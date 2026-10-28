@@ -176,6 +176,20 @@ it('maps known Host messages to English and leaves unknown Host or CLI text verb
   expect(operationMessage(new Error('请先关闭账号终端'))).toBe('请先关闭账号终端')
 })
 
+it.each([
+  ['任务超时：已达到总时限 30 分钟', 'The task timed out: reached the total time limit of 30 min'],
+  ['任务超时：已达到总时限 2 小时', 'The task timed out: reached the total time limit of 2 h'],
+  ['任务超时：已达到总时限 90 秒', 'The task timed out: reached the total time limit of 90 s'],
+  ['任务超时：连续 10 分钟没有收到 CLI 事件（空闲时限）', 'The task timed out: no CLI event for 10 min (idle time limit)'],
+  ['任务超时', 'The task timed out'],
+])('translates timeout messages and duration units: %s', (message, english) => {
+  setLanguagePreference('en')
+  expect(hostText(message)).toBe(english)
+  expect(hostText(`Error: ${message}`)).toBe(english)
+  setLanguagePreference('zh')
+  expect(hostText(message)).toBe(message)
+})
+
 it('maps isolated-copy Host messages, translating a nested Host reason but not paths or details', () => {
   setLanguagePreference('en')
   expect(hostText('项目文件数超过隔离副本上限（20000 个）；已改为排队，等待主目录空闲')).toBe(

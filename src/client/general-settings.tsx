@@ -3,6 +3,9 @@ import { Button, StateDot, Switch } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   LANGUAGE_PREFERENCES,
   MAX_CONCURRENT_LIMIT,
+  MAX_TASK_TIME_LIMIT_MS,
+  TASK_TIME_LIMIT_CHOICES,
+  IDLE_TIME_LIMIT_CHOICES,
   type GeneralSettings,
   type LanguagePreference,
 } from '../shared/cli-settings.ts'
@@ -16,33 +19,45 @@ function readSettings(raw: string): GeneralSettings {
   const next = JSON.parse(raw)
   const count = (input: unknown) =>
     Number.isInteger(input) && (input as number) >= 1 && (input as number) <= MAX_CONCURRENT_LIMIT
-  // Absent fields are an older Host's defaults (`follow`, off, asking); any other value is rejected.
+  // Absent fields are an older Host's defaults (`follow`, off, asking, 30 minutes, no idle limit); any other value is rejected.
   const language = next?.language ?? 'follow'
   const isolatedParallelWrites = next?.isolatedParallelWrites ?? false
   const askBeforeDispatch = next?.askBeforeDispatch ?? true
+  const taskTimeLimitMs = next?.taskTimeLimitMs === undefined ? 1_800_000 : next.taskTimeLimitMs
+  const defaultTaskTimeLimitMs = next?.defaultTaskTimeLimitMs === undefined ? 1_800_000 : next.defaultTaskTimeLimitMs
+  const idleTimeLimitMs = next?.idleTimeLimitMs === undefined ? 0 : next.idleTimeLimitMs
+  const duration = (input: unknown, minimum: number) =>
+    Number.isInteger(input) && (input as number) >= minimum && (input as number) <= MAX_TASK_TIME_LIMIT_MS
   if (
     !count(next?.maxConcurrent) ||
     !count(next?.defaultMaxConcurrent) ||
     !LANGUAGE_PREFERENCES.includes(language) ||
     typeof isolatedParallelWrites !== 'boolean' ||
-    typeof askBeforeDispatch !== 'boolean'
+    typeof askBeforeDispatch !== 'boolean' ||
+    !duration(taskTimeLimitMs, 1000) ||
+    !duration(defaultTaskTimeLimitMs, 1000) ||
+    (idleTimeLimitMs !== 0 && !duration(idleTimeLimitMs, 60_000))
   )
     throw new Error(t('收到无效的通用设置，请重试'))
-  return { ...next, language, isolatedParallelWrites, askBeforeDispatch }
+  return { ...next, language, isolatedParallelWrites, askBeforeDispatch, taskTimeLimitMs, defaultTaskTimeLimitMs, idleTimeLimitMs }
 }
 
-type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch'
+type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch' | 'taskTimeLimitMs' | 'idleTimeLimitMs'
 const SAVING: Record<Field, MessageKey> = {
   language: '正在保存界面语言…',
   maxConcurrent: '正在保存同时对话数…',
   isolatedParallelWrites: '正在保存同目录写任务并行…',
   askBeforeDispatch: '正在保存调用前询问模型…',
+  taskTimeLimitMs: '正在保存总时限…',
+  idleTimeLimitMs: '正在保存空闲时限…',
 }
 const UNSAVED: Record<Field, MessageKey> = {
   language: '界面语言未保存，请重新选择重试',
   maxConcurrent: '同时对话数未保存，请重新选择重试',
   isolatedParallelWrites: '同目录写任务并行未保存，请重试',
   askBeforeDispatch: '调用前询问模型未保存，请重试',
+  taskTimeLimitMs: '总时限未保存，请重新选择重试',
+  idleTimeLimitMs: '空闲时限未保存，请重新选择重试',
 }
 // Each language is named in itself, so the choice stays findable after a switch.
 const LANGUAGE_LABELS: Record<LanguagePreference, () => string> = {
@@ -63,6 +78,8 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
   const hintId = useId()
   const isolationHintId = useId()
   const askHintId = useId()
+  const taskTimeHintId = useId()
+  const idleTimeHintId = useId()
   const request = useRef<AbortController>()
   const service = api.cliworker
 
@@ -138,6 +155,27 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
       label: count === settings?.defaultMaxConcurrent ? t('{count}（默认）', { count }) : String(count),
     }
   })
+  const taskTimeLabel = (ms: number) => {
+    if (ms === MAX_TASK_TIME_LIMIT_MS) return t('不限制（最长 24 小时）')
+    if (ms % 3_600_000 === 0) return t('{count} 小时', { count: ms / 3_600_000 })
+    if (ms % 60_000 === 0) return t('{count} 分钟', { count: ms / 60_000 })
+    return t('{count} 秒', { count: Math.ceil(ms / 1000) })
+  }
+  const taskTimeChoices = [...new Set([
+    ...TASK_TIME_LIMIT_CHOICES,
+    ...(settings ? [settings.defaultTaskTimeLimitMs, settings.taskTimeLimitMs] : []),
+  ])].sort((a, b) => a - b).map((ms) => ({
+    id: String(ms),
+    label: ms === settings?.defaultTaskTimeLimitMs ? t('{label}（默认）', { label: taskTimeLabel(ms) }) : taskTimeLabel(ms),
+  }))
+  const idleTimeChoices = [...new Set([
+    ...IDLE_TIME_LIMIT_CHOICES,
+    ...(settings ? [settings.idleTimeLimitMs] : []),
+  ])].sort((a, b) => a - b).map((ms) => ({
+    id: String(ms),
+    // 「关闭」 already names the Close button, so the off choice has its own key.
+    label: ms === 0 ? t('不启用') : t('{count} 分钟', { count: Math.ceil(ms / 60_000) }),
+  }))
   return (
     <div className="cwn-settings-pane" aria-label={t('CLI Worker 通用设置')}>
       <div className="cwn-cli-identity">
@@ -240,6 +278,49 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
               )}
             </div>
           )}
+        </div>
+      </section>
+      <section className="cwn-settings-section" aria-label={t('任务时限')}>
+        <div className="cwn-settings-section-head">
+          <h3>{t('任务时限')}</h3>
+        </div>
+        <div className="cwn-settings-form">
+          <div className="cwn-setting-row">
+            <span className="cwn-setting-row-text">
+              <span>{t('总时限')}</span>
+              <span className="cwn-setting-description" id={taskTimeHintId}>
+                {t('从任务开始计时，到时停止任务；修改只影响之后开始的任务')}
+              </span>
+            </span>
+            <NativeChoice
+              label={t('总时限')}
+              describedBy={taskTimeHintId}
+              selected={settings ? String(settings.taskTimeLimitMs) : ''}
+              placeholder={placeholder ?? t('总时限')}
+              choices={taskTimeChoices}
+              disabled={disabled}
+              onChange={(id) => void save('taskTimeLimitMs', Number(id))}
+            />
+          </div>
+          {feedback('taskTimeLimitMs')}
+          <div className="cwn-setting-row">
+            <span className="cwn-setting-row-text">
+              <span>{t('空闲时限')}</span>
+              <span className="cwn-setting-description" id={idleTimeHintId}>
+                {t('CLI 连续这段时间没有任何事件（回复、工具、思考）时停止任务')}
+              </span>
+            </span>
+            <NativeChoice
+              label={t('空闲时限')}
+              describedBy={idleTimeHintId}
+              selected={settings ? String(settings.idleTimeLimitMs) : ''}
+              placeholder={placeholder ?? t('空闲时限')}
+              choices={idleTimeChoices}
+              disabled={disabled}
+              onChange={(id) => void save('idleTimeLimitMs', Number(id))}
+            />
+          </div>
+          {feedback('idleTimeLimitMs')}
         </div>
       </section>
     </div>
