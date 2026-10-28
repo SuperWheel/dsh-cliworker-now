@@ -172,7 +172,7 @@ flowchart LR
   - **仅可查看**：以 CLI 原生的只读/规划模式运行；Antigravity、Qoder、Qoder CN 和 Hermes 没有可确认的整进程只读模式，此时拒绝派遣。
   - **工作区内修改**：使用 CLI 自己的写入模式；CLI 请求额外授权（例如联网、工作区外写入）时按主对话审批策略处理：「询问」时逐项弹出 DSH 授权，「从不询问」时拒绝。
   - **完全权限**：使用 CLI 自己的免确认/完全访问模式（Codex `danger-full-access`、Claude Code `bypassPermissions`、Qoder `yolo`、ZCode `yolo`、Grok `--always-approve`、OMP `yolo`、OpenCode/MiMo 全部工具允许、Pi 开放原生命令）；仍有的授权请求自动放行并记入时间线。**此档下 CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用。** Kimi 与 Hermes 的免确认模式描述不一致或未核实，仍用写入模式，授权请求由插件自动放行。
-  - 主 Agent 派出的任务（`cliworker_start` / `cliworker_followup`）在主对话页弹出授权问题；你在子会话中续聊、排队或重新运行的轮次在该子会话中审批，任务卡显示「等待审批」。CLI 原生提供会话级授权（Codex、Claude Code、Kimi、Qoder、Hermes）时，主对话页另有「本会话始终允许」，由 CLI 自己记住；子会话审批面板只有允许一次 / 拒绝。无人应答或任务停止时按拒绝处理。
+  - 主 Agent 派出的任务（`cliworker_start` / `cliworker_followup`）在主对话页弹出授权问题；你在子会话中续聊、排队或重新运行的轮次在该子会话中审批，任务卡显示「等待审批」。CLI 原生提供会话级授权（Codex、Claude Code、Kimi、Qoder、Hermes）时，主对话页另有「本会话始终允许」，由 CLI 自己记住；子会话审批面板只有允许一次 / 拒绝。Worker 经 DSH 备选工具（例如 Pi 的备选命令工具申请更宽的沙箱）请求审批时按同样规则询问，只有允许一次 / 拒绝。无人应答或任务停止时按拒绝处理。
   - Harness 处于规划模式时仍拒绝派遣写任务。OMP 在「工作区内修改」下开放原生命令，每次命令和写入的原生确认同样按上述规则交给 DSH。Antigravity 和 Pi 没有可回复的原生授权协议：Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
 - **关闭的原生功能**：插件默认保留 CLI 原生功能（Grok 网页搜索与抓取、OpenCode/MiMo 用户自己的 skill 已启用），只因以下理由关闭：
   - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（是否启用待定）。

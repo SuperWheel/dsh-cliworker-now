@@ -57,7 +57,7 @@
   - Pi 目录（让 Pi 原样列出）：原生 read、grep、find、ls、write、edit，没有 bash；DSH 桥 46 个工具，含 bash、job_output/job_list/job_kill、working_directory、web_search/web_fetch、DSH 技能三件及 DSH 独有工具（visible_workflow_*、schedule_*、goal 系列、todo_write、ask_user_question、exit_plan_mode、workflow、list_agents、present、load_workspace_dependencies），没有与原生重复的读写搜索工具。Pi 看到的名称为 `dsh_<哈希>_<名称>`，长名截断到约 45 字符（如 `…_visible_workflow_plan_wa`）。
   - Pi 备选命令：工作区内命令经 DSH bash 执行、无审批，结果由原生 write 写入 pi-shell.txt。工作区外 `printf PI-OUTSIDE-1028 > …/pi.txt`：第一轮被宿主沙箱拒绝（`file access denied under workspace-write mode`）；第二轮模型仍传 `sandbox_permissions: "workspace-write"`，再次被拒；第三轮（主 Agent `cliworker_followup`）明确要求 `"danger-full-access"` 加 justification，Worker 子会话出现 DSH 原生审批面板，点「允许一次」后写入成功，内容正确。该文件权限为 0644（DSH bash 沿用默认 umask，与 Codex 写出的 0600 不同）。
   - Codex 目录（续聊让 Codex 按服务器列出 MCP 工具）：`dsh_worker_tools` 41 个，为 DSH 技能三件、web_search/web_fetch（Codex 能力表无 `web`）及上述 DSH 独有工具；没有 bash、read、write、grep、job_*。读、搜、命令、编辑都用原生工具（`seq 1 300000` 走原生 commandExecution）。Codex 同时加载了用户自己的 Codex MCP：`codex_apps`（ChatGPT 连接器，含 Gmail/Slack/Drive 等写操作）、mysql_toolbox、node_repl、nowledge_mem；仅可查看场景中 Codex 调用了 nowledge_mem `memory_search`；`mcp.consensus.app` 报 AuthRequired 诊断。
-  - 发现（未修）：DSH 备选工具的审批只出现在 Worker 子会话面板。上述第三轮由主 Agent 发起，主页面没有提问卡，任务卡只显示「运行中」，与「主 Agent 发起→主页面提问卡」的约定不一致；不打开子会话时任务会一直等待。
+  - 发现（未修）：DSH 备选工具的审批只出现在 Worker 子会话面板。上述第三轮由主 Agent 发起，主页面没有提问卡，任务卡只显示「运行中」，与「主 Agent 发起→主页面提问卡」的约定不一致；不打开子会话时任务会一直等待。由 `relay-harness-tool-approvals` 处理。
   - 未验证：Codex `tool_timeout_sec` 与 `developerInstructions` 运行时生效、Claude/OpenCode/MiMo/Grok 说明实际生效、图片透传、Windows 目录（pwsh）。
 
 ## 5. 文档

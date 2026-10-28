@@ -1242,3 +1242,11 @@ OpenSpec 变更 `isolate-opencode-mimo-config`，处理上节记录的缺口。�
 - MiMo：每次启动的中间件运行 `claude-import`，把 `~/.claude/projects/*/*.jsonl` 写进 MiMo 数据库（Worker 与模型发现用的是真实数据库）。`firstPartyEnvironment('mimo')` 加 `MIMOCODE_DISABLE_CLAUDE_IMPORT=1`，覆盖模型发现、Worker、分支元数据与登录。已导入的会话不删除。Codex/OpenCode 会话导入只经服务端接口触发，插件不调用。
 - 不改：MiMo 项目配置、`~/.mimocode`、真实 HOME/XDG 是 MiMo 自身的账号与模型来源（模型发现认项目级 `provider.apiKey`，`MIMOCODE_DISABLE_PROJECT_CONFIG` 还会去掉项目 AGENTS.md）；MiMo 读取 CLAUDE.md、默认扫描 `.agents` skill 不涉及账号，是否与 OpenCode 统一另行决定。
 - 风险：`OPENCODE_TEST_HOME` 名称带 TEST，后续版本若改名，隔离会失效；升级 OpenCode 时按该变更 tasks.md 记录的对比步骤重新核对。
+
+## 2026-10-28 DSH 备选工具审批按轮次来源询问（未发布）
+
+OpenSpec 变更 `relay-harness-tool-approvals`，处理 `relay-native-approvals-to-host` 验收中的发现：Worker 经工具桥调用的 DSH 工具（如 Pi 的备选 bash）自行发起 `approval.request`，经 `dsh-api-remotes` 转给持有子会话的客户端，插件不参与，主 Agent 派出的任务主页面没有提问卡，任务卡也不显示「等待审批」。
+
+- 工具桥 `execute` 把 `cliworker:<callId>` 登记到 `bridgeCalls`（Worker、runId、子 Agent、工具名、参数），结束时删除。Host 以 `ctx.on('approval/request', …, true)` 注册在 Remote 转发者之前，只认领 callId 在 `bridgeCalls` 中且请求方为登记子 Agent 的请求，其他一律 `next()`。
+- 认领后经运行时 `harnessApproval` → `trackApproval`（与 CLI 原生请求共用：时间线、`approvalWaiting`、停止撤回）。主 Agent 发起的轮次走 `decideNativeApproval`（父页面 `userQuestions.ask`）；其他轮次先按规划与预设执行 `decideApproval`，需要询问时才 `next()` 交给子会话原生面板，并与停止信号赛跑。摘要为「执行命令（DSH 备选工具 bash）：<命令>」，详情取 DSH 的 `displayReason.zh`，不提供会话级授权。结果映射回 DSH：允许 → `allowed-once`，停止 → `cancelled`，无应答者 → `unavailable`，其余 → `rejected`。
+- 未改：工具桥审批等待期间不暂停空闲时限（计时在原生运行器中）；DSH 工具被拒后本轮为「已完成」加诊断，与原生拒绝的「结果待核实」不一致。

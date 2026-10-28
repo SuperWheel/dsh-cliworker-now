@@ -8,6 +8,8 @@ import {
   decideApproval,
   decisionFromAnswer,
   decisionFromOutcome,
+  harnessApprovalRequest,
+  outcomeFromDecision,
   parseNativeApprovalRequest,
   runAccess,
   type NativeAccess,
@@ -423,5 +425,147 @@ describe('Host permission boundaries (synthetic agents, no DSH Desktop)', () => 
     expect(await service.decideNativeApproval(worker, ask, new AbortController().signal, 'plan'))
       .toEqual({ decision: 'deny', source: 'plan' })
     expect(request).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('DSH tool approvals from the tool bridge follow the turn origin', () => {
+  const escalation = {
+    reason: 'escalate sandbox to danger-full-access: 用户授权的工作区外写入',
+    displayReason: { en: 'Allow …', zh: '允许本次操作使用 danger-full-access 权限：用户授权的工作区外写入' },
+  }
+  it('summarizes the call with its command and the localized reason; DSH has no session grant', () => {
+    const request = harnessApprovalRequest('bash', { command: 'printf X > /outside/x.txt', sandbox_permissions: 'danger-full-access' }, escalation)
+    expect(request).toEqual({
+      kind: 'tool',
+      summary: '执行命令（DSH 备选工具 bash）：printf X > /outside/x.txt',
+      detail: '允许本次操作使用 danger-full-access 权限：用户授权的工作区外写入',
+      allowSession: false,
+    })
+    expect(harnessApprovalRequest('web_fetch', { url: 'https://example.com' }, { reason: 'network' }))
+      .toEqual({ kind: 'tool', summary: '使用 DSH 备选工具 web_fetch', detail: 'network', allowSession: false })
+    // Bounded like a native frame.
+    const long = harnessApprovalRequest('bash', { command: 'x'.repeat(2000) }, { reason: 'y'.repeat(9000) })
+    expect(() => parseNativeApprovalRequest(long)).not.toThrow()
+  })
+  it('maps decisions back to the outcome the DSH tool waits for', () => {
+    expect(outcomeFromDecision({ decision: 'allow-once', source: 'user' })).toBe('allowed-once')
+    expect(outcomeFromDecision({ decision: 'allow-once', source: 'full-access' })).toBe('allowed-once')
+    expect(outcomeFromDecision({ decision: 'deny', source: 'user' })).toBe('rejected')
+    expect(outcomeFromDecision({ decision: 'deny', source: 'plan' })).toBe('rejected')
+    expect(outcomeFromDecision({ decision: 'deny', source: 'preset' })).toBe('rejected')
+    expect(outcomeFromDecision({ decision: 'deny', source: 'stopped' })).toBe('cancelled')
+    expect(outcomeFromDecision({ decision: 'deny', source: 'unavailable' })).toBe('unavailable')
+  })
+
+  // Synthetic runtime shell holding one running task, and a service around it.
+  const setup = (origin: 'agent' | 'user', sandbox = 'workspace-write', answer = '允许一次') => {
+    const events: any[] = []
+    const worker: any = { id: 'w', agentName: 'pi-2', parentSessionId: 'parent', runId: 'run-1', mode: 'accept-edits',
+      preference: { cli: 'pi' }, project: '/p', title: 'w', harnessConversation: { sessionId: 'child' } }
+    const task: any = { worker, controller: new AbortController(), approvals: new AbortController() }
+    const shell: any = { storage: { append: (_worker: unknown, event: unknown) => events.push(event) }, changed: () => {},
+      tasks: new Map([[worker.id, task]]), running: new Set([task]) }
+    const ask = vi.fn(async (_input: any) => ({ answers: [{ id: 'cliworker_approval', selected: [answer] }] }))
+    const parent = {
+      id: 'parent',
+      session: { header: { origin: 'user' } },
+      ctx: { get: (name: string) => ({
+        planMode: { get: () => ({ active: false }) },
+        sandboxPolicy: { resolve: () => ({ mode: sandbox }) },
+        approval: { overrideOf: () => (sandbox === 'danger-full-access' ? 'never' : 'ask'), config: { policy: 'ask' } },
+        userQuestions: { ask },
+      })[name] },
+    }
+    const child = { id: 'child' }
+    const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+      ctx: { agents: { get: (id: string) => (id === 'parent' ? parent : id === 'child' ? child : undefined) } },
+      disposed: new AbortController(),
+      runOrigins: new Map([['run-1', origin]]),
+      bridgeCalls: new Map([['cliworker:cwn-harness-1', { worker, runId: 'run-1', child, name: 'bash',
+        arguments: { command: 'printf X > /outside/x.txt', sandbox_permissions: 'danger-full-access' } }]]),
+      runtime: { harnessApproval: (...args: any[]) => (WorkerRuntime.prototype as any).harnessApproval.apply(shell, args) },
+    })
+    const raise = (next: () => Promise<any>, extra: Record<string, unknown> = {}) =>
+      service.answerHarnessApproval({ agent: child, toolName: 'bash', callId: 'cliworker:cwn-harness-1', ...escalation, ...extra }, next)
+    return { events, worker, task, ask, child, raise }
+  }
+
+  it('a parent-started turn asks on the parent page with the tool and command, and records it', async () => {
+    const f = setup('agent')
+    const next = vi.fn(async () => 'unavailable')
+    const pending = f.raise(next)
+    expect(f.worker.approvalWaiting).toBe(1)
+    expect(f.events[0]).toMatchObject({ kind: 'status', text: 'CLI 请求授权：执行命令（DSH 备选工具 bash）：printf X > /outside/x.txt' })
+    expect(await pending).toBe('allowed-once')
+    expect(next).not.toHaveBeenCalled()
+    const question = f.ask.mock.calls[0]![0].questions[0]
+    expect(question.question).toContain('pi-2（Pi）请求授权：执行命令（DSH 备选工具 bash）：printf X > /outside/x.txt')
+    expect(question.question).toContain('工作目录：/p')
+    expect(question.options.map((option: { label: string }) => option.label)).toEqual(['允许一次', '拒绝'])
+    expect(f.worker.approvalWaiting).toBeUndefined()
+    expect(f.events.at(-1)).toMatchObject({ text: '授权决定：允许一次（DSH 用户）' })
+  })
+  it('a denial on the parent page rejects the DSH tool call', async () => {
+    const f = setup('agent', 'workspace-write', '拒绝')
+    expect(await f.raise(vi.fn())).toBe('rejected')
+    expect(f.events.at(-1)).toMatchObject({ text: '授权决定：拒绝（DSH 用户）' })
+  })
+  it("a Worker-UI turn keeps the child's own panel, still waiting visibly", async () => {
+    const f = setup('user')
+    let answer!: (outcome: string) => void
+    const next = vi.fn(() => new Promise<string>((resolve) => (answer = resolve)))
+    const pending = f.raise(next)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(next).toHaveBeenCalledTimes(1)
+    expect(f.worker.approvalWaiting).toBe(1)
+    answer('rejected')
+    expect(await pending).toBe('rejected')
+    expect(f.ask).not.toHaveBeenCalled()
+    expect(f.events.at(-1)).toMatchObject({ text: '授权决定：拒绝（DSH 用户）' })
+  })
+  it('a plan launch denies without asking, whoever started the turn', async () => {
+    for (const origin of ['agent', 'user'] as const) {
+      const f = setup(origin)
+      f.task.launchMode = 'plan'
+      const next = vi.fn()
+      expect(await f.raise(next)).toBe('rejected')
+      expect(next).not.toHaveBeenCalled()
+      expect(f.ask).not.toHaveBeenCalled()
+      expect(f.events.at(-1)).toMatchObject({ text: '授权决定：拒绝（规划模式）' })
+    }
+  })
+  it('a stop withdraws the wait and cancels the DSH tool call', async () => {
+    const f = setup('user')
+    const pending = f.raise(() => new Promise(() => {}))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    f.task.approvals.abort(new Error('run ended'))
+    expect(await pending).toBe('cancelled')
+    expect(f.worker.approvalWaiting).toBeUndefined()
+    expect(f.events.at(-1)).toMatchObject({ text: '授权决定：拒绝（任务停止）' })
+    // The DSH tool call's own cancellation withdraws it too.
+    const g = setup('agent')
+    g.ask.mockImplementation(() => new Promise(() => {}))
+    const control = new AbortController()
+    const asked = g.raise(vi.fn(), { signal: control.signal })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    control.abort()
+    expect(await asked).toBe('cancelled')
+  })
+  it('a call from an ended run is denied without asking', async () => {
+    const f = setup('agent')
+    f.worker.runId = 'run-2'
+    expect(await f.raise(vi.fn())).toBe('cancelled')
+    expect(f.ask).not.toHaveBeenCalled()
+    expect(f.events).toEqual([])
+  })
+  it('leaves every other approval request to the existing answerers', async () => {
+    const f = setup('agent')
+    for (const extra of [{ callId: undefined }, { callId: 'cliworker:cwn-harness-other' }, { agent: { id: 'parent' } }]) {
+      const next = vi.fn(async () => 'allowed-once')
+      expect(await f.raise(next, extra)).toBe('allowed-once')
+      expect(next).toHaveBeenCalledTimes(1)
+    }
+    expect(f.ask).not.toHaveBeenCalled()
+    expect(f.events).toEqual([])
   })
 })

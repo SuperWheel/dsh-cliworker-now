@@ -214,6 +214,49 @@ interface PriorityMessage {
 const deliveryTerminal = (state: DeliveryState) =>
   ['superseded', 'cancelled', 'failed', 'completed'].includes(state)
 
+/**
+ * Record one authorization request on the running turn, wait visibly for its
+ * decision and record that. A stop, a newer run or a failure is a denial.
+ * Shared by native CLI requests and DSH tool requests from the tool bridge.
+ */
+async function trackApproval(
+  runtime: Pick<WorkerRuntime, 'storage' | 'changed'>,
+  task: Task,
+  request: NativeApprovalRequest,
+  decide: (signal: AbortSignal, mode: TaskMode) => Promise<NativeApprovalDecision>,
+  /** The asker's own cancellation, such as the DSH tool call's. */
+  asker?: AbortSignal,
+): Promise<NativeApprovalDecision> {
+  const { worker, controller } = task
+  const runId = worker.runId
+  const approvals = task.approvals ?? new AbortController()
+  const signal = AbortSignal.any([controller.signal, approvals.signal, ...(asker ? [asker] : [])])
+  // Stopping starts before the controller aborts; deny from that moment.
+  const withdrawn = () => signal.aborted || !!task.nativeStopRequested
+  runtime.storage.append(worker, {
+    kind: 'status',
+    text: `CLI 请求授权：${request.summary}`,
+    ...(request.detail ? { detail: request.detail } : {}),
+  })
+  worker.approvalWaiting = (worker.approvalWaiting ?? 0) + 1
+  runtime.changed()
+  let decided: NativeApprovalDecision
+  if (withdrawn()) decided = { decision: 'deny', source: 'stopped' }
+  else
+    try {
+      decided = await decide(signal, task.launchMode ?? worker.mode)
+    } catch {
+      decided = { decision: 'deny', source: withdrawn() ? 'stopped' : 'unavailable' }
+    }
+  const current = worker.runId === runId
+  const decision: NativeApprovalDecision = withdrawn() || !current ? { decision: 'deny', source: 'stopped' } : decided
+  if (worker.approvalWaiting) worker.approvalWaiting -= 1
+  if (!worker.approvalWaiting) delete worker.approvalWaiting
+  if (current) runtime.storage.append(worker, { kind: 'status', text: approvalDecisionText(decision) })
+  runtime.changed()
+  return decision
+}
+
 export class WorkerRuntime {
   private harnessPreparation?: (
     worker: Worker,
@@ -257,42 +300,37 @@ export class WorkerRuntime {
     request: NativeApprovalRequest,
     answer: (decision: NativeApprovalDecision) => Promise<void>,
   ): void {
-    const { worker, controller } = task
+    const { worker } = task
     const runId = worker.runId
-    const approvals = task.approvals ?? new AbortController()
-    const signal = AbortSignal.any([controller.signal, approvals.signal])
-    // Stopping starts before the controller aborts; deny from that moment.
-    const withdrawn = () => signal.aborted || !!task.nativeStopRequested
-    this.storage.append(worker, {
-      kind: 'status',
-      text: `CLI 请求授权：${request.summary}`,
-      ...(request.detail ? { detail: request.detail } : {}),
-    })
-    worker.approvalWaiting = (worker.approvalWaiting ?? 0) + 1
-    this.changed()
-    const decide = async (): Promise<NativeApprovalDecision> => {
-      if (!this.approvalHandler) return { decision: 'deny', source: 'unavailable' }
-      if (withdrawn()) return { decision: 'deny', source: 'stopped' }
-      try {
-        return await this.approvalHandler(worker, request, signal, task.launchMode ?? worker.mode)
-      } catch {
-        return { decision: 'deny', source: withdrawn() ? 'stopped' : 'unavailable' }
-      }
-    }
-    void decide().then(async (decided) => {
-      const current = worker.runId === runId
-      const decision: NativeApprovalDecision =
-        withdrawn() || !current ? { decision: 'deny', source: 'stopped' } : decided
-      if (worker.approvalWaiting) worker.approvalWaiting -= 1
-      if (!worker.approvalWaiting) delete worker.approvalWaiting
-      if (current) this.storage.append(worker, { kind: 'status', text: approvalDecisionText(decision) })
-      this.changed()
+    const withdrawn = () =>
+      task.controller.signal.aborted || !!task.approvals?.signal.aborted || !!task.nativeStopRequested
+    const handler = this.approvalHandler
+    void trackApproval(this, task, request, (signal, mode) =>
+      handler ? handler(worker, request, signal, mode) : Promise.resolve({ decision: 'deny', source: 'unavailable' }),
+    ).then(async (decision) => {
       await answer(decision).catch(() => {
         // The runner denies on its own once its bridge or run ends.
         if (worker.runId === runId && !withdrawn())
           this.storage.append(worker, { kind: 'diagnostic', text: '授权决定未送达 CLI，CLI 按拒绝处理' })
       })
     })
+  }
+  /**
+   * Record and decide one DSH tool authorization raised through this Worker's
+   * tool bridge during run `runId`, like a native request. Without that
+   * running turn it is a denial.
+   */
+  harnessApproval(
+    worker: Worker,
+    runId: string,
+    request: NativeApprovalRequest,
+    signal: AbortSignal,
+    decide: (signal: AbortSignal, mode: TaskMode) => Promise<NativeApprovalDecision>,
+  ): Promise<NativeApprovalDecision> {
+    const task = this.tasks.get(worker.id)
+    if (!task || task.worker.runId !== runId || !this.running.has(task))
+      return Promise.resolve({ decision: 'deny', source: 'stopped' })
+    return trackApproval(this, task, request, decide, signal)
   }
   private agyContextReader = new AgyContextReader()
   private hermesSessionReader = new HermesSessionTelemetryReader()

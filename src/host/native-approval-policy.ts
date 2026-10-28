@@ -145,11 +145,45 @@ export function decisionFromAnswer(
   return { decision: 'deny', source: 'user' }
 }
 
+export type ApprovalOutcome = 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable'
+
 /** Map a DSH approval outcome from the Worker's native panel. */
-export function decisionFromOutcome(
-  outcome: 'allowed-once' | 'rejected' | 'cancelled' | 'unavailable',
-): NativeApprovalDecision {
+export function decisionFromOutcome(outcome: ApprovalOutcome): NativeApprovalDecision {
   if (outcome === 'allowed-once') return { decision: 'allow-once', source: 'user' }
   if (outcome === 'rejected') return { decision: 'deny', source: 'user' }
   return { decision: 'deny', source: outcome === 'cancelled' ? 'stopped' : 'unavailable' }
+}
+
+/** Map a decision back to the DSH outcome a tool bridge request is waiting for. */
+export function outcomeFromDecision(decision: NativeApprovalDecision): ApprovalOutcome {
+  if (decision.decision !== 'deny') return 'allowed-once'
+  if (decision.source === 'stopped') return 'cancelled'
+  return decision.source === 'unavailable' ? 'unavailable' : 'rejected'
+}
+
+const clip = (value: string, limit: number) => (value.length > limit ? `${value.slice(0, limit - 1)}…` : value)
+
+/**
+ * Summary of one DSH tool approval raised through the tool bridge. DSH sends
+ * the reason but not the command, so the command comes from the call itself.
+ * DSH has no session-wide grant.
+ */
+export function harnessApprovalRequest(
+  name: string,
+  args: unknown,
+  reason: { reason?: string; displayReason?: { readonly [locale: string]: string } },
+): NativeApprovalRequest {
+  const command = args && typeof args === 'object' ? (args as Record<string, unknown>).command : undefined
+  const detail = reason.displayReason?.zh ?? reason.reason
+  return {
+    kind: 'tool',
+    summary: clip(
+      typeof command === 'string' && command.trim()
+        ? `执行命令（DSH 备选工具 ${name}）：${command}`
+        : `使用 DSH 备选工具 ${name}`,
+      500,
+    ),
+    ...(detail?.trim() ? { detail: clip(detail, 4000) } : {}),
+    allowSession: false,
+  }
 }

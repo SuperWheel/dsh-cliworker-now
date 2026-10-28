@@ -48,13 +48,17 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-plan-mode'
 import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import type { ApprovalRequestEvent } from '@deepseek-ai/dsh-user-approval/types'
 import {
   approvalPrompt,
   approvalQuestion,
   decideApproval,
   decisionFromAnswer,
   decisionFromOutcome,
+  harnessApprovalRequest,
+  outcomeFromDecision,
   runAccess,
+  type ApprovalOutcome,
   type NativeApprovalDecision,
   type PermissionState,
   type RunOrigin,
@@ -278,6 +282,8 @@ export class CliWorkerService extends TypertRemoteService {
   private selectionProjects = new WeakMap<Preference, string>()
   /** Turn origin by runId: the parent model's tool call, or the user in the Worker UI. */
   private runOrigins?: Map<string, RunOrigin>
+  /** DSH tool calls the tool bridge is executing, by their DSH call id. */
+  private bridgeCalls = new Map<string, { worker: Worker; runId: string; child: Agent; name: string; arguments: unknown }>
   private displayedBindings = new Map<string, string>()
   private settingsCatalogs?: SettingsCatalogCache
   private settingsInstance?: string
@@ -564,16 +570,24 @@ export class CliWorkerService extends TypertRemoteService {
               if (this.project(parent) !== worker.project) throw new Error('工具桥项目已变更')
               this.runtime.assertCliEnabled(cli)
             },
-            execute: async (call) =>
-              withinCliTool(worker.runId, async () =>
-                child.ctx.tools.execute({
-                  callId: ToolCallId(`cliworker:${call.callId}`),
-                  name: call.name,
-                  arguments: call.arguments,
-                  agent: child,
-                  signal: call.signal,
-                }),
-              ),
+            execute: async (call) => {
+              // An approval this call raises is matched to its Worker by call id.
+              const callId = ToolCallId(`cliworker:${call.callId}`)
+              this.bridgeCalls.set(callId, { worker, runId: call.binding.runId, child, name: call.name, arguments: call.arguments })
+              try {
+                return await withinCliTool(worker.runId, async () =>
+                  child.ctx.tools.execute({
+                    callId,
+                    name: call.name,
+                    arguments: call.arguments,
+                    agent: child,
+                    signal: call.signal,
+                  }),
+                )
+              } finally {
+                this.bridgeCalls.delete(callId)
+              }
+            },
             ...(skills
               ? {
                   skills: {
@@ -673,6 +687,8 @@ export class CliWorkerService extends TypertRemoteService {
       () => this.runtime.setApprovalHandler((worker, request, signal, mode) => this.decideNativeApproval(worker, request, signal, mode)),
       'cliworker:approvals',
     )
+    // Ahead of the Remote answerer, which would ask only in the Worker's child session.
+    ctx.on('approval/request', (request, next) => this.answerHarnessApproval(request, next), true)
     ctx.effect(
       () =>
         this.runtime.setAccessSnapshot((worker) => {
@@ -781,6 +797,37 @@ export class CliWorkerService extends TypertRemoteService {
       signal: control,
     })
     return decisionFromOutcome(outcome)
+  }
+  /**
+   * Answer a DSH tool approval raised by a tool bridge call like a native
+   * request: a parent-started turn asks on the parent page, a Worker-UI turn
+   * keeps the child's own panel. Any other request is not ours.
+   */
+  private async answerHarnessApproval(
+    request: ApprovalRequestEvent,
+    next: () => Promise<ApprovalOutcome>,
+  ): Promise<ApprovalOutcome> {
+    const call = request.callId === undefined ? undefined : this.bridgeCalls.get(request.callId)
+    if (!call || call.child !== request.agent) return next()
+    const { worker, runId } = call
+    const summary = harnessApprovalRequest(call.name, call.arguments, request)
+    const decision = await this.runtime.harnessApproval(
+      worker,
+      runId,
+      summary,
+      request.signal ?? this.disposed.signal,
+      async (signal, mode) => {
+        if (this.runOrigins?.get(runId) === 'agent') return this.decideNativeApproval(worker, summary, signal, mode)
+        // The child's own panel answers, after the same plan and preset rules.
+        const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
+        if (!parent) return { decision: 'deny', source: 'unavailable' }
+        const decided = decideApproval(mode, this.permissionState(parent))
+        if (decided !== 'ask') return decided
+        // A stop must not wait on a panel nobody may answer.
+        return decisionFromOutcome(await waitForInput(next(), signal))
+      },
+    )
+    return outcomeFromDecision(decision)
   }
   private async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
     try {
