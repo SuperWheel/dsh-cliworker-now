@@ -108,6 +108,8 @@ export async function prepareNativeWorker<
         timeoutMs: config.timeoutMs,
         maxLineBytes: config.maxLineBytes,
         maxRunBytes: config.maxRunBytes,
+        maxNativeLineBytes: config.maxNativeLineBytes,
+        maxToolPreviewBytes: config.maxToolPreviewBytes,
       }),
       { mode: 0o600, flag: 'wx' },
     )

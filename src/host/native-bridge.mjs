@@ -79,6 +79,10 @@ try {
     config.maxLineBytes > 16_777_216 ||
     !Number.isSafeInteger(config.maxRunBytes) ||
     config.maxRunBytes < config.maxLineBytes ||
+    (config.maxNativeLineBytes !== undefined &&
+      (!Number.isSafeInteger(config.maxNativeLineBytes) || config.maxNativeLineBytes < 1024 || config.maxNativeLineBytes > 67_108_864)) ||
+    (config.maxToolPreviewBytes !== undefined &&
+      (!Number.isSafeInteger(config.maxToolPreviewBytes) || config.maxToolPreviewBytes < 1024)) ||
     !Number.isSafeInteger(config.timeoutMs) ||
     config.timeoutMs < 1 ||
     config.timeoutMs > 86_400_000

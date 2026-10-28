@@ -252,6 +252,12 @@ export interface WorkerEvent {
   step?: number
   state?: string
   detail?: string
+  /** A running step's new output or public reasoning only; the timeline appends it. */
+  delta?: string
+  /** Shown content was cut to the display budget; the full content stays with the CLI. */
+  truncated?: true
+  /** Byte size of the largest cut content, when known. */
+  outputBytes?: number
   toolCall?: PublicToolCall
   response?: NativeResponseIdentity
   /** Whether the terminal body covers all response segments or only the final response. */
@@ -280,6 +286,8 @@ export interface TimelineItem {
   time: string
   state?: string
   detail?: string
+  truncated?: true
+  outputBytes?: number
   toolCall?: PublicToolCall
   queuedFollowupId?: string
   deliveryState?: DeliveryState
@@ -339,6 +347,14 @@ export const active = (status: WorkerStatus) =>
   status === 'queued' || status === 'running' || status === 'stopping'
 
 /** Fold repeated step updates without duplicating streamed text or the final response. */
+function appendDelta(row: TimelineItem, delta: string) {
+  if (row.kind !== 'tool') {
+    row.detail = (row.detail ?? '') + delta
+    return
+  }
+  const output = row.toolCall?.output
+  row.toolCall = { ...row.toolCall, output: (typeof output === 'string' ? output : '') + delta }
+}
 export function foldEvents(
   events: readonly WorkerEvent[],
   endedRun?: { runId: string; status: WorkerStatus },
@@ -468,6 +484,11 @@ export function foldEvents(
       // snapshot can withdraw a block; never append or retain its older text.
       if (event.detail || (event.kind === 'reasoning' && event.detail !== undefined))
         existing.detail = event.detail
+      // Increments extend the shown output (tools) or visible reasoning; a later
+      // snapshot above or a completed output replaces them.
+      if (event.delta) appendDelta(existing, event.delta)
+      if (event.truncated) existing.truncated = true
+      if (event.outputBytes) existing.outputBytes = Math.max(existing.outputBytes ?? 0, event.outputBytes)
     } else {
       const row: TimelineItem = {
         id: key,
@@ -480,7 +501,10 @@ export function foldEvents(
         response: event.response,
         queuedFollowupId: event.queuedFollowupId,
         admittedRunId: event.admittedRunId,
+        ...(event.truncated ? { truncated: true as const } : {}),
+        ...(event.outputBytes ? { outputBytes: event.outputBytes } : {}),
       }
+      if (event.delta) appendDelta(row, event.delta)
       steps.set(key, row)
       rows.push(row)
     }

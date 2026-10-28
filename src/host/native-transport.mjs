@@ -7,6 +7,102 @@ const failure = (message) => new Error(message)
 const bounded = (value, max) => Buffer.byteLength(value) <= max
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const steerRejected = () => Object.assign(new Error('原生引导通路已关闭或尚未准备，请保留消息后重试'), { code: 'STEER_REJECTED' })
+const PREVIEW_BYTES = 262_144
+const NATIVE_TEXT_BYTES = 65_536
+const DISPLAY_LIMIT = '本轮展示内容已达上限，后续工具输出与思考只显示摘要；CLI 继续运行，完整内容见 CLI 原生会话或实际产物'
+const inboundTooLarge = (limit) => failure(`原生 CLI 单个入站协议帧超过上限（${limit} 字节），已停止运行`)
+
+/** The longest UTF-8 prefix within `max` bytes, never splitting a character. */
+export function cutBytes(value, max) {
+  if (value.length * 3 <= max || Buffer.byteLength(value) <= max) return value
+  const bytes = Buffer.from(value, 'utf8')
+  let end = Math.max(0, max)
+  while (end > 0 && (bytes[end] & 0xc0) === 0x80) end--
+  return bytes.subarray(0, end).toString('utf8')
+}
+
+/** Native records keep only the size of a large text body; public events carry its bounded preview. */
+export function summarizeNativeRecord(value, limit = NATIVE_TEXT_BYTES) {
+  if (typeof value === 'string') {
+    if (value.length * 3 <= limit) return value
+    const bytes = Buffer.byteLength(value)
+    return bytes > limit ? { cliworkerOmitted: true, bytes } : value
+  }
+  if (Array.isArray(value)) return value.map((entry) => summarizeNativeRecord(entry, limit))
+  if (value && typeof value === 'object')
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, summarizeNativeRecord(entry, limit)]))
+  return value
+}
+
+/**
+ * Display budgets for public events: one step's preview and the whole run's shown
+ * content. Exceeding either only truncates what is shown (marked `truncated`); it
+ * never stops the CLI or changes the terminal. Returns undefined for a dropped increment.
+ */
+export function createEventBudget(config, notify) {
+  const preview = Math.min(config.maxToolPreviewBytes ?? PREVIEW_BYTES, Math.floor(config.maxLineBytes / 4))
+  const streamed = new Map(), capped = new Set()
+  let shown = 0, degraded = false
+  const degrade = () => {
+    if (degraded) return
+    degraded = true
+    notify({ kind: 'diagnostic', text: DISPLAY_LIMIT })
+  }
+  const room = () => Math.max(0, Math.min(preview, degraded ? 0 : config.maxRunBytes - shown))
+  return (event) => {
+    // Replies, statuses and diagnostics are never degraded; the frame guard still protects them.
+    if (event.kind !== 'tool' && event.kind !== 'reasoning') return event
+    const key = `${event.kind}:${event.step ?? ''}`, next = { ...event }
+    let truncated = event.truncated === true, outputBytes = event.outputBytes
+    const clip = (value) => {
+      const text = typeof value === 'string' ? value : JSON.stringify(value)
+      if (text === undefined) return value
+      const size = Buffer.byteLength(text), available = room()
+      if (size <= available) {
+        shown += size
+        return value
+      }
+      truncated = true
+      outputBytes = Math.max(outputBytes ?? 0, size)
+      if (available < preview) degrade()
+      if (!available) return undefined
+      const kept = cutBytes(text, available)
+      shown += Buffer.byteLength(kept)
+      return kept
+    }
+    if (typeof next.delta === 'string') {
+      if (capped.has(key) || degraded) return undefined
+      const used = streamed.get(key) ?? 0, size = Buffer.byteLength(next.delta)
+      const available = Math.max(0, Math.min(preview - used, config.maxRunBytes - shown))
+      if (size > available) {
+        next.delta = cutBytes(next.delta, available)
+        truncated = true
+        capped.add(key)
+        if (config.maxRunBytes - shown < preview - used) degrade()
+      }
+      const sent = Buffer.byteLength(next.delta)
+      streamed.set(key, used + sent)
+      shown += sent
+    }
+    if (typeof next.detail === 'string') {
+      next.detail = clip(next.detail)
+      if (next.detail === undefined) delete next.detail
+    }
+    if (next.toolCall) {
+      next.toolCall = { ...next.toolCall }
+      for (const field of ['input', 'output']) {
+        if (next.toolCall[field] === undefined || next.toolCall[field] === null) continue
+        next.toolCall[field] = clip(next.toolCall[field])
+        if (next.toolCall[field] === undefined) delete next.toolCall[field]
+      }
+    }
+    if (truncated) next.truncated = true
+    else delete next.truncated
+    if (Number.isSafeInteger(outputBytes) && outputBytes > 0) next.outputBytes = outputBytes
+    else delete next.outputBytes
+    return next
+  }
+}
 
 /** One owned native process; descendants remain inside the Host's enclosing process range. */
 export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) {
@@ -17,18 +113,26 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
   let sessionId,
     result,
     response = '',
-    total = 0,
-    outgoing = 0,
     closed = false
+  const write = (value) => {
+    const line = JSON.stringify(value) + '\n'
+    return bounded(line, config.maxLineBytes) ? line : undefined
+  }
   const output = (value) => {
     if (closed) throw failure('Native bridge is closed')
-    const line = JSON.stringify(value) + '\n'
-    if (!bounded(line, config.maxLineBytes)) throw failure('Native bridge frame exceeds limit')
-    outgoing += Buffer.byteLength(line)
-    if (value.type !== 'result' && outgoing > config.maxRunBytes)
-      throw failure('Native bridge output exceeds run limit')
+    let line = write(value)
+    // One outgoing frame is protected separately from display: shrink it to a summary.
+    if (!line && value.type === 'event' && value.event.kind !== 'assistant') {
+      const { detail: _detail, delta: _delta, toolCall, ...event } = value.event
+      const { input: _input, output: _output, ...call } = toolCall ?? {}
+      line = write({ type: 'event', event: { ...event, text: cutBytes(event.text, 4096), truncated: true,
+        ...(toolCall ? { toolCall: call } : {}) } })
+    } else if (!line && value.type === 'native')
+      line = write({ type: 'native', record: summarizeNativeRecord(value.record, 1024) })
+    if (!line) throw failure('Native bridge frame exceeds limit')
     emit(line)
   }
+  const budget = createEventBudget(config, (event) => output({ type: 'event', event }))
   const io = {
     signal,
     session(id, model) {
@@ -45,14 +149,16 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
       if (
         !event ||
         !['assistant', 'reasoning', 'tool', 'status', 'diagnostic'].includes(event.kind) ||
-        typeof event.text !== 'string'
+        typeof event.text !== 'string' ||
+        (event.delta !== undefined && typeof event.delta !== 'string')
       )
         throw failure('Invalid native public event')
       if (event.kind === 'assistant') response += event.text
-      output({ type: 'event', event })
+      const shownEvent = budget(event)
+      if (shownEvent) output({ type: 'event', event: shownEvent })
     },
     native(record) {
-      output({ type: 'native', record })
+      output({ type: 'native', record: summarizeNativeRecord(record) })
     },
     registerSteer(handler) {
       if (typeof handler !== 'function' || steerHandler || closed || result) throw failure('Invalid native guidance handler')
@@ -133,9 +239,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
         rejectDone(issue)
         child.kill('SIGTERM')
       }
+      // Cumulative inbound bytes never stop a run; each protocol frame is bounded by its peer.
       const read = (chunk, callback, isError) => {
-        total += chunk.length
-        if (total > config.maxRunBytes) return fail(failure('Native stream exceeds run limit'))
         if (isError) {
           stderr = (stderr + chunk.toString('utf8')).slice(-8192)
           onNativeStderr(chunk)
@@ -207,7 +312,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
         ...options,
         onStdout: (chunk) => (peer ? peer.feed(chunk) : queued.push(chunk)),
       })
-      peer = createLinePeer(owned, { ...options, signal, maxLineBytes: config.maxLineBytes })
+      peer = createLinePeer(owned, { ...options, signal, maxLineBytes: config.maxLineBytes,
+        maxInboundLineBytes: config.maxNativeLineBytes ?? config.maxLineBytes })
       for (const chunk of queued) peer.feed(chunk)
       return peer
     },
@@ -264,6 +370,7 @@ export function createLinePeer(owned, options = {}) {
   let buffer = '',
     ended = false,
     issue
+  const inbound = options.maxInboundLineBytes ?? options.maxLineBytes ?? 1_048_576
   const writes = new Set()
   owned.flush = async () => {
     await Promise.allSettled([...writes])
@@ -383,12 +490,10 @@ export function createLinePeer(owned, options = {}) {
         while ((end = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, end).trim()
           buffer = buffer.slice(end + 1)
-          if (!bounded(line, options.maxLineBytes ?? 1_048_576))
-            throw failure('Native RPC frame exceeds line limit')
+          if (!bounded(line, inbound)) throw inboundTooLarge(inbound)
           if (line) deliver(JSON.parse(line))
         }
-        if (!bounded(buffer, options.maxLineBytes ?? 1_048_576))
-          throw failure('Native RPC frame exceeds line limit')
+        if (!bounded(buffer, inbound)) throw inboundTooLarge(inbound)
       } catch (error) {
         fail(error)
         void owned.stop()

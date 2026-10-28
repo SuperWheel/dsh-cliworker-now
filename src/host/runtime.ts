@@ -2481,7 +2481,8 @@ export class WorkerRuntime {
         const decoder = new StringDecoder('utf8')
         for await (const chunk of stream) {
           totalBytes += Buffer.byteLength(chunk)
-          if (totalBytes > this.config.maxRunBytes)
+          // The native bridge already bounds what it shows; its cumulative bytes are statistics only.
+          if (!nativeTransport && totalBytes > this.config.maxRunBytes)
             throw new Error('CLI output exceeded the configured per-run limit')
           appendFileSync(this.storage.rawPath(worker) + (isError ? '.stderr' : ''), chunk, { mode: 0o600 })
           if (isError) stderr = (stderr + decoder.write(chunk)).slice(-8192)

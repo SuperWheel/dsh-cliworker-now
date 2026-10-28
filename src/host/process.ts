@@ -59,6 +59,10 @@ export interface RuntimeConfig {
   graceMs: number
   maxLineBytes: number
   maxRunBytes: number
+  /** Native CLI inbound single-frame protection, separate from display budgets. */
+  maxNativeLineBytes?: number
+  /** Shown output of one native tool step or reasoning block. */
+  maxToolPreviewBytes?: number
   maxTimelineItems: number
 }
 export const DEFAULT_CONFIG: RuntimeConfig = {
@@ -68,6 +72,8 @@ export const DEFAULT_CONFIG: RuntimeConfig = {
   graceMs: 5000,
   maxLineBytes: 1_048_576,
   maxRunBytes: 16_777_216,
+  maxNativeLineBytes: 8_388_608,
+  maxToolPreviewBytes: 262_144,
   maxTimelineItems: 1000,
 }
 
