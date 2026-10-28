@@ -357,6 +357,8 @@ it('runs real native child submissions through CLI once and preserves owned clea
   const planChild = ctx.agents.get(SessionId(planWorker.harnessConversation.sessionId))!
   await planChild.whenIdle()
   const planTools = await leases.options.at(-1).tools()
+  // The bridge receives the same native table as the launch: plan writes stay withheld.
+  expect(leases.options.at(-1).native).toMatchObject({ cli: 'opencode', withheld: ['file-write'], mcpServers: [] })
   expect(planTools).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'synthetic_unknown_write', execution: 'host' })]))
   // Catalog visibility inherits the real child scope; it does not execute a tool.
   const revoke = planChild.ctx.tools.restrict({ deny: ['synthetic_unknown_write'] })

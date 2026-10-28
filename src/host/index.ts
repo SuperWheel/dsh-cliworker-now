@@ -30,7 +30,8 @@ import {
 } from './native-harness-tools.ts'
 import { nativeHarnessToolCapability, nativeHarnessExecutionReady } from './native-harness-injection.mjs'
 import { installHarnessModelGuard, withinCliTool } from './harness-model-guard.ts'
-import { resolveHarnessAttachments } from './harness-attachments.ts'
+import { readHarnessImage, resolveHarnessAttachments } from './harness-attachments.ts'
+import { nativeCliCapabilities, nativeCliMcpServers } from './cli-native-capabilities.mjs'
 import type { NativeAttachment } from './native-attachments.mjs'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
@@ -519,6 +520,9 @@ export class CliWorkerService extends TypertRemoteService {
             tools,
             signal,
             executionReady: nativeHarnessExecutionReady(cli),
+            // Same inputs as the launch: overlapping DSH tools stay with the CLI.
+            native: nativeCliCapabilities({ cli, mode: worker.mode, mcpServers: await nativeCliMcpServers(cli, worker.project) }),
+            resolveImage: (attachment, control) => readHarnessImage(child.ctx, attachment, control),
             authorize: async (identity) => {
               signal.throwIfAborted()
               const current = this.runtime.get(parent.id, worker.id)
@@ -578,7 +582,7 @@ export class CliWorkerService extends TypertRemoteService {
               reasons: {
                 ...worker.harnessConversation.reasons,
                 tools: owned.capabilities.ready
-                  ? '共享当前子 Agent 获准的 DSH 工具与 MCP；每次执行仍走宿主权限和审批链，未接通的模型辅助与递归派遣不可用'
+                  ? 'CLI 原生工具优先；仅提供原生未覆盖的获准 DSH 工具与 MCP 作为备选，每次执行仍走宿主权限和审批链，未接通的模型辅助与递归派遣不可用'
                   : owned.capabilities.reason,
                 skills: owned.capabilities.ready
                   ? '当前子 Agent 没有可供模型读取的 DSH 技能'

@@ -10,6 +10,7 @@ import { runNativeHarnessMcp, HARNESS_CONNECTION_ENV } from '../src/host/native-
 import { nativeCodexArgv } from '../src/host/native-codex.mjs'
 import { prepareNativeWorker } from '../src/host/native-worker.ts'
 import nativeHarnessExtension, { prepareNativeHarnessExtension, nativeHarnessExtensionToolName } from '../src/host/native-harness-extension.mjs'
+import { HARNESS_FALLBACK_PREFIX } from '../src/host/cli-native-capabilities.mjs'
 
 // All tool bodies, skills and native protocol input in this suite are synthetic.
 const binding = { parentSessionId: 'parent', harnessSessionId: 'child', workerId: 'worker', runId: 'run', cli: 'codex' }
@@ -61,7 +62,7 @@ describe('run-isolated Harness MCP bridge (synthetic)', () => {
     // Adding a newly authorized tool does not require restarting the CLI run.
     visible = [grant, { ...mcp, description: '重新注册的目录说明' }]
     expect((await rpc(target, 'tools/list', {}, { id: 5 })).result).toMatchObject({ tools: [
-      { name: grant.name }, { name: mcp.name, description: '重新注册的目录说明' },
+      { name: grant.name }, { name: mcp.name, description: `${HARNESS_FALLBACK_PREFIX}重新注册的目录说明` },
     ] })
   })
   it('fails closed on a changed invalid catalog and never executes a duplicate or reserved grant', async () => {
@@ -76,7 +77,7 @@ describe('run-isolated Harness MCP bridge (synthetic)', () => {
   })
   it('exports only explicit Host grants and invokes the guarded dependency once', async () => {
     const target = await lease({ tools: [grant, { ...grant, name: 'model', execution: 'model' }, { ...grant, name: 'dispatch', execution: 'dispatch' }, { ...grant, name: 'run_code' }] })
-    expect((await rpc(target, 'tools/list')).result).toEqual({ tools: [{ name: grant.name, description: grant.description, inputSchema: grant.inputSchema }] })
+    expect((await rpc(target, 'tools/list')).result).toEqual({ tools: [{ name: grant.name, description: `${HARNESS_FALLBACK_PREFIX}${grant.description}`, inputSchema: grant.inputSchema }] })
     const args = { name: 'read_file', arguments: { path: 'simulated.txt' } }
     const [first, repeated] = await Promise.all([rpc(target, 'tools/call', args, { id: 2 }), rpc(target, 'tools/call', args, { id: 2 })])
     expect(first).toEqual(repeated); expect(target.execute).toHaveBeenCalledTimes(1)
@@ -89,7 +90,7 @@ describe('run-isolated Harness MCP bridge (synthetic)', () => {
     const names = ['send_message', 'send_message.parent', 'interrupt_agent', 'subagent', 'subagents', 'subagents.prompt',
       'subagent_tool', 'spawn_agent', 'delegate_task', 'agent_subagent', 'list_subagent_models', 'resume_subagent']
     const target = await lease({ tools: [grant, ...names.map(name => ({ ...grant, name }))] })
-    expect((await rpc(target, 'tools/list')).result).toEqual({ tools: [{ name: grant.name, description: grant.description, inputSchema: grant.inputSchema }] })
+    expect((await rpc(target, 'tools/list')).result).toEqual({ tools: [{ name: grant.name, description: `${HARNESS_FALLBACK_PREFIX}${grant.description}`, inputSchema: grant.inputSchema }] })
     for (const [index, name] of names.entries()) expect((await rpc(target, 'tools/call', { name }, { id: index + 10 })).error).toContain('授权目录')
     expect(target.execute).not.toHaveBeenCalled()
   })
@@ -226,19 +227,18 @@ describe('run-isolated Harness MCP bridge (synthetic)', () => {
   })
 })
 describe('temporary native injection (synthetic)', () => {
-  it.each(['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'zcode', 'pi', 'qoder', 'qodercn'])('injects %s without putting secrets in argv', async cli => {
+  it.each(['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'pi', 'qoder', 'qodercn'])('injects %s without putting secrets in argv', async cli => {
     const target = await lease({ binding: { ...binding, cli } })
     const argv = cli === 'claude' ? ['claude', '--print', '--model', 'fixture', 'prompt'] : [cli, 'serve']
     const result = buildNativeHarnessInjection({ cli, argv, env: {}, connection: target.connection, mcpEntryPath: '/synthetic/bridge.mjs' })
     expect(result.transport).toBe(true); expect(result.ready).toBe(true)
     expect(result.argv.join(' ')).not.toContain(target.connection.token)
     expect(result.env[HARNESS_CONNECTION_ENV]).toContain(target.connection.token)
-    if (['kimi', 'grok', 'zcode'].includes(cli)) expect(result.acpMcpServers).toHaveLength(1)
-    if (cli === 'zcode') expect(result.acpMcpServers[0].isolation).toBe('session')
+    if (['kimi', 'grok'].includes(cli)) expect(result.acpMcpServers).toHaveLength(1)
     expect(argv).toEqual(cli === 'claude' ? ['claude', '--print', '--model', 'fixture', 'prompt'] : [cli, 'serve'])
   })
   it('has concrete unavailable reasons and refuses CLI/namespace conflicts', async () => {
-    for (const cli of ['omp', 'hermes']) expect(nativeHarnessToolCapability(cli, undefined)).toMatchObject({ transport: false, ready: false, reason: expect.any(String) })
+    for (const cli of ['omp', 'hermes', 'zcode']) expect(nativeHarnessToolCapability(cli, undefined)).toMatchObject({ transport: false, ready: false, reason: expect.any(String) })
     const target = await lease()
     expect(() => buildNativeHarnessInjection({ cli: 'kimi', argv: ['kimi'], connection: target.connection })).toThrow('身份不匹配')
     expect(() => buildNativeHarnessInjection({ cli: 'opencode', argv: ['opencode'], connection: { ...target.connection, binding: { ...binding, cli: 'opencode' } }, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { dsh_worker_tools: {} } }) } })).toThrow('拒绝覆盖')

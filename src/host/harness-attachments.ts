@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { NativeAttachment } from './native-attachments.mjs'
 
@@ -37,4 +38,14 @@ export function resolveHarnessAttachments(ctx: { get(name: string): unknown }, m
     }
   }
   return result
+}
+const IMAGE_MEDIA_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
+/** Inline bytes of a host tool's image result, for a CLI whose MCP accepts images. */
+export async function readHarnessImage(ctx: { get(name: string): unknown }, ref: unknown, signal: AbortSignal): Promise<{ data: string; mimeType: string } | undefined> {
+  const attachment = ref as { attachmentId?: unknown; mediaType?: unknown } | undefined
+  if (typeof attachment?.attachmentId !== 'string' || typeof attachment.mediaType !== 'string' || !IMAGE_MEDIA_TYPES.includes(attachment.mediaType)) return undefined
+  const store = ctx.get('attachments') as { imageHostPath?(ref: unknown): string | undefined } | undefined
+  const path = store?.imageHostPath?.(ref)
+  if (!path) return undefined
+  return { data: (await readFile(path, { signal })).toString('base64'), mimeType: attachment.mediaType }
 }

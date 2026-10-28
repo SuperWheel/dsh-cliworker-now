@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection, createNativeHarnessClient } from './native-harness-mcp.mjs'
+import { nativeFirstGuidance } from './cli-native-capabilities.mjs'
 
 const serverName = 'dsh_worker_tools'
 export const HARNESS_MCP_SERVER = serverName
@@ -13,6 +14,10 @@ export const nativeHarnessExecutionReady = cli => ['codex', 'claude', 'opencode'
 export function nativeHarnessReadyConnection(config, env = process.env) {
   const connection = config.harnessTools ?? readNativeHarnessConnection(env)
   return connection?.executionReady && connection.binding.cli === config.cli ? connection : undefined
+}
+/** The native-first note for this run's ready bridge, naming only offered tools. */
+export function nativeHarnessGuidance(config, env = process.env) {
+  return nativeFirstGuidance(nativeHarnessReadyConnection(config, env)?.tools)
 }
 export async function nativeHarnessAcpApproval(config, params, signal) {
   const connection = nativeHarnessReadyConnection(config)
@@ -32,6 +37,7 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   return authorized ? selected.optionId : undefined
 }
 const reasons = {
+  zcode: 'ZCode 工具桥执行尚未核验，未注入 DSH 工具目录',
   hermes: 'Hermes 当前安全隔离运行尚无已验证的临时 DSH 工具注入入口',
   omp: 'OMP 当前安装版在 --no-extensions 隔离模式下忽略显式扩展，尚无安全工具注入入口',
 }
@@ -41,7 +47,7 @@ export function nativeHarnessToolCapability(cli, connection) {
   if (!connection) return { transport: true, ready: false, reason: '当前运行尚未建立获准的 DSH 工具桥' }
   return { transport: true, ready: connection.executionReady === true, ...(connection.executionReady === true ? {} : { reason: '临时工具传输可配置，当前原生授权尚未核验' }) }
 }
-export function buildNativeHarnessInjection({ cli, argv, env = {}, connection, nodeExecutable = process.execPath, mcpEntryPath = join(dirname(fileURLToPath(import.meta.url)), 'native-harness-mcp.mjs') }) {
+export function buildNativeHarnessInjection({ cli, argv, env = {}, connection, toolTimeoutMs, nodeExecutable = process.execPath, mcpEntryPath = join(dirname(fileURLToPath(import.meta.url)), 'native-harness-mcp.mjs') }) {
   const capability = nativeHarnessToolCapability(cli, connection)
   if (!connection || !capability.transport) return { ...capability, argv: [...argv], env: { ...env } }
   readNativeHarnessConnection({ [HARNESS_CONNECTION_ENV]: JSON.stringify(connection) })
@@ -52,12 +58,17 @@ export function buildNativeHarnessInjection({ cli, argv, env = {}, connection, n
   if (cli === 'pi' || cli === 'antigravity') return { ...capability, argv: [...argv], env: privateEnv }
   const command = { command: nodeExecutable, args: [mcpEntryPath] }
   const acpMcpServers = [{ name: serverName, ...command, env: [{ name: HARNESS_CONNECTION_ENV, value: JSON.stringify(connection) }, { name: 'ELECTRON_RUN_AS_NODE', value: '1' }] }]
-  if (cli === 'codex') return { ...capability, argv: [...argv, '-c', `mcp_servers.${serverName}.command=${JSON.stringify(nodeExecutable)}`, '-c', `mcp_servers.${serverName}.args=${JSON.stringify([mcpEntryPath])}`, '-c', `mcp_servers.${serverName}.env_vars=${JSON.stringify([HARNESS_CONNECTION_ENV, 'ELECTRON_RUN_AS_NODE'])}`, ...(capability.ready ? ['-c', `mcp_servers.${serverName}.default_tools_approval_mode="approve"`] : [])], env: privateEnv }
+  // Appended to, never replacing, the CLI's own system prompt and instruction files.
+  const note = capability.ready ? nativeFirstGuidance(connection.tools) : undefined
+  const guidance = flag => (note ? [flag, note] : [])
+  // A host approval has no deadline of its own; the run limit bounds every call.
+  const timeout = toolTimeoutMs > 0 ? ['-c', `mcp_servers.${serverName}.tool_timeout_sec=${Math.ceil(toolTimeoutMs / 1000)}`] : []
+  if (cli === 'codex') return { ...capability, argv: [...argv, '-c', `mcp_servers.${serverName}.command=${JSON.stringify(nodeExecutable)}`, '-c', `mcp_servers.${serverName}.args=${JSON.stringify([mcpEntryPath])}`, '-c', `mcp_servers.${serverName}.env_vars=${JSON.stringify([HARNESS_CONNECTION_ENV, 'ELECTRON_RUN_AS_NODE'])}`, ...timeout, ...(capability.ready ? ['-c', `mcp_servers.${serverName}.default_tools_approval_mode="approve"`] : [])], env: privateEnv }
   if (cli === 'claude') {
     const index = argv.indexOf('--print')
     if (index < 1) throw new Error('无法确认 Claude 原生入口')
     return { ...capability, argv: [...argv.slice(0, index), '--mcp-config', JSON.stringify({ mcpServers: { [serverName]: { ...command,
-      env: { [HARNESS_CONNECTION_ENV]: '${CLIWORKER_HARNESS_TOOLS}', ELECTRON_RUN_AS_NODE: '1' } } } }), ...(capability.ready ? ['--allowedTools', `mcp__${serverName}__*`] : []), ...argv.slice(index)], env: privateEnv }
+      env: { [HARNESS_CONNECTION_ENV]: '${CLIWORKER_HARNESS_TOOLS}', ELECTRON_RUN_AS_NODE: '1' } } } }), ...(capability.ready ? ['--allowedTools', `mcp__${serverName}__*`] : []), ...guidance('--append-system-prompt'), ...argv.slice(index)], env: privateEnv }
   }
   if (cli === 'opencode' || cli === 'mimo') {
     const key = `${cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'}_CONFIG_CONTENT`

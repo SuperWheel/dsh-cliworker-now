@@ -3,6 +3,8 @@ import { randomBytes, createHash, timingSafeEqual } from 'node:crypto'
 import { constants } from 'node:fs'
 import { open, realpath, lstat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { HARNESS_FALLBACK_PREFIX, nativeCoverage } from './cli-native-capabilities.mjs'
+import type { NativeCliCapabilities } from './cli-native-capabilities.mjs'
 
 /** Host-private identity. Never accept an identity supplied by the CLI as authority. */
 export interface NativeHarnessBinding {
@@ -18,6 +20,8 @@ export interface NativeHarnessConnection {
   binding: NativeHarnessBinding
   /** Native permissions have explicitly admitted this exact managed bridge. */
   executionReady?: boolean
+  /** Tool names offered when the run started, for the native-first note. */
+  tools?: string[]
 }
 export interface NativeHarnessTool {
   name: string
@@ -47,6 +51,10 @@ export interface NativeHarnessToolsOptions {
   maxBytes?: number
   maxCalls?: number
   executionReady?: boolean
+  /** The CLI's native capability table; DSH tools it covers are not offered. */
+  native?: NativeCliCapabilities
+  /** Inline bytes for a host image result, when the CLI's MCP accepts images. */
+  resolveImage?(attachment: unknown, signal: AbortSignal): Promise<{ data: string; mimeType: string } | undefined>
 }
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && !/[\x00-\x1f\x7f]/u.test(value)
@@ -80,18 +88,20 @@ async function body(request: IncomingMessage, maximum: number): Promise<unknown>
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw failure('工具桥请求不是有效 JSON') }
 }
 const resultText = (value: unknown) => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value ?? null) }] })
-function hostToolResult(value: unknown) {
+async function hostToolResult(value: unknown, image?: (attachment: unknown) => Promise<{ data: string; mimeType: string } | undefined>) {
   // tools.execute's public rc.2 result is already its model-visible projection.
   // Never JSON-wrap an execution failure into a successful MCP result, or leak
   // execution-local value/error/meta/additionalContexts as unreviewed content.
   if (record(value) && typeof value.isError === 'boolean') {
     if (!Array.isArray(value.content)) return { ...resultText('DSH 工具结果格式不受支持；未自动重试'), isError: true }
     let unsupported = false
-    const content = value.content.map(part => {
+    const content = await Promise.all(value.content.map(async part => {
       if (record(part) && part.type === 'text' && typeof part.text === 'string') return { type: 'text', text: part.text }
+      const inline = image && record(part) && part.type === 'image' ? await image(part.attachment) : undefined
+      if (inline) return { type: 'image', data: inline.data, mimeType: inline.mimeType }
       unsupported = true
       return { type: 'text', text: 'DSH 工具返回非文本内容，当前 CLI 工具桥尚不支持；未自动重试' }
-    })
+    }))
     if (Array.isArray(value.additionalContexts) && value.additionalContexts.length)
       return { content: [...content, { type: 'text', text: 'DSH 工具返回额外上下文，当前 CLI 工具桥尚不支持；未自动重试' }], isError: true }
     return { content, isError: value.isError || unsupported }
@@ -99,7 +109,8 @@ function hostToolResult(value: unknown) {
   // Small explicit Host adapters may return a canonical JSON value directly.
   return resultText(value)
 }
-const skillSchema = (name: string, description: string, resource = false) => ({ name, description, inputSchema: {
+const fallback = (description: string) => `${HARNESS_FALLBACK_PREFIX}${description}`
+const skillSchema = (name: string, description: string, resource = false) => ({ name, description: fallback(description), inputSchema: {
   type: 'object', properties: name === 'dsh_list_skills' ? {} : { name: { type: 'string' }, ...(resource ? { path: { type: 'string' } } : {}) },
   required: name === 'dsh_list_skills' ? [] : resource ? ['name', 'path'] : ['name'], additionalProperties: false,
 } })
@@ -111,7 +122,8 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
   const lifetime = new AbortController(), active = new Set<Promise<unknown>>()
   const ledger = new Map<string, { hash: string; promise: Promise<unknown>; controller: AbortController }>()
   const cancelled = new Set<string>()
-  async function visibleTools(signal = lifetime.signal) {
+  // Host grants, including those the CLI covers natively (skill dependencies).
+  async function grantedTools(signal = lifetime.signal) {
     signal.throwIfAborted()
     const grants = typeof options.tools === 'function' ? await options.tools(signal) : options.tools
     signal.throwIfAborted()
@@ -122,6 +134,12 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
         throw failure('工具桥授权目录无效或重名')
       tools.set(grant.name, structuredClone(grant))
     }
+    return tools
+  }
+  // Offered to the CLI: grants its native tools do not already cover.
+  async function visibleTools(signal = lifetime.signal) {
+    const tools = await grantedTools(signal)
+    for (const name of tools.keys()) if (nativeCoverage(name, options.native)) tools.delete(name)
     return tools
   }
   const initialTools = await visibleTools()
@@ -141,7 +159,8 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
     if (!visible.some(row => row.name === name)) throw failure('技能不在当前授权目录中')
     const value = await options.skills.get(name, signal)
     if (!value || value.name !== name || typeof value.content !== 'string') throw failure('技能不可用')
-    const tools = await visibleTools(signal)
+    // A dependency the CLI covers natively is still a granted capability.
+    const tools = await grantedTools(signal)
     if (value.requiredTools?.some(required => !tools.has(required))) throw failure('技能所需工具未获准或尚未接通')
     return value
   }
@@ -175,7 +194,7 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
     signal.throwIfAborted()
     await check(method, typeof params.name === 'string' ? params.name : undefined)
     signal.throwIfAborted()
-    if (method === 'tools/list') return { tools: [...(await visibleTools(signal)).values()].map(({ execution: _execution, ...schema }) => schema).concat(options.skills ? [
+    if (method === 'tools/list') return { tools: [...(await visibleTools(signal)).values()].map(({ execution: _execution, ...schema }) => ({ ...schema, description: fallback(schema.description) })).concat(options.skills ? [
       skillSchema('dsh_list_skills', '列出当前会话获准技能的摘要；正文与资源按需加载。'),
       skillSchema('dsh_read_skill', '读取获准技能说明；未声明依赖不代表全部外部能力已验证。'),
       skillSchema('dsh_read_skill_resource', '读取已授权技能内的相对资源；返回base64文件内容。', true),
@@ -193,7 +212,7 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
       if (!(await visibleTools(signal)).has(params.name)) throw failure('工具不在当前授权目录中')
       const result = await options.execute({ binding, callId: `cwn-harness-${createHash('sha256').update(key).digest('hex')}`, name: params.name, arguments: args, signal })
       if (signal.aborted) throw failure('工具调用已取消；未自动重试')
-      return hostToolResult(result)
+      return hostToolResult(result, options.native?.mcpImages && options.resolveImage ? attachment => options.resolveImage!(attachment, signal) : undefined)
     }
     if (method === 'resources/list' || method === 'resources/templates/list') return method === 'resources/list' ? { resources: [] } : { resourceTemplates: options.skills ? [{ uriTemplate: 'dsh-skill://{name}/{path}', name: '当前获准技能资源' }] : [] }
     if (method === 'resources/read') {
@@ -257,7 +276,8 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
   await new Promise<void>((yes, no) => { server.once('error', no); server.listen(0, '127.0.0.1', () => { server.off('error', no); yes() }) })
   const address = server.address()
   if (!address || typeof address === 'string') throw new Error('工具桥地址无效')
-  const connection: NativeHarnessConnection = { url: `http://127.0.0.1:${address.port}/rpc`, token: secret, binding: { ...binding }, executionReady: options.executionReady === true }
+  const offered = [...initialTools.keys(), ...(options.skills ? ['dsh_list_skills', 'dsh_read_skill', 'dsh_read_skill_resource'] : [])]
+  const connection: NativeHarnessConnection = { url: `http://127.0.0.1:${address.port}/rpc`, token: secret, binding: { ...binding }, executionReady: options.executionReady === true, tools: offered }
   const abort = () => { void close() }
   async function close(): Promise<void> {
     if (closePromise) return closePromise

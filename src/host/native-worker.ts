@@ -84,7 +84,7 @@ export async function prepareNativeWorker<
     const { harnessTools, ...publicInput } = input
     const injected = buildNativeHarnessInjection({ cli: input.cli, argv: launch.argv,
       env: baseEnv ? Object.fromEntries(Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : undefined,
-      connection: harnessTools })
+      connection: harnessTools, toolTimeoutMs: config.timeoutMs })
     let nativeArgv = injected.argv
     if (input.cli === 'antigravity' && harnessTools) {
       const prepared = prepareAgyHarnessWorkspace({ directory, argv: nativeArgv, connection: harnessTools })
