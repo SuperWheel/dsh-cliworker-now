@@ -66,8 +66,12 @@
 
 ## 4. 验收
 
-- [ ] 4.1 Desktop 实机：三档预设下派遣 Codex，核对弹窗出现与否、批准/拒绝结果、产物与时间线（真实模型调用需已有选型授权）。
-  - 待合并后由主会话执行。本分支未启动或退出 DSH Desktop，未发真实 CLI 或模型请求。
+- [x] 4.1 Desktop 实机：三档预设下派遣 Codex，核对弹窗出现与否、批准/拒绝结果、产物与时间线（真实模型调用需已有选型授权）。
+  - 2026-10-28 Desktop 实机验收（macOS，DSH Desktop 0.2.1-rc.3，插件链接到本仓库 ac4240b 的构建）。界面经内置浏览器直连 Desktop Host 的 Web UI 操作（与 Electron 窗口同一 Host 与 profile）；Electron 窗口中 Computer Use 点击无效，未在窗口内操作。主 Agent GLM-5.3-Flash Max，Worker Codex `gpt-6-luna`/low；工作区 `cliworker-isolation-test`，工作区外目录 `cliworker-accept-outside-20261028`。证据为 `~/.dsh/cliworker-now/<id>.events.jsonl` 与实际文件（不入 Git）。
+  - 工作区内修改：主 Agent 派遣 Codex 写工作区外文件，Codex 请求提权，主页面弹出提问卡「执行命令：/bin/zsh -lc 'printf … > …/allow.txt'」。允许一次 → 事件「授权决定：允许一次（DSH 用户）」，任务完成，allow.txt 内容正确（0600）。拒绝 → 「授权决定：拒绝（DSH 用户）」，工具步骤失败，任务为结果待核实（「Codex 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实…」），deny.txt 未创建。
+  - 仅可查看：以规划模式启动，Codex 回复「approval policy is Never」，无弹窗、未写文件（符合设计）。完全权限：无弹窗，直接写入 full.txt，退出码 0。
+  - 发现（未修）：① 授权卡把原因、命令目录、工作目录连成一段显示，没有换行。② DSH 备选工具（如 Pi 的 DSH bash）的审批走 DSH 原生审批，只出现在 Worker 子会话面板；由主 Agent `cliworker_followup` 发起时主页面没有提问卡，任务卡只显示「运行中」，不打开子会话就看不到，任务会一直等待（详见 `scope-harness-bridge-tools` 4.1）。
+  - 未验证：会话级授权（allow-session）真实往返；Electron 窗口内操作；Windows。
 - [x] 4.2 至少一个 ACP 系 CLI 与 Claude Code 同类复验；未验证的 CLI 在本任务下列出。
   - 2026-10-28 合并后真实验收（macOS，`.test-data/accept-merged.ts` 用隔离预览包快照的 `WorkerRuntime` 跑真实 CLI 与模型；DSH 审批弹窗由脚本按预设决定并记录，CLI 端、进程退出与产物均为真实；证据在 `.test-data/accept-merged/<场景>-<cli>-*/report.json`，不入 Git）。场景：工作区内修改下写工作区外文件（`printf <标记> > <工作区外>/outside.txt`）。
   - **发现并修复缺陷**：Claude Code 2.1.287 只带 `--permission-prompts host` 时不发 `can_use_tool`，所有需确认的操作被 CLI 自动拒绝（首轮验收任务失败，`approval` 帧 0；直接探测 `curl` 同样）。加 `--permission-prompt-tool stdio` 后发出 `can_use_tool`（直接探测确认）。`nativeClaudeArgv` 在有审批通道时追加该参数，并拒绝重复传入。另：Claude 拒绝后以 `error_during_execution` 退出码 1 结束，传输层原先用「Native process exited unsuccessfully (1)」覆盖了「CLI 额外授权被拒绝，本轮已中断」；改为运行器已报 ERROR 时保留其原因（新增回归测试，修复前失败）。
