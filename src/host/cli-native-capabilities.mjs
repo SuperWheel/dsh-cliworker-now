@@ -4,7 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 export const CAPABILITY_CLASSES = ['file-read', 'file-write', 'search', 'shell', 'web', 'image-read', 'skills']
 
@@ -60,7 +60,6 @@ const dshClasses = {
   // DSH skills reach a CLI only through dsh_list_skills / dsh_read_skill.
   skill: 'dsh-skill',
 }
-const mcpName = name => name.replace(/[^A-Za-z0-9_-]/gu, '_')
 /** A DSH tool's capability class, or undefined for a DSH-only tool. */
 export function dshToolClass(name) {
   return Object.hasOwn(dshClasses, name) ? dshClasses[name] : undefined
@@ -71,7 +70,10 @@ export function dshToolClass(name) {
  */
 export function nativeCoverage(name, capabilities) {
   if (!capabilities) return undefined
-  const server = capabilities.mcpServers.find(server => name.startsWith(`mcp__${mcpName(server)}__`))
+  // Only an unambiguous identity counts: DSH keeps a valid server name verbatim,
+  // and a remainder with `__` may belong to another server such as `github__x`.
+  const server = capabilities.mcpServers.find(server => /^[A-Za-z0-9_-]{1,32}$/u.test(server) &&
+    name.startsWith(`mcp__${server}__`) && !name.slice(server.length + 7).includes('__'))
   if (server) return `CLI 原生已配置同名 MCP「${server}」`
   const kind = dshToolClass(name)
   if (kind === 'dsh-skill') return 'DSH 技能只经 dsh_read_skill 按需读取'
@@ -87,9 +89,11 @@ export function nativeCoverage(name, capabilities) {
  * developer_instructions instead of appending to it; keep the user's own.
  */
 export function codexDeveloperInstructionsConfigured(project, env = process.env) {
-  const root = env.CODEX_HOME || join(env.HOME || homedir(), '.codex')
-  return [join(root, 'config.toml'), join(project, '.codex', 'config.toml')].some(path => {
-    try { return /^\s*developer_instructions\s*=/mu.test(readFileSync(path, 'utf8')) } catch { return false }
+  return codexConfigPaths(project, env).some(path => {
+    let text
+    try { text = readFileSync(path, 'utf8') } catch { return false }
+    // Any table (profiles included): withholding the note is the safe side.
+    return tomlEntries(text).some(entry => entry.path.at(-1) === 'developer_instructions')
   })
 }
 export const HARNESS_FALLBACK_PREFIX = '备选（DSH）：仅在 CLI 自身工具无法完成时使用。'
@@ -106,13 +110,80 @@ export function nativeFirstGuidance(tools) {
 async function json(path) {
   try { return JSON.parse(await readFile(path, 'utf8')) } catch { return undefined }
 }
-async function tomlServers(path) {
-  let text
-  try { text = await readFile(path, 'utf8') } catch { return [] }
-  // Names only: `[mcp_servers.<name>]` or `[mcp_servers."<name>"]` tables.
-  return [...text.matchAll(/^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/gmu)].map(match => match[1] ?? match[2])
+/** Codex's config layers, lowest precedence first: CODEX_HOME, then project ancestors down to the cwd. */
+function codexConfigPaths(project, env) {
+  const ancestors = []
+  for (let directory = resolve(project); ; directory = dirname(directory)) {
+    ancestors.unshift(join(directory, '.codex', 'config.toml'))
+    if (dirname(directory) === directory) break
+  }
+  return [...new Set([join(env.CODEX_HOME || join(env.HOME || homedir(), '.codex'), 'config.toml'), ...ancestors])]
 }
-const keys = value => (value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : [])
+// Dotted TOML key split outside quotes, quotes removed.
+function keyPath(text) {
+  const parts = []
+  let current = '', quote = ''
+  for (const char of text.trim()) {
+    if (quote) { if (char === quote) quote = ''; else current += char }
+    else if (char === '"' || char === "'") quote = char
+    else if (char === '.') { parts.push(current.trim()); current = '' }
+    else current += char
+  }
+  return [...parts, current.trim()]
+}
+// The part of a line before a comment, ignoring `#` inside quoted strings.
+function code(line) {
+  let quote = ''
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index]
+    if (quote) { if (char === '\\' && quote === '"') index++; else if (char === quote) quote = '' }
+    else if (char === '"' || char === "'") quote = char
+    else if (char === '#') return line.slice(0, index)
+  }
+  return line
+}
+/**
+ * Key/value lines of a TOML file with their full key path. Multi-line string
+ * bodies are skipped, so table-looking text inside a value never counts.
+ */
+function tomlEntries(text) {
+  const entries = []
+  let table = [], multiline = ''
+  for (const raw of text.split(/\r?\n/u)) {
+    if (multiline) { if (raw.includes(multiline)) multiline = ''; continue }
+    const line = code(raw).trim()
+    const header = /^\[(?!\[)(.+)\]$/u.exec(line)
+    if (header) { table = keyPath(header[1]); entries.push({ path: table, value: undefined }); continue }
+    const equals = line.indexOf('=')
+    if (equals <= 0) continue
+    const value = line.slice(equals + 1).trim()
+    entries.push({ path: [...table, ...keyPath(line.slice(0, equals))], value })
+    for (const delimiter of ['"""', "'''"])
+      if (value.split(delimiter).length === 2) { multiline = delimiter; break }
+  }
+  return entries
+}
+/** Enabled `mcp_servers.<name>` across Codex's layers; a later layer's `enabled` wins. */
+async function codexServers(project, env) {
+  const enabled = new Map()
+  for (const path of codexConfigPaths(project, env)) {
+    let text
+    try { text = await readFile(path, 'utf8') } catch { continue }
+    for (const { path: key, value } of tomlEntries(text)) {
+      if (key[0] !== 'mcp_servers' || !key[1]) continue
+      // A plain value directly under [mcp_servers] is no server definition.
+      if (key.length === 2 && value !== undefined && !value.startsWith('{')) continue
+      if (!enabled.has(key[1])) enabled.set(key[1], true)
+      if (key.length === 3 && key[2] === 'enabled') enabled.set(key[1], !/^false\b/u.test(value))
+      // Inline table: `name = { ..., enabled = false }`.
+      if (key.length === 2 && value?.startsWith('{') && /\benabled\s*=\s*false\b/u.test(value)) enabled.set(key[1], false)
+    }
+  }
+  return [...enabled].filter(([, on]) => on).map(([name]) => name)
+}
+const record = value => !!value && typeof value === 'object' && !Array.isArray(value)
+// Server names without `disabled: true` / `enabled: false`.
+const keys = value => (record(value) ? Object.keys(value).filter(name => !(record(value[name]) && (value[name].disabled === true || value[name].enabled === false))) : [])
 const serversIn = async path => keys((await json(path))?.mcpServers)
 function gitRoot(project) {
   for (let directory = project; ; directory = dirname(directory)) {
@@ -126,13 +197,15 @@ function gitRoot(project) {
  */
 export async function nativeCliMcpServers(cli, project, env = process.env) {
   const home = env.HOME || homedir()
-  if (cli === 'codex') {
-    const root = env.CODEX_HOME || join(home, '.codex')
-    return [...await tomlServers(join(root, 'config.toml')), ...await tomlServers(join(project, '.codex', 'config.toml'))]
-  }
+  if (cli === 'codex') return codexServers(project, env)
   if (cli === 'claude') {
-    const user = await json(join(home, '.claude.json'))
-    return [...keys(user?.mcpServers), ...keys(user?.projects?.[project]?.mcpServers), ...await serversIn(join(project, '.mcp.json'))]
+    const user = await json(join(home, '.claude.json')), local = user?.projects?.[project]
+    const list = value => (Array.isArray(value) ? value.filter(name => typeof name === 'string') : [])
+    // Project .mcp.json servers run only once approved for this project.
+    const approved = (await serversIn(join(project, '.mcp.json'))).filter(name =>
+      !list(local?.disabledMcpjsonServers).includes(name) && (local?.enableAllProjectMcpServers === true || list(local?.enabledMcpjsonServers).includes(name)))
+    const disabled = list(local?.disabledMcpServers)
+    return [...keys(user?.mcpServers), ...keys(local?.mcpServers), ...approved].filter(name => !disabled.includes(name))
   }
   if (cli === 'kimi') {
     const root = env.KIMI_CODE_HOME || join(home, '.kimi-code')

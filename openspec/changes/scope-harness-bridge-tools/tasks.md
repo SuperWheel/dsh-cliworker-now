@@ -43,10 +43,12 @@
 - [x] 3.1 目录与注入夹具：重叠工具被排除、原生缺失能力（Pi shell）的 DSH 工具保留、同名 MCP 去重、描述带备选标记、说明内容与实际目录一致、未接通不注入；执行仍走宿主审批。
   - 新增 `tests/cli-native-capabilities.test.ts`（模拟夹具，目录名按 1.2 导出）：Codex 只交出 web_search、web_fetch、todo_write、ask_user_question、DSH 独有 MCP，且被覆盖工具调用被拒、未执行；Pi 交出 bash/terminal/job，调用经 `authorize`（宿主授权）后执行一次；规划模式不交写入；同名 MCP（含非法字符规范化）去重、空能力表回退；被覆盖的 `requiredTools` 仍可读技能；说明与 `connection.tools` 一致；Claude 图片透传、Codex 保持错误投影；ZCode 不注入；Codex `tool_timeout_sec`；Claude `--append-system-prompt` 在 `--print` 前且任务原样；Codex 已配 `developer_instructions` 时检测为真；Grok 新会话带 `_meta.rules`、恢复不带、任务文本不含说明；Antigravity 保留搜索/网页备选；Codex/Claude/Kimi/Grok/Antigravity MCP 名称只读名称。
   - 更新 `native-harness-tools.test.ts`（描述前缀、ZCode 不注入）与 `harness-service-integration.test.ts`（真实 Host 准备路径传入 OpenCode 规划模式能力表）。
+  - Codex 审查后修正（2026-10-28）：同名 MCP 只认确定身份，即服务器名合法且 `mcp__<server>__` 之后不再含 `__`。规范化或带哈希后缀的名称、可能属于 `github__x` 之类其他服务器的名称，都保留为备选。Codex 读取顺序为 `CODEX_HOME`，再到项目各上级目录的 `.codex/config.toml`，后层的 `enabled` 生效。`enabled = false`（含行内表写法）不算原生覆盖。TOML 按字符串扫描，多行字符串和注释里的示例行不算定义；`[mcp_servers]` 下的普通值也不算服务器。Claude 的 `disabledMcpServers` 不算；项目 `.mcp.json` 只算 `enableAllProjectMcpServers` 或 `enabledMcpjsonServers` 已批准且不在 `disabledMcpjsonServers` 中的服务器。`developer_instructions` 检测也包含上级目录各层，多行值里的示例不算。夹具已覆盖上述情形。
   - 未单测：Codex runner 实际发送 `developerInstructions`、OpenCode/MiMo runner 实际发送 `system`、Pi bridge 实际带 `--append-system-prompt`（代码走查 + 共用的 `nativeHarnessGuidance`/`nativeFirstGuidance` 单测覆盖）。
 - [x] 3.2 `pnpm typecheck`、关联测试、`pnpm build:preview`。
   - 2026-10-28 macOS：`corepack pnpm build:preview` 退出 0，`lib/cli-native-capabilities.mjs` 与 `lib/types/host/cli-native-capabilities.mjs` 均已打包。新 worktree 无 `lib/`，Client 类型检查缺生成的 `lib/typert.remote-client.d.ts`；复制预览产物到被忽略的 `lib/` 后 `corepack pnpm typecheck` 通过（Host/Client，DSH 0.2.1-rc.3）。
   - 关联测试 24 个文件 555 项通过：cli-native-capabilities、native-harness-tools/extended/lease、native-agy-harness、harness-service-integration、harness-model-guard、pi-omp-adapter/native、grok-adapter/context-status/model-context、native-acp、native-qoder、native-zcode、native-http、native-primary-runners、native-guidance、codex-run-usage、kimi-durable-usage、harness-native-attachments、native-attachments、ten-cli-native-parity、native-launch。未运行全量 `pnpm test`，未运行 `pnpm build`，未做 Windows 检查。
+  - 审查修正后：`corepack pnpm vitest run`（全量）238 个文件中 235 个通过、3 个跳过，4748 项中 4735 项通过、13 项跳过；`corepack pnpm typecheck` 通过。仍未运行 `pnpm build`，也未做 Windows 检查。
 
 ## 4. 真实验收（需已有选型授权）
 
