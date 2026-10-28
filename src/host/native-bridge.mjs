@@ -93,10 +93,9 @@ try {
       process.stdout.write(line)
     },
     controller.signal,
-    (chunk) => {
-      timers?.touch()
-      process.stderr.write(chunk)
-    },
+    (chunk) => process.stderr.write(chunk),
+    // Heartbeats such as Claude keep_alive are dropped by runners but still prove the CLI is alive.
+    () => timers?.touch(),
   )
   control = await receiveNativeStopControl(config.stopDirectory, config.stopNonce, async () => {
     stop()

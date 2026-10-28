@@ -4,7 +4,8 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareNativeWorker } from '../src/host/native-worker.ts'
-import { agyArguments, DEFAULT_CONFIG } from '../src/host/process.ts'
+import { DEFAULT_CONFIG } from '../src/host/process.ts'
+import { workerArguments } from '../src/host/adapters.ts'
 
 // SIMULATED: a synthetic silent CLI process under the real bridge script. No
 // installed CLI, account or model is used.
@@ -21,7 +22,11 @@ const alive = (pid: number) => {
   }
 }
 
-async function bridge(limit: { totalMs: number; idleMs: number }, stderrEveryMs = 0) {
+async function bridge(
+  limit: { totalMs: number; idleMs: number },
+  output: { cli?: 'antigravity' | 'claude'; stderrEveryMs?: number; keepAliveEveryMs?: number } = {},
+) {
+  const cli = output.cli ?? 'antigravity'
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-bridge-time-limit-')))
   directories.push(directory)
   const executable = join(directory, 'synthetic-cli.mjs'),
@@ -32,18 +37,19 @@ async function bridge(limit: { totalMs: number; idleMs: number }, stderrEveryMs 
     `#!/usr/bin/env node
 import { writeFileSync } from 'node:fs'
 writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
-${stderrEveryMs ? `setInterval(() => process.stderr.write('SIMULATED progress\\n'), ${stderrEveryMs})` : ''}
+${output.stderrEveryMs ? `setInterval(() => process.stderr.write('SIMULATED progress\\n'), ${output.stderrEveryMs})` : ''}
+${output.keepAliveEveryMs ? `setInterval(() => process.stdout.write(JSON.stringify({ type: 'keep_alive' }) + '\\n'), ${output.keepAliveEveryMs})` : ''}
 setInterval(() => {}, 60000)
 `,
     { mode: 0o700 },
   )
   const prompt = 'SIMULATED silent task'
   const startedAt = Date.now()
-  const preference = { model: 'synthetic-model', effort: 'default' as const }
+  const preference = { cli, model: 'synthetic-model', effort: 'default' as const }
   const launch = await prepareNativeWorker(
-    { argv: agyArguments(executable, directory, preference, 'accept-edits', prompt, limit.totalMs) },
+    { argv: workerArguments(executable, directory, preference, 'accept-edits', prompt, limit.totalMs, undefined, true) },
     {
-      cli: 'antigravity',
+      cli,
       project: directory,
       preference,
       mode: 'accept-edits',
@@ -79,8 +85,16 @@ it('stops a silent CLI on the idle window and exits only after the CLI process i
 }, 30_000)
 
 it('renews the idle window on native output and stops on the shared deadline instead', async () => {
-  const run = await bridge({ totalMs: 1500, idleMs: 600 }, 100)
+  const run = await bridge({ totalMs: 1500, idleMs: 600 }, { stderrEveryMs: 100 })
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task timed out' })
   expect(run.elapsed).toBeGreaterThanOrEqual(1400)
+  expect(run.cliAlive).toBe(false)
+}, 30_000)
+
+it('renews the idle window on heartbeats a runner drops before forwarding', async () => {
+  // Claude keep_alive frames never reach a public event, yet the CLI is alive.
+  const run = await bridge({ totalMs: 1500, idleMs: 600 }, { cli: 'claude', keepAliveEveryMs: 100 })
+  expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task timed out' })
+  expect(run.frames.some((frame) => JSON.stringify(frame).includes('keep_alive'))).toBe(false)
   expect(run.cliAlive).toBe(false)
 }, 30_000)

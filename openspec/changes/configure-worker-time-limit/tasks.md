@@ -13,7 +13,7 @@
   - 任务首次 `execute()` 时生成 `{ deadlineAt, totalMs, idleMs }` 并保存在任务上（换号续接沿用，账号占用退回队列时清除）。Host 计时器、`native-worker.ts` 写入的请求（`deadlineAt`、`idleTimeoutMs`，`timeoutMs` 保留为总时限兼容旧桥）、agy `--print-timeout`（剩余秒数，至少 1 秒）共用该截止时间。
   - 桥启动时把 `config.timeoutMs` 改为剩余时间，runner 的 `waitFor`/`turn/start` 超时因此按剩余时间计，未逐个修改 runner；ZCode 私有账号材料有效期改按 `deadlineAt` 判断。
 - [x] 2.3 桥实现空闲计时器，任何原生事件续期；超时说明区分总时限与空闲。
-  - 新增 `native-time-limit.mjs`（已加入 `scripts/build.mjs` 清单）：桥的每条输出帧与 CLI stderr 诊断续期。不经该桥的 Pi/OMP 与旧协议由 Host 按子进程输出续期。
+  - 新增 `native-time-limit.mjs`（已加入 `scripts/build.mjs` 清单）：桥的每条输出帧与 CLI 子进程的任何原始输出续期（`createNativeIO` 新增只通知不带内容的 `onNativeOutput`，覆盖被 runner 丢弃的 Claude `keep_alive`；该缺口由 Codex 审查发现后修复）。不经该桥的 Pi/OMP 与旧协议由 Host 按子进程输出续期。
   - 桥超时结果（有或没有会话）由 Host 映射为 `interrupted`：「任务超时：已达到总时限 2 小时」/「任务超时：连续 10 分钟没有收到 CLI 事件（空闲时限）」，Client 有对应英文。
 - [x] 2.4 Client 通用设置页新增「任务时限」分组。
   - 总时限：30 分钟、1/2/4/8 小时、不限制（最长 24 小时），另列部署默认值（标「（默认）」）与当前值；空闲时限：不启用、5/10/30 分钟。旧 Host 缺字段时按 30 分钟与不启用显示。
@@ -22,7 +22,8 @@
 
 - [x] 3.1 计时夹具：长于 30 分钟（假时钟）不超时、空闲超时、运行中改设置不影响当前任务、旧 `timeoutMs` 继承、超时后进程范围退出才报告。
   - `tests/task-time-limit.test.ts`（模拟进程与假时钟，11 项通过）：桥计时器 2 小时截止下 45 分钟不触发、空闲续期与超时、关闭后不再触发、旧请求按 `timeoutMs` 计；Host 侧 2 小时总时限下 45 分钟仍运行，运行中缩短为 30 分钟后当前任务仍按 2 小时结束、下一任务按 30 分钟；Cordis `timeoutMs` 45 分钟作为初始值且不写入存储；Host 空闲计时；桥请求写入同一 `deadlineAt`，桥总时限/空闲超时（含无会话）映射为中断说明。各用例在 `terminate` 后、模拟进程范围退出前确认任务未结束。
-  - `tests/native-bridge-time-limit.test.ts`（真实 `native-bridge.mjs` 进程 + 合成静默 CLI，2 项通过）：空闲超时以 `Native task idle timed out` 结束，桥退出时合成 CLI 进程已不存在；stderr 输出续期后以总时限结束。变异检查：去掉 stderr 续期或 Host 无会话映射后，对应用例失败。
+  - `tests/native-bridge-time-limit.test.ts`（真实 `native-bridge.mjs` 进程 + 合成 CLI，3 项通过）：静默 CLI 以 `Native task idle timed out` 结束，桥退出时合成 CLI 进程已不存在；stderr 输出、或只发 Claude `keep_alive`（不转发给 Host）时续期，最终以总时限结束。变异检查：去掉原始输出续期或 Host 无会话映射后，对应用例失败。
+  - 修复心跳续期后重跑：原生相关 41 个测试文件 628 项通过（3 项跳过），预览构建与预览包内 Host/Client 类型检查再次通过。
 - [x] 3.2 设置页渲染与持久化测试；`pnpm typecheck`、关联测试、`pnpm build:preview`。
   - `tests/general-settings.test.ts`：时限字段私有持久化（0600）、`null` 恢复配置默认、非法补丁拒绝。`tests/settings-dialog.test.tsx`、`tests/client-i18n.test.tsx`：分组渲染、45 分钟/90 秒部署默认标注、选择后保存载荷、Host 未应用时显示未保存并可重试、旧 Host 默认、非法值拒绝、英文超时说明。
   - `corepack pnpm build:preview` 通过，预览包含 `lib/native-time-limit.mjs`；在预览包内执行 `scripts/build.mjs --typecheck-only`：Host/Client 类型检查通过（DSH 0.2.1-rc.3）。worktree 内直接 `corepack pnpm typecheck` 的 Host 部分通过，Client 部分因 worktree 没有生成的 `lib/typert.remote-client.d.ts` 失败（需 `pnpm build` 生成，本会话不运行）。
