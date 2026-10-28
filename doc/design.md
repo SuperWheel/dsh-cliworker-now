@@ -1184,3 +1184,14 @@ OpenSpec 变更 `judge-run-outcome-by-native-terminal`（起因：用户反馈 W
 - 各 CLI 的工具失败信号沿用原识别：Codex 条目 `failed`（`inProgress` 收尾改为未完成工具）、Claude `is_error`、ACP `status==='failed'`、ZCode 单工具 error 与批次 `errorCount`（扣除已知失败和被拒工具）、OpenCode/MiMo `state.status==='error'`、Hermes `tool.failed`、Antigravity `tool_info.error`、Pi/OMP `isError`。
 - Antigravity 步骤状态 `ERROR` 仍判本轮失败（无法确认是否只是工具级信号）；`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
 - 持久化无迁移，历史 failed 记录不重算。
+
+## 2026-10-28 CLI 权限跟随 DSH 预设，额外授权交给 DSH（未发布）
+
+OpenSpec 变更 `relay-native-approvals-to-host`（用户 2026-10-28 决定）。替代上文「宿主处于规划或只读模式时拒绝派遣」与「插件仍拒绝全部额外权限/授权请求」：
+
+- 每轮启动时按父会话 `sandboxPolicy` 快照档位（`runAccess`），状态行记「本轮权限：…」。仅可查看以 CLI 原生规划/只读模式启动（runtime `launchMode=plan`）；Antigravity、Qoder、Qoder CN、Hermes 无可确认的整进程只读模式，派遣前拒绝。父会话规划模式仍拒绝派遣写任务。
+- 完全权限的原生模式：Codex `danger-full-access`+`never`、Claude `bypassPermissions`、Qoder CLI `bypass_permissions`/ACP `yolo`、ZCode `yolo`、Grok `agent --always-approve stdio`、OpenCode/MiMo `"*": "allow"`+`bash: allow`（task/skill/question 仍 deny）。Kimi（`--yolo`/`--auto` 与 ACP 描述矛盾）、Hermes（`--yolo` 对 HTTP 通路未核实）、Antigravity（去掉免确认后无已知审批事件）保持原参数。
+- 授权通路：runner `io.approval` → 桥帧 `{type:'approval',id,request}` → Host `relayApproval` → 父会话当前状态判定（规划 → 拒；`never`+完全权限 → 放行；`never` 其他 → 拒；`ask` → 弹窗）→ 私有邮箱 `approval` 命令回写 → runner 回复 CLI 原生值。来源在 `launch` 入口确定：主 Agent 工具调用 → 父会话 `userQuestions.ask` 问题卡；用户在子会话发起 → 子 Agent `approval.request`（子会话审批策略每轮同步为父会话策略，客户端在 CLI Worker 面板挂载期间持有运行中 Worker 的子会话）。
+- 原生回复：Codex `accept/acceptForSession/decline`（permissions 请求回显授予子集与 `scope`）；Claude `--permission-prompts host`，`behavior:allow`+`updatedInput`，会话级把 CLI 自己的 `permission_suggestions` 改为 `destination:'session'` 放入 `updatedPermissions`，拒绝仍 `interrupt:true` 失败；ACP 选原生 `optionId`，会话级仅 Kimi `approve_always`、Qoder `proceed_always`（不选 `proceed_always_and_save`，Grok 的 always 会持久到项目，不提供）；ZCode `{decision:'allow'|'deny'}`，不发 `permissionUpdates`（会写项目规则）；Hermes `choice` 为 `once/session/deny`（仅事件 `choices` 含 `session` 时提供会话级，不发 `always`）；OpenCode/MiMo `reply:'once'|'reject'`（`always` 超出会话，不提供）。
+- runner 等待期间不阻塞读循环（Codex、Claude、ACP、ZCode）；Hermes 与 HTTP 会话系在事件循环内顺序等待。停止、桥关闭或无答复时回复拒绝；拒绝后正常结束仍为结果待核实（Claude 除外）。
+- 未做：空闲时限在等待审批期间暂停依赖 `configure-worker-time-limit`；子会话持有仅在 CLI Worker 面板挂载时有效；所有 CLI 的真实审批往返未实测。

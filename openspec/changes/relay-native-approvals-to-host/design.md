@@ -52,18 +52,24 @@ CLI 反向请求 → runner 写出桥帧 `{ type: 'approval', id, request }`（C
 - 等待期间暂停空闲时限，总时限照常；任务停止、进程退出或运行身份不再匹配时撤回弹窗（`signal`）并回复拒绝，停止仍在进程范围退出后才报告成功。
 - 时间线（Worker 事件）记录请求摘要、决定与决定来源；不记录 CLI 原始参数中的环境变量或凭据。
 
-## 各 CLI 映射（标「待核实」者须先确认原生能力，不发明）
+## 各 CLI 映射（2026-10-28 按 `--help`、安装包源码与本机生成的协议 schema 核实，未发模型请求；见 tasks.md 1.3）
 
-| CLI | 仅可查看 | 工作区内修改 | 完全权限 | 授权请求入口 |
+仅可查看一律以 CLI 原生规划模式启动（runtime `launchMode=plan`），比原表「Codex `read-only` + `on-request`」更严：规划轮次的 Codex 审批策略为 `never`，不产生升级请求。
+
+| CLI | 仅可查看 | 工作区内修改 | 完全权限 | 授权回复（允许一次 / 本会话始终允许 / 拒绝） |
 | --- | --- | --- | --- | --- |
-| Codex | `read-only` + `on-request` | `workspace-write` + `on-request` | `danger-full-access` + `never` | `item/*/requestApproval`（已有） |
-| Claude Code | `plan` | `acceptEdits` | `bypassPermissions` | stream-json `control_request`（已有，现为 deny） |
-| Kimi / Grok / Qoder / Qoder CN | 原生 plan（Qoder 无，拒绝派遣） | 现有写模式 | 原生免确认模式（待核实） | ACP `session/request_permission`（已有） |
-| ZCode | 原生只读（待核实） | 现有写模式 | 待核实 | `interaction/requestPermission`（已有） |
-| OpenCode / MiMo | `edit/bash: deny` | `edit: allow`，`bash: ask` | `"*": allow` | `permission.asked`（已有） |
-| Hermes | 待核实 | 现有 | 待核实 | `approval.request`（已有） |
-| Antigravity | 拒绝派遣（无整进程只读） | 去掉 `--dangerously-skip-permissions`，保留 `--sandbox`（待核实是否有审批事件） | 现有参数 | 待核实 |
-| Pi / OMP | 现有只读工具集 | 现有工具集 | 现有工具集 | 无原生审批协议，范围外 |
+| Codex 0.162.1 | `read-only` + `never` | `workspace-write` + `on-request` | `danger-full-access` + `never` | `accept` / `acceptForSession` / `decline`；permissions 请求回显授予子集，`scope` 为 `turn`/`session` |
+| Claude Code 2.1.287 | `plan` | `acceptEdits` | `bypassPermissions` | `--permission-prompts host`；`allow`+`updatedInput` / 另加 `updatedPermissions`（CLI 自己的 `permission_suggestions`，`destination:'session'`）/ `deny`+`interrupt:true`（本轮失败） |
+| Kimi 2.3.3（ACP） | `plan` | `default` | 保持 `default`（`--yolo`/`--auto` 帮助与 ACP 描述矛盾），授权自动放行 | `approve_once` / `approve_always`（会话级）/ `reject` |
+| Grok 1.0.62 | 私有配置 deny 规则（原有） | `--permission-mode acceptEdits` | `agent --always-approve stdio` | `allow_once` 选项 / 不提供（always 持久到项目）/ `reject_once` |
+| Qoder 1.1.73 / CN 1.1.74 | 拒绝派遣（无 plan） | CLI `accept_edits`，ACP `acceptEdits` | CLI `bypass_permissions`，ACP `yolo` | `allow_once` 选项 / `proceed_always`（不选 `proceed_always_and_save`）/ `reject_once` |
+| ZCode 0.16.9 / 0.17.0 | `plan` | `edit` | `yolo`（`auto` 未实现，`guarded` 仅 0.17） | `{decision:'allow'}` / 不提供（无已确认会话级回复，`permissionUpdates` 写项目规则）/ `{decision:'deny'}` |
+| OpenCode / MiMo | `edit/bash: deny` | `edit: allow`，`bash: ask` | `"*": allow`，`bash: allow` | `reply:'once'` / 不提供（`always` 存活到进程重启或范围未核实）/ `reply:'reject'` |
+| Hermes | 拒绝派遣（无已确认只读开关） | 现有 | 保持现有（`--yolo` 对 HTTP 通路未核实），授权自动放行 | `choice:'once'` / `'session'`（仅事件 `choices` 含时）/ `'deny'`；不发 `always` |
+| Antigravity 1.4.9 | 拒绝派遣（无整进程只读） | 保持 `--sandbox --dangerously-skip-permissions`（去掉后无已知审批事件） | 同左 | 无原生授权协议 |
+| Pi / OMP | 现有只读工具集 | 现有工具集 | 现有工具集 | 无原生授权协议，范围外 |
+
+完全权限下没有已确认原生模式的 CLI（Kimi、Hermes、Antigravity、Pi、OMP）在时间线说明「按其写入模式运行」。
 
 ## 兼容与风险
 
