@@ -1,3 +1,4 @@
+import { summarizeNativeRecord } from './native-transport.mjs'
 import { agyResponseUsage } from './native-response.mjs'
 import { recordAgyHarnessSession } from './native-agy-harness.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
@@ -23,7 +24,7 @@ export function nativeAgyArgv(config) {
 export async function runNativeAgy(config, io) {
   const peer = await io.openStdio(nativeAgyArgv(config), { env: config.env, cwd: config.project })
   let sessionId, result, invalidStep = false, failedStep = false
-  const steps = new Map(), responses = new Map()
+  const steps = new Map(), responses = new Map(), toolOutputs = new Map()
   const toolOutcomes = createToolOutcomes()
   const currentResponse = () => [...responses.values()].filter((text) => text.trim()).join('\n')
   const identify = (id, model) => {
@@ -88,8 +89,14 @@ export async function runNativeAgy(config, io) {
         })
       } else if (item.step_type === 'tool') {
         const info = object(item.tool_info) ? item.tool_info : {}
+        const { parameters: _input, output, result, ...metadata } = info
+        const body = output ?? result, prior = toolOutputs.get(index) ?? ''
+        const increment = state !== 'DONE' && !toolError && typeof body === 'string' && typeof prior === 'string' && body.startsWith(prior)
+        if (body !== undefined) toolOutputs.set(index, body)
         io.event({ kind: 'tool', step: index, text: typeof item.tool_name === 'string' ? item.tool_name : '工具', state: toolError ? 'FAILED' : state,
-          detail: JSON.stringify(info), toolCall: {
+          detail: JSON.stringify(metadata),
+          ...(increment ? { delta: body.slice(prior.length) } : {}), toolCall: {
+            ...(!increment && (body !== undefined || state === 'DONE' || toolError) && toolOutputs.has(index) ? { output: toolOutputs.get(index) } : {}),
             ...(string(info.name) ? { name: info.name } : string(item.tool_name) ? { name: item.tool_name } : {}),
             ...(Object.hasOwn(info, 'parameters') ? { input: info.parameters } : {}),
             ...(object(info.parameters) && typeof info.parameters.CommandLine === 'string'
@@ -103,12 +110,15 @@ export async function runNativeAgy(config, io) {
       if (!object(end) || !string(end.conversation_id) || !string(end.status) || typeof end.response !== 'string') throw fail('无效的原生终态')
       identify(end.conversation_id)
       result = end
-      if (end.status !== 'SUCCESS') io.event({ kind: 'diagnostic', text: 'CLI 最终汇总', state: end.status, detail: JSON.stringify(end) })
+      if (end.status !== 'SUCCESS') io.event({ kind: 'diagnostic', text: 'CLI 最终汇总', state: end.status, detail: JSON.stringify({ status: end.status, error: end.error }) })
     } else {
       invalidStep = true
       io.event({ kind: 'diagnostic', text: `未识别事件：${value.event}` })
     }
-    io.native(value)
+    const info = value.step_update?.tool_info
+    io.native(info ? { ...value, step_update: { ...value.step_update, tool_info: { ...info,
+      ...(info.output !== undefined ? { output: summarizeNativeRecord(info.output, 0) } : {}),
+      ...(info.result !== undefined ? { result: summarizeNativeRecord(info.result, 0) } : {}) } } } : value)
   })
   try {
     io.signal?.throwIfAborted()

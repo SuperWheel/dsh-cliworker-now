@@ -204,6 +204,17 @@ Desktop 不读取 `.zshrc`。插件会识别常见安装位置；仍找不到时
 
 </details>
 
+<details>
+<summary><strong>读大文件时输出显示“已截断”，或模型说文件内容被截断？</strong></summary>
+
+这是两层不同的预算：
+
+- **插件展示预算**（插件配置项）：单个工具输出或思考块最多显示 `maxToolPreviewBytes`（默认 256 KiB），整轮工具输出与思考最多显示 `maxRunBytes`（默认 16 MiB）。超出时只截断界面显示并标注“输出已截断，完整内容见 CLI 原生会话或实际产物”，CLI 继续运行，本轮结果不变；转给主 Agent 的工具回执也带同样的说明。运行中的输出只传新增部分，不再随输出变长重复发送。
+- **入站单帧保护**：CLI 发来的单个协议帧超过 `maxNativeLineBytes`（默认 32 MiB）时停止运行，错误中写明上限。
+- **CLI 自己的模型可见预算**：模型实际能读到多少工具输出由 CLI 决定，插件不覆盖、也不提供调整入口，调大上面的插件预算不会让模型看到更多。Codex 由模型每次调用自填的 `max_output_tokens` 和 Codex 配置 `tool_output_token_limit` 决定；插件启动的 Codex 读取 `$CODEX_HOME/config.toml`（未设置时为 `~/.codex/config.toml`），项目 `.codex/config.toml` 与命令行配置的优先级更高。gpt-6.x 在原生 Codex 中同样使用代码模式的 exec/wait 工具，表现与插件内一致。
+
+</details>
+
 更多账号、路径和模型规则见 [使用细节与 CLI 说明](doc/usage-details.md)。
 
 ## 开发

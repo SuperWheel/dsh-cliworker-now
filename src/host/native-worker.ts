@@ -109,6 +109,8 @@ export async function prepareNativeWorker<
         ...(config.timeLimit ? { deadlineAt: config.timeLimit.deadlineAt, idleTimeoutMs: config.timeLimit.idleMs } : {}),
         maxLineBytes: config.maxLineBytes,
         maxRunBytes: config.maxRunBytes,
+        maxNativeLineBytes: config.maxNativeLineBytes,
+        maxToolPreviewBytes: config.maxToolPreviewBytes,
       }),
       { mode: 0o600, flag: 'wx' },
     )

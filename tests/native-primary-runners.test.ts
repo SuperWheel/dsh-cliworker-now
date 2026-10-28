@@ -85,6 +85,17 @@ function claudeTurn(){
   send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:'synthetic error',is_error:true}]}});
  }
  send({type:'stream_event',session_id:id,event:{type:'message_start',message:{id:'reply'}}});
+ if(scenario.startsWith('budget-')){
+  // SIMULATED Claude thought increments and one native tool result.
+  const count=Number(scenario.slice(7)),chunk='思'.repeat(341),thought=chunk.repeat(count);
+  send({type:'stream_event',session_id:id,event:{type:'content_block_start',index:0,content_block:{type:'thinking',thinking:chunk}}});
+  for(let i=1;i<count;i++)send({type:'stream_event',session_id:id,event:{type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:chunk}}});
+  send({type:'stream_event',session_id:id,event:{type:'message_stop'}});
+  send({type:'assistant',session_id:id,message:{id:'reply',content:[{type:'thinking',thinking:thought}]}});
+  send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Read',input:{file_path:'synthetic'}}]}});
+  send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:thought}]}});
+  claudeEnd();return;
+ }
  if(scenario==='multiple-blocks'){
   send({type:'stream_event',session_id:id,event:{type:'content_block_start',index:0,content_block:{type:'thinking',thinking:'',signature:'HIDDEN_SIGNATURE'}}});
   send({type:'stream_event',session_id:id,event:{type:'content_block_delta',index:0,delta:{type:'thinking_delta',thinking:'公开思考'}}});
@@ -132,6 +143,11 @@ function agyTurn(){
  if(['metadata','metadata-conflict','unknown','unknown-conflict'].includes(scenario)){
   send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'user_input',state:'DONE'}});
   send({event:'step_update',step_update:{conversation_id:id,step_index:2,step_type:scenario.startsWith('unknown')?'unknown':'checkpoint',state:'DONE'}});
+ }
+ if(scenario==='tool-snapshots'){
+  // SIMULATED cumulative/replacing native tool_info output.
+  for(const output of ['旧','旧值','替换','替换完成'])send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'RUNNING',tool_name:'Read',tool_info:{name:'Read',parameters:{path:'synthetic'},output}}});
+  send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'DONE',tool_name:'Read',tool_info:{name:'Read',output:'替换完成'}}});
  }
  if(scenario==='tool-info-error')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'DONE',tool_name:'Read',tool_info:{name:'Read',error:{type:'SyntheticToolError',message:'explicit synthetic failure'}}}});
  if(scenario==='invalid-step-state')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'checkpoint',state:'NOT_A_NATIVE_STATE'}});
@@ -216,6 +232,7 @@ function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', re
 async function run(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true,
   guide?: (io: any, controller: AbortController) => Promise<void>) {
   const { config, log } = setup(cli, scenario, resume)
+  if (scenario.startsWith('budget-')) config.maxLineBytes = 1024 * 1024
   const frames: any[] = [], controller = new AbortController()
   let guidance: Promise<void> | undefined
   const io = createNativeIO(config, (line: string) => {
@@ -237,6 +254,37 @@ async function run(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success'
 }
 
 describe('native primary runners (synthetic protocol processes, no real accounts/models)', () => {
+  it('reconciles Antigravity cumulative and replacing tool snapshots without duplicate bodies', async () => {
+    // SIMULATED optional tool_info output fields.
+    const { frames, result } = await run('antigravity', 'tool-snapshots')
+    expect(result.status).toBe('SUCCESS')
+    const tools = frames.filter(frame => frame.event?.kind === 'tool').map(frame => frame.event)
+    expect(tools.map(event => event.delta ?? event.toolCall.output)).toEqual(['旧', '值', '替换', '完成', '替换完成'])
+    expect(tools.every(event => !event.detail.includes('替换') && !event.detail.includes('parameters'))).toBe(true)
+    expect(foldNativeFrames(frames).find(row => row.kind === 'tool')?.toolCall?.output).toBe('替换完成')
+  })
+  it('keeps Claude thought transfer linear and emits one tool output without duplicate detail', async () => {
+    // SIMULATED native stream, including message_stop before the final snapshot.
+    const sizes: number[] = []
+    for (const count of [64, 128]) {
+      const { frames, result } = await run('claude', `budget-${count}`)
+      expect(result.status, JSON.stringify(result)).toBe('SUCCESS')
+      const body = '思'.repeat(341 * count), rows = foldNativeFrames(frames)
+      expect(rows.find(row => row.kind === 'reasoning')?.detail).toBe(body)
+      expect(rows.find(row => row.kind === 'tool')?.toolCall?.output).toBe(body)
+      const deltas = frames.filter(frame => frame.event?.kind === 'reasoning' && frame.event.delta !== undefined)
+      expect(deltas).toHaveLength(count)
+      expect(deltas.every(frame => frame.event.detail === undefined)).toBe(true)
+      const completed = frames.filter(frame => frame.event?.toolCall?.output !== undefined)
+      expect(completed).toHaveLength(1)
+      expect(completed[0].event.detail).toBeUndefined()
+      const bytes = Buffer.byteLength(JSON.stringify(frames))
+      expect(bytes).toBeLessThan(Buffer.byteLength(body) * 12)
+      sizes.push(bytes)
+    }
+    expect(sizes[1]!).toBeLessThan(sizes[0]! * 2.4)
+  })
+
   it.each([false, true])('requests public Codex summaries for resume=%s without changing the selected model or effort', async resume => {
     const { messages, frames, result } = await run('codex', 'success', resume)
     expect(result.status).toBe('SUCCESS')
@@ -307,10 +355,14 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     const { result, frames } = await run('codex', 'tool-progress')
     expect(result.status).toBe('SUCCESS')
     const events = frames.filter((frame) => frame.type === 'event').map((frame) => frame.event)
-    expect(events.filter((event) => event.toolCall?.callId === 'tool' && event.state === 'RUNNING').at(-1))
-      .toMatchObject({ detail: '模拟输出', toolCall: { command: 'synthetic read', output: '模拟输出' } })
+    // Running output travels as increments only; the timeline appends them on the same step.
+    expect(events.filter((event) => event.kind === 'tool' && typeof event.delta === 'string').map((event) => event.delta))
+      .toEqual(['模拟', '输出'])
+    expect(events.some((event) => event.state === 'RUNNING' && event.toolCall?.output === '模拟输出')).toBe(false)
+    const running = foldNativeFrames(frames.filter((frame) => frame.type !== 'event' || frame.event.state !== 'COMPLETED'))
+    expect(running.find((row) => row.toolCall?.callId === 'tool')?.toolCall).toMatchObject({ command: 'synthetic read', output: '模拟输出' })
     expect(events.find((event) => event.toolCall?.callId === 'tool' && event.state === 'COMPLETED')?.toolCall.output).toBe('模拟输出')
-    expect(events.find((event) => event.detail === '模拟 MCP 进度')).toMatchObject({ state: 'RUNNING', toolCall: { callId: 'mcp' } })
+    expect(events.find((event) => event.toolCall?.output === '模拟 MCP 进度')).toMatchObject({ state: 'RUNNING', toolCall: { callId: 'mcp' } })
     expect(events.find((event) => event.toolCall?.callId === 'dynamic')?.toolCall.output)
       .toEqual([{ type: 'inputText', text: '模拟动态工具结果' }])
     expect(JSON.stringify(frames)).not.toContain('FOREIGN TOOL OUTPUT')

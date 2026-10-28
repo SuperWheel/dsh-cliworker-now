@@ -1,7 +1,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolRunContext, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
-import type { TimelineItem } from '../shared/types.ts'
+import { truncationNote, type TimelineItem } from '../shared/types.ts'
 import type {
   HarnessConversationDependencies,
   HarnessConversationRecord,
@@ -105,6 +105,7 @@ export class HarnessObservedTools {
       assertOwner()
       if (this.source.completed() && !this.source.hasFollowing()) exec.concludeTurn()
     }
+    if (row.truncated) return `${text}\n\n[${truncationNote(row)}]`
     return JSON.parse(json(output))
   }
 

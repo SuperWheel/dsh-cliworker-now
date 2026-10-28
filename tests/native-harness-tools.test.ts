@@ -29,6 +29,27 @@ async function rpc(target: Awaited<ReturnType<typeof lease>>, method: string, pa
   return { status: response.status, ...await response.json() as Record<string, unknown> }
 }
 describe('run-isolated Harness MCP bridge (synthetic)', () => {
+  it.each([6000, 9000])('rejects a %i-byte Chinese result before MCP wrapping and keeps the bridge usable', async bytes => {
+    // SIMULATED multibyte payload: below max chars, over byte budget or envelope reserve.
+    const maximum = 8192, text = '中'.repeat(bytes / 3)
+    expect(text.length).toBeLessThan(maximum)
+    expect(Buffer.byteLength(text)).toBeGreaterThan(maximum - 4096)
+    const execute = vi.fn(async () => ({ content: [{ type: 'text', text }] }))
+    const target = await lease({ maxBytes: maximum, execute })
+    expect((await rpc(target, 'tools/call', { name: grant.name })).error).toBe('工具桥响应超过限制；不会自动重试')
+    expect(execute).toHaveBeenCalledOnce()
+    const input = new PassThrough(), output = new PassThrough()
+    let data = ''; output.on('data', chunk => { data += String(chunk) })
+    const carrier = runNativeHarnessMcp({ input, output, maximum, env: { [HARNESS_CONNECTION_ENV]: JSON.stringify(target.connection) } })
+    try {
+      input.write(JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: grant.name } }) + '\n')
+      await vi.waitFor(() => expect(data).toContain('工具桥响应超过限制；不会自动重试'))
+      expect(Buffer.byteLength(data)).toBeLessThan(maximum)
+      expect(execute).toHaveBeenCalledTimes(2)
+    } finally { await carrier.close() }
+    expect((await rpc(target, 'tools/list', {}, { id: 2 })).result).toMatchObject({ tools: [{ name: grant.name }] })
+  })
+
   it('inherits exact scoped registry grants without treating a built-in name or MCP prefix as authorization', () => {
     const names = ['read', 'write', 'edit', 'bash', 'read_image', 'grep', 'mcp__configured__read', 'read_file']
     const schemas = names.map(name => ({ name }))

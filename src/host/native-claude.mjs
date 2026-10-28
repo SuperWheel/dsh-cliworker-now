@@ -120,7 +120,7 @@ export async function runNativeClaude(config, io) {
           responses.emit({ kind: 'assistant', step: step(key), text: block.text, state: 'RUNNING' }, value.parent_tool_use_id == null ? stream.message : undefined, event.index)
         } else if (block.type === 'thinking' && typeof block.thinking === 'string' && block.thinking && block.redacted !== true) {
           thinking.set(key, block.thinking)
-          responses.emit({ kind: 'reasoning', step: step(`thinking:${key}`), text: 'Claude Code 公开思考', detail: block.thinking, state: 'RUNNING' }, value.parent_tool_use_id == null ? stream.message : undefined, event.index)
+          responses.emit({ kind: 'reasoning', step: step(`thinking:${key}`), text: 'Claude Code 公开思考', delta: block.thinking, state: 'RUNNING' }, value.parent_tool_use_id == null ? stream.message : undefined, event.index)
         }
       } else if (event.type === 'content_block_stop') {
         if (stream.block?.index === event.index) stream.block = undefined
@@ -138,7 +138,7 @@ export async function runNativeClaude(config, io) {
         } else if (delta?.type === 'thinking_delta' && typeof delta.thinking === 'string') {
           if (finished.has(`thinking:${key}`)) throw fail('思考块完成后收到增量')
           thinking.set(key, (thinking.get(key) ?? '') + delta.thinking)
-          responses.emit({ kind: 'reasoning', step: step(`thinking:${key}`), text: 'Claude Code 公开思考', detail: thinking.get(key), state: 'RUNNING' }, value.parent_tool_use_id == null ? stream.message : undefined, event.index)
+          responses.emit({ kind: 'reasoning', step: step(`thinking:${key}`), text: 'Claude Code 公开思考', delta: delta.thinking, state: 'RUNNING' }, value.parent_tool_use_id == null ? stream.message : undefined, event.index)
         }
       }
     } else if (value.type === 'assistant') {
@@ -176,7 +176,7 @@ export async function runNativeClaude(config, io) {
               ...(string(value.parent_tool_use_id) ? { parentCallId: value.parent_tool_use_id } : {}),
               ...(typeof block.input?.command === 'string' ? { command: block.input.command } : {}) }
             toolMetadata.set(block.id, toolCall)
-            const identity = responses.emit({ kind: 'tool', step: step(`tool:${block.id}`), text: block.name, detail: JSON.stringify(block.input), state: 'RUNNING', toolCall }, value.parent_tool_use_id == null ? value.message.id : undefined, blockIndex)
+            const identity = responses.emit({ kind: 'tool', step: step(`tool:${block.id}`), text: block.name, state: 'RUNNING', toolCall }, value.parent_tool_use_id == null ? value.message.id : undefined, blockIndex)
             if (identity) toolResponses.set(block.id, identity)
           }
         }
@@ -190,7 +190,7 @@ export async function runNativeClaude(config, io) {
         finished.add(`tool:${block.tool_use_id}`)
         if (block.is_error) toolOutcomes.failed(block.tool_use_id)
         else toolOutcomes.succeeded()
-        emit({ kind: 'tool', step: step(`tool:${block.tool_use_id}`), text: '工具结果', detail: typeof block.content === 'string' ? block.content : JSON.stringify(block.content), state: block.is_error ? 'FAILED' : 'COMPLETED',
+        emit({ kind: 'tool', step: step(`tool:${block.tool_use_id}`), text: '工具结果', state: block.is_error ? 'FAILED' : 'COMPLETED',
           ...(toolResponses.has(block.tool_use_id) ? { response: toolResponses.get(block.tool_use_id) } : {}),
           toolCall: { ...toolMetadata.get(block.tool_use_id), callId: block.tool_use_id, output: block.content,
             ...(string(value.parent_tool_use_id) ? { parentCallId: value.parent_tool_use_id } : {}) } })

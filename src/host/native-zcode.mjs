@@ -1,3 +1,4 @@
+import { summarizeNativeRecord } from './native-transport.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
@@ -228,7 +229,9 @@ export async function runNativeZcode(config, io) {
         message?.method,
       )
     )
-      io.native(message)
+      io.native(message?.params?.type === 'tool.updated' && message.params.payload?.result !== undefined
+        ? { ...message, params: { ...message.params, payload: { ...message.params.payload,
+          result: summarizeNativeRecord(message.params.payload.result, 0) } } } : message)
     if (!isRecord(message) || message.jsonrpc !== undefined) {
       failure('Invalid ZCode NDJSON envelope')
       throw new Error('Invalid ZCode NDJSON envelope')
@@ -360,7 +363,7 @@ export async function runNativeZcode(config, io) {
       thoughtMessageId = payload.assistantMessageId
       thought += payload.delta
       responses.emit({ kind: 'reasoning', step: thoughtStep, text: 'ZCode 公开思考',
-        detail: thought, state: 'RUNNING' }, thoughtMessageId, 'reasoning', 0)
+        delta: payload.delta, state: 'RUNNING' }, thoughtMessageId, 'reasoning', 0)
     } else if (event.type === 'model.streaming' && payload.kind === 'tool_call') {
       // This frame carries a complete structured input even when done=false.
       // Never parse/concatenate text deltas or execute the observed tool.
@@ -394,6 +397,10 @@ export async function runNativeZcode(config, io) {
           : cachedInput ?? (!previous.inputFromStream && previous.assistantMessageId === assistantMessageId ? previous.input : undefined)
         const value = { ...previous, name: payload.toolName ?? previous.name, done, assistantMessageId, input,
           inputFromStream: explicitInput ? false : cachedInput !== undefined || previous.inputFromStream }
+        const { input: _input, result, ...metadata } = payload
+        const prior = previous.output ?? ''
+        const increment = !done && typeof result === 'string' && typeof prior === 'string' && result.startsWith(prior)
+        if (Object.hasOwn(payload, 'result')) value.output = result
         tools.set(payload.toolCallId, value)
         if (error && !deniedTools.has(payload.toolCallId)) {
           failedTools.add(payload.toolCallId)
@@ -404,11 +411,12 @@ export async function runNativeZcode(config, io) {
           step: value.step,
           text: value.name,
           state: done ? (error ? 'FAILED' : 'COMPLETED') : 'RUNNING',
-          detail: JSON.stringify(payload),
+          detail: JSON.stringify(metadata),
+          ...(increment ? { delta: result.slice(prior.length) } : {}),
           toolCall: { callId: payload.toolCallId,
             ...(nonempty(payload.toolName) ? { name: payload.toolName } : {}),
             ...(value.input === undefined ? {} : { input: value.input }),
-            ...(Object.hasOwn(payload, 'result') ? { output: payload.result } : {}) },
+            ...(!increment && (result !== undefined || done) && value.output !== undefined ? { output: value.output } : {}) },
         })
       }
     } else if (

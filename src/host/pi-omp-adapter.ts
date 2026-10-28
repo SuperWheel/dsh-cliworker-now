@@ -24,6 +24,10 @@ export type PiOmpMetadataCapture = (
   scope?: { leaseDirectory?: string },
 ) => Promise<string>
 export interface PiOmpInput extends PiOmpNativeOptions {
+  maxLineBytes?: number
+  maxRunBytes?: number
+  maxNativeLineBytes?: number
+  maxToolPreviewBytes?: number
   managedCredentials?: boolean
   cli: PiOmpCli
   executable: string

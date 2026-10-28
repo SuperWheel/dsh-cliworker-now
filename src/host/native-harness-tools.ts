@@ -210,7 +210,7 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
     const finish = (status: number, value: unknown) => {
       const serialized = JSON.stringify(value)
       response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-      response.end(serialized.length <= maximum ? serialized : JSON.stringify({ error: '工具桥响应超过限制；不会自动重试' }))
+      response.end(Buffer.byteLength(serialized) <= maximum - 4096 ? serialized : JSON.stringify({ error: '工具桥响应超过限制；不会自动重试' }))
     }
     try {
       const auth = request.headers.authorization ?? '', expected = `Bearer ${secret}`

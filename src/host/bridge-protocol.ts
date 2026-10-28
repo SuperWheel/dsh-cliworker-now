@@ -71,6 +71,9 @@ export class BridgeProtocol {
         ...(Number.isInteger(e.step) ? { step: e.step } : {}),
         ...(typeof e.state === 'string' ? { state: e.state } : {}),
         ...(typeof e.detail === 'string' ? { detail: e.detail } : {}),
+        ...((e.kind === 'tool' || e.kind === 'reasoning') && typeof e.delta === 'string' && e.delta ? { delta: e.delta } : {}),
+        ...(e.truncated === true ? { truncated: true as const } : {}),
+        ...(Number.isSafeInteger(e.outputBytes) && e.outputBytes > 0 ? { outputBytes: e.outputBytes } : {}),
         ...(typeof e.observedModel === 'string' ? { observedModel: e.observedModel } : {}),
         ...(e.response === undefined ? {} : { response: parseNativeResponse(e.response) }),
         ...(e.kind === 'tool' && pickPublicToolCall(e.toolCall)

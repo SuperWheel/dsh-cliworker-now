@@ -13,7 +13,7 @@ import {
   TerminalBlock,
   TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import { active, isUserInterrupted, type TimelineItem, type Worker } from '../shared/types.ts'
+import { active, isUserInterrupted, outputSizeLabel, TRUNCATED_PLAIN, TRUNCATED_SIZED, type TimelineItem, type Worker } from '../shared/types.ts'
 import { messageClock } from '../shared/telemetry.ts'
 import { UsageIndicator } from './telemetry.tsx'
 import { useNativePresentation } from './native-presentation.tsx'
@@ -217,10 +217,20 @@ function Reasoning({ item }: { item: TimelineItem }) {
               labels={markdownLabels()}
               variant="compact"
             />
+            <Truncated item={item} />
           </div>
         )}
       </DisclosureRow>
     </div>
+  )
+}
+/** Shown content was cut to the display budget; the CLI kept running. */
+function Truncated({ item }: { item: TimelineItem }) {
+  if (!item.truncated) return null
+  return (
+    <p className="cwn-process-note" data-truncated>
+      {item.outputBytes ? t(TRUNCATED_SIZED, { size: outputSizeLabel(item.outputBytes) }) : t(TRUNCATED_PLAIN)}
+    </p>
   )
 }
 function Value({ value, label }: { value: unknown; label: string }) {
@@ -264,7 +274,7 @@ function Tool({ item, rows, worker }: { item: TimelineItem; rows: TimelineItem[]
     chain = toolDepth(item, rows)
   const hasInput = call?.input !== undefined,
     hasOutput = call?.output !== undefined
-  const expandable = hasInput || hasOutput || !!call?.command || !!item.detail
+  const expandable = hasInput || hasOutput || !!call?.command || !!item.detail || !!item.truncated
   const title = call?.name || hostText(item.text)
   const summary =
     call?.command ??
@@ -343,6 +353,7 @@ function Tool({ item, rows, worker }: { item: TimelineItem; rows: TimelineItem[]
             {!hasInput && !hasOutput && !terminal && item.detail && (
               <Value value={detailValue(item.detail)} label={t('{title} 详情', { title })} />
             )}
+            <Truncated item={item} />
             {chain.unresolved && <p className="cwn-process-note">{t('父调用关系未完整提供；按已有顺序展示。')}</p>}
           </div>
         )}

@@ -1,3 +1,8 @@
+import { ClaudeResponseTracker } from '../src/host/primary-response.mjs'
+import { GrokResponseTracker } from '../src/host/grok-response.mjs'
+import { ZcodeResponseTracker } from '../src/host/zcode-response.mjs'
+import { NativeBlockResponses } from '../src/host/http-rpc-response.mjs'
+import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
 import { expect, it } from 'vitest'
 import { AgyProtocol } from '../src/host/protocol.ts'
 import { BridgeProtocol } from '../src/host/bridge-protocol.ts'
@@ -93,4 +98,24 @@ it('folds explicit response blocks independently of legacy display step and reta
   expect(() =>
     foldEvents([...events, { ...events[0]!, seq: 5, response: { id: 'response', blockId: 'a', index: 3 } }]),
   ).toThrow('identity changed')
+})
+
+it.each(['claude', 'grok', 'zcode', 'rpc'])('%s completion receipts never replay the last reasoning increment', cli => {
+  // SIMULATED protocol response identity; no CLI or model.
+  const frames: unknown[] = [], emit = (event: unknown) => frames.push({ type: 'event', event })
+  const event = { kind: 'reasoning', step: 1, text: '公开思考', delta: '模拟增量', state: 'RUNNING' }
+  if (cli === 'claude') {
+    const tracker = new ClaudeResponseTracker(emit)
+    tracker.start('message'); tracker.emit(event, 'message', 0); tracker.finish()
+  } else if (cli === 'grok') {
+    const tracker = new GrokResponseTracker(emit)
+    tracker.start('message'); tracker.emit(event, 'reasoning'); tracker.finish()
+  } else if (cli === 'zcode') {
+    const tracker = new ZcodeResponseTracker(emit)
+    tracker.emit(event, 'message', 'reasoning', 0); tracker.finish()
+  } else {
+    const tracker = new NativeBlockResponses('pi', emit)
+    tracker.event('message', 'reasoning', event, 0); tracker.finish('message')
+  }
+  expect(foldNativeFrames(frames).filter(row => row.kind === 'reasoning').map(row => row.detail)).toEqual(['模拟增量'])
 })

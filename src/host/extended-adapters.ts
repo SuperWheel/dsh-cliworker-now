@@ -160,6 +160,10 @@ export async function extendedLaunch(
             {
               ...input,
               cli,
+              maxLineBytes: config.maxLineBytes,
+              maxRunBytes: config.maxRunBytes,
+              maxNativeLineBytes: config.maxNativeLineBytes,
+              maxToolPreviewBytes: config.maxToolPreviewBytes,
               ...(config.harnessTools ? { harnessTools: config.harnessTools } : {}),
               accountRoot:
                 config.stateDirectory ??

@@ -1020,3 +1020,34 @@ it.each(['complete', 'interrupted'])('projects %s interleaved Claude Task stream
   } else expect(settled).toHaveLength(0)
   expect(f.realTool).not.toHaveBeenCalled()
 })
+
+it('names a truncated CLI tool preview in the receipt given to the main agent (synthetic)', async () => {
+  const usage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }
+  const f = await fixture({
+    sourceEvents: [
+      { kind: 'user', text: 'synthetic input' },
+      {
+        kind: 'tool',
+        text: 'synthetic_cli_tool',
+        step: 1,
+        state: 'COMPLETED',
+        truncated: true,
+        outputBytes: 819_200,
+        toolCall: { callId: 'existing-call', name: 'synthetic_cli_tool', input: { observed: true }, output: 'preview' },
+        response: { id: 'tool-response', blockId: 'tool', index: 0, complete: true, usage },
+      },
+      {
+        kind: 'assistant',
+        text: 'final answer',
+        step: 2,
+        response: { id: 'answer-response', blockId: 'text', index: 0, complete: true, usage },
+      },
+    ],
+  })
+  await f.begin()
+  await f.finish('completed')
+  expect(f.realTool).not.toHaveBeenCalled()
+  expect(f.agent.session.log.find((event) => event.type === 'tool/result')?.data.message.content).toEqual([
+    { type: 'text', text: 'preview\n\n[输出已截断（共 800 KB），完整内容见 CLI 原生会话或实际产物]' },
+  ])
+})

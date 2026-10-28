@@ -39,6 +39,12 @@ function safeItem(item) {
   return item
 }
 
+/** Tool metadata for `detail`; the output body travels once, in `toolCall.output`. */
+function toolDetail(item) {
+  const { aggregatedOutput: _output, result: _result, contentItems: _items, changes: _changes, ...metadata } = safeItem(item)
+  return JSON.stringify(metadata)
+}
+
 function publicTool(item) {
   return {
     callId: item.id,
@@ -56,7 +62,7 @@ function publicTool(item) {
 export async function runNativeCodex(config, io) {
   const peer = await io.openStdio(nativeCodexArgv(config), { env: config.env, cwd: config.project })
   let threadId, turnId, response = '', failure, denied = false, completed = false, started = false
-  const steps = new Map(), messages = new Map(), summaries = new Map(), finished = new Set(), tools = new Set(), receipts = new Map()
+  const steps = new Map(), messages = new Map(), finished = new Set(), tools = new Set(), receipts = new Map()
   const steerReceipts = new Map(), toolItems = new Map(), toolOutput = new Map()
   // Items whose approval was declined; their declined/failed completion is the denial itself.
   const deniedItems = new Set()
@@ -128,7 +134,7 @@ export async function runNativeCodex(config, io) {
       if (item.status === 'inProgress') markFailure('原生轮次结束时仍有未完成工具')
       else if (failed && !deniedItems.has(item.id)) toolOutcomes.failed(item.id)
       else if (!failed) toolOutcomes.succeeded()
-      io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: failed ? 'FAILED' : 'COMPLETED', detail: JSON.stringify(safeItem(item)), toolCall: { ...publicTool(item),
+      io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: failed ? 'FAILED' : 'COMPLETED', detail: toolDetail(item), toolCall: { ...publicTool(item),
         ...(item.type === 'commandExecution' && item.aggregatedOutput == null && toolOutput.has(item.id) ? { output: toolOutput.get(item.id) } : {}) } })
     }
   }
@@ -181,8 +187,7 @@ export async function runNativeCodex(config, io) {
     } else if (message.method === 'item/reasoning/summaryTextDelta') {
       if (!string(params.itemId) || typeof params.delta !== 'string' || finished.has(params.itemId) || (params.summaryIndex !== undefined && (!Number.isSafeInteger(params.summaryIndex) || params.summaryIndex < 0))) throw fail('无效或迟到的公开摘要增量')
       const key = `reasoning:${params.itemId}:${params.summaryIndex ?? 0}`
-      summaries.set(key, (summaries.get(key) ?? '') + params.delta)
-      io.event({ kind: 'reasoning', step: step(key), text: 'Codex 思考摘要', detail: summaries.get(key), state: 'RUNNING' })
+      io.event({ kind: 'reasoning', step: step(key), text: 'Codex 思考摘要', delta: params.delta, state: 'RUNNING' })
     } else if (message.method === 'item/commandExecution/outputDelta' || message.method === 'item/mcpToolCall/progress') {
       const item = toolItems.get(params.itemId)
       const command = message.method === 'item/commandExecution/outputDelta'
@@ -191,11 +196,11 @@ export async function runNativeCodex(config, io) {
       // Raw reasoning and unrelated notifications never enter this channel.
       if (!item || !tools.has(params.itemId) || finished.has(params.itemId) ||
         item.type !== (command ? 'commandExecution' : 'mcpToolCall') || typeof delta !== 'string') return
-      const output = command ? (toolOutput.get(params.itemId) ?? '') + delta : delta
-      toolOutput.set(params.itemId, output)
-      io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type,
-        state: 'RUNNING', detail: output, toolCall: { ...publicTool(item), output } })
-      io.native(message)
+      // Only the increment is sent; the completed item carries the one full output.
+      if (command) toolOutput.set(params.itemId, (toolOutput.get(params.itemId) ?? '') + delta)
+      io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: 'RUNNING',
+        ...(command ? { delta } : { toolCall: { ...publicTool(item), output: delta } }) })
+      io.native({ method: message.method, params: { ...params, ...(command ? { delta: { cliworkerOmitted: true, bytes: Buffer.byteLength(delta) } } : {}) } })
     } else if (message.method === 'item/started' || message.method === 'item/completed') {
       const item = params.item
       if (!object(item) || !string(item.id) || !string(item.type)) throw fail('无效的条目通知')
@@ -205,7 +210,7 @@ export async function runNativeCodex(config, io) {
         if (finished.has(item.id)) throw fail('条目完成后再次启动')
         tools.add(item.id)
         toolItems.set(item.id, item)
-        io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: 'RUNNING', detail: JSON.stringify(safeItem(item)), toolCall: publicTool(item) })
+        io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: 'RUNNING', detail: toolDetail(item), toolCall: publicTool(item) })
       }
     } else if (message.method === 'thread/tokenUsage/updated') {
       runUsage.active(params)

@@ -206,6 +206,9 @@ const eventSchema = z.object({
   step: z.number().optional(),
   state: z.string().optional(),
   detail: z.string().optional(),
+  delta: z.string().optional(),
+  truncated: z.literal(true).optional(),
+  outputBytes: z.number().int().safe().positive().optional(),
   response: z.unknown().transform((value, context) => {
     if (value === undefined) return undefined
     try { return parseNativeResponse(value) }

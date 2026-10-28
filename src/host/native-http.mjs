@@ -57,15 +57,19 @@ export async function closeServer(managed) {
 export function httpLimits(config) {
   let used = 0
   const maximum = config.maxRunBytes ?? 16 * 1024 * 1024
+  const line = config.maxLineBytes ?? 1024 * 1024
   return {
-    line: config.maxLineBytes ?? 1024 * 1024,
+    line,
+    // One SSE frame is the native inbound unit, bounded separately from display budgets.
+    frame: config.maxNativeLineBytes ?? line,
     json: maximum,
+    // Cumulative inbound bytes are statistics only; they never stop a run.
     add(bytes) {
       used += bytes
-      if (used > maximum) throw new Error('原生 HTTP 输出超过限制')
     },
   }
 }
+const frameTooLarge = (limit) => new Error(`原生 CLI 单个入站协议帧超过上限（${limit} 字节），已停止运行`)
 export async function httpJson(
   base,
   path,
@@ -138,7 +142,7 @@ export async function openSse(base, path, { headers, signal, limit }) {
           return
         }
         frameBytes += Buffer.byteLength(value)
-        if (frameBytes > limit.line) throw new Error('原生 SSE 帧超过限制')
+        if (frameBytes > limit.frame) throw frameTooLarge(limit.frame)
         if (value.startsWith(':')) return
         const colon = value.indexOf(':')
         const field = colon < 0 ? value : value.slice(0, colon)
@@ -163,7 +167,7 @@ export async function openSse(base, path, { headers, signal, limit }) {
             pending = pending.slice(index + 1)
             await line(raw)
           }
-          if (Buffer.byteLength(pending) > limit.line) throw new Error('原生 SSE 行超过限制')
+          if (Buffer.byteLength(pending) > limit.frame) throw frameTooLarge(limit.frame)
           if (complete) {
             if (pending || data.length) throw new Error('原生终态后仍有不完整 SSE 帧')
             return

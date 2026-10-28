@@ -417,6 +417,8 @@ export const en = {
   '{title} 结果': '{title} result',
   '{title} 详情': '{title} details',
   '父调用关系未完整提供；按已有顺序展示。': 'Parent call relationships are incomplete; shown in recorded order.',
+  '输出已截断（共 {size}），完整内容见 CLI 原生会话或实际产物': 'Output truncated ({size} in total); the full content is in the CLI\'s native session or the actual output files',
+  '输出已截断，完整内容见 CLI 原生会话或实际产物': 'Output truncated; the full content is in the CLI\'s native session or the actual output files',
   '无正文回复': 'No text reply',
   ' · CLI 报告耗时：{seconds}秒': ' · CLI-reported duration: {seconds}s',
   ' · CLI 会话累计耗时：{seconds}秒': ' · CLI session total duration: {seconds}s',

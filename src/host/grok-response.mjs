@@ -109,7 +109,8 @@ export class GrokResponseTracker {
   }
   finish(usage, complete = true) {
     if (!this.enabled) return
-    if (this.last && complete) this.output({ ...this.last,
+    if (this.last && complete) this.output({ ...this.last, delta: undefined,
+      ...(this.last.toolCall ? { toolCall: { ...this.last.toolCall, output: undefined } } : {}),
       ...(this.last.kind === 'assistant' ? { text: '' } : {}),
       response: { ...this.last.response, complete: true, ...(usage ? { usage } : {}) } })
     this.sequence++
