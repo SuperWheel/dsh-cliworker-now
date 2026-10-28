@@ -46,6 +46,18 @@ import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-plan-mode'
+import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import {
+  approvalPrompt,
+  approvalQuestion,
+  decideApproval,
+  decisionFromAnswer,
+  decisionFromOutcome,
+  runAccess,
+  type NativeApprovalDecision,
+  type PermissionState,
+  type RunOrigin,
+} from './native-approval-policy.ts'
 import {
   CLI_IDS,
   CLI_LABELS,
@@ -257,6 +269,8 @@ export class CliWorkerService extends TypertRemoteService {
   private messageSubmissions = new Map<string, { request: string; done: Promise<string> }>()
   private selectionBindings = new WeakMap<Preference, string>()
   private selectionProjects = new WeakMap<Preference, string>()
+  /** Turn origin by runId: the parent model's tool call, or the user in the Worker UI. */
+  private runOrigins?: Map<string, RunOrigin>
   private displayedBindings = new Map<string, string>()
   private settingsCatalogs?: SettingsCatalogCache
   private settingsInstance?: string
@@ -450,6 +464,11 @@ export class CliWorkerService extends TypertRemoteService {
             : parent.ctx.get('sandboxPolicy')!.resolve({ session: parent.session }).mode,
         )
         child.ctx.get('planMode')?.set(child, worker.mode === 'plan')
+        // Delegation pins a child to `never`; a Worker-UI turn asks in this child,
+        // so it follows the parent's policy. Direct log write: no model notice.
+        const childApproval = child.ctx.get('approval')
+        const policy = this.permissionState(parent).approval
+        if (childApproval && childApproval.overrideOf(child.session) !== policy) setApprovalPolicy(child.session, policy)
         // Host tools act on the parent's project; an isolated run must not write there.
         const support = input.isolated
           ? { transport: false, reason: '本轮在隔离副本中运行，未接通 DSH 工具桥，避免写入原项目' }
@@ -622,6 +641,7 @@ export class CliWorkerService extends TypertRemoteService {
       const agent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
       if (!agent) throw new Error('父会话已关闭，请重新打开后继续发送')
       this.assertExecution(agent)
+      this.assertAccessSupported(agent, cliOf(worker.preference), worker.mode)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       this.runtime.assertCliEnabled(cliOf(worker.preference))
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -636,6 +656,18 @@ export class CliWorkerService extends TypertRemoteService {
         ])
       },
       'cliworker:lifetime',
+    )
+    ctx.effect(
+      () => this.runtime.setApprovalHandler((worker, request, signal) => this.decideNativeApproval(worker, request, signal)),
+      'cliworker:approvals',
+    )
+    ctx.effect(
+      () =>
+        this.runtime.setAccessSnapshot((worker) => {
+          const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
+          return parent ? runAccess(worker.mode, this.permissionState(parent)) : undefined
+        }),
+      'cliworker:access',
     )
     this.registerTools()
     registerCliRouting(ctx)
@@ -662,12 +694,67 @@ export class CliWorkerService extends TypertRemoteService {
   }
   private assertExecution(agent: Agent): void {
     if (agent.session.header.origin === 'subagent') throw new Error('MVP 只支持主对话下的直接 CLI 子 Agent')
-    // agy's terminal sandbox cannot implement Harness's whole-process read-only
-    // policy (its native state is writable). Refuse rather than silently weaken it.
     if (agent.ctx.get('planMode')?.get(agent).active)
       throw new Error('请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界')
-    if (agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode === 'read-only')
-      throw new Error('Harness 当前为只读权限；外部 CLI 需要可写运行状态，请先明确切换项目权限')
+  }
+  /**
+   * 仅可查看 runs the CLI in its native read-only mode. A CLI without a
+   * whole-process read-only mode is refused rather than silently weakened:
+   * agy's terminal sandbox keeps its native state writable, and Qoder's ACP has
+   * no read-only plan mode.
+   */
+  private assertAccessSupported(agent: Agent, cli: CliId, mode: TaskMode): void {
+    if (runAccess(mode, this.permissionState(agent)) !== 'read-only') return
+    if (cli === 'antigravity')
+      throw new Error('Harness 当前为仅可查看；Antigravity 没有整进程只读模式，请切换权限预设或改用其他 CLI')
+    if (cli === 'qoder' || cli === 'qodercn')
+      throw new Error('Harness 当前为仅可查看；Qoder 未公开只读模式，请切换权限预设或改用其他 CLI')
+  }
+  /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
+  private permissionState(agent: Agent): PermissionState {
+    const approval = agent.ctx.get('approval')
+    return {
+      planMode: !!agent.ctx.get('planMode')?.get(agent).active,
+      sandbox: agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode,
+      // Without an approval service nothing can be asked; DSH fails closed.
+      approval: approval ? (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') : 'never',
+    }
+  }
+  /**
+   * Decide one native authorization request from the parent's current state.
+   * A parent-started turn asks on the parent page; a Worker-UI turn asks in the
+   * Worker's own native conversation. Any failure to ask is a denial.
+   */
+  private async decideNativeApproval(
+    worker: Worker,
+    request: Parameters<typeof approvalQuestion>[0],
+    signal: AbortSignal,
+  ): Promise<NativeApprovalDecision> {
+    const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
+    if (!parent) return { decision: 'deny', source: 'unavailable' }
+    const decided = decideApproval(worker.mode, this.permissionState(parent))
+    if (decided !== 'ask') return decided
+    const cli = cliOf(worker.preference)
+    const context = { worker: workerName(worker), cli: CLI_LABELS[cli], project: worker.project }
+    const control = AbortSignal.any([signal, this.disposed.signal])
+    if (this.runOrigins?.get(worker.runId ?? '') === 'agent') {
+      const response = await waitForInput(
+        parent.ctx.get('userQuestions')!.ask({ agent: parent, signal: control, questions: [approvalQuestion(request, context)] }),
+        control,
+      )
+      return decisionFromAnswer(request, response.answers.find((item) => item.id === 'cliworker_approval'))
+    }
+    const binding = worker.harnessConversation
+    const child = binding && this.ctx.agents.get(binding.sessionId as Agent['id'])
+    const approval = child?.ctx.get('approval')
+    if (!child || !approval) return { decision: 'deny', source: 'unavailable' }
+    const outcome = await approval.request({
+      agent: child,
+      toolName: `cliworker:${cli}`,
+      reason: approvalPrompt(request, context),
+      signal: control,
+    })
+    return decisionFromOutcome(outcome)
   }
   private async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
     try {
@@ -1040,6 +1127,7 @@ export class CliWorkerService extends TypertRemoteService {
     preparationId?: string,
     submissionId?: string,
     attachments?: readonly NativeAttachment[],
+    origin: RunOrigin = 'user',
   ): Promise<string> {
     if (workerId && !preparationId)
       return this.runtime.prepareFollowup(
@@ -1061,10 +1149,12 @@ export class CliWorkerService extends TypertRemoteService {
             id,
             submissionId,
             attachments,
+            origin,
           ),
         queuedAdmission?.priority ? queuedAdmission.id : undefined,
       )
     this.assertExecution(agent)
+    this.assertAccessSupported(agent, cliOf(preference), mode)
     this.runtime.assertCliEnabled(cliOf(preference))
     if (this.accounts.isBusy(cliOf(preference)))
       throw new Error('此 CLI 正在管理账号，请先关闭账号终端再启动任务')
@@ -1112,6 +1202,13 @@ export class CliWorkerService extends TypertRemoteService {
           attachments,
         )
         submission = submitted
+        // Approvals of this exact turn surface where it was started.
+        const runId = submitted.worker.runId
+        if (runId) {
+          const origins = (this.runOrigins ??= new Map())
+          origins.set(runId, origin)
+          void submitted.done.finally(() => origins.delete(runId))
+        }
         return {
           cancel: submitted.cancel,
           done: submitted.done.then((worker) => ({
@@ -1360,6 +1457,12 @@ export class CliWorkerService extends TypertRemoteService {
                 undefined,
                 { agentName, role: setup.role ?? undefined },
                 AbortSignal.any([exec.signal, this.disposed.signal]),
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                undefined,
+                'agent',
               )
             },
           }),
@@ -1411,7 +1514,7 @@ export class CliWorkerService extends TypertRemoteService {
             execute: async (args, exec) => {
               if (!exec.agent) throw new Error('A parent Agent is required')
               const worker = this.runtime.resolveWorker(exec.agent.id, args.worker_id, args.worker_name)
-              return this.followup(exec.agent.id, worker.id, args.prompt, exec.signal)
+              return this.continueWorker(exec.agent.id, worker.id, args.prompt, exec.signal, 'agent')
             },
           }),
         ),
@@ -2812,6 +2915,16 @@ export class CliWorkerService extends TypertRemoteService {
     prompt: string,
     signal: AbortSignal,
   ): Promise<string> {
+    return this.continueWorker(parentSessionId, workerId, prompt, signal, 'user')
+  }
+  /** Shared follow-up admission; `origin` decides where this turn's approvals appear. */
+  private async continueWorker(
+    parentSessionId: string,
+    workerId: string,
+    prompt: string,
+    signal: AbortSignal,
+    origin: RunOrigin,
+  ): Promise<string> {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
@@ -2827,6 +2940,12 @@ export class CliWorkerService extends TypertRemoteService {
         workerId,
         undefined,
         signal,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        origin,
       )
     } catch (error) {
       throw failure(error)

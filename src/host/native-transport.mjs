@@ -7,12 +7,32 @@ const failure = (message) => new Error(message)
 const bounded = (value, max) => Buffer.byteLength(value) <= max
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const steerRejected = () => Object.assign(new Error('原生引导通路已关闭或尚未准备，请保留消息后重试'), { code: 'STEER_REJECTED' })
+const APPROVAL_KINDS = new Set(['command', 'file', 'network', 'permission', 'tool', 'other'])
+const APPROVAL_DECISIONS = new Set(['allow-once', 'allow-session', 'deny'])
+const clip = (value, max) => (typeof value === 'string' ? value.slice(0, max) : undefined)
+/** Fail-closed answer used whenever the Host cannot decide for this run. */
+export const deniedApproval = (source) => ({ decision: 'deny', source })
+/** Public, bounded request summary; never raw CLI params or environment. */
+export function nativeApprovalRequest(request) {
+  if (!request || typeof request !== 'object' || !APPROVAL_KINDS.has(request.kind) ||
+    typeof request.summary !== 'string' || !request.summary.trim())
+    throw failure('Invalid native approval request')
+  return {
+    kind: request.kind,
+    summary: request.summary.trim().slice(0, 500),
+    ...(clip(request.detail, 4000)?.trim() ? { detail: clip(request.detail, 4000) } : {}),
+    allowSession: request.allowSession === true,
+  }
+}
 
 /** One owned native process; descendants remain inside the Host's enclosing process range. */
 export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) {
   const children = new Set()
   const controls = new Set()
   const steering = new Map()
+  // Pending Host authorization decisions; each settles exactly once.
+  const approvals = new Map()
+  let approvalSequence = 0
   let steerHandler
   let sessionId,
     result,
@@ -53,6 +73,54 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
     },
     native(record) {
       output({ type: 'native', record })
+    },
+    /**
+     * Ask the Host to decide one native authorization request. Resolves to the
+     * Host decision, or a denial when no Host relay exists for this run, the run
+     * stops, or the bridge closes first. Never rejects.
+     */
+    approval(request) {
+      let safe
+      try {
+        safe = nativeApprovalRequest(request)
+      } catch {
+        return Promise.resolve(deniedApproval('invalid'))
+      }
+      if (!config.approvalNonce || closed || result || signal?.aborted)
+        return Promise.resolve(deniedApproval(signal?.aborted ? 'stopped' : 'unavailable'))
+      if (approvals.size >= 50) return Promise.resolve(deniedApproval('unavailable'))
+      const id = `approval-${++approvalSequence}`
+      return new Promise((resolve) => {
+        const abort = () => settle(deniedApproval('stopped'))
+        const settle = (value) => {
+          if (!approvals.has(id)) return
+          approvals.delete(id)
+          signal?.removeEventListener('abort', abort)
+          resolve(value)
+        }
+        approvals.set(id, settle)
+        signal?.addEventListener('abort', abort, { once: true })
+        try {
+          output({ type: 'approval', id, request: safe })
+        } catch {
+          settle(deniedApproval('unavailable'))
+        }
+      })
+    },
+    /** Control-mailbox receiver for one Host decision. Unknown or settled ids are rejected. */
+    answerApproval(message, id) {
+      const settle = approvals.get(id)
+      if (!settle) return Promise.reject(steerRejected())
+      let value
+      try {
+        value = JSON.parse(message)
+      } catch {
+        value = undefined
+      }
+      if (!value || !APPROVAL_DECISIONS.has(value.decision) || typeof value.source !== 'string')
+        settle(deniedApproval('invalid'))
+      else settle({ decision: value.decision, source: value.source.slice(0, 40) })
+      return Promise.resolve()
     },
     registerSteer(handler) {
       if (typeof handler !== 'function' || steerHandler || closed || result) throw failure('Invalid native guidance handler')
@@ -213,6 +281,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
     },
     async close(error) {
       steerHandler = undefined
+      for (const settle of [...approvals.values()]) settle(deniedApproval('stopped'))
       const outcomes = await Promise.allSettled([...children].map((child) => child.stop()))
       const cleanup = outcomes.find((value) => value.status === 'rejected')
       if (cleanup) throw cleanup.reason

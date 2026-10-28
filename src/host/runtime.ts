@@ -84,6 +84,13 @@ import type { GeneralSettings } from '../shared/cli-settings.ts'
 import type { TokenUsage } from '../shared/telemetry.ts'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
+import {
+  ACCESS_LABELS,
+  approvalDecisionText,
+  type NativeAccess,
+  type NativeApprovalDecision,
+  type NativeApprovalRequest,
+} from './native-approval-policy.ts'
 import { workerPermissionOptions } from '../shared/worker-permissions.ts'
 import { GOAL_OBJECTIVE_LIMIT, type WorkerGoal } from '../shared/conversation-features.ts'
 import {
@@ -210,6 +217,67 @@ export class WorkerRuntime {
     return () => {
       if (this.harnessPreparation === prepare) this.harnessPreparation = undefined
     }
+  }
+  private approvalHandler?: (
+    worker: Worker,
+    request: NativeApprovalRequest,
+    signal: AbortSignal,
+  ) => Promise<NativeApprovalDecision>
+  /** Host decision for each native authorization request; absent denies. */
+  setApprovalHandler(handler: NonNullable<WorkerRuntime['approvalHandler']>): () => void {
+    this.approvalHandler = handler
+    return () => {
+      if (this.approvalHandler === handler) this.approvalHandler = undefined
+    }
+  }
+  private accessSnapshot?: (worker: Worker) => NativeAccess | undefined
+  /** Parent DSH permission tier, read once when a turn launches. */
+  setAccessSnapshot(read: NonNullable<WorkerRuntime['accessSnapshot']>): () => void {
+    this.accessSnapshot = read
+    return () => {
+      if (this.accessSnapshot === read) this.accessSnapshot = undefined
+    }
+  }
+  /**
+   * Relay one native authorization request to the Host decision and answer the
+   * runner. Every path answers: a missing handler, failure or stop is a denial.
+   */
+  private relayApproval(
+    task: Task,
+    request: NativeApprovalRequest,
+    answer: (decision: NativeApprovalDecision) => Promise<void>,
+  ): void {
+    const { worker, controller } = task
+    const runId = worker.runId
+    this.storage.append(worker, {
+      kind: 'status',
+      text: `CLI 请求授权：${request.summary}`,
+      ...(request.detail ? { detail: request.detail } : {}),
+    })
+    worker.approvalWaiting = (worker.approvalWaiting ?? 0) + 1
+    this.changed()
+    const decide = async (): Promise<NativeApprovalDecision> => {
+      if (!this.approvalHandler) return { decision: 'deny', source: 'unavailable' }
+      try {
+        return await this.approvalHandler(worker, request, controller.signal)
+      } catch {
+        return { decision: 'deny', source: controller.signal.aborted ? 'stopped' : 'unavailable' }
+      }
+    }
+    void decide().then(async (decided) => {
+      const current = worker.runId === runId
+      const decision: NativeApprovalDecision =
+        controller.signal.aborted || !current ? { decision: 'deny', source: 'stopped' } : decided
+      if (worker.approvalWaiting) worker.approvalWaiting -= 1
+      if (!worker.approvalWaiting) delete worker.approvalWaiting
+      if (current) this.storage.append(worker, { kind: 'status', text: approvalDecisionText(decision) })
+      this.changed()
+      await answer(decision).catch(() => {
+        // The runner denies on its own once its bridge or run ends.
+        if (worker.runId === runId && !controller.signal.aborted)
+          this.storage.append(worker, { kind: 'diagnostic', text: '授权决定未送达 CLI，CLI 按拒绝处理' })
+      })
+    })
   }
   private agyContextReader = new AgyContextReader()
   private hermesSessionReader = new HermesSessionTelemetryReader()
@@ -2170,13 +2238,17 @@ export class WorkerRuntime {
     const resumeConversation = worker.conversationId ?? pendingFork?.sourceConversationId
     const expectedConversation = worker.conversationId
     const nativeTransport = usesNativeBridge(worker)
+    // Bound to the prepared launch's approval mailbox once it exists.
+    let answerApproval: ((id: string, decision: NativeApprovalDecision) => Promise<void>) | undefined
     const createProtocol = nativeTransport
       ? (
           _cli: CliId,
           emit: Parameters<typeof protocolFor>[1],
           identify: Parameters<typeof protocolFor>[2],
           limit: number,
-        ) => new BridgeProtocol(emit, identify, limit)
+        ) => new BridgeProtocol(emit, identify, limit, (id, request) =>
+          this.relayApproval(task, request, (decision) =>
+            answerApproval ? answerApproval(id, decision) : Promise.reject(new Error('授权通路未就绪'))))
       : protocolFor
     // Any reply, reasoning, tool event or delivered result means the resumed turn already started.
     let observed = false
@@ -2291,7 +2363,10 @@ export class WorkerRuntime {
       await assertFirstPartyConfiguration(cliOf(worker.preference), directory, controller.signal)
       metadataReady = true
       harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated })
+      const access = this.accessSnapshot?.(worker)
+      if (access) this.storage.append(worker, { kind: 'status', text: `本轮权限：${ACCESS_LABELS[access]}` })
       const executionConfig = { ...this.config,
+        ...(access ? { access } : {}),
         ...(task.attachments?.length ? { attachments: task.attachments } : {}),
         ...(harnessLease?.connection ? { harnessTools: harnessLease.connection } : {}),
       }
@@ -2351,6 +2426,7 @@ export class WorkerRuntime {
                 this.config.timeoutMs,
                 resumeConversation,
                 nativeTransport,
+                access,
               ),
               this.storage.directory,
               controller.signal,
@@ -2371,6 +2447,7 @@ export class WorkerRuntime {
                 this.config.timeoutMs,
                 resumeConversation,
                 nativeTransport,
+                access,
               ),
             }
       // Preparation can already own a private credential snapshot. Retain its
@@ -2387,6 +2464,7 @@ export class WorkerRuntime {
                 project: directory,
                 preference: worker.preference,
                 mode: worker.mode,
+                ...(access ? { access } : {}),
                 prompt: prompt,
                 conversationId: expectedConversation,
                 ...(pendingFork?.sourceConversationId ? { forkSource: { conversationId: pendingFork.sourceConversationId, messageId: pendingFork.sourceMessageId! } } : {}),
@@ -2408,6 +2486,8 @@ export class WorkerRuntime {
             )
           : launch
       release = 'cleanup' in execution ? execution.cleanup : undefined
+      if ('answerApproval' in execution && typeof execution.answerApproval === 'function')
+        answerApproval = execution.answerApproval as typeof answerApproval
       controller.signal.throwIfAborted()
       if (
         binding !==

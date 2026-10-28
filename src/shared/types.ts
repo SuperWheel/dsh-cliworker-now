@@ -178,6 +178,8 @@ export interface Worker {
   isolationNotice?: string
   /** Set on a completed turn whose CLI recovered from failed tool steps. */
   resultNotice?: string
+  /** CLI authorization requests of the running turn still awaiting a DSH answer. */
+  approvalWaiting?: number
 }
 /**
  * `released` keeps the conversation bound to its copy path after merge or

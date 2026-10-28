@@ -2,7 +2,7 @@ import { open, lstat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { createNativeIO } from './native-transport.mjs'
-import { receiveNativeStopControl, receiveNativeGuidanceControl } from './pi-omp-control.mjs'
+import { receiveNativeStopControl, receiveNativeGuidanceControl, receiveNativeApprovalControl } from './pi-omp-control.mjs'
 
 process.umask(0o077)
 const modules = {
@@ -19,7 +19,7 @@ const modules = {
   hermes: ['native-hermes', 'runNativeHermes'],
 }
 const controller = new AbortController()
-let io, emergency, timer, error, control, guidance
+let io, emergency, timer, error, control, guidance, approval
 const stop = () => {
   if (controller.signal.aborted) return
   controller.abort(new Error('任务已停止'))
@@ -100,6 +100,12 @@ try {
     guidance = await receiveNativeGuidanceControl(config.controlDirectory, config.controlNonce,
       (message, id, attempt) => io.steer(message, id, attempt))
   }
+  if (config.approvalNonce) {
+    if (config.approvalDirectory !== resolve(dirname(path), 'approval'))
+      throw new Error('Unbound native approval control')
+    approval = await receiveNativeApprovalControl(config.approvalDirectory, config.approvalNonce,
+      (message, id) => io.answerApproval(message, id))
+  }
   timer = setTimeout(() => {
     error = new Error('Native task timed out')
     stop()
@@ -116,6 +122,7 @@ try {
   process.removeListener('SIGTERM', stop)
   process.removeListener('SIGINT', stop)
   try {
+    await approval?.close()
     await guidance?.close()
     await control?.close()
     if (io) await io.close(error)

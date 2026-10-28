@@ -27,3 +27,5 @@ export function receiveNativeStopControl(
   nonce: string,
   handle: () => Promise<void>,
 ): Promise<{ close: () => Promise<void> }>
+export const createNativeApprovalControl: typeof createPiOmpControl
+export const receiveNativeApprovalControl: typeof receivePiOmpControl

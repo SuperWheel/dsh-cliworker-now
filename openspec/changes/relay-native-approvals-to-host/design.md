@@ -17,12 +17,40 @@
 
 ## 授权请求通路
 
-CLI 反向请求 → runner 通过桥的控制通道发给 Host（新增 `approval` 控制消息，带 Worker/run 身份、CLI 原生请求摘要）→ Host 校验运行身份与当前预设 → `ask` 时调用 `approval.request({ agent: <可弹窗的 agent>, tool: 'cliworker:<cli>', reason, displayReason, signal })` → 结果回桥 → runner 回复 CLI 原生允许/拒绝。
+CLI 反向请求 → runner 写出桥帧 `{ type: 'approval', id, request }`（CLI、请求种类、命令/路径/网络目标摘要、是否支持会话级允许）→ Host 按运行身份找到该轮的审批处理器 → 决定（见下）→ Host 经桥的私有控制邮箱（与停止、引导同一机制，命令类型 `approval`）写回 `{ id, decision: 'allow-once' | 'allow-session' | 'deny' }` → runner 回复 CLI 原生允许/拒绝。runner 等待期间 CLI 本身阻塞；任务停止、桥关闭或 Host 未在本轮内答复时 runner 回复拒绝。
 
-- 发起 agent：优先插件子 Agent（若其审批策略可为 ask 且处于轮次中）；否则用父 Agent 并在 `displayReason` 写明 Worker。待 1.2 核实后定稿。
-- 并发：多个 Worker 的请求按 DSH 应答者队列逐个弹出；同一 Worker 一次一个。
-- 等待期间：暂停空闲时限，总时限照常；任务停止经 `signal` 撤回弹窗。
-- 「本会话始终允许」：仅当 DSH 应答结果明确提供该语义且 CLI 原生有对应回复（如 Codex `acceptForSession`）时映射，否则只做单次允许。
+### 1.2 核实结论（2026-10-28，见 tasks.md 1.2）
+
+- `approval.request` 只能在发起 agent 的开放轮次内调用；父 Agent 在后台派遣后轮次通常已结束，不能可靠发起。
+- DSH 原生审批面板只出现在客户端已持有（retain）的那个会话的输入区；插件子会话仅在用户打开该 Worker 会话时被持有，否则 DSH 结果为 `unavailable`。
+- `userQuestions.ask` 只要求发起者是存活的根 Agent，不要求开放轮次；不带 callId 的阻塞提问由客户端问题面板在该会话输入区呈现（插件首次选型即用此通路）。
+- DSH 审批结果只有 `allowed-once`，无「始终允许」。
+
+### 发起者与弹窗位置（用户 2026-10-28 决定）
+
+| 本轮来源 | 弹窗位置 | 实现 |
+| --- | --- | --- |
+| 主 Agent 调用（`cliworker_start` / `cliworker_followup`） | 主 Agent 页面 | 父 Agent `userQuestions.ask`：问题卡写明 Worker、CLI、请求内容与工作目录，选项「允许一次 / 本会话始终允许（仅 CLI 原生支持时）/ 拒绝」 |
+| 用户在 Worker 会话或侧栏中续聊、排队消息、重新运行 | 该 Worker 的原生会话 | 子 Agent `approval.request`（方案 A）：每轮准备时把子会话审批策略同步为父会话的有效策略（`setApprovalPolicy` 直接写日志，不注入模型消息）；客户端在该轮运行期间持有子会话，并在 Worker 卡片显示「等待审批」，用户在 Worker 会话内原生审批面板作答（只有允许一次 / 拒绝） |
+
+- 无应答者（客户端未持有对应会话、问题服务不可用、发起者不是存活 Agent、子轮次已关闭）一律拒绝，时间线记决定来源「无人应答」。
+- 来源在 `launch` 入口按调用者确定，随运行快照，不从提示文字推断。
+
+### 决定规则（每个请求到来时重新读取父会话当前状态）
+
+1. Worker 规划模式（本轮以 `plan` 启动）或父会话处于 Harness 规划模式 → 拒绝，来源「规划模式」，不弹窗。
+2. 父会话审批策略 `never`：沙箱为 `danger-full-access`（完全权限）→ 自动放行，来源「完全权限自动放行」；其他沙箱 → 拒绝，来源「权限预设」。
+3. 审批策略 `ask` → 按上表弹窗，来源「DSH 用户」（或「无人应答」）。
+
+### 本会话始终允许（用户 2026-10-28 决定）
+
+通过 CLI 原生的会话级授权实现，插件不自行记忆授权：仅当该 CLI 的授权请求原生提供会话级/始终允许的回复（如 Codex `acceptForSession`、ACP `allow_always` 选项、OpenCode `always`）时，主页面问题卡才出现此选项，选择后 runner 回复该原生值；后续是否再询问由 CLI 自己决定。Worker 会话内的 DSH 原生审批面板只有允许一次 / 拒绝。
+
+### 等待与清理
+
+- 并发：同一 Worker 一次一个请求（CLI 本身阻塞）；多个 Worker 的请求由 DSH 应答者逐个呈现。
+- 等待期间暂停空闲时限，总时限照常；任务停止、进程退出或运行身份不再匹配时撤回弹窗（`signal`）并回复拒绝，停止仍在进程范围退出后才报告成功。
+- 时间线（Worker 事件）记录请求摘要、决定与决定来源；不记录 CLI 原始参数中的环境变量或凭据。
 
 ## 各 CLI 映射（标「待核实」者须先确认原生能力，不发明）
 

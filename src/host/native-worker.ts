@@ -5,11 +5,12 @@ import type { CliId, Preference, TaskMode, Worker } from '../shared/types.ts'
 import type { RuntimeConfig } from './process.ts'
 import { windowsCodexBackgroundLaunch } from './windows-codex-launch.ts'
 import { nativeLaunchArgv } from './native-launch.mjs'
-import { createNativeStopControl, createNativeGuidanceControl } from './pi-omp-control.mjs'
+import { createNativeStopControl, createNativeGuidanceControl, createNativeApprovalControl } from './pi-omp-control.mjs'
 import { buildNativeHarnessInjection } from './native-harness-injection.mjs'
 import { prepareAgyHarnessWorkspace } from './native-agy-harness.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
+import type { NativeAccess, NativeApprovalDecision } from './native-approval-policy.ts'
 
 export const NATIVE_TRANSPORTS = {
   antigravity: 'agy-stream-v1',
@@ -56,6 +57,8 @@ export async function prepareNativeWorker<
     forkSource?: { conversationId: string; messageId: string }
     conversationId?: string
     stateDirectory: string
+    /** DSH sandbox snapshot for this run; absent keeps the historical workspace mapping. */
+    access?: NativeAccess
     /** Non-secret model IDs from the exact admitted Claude route. */
     claudeModelCandidates?: Array<{ value: string; resolvedModel: string }>
     harnessTools?: NativeHarnessConnection
@@ -69,8 +72,10 @@ export async function prepareNativeWorker<
   const request = join(directory, 'request.json')
   let control: Awaited<ReturnType<typeof createNativeStopControl>> | undefined
   let guidance: Awaited<ReturnType<typeof createNativeGuidanceControl>> | undefined
+  let approval: Awaited<ReturnType<typeof createNativeApprovalControl>> | undefined
   try {
     control = await createNativeStopControl(join(directory, 'stop'))
+    approval = await createNativeApprovalControl(join(directory, 'approval'))
     if (['codex', 'hermes'].includes(input.cli)) guidance = await createNativeGuidanceControl(join(directory, 'control'))
     const activeControl = control
     const native =
@@ -104,6 +109,8 @@ export async function prepareNativeWorker<
         stopDirectory: join(directory, 'stop'),
         stopNonce: activeControl.nonce,
         ...(guidance ? { controlDirectory: join(directory, 'control'), controlNonce: guidance.nonce } : {}),
+        approvalDirectory: join(directory, 'approval'),
+        approvalNonce: approval.nonce,
         ...(native ? { nativeExecutable: native.argv[0] } : {}),
         timeoutMs: config.timeoutMs,
         maxLineBytes: config.maxLineBytes,
@@ -111,14 +118,18 @@ export async function prepareNativeWorker<
       }),
       { mode: 0o600, flag: 'wx' },
     )
+    const activeApproval = approval
     return {
       ...launch,
       argv: [process.execPath, bridgePath(), request],
+      answerApproval: (id: string, decision: NativeApprovalDecision) =>
+        activeApproval.steer(JSON.stringify(decision), id),
       env: { ...injected.env, ELECTRON_RUN_AS_NODE: '1' },
       stop: activeControl.stop,
       ...(guidance ? { steer: guidance.steer } : {}),
       cleanup: async () => {
         try {
+          await activeApproval.close()
           await guidance?.close()
           await activeControl.close()
           await launch.cleanup?.()
@@ -129,6 +140,7 @@ export async function prepareNativeWorker<
     }
   } catch (error) {
     try {
+      await approval?.close()
       await guidance?.close()
       await control?.close()
     } finally {

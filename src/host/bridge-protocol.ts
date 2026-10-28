@@ -3,6 +3,7 @@ import type { EventInput, ProtocolResult } from './protocol.ts'
 import { pickPublicToolCall } from './public-tool-projection.ts'
 import { parseNativeResponse } from './native-response.mjs'
 import { parseRequestState } from './native-request-state.ts'
+import { parseNativeApprovalRequest, type NativeApprovalRequest } from './native-approval-policy.ts'
 
 /** Internal framing for owned native transports; never accepts arbitrary event kinds. */
 export class BridgeProtocol {
@@ -16,6 +17,8 @@ export class BridgeProtocol {
     private emit: (event: EventInput) => void,
     private identify: (id: string) => void,
     private maxLineBytes: number,
+    /** Host relay for native authorization requests; absent runs keep the runner's denial. */
+    private approval?: (id: string, request: NativeApprovalRequest) => void,
   ) {}
   feed(chunk: Buffer | string) {
     this.pending += typeof chunk === 'string' ? chunk : this.decoder.write(chunk)
@@ -76,6 +79,10 @@ export class BridgeProtocol {
         ...(e.kind === 'tool' && pickPublicToolCall(e.toolCall)
           ? { toolCall: pickPublicToolCall(e.toolCall) } : {}),
       })
+    } else if (v.type === 'approval') {
+      if (typeof v.id !== 'string' || !/^approval-\d{1,6}$/.test(v.id)) throw new Error('Invalid approval frame')
+      const request = parseNativeApprovalRequest(v.request)
+      this.approval?.(v.id, request)
     } else if (v.type === 'result') {
       if (!this.conversationId && v.status === 'ERROR' && typeof v.error === 'string')
         throw new Error(v.error.slice(0, 4096))

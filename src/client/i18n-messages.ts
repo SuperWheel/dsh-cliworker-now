@@ -209,6 +209,7 @@ export const en = {
   // panel
   '排队中': 'Queued',
   '运行中': 'Running',
+  '等待审批': 'Waiting for approval',
   '正在停止': 'Stopping',
   '已完成': 'Completed',
   '失败': 'Failed',

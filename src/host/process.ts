@@ -13,6 +13,7 @@ import type { CliExecutablePathStore } from './cli-executable-paths.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
+import type { NativeAccess } from './native-approval-policy.ts'
 
 export interface ProcessBackend {
   resolveExecutable(name: string): Promise<string>
@@ -31,6 +32,8 @@ export interface RuntimeConfig {
   attachments?: readonly NativeAttachment[]
   /** Per-run Host-private tool connection; never persisted as deployment settings. */
   harnessTools?: NativeHarnessConnection
+  /** Per-run DSH permission tier snapshot; absent keeps the historical workspace mapping. */
+  access?: NativeAccess
   /** Host-private machine-local CLI path preferences, shared by all entry points. */
   cliExecutablePaths?: CliExecutablePathStore
   executable: string

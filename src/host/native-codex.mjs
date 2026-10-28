@@ -33,6 +33,36 @@ export function nativeCodexArgv(config) {
   return [argv[0], 'app-server', '--stdio', ...preserved]
 }
 
+const APPROVAL_METHODS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval']
+const SANDBOX_TYPES = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' }
+
+/**
+ * Native thread settings for this run's DSH tier. Plan never asks; 完全权限
+ * uses Codex's own full-access mode; the confined tiers ask on request. A run
+ * without a Host tier keeps the historical workspace mapping.
+ */
+export function codexPermission(config) {
+  const plan = config.mode === 'plan'
+  const sandbox = plan ? 'read-only' : config.access ?? 'workspace-write'
+  const approvalPolicy = plan || !config.access || sandbox === 'danger-full-access' ? 'never' : 'on-request'
+  return { sandbox, approvalPolicy, sandboxType: SANDBOX_TYPES[sandbox], legacy: !config.access }
+}
+
+/** Public summary of one Codex approval request for the DSH prompt. */
+export function codexApprovalRequest(method, params) {
+  const reason = string(params.reason) ? `原因：${params.reason}` : undefined
+  if (method === 'item/commandExecution/requestApproval') {
+    const command = Array.isArray(params.command) ? params.command.join(' ') : params.command
+    return { kind: 'command', summary: `执行命令：${string(command) ? command : '（CLI 未提供命令）'}`,
+      detail: [reason, string(params.cwd) ? `命令目录：${params.cwd}` : undefined].filter(Boolean).join('\n'), allowSession: true }
+  }
+  if (method === 'item/fileChange/requestApproval')
+    return { kind: 'file', summary: string(params.grantRoot) ? `写入目录：${params.grantRoot}` : '修改文件',
+      detail: reason, allowSession: true }
+  return { kind: 'permission', summary: '扩大沙箱权限', allowSession: true,
+    detail: [reason, object(params.permissions) ? `请求：${JSON.stringify(params.permissions).slice(0, 2000)}` : undefined].filter(Boolean).join('\n') }
+}
+
 function safeItem(item) {
   // The app-server exposes raw reasoning separately. Only its public summary is used.
   if (item.type === 'reasoning') return { id: item.id, type: item.type, summary: item.summary }
@@ -142,19 +172,28 @@ export async function runNativeCodex(config, io) {
     }
     if (typeof message.method !== 'string') return
     const params = object(message.params) ? message.params : {}
-    // Server requests are denied even if native configuration would normally approve them.
+    // Authorization requests go to the Host (DSH preset and user); other
+    // interactive requests (user input, elicitation) remain unsupported.
     if (message.id !== undefined) {
-      const approval = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval'].includes(message.method)
-      if (approval) {
-        denied = true
-        if (typeof params.itemId === 'string') deniedItems.add(params.itemId)
+      if (APPROVAL_METHODS.includes(message.method)) {
+        const itemId = typeof params.itemId === 'string' ? params.itemId : undefined
+        void io.approval(codexApprovalRequest(message.method, params)).then((answer) => {
+          const allowed = answer.decision !== 'deny'
+          if (!allowed) {
+            denied = true
+            if (itemId) deniedItems.add(itemId)
+          }
+          io.event({ kind: 'diagnostic', text: allowed ? 'Codex 原生授权请求已批准' : 'Codex 原生交互请求已拒绝' })
+          if (message.method !== 'item/permissions/requestApproval')
+            return peer.send({ id: message.id, result: { decision: !allowed ? 'decline' : answer.decision === 'allow-session' ? 'acceptForSession' : 'accept' } })
+          return peer.send({ id: message.id, result: allowed && object(params.permissions)
+            ? { permissions: params.permissions, scope: answer.decision === 'allow-session' ? 'session' : 'turn' }
+            : { permissions: { network: null, fileSystem: null }, scope: 'turn' } })
+        }).catch(() => markFailure('Codex 授权回复未送达'))
+        return
       }
-      else markFailure('CLI 请求额外交互授权，插件未批准')
-      io.event({ kind: 'diagnostic', text: 'Codex 原生交互请求已拒绝', ...(approval ? {} : { state: 'FAILED' }) })
-      if (['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(message.method))
-        return peer.send({ id: message.id, result: { decision: 'decline' } })
-      else if (message.method === 'item/permissions/requestApproval')
-        return peer.send({ id: message.id, result: { permissions: { network: null, fileSystem: null }, scope: 'turn' } })
+      markFailure('CLI 请求额外交互授权，插件未批准')
+      io.event({ kind: 'diagnostic', text: 'Codex 原生交互请求已拒绝', state: 'FAILED' })
       return peer.send({ id: message.id, error: { code: -32601, message: 'CLI Worker does not provide interactive approvals or user input' } })
     }
     if (!started) {
@@ -228,14 +267,14 @@ export async function runNativeCodex(config, io) {
     io.signal?.throwIfAborted()
     await peer.request('initialize', { clientInfo: { name: 'cli_worker_native', title: 'CLI Worker', version: '0.8.4' }, capabilities: { experimentalApi: false, requestAttestation: false, explicitGatewayOauth: true } })
     await peer.send({ method: 'initialized', params: {} })
-    const mode = config.mode === 'plan' ? 'read-only' : 'workspace-write'
-    const options = { cwd: config.project, model: config.preference.model, approvalPolicy: 'never', sandbox: mode }
+    const permission = codexPermission(config)
+    const options = { cwd: config.project, model: config.preference.model, approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox }
     const result = await peer.request(config.conversationId ? 'thread/resume' : 'thread/start', {
       ...options,
       ...(config.conversationId ? { threadId: config.conversationId, excludeTurns: true } : {}),
     })
     if (!string(result?.thread?.id) || (config.conversationId && result.thread.id !== config.conversationId)) throw fail('原生会话身份与绑定不一致')
-    if (result.model !== config.preference.model || !string(result.cwd) || resolve(result.cwd) !== resolve(config.project) || result.approvalPolicy !== 'never' || result.sandbox?.type !== (config.mode === 'plan' ? 'readOnly' : 'workspaceWrite') || result.sandbox?.networkAccess === true)
+    if (result.model !== config.preference.model || !string(result.cwd) || resolve(result.cwd) !== resolve(config.project) || result.approvalPolicy !== permission.approvalPolicy || result.sandbox?.type !== permission.sandboxType || (permission.legacy && result.sandbox?.networkAccess === true))
       throw fail('原生会话未保留所选模型、目录或权限')
     if (config.preference.effort !== 'default' && result.reasoningEffort !== undefined && result.reasoningEffort !== null && result.reasoningEffort !== config.preference.effort) throw fail('原生思考强度与选型不一致')
     threadId = result.thread.id
@@ -264,8 +303,11 @@ export async function runNativeCodex(config, io) {
       // Public summaries are opt-in (some models default to none). Never request raw reasoning.
       summary: 'auto',
       cwd: config.project,
-      approvalPolicy: 'never',
-      sandboxPolicy: config.mode === 'plan' ? { type: 'readOnly' } : { type: 'workspaceWrite', writableRoots: [config.project], networkAccess: false },
+      approvalPolicy: permission.approvalPolicy,
+      // A tiered run keeps the user's native network and writable roots for its
+      // sandbox type; plan and legacy runs still pin the stricter turn policy.
+      ...(config.mode === 'plan' ? { sandboxPolicy: { type: 'readOnly' } }
+        : permission.legacy ? { sandboxPolicy: { type: 'workspaceWrite', writableRoots: [config.project], networkAccess: false } } : {}),
     }, { timeoutMs: config.timeoutMs })
     if (!string(turn?.turn?.id) || (turnId && turn.turn.id !== turnId)) throw fail('启动回执缺少匹配轮次')
     turnId = turn.turn.id

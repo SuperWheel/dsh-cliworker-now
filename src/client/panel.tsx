@@ -55,6 +55,8 @@ interface PanelProps {
   api: API
   openNativeSettings?: () => void
   renderHarnessConversation?: (worker: Worker) => ReactNode
+  /** Background holder for running Workers' native sessions (approval panels). */
+  renderSessionRetention?: (workers: readonly Worker[]) => ReactNode
   activeHarnessSessionId?: string
 }
 export function Panel(props: PanelProps) {
@@ -79,6 +81,7 @@ function SessionPanel({
   api,
   openNativeSettings,
   renderHarnessConversation,
+  renderSessionRetention,
   activeHarnessSessionId,
   drafts,
   editDraft,
@@ -429,6 +432,7 @@ function SessionPanel({
   }
   return (
     <section className="cwn" aria-label="CLI Worker Now">
+      {renderSessionRetention?.(snapshot.workers)}
       <header className="cwn-head">
         {selected ? (
           <>

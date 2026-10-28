@@ -210,6 +210,7 @@ async function fixture() {
     binding: 'synthetic-binding',
   }))
   const launch = vi.fn(() => 'synthetic-background-receipt')
+  // The model tool continues through the shared path with origin 'agent'.
   const followup = vi.fn(async () => 'synthetic-followup-receipt')
   const resolveWorker = vi.fn(() => ({ id: 'synthetic-worker' }))
   const service = Object.assign(Object.create(CliWorkerService.prototype), {
@@ -218,7 +219,7 @@ async function fixture() {
     chooseDispatch,
     chooseQoderVariant: vi.fn(async () => 'qoder'),
     launch,
-    followup,
+    continueWorker: followup,
     runtime: { resolveWorker },
     disposed: new AbortController(),
   })
@@ -493,17 +494,17 @@ describe('native prompt/tool integration', () => {
         ...f.agent,
         ctx: { get: (name: string) => (name === 'planMode' ? { get: () => ({ active: true }) } : undefined) },
       },
-      {
-        ...f.agent,
-        ctx: {
-          get: (name: string) =>
-            name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'read-only' }) } : undefined,
-        },
-      },
     ])
       await expect(f.start('glm', {}, target as unknown as Agent)).rejects.toThrow()
     await expect(f.start('kimi', { read_only: true })).rejects.toThrow('不支持只读')
     expect(f.launch).not.toHaveBeenCalled()
+    // 仅可查看 now admits dispatch; the CLI runs in its native read-only mode.
+    const readOnly = {
+      ...f.agent,
+      ctx: { get: (name: string) => (name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'read-only' }) } : undefined) },
+    }
+    await expect(f.start('glm', {}, readOnly as unknown as Agent)).resolves.toBeDefined()
+    expect(f.launch).toHaveBeenCalledTimes(1)
   })
 
   it('keeps exact named-worker followup on its existing worker', async () => {
@@ -516,7 +517,7 @@ describe('native prompt/tool integration', () => {
       } as any)
     expect(result).toBe('synthetic-followup-receipt')
     expect(f.resolveWorker).toHaveBeenCalledWith(f.agent.id, undefined, '小林')
-    expect(f.followup).toHaveBeenCalledWith(f.agent.id, 'synthetic-worker', 'Synthetic next task', f.signal)
+    expect(f.followup).toHaveBeenCalledWith(f.agent.id, 'synthetic-worker', 'Synthetic next task', f.signal, 'agent')
     expect(f.launch).not.toHaveBeenCalled()
   })
 })

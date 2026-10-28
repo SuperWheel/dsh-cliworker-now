@@ -120,7 +120,11 @@ export function WorkerCard({
                 <span className="cwn-worker-title">{worker.title}</span>
                 <span className={`cwn-worker-status ${worker.status}`}>
                   <span className={`cwn-dot ${worker.status}`} />
-                  {isUserInterrupted(worker) ? t('已停止') : t(status[worker.status])}
+                  {isUserInterrupted(worker)
+                    ? t('已停止')
+                    : worker.status === 'running' && worker.approvalWaiting
+                      ? t('等待审批')
+                      : t(status[worker.status])}
                 </span>
               </span>
             </button>

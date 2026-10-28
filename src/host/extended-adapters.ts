@@ -194,6 +194,7 @@ export async function extendedLaunch(
       launch = await prepareNativeWorker(
         prepared,
         { cli, project, preference, mode, prompt, conversationId, stateDirectory: state,
+          ...(config.access ? { access: config.access } : {}),
           ...(config.attachments?.length ? { attachments: config.attachments } : {}),
           ...(config.harnessTools ? { harnessTools: config.harnessTools } : {}) },
         config,
@@ -212,6 +213,7 @@ export async function extendedLaunch(
       ...('activate' in launch && launch.activate ? { activate: launch.activate } : {}),
       ...('steer' in launch && launch.steer ? { steer: launch.steer } : {}),
       ...('stop' in launch && launch.stop ? { stop: launch.stop } : {}),
+      ...('answerApproval' in launch && launch.answerApproval ? { answerApproval: launch.answerApproval } : {}),
       cleanup: async () => {
         try {
           await cleanupLaunch()

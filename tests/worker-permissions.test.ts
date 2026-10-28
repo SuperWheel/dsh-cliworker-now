@@ -245,10 +245,10 @@ describe('Host Worker permission changes', () => {
     const open = f.ctx.sessionPersistence.open.bind(f.ctx.sessionPersistence)
     vi.spyOn(f.ctx.sessionPersistence, 'open').mockImplementationOnce(async (...args) => {
       const writer = await open(...args)
-      setSandboxMode(f.parent.session, 'read-only')
+      f.parent.ctx.get('planMode')!.set(f.parent, true)
       return writer
     })
-    await expect(f.save('plan')).rejects.toThrow('只读')
+    await expect(f.save('plan')).rejects.toThrow('规划模式')
     expect(f.runtime.get(f.parent.id, f.worker.id).mode).toBe('accept-edits')
     const writer = await open(f.child.id, 'write')
     await writer.close()
@@ -425,13 +425,13 @@ describe('Host Worker permission changes', () => {
       expect(f.backend.spawn).not.toHaveBeenCalled()
     },
   )
-  it('keeps a read-only parent authoritative for both the read state and save admission', async () => {
+  it('keeps a read-only parent authoritative for the child sandbox, never wider', async () => {
     const f = await fixture()
     setSandboxMode(f.parent.session, 'read-only')
-    expect(await f.read()).toMatchObject({ writable: false, reason: expect.stringContaining('只读') })
-    await expect(f.save('plan')).rejects.toThrow('只读')
-    await expect(f.save('accept-edits')).rejects.toThrow('只读')
-    expect(f.runtime.get(f.parent.id, f.worker.id)).toEqual(f.worker)
+    // 仅可查看 admits the Worker setting; its runs stay capped at read-only.
+    expect(await f.read()).toMatchObject({ writable: true })
+    await f.save('accept-edits')
+    expect(f.child.ctx.get('sandboxPolicy')!.resolve({ session: f.child.session }).mode).toBe('read-only')
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it('does not advertise or save a plan mode for Hermes at either Host or runtime boundary', async () => {

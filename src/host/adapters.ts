@@ -45,6 +45,7 @@ import {
 } from '../shared/types.ts'
 import { AgyProtocol, type EventInput } from './protocol.ts'
 import { CliProtocol } from './cli-protocol.ts'
+import type { NativeAccess } from './native-approval-policy.ts'
 import {
   agyArguments,
   ProcessCleanupUnconfirmedError,
@@ -277,6 +278,8 @@ export function workerArguments(
   timeoutMs: number,
   conversationId?: string,
   nativeTransport = false,
+  /** DSH permission tier for this run; absent keeps the historical workspace mapping. */
+  access?: NativeAccess,
 ): string[] {
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
@@ -299,9 +302,9 @@ export function workerArguments(
       '-c',
       `model_reasoning_effort=${JSON.stringify(preference.effort)}`,
       '-c',
-      `sandbox_mode=${JSON.stringify(mode === 'plan' ? 'read-only' : 'workspace-write')}`,
+      `sandbox_mode=${JSON.stringify(mode === 'plan' ? 'read-only' : (access ?? 'workspace-write'))}`,
       '-c',
-      'approval_policy="never"',
+      `approval_policy=${JSON.stringify(mode === 'plan' || !access || access === 'danger-full-access' ? 'never' : 'on-request')}`,
       task,
     ]
   if (cli === 'claude')
