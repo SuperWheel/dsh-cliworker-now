@@ -4,13 +4,15 @@ import { GrokDurableContextObserver } from './grok-durable-context.mjs'
 
 // `grok agent stdio` ignores the global permission flags before `agent`; the
 // read-only policy lives in the run's private config (prepareGrok). The flag
-// is only replaced, never duplicated, and 1.0.62's ACP lists no modes.
+// is only replaced, never duplicated, and 1.0.62's ACP lists no modes. 完全权限
+// uses the agent subcommand's own --always-approve.
 export const grokAcpArgv = (config) =>
   replaceNativeArguments(
     config.argv,
     ['--output-format', '--resume', '--single', '--tools', '--permission-mode'],
     [],
-    [...(config.mode === 'plan' ? [] : ['--permission-mode', 'acceptEdits']), 'agent', '--no-leader', 'stdio'],
+    [...(config.mode === 'plan' ? [] : ['--permission-mode', 'acceptEdits']), 'agent',
+      ...(config.mode !== 'plan' && config.access === 'danger-full-access' ? ['--always-approve'] : []), '--no-leader', 'stdio'],
   )
 
 export const runNativeGrok = (config, io) => {

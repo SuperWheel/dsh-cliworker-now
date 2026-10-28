@@ -1,7 +1,7 @@
 import { runNativeAcp } from './native-acp.mjs'
 import { readQoderDurableContextAsync } from './qoder-durable-context.mjs'
 
-/** Qoder's ACP uses acceptEdits; its CLI flag spelling is accept_edits. */
+/** Qoder's ACP uses acceptEdits / yolo; its CLI flags are accept_edits / bypass_permissions. */
 export const qoderAcpArgv = (config) => {
   if (config.mode !== 'accept-edits')
     throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
@@ -16,8 +16,10 @@ export const runNativeQoder = (config, io) =>
     argv: qoderAcpArgv,
     effortId: 'reasoning_effort',
     off: 'none',
-    editMode: 'acceptEdits',
+    editMode: config.access === 'danger-full-access' ? 'yolo' : 'acceptEdits',
     modeConfigId: 'mode',
+    // proceed_always is session-scoped; proceed_always_and_save persists and is never chosen.
+    sessionOption: (options) => options.find((option) => option.kind === 'allow_always' && option.optionId === 'proceed_always'),
     encode: (value) => value,
     toolName: (update) => update._meta?.qoder?.toolName ?? update.title,
     onResult: async (result, sessionId, nativeIo) => {

@@ -25,7 +25,7 @@ const event=(type,payload,extra={})=>out({method:'session/event',params:{session
 const finish=()=>{event('turn.completed',{inputId,resultType:stopped?'cancelled':'success',response:scenario==='tool-boundary'||scenario==='model-usage'?'AFTER':'HELLO',usage:scenario==='model-usage'?{inputTokens:99999,outputTokens:1}:undefined});out({method:'state.updated',params:{sessionId,reason:'prompt_completed'}});};
 createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
- if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==false)process.exit(23);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
+ if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==false)process.exit(23);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
  if(q.jsonrpc!==undefined)process.exit(20);
  if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1}});
  if(q.method==='provider/updateAccountConfig')return reply(q,{receivedRevision:q.params.revision,providerCount:1,status:'received'});
@@ -101,7 +101,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(scenario==='changed-model'){event('session.updated',{providerId:'wrong',modelId:'wrong'});return;}
   event('model.streaming',{kind:'text_delta',delta:'HELLO'},{eventId:'delta-one'});
   if(scenario==='cancel')return;
-  if(scenario.startsWith('permission')){event('tool.updated',{toolCallId:'denied-tool',toolName:'Bash',kind:'scheduled'});return out({id:'permission',method:'interaction/requestPermission',params:{sessionId,toolCallId:'denied-tool',toolName:'Bash'}});}
+  if(scenario.startsWith('permission')){event('tool.updated',{toolCallId:'denied-tool',toolName:'Bash',kind:'scheduled'});return out({id:'permission',method:'interaction/requestPermission',params:{sessionId,toolCallId:'denied-tool',toolName:'Bash',reason:'Run synthetic command',riskLevel:'medium',input:{command:'synthetic --flag'},options:[]}});}
   if(['tool-failure','tool-recovered','batch-failure'].includes(scenario)){
    // Simulated order: a write fails, the batch closes it, and the CLI may carry on.
    event('tool.updated',{kind:'call',toolCallId:'write-tool',toolName:'write',input:{path:'synthetic'}});
@@ -122,7 +122,8 @@ createInterface({input:process.stdin}).on('line',line=>{
 });
 `
 
-async function fixture(scenario = 'success', continuation = false) {
+async function fixture(scenario = 'success', continuation = false,
+  host: { access?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-native-zcode-fixture-')))
   roots.push(root)
   const script = join(root, 'agent.mjs'),
@@ -195,14 +196,18 @@ async function fixture(scenario = 'success', continuation = false) {
     maxLineBytes: 1024 * 1024,
     maxRunBytes: 8 * 1024 * 1024,
     ...(continuation ? { conversationId: 'zcode-fixture' } : {}),
+    ...(host.access ? { access: host.access } : {}),
+    ...(host.decision ? { approvalNonce: 'synthetic-nonce' } : {}),
   }
   const controller = new AbortController(),
     frames: any[] = []
-  const io = createNativeIO(
+  const io: any = createNativeIO(
     config,
     (line: string) => {
       const frame = JSON.parse(line)
       frames.push(frame)
+      if (host.decision && frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: host.decision, source: 'user' }), frame.id), 5)
       if (scenario === 'cancel' && frame.type === 'event' && frame.event.kind === 'assistant')
         controller.abort(new Error('Simulated stop'))
     },
@@ -318,6 +323,29 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     const { result, records } = await fixture('wrong-model')
     expect(result.status).toBe('ERROR')
     expect(records.some((record) => record.method === 'session/send')).toBe(false)
+  })
+  it.each([
+    ['allow-once', 'allow', 'SUCCESS'],
+    // No confirmed session-scoped reply; permissionUpdates would persist a project rule.
+    ['allow-session', 'allow', 'SUCCESS'],
+    ['deny', 'deny', 'UNCERTAIN'],
+  ] as const)('relays a permission request to the Host: %s → %s', async (decision, reply, status) => {
+    const { result, records, frames } = await fixture('permission', false, { decision })
+    expect(frames.find((frame) => frame.type === 'approval').request).toEqual({
+      kind: 'command', summary: 'Bash：Run synthetic command', detail: 'synthetic --flag', allowSession: false,
+    })
+    const answer = records.find((record) => record.id === 'permission').result
+    expect(answer.decision).toBe(reply)
+    expect(answer).not.toHaveProperty('permissionUpdates')
+    expect(result.status).toBe(status)
+  })
+  it.each([
+    ['workspace-write', 'edit'],
+    ['danger-full-access', 'yolo'],
+  ])('selects the native mode for the DSH tier %s → %s', async (access, mode) => {
+    const { result, records } = await fixture('success', false, { access })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.find((record) => record.method === 'session/setMode')?.params.mode ?? 'edit').toBe(mode)
   })
   it('denies additional permissions and reports a natively completed turn as unverified, not success', async () => {
     const { result, records, frames } = await fixture('permission')

@@ -9,6 +9,7 @@ import { nativeTelemetryProjections } from '../src/client/harness-telemetry-data
 // Native protocols below are simulated by explicit local fixture processes.
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeOpenCode } from '../src/host/native-opencode.mjs'
+import { serverConfiguration } from '../src/host/native-session-http.mjs'
 import { runNativeMimo } from '../src/host/native-mimo.mjs'
 import { runNativeHermes } from '../src/host/native-hermes.mjs'
 import { cleanupHermesHttpHome, prepareHermesHttpHome } from '../src/host/native-hermes-home.mjs'
@@ -108,7 +109,7 @@ const server=createServer(async(req,res)=>{
  if(path==='/v1/runs/'+run+'/events'){
    sse=res;res.writeHead(200,{'Content-Type':'text/event-stream'});res.flushHeaders()
    const values=(mode==='fragmented'?['开','发','任','务','，',' ','好','的']:['模拟正文']).map((delta,i)=>({event:'message.delta',run_id:run,seq:i+1,delta}))
-   if(mode.startsWith('permission'))values.push({event:'approval.request',run_id:run,seq:2,request_id:'approval_SYNTHETIC',choices:['once','deny']})
+   if(mode.startsWith('permission'))values.push({event:'approval.request',run_id:run,seq:2,request_id:'approval_SYNTHETIC',command:'synthetic --flag',description:'模拟危险命令',choices:mode==='permission-session'?['once','session','always','deny']:['once','deny']})
    if(mode==='tool-failure'||mode==='permission-tool-failure'||mode==='tool-recovered')values.push({event:'tool.started',run_id:run,seq:3,tool:'terminal'},{event:'tool.failed',run_id:run,seq:4,tool:'terminal',error:true})
    if(mode==='tool-recovered')values.push({event:'tool.started',run_id:run,seq:5,tool:'write_file'},{event:'tool.completed',run_id:run,seq:6,tool:'write_file',error:false})
    if(mode==='tools')values.push({event:'tool.started',run_id:run,seq:2,tool:'read_file'},{event:'tool.completed',run_id:run,seq:3,tool:'read_file',error:false})
@@ -189,19 +190,24 @@ async function setup(cli: 'opencode' | 'mimo' | 'hermes', mode = 'success') {
   return { config, record, root, source }
 }
 async function run(cli: 'opencode' | 'mimo' | 'hermes', mode = 'success', resume = false,
-  guide?: (io: any, controller: AbortController) => Promise<void>, extraEnv: Record<string, string> = {}) {
+  guide?: (io: any, controller: AbortController) => Promise<void>, extraEnv: Record<string, string> = {},
+  /** Simulated Host decision; enables the approval channel. */
+  decision?: 'allow-once' | 'allow-session' | 'deny') {
   const task = await setup(cli, mode),
     frames: any[] = [],
     controller = new AbortController()
   Object.assign(task.config.env, extraEnv)
   if (resume) task.config.conversationId = cli === 'hermes' ? 'api_SYNTHETIC' : 'ses_SYNTHETIC'
+  if (decision) task.config.approvalNonce = 'synthetic-nonce'
   const children: any[] = []
   let guidance: Promise<void> | undefined
-  const io = createNativeIO(
+  const io: any = createNativeIO(
     task.config,
     (line: string) => {
       const frame = JSON.parse(line)
       frames.push(frame)
+      if (decision && frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id), 5)
       if (mode === 'cancel' && frame.type === 'event' && frame.event.kind === 'assistant') controller.abort()
       if (guide && !guidance && frame.type === 'event' && frame.event.kind === 'assistant') {
         guidance = guide(io, controller)
@@ -403,6 +409,25 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(requests.filter((row: any) => row.path?.endsWith('prompt_async'))).toHaveLength(1)
       expectServerCloseReceipt(requests)
     })
+    it.each([
+      ['allow-once', 'once', 'SUCCESS'],
+      // `always` can outlive the session, so a session grant is never offered or sent.
+      ['allow-session', 'once', 'SUCCESS'],
+      ['deny', 'reject', 'UNCERTAIN'],
+    ] as const)(`${cli}: relays permission.asked to the Host: %s → %s`, async (decision, reply, status) => {
+      const { frames, requests } = await run(cli, 'permission', false, undefined, {}, decision)
+      expect(frames.find((row) => row.type === 'approval').request).toEqual({ kind: 'command', summary: 'bash', allowSession: false })
+      expect(requests.find((row: any) => row.path?.startsWith('/permission/')).body.reply).toBe(reply)
+      expect(frames.at(-1).status).toBe(status)
+      expectServerCloseReceipt(requests)
+    })
+    it(`${cli}: maps the DSH tier to the native permission rules, never wider`, () => {
+      const base = { mode: 'accept-edits', preference: { model: 'synthetic/model' }, env: {} }
+      const rules = (config: any) => JSON.parse(serverConfiguration(config, cli).env[`${cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'}_PERMISSION`])
+      expect(rules({ ...base, access: 'workspace-write' })).toMatchObject({ '*': 'ask', edit: 'allow', bash: 'ask' })
+      expect(rules({ ...base, access: 'danger-full-access' })).toMatchObject({ '*': 'allow', edit: 'allow', bash: 'allow', task: 'deny' })
+      expect(rules({ ...base, mode: 'plan', access: 'danger-full-access' })).toMatchObject({ '*': 'ask', edit: 'deny', bash: 'deny' })
+    })
     it(`${cli}: reports a turn that ends right after a tool error as unverified`, async () => {
       const { frames, requests } = await run(cli, 'tool-failure')
       expect(frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
@@ -519,6 +544,20 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
       code: 'ENOENT',
     })
     expectServerCloseReceipt(requests)
+  })
+  it.each([
+    ['permission-session', 'allow-session', 'session', true, 'SUCCESS'],
+    // Without a native session choice, a session grant falls back to once; `always` is never sent.
+    ['permission', 'allow-session', 'once', false, 'SUCCESS'],
+    ['permission-session', 'allow-once', 'once', true, 'SUCCESS'],
+    ['permission-session', 'deny', 'deny', true, 'UNCERTAIN'],
+  ] as const)('relays a Hermes approval.request (%s) to the Host: %s → %s', async (mode, decision, choice, allowSession, status) => {
+    const { frames, requests } = await run('hermes', mode, false, undefined, {}, decision)
+    expect(frames.find((row) => row.type === 'approval').request).toEqual({
+      kind: 'command', summary: '模拟危险命令', detail: 'synthetic --flag', allowSession,
+    })
+    expect(requests.find((row: any) => row.path?.endsWith('/approval')).body).toMatchObject({ choice, request_id: 'approval_SYNTHETIC' })
+    expect(frames.at(-1).status).toBe(status)
   })
   it.each(['permission', 'permission-tool-failure'])('reports %s as uncertain when the Hermes run completes', async (mode) => {
     const { frames, requests } = await run('hermes', mode)

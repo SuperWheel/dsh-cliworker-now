@@ -17,6 +17,8 @@ export const runNativeKimi = (config, io) => {
     effortId: 'thinking',
     off: 'off',
     editMode: 'default',
+    // Kimi maps approve_always to a session-scoped grant.
+    sessionOption: (options) => options.find((option) => option.kind === 'allow_always' && option.optionId === 'approve_always'),
     encode: (value) => value,
     awaitPostPromptUsage: true,
     onReady: (_state, sessionId, nativeIo) => usage.prepare(sessionId, nativeIo.signal),

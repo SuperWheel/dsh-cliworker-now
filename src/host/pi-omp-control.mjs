@@ -257,3 +257,7 @@ export async function createNativeStopControl(directory, options = {}) {
 }
 export const receiveNativeStopControl = (directory, nonce, handle) =>
   receiveControl(directory, nonce, handle, 'stop')
+/** Host -> runner authorization decisions; one mailbox per prepared launch. */
+export const createNativeApprovalControl = (directory, options = {}) => createControl(directory, options, 'approval')
+export const receiveNativeApprovalControl = (directory, nonce, handle) =>
+  receiveControl(directory, nonce, handle, 'approval')

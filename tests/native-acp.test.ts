@@ -84,7 +84,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   }
   if(scenario==='changed-model'){pending=q;return out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'config_option_update',configOptions:[{id:'model',currentValue:'wrong'}]}}});}
   if(scenario==='cancel'){pending=q;return;}
-  if(scenario==='permission'){pending=q;return out({jsonrpc:'2.0',id:'permission-fixture',method:'session/request_permission',params:{sessionId:'session-fixture',options:[{kind:'allow_once',optionId:'allow'},{kind:'reject_once',optionId:'reject'}]}});}
+  if(scenario==='permission'){pending=q;return out({jsonrpc:'2.0',id:'permission-fixture',method:'session/request_permission',params:{sessionId:'session-fixture',toolCall:{toolCallId:'tool-permission',title:'Run synthetic command',kind:'execute',rawInput:{command:'synthetic --flag'}},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:'approve_always'},{kind:'reject_once',optionId:'reject'}]}});}
   if(scenario==='tool-failure'||scenario==='tool-recovered')out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'tool_call',toolCallId:'tool-fixture',title:'Simulated edit',status:'failed'}}});
   if(scenario==='tool-recovered')update('session-fixture','AFTER','delta-recovered');
   if(scenario==='bad-envelope')return out({id:q.id,result:{stopReason:'end_turn'}});
@@ -101,7 +101,13 @@ createInterface({input:process.stdin}).on('line',line=>{
 });
 `
 
-async function fixture(cli: 'kimi' | 'grok', scenario = 'success', continuation = false) {
+async function fixture(
+  cli: 'kimi' | 'grok',
+  scenario = 'success',
+  continuation = false,
+  /** Simulated Host decision; enables the approval channel. */
+  decision?: 'allow-once' | 'allow-session' | 'deny',
+) {
   const root = await mkdtemp(join(tmpdir(), 'cliworker-native-acp-fixture-'))
   roots.push(root)
   const script = join(root, 'agent.mjs'),
@@ -146,14 +152,17 @@ async function fixture(cli: 'kimi' | 'grok', scenario = 'success', continuation 
     maxLineBytes: 1024 * 1024,
     maxRunBytes: 8 * 1024 * 1024,
     ...(continuation ? { conversationId: 'session-fixture' } : {}),
+    ...(decision ? { approvalNonce: 'synthetic-nonce', mode: 'accept-edits' } : {}),
   }
   const controller = new AbortController(),
     frames: any[] = []
-  const io = createNativeIO(
+  const io: any = createNativeIO(
     config,
     (line: string) => {
       const frame = JSON.parse(line)
       frames.push(frame)
+      if (decision && frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id), 5)
       if (scenario === 'cancel' && frame.type === 'event' && frame.event.kind === 'assistant')
         controller.abort(new Error('Simulated stop'))
     },
@@ -365,6 +374,23 @@ describe('Native ACP runners (simulated native processes)', () => {
     expect(records.find((record) => record.id === 'permission-fixture')?.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'reject' },
     })
+  })
+  it.each([
+    ['kimi', 'allow-once', 'allow', 'SUCCESS'],
+    ['kimi', 'allow-session', 'approve_always', 'SUCCESS'],
+    ['kimi', 'deny', 'reject', 'UNCERTAIN'],
+    // Grok's always-allow persists to the project, so a session grant falls back to once.
+    ['grok', 'allow-session', 'allow', 'SUCCESS'],
+    ['grok', 'deny', 'reject', 'UNCERTAIN'],
+  ] as const)('%s relays a permission request to the Host: %s → %s', async (cli, decision, optionId, status) => {
+    const { frames, records, result } = await fixture(cli, 'permission', false, decision)
+    expect(frames.find((frame) => frame.type === 'approval').request).toEqual({
+      kind: 'command', summary: 'Run synthetic command', detail: 'synthetic --flag', allowSession: cli === 'kimi',
+    })
+    expect(records.find((record) => record.id === 'permission-fixture')?.result).toEqual({
+      outcome: { outcome: 'selected', optionId },
+    })
+    expect(result.status).toBe(status)
   })
   it.each(['kimi', 'grok'] as const)(
     '%s attempts native cancel after a real fixture output chunk',

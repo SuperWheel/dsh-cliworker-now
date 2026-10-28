@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import remoteContribution from 'dsh-cliworker-now/remote'
 import { active } from '../shared/types.ts'
+import { ApprovalSessionRetention } from './approval-session-retention.tsx'
 import { Panel } from './panel.tsx'
 import { NativePresentationProvider } from './native-presentation.tsx'
 import { HarnessConversation, readHarnessConversationBinding } from './harness-conversation.tsx'
@@ -129,6 +130,9 @@ export function apply(ctx: Context): void {
             {...props}
             sessionId={parentSessionId}
             activeHarnessSessionId={address?.childSessionId}
+            renderSessionRetention={(workers) => (
+              <ApprovalSessionRetention services={harnessServices} parentSessionId={parentSessionId} workers={workers} />
+            )}
             renderHarnessConversation={(worker) => (
               <HarnessConversation
                 key={worker.id}

@@ -219,6 +219,18 @@ function validateIdentity(status, runID, sessionID) {
     throw new Error('Hermes 运行或会话身份不一致')
 }
 
+/** Only a native session grant; `always` would also write the permanent allowlist. */
+export const hermesSessionGrant = (event) => Array.isArray(event.choices) && event.choices.includes('session')
+/** Public summary of one Hermes approval.request (command already redacted by Hermes). */
+export function hermesApprovalRequest(event) {
+  return {
+    kind: 'command',
+    summary: (string(event.description) ? event.description : '执行危险命令').slice(0, 500),
+    ...(string(event.command) ? { detail: event.command.slice(0, 4000) } : {}),
+    allowSession: hermesSessionGrant(event),
+  }
+}
+
 export async function runNativeHermes(config, io) {
   if (config.mode !== 'accept-edits') throw new Error('Hermes 当前原生通路不支持只读派遣')
   const selection = selected(config),
@@ -419,11 +431,16 @@ export async function runNativeHermes(config, io) {
       } else if (event.event === 'approval.request') {
         const requestID = event.request_id ?? event.prompt_id
         if (!string(requestID)) throw new Error('Hermes 审批请求缺少身份')
-        permissionDenied = true
-        io.event({ kind: 'diagnostic', text: 'Hermes 额外授权已拒绝', detail: JSON.stringify(event) })
+        // The run waits on this request; the Host decides from the DSH preset and user.
+        const answer = await io.approval(hermesApprovalRequest(event))
+        const choice = answer.decision === 'deny' ? 'deny' : answer.decision === 'allow-session' && hermesSessionGrant(event) ? 'session' : 'once'
+        if (choice === 'deny') {
+          permissionDenied = true
+          io.event({ kind: 'diagnostic', text: 'Hermes 额外授权已拒绝', detail: JSON.stringify(event) })
+        } else io.event({ kind: 'diagnostic', text: 'Hermes 额外授权已批准' })
         await request(`/v1/runs/${encodeURIComponent(runID)}/approval`, 'POST', {
           request_id: requestID,
-          choice: 'deny',
+          choice,
           ...(Number.isSafeInteger(event.execution_generation)
             ? { execution_generation: event.execution_generation }
             : {}),

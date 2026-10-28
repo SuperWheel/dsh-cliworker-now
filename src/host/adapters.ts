@@ -45,6 +45,7 @@ import {
 } from '../shared/types.ts'
 import { AgyProtocol, type EventInput } from './protocol.ts'
 import { CliProtocol } from './cli-protocol.ts'
+import type { NativeAccess } from './native-approval-policy.ts'
 import {
   agyArguments,
   ProcessCleanupUnconfirmedError,
@@ -277,6 +278,8 @@ export function workerArguments(
   timeoutMs: number,
   conversationId?: string,
   nativeTransport = false,
+  /** DSH permission tier for this run; absent keeps the historical workspace mapping. */
+  access?: NativeAccess,
 ): string[] {
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
@@ -285,7 +288,7 @@ export function workerArguments(
   if ((cli === 'qoder' || cli === 'qodercn')) {
     if (!nativeTransport) throw new Error('Qoder 仅支持已确认的原生 ACP 通信，请新建任务')
     if (mode === 'plan') throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
-    return [executable, '--acp', '--permission-mode', 'accept_edits', '--model', preference.model]
+    return [executable, '--acp', '--permission-mode', access === 'danger-full-access' ? 'bypass_permissions' : 'accept_edits', '--model', preference.model]
   }
   if (cli === 'codex')
     return [
@@ -299,9 +302,9 @@ export function workerArguments(
       '-c',
       `model_reasoning_effort=${JSON.stringify(preference.effort)}`,
       '-c',
-      `sandbox_mode=${JSON.stringify(mode === 'plan' ? 'read-only' : 'workspace-write')}`,
+      `sandbox_mode=${JSON.stringify(mode === 'plan' ? 'read-only' : (access ?? 'workspace-write'))}`,
       '-c',
-      'approval_policy="never"',
+      `approval_policy=${JSON.stringify(mode === 'plan' || !access || access === 'danger-full-access' ? 'never' : 'on-request')}`,
       task,
     ]
   if (cli === 'claude')
@@ -316,7 +319,7 @@ export function workerArguments(
       preference.model,
       ...(preference.effort !== 'default' ? ['--effort', preference.effort] : []),
       '--permission-mode',
-      mode === 'plan' ? 'plan' : 'acceptEdits',
+      mode === 'plan' ? 'plan' : access === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits',
       ...(conversationId ? ['--resume', conversationId] : []),
       task,
     ]

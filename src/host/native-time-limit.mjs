@@ -26,6 +26,7 @@ export function readTimeLimit(config, now = Date.now()) {
 /** `onExpire` runs once, with the limit that was reached first. */
 export function startRunTimers({ deadlineAt, idleMs }, onExpire) {
   let expired = false,
+    holds = 0,
     idle
   const expire = (kind) => {
     if (expired) return
@@ -43,7 +44,19 @@ export function startRunTimers({ deadlineAt, idleMs }, onExpire) {
   return {
     /** Any native frame or diagnostic output renews the idle window. */
     touch() {
-      if (!expired && idleMs > 0) arm()
+      if (!expired && idleMs > 0 && !holds) arm()
+    },
+    /** Pauses the idle window (not the deadline) until the returned release runs, e.g. while a user decides an approval. */
+    hold() {
+      holds++
+      clearTimeout(idle)
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        holds--
+        if (!holds && !expired && idleMs > 0) arm()
+      }
     },
     close() {
       expired = true
