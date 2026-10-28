@@ -347,6 +347,17 @@ export const active = (status: WorkerStatus) =>
   status === 'queued' || status === 'running' || status === 'stopping'
 
 /** Fold repeated step updates without duplicating streamed text or the final response. */
+/** Binary units, matching the configured byte budgets. */
+export function outputSizeLabel(bytes: number) {
+  return bytes >= 1_048_576 ? `${(bytes / 1_048_576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+/** Source text of the truncation marker; the Client translates the same keys. */
+export const TRUNCATED_SIZED = '输出已截断（共 {size}），完整内容见 CLI 原生会话或实际产物'
+export const TRUNCATED_PLAIN = '输出已截断，完整内容见 CLI 原生会话或实际产物'
+export function truncationNote(row: { truncated?: true; outputBytes?: number }) {
+  if (!row.truncated) return ''
+  return row.outputBytes ? TRUNCATED_SIZED.replace('{size}', outputSizeLabel(row.outputBytes)) : TRUNCATED_PLAIN
+}
 function appendDelta(row: TimelineItem, delta: string) {
   if (row.kind !== 'tool') {
     row.detail = (row.detail ?? '') + delta

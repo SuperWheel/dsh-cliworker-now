@@ -16,6 +16,7 @@ import {
   type NativeResponseUsage,
   type Worker,
   type WorkerEvent,
+  truncationNote,
 } from '../shared/types.ts'
 import type {
   HarnessConversationDependencies,
@@ -463,12 +464,13 @@ export class HarnessConversationStream {
                 content: [
                   {
                     type: 'text',
+                    // A cut preview names itself, so the main agent never mistakes it for the whole output.
                     text:
-                      output === undefined
+                      (output === undefined
                         ? (current.detail ?? current.text)
                         : typeof output === 'string'
                           ? output
-                          : json(output),
+                          : json(output)) + (current.truncated ? `\n\n[${truncationNote(current)}]` : ''),
                   },
                 ],
               }),

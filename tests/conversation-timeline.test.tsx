@@ -290,3 +290,22 @@ it('places a queue-start user before its preparation process without moving mid-
   ])
   expect(visible(midrun)).toEqual(['div', 'article', 'article'])
 })
+
+it('marks a truncated tool output and reasoning block, and keeps old full records unmarked (synthetic)', async () => {
+  const items = [
+    row('r:user', 'user', '模拟请求'),
+    row('r:tool:1', 'tool', '模拟读取', { state: 'COMPLETED', truncated: true, outputBytes: 819_200,
+      toolCall: { callId: 'read', name: 'commandExecution', command: 'synthetic read', output: '模拟预览' } }),
+    row('r:reasoning:2', 'reasoning', '模拟思考', { state: 'COMPLETED', detail: '模拟思考预览', truncated: true }),
+    row('old:tool:3', 'tool', '模拟旧工具', { state: 'DONE', detail: '模拟旧完整结果' }),
+    row('r:reply', 'assistant', '模拟回复'),
+  ]
+  const result = await render(items)
+  await expandRows(result)
+  const marks = result.root.findAll((node) => node.props['data-truncated'] === true)
+  expect(marks.map((node) => node.children.join(''))).toEqual([
+    '输出已截断（共 800 KB），完整内容见 CLI 原生会话或实际产物',
+    '输出已截断，完整内容见 CLI 原生会话或实际产物',
+  ])
+  expect(JSON.stringify(result.toJSON())).toContain('模拟旧完整结果')
+})

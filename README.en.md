@@ -201,6 +201,17 @@ The plugin offers only the effort levels the CLI supports. When the CLI provides
 
 </details>
 
+<details>
+<summary><strong>Output shows “truncated” when reading large files, or the model says the file was cut off.</strong></summary>
+
+These are two different budgets:
+
+- **Plugin display budget** (plugin settings): one tool output or reasoning block shows at most `maxToolPreviewBytes` (default 256 KiB), and one run shows at most `maxRunBytes` (default 16 MiB) of tool output and reasoning. Beyond that, only the display is cut and marked “Output truncated; the full content is in the CLI's native session or the actual output files”. The CLI keeps running and the run's result is unchanged; tool receipts passed to the main agent carry the same note. Running output is sent as increments only, never resent as it grows.
+- **Inbound frame protection**: a single protocol frame from the CLI larger than `maxNativeLineBytes` (default 32 MiB) stops the run, and the error names the limit.
+- **The CLI's own model-visible budget**: how much tool output the model actually reads is decided by the CLI. The plugin neither overrides it nor offers a setting for it, and raising the plugin budgets above does not let the model see more. For Codex it is decided by the `max_output_tokens` the model sets on each call and by Codex's `tool_output_token_limit` setting; the Codex launched by the plugin reads `$CODEX_HOME/config.toml` (`~/.codex/config.toml` when unset), and a project `.codex/config.toml` or command-line settings take precedence. gpt-6.x also uses the code-mode exec/wait tools in native Codex, so it behaves the same as in the plugin.
+
+</details>
+
 More account, path and model rules are in [usage details](doc/usage-details.en.md).
 
 ## Development

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeCodex } from '../src/host/native-codex.mjs'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
+import { foldEvents, truncationNote, type WorkerEvent } from '../src/shared/types.ts'
 
 const directories: string[] = []
 afterEach(() => { for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true }) })
@@ -114,5 +115,36 @@ describe('native output budget (simulated Codex app-server)', () => {
     const { result } = await run('oversized-frame', { maxNativeLineBytes: 65_536 })
     expect(result).toMatchObject({ type: 'result', status: 'ERROR' })
     expect(result.error).toMatch(/入站.*65536/)
+  })
+})
+
+describe('timeline fold of bounded output (synthetic events)', () => {
+  const event = (seq: number, extra: Partial<WorkerEvent>): WorkerEvent =>
+    ({ seq, runId: 'synthetic-run', time: '', kind: 'tool', text: 'synthetic read', step: 1, ...extra }) as WorkerEvent
+  it('still renders old records that resent cumulative output', () => {
+    const [tool] = foldEvents([
+      event(1, { state: 'RUNNING', detail: '模拟', toolCall: { callId: 'read', output: '模拟' } }),
+      event(2, { state: 'RUNNING', detail: '模拟输出', toolCall: { callId: 'read', output: '模拟输出' } }),
+      event(3, { state: 'COMPLETED', detail: '{"id":"read"}', toolCall: { callId: 'read', output: '模拟输出' } }),
+    ])
+    expect(tool).toMatchObject({ state: 'COMPLETED', toolCall: { output: '模拟输出' } })
+    expect(tool!.truncated).toBeUndefined()
+  })
+  it('appends increments per step and lets the completed output and marker win', () => {
+    const [tool, reasoning] = foldEvents([
+      event(1, { state: 'RUNNING', toolCall: { callId: 'read', command: 'synthetic read', output: null } }),
+      event(2, { state: 'RUNNING', delta: '模拟' }),
+      event(3, { kind: 'reasoning', text: '模拟思考', step: 2, state: 'RUNNING', delta: '第一段' }),
+      event(4, { state: 'RUNNING', delta: '输出', truncated: true }),
+      event(5, { kind: 'reasoning', text: '模拟思考', step: 2, state: 'RUNNING', delta: '第二段' }),
+    ])
+    expect(tool).toMatchObject({ state: 'RUNNING', truncated: true, toolCall: { output: '模拟输出' } })
+    expect(reasoning).toMatchObject({ detail: '第一段第二段' })
+    const [done] = foldEvents([
+      event(1, { state: 'RUNNING', delta: '模拟' }),
+      event(2, { state: 'COMPLETED', toolCall: { output: '完整预览' }, truncated: true, outputBytes: 2_097_152 }),
+    ])
+    expect(done).toMatchObject({ toolCall: { output: '完整预览' }, truncated: true, outputBytes: 2_097_152 })
+    expect(truncationNote(done!)).toBe('输出已截断（共 2.0 MB），完整内容见 CLI 原生会话或实际产物')
   })
 })

@@ -141,7 +141,7 @@ export interface Config {
   maxLineBytes?: number
   /** Maximum output bytes per run (default 16777216); for native CLIs, the run's display budget. */
   maxRunBytes?: number
-  /** Maximum bytes of one native CLI protocol frame (default 8388608). */
+  /** Maximum bytes of one native CLI protocol frame (default 33554432). */
   maxNativeLineBytes?: number
   /** Maximum shown bytes of one native tool output or reasoning block (default 262144). */
   maxToolPreviewBytes?: number
@@ -249,8 +249,8 @@ export class CliWorkerService extends TypertRemoteService {
     graceMs: z.natural().min(100).max(30000).default(DEFAULT_CONFIG.graceMs),
     maxLineBytes: z.natural().min(1024).default(DEFAULT_CONFIG.maxLineBytes),
     maxRunBytes: z.natural().min(1024).default(DEFAULT_CONFIG.maxRunBytes),
-    maxNativeLineBytes: z.natural().min(1024).max(67_108_864).default(DEFAULT_CONFIG.maxNativeLineBytes),
-    maxToolPreviewBytes: z.natural().min(1024).default(DEFAULT_CONFIG.maxToolPreviewBytes),
+    maxNativeLineBytes: z.natural().min(1024).max(67_108_864).default(DEFAULT_CONFIG.maxNativeLineBytes!),
+    maxToolPreviewBytes: z.natural().min(1024).default(DEFAULT_CONFIG.maxToolPreviewBytes!),
     maxTimelineItems: z.natural().min(10).default(DEFAULT_CONFIG.maxTimelineItems),
   })
   private runtime: WorkerRuntime

@@ -72,7 +72,7 @@ export const DEFAULT_CONFIG: RuntimeConfig = {
   graceMs: 5000,
   maxLineBytes: 1_048_576,
   maxRunBytes: 16_777_216,
-  maxNativeLineBytes: 8_388_608,
+  maxNativeLineBytes: 33_554_432,
   maxToolPreviewBytes: 262_144,
   maxTimelineItems: 1000,
 }
