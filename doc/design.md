@@ -1182,5 +1182,6 @@ OpenSpec 变更 `judge-run-outcome-by-native-terminal`（起因：用户反馈 W
 - 终态顺序：本轮失败（协议/身份不一致、原生轮次失败或中断、缺少终态、仍有未完成工具、非零退出、需要额外交互输入）→ 失败；有授权拒绝 → 结果待核实（既有规则）；最后一步工具失败后直接结束 → 结果待核实，提示核查产物、不要自动重试；否则成功，有失败步骤时附说明「本轮有 N 个工具步骤失败，CLI 已自行处理」。
 - 成功帧新增可选 `notice`（仅 SUCCESS，≤2000 字符）：`native-transport.mjs` → `bridge-protocol.ts` → `Worker.resultNotice`（每轮重置）→ 时间线诊断「本轮结果说明」与主 Agent 结果的 `notice`/guidance。runtime 待核实与说明分支改按 `BridgeProtocol` 判断，Pi/OMP 同样生效。
 - 各 CLI 的工具失败信号沿用原识别：Codex 条目 `failed`（`inProgress` 收尾改为未完成工具）、Claude `is_error`、ACP `status==='failed'`、ZCode 单工具 error 与批次 `errorCount`（扣除已知失败和被拒工具）、OpenCode/MiMo `state.status==='error'`、Hermes `tool.failed`、Antigravity `tool_info.error`、Pi/OMP `isError`。
-- Antigravity 步骤状态 `ERROR` 仍判本轮失败（无法确认是否只是工具级信号）；`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
+- Antigravity：真实 agy 的工具失败为步骤状态 `ERROR` 加 `tool_info.error`（2026-10-28 实测，`TOOL_ERROR`），按工具失败计、不算未完成工具；没有 `tool_info.error` 的 `ERROR` 状态仍判本轮失败。`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
+- 真实验收（2026-10-28）：Codex、Claude Code、Qoder、ZCode、OpenCode、Antigravity 读取不存在的文件失败后自行写出产物，均为完成并附失败步骤数。
 - 持久化无迁移，历史 failed 记录不重算。

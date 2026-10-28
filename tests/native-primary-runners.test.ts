@@ -136,7 +136,11 @@ function agyTurn(){
  if(scenario==='tool-info-error')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'DONE',tool_name:'Read',tool_info:{name:'Read',error:{type:'SyntheticToolError',message:'explicit synthetic failure'}}}});
  if(scenario==='invalid-step-state')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'checkpoint',state:'NOT_A_NATIVE_STATE'}});
  const chunks=scenario==='fragmented'?['合','成','回','复']:['合成回复'];chunks.forEach((text_delta,index)=>send({event:'step_update',step_update:{conversation_id:id,step_index:1,step_type:'agent_response',state:index===chunks.length-1?'DONE':'RUNNING',text_delta,...(scenario==='response-usage'?{usage:{input_tokens:100,output_tokens:20,cache_read_tokens:300,total_tokens:120,thinking_tokens:0}}:{})}}));
- if(toolFails)send({event:'step_update',step_update:{conversation_id:id,step_index:3,step_type:'tool',state:'DONE',tool_name:'Write',tool_info:{name:'Write',error:{type:'SyntheticToolError',message:'synthetic write failure'}}}});
+ // Shape observed from real agy on 2026-10-28: a failed tool ends as state ERROR with tool_info.error.
+ if(toolFails){
+  send({event:'step_update',step_update:{conversation_id:id,step_index:3,step_type:'tool',state:'ACTIVE',tool_name:'Write',tool_info:{name:'Write'}}});
+  send({event:'step_update',step_update:{conversation_id:id,step_index:3,step_type:'tool',state:'ERROR',tool_name:'Write',tool_info:{name:'Write',error:{type:'TOOL_ERROR',message:'synthetic write failure'}}}});
+ }
  if(scenario==='tool-recovered'){
   send({event:'step_update',step_update:{conversation_id:id,step_index:4,step_type:'tool',state:'DONE',tool_name:'Write',tool_info:{name:'Write'}}});
   send({event:'step_update',step_update:{conversation_id:id,step_index:5,step_type:'agent_response',state:'DONE',text_delta:'模拟恢复后的回复'}});

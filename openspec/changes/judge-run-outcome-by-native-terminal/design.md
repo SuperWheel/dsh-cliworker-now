@@ -13,7 +13,7 @@
 - 实现：各 runner 共用 `src/host/native-tool-outcomes.mjs`（`failed(id)` 按身份去重、`succeeded()`、`settle(io, response, scope)`）；Pi/OMP 直接读取 `count`/`lastFailed` 输出终态。runtime 的待核实与说明分支改按 `protocol instanceof BridgeProtocol` 判断，Pi/OMP 的 UNCERTAIN 不再当作失败。
 - 各 CLI 的「工具失败」信号沿用现有识别（Codex `status/exitCode/success/error`，Claude `is_error`，ACP `status==='failed'`，ZCode `kind:'error'`/`success!==true`/批次 `errorCount`，OpenCode/MiMo `state.status==='error'`，Hermes `tool.failed`，agy `tool_info.error`，Pi/OMP `isError`）。
 - ZCode 批次 `errorCount` 与 Codex `turn/completed.items` 回放可能重复报告同一工具，计数按工具身份去重。
-- agy：只有 `tool_info.error` 改记工具失败；步骤状态 `ERROR` 仍为本轮失败（无法确认它只是工具级信号）。`tool_info.error` 改设 `invalidStep`，继续阻止续聊汇总冲突转为结果待核实，保持 worker-run-outcomes「AGY 续聊汇总冲突终态」不变。
+- agy：`tool_info.error` 改记工具失败。真实 agy 的失败工具步骤以状态 `ERROR` 结束并带 `tool_info.error`（2026-10-28 实测，类型 `TOOL_ERROR`），此组合是合法终态、不算未完成工具；没有 `tool_info.error` 的 `ERROR` 状态仍为本轮失败。`tool_info.error` 改设 `invalidStep`，继续阻止续聊汇总冲突转为结果待核实，保持 worker-run-outcomes「AGY 续聊汇总冲突终态」不变。
 - 未完成工具：Codex 条目以 `inProgress` 收尾、OpenCode/MiMo 工具状态既非 completed 也非 error 时，记为本轮失败。Pi/OMP 不在本变更新增此检查。
 - Claude Code：授权拒绝带 `interrupt:true` 仍为失败（不变）；仅工具 `is_error` 不再锁死 ERROR。
 

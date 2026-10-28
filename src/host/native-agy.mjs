@@ -64,7 +64,10 @@ export async function runNativeAgy(config, io) {
       }
       const toolError = item.step_type === 'tool' && object(item.tool_info) &&
         item.tool_info.error !== undefined && item.tool_info.error !== null && item.tool_info.error !== '' && item.tool_info.error !== false
-      if ((state && !['PENDING', 'QUEUED', 'ACTIVE', 'RUNNING', 'IN_PROGRESS', 'DONE'].includes(state)) ||
+      // agy ends a failed tool step as state ERROR with tool_info.error (observed 2026-10-28); that is the step's own outcome.
+      const failedTool = toolError && state === 'ERROR'
+      if (failedTool && steps.get(index)?.type === 'tool') steps.get(index).failedTool = true
+      if ((state && !failedTool && !['PENDING', 'QUEUED', 'ACTIVE', 'RUNNING', 'IN_PROGRESS', 'DONE'].includes(state)) ||
         (item.state !== undefined && typeof item.state !== 'string') ||
         (item.text_delta !== undefined && typeof item.text_delta !== 'string') ||
         (item.error !== undefined && item.error !== null && item.error !== '' && item.error !== false) || item.is_error === true) invalidItem = true
@@ -118,7 +121,7 @@ export async function runNativeAgy(config, io) {
     const outcome = await peer.done
     io.signal?.throwIfAborted()
     const observed = currentResponse()
-    const unfinishedTool = [...steps.values()].some((item) => item.type === 'tool' && item.state !== 'DONE')
+    const unfinishedTool = [...steps.values()].some((item) => item.type === 'tool' && item.state !== 'DONE' && !(item.state === 'ERROR' && item.failedTool))
     const allDone = !invalidStep && steps.size > 0 && [...steps.values()].every((item) => item.state === 'DONE') && [...responses].some(([index, text]) => index !== undefined && steps.get(index)?.state === 'DONE' && text.trim()) && (result.error === undefined || typeof result.error === 'string')
     const conflict = outcome.exitCode === 0 && config.conversationId && sessionId === config.conversationId && result.status === 'ERROR' && allDone
     if (conflict) {
