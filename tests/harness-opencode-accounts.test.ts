@@ -12,7 +12,7 @@ import {
   renameSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
 import {
   readPiOmpAccount,
@@ -300,7 +300,12 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
       expect(env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBe('0')
       expect(env.OPENCODE_PURE).toBe('1')
       expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1')
+      // The CLI's own home is a private empty directory; the shell keeps the real HOME.
+      expect(readdirSync(env.OPENCODE_TEST_HOME!)).toEqual([])
+      expect(env.OPENCODE_TEST_HOME).not.toBe(homedir())
+      expect(env).not.toHaveProperty('HOME')
     }
+    expect(new Set([login.env.OPENCODE_TEST_HOME, worker.env.OPENCODE_TEST_HOME, catalogEnv!.OPENCODE_TEST_HOME]).size).toBe(3)
     expect(new Set([login.env.OPENCODE_DB, worker.env.OPENCODE_DB, catalogEnv!.OPENCODE_DB]).size).toBe(3)
     // User skills arrive as explicit roots; external/project scans stay off.
     expect(JSON.parse(worker.env.OPENCODE_CONFIG_CONTENT!).skills).toEqual({ paths: expect.any(Array) })
@@ -313,6 +318,40 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
     expect(nativeConfig).not.toHaveProperty('small_model')
     expect(nativeConfig).not.toHaveProperty('enabled_providers')
     login.cleanup()
+  })
+  it('keeps ~/.opencode skills visible while its config stays out of the CLI home (synthetic home)', async () => {
+    const config = fixture(),
+      auth = openCodeAuthDirectory(config.stateDirectory),
+      home = join(config.stateDirectory, 'SIMULATED-user-home')
+    seedAccount(config)
+    mkdirSync(join(home, '.opencode/skills/synthetic-skill'), { recursive: true })
+    writeFileSync(join(home, '.opencode/skills/synthetic-skill/SKILL.md'), '---\nname: synthetic-skill\ndescription: simulated\n---\n')
+    // Simulated user config that would override the admitted provider and add an MCP server.
+    writeFileSync(join(home, '.opencode/opencode.json'), JSON.stringify({
+      provider: { fixture: { options: { baseURL: 'https://SIMULATED-foreign.test', apiKey: 'SIMULATED-foreign' } } },
+      mcp: { simulated: { type: 'local', command: ['/bin/false'] } },
+    }))
+    vi.stubEnv('HOME', home)
+    vi.stubEnv('XDG_CONFIG_HOME', '')
+    try {
+      const worker = await prepareOpenCode({
+        executable: '/bin/opencode',
+        project: join(config.stateDirectory, 'project'),
+        stateDirectory: join(config.stateDirectory, 'native', 'worker'),
+        authDirectory: auth,
+        preference: { model: 'fixture/model', effort: 'default' },
+        mode: 'accept-edits',
+        prompt: 'synthetic task',
+      })
+      const content = JSON.parse(worker.env.OPENCODE_CONFIG_CONTENT!)
+      expect(content.skills.paths).toContain(join(home, '.opencode/skills'))
+      expect(worker.env.OPENCODE_TEST_HOME).not.toBe(home)
+      expect(existsSync(join(worker.env.OPENCODE_TEST_HOME!, '.opencode'))).toBe(false)
+      expect(JSON.stringify(worker.env)).not.toContain('SIMULATED-foreign')
+      expect(JSON.parse(readFileSync(worker.env.OPENCODE_CONFIG!, 'utf8')).provider.fixture.options.baseURL).toBe('https://example.test')
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
   it('never resolves a Host source for terminals, tasks or catalogs', async () => {
     const resolveCredential = vi.fn(async () => 'synthetic-host-key')

@@ -176,7 +176,7 @@ flowchart LR
   - Harness 处于规划模式时仍拒绝派遣写任务。OMP 在「工作区内修改」下开放原生命令，每次命令和写入的原生确认同样按上述规则交给 DSH。Antigravity 和 Pi 没有可回复的原生授权协议：Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
 - **关闭的原生功能**：插件默认保留 CLI 原生功能（Grok 网页搜索与抓取、OpenCode/MiMo 用户自己的 skill 已启用），只因以下理由关闭：
   - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（是否启用待定）。
-  - 账号隔离：OpenCode/MiMo 外部插件、项目配置、Claude Code 配置导入与 `.claude`/`.agents` 兼容 skill 目录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件、MCP 与记忆。
+  - 账号隔离：OpenCode/MiMo 外部插件与 Claude Code 命令、MCP 导入；OpenCode 项目配置、主目录 `~/.opencode` 配置（其中 skill 照常提供）、CLAUDE.md 与 `.claude`/`.agents` 兼容 skill 目录；MiMo 启动时导入 Claude Code 会话记录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件、MCP 与记忆。MiMo 的项目配置与 `~/.mimocode` 是它自己的账号与模型来源，不关闭。
   - 无法遵循 DSH 权限：Pi 原生命令（「完全权限」除外）。
   - 其他：OpenCode/MiMo/OMP 的 LSP（避免自动下载）；ZCode 浏览器 REPL（可执行任意代码，待核实后再议）；Grok 与 OMP 的记忆（是否启用待定）。
 - **两层结构**：主对话 → 直接子智能体，默认两个并发（可在「CLI Worker 设置」调整，所有 CLI 共用，最多 8 个），不支持递归派遣。

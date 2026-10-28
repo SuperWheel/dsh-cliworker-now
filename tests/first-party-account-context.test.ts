@@ -62,6 +62,7 @@ describe('MiMo own native account context (synthetic files only)', () => {
     expect(prepared.env).toMatchObject({
       MIMOCODE_AUTH_CONTENT: '',
       MIMOCODE_DISABLE_PROJECT_CONFIG: '1',
+      MIMOCODE_DISABLE_CLAUDE_IMPORT: '1',
       MIMOCODE_PURE: '1',
     })
     // Simulate native Auth.set's writeFileString, including a subsequent logout.
@@ -106,6 +107,8 @@ describe('MiMo own native account context (synthetic files only)', () => {
         MIMOCODE_PURE: '1',
         MIMOCODE_DISABLE_PROJECT_CONFIG: '1',
         MIMOCODE_MIMO_ONLY: '1',
+        // Windows login uses the real home, where ~/.claude/projects would otherwise be imported.
+        MIMOCODE_DISABLE_CLAUDE_IMPORT: '1',
       })
       const runtime = dirname(prepared.cwd)
       expect(await readdir(join(runtime, 'data'))).toEqual([])

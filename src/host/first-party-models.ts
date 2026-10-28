@@ -131,10 +131,12 @@ export function claudeManagedSettingsPath(
       : '/etc/claude-code/managed-settings.json'
 }
 
-/** Disable inherited SDK credentials and cross-CLI plugin imports in the native MiMo provider resolver. */
+/** Disable inherited SDK credentials and cross-CLI plugin/session imports in native MiMo. */
 export function firstPartyEnvironment(cli: string): Record<string, string> {
   if (cli !== 'mimo') return {}
   return {
+    // mimocode 0.1.15 otherwise copies ~/.claude/projects transcripts into its DB on every start.
+    MIMOCODE_DISABLE_CLAUDE_IMPORT: '1',
     MIMOCODE_DISABLE_PROVIDER_ENV: '1',
     MIMOCODE_DISABLE_DEFAULT_PLUGINS: '1',
     MIMOCODE_PURE: '1',

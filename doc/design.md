@@ -1232,4 +1232,13 @@ OpenSpec 变更 `reenable-native-cli-features`（用户「先做 reenable」）�
 - OMP（16.4.4 核实）：`approvalMode` 为 `always-ask/write/yolo`；`write` 下写入与 bash 经 RPC `extension_ui_request`（`select`，标题 `Allow tool: X…`，选项 `Approve/Deny`）询问，无超时。OMP 写任务在工作区内修改与完全权限下加 `bash`；`--approval-mode` 与 `tools.approvalMode` 按档位取 `write`/`yolo`。桥把审批询问转为 `approval` 帧（bash→command、write/edit→file），Host 经 `BridgeProtocol` 中继并经私有邮箱 `approval` 命令回写，桥回 `extension_ui_response`。拒绝后正常结束为结果待核实；停止或桥关闭时回 Deny。其他交互请求仍取消并判失败。Host 对 OMP 也按审批等待暂停空闲时限。
 - OpenCode/MiMo：skill 权限改为 `allow`（替代上节「task/skill/question 仍 deny」中的 skill；各档位，skill 只读取用户指令）；`nativeSkillPaths` 把用户自己的 skill 根目录（`<配置目录>/{skill,skills}`、`~/.opencode|.mimocode/{skill,skills}`、项目 `.opencode|.mimocode/{skill,skills}`，仅现存目录）写入 `skills.paths`。OpenCode 由 Host 写入启动配置；MiMo 由运行器按自身环境计算。外部兼容目录与 Claude 配置导入、项目配置、外部插件保持关闭。
 - ZCode：`Skill` 只加载指令、可单独开启，但按设计随子 Agent 决定处理；浏览器 REPL 可执行任意代码，保持关闭。
-- 已知隔离缺口（未改）：OpenCode/MiMo 仍会读取 `~/.opencode`、`~/.mimocode` 下的配置；MiMo Worker 环境只经 `firstPartyEnvironment('mimo')`，使用真实配置目录。
+- 已知隔离缺口（未改）：OpenCode/MiMo 仍会读取 `~/.opencode`、`~/.mimocode` 下的配置；MiMo Worker 环境只经 `firstPartyEnvironment('mimo')`，使用真实配置目录。下节处理。
+
+## 2026-10-28 OpenCode/MiMo 配置隔离（未发布）
+
+OpenSpec 变更 `isolate-opencode-mimo-config`，处理上节记录的缺口。按 opencode 1.19.0、mimocode 0.1.15 内嵌源码核实，并用模拟主目录对真实二进制做前后对比（`debug config`/`debug skill`/`debug paths`，不调用模型）。
+
+- OpenCode：配置目录列表含 `<Global.Path.home>/.opencode`，home 取 `OPENCODE_TEST_HOME ?? os.homedir()`。其中 `opencode.json(c)` 在插件写入的 provider 之后深度合并（可覆盖所选 provider 的地址与密钥、追加 MCP），`command/agent/mode` 被加载，CLI 还在该目录写 `.gitignore` 并安装依赖。`openCodeEnvironment` 在状态目录建私有空目录 `home`（0700）并设 `OPENCODE_TEST_HOME`，Worker、模型发现、登录三处共用。不改 `HOME`，shell 命令仍用真实主目录。`~/.opencode/skill(s)` 仍由 Host 用真实主目录算出，经 `skills.paths` 提供。外部插件此前已由 `OPENCODE_PURE` 在服务端跳过。
+- MiMo：每次启动的中间件运行 `claude-import`，把 `~/.claude/projects/*/*.jsonl` 写进 MiMo 数据库（Worker 与模型发现用的是真实数据库）。`firstPartyEnvironment('mimo')` 加 `MIMOCODE_DISABLE_CLAUDE_IMPORT=1`，覆盖模型发现、Worker、分支元数据与登录。已导入的会话不删除。Codex/OpenCode 会话导入只经服务端接口触发，插件不调用。
+- 不改：MiMo 项目配置、`~/.mimocode`、真实 HOME/XDG 是 MiMo 自身的账号与模型来源（模型发现认项目级 `provider.apiKey`，`MIMOCODE_DISABLE_PROJECT_CONFIG` 还会去掉项目 AGENTS.md）；MiMo 读取 CLAUDE.md、默认扫描 `.agents` skill 不涉及账号，是否与 OpenCode 统一另行决定。
+- 风险：`OPENCODE_TEST_HOME` 名称带 TEST，后续版本若改名，隔离会失效；升级 OpenCode 时按该变更 tasks.md 记录的对比步骤重新核对。

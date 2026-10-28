@@ -10,6 +10,7 @@ import { nativeTelemetryProjections } from '../src/client/harness-telemetry-data
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeOpenCode } from '../src/host/native-opencode.mjs'
 import { serverConfiguration } from '../src/host/native-session-http.mjs'
+import { firstPartyEnvironment } from '../src/host/first-party-models.ts'
 import { runNativeMimo } from '../src/host/native-mimo.mjs'
 import { runNativeHermes } from '../src/host/native-hermes.mjs'
 import { cleanupHermesHttpHome, prepareHermesHttpHome } from '../src/host/native-hermes-home.mjs'
@@ -437,9 +438,12 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
         await mkdir(skills, { recursive: true })
         const name = cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'
         // OpenCode's Host launch already wrote the roots; MiMo's runner reads its real config root.
-        const env = { XDG_CONFIG_HOME: root, ...(cli === 'opencode' ? { OPENCODE_CONFIG_CONTENT: JSON.stringify({ skills: { paths: [skills] }, plugin: [] }) } : {}) }
-        const content = JSON.parse(serverConfiguration({ mode: 'plan', access: 'read-only', project: root, preference: { model: 'synthetic/model' }, env }, cli).env[`${name}_CONFIG_CONTENT`])
+        const env = { XDG_CONFIG_HOME: root, ...(cli === 'opencode' ? { OPENCODE_CONFIG_CONTENT: JSON.stringify({ skills: { paths: [skills] }, plugin: [] }) } : firstPartyEnvironment('mimo')) }
+        const configured = serverConfiguration({ mode: 'plan', access: 'read-only', project: root, preference: { model: 'synthetic/model' }, env }, cli).env
+        const content = JSON.parse(configured[`${name}_CONFIG_CONTENT`])
         expect(content.skills).toEqual({ paths: [skills] })
+        // The isolation switches of the launch environment survive the server configuration.
+        if (cli === 'mimo') expect(configured).toMatchObject({ MIMOCODE_DISABLE_CLAUDE_IMPORT: '1', MIMOCODE_PURE: '1' })
       } finally {
         await rm(root, { recursive: true, force: true })
       }

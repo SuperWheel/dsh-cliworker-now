@@ -241,6 +241,8 @@ describe('first-party model scopes', () => {
   })
   it('MiMo discovery and execution share the environment that disables foreign SDK sources', () => {
     expect(firstPartyEnvironment('mimo')).toMatchObject({
+      // Startup would otherwise import Claude Code transcripts into the MiMo DB.
+      MIMOCODE_DISABLE_CLAUDE_IMPORT: '1',
       MIMOCODE_DISABLE_PROVIDER_ENV: '1',
       MIMOCODE_DISABLE_DEFAULT_PLUGINS: '1',
       MIMOCODE_PURE: '1',

@@ -69,7 +69,7 @@ export async function openCodeEnvironment(
 ) {
   if (!isAbsolute(stateDirectory) || !isAbsolute(authDirectory))
     throw new Error('OpenCode state and auth directories must be absolute')
-  const paths = ['config', 'data', 'cache', 'state', 'tmp'].map((name) => join(stateDirectory, name))
+  const paths = ['config', 'data', 'cache', 'state', 'tmp', 'home'].map((name) => join(stateDirectory, name))
   for (const path of [stateDirectory, ...paths, authDirectory, join(authDirectory, 'opencode')]) {
     await mkdir(path, { recursive: true, mode: 0o700 })
     const info = await lstat(path)
@@ -97,6 +97,10 @@ export async function openCodeEnvironment(
     XDG_CACHE_HOME: paths[2]!,
     XDG_STATE_HOME: paths[3]!,
     TMPDIR: paths[4]!,
+    // opencode 1.19 Global.Path.home: its .opencode dir merges provider/MCP config over the
+    // admitted profile and gets a dependency install. Shell HOME stays real; user skills
+    // there remain explicit skills.paths.
+    OPENCODE_TEST_HOME: paths[5]!,
     OPENCODE_DB: join(stateDirectory, 'data', 'opencode.db'),
     OPENCODE_CONFIG: configFile,
     OPENCODE_CONFIG_DIR: paths[0]!,
