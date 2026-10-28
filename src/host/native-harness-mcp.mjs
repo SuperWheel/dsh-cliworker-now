@@ -1,5 +1,6 @@
 // A run-scoped MCP stdio carrier. It never imports Host tools or user credentials.
 import { randomUUID } from 'node:crypto'
+import { request as httpRequest } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
 export const HARNESS_CONNECTION_ENV = 'CLIWORKER_HARNESS_TOOLS'
@@ -16,25 +17,33 @@ export function readNativeHarnessConnection(env = process.env) {
 export function createNativeHarnessClient(connection, { maximum = 1024 * 1024 } = {}) {
   const clientId = randomUUID()
   async function request(id, method, params = {}, signal) {
-    const response = await fetch(connection.url, {
-      method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${connection.token}` },
-      body: JSON.stringify({ binding: connection.binding, clientId, id, method, params }), signal,
+    signal?.throwIfAborted()
+    const body = JSON.stringify({ binding: connection.binding, clientId, id, method, params })
+    // Not fetch: it gives up after 300 s without response headers, while a DSH
+    // tool may wait longer for a user's approval. The Host answers once done.
+    const response = await new Promise((resolve, reject) => {
+      const call = httpRequest(connection.url, {
+        method: 'POST', signal,
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body), Authorization: `Bearer ${connection.token}` },
+      }, (reply) => {
+        let length = 0
+        const parts = []
+        reply.on('data', (part) => {
+          length += part.byteLength
+          if (length > maximum) {
+            reply.destroy()
+            reject(new Error('工具桥响应超过限制；未自动重试'))
+          } else parts.push(part)
+        })
+        reply.on('end', () => resolve({ status: reply.statusCode ?? 0, text: Buffer.concat(parts).toString('utf8') }))
+        reply.on('close', () => { if (!reply.complete) reject(new Error('工具桥没有响应；未自动重试')) })
+        reply.on('error', reject)
+      })
+      call.on('error', reject)
+      call.end(body)
     })
-    const reader = response.body?.getReader()
-    if (!reader) throw new Error('工具桥没有响应；未自动重试')
-    let length = 0
-    const parts = []
-    try {
-      for (;;) {
-        const part = await reader.read()
-        if (part.done) break
-        length += part.value.byteLength
-        if (length > maximum) throw new Error('工具桥响应超过限制；未自动重试')
-        parts.push(part.value)
-      }
-    } finally { await reader.cancel().catch(() => {}) }
-    const result = JSON.parse(Buffer.concat(parts).toString('utf8'))
-    if (!response.ok || result.error) throw Object.assign(new Error(typeof result.error === 'string' ? result.error : '工具桥拒绝请求；未自动重试'), { nativeHarnessPublicError: true })
+    const result = JSON.parse(response.text)
+    if (response.status !== 200 || result.error) throw Object.assign(new Error(typeof result.error === 'string' ? result.error : '工具桥拒绝请求；未自动重试'), { nativeHarnessPublicError: true })
     return result.result
   }
   return { request, cancel: (id, signal) => request(`cancel:${id}`, 'rpc/cancel', { requestId: id }, signal) }

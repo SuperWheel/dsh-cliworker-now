@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { createNativeIO } from './native-transport.mjs'
 import { receiveNativeStopControl, receiveNativeGuidanceControl, receiveNativeApprovalControl } from './pi-omp-control.mjs'
-import { readTimeLimit, startRunTimers, TIME_LIMIT_ERRORS } from './native-time-limit.mjs'
+import { createIdleHolds, readTimeLimit, startRunTimers, TIME_LIMIT_ERRORS } from './native-time-limit.mjs'
 
 process.umask(0o077)
 const modules = {
@@ -21,6 +21,14 @@ const modules = {
 }
 const controller = new AbortController()
 let io, emergency, timers, error, control, guidance, approval
+const idleCommand = createIdleHolds(() => timers?.hold() ?? (() => {}))
+// Mailbox id `<hold key>:<command>`: one id carries one message only.
+const holdIdle = (message, id) => {
+  const [key, command] = id.split(':')
+  return command === message && idleCommand(message, key)
+    ? Promise.resolve()
+    : Promise.reject(new Error('Unknown idle command'))
+}
 const stop = () => {
   if (controller.signal.aborted) return
   controller.abort(new Error('任务已停止'))
@@ -116,7 +124,8 @@ try {
     if (config.approvalDirectory !== resolve(dirname(path), 'approval'))
       throw new Error('Unbound native approval control')
     approval = await receiveNativeApprovalControl(config.approvalDirectory, config.approvalNonce,
-      (message, id) => io.answerApproval(message, id))
+      // The Host pauses the idle window while a DSH fallback tool waits for the user.
+      (message, id) => (id.startsWith('idle-') ? holdIdle(message, id) : io.answerApproval(message, id)))
   }
   timers = startRunTimers(limit, (kind) => {
     if (controller.signal.aborted) return

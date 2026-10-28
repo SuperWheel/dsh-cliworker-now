@@ -120,7 +120,7 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
   if (Object.values(binding).some(value => !text(value))) throw new Error('工具桥身份不完整')
   const maximum = options.maxBytes ?? 1024 * 1024, maxCalls = options.maxCalls ?? 1024
   const lifetime = new AbortController(), active = new Set<Promise<unknown>>()
-  const ledger = new Map<string, { hash: string; promise: Promise<unknown>; controller: AbortController }>()
+  const ledger = new Map<string, { hash: string; promise: Promise<unknown>; controller: AbortController; waiting: number }>()
   const cancelled = new Set<string>()
   // Host grants, including those the CLI covers natively (skill dependencies).
   async function grantedTools(signal = lifetime.signal) {
@@ -257,7 +257,14 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
       const controller = previous?.controller ?? new AbortController()
       if (cancelled.has(key)) controller.abort(new Error('MCP 请求已取消'))
       const operation = previous?.promise ?? dispatch(value.method, (value.params ?? {}) as Record<string, unknown>, key, AbortSignal.any([lifetime.signal, controller.signal]))
-      if (!previous) { ledger.set(key, { hash, promise: operation, controller }); active.add(operation); void operation.finally(() => active.delete(operation)).catch(() => {}) }
+      const entry = previous ?? { hash, promise: operation, controller, waiting: 0 }
+      if (!previous) { ledger.set(key, entry); active.add(operation); void operation.finally(() => active.delete(operation)).catch(() => {}) }
+      // A caller that hangs up has given the call up; with nobody else waiting,
+      // withdraw it (a pending approval included) instead of running it unseen.
+      entry.waiting++
+      response.once('close', () => {
+        if (!response.writableFinished && --entry.waiting === 0) controller.abort(new Error('MCP 请求连接已断开'))
+      })
       const result = await operation
       await check(value.method, name)
       if (value.method === 'tools/call' && (name === 'dsh_read_skill' || name === 'dsh_read_skill_resource')) {

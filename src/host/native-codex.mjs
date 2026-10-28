@@ -329,8 +329,7 @@ export async function runNativeCodex(config, io) {
     io.signal?.throwIfAborted()
     if (outcome.exitCode !== 0) markFailure('Codex 原生进程非零退出')
     if (failure) io.result('ERROR', response, failure, 'response')
-    else if (denied) io.result('UNCERTAIN', response, 'Codex 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'response')
-    else toolOutcomes.settle(io, response, 'response')
+    else toolOutcomes.settle(io, response, 'response', denied)
   } finally {
     releaseSteer?.()
     io.signal?.removeEventListener('abort', abort)

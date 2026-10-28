@@ -31,9 +31,13 @@ export function createToolOutcomes() {
     get lastFailed() {
       return lastFailed
     },
-    /** Terminal for a turn with no turn-level failure and no denied authorization. */
-    settle(io, response, resultScope) {
-      if (lastFailed) io.result('UNCERTAIN', response, LAST_TOOL_FAILED, resultScope)
+    /**
+     * Terminal for a turn with no turn-level failure. A denied authorization is
+     * the user's decision, not a failure: that turn completes without a notice.
+     */
+    settle(io, response, resultScope, denied = false) {
+      if (denied) io.result('SUCCESS', response, undefined, resultScope)
+      else if (lastFailed) io.result('UNCERTAIN', response, LAST_TOOL_FAILED, resultScope)
       else if (count) io.result('SUCCESS', response, undefined, resultScope, recoveredNotice(count))
       else io.result('SUCCESS', response, undefined, resultScope)
     },

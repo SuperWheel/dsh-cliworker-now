@@ -1017,7 +1017,7 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
   }
   it.each([
     ['allow-once', 'Approve', 'SUCCESS'],
-    ['deny', 'Deny', 'UNCERTAIN'],
+    ['deny', 'Deny', 'SUCCESS'],
   ] as const)('relays an OMP tool approval to the Host (%s → %s)', async (decision, answer, status) => {
     const { input } = await fixture('omp', 'approval')
     const run = { ...input, mode: 'accept-edits' as const, access: 'workspace-write' as const }
@@ -1026,6 +1026,9 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     expect(approval).toEqual({ type: 'approval', id: 'approval-1',
       request: { kind: 'command', summary: 'Allow tool: bash', detail: 'Command: ls -la', allowSession: false } })
     expect(frames.at(-1)).toMatchObject({ type: 'result', status })
+    // A denial completes the turn as is: no unverified wording, no failed-tool notice.
+    expect(frames.at(-1)).not.toHaveProperty('error')
+    expect(frames.at(-1)).not.toHaveProperty('notice')
     const observed = JSON.parse(await readFile(join(state, 'agent/observed-ui-response.json'), 'utf8'))
     expect(observed).toEqual({ type: 'extension_ui_response', id: 'ui-1', value: answer })
   })

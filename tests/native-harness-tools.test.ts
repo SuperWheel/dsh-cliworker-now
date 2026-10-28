@@ -265,6 +265,49 @@ describe('temporary native injection (synthetic)', () => {
     expect(() => buildNativeHarnessInjection({ cli: 'opencode', argv: ['opencode'], connection: { ...target.connection, binding: { ...binding, cli: 'opencode' } }, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify({ mcp: { dsh_worker_tools: {} } }) } })).toThrow('拒绝覆盖')
     expect(nativeHarnessMcpServers({ cli: 'kimi', argv: ['kimi'] }, {})).toEqual([])
   })
+  it('withdraws a tool call once its only caller hangs up, not while a replay still waits', async () => {
+    // A caller that gave up must not leave e.g. an approval to run its command unseen.
+    let entered!: () => void, settle!: () => void
+    const signals: AbortSignal[] = []
+    let started = new Promise<void>(yes => { entered = yes })
+    const execute = vi.fn(async ({ signal }: { signal: AbortSignal }) => {
+      signals.push(signal); entered()
+      await new Promise<void>(yes => { settle = yes; signal.addEventListener('abort', () => yes(), { once: true }) })
+      return 'simulated output'
+    })
+    const target = await lease({ execute })
+    const call = (id: number, signal?: AbortSignal) => fetch(target.connection.url, { method: 'POST', signal,
+      headers: { Authorization: `Bearer ${target.connection.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ binding, clientId, id, method: 'tools/call', params: { name: 'read_file' } }) })
+    const lone = new AbortController()
+    const abandoned = call(1, lone.signal).catch(() => undefined)
+    await started
+    lone.abort()
+    await abandoned
+    await vi.waitFor(() => expect(signals[0]!.aborted).toBe(true))
+    started = new Promise<void>(yes => { entered = yes })
+    const first = new AbortController()
+    const left = call(2, first.signal).catch(() => undefined)
+    await started
+    const replay = call(2)
+    await new Promise(yes => setTimeout(yes, 20))
+    first.abort()
+    await left
+    await new Promise(yes => setTimeout(yes, 20))
+    expect(signals[1]!.aborted).toBe(false)
+    settle()
+    expect((await (await replay).json() as { result: unknown }).result).toBeDefined()
+    expect(execute).toHaveBeenCalledTimes(2)
+  })
+  it('carries a tool call without fetch, whose 300 s header limit is shorter than an approval wait', async () => {
+    const target = await lease({ binding: { ...binding, cli: 'pi' } })
+    vi.stubEnv(HARNESS_CONNECTION_ENV, JSON.stringify(target.connection))
+    const registerTool = vi.fn(); await nativeHarnessExtension({ registerTool })
+    vi.stubGlobal('fetch', () => { throw new Error('fetch must not carry Harness tool calls') })
+    try {
+      expect(await registerTool.mock.calls[0][0].execute('native-no-fetch', {})).toMatchObject({ content: [{ type: 'text' }] })
+    } finally { vi.unstubAllGlobals() }
+  })
   it('registers Pi explicit extension schemas and preserves call identity', async () => {
     const cli = 'pi'
     const target = await lease({ binding: { ...binding, cli } })

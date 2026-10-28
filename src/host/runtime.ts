@@ -73,6 +73,7 @@ import { projectPublicToolCall } from './public-tool-projection.ts'
 import { WorkerStorage } from './storage.ts'
 import { authorizeSelection, ACCOUNT_CHANGED } from './authorized-catalog.ts'
 import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
+import { LAST_TOOL_FAILED } from './native-tool-outcomes.mjs'
 import { codexRouteEnvironment, readCliAccountBinding } from './cli-account-binding.ts'
 import { crossAccountResume, nativeSessionReachable } from './cross-account-resume.ts'
 import { carryoverContext } from './carryover-context.ts'
@@ -156,6 +157,10 @@ interface Task {
   carryover?: { previousConversationId?: string; previousSessionUsage?: TokenUsage; forkState?: WorkerForkState }
   /** Fixed when the turn first starts; a carried-over attempt keeps the same deadline. */
   timeLimit?: TaskTimeLimit
+  /** Pauses this run's idle window until the returned release runs. */
+  holdIdle?: () => () => void
+  /** Run in which a DSH fallback tool authorization was denied. */
+  harnessDeniedRunId?: string
 }
 /** A message for a run whose account has since changed is queued instead of steered. */
 class AccountChangedDuringRunError extends Error {
@@ -330,7 +335,14 @@ export class WorkerRuntime {
     const task = this.tasks.get(worker.id)
     if (!task || task.worker.runId !== runId || !this.running.has(task))
       return Promise.resolve({ decision: 'deny', source: 'stopped' })
+    // The CLI only waits for a tool result meanwhile; that is not it going quiet.
+    const release = task.holdIdle?.() ?? (() => {})
     return trackApproval(this, task, request, decide, signal)
+      .then((decision) => {
+        if (decision.decision === 'deny' && decision.source !== 'stopped') task.harnessDeniedRunId = runId
+        return decision
+      })
+      .finally(release)
   }
   private agyContextReader = new AgyContextReader()
   private hermesSessionReader = new HermesSessionTelemetryReader()
@@ -2314,19 +2326,41 @@ export class WorkerRuntime {
             idleTimer = setTimeout(() => controller.abort(new Error(timeLimitMessage('idle', limit))), limit.idleMs)
           }
         : undefined
-    task.approvals = new AbortController()
-    // Bound to the prepared launch's approval mailbox once it exists.
-    let answerApproval: ((id: string, decision: NativeApprovalDecision) => Promise<void>) | undefined
-    const relay = (id: string, request: NativeApprovalRequest) => {
+    const holdHostIdle = () => {
       idleHolds++
       clearTimeout(idleTimer)
       let released = false
+      return () => {
+        if (released) return
+        released = true
+        idleHolds--
+        touchIdle?.()
+      }
+    }
+    task.approvals = new AbortController()
+    // Bound to the prepared launch's approval mailbox once it exists.
+    let answerApproval: ((id: string, decision: NativeApprovalDecision) => Promise<void>) | undefined
+    let holdRunnerIdle: ((id: string, state: 'hold' | 'release') => Promise<void>) | undefined
+    let runnerIdleHolds = 0
+    // A native runner pauses itself for CLI approvals; DSH tool approvals ask it over the mailbox.
+    task.holdIdle = () => {
+      if (!nativeTransport) return holdHostIdle()
+      const send = holdRunnerIdle
+      if (!send || !(limit.idleMs > 0)) return () => {}
+      const id = `idle-${++runnerIdleHolds}`
+      const held = send(id, 'hold').catch(() => undefined)
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        // After the hold's receipt, so the runner never sees the release first.
+        void held.then(() => send(id, 'release')).catch(() => undefined)
+      }
+    }
+    const relay = (id: string, request: NativeApprovalRequest) => {
+      const release = holdHostIdle()
       this.relayApproval(task, request, (decision) => {
-        if (!released) {
-          released = true
-          idleHolds--
-          touchIdle?.()
-        }
+        release()
         return answerApproval ? answerApproval(id, decision) : Promise.reject(new Error('授权通路未就绪'))
       })
     }
@@ -2584,6 +2618,8 @@ export class WorkerRuntime {
       release = 'cleanup' in execution ? execution.cleanup : undefined
       if ('answerApproval' in execution && typeof execution.answerApproval === 'function')
         answerApproval = execution.answerApproval as typeof answerApproval
+      if ('holdIdle' in execution && typeof execution.holdIdle === 'function')
+        holdRunnerIdle = execution.holdIdle as typeof holdRunnerIdle
       controller.signal.throwIfAborted()
       if (
         binding !==
@@ -2694,6 +2730,10 @@ export class WorkerRuntime {
           `CLI exited with ${outcome.exitCode}: ${stderr || protocol.result?.response || 'no diagnostic'}`,
         )
       if (!protocol.result) throw new Error('CLI exited without a final result')
+      // The Host denied a DSH fallback tool, so the runner saw only a failed tool.
+      // A denial is the user's decision: the run completes without a notice, also
+      // when that refused step was the last one before the CLI ended.
+      const harnessDenied = task.harnessDeniedRunId === worker.runId
       if (
         protocol instanceof AgyProtocol &&
         expectedConversation &&
@@ -2703,14 +2743,15 @@ export class WorkerRuntime {
       )
         summaryConflict = `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${protocol.result.error || '未提供错误详情'}`
       // Native runners and the Pi/OMP bridge share this frame and its unverified outcome.
-      else if (protocol instanceof BridgeProtocol && protocol.result.status === 'UNCERTAIN')
-        summaryConflict =
-          protocol.result.error || 'CLI 汇总状态冲突，结果待核实，请先核查实际产物，不要自动重试'
-      else if (protocol.result.status !== 'SUCCESS')
+      else if (protocol instanceof BridgeProtocol && protocol.result.status === 'UNCERTAIN') {
+        if (!harnessDenied || protocol.result.error !== LAST_TOOL_FAILED)
+          summaryConflict =
+            protocol.result.error || 'CLI 汇总状态冲突，结果待核实，请先核查实际产物，不要自动重试'
+      } else if (protocol.result.status !== 'SUCCESS')
         throw new Error(
           `CLI ${protocol.result.status}: ${protocol.result.error || protocol.result.response || stderr || '请检查 CLI 认证及模型/强度兼容性'}`,
         )
-      else if (protocol instanceof BridgeProtocol && protocol.result.notice) {
+      else if (!harnessDenied && protocol instanceof BridgeProtocol && protocol.result.notice) {
         worker.resultNotice = protocol.result.notice
         this.storage.append(worker, { kind: 'diagnostic', text: '本轮结果说明', detail: protocol.result.notice })
       }
@@ -2739,6 +2780,7 @@ export class WorkerRuntime {
       clearTimeout(idleTimer)
       // Withdraw prompts still open when the CLI exits or the protocol fails.
       task.approvals?.abort(new Error('当前运行已结束，授权请求已撤回'))
+      task.holdIdle = undefined
       if (worker.approvalWaiting) {
         delete worker.approvalWaiting
         this.changed()

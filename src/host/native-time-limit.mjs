@@ -23,6 +23,24 @@ export function readTimeLimit(config, now = Date.now()) {
   return { deadlineAt, idleMs }
 }
 
+/**
+ * Host-held idle pauses, one per mailbox id: `hold` pauses through `hold()`,
+ * `release` resumes it. A released id ignores any later command, even a late hold.
+ * Returns false for an unknown command.
+ */
+export function createIdleHolds(hold) {
+  const holds = new Map()
+  return (message, id) => {
+    if (message === 'hold') {
+      if (!holds.has(id)) holds.set(id, hold())
+    } else if (message === 'release') {
+      holds.get(id)?.()
+      holds.set(id, () => {})
+    } else return false
+    return true
+  }
+}
+
 /** `onExpire` runs once, with the limit that was reached first. */
 export function startRunTimers({ deadlineAt, idleMs }, onExpire) {
   let expired = false,

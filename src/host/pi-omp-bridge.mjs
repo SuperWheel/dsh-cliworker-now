@@ -115,7 +115,6 @@ let child,
 const toolOutcomes = createToolOutcomes()
 // Pending OMP approvals relayed to the Host, by bridge id; each settles exactly once.
 const approvals = new Map()
-const APPROVAL_DENIED = 'CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
 /**
  * OMP 16.4 asks for a tool approval as an RPC `select` titled "Allow tool: <name>"
  * with exactly Approve/Deny. Anything else stays an unanswerable interactive request.
@@ -1009,7 +1008,8 @@ try {
       failure ??= errorMessage(error)
     }
     if (failure || stopped) output({ type: 'result', status: 'ERROR', response, error: failure, resultScope: 'run' })
-    else if (permissionDenied) output({ type: 'result', status: 'UNCERTAIN', response, error: APPROVAL_DENIED, resultScope: 'run' })
+    // A denied authorization is the user's decision, not a failure: the turn completes without a notice.
+    else if (permissionDenied) output({ type: 'result', status: 'SUCCESS', response, resultScope: 'run' })
     else if (toolOutcomes.lastFailed) output({ type: 'result', status: 'UNCERTAIN', response, error: LAST_TOOL_FAILED, resultScope: 'run' })
     else output({ type: 'result', status: 'SUCCESS', response, resultScope: 'run',
       ...(toolOutcomes.count ? { notice: recoveredNotice(toolOutcomes.count) } : {}) })

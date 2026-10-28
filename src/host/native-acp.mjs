@@ -351,10 +351,8 @@ export async function runNativeAcp(config, io, settings) {
       fail('CLI 工具缺少终态')
     if (io.signal.aborted) fail('任务已停止')
     if (failure) io.result('ERROR', response, failure, 'run')
-    else if (denied)
-      io.result('UNCERTAIN', response, 'CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'run')
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
-    else toolOutcomes.settle(io, response, 'run')
+    else toolOutcomes.settle(io, response, 'run', denied)
   } finally {
     io.signal.removeEventListener('abort', cancel)
     active = false

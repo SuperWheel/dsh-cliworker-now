@@ -127,6 +127,8 @@ export async function prepareNativeWorker<
       argv: [process.execPath, bridgePath(), request],
       answerApproval: (id: string, decision: NativeApprovalDecision) =>
         activeApproval.steer(JSON.stringify(decision), id),
+      /** Pauses or resumes the runner's idle window for hold `key` (`idle-…`); each command has its own mailbox id. */
+      holdIdle: (key: string, state: 'hold' | 'release') => activeApproval.steer(state, `${key}:${state}`),
       env: { ...injected.env, ELECTRON_RUN_AS_NODE: '1' },
       stop: activeControl.stop,
       ...(guidance ? { steer: guidance.steer } : {}),

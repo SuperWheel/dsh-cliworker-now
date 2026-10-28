@@ -328,7 +328,7 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     ['allow-once', 'allow', 'SUCCESS'],
     // No confirmed session-scoped reply; permissionUpdates would persist a project rule.
     ['allow-session', 'allow', 'SUCCESS'],
-    ['deny', 'deny', 'UNCERTAIN'],
+    ['deny', 'deny', 'SUCCESS'],
   ] as const)('relays a permission request to the Host: %s → %s', async (decision, reply, status) => {
     const { result, records, frames } = await fixture('permission', false, { decision })
     expect(frames.find((frame) => frame.type === 'approval').request).toEqual({
@@ -347,17 +347,19 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     expect(result.status).toBe('SUCCESS')
     expect(records.find((record) => record.method === 'session/setMode')?.params.mode ?? 'edit').toBe(mode)
   })
-  it('denies additional permissions and reports a natively completed turn as unverified, not success', async () => {
+  it('denies additional permissions and reports a natively completed turn as completed, without a notice', async () => {
     const { result, records, frames } = await fixture('permission')
-    expect(result).toMatchObject({ status: 'UNCERTAIN', response: 'HELLO' })
-    expect(result.error).toMatch(/额外权限请求已拒绝.*结果待核实/)
+    expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
+    expect(result).not.toHaveProperty('error')
+    expect(result).not.toHaveProperty('notice')
     expect(records.find((record) => record.id === 'permission').result.decision).toBe('deny')
     // The denied call is closed by its batch, so it does not stay running in the timeline.
     expect(frames.filter((frame) => frame.event?.toolCall?.callId === 'denied-tool').at(-1)?.event.state).toBe('FAILED')
   })
-  it('keeps a denied turn unverified when another tool in the batch fails besides the denied one', async () => {
+  it('completes a denied turn without a notice when another tool in the batch fails besides the denied one', async () => {
     const { result } = await fixture('permission-other-failure')
-    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('结果待核实') })
+    expect(result).toMatchObject({ status: 'SUCCESS' })
+    expect(result).not.toHaveProperty('notice')
   })
   it('counts a failed call once when its batch reports it again, and succeeds after the CLI carries on', async () => {
     const { result, frames } = await fixture('tool-recovered')

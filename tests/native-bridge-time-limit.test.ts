@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareNativeWorker } from '../src/host/native-worker.ts'
@@ -24,7 +24,13 @@ const alive = (pid: number) => {
 
 async function bridge(
   limit: { totalMs: number; idleMs: number },
-  output: { cli?: 'antigravity' | 'claude'; stderrEveryMs?: number; keepAliveEveryMs?: number } = {},
+  output: {
+    cli?: 'antigravity' | 'claude'
+    stderrEveryMs?: number
+    keepAliveEveryMs?: number
+    /** Runs once the synthetic CLI has started under the bridge. */
+    whileRunning?: (launch: Awaited<ReturnType<typeof prepareNativeWorker>>) => Promise<void>
+  } = {},
 ) {
   const cli = output.cli ?? 'antigravity'
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-bridge-time-limit-')))
@@ -67,7 +73,12 @@ setInterval(() => {}, 60000)
     let stdout = ''
     child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
     child.stderr.resume()
-    const code = await new Promise<number | null>((resolve) => child.once('close', resolve))
+    const closed = new Promise<number | null>((resolve) => child.once('close', resolve))
+    if (output.whileRunning) {
+      while (!existsSync(pidFile)) await new Promise((resolve) => setTimeout(resolve, 10))
+      await output.whileRunning(launch)
+    }
+    const code = await closed
     const pid = Number(readFileSync(pidFile, 'utf8'))
     const frames = stdout.trim().split('\n').map((line) => JSON.parse(line))
     return { code, frames, result: frames.at(-1), elapsed: Date.now() - startedAt, cliAlive: alive(pid) }
@@ -96,5 +107,22 @@ it('renews the idle window on heartbeats a runner drops before forwarding', asyn
   const run = await bridge({ totalMs: 1500, idleMs: 600 }, { cli: 'claude', keepAliveEveryMs: 100 })
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task timed out' })
   expect(run.frames.some((frame) => JSON.stringify(frame).includes('keep_alive'))).toBe(false)
+  expect(run.cliAlive).toBe(false)
+}, 30_000)
+
+it('pauses the idle window while the Host holds it for a DSH tool approval', async () => {
+  let releasedAt = 0
+  const run = await bridge({ totalMs: 20_000, idleMs: 400 }, {
+    whileRunning: async (launch) => {
+      await launch.holdIdle('idle-1', 'hold')
+      // Three idle windows pass while the user decides.
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      releasedAt = Date.now()
+      await launch.holdIdle('idle-1', 'release')
+    },
+  })
+  expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task idle timed out' })
+  expect(releasedAt).toBeGreaterThan(0)
+  expect(run.elapsed).toBeGreaterThanOrEqual(1500)
   expect(run.cliAlive).toBe(false)
 }, 30_000)

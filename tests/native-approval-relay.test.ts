@@ -9,6 +9,7 @@ import {
   decisionFromAnswer,
   decisionFromOutcome,
   harnessApprovalRequest,
+  literalMarkdown,
   outcomeFromDecision,
   parseNativeApprovalRequest,
   runAccess,
@@ -84,10 +85,31 @@ describe('answers map to native decisions; anything else is a denial', () => {
       '允许一次',
       '拒绝',
     ])
-    const text = approvalQuestion(request, context).question
-    expect(text).toContain('Alice（Codex）')
-    expect(text).toContain('registry.npmjs.org')
-    expect(text).toContain('工作目录：/repo')
+    const question = approvalQuestion(request, context)
+    // The card title collapses line breaks, so it names only who asks.
+    expect(question.question).toBe('Alice（Codex）请求授权')
+    const paragraphs = question.detail.split('\n\n')
+    expect(paragraphs[0]).toBe(literalMarkdown(request.summary))
+    expect(paragraphs.at(-1)).toBe('工作目录：\\/repo')
+    expect(question.detail).toContain('registry\\.npmjs\\.org')
+  })
+  it('lays out CLI text as literal Markdown paragraphs that keep their line breaks', () => {
+    const question = approvalQuestion(
+      { kind: 'command', summary: 'run `rm -rf *` <b>now</b> [x](https://e.test)', detail: '原因：first line\n\n  second_line  \n', allowSession: false },
+      { worker: 'W', cli: 'Codex', project: '/p' },
+    )
+    expect(question.detail).toBe(
+      [
+        'run \\`rm \\-rf \\*\\` \\<b\\>now\\<\\/b\\> \\[x\\]\\(https\\:\\/\\/e\\.test\\)',
+        '原因：first line\\\nsecond\\_line',
+        '工作目录：\\/p',
+      ].join('\n\n'),
+    )
+    // Every ASCII punctuation is escaped, so nothing turns into a link, format or HTML.
+    expect(literalMarkdown('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~')).toBe(
+      '!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'.replace(/./g, '\\$&'),
+    )
+    expect(literalMarkdown(' \n \n')).toBe('')
   })
   it.each([
     [{ selected: ['允许一次'] }, 'allow-once'],
@@ -499,8 +521,9 @@ describe('DSH tool approvals from the tool bridge follow the turn origin', () =>
     expect(await pending).toBe('allowed-once')
     expect(next).not.toHaveBeenCalled()
     const question = f.ask.mock.calls[0]![0].questions[0]
-    expect(question.question).toContain('pi-2（Pi）请求授权：执行命令（DSH 备选工具 bash）：printf X > /outside/x.txt')
-    expect(question.question).toContain('工作目录：/p')
+    expect(question.question).toBe('pi-2（Pi）请求授权')
+    expect(question.detail).toContain('执行命令（DSH 备选工具 bash）：printf X \\> \\/outside\\/x\\.txt')
+    expect(question.detail).toContain('工作目录：\\/p')
     expect(question.options.map((option: { label: string }) => option.label)).toEqual(['允许一次', '拒绝'])
     expect(f.worker.approvalWaiting).toBeUndefined()
     expect(f.events.at(-1)).toMatchObject({ text: '授权决定：允许一次（DSH 用户）' })

@@ -1051,3 +1051,35 @@ it('names a truncated CLI tool preview in the receipt given to the main agent (s
     { type: 'text', text: 'preview\n\n[输出已截断（共 800 KB），完整内容见 CLI 原生会话或实际产物]' },
   ])
 })
+
+it('shows the command of a command-only CLI tool as its call arguments, live and passive (synthetic)', async () => {
+  // Codex commandExecution entries carry `command` but no structured input.
+  const usage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }
+  const live = await fixture({ sourceEvents: [
+    { kind: 'user', text: 'synthetic input' },
+    { kind: 'tool', text: 'printf live', step: 1, state: 'COMPLETED',
+      toolCall: { callId: 'live', name: 'commandExecution', command: 'printf live\nsecond', output: 'ok' },
+      response: { id: 'tool-response', blockId: 'tool', index: 0, complete: true, usage } },
+    { kind: 'tool', text: 'structured', step: 1, state: 'COMPLETED',
+      toolCall: { callId: 'structured', name: 'synthetic_cli_tool', input: { path: 'a.txt' }, command: 'ignored', output: 'ok' },
+      response: { id: 'tool-response-2', blockId: 'tool', index: 0, complete: true, usage } },
+    { kind: 'assistant', text: 'final answer', step: 2,
+      response: { id: 'answer-response', blockId: 'text', index: 0, complete: true, usage } },
+  ] })
+  await live.begin()
+  await live.finish('completed')
+  expect(live.agent.session.log.filter((event) => event.type === 'tool/call').map((event) => event.data.arguments))
+    .toEqual([JSON.stringify({ command: 'printf live\nsecond' }), JSON.stringify({ path: 'a.txt' })])
+  const passive = await fixture({ cli: 'hermes', transport: 'hermes-http-v1', sourceEvents: [
+    { kind: 'user', text: 'synthetic input' },
+    { kind: 'tool', step: 1, text: 'printf passive', state: 'COMPLETED',
+      toolCall: { callId: 'passive', name: 'commandExecution', command: 'printf passive', output: 'ok' } },
+    { kind: 'assistant', step: 2, text: 'synthetic final answer' },
+  ] })
+  await passive.begin()
+  await passive.finish('completed')
+  expect(passive.agent.session.log.filter((event) => event.type === 'tool/call').map((event) => event.data.arguments))
+    .toEqual([JSON.stringify({ command: 'printf passive' })])
+  expect(live.realTool).not.toHaveBeenCalled()
+  expect(passive.realTool).not.toHaveBeenCalled()
+})

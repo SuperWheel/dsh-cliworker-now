@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -10,7 +11,8 @@ import { WorkerStorage } from '../src/host/storage.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 import { BRIDGE_TIME_LIMIT_ERRORS } from '../src/host/task-time-limit.ts'
 // @ts-expect-error The bridge helper is plain ESM without declarations.
-import { readTimeLimit, startRunTimers, TIME_LIMIT_ERRORS } from '../src/host/native-time-limit.mjs'
+import { createIdleHolds, readTimeLimit, startRunTimers, TIME_LIMIT_ERRORS } from '../src/host/native-time-limit.mjs'
+import { LAST_TOOL_FAILED } from '../src/host/native-tool-outcomes.mjs'
 import type { Worker } from '../src/shared/types.ts'
 
 // SIMULATED: fake clock, synthetic process records and account admission only.
@@ -95,6 +97,31 @@ describe('native bridge run timers', () => {
     timers.close()
     vi.advanceTimersByTime(10 * MINUTE)
     expect(expired).not.toHaveBeenCalled()
+  })
+
+  it('pauses the idle window per Host hold id and ignores a hold after its release', () => {
+    fakeClock()
+    const expired = vi.fn()
+    const timers = startRunTimers({ deadlineAt: Date.now() + 120 * MINUTE, idleMs: 10 * MINUTE }, expired)
+    const command = createIdleHolds(() => timers.hold())
+    expect(command('hold', 'idle-1')).toBe(true)
+    // A replayed hold does not stack a second pause.
+    expect(command('hold', 'idle-1')).toBe(true)
+    vi.advanceTimersByTime(30 * MINUTE)
+    expect(expired).not.toHaveBeenCalled()
+    expect(command('release', 'idle-1')).toBe(true)
+    vi.advanceTimersByTime(10 * MINUTE - 1)
+    expect(expired).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(expired).toHaveBeenCalledExactlyOnceWith('idle')
+    // A release that overtook its hold settles the id.
+    const late = vi.fn(() => () => {})
+    const other = createIdleHolds(late)
+    expect(other('release', 'idle-2')).toBe(true)
+    expect(other('hold', 'idle-2')).toBe(true)
+    expect(late).not.toHaveBeenCalled()
+    expect(other('pause', 'idle-3')).toBe(false)
+    timers.close()
   })
 })
 
@@ -255,6 +282,38 @@ describe('Host task time limit', () => {
     expect(worker.error).toBe('Error: 任务超时：连续 10 分钟没有收到 CLI 事件（空闲时限）')
   })
 
+  it('pauses its own idle window while a DSH fallback tool waits for approval', async () => {
+    fakeClock()
+    const f = fixture()
+    f.runtime.setGeneralSettings({ taskTimeLimitMs: 120 * MINUTE, idleTimeLimitMs: 10 * MINUTE })
+    const task = f.start()
+    await until(() => f.calls.length === 1)
+    const call = f.calls[0]!
+    call.stdout.write(agyStep('SIMULATED step'))
+    await settle()
+    let answer!: (decision: { decision: 'allow-once'; source: 'user' }) => void
+    const decided = f.runtime.harnessApproval(
+      task.worker,
+      f.runtime.get('parent', task.worker.id).runId!,
+      { kind: 'tool', summary: 'SIMULATED DSH tool', allowSession: false },
+      new AbortController().signal,
+      () => new Promise((resolve) => (answer = resolve)),
+    )
+    await settle()
+    vi.advanceTimersByTime(25 * MINUTE)
+    await settle()
+    expect(call.terminated).toBe(false)
+    answer({ decision: 'allow-once', source: 'user' })
+    expect(await decided).toEqual({ decision: 'allow-once', source: 'user' })
+    vi.advanceTimersByTime(10 * MINUTE - 1)
+    await settle()
+    expect(call.terminated).toBe(false)
+    vi.advanceTimersByTime(1)
+    await until(() => call.terminated)
+    call.exit()
+    expect((await task.done).error).toBe('Error: 任务超时：连续 10 分钟没有收到 CLI 事件（空闲时限）')
+  })
+
   it.each([
     ['idle', true, 'Native task idle timed out', '任务超时：连续 5 分钟没有收到 CLI 事件（空闲时限）'],
     ['total', true, 'Native task timed out', '任务超时：已达到总时限 8 小时'],
@@ -283,5 +342,88 @@ describe('Host task time limit', () => {
     const worker = await task.done
     expect(worker.status).toBe('interrupted')
     expect(worker.error).toBe(`Error: ${message}`)
+  })
+})
+
+describe('DSH fallback tool approvals in a native bridge run', () => {
+  const request = { kind: 'tool' as const, summary: 'SIMULATED DSH tool', allowSession: false }
+  const commands = (directory: string) =>
+    readdirSync(directory)
+      .filter((name) => name.endsWith('.request.json'))
+      .map((name) => ({ name, ...JSON.parse(readFileSync(join(directory, name), 'utf8')) }))
+  async function command(directory: string, message: string) {
+    for (let index = 0; index < 200; index++) {
+      const found = commands(directory).find((item) => item.message === message)
+      if (found) return found
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    throw new Error(`no ${message} command`)
+  }
+  // Stands in for the runner's receipt of one mailbox command.
+  const receipt = (directory: string, sent: { name: string; nonce: string; id: string; attempt: string; message: string }) =>
+    writeFileSync(
+      join(directory, sent.name.replace('.request.', '.receipt.')),
+      JSON.stringify({ nonce: sent.nonce, id: sent.id, attempt: sent.attempt, digest: createHash('sha256').update(sent.message).digest('hex'), success: true }),
+      { mode: 0o600 },
+    )
+  async function running(idleTimeLimitMs: number) {
+    const f = fixture({ native: true })
+    f.runtime.setGeneralSettings({ taskTimeLimitMs: 120 * MINUTE, idleTimeLimitMs })
+    const task = f.start()
+    await until(() => f.calls.length === 1)
+    return { f, task, runId: f.runtime.get('parent', task.worker.id).runId! }
+  }
+
+  it('asks the runner to hold its idle window, and releases only after the hold was received', async () => {
+    const { f, task, runId } = await running(5 * MINUTE)
+    const directory = f.requests[0].approvalDirectory
+    let answer!: (decision: { decision: 'deny'; source: 'user' }) => void
+    const decided = f.runtime.harnessApproval(task.worker, runId, request, new AbortController().signal,
+      () => new Promise((resolve) => (answer = resolve)))
+    const hold = await command(directory, 'hold')
+    expect(hold).toMatchObject({ nonce: f.requests[0].approvalNonce, id: 'idle-1:hold', type: 'approval' })
+    answer({ decision: 'deny', source: 'user' })
+    await decided
+    await settle()
+    expect(commands(directory).map((item) => item.message)).toEqual(['hold'])
+    receipt(directory, hold)
+    expect(await command(directory, 'release')).toMatchObject({ id: 'idle-1:release', type: 'approval' })
+  })
+
+  it('sends nothing to the runner when no idle limit is set', async () => {
+    const { f, task, runId } = await running(0)
+    await f.runtime.harnessApproval(task.worker, runId, request, new AbortController().signal,
+      async () => ({ decision: 'allow-once', source: 'user' }))
+    await settle()
+    expect(commands(f.requests[0].approvalDirectory)).toEqual([])
+  })
+
+  const recovered = '本轮有 1 个工具步骤失败，CLI 已自行处理'
+  const noReply = 'CLI 未返回可核查的本轮正文'
+  it.each([
+    // A denial is the user's decision: the refused tool is not a failure the CLI recovered from.
+    ['deny', 'SUCCESS', recovered, 'completed', undefined],
+    // The refused tool was the last step before the CLI ended.
+    ['deny', 'UNCERTAIN', LAST_TOOL_FAILED, 'completed', undefined],
+    ['deny', 'UNCERTAIN', noReply, 'uncertain', noReply],
+    ['deny', 'ERROR', 'SIMULATED failure', 'failed', undefined],
+    ['allow-once', 'SUCCESS', recovered, 'completed', recovered],
+    ['allow-once', 'UNCERTAIN', LAST_TOOL_FAILED, 'uncertain', LAST_TOOL_FAILED],
+  ] as const)('a %s DSH tool decision then a CLI %s (%s) ends the run %s', async (decision, status, text, expected, shown) => {
+    const { f, task, runId } = await running(0)
+    await f.runtime.harnessApproval(task.worker, runId, request, new AbortController().signal,
+      async () => ({ decision, source: 'user' }))
+    const call = f.calls[0]!
+    call.stdout.write(line({ type: 'session', id: 'synthetic-session', model: 'synthetic-model' }))
+    call.stdout.write(line({ type: 'result', status, response: 'SIMULATED reply', resultScope: 'run',
+      ...(status === 'SUCCESS' ? { notice: text } : { error: text }) }))
+    call.exit()
+    const worker = await task.done
+    expect(worker.status).toBe(expected)
+    if (expected === 'completed') {
+      expect(worker.error).toBeUndefined()
+      expect(worker.resultNotice).toBe(shown)
+    }
+    if (expected === 'uncertain') expect(worker.error).toBe(shown)
   })
 })

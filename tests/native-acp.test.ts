@@ -367,10 +367,11 @@ describe('Native ACP runners (simulated native processes)', () => {
       expect(records.some((record) => record.method === 'session/prompt')).toBe(false)
     },
   )
-  it.each(['kimi', 'grok'] as const)('%s denies permission and reports a clean end_turn as unverified', async (cli) => {
+  it.each(['kimi', 'grok'] as const)('%s denies permission and reports a clean end_turn as completed, without a notice', async (cli) => {
     const { result, records } = await fixture(cli, 'permission')
-    expect(result).toMatchObject({ status: 'UNCERTAIN', response: 'HELLO' })
-    expect(result.error).toMatch(/额外权限请求已拒绝.*结果待核实/)
+    expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
+    expect(result).not.toHaveProperty('error')
+    expect(result).not.toHaveProperty('notice')
     expect(records.find((record) => record.id === 'permission-fixture')?.result).toEqual({
       outcome: { outcome: 'selected', optionId: 'reject' },
     })
@@ -378,10 +379,10 @@ describe('Native ACP runners (simulated native processes)', () => {
   it.each([
     ['kimi', 'allow-once', 'allow', 'SUCCESS'],
     ['kimi', 'allow-session', 'approve_always', 'SUCCESS'],
-    ['kimi', 'deny', 'reject', 'UNCERTAIN'],
+    ['kimi', 'deny', 'reject', 'SUCCESS'],
     // Grok's always-allow persists to the project, so a session grant falls back to once.
     ['grok', 'allow-session', 'allow', 'SUCCESS'],
-    ['grok', 'deny', 'reject', 'UNCERTAIN'],
+    ['grok', 'deny', 'reject', 'SUCCESS'],
   ] as const)('%s relays a permission request to the Host: %s → %s', async (cli, decision, optionId, status) => {
     const { frames, records, result } = await fixture(cli, 'permission', false, decision)
     expect(frames.find((frame) => frame.type === 'approval').request).toEqual({

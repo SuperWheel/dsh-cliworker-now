@@ -484,9 +484,7 @@ export async function runNativeHermes(config, io) {
     if ([...activeTools.values()].some((queue) => queue.length)) throw new Error('Hermes 工具缺少完成事件')
     if (!assistantSegmentOpen && final.output) assistant(final.output)
     response = final.output
-    if (permissionDenied)
-      io.result('UNCERTAIN', response, 'Hermes 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'response')
-    else toolOutcomes.settle(io, response, 'response')
+    toolOutcomes.settle(io, response, 'response', permissionDenied)
   } catch (error) {
     if (runID && !terminal) await stopRun()
     throw error

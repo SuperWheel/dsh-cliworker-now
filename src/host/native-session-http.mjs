@@ -554,9 +554,7 @@ export async function runNativeSessionHttp(original, io, cli) {
     signal.throwIfAborted()
     if (failure) throw new Error(failure)
     if (unfinishedTool) throw new Error('原生轮次结束时仍有未完成工具')
-    if (permissionDenied)
-      io.result('UNCERTAIN', response, '原生额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'run')
-    else toolOutcomes.settle(io, response, 'run')
+    toolOutcomes.settle(io, response, 'run', permissionDenied)
   } catch (error) {
     if (submitted && !terminal && !stopped) await abortRun()
     throw error

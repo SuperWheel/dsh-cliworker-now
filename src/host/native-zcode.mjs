@@ -9,8 +9,6 @@ import { ZcodeResponseTracker, ZcodeToolInputs } from './zcode-response.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
 import { zcodeContextBinding, unknownZcodeContextInspection, readZcodeContextInspections } from './zcode-context-observation.mjs'
 
-const ZCODE_DENIED = 'ZCode 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
-
 const ZCODE_KINDS = { bash: 'command', shell: 'command', edit: 'file', write: 'file', webfetch: 'network', websearch: 'network' }
 /** Public summary of one interaction/requestPermission for the DSH prompt. */
 export function zcodeApprovalRequest(params) {
@@ -601,8 +599,7 @@ export async function runNativeZcode(config, io) {
     const closed = await peer.request('session/close', { sessionId }, { jsonrpc: false })
     if (closed?.closed !== true) throw new Error('ZCode session did not close')
     if (failed) io.result('ERROR', response, failed, 'run')
-    else if (denied) io.result('UNCERTAIN', response, ZCODE_DENIED, 'run')
-    else toolOutcomes.settle(io, response, 'run')
+    else toolOutcomes.settle(io, response, 'run', denied)
   } finally {
     io.signal.removeEventListener('abort', cancel)
     active = false

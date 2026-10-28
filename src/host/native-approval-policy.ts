@@ -104,7 +104,7 @@ export function approvalDecisionText(decision: NativeApprovalDecision): string {
   return `授权决定：${DECISION_LABELS[decision.decision]}（${SOURCE_LABELS[decision.source]}）`
 }
 
-/** Prompt copy shared by the parent question card and the Worker approval panel. */
+/** Worker approval panel copy; the panel shows it as plain text. */
 export function approvalPrompt(
   request: NativeApprovalRequest,
   context: { worker: string; cli: string; project: string },
@@ -116,7 +116,23 @@ export function approvalPrompt(
   ].join('\n')
 }
 
-/** Parent-page question: offers a session grant only when the CLI natively has one. */
+/**
+ * Untrusted text as one literal Markdown paragraph: every ASCII punctuation is
+ * escaped, so nothing becomes a link, format or HTML, and each line keeps a hard break.
+ */
+export function literalMarkdown(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/[!-/:-@[-`{-~]/g, '\\$&'))
+    .join('\\\n')
+}
+
+/**
+ * Parent-page question: offers a session grant only when the CLI natively has one.
+ * The card's title collapses line breaks; only `detail` is laid out as paragraphs.
+ */
 export function approvalQuestion(
   request: NativeApprovalRequest,
   context: { worker: string; cli: string; project: string },
@@ -124,7 +140,11 @@ export function approvalQuestion(
   return {
     id: 'cliworker_approval',
     header: 'CLI 授权',
-    question: approvalPrompt(request, context),
+    question: `${context.worker}（${context.cli}）请求授权`,
+    detail: [request.summary, request.detail ?? '', `工作目录：${context.project}`]
+      .map(literalMarkdown)
+      .filter(Boolean)
+      .join('\n\n'),
     options: [
       { label: APPROVAL_OPTIONS.once },
       ...(request.allowSession ? [{ label: APPROVAL_OPTIONS.session }] : []),

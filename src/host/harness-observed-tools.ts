@@ -12,6 +12,12 @@ const terminal = (state?: string) =>
   /^(?:COMPLETED|COMPLETE|DONE|SUCCESS|FAILED|ERROR|CANCELLED|CANCELED)$/u.test(state ?? '')
 const failed = (state?: string) => /^(?:FAILED|ERROR|CANCELLED|CANCELED)$/u.test(state ?? '')
 
+/** Call arguments of an observed CLI tool; a command-only entry (Codex commandExecution) shows its command. */
+export function observedToolInput(toolCall: NonNullable<TimelineItem['toolCall']>): unknown {
+  if (toolCall.input !== undefined) return toolCall.input
+  return typeof toolCall.command === 'string' ? { command: toolCall.command } : undefined
+}
+
 /** AgentLoop receives an existing CLI receipt; this registry cannot execute a tool. */
 export class HarnessObservedTools {
   private readonly receipts = new Map<string, { rowId: string; name: string; arguments: string }>()
@@ -116,7 +122,7 @@ export class HarnessObservedTools {
     if (name === 'run_code' || !/^[a-zA-Z0-9_.:-]{1,128}$/u.test(name))
       throw new Error('CLI 工具名称不能安全注册为回执适配')
     const callId = ToolCallId(`cliworker:${this.runId}:${row.toolCall.callId}`)
-    const args = json(row.toolCall.input ?? {})
+    const args = json(observedToolInput(row.toolCall) ?? {})
     const previous = this.receipts.get(callId)
     if (previous && (previous.rowId !== row.id || previous.name !== name || previous.arguments !== args))
       throw new Error('CLI 工具调用身份或参数发生变化')

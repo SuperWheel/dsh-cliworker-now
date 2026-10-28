@@ -23,7 +23,7 @@ import type {
   HarnessConversationRecord,
   HarnessConversationRun,
 } from './harness-conversation-types.ts'
-import { HarnessObservedTools } from './harness-observed-tools.ts'
+import { HarnessObservedTools, observedToolInput } from './harness-observed-tools.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -401,11 +401,12 @@ export class HarnessConversationStream {
         // These are already executed CLI operations. A passive log entry is not
         // a tool-call stream chunk, so AgentLoop cannot dispatch it a second time.
         const callId = ToolCallId(`cliworker:${this.run.runId}:${first.toolCall?.callId ?? first.id}`)
+        const input = first.toolCall && observedToolInput(first.toolCall)
         const block = {
           type: 'tool-call' as const,
           id: callId,
           name: first.toolCall?.name || first.text || 'CLI 工具',
-          arguments: first.toolCall?.input === undefined ? '' : json(first.toolCall.input),
+          arguments: input === undefined ? '' : json(input),
         }
         // Released Session v4 requires a model-advertised call before a call
         // lifecycle. Append this observed CLI declaration directly, with a

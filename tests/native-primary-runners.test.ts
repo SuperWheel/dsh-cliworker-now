@@ -437,9 +437,11 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     })
     expect(events.filter((event) => event.kind === 'reasoning')).toHaveLength(0)
   })
-  it.each(['deny', 'deny-file', 'deny-permissions'])('denies Codex %s approval and reports a completed turn as uncertain', async (scenario) => {
+  it.each(['deny', 'deny-file', 'deny-permissions'])('denies Codex %s approval and reports a completed turn as completed, without a notice', async (scenario) => {
     const { result, messages, frames } = await run('codex', scenario)
-    expect(result).toMatchObject({ status: 'UNCERTAIN', response: '合成回复', resultScope: 'response', error: 'Codex 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试' })
+    expect(result).toMatchObject({ status: 'SUCCESS', response: '合成回复', resultScope: 'response' })
+    expect(result).not.toHaveProperty('error')
+    expect(result).not.toHaveProperty('notice')
     expect(messages.find((value) => value.id === 'synthetic-approval').result)
       .toEqual(scenario === 'deny-permissions' ? { permissions: { network: null, fileSystem: null }, scope: 'turn' } : { decision: 'decline' })
     const diagnostic = frames.find((frame) => frame.event?.kind === 'diagnostic')?.event
@@ -485,7 +487,7 @@ describe('native primary runners (synthetic protocol processes, no real accounts
   it.each([
     ['allow-once', 'accept', 'SUCCESS'],
     ['allow-session', 'acceptForSession', 'SUCCESS'],
-    ['deny', 'decline', 'UNCERTAIN'],
+    ['deny', 'decline', 'SUCCESS'],
   ] as const)('relays a Codex approval to the Host: %s → %s', async (decision, reply, status) => {
     const { config, log } = setup('codex', 'tier-ask', true)
     Object.assign(config, { access: 'workspace-write', approvalNonce: 'synthetic-nonce' })
@@ -504,9 +506,10 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(messages.find((value) => value.id === 'synthetic-approval').result).toEqual({ decision: reply })
     expect(frames.at(-1).status).toBe(status)
   })
-  it('keeps a denied Codex turn with another failed tool unverified, never successful', async () => {
+  it('completes a denied Codex turn with another failed tool, without a notice', async () => {
     const { result } = await run('codex', 'deny-tool-failure')
-    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('额外授权已拒绝') })
+    expect(result).toMatchObject({ status: 'SUCCESS' })
+    expect(result).not.toHaveProperty('notice')
   })
   it.each(['user-input', 'unknown-request'])('keeps Codex %s server requests as failures even when the turn completes', async (scenario) => {
     const { result, messages, frames } = await run('codex', scenario)

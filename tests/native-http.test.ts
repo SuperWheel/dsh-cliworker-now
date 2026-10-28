@@ -399,12 +399,11 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(reasoning.at(-1).event).toMatchObject({ detail: '公开思考', state: 'COMPLETED' })
       expect(JSON.stringify(frames)).not.toContain('OPAQUE_SIGNATURE_MUST_NOT_COPY')
     })
-    it.each(['permission', 'permission-tool-failure'])(`${cli}: reports %s as uncertain when the turn completes`, async (mode) => {
+    it.each(['permission', 'permission-tool-failure'])(`${cli}: reports %s as completed, without a notice, when the turn completes`, async (mode) => {
       const { frames, requests } = await run(cli, mode)
-      expect(frames.at(-1)).toMatchObject({
-        status: 'UNCERTAIN', response: '模拟正文', resultScope: 'run',
-        error: '原生额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试',
-      })
+      expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: '模拟正文', resultScope: 'run' })
+      expect(frames.at(-1)).not.toHaveProperty('error')
+      expect(frames.at(-1)).not.toHaveProperty('notice')
       expect(frames.some((row) => row.type === 'event' && row.event.kind === 'diagnostic' && row.event.text === '原生额外授权已拒绝')).toBe(true)
       expect(requests.find((row: any) => row.path?.startsWith('/permission/')).body.reply).toBe('reject')
       expect(requests.filter((row: any) => row.path?.endsWith('prompt_async'))).toHaveLength(1)
@@ -414,7 +413,7 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       ['allow-once', 'once', 'SUCCESS'],
       // `always` can outlive the session, so a session grant is never offered or sent.
       ['allow-session', 'once', 'SUCCESS'],
-      ['deny', 'reject', 'UNCERTAIN'],
+      ['deny', 'reject', 'SUCCESS'],
     ] as const)(`${cli}: relays permission.asked to the Host: %s → %s`, async (decision, reply, status) => {
       const { frames, requests } = await run(cli, 'permission', false, undefined, {}, decision)
       expect(frames.find((row) => row.type === 'approval').request).toEqual({ kind: 'command', summary: 'bash', allowSession: false })
@@ -570,7 +569,7 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
     // Without a native session choice, a session grant falls back to once; `always` is never sent.
     ['permission', 'allow-session', 'once', false, 'SUCCESS'],
     ['permission-session', 'allow-once', 'once', true, 'SUCCESS'],
-    ['permission-session', 'deny', 'deny', true, 'UNCERTAIN'],
+    ['permission-session', 'deny', 'deny', true, 'SUCCESS'],
   ] as const)('relays a Hermes approval.request (%s) to the Host: %s → %s', async (mode, decision, choice, allowSession, status) => {
     const { frames, requests } = await run('hermes', mode, false, undefined, {}, decision)
     expect(frames.find((row) => row.type === 'approval').request).toEqual({
@@ -579,12 +578,11 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
     expect(requests.find((row: any) => row.path?.endsWith('/approval')).body).toMatchObject({ choice, request_id: 'approval_SYNTHETIC' })
     expect(frames.at(-1).status).toBe(status)
   })
-  it.each(['permission', 'permission-tool-failure'])('reports %s as uncertain when the Hermes run completes', async (mode) => {
+  it.each(['permission', 'permission-tool-failure'])('reports %s as completed, without a notice, when the Hermes run completes', async (mode) => {
     const { frames, requests } = await run('hermes', mode)
-    expect(frames.at(-1)).toMatchObject({
-      status: 'UNCERTAIN', response: '模拟正文', resultScope: 'response',
-      error: 'Hermes 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试',
-    })
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: '模拟正文', resultScope: 'response' })
+    expect(frames.at(-1)).not.toHaveProperty('error')
+    expect(frames.at(-1)).not.toHaveProperty('notice')
     expect(frames.some((row) => row.type === 'event' && row.event.kind === 'diagnostic' && row.event.text === 'Hermes 额外授权已拒绝')).toBe(true)
     expect(frames.some((row) => row.type === 'event' && row.event.kind === 'assistant')).toBe(true)
     expect(requests.find((row: any) => row.path?.endsWith('/approval')).body).toMatchObject({

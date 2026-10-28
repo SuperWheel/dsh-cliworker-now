@@ -219,7 +219,7 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
     ['allow-once', 'allow', 'SUCCESS'],
     // proceed_always is session-scoped; proceed_always_and_save would persist and is never chosen.
     ['allow-session', 'proceed_always', 'SUCCESS'],
-    ['deny', 'reject', 'UNCERTAIN'],
+    ['deny', 'reject', 'SUCCESS'],
   ] as const)('relays a permission request to the Host: %s → %s', async (decision, optionId, status) => {
     const { frames, records, result } = await fixture('permission', { decision })
     expect(frames.find((frame) => frame.type === 'approval').request).toMatchObject({ allowSession: true })
@@ -310,11 +310,12 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
   })
 
   it.each(['permission', 'permission-no-reject'])(
-    'denies extra permissions and reports the finished turn as unverified, never success (%s)',
+    'denies extra permissions and reports the finished turn as completed, without a notice (%s)',
     async (scenario) => {
       const { records, result } = await fixture(scenario)
-      expect(result).toMatchObject({ status: 'UNCERTAIN', response: 'HELLO' })
-      expect(result.error).toMatch(/额外权限请求已拒绝.*结果待核实/)
+      expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
+      expect(result).not.toHaveProperty('error')
+      expect(result).not.toHaveProperty('notice')
       expect(records.find((record) => record.id === 'permission-simulated')?.result).toEqual({
         outcome:
           scenario === 'permission' ? { outcome: 'selected', optionId: 'reject' } : { outcome: 'cancelled' },
@@ -322,9 +323,10 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
     },
   )
 
-  it('keeps a denied turn unverified when a tool other than the denied one fails', async () => {
+  it('completes a denied turn without a notice when a tool other than the denied one fails', async () => {
     const { result } = await fixture('permission-other-failure')
-    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringMatching(/额外权限请求已拒绝.*结果待核实/) })
+    expect(result).toMatchObject({ status: 'SUCCESS' })
+    expect(result).not.toHaveProperty('notice')
   })
 
   it('reports a turn that carries on after a failed tool as success with the failed step count', async () => {
@@ -444,7 +446,7 @@ describe('Native Qoder CN ACP runner (simulated processes; no native login or re
 
   it.each(['permission', 'permission-no-reject'])('denies CN extra permissions (%s)', async scenario => {
     const { records, result, processExited } = await fixture(scenario, { cli: 'qodercn' })
-    expect(result).toMatchObject({ status: 'UNCERTAIN', response: 'HELLO' })
+    expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
     expect(records.find(record => record.id === 'permission-simulated')?.result).toEqual({ outcome:
       scenario === 'permission' ? { outcome: 'selected', optionId: 'reject' } : { outcome: 'cancelled' } })
     expect(processExited).toBe(true)

@@ -1118,6 +1118,8 @@ OpenSpec 变更 `add-isolated-parallel-writes`，设计细节见该变更的 `de
 
 OpenSpec 变更 `report-denied-permission-as-unverified`。
 
+> 2026-10-28 起由 `close-approval-relay-gaps` 取代：授权被拒后 CLI 正常结束的轮次改为「已完成」，不再标结果待核实。下文为当时的决定。
+
 - 插件仍拒绝全部额外权限/授权请求。拒绝后 CLI 本轮自身正常结束、无其他失败时，结果为结果待核实（`uncertain`），提示核查实际产物、不要自动重试；不报告成功。
 - 被拒绝工具因拒绝报告的失败不单独判失败：ZCode 按请求与 `permission.resolved` 的 `toolCallId`（批次 `errorCount` 只扣除批内被拒工具），ACP 按 `toolCall.toolCallId`，Codex 按审批 `itemId`（`declined` 完成）。Hermes 与原生 HTTP 会话系审批不带工具身份，有拒绝时整体为结果待核实。
 - Claude Code 拒绝即中断本轮，仍为失败；需要额外交互输入的请求仍为失败。
@@ -1250,3 +1252,16 @@ OpenSpec 变更 `relay-harness-tool-approvals`，处理 `relay-native-approvals-
 - 工具桥 `execute` 把 `cliworker:<callId>` 登记到 `bridgeCalls`（Worker、runId、子 Agent、工具名、参数），结束时删除。Host 以 `ctx.on('approval/request', …, true)` 注册在 Remote 转发者之前，只认领 callId 在 `bridgeCalls` 中且请求方为登记子 Agent 的请求，其他一律 `next()`。
 - 认领后经运行时 `harnessApproval` → `trackApproval`（与 CLI 原生请求共用：时间线、`approvalWaiting`、停止撤回）。主 Agent 发起的轮次走 `decideNativeApproval`（父页面 `userQuestions.ask`）；其他轮次先按规划与预设执行 `decideApproval`，需要询问时才 `next()` 交给子会话原生面板，并与停止信号赛跑。摘要为「执行命令（DSH 备选工具 bash）：<命令>」，详情取 DSH 的 `displayReason.zh`，不提供会话级授权。结果映射回 DSH：允许 → `allowed-once`，停止 → `cancelled`，无应答者 → `unavailable`，其余 → `rejected`。
 - 未改：工具桥审批等待期间不暂停空闲时限（计时在原生运行器中）；DSH 工具被拒后本轮为「已完成」加诊断，与原生拒绝的「结果待核实」不一致。
+
+## 2026-10-28 授权中继收尾：提问卡分段、命令工具标题、DSH 工具拒绝与空闲时限（未发布）
+
+OpenSpec 变更 `close-approval-relay-gaps`，处理此前 Desktop 验收留下的四个问题。
+
+- 提问卡：DSH 通用提问流程把 `question` 放进标题（换行折叠），`detail` 用 `MarkdownText` 渲染。`approvalQuestion` 的标题改为「<Worker>（<CLI>）请求授权」，摘要、原因、工作目录放进 `detail` 各成一段；CLI 文字经 `literalMarkdown` 转义全部 ASCII 标点、按行硬换行，不会变成链接、格式或 HTML。Worker 会话审批面板仍用 `approvalPrompt` 纯文本。
+- 工具块：DSH 工具块参数为空串时以 callId 作摘要。`observedToolInput` 在条目只有字符串 `command`（Codex `commandExecution`）时以 `{ command }` 作参数，实时声明与回放共用。
+- 授权被拒的结果（用户 2026-10-28 决定，取代 2026-10-25「额外授权被拒绝后标为结果待核实」）：授权被拒是用户的决定，CLI 自行正常结束的轮次为「已完成」，不显示待核实与横幅，也不附「本轮有 N 个工具步骤失败」；拒绝记录仍在时间线。
+  - 原生运行器：`settle(io, response, scope, denied)` 为真时直接 SUCCESS、不带说明；Codex、Hermes、OpenCode/MiMo、ZCode、ACP 的拒绝分支改为传入该标记，Pi/OMP 运行器直接输出 SUCCESS。ACP 无正文仍为待核实（检查在拒绝之前）。Claude Code 拒绝即中断本轮，仍为失败。
+  - DSH 备选工具：Host 记录 `task.harnessDeniedRunId`（拒绝且来源不是任务停止）。运行器报 SUCCESS 时不写「本轮结果说明」；报 UNCERTAIN 且为 `LAST_TOOL_FAILED` 时视为被拒工具即最后的失败步骤，按已完成处理；其他 UNCERTAIN、失败、停止按原规则。
+  - 其他待核实情况（最后一步工具失败后直接结束、AGY 汇总冲突、ACP 无正文）不变。
+- 空闲时限：`task.holdIdle()` 在 DSH 备选工具等待授权时暂停空闲计时。Host 计时的 Pi、OMP 与 CLI 原生审批共用 `holdHostIdle`；运行器计时的 CLI 只在启用空闲时限时经该轮审批邮箱发送 `idle-<n>:hold` / `idle-<n>:release`（邮箱同 id 只收一种内容），`release` 等 `hold` 回执后再发；`native-bridge.mjs` 交给 `createIdleHolds`，先到的 `release` 作废该键。审批邮箱每轮 200 次提交上限由授权回复与此共享。
+- 工具桥等待上限（验收中发现）：载体客户端原用 Node `fetch`，300 秒收不到响应头即放弃，Host 等工具结束才回复，所以等待授权超过 5 分钟的调用会失败，提问卡却仍留着，之后允许仍会执行。客户端改用 `node:http`（无响应等待上限）；Host 账本按等待中的请求计数，响应未写完即关闭且计数归零时中止该调用，授权提问随之撤回。
