@@ -58,7 +58,8 @@ export class ClaudeResponseTracker {
   finish(final = false) {
     if (this.last) {
       const usage = final && this.hasDelta && !this.invalidUsage ? claudeResponseUsage(this.tokens) : undefined
-      this.output({ ...this.last, ...(this.last.kind === 'assistant' ? { text: '' } : {}),
+      this.output({ ...this.last, delta: undefined,
+        ...(this.last.toolCall ? { toolCall: { ...this.last.toolCall, output: undefined } } : {}), ...(this.last.kind === 'assistant' ? { text: '' } : {}),
         response: { ...this.last.response, complete: true, ...(usage ? { usage } : {}) } })
     }
     this.id = undefined

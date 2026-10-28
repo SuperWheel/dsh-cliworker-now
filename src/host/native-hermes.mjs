@@ -372,12 +372,13 @@ export async function runNativeHermes(config, io) {
         if (typeof event.text !== 'string') throw new Error('Hermes 公开思考格式无效')
         if (event.text) {
           reasoningStep ??= ++toolStep
-          reasoningDetail += (reasoningDetail ? '\n' : '') + event.text
+          const delta = (reasoningDetail ? '\n' : '') + event.text
+          reasoningDetail += delta
           io.event({
             kind: 'reasoning',
             step: reasoningStep,
             text: 'Hermes 公开思考',
-            detail: reasoningDetail,
+            delta,
             state: 'RUNNING',
           })
         }
@@ -398,6 +399,7 @@ export async function runNativeHermes(config, io) {
           if (event.error === true || event.event === 'tool.failed') toolOutcomes.failed(step)
           else toolOutcomes.succeeded()
         }
+        const { result, output, arguments: input, ...metadata } = event
         io.event({
           kind: 'tool',
           step,
@@ -408,8 +410,10 @@ export async function runNativeHermes(config, io) {
               : event.error === true || event.event === 'tool.failed'
                 ? 'FAILED'
                 : 'COMPLETED',
-          detail: JSON.stringify(event),
+          detail: JSON.stringify(metadata),
           toolCall: { name: event.tool,
+            ...(input !== undefined ? { input } : {}),
+            ...(output !== undefined || result !== undefined ? { output: output ?? result } : {}),
             ...(typeof event.tool_call_id === 'string' ? { callId: event.tool_call_id } : {}) },
         })
       } else if (event.event === 'approval.request') {

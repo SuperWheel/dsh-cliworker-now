@@ -85,6 +85,12 @@ const server=createServer(async(req,res)=>{
    if(mode==='tool-failure'||mode==='permission-tool-failure'||mode==='tool-recovered')for(const status of ['running','error'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'bash',state:{status}}}})
    if(mode==='tool-recovered')for(const status of ['running','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_RETRY',messageID:aid,sessionID:sid,type:'tool',tool:'write',state:{status}}}})
    if(mode==='tools')for(const status of ['pending','running','completed','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'read',state:{status}}}})
+   if(mode==='budget-snapshots'){
+     // SIMULATED growing public reasoning snapshots and cumulative/replacing tool snapshots.
+     for(const text of ['旧','旧值','旧值完成'])values.push({type:'message.part.updated',properties:{part:{id:'prt_THOUGHT',messageID:aid,sessionID:sid,type:'reasoning',text}}});
+     for(const output of ['旧','旧值','替换','替换完成'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'read',state:{status:'running',output}}}});
+     values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'read',state:{status:'completed',output:'替换完成'}}}});
+   }
    if(mode==='reasoning')values.push({type:'message.part.updated',properties:{part:{id:'prt_THOUGHT',messageID:aid,sessionID:sid,type:'reasoning',text:'',metadata:{anthropic:{signature:'OPAQUE_SIGNATURE_MUST_NOT_COPY'}}}}},
     {type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:'prt_THOUGHT',field:'signature',delta:'OPAQUE_SIGNATURE_MUST_NOT_COPY'}},
     {type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:'prt_THOUGHT',field:'text',delta:'公开'}} ,
@@ -359,6 +365,18 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(frames.at(-1).status).toBe('SUCCESS')
       expect(requests.some((row: any) => row.path === '/session' && row.method === 'POST')).toBe(false)
     })
+    it(`${cli}: reconciles cumulative and replacing output snapshots`, async () => {
+      // SIMULATED HTTP/SSE snapshots, no external service.
+      const { frames } = await run(cli, 'budget-snapshots')
+      expect(frames.at(-1).status).toBe('SUCCESS')
+      const progress = frames.filter(frame => frame.event?.state === 'RUNNING' && ['tool', 'reasoning'].includes(frame.event.kind))
+      expect(progress.filter(frame => frame.event.kind === 'tool')
+        .map(frame => frame.event.delta ?? frame.event.toolCall.output)).toEqual(['旧', '值', '替换', '完成'])
+      expect(progress.filter(frame => frame.event.kind === 'reasoning').map(frame => frame.event.delta)).toEqual(['旧', '值', '完成'])
+      const rows = timeline(frames)
+      expect(rows.find(row => row.kind === 'reasoning')?.detail).toBe('旧值完成')
+      expect(rows.find(row => row.kind === 'tool')?.toolCall?.output).toBe('替换完成')
+    })
     it(`${cli}: keeps a stable tool step and deduplicates identical snapshots`, async () => {
       const { frames } = await run(cli, 'tools')
       const tools = frames.filter((row) => row.type === 'event' && row.event.kind === 'tool')
@@ -575,6 +593,7 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
     const reasoning = frames.filter((row) => row.type === 'event' && row.event.kind === 'reasoning')
     expect(frames.at(-1).status).toBe('SUCCESS')
     expect(new Set(reasoning.map((row) => row.event.step)).size).toBe(1)
+    expect(reasoning.filter(row => row.event.state === 'RUNNING').map(row => row.event.delta)).toEqual(['公开思考一', '\n公开思考二'])
     expect(reasoning.at(-1).event).toMatchObject({ detail: '公开思考一\n公开思考二', state: 'COMPLETED' })
   })
   it('does not bind an existing CLI-owned session to HTTP', async () => {

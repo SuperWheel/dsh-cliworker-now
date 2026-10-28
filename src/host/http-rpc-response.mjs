@@ -92,7 +92,8 @@ export class NativeBlockResponses {
     response.complete = true
     if (!response.last) return
     const event = response.lastText ?? response.last
-    this.output({ ...event, ...(event.kind === 'assistant' ? { text: '' } : {}),
+    this.output({ ...event, delta: undefined,
+      ...(event.toolCall ? { toolCall: { ...event.toolCall, output: undefined } } : {}), ...(event.kind === 'assistant' ? { text: '' } : {}),
       response: { ...event.response, complete: true, ...(usage ? { usage } : {}) } })
   }
   completed(id) { return this.responses.get(id)?.complete === true }

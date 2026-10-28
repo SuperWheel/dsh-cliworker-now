@@ -1,3 +1,4 @@
+import { summarizeNativeRecord } from './native-transport.mjs'
 // ACP is JSON-RPC 2.0 over NDJSON. Kimi and Grok retain their own config wire.
 import { nativeHarnessMcpServers, nativeHarnessAcpApproval } from './native-harness-injection.mjs'
 import { nativeAttachmentInput } from './native-attachments.mjs'
@@ -91,7 +92,11 @@ export async function runNativeAcp(config, io, settings) {
     thought = ''
   }
   const receive = async (message) => {
-    io.native(message)
+    const rawUpdate = message?.params?.update
+    io.native(['tool_call', 'tool_call_update'].includes(rawUpdate?.sessionUpdate)
+      ? { ...message, params: { ...message.params, update: { ...rawUpdate,
+        ...(rawUpdate.rawOutput !== undefined ? { rawOutput: summarizeNativeRecord(rawUpdate.rawOutput, 0) } : {}),
+        ...(rawUpdate.content !== undefined ? { content: summarizeNativeRecord(rawUpdate.content, 0) } : {}) } } } : message)
     if (!isRecord(message) || message.jsonrpc !== '2.0') {
       fail('Invalid ACP JSON-RPC envelope')
       throw new Error('Invalid ACP JSON-RPC envelope')
@@ -175,7 +180,7 @@ export async function runNativeAcp(config, io, settings) {
           kind: 'reasoning',
           step: thoughtStep,
           text: `${settings.name} 公开思考`,
-          detail: thought,
+          delta: update.content.text,
           state: 'RUNNING',
         })
       }
@@ -192,6 +197,12 @@ export async function runNativeAcp(config, io, settings) {
         ...(nonempty(update.title) ? { title: update.title } : {}),
         ...(nonempty(update.status) ? { status: update.status } : {}),
       }
+      const { rawInput: _input, rawOutput, content, ...metadata } = update
+      const output = Object.hasOwn(update, 'rawOutput') ? rawOutput : content
+      const done = ['completed', 'failed'].includes(value.status)
+      const prior = previous.output ?? ''
+      const increment = !done && typeof output === 'string' && typeof prior === 'string' && output.startsWith(prior)
+      if (output !== undefined) value.output = output
       tools.set(update.toolCallId, value)
       if (value.status === 'failed' && !deniedTools.has(update.toolCallId)) toolOutcomes.failed(update.toolCallId)
       else if (value.status === 'completed' && previous.status !== 'completed') toolOutcomes.succeeded()
@@ -200,14 +211,13 @@ export async function runNativeAcp(config, io, settings) {
         step: value.step,
         text: value.title,
         state: value.status === 'completed' ? 'COMPLETED' : value.status === 'failed' ? 'FAILED' : 'RUNNING',
-        detail: JSON.stringify(update),
+        detail: JSON.stringify(metadata),
+        ...(increment ? { delta: output.slice(prior.length) } : {}),
         toolCall: { callId: update.toolCallId,
           ...(nonempty(settings.toolName?.(update) ?? update.title)
             ? { name: settings.toolName?.(update) ?? update.title } : {}),
           ...(Object.hasOwn(update, 'rawInput') ? { input: update.rawInput } : {}),
-          ...(Object.hasOwn(update, 'rawOutput') ? { output: update.rawOutput } :
-            ['completed', 'failed'].includes(value.status) && Array.isArray(update.content)
-              ? { output: update.content } : {}) },
+          ...(!increment && (output !== undefined || done) && value.output !== undefined ? { output: value.output } : {}) },
       })
     }
   }

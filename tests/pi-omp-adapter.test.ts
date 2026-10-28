@@ -188,6 +188,12 @@ if(cmd.type==='prompt'){
 streaming=true;
 send({id:cmd.id,type:'response',command:'prompt',success:true});send({type:'message_start',message:{role:'assistant'}});
 send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',delta:'SECRET_REASONING_FIXTURE'}});
+// SIMULATED display budgets and native inbound framing, no external CLI/model.
+if(scenario==='budget-stream'){for(let i=0;i<300;i++)send({type:'fixture_ignored',body:'x'.repeat(65536)});process.stderr.write('x'.repeat(3*1024*1024));}
+if(scenario==='budget-tool'){
+ send({type:'tool_execution_start',toolCallId:'budget-tool',toolName:'read'});
+ send({type:'tool_execution_end',toolCallId:'budget-tool',toolName:'read',result:{content:[{type:'text',text:'中'.repeat(400000)}]}});
+}
 if(scenario==='public-thinking'){
 send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',contentIndex:0,delta:'模拟公开',partial:{content:[{thinkingSignature:'OPAQUE_SIGNATURE'}]}}});
 send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',contentIndex:0,delta:'过程'}});
@@ -274,6 +280,46 @@ async function prepareConfirmed(input: PiOmpInput) {
   )
 }
 describe('Pi/OMP bridge with simulated native RPC processes', () => {
+  it.each(['pi', 'omp'] as const)('%s forwards Host budgets into the private bridge request', async cli => {
+    // SIMULATED provider metadata, no external network.
+    const { input } = await fixture(cli)
+    const limits = { maxLineBytes: 8192, maxRunBytes: 16000, maxNativeLineBytes: 2_000_000, maxToolPreviewBytes: 1024 }
+    const prepared = await extendedLaunch(cli, input.executable, input.project, input.preference, input.mode, input.prompt,
+      input.stateDirectory, { ...DEFAULT_CONFIG, ...limits, stateDirectory: input.stateDirectory }, undefined,
+      async (argv, env) => (await exec(argv[0]!, argv.slice(1), { env: fixtureEnvironment(input.nativeHome, env) })).stdout)
+    try { expect(JSON.parse(await readFile(prepared.argv.at(-1)!, 'utf8'))).toMatchObject(limits) }
+    finally { await prepared.cleanup?.() }
+  })
+  it.each(['pi', 'omp'] as const)('%s truncates configured display budgets without rejecting large inbound totals', async cli => {
+    // SIMULATED 19 MiB inbound stream; maxRunBytes is only a display budget.
+    const { input } = await fixture(cli, 'budget-stream')
+    const result = await launch({ ...input, maxLineBytes: 8192, maxNativeLineBytes: 131072, maxRunBytes: 1024 })
+    expect(result.code).toBe(0)
+    expect(result.frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
+  })
+  it.each(['pi', 'omp'] as const)('%s uses preview/run caps independently from a configured inbound frame limit', async cli => {
+    // SIMULATED single 1.2 MiB result: above the old fixed line limit.
+    const { input } = await fixture(cli, 'budget-tool')
+    for (const maxRunBytes of [512, 16000]) {
+      const result = await launch({ ...input, maxLineBytes: 8192, maxNativeLineBytes: 2_000_000, maxRunBytes, maxToolPreviewBytes: 1024 })
+      expect(result.code).toBe(0)
+      expect(result.frames.at(-1).status).toBe('SUCCESS')
+      const tool = result.frames.find(frame => frame.event?.state === 'COMPLETED' && frame.event.kind === 'tool').event
+      expect(tool.truncated).toBe(true)
+      expect(tool.detail).toBeUndefined()
+      expect(Buffer.byteLength(tool.toolCall.output)).toBeLessThanOrEqual(Math.min(1024, maxRunBytes))
+    }
+  })
+  it.each(['pi', 'omp'] as const)('%s rejects one inbound frame with the configured limit in its error', async cli => {
+    // SIMULATED oversized frame, including the legacy maxLineBytes fallback.
+    const { input } = await fixture(cli, 'budget-tool')
+    for (const limits of [{ maxLineBytes: 8192, maxNativeLineBytes: 4096 }, { maxLineBytes: 8192 }]) {
+      const result = await launch({ ...input, ...limits })
+      expect(result.frames.at(-1)).toMatchObject({ status: 'ERROR',
+        error: `原生 CLI 单个入站协议帧超过上限（${limits.maxNativeLineBytes ?? limits.maxLineBytes} 字节），已停止运行` })
+    }
+  })
+
   it('Pi explicitly whitelists run tools without persisting the connection', async () => {
     const cli = 'pi'
     const { input } = await fixture(cli)

@@ -3,6 +3,7 @@
 import { NativeBlockResponses, piOmpResponseUsage, piOmpReportedUsage } from './http-rpc-response.mjs'
 import { OmpContextInspection } from './omp-context-inspection.mjs'
 import { PI_CONTEXT_ENV, preparePiContextObserver, readPiContextObservation } from './pi-context-observer.mjs'
+import { createEventBudget, summarizeNativeRecord } from './native-transport.mjs'
 import { spawnNativeProcess } from './native-spawn.mjs'
 import { createToolOutcomes, LAST_TOOL_FAILED, recoveredNotice } from './native-tool-outcomes.mjs'
 import { createHash, randomBytes } from 'node:crypto'
@@ -24,8 +25,12 @@ import {
 } from './pi-native-catalog.mjs'
 
 process.umask(0o077)
-const output = (value) => process.stdout.write(JSON.stringify(value) + '\n')
-const event = (value) => output({ type: 'event', event: value })
+const output = (value) => process.stdout.write(JSON.stringify(value.type === 'native' ? { ...value, record: summarizeNativeRecord(value.record) } : value) + '\n')
+let eventBudget
+const event = (value) => {
+  const shown = eventBudget ? eventBudget(value) : value
+  if (shown) output({ type: 'event', event: shown })
+}
 const safeErrors = new Set([
   '任务已停止',
   '所选模型或强度不在原生可用目录中',
@@ -162,6 +167,12 @@ try {
   const harnessTools = readNativeHarnessConnection()
   const requestPath = process.argv[2]
   config = JSON.parse(await privateFile(requestPath, true))
+  config.maxLineBytes ??= 1_048_576
+  config.maxRunBytes ??= 16_777_216
+  config.maxNativeLineBytes ??= config.maxLineBytes
+  eventBudget = createEventBudget(config, value => output({ type: 'event', event: value }))
+  const inboundError = `原生 CLI 单个入站协议帧超过上限（${config.maxNativeLineBytes} 字节），已停止运行`
+  safeErrors.add(inboundError)
   await unlink(requestPath)
   if (!config.controlNonce) await rmdir(dirname(requestPath))
   if (
@@ -433,8 +444,6 @@ try {
       stdio: config.cli === 'pi' ? ['pipe', 'pipe', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
     })
     let pending = '',
-      bytes = 0,
-      stderrBytes = 0,
       settled = false,
       finalState = false,
       sent = false,
@@ -465,12 +474,12 @@ try {
       let block = thinkingBlocks.get(key)
       if (!block) {
         if (!text) return
-        block = { messageKey, index, step: thinkingBlocks.size, text: '', emittedAt: 0 }
+        block = { messageKey, index, step: thinkingBlocks.size, text: '', emitted: '', emittedAt: 0 }
         thinkingBlocks.set(key, block)
       }
       block.text = text
       block.state = state
-      // Native token deltas can be tiny. Bound live snapshot frequency while
+      // Native token deltas can be tiny. Coalesce live increments while
       // always delivering the authoritative completed block immediately.
       const now = Date.now()
       if (!force && state === 'RUNNING' && now - block.emittedAt < 200) return
@@ -480,9 +489,10 @@ try {
         kind: 'reasoning',
         step: block.step,
         text: `${config.cli === 'pi' ? 'Pi' : 'OMP'} 公开思考`,
-        detail: text,
+        ...(state === 'RUNNING' && text && text.startsWith(block.emitted) ? { delta: text.slice(block.emitted.length) } : { detail: text }),
         state,
       }, index)
+      block.emitted = text
     }
     const toolSteps = new Map()
     const send = (value) => {
@@ -845,11 +855,6 @@ try {
       if (value.type === 'tool_execution_end') {
         if (value.isError) toolOutcomes.failed(value.toolCallId)
         else toolOutcomes.succeeded()
-        const detail = (value.result?.content ?? [])
-          .filter((c) => c.type === 'text')
-          .map((c) => c.text ?? '')
-          .join('\n')
-          .slice(0, 32768)
         const owner = toolResponses.get(value.toolCallId)
         const emitTool = (event) => owner ? responses.event(owner.owner, owner.blockId, event) : eventOutput(event)
         emitTool({
@@ -857,7 +862,6 @@ try {
           step: toolSteps.get(value.toolCallId),
           text: String(value.toolName ?? '工具'),
           state: value.isError ? 'FAILED' : 'COMPLETED',
-          detail,
           toolCall: { callId: value.toolCallId, output: value.result },
         })
         return
@@ -900,25 +904,20 @@ try {
     child.stdout.setEncoding('utf8')
     child.stdout.on('data', (chunk) => {
       try {
-        bytes += Buffer.byteLength(chunk)
-        if (bytes > 16 * 1024 * 1024) throw new Error('Native RPC output exceeds run limit')
         pending += chunk
         let end
         while ((end = pending.indexOf('\n')) >= 0) {
           const line = pending.slice(0, end)
           pending = pending.slice(end + 1)
-          if (Buffer.byteLength(line) > 1024 * 1024) throw new Error('Native RPC line exceeds limit')
+          if (Buffer.byteLength(line) > config.maxNativeLineBytes) throw new Error(inboundError)
           if (line.trim()) consume(JSON.parse(line))
         }
-        if (Buffer.byteLength(pending) > 1024 * 1024) throw new Error('Native RPC line exceeds limit')
+        if (Buffer.byteLength(pending) > config.maxNativeLineBytes) throw new Error(inboundError)
       } catch (error) {
         stop(errorMessage(error))
       }
     })
-    child.stderr.on('data', (chunk) => {
-      stderrBytes += chunk.length
-      if (stderrBytes > 2 * 1024 * 1024) stop('Native stderr exceeds limit')
-    })
+    child.stderr.resume()
     startupTimer = setTimeout(() => stop('Native RPC startup timed out'), 20000)
     send({ id: 'initial', type: 'get_state' })
     const outcome = await new Promise((resolve) => {

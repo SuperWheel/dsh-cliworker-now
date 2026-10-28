@@ -14,7 +14,7 @@ afterEach(async () => {
 })
 
 const source = String.raw`
-// Simulated ACP agent. This fixture never calls a model or uses credentials.
+// SIMULATED ACP agent. This fixture never calls a model or uses credentials.
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
 const out=x=>process.stdout.write(JSON.stringify(x)+'\n');
@@ -55,6 +55,14 @@ createInterface({input:process.stdin}).on('line',line=>{
    update('session-fixture','AFTER','delta-two');
    extension({sessionUpdate:'response_completed',message_id:'native-b',usage:{...usage,output_tokens:6}},'response-end-b');
    extension({sessionUpdate:'response_completed',message_id:'native-b',usage:{...usage,output_tokens:6}},'response-end-b');
+  }
+  if(scenario.startsWith('budget-')){
+   // SIMULATED cumulative ACP tool snapshots and public thought increments.
+   const count=Number(scenario.slice(7)),chunk='思'.repeat(341);
+   const emit=update=>out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update}});
+   for(let i=0;i<count;i++)emit({sessionUpdate:'agent_thought_chunk',content:{type:'text',text:chunk}});
+   for(let i=1;i<=count;i++)emit({sessionUpdate:'tool_call_update',toolCallId:'budget-tool',title:'Synthetic read',status:'in_progress',rawOutput:chunk.repeat(i)});
+   emit({sessionUpdate:'tool_call_update',toolCallId:'budget-tool',title:'Synthetic read',status:'completed',rawOutput:chunk.repeat(count)});
   }
   if(scenario==='tool-boundary'){
    for(const status of ['in_progress','completed'])out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'tool_call',toolCallId:'tool-fixture',title:'Simulated read',status,rawInput:{path:'synthetic'},rawOutput:status==='completed'?'safe result':undefined}}});
@@ -166,6 +174,26 @@ async function fixture(cli: 'kimi' | 'grok', scenario = 'success', continuation 
 }
 
 describe('Native ACP runners (simulated native processes)', () => {
+  it('keeps many ACP output/thought increments linear and folds the complete timeline', async () => {
+    // SIMULATED: only a local JSON-RPC fixture, no model or account.
+    const sizes: number[] = []
+    for (const count of [64, 128]) {
+      const { frames, result } = await fixture('kimi', `budget-${count}`)
+      expect(result.status).toBe('SUCCESS')
+      const rows = foldNativeFrames(frames), body = '思'.repeat(341 * count)
+      expect(rows.find(row => row.kind === 'reasoning')?.detail).toBe(body)
+      expect(rows.find(row => row.kind === 'tool')?.toolCall?.output).toBe(body)
+      const progress = frames.filter(frame => frame.event?.state === 'RUNNING' && ['tool', 'reasoning'].includes(frame.event.kind))
+      expect(progress).toHaveLength(count * 2)
+      expect(progress.every(frame => frame.event.delta === '思'.repeat(341))).toBe(true)
+      expect(progress.every(frame => frame.event.toolCall?.output === undefined)).toBe(true)
+      const bytes = Buffer.byteLength(JSON.stringify(frames))
+      expect(bytes).toBeLessThan(Buffer.byteLength(body) * 12)
+      sizes.push(bytes)
+    }
+    expect(sizes[1]!).toBeLessThan(sizes[0]! * 2.4)
+  })
+
   it.each(['kimi', 'grok'] as const)('%s transmits a real temporary upload reference in its ACP prompt', async cli => {
     const { records, result } = await fixture(cli, 'attachments')
     expect(result.status).toBe('SUCCESS')
@@ -246,8 +274,8 @@ describe('Native ACP runners (simulated native processes)', () => {
     const { frames, result } = await fixture('grok', 'grok-public-thought')
     expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLOAFTER' })
     const events = frames.filter((frame) => frame.type === 'event').map((frame) => frame.event)
-    expect(events.filter((event) => event.kind === 'reasoning').map((event) => [event.state, event.detail])).toEqual([
-      ['RUNNING', 'Synthetic public '], ['RUNNING', 'Synthetic public thought'], ['COMPLETED', 'Synthetic public thought'],
+    expect(events.filter((event) => event.kind === 'reasoning').map((event) => [event.state, event.delta ?? event.detail])).toEqual([
+      ['RUNNING', 'Synthetic public '], ['RUNNING', 'thought'], ['COMPLETED', 'Synthetic public thought'],
     ])
     expect(foldNativeFrames(frames).filter((row) => ['assistant', 'reasoning'].includes(row.kind))
       .map((row) => [row.kind, row.kind === 'reasoning' ? row.detail : row.text])).toEqual([

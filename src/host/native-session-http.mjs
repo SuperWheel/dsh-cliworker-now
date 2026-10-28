@@ -1,3 +1,4 @@
+import { summarizeNativeRecord } from './native-transport.mjs'
 import { randomBytes } from 'node:crypto'
 import { resolve } from 'node:path'
 import { realpath } from 'node:fs/promises'
@@ -192,8 +193,10 @@ export async function runNativeSessionHttp(original, io, cli) {
     reasoningText.set(part.id, detail)
     if (!detail) return
     if (!reasoningSteps.has(part.id)) reasoningSteps.set(part.id, ++step)
+    // Growth since the last shown text is an increment; completion sends one snapshot.
     responses.event(part.messageID, part.id, {
-      kind: 'reasoning', step: reasoningSteps.get(part.id), text: '原生公开思考', detail,
+      kind: 'reasoning', step: reasoningSteps.get(part.id), text: '原生公开思考',
+      ...(Number.isFinite(part.time?.end) ? { detail } : { delta: detail.slice(current.length) }),
       state: Number.isFinite(part.time?.end) ? 'COMPLETED' : 'RUNNING',
     })
   }
@@ -205,14 +208,18 @@ export async function runNativeSessionHttp(original, io, cli) {
     if (state.status === 'error') toolOutcomes.failed(part.id)
     else if (state.status === 'completed' && previous?.state?.status !== 'completed') toolOutcomes.succeeded()
     if (!toolSteps.has(part.id)) toolSteps.set(part.id, ++step)
+    const { input: _input, output, ...metadata } = state
+    const prior = previous?.state?.output ?? ''
+    const increment = ['pending', 'running'].includes(state.status) && typeof output === 'string' && typeof prior === 'string' && output.startsWith(prior)
     responses.event(part.messageID, part.id, {
       kind: 'tool', text: part.tool ?? '工具', step: toolSteps.get(part.id),
       state: state.status === 'completed' ? 'COMPLETED' : state.status === 'error' ? 'FAILED' : 'RUNNING',
-      detail: JSON.stringify(state),
+      detail: JSON.stringify(metadata),
+      ...(increment ? { delta: output.slice(prior.length) } : {}),
       toolCall: { callId: typeof part.callID === 'string' ? part.callID : part.id,
         ...(typeof part.tool === 'string' ? { name: part.tool } : {}),
         ...(Object.hasOwn(state, 'input') ? { input: state.input } : {}),
-        ...(Object.hasOwn(state, 'output') ? { output: state.output } : {}),
+        ...(!increment && Object.hasOwn(state, 'output') ? { output } : {}),
         ...(typeof state.input?.command === 'string' ? { command: state.input.command } : {}) },
     })
   }
@@ -297,7 +304,7 @@ export async function runNativeSessionHttp(original, io, cli) {
               kind: 'reasoning',
               step: reasoningSteps.get(properties.partID),
               text: '原生公开思考',
-              detail,
+              delta: properties.delta,
               state: 'RUNNING',
             })
           }
@@ -323,8 +330,9 @@ export async function runNativeSessionHttp(original, io, cli) {
         // Only the explicitly public text/time identity enters our raw stream.
         io.native(part.type === 'reasoning' ? { type: event.type, properties: {
           part: { id: part.id, messageID: part.messageID, sessionID: part.sessionID,
-            type: part.type, text: part.text, ...(part.time ? { time: part.time } : {}) },
-        } } : event)
+            type: part.type, text: summarizeNativeRecord(part.text, 0), ...(part.time ? { time: part.time } : {}) },
+        } } : part.type === 'tool' && part.state?.output !== undefined
+          ? { ...event, properties: { ...properties, part: { ...part, state: { ...part.state, output: summarizeNativeRecord(part.state.output, 0) } } } } : event)
       }
       return
     }

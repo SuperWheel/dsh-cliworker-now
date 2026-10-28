@@ -1184,3 +1184,18 @@ OpenSpec 变更 `judge-run-outcome-by-native-terminal`（起因：用户反馈 W
 - 各 CLI 的工具失败信号沿用原识别：Codex 条目 `failed`（`inProgress` 收尾改为未完成工具）、Claude `is_error`、ACP `status==='failed'`、ZCode 单工具 error 与批次 `errorCount`（扣除已知失败和被拒工具）、OpenCode/MiMo `state.status==='error'`、Hermes `tool.failed`、Antigravity `tool_info.error`、Pi/OMP `isError`。
 - Antigravity 步骤状态 `ERROR` 仍判本轮失败（无法确认是否只是工具级信号）；`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
 - 持久化无迁移，历史 failed 记录不重算。
+
+## 2026-10-28 原生工具输出预算（未发布）
+
+OpenSpec 变更 `bound-native-tool-output`（起因：Windows 用户反馈 Codex 读大文件时运行被插件以 `Native bridge output exceeds run limit` 终止，浪费额度）。
+
+- 根因：各原生 runner 在每个输出增量里重发累计全文（`detail`、`toolCall.output` 与原始帧各一份），传输量随输出长度平方增长；超出 `maxRunBytes` 即终止进程。无模型复现：单条命令 400KB 输出在传输约 16.7MB 后被终止。
+- 事件形状：运行中的工具输出与公开思考只带 `delta`（本次新增）；工具完成时完整（或截断后）输出只在 `toolCall.output` 出现一次，`detail` 只留元数据；思考完成时发一次 `detail` 快照。事件新增可选 `truncated`、`outputBytes`。`io.native` 记录中超过 64 KiB 的字符串只保留 `{ cliworkerOmitted: true, bytes }`；Codex `outputDelta` 原始帧只记录字节数。
+- 预算分层（`native-transport.mjs` `createEventBudget`，Pi/OMP 桥共用）：单步展示 `maxToolPreviewBytes`（默认 256 KiB，且不超过出站单帧的 1/4）；整轮展示 `maxRunBytes`（原生通路下即整轮展示预算，默认 16 MiB）。超出只截断展示、标注 `truncated`，整轮超限时发一次诊断「本轮展示内容已达上限……」，不抛错、不改终态。出站单帧仍受 `maxLineBytes` 保护，超限的事件先降为摘要。只对工具和思考事件降级；回复、状态与诊断不截断。
+- 入站：CLI 单个协议帧上限独立为 `maxNativeLineBytes`（默认 32 MiB，暂定值：Codex 0.162.1 协议未给出 `aggregatedOutput`/`outputDelta` 上限，无模型 `command/exec` 实测合法单帧达 18,000,057 字节），超出时停止并报告「原生 CLI 单个入站协议帧超过上限（N 字节）」。入站累计字节不再终止运行；Host `runtime.ts` 对原生桥输出的累计字节同样只统计不终止，非原生通路保持原检查。
+- Host 与界面：`bridge-protocol.ts` 透传 `delta`/`truncated`/`outputBytes`，`storage.ts` 事件 schema 新增三字段；`foldEvents` 把 `delta` 追加到工具行 `toolCall.output`（字符串）或思考行 `detail`，之后的快照或完成输出覆盖它。旧记录（累计 `detail`/`output`）无迁移、照常渲染。Client `worker-process.tsx` 在工具与思考展开区显示「输出已截断（共 N KB），完整内容见 CLI 原生会话或实际产物」；`harness-conversation-stream.ts` 与 `harness-observed-tools.ts` 转给主 Agent 的工具回执附同样说明。
+- 各 runner：Codex、Claude、ACP 系（Kimi、Qoder、Grok）、ZCode、OpenCode/MiMo、Hermes、Antigravity 均改为运行中发增量、完成时一份输出、`detail` 只留元数据；CLI 只给累计快照时，新快照以前一份为前缀则发差量，否则作为替换输出（仍受展示预算约束）。OpenCode/MiMo 公开思考仍保留「快照冲突即报错、取较长快照」的原规则。各 response tracker 完成回执不再重放最后一个 `delta` 或工具输出。
+- Pi/OMP 桥：从 Host 请求读取 `maxLineBytes`/`maxRunBytes`/`maxNativeLineBytes`/`maxToolPreviewBytes`（`extended-adapters.ts` 透传），复用 `createEventBudget` 与原始记录摘要；去掉写死的 16 MiB 累计、1 MiB 单行和 2 MiB stderr 终止，单帧按 `maxNativeLineBytes` 保护。工具完成只发一份输出。
+- HTTP/SSE（OpenCode、MiMo、Hermes）：`httpLimits` 累计字节只统计；单个 SSE 帧按 `maxNativeLineBytes` 保护并报告上限。单次 JSON 响应仍以 `maxRunBytes` 为上限。
+- 工具桥：Host 响应按 UTF-8 字节判断，并为下一层 JSON-RPC 包装预留 4096 字节，两层判定一致；超限返回明确错误，工具桥仍可继续使用。
+- 不做：不映射 Codex `max_output_tokens`/`tool_output_token_limit`。模型可见输出由 CLI 决定；插件启动的 Codex 读取 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`），插件只传 `model_reasoning_effort`、`sandbox_mode`、`approval_policy` 三个 `-c`。

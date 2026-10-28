@@ -148,3 +148,34 @@ describe('timeline fold of bounded output (synthetic events)', () => {
     expect(truncationNote(done!)).toBe('输出已截断（共 2.0 MB），完整内容见 CLI 原生会话或实际产物')
   })
 })
+
+describe('native HTTP/SSE inbound budget (simulated local stream)', () => {
+  async function stream(frames: string[], limits: Record<string, number>) {
+    const { createServer } = await import('node:http')
+    const { httpLimits, openSse } = await import('../src/host/native-http.mjs')
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      for (const frame of frames) response.write(`data: ${frame}\n\n`)
+      response.end()
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as { port: number }
+    try {
+      const sse = await openSse(`http://127.0.0.1:${port}`, '/events', { headers: {}, signal: new AbortController().signal, limit: httpLimits(limits) })
+      let seen = 0
+      await sse.consume(async (payload: any) => { seen++; return payload.done === true })
+      return seen
+    } finally {
+      server.close()
+    }
+  }
+  it('counts cumulative inbound bytes without stopping the stream', async () => {
+    const body = JSON.stringify({ text: 'x'.repeat(60_000) })
+    const seen = await stream([...Array(40).fill(body), JSON.stringify({ done: true })], { maxLineBytes: 65_536, maxRunBytes: 1_048_576 })
+    expect(seen).toBe(41)
+  })
+  it('stops on one oversized SSE frame and names the inbound limit', async () => {
+    await expect(stream([JSON.stringify({ text: 'x'.repeat(100_000) }), JSON.stringify({ done: true })],
+      { maxLineBytes: 65_536, maxRunBytes: 16_777_216, maxNativeLineBytes: 65_536 })).rejects.toThrow('原生 CLI 单个入站协议帧超过上限（65536 字节）')
+  })
+})

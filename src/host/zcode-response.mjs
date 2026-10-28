@@ -72,7 +72,8 @@ export class ZcodeResponseTracker {
     return true
   }
   finish(usage) {
-    if (this.last) this.output({ ...this.last,
+    if (this.last) this.output({ ...this.last, delta: undefined,
+      ...(this.last.toolCall ? { toolCall: { ...this.last.toolCall, output: undefined } } : {}),
       ...(this.last.kind === 'assistant' ? { text: '' } : {}),
       response: { ...this.last.response, complete: true, ...(usage ? { usage } : {}) } })
     this.id = undefined
