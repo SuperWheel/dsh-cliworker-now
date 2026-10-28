@@ -2365,6 +2365,11 @@ export class WorkerRuntime {
       harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated })
       const access = this.accessSnapshot?.(worker)
       if (access) this.storage.append(worker, { kind: 'status', text: `本轮权限：${ACCESS_LABELS[access]}` })
+      // No confirmed native full-access mode: the CLI keeps its stricter write mode.
+      if (access === 'danger-full-access' && ['kimi', 'hermes', 'antigravity', 'pi', 'omp'].includes(cliOf(worker.preference)))
+        this.storage.append(worker, { kind: 'status', text: '该 CLI 没有已确认的原生完全权限模式，本轮按其写入模式运行；授权请求自动放行' })
+      // 仅可查看 launches every CLI in its native read-only/plan mode.
+      const launchMode: TaskMode = access === 'read-only' ? 'plan' : worker.mode
       const executionConfig = { ...this.config,
         ...(access ? { access } : {}),
         ...(task.attachments?.length ? { attachments: task.attachments } : {}),
@@ -2400,7 +2405,7 @@ export class WorkerRuntime {
             executable,
             directory,
             worker.preference,
-            worker.mode,
+            launchMode,
             prompt,
             this.nativeStateDirectory(worker),
             executionConfig,
@@ -2421,7 +2426,7 @@ export class WorkerRuntime {
                 executable,
                 directory,
                 worker.preference,
-                worker.mode,
+                launchMode,
                 prompt,
                 this.config.timeoutMs,
                 resumeConversation,
@@ -2442,7 +2447,7 @@ export class WorkerRuntime {
                 executable,
                 directory,
                 worker.preference,
-                worker.mode,
+                launchMode,
                 prompt,
                 this.config.timeoutMs,
                 resumeConversation,
@@ -2463,7 +2468,7 @@ export class WorkerRuntime {
                 cli: cliOf(worker.preference),
                 project: directory,
                 preference: worker.preference,
-                mode: worker.mode,
+                mode: launchMode,
                 ...(access ? { access } : {}),
                 prompt: prompt,
                 conversationId: expectedConversation,

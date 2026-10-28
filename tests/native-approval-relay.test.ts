@@ -16,6 +16,10 @@ import {
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { createNativeApprovalControl, receiveNativeApprovalControl } from '../src/host/pi-omp-control.mjs'
 import { BridgeProtocol } from '../src/host/bridge-protocol.ts'
+import { WorkerRuntime } from '../src/host/runtime.ts'
+import { workerArguments } from '../src/host/adapters.ts'
+import { claudePermissionMode } from '../src/host/native-claude.mjs'
+import { grokAcpArgv } from '../src/host/native-grok.mjs'
 
 // Synthetic fixtures only: no CLI process, model or DSH Desktop is involved.
 const cleanups: Array<() => void | Promise<void>> = []
@@ -176,5 +180,110 @@ describe('runner ↔ Host approval channel', () => {
     expect(seen).toEqual([['approval-1', request]])
     expect(() => protocol.feed(JSON.stringify({ type: 'approval', id: '../x', request }) + '\n')).toThrow()
     expect(() => parseNativeApprovalRequest({ kind: 'shell', summary: 'x', allowSession: false })).toThrow()
+  })
+})
+
+describe('Host relay answers every request and records it', () => {
+  // Synthetic runtime shell: only the members relayApproval touches.
+  const relay = (handler?: (...args: any[]) => Promise<any>) => {
+    const events: any[] = []
+    const shell = {
+      storage: { append: (_worker: unknown, event: unknown) => events.push(event) },
+      changed: () => {},
+      approvalHandler: handler,
+    }
+    const worker: any = { id: 'w', runId: 'run-1' }
+    const controller = new AbortController()
+    const answers: any[] = []
+    let failAnswer = false
+    const run = (answer = (decision: unknown) => (failAnswer ? Promise.reject(new Error('closed')) : (answers.push(decision), Promise.resolve()))) =>
+      (WorkerRuntime.prototype as any).relayApproval.call(shell, { worker, controller }, request, answer)
+    return { events, worker, controller, answers, run, failNext: () => (failAnswer = true) }
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+  it('records the request, waits visibly, then records and sends the decision', async () => {
+    let release!: (value: unknown) => void
+    const f = relay(() => new Promise((resolve) => (release = resolve)))
+    f.run()
+    expect(f.events[0]).toMatchObject({ kind: 'status', text: expect.stringContaining('registry.npmjs.org') })
+    expect(f.worker.approvalWaiting).toBe(1)
+    release({ decision: 'allow-once', source: 'user' })
+    await settle()
+    expect(f.worker.approvalWaiting).toBeUndefined()
+    expect(f.events.at(-1)).toMatchObject({ text: '授权决定：允许一次（DSH 用户）' })
+    expect(f.answers).toEqual([{ decision: 'allow-once', source: 'user' }])
+  })
+  it('denies without a Host handler or when the handler fails', async () => {
+    const none = relay()
+    none.run()
+    await settle()
+    expect(none.answers).toEqual([{ decision: 'deny', source: 'unavailable' }])
+    const broken = relay(async () => {
+      throw new Error('NO_PROVIDER')
+    })
+    broken.run()
+    await settle()
+    expect(broken.answers).toEqual([{ decision: 'deny', source: 'unavailable' }])
+  })
+  it('a stop or a newer run turns a late approval into a denial', async () => {
+    let release!: (value: unknown) => void
+    const f = relay(() => new Promise((resolve) => (release = resolve)))
+    f.run()
+    f.controller.abort()
+    release({ decision: 'allow-once', source: 'user' })
+    await settle()
+    expect(f.answers).toEqual([{ decision: 'deny', source: 'stopped' }])
+    const g = relay(() => new Promise((resolve) => (release = resolve)))
+    g.run()
+    g.worker.runId = 'run-2'
+    release({ decision: 'allow-once', source: 'user' })
+    await settle()
+    expect(g.answers).toEqual([{ decision: 'deny', source: 'stopped' }])
+    // The newer run's timeline does not receive the old decision.
+    expect(g.events.some((event) => String(event.text).startsWith('授权决定'))).toBe(false)
+  })
+  it('records an undelivered decision; the runner denies on its own', async () => {
+    const f = relay(async () => ({ decision: 'allow-once', source: 'user' }))
+    f.failNext()
+    f.run()
+    await settle()
+    await settle()
+    expect(f.events.at(-1)).toMatchObject({ kind: 'diagnostic', text: '授权决定未送达 CLI，CLI 按拒绝处理' })
+  })
+})
+
+describe('each CLI launches no wider than the DSH tier (argument mapping, no process)', () => {
+  const tiers: NativeAccess[] = ['read-only', 'workspace-write', 'danger-full-access']
+  // The runtime launches 仅可查看 as the CLI's native plan mode (runAccess → plan).
+  const launch = (access: NativeAccess) => (access === 'read-only' ? 'plan' : 'accept-edits') as 'plan' | 'accept-edits'
+  const value = (argv: string[], flag: string) => argv[argv.indexOf(flag) + 1]
+  it.each(tiers)('Codex exec %s', (access) => {
+    const argv = workerArguments('codex', '/p', { cli: 'codex', model: 'm', effort: 'high' }, launch(access), 'x', 1, undefined, false, access)
+    expect(argv).toContain(`sandbox_mode=${JSON.stringify(access)}`)
+    expect(argv).toContain(`approval_policy=${JSON.stringify(access === 'workspace-write' ? 'on-request' : 'never')}`)
+  })
+  it.each([
+    ['read-only', 'plan'],
+    ['workspace-write', 'acceptEdits'],
+    ['danger-full-access', 'bypassPermissions'],
+  ] as const)('Claude Code %s → --permission-mode %s', (access, mode) => {
+    const argv = workerArguments('claude', '/p', { cli: 'claude', model: 'm', effort: 'default' }, launch(access), 'x', 1, undefined, true, access)
+    expect(value(argv, '--permission-mode')).toBe(mode)
+    expect(claudePermissionMode({ mode: launch(access), access })).toBe(mode)
+  })
+  it.each([
+    ['workspace-write', 'accept_edits', 'acceptEdits'],
+    ['danger-full-access', 'bypass_permissions', 'yolo'],
+  ] as const)('Qoder %s → CLI %s / ACP %s', (access, flag, _acp) => {
+    const argv = workerArguments('qoder', '/p', { cli: 'qoder', model: 'm', effort: 'high' }, 'accept-edits', 'x', 1, undefined, true, access)
+    expect(value(argv, '--permission-mode')).toBe(flag)
+  })
+  it.each([
+    ['read-only', ['agent', '--no-leader', 'stdio']],
+    ['workspace-write', ['--permission-mode', 'acceptEdits', 'agent', '--no-leader', 'stdio']],
+    ['danger-full-access', ['--permission-mode', 'acceptEdits', 'agent', '--always-approve', '--no-leader', 'stdio']],
+  ] as const)('Grok %s', (access, tail) => {
+    const argv = grokAcpArgv({ argv: ['grok', '--permission-mode', 'default', '--single', 'x'], mode: launch(access), access })
+    expect(argv).toEqual(['grok', ...tail])
   })
 })

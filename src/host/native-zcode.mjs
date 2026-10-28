@@ -10,6 +10,20 @@ import { zcodeContextBinding, unknownZcodeContextInspection, readZcodeContextIns
 
 const ZCODE_DENIED = 'ZCode 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
 
+const ZCODE_KINDS = { bash: 'command', shell: 'command', edit: 'file', write: 'file', webfetch: 'network', websearch: 'network' }
+/** Public summary of one interaction/requestPermission for the DSH prompt. */
+export function zcodeApprovalRequest(params) {
+  const input = isRecord(params.input) ? params.input : {}
+  const target = [input.command, input.file_path, input.path, input.url].find(nonempty)
+  const tool = nonempty(params.toolName) ? params.toolName : '工具调用'
+  return {
+    kind: ZCODE_KINDS[tool.toLowerCase()] ?? 'tool',
+    summary: (nonempty(params.reason) ? `${tool}：${params.reason}` : tool).slice(0, 500),
+    ...(target ? { detail: target.slice(0, 4000) } : {}),
+    allowSession: false,
+  }
+}
+
 export function zcodeAppServerArgv(config) {
   const firstOption = config.argv.findIndex((arg) =>
     ['--cwd', '--mode', '--output-format', '--resume', '--prompt', '--disallowedTools'].includes(arg),
@@ -166,7 +180,7 @@ export async function runNativeZcode(config, io) {
     modelId: config.preference.model.slice(slash + 1),
   }
   const account = nativeAccount(config, model)
-  const mode = config.mode === 'plan' ? 'plan' : 'edit'
+  const mode = config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'yolo' : 'edit'
   const denyIndex = config.argv.indexOf('--disallowedTools')
   const toolDenylist = denyIndex >= 0 ? config.argv[denyIndex + 1]?.split(',').filter(Boolean) : []
   const inputId = randomUUID()
@@ -246,11 +260,25 @@ export async function runNativeZcode(config, io) {
           askUserQuestionAutoResolutionEnabled: false,
         }
       else if (message.method === 'interaction/requestPermission') {
-        result = { decision: 'deny', reason: 'CLI Worker 无额外交互授权' }
-        if (active && message.params?.sessionId === sessionId) {
-          denied = true
-          if (nonempty(message.params.toolCallId)) deniedTools.add(message.params.toolCallId)
-          io.event({ kind: 'diagnostic', text: 'ZCode 额外权限请求已拒绝' })
+        const deny = () => {
+          if (active && message.params?.sessionId === sessionId) {
+            denied = true
+            if (nonempty(message.params.toolCallId)) deniedTools.add(message.params.toolCallId)
+            io.event({ kind: 'diagnostic', text: 'ZCode 额外权限请求已拒绝' })
+          }
+          return { decision: 'deny', reason: 'DSH 未批准此授权' }
+        }
+        if (!(active && message.params?.sessionId === sessionId)) result = deny()
+        else {
+          // The Host decides without blocking this reader. The reverse reply has
+          // no confirmed session scope, and permissionUpdates would persist a
+          // project rule, so only a plain allow is sent.
+          void io.approval(zcodeApprovalRequest(message.params)).then((answer) => {
+            if (answer.decision === 'deny') return peer.send({ id: message.id, result: deny() })
+            io.event({ kind: 'diagnostic', text: 'ZCode 额外权限请求已批准' })
+            return peer.send({ id: message.id, result: { decision: 'allow' } })
+          }).catch(() => failure('ZCode 授权回复未送达'))
+          return
         }
       } else if (message.method === 'interaction/requestUserInput') {
         result = { action: 'cancel', reason: 'CLI Worker 无额外交互输入' }

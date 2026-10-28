@@ -700,15 +700,18 @@ export class CliWorkerService extends TypertRemoteService {
   /**
    * 仅可查看 runs the CLI in its native read-only mode. A CLI without a
    * whole-process read-only mode is refused rather than silently weakened:
-   * agy's terminal sandbox keeps its native state writable, and Qoder's ACP has
-   * no read-only plan mode.
+   * agy's terminal sandbox keeps its native state writable, Qoder's ACP has
+   * no read-only plan mode, and Hermes has no confirmed read-only switch. A
+   * Worker plan task alone keeps each CLI's existing plan handling.
    */
-  private assertAccessSupported(agent: Agent, cli: CliId, mode: TaskMode): void {
-    if (runAccess(mode, this.permissionState(agent)) !== 'read-only') return
+  private assertAccessSupported(agent: Agent, cli: CliId, _mode: TaskMode): void {
+    if (this.permissionState(agent).sandbox !== 'read-only') return
     if (cli === 'antigravity')
       throw new Error('Harness 当前为仅可查看；Antigravity 没有整进程只读模式，请切换权限预设或改用其他 CLI')
     if (cli === 'qoder' || cli === 'qodercn')
       throw new Error('Harness 当前为仅可查看；Qoder 未公开只读模式，请切换权限预设或改用其他 CLI')
+    if (cli === 'hermes')
+      throw new Error('Harness 当前为仅可查看；Hermes 未公开只读模式，请切换权限预设或改用其他 CLI')
   }
   /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
   private permissionState(agent: Agent): PermissionState {

@@ -182,6 +182,7 @@ function fixture(
     parent: vi.fn(async () => agent),
     project: () => project,
     assertExecution: vi.fn(),
+    assertAccessSupported: vi.fn(),
     querySelection: vi.fn(
       async (
         preference: unknown,

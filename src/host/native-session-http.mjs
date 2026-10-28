@@ -25,20 +25,34 @@ function selection(config) {
     modelID: config.preference.model.slice(slash + 1),
   }
 }
-function serverConfiguration(config, cli) {
+const HTTP_KINDS = { bash: 'command', edit: 'file', write: 'file', webfetch: 'network', websearch: 'network' }
+/** Public summary of one permission.asked event for the DSH prompt. */
+export function sessionHttpApprovalRequest(properties) {
+  const permission = string(properties.permission) ? properties.permission : '工具调用'
+  const patterns = Array.isArray(properties.patterns) ? properties.patterns.filter(string) : []
+  return {
+    kind: HTTP_KINDS[permission] ?? 'tool',
+    summary: permission.slice(0, 500),
+    ...(patterns.length ? { detail: patterns.join('\n').slice(0, 4000) } : {}),
+    allowSession: false,
+  }
+}
+export function serverConfiguration(config, cli) {
   const name = cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'
   const environment = config.env ?? process.env
   const raw = environment[`${name}_CONFIG_CONTENT`]
   const previous = raw ? JSON.parse(raw) : {}
   if (!object(previous)) throw new Error('原生 HTTP 配置无效')
+  // 完全权限 allows every native tool; task/skill/question stay off as before.
+  const full = config.mode !== 'plan' && config.access === 'danger-full-access'
   const permission = {
-    '*': 'ask',
+    '*': full ? 'allow' : 'ask',
     read: 'allow',
     glob: 'allow',
     grep: 'allow',
     list: 'allow',
     edit: config.mode === 'plan' ? 'deny' : 'allow',
-    bash: config.mode === 'plan' ? 'deny' : 'ask',
+    bash: config.mode === 'plan' ? 'deny' : full ? 'allow' : 'ask',
     task: 'deny',
     skill: 'deny',
     question: 'deny',
@@ -223,6 +237,16 @@ export async function runNativeSessionHttp(original, io, cli) {
     if (event.type === 'permission.asked' || event.type === 'question.asked') {
       if (terminal || !submitted) throw new Error('轮次之外收到原生审批请求')
       if (!string(properties.id)) throw new Error('原生审批身份缺失')
+      if (event.type === 'permission.asked') {
+        // The Host decides from the DSH preset and user. `always` outlives this
+        // session in some builds, so only a one-time allow is sent.
+        const answer = await io.approval(sessionHttpApprovalRequest(properties))
+        if (answer.decision !== 'deny') {
+          io.event({ kind: 'diagnostic', text: '原生额外授权已批准' })
+          await request(`/permission/${encodeURIComponent(properties.id)}/reply${query}`, 'POST', { reply: 'once' })
+          return
+        }
+      }
       permissionDenied = true
       io.event({ kind: 'diagnostic', text: '原生额外授权已拒绝', detail: JSON.stringify(properties) })
       await request(
@@ -231,7 +255,7 @@ export async function runNativeSessionHttp(original, io, cli) {
           : `/question/${encodeURIComponent(properties.id)}/reject${query}`,
         'POST',
         event.type === 'permission.asked'
-          ? { reply: 'reject', message: 'CLI Worker 尚未提供此额外授权交互。' }
+          ? { reply: 'reject', message: 'DSH 未批准此授权。' }
           : {},
       )
       return

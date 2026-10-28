@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { nativeCodexArgv, runNativeCodex } from '../src/host/native-codex.mjs'
-import { nativeClaudeArgv, runNativeClaude } from '../src/host/native-claude.mjs'
+import { claudePermissionMode, nativeClaudeArgv, runNativeClaude } from '../src/host/native-claude.mjs'
 import { nativeAgyArgv, runNativeAgy } from '../src/host/native-agy.mjs'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
 
@@ -31,7 +31,7 @@ function codexTurn(){
  note('turn/started',{threadId:id,turn:{id:turn,status:'inProgress',items:[]}});
  note('item/agentMessage/delta',{threadId:'other-session',turnId:turn,itemId:'other',delta:'MUST NOT APPEAR'});
  note('item/agentMessage/delta',{threadId:id,turnId:'old-turn',itemId:'old',delta:'MUST NOT APPEAR'});
- if(scenario.startsWith('deny')){
+ if(scenario.startsWith('deny')||scenario==='tier-ask'){
   const method=scenario==='deny-file'?'item/fileChange/requestApproval':scenario==='deny-permissions'?'item/permissions/requestApproval':'item/commandExecution/requestApproval';
   send({id:'synthetic-approval',method,params:{threadId:id,turnId:turn,itemId:'command'}});return;
  }
@@ -79,6 +79,7 @@ function claudeTurn(){
  send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical});
  if(scenario==='identity-mismatch')return;
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
+ if(scenario==='ask'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
  if(scenario==='child-model')send({type:'assistant',session_id:id,parent_tool_use_id:'synthetic-task',message:{id:'child',model:'synthetic-child-model',content:[{type:'text',text:'子任务公开进度'}]}});
  if(scenario==='tool-failure-cancel'){
   send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Read',input:{file_path:'synthetic'}}]}});
@@ -151,7 +152,7 @@ lines.on('line',line=>{
  const value=JSON.parse(line);appendFileSync(log,line+'\\n');
  if(cli==='codex'){
   if(value.method==='initialize')send({id:value.id,result:{userAgent:'synthetic/0.162.1'}});
-  else if(['thread/start','thread/resume'].includes(value.method))send({id:value.id,result:thread()});
+  else if(['thread/start','thread/resume'].includes(value.method))send({id:value.id,result:scenario.startsWith('tier')?{...thread(),approvalPolicy:value.params.approvalPolicy,sandbox:{type:{'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[value.params.sandbox],networkAccess:scenario==='tier-network'}}:thread()});
   else if(value.method==='turn/start'){send({id:value.id,result:{turn:{id:turn,status:'inProgress',items:[]}}});codexTurn();}
   else if(value.method==='turn/steer'){
    if(scenario==='steer-rejected')send({id:value.id,error:{code:-32600,message:'synthetic inactive turn'}});
@@ -162,7 +163,7 @@ lines.on('line',line=>{
    setTimeout(()=>codexEnd(),30);
   }
   else if(['synthetic-approval','synthetic-interaction'].includes(value.id)){
-   if(value.id==='synthetic-approval'&&scenario!=='deny-permissions')note('item/completed',{threadId:id,turnId:turn,item:{id:'command',type:scenario==='deny-file'?'fileChange':'commandExecution',status:'declined'}});
+   if(value.id==='synthetic-approval'&&scenario!=='deny-permissions')note('item/completed',{threadId:id,turnId:turn,item:{id:'command',type:scenario==='deny-file'?'fileChange':'commandExecution',...(value.result?.decision==='decline'?{status:'declined'}:{status:'completed',exitCode:0})}});
    note('item/completed',{threadId:id,turnId:turn,item:{id:'reply',type:'agentMessage',text:'合成回复'}});
    if(scenario==='deny-tool-failure')note('item/completed',{threadId:id,turnId:turn,item:{id:'tool',type:'commandExecution',status:'failed',exitCode:1}});
    codexEnd(scenario==='deny-failed'?'failed':scenario==='deny-interrupted'?'interrupted':'completed');
@@ -393,6 +394,60 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     const { result } = await run('codex', scenario)
     expect(result.status).toBe('ERROR')
   })
+  it.each([
+    ['read-only', 'accept-edits', 'read-only', 'on-request'],
+    ['workspace-write', 'accept-edits', 'workspace-write', 'on-request'],
+    ['danger-full-access', 'accept-edits', 'danger-full-access', 'never'],
+    ['danger-full-access', 'plan', 'read-only', 'never'],
+  ] as const)('maps the DSH tier %s (%s) to Codex %s + %s, never wider', async (access, mode, sandbox, approvalPolicy) => {
+    const { config, log } = setup('codex', 'tier', true)
+    Object.assign(config, { access, mode })
+    const frames: any[] = []
+    const io = createNativeIO(config, (line: string) => frames.push(JSON.parse(line)), new AbortController().signal)
+    let error
+    try { await runNativeCodex(config, io) } catch (caught) { error = caught }
+    await io.close(error)
+    expect(frames.at(-1).status).toBe('SUCCESS')
+    const messages = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    expect(messages.find((m) => m.method === 'thread/resume').params).toMatchObject({ sandbox, approvalPolicy })
+    const turn = messages.find((m) => m.method === 'turn/start').params
+    expect(turn.approvalPolicy).toBe(approvalPolicy)
+    // Tiered runs keep the user's native sandbox details; plan still pins read-only.
+    if (mode === 'plan') expect(turn.sandboxPolicy).toEqual({ type: 'readOnly' })
+    else expect(turn).not.toHaveProperty('sandboxPolicy')
+  })
+  it('accepts the user\'s native network setting under 工作区内修改 instead of failing before launch', async () => {
+    const { config } = setup('codex', 'tier-network', true)
+    config.access = 'workspace-write'
+    const frames: any[] = []
+    const io = createNativeIO(config, (line: string) => frames.push(JSON.parse(line)), new AbortController().signal)
+    let error
+    try { await runNativeCodex(config, io) } catch (caught) { error = caught }
+    await io.close(error)
+    expect(frames.at(-1).status).toBe('SUCCESS')
+  })
+  it.each([
+    ['allow-once', 'accept', 'SUCCESS'],
+    ['allow-session', 'acceptForSession', 'SUCCESS'],
+    ['deny', 'decline', 'UNCERTAIN'],
+  ] as const)('relays a Codex approval to the Host: %s → %s', async (decision, reply, status) => {
+    const { config, log } = setup('codex', 'tier-ask', true)
+    Object.assign(config, { access: 'workspace-write', approvalNonce: 'synthetic-nonce' })
+    const frames: any[] = []
+    const io: any = createNativeIO(config, (line: string) => {
+      const frame = JSON.parse(line)
+      frames.push(frame)
+      if (frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id), 5)
+    }, new AbortController().signal)
+    let error
+    try { await runNativeCodex(config, io) } catch (caught) { error = caught }
+    await io.close(error)
+    expect(frames.find((frame) => frame.type === 'approval').request).toMatchObject({ kind: 'command', allowSession: true })
+    const messages = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    expect(messages.find((value) => value.id === 'synthetic-approval').result).toEqual({ decision: reply })
+    expect(frames.at(-1).status).toBe(status)
+  })
   it('keeps a denied Codex turn with another failed tool unverified, never successful', async () => {
     const { result } = await run('codex', 'deny-tool-failure')
     expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('额外授权已拒绝') })
@@ -403,6 +458,45 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(messages.find((value) => value.id === 'synthetic-interaction').error.code).toBe(-32601)
     expect(frames.find((frame) => frame.event?.kind === 'diagnostic')?.event)
       .toMatchObject({ text: 'Codex 原生交互请求已拒绝', state: 'FAILED' })
+  })
+  it.each([
+    ['allow-once', 'allow', 'SUCCESS'],
+    ['allow-session', 'allow', 'SUCCESS'],
+    ['deny', 'deny', 'ERROR'],
+  ] as const)('relays a Claude can_use_tool request to the Host: %s', async (decision, behavior, status) => {
+    const { config, log } = setup('claude', 'ask', true)
+    config.approvalNonce = 'synthetic-nonce'
+    const frames: any[] = []
+    const io: any = createNativeIO(config, (line: string) => {
+      const frame = JSON.parse(line)
+      frames.push(frame)
+      if (frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id), 5)
+    }, new AbortController().signal)
+    let error
+    try { await runNativeClaude(config, io) } catch (caught) { error = caught }
+    await io.close(error)
+    expect(frames.find((frame) => frame.type === 'approval').request).toEqual({ kind: 'command', summary: 'Bash', detail: 'synthetic', allowSession: true })
+    const reply = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+      .find((value) => value.type === 'control_response' && value.response?.request_id === 'synthetic-permission').response.response
+    expect(reply.behavior).toBe(behavior)
+    if (decision === 'allow-session')
+      // The CLI's own suggestion, scoped to this session only.
+      expect(reply.updatedPermissions).toEqual([{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'synthetic' }], behavior: 'allow', destination: 'session' }])
+    else expect(reply).not.toHaveProperty('updatedPermissions')
+    // A Claude denial interrupts the native turn, so it stays a failure.
+    if (decision === 'deny') expect(reply.interrupt).toBe(true)
+    expect(frames.at(-1).status).toBe(status)
+  })
+  it('lets Claude ask the Host only when the approval channel exists, and maps the DSH tier', () => {
+    const { config } = setup('claude', 'success', true)
+    expect(nativeClaudeArgv(config).slice(-2)).toEqual(['--permission-prompts', 'none'])
+    expect(nativeClaudeArgv({ ...config, approvalNonce: 'synthetic' }).slice(-2)).toEqual(['--permission-prompts', 'host'])
+    expect(claudePermissionMode({ mode: 'plan', access: 'danger-full-access' })).toBe('plan')
+    expect(claudePermissionMode({ mode: 'accept-edits', access: 'workspace-write' })).toBe('acceptEdits')
+    expect(claudePermissionMode({ mode: 'accept-edits', access: 'danger-full-access' })).toBe('bypassPermissions')
+    // The launched mode must match the tier, or the run is refused before start.
+    expect(() => nativeClaudeArgv({ ...config, access: 'danger-full-access' })).toThrow('原生权限模式与任务不一致')
   })
   it('denies Claude reverse permission requests without upgrading successful native status', async () => {
     const { result, messages } = await run('claude', 'deny')

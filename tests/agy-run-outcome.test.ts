@@ -339,6 +339,7 @@ describe('AGY runtime outcomes', () => {
       disposed: new AbortController(),
       accounts: { isBusy: () => false },
       assertExecution: () => {},
+      assertAccessSupported: () => {},
       project: () => f.project,
       querySelection: async () => ({ binding: 'synthetic-account', preference }),
     })

@@ -38,7 +38,7 @@ const finish=request=>{
 };
 createInterface({input:process.stdin}).on('line',line=>{
  const request=JSON.parse(line);log(request);
- if(!request.method){if(pending){if(scenario.startsWith('permission'))update({sessionUpdate:'tool_call_update',toolCallId:'denied-simulated',status:'failed'});if(scenario==='permission-other-failure')update({sessionUpdate:'tool_call',toolCallId:'other-simulated',title:'Edit synthetic.txt',status:'failed',_meta:{qoder:{toolName:'Edit'}}});finish(pending);pending=undefined;}return;}
+ if(!request.method){if(pending){if(scenario.startsWith('permission'))update({sessionUpdate:'tool_call_update',toolCallId:'denied-simulated',status:['allow','proceed_always'].includes(request.result?.outcome?.optionId)?'completed':'failed'});if(scenario==='permission-other-failure')update({sessionUpdate:'tool_call',toolCallId:'other-simulated',title:'Edit synthetic.txt',status:'failed',_meta:{qoder:{toolName:'Edit'}}});finish(pending);pending=undefined;}return;}
  if(request.jsonrpc!=='2.0')process.exit(20);
  if(request.method==='initialize')return reply(request,{protocolVersion:1,agentInfo:{name:process.env.QODER_TEST_AGENT||'qoder-cli'},agentCapabilities:{loadSession:scenario!=='no-restore'}});
  if(request.method==='session/new'||request.method==='session/load'){
@@ -85,7 +85,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(scenario==='cancel'){pending=request;return;}
   if(scenario==='permission'||scenario==='permission-no-reject'||scenario==='permission-other-failure'){
    update({sessionUpdate:'tool_call',toolCallId:'denied-simulated',title:'Run synthetic shell',status:'pending',_meta:{qoder:{toolName:'Bash'}}});
-   pending=request;return out({jsonrpc:'2.0',id:'permission-simulated',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'denied-simulated'},options:[{kind:'allow_once',optionId:'allow'},...(scenario==='permission'?[{kind:'reject_once',optionId:'reject'}]:[])]}});
+   pending=request;return out({jsonrpc:'2.0',id:'permission-simulated',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'denied-simulated'},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:'proceed_always'},{kind:'allow_always',optionId:'proceed_always_and_save'},...(scenario==='permission'?[{kind:'reject_once',optionId:'reject'}]:[])]}});
   }
   finish(request);
   if(scenario==='nonzero-exit')process.exitCode=23;
@@ -100,7 +100,8 @@ createInterface({input:process.stdin}).on('line',line=>{
 
 async function fixture(
   scenario = 'success',
-  options: { continuation?: boolean; mode?: string; effort?: string; cli?: 'qoder' | 'qodercn'; agentName?: string } = {},
+  options: { continuation?: boolean; mode?: string; effort?: string; cli?: 'qoder' | 'qodercn'; agentName?: string
+    access?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'cliworker-native-qoder-simulated-'))
   roots.push(root)
@@ -123,14 +124,18 @@ async function fixture(
     maxLineBytes: 1024 * 1024,
     maxRunBytes: 8 * 1024 * 1024,
     ...(options.continuation ? { conversationId: 'qoder-simulated-session' } : {}),
+    ...(options.access ? { access: options.access } : {}),
+    ...(options.decision ? { approvalNonce: 'synthetic-nonce' } : {}),
   }
   const controller = new AbortController()
   const frames: any[] = []
-  const io = createNativeIO(
+  const io: any = createNativeIO(
     config,
     (line: string) => {
       const frame = JSON.parse(line)
       frames.push(frame)
+      if (options.decision && frame.type === 'approval')
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: options.decision, source: 'user' }), frame.id), 5)
       if (scenario === 'cancel' && frame.event?.kind === 'assistant')
         controller.abort(new Error('Simulated user stop'))
     },
@@ -205,6 +210,24 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
     expect(processExited).toBe(true)
   })
 
+  it('selects the native yolo mode under 完全权限 and confirms it before prompt', async () => {
+    const { records, result } = await fixture('success', { access: 'danger-full-access' })
+    expect(result.status).toBe('SUCCESS')
+    expect(methods(records, 'session/set_config_option').at(-1).params).toMatchObject({ configId: 'mode', value: 'yolo' })
+  })
+  it.each([
+    ['allow-once', 'allow', 'SUCCESS'],
+    // proceed_always is session-scoped; proceed_always_and_save would persist and is never chosen.
+    ['allow-session', 'proceed_always', 'SUCCESS'],
+    ['deny', 'reject', 'UNCERTAIN'],
+  ] as const)('relays a permission request to the Host: %s → %s', async (decision, optionId, status) => {
+    const { frames, records, result } = await fixture('permission', { decision })
+    expect(frames.find((frame) => frame.type === 'approval').request).toMatchObject({ allowSession: true })
+    expect(records.find((record) => record.id === 'permission-simulated')?.result).toEqual({
+      outcome: { outcome: 'selected', optionId },
+    })
+    expect(result.status).toBe(status)
+  })
   it('preserves the native effort when the user chooses default', async () => {
     const { records, result } = await fixture('success', { effort: 'default' })
     expect(result.status).toBe('SUCCESS')

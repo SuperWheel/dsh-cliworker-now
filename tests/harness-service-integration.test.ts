@@ -483,5 +483,10 @@ it('runs real native child submissions through CLI once and preserves owned clea
       new AbortController().signal,
     ),
   ).rejects.toThrow('没有整进程只读模式')
+  for (const [cli, message] of [['hermes', 'Hermes 未公开只读模式'], ['qoder', 'Qoder 未公开只读模式']] as const)
+    await expect(
+      service.launch(parent.agent, 'Rejected read-only', 'blocked', { ...activeWorker.preference, cli },
+        'plan', undefined, undefined, new AbortController().signal),
+    ).rejects.toThrow(message)
   expect(calls).toHaveLength(6)
 })

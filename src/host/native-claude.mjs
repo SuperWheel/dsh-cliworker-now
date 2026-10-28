@@ -27,6 +27,23 @@ function modelEvidence(config, initialized) {
   return new Set([selected, ...canonical])
 }
 
+/** Native permission mode for the run's DSH tier; plan wins. */
+export const claudePermissionMode = (config) =>
+  config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits'
+
+const CLAUDE_KINDS = { Bash: 'command', Edit: 'file', MultiEdit: 'file', Write: 'file', NotebookEdit: 'file', WebFetch: 'network', WebSearch: 'network' }
+/** Public summary of one can_use_tool request; a session grant needs native suggestions. */
+export function claudeApprovalRequest(request) {
+  const input = object(request.input) ? request.input : {}
+  const target = [input.command, input.file_path, input.notebook_path, input.url, input.query, request.blocked_path].find(string)
+  return {
+    kind: CLAUDE_KINDS[request.tool_name] ?? 'tool',
+    summary: `${string(request.title) ? request.title : request.tool_name}`.slice(0, 500),
+    ...(target ? { detail: target.slice(0, 4000) } : {}),
+    allowSession: Array.isArray(request.permission_suggestions) && request.permission_suggestions.length > 0 && request.suppress_always_allow_rule !== true,
+  }
+}
+
 /** Keep the selected route's private --settings path and native permission mode. */
 export function nativeClaudeArgv(config) {
   const argv = config.argv
@@ -34,15 +51,14 @@ export function nativeClaudeArgv(config) {
   const args = argv.slice(0, -1)
   if (args[args.indexOf('--output-format') + 1] !== 'stream-json' || args[args.indexOf('--model') + 1] !== config.preference.model)
     throw fail('原生输出格式或模型与选型不一致')
-  const permission = config.mode === 'plan' ? 'plan' : 'acceptEdits'
-  if (args[args.indexOf('--permission-mode') + 1] !== permission) throw fail('原生权限模式与任务不一致')
+  if (args[args.indexOf('--permission-mode') + 1] !== claudePermissionMode(config)) throw fail('原生权限模式与任务不一致')
   if (config.preference.effort === 'default' ? args.includes('--effort') : args[args.indexOf('--effort') + 1] !== config.preference.effort) throw fail('原生思考强度与选型不一致')
   const resumeId = config.conversationId ?? config.forkSource?.conversationId
   if (resumeId && args[args.indexOf('--resume') + 1] !== resumeId) throw fail('恢复参数与会话不一致')
   if (!resumeId && args.includes('--resume')) throw fail('缺少恢复会话绑定')
   if (args.includes('--input-format') || args.includes('--permission-prompts')) throw fail('重复的原生输入或权限控制选项')
   if (config.forkSource && (!string(config.forkSource.messageId) || config.conversationId)) throw fail('延迟分支截点无效')
-  return [...args, ...(config.forkSource ? ['--fork-session', '--resume-session-at', config.forkSource.messageId] : []), '--input-format', 'stream-json', ...(args.includes('--include-partial-messages') ? [] : ['--include-partial-messages']), '--permission-prompts', 'none']
+  return [...args, ...(config.forkSource ? ['--fork-session', '--resume-session-at', config.forkSource.messageId] : []), '--input-format', 'stream-json', ...(args.includes('--include-partial-messages') ? [] : ['--include-partial-messages']), '--permission-prompts', config.approvalNonce ? 'host' : 'none']
 }
 
 export async function runNativeClaude(config, io) {
@@ -84,6 +100,27 @@ export async function runNativeClaude(config, io) {
     const stream = streams.get(scope)
     if (value.type === 'control_request') {
       if (!string(value.request_id)) throw fail('反向请求缺少标识')
+      const request = value.request
+      // Tool authorization goes to the Host; a request needing user interaction stays unsupported.
+      if (request?.subtype === 'can_use_tool' && string(request.tool_name) && request.requires_user_interaction !== true) {
+        void io.approval(claudeApprovalRequest(request)).then((answer) => {
+          if (answer.decision === 'deny') {
+            // Denial interrupts the native turn, so the run stays failed.
+            failure ??= 'CLI 额外授权被拒绝，本轮已中断'
+            io.event({ kind: 'diagnostic', text: 'Claude 原生授权请求已拒绝', state: 'FAILED' })
+            return peer.send({ type: 'control_response', response: { subtype: 'success', request_id: value.request_id,
+              response: { behavior: 'deny', message: 'DSH 未批准此授权', interrupt: true } } })
+          }
+          io.event({ kind: 'diagnostic', text: 'Claude 原生授权请求已批准' })
+          const session = answer.decision === 'allow-session' && Array.isArray(request.permission_suggestions)
+            ? request.permission_suggestions.filter(object).map((update) => ({ ...update, destination: 'session' }))
+            : []
+          return peer.send({ type: 'control_response', response: { subtype: 'success', request_id: value.request_id,
+            response: { behavior: 'allow', updatedInput: object(request.input) ? request.input : {},
+              ...(session.length ? { updatedPermissions: session } : {}) } } })
+        }).catch(() => { failure ??= 'Claude 授权回复未送达' })
+        return
+      }
       failure ??= 'CLI 请求额外交互授权，插件未批准'
       io.event({ kind: 'diagnostic', text: 'Claude 原生交互请求已拒绝', state: 'FAILED' })
       return peer.send({ type: 'control_response', response: value.request?.subtype === 'can_use_tool'
@@ -100,7 +137,7 @@ export async function runNativeClaude(config, io) {
     }
     if (value.type === 'system' && value.subtype === 'init') {
       if (!sessionId) throw fail('初始化缺少会话身份')
-      if (value.permissionMode !== undefined && value.permissionMode !== (config.mode === 'plan' ? 'plan' : 'acceptEdits')) throw fail('原生初始化权限模式不一致')
+      if (value.permissionMode !== undefined && value.permissionMode !== claudePermissionMode(config)) throw fail('原生初始化权限模式不一致')
       io.event({ kind: 'status', text: 'Claude Code 原生流已连接', observedModel: typeof value.model === 'string' ? value.model : undefined })
     } else if (value.type === 'stream_event') {
       const event = value.event

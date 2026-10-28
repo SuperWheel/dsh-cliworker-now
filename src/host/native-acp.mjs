@@ -15,6 +15,22 @@ export async function nativeAcpAttachmentPrompt(config, agentCapabilities, signa
   return nativeAttachmentInput('acp', text, attachments.filter(item => item.kind !== 'image'), signal)
 }
 
+const ACP_KINDS = { execute: 'command', edit: 'file', delete: 'file', move: 'file', fetch: 'network' }
+/** Public summary of one ACP permission request for the DSH prompt. A session
+ * grant is offered only when the CLI's own session-scoped option is present. */
+export function acpApprovalRequest(params, sessionOption) {
+  const call = isRecord(params?.toolCall) ? params.toolCall : {}
+  const input = isRecord(call.rawInput) ? call.rawInput : {}
+  const paths = Array.isArray(call.locations) ? call.locations.map((item) => item?.path).filter(nonempty) : []
+  const detail = nonempty(input.command) ? input.command : paths.join('\n')
+  return {
+    kind: ACP_KINDS[call.kind] ?? 'tool',
+    summary: (nonempty(call.title) ? call.title : '工具调用').slice(0, 500),
+    ...(detail ? { detail: detail.slice(0, 4000) } : {}),
+    allowSession: !!sessionOption,
+  }
+}
+
 /** Remove only known per-turn arguments; retain executable/launcher and other global options. */
 export function replaceNativeArguments(argv, pairs, switches, tail) {
   if (!Array.isArray(argv) || !argv.length || argv.some((arg) => typeof arg !== 'string'))
@@ -103,25 +119,33 @@ export async function runNativeAcp(config, io, settings) {
     }
     if (message.id !== undefined) {
       if (message.method === 'session/request_permission') {
-        if (active && !ended && message.params?.sessionId === sessionId) {
-          const approved = await nativeHarnessAcpApproval(config, message.params, io.signal)
-          if (approved) return peer.send({ jsonrpc: '2.0', id: message.id,
-            result: { outcome: { outcome: 'selected', optionId: approved } } })
+        const options = Array.isArray(message.params?.options) ? message.params.options : []
+        const reply = (option) => peer.send({ jsonrpc: '2.0', id: message.id,
+          result: { outcome: option ? { outcome: 'selected', optionId: option.optionId } : { outcome: 'cancelled' } } })
+        const deny = () => {
+          if (active && message.params?.sessionId === sessionId) {
+            // The CLI may recover from a denial; the turn then ends as unverified, not failed.
+            denied = true
+            if (nonempty(message.params?.toolCall?.toolCallId)) deniedTools.add(message.params.toolCall.toolCallId)
+            io.event({ kind: 'diagnostic', text: 'CLI 额外权限请求已拒绝' })
+          }
+          return reply(options.find((option) => option.kind === 'reject_once'))
         }
-        if (active && message.params?.sessionId === sessionId) {
-          // The CLI may recover from a denial; the turn then ends as unverified, not failed.
-          denied = true
-          if (nonempty(message.params?.toolCall?.toolCallId)) deniedTools.add(message.params.toolCall.toolCallId)
-          io.event({ kind: 'diagnostic', text: 'CLI 额外权限请求已拒绝' })
-        }
-        const reject = message.params?.options?.find((option) => option.kind === 'reject_once')
-        return peer.send({
-          jsonrpc: '2.0',
-          id: message.id,
-          result: {
-            outcome: reject ? { outcome: 'selected', optionId: reject.optionId } : { outcome: 'cancelled' },
-          },
-        })
+        if (!(active && !ended && message.params?.sessionId === sessionId)) return deny()
+        const approved = await nativeHarnessAcpApproval(config, message.params, io.signal)
+        if (approved) return peer.send({ jsonrpc: '2.0', id: message.id,
+          result: { outcome: { outcome: 'selected', optionId: approved } } })
+        // Other requests go to the Host (DSH preset and user) without blocking this reader.
+        const sessionOption = settings.sessionOption?.(options)
+        void io.approval(acpApprovalRequest(message.params, sessionOption)).then((answer) => {
+          const option = answer.decision === 'deny' ? undefined
+            : answer.decision === 'allow-session' && sessionOption ? sessionOption
+              : options.find((item) => item.kind === 'allow_once')
+          if (!option) return deny()
+          io.event({ kind: 'diagnostic', text: 'CLI 额外权限请求已批准' })
+          return reply(option)
+        }).catch(() => fail('ACP 授权回复未送达'))
+        return
       } else {
         return peer.send({
           jsonrpc: '2.0',

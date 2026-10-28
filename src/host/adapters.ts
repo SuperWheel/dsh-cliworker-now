@@ -288,7 +288,7 @@ export function workerArguments(
   if ((cli === 'qoder' || cli === 'qodercn')) {
     if (!nativeTransport) throw new Error('Qoder 仅支持已确认的原生 ACP 通信，请新建任务')
     if (mode === 'plan') throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
-    return [executable, '--acp', '--permission-mode', 'accept_edits', '--model', preference.model]
+    return [executable, '--acp', '--permission-mode', access === 'danger-full-access' ? 'bypass_permissions' : 'accept_edits', '--model', preference.model]
   }
   if (cli === 'codex')
     return [
@@ -319,7 +319,7 @@ export function workerArguments(
       preference.model,
       ...(preference.effort !== 'default' ? ['--effort', preference.effort] : []),
       '--permission-mode',
-      mode === 'plan' ? 'plan' : 'acceptEdits',
+      mode === 'plan' ? 'plan' : access === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits',
       ...(conversationId ? ['--resume', conversationId] : []),
       task,
     ]
