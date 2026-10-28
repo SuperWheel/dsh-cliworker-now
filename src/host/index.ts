@@ -546,7 +546,9 @@ export class CliWorkerService extends TypertRemoteService {
             signal,
             executionReady: nativeHarnessExecutionReady(cli),
             // Same inputs as the launch: overlapping DSH tools stay with the CLI.
-            native: nativeCliCapabilities({ cli, mode: worker.mode, mcpServers: await nativeCliMcpServers(cli, worker.project) }),
+            // 仅可查看 launches in plan mode, so the catalog follows the launch, not the stored mode.
+            native: nativeCliCapabilities({ cli, mode: input.access === 'read-only' ? 'plan' : worker.mode, access: input.access,
+              mcpServers: await nativeCliMcpServers(cli, worker.project) }),
             resolveImage: (attachment, control) => readHarnessImage(child.ctx, attachment, control),
             authorize: async (identity) => {
               signal.throwIfAborted()

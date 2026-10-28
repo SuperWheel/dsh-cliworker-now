@@ -1,29 +1,58 @@
 // What each CLI can do natively under the exact launch this plugin builds.
 // Launch builders read the same constants, so re-enabling a native feature here
 // also drops the overlapping DSH fallback from the bridge catalog.
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
 export const CAPABILITY_CLASSES = ['file-read', 'file-write', 'search', 'shell', 'web', 'image-read', 'skills']
 
-/** Pi/OMP `--tools`: no native shell or web (no native approval to relay). */
-export function piOmpNativeTools(cli, mode) {
-  return [...(cli === 'pi' ? ['read', 'grep', 'find', 'ls'] : ['read', 'grep', 'glob']), ...(mode === 'accept-edits' ? ['write', 'edit'] : [])]
+/**
+ * Pi/OMP `--tools`. Pi has no native approval to relay, so its bash runs only
+ * when the DSH tier is 完全权限; otherwise the DSH shell fallback asks the Host.
+ * OMP asks before each bash call and the bridge relays it, so it gets bash in
+ * either writable tier.
+ */
+export function piOmpNativeTools(cli, mode, access) {
+  const bash = mode === 'accept-edits' &&
+    (cli === 'pi' ? access === 'danger-full-access' : ['workspace-write', 'danger-full-access'].includes(access))
+  return [
+    ...(cli === 'pi' ? ['read', 'grep', 'find', 'ls'] : ['read', 'grep', 'glob']),
+    ...(mode === 'accept-edits' ? ['write', 'edit'] : []),
+    ...(bash ? ['bash'] : []),
+  ]
 }
-/** Grok web search/fetch stay off until reenable-native-cli-features decides otherwise. */
-export const GROK_NATIVE_WEB = false
-/** Grok's plan launch restricts tools to this read-only list. */
-export const GROK_PLAN_TOOLS = ['read_file', 'grep', 'list_dir']
+/** Grok's own web search and fetch (fetch is off unless enabled; grok 1.0.62 docs). */
+export const GROK_NATIVE_WEB = true
+/** Grok's plan launch restricts tools to this read-only list; web reads are read-only too. */
+export const GROK_PLAN_TOOLS = ['read_file', 'grep', 'list_dir', ...(GROK_NATIVE_WEB ? ['web_search', 'web_fetch'] : [])]
+
+/**
+ * The user's own OpenCode/MiMo skill directories (opencode 1.19 / mimocode 0.1.15
+ * discovery roots), handed over as `skills.paths`. Project config, external
+ * (.claude/.agents) skill scans and provider config stay isolated.
+ */
+export function nativeSkillPaths(cli, { env = process.env, project, home = homedir() } = {}) {
+  const name = cli === 'mimo' ? 'mimocode' : 'opencode'
+  const config = cli === 'mimo' && env.MIMOCODE_HOME
+    ? join(env.MIMOCODE_HOME, 'config')
+    : join(env.XDG_CONFIG_HOME || join(home, '.config'), name)
+  const roots = [config, join(home, `.${name}`), ...(project ? [join(project, `.${name}`)] : [])]
+  return [...new Set(roots.flatMap(root => ['skill', 'skills'].map(directory => join(root, directory))))]
+    .filter(path => { try { return statSync(path).isDirectory() } catch { return false } })
+}
 
 const write = mode => (mode === 'plan' ? [] : ['file-write'])
 const tables = {
   codex: mode => ['file-read', ...write(mode), 'search', 'shell', 'image-read', 'skills'],
   claude: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read', 'skills'],
-  opencode: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read'],
-  mimo: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read'],
-  pi: mode => ['file-read', ...(piOmpNativeTools('pi', mode).includes('write') ? ['file-write'] : []), 'search', 'image-read'],
+  opencode: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read', 'skills'],
+  mimo: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read', 'skills'],
+  pi: (mode, access) => {
+    const tools = piOmpNativeTools('pi', mode, access)
+    return ['file-read', ...(tools.includes('write') ? ['file-write'] : []), 'search', ...(tools.includes('bash') ? ['shell'] : []), 'image-read']
+  },
   grok: mode => mode === 'plan'
     ? ['file-read', 'search', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])]
     : ['file-read', 'file-write', 'search', 'shell', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])],
@@ -40,8 +69,8 @@ const mcpImages = new Set(['claude', 'opencode', 'mimo', 'kimi'])
  * The run's native capability table. An unknown CLI gets an empty table, which
  * offers every granted DSH tool as before (the documented rollback).
  */
-export function nativeCliCapabilities({ cli, mode, mcpServers = [] }) {
-  const classes = tables[cli]?.(mode) ?? []
+export function nativeCliCapabilities({ cli, mode, access, mcpServers = [] }) {
+  const classes = tables[cli]?.(mode, access) ?? []
   // Plan mode withholds native writes on purpose; a DSH write is no fallback there.
   const withheld = tables[cli] && mode === 'plan' ? ['file-write'] : []
   return { cli, classes: [...new Set(classes)], withheld, mcpServers: [...new Set(mcpServers)], mcpImages: mcpImages.has(cli) }

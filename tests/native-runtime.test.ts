@@ -276,6 +276,22 @@ it('keeps the run occupied until its native Harness tool lease has drained', asy
   expect((await submission.done).status).toBe('completed')
   expect([preparations, cleanups]).toEqual([1, 1])
 })
+it('hands the bridge preparation and the launch one tier snapshot', async () => {
+  const f = setup()
+  const tiers = ['danger-full-access', 'workspace-write'] as const
+  let reads = 0
+  f.runtime.setAccessSnapshot(() => tiers[reads++])
+  const prepared: unknown[] = []
+  f.runtime.setHarnessPreparation(async (_worker, _signal, input) => {
+    prepared.push(input.access)
+    return { close: async () => {} }
+  })
+  const result = await f.runtime.submit('parent', f.project, 'synthetic', 'first', pref, 'accept-edits').done
+  expect(result.status).toBe('completed')
+  expect(reads).toBe(1)
+  expect(prepared).toEqual(['danger-full-access'])
+  expect(f.requests[0].access).toBe('danger-full-access')
+})
 it('fails closed before CLI spawn when native child or tool admission fails', async () => {
   const f = setup()
   f.runtime.setHarnessPreparation(async () => { throw new Error('synthetic native binding failure') })

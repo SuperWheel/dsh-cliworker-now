@@ -6,6 +6,7 @@ import { nativeHttpEndpoint, startHttpContextRelay } from './http-context-relay.
 import { NativeBlockResponses, sessionHttpResponseUsage, sessionHttpSessionUsage } from './http-rpc-response.mjs'
 import { HARNESS_MCP_SERVER, nativeHarnessGuidance } from './native-harness-injection.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
+import { nativeSkillPaths } from './cli-native-capabilities.mjs'
 import { readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import {
   deferred,
@@ -44,7 +45,8 @@ export function serverConfiguration(config, cli) {
   const raw = environment[`${name}_CONFIG_CONTENT`]
   const previous = raw ? JSON.parse(raw) : {}
   if (!object(previous)) throw new Error('原生 HTTP 配置无效')
-  // 完全权限 allows every native tool; task/skill/question stay off as before.
+  // 完全权限 allows every native tool; task/question stay off. A skill only loads
+  // the user's own instructions, so it is allowed in every tier.
   const full = config.mode !== 'plan' && config.access === 'danger-full-access'
   const permission = {
     '*': full ? 'allow' : 'ask',
@@ -55,7 +57,7 @@ export function serverConfiguration(config, cli) {
     edit: config.mode === 'plan' ? 'deny' : 'allow',
     bash: config.mode === 'plan' ? 'deny' : full ? 'allow' : 'ask',
     task: 'deny',
-    skill: 'deny',
+    skill: 'allow',
     question: 'deny',
     ...(readNativeHarnessConnection(environment)?.executionReady === true ? { [`${HARNESS_MCP_SERVER}_*`]: 'allow' } : {}),
   }
@@ -68,6 +70,8 @@ export function serverConfiguration(config, cli) {
         model: config.preference.model,
         small_model: config.preference.model,
         enabled_providers: [selection(config).providerID],
+        // OpenCode's Host launch already lists the roots; MiMo keeps the user's config dirs.
+        ...(cli === 'mimo' ? { skills: { paths: nativeSkillPaths('mimo', { env: environment, project: config.project }) } } : {}),
         permission,
       }),
       [`${name}_PERMISSION`]: JSON.stringify(permission),

@@ -1221,3 +1221,14 @@ OpenSpec 变更 `relay-native-approvals-to-host`（用户 2026-10-28 决定）�
 - 原生回复：Codex `accept/acceptForSession/decline`（permissions 请求回显授予子集与 `scope`）；Claude `--permission-prompts host`，`behavior:allow`+`updatedInput`，会话级把 CLI 自己的 `permission_suggestions` 改为 `destination:'session'` 放入 `updatedPermissions`，拒绝仍 `interrupt:true` 失败；ACP 选原生 `optionId`，会话级仅 Kimi `approve_always`、Qoder `proceed_always`（不选 `proceed_always_and_save`，Grok 的 always 会持久到项目，不提供）；ZCode `{decision:'allow'|'deny'}`，不发 `permissionUpdates`（会写项目规则）；Hermes `choice` 为 `once/session/deny`（仅事件 `choices` 含 `session` 时提供会话级，不发 `always`）；OpenCode/MiMo `reply:'once'|'reject'`（`always` 超出会话，不提供）。
 - runner 等待期间不阻塞读循环（Codex、Claude、ACP、ZCode）；Hermes 与 HTTP 会话系在事件循环内顺序等待。停止、桥关闭或无答复时回复拒绝；拒绝后正常结束仍为结果待核实（Claude 除外）。
 - 等待审批期间暂停空闲时限（合并时接入：`startRunTimers().hold()`，经 `createNativeIO` 的 `onApprovalWait` 持有至决定、停止或关闭；总时限照常）。未做：子会话持有仅在 CLI Worker 面板挂载时有效；所有 CLI 的真实审批往返未实测。
+
+## 2026-10-28 重新启用 CLI 原生功能（未发布）
+
+OpenSpec 变更 `reenable-native-cli-features`（用户「先做 reenable」）。原则：原生功能默认保留，只因两层任务树、账号隔离或无法遵循 DSH 预设而关闭，README 列出关闭项与类别。
+
+- Grok：`GROK_NATIVE_WEB` 打开网页搜索与抓取（去掉 `--disable-web-search`，`GROK_WEB_FETCH=1`、`features.web_fetch = true`）；规划 `--tools` 加 `web_search,web_fetch`；仅可查看的 `[permission] allow` 加 `WebSearch`、`WebFetch`（grok 1.0.62：搜索不询问，抓取非白名单域名会经 ACP 询问，按授权通路处理）。
+- Pi：`piOmpNativeTools(cli, mode, access)`，Pi 只在写任务且完全权限时加 `bash`，能力表随之加 `shell`，DSH 命令备选退出目录。
+- OMP（16.4.4 核实）：`approvalMode` 为 `always-ask/write/yolo`；`write` 下写入与 bash 经 RPC `extension_ui_request`（`select`，标题 `Allow tool: X…`，选项 `Approve/Deny`）询问，无超时。OMP 写任务在工作区内修改与完全权限下加 `bash`；`--approval-mode` 与 `tools.approvalMode` 按档位取 `write`/`yolo`。桥把审批询问转为 `approval` 帧（bash→command、write/edit→file），Host 经 `BridgeProtocol` 中继并经私有邮箱 `approval` 命令回写，桥回 `extension_ui_response`。拒绝后正常结束为结果待核实；停止或桥关闭时回 Deny。其他交互请求仍取消并判失败。Host 对 OMP 也按审批等待暂停空闲时限。
+- OpenCode/MiMo：skill 权限改为 `allow`（替代上节「task/skill/question 仍 deny」中的 skill；各档位，skill 只读取用户指令）；`nativeSkillPaths` 把用户自己的 skill 根目录（`<配置目录>/{skill,skills}`、`~/.opencode|.mimocode/{skill,skills}`、项目 `.opencode|.mimocode/{skill,skills}`，仅现存目录）写入 `skills.paths`。OpenCode 由 Host 写入启动配置；MiMo 由运行器按自身环境计算。外部兼容目录与 Claude 配置导入、项目配置、外部插件保持关闭。
+- ZCode：`Skill` 只加载指令、可单独开启，但按设计随子 Agent 决定处理；浏览器 REPL 可执行任意代码，保持关闭。
+- 已知隔离缺口（未改）：OpenCode/MiMo 仍会读取 `~/.opencode`、`~/.mimocode` 下的配置；MiMo Worker 环境只经 `firstPartyEnvironment('mimo')`，使用真实配置目录。

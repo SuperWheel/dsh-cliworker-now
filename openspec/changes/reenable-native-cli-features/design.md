@@ -14,7 +14,7 @@
 | OpenCode/MiMo | 外部插件、Claude Code 配置导入、项目配置 | 账号隔离 | 保留 |
 | OpenCode/MiMo、OMP | LSP | 避免自动下载与性能 | 保留 |
 | Pi | bash | 无法遵循 DSH 权限（无原生审批） | 仅完全权限启用 |
-| OMP | bash | 同 Pi，OMP 有原生 `approvalMode` | 核实后按预设映射 |
+| OMP | bash | 同 Pi，OMP 有原生 `approvalMode` | 工作区内修改（`write`，审批转 DSH）与完全权限（`yolo`）启用 |
 | Pi/OMP | 扩展、用户 skill、规则 | 账号隔离 / 加载用户扩展 | 保留 |
 | Hermes | 插件、MCP、记忆、只开 terminal/file | 安全隔离 | 保留（工具桥接入后另议） |
 
@@ -23,7 +23,8 @@
 - Grok：删除 `--disable-web-search` 与 `GROK_WEB_FETCH: '0'`；核实 ACP 模式下网页抓取是否另需权限审批，按 `relay-native-approvals-to-host` 处理。
 - OpenCode/MiMo：`OPENCODE_DISABLE_EXTERNAL_SKILLS` 只控制兼容的外部 skill 目录（如 `.claude/skills`、`.agents/skills`）；插件把 `XDG_CONFIG_HOME` 指向私有目录，用户 OpenCode 原生 skill 目录不在其中。需按实际版本核实 skill 发现路径，采用只读方式把用户 skill 目录提供给 CLI（如通过 CLI 支持的 skill 路径配置），不复制用户 provider 配置。外部 skill 目录中的 `.claude/skills` 不含凭据，可启用；若同时会触发读取 Claude 配置则保留关闭。
 - Pi：`--tools` 在完全权限时追加 `bash`；预设来自 `relay-native-approvals-to-host` 的每轮快照；能力表随之更新，DSH 命令工具自动退出目录。
-- OMP：先核实 `approvalMode` 的取值与是否产生可拦截的审批事件。
+- OMP：16.4.4 核实 `approvalMode` 为 `always-ask/write/yolo`，`write` 下经 RPC `extension_ui_request`（select，选项 Approve/Deny）询问，可回 `extension_ui_response`。桥把它转为 DSH 审批帧，按 `relay-native-approvals-to-host` 的通路回写；工作区内修改用 `write`，完全权限用 `yolo`，两档均开放 bash。
+- OpenCode/MiMo 结论：两者均支持配置 `skills.paths`。不打开 `OPENCODE_DISABLE_EXTERNAL_SKILLS`（`.claude/skills` 还需打开 Claude Code 导入，`.agents/skills` 不是 OpenCode 自己的目录），改为把用户自己的 skill 根目录写入 `skills.paths`，skill 权限改为 allow。
 
 ## 依赖
 

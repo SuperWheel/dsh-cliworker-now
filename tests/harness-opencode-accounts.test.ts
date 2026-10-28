@@ -302,6 +302,10 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
       expect(env.OPENCODE_DISABLE_PROJECT_CONFIG).toBe('1')
     }
     expect(new Set([login.env.OPENCODE_DB, worker.env.OPENCODE_DB, catalogEnv!.OPENCODE_DB]).size).toBe(3)
+    // User skills arrive as explicit roots; external/project scans stay off.
+    expect(JSON.parse(worker.env.OPENCODE_CONFIG_CONTENT!).skills).toEqual({ paths: expect.any(Array) })
+    expect(worker.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBe('1')
+    expect(worker.env.OPENCODE_DISABLE_CLAUDE_CODE).toBe('1')
     if (process.platform !== 'win32') expect(statSync(auth).mode & 0o777).toBe(0o700)
     expect(JSON.parse(login.env.OPENCODE_PERMISSION!)).toEqual({ '*': 'deny' })
     const nativeConfig = JSON.parse(login.env.OPENCODE_CONFIG_CONTENT!)

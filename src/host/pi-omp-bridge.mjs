@@ -15,7 +15,7 @@ import { readFile } from 'node:fs/promises'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { ownsOwnAccountLease, OWN_ACCOUNT_BUSY } from './own-account-lease.mjs'
 import { assertPiOmpRefreshSources, assertPiOmpRefreshCache } from './pi-omp-refresh.mjs'
-import { receivePiOmpControl, receiveNativeStopControl } from './pi-omp-control.mjs'
+import { receivePiOmpControl, receiveNativeStopControl, receiveNativeApprovalControl } from './pi-omp-control.mjs'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import { prepareNativeHarnessExtension } from './native-harness-extension.mjs'
 import { nativeFirstGuidance, piOmpNativeTools } from './cli-native-capabilities.mjs'
@@ -107,13 +107,38 @@ let child,
   finalized = false,
   controlReceiver,
   stopReceiver,
+  approvalReceiver,
+  approvalSequence = 0,
+  permissionDenied = false,
   nativeStop,
   closeGuidance = () => {}
 const toolOutcomes = createToolOutcomes()
+// Pending OMP approvals relayed to the Host, by bridge id; each settles exactly once.
+const approvals = new Map()
+const APPROVAL_DENIED = 'CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
+/**
+ * OMP 16.4 asks for a tool approval as an RPC `select` titled "Allow tool: <name>"
+ * with exactly Approve/Deny. Anything else stays an unanswerable interactive request.
+ */
+function ompApprovalRequest(value) {
+  if (config?.cli !== 'omp' || value.method !== 'select' || typeof value.title !== 'string') return
+  const options = Array.isArray(value.options) ? value.options : []
+  if (options.length !== 2 || !options.includes('Approve') || !options.includes('Deny')) return
+  const [first, ...rest] = value.title.split('\n')
+  const tool = /^Allow tool: (.+)$/.exec(first)?.[1]?.trim()
+  if (!tool) return
+  return {
+    kind: tool === 'bash' ? 'command' : ['write', 'edit'].includes(tool) ? 'file' : 'tool',
+    summary: first.slice(0, 500),
+    ...(rest.join('\n').trim() ? { detail: rest.join('\n').trim().slice(0, 4000) } : {}),
+    allowSession: false,
+  }
+}
 const metadataController = new AbortController()
 const stop = (reason) => {
   failure ??= reason
   closeGuidance()
+  for (const settle of [...approvals.values()]) settle('deny')
   const terminate = () => {
     child?.stdin?.end()
     child?.kill('SIGTERM')
@@ -178,6 +203,7 @@ try {
   if (!config.controlNonce) await rmdir(dirname(requestPath))
   if (
     !['pi', 'omp'].includes(config.cli) ||
+    (config.access !== undefined && !['read-only', 'workspace-write', 'danger-full-access'].includes(config.access)) ||
     typeof config.executable !== 'string' ||
     !isAbsolute(config.stateDirectory)
   )
@@ -190,6 +216,17 @@ try {
       metadataController.abort()
       await stop('任务已停止')
     })
+  if (config.approvalNonce) {
+    if (config.cli !== 'omp' || config.approvalDirectory !== join(dirname(requestPath), 'approval'))
+      throw new Error('Unbound native approval control')
+    approvalReceiver = await receiveNativeApprovalControl(config.approvalDirectory, config.approvalNonce, async (message, id) => {
+      const settle = approvals.get(id)
+      if (!settle) throw new Error('Unknown native approval')
+      let value
+      try { value = JSON.parse(message) } catch {}
+      settle(['allow-once', 'allow-session', 'deny'].includes(value?.decision) ? value.decision : 'deny')
+    })
+  }
   if (config.leaseDirectory) {
     if (typeof config.nativeRoot !== 'string' || dirname(config.nativeRoot) !== config.leaseDirectory)
       throw new Error('Invalid shared account directory')
@@ -264,6 +301,8 @@ try {
   // Pi's SDK is loaded in this process and consults process.env itself. Apply
   // the same own-source environment before importing it, not only at spawn.
   process.env = env
+  // OMP asks before writes/bash under `write`; 完全权限 matches the DSH tier.
+  const ompApprovalMode = config.access === 'danger-full-access' ? 'yolo' : 'write'
   const isolated =
     config.cli === 'pi'
       ? [
@@ -282,7 +321,7 @@ try {
           '--no-lsp',
           '--no-pty',
           '--approval-mode',
-          'write',
+          ompApprovalMode,
           '--config',
           join(nativeRoot, 'config.yml'),
         ]
@@ -311,7 +350,8 @@ try {
         mcp: { enableProjectConfig: false },
         retry: { modelFallback: false },
         memory: { backend: 'off' },
-        tools: { approvalMode: 'write' },
+        // 完全权限 runs OMP's own yolo; otherwise exec-tier tools (bash) ask and the Host decides.
+        tools: { approvalMode: ompApprovalMode },
       }),
     )
   }
@@ -416,7 +456,7 @@ try {
       ? await nativeAttachmentInput('pi', config.prompt, config.attachments, metadataController.signal)
       : { message: await nativeAttachmentInput('text', config.prompt, config.attachments, metadataController.signal) }
     const harnessExtension = await prepareNativeHarnessExtension(harnessTools, { signal: metadataController.signal })
-    const tools = [...piOmpNativeTools(config.cli, config.mode), ...harnessExtension.tools]
+    const tools = [...piOmpNativeTools(config.cli, config.mode, config.access), ...harnessExtension.tools]
     // Pi's addendum keeps its native preamble; the note names the extension tools Pi sees.
     const guidance = nativeFirstGuidance(harnessExtension.tools)
     const nativeArgs = [
@@ -758,8 +798,26 @@ try {
       }
       if (config.discover) return
       if (value.type === 'extension_ui_request') {
-        // Notifications carry no obligation. Interactive requests are denied.
+        // Notifications carry no obligation. A tool approval goes to the Host; other interactive requests are denied.
         if (['confirm', 'select', 'input', 'editor'].includes(value.method)) {
+          const request = config.approvalNonce && !stopped ? ompApprovalRequest(value) : undefined
+          if (request && approvals.size < 50 && approvalSequence < 200) {
+            const id = `approval-${++approvalSequence}`
+            void new Promise((resolve) => approvals.set(id, (decision) => {
+              approvals.delete(id)
+              resolve(decision)
+            })).then((decision) => {
+              if (decision === 'deny') permissionDenied = true
+              send({ type: 'extension_ui_response', id: value.id, value: decision === 'deny' ? 'Deny' : 'Approve' })
+            })
+            output({ type: 'approval', id, request })
+            return
+          }
+          if (request) {
+            permissionDenied = true
+            send({ type: 'extension_ui_response', id: value.id, value: 'Deny' })
+            return
+          }
           failure ??= 'CLI 需要额外原生交互授权'
           send({ type: 'extension_ui_response', id: value.id, cancelled: true, confirmed: false })
         }
@@ -951,6 +1009,7 @@ try {
       failure ??= errorMessage(error)
     }
     if (failure || stopped) output({ type: 'result', status: 'ERROR', response, error: failure, resultScope: 'run' })
+    else if (permissionDenied) output({ type: 'result', status: 'UNCERTAIN', response, error: APPROVAL_DENIED, resultScope: 'run' })
     else if (toolOutcomes.lastFailed) output({ type: 'result', status: 'UNCERTAIN', response, error: LAST_TOOL_FAILED, resultScope: 'run' })
     else output({ type: 'result', status: 'SUCCESS', response, resultScope: 'run',
       ...(toolOutcomes.count ? { notice: recoveredNotice(toolOutcomes.count) } : {}) })
@@ -965,6 +1024,8 @@ try {
   if (!finalized) output({ type: 'result', status: 'ERROR', response: '', error: errorMessage(error) })
   process.exitCode = 1
 }
+for (const settle of [...approvals.values()]) settle('deny')
 await controlReceiver?.close().catch(() => undefined)
 await stopReceiver?.close().catch(() => undefined)
+await approvalReceiver?.close().catch(() => undefined)
 import { nativeAttachmentInput } from './native-attachments.mjs'

@@ -164,6 +164,7 @@ export async function extendedLaunch(
               maxRunBytes: config.maxRunBytes,
               maxNativeLineBytes: config.maxNativeLineBytes,
               maxToolPreviewBytes: config.maxToolPreviewBytes,
+              ...(config.access ? { access: config.access } : {}),
               ...(config.harnessTools ? { harnessTools: config.harnessTools } : {}),
               accountRoot:
                 config.stateDirectory ??

@@ -10,10 +10,11 @@ export interface NativeCliCapabilities {
   mcpImages: boolean
 }
 export const CAPABILITY_CLASSES: readonly CapabilityClass[]
-export function piOmpNativeTools(cli: string, mode: string): string[]
+export function piOmpNativeTools(cli: string, mode: string, access?: string): string[]
+export function nativeSkillPaths(cli: string, options?: { env?: Record<string, string | undefined>; project?: string; home?: string }): string[]
 export const GROK_NATIVE_WEB: boolean
 export const GROK_PLAN_TOOLS: readonly string[]
-export function nativeCliCapabilities(input: { cli: string; mode: string; mcpServers?: readonly string[] }): NativeCliCapabilities
+export function nativeCliCapabilities(input: { cli: string; mode: string; access?: string; mcpServers?: readonly string[] }): NativeCliCapabilities
 export function dshToolClass(name: string): CapabilityClass | 'dsh-skill' | undefined
 export function nativeCoverage(name: string, capabilities?: NativeCliCapabilities): string | undefined
 export function codexDeveloperInstructionsConfigured(project: string, env?: Record<string, string | undefined>): boolean

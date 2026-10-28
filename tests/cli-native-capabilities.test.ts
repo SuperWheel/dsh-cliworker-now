@@ -6,7 +6,7 @@ import { createNativeHarnessTools, type NativeHarnessToolsOptions } from '../src
 import { runNativeGrok } from '../src/host/native-grok.mjs'
 import { buildNativeHarnessInjection, nativeHarnessGuidance, nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 import {
-  codexDeveloperInstructionsConfigured, HARNESS_FALLBACK_PREFIX, nativeCliCapabilities, nativeCliMcpServers, nativeCoverage, nativeFirstGuidance, piOmpNativeTools,
+  codexDeveloperInstructionsConfigured, HARNESS_FALLBACK_PREFIX, nativeCliCapabilities, nativeCliMcpServers, nativeCoverage, nativeFirstGuidance, nativeSkillPaths, piOmpNativeTools,
 } from '../src/host/cli-native-capabilities.mjs'
 
 // Catalog names follow the exported dsh-base 0.2.1-rc.2 child catalog; every
@@ -55,6 +55,20 @@ describe('native capability table (synthetic)', () => {
     expect((await pi.rpc('tools/call', { name: 'bash', arguments: { command: 'true' } })).result).toEqual({ isError: false, content: [{ type: 'text', text: 'simulated' }] })
     expect(pi.authorize).toHaveBeenCalledWith(expect.objectContaining({ cli: 'pi' }), { method: 'tools/call', name: 'bash' })
     expect(pi.execute).toHaveBeenCalledOnce()
+  })
+  it('gives Pi its native bash only under 完全权限, which then withdraws the DSH shell fallback', async () => {
+    expect(piOmpNativeTools('pi', 'accept-edits', 'danger-full-access')).toContain('bash')
+    for (const [mode, access] of [['accept-edits', 'workspace-write'], ['plan', 'danger-full-access'], ['accept-edits', undefined]] as const)
+      expect(piOmpNativeTools('pi', mode, access)).not.toContain('bash')
+    // OMP asks before each bash call and relays that question to DSH.
+    for (const access of ['workspace-write', 'danger-full-access'])
+      expect(piOmpNativeTools('omp', 'accept-edits', access)).toContain('bash')
+    for (const [mode, access] of [['plan', 'danger-full-access'], ['accept-edits', 'read-only'], ['accept-edits', undefined]] as const)
+      expect(piOmpNativeTools('omp', mode, access)).not.toContain('bash')
+    const full = await lease('pi', 'accept-edits', { native: nativeCliCapabilities({ cli: 'pi', mode: 'accept-edits', access: 'danger-full-access' }) })
+    const names = await full.names()
+    for (const name of ['bash', 'terminal_open', 'job_output']) expect(names).not.toContain(name)
+    expect(names).toContain('web_search')
   })
   it('does not offer a DSH write as a plan-mode fallback', async () => {
     const plan = await lease('pi', 'plan')
@@ -171,6 +185,23 @@ describe('native injection details (synthetic)', () => {
     const codex = await lease('codex', 'accept-edits')
     const argv = buildNativeHarnessInjection({ cli: 'codex', argv: ['codex'], connection: codex.connection, toolTimeoutMs: 1_800_000, mcpEntryPath: '/synthetic/bridge.mjs' }).argv
     expect(argv[argv.indexOf('mcp_servers.dsh_worker_tools.tool_timeout_sec=1800')]).toBeDefined()
+  })
+})
+
+describe('OpenCode/MiMo user skill roots (synthetic directories)', () => {
+  it('lists only existing user and project skill directories of the same CLI', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cwn-skills-'))
+    directories.push(root)
+    const home = join(root, 'home'), project = join(root, 'project'), xdg = join(root, 'xdg')
+    for (const path of [join(xdg, 'opencode/skills'), join(home, '.opencode/skill'), join(project, '.opencode/skills'),
+      join(project, '.claude/skills'), join(project, '.agents/skills'), join(home, '.mimocode/skills'), join(root, 'mimo-home/config/skill')])
+      await mkdir(path, { recursive: true })
+    await writeFile(join(project, '.opencode/skill'), 'not a directory')
+    expect(nativeSkillPaths('opencode', { env: { XDG_CONFIG_HOME: xdg }, project, home }))
+      .toEqual([join(xdg, 'opencode/skills'), join(home, '.opencode/skill'), join(project, '.opencode/skills')])
+    expect(nativeSkillPaths('mimo', { env: { MIMOCODE_HOME: join(root, 'mimo-home') }, home }))
+      .toEqual([join(root, 'mimo-home/config/skill'), join(home, '.mimocode/skills')])
+    expect(nativeCliCapabilities({ cli: 'opencode', mode: 'plan' }).classes).toContain('skills')
   })
 })
 

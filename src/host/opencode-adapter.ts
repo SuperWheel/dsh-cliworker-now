@@ -15,6 +15,7 @@ import {
 } from './opencode-native.ts'
 import { probeAccountModels, type AccountModelScope } from './account-models.mjs'
 import { NativeBlockResponses, sessionHttpResponseUsage } from './http-rpc-response.mjs'
+import { nativeSkillPaths } from './cli-native-capabilities.mjs'
 
 export interface OpenCodeInput {
   executable: string
@@ -163,9 +164,10 @@ export async function prepareOpenCode(
         edit: mode === 'plan' ? 'deny' : 'allow',
         bash: mode === 'plan' ? 'deny' : 'ask',
         task: 'deny',
-        skill: 'deny',
+        skill: 'allow',
         question: 'deny',
       },
+      skills: { paths: nativeSkillPaths('opencode', { project }) },
     },
     snapshot,
     false,

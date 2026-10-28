@@ -25,15 +25,17 @@ export interface GrokInput {
 }
 const record = (x: unknown): x is Record<string, unknown> =>
   typeof x === 'object' && x !== null && !Array.isArray(x)
-const baseConfig = `[cli]\nauto_update = false\nuse_leader = false\n[features]\nsupport_permission = true\ntelemetry = false\nfeedback = false\ncodebase_indexing = false\n[telemetry]\ntrace_upload = false\nmixpanel_enabled = false\n[subagents]\nenabled = false\n[session]\nload_envrc = false\n[shell_environment_policy]\ninherit = "core"\nignore_default_excludes = false\n`
+const baseConfig = `[cli]\nauto_update = false\nuse_leader = false\n[features]\nsupport_permission = true\nweb_fetch = ${GROK_NATIVE_WEB}\ntelemetry = false\nfeedback = false\ncodebase_indexing = false\n[telemetry]\ntrace_upload = false\nmixpanel_enabled = false\n[subagents]\nenabled = false\n[session]\nload_envrc = false\n[shell_environment_policy]\ninherit = "core"\nignore_default_excludes = false\n`
 // `grok agent stdio` ignores the global --permission-mode/--deny flags, and its
 // config ignores permission_mode = "dontAsk", so a read-only run denies edits
 // by rule in this run's private config. Bare mkdir/touch skip prompts in every
 // mode and are denied too. A ready DSH bridge is pre-approved; the Host still
-// approves each execution. Other prompts are still refused by the plugin.
+// approves each execution. Web reads are pre-approved too: a plan run refuses
+// every prompt, and web_fetch otherwise asks for each domain off Grok's list.
 function grokConfig(readOnly?: { bridge: boolean }) {
   if (!readOnly) return baseConfig
-  const allow = readOnly.bridge ? `allow = ["MCPTool(${HARNESS_MCP_SERVER}__*)"]\n` : ''
+  const allowed = [...(GROK_NATIVE_WEB ? ['WebSearch', 'WebFetch'] : []), ...(readOnly.bridge ? [`MCPTool(${HARNESS_MCP_SERVER}__*)`] : [])]
+  const allow = allowed.length ? `allow = ${JSON.stringify(allowed).replaceAll(',', ', ')}\n` : ''
   return `${baseConfig}[permission]\ndeny = ["Edit", "Write", "Bash(mkdir)", "Bash(touch)"]\n${allow}`
 }
 function bridgePath() {
@@ -131,7 +133,7 @@ async function state(stateDirectory: string, project?: string, readOnly?: { brid
       GROK_MEMORY: '0',
       GROK_SUBAGENTS: '0',
       GROK_WORKFLOWS: '0',
-      ...(GROK_NATIVE_WEB ? {} : { GROK_WEB_FETCH: '0' }),
+      GROK_WEB_FETCH: GROK_NATIVE_WEB ? '1' : '0',
       GROK_TELEMETRY_ENABLED: '0',
       GROK_TELEMETRY_TRACE_UPLOAD: '0',
       GROK_TELEMETRY_MIXPANEL_ENABLED: '0',

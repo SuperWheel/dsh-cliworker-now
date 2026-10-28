@@ -10,10 +10,11 @@ import { snapshotPiOmpNative, safePiOmpAncestors, type PiOmpNativeOptions } from
 import { finishPiOmpRefresh } from './pi-omp-refresh.mjs'
 import { acquireOwnAccountLease, ownAccountBusy } from './own-account-lease.mjs'
 import { assertPiOmpRefreshSources, assertPiOmpRefreshCache } from './pi-omp-refresh.mjs'
-import { createPiOmpControl, createNativeStopControl } from './pi-omp-control.mjs'
+import { createPiOmpControl, createNativeStopControl, createNativeApprovalControl } from './pi-omp-control.mjs'
 import { buildNativeHarnessInjection } from './native-harness-injection.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
+import type { NativeAccess, NativeApprovalDecision } from './native-approval-policy.ts'
 
 export type PiOmpCli = 'pi' | 'omp'
 export type PiOmpMetadataPhase = 'native-candidates' | 'account-scope'
@@ -34,6 +35,8 @@ export interface PiOmpInput extends PiOmpNativeOptions {
   project: string
   preference: { model: string; effort: string }
   mode: TaskMode
+  /** The run's DSH tier snapshot; only 完全权限 adds Pi's native bash. */
+  access?: NativeAccess
   prompt: string
   attachments?: readonly NativeAttachment[]
   conversationId?: string
@@ -107,6 +110,7 @@ async function contextFor(
     const requestPath = join(requestDirectory, 'request.json')
     let control: Awaited<ReturnType<typeof createPiOmpControl>> | undefined
     let stopControl: Awaited<ReturnType<typeof createNativeStopControl>> | undefined
+    let approvalControl: Awaited<ReturnType<typeof createNativeApprovalControl>> | undefined
     const temporary = join(requestDirectory, `.request-${randomUUID()}.tmp`)
     const injection = buildNativeHarnessInjection({ cli: input.cli, argv: [input.executable], env: native.env,
       connection: !('discover' in input) && !extra.metadataPhase ? input.harnessTools : undefined })
@@ -114,6 +118,8 @@ async function contextFor(
       if (!('discover' in input) && !extra.metadataPhase) {
         control = await createPiOmpControl(join(requestDirectory, 'control'))
         stopControl = await createNativeStopControl(join(requestDirectory, 'stop'))
+        // OMP's native tool approvals are relayed to the Host through this mailbox.
+        if (input.cli === 'omp') approvalControl = await createNativeApprovalControl(join(requestDirectory, 'approval'))
       }
       await writeFile(
         temporary,
@@ -126,6 +132,9 @@ async function contextFor(
           ...(control ? { controlNonce: control.nonce } : {}),
           ...(stopControl
             ? { stopNonce: stopControl.nonce, stopDirectory: join(requestDirectory, 'stop') }
+            : {}),
+          ...(approvalControl
+            ? { approvalNonce: approvalControl.nonce, approvalDirectory: join(requestDirectory, 'approval') }
             : {}),
           stateDirectory: isolated,
           nativeRoot: native.directory,
@@ -140,17 +149,22 @@ async function contextFor(
     } catch (error) {
       await control?.close()
       await stopControl?.close()
+      await approvalControl?.close()
       await rm(requestDirectory, { recursive: true, force: true })
       throw error
     } finally {
       await rm(temporary, { force: true })
     }
+    const activeApproval = approvalControl
     return {
       argv: [process.execPath, bridgePath(), requestPath],
       env: injection.env,
       leaseDirectory: native.leaseDirectory,
       ...(control ? { steer: control.steer } : {}),
       ...(stopControl ? { stop: stopControl.stop } : {}),
+      ...(activeApproval
+        ? { answerApproval: (id: string, decision: NativeApprovalDecision) => activeApproval.steer(JSON.stringify(decision), id) }
+        : {}),
       activate: async () => {
         if (native.leaseDirectory) {
           await acquireOwnAccountLease(native.leaseDirectory, leaseNonce)
@@ -161,6 +175,7 @@ async function contextFor(
       cleanup: async () => {
         await control?.close()
         await stopControl?.close()
+        await approvalControl?.close()
         if (native.leaseDirectory)
           await finishPiOmpRefresh(native.leaseDirectory, leaseNonce, input.executable, native.receipt)
         if (control) await rm(requestDirectory, { recursive: true, force: true })
@@ -219,6 +234,7 @@ export async function preparePiOmp(
   cleanup: () => Promise<void>
   steer?: (message: string, requestId: string, signal?: AbortSignal) => Promise<void>
   stop?: () => Promise<void>
+  answerApproval?: (id: string, decision: NativeApprovalDecision) => Promise<void>
 }> {
   if (input.cli !== 'pi' && input.cli !== 'omp') throw new Error('Unsupported Pi/OMP CLI')
   if (!/^[A-Za-z0-9_.:-]+\/[^\s\x00-\x1f]+$/.test(input.preference.model))

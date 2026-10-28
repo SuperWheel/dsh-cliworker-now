@@ -218,7 +218,7 @@ export class WorkerRuntime {
   private harnessPreparation?: (
     worker: Worker,
     signal: AbortSignal,
-    input: { submissionId?: string; isolated?: boolean },
+    input: { submissionId?: string; isolated?: boolean; access?: NativeAccess },
   ) => Promise<{ connection?: NativeHarnessConnection; close(): Promise<void> } | undefined>
   setHarnessPreparation(prepare: NonNullable<WorkerRuntime['harnessPreparation']>): () => void {
     this.harnessPreparation = prepare
@@ -2266,25 +2266,40 @@ export class WorkerRuntime {
     const expectedConversation = worker.conversationId
     const nativeTransport = usesNativeBridge(worker)
     // The native bridge renews its own idle window; other transports are timed on their output here.
+    let idleHolds = 0
     const touchIdle =
       !nativeTransport && limit.idleMs > 0
         ? () => {
             clearTimeout(idleTimer)
+            // A user deciding an approval is not the CLI going quiet.
+            if (idleHolds) return
             idleTimer = setTimeout(() => controller.abort(new Error(timeLimitMessage('idle', limit))), limit.idleMs)
           }
         : undefined
     task.approvals = new AbortController()
     // Bound to the prepared launch's approval mailbox once it exists.
     let answerApproval: ((id: string, decision: NativeApprovalDecision) => Promise<void>) | undefined
-    const createProtocol = nativeTransport
+    const relay = (id: string, request: NativeApprovalRequest) => {
+      idleHolds++
+      clearTimeout(idleTimer)
+      let released = false
+      this.relayApproval(task, request, (decision) => {
+        if (!released) {
+          released = true
+          idleHolds--
+          touchIdle?.()
+        }
+        return answerApproval ? answerApproval(id, decision) : Promise.reject(new Error('授权通路未就绪'))
+      })
+    }
+    // OMP's tool approvals reach the Host through its RPC bridge as well.
+    const createProtocol = nativeTransport || cliOf(worker.preference) === 'omp'
       ? (
           _cli: CliId,
           emit: Parameters<typeof protocolFor>[1],
           identify: Parameters<typeof protocolFor>[2],
           limit: number,
-        ) => new BridgeProtocol(emit, identify, limit, (id, request) =>
-          this.relayApproval(task, request, (decision) =>
-            answerApproval ? answerApproval(id, decision) : Promise.reject(new Error('授权通路未就绪'))))
+        ) => new BridgeProtocol(emit, identify, limit, relay)
       : protocolFor
     // Any reply, reasoning, tool event or delivered result means the resumed turn already started.
     let observed = false
@@ -2398,11 +2413,12 @@ export class WorkerRuntime {
       controller.signal.throwIfAborted()
       await assertFirstPartyConfiguration(cliOf(worker.preference), directory, controller.signal)
       metadataReady = true
-      harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated })
+      // One tier snapshot drives both the launch and the bridge catalog built from it.
       const access = this.accessSnapshot?.(worker)
+      harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated, access })
       if (access) this.storage.append(worker, { kind: 'status', text: `本轮权限：${ACCESS_LABELS[access]}` })
       // No confirmed native full-access mode: the CLI keeps its stricter write mode.
-      if (access === 'danger-full-access' && ['kimi', 'hermes', 'antigravity', 'pi', 'omp'].includes(cliOf(worker.preference)))
+      if (access === 'danger-full-access' && ['kimi', 'hermes', 'antigravity'].includes(cliOf(worker.preference)))
         this.storage.append(worker, { kind: 'status', text: '该 CLI 没有已确认的原生完全权限模式，本轮按其写入模式运行；授权请求自动放行' })
       // 仅可查看 launches every CLI in its native read-only/plan mode.
       const launchMode: TaskMode = access === 'read-only' ? 'plan' : worker.mode

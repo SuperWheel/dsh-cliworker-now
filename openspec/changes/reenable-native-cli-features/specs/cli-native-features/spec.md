@@ -35,3 +35,7 @@ Pi Worker 的原生 bash SHALL 仅在父会话为完全权限时启用；其他�
 #### Scenario: 工作区内修改下的 Pi
 - **WHEN** 父会话为工作区内修改，Pi 需要执行命令
 - **THEN** Pi 原生工具集不含 bash，Pi 通过 DSH 备选命令工具执行，每次经宿主沙箱与审批
+
+#### Scenario: 工作区内修改下的 OMP
+- **WHEN** 父会话为工作区内修改，OMP 写任务需要执行命令
+- **THEN** OMP 原生工具集包含 bash，每次原生确认经 DSH 审批后回复 OMP，拒绝时 OMP 不执行该命令

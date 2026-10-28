@@ -427,6 +427,22 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(rules({ ...base, access: 'workspace-write' })).toMatchObject({ '*': 'ask', edit: 'allow', bash: 'ask' })
       expect(rules({ ...base, access: 'danger-full-access' })).toMatchObject({ '*': 'allow', edit: 'allow', bash: 'allow', task: 'deny' })
       expect(rules({ ...base, mode: 'plan', access: 'danger-full-access' })).toMatchObject({ '*': 'ask', edit: 'deny', bash: 'deny' })
+      for (const access of ['read-only', 'workspace-write', 'danger-full-access'])
+        expect(rules({ ...base, mode: 'plan', access })).toMatchObject({ skill: 'allow', task: 'deny', question: 'deny' })
+    })
+    it(`${cli}: hands the user's own skill roots to the CLI, keeping the previous config`, async () => {
+      const root = await mkdtemp(join(tmpdir(), 'cwn-http-skills-'))
+      try {
+        const skills = join(root, cli === 'mimo' ? 'mimocode/skills' : 'opencode/skills')
+        await mkdir(skills, { recursive: true })
+        const name = cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'
+        // OpenCode's Host launch already wrote the roots; MiMo's runner reads its real config root.
+        const env = { XDG_CONFIG_HOME: root, ...(cli === 'opencode' ? { OPENCODE_CONFIG_CONTENT: JSON.stringify({ skills: { paths: [skills] }, plugin: [] }) } : {}) }
+        const content = JSON.parse(serverConfiguration({ mode: 'plan', access: 'read-only', project: root, preference: { model: 'synthetic/model' }, env }, cli).env[`${name}_CONFIG_CONTENT`])
+        expect(content.skills).toEqual({ paths: [skills] })
+      } finally {
+        await rm(root, { recursive: true, force: true })
+      }
     })
     it(`${cli}: reports a turn that ends right after a tool error as unverified`, async () => {
       const { frames, requests } = await run(cli, 'tool-failure')
