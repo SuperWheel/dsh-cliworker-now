@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNativeHarnessTools, type NativeHarnessToolsOptions } from '../src/host/native-harness-tools.ts'
+import { runNativeGrok } from '../src/host/native-grok.mjs'
 import { buildNativeHarnessInjection, nativeHarnessGuidance, nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 import {
   codexDeveloperInstructionsConfigured, HARNESS_FALLBACK_PREFIX, nativeCliCapabilities, nativeCliMcpServers, nativeCoverage, nativeFirstGuidance, piOmpNativeTools,
@@ -130,6 +131,32 @@ describe('native injection details (synthetic)', () => {
     expect(codexDeveloperInstructionsConfigured(home, { HOME: home })).toBe(true)
     expect(codexDeveloperInstructionsConfigured(home, { HOME: '/nonexistent', CODEX_HOME: join(home, '.codex') })).toBe(true)
   })
+  it('appends Grok rules on a new ACP session only', async () => {
+    const grok = await lease('grok', 'accept-edits')
+    const requests: Array<{ method: string; params: any }> = []
+    const peer = { request: async (method: string, params: any) => {
+      requests.push({ method, params })
+      if (method === 'initialize') return { protocolVersion: 1, agentCapabilities: { loadSession: true } }
+      if (method === 'session/new' || method === 'session/load') return { sessionId: 'session', configOptions: [{ id: 'model', currentValue: 'chosen', options: [{ value: 'chosen' }] }] }
+      if (method === 'session/prompt') return { stopReason: 'end_turn' }
+      return {}
+    }, send: async () => {}, end() {}, close: async () => {} }
+    const run = (conversationId?: string) => runNativeGrok({ cli: 'grok', argv: ['mock'], project: '/synthetic', preference: { model: 'chosen', effort: 'default' }, mode: 'accept-edits', prompt: 'mock', harnessTools: grok.connection, ...(conversationId ? { conversationId } : {}) }, {
+      signal: new AbortController().signal, native() {}, session() {}, event() {}, result() {}, openStdio: async () => peer,
+    })
+    await run()
+    const created = requests.find(request => request.method === 'session/new')!
+    expect(created.params._meta).toEqual({ rules: nativeFirstGuidance(grok.connection.tools) })
+    expect(requests.find(request => request.method === 'session/prompt')!.params.prompt).not.toEqual(expect.arrayContaining([expect.objectContaining({ text: expect.stringContaining('CLI Worker 说明') })]))
+    requests.length = 0
+    await run('session')
+    expect(requests.find(request => request.method === 'session/load')!.params._meta).toBeUndefined()
+  })
+  it('offers Antigravity DSH search and web as fallbacks', () => {
+    const agy = nativeCliCapabilities({ cli: 'antigravity', mode: 'accept-edits' })
+    for (const name of ['grep', 'glob', 'web_search']) expect(nativeCoverage(name, agy)).toBeUndefined()
+    for (const name of ['read', 'write', 'bash']) expect(nativeCoverage(name, agy)).toBeDefined()
+  })
   it('bounds Codex MCP calls by the run time limit', async () => {
     const codex = await lease('codex', 'accept-edits')
     const argv = buildNativeHarnessInjection({ cli: 'codex', argv: ['codex'], connection: codex.connection, toolTimeoutMs: 1_800_000, mcpEntryPath: '/synthetic/bridge.mjs' }).argv
@@ -147,6 +174,14 @@ describe('native MCP server names (synthetic config)', () => {
     await writeFile(join(home, '.claude.json'), JSON.stringify({ mcpServers: { user: { command: 'secret' } }, projects: { [project]: { mcpServers: { scoped: {} } } } }))
     await writeFile(join(project, '.mcp.json'), JSON.stringify({ mcpServers: { shared: {} } }))
     expect(await nativeCliMcpServers('claude', project, { HOME: home })).toEqual(['user', 'scoped', 'shared'])
-    expect(await nativeCliMcpServers('opencode', project, { HOME: home })).toEqual([])
+    expect(await nativeCliMcpServers('grok', project, { HOME: home })).toEqual(['user', 'shared'])
+    await mkdir(join(home, '.kimi-code')); await mkdir(join(project, '.kimi-code')); await mkdir(join(project, '.git'))
+    await writeFile(join(home, '.kimi-code', 'mcp.json'), JSON.stringify({ mcpServers: { kimiuser: {} } }))
+    await writeFile(join(project, '.kimi-code', 'mcp.json'), JSON.stringify({ mcpServers: { kimiproject: {} } }))
+    expect(await nativeCliMcpServers('kimi', project, { HOME: home })).toEqual(['kimiuser', 'shared', 'kimiproject'])
+    await mkdir(join(home, '.gemini', 'config'), { recursive: true })
+    await writeFile(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { agyuser: { env: { TOKEN: 'secret' } } } }))
+    expect(await nativeCliMcpServers('antigravity', project, { HOME: home })).toEqual(['agyuser'])
+    for (const cli of ['opencode', 'mimo', 'pi', 'qoder']) expect(await nativeCliMcpServers(cli, project, { HOME: home })).toEqual([])
   })
 })

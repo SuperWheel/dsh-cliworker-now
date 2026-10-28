@@ -1184,3 +1184,13 @@ OpenSpec 变更 `judge-run-outcome-by-native-terminal`（起因：用户反馈 W
 - 各 CLI 的工具失败信号沿用原识别：Codex 条目 `failed`（`inProgress` 收尾改为未完成工具）、Claude `is_error`、ACP `status==='failed'`、ZCode 单工具 error 与批次 `errorCount`（扣除已知失败和被拒工具）、OpenCode/MiMo `state.status==='error'`、Hermes `tool.failed`、Antigravity `tool_info.error`、Pi/OMP `isError`。
 - Antigravity 步骤状态 `ERROR` 仍判本轮失败（无法确认是否只是工具级信号）；`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
 - 持久化无迁移，历史 failed 记录不重算。
+
+## 2026-10-28 CLI 原生工具优先，DSH 工具作为备选（未发布）
+
+OpenSpec 变更 `scope-harness-bridge-tools`（起因：Windows 用户反馈插件内 Codex 不太会用工具；DSH 工具桥交给 CLI 的工具与原生工具大量重复。用户决定原生优先、DSH 工具只作备选）。
+
+- 新增 `src/host/cli-native-capabilities.mjs`：按 CLI 与任务模式给出启动参数下实际启用的原生能力类别，Pi `--tools` 与 Grok 网页开关读取同一模块。Host 准备工具桥时把能力表与 CLI 原生 MCP 名称（只读名称）交给 `createNativeHarnessTools`；目录与调用都排除已覆盖的 DSH 工具，交出的描述加「备选」前缀。规划模式的写入属刻意关闭，不作备选。能力表为空即恢复全部交出。
+- 技能 `requiredTools` 改按获准目录判断，被原生覆盖的工具仍算满足。
+- 原生优先说明只走已核实的追加入口：Codex `developerInstructions`（用户已配置 `developer_instructions` 时不发）、Claude `--append-system-prompt`、Pi `--append-system-prompt`、OpenCode/MiMo `prompt_async.system`、Grok 新会话 `_meta.rules`；Kimi、Qoder、Antigravity 无已核实入口，不加。说明列出运行开始时实际交出的工具（`NativeHarnessConnection.tools` 快照）。
+- ZCode 不再注入目录并记录原因；Codex MCP 设 `tool_timeout_sec` 为任务时限；支持 MCP 图片的 CLI（Claude、OpenCode、MiMo、Kimi）透传图片结果，其余保持错误投影。
+- 逐 CLI 表与核实依据见 `doc/native-harness-tools.md`「原生工具优先」。真实模型验收待合并后执行。

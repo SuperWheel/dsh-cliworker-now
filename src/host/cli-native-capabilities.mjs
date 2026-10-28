@@ -1,10 +1,10 @@
 // What each CLI can do natively under the exact launch this plugin builds.
 // Launch builders read the same constants, so re-enabling a native feature here
 // also drops the overlapping DSH fallback from the bridge catalog.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export const CAPABILITY_CLASSES = ['file-read', 'file-write', 'search', 'shell', 'web', 'image-read', 'skills']
 
@@ -25,15 +25,16 @@ const tables = {
   mimo: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'image-read'],
   pi: mode => ['file-read', ...(piOmpNativeTools('pi', mode).includes('write') ? ['file-write'] : []), 'search', 'image-read'],
   grok: mode => mode === 'plan'
-    ? ['file-read', 'search', ...(GROK_NATIVE_WEB ? ['web'] : [])]
-    : ['file-read', 'file-write', 'search', 'shell', ...(GROK_NATIVE_WEB ? ['web'] : [])],
-  kimi: mode => ['file-read', ...write(mode), 'search', 'shell', 'web'],
-  qoder: mode => ['file-read', ...write(mode), 'search', 'shell', 'web'],
-  qodercn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web'],
-  antigravity: mode => ['file-read', ...write(mode), 'search', 'shell', 'web'],
+    ? ['file-read', 'search', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])]
+    : ['file-read', 'file-write', 'search', 'shell', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])],
+  kimi: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  qoder: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  qodercn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  // agy retired its grep/glob tools and its web exposure is unverified: DSH keeps both as fallbacks.
+  antigravity: mode => ['file-read', ...write(mode), 'shell'],
 }
 /** Whether the CLI's MCP client hands image content from a tool result to its model (Codex unverified). */
-const mcpImages = new Set(['claude', 'opencode', 'mimo'])
+const mcpImages = new Set(['claude', 'opencode', 'mimo', 'kimi'])
 
 /**
  * The run's native capability table. An unknown CLI gets an empty table, which
@@ -112,6 +113,13 @@ async function tomlServers(path) {
   return [...text.matchAll(/^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/gmu)].map(match => match[1] ?? match[2])
 }
 const keys = value => (value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value) : [])
+const serversIn = async path => keys((await json(path))?.mcpServers)
+function gitRoot(project) {
+  for (let directory = project; ; directory = dirname(directory)) {
+    if (existsSync(join(directory, '.git'))) return directory
+    if (dirname(directory) === directory) return project
+  }
+}
 /**
  * Names of MCP servers the CLI loads from the user's own native config for this
  * project. Only names are read; values (commands, secrets) are never returned.
@@ -124,7 +132,16 @@ export async function nativeCliMcpServers(cli, project, env = process.env) {
   }
   if (cli === 'claude') {
     const user = await json(join(home, '.claude.json'))
-    return [...keys(user?.mcpServers), ...keys(user?.projects?.[project]?.mcpServers), ...keys((await json(join(project, '.mcp.json')))?.mcpServers)]
+    return [...keys(user?.mcpServers), ...keys(user?.projects?.[project]?.mcpServers), ...await serversIn(join(project, '.mcp.json'))]
   }
+  if (cli === 'kimi') {
+    const root = env.KIMI_CODE_HOME || join(home, '.kimi-code')
+    return [...await serversIn(join(root, 'mcp.json')), ...await serversIn(join(gitRoot(project), '.mcp.json')), ...await serversIn(join(project, '.kimi-code', 'mcp.json'))]
+  }
+  // Grok's private GROK_HOME drops ~/.grok, but it still scans these compatible sources.
+  if (cli === 'grok')
+    return [...keys((await json(join(home, '.claude.json')))?.mcpServers), ...await serversIn(join(home, '.cursor', 'mcp.json')), ...await serversIn(join(project, '.mcp.json'))]
+  if (cli === 'antigravity') return serversIn(join(home, '.gemini', 'config', 'mcp_config.json'))
+  // Qoder loads user MCP from locations not yet verified; nothing is deduplicated.
   return []
 }

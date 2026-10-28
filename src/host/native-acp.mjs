@@ -1,5 +1,5 @@
 // ACP is JSON-RPC 2.0 over NDJSON. Kimi and Grok retain their own config wire.
-import { nativeHarnessMcpServers, nativeHarnessAcpApproval } from './native-harness-injection.mjs'
+import { nativeHarnessMcpServers, nativeHarnessAcpApproval, nativeHarnessGuidance } from './native-harness-injection.mjs'
 import { nativeAttachmentInput } from './native-attachments.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
 export const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -257,7 +257,9 @@ export async function runNativeAcp(config, io, settings) {
       if (state?.sessionId !== undefined && state.sessionId !== sessionId)
         throw new Error('ACP restored a different session')
     } else {
-      state = await peer.request('session/new', { cwd: config.project, mcpServers: nativeHarnessMcpServers(config) }, { jsonrpc: true })
+      // Grok appends _meta.rules to its own prompt; no other ACP CLI has a verified entry.
+      const rules = config.cli === 'grok' ? nativeHarnessGuidance(config) : undefined
+      state = await peer.request('session/new', { cwd: config.project, mcpServers: nativeHarnessMcpServers(config), ...(rules ? { _meta: { rules } } : {}) }, { jsonrpc: true })
       if (!nonempty(state?.sessionId)) throw new Error('ACP did not return a session identity')
       sessionId = state.sessionId
     }
