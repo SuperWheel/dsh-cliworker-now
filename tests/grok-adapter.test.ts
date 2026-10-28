@@ -39,6 +39,31 @@ function fixture(max = 8192) {
   return { parser, send, end, events, ids }
 }
 describe('Grok adapter (synthetic fixtures; real execution not subscription-validated)', () => {
+  it.each(['read-only', 'workspace-write', 'danger-full-access'] as const)('prepares private native permission rules for %s', async access => {
+    const input = { executable: '/bin/grok', project: directory(), stateDirectory: directory(), prompt: 'synthetic',
+      preference: { model: 'grok-4.5', effort: 'low' as const }, mode: 'accept-edits' as const, access }
+    const prepared = await prepareGrok(input)
+    const config = readFileSync(join(prepared.env.GROK_HOME!, 'config.toml'), 'utf8')
+    if (access === 'danger-full-access') {
+      expect(config).not.toContain('ask =')
+      expect(prepared.argv[prepared.argv.indexOf('--permission-mode') + 1]).toBe('bypassPermissions')
+    } else if (access === 'workspace-write') {
+      // Grok's own auto-review classifier; anything it will not allow surfaces a prompt.
+      expect(config).toContain('[ui]\npermission_mode = "auto"')
+      expect(config).not.toContain('ask =')
+      expect(config).not.toContain('deny =')
+      expect(prepared.argv[prepared.argv.indexOf('--permission-mode') + 1]).toBe('default')
+    } else {
+      // Native ask rules precede mkdir/touch and other built-in auto-approvals.
+      expect(config).toContain('[permission]\nask = ["Bash", "Edit", "Write"]')
+      expect(config).toContain('[ui]\npermission_mode = "ask"')
+      expect(config).not.toContain('deny =')
+      expect(prepared.argv[prepared.argv.indexOf('--permission-mode') + 1]).toBe('default')
+    }
+    if (process.platform !== 'win32') expect(statSync(join(prepared.env.GROK_HOME!, 'config.toml')).mode & 0o777).toBe(0o600)
+    const plan = await prepareGrok({ ...input, mode: 'plan' })
+    expect(readFileSync(join(plan.env.GROK_HOME!, 'config.toml'), 'utf8')).toContain('deny = ["Edit", "Write", "Bash(mkdir)", "Bash(touch)"]')
+  })
   it('uses native resume and permission modes with an isolated private state', async () => {
     const project = directory(),
       stateDirectory = directory(),
@@ -71,7 +96,7 @@ describe('Grok adapter (synthetic fixtures; real execution not subscription-vali
     expect(readFileSync(path, 'utf8')).toContain('load_envrc = false')
     const editing = await prepareGrok({ ...input, mode: 'accept-edits' })
     expect(editing.env.GROK_HOME).toBe(prepared.env.GROK_HOME)
-    expect(editing.argv[editing.argv.indexOf('--permission-mode') + 1]).toBe('acceptEdits')
+    expect(editing.argv[editing.argv.indexOf('--permission-mode') + 1]).toBe('default')
   })
   it('writes the read-only deny policy into the run config and drops it again for a writable run', async () => {
     const input = { executable: '/bin/grok', project: directory(), stateDirectory: directory(), prompt: 'task',
@@ -85,7 +110,7 @@ describe('Grok adapter (synthetic fixtures; real execution not subscription-vali
     expect(readOnly).toContain('allow = ["WebSearch", "WebFetch"]\n')
     expect(readOnly).toContain('[features]\nsupport_permission = true\nweb_fetch = true\n')
     expect(readOnly).toContain('load_envrc = false')
-    const writable = await config({ mode: 'accept-edits' })
+    const writable = await config({ mode: 'accept-edits', access: 'danger-full-access' })
     // A writable run keeps Grok's own per-domain fetch prompt, which the Host relays.
     expect(writable).not.toContain('[permission]')
     expect(writable).toContain('web_fetch = true')

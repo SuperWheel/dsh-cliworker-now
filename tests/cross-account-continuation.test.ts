@@ -295,7 +295,7 @@ describe('cross-account continuation with synthetic AGY processes', () => {
     expect(prompt.split(NEXT)).toHaveLength(2)
     expect(fresh.launch.argv).toContain(preference.model)
     expect(fresh.launch.argv).toContain('low')
-    expect(fresh.launch.argv).toContain('accept-edits')
+    expect(fresh.launch.argv[fresh.launch.argv.indexOf('--mode') + 1]).toBe('auto')
     fresh.succeed(NEW)
     expect(await task.done).toMatchObject({ id, status: 'completed', conversationId: NEW, previousConversationIds: [OLD] })
     expect(persistedWorker(f.storage, id)).toMatchObject({ conversationId: NEW, previousConversationIds: [OLD] })

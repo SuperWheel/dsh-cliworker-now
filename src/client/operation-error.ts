@@ -2,8 +2,8 @@ import { en, type MessageKey } from './i18n-messages.ts'
 import { t, uiLanguage } from './i18n.ts'
 
 /**
- * Host messages with variable parts. A `reason` capture is itself Host text and
- * is mapped again; a `duration` capture translates its unit. Paths, counts and
+ * Host messages with variable parts. A `reason`, `parent` or `level` capture is
+ * itself Host text and is mapped again; a `duration` capture translates its unit. Paths, counts and
  * other details stay verbatim.
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
@@ -31,6 +31,7 @@ const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
   [/^主目录中的 (.+) 不是目录，已停止合并$/u, '主目录中的 {path} 不是目录，已停止合并', 'path'],
   [/^合并期间主目录中的 (.+) 发生变化，请重新合并$/u, '合并期间主目录中的 {path} 发生变化，请重新合并', 'path'],
   [/^合并写回中途失败，主目录可能已部分更新，可再次合并：(.+)$/su, '合并写回中途失败，主目录可能已部分更新，可再次合并：{detail}', 'detail'],
+  [/^(.+。)主对话为(仅可查看|工作区内修改|完全权限)，最高可选([^，。]+)。$/su, '{reason}主对话为{parent}，最高可选{level}。', 'reason', 'parent', 'level'],
 ]
 
 /**
@@ -56,7 +57,7 @@ export function hostText(text: string | undefined): string | undefined {
           const key = unit === '小时' ? '{count} 小时' : unit === '分钟' ? '{count} 分钟' : '{count} 秒'
           return [name, t(key, { count: count! })]
         }
-        return [name, name === 'reason' ? hostText(captured) : captured]
+        return [name, ['reason', 'parent', 'level'].includes(name) ? hostText(captured) : captured]
       })))
   }
   return text

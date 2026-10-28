@@ -47,7 +47,8 @@ export function codexPermission(config) {
   const plan = config.mode === 'plan'
   const sandbox = plan ? 'read-only' : config.access ?? 'workspace-write'
   const approvalPolicy = plan || !config.access || sandbox === 'danger-full-access' ? 'never' : 'on-request'
-  return { sandbox, approvalPolicy, sandboxType: SANDBOX_TYPES[sandbox], legacy: !config.access }
+  return { sandbox, approvalPolicy, sandboxType: SANDBOX_TYPES[sandbox], legacy: !config.access,
+    ...(!plan && config.access ? { approvalsReviewer: sandbox === 'workspace-write' ? 'auto_review' : 'user' } : {}) }
 }
 
 /** Public summary of one Codex approval request for the DSH prompt. */
@@ -274,17 +275,36 @@ export async function runNativeCodex(config, io) {
     io.signal?.throwIfAborted()
     await peer.request('initialize', { clientInfo: { name: 'cli_worker_native', title: 'CLI Worker', version: '0.8.4' }, capabilities: { experimentalApi: false, requestAttestation: false, explicitGatewayOauth: true } })
     await peer.send({ method: 'initialized', params: {} })
-    const permission = codexPermission(config)
-    const options = { cwd: config.project, model: config.preference.model, approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox }
+    let permission = codexPermission(config)
     const guidance = codexDeveloperInstructionsConfigured(config.project, { ...process.env, ...config.env }) ? undefined : nativeHarnessGuidance(config)
-    const result = await peer.request(config.conversationId ? 'thread/resume' : 'thread/start', {
-      ...options,
-      ...(guidance ? { developerInstructions: guidance } : {}),
-      ...(config.conversationId ? { threadId: config.conversationId, excludeTurns: true } : {}),
-    })
-    if (!string(result?.thread?.id) || (config.conversationId && result.thread.id !== config.conversationId)) throw fail('原生会话身份与绑定不一致')
-    if (result.model !== config.preference.model || !string(result.cwd) || resolve(result.cwd) !== resolve(config.project) || result.approvalPolicy !== permission.approvalPolicy || result.sandbox?.type !== permission.sandboxType || (permission.legacy && result.sandbox?.networkAccess === true))
-      throw fail('原生会话未保留所选模型、目录或权限')
+    let result, binding = config.conversationId
+    for (;;) {
+      io.signal?.throwIfAborted()
+      try {
+        result = await peer.request(binding ? 'thread/resume' : 'thread/start', {
+          cwd: config.project, model: config.preference.model, approvalPolicy: permission.approvalPolicy, sandbox: permission.sandbox,
+          ...(permission.approvalsReviewer ? { approvalsReviewer: permission.approvalsReviewer } : {}),
+          ...(guidance ? { developerInstructions: guidance } : {}),
+          ...(binding ? { threadId: binding, excludeTurns: true } : {}),
+        })
+      } catch (error) {
+        // Only a definite parameter rejection permits a metadata-only retry.
+        if (permission.approvalsReviewer !== 'auto_review' || ![-32600, -32602].includes(error?.code)) throw error
+        result = undefined
+      }
+      if (result) {
+        if (!string(result.thread?.id) || (binding && result.thread.id !== binding)) throw fail('原生会话身份与绑定不一致')
+        if (result.model !== config.preference.model || !string(result.cwd) || resolve(result.cwd) !== resolve(config.project))
+          throw fail('原生会话未保留所选模型、目录或权限')
+        binding = result.thread.id
+        if (result.approvalPolicy === permission.approvalPolicy && result.sandbox?.type === permission.sandboxType &&
+          (!permission.approvalsReviewer || result.approvalsReviewer === permission.approvalsReviewer) &&
+          !(permission.legacy && result.sandbox?.networkAccess === true)) break
+      }
+      if (permission.approvalsReviewer !== 'auto_review') throw fail('原生会话未保留所选权限，无法确认询问模式；已拒绝启动')
+      permission = codexPermission({ ...config, access: 'read-only' })
+      io.event({ kind: 'diagnostic', text: 'Codex 原生自动审批不可用，本轮按询问运行' })
+    }
     if (config.preference.effort !== 'default' && result.reasoningEffort !== undefined && result.reasoningEffort !== null && result.reasoningEffort !== config.preference.effort) throw fail('原生思考强度与选型不一致')
     threadId = result.thread.id
     io.session(threadId, result.model)
@@ -313,9 +333,10 @@ export async function runNativeCodex(config, io) {
       summary: 'auto',
       cwd: config.project,
       approvalPolicy: permission.approvalPolicy,
-      // A tiered run keeps the user's native network and writable roots for its
-      // sandbox type; plan and legacy runs still pin the stricter turn policy.
-      ...(config.mode === 'plan' ? { sandboxPolicy: { type: 'readOnly' } }
+      ...(permission.approvalsReviewer ? { approvalsReviewer: permission.approvalsReviewer } : {}),
+      // Writable tiers keep native sandbox details. Asking and planning both
+      // pin read-only, with different approval policies; legacy stays confined.
+      ...(permission.sandbox === 'read-only' ? { sandboxPolicy: { type: 'readOnly' } }
         : permission.legacy ? { sandboxPolicy: { type: 'workspaceWrite', writableRoots: [config.project], networkAccess: false } } : {}),
     }, { timeoutMs: config.timeoutMs })
     if (!string(turn?.turn?.id) || (turnId && turn.turn.id !== turnId)) throw fail('启动回执缺少匹配轮次')

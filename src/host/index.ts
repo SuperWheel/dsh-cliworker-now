@@ -75,6 +75,7 @@ import {
   type TaskMode,
   type RoleSnapshot,
   type Worker,
+  type WorkerLevel,
 } from '../shared/types.ts'
 import { agentNameSchema, readRoleAnswer, roleQuestion } from './roles.ts'
 import {
@@ -89,7 +90,16 @@ import { validatePreference, configuredCliExecutable, resolveCliExecutable } fro
 import { CliExecutablePathStore } from './cli-executable-paths.ts'
 import type { CliExecutablePathStatus } from '../shared/cli-settings.ts'
 import { RUNNING_MESSAGE_MODES } from '../shared/running-message.ts'
-import { workerPermissionOptions, type WorkerPermissionState } from '../shared/worker-permissions.ts'
+import {
+  askRunsAsPlan,
+  runsUnderViewOnly,
+  cliLevelOptions,
+  effectiveLevel,
+  levelName,
+  workerLevelOptions,
+  workerPlanSupported,
+  type WorkerPermissionState,
+} from '../shared/worker-permissions.ts'
 import { WindowsCliInstallationError, WindowsCliNotFoundError } from './windows-cli-installation.ts'
 import { ACCOUNT_CHANGED, authorizedCatalog, authorizeSelection } from './authorized-catalog.ts'
 import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
@@ -406,12 +416,10 @@ export class CliWorkerService extends TypertRemoteService {
           const worker = this.runtime.get(record.parentSessionId, record.workerId)
           if (worker.harnessConversation?.sessionId !== record.sessionId)
             throw new Error('CLI 子会话绑定已改变，未修改权限')
-          if (mode !== undefined) {
-            const saved = JSON.parse(await this.configureWorkerPermission(record.parentSessionId, record.workerId, mode, signal)) as Worker
-            return `当前 CLI 权限：${workerPermissionOptions(saved).find((option) => option.value === saved.mode)?.name ?? saved.mode}`
-          }
+          if (mode !== undefined) await this.configureWorkerPermission(record.parentSessionId, record.workerId, mode, signal)
           const state = JSON.parse(await this.permissionForWorker(record.parentSessionId, record.workerId, signal)) as WorkerPermissionState
-          return `当前 CLI 权限：${state.currentValue}。可用模式：${state.options.map((option) => `${option.value}（${option.name}）`).join('、')}${state.reason ? `。${state.reason}` : ''}`
+          const current = state.options.find((option) => option.value === state.currentValue)?.name ?? state.currentValue
+          return `当前 CLI 权限：${current}${state.plan.active ? '（规划模式）' : ''}。可用档位：${state.options.map((option) => `${option.value}（${option.name}）`).join('、')}${state.reason ? `。${state.reason}` : ''}`
         },
         run: async (record, prompt, requestId, signal, messages = []) => {
           const parent = await this.parent(record.parentSessionId)
@@ -470,17 +478,14 @@ export class CliWorkerService extends TypertRemoteService {
         const cli = cliOf(worker.preference)
         const child = this.ctx.agents.get(binding.sessionId as Agent['id'])
         if (!child) throw new Error('原生子 Agent 尚未就绪，未启动 CLI 工具桥')
-        setSandboxMode(
-          child.session,
-          worker.mode === 'plan'
-            ? 'read-only'
-            : parent.ctx.get('sandboxPolicy')!.resolve({ session: parent.session }).mode,
-        )
+        // DSH fallback tools in the child follow the run's level, not the parent's tier.
+        const permission = this.childPermission(parent, worker)
+        setSandboxMode(child.session, input.access ?? permission.sandbox)
         child.ctx.get('planMode')?.set(child, worker.mode === 'plan')
-        // Delegation pins a child to `never`; a Worker-UI turn asks in this child,
-        // so it follows the parent's policy. Direct log write: no model notice.
+        // Delegation pins a child to `never`; a Worker-UI turn asks in this child.
+        // Below full access it always asks. Direct log write: no model notice.
         const childApproval = child.ctx.get('approval')
-        const policy = this.permissionState(parent).approval
+        const policy = (input.access ?? permission.sandbox) === 'danger-full-access' ? permission.approval : 'ask'
         if (childApproval && childApproval.overrideOf(child.session) !== policy) setApprovalPolicy(child.session, policy)
         // Host tools act on the parent's project; an isolated run must not write there.
         const support = input.isolated
@@ -552,8 +557,8 @@ export class CliWorkerService extends TypertRemoteService {
             signal,
             executionReady: nativeHarnessExecutionReady(cli),
             // Same inputs as the launch: overlapping DSH tools stay with the CLI.
-            // 仅可查看 launches in plan mode, so the catalog follows the launch, not the stored mode.
-            native: nativeCliCapabilities({ cli, mode: input.access === 'read-only' ? 'plan' : worker.mode, access: input.access,
+            // A first item that runs as plan follows the launch, not the stored mode.
+            native: nativeCliCapabilities({ cli, mode: input.access === 'read-only' && askRunsAsPlan(cli) ? 'plan' : worker.mode, access: input.access,
               mcpServers: await nativeCliMcpServers(cli, worker.project) }),
             resolveImage: (attachment, control) => readHarnessImage(child.ctx, attachment, control),
             authorize: async (identity) => {
@@ -693,7 +698,13 @@ export class CliWorkerService extends TypertRemoteService {
       () =>
         this.runtime.setAccessSnapshot((worker) => {
           const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
-          return parent ? runAccess(worker.mode, this.permissionState(parent)) : undefined
+          if (!parent) return undefined
+          const state = this.permissionState(parent)
+          const access = runAccess(worker.mode, worker.level, state)
+          if (worker.mode === 'plan' || state.planMode) return { access, label: '规划模式' }
+          const level = effectiveLevel(worker.level, state.sandbox)
+          const capped = worker.level !== undefined && level !== worker.level
+          return { access, label: `${levelName(cliOf(worker.preference), level)}${capped ? '（受主对话限制）' : ''}` }
         }),
       'cliworker:access',
     )
@@ -733,20 +744,26 @@ export class CliWorkerService extends TypertRemoteService {
       throw new Error('Harness 当前为只读权限；此操作会写入项目或账号状态，请先明确切换项目权限')
   }
   /**
-   * 仅可查看 runs the CLI in its native read-only mode. A CLI without a
-   * whole-process read-only mode is refused rather than silently weakened:
-   * agy's terminal sandbox keeps its native state writable, Qoder's ACP has
-   * no read-only plan mode, and Hermes has no confirmed read-only switch. A
-   * Worker plan task alone keeps each CLI's existing plan handling.
+   * 仅可查看 runs the Worker at its first item: the CLI's native ask mode, or
+   * Pi's read-only tools. A CLI whose first item cannot ask before a change is
+   * refused rather than silently weakened: agy's plan launch keeps its terminal
+   * sandbox state writable, and Hermes offers no first item. A Worker plan task
+   * alone keeps each CLI's existing plan handling.
    */
   private assertAccessSupported(agent: Agent, cli: CliId, _mode: TaskMode): void {
     if (this.permissionState(agent).sandbox !== 'read-only') return
     if (cli === 'antigravity')
-      throw new Error('Harness 当前为仅可查看；Antigravity 没有整进程只读模式，请切换权限预设或改用其他 CLI')
-    if (cli === 'qoder' || cli === 'qodercn')
-      throw new Error('Harness 当前为仅可查看；Qoder 未公开只读模式，请切换权限预设或改用其他 CLI')
+      throw new Error('Harness 当前为仅可查看；Antigravity 无法把授权请求转给你，请切换权限预设或改用其他 CLI')
     if (cli === 'hermes')
-      throw new Error('Harness 当前为仅可查看；Hermes 未公开只读模式，请切换权限预设或改用其他 CLI')
+      throw new Error('Harness 当前为仅可查看；Hermes 没有可询问的档位，请切换权限预设或改用其他 CLI')
+    if (!runsUnderViewOnly(cli))
+      throw new Error('Harness 当前为仅可查看；Kimi 的第一项会自动批准 Git 仓库内的编辑，请切换权限预设或改用其他 CLI')
+  }
+  /** The child session's DSH sandbox and approval policy for a Worker's plan switch and level. */
+  private childPermission(parent: Agent, worker: Pick<Worker, 'mode' | 'level'>): Pick<PermissionState, 'sandbox' | 'approval'> {
+    const state = this.permissionState(parent)
+    const sandbox = runAccess(worker.mode, worker.level, state)
+    return { sandbox, approval: sandbox === 'danger-full-access' ? state.approval : 'ask' }
   }
   /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
   private permissionState(agent: Agent): PermissionState {
@@ -772,7 +789,7 @@ export class CliWorkerService extends TypertRemoteService {
   ): Promise<NativeApprovalDecision> {
     const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
     if (!parent) return { decision: 'deny', source: 'unavailable' }
-    const decided = decideApproval(mode, this.permissionState(parent))
+    const decided = decideApproval(mode, worker.level, this.permissionState(parent))
     if (decided !== 'ask') return decided
     const cli = cliOf(worker.preference)
     const context = { worker: workerName(worker), cli: CLI_LABELS[cli], project: worker.project }
@@ -821,7 +838,7 @@ export class CliWorkerService extends TypertRemoteService {
         // The child's own panel answers, after the same plan and preset rules.
         const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
         if (!parent) return { decision: 'deny', source: 'unavailable' }
-        const decided = decideApproval(mode, this.permissionState(parent))
+        const decided = decideApproval(mode, worker.level, this.permissionState(parent))
         if (decided !== 'ask') return decided
         // A stop must not wait on a panel nobody may answer.
         return decisionFromOutcome(await waitForInput(next(), signal))
@@ -2552,7 +2569,7 @@ export class CliWorkerService extends TypertRemoteService {
   private async configureColdWorkerPermission(
     parent: Agent,
     worker: Worker,
-    selected: TaskMode,
+    selected: TaskMode | WorkerLevel,
     signal: AbortSignal,
   ): Promise<Worker> {
     const sessionId = SessionId(worker.harnessConversation!.sessionId)
@@ -2632,14 +2649,13 @@ export class CliWorkerService extends TypertRemoteService {
           sessions.announce(session)
           validateCurrent()
           const saved = this.runtime.configureWorkerPermission(parent.id, worker.id, selected, preparationId)
-          const sandbox = selected === 'plan' ? 'read-only' :
-            parent.ctx.get('sandboxPolicy')!.resolve({ session: parent.session }).mode
+          const { sandbox } = this.childPermission(parent, saved)
           if (parent.ctx.get('sandboxPolicy')!.resolve({ session }).mode !== sandbox)
             setSandboxMode(session, sandbox)
           // This is the native persisted collaboration event. There is no
           // Agent to queue a pending intent or inject a synthetic user message.
-          if (plan.active !== (selected === 'plan') || plan.wanted !== null)
-            session.append('plan/mode', { active: selected === 'plan' })
+          if (plan.active !== (saved.mode === 'plan') || plan.wanted !== null)
+            session.append('plan/mode', { active: saved.mode === 'plan' })
           if (!(await sessions.flush(session)))
             throw new Error('原生会话权限持久化服务不可用，请重新读取当前状态')
           return saved
@@ -2668,8 +2684,15 @@ export class CliWorkerService extends TypertRemoteService {
         if (snapshot.queuedFollowups?.length)
           throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改权限')
       } catch (error) { reason = error instanceof Error ? error.message : String(error) }
+      const sandbox = this.permissionState(parent).sandbox
+      const options = workerLevelOptions(worker, sandbox)
+      if (!reason && !options.length) reason = 'Harness 当前为仅可查看；此 CLI 没有可用档位'
       const state: WorkerPermissionState = {
-        currentValue: worker.mode, options: workerPermissionOptions(worker), writable: !reason, ...(reason ? { reason } : {}),
+        currentValue: effectiveLevel(worker.level, sandbox),
+        options,
+        plan: { supported: workerPlanSupported(worker), active: worker.mode === 'plan' },
+        writable: !reason,
+        ...(reason ? { reason } : {}),
       }
       return JSON.stringify(state)
     } catch (error) { throw failure(error) }
@@ -2683,9 +2706,14 @@ export class CliWorkerService extends TypertRemoteService {
       this.assertExecution(parent, true)
       const worker = this.runtime.get(parent.id, workerId)
       if (this.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      const selected = validate.enum(['plan', 'accept-edits']).parse(mode)
-      if (!workerPermissionOptions(worker).some((option) => option.value === selected))
-        throw new Error('当前 CLI 通路不支持此权限模式')
+      const selected = validate.enum(['plan', 'accept-edits', 'ask', 'auto', 'full']).parse(mode)
+      if (selected === 'plan' && !workerPlanSupported(worker)) throw new Error('当前 CLI 不支持规划模式')
+      if (selected !== 'plan' && selected !== 'accept-edits') {
+        if (!cliLevelOptions(cliOf(worker.preference)).some((option) => option.value === selected))
+          throw new Error('当前 CLI 通路不支持此权限模式')
+        if (!workerLevelOptions(worker, this.permissionState(parent).sandbox).some((option) => option.value === selected))
+          throw new Error('所选档位高于主对话的权限，未修改')
+      }
       this.assertNativeWorkerSettingsIdle(worker)
       const binding = worker.harnessConversation
       const child = binding && this.ctx.agents.get(binding.sessionId as Agent['id'])
@@ -2704,14 +2732,11 @@ export class CliWorkerService extends TypertRemoteService {
       const saved = this.runtime.configureWorkerPermission(parent.id, worker.id, selected)
       if (child) {
         // Keep the real session projection and tool policy aligned with the
-        // saved CLI mode while idle; the next run rechecks the same parent policy.
-        const sandbox =
-          selected === 'plan'
-            ? 'read-only'
-            : parent.ctx.get('sandboxPolicy')!.resolve({ session: parent.session }).mode
+        // saved setting while idle; the next run rechecks the same parent policy.
+        const { sandbox } = this.childPermission(parent, saved)
         if (child.ctx.get('sandboxPolicy')!.resolve({ session: child.session }).mode !== sandbox)
           setSandboxMode(child.session, sandbox)
-        child.ctx.get('planMode')?.set(child, selected === 'plan')
+        child.ctx.get('planMode')?.set(child, saved.mode === 'plan')
       }
       return JSON.stringify(saved)
     } catch (error) { throw failure(error) }

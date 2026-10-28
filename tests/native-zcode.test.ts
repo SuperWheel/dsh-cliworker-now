@@ -34,8 +34,11 @@ createInterface({input:process.stdin}).on('line',line=>{
    awaiting=q;return out({id:'preferences',method:'session/requestRuntimePreferences',params:{sessionId}});
  }
  if(q.method==='session/setModel'){state.settings.model.current=scenario==='wrong-model'?{providerId:'wrong',modelId:'wrong'}:q.params.model;return reply(q,state);}
- if(q.method==='session/setMode'){state.settings.mode.current=q.params.mode;return reply(q,state);}
- if(q.method==='session/read'){if(scenario==='active-final'&&inputId)state.runtime.activeTurnId='still-active';return reply(q,state);}
+ if(q.method==='session/setMode'){
+   if((scenario==='no-edit'&&q.params.mode==='edit')||(scenario==='no-yolo'&&q.params.mode==='yolo')||scenario==='no-modes')return out({id:q.id,error:{code:-32602,message:'Synthetic unavailable mode'}});
+   state.settings.mode.current=scenario==='wrong-mode'||(scenario==='wrong-edit'&&q.params.mode==='edit')?'yolo':q.params.mode;return reply(q,state);
+ }
+ if(q.method==='session/read'){if(scenario==='mode-drift-final'&&inputId)state.settings.mode.current='yolo';if(scenario==='active-final'&&inputId)state.runtime.activeTurnId='still-active';return reply(q,state);}
  if(q.method==='session/subscribe')return reply(q,{sessionId,eventSeq:0,events:[]});
  if(q.method==='session/close')return reply(q,{closed:true});
  if(q.method==='session/send'){
@@ -123,7 +126,7 @@ createInterface({input:process.stdin}).on('line',line=>{
 `
 
 async function fixture(scenario = 'success', continuation = false,
-  host: { access?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {}) {
+  host: { access?: string; mode?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-native-zcode-fixture-')))
   roots.push(root)
   const script = join(root, 'agent.mjs'),
@@ -197,6 +200,7 @@ async function fixture(scenario = 'success', continuation = false,
     maxRunBytes: 8 * 1024 * 1024,
     ...(continuation ? { conversationId: 'zcode-fixture' } : {}),
     ...(host.access ? { access: host.access } : {}),
+    ...(host.mode ? { mode: host.mode } : {}),
     ...(host.decision ? { approvalNonce: 'synthetic-nonce' } : {}),
   }
   const controller = new AbortController(),
@@ -330,7 +334,7 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     ['allow-session', 'allow', 'SUCCESS'],
     ['deny', 'deny', 'SUCCESS'],
   ] as const)('relays a permission request to the Host: %s → %s', async (decision, reply, status) => {
-    const { result, records, frames } = await fixture('permission', false, { decision })
+    const { result, records, frames } = await fixture('permission', false, { decision, access: 'read-only' })
     expect(frames.find((frame) => frame.type === 'approval').request).toEqual({
       kind: 'command', summary: 'Bash：Run synthetic command', detail: 'synthetic --flag', allowSession: false,
     })
@@ -340,12 +344,46 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     expect(result.status).toBe(status)
   })
   it.each([
+    ['read-only', 'build'],
     ['workspace-write', 'edit'],
     ['danger-full-access', 'yolo'],
   ])('selects the native mode for the DSH tier %s → %s', async (access, mode) => {
     const { result, records } = await fixture('success', false, { access })
     expect(result.status).toBe('SUCCESS')
     expect(records.find((record) => record.method === 'session/setMode')?.params.mode ?? 'edit').toBe(mode)
+  })
+  it.each(['read-only', 'workspace-write', 'danger-full-access'])('keeps plan ahead of %s', async access => {
+    const { result, records } = await fixture('success', false, { mode: 'plan', access })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.find(row => row.method === 'session/create').params.mode).toBe('plan')
+    expect(records.find(row => row.method === 'session/setMode').params.mode).toBe('plan')
+  })
+  it.each(['no-edit', 'wrong-edit'])('falls back to confirmed build before input on %s', async scenario => {
+    const { result, records, frames } = await fixture(scenario, false, { access: 'workspace-write' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['edit', 'build'])
+    expect(frames.some(frame => frame.event?.text?.includes('本轮按询问运行'))).toBe(true)
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+  })
+  it('falls back from unavailable yolo to confirmed edit', async () => {
+    const { result, records, frames } = await fixture('no-yolo', false, { access: 'danger-full-access' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['yolo', 'edit'])
+    expect(frames.some(frame => frame.event?.text?.includes('本轮按仅工作区编辑运行'))).toBe(true)
+  })
+  it('confirms build on resumed sessions and refuses final mode drift without retrying input', async () => {
+    const resumed = await fixture('success', true, { access: 'read-only' })
+    expect(resumed.result.status).toBe('SUCCESS')
+    expect(resumed.records.find(row => row.method === 'session/setMode').params.mode).toBe('build')
+    const drifted = await fixture('mode-drift-final', false, { access: 'read-only' })
+    expect(drifted.result.status).toBe('ERROR')
+    expect(drifted.records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(drifted.records.filter(row => row.method === 'session/setMode')).toHaveLength(1)
+  })
+  it.each(['no-modes', 'wrong-mode'])('rejects unavailable or unconfirmed build on %s without input', async scenario => {
+    const { result, records } = await fixture(scenario, false, { access: 'read-only' })
+    expect(result.status).toBe('ERROR')
+    expect(records.some(row => row.method === 'session/send')).toBe(false)
   })
   it('denies additional permissions and reports a natively completed turn as completed, without a notice', async () => {
     const { result, records, frames } = await fixture('permission')

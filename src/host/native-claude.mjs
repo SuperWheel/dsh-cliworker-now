@@ -29,7 +29,8 @@ function modelEvidence(config, initialized) {
 
 /** Native permission mode for the run's DSH tier; plan wins. */
 export const claudePermissionMode = (config) =>
-  config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits'
+  config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'bypassPermissions'
+    : config.access === 'read-only' ? 'manual' : config.access === 'workspace-write' ? 'auto' : 'acceptEdits'
 
 const CLAUDE_KINDS = { Bash: 'command', Edit: 'file', MultiEdit: 'file', Write: 'file', NotebookEdit: 'file', WebFetch: 'network', WebSearch: 'network' }
 /** Public summary of one can_use_tool request; a session grant needs native suggestions. */
@@ -64,8 +65,49 @@ export function nativeClaudeArgv(config) {
 }
 
 export async function runNativeClaude(config, io) {
+  const manualConfig = () => {
+    const argv = [...config.argv]
+    argv[argv.indexOf('--permission-mode') + 1] = 'manual'
+    return { ...config, argv, access: 'read-only' }
+  }
+  const downgrade = () => io.event({ kind: 'diagnostic', text: 'Claude Code 原生自动审批不可用，本轮按询问运行' })
+  if (['manual', 'auto'].includes(claudePermissionMode(config))) {
+    // Help is a local capability probe, never a session or a model request.
+    nativeClaudeArgv(config)
+    let help = '', timer
+    const probe = io.spawn([config.argv[0], '--help'], { cwd: config.project, env: config.env,
+      onStdout: (chunk) => { help = (help + chunk.toString('utf8')).slice(0, 131072) } })
+    try {
+      probe.end()
+      const exit = await Promise.race([probe.done, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(fail('权限模式能力检查超时')), Math.min(config.timeoutMs, 5000))
+      })])
+      if (exit.exitCode !== 0) throw fail('权限模式能力检查失败')
+    } finally {
+      clearTimeout(timer)
+      await probe.stop()
+    }
+    const modes = help.match(/--permission-mode\s+[\s\S]*?(?=\n\s*--|$)/)?.[0] ?? ''
+    if (!/["']manual["']/.test(modes)) throw fail('原生询问模式不可用，已拒绝启动')
+    if (claudePermissionMode(config) === 'auto' && !/["']auto["']/.test(modes)) {
+      downgrade()
+      return runClaudeSession(manualConfig(), io)
+    }
+  }
+  try {
+    await runClaudeSession(config, io)
+  } catch (error) {
+    if (error?.code !== 'CLAUDE_PERMISSION_UNAVAILABLE' || claudePermissionMode(config) !== 'auto' || io.signal?.aborted) throw error
+    // The first process is closed and no user input was sent. Retry only in manual mode.
+    downgrade()
+    await runClaudeSession(manualConfig(), io)
+  }
+}
+
+async function runClaudeSession(config, io) {
   const peer = await io.openStdio(nativeClaudeArgv(config), { env: config.env, cwd: config.project })
-  let sessionId, result, response = '', failure, submitted = false, models
+  let sessionId, result, response = '', failure, submitted = false, models, denied = false
+  let permissionMode = claudePermissionMode(config)
   const steps = new Map(), text = new Map(), thinking = new Map(), finished = new Set(), tools = new Set(), answers = new Map(), toolMetadata = new Map()
   const childEvents = []
   const toolOutcomes = createToolOutcomes()
@@ -107,11 +149,11 @@ export async function runNativeClaude(config, io) {
       if (request?.subtype === 'can_use_tool' && string(request.tool_name) && request.requires_user_interaction !== true) {
         void io.approval(claudeApprovalRequest(request)).then((answer) => {
           if (answer.decision === 'deny') {
-            // Denial interrupts the native turn, so the run stays failed.
-            failure ??= 'CLI 额外授权被拒绝，本轮已中断'
-            io.event({ kind: 'diagnostic', text: 'Claude 原生授权请求已拒绝', state: 'FAILED' })
+            // Reject this operation while allowing the native turn to continue.
+            denied = true
+            io.event({ kind: 'diagnostic', text: 'Claude 原生授权请求已拒绝' })
             return peer.send({ type: 'control_response', response: { subtype: 'success', request_id: value.request_id,
-              response: { behavior: 'deny', message: 'DSH 未批准此授权', interrupt: true } } })
+              response: { behavior: 'deny', message: 'DSH 未批准此授权', interrupt: false } } })
           }
           io.event({ kind: 'diagnostic', text: 'Claude 原生授权请求已批准' })
           const session = answer.decision === 'allow-session' && Array.isArray(request.permission_suggestions)
@@ -124,6 +166,7 @@ export async function runNativeClaude(config, io) {
         return
       }
       failure ??= 'CLI 请求额外交互授权，插件未批准'
+      // Unsupported interactive callbacks cannot be relayed safely; stop this turn.
       io.event({ kind: 'diagnostic', text: 'Claude 原生交互请求已拒绝', state: 'FAILED' })
       return peer.send({ type: 'control_response', response: value.request?.subtype === 'can_use_tool'
         ? { subtype: 'success', request_id: value.request_id, response: { behavior: 'deny', message: 'CLI Worker 未提供额外交互授权', interrupt: true } }
@@ -139,7 +182,11 @@ export async function runNativeClaude(config, io) {
     }
     if (value.type === 'system' && value.subtype === 'init') {
       if (!sessionId) throw fail('初始化缺少会话身份')
-      if (value.permissionMode !== undefined && value.permissionMode !== claudePermissionMode(config)) throw fail('原生初始化权限模式不一致')
+      if (permissionMode === 'auto' && value.permissionMode === 'manual') {
+        permissionMode = 'manual'
+        io.event({ kind: 'diagnostic', text: 'Claude Code 原生自动审批不可用，本轮按询问运行' })
+      } else if ((config.access && config.mode !== 'plan' || value.permissionMode !== undefined) && value.permissionMode !== permissionMode)
+        throw fail('原生初始化权限模式不一致，已拒绝继续')
       io.event({ kind: 'status', text: 'Claude Code 原生流已连接', observedModel: typeof value.model === 'string' ? value.model : undefined })
     } else if (value.type === 'stream_event') {
       const event = value.event
@@ -239,7 +286,7 @@ export async function runNativeClaude(config, io) {
       responses.finish()
       flushChildren()
       result = value
-      if (Array.isArray(value.permission_denials) && value.permission_denials.length) failure ??= '工具权限被拒绝；未执行的操作不能视为完成'
+      if (Array.isArray(value.permission_denials) && value.permission_denials.length) denied = true
       if (value.is_error || value.subtype !== 'success') failure ??= Array.isArray(value.errors) ? value.errors.filter((entry) => typeof entry === 'string').join('; ') || 'Claude 原生任务失败' : 'Claude 原生任务失败'
       if (tools.size) failure ??= '原生任务结束时仍有未完成工具'
       if (typeof value.result === 'string' && value.result.trim()) response = value.result
@@ -261,8 +308,13 @@ export async function runNativeClaude(config, io) {
       subtype: 'initialize', hooks: {}, sdkMcpServers: [], promptSuggestions: false, agentProgressSummaries: false,
     } })
     const initialized = (await initialization).response
-    if (initialized.subtype !== 'success') throw fail('原生初始化被拒绝')
+    // Only a native refusal/readback permits fallback; transport failure never does.
+    if (initialized.subtype !== 'success')
+      throw Object.assign(fail('原生初始化被拒绝'), { code: permissionMode === 'auto' ? 'CLAUDE_PERMISSION_UNAVAILABLE' : undefined })
     models = modelEvidence(config, initialized.response)
+    // Claude 2.1.287 exposes this before user input, unlike system/init.
+    if (config.access && config.mode !== 'plan' && initialized.response.current_permission_mode !== permissionMode)
+      throw Object.assign(fail('原生初始化未确认所选权限；询问模式不可确认时拒绝启动'), { code: 'CLAUDE_PERMISSION_UNAVAILABLE' })
     if (failure) throw fail(failure)
     io.signal?.throwIfAborted()
     const completion = peer.waitFor((value) => value.type === 'result', { timeoutMs: config.timeoutMs })
@@ -294,7 +346,7 @@ export async function runNativeClaude(config, io) {
     io.signal?.throwIfAborted()
     if (outcome.exitCode !== 0) failure ??= 'Claude 原生进程非零退出'
     if (failure) io.result('ERROR', response, failure, 'response')
-    else toolOutcomes.settle(io, response, 'response')
+    else toolOutcomes.settle(io, response, 'response', denied)
   } finally {
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()

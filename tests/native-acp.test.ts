@@ -20,7 +20,14 @@ import { appendFileSync } from 'node:fs';
 const out=x=>process.stdout.write(JSON.stringify(x)+'\n');
 const log=x=>appendFileSync(process.env.AUDIT,JSON.stringify(x)+'\n',{mode:0o600});
 const scenario=process.env.SCENARIO, cli=process.env.FIXTURE_CLI;
-const state={sessionId:'session-fixture',modes:{currentModeId:'default',availableModes:[{id:'default'},{id:'plan'}]},configOptions:[{id:'model',currentValue:'before',options:[{value:'before'},{value:'chosen/model'}]},{id:cli==='kimi'?'thinking':'reasoning_effort',currentValue:cli==='kimi'?'off':'none',options:[{value:'off'},{value:'none'},{value:'high'}]}]};
+const state={sessionId:'session-fixture',modes:{currentModeId:'default',availableModes:[{id:'default'},{id:'plan'},{id:'yolo'},{id:'auto'}]},configOptions:[{id:'model',currentValue:'before',options:[{value:'before'},{value:'chosen/model'}]},{id:cli==='kimi'?'thinking':'reasoning_effort',currentValue:cli==='kimi'?'off':'none',options:[{value:'off'},{value:'none'},{value:'high'}]}]};
+if(cli==='kimi')state.configOptions.push({id:'mode',currentValue:'default',options:state.modes.availableModes.map(mode=>({value:mode.id}))});
+if(scenario==='missing-yolo'){
+ state.modes.availableModes=state.modes.availableModes.filter(mode=>mode.id!=='yolo');
+ state.configOptions.find(option=>option.id==='mode').options=state.modes.availableModes.map(mode=>({value:mode.id}));
+}
+if(scenario==='missing-auto')state.modes.availableModes=state.modes.availableModes.filter(mode=>mode.id!=='auto');
+if(scenario==='missing-default')state.modes.availableModes=state.modes.availableModes.filter(mode=>mode.id!=='default');
 let pending;
 log({argv:process.argv.slice(2)});
 const reply=(q,result)=>out({jsonrpc:'2.0',id:q.id,result});
@@ -40,7 +47,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   // installed guide incorrectly advertises a nested { value } shape.
   const value=q.params.value;
   if(typeof value!=='string')process.exit(21);
-  state.configOptions.find(x=>x.id===q.params.configId).currentValue=scenario==='wrong-model'?'wrong':value;
+  state.configOptions.find(x=>x.id===q.params.configId).currentValue=scenario==='wrong-model'?'wrong':scenario==='unconfirmed-yolo'&&q.params.configId==='mode'&&value==='yolo'?'auto':value;
   return reply(q,{configOptions:state.configOptions});
  }
  if(q.method==='session/set_mode'){state.modes.currentModeId=q.params.modeId;return reply(q,{});}
@@ -82,9 +89,10 @@ createInterface({input:process.stdin}).on('line',line=>{
    extension({sessionUpdate:'reasoning_completed',signature:'PRIVATE_REASONING_SIGNATURE'},'reasoning-end');
    update('session-fixture','AFTER','delta-two');
   }
+  if(scenario==='changed-mode'){pending=q;return out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'current_mode_update',currentModeId:'auto'}}});}
   if(scenario==='changed-model'){pending=q;return out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'config_option_update',configOptions:[{id:'model',currentValue:'wrong'}]}}});}
   if(scenario==='cancel'){pending=q;return;}
-  if(scenario==='permission'){pending=q;return out({jsonrpc:'2.0',id:'permission-fixture',method:'session/request_permission',params:{sessionId:'session-fixture',toolCall:{toolCallId:'tool-permission',title:'Run synthetic command',kind:'execute',rawInput:{command:'synthetic --flag'}},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:'approve_always'},{kind:'reject_once',optionId:'reject'}]}});}
+  if(scenario==='permission'){pending=q;return out({jsonrpc:'2.0',id:'permission-fixture',method:'session/request_permission',params:{sessionId:'session-fixture',toolCall:{toolCallId:'tool-permission',title:'Run synthetic command',kind:'execute',rawInput:{command:'synthetic --flag'}},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:cli==='grok'?'always':'approve_always'},{kind:'reject_once',optionId:'reject'}]}});}
   if(scenario==='tool-failure'||scenario==='tool-recovered')out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'tool_call',toolCallId:'tool-fixture',title:'Simulated edit',status:'failed'}}});
   if(scenario==='tool-recovered')update('session-fixture','AFTER','delta-recovered');
   if(scenario==='bad-envelope')return out({id:q.id,result:{stopReason:'end_turn'}});
@@ -107,6 +115,7 @@ async function fixture(
   continuation = false,
   /** Simulated Host decision; enables the approval channel. */
   decision?: 'allow-once' | 'allow-session' | 'deny',
+  permission: { mode?: string; access?: string } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'cliworker-native-acp-fixture-'))
   roots.push(root)
@@ -153,6 +162,7 @@ async function fixture(
     maxRunBytes: 8 * 1024 * 1024,
     ...(continuation ? { conversationId: 'session-fixture' } : {}),
     ...(decision ? { approvalNonce: 'synthetic-nonce', mode: 'accept-edits' } : {}),
+    ...permission,
   }
   const controller = new AbortController(),
     frames: any[] = []
@@ -183,6 +193,65 @@ async function fixture(
 }
 
 describe('Native ACP runners (simulated native processes)', () => {
+  it.each([
+    ['plan', 'danger-full-access', 'plan'],
+    ['accept-edits', 'read-only', 'default'],
+    ['accept-edits', 'workspace-write', 'yolo'],
+    ['accept-edits', 'danger-full-access', 'auto'],
+  ])('confirms Kimi %s / %s as native %s before prompting', async (mode, access, expected) => {
+    const { records, result, frames } = await fixture('kimi', 'success', false, undefined, { mode, access })
+    expect(result.status).toBe('SUCCESS')
+    const selections = records.filter(record => record.method === 'session/set_config_option' && record.params.configId === 'mode')
+    if (expected === 'default') expect(selections).toEqual([])
+    else expect(selections.at(-1)?.params.value).toBe(expected)
+    expect(records.some(record => record.method === 'session/prompt')).toBe(true)
+    // The menu names default 仅工作区编辑, so no per-turn notice repeats it.
+    expect(frames.some(frame => frame.event?.text.includes('Git 工作区'))).toBe(false)
+  })
+  it.each(['missing-yolo', 'unconfirmed-yolo'])('downgrades Kimi to confirmed default (%s)', async scenario => {
+    const { records, frames, result } = await fixture('kimi', scenario, true, undefined,
+      { mode: 'accept-edits', access: 'workspace-write' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(record => record.method === 'session/set_config_option').at(-1)?.params)
+      .toMatchObject({ configId: 'mode', value: 'default' })
+    expect(frames.some(frame => frame.event?.text.includes('本轮按询问运行'))).toBe(true)
+  })
+  it('checks the Kimi advertised list even when the selected current mode matches', async () => {
+    const { records, result } = await fixture('kimi', 'missing-default', false, undefined,
+      { mode: 'accept-edits', access: 'read-only' })
+    expect(result.status).toBe('ERROR')
+    expect(records.some(record => record.method === 'session/prompt')).toBe(false)
+  })
+  it('downgrades unavailable Kimi full access to yolo, never assuming mode names mean permission strength', async () => {
+    const { records, result, frames } = await fixture('kimi', 'missing-auto', false, undefined,
+      { mode: 'accept-edits', access: 'danger-full-access' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(record => record.method === 'session/set_config_option').at(-1)?.params.value).toBe('yolo')
+    expect(frames.some(frame => frame.event?.text.includes('本轮按自动审批运行'))).toBe(true)
+  })
+  it('cancels Kimi when a native mode update widens the confirmed ask mode', async () => {
+    const { records, result } = await fixture('kimi', 'changed-mode', false, undefined,
+      { mode: 'accept-edits', access: 'read-only' })
+    expect(result.status).toBe('ERROR')
+    expect(records.some(record => record.method === 'session/cancel')).toBe(true)
+  })
+  it.each([false, true])('leaves Grok auto-review to the private config without an ACP autoMode (resume=%s)', async continuation => {
+    const { frames, records, result } = await fixture('grok', 'no-modes', continuation, undefined,
+      { mode: 'accept-edits', access: 'workspace-write' })
+    expect(result.status).toBe('SUCCESS')
+    expect(frames.some(frame => frame.event?.text.includes('本轮按询问运行'))).toBe(false)
+    const session = records.find(record => record.method === (continuation ? 'session/load' : 'session/new'))
+    expect(session.params._meta?.autoMode).toBeUndefined()
+    expect(records.find(record => record.argv).argv).not.toContain('--always-approve')
+  })
+  it.each(['kimi', 'grok'] as const)('%s ask mode relays denial and continues without a notice', async cli => {
+    const { records, result } = await fixture(cli, 'permission', false, 'deny',
+      { mode: 'accept-edits', access: 'read-only' })
+    expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO' })
+    expect(result).not.toHaveProperty('notice')
+    expect(records.find(record => record.id === 'permission-fixture')?.result.outcome.optionId).toBe('reject')
+    expect(records.some(record => record.method === 'session/cancel')).toBe(false)
+  })
   it('keeps many ACP output/thought increments linear and folds the complete timeline', async () => {
     // SIMULATED: only a local JSON-RPC fixture, no model or account.
     const sizes: number[] = []
@@ -251,10 +320,11 @@ describe('Native ACP runners (simulated native processes)', () => {
     expect(argv.filter((arg: string) => ['--permission-mode', '--deny', '--allow'].includes(arg))).toEqual([])
     expect(records.some(record => record.method === 'session/set_mode')).toBe(false)
   })
-  it('keeps writable Grok on acceptEdits and replaces any earlier mode', () => {
+  it('removes ignored global Grok permissions and retains only the full-access agent flag', () => {
     const argv = ['grok', '--cwd', '/synthetic', '--permission-mode', 'default', '--single', 'task']
     expect(grokAcpArgv({ argv, mode: 'accept-edits' })).toEqual(['grok', '--cwd', '/synthetic',
-      '--permission-mode', 'acceptEdits', 'agent', '--no-leader', 'stdio'])
+      'agent', '--no-leader', 'stdio'])
+    expect(grokAcpArgv({ argv, mode: 'accept-edits', access: 'danger-full-access' })).toEqual(['grok', '--cwd', '/synthetic', 'agent', '--always-approve', '--no-leader', 'stdio'])
     expect(grokAcpArgv({ argv, mode: 'plan' })).toEqual(['grok', '--cwd', '/synthetic', 'agent', '--no-leader', 'stdio'])
   })
   it('still requires an ACP that lists modes to confirm plan, and never assumes it for other CLIs', async () => {
@@ -262,7 +332,7 @@ describe('Native ACP runners (simulated native processes)', () => {
     expect(listed.result.status).toBe('SUCCESS')
     expect(listed.records.find(record => record.method === 'session/set_mode')?.params.modeId).toBe('plan')
     const kimi = await fixture('kimi', 'no-modes')
-    expect(kimi.result).toMatchObject({ status: 'ERROR', error: 'ACP does not advertise the selected permission mode' })
+    expect(kimi.result).toMatchObject({ status: 'ERROR', error: expect.stringContaining('ACP does not advertise the selected permission mode') })
     expect(kimi.records.some(record => record.method === 'session/prompt')).toBe(false)
   })
   it('sends Grok model and effort as the scalar values accepted by its native decoder', async () => {

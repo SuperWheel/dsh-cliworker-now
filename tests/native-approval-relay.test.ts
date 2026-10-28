@@ -45,35 +45,52 @@ const presets: Record<string, PermissionState> = {
 }
 const request = { kind: 'network', summary: '访问 registry.npmjs.org 安装依赖', allowSession: true } as const
 
-describe('permission tier and decisions follow the DSH preset', () => {
-  it.each(Object.entries(presets))('%s: tier is never wider than the parent', (name, state) => {
-    expect(runAccess('accept-edits', state)).toBe(name as NativeAccess)
-    expect(runAccess('plan', state)).toBe('read-only')
-    expect(runAccess('accept-edits', { ...state, planMode: true })).toBe('read-only')
+describe('permission tier and decisions follow the Worker level capped by the DSH preset', () => {
+  it.each(Object.entries(presets))('%s: a Worker without a level follows the parent', (name, state) => {
+    expect(runAccess('accept-edits', undefined, state)).toBe(name as NativeAccess)
+    expect(runAccess('plan', undefined, state)).toBe('read-only')
+    expect(runAccess('accept-edits', undefined, { ...state, planMode: true })).toBe('read-only')
   })
-  it('asks under 仅可查看 and 工作区内修改, auto-allows the residue under 完全权限', () => {
-    expect(decideApproval('accept-edits', presets['read-only']!)).toBe('ask')
-    expect(decideApproval('accept-edits', presets['workspace-write']!)).toBe('ask')
-    expect(decideApproval('accept-edits', presets['danger-full-access']!)).toEqual({
+  it.each([
+    ['ask', 'danger-full-access', 'read-only'],
+    ['auto', 'danger-full-access', 'workspace-write'],
+    ['full', 'danger-full-access', 'danger-full-access'],
+    ['full', 'workspace-write', 'workspace-write'],
+    ['auto', 'read-only', 'read-only'],
+    ['ask', 'workspace-write', 'read-only'],
+  ] as const)('level %s under %s runs at %s, never wider than the parent', (level, parent, access) => {
+    expect(runAccess('accept-edits', level, presets[parent]!)).toBe(access)
+    expect(runAccess('plan', level, presets[parent]!)).toBe('read-only')
+  })
+  it('asks below full access, auto-allows the residue only when Worker and parent are both full', () => {
+    expect(decideApproval('accept-edits', undefined, presets['read-only']!)).toBe('ask')
+    expect(decideApproval('accept-edits', undefined, presets['workspace-write']!)).toBe('ask')
+    expect(decideApproval('accept-edits', undefined, presets['danger-full-access']!)).toEqual({
       decision: 'allow-once',
       source: 'full-access',
     })
+    expect(decideApproval('accept-edits', 'full', presets['danger-full-access']!)).toMatchObject({ decision: 'allow-once' })
+  })
+  it('a Worker that chose to be asked is asked even when the parent never asks', () => {
+    expect(decideApproval('accept-edits', 'ask', presets['danger-full-access']!)).toBe('ask')
+    expect(decideApproval('accept-edits', 'ask', { planMode: false, sandbox: 'workspace-write', approval: 'never' })).toBe('ask')
   })
   it.each(Object.entries(presets))('plan mode denies first under %s, without a prompt', (_name, state) => {
-    expect(decideApproval('plan', state)).toEqual({ decision: 'deny', source: 'plan' })
-    expect(decideApproval('accept-edits', { ...state, planMode: true })).toEqual({ decision: 'deny', source: 'plan' })
+    for (const level of [undefined, 'ask', 'auto', 'full'] as const) {
+      expect(decideApproval('plan', level, state)).toEqual({ decision: 'deny', source: 'plan' })
+      expect(decideApproval('accept-edits', level, { ...state, planMode: true })).toEqual({ decision: 'deny', source: 'plan' })
+    }
   })
-  it('a confined custom policy with prompts disabled denies by preset', () => {
-    expect(decideApproval('accept-edits', { planMode: false, sandbox: 'workspace-write', approval: 'never' })).toEqual({
-      decision: 'deny',
-      source: 'preset',
-    })
+  it('a middle level under a policy with prompts disabled denies by preset', () => {
+    const confined = { planMode: false, sandbox: 'workspace-write', approval: 'never' } as const
+    expect(decideApproval('accept-edits', undefined, confined)).toEqual({ decision: 'deny', source: 'preset' })
+    expect(decideApproval('accept-edits', 'auto', presets['danger-full-access']!)).toEqual({ decision: 'deny', source: 'preset' })
   })
   it('each request reads the state current when it arrives (preset switched mid-run)', () => {
     const state = { ...presets['danger-full-access']! }
-    expect(decideApproval('accept-edits', state)).toMatchObject({ decision: 'allow-once' })
+    expect(decideApproval('accept-edits', 'full', state)).toMatchObject({ decision: 'allow-once' })
     Object.assign(state, presets['workspace-write'])
-    expect(decideApproval('accept-edits', state)).toBe('ask')
+    expect(decideApproval('accept-edits', 'full', state)).toBe('ask')
   })
 })
 
@@ -373,26 +390,33 @@ describe('Host relay answers every request and records it', () => {
 })
 
 describe('each CLI launches no wider than the DSH tier (argument mapping, no process)', () => {
-  const tiers: NativeAccess[] = ['read-only', 'workspace-write', 'danger-full-access']
-  // The runtime launches 仅可查看 as the CLI's native plan mode (runAccess → plan).
+  // Legacy launch helper for the other CLI fixtures below.
   const launch = (access: NativeAccess) => (access === 'read-only' ? 'plan' : 'accept-edits') as 'plan' | 'accept-edits'
   const value = (argv: string[], flag: string) => argv[argv.indexOf(flag) + 1]
-  it.each(tiers)('Codex exec %s', (access) => {
-    const argv = workerArguments('codex', '/p', { cli: 'codex', model: 'm', effort: 'high' }, launch(access), 'x', 1, undefined, false, access)
-    expect(argv).toContain(`sandbox_mode=${JSON.stringify(access)}`)
-    expect(argv).toContain(`approval_policy=${JSON.stringify(access === 'workspace-write' ? 'on-request' : 'never')}`)
+  it.each([
+    ['danger-full-access', 'plan', 'read-only', 'never'],
+    ['read-only', 'accept-edits', 'read-only', 'on-request'],
+    ['workspace-write', 'accept-edits', 'workspace-write', 'on-request'],
+    ['danger-full-access', 'accept-edits', 'danger-full-access', 'never'],
+  ] as const)('Codex exec %s + %s', (access, mode, sandbox, approval) => {
+    const argv = workerArguments('codex', '/p', { cli: 'codex', model: 'm', effort: 'high' }, mode, 'x', 1, undefined, false, access)
+    expect(argv).toContain(`sandbox_mode=${JSON.stringify(sandbox)}`)
+    expect(argv).toContain(`approval_policy=${JSON.stringify(approval)}`)
+    if (mode !== 'plan') expect(argv).toContain(`approvals_reviewer="${access === 'workspace-write' ? 'auto_review' : 'user'}"`)
   })
   it.each([
-    ['read-only', 'plan'],
-    ['workspace-write', 'acceptEdits'],
-    ['danger-full-access', 'bypassPermissions'],
-  ] as const)('Claude Code %s → --permission-mode %s', (access, mode) => {
-    const argv = workerArguments('claude', '/p', { cli: 'claude', model: 'm', effort: 'default' }, launch(access), 'x', 1, undefined, true, access)
+    ['danger-full-access', 'plan', 'plan'],
+    ['read-only', 'accept-edits', 'manual'],
+    ['workspace-write', 'accept-edits', 'auto'],
+    ['danger-full-access', 'accept-edits', 'bypassPermissions'],
+  ] as const)('Claude Code %s + %s → --permission-mode %s', (access, taskMode, mode) => {
+    const argv = workerArguments('claude', '/p', { cli: 'claude', model: 'm', effort: 'default' }, taskMode, 'x', 1, undefined, true, access)
     expect(value(argv, '--permission-mode')).toBe(mode)
-    expect(claudePermissionMode({ mode: launch(access), access })).toBe(mode)
+    expect(claudePermissionMode({ mode: taskMode, access })).toBe(mode)
   })
   it.each([
-    ['workspace-write', 'accept_edits', 'acceptEdits'],
+    ['read-only', 'default', 'default'],
+    ['workspace-write', 'auto', 'auto'],
     ['danger-full-access', 'bypass_permissions', 'yolo'],
   ] as const)('Qoder %s → CLI %s / ACP %s', (access, flag, _acp) => {
     const argv = workerArguments('qoder', '/p', { cli: 'qoder', model: 'm', effort: 'high' }, 'accept-edits', 'x', 1, undefined, true, access)
@@ -400,10 +424,10 @@ describe('each CLI launches no wider than the DSH tier (argument mapping, no pro
   })
   it.each([
     ['read-only', ['agent', '--no-leader', 'stdio']],
-    ['workspace-write', ['--permission-mode', 'acceptEdits', 'agent', '--no-leader', 'stdio']],
-    ['danger-full-access', ['--permission-mode', 'acceptEdits', 'agent', '--always-approve', '--no-leader', 'stdio']],
+    ['workspace-write', ['agent', '--no-leader', 'stdio']],
+    ['danger-full-access', ['agent', '--always-approve', '--no-leader', 'stdio']],
   ] as const)('Grok %s', (access, tail) => {
-    const argv = grokAcpArgv({ argv: ['grok', '--permission-mode', 'default', '--single', 'x'], mode: launch(access), access })
+    const argv = grokAcpArgv({ argv: ['grok', '--permission-mode', 'default', '--single', 'x'], mode: 'accept-edits', access })
     expect(argv).toEqual(['grok', ...tail])
   })
 })

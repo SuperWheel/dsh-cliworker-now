@@ -58,14 +58,14 @@ const optionValues = (options) =>
 const optionValue = (value) => (isRecord(value) ? value.value : value)
 const findOption = (state, id) => state?.configOptions?.find((option) => option.id === id)
 
-async function selectOption(peer, sessionId, state, id, value, encode, required = true) {
+async function selectOption(peer, sessionId, state, id, value, encode, required = true, force = false) {
   const option = findOption(state, id)
   if (!option) {
     if (required) throw new Error(`ACP does not advertise ${id} selection`)
     return state
   }
   if (!optionValues(option.options).includes(value)) throw new Error(`ACP rejected the selected ${id}`)
-  if (optionValue(option.currentValue) === value) return state
+  if (!force && optionValue(option.currentValue) === value) return state
   const updated = await peer.request(
     'session/set_config_option',
     { sessionId, configId: id, value: encode(value) },
@@ -78,7 +78,8 @@ async function selectOption(peer, sessionId, state, id, value, encode, required 
 
 /** Runs exactly one turn; restored history is deliberately ignored before prompt admission. */
 export async function runNativeAcp(config, io, settings) {
-  const wantedMode = config.mode === 'plan' ? 'plan' : settings.editMode
+  let wantedMode = config.mode === 'plan' ? 'plan' : settings.editMode
+  let permissionDowngraded = false
   let peer,
     sessionId,
     active = false,
@@ -129,7 +130,7 @@ export async function runNativeAcp(config, io, settings) {
           result: { outcome: option ? { outcome: 'selected', optionId: option.optionId } : { outcome: 'cancelled' } } })
         const deny = () => {
           if (active && message.params?.sessionId === sessionId) {
-            // The CLI may recover from a denial; the turn then ends as unverified, not failed.
+            // The CLI may recover from a denial and complete the turn normally.
             denied = true
             if (nonempty(message.params?.toolCall?.toolCallId)) deniedTools.add(message.params.toolCall.toolCallId)
             io.event({ kind: 'diagnostic', text: 'CLI 额外权限请求已拒绝' })
@@ -143,6 +144,12 @@ export async function runNativeAcp(config, io, settings) {
         // Other requests go to the Host (DSH preset and user) without blocking this reader.
         const sessionOption = settings.sessionOption?.(options)
         void io.approval(acpApprovalRequest(message.params, sessionOption)).then((answer) => {
+          // The Host may still hold the requested full-access tier. A native
+          // downgrade must not inherit its automatic residual approvals.
+          if (permissionDowngraded && answer.source === 'full-access') {
+            io.event({ kind: 'diagnostic', text: '原生权限已降级，拒绝沿用完全权限自动放行；请切换 Worker 档位后重试' })
+            return deny()
+          }
           const option = answer.decision === 'deny' ? undefined
             : answer.decision === 'allow-session' && sessionOption ? sessionOption
               : options.find((item) => item.kind === 'allow_once')
@@ -165,6 +172,13 @@ export async function runNativeAcp(config, io, settings) {
       return
     const update = message.params.update
     if (!isRecord(update)) return
+    if (update.sessionUpdate === 'current_mode_update') {
+      if (wantedMode && update.currentModeId !== wantedMode) {
+        fail('ACP 实际权限与所选模式不匹配')
+        cancel()
+      }
+      return
+    }
     if (update.sessionUpdate === 'config_option_update') {
       const observed = optionValue(findOption(update, 'model')?.currentValue)
       if (observed !== undefined && observed !== config.preference.model) {
@@ -307,20 +321,39 @@ export async function runNativeAcp(config, io, settings) {
         config.preference.effort === 'none' ? settings.off : config.preference.effort,
         settings.encode,
       )
-    if (wantedMode && settings.modeConfigId) {
-      state = await selectOption(peer, sessionId, state, settings.modeConfigId, wantedMode, settings.encode)
-    } else if (wantedMode && state?.modes?.currentModeId !== wantedMode) {
-      // Only a CLI whose launch already fixed this mode may omit ACP modes entirely.
-      if (!(settings.launchModes?.includes(wantedMode) && state?.modes == null)) {
-        if (!state?.modes?.availableModes?.some((mode) => mode.id === wantedMode))
-          throw new Error('ACP does not advertise the selected permission mode')
-        await peer.request('session/set_mode', { sessionId, modeId: wantedMode }, { jsonrpc: true })
+    if (wantedMode) {
+      const candidates = [wantedMode, ...(config.mode === 'plan' ? [] : settings.fallbackModes ?? [])]
+      for (const [index, candidate] of candidates.entries()) {
+        try {
+          io.signal.throwIfAborted()
+          const launchConfirmed = settings.launchModes?.includes(candidate) && state?.modes == null
+          if ((settings.requireModeCatalog || !settings.modeConfigId) && !launchConfirmed &&
+            !state?.modes?.availableModes?.some((mode) => mode.id === candidate))
+            throw new Error('ACP does not advertise the selected permission mode')
+          if (settings.modeConfigId) {
+            // A rejected selection may already have changed native state. Always
+            // send and confirm the fallback, even if the old snapshot matched it.
+            state = await selectOption(peer, sessionId, state, settings.modeConfigId, candidate, settings.encode, true, index > 0)
+          } else if (!launchConfirmed && (index > 0 || state?.modes?.currentModeId !== candidate)) {
+            const updated = await peer.request('session/set_mode', { sessionId, modeId: candidate }, { jsonrpc: true })
+            if (updated?.modes?.currentModeId !== undefined && updated.modes.currentModeId !== candidate)
+              throw new Error('ACP did not confirm the selected permission mode')
+          }
+          wantedMode = candidate
+          permissionDowngraded = index > 0
+          if (permissionDowngraded) io.event({ kind: 'diagnostic', text: `${settings.name} 原生权限模式不可用，本轮按${candidate === 'default' ? '询问' : '自动审批'}运行（${candidate}）` })
+          break
+        } catch (error) {
+          io.signal.throwIfAborted()
+          if (index === candidates.length - 1)
+            throw new Error(`${settings.name} 无法确认原生权限模式，拒绝启动：${error instanceof Error ? error.message : String(error)}`)
+        }
       }
     }
     io.signal.throwIfAborted()
     if (failure) throw new Error(failure)
     io.session(sessionId, config.preference.model)
-    await settings.onReady?.(state, sessionId, io)
+    await settings.onReady?.(state, sessionId, io, wantedMode)
     io.signal.throwIfAborted()
     io.event({ kind: 'status', text: `${settings.name} 原生模型已确认` })
     active = true

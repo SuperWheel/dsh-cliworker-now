@@ -1,5 +1,5 @@
 import { cliOf, type CliId, type Worker } from './types.ts'
-import { workerPermissionOptions } from './worker-permissions.ts'
+import { workerPlanSupported } from './worker-permissions.ts'
 
 /** Harness conversation features bridged onto a CLI Worker conversation. */
 export type BridgedConversationFeature = 'goal' | 'plan' | 'feedback' | 'fork' | 'forkEarlier'
@@ -47,7 +47,7 @@ export function bridgedFeatureSupport(
   worker: Pick<Worker, 'preference' | 'transport'>,
 ): Record<BridgedConversationFeature, BridgedFeatureSupport> {
   const cli = cliOf(worker.preference)
-  const plan = workerPermissionOptions(worker).some((option) => option.value === 'plan')
+  const plan = workerPlanSupported(worker)
   const expectedTransport: Partial<Record<CliId, string>> = { codex: 'codex-app-v1', claude: 'claude-stream-v1', kimi: 'kimi-acp-v1', mimo: 'mimo-http-v1', zcode: 'zcode-app-v1', pi: 'pi-rpc-v1', opencode: 'opencode-http-v1', qoder: 'qoder-acp-v1', qodercn: 'qodercn-acp-v1' }
   const fork = worker.transport === expectedTransport[cli] ? forkSupport[cli] : undefined
   return {

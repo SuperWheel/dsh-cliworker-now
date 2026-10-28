@@ -219,7 +219,8 @@ it('keeps a Qoder worker on its ACP session for follow-up and refuses unsupporte
   const first = await f.runtime.submit('parent', f.project, 'synthetic Qoder', 'first', qoder, 'accept-edits').done
   expect(first.status, first.error).toBe('completed')
   expect(first.transport).toBe('qoder-acp-v1')
-  expect(f.requests[0].argv).toEqual([f.executable, '--acp', '--permission-mode', 'accept_edits', '--model', qoder.model])
+  // Without a Host snapshot the middle level applies: Qoder's native auto.
+  expect(f.requests[0].argv).toEqual([f.executable, '--acp', '--permission-mode', 'auto', '--model', qoder.model])
   const second = await f.runtime.submit('parent', f.project, 'synthetic Qoder', 'next', qoder, 'accept-edits', first.id).done
   expect(second.status).toBe('completed')
   expect(second.conversationId).toBe(first.conversationId)
@@ -280,7 +281,7 @@ it('hands the bridge preparation and the launch one tier snapshot', async () => 
   const f = setup()
   const tiers = ['danger-full-access', 'workspace-write'] as const
   let reads = 0
-  f.runtime.setAccessSnapshot(() => tiers[reads++])
+  f.runtime.setAccessSnapshot(() => ({ access: tiers[reads++]!, label: 'SIMULATED' }))
   const prepared: unknown[] = []
   f.runtime.setHarnessPreparation(async (_worker, _signal, input) => {
     prepared.push(input.access)

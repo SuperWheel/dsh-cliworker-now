@@ -143,6 +143,7 @@ export function agyArguments(
   prompt: string,
   timeoutMs: number,
   conversationId?: string,
+  access?: NativeAccess,
 ): string[] {
   // --disable-slash-commands also disables --mode plan in agy 1.2.16.
   // Prefix plain task text instead, and keep the native mode effective.
@@ -150,10 +151,10 @@ export function agyArguments(
     executable,
     '--add-dir',
     project,
-    '--sandbox',
-    '--dangerously-skip-permissions',
+    ...(mode === 'plan' || access !== 'danger-full-access' ? ['--sandbox'] : ['--sandbox=false']),
+    ...(mode !== 'plan' && access === 'danger-full-access' ? ['--dangerously-skip-permissions'] : []),
     '--mode',
-    mode,
+    mode === 'plan' || access === 'read-only' ? 'plan' : access === 'danger-full-access' ? 'accept-edits' : 'auto',
     '--model',
     preference.model,
     ...(preference.effort === 'default' ? [] : ['--effort', preference.effort]),

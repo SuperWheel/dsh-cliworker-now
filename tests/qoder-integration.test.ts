@@ -4,7 +4,7 @@ import { CLI_IDS } from '../src/shared/types.ts'
 import { requireCliName, invocationResolution } from '../src/host/routing.ts'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { transportFor, usesNativeBridge } from '../src/host/native-worker.ts'
-import { workerPermissionOptions } from '../src/shared/worker-permissions.ts'
+import { cliLevelOptions, workerPlanSupported } from '../src/shared/worker-permissions.ts'
 import {
   buildNativeHarnessInjection,
   nativeHarnessToolCapability,
@@ -53,14 +53,14 @@ it('retains native approval checks, literal model argv and only supported permis
     '/synthetic/qoder',
     '--acp',
     '--permission-mode',
-    'accept_edits',
+    'auto',
     '--model',
     'literal;$(must-not-run)',
   ])
   expect(argv.join(' ')).not.toMatch(/yolo|bypass|dangerously/)
   expect(
-    workerPermissionOptions({ preference, transport: 'qoder-acp-v1' }).map((option) => option.value),
-  ).toEqual(['accept-edits'])
+    [workerPlanSupported({ preference, transport: 'qoder-acp-v1' }), cliLevelOptions('qoder').map((option) => option.value)],
+  ).toEqual([false, ['ask', 'auto', 'full']])
   expect(nativeHarnessToolCapability('qoder')).toMatchObject({ transport: true, ready: false })
   expect(buildNativeHarnessInjection({ cli: 'qoder', argv }).argv).toEqual(argv)
 })

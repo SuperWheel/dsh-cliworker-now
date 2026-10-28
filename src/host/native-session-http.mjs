@@ -45,7 +45,7 @@ export function serverConfiguration(config, cli) {
   const raw = environment[`${name}_CONFIG_CONTENT`]
   const previous = raw ? JSON.parse(raw) : {}
   if (!object(previous)) throw new Error('原生 HTTP 配置无效')
-  // 完全权限 allows every native tool; task/question stay off. A skill only loads
+  // Full access allows every native tool; task/question stay off. A skill only loads
   // the user's own instructions, so it is allowed in every tier.
   const full = config.mode !== 'plan' && config.access === 'danger-full-access'
   const permission = {
@@ -54,8 +54,10 @@ export function serverConfiguration(config, cli) {
     glob: 'allow',
     grep: 'allow',
     list: 'allow',
-    edit: config.mode === 'plan' ? 'deny' : 'allow',
+    // MiMo starts from ask rules; only its verified native skip-all enables auto.
+    edit: config.mode === 'plan' ? 'deny' : full || (cli === 'opencode' && config.access !== 'read-only') ? 'allow' : 'ask',
     bash: config.mode === 'plan' ? 'deny' : full ? 'allow' : 'ask',
+    ...(config.mode !== 'plan' ? { external_directory: full ? 'allow' : 'ask' } : {}),
     task: 'deny',
     skill: 'allow',
     question: 'deny',
@@ -65,6 +67,8 @@ export function serverConfiguration(config, cli) {
     ...config,
     env: {
       ...environment,
+      // Instance switches below are the only source of MiMo runtime auto-allow.
+      ...(cli === 'mimo' ? { MIMOCODE_DANGEROUSLY_SKIP_PERMISSIONS: '0', MIMOCODE_AUTO_APPROVE_DELETE: '0' } : {}),
       [`${name}_CONFIG_CONTENT`]: JSON.stringify({
         ...previous,
         model: config.preference.model,
@@ -77,6 +81,60 @@ export function serverConfiguration(config, cli) {
       [`${name}_PERMISSION`]: JSON.stringify(permission),
     },
   }
+}
+
+async function configureMimoPermissions(config, request, query, io) {
+  const full = config.mode !== 'plan' && config.access === 'danger-full-access'
+  const auto = config.mode !== 'plan' && config.access === 'workspace-write'
+  const missing = (error) => error?.status === 404 || error?.status === 405
+  const setSwitch = async (name, enabled) => {
+    const path = `/permission/${name}${query}`
+    let receipt
+    try { receipt = await request(path, 'POST', { enabled }) }
+    catch (error) {
+      if (missing(error)) return false
+      throw error
+    }
+    if (receipt !== enabled) throw new Error(`MiMo ${name} 设置回执不一致`)
+    let state
+    try { state = await request(path) }
+    catch (error) {
+      // Older builds may expose only the setter; its boolean receipt is required.
+      if (missing(error)) return true
+      throw error
+    }
+    if (state !== enabled) throw new Error(`MiMo ${name} 状态回读不一致`)
+    return true
+  }
+  if (full) {
+    for (const name of ['skip-all', 'auto-approve-delete']) {
+      try {
+        if (await setSwitch(name, true)) continue
+      } catch { /* Full access keeps its native allow rules if an extra switch fails. */ }
+      io.event({ kind: 'diagnostic', text: `MiMo 原生 ${name} 不可用，保留全部 allow 规则；仍可能出现原生确认。` })
+    }
+    return
+  }
+  // Every owned instance starts with both environment bypasses disabled. A
+  // missing route cannot enable it; an existing route must confirm the reset.
+  try {
+    await setSwitch('auto-approve-delete', false)
+    await setSwitch('skip-all', false)
+  } catch {
+    throw new Error('MiMo 原生审批开关无法确认关闭，不能安全按询问或规划运行')
+  }
+  if (!auto) return
+  let mayBeEnabled = true
+  try {
+    if (await setSwitch('skip-all', true)) return
+    mayBeEnabled = false
+  } catch { /* Reset before falling back, including an ambiguous enable receipt. */ }
+  try {
+    if (!await setSwitch('skip-all', false) && mayBeEnabled) throw new Error('MiMo skip-all 关闭未确认')
+  } catch {
+    throw new Error('MiMo 原生自动审批不可用且无法确认关闭，不能安全降级为询问')
+  }
+  io.event({ kind: 'diagnostic', text: 'MiMo 原生自动审批不可用，本轮按询问运行。' })
 }
 function assertModel(catalog, selected, effort) {
   if (!object(catalog) || !Array.isArray(catalog.all)) throw new Error('原生 HTTP 模型目录无效')
@@ -450,6 +508,9 @@ export async function runNativeSessionHttp(original, io, cli) {
     if (Number.isSafeInteger(model.limit?.context) && model.limit.context > 0)
       io.native({ type: 'cliworker.model_context', scope: 'model',
         source: `${cli}.provider.limit.context`, ...selected, contextCapacity: model.limit.context })
+    // Apply to the final owned instance after optional context-relay restarts,
+    // before creating or resuming a session and before sending any prompt.
+    if (cli === 'mimo') await configureMimoPermissions(config, request, query, io)
     let initialSession
     if (config.conversationId) {
       if (!/^ses_[A-Za-z0-9]+$/.test(config.conversationId)) throw new Error('原生会话身份格式无效')

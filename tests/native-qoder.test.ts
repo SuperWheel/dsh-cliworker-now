@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeQoder } from '../src/host/native-qoder.mjs'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
+import { workerArguments } from '../src/host/adapters.ts'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -21,8 +22,12 @@ const out=value=>process.stdout.write(JSON.stringify(value)+'\n');
 const log=value=>appendFileSync(process.env.AUDIT,JSON.stringify(value)+'\n',{mode:0o600});
 const sessionId='qoder-simulated-session';
 const model={id:'model',type:'select',category:'model',currentValue:'before',options:[{value:'before'},{value:'native/model-key',name:'Human model display name'}]};
-const mode={id:'mode',type:'select',category:'mode',currentValue:'default',options:[{value:'default'},{value:'acceptEdits'},{value:'dontAsk'},{value:'yolo'}]};
-const state={sessionId,modes:{currentModeId:'default',availableModes:[{id:'default'},{id:'acceptEdits'},{id:'dontAsk'},{id:'yolo'}]},configOptions:[...(scenario==='missing-model'?[]:[model]),...(scenario==='missing-mode'?[]:[mode])]};
+const mode={id:'mode',type:'select',category:'mode',currentValue:'default',options:[{value:'default'},{value:'acceptEdits'},{value:'auto'},{value:'dontAsk'},{value:'yolo'}]};
+const state={sessionId,modes:{currentModeId:'default',availableModes:[{id:'default'},{id:'acceptEdits'},{id:'auto'},{id:'dontAsk'},{id:'yolo'}]},configOptions:[...(scenario==='missing-model'?[]:[model]),...(scenario==='missing-mode'?[]:[mode])]};
+if(scenario==='missing-auto')mode.options=mode.options.filter(option=>option.value!=='auto');
+if(scenario==='missing-yolo'||scenario==='permission-downgraded')mode.options=mode.options.filter(option=>option.value!=='yolo');
+if(scenario==='missing-default')mode.options=mode.options.filter(option=>option.value!=='default');
+if(scenario==='resume-yolo'||scenario==='unconfirmed-mode')mode.currentValue='yolo';
 if(scenario==='unavailable-model')model.options=[{value:'before'}];
 let pending;
 log({fixture:'simulated-qoder',pid:process.pid,argv:process.argv.slice(2)});
@@ -62,7 +67,8 @@ createInterface({input:process.stdin}).on('line',line=>{
   const option=state.configOptions.find(item=>item.id===configId);
   if(!option)return reject(request,'Simulated unknown option');
   option.currentValue=(scenario==='unconfirmed-model'&&configId==='model')?'wrong':
-   (scenario==='unconfirmed-mode'&&configId==='mode')?'dontAsk':value;
+   (scenario==='unconfirmed-mode'&&configId==='mode')?'dontAsk':
+   (scenario==='unconfirmed-auto'&&configId==='mode'&&value==='auto')?'yolo':value;
   if(configId==='model')state.configOptions.push({id:'reasoning_effort',type:'select',category:'thought_level',currentValue:'none',options:scenario==='unsupported-effort'?[{value:'none'}]:[{value:'none'},{value:'high'}]});
   return reply(request,{configOptions:state.configOptions});
  }
@@ -83,7 +89,7 @@ createInterface({input:process.stdin}).on('line',line=>{
    pending=request;return update({sessionUpdate:'config_option_update',configOptions:[{id:scenario==='changed-model'?'model':'mode',currentValue:scenario==='changed-model'?'wrong':'yolo'}]});
   }
   if(scenario==='cancel'){pending=request;return;}
-  if(scenario==='permission'||scenario==='permission-no-reject'||scenario==='permission-other-failure'){
+  if(scenario==='permission'||scenario==='permission-no-reject'||scenario==='permission-other-failure'||scenario==='permission-downgraded'){
    update({sessionUpdate:'tool_call',toolCallId:'denied-simulated',title:'Run synthetic shell',status:'pending',_meta:{qoder:{toolName:'Bash'}}});
    pending=request;return out({jsonrpc:'2.0',id:'permission-simulated',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'denied-simulated'},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:'proceed_always'},{kind:'allow_always',optionId:'proceed_always_and_save'},...(scenario==='permission'?[{kind:'reject_once',optionId:'reject'}]:[])]}});
   }
@@ -101,7 +107,7 @@ createInterface({input:process.stdin}).on('line',line=>{
 async function fixture(
   scenario = 'success',
   options: { continuation?: boolean; mode?: string; effort?: string; cli?: 'qoder' | 'qodercn'; agentName?: string
-    access?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {},
+    access?: string; decision?: 'allow-once' | 'allow-session' | 'deny'; source?: string } = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'cliworker-native-qoder-simulated-'))
   roots.push(root)
@@ -135,7 +141,7 @@ async function fixture(
       const frame = JSON.parse(line)
       frames.push(frame)
       if (options.decision && frame.type === 'approval')
-        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: options.decision, source: 'user' }), frame.id), 5)
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: options.decision, source: options.source ?? 'user' }), frame.id), 5)
       if (scenario === 'cancel' && frame.event?.kind === 'assistant')
         controller.abort(new Error('Simulated user stop'))
     },
@@ -175,12 +181,64 @@ const usageReceipts = (frames: any[]) =>
   frames.filter((frame) => frame.record?.type === 'cliworker.qoder_prompt_usage').map((frame) => frame.record)
 
 describe('Native Qoder ACP runner (simulated native processes; no real model)', () => {
+  describe.each(['qoder', 'qodercn'] as const)('%s permission tiers', cli => {
+    it.each([
+      ['read-only', 'default', 'default'],
+      ['workspace-write', 'auto', 'auto'],
+      ['danger-full-access', 'bypass_permissions', 'yolo'],
+    ] as const)('maps %s to CLI %s and ACP %s', async (access, flag, acp) => {
+      const preference = { cli, model: 'native/model-key', effort: 'high' as const }
+      const argv = workerArguments(cli, '/synthetic', preference, 'accept-edits', 'synthetic', 1000, undefined, true, access)
+      expect(argv.slice(1, 4)).toEqual(['--acp', '--permission-mode', flag])
+      const { records, result } = await fixture('resume-yolo', { cli, access, continuation: true })
+      expect(result.status).toBe('SUCCESS')
+      const changes = methods(records, 'session/set_config_option').filter(record => record.params.configId === 'mode')
+      if (acp === 'yolo') expect(changes).toEqual([])
+      else expect(changes.at(-1)?.params.value).toBe(acp)
+    })
+    it('rejects planning before starting the process', async () => {
+      const { records, result } = await fixture('success', { cli, mode: 'plan' })
+      expect(result.status).toBe('ERROR')
+      expect(records).toEqual([])
+    })
+    it.each(['missing-auto', 'unconfirmed-auto'])('confirms a stricter fallback before prompt (%s)', async scenario => {
+      const { records, frames, result } = await fixture(scenario, { cli, access: 'workspace-write' })
+      expect(result.status).toBe('SUCCESS')
+      expect(methods(records, 'session/set_config_option').at(-1)?.params).toMatchObject({ configId: 'mode', value: 'default' })
+      expect(frames.some(frame => frame.event?.text.includes('本轮按询问运行'))).toBe(true)
+      expect(methods(records, 'session/prompt')).toHaveLength(1)
+    })
+    it('downgrades unavailable full access to native auto', async () => {
+      const { records, result } = await fixture('missing-yolo', { cli, access: 'danger-full-access' })
+      expect(result.status).toBe('SUCCESS')
+      expect(methods(records, 'session/set_config_option').at(-1)?.params.value).toBe('auto')
+    })
+    it.each(['missing-default', 'missing-mode', 'unconfirmed-mode'])('rejects an unconfirmed ask mode (%s)', async scenario => {
+      const { records, result } = await fixture(scenario, { cli, access: 'read-only', continuation: true })
+      expect(result.status).toBe('ERROR')
+      expect(methods(records, 'session/prompt')).toEqual([])
+    })
+    it('continues after denial in ask mode and never sends persistent permission grants', async () => {
+      const { records, result } = await fixture('permission', { cli, access: 'read-only', decision: 'deny' })
+      expect(result.status).toBe('SUCCESS')
+      expect(result).not.toHaveProperty('notice')
+      expect(records.find(record => record.id === 'permission-simulated')?.result.outcome.optionId).toBe('reject')
+      expect(methods(records, 'session/cancel')).toEqual([])
+    })
+    it('rejects stale Host full-access auto-approval after a native downgrade', async () => {
+      const { records, result, frames } = await fixture('permission-downgraded',
+        { cli, access: 'danger-full-access', decision: 'allow-once', source: 'full-access' })
+      expect(result.status).toBe('SUCCESS')
+      expect(records.find(record => record.id === 'permission-simulated')?.result.outcome).toEqual({ outcome: 'cancelled' })
+      expect(frames.some(frame => frame.event?.text.includes('拒绝沿用完全权限自动放行'))).toBe(true)
+    })
+  })
   it('passes uploaded files through the actual Qoder runner without losing ACP content blocks', async () => {
     const { records, result } = await fixture('attachments')
     expect(result.status).toBe('SUCCESS')
     expect(methods(records, 'session/prompt')[0].params.prompt[1]).toMatchObject({ type: 'resource_link', name: 'Qoder 附件.txt', mimeType: 'text/plain' })
   })
-  it('confirms native model, dynamic effort, and acceptEdits scalar configuration before prompt', async () => {
+  it('confirms native model, dynamic effort, and auto scalar configuration before prompt', async () => {
     const { records, result, processExited } = await fixture()
     expect(result).toMatchObject({ status: 'SUCCESS', response: 'HELLO', resultScope: 'run' })
     expect(records[0].argv).toEqual(['--acp'])
@@ -198,7 +256,7 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
     ).toEqual([
       ['model', 'native/model-key'],
       ['reasoning_effort', 'high'],
-      ['mode', 'acceptEdits'],
+      ['mode', 'auto'],
     ])
     expect(methods(records, 'session/set_mode')).toHaveLength(0)
     const lastSelection = records.findLastIndex((record) => record.method === 'session/set_config_option')
@@ -421,7 +479,7 @@ describe('Native Qoder CN ACP runner (simulated processes; no native login or re
     expect(methods(records, continuation ? 'session/load' : 'session/new')).toHaveLength(1)
     expect(methods(records, continuation ? 'session/new' : 'session/load')).toHaveLength(0)
     expect(methods(records, 'session/set_config_option').map(record => [record.params.configId, record.params.value])).toEqual([
-      ['model', 'native/model-key'], ['reasoning_effort', 'high'], ['mode', 'acceptEdits'],
+      ['model', 'native/model-key'], ['reasoning_effort', 'high'], ['mode', 'auto'],
     ])
     expect(frames.filter(frame => frame.record?.type === 'cliworker.qodercn_prompt_usage').map(frame => frame.record)).toEqual([
       { type: 'cliworker.qodercn_prompt_usage', sessionId: 'qoder-simulated-session', model: 'native/model-key',

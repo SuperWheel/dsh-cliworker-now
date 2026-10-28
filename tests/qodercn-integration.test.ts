@@ -4,7 +4,7 @@ import { workerArguments } from '../src/host/adapters.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { requireCliName, invocationResolution } from '../src/host/routing.ts'
 import { transportFor, usesNativeBridge } from '../src/host/native-worker.ts'
-import { workerPermissionOptions } from '../src/shared/worker-permissions.ts'
+import { cliLevelOptions, workerPlanSupported } from '../src/shared/worker-permissions.ts'
 import { buildNativeHarnessInjection, nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 
 // Synthetic routing and argv only; no native login, executable launch, or real model.
@@ -27,9 +27,10 @@ it('selects Qoder CN explicitly and keeps its native transport distinct from glo
 it('preserves literal CN model argv and native approval boundaries', () => {
   const argv = workerArguments('/synthetic/qoderclicn', '/synthetic/project',
     { ...preference, model: 'literal;$(must-not-run)', effort: 'high' }, 'accept-edits', 'simulated', 1000, undefined, true)
-  expect(argv).toEqual(['/synthetic/qoderclicn', '--acp', '--permission-mode', 'accept_edits', '--model', 'literal;$(must-not-run)'])
+  expect(argv).toEqual(['/synthetic/qoderclicn', '--acp', '--permission-mode', 'auto', '--model', 'literal;$(must-not-run)'])
   expect(argv.join(' ')).not.toMatch(/yolo|bypass|dangerously/)
-  expect(workerPermissionOptions({ preference, transport: 'qodercn-acp-v1' }).map(option => option.value)).toEqual(['accept-edits'])
+  expect(workerPlanSupported({ preference, transport: 'qodercn-acp-v1' })).toBe(false)
+  expect(cliLevelOptions('qodercn').map(option => option.value)).toEqual(['ask', 'auto', 'full'])
   expect(nativeHarnessToolCapability('qodercn')).toMatchObject({ transport: true, ready: false })
   expect(buildNativeHarnessInjection({ cli: 'qodercn', argv }).argv).toEqual(argv)
 })

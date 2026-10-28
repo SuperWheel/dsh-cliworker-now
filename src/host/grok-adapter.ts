@@ -12,12 +12,14 @@ import { GrokResponseTracker, grokResponseUsage } from './grok-response.mjs'
 import { HARNESS_MCP_SERVER, nativeHarnessReadyConnection } from './native-harness-injection.mjs'
 import { GROK_NATIVE_WEB, GROK_PLAN_TOOLS } from './cli-native-capabilities.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
+import type { NativeAccess } from './native-approval-policy.ts'
 
 export interface GrokInput {
   executable: string
   project: string
   preference: { model: string; effort: Effort }
   mode: TaskMode
+  access?: NativeAccess
   prompt: string
   conversationId?: string
   stateDirectory: string
@@ -32,8 +34,13 @@ const baseConfig = `[cli]\nauto_update = false\nuse_leader = false\n[features]\n
 // mode and are denied too. A ready DSH bridge is pre-approved; the Host still
 // approves each execution. Web reads are pre-approved too: a plan run refuses
 // every prompt, and web_fetch otherwise asks for each domain off Grok's list.
-function grokConfig(readOnly?: { bridge: boolean }) {
-  if (!readOnly) return baseConfig
+// The ask level asks before every edit and shell call; the middle level uses
+// Grok's own auto-review classifier (config `ui.permission_mode`). An ignored
+// key falls back to Grok's default ask mode, never to a wider one.
+function grokConfig(readOnly?: { bridge: boolean }, level?: 'ask' | 'auto') {
+  if (!readOnly) return level === 'ask'
+    ? `${baseConfig}[ui]\npermission_mode = "ask"\n[permission]\nask = ["Bash", "Edit", "Write"]\n`
+    : level === 'auto' ? `${baseConfig}[ui]\npermission_mode = "auto"\n` : baseConfig
   const allowed = [...(GROK_NATIVE_WEB ? ['WebSearch', 'WebFetch'] : []), ...(readOnly.bridge ? [`MCPTool(${HARNESS_MCP_SERVER}__*)`] : [])]
   const allow = allowed.length ? `allow = ${JSON.stringify(allowed).replaceAll(',', ', ')}\n` : ''
   return `${baseConfig}[permission]\ndeny = ["Edit", "Write", "Bash(mkdir)", "Bash(touch)"]\n${allow}`
@@ -59,7 +66,7 @@ async function publish(from: string, to: string) {
     }
   }
 }
-async function state(stateDirectory: string, project?: string, readOnly?: { bridge: boolean }) {
+async function state(stateDirectory: string, project?: string, readOnly?: { bridge: boolean }, level?: 'ask' | 'auto') {
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
   if ((await lstat(stateDirectory)).isSymbolicLink()) throw new Error('Unsafe Grok state symlink')
   await chmod(stateDirectory, 0o700)
@@ -89,7 +96,7 @@ async function state(stateDirectory: string, project?: string, readOnly?: { brid
   const temporary = (path: string) => `${path}.${randomUUID()}.tmp`
   const configTemporary = temporary(configPath)
   try {
-    await writeFile(configTemporary, grokConfig(readOnly), { mode: 0o600, flag: 'wx' })
+    await writeFile(configTemporary, grokConfig(readOnly, level), { mode: 0o600, flag: 'wx' })
     await publish(configTemporary, configPath)
   } finally {
     await rm(configTemporary, { force: true })
@@ -151,7 +158,7 @@ export async function prepareGrok(
   if (!input.prompt.trim()) throw new Error('Prompt must not be empty')
   const prepared = await state(input.stateDirectory, input.project, input.mode === 'plan'
     ? { bridge: !!nativeHarnessReadyConnection({ cli: 'grok', harnessTools: input.harnessTools }, {}) }
-    : undefined)
+    : undefined, input.mode === 'plan' || input.access === 'danger-full-access' ? undefined : input.access === 'workspace-write' ? 'auto' : 'ask')
   return {
     argv: [
       input.executable,
@@ -163,7 +170,7 @@ export async function prepareGrok(
       '--output-format',
       'streaming-json',
       '--permission-mode',
-      input.mode === 'plan' ? 'default' : 'acceptEdits',
+      input.mode !== 'plan' && input.access === 'danger-full-access' ? 'bypassPermissions' : 'default',
       '--no-memory',
       '--no-subagents',
       ...(GROK_NATIVE_WEB ? [] : ['--disable-web-search']),

@@ -147,6 +147,12 @@ async function fixture(cli: PiOmpCli, scenario = 'success', version = '1.0.2') {
 import {mkdirSync,writeFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {createInterface} from 'node:readline';
 const cli=${JSON.stringify(cli)},scenario=${JSON.stringify(scenario)},marker=${JSON.stringify(join(root, 'native-stopped'))};
 const provider=${JSON.stringify(provider)},modelId=${JSON.stringify(modelId)},agent=process.env.PI_CODING_AGENT_DIR;
+if(process.argv.includes('--help')){
+writeFileSync(${JSON.stringify(join(root, 'help-observed.json'))},JSON.stringify({home:process.env.HOME,cwd:process.cwd(),accountKey:!!process.env.FIXTURE_API_KEY}));
+if(scenario==='help-error')process.exit(1);
+const modes=scenario==='no-write'?'always-ask|yolo':scenario==='no-ask'?'write|yolo':scenario==='no-modes'?'':scenario==='no-yolo'?'always-ask|write':'always-ask|write|yolo';
+process.stdout.write('omp v16.4.4 --approval-mode=<value> ('+modes+')');process.exit(0);
+}
 if(process.argv.includes('models')){
 if(scenario==='catalog-cancel'){writeFileSync(${JSON.stringify(join(root, 'catalog-pid'))},String(process.pid));writeFileSync(${JSON.stringify(join(root, 'catalog-started'))},'STARTED');setInterval(()=>{},1000);process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));}
 else if(scenario==='catalog-refresh'&&!process.argv.includes('refresh')){process.stdout.write('[]');process.exit(0);}
@@ -174,7 +180,9 @@ if(cmd.type==='get_session_stats'){if(scenario==='usage-timeout')return;send({id
 if(cmd.type==='set_model'){model={provider:cmd.provider,id:cmd.modelId};send({id:cmd.id,type:'response',command:cmd.type,success:true,data:model});return}
 if(cmd.type==='set_thinking_level'){thinkingLevel=cmd.level;send({id:cmd.id,type:'response',command:cmd.type,success:true});return}
 if(cmd.type==='get_available_models'){send({id:cmd.id,type:'response',command:cmd.type,success:true,data:{models:[model]}});return}
-if(cmd.type==='extension_ui_response'){writeFileSync(join(agent,'observed-ui-response.json'),JSON.stringify(cmd));const ok=cmd.value==='Approve';send({type:'tool_execution_start',toolCallId:'b',toolName:'bash'});send({type:'tool_execution_end',toolCallId:'b',toolName:'bash',isError:!ok,result:{content:[{type:'text',text:ok?'ran':'denied by user'}]}});streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[{type:'text',text:'HELLO'}],stopReason:'stop'}});send({type:'agent_end'});return}
+if(cmd.type==='extension_ui_response'){writeFileSync(join(agent,'observed-ui-response.json'),JSON.stringify(cmd));const ok=cmd.value==='Approve';const toolName=scenario==='approval-write'?'write':scenario==='approval-edit'?'edit':'bash';send({type:'tool_execution_start',toolCallId:cmd.id,toolName});send({type:'tool_execution_end',toolCallId:cmd.id,toolName,isError:!ok,result:{content:[{type:'text',text:ok?'ran':'denied by user'}]}});
+if(scenario==='approval-repeat'&&cmd.id==='ui-1'){send({type:'extension_ui_request',id:'ui-2',method:'select',title:'Allow tool: write',options:['Approve','Deny']});return}
+streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[{type:'text',text:'HELLO'}],stopReason:'stop'}});send({type:'agent_end'});return}
 if(cmd.type==='abort'){writeFileSync(${JSON.stringify(join(root, 'native-aborted'))},'ABORT');send({id:cmd.id,type:'response',command:'abort',success:true});return}
 if(cmd.type==='steer'){
 steers.push(cmd.message);writeFileSync(join(agent,'observed-steers.json'),JSON.stringify(steers));
@@ -204,7 +212,7 @@ send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',content
 for(const delta of scenario==='fragmented'?['H','E','L','L','O']:[resumed?'RESUMED':'HELLO'])send({type:'message_update',assistantMessageEvent:{type:'text_delta',delta}});
 if(scenario==='cancel'||scenario.startsWith('steer-'))return;
 // SIMULATED OMP 16.4 tool approval (approval.ts): an RPC select answered with Approve/Deny.
-if(scenario==='approval'){send({type:'extension_ui_request',id:'ui-1',method:'select',title:'Allow tool: bash\\nCommand: ls -la',options:['Approve','Deny']});return}
+if(scenario.startsWith('approval')){const tool=scenario==='approval-write'?'write':scenario==='approval-edit'?'edit':'bash';send({type:'extension_ui_request',id:'ui-1',method:'select',title:'Allow tool: '+tool+'\\n'+(tool==='bash'?'Command: ls -la':'Path: fixture.txt'),options:['Approve','Deny']});return}
 if(scenario==='ui-input'){send({type:'extension_ui_request',id:'ui-2',method:'input',title:'Name?'});}
 if(scenario==='tool-error'||scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
 if(scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'retry',toolName:'edit'});send({type:'tool_execution_end',toolCallId:'retry',toolName:'edit',isError:false,result:{content:[{type:'text',text:'edited'}]}})}
@@ -977,9 +985,11 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
   it.each([
     ['pi', 'danger-full-access', true],
     ['pi', 'workspace-write', false],
+    ['pi', 'read-only', false],
     ['pi', undefined, false],
     ['omp', 'danger-full-access', true],
     ['omp', 'workspace-write', true],
+    ['omp', 'read-only', true],
     ['omp', undefined, false],
   ] as const)('%s under tier %s launches native bash: %s', async (cli, access, bash) => {
     const { input } = await fixture(cli)
@@ -990,9 +1000,12 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     const argv = JSON.parse(await readFile(join(request.stateDirectory, 'agent/observed-argv.json'), 'utf8'))
     expect(argv[argv.indexOf('--tools') + 1].split(',').includes('bash')).toBe(bash)
   })
-  async function relayRun(input: PiOmpInput, decide: (frame: any) => 'allow-once' | 'deny' | undefined) {
+  async function relayRun(input: PiOmpInput, decide: (frame: any) => 'allow-once' | 'deny' | undefined,
+    beforeStart?: (request: any) => Promise<void>) {
     const prepared = await prepareConfirmed(input)
-    const state = JSON.parse(await readFile(prepared.argv[2]!, 'utf8')).stateDirectory as string
+    const request = JSON.parse(await readFile(prepared.argv[2]!, 'utf8'))
+    const state = request.stateDirectory as string
+    await beforeStart?.(request)
     const child = spawn(prepared.argv[0]!, prepared.argv.slice(1), {
       env: fixtureEnvironment(input.nativeHome, prepared.env),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -1043,14 +1056,98 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     await prepared.cleanup()
   })
   it.each([
-    ['danger-full-access', 'yolo'],
-    ['workspace-write', 'write'],
-  ] as const)('runs OMP under tier %s with approvalMode %s', async (access, mode) => {
+    ['plan', 'danger-full-access', 'yolo', ['read', 'grep', 'glob']],
+    ['accept-edits', 'read-only', 'always-ask', ['read', 'grep', 'glob', 'write', 'edit', 'bash']],
+    ['accept-edits', 'workspace-write', 'write', ['read', 'grep', 'glob', 'write', 'edit', 'bash']],
+    ['accept-edits', 'danger-full-access', 'yolo', ['read', 'grep', 'glob', 'write', 'edit', 'bash']],
+  ] as const)('OMP %s/%s uses %s and the exact native tool list', async (taskMode, access, mode, tools) => {
     const { input } = await fixture('omp')
-    const { code, state } = await relayRun({ ...input, mode: 'accept-edits', access }, () => undefined)
+    const { code, state } = await relayRun({ ...input, mode: taskMode, access }, () => undefined)
     expect(code).toBe(0)
     const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
     expect(argv[argv.indexOf('--approval-mode') + 1]).toBe(mode)
+    expect(argv[argv.indexOf('--tools') + 1].split(',')).toEqual(tools)
+    const config = JSON.parse(await readFile(join(state, 'agent/config.yml'), 'utf8'))
+    expect(config.tools.approvalMode).toBe(mode)
+    if (mode === 'always-ask') expect(config.tools.approval).toEqual({ write: 'prompt', edit: 'prompt', bash: 'prompt' })
+    // Let OMP classify edits itself, including writes to exec-tier SSH targets.
+    if (mode === 'write') expect(config.tools.approval).toEqual({ bash: 'prompt' })
+  })
+  it.each([
+    ['plan', 'danger-full-access', ['read', 'grep', 'find', 'ls']],
+    ['accept-edits', 'read-only', ['read', 'grep', 'find', 'ls']],
+    ['accept-edits', 'workspace-write', ['read', 'grep', 'find', 'ls', 'write', 'edit']],
+    ['accept-edits', 'danger-full-access', ['read', 'grep', 'find', 'ls', 'write', 'edit', 'bash']],
+  ] as const)('Pi %s/%s has the exact native tool list', async (mode, access, tools) => {
+    const { input } = await fixture('pi')
+    const { code, state } = await relayRun({ ...input, mode, access }, () => undefined)
+    expect(code).toBe(0)
+    const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
+    expect(argv[argv.indexOf('--tools') + 1].split(',')).toEqual(tools)
+    expect(argv).not.toContain('--approval-mode')
+  })
+  it.each(['approval', 'approval-write', 'approval-edit'] as const)('relays and denies OMP ask-level %s, then completes normally', async scenario => {
+    const { input } = await fixture('omp', scenario)
+    const { code, frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => 'deny')
+    expect(code).toBe(0)
+    expect(frames.find(frame => frame.type === 'approval')?.request).toMatchObject({ kind: scenario === 'approval' ? 'command' : 'file', allowSession: false })
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS' })
+    expect(frames.at(-1)).not.toHaveProperty('notice')
+    expect(frames.at(-1)).not.toHaveProperty('error')
+    expect(JSON.parse(await readFile(join(state, 'agent/observed-ui-response.json'), 'utf8')).value).toBe('Deny')
+  })
+  it('continues relaying a second OMP approval after the first denial', async () => {
+    const { input } = await fixture('omp', 'approval-repeat')
+    const { code, frames } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => 'deny')
+    expect(code).toBe(0)
+    expect(frames.filter(frame => frame.type === 'approval').map(frame => frame.request.kind)).toEqual(['command', 'file'])
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS' })
+    expect(frames.at(-1)).not.toHaveProperty('notice')
+  })
+  it('replaces nested and dotted private OMP tool overrides before ask-mode launch', async () => {
+    const { root, input } = await fixture('omp', 'approval-write')
+    const original = JSON.stringify({ tools: { approvalMode: 'yolo', approval: { write: 'allow', edit: 'allow', bash: 'allow' } },
+      'tools.approval.write': 'allow', 'tools.approval': { bash: 'allow' }, 'tools.approvalMode': 'yolo' })
+    const userConfig = join(root, 'synthetic-user-config.yml')
+    await writeFile(userConfig, original)
+    let privateRoot = ''
+    const { code, frames } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => 'deny', async request => {
+      privateRoot = request.nativeRoot ?? join(request.stateDirectory, 'agent')
+      // Synthetic stale private snapshots, never a user's real config or credentials.
+      await writeFile(join(privateRoot, 'native-auth.json'), original)
+      await writeFile(join(privateRoot, 'config.yml'), original)
+    })
+    expect(code).toBe(0)
+    expect(frames.filter(frame => frame.type === 'approval')).toHaveLength(1)
+    const config = JSON.parse(await readFile(join(privateRoot, 'config.yml'), 'utf8'))
+    expect(Object.keys(config).some(key => key.startsWith('tools.'))).toBe(false)
+    expect(config.tools).toEqual({ approvalMode: 'always-ask', approval: { write: 'prompt', edit: 'prompt', bash: 'prompt' } })
+    expect(await readFile(userConfig, 'utf8')).toBe(original)
+    if (process.platform !== 'win32') expect((await stat(join(privateRoot, 'config.yml'))).mode & 0o777).toBe(0o600)
+  })
+  it.each([
+    ['no-write', 'workspace-write', 'always-ask'],
+    ['no-yolo', 'danger-full-access', 'write'],
+  ] as const)('OMP %s falls back from %s to %s before RPC', async (scenario, access, expected) => {
+    const { root, input } = await fixture('omp', scenario)
+    const { code, frames, state } = await relayRun({ ...input, mode: 'accept-edits', access }, () => undefined)
+    expect(code).toBe(0)
+    expect(frames.some(frame => frame.event?.text.includes('原生目标权限模式不可用') || frame.event?.text.includes('原生完全权限不可用'))).toBe(true)
+    const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
+    expect(argv[argv.indexOf('--approval-mode') + 1]).toBe(expected)
+    expect(JSON.parse(await readFile(join(state, 'agent/config.yml'), 'utf8')).tools.approvalMode).toBe(expected)
+    const probe = JSON.parse(await readFile(join(root, 'help-observed.json'), 'utf8'))
+    expect(probe.accountKey).toBe(false)
+    expect(probe.cwd).toBe(probe.home)
+    await expect(stat(probe.home)).rejects.toThrow()
+  })
+  it.each(['no-ask', 'no-modes', 'help-error'])('OMP %s refuses unavailable ask before starting RPC', async scenario => {
+    const { input } = await fixture('omp', scenario)
+    const { code, frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => undefined)
+    expect(code).not.toBe(0)
+    expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: expect.stringContaining('OMP 原生询问模式不可用') })
+    expect(frames.some(frame => frame.type === 'session')).toBe(false)
+    await expect(stat(join(state, 'agent/observed-argv.json'))).rejects.toThrow()
   })
   it('refuses an unknown tier in the bridge request', async () => {
     const { input } = await fixture('pi')
@@ -1282,8 +1379,10 @@ it.each(['pi', 'omp'] as const)(
     for (const path of foreign) await writeFile(path, 'FOREIGN_API_KEY=SYNTHETIC_FOREIGN_DOTENV\n')
     const guard = `import {readFileSync as probeRead} from 'node:fs';
 if(process.env.FOREIGN_API_KEY) throw new Error('foreign dotenv credential was projected');
+if(!process.argv.includes('--help')){
 if(process.env.FIXTURE_API_KEY!==${JSON.stringify(fixtureKey)}) throw new Error('own env lost');
 probeRead(process.env.PI_CODING_AGENT_DIR+(${JSON.stringify(cli)}==='pi'?'/auth.json':'/agent.db'));
+}else if(process.env.FIXTURE_API_KEY) throw new Error('help probe received account credentials');
 `
     for (const path of [input.executable, join(root, 'dist/core/model-runtime.js')])
       await writeFile(path, guard + (await readFile(path, 'utf8')))

@@ -284,11 +284,11 @@ export function workerArguments(
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
   if (cli === 'antigravity')
-    return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId)
+    return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId, access)
   if ((cli === 'qoder' || cli === 'qodercn')) {
     if (!nativeTransport) throw new Error('Qoder 仅支持已确认的原生 ACP 通信，请新建任务')
     if (mode === 'plan') throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
-    return [executable, '--acp', '--permission-mode', access === 'danger-full-access' ? 'bypass_permissions' : 'accept_edits', '--model', preference.model]
+    return [executable, '--acp', '--permission-mode', access === 'read-only' ? 'default' : access === 'danger-full-access' ? 'bypass_permissions' : 'auto', '--model', preference.model]
   }
   if (cli === 'codex')
     return [
@@ -305,6 +305,7 @@ export function workerArguments(
       `sandbox_mode=${JSON.stringify(mode === 'plan' ? 'read-only' : (access ?? 'workspace-write'))}`,
       '-c',
       `approval_policy=${JSON.stringify(mode === 'plan' || !access || access === 'danger-full-access' ? 'never' : 'on-request')}`,
+      ...(mode !== 'plan' && access ? ['-c', `approvals_reviewer=${JSON.stringify(access === 'workspace-write' ? 'auto_review' : 'user')}`] : []),
       task,
     ]
   if (cli === 'claude')
@@ -319,7 +320,7 @@ export function workerArguments(
       preference.model,
       ...(preference.effort !== 'default' ? ['--effort', preference.effort] : []),
       '--permission-mode',
-      mode === 'plan' ? 'plan' : access === 'danger-full-access' ? 'bypassPermissions' : 'acceptEdits',
+      mode === 'plan' ? 'plan' : access === 'danger-full-access' ? 'bypassPermissions' : access === 'read-only' ? 'manual' : access === 'workspace-write' ? 'auto' : 'acceptEdits',
       ...(conversationId ? ['--resume', conversationId] : []),
       task,
     ]

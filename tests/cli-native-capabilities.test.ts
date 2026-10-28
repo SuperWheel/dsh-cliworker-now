@@ -61,9 +61,9 @@ describe('native capability table (synthetic)', () => {
     for (const [mode, access] of [['accept-edits', 'workspace-write'], ['plan', 'danger-full-access'], ['accept-edits', undefined]] as const)
       expect(piOmpNativeTools('pi', mode, access)).not.toContain('bash')
     // OMP asks before each bash call and relays that question to DSH.
-    for (const access of ['workspace-write', 'danger-full-access'])
+    for (const access of ['read-only', 'workspace-write', 'danger-full-access'])
       expect(piOmpNativeTools('omp', 'accept-edits', access)).toContain('bash')
-    for (const [mode, access] of [['plan', 'danger-full-access'], ['accept-edits', 'read-only'], ['accept-edits', undefined]] as const)
+    for (const [mode, access] of [['plan', 'danger-full-access'], ['accept-edits', undefined]] as const)
       expect(piOmpNativeTools('omp', mode, access)).not.toContain('bash')
     const full = await lease('pi', 'accept-edits', { native: nativeCliCapabilities({ cli: 'pi', mode: 'accept-edits', access: 'danger-full-access' }) })
     const names = await full.names()
@@ -74,6 +74,28 @@ describe('native capability table (synthetic)', () => {
     const plan = await lease('pi', 'plan')
     for (const name of ['write', 'edit']) expect(await plan.names()).not.toContain(name)
     expect(piOmpNativeTools('pi', 'plan')).toEqual(['read', 'grep', 'find', 'ls'])
+  })
+  it('treats Pi accept-edits/read-only as plan in both native tools and DSH write coverage', async () => {
+    const native = nativeCliCapabilities({ cli: 'pi', mode: 'accept-edits', access: 'read-only' })
+    const pi = await lease('pi', 'accept-edits', { native })
+    expect(piOmpNativeTools('pi', 'accept-edits', 'read-only')).toEqual(['read', 'grep', 'find', 'ls'])
+    expect(native.classes).not.toContain('file-write')
+    expect(native.classes).not.toContain('shell')
+    for (const name of ['write', 'edit']) expect(await pi.names()).not.toContain(name)
+    expect(pi.execute).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['plan', 'danger-full-access', false],
+    ['accept-edits', 'read-only', true],
+    ['accept-edits', 'workspace-write', true],
+    ['accept-edits', 'danger-full-access', true],
+  ] as const)('OMP %s/%s keeps capability coverage aligned with native tools', async (mode, access, writable) => {
+    const native = nativeCliCapabilities({ cli: 'omp', mode, access })
+    expect(native.classes.includes('file-write')).toBe(writable)
+    expect(native.classes.includes('shell')).toBe(writable)
+    const omp = await lease('omp', mode, { native })
+    for (const name of ['read', 'grep', 'write', 'edit']) expect(await omp.names()).not.toContain(name)
+    expect((await omp.names()).includes('bash')).toBe(!writable)
   })
   it('drops a DSH MCP server only when the CLI loads the same server natively', () => {
     const native = nativeCliCapabilities({ cli: 'claude', mode: 'accept-edits', mcpServers: ['github', 'my.server'] })

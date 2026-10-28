@@ -88,7 +88,10 @@ export type WorkerStatus =
   | 'failed'
   | 'interrupted'
   | 'uncertain'
+/** The Worker's plan switch: `plan` runs the CLI in its native plan mode. */
 export type TaskMode = 'plan' | 'accept-edits'
+/** Worker permission level: first item (ask), middle, full. Capped by the parent per run. */
+export type WorkerLevel = 'ask' | 'auto' | 'full'
 export interface Preference {
   /** Missing in v0.1.x data means Antigravity. */
   cli?: CliId
@@ -135,6 +138,8 @@ export interface Worker {
   role?: RoleSnapshot
   preference: Preference
   mode: TaskMode
+  /** The user's chosen level; missing means full, i.e. follow the parent conversation. */
+  level?: WorkerLevel
   conversationId?: string
   /** Native sessions this task left when it continued in a new session under another account. */
   previousConversationIds?: string[]

@@ -27,6 +27,7 @@ import {
   type WorkerEvent,
   type TaskMode,
   type Worker,
+  type WorkerLevel,
   type WorkerSnapshot,
   type HistoryPage,
   type TimelineItem,
@@ -88,13 +89,12 @@ import type { TokenUsage } from '../shared/telemetry.ts'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 import {
-  ACCESS_LABELS,
   approvalDecisionText,
   type NativeAccess,
   type NativeApprovalDecision,
   type NativeApprovalRequest,
 } from './native-approval-policy.ts'
-import { workerPermissionOptions } from '../shared/worker-permissions.ts'
+import { askRunsAsPlan, cliLevelOptions, workerPlanSupported } from '../shared/worker-permissions.ts'
 import { GOAL_OBJECTIVE_LIMIT, type WorkerGoal } from '../shared/conversation-features.ts'
 import {
   createIsolatedWorkspace,
@@ -288,8 +288,8 @@ export class WorkerRuntime {
       if (this.approvalHandler === handler) this.approvalHandler = undefined
     }
   }
-  private accessSnapshot?: (worker: Worker) => NativeAccess | undefined
-  /** Parent DSH permission tier, read once when a turn launches. */
+  private accessSnapshot?: (worker: Worker) => { access: NativeAccess; label: string } | undefined
+  /** The run's tier (Worker level capped by the parent) and its timeline label, read once at launch. */
   setAccessSnapshot(read: NonNullable<WorkerRuntime['accessSnapshot']>): () => void {
     this.accessSnapshot = read
     return () => {
@@ -1683,11 +1683,13 @@ export class WorkerRuntime {
     this.changed()
     return updated
   }
-  configureWorkerPermission(parent: string, id: string, mode: TaskMode, preparationId?: string): Worker {
+  /** @param setting - The plan switch (`plan`/`accept-edits`) or a level; the caller enforces the parent cap. */
+  configureWorkerPermission(parent: string, id: string, setting: TaskMode | WorkerLevel, preparationId?: string): Worker {
     if (this.disposed) throw new Error('CLI Worker is shutting down')
     const worker = this.get(parent, id)
     if (isRetiredCli(cliOf(worker.preference))) throw new Error(RETIRED_HARNESS_NOTICE)
-    if (!workerPermissionOptions(worker).some((option) => option.value === mode))
+    const plan = setting === 'plan' || setting === 'accept-edits'
+    if (plan ? setting === 'plan' && !workerPlanSupported(worker) : !cliLevelOptions(cliOf(worker.preference)).some((option) => option.value === setting))
       throw new Error('当前 CLI 通路不支持此权限模式')
     if (preparationId) {
       const preparation = this.preparations.get(id)
@@ -1698,7 +1700,7 @@ export class WorkerRuntime {
     if (this.followups.list(id).length)
       throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改权限')
     this.assertCliEnabled(cliOf(worker.preference))
-    const updated = { ...worker, mode }
+    const updated: Worker = plan ? { ...worker, mode: setting } : { ...worker, level: setting }
     this.storage.save(updated)
     this.changed()
     return updated
@@ -2486,14 +2488,13 @@ export class WorkerRuntime {
       await assertFirstPartyConfiguration(cliOf(worker.preference), directory, controller.signal)
       metadataReady = true
       // One tier snapshot drives both the launch and the bridge catalog built from it.
-      const access = this.accessSnapshot?.(worker)
+      const snapshot = this.accessSnapshot?.(worker)
+      const access = snapshot?.access
       harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated, access })
-      if (access) this.storage.append(worker, { kind: 'status', text: `本轮权限：${ACCESS_LABELS[access]}` })
-      // No confirmed native full-access mode: the CLI keeps its stricter write mode.
-      if (access === 'danger-full-access' && ['kimi', 'hermes', 'antigravity'].includes(cliOf(worker.preference)))
-        this.storage.append(worker, { kind: 'status', text: '该 CLI 没有已确认的原生完全权限模式，本轮按其写入模式运行；授权请求自动放行' })
-      // 仅可查看 launches every CLI in its native read-only/plan mode.
-      const launchMode: TaskMode = access === 'read-only' ? 'plan' : worker.mode
+      if (snapshot) this.storage.append(worker, { kind: 'status', text: `本轮权限：${snapshot.label}` })
+      // A first item that cannot ask (Antigravity 仅规划, Pi 只读) launches as plan;
+      // every other first item launches the CLI's native ask mode.
+      const launchMode: TaskMode = access === 'read-only' && askRunsAsPlan(cliOf(worker.preference)) ? 'plan' : worker.mode
       task.launchMode = launchMode
       const executionConfig = { ...this.config, timeLimit: limit,
         ...(access ? { access } : {}),

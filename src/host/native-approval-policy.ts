@@ -2,7 +2,8 @@
  * CLI permission tier and authorization decisions derived from the parent
  * conversation's DSH permission state. Pure: callers read DSH services.
  */
-import type { TaskMode } from '../shared/types.ts'
+import type { TaskMode, WorkerLevel } from '../shared/types.ts'
+import { effectiveLevel, levelAccess } from '../shared/worker-permissions.ts'
 
 /** DSH sandbox modes; also the CLI access tier a run is launched with. */
 export type NativeAccess = 'read-only' | 'workspace-write' | 'danger-full-access'
@@ -55,26 +56,27 @@ export interface PermissionState {
 }
 
 /**
- * The access tier a run starts with. Plan wins; otherwise the CLI follows the
- * parent's sandbox. Never wider than the parent.
+ * The access tier a run starts with. Plan wins; otherwise the Worker's level
+ * capped by the parent's sandbox. Never wider than the parent.
  */
-export function runAccess(mode: TaskMode, state: PermissionState): NativeAccess {
-  return mode === 'plan' || state.planMode ? 'read-only' : state.sandbox
+export function runAccess(mode: TaskMode, level: WorkerLevel | undefined, state: PermissionState): NativeAccess {
+  return mode === 'plan' || state.planMode ? 'read-only' : levelAccess(effectiveLevel(level, state.sandbox))
 }
 
 /**
  * Decide one request from the state current when it arrives. `ask` means the
- * user must answer; every other outcome is final and shows no prompt.
+ * user must answer; every other outcome is final and shows no prompt. A Worker
+ * at its first item always asks: the user chose to be asked.
  */
 export function decideApproval(
   mode: TaskMode,
+  level: WorkerLevel | undefined,
   state: PermissionState,
 ): NativeApprovalDecision | 'ask' {
   if (mode === 'plan' || state.planMode) return { decision: 'deny', source: 'plan' }
-  if (state.approval === 'never')
-    return state.sandbox === 'danger-full-access'
-      ? { decision: 'allow-once', source: 'full-access' }
-      : { decision: 'deny', source: 'preset' }
+  const effective = effectiveLevel(level, state.sandbox)
+  if (state.approval === 'never' && effective === 'full') return { decision: 'allow-once', source: 'full-access' }
+  if (state.approval === 'never' && effective !== 'ask') return { decision: 'deny', source: 'preset' }
   return 'ask'
 }
 

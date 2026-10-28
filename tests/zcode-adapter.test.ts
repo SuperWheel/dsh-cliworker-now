@@ -264,6 +264,16 @@ describe('ZCode adapter (explicitly synthetic fixtures)', () => {
     ).toEqual({ reasoningLevel: 'max' })
     expect(readFileSync(input.builtinConfig, 'utf8')).toBe(JSON.stringify(builtin()))
   })
+  it.each([
+    ['plan', 'danger-full-access', 'plan'],
+    ['accept-edits', 'read-only', 'build'],
+    ['accept-edits', 'workspace-write', 'edit'],
+    ['accept-edits', 'danger-full-access', 'yolo'],
+  ] as const)('maps %s / %s to %s in launch arguments', async (mode, access, expected) => {
+    const { input } = setup()
+    const launch = await prepareZCode({ ...input, mode, access })
+    expect(launch.argv[launch.argv.indexOf('--mode') + 1]).toBe(expected)
+  })
   it('replaces a planted personal-config symlink without touching its target', async () => {
     const { root, input, state } = setup(),
       outside = join(root, 'unrelated.json')

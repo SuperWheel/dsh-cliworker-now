@@ -105,17 +105,18 @@ function fixture(permissionComponent?: ComponentType<any>, modelRegistration?: {
       permissionForWorker: vi.fn(async () => ({
         ok: true,
         value: JSON.stringify({
-          currentValue: 'accept-edits',
+          currentValue: 'auto',
           writable: true,
           options: [
-            { value: 'accept-edits', name: '允许编辑', description: 'Synthetic CLI editable mode' },
-            { value: 'plan', name: '规划', description: 'Synthetic CLI readonly mode' },
+            { value: 'ask', name: '询问', description: 'Synthetic CLI ask level' },
+            { value: 'auto', name: '自动审批', description: 'Synthetic CLI middle level' },
           ],
+          plan: { supported: true, active: false },
         }),
       })),
-      configureWorkerPermission: vi.fn(async (_parent, _worker, mode) => ({
+      configureWorkerPermission: vi.fn(async (_parent, _worker, setting) => ({
         ok: true,
-        value: JSON.stringify({ ...worker, mode }),
+        value: JSON.stringify(setting === 'plan' || setting === 'accept-edits' ? { ...worker, mode: setting } : { ...worker, level: setting }),
       })),
       catalogForWorker: vi.fn(async () => ({
         ok: true,
@@ -237,7 +238,7 @@ it.each([names[1], names[2]])(
     expect(nativeProps.useProjection('permissions')).toEqual({ currentValue: 'workspace-write' })
     expect(nativeProps.useProjection('plan')).toEqual({ active: false, pending: false })
     expect(nativeProps.usePermissionCatalog((state: any) => state.value.options.map((option: any) => option.value)))
-      .toEqual(['workspace-write', 'read-only'])
+      .toEqual(['read-only', 'workspace-write'])
     expect(nativeProps.useProjection('other')).toEqual({ untouched: 'other' })
     const parentActual = f.native[name]!.mock.calls.filter(([props]) => props.sessionId === 'parent').at(
       -1,
@@ -251,14 +252,16 @@ it.each([names[1], names[2]])(
     expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledWith(
       'parent',
       'worker',
-      'plan',
+      'ask',
       expect.any(AbortSignal),
     )
+    // The level never stands in for the plan switch.
+    expect(nativeProps.useProjection('plan')).toEqual({ active: false, pending: false })
     expect(f.api.cliworker.catalogForWorker).not.toHaveBeenCalled()
   },
 )
 
-it('lets the installed native PermissionSelect choose its glyph, trigger and menu, and maps only supported presets to CLI modes', async () => {
+it('lets the installed native PermissionSelect choose its glyph, trigger and menu, and maps only supported presets to Worker levels', async () => {
   // SIMULATION: glyph/portal surfaces are test markers. The installed, unchanged
   // PermissionSelect owns glyph selection, its trigger, menu options and clicks.
   const primitives = {
@@ -284,47 +287,84 @@ it('lets the installed native PermissionSelect choose its glyph, trigger and men
   expect(currentMenu().side).toBe('top')
   expect(currentMenu().selectedId).toBe('workspace-write')
   expect(currentMenu().items.map((item: any) => [item.id, item.icon.type])).toEqual([
-    ['workspace-write', primitives.PermissionIconWorkspaceWriteRegular],
     ['read-only', primitives.PermissionIconReadOnlyRegular],
+    ['workspace-write', primitives.PermissionIconWorkspaceWriteRegular],
   ])
+  expect(currentMenu().items.map((item: any) => item.label)).toEqual(['询问', '自动审批'])
   await act(async () => currentMenu().onSelect('read-only'))
   expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledExactlyOnceWith(
-    'parent', 'worker', 'plan', expect.any(AbortSignal),
+    'parent', 'worker', 'ask', expect.any(AbortSignal),
   )
   expect(tree.root.findByType('button').findAllByType(primitives.PermissionIconReadOnlyRegular)).toHaveLength(1)
   await act(async () => currentMenu().onSelect('workspace-write'))
   expect(f.api.cliworker.configureWorkerPermission).toHaveBeenLastCalledWith(
-    'parent', 'worker', 'accept-edits', expect.any(AbortSignal),
+    'parent', 'worker', 'auto', expect.any(AbortSignal),
   )
   const props = f.native[names[1]]!.mock.calls.at(-1)![0]
-  for (const unsupported of ['danger-full-access', 'auto', 'accept-edits', 'plan'])
+  // Above the parent's cap, or not a DSH preset value at all.
+  for (const unsupported of ['danger-full-access', 'auto', 'accept-edits', 'plan', 'ask'])
     expect(await props.select(unsupported)).toBe(false)
   expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledTimes(2)
 })
 
-it('shows the CLI real mode on a locked PermissionSelect when the CLI has no plan mode', async () => {
-  // SIMULATION: a CLI whose only permission mode is accept-edits (e.g. Qoder).
+it('keeps the permission levels usable when the CLI has no plan mode', async () => {
+  // SIMULATION: a CLI without plan mode (e.g. Qoder) still has its three levels.
   const f = fixture()
   f.api.cliworker.permissionForWorker.mockResolvedValue({
     ok: true,
     value: JSON.stringify({
-      currentValue: 'accept-edits',
+      currentValue: 'auto',
       writable: true,
-      options: [{ value: 'accept-edits', name: '允许编辑', description: 'Synthetic only mode' }],
+      options: [
+        { value: 'ask', name: '询问', description: 'Synthetic ask level' },
+        { value: 'auto', name: '自动审批', description: 'Synthetic middle level' },
+      ],
+      plan: { supported: false, active: false },
     }),
   })
   const planless = { ...binding, capabilities: { ...binding.capabilities, plan: false } }
   f.bindings.publish(planless, { ...worker, harnessConversation: planless })
   const tree = await f.mount(names[1])
   const props = f.native[names[1]]!.mock.calls.at(-1)![0]
-  // Mapped to the native workspace-write preset, not left on the parent's preset.
-  expect(props.usePermissionCatalog((state: any) => state.value.defaultPreset)).toBe('workspace-write')
   expect(props.useProjection('permissions')).toEqual({ currentValue: 'workspace-write' })
-  expect(props.locked).toBe(true)
-  expect(JSON.stringify(tree.toJSON())).toContain('当前 CLI 只有“允许编辑”一种权限模式')
-  expect(await props.select('workspace-write')).toBe(false)
-  expect(f.api.cliworker.permissionForWorker).toHaveBeenCalled()
-  expect(f.api.cliworker.configureWorkerPermission).not.toHaveBeenCalled()
+  expect(props.locked).toBe(false)
+  expect(JSON.stringify(tree.toJSON())).not.toContain('一种权限模式')
+  await act(async () => {
+    expect(await props.select('read-only')).toBe(true)
+  })
+  expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledExactlyOnceWith(
+    'parent', 'worker', 'ask', expect.any(AbortSignal),
+  )
+})
+
+it('exits native plan mode through the plan switch and keeps the level', async () => {
+  // SIMULATION: a Worker planning at the ask level.
+  const f = fixture()
+  f.api.cliworker.permissionForWorker.mockResolvedValue({
+    ok: true,
+    value: JSON.stringify({
+      currentValue: 'ask',
+      writable: true,
+      options: [
+        { value: 'ask', name: '询问', description: 'Synthetic ask level' },
+        { value: 'auto', name: '自动审批', description: 'Synthetic middle level' },
+      ],
+      plan: { supported: true, active: true },
+    }),
+  })
+  f.bindings.publish(binding, { ...worker, mode: 'plan', level: 'ask' })
+  await f.mount(names[2])
+  const latest = () => f.native[names[2]]!.mock.calls.at(-1)![0]
+  expect(latest().useProjection('plan')).toEqual({ active: true, pending: false })
+  expect(latest().useProjection('permissions')).toEqual({ currentValue: 'read-only' })
+  await act(async () => {
+    expect(await latest().exitPlanMode()).toBeNull()
+  })
+  expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledExactlyOnceWith(
+    'parent', 'worker', 'accept-edits', expect.any(AbortSignal),
+  )
+  expect(latest().useProjection('plan')).toEqual({ active: false, pending: false })
+  expect(latest().useProjection('permissions')).toEqual({ currentValue: 'read-only' })
 })
 
 it('keeps native controls locked when the selected receipt belongs to another Worker and cancels permission reads on unmount', async () => {
@@ -359,12 +399,13 @@ it('preserves native inbox ownership and locks CLI settings while a native queue
 const permissionReceipt = (writable: boolean) => ({
   ok: true,
   value: JSON.stringify({
-    currentValue: 'accept-edits',
+    currentValue: 'auto',
     writable,
     options: [
-      { value: 'accept-edits', name: '允许编辑', description: 'Synthetic editable mode' },
-      { value: 'plan', name: '规划', description: 'Synthetic readonly mode' },
+      { value: 'ask', name: '询问', description: 'Synthetic ask level' },
+      { value: 'auto', name: '自动审批', description: 'Synthetic middle level' },
     ],
+    plan: { supported: true, active: false },
     ...(!writable && { reason: 'Synthetic parent authorization is readonly' }),
   }),
 })
@@ -477,7 +518,7 @@ it.each(['parent-changed', 'unmounted'] as const)(
     }
     expect(signal.aborted).toBe(true)
     await act(async () => {
-      save.resolve({ ok: true, value: JSON.stringify({ ...worker, mode: 'plan' }) })
+      save.resolve({ ok: true, value: JSON.stringify({ ...worker, level: 'ask' }) })
       expect(await result).toBe(false)
     })
     if (event === 'parent-changed') {
@@ -495,15 +536,16 @@ it.each(['read-first', 'save-first'] as const)(
     const tree = await f.mount(names[1])
     const latest = () =>
       f.native[names[1]]!.mock.calls.filter(([props]) => props.sessionId === 'child').at(-1)![0]
-    const stateReceipt = (currentValue: 'plan' | 'accept-edits') => ({
+    const stateReceipt = (currentValue: 'ask' | 'auto') => ({
       ok: true,
       value: JSON.stringify({
         currentValue,
         writable: true,
         options: [
-          { value: 'accept-edits', name: '允许编辑' },
-          { value: 'plan', name: '规划' },
+          { value: 'ask', name: '询问' },
+          { value: 'auto', name: '自动审批' },
         ],
+        plan: { supported: true, active: false },
       }),
     })
     const oldSave = Promise.withResolvers<{ ok: boolean; value: string }>()
@@ -513,33 +555,33 @@ it.each(['read-first', 'save-first'] as const)(
       pending = latest().select('read-only')
     })
     expect(latest().locked).toBe(true)
-    const updateWatch = async (mode: 'plan' | 'accept-edits') => {
+    const updateWatch = async (level: 'ask' | 'auto') => {
       await act(async () => {
-        f.updateSnapshot({ selected: { ...worker, mode }, selectedBusy: false, queuedFollowups: [] })
+        f.updateSnapshot({ selected: { ...worker, level }, selectedBusy: false, queuedFollowups: [] })
         tree.update(createElement(f.core.entriesOfSlot(names[1])[0]!.component as any, f.props()))
       })
     }
-    // The save was accepted as plan, then another native control changed it back
-    // to accept-edits before this control received its older save response.
-    f.api.cliworker.permissionForWorker.mockResolvedValueOnce(stateReceipt('plan'))
-    await updateWatch('plan')
+    // The save was accepted as ask, then another native control changed it back
+    // to auto before this control received its older save response.
+    f.api.cliworker.permissionForWorker.mockResolvedValueOnce(stateReceipt('ask'))
+    await updateWatch('ask')
     expect(latest().useProjection('permissions')).toEqual({ currentValue: 'read-only' })
     const newRead = Promise.withResolvers<ReturnType<typeof stateReceipt>>()
     f.api.cliworker.permissionForWorker.mockReturnValueOnce(newRead.promise)
-    await updateWatch('accept-edits')
+    await updateWatch('auto')
     expect(latest().useProjection('permissions')).toEqual({ currentValue: 'workspace-write' })
     const settleRead = async () => {
       await act(async () => {
-        newRead.resolve(stateReceipt('accept-edits'))
+        newRead.resolve(stateReceipt('auto'))
       })
     }
     const settleSave = async () => {
       await act(async () => {
-        oldSave.resolve({ ok: true, value: JSON.stringify({ ...worker, mode: 'plan' }) })
+        oldSave.resolve({ ok: true, value: JSON.stringify({ ...worker, level: 'ask' }) })
         expect(await pending).toBe(true)
       })
       // Even before the latest read resolves, the old response must not replace
-      // the newer mode already received from the Worker watch.
+      // the newer level already received from the Worker watch.
       expect(latest().useProjection('permissions')).toEqual({ currentValue: 'workspace-write' })
     }
     if (order === 'read-first') {
@@ -556,7 +598,7 @@ it.each(['read-first', 'save-first'] as const)(
     expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledExactlyOnceWith(
       'parent',
       'worker',
-      'plan',
+      'ask',
       expect.any(AbortSignal),
     )
   },

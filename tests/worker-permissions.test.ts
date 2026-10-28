@@ -17,7 +17,7 @@ import { CliWorkerService } from '../src/host/index.ts'
 import { WorkerRuntime } from '../src/host/runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
-import { workerPermissionOptions } from '../src/shared/worker-permissions.ts'
+import { cliLevelOptions, effectiveLevel, runsUnderViewOnly, workerLevelOptions, workerPlanSupported } from '../src/shared/worker-permissions.ts'
 import type { Worker } from '../src/shared/types.ts'
 
 // Actual rc.2 Agents, Session/Inbox and sandbox policies; actual Host permission
@@ -320,10 +320,12 @@ describe('Host Worker permission changes', () => {
     const originalHistory = f.storage.history(f.worker.id)
     const parentSeq = f.parent.session.seq
     const childSeq = f.child.session.seq
+    // 工作区内修改 caps the menu at the middle level; a Worker without a level follows it.
     expect(await f.read()).toMatchObject({
-      currentValue: 'accept-edits',
+      currentValue: 'auto',
       writable: true,
-      options: [{ value: 'plan' }, { value: 'accept-edits' }],
+      options: [{ value: 'ask', name: '询问' }, { value: 'auto', name: '自动审批' }],
+      plan: { supported: true, active: false },
     })
     const saved = await f.save('plan')
     expect(saved).toEqual({ ...f.worker, mode: 'plan' })
@@ -339,6 +341,39 @@ describe('Host Worker permission changes', () => {
     expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
     expect(f.backend.spawn).not.toHaveBeenCalled()
     expect((await f.save('accept-edits')).harnessConversation).toEqual(f.worker.harnessConversation)
+    // Levels are saved apart from the plan switch.
+    expect(await f.save('ask')).toMatchObject({ mode: 'accept-edits', level: 'ask' })
+    expect(await f.read()).toMatchObject({ currentValue: 'ask', plan: { active: false } })
+    await expect(f.save('full')).rejects.toThrow('高于主对话')
+    expect(f.runtime.get(f.parent.id, f.worker.id).level).toBe('ask')
+  })
+  it('keeps a saved level above a lowered parent and runs it capped, restoring it when the parent is raised', async () => {
+    const f = await fixture()
+    setSandboxMode(f.parent.session, 'danger-full-access')
+    expect((await f.read()).options.map((option: { value: string }) => option.value)).toEqual(['ask', 'auto', 'full'])
+    await f.save('full')
+    expect(f.child.ctx.get('sandboxPolicy')!.resolve({ session: f.child.session }).mode).toBe('danger-full-access')
+    setSandboxMode(f.parent.session, 'workspace-write')
+    const capped = await f.read()
+    expect(capped.currentValue).toBe('auto')
+    expect(capped.options.map((option: { value: string }) => option.value)).toEqual(['ask', 'auto'])
+    expect(capped.options[1].description).toContain('主对话为工作区内修改，最高可选自动审批')
+    expect(f.runtime.get(f.parent.id, f.worker.id).level).toBe('full')
+    setSandboxMode(f.parent.session, 'danger-full-access')
+    expect(await f.read()).toMatchObject({ currentValue: 'full' })
+  })
+  it('sets the child sandbox from the saved level, below the parent when the Worker asks', async () => {
+    const f = await fixture()
+    const policy = () => f.child.ctx.get('sandboxPolicy')!.resolve({ session: f.child.session }).mode
+    await f.save('ask')
+    expect(policy()).toBe('read-only')
+    await f.save('auto')
+    expect(policy()).toBe('workspace-write')
+    await f.save('plan')
+    expect(policy()).toBe('read-only')
+    await f.save('accept-edits')
+    expect(policy()).toBe('workspace-write')
+    expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it('updates the actual child plan projection and sandbox immediately in both directions without changing the parent', async () => {
     const f = await fixture()
@@ -428,19 +463,23 @@ describe('Host Worker permission changes', () => {
   it('keeps a read-only parent authoritative for the child sandbox, never wider', async () => {
     const f = await fixture()
     setSandboxMode(f.parent.session, 'read-only')
-    // 仅可查看 admits the Worker setting; its runs stay capped at read-only.
-    expect(await f.read()).toMatchObject({ writable: true })
+    // 仅可查看 admits the Worker setting; its runs stay capped at the first item.
+    expect(await f.read()).toMatchObject({ writable: true, currentValue: 'ask', options: [{ value: 'ask' }] })
+    await expect(f.save('auto')).rejects.toThrow('高于主对话')
     await f.save('accept-edits')
     expect(f.child.ctx.get('sandboxPolicy')!.resolve({ session: f.child.session }).mode).toBe('read-only')
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it('does not advertise or save a plan mode for Hermes at either Host or runtime boundary', async () => {
     const f = await fixture('hermes')
-    expect(await f.read()).toMatchObject({ writable: true, options: [{ value: 'accept-edits' }] })
-    expect((await f.read()).options).toHaveLength(1)
+    // Hermes has no first item; 工作区内修改 leaves only its middle level.
+    expect(await f.read()).toMatchObject({ writable: true, options: [{ value: 'auto' }], plan: { supported: false } })
     await expect(f.save('plan')).rejects.toThrow('不支持')
     expect(() => f.runtime.configureWorkerPermission(f.parent.id, f.worker.id, 'plan')).toThrow('不支持')
+    await expect(f.save('ask')).rejects.toThrow('不支持')
     expect((await f.save('accept-edits')).conversationId).toBe(f.worker.conversationId)
+    setSandboxMode(f.parent.session, 'read-only')
+    expect(await f.read()).toMatchObject({ writable: false, options: [], reason: expect.stringContaining('没有可用档位') })
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it.each(['next-turn', 'next-step'] as const)(
@@ -508,7 +547,7 @@ describe('Host Worker permission changes', () => {
     await expect(
       f.service.configureWorkerPermission(f.child.id, f.worker.id, 'plan', f.signal),
     ).rejects.toThrow()
-    for (const mode of ['auto', 'full-access', 'unknown']) await expect(f.save(mode)).rejects.toThrow()
+    for (const mode of ['full', 'danger-full-access', 'full-access', 'unknown']) await expect(f.save(mode)).rejects.toThrow()
     const abort = new AbortController()
     abort.abort()
     await expect(
@@ -518,16 +557,33 @@ describe('Host Worker permission changes', () => {
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it('advertises Kimi plan only for the verified native ACP route', () => {
-    expect(
-      workerPermissionOptions({ preference: { cli: 'kimi', model: 'fixture', effort: 'default' } }).map(
-        (option) => option.value,
-      ),
-    ).toEqual(['accept-edits'])
-    expect(
-      workerPermissionOptions({
-        preference: { cli: 'kimi', model: 'fixture', effort: 'default' },
-        transport: 'kimi-acp-v1',
-      }).map((option) => option.value),
-    ).toEqual(['plan', 'accept-edits'])
+    expect(workerPlanSupported({ preference: { cli: 'kimi', model: 'fixture', effort: 'default' } })).toBe(false)
+    expect(workerPlanSupported({ preference: { cli: 'kimi', model: 'fixture', effort: 'default' }, transport: 'kimi-acp-v1' })).toBe(true)
+  })
+  it('names each CLI level for what it really does', () => {
+    const names = (cli: NonNullable<Worker['preference']['cli']>) => cliLevelOptions(cli).map((option) => option.name)
+    expect(names('codex')).toEqual(['询问', '自动审批', '完全权限'])
+    expect(names('antigravity')).toEqual(['仅规划', '自动审批', '完全权限'])
+    expect(names('pi')).toEqual(['只读', '自动批准编辑', '完全权限'])
+    expect(names('hermes')).toEqual(['自动审批', '完全权限'])
+    expect(names('zcode')).toEqual(['询问', '仅工作区编辑', '完全权限'])
+    expect(names('opencode')).toEqual(['询问', '仅工作区编辑', '完全权限'])
+    expect(names('omp')).toEqual(['询问', '自动批准编辑', '完全权限'])
+    // Kimi's native default auto-approves edits inside a Git workspace.
+    expect(names('kimi')).toEqual(['仅工作区编辑', '自动审批', '完全权限'])
+    expect(names('harness')).toEqual([])
+    const codex = { preference: { cli: 'codex' as const, model: 'fixture', effort: 'default' as const } }
+    expect(workerLevelOptions(codex, 'read-only').map((option) => option.value)).toEqual(['ask'])
+    // Under 仅可查看 a first item that would not ask before every change is withheld.
+    for (const cli of ['kimi', 'antigravity', 'hermes'] as const) {
+      expect(runsUnderViewOnly(cli)).toBe(false)
+      expect(workerLevelOptions({ preference: { cli, model: 'fixture', effort: 'default' } }, 'read-only')).toEqual([])
+    }
+    for (const cli of ['codex', 'claude', 'qoder', 'qodercn', 'grok', 'mimo', 'zcode', 'opencode', 'pi', 'omp'] as const)
+      expect(runsUnderViewOnly(cli)).toBe(true)
+    expect(workerLevelOptions(codex, 'danger-full-access').every((option) => !option.description.includes('主对话为'))).toBe(true)
+    expect(effectiveLevel(undefined, 'workspace-write')).toBe('auto')
+    expect(effectiveLevel('ask', 'danger-full-access')).toBe('ask')
+    expect(effectiveLevel('full', 'read-only')).toBe('ask')
   })
 })

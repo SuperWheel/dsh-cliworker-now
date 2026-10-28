@@ -10,7 +10,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, writeFile, rename, realpath, unlink, rmdir, lstat, open, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
-import { ompConfigurationEnvironment } from './pi-omp-environment.mjs'
+import { ompConfigurationEnvironment, ompPermissionSettings, probeOmpApprovalModes, OMP_APPROVAL_UNAVAILABLE } from './pi-omp-environment.mjs'
 import { readFile } from 'node:fs/promises'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { ownsOwnAccountLease, OWN_ACCOUNT_BUSY } from './own-account-lease.mjs'
@@ -38,6 +38,7 @@ const safeErrors = new Set([
   '无法读取 Pi/OMP 原生模型目录，请检查本机配置',
   OWN_ACCOUNT_BUSY,
   '账号配置已变化，请重新刷新模型',
+  OMP_APPROVAL_UNAVAILABLE,
 ])
 const errorMessage = (error) =>
   error instanceof Error && safeErrors.has(error.message)
@@ -116,7 +117,7 @@ const toolOutcomes = createToolOutcomes()
 // Pending OMP approvals relayed to the Host, by bridge id; each settles exactly once.
 const approvals = new Map()
 /**
- * OMP 16.4 asks for a tool approval as an RPC `select` titled "Allow tool: <name>"
+ * OMP 16.4.4 asks for write/edit/bash approval as an RPC `select` titled "Allow tool: <name>"
  * with exactly Approve/Deny. Anything else stays an unanswerable interactive request.
  */
 function ompApprovalRequest(value) {
@@ -300,8 +301,14 @@ try {
   // Pi's SDK is loaded in this process and consults process.env itself. Apply
   // the same own-source environment before importing it, not only at spawn.
   process.env = env
-  // OMP asks before writes/bash under `write`; 完全权限 matches the DSH tier.
-  const ompApprovalMode = config.access === 'danger-full-access' ? 'yolo' : 'write'
+  if (config.cli === 'pi' && config.access === 'read-only') config.mode = 'plan'
+  const ompPermissions = config.cli === 'omp'
+    ? ompPermissionSettings(config.access, config.discover || config.metadataPhase
+      ? ['always-ask', 'write', 'yolo']
+      : await probeOmpApprovalModes(config.executable, metadataController.signal))
+    : undefined
+  if (stopped) throw new Error('任务已停止')
+  if (ompPermissions?.notice) event({ kind: 'status', text: ompPermissions.notice })
   const isolated =
     config.cli === 'pi'
       ? [
@@ -320,7 +327,7 @@ try {
           '--no-lsp',
           '--no-pty',
           '--approval-mode',
-          ompApprovalMode,
+          ompPermissions.mode,
           '--config',
           join(nativeRoot, 'config.yml'),
         ]
@@ -331,7 +338,7 @@ try {
     await writePrivateFile(
       join(nativeRoot, 'config.yml'),
       JSON.stringify({
-        ...nativeAuth,
+        ...Object.fromEntries(Object.entries(nativeAuth).filter(([key]) => key !== 'tools' && !key.startsWith('tools.'))),
         startup: { setupWizard: false, checkUpdate: false, showSplash: false },
         disabledProviders: [
           'native',
@@ -349,8 +356,7 @@ try {
         mcp: { enableProjectConfig: false },
         retry: { modelFallback: false },
         memory: { backend: 'off' },
-        // 完全权限 runs OMP's own yolo; otherwise exec-tier tools (bash) ask and the Host decides.
-        tools: { approvalMode: ompApprovalMode },
+        tools: ompPermissions.tools,
       }),
     )
   }

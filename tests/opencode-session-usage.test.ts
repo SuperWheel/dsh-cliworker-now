@@ -18,6 +18,7 @@ vi.mock('../src/host/native-http.mjs', async load => {
       wire.calls.push(path)
       if (path === '/doc') return { paths: { '/event': {}, '/session/{sessionID}/prompt_async': {}, '/session/{sessionID}/abort': {} } }
       if (path === '/provider') return { all: [{ id: 'simulated', models: { chat: { id: 'chat' } } }] }
+      if (path === '/permission/skip-all' || path === '/permission/auto-approve-delete') return false
       if (path === '/session') return { id: 'ses_USAGE', tokens: { input: 9999 } }
       if (path === '/session/ses_USAGE') {
         wire.reads++

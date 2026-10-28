@@ -24,14 +24,16 @@ import {
   CLI_LABELS,
   type ModelChoice,
   type Preference,
+  type TaskMode,
   type Worker,
+  type WorkerLevel,
 } from '../shared/types.ts'
 import type { WorkerPermissionState } from '../shared/worker-permissions.ts'
 import { visibleModelChoices } from '../shared/model-presentation.ts'
 import type { HarnessBindingRegistry, HarnessNativeBinding } from './harness-binding-registry.ts'
 import { value, type API, type Snapshot } from './workers.ts'
 import type { installHarnessNativeAttachments } from './harness-native-attachments.ts'
-import { harnessFeatureReason, harnessPermissionReason } from './harness-feature-support.ts'
+import { harnessFeatureReason } from './harness-feature-support.ts'
 import { openHarnessWorkerGoal } from './harness-goal-editor.ts'
 import { effortLabel, languagePreference, t } from './i18n.ts'
 import { hostText } from './operation-error.ts'
@@ -165,7 +167,7 @@ export function installHarnessNativeCommands(
     return binding as OwnedBinding
   }
   const reasonFor = (binding: OwnedBinding, command: Command) =>
-    harnessFeatureReason(binding, command) || (command === 'permission' ? harnessPermissionReason(binding) : undefined) ||
+    harnessFeatureReason(binding, command) ||
     (command === 'feedback' && !features.openFeedback ? t('Harness 反馈服务尚未就绪') : undefined) ||
     (command === 'fork' ? features.forkReason?.(binding.sessionId) || (!features.fork ? t('CLI 分支入口尚未就绪') : undefined) : undefined)
   const open = (session: ClientSessionContext, command: SettingCommand, segment: TokenSegment) => {
@@ -281,8 +283,15 @@ export function installHarnessNativeCommands(
           ) as WorkerPermissionState
           check()
           if (!permission.writable) throw new Error(hostText(permission.reason) || t('当前任务暂不可修改权限'))
-          if (command === 'plan' && !permission.options.some((option) => option.value === 'plan'))
-            throw new Error(t('当前 CLI 不支持规划模式'))
+          if (command === 'plan') {
+            if (!permission.plan.supported) throw new Error(t('当前 CLI 不支持规划模式'))
+            // The plan switch is separate from the level and keeps it.
+            modes = new Set(['plan', 'accept-edits'])
+            return [
+              { id: 'plan', label: t('开启规划'), detail: t('以 CLI 原生规划模式运行，只出方案、不改文件'), active: permission.plan.active },
+              { id: 'accept-edits', label: t('关闭规划'), detail: t('按当前权限档位执行'), active: !permission.plan.active },
+            ]
+          }
           modes = new Set(permission.options.map((option) => option.value))
           return permission.options.map((option) => ({
             id: option.value,
@@ -317,18 +326,14 @@ export function installHarnessNativeCommands(
               ),
             ) as Worker
           } else {
-            if (
-              !modes.has(option.id) ||
-              (option.id !== 'plan' && option.id !== 'accept-edits') ||
-              !api.cliworker.configureWorkerPermission
-            )
+            if (!modes.has(option.id) || !api.cliworker.configureWorkerPermission)
               throw new Error(t('当前 CLI 不支持此权限模式'))
             saved = JSON.parse(
               value(
                 await api.cliworker.configureWorkerPermission(
                   binding.parentSessionId,
                   binding.workerId,
-                  option.id,
+                  option.id as TaskMode | WorkerLevel,
                   lifetime.signal,
                 ),
               ),

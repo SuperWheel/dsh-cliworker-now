@@ -146,6 +146,7 @@ describe('OMP original-process bridge integration (simulated CLI)', () => {
     await writeFile(history, 'SIMULATED SESSION: one user message\n')
     await writeFile(executable, `// Simulated RPC, never imports external source or calls a model.
 import {createInterface} from 'node:readline';import {writeFileSync} from 'node:fs';
+if(process.argv.includes('--help')){process.stdout.write('--approval-mode=<value> (always-ask|write|yolo)');process.exit(0)}
 const scenario=${JSON.stringify(scenario)},calls=[],history=${JSON.stringify(history)};
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 if(scenario!=='unsupported')send({type:'available_commands_update',commands:${JSON.stringify(commands)}});

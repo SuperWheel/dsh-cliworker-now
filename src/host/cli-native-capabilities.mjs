@@ -11,15 +11,15 @@ export const CAPABILITY_CLASSES = ['file-read', 'file-write', 'search', 'shell',
 /**
  * Pi/OMP `--tools`. Pi has no native approval to relay, so its bash runs only
  * when the DSH tier is 完全权限; otherwise the DSH shell fallback asks the Host.
- * OMP asks before each bash call and the bridge relays it, so it gets bash in
- * either writable tier.
+ * OMP relays approvals in both restricted tiers, so ask also exposes bash.
  */
 export function piOmpNativeTools(cli, mode, access) {
+  const writable = mode === 'accept-edits' && !(cli === 'pi' && access === 'read-only')
   const bash = mode === 'accept-edits' &&
-    (cli === 'pi' ? access === 'danger-full-access' : ['workspace-write', 'danger-full-access'].includes(access))
+    (cli === 'pi' ? access === 'danger-full-access' : ['read-only', 'workspace-write', 'danger-full-access'].includes(access))
   return [
     ...(cli === 'pi' ? ['read', 'grep', 'find', 'ls'] : ['read', 'grep', 'glob']),
-    ...(mode === 'accept-edits' ? ['write', 'edit'] : []),
+    ...(writable ? ['write', 'edit'] : []),
     ...(bash ? ['bash'] : []),
   ]
 }
@@ -53,6 +53,10 @@ const tables = {
     const tools = piOmpNativeTools('pi', mode, access)
     return ['file-read', ...(tools.includes('write') ? ['file-write'] : []), 'search', ...(tools.includes('bash') ? ['shell'] : []), 'image-read']
   },
+  omp: (mode, access) => {
+    const tools = piOmpNativeTools('omp', mode, access)
+    return ['file-read', ...(tools.includes('write') ? ['file-write'] : []), 'search', ...(tools.includes('bash') ? ['shell'] : [])]
+  },
   grok: mode => mode === 'plan'
     ? ['file-read', 'search', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])]
     : ['file-read', 'file-write', 'search', 'shell', 'skills', ...(GROK_NATIVE_WEB ? ['web'] : [])],
@@ -70,6 +74,7 @@ const mcpImages = new Set(['claude', 'opencode', 'mimo', 'kimi'])
  * offers every granted DSH tool as before (the documented rollback).
  */
 export function nativeCliCapabilities({ cli, mode, access, mcpServers = [] }) {
+  if (cli === 'pi' && access === 'read-only') mode = 'plan'
   const classes = tables[cli]?.(mode, access) ?? []
   // Plan mode withholds native writes on purpose; a DSH write is no fallback there.
   const withheld = tables[cli] && mode === 'plan' ? ['file-write'] : []

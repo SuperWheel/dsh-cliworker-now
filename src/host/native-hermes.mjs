@@ -232,7 +232,7 @@ export function hermesApprovalRequest(event) {
 }
 
 export async function runNativeHermes(config, io) {
-  if (config.mode !== 'accept-edits') throw new Error('Hermes 当前原生通路不支持只读派遣')
+  if (config.mode !== 'accept-edits' || config.access === 'read-only') throw new Error('Hermes 当前原生通路不支持询问或只读派遣')
   const selection = selected(config),
     limit = httpLimits(config)
   const key = randomBytes(32).toString('hex'),

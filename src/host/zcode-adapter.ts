@@ -15,6 +15,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto'
 import { join, dirname, basename, resolve } from 'node:path'
 import { homedir } from 'node:os'
+import type { NativeAccess } from './native-approval-policy.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import { EFFORTS, type Effort, type ModelChoice, type TaskMode } from '../shared/types.ts'
@@ -53,6 +54,7 @@ export interface ZCodeInput {
   project: string
   preference: { model: string; effort: Effort }
   mode: TaskMode
+  access?: NativeAccess
   prompt: string
   conversationId?: string
   nativeTransport?: boolean
@@ -224,7 +226,7 @@ export async function prepareZCode(input: ZCodeInput) {
     '--cwd',
     input.project,
     '--mode',
-    input.mode === 'plan' ? 'plan' : 'edit',
+    input.mode === 'plan' ? 'plan' : input.access === 'read-only' ? 'build' : input.access === 'danger-full-access' ? 'yolo' : 'edit',
     '--output-format',
     'stream-json',
     '--disallowedTools',

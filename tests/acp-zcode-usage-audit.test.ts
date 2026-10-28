@@ -69,8 +69,9 @@ describe('Kimi/Grok/ZCode protocol audit (offline synthetic evidence)', () => {
   it.each(['kimi', 'grok'] as const)('%s separates public thought spans and retains ACP content-only tool receipts', async (cli) => {
     const f = events(), native: any[] = []
     let receive!: (message: any) => void
-    const state = { sessionId: 'synthetic', modes: { currentModeId: 'default' },
-      configOptions: [{ id: 'model', currentValue: 'model', options: [{ value: 'model' }] }] }
+    const state = { sessionId: 'synthetic', modes: { currentModeId: 'yolo', availableModes: [{ id: 'default' }, { id: 'yolo' }] },
+      configOptions: [{ id: 'model', currentValue: 'model', options: [{ value: 'model' }] },
+        { id: 'mode', currentValue: 'yolo', options: [{ value: 'default' }, { value: 'yolo' }] }] }
     const peer = {
       async request(method: string) {
         if (method === 'initialize') return { protocolVersion: 1 }

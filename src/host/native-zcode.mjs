@@ -180,7 +180,7 @@ export async function runNativeZcode(config, io) {
     modelId: config.preference.model.slice(slash + 1),
   }
   const account = nativeAccount(config, model)
-  const mode = config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'yolo' : 'edit'
+  let mode = config.mode === 'plan' ? 'plan' : config.access === 'read-only' ? 'build' : config.access === 'danger-full-access' ? 'yolo' : 'edit'
   const denyIndex = config.argv.indexOf('--disallowedTools')
   const toolDenylist = denyIndex >= 0 ? config.argv[denyIndex + 1]?.split(',').filter(Boolean) : []
   const inputId = randomUUID()
@@ -513,7 +513,7 @@ export async function runNativeZcode(config, io) {
           {
             ...common,
             workspace: { workspaceKey: config.project, workspacePath: config.project },
-            mode,
+            mode: mode === 'plan' ? 'plan' : 'build',
             // 0.16.9 converts an initial model to a provider/model string and
             // discards required reasoning options. prepareZCode already set the
             // complete private default; setModel + readback below are mandatory
@@ -529,10 +529,22 @@ export async function runNativeZcode(config, io) {
       { sessionId, model: selection, persistAsWorkspaceLastUsed: false },
       { jsonrpc: false },
     )
-    await peer.request('session/setMode', { sessionId, mode }, { jsonrpc: false })
-    snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
-    readIdentity(snapshot, sessionId, config.project)
-    confirmSelection(snapshot, selection, mode)
+    const modes = mode === 'yolo' ? ['yolo', 'edit', 'build'] : mode === 'edit' ? ['edit', 'build'] : [mode]
+    for (const candidate of modes) {
+      try {
+        await peer.request('session/setMode', { sessionId, mode: candidate }, { jsonrpc: false })
+        snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
+        readIdentity(snapshot, sessionId, config.project)
+        confirmSelection(snapshot, selection, candidate)
+        if (candidate !== mode) io.event({ kind: 'diagnostic', text: candidate === 'build'
+          ? 'ZCode 原生权限模式不可用，本轮按询问运行' : 'ZCode 原生完全权限不可用，本轮按仅工作区编辑运行' })
+        mode = candidate
+        break
+      } catch (error) {
+        io.signal?.throwIfAborted()
+        if (candidate === modes.at(-1)) throw new Error('ZCode 原生权限模式无法确认，已拒绝启动', { cause: error })
+      }
+    }
     if (snapshot.runtime?.activeTurnId || snapshot.projection?.status === 'running')
       throw new Error('ZCode session is already running')
     const subscription = await peer.request(

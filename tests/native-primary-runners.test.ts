@@ -6,6 +6,7 @@ import { createNativeIO } from '../src/host/native-transport.mjs'
 import { nativeCodexArgv, runNativeCodex } from '../src/host/native-codex.mjs'
 import { claudePermissionMode, nativeClaudeArgv, runNativeClaude } from '../src/host/native-claude.mjs'
 import { nativeAgyArgv, runNativeAgy } from '../src/host/native-agy.mjs'
+import { workerArguments } from '../src/host/adapters.ts'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
 
 const directories: string[] = []
@@ -16,7 +17,12 @@ const fixture = `#!/usr/bin/env node
 import { appendFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 const cli=process.env.CWN_NATIVE_FIXTURE_CLI, scenario=process.env.CWN_NATIVE_FIXTURE_SCENARIO;
+if(cli==='antigravity'&&process.argv.includes('--help')){console.log('  --mode Set mode (accept-edits, auto, plan)');process.exit(0);}
 const log=process.env.CWN_NATIVE_FIXTURE_LOG;
+if(cli==='claude'&&process.argv.includes('--help')){
+ console.log('--permission-mode <mode> (choices: "acceptEdits", '+(scenario==='level-no-auto'?'':'"auto", ')+(scenario==='level-no-manual'?'':'"manual", ')+'"plan", "bypassPermissions")');process.exit(0);
+}
+const permissionMode=process.argv[process.argv.indexOf('--permission-mode')+1];
 const id='synthetic-session', turn='synthetic-turn';
 let waiting=false;
 const toolFails=['tool-failure','tool-recovered','tool-failure-turn-failed','tool-failure-nonzero-exit'].includes(scenario);
@@ -76,8 +82,12 @@ function claudeEnd(error=false){send({type:'result',subtype:'success',session_id
 function claudeTurn(){
  const selected=process.argv[process.argv.indexOf('--model')+1];
  const canonical=['claude-alias','claude-proxy','claude-unknown-alias'].includes(scenario)?'synthetic-resolved-model':selected;
- send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical});
+ send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical,permissionMode:scenario==='level-system-manual'?'manual':scenario==='level-system-wide'?'bypassPermissions':permissionMode});
  if(scenario==='identity-mismatch')return;
+ if(scenario==='deny-continue'||scenario==='unsupported-interaction'){
+  send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Bash',input:{command:'synthetic'}}]}});
+  send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',requires_user_interaction:scenario==='unsupported-interaction'}});return;
+ }
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
  if(scenario==='ask'||scenario==='ask-nonzero-exit'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
  if(scenario==='child-model')send({type:'assistant',session_id:id,parent_tool_use_id:'synthetic-task',message:{id:'child',model:'synthetic-child-model',content:[{type:'text',text:'子任务公开进度'}]}});
@@ -172,7 +182,14 @@ lines.on('line',line=>{
  const value=JSON.parse(line);appendFileSync(log,line+'\\n');
  if(cli==='codex'){
   if(value.method==='initialize')send({id:value.id,result:{userAgent:'synthetic/0.162.1'}});
-  else if(['thread/start','thread/resume'].includes(value.method))send({id:value.id,result:scenario.startsWith('tier')?{...thread(),approvalPolicy:value.params.approvalPolicy,sandbox:{type:{'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[value.params.sandbox],networkAccess:scenario==='tier-network'}}:thread()});
+  else if(['thread/start','thread/resume'].includes(value.method)){
+   if(scenario==='tier-rejected'&&value.params.approvalsReviewer==='auto_review'){send({id:value.id,error:{code:-32602,message:'synthetic unsupported reviewer'}});return;}
+   const result=scenario.startsWith('tier')?{...thread(),approvalPolicy:value.params.approvalPolicy,approvalsReviewer:value.params.approvalsReviewer,sandbox:{type:{'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[value.params.sandbox],networkAccess:scenario==='tier-network'}}:thread();
+   if(scenario==='tier-fallback')result.approvalsReviewer='user';
+   if(scenario==='tier-missing-reviewer')delete result.approvalsReviewer;
+   if(scenario==='tier-wide')result.sandbox.type='dangerFullAccess';
+   send({id:value.id,result});
+  }
   else if(value.method==='turn/start'){send({id:value.id,result:{turn:{id:turn,status:'inProgress',items:[]}}});codexTurn();}
   else if(value.method==='turn/steer'){
    if(scenario==='steer-rejected')send({id:value.id,error:{code:-32600,message:'synthetic inactive turn'}});
@@ -194,12 +211,19 @@ lines.on('line',line=>{
    const selected=process.argv[process.argv.indexOf('--model')+1];
    const models=['claude-proxy','claude-unknown-alias'].includes(scenario)?[{value:'unrelated-alias',resolvedModel:'unrelated-model'}]:[{value:selected,resolvedModel:scenario==='claude-alias'?'synthetic-resolved-model':selected,supportsEffort:true,supportedEffortLevels:scenario==='unsupported-effort'?['high']:['low']}];
    if(scenario==='ambiguous-alias')models.push({value:selected,resolvedModel:'other-model'});
-   send({type:'control_response',response:{subtype:scenario==='init-rejected'?'error':'success',request_id:value.request_id,response:{models}}});
+   const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario==='level-fallback'&&permissionMode==='auto'?'acceptEdits':permissionMode;
+   send({type:'control_response',response:{subtype:scenario==='init-rejected'||scenario==='level-rejected'&&permissionMode==='auto'?'error':'success',request_id:value.request_id,response:{models,current_permission_mode:actual}}});
   }else if(value.request?.subtype==='get_context_usage'){
    if(scenario==='context-timeout')return;
    send({type:'control_response',response:{subtype:scenario==='context-unsupported'?'error':'success',request_id:value.request_id,response:{model:scenario==='context-other-model'?'wrong-model':'synthetic-model',totalTokens:17,maxTokens:128000,categories:[{name:'System prompt',tokens:7,kind:'used'},{name:'Messages',tokens:10,kind:'used'}],systemPromptSections:[{name:'PRIVATE_BODY_MUST_NOT_LEAK',text:'PRIVATE_BODY_MUST_NOT_LEAK'}]}}});
   }else if(value.type==='user')claudeTurn();
-  else if(value.type==='control_response')claudeEnd();
+  else if(value.type==='control_response'){
+   if(scenario==='deny-continue'||scenario==='unsupported-interaction'){
+    send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:'synthetic denial',is_error:true}]}});
+    if(value.response.response.interrupt!==true)send({type:'assistant',session_id:id,message:{id:'after-denial',content:[{type:'text',text:'模拟拒绝后继续'}]}});
+   }
+   claudeEnd();
+  }
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
@@ -211,6 +235,7 @@ function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', re
   directories.push(directory)
   const executable = join(directory, 'synthetic-cli.mjs'), log = join(directory, 'messages.jsonl')
   writeFileSync(executable, fixture, { mode: 0o700 })
+  writeFileSync(log, '')
   const prompt = '保留字面文本 $(touch nope); `echo no`\n第二行'
   const config: any = {
     cli, project: directory, prompt, mode: 'accept-edits',
@@ -253,6 +278,85 @@ async function run(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success'
   const messages = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   return { config, frames, messages, result: frames.at(-1) }
 }
+
+async function runLevel(cli: 'codex' | 'claude', scenario: string, access: 'read-only' | 'workspace-write' | 'danger-full-access', mode: 'plan' | 'accept-edits' = 'accept-edits', resume = true) {
+  const { config, log } = setup(cli, scenario, resume)
+  Object.assign(config, { access, mode, approvalNonce: 'synthetic-nonce' })
+  config.argv = workerArguments(config.argv[0], config.project, { ...config.preference, cli }, mode, config.prompt, config.timeoutMs, config.conversationId, true, access)
+  const frames: any[] = [], launches: string[][] = []
+  const io = createNativeIO(config, (line: string) => frames.push(JSON.parse(line)), new AbortController().signal)
+  const open = io.openStdio
+  io.openStdio = (argv: string[], options: any) => { launches.push(argv); return open(argv, options) }
+  let error
+  try { await (cli === 'codex' ? runNativeCodex : runNativeClaude)(config, io) } catch (caught) { error = caught }
+  await io.close(error)
+  const messages = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  return { frames, launches, messages, result: frames.at(-1), config }
+}
+
+describe('permission levels (synthetic native processes, no accounts/models)', () => {
+  it.each([true, false])('Codex pins reviewer at thread and turn start, resume=%s', async (resume) => {
+    for (const access of ['read-only', 'workspace-write', 'danger-full-access'] as const) {
+      const f = await runLevel('codex', 'tier', access, 'accept-edits', resume)
+      expect(f.result.status).toBe('SUCCESS')
+      const reviewer = access === 'workspace-write' ? 'auto_review' : 'user'
+      expect(f.config.argv).toContain(`approvals_reviewer="${reviewer}"`)
+      expect(f.messages.find((m) => m.method === (resume ? 'thread/resume' : 'thread/start')).params).toMatchObject({ sandbox: access, approvalsReviewer: reviewer })
+      expect(f.messages.find((m) => m.method === 'turn/start').params.approvalsReviewer).toBe(reviewer)
+    }
+  })
+  it.each(['tier-fallback', 'tier-rejected'])('Codex %s falls back before a single model turn', async (scenario) => {
+    const f = await runLevel('codex', scenario, 'workspace-write', 'accept-edits', false)
+    expect(f.result.status).toBe('SUCCESS')
+    const starts = f.messages.filter((m) => ['thread/start', 'thread/resume'].includes(m.method))
+    expect(starts).toHaveLength(2)
+    expect(starts[1].params).toMatchObject({ sandbox: 'read-only', approvalPolicy: 'on-request', approvalsReviewer: 'user' })
+    if (scenario === 'tier-fallback') expect(starts[1].params.threadId).toBe('synthetic-session')
+    const turns = f.messages.filter((m) => m.method === 'turn/start')
+    expect(turns).toHaveLength(1)
+    expect(turns[0].params).toMatchObject({ sandboxPolicy: { type: 'readOnly' }, approvalPolicy: 'on-request', approvalsReviewer: 'user' })
+    expect(f.frames.some((f) => f.event?.text === 'Codex 原生自动审批不可用，本轮按询问运行')).toBe(true)
+  })
+  it.each(['tier-missing-reviewer', 'tier-wide'])('Codex %s refuses to submit if asking is unconfirmed', async (scenario) => {
+    const f = await runLevel('codex', scenario, 'workspace-write')
+    expect(f.result.status).toBe('ERROR')
+    expect(f.messages.some((m) => m.method === 'turn/start')).toBe(false)
+  })
+  it.each([
+    ['danger-full-access', 'plan', 'plan'],
+    ['read-only', 'accept-edits', 'manual'],
+    ['workspace-write', 'accept-edits', 'auto'],
+    ['danger-full-access', 'accept-edits', 'bypassPermissions'],
+  ] as const)('Claude %s + %s uses %s and the Host channel', async (access, mode, expected) => {
+    const f = await runLevel('claude', 'level', access, mode)
+    expect(f.result.status).toBe('SUCCESS')
+    expect(f.launches).toHaveLength(1)
+    expect(f.launches[0]![f.launches[0]!.indexOf('--permission-mode') + 1]).toBe(expected)
+    expect(f.launches[0]!.slice(-4)).toEqual(['--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'])
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
+  })
+  it.each(['level-fallback', 'level-rejected', 'level-no-auto', 'level-system-manual'])('Claude %s uses manual without replaying user input', async (scenario) => {
+    const f = await runLevel('claude', scenario, 'workspace-write')
+    expect(f.result.status, JSON.stringify(f.result)).toBe('SUCCESS')
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
+    if (scenario !== 'level-system-manual') {
+      const last = f.launches.at(-1)!
+      expect(last[last.indexOf('--permission-mode') + 1]).toBe('manual')
+    }
+    expect(f.frames.some((f) => f.event?.text === 'Claude Code 原生自动审批不可用，本轮按询问运行')).toBe(true)
+  })
+  it.each(['level-missing', 'level-wide', 'level-no-manual'])('Claude %s refuses before user input when manual cannot be confirmed', async (scenario) => {
+    const f = await runLevel('claude', scenario, 'workspace-write')
+    expect(f.result.status).toBe('ERROR')
+    expect(f.messages.some((m) => m.type === 'user')).toBe(false)
+  })
+  it('Claude rejects a wider system/init after its confirmed preflight without resending input', async () => {
+    const f = await runLevel('claude', 'level-system-wide', 'workspace-write')
+    expect(f.result.status).toBe('ERROR')
+    expect(f.launches).toHaveLength(1)
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
+  })
+})
 
 describe('native primary runners (synthetic protocol processes, no real accounts/models)', () => {
   it('reconciles Antigravity cumulative and replacing tool snapshots without duplicate bodies', async () => {
@@ -470,8 +574,9 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(messages.find((m) => m.method === 'thread/resume').params).toMatchObject({ sandbox, approvalPolicy })
     const turn = messages.find((m) => m.method === 'turn/start').params
     expect(turn.approvalPolicy).toBe(approvalPolicy)
-    // Tiered runs keep the user's native sandbox details; plan still pins read-only.
-    if (mode === 'plan') expect(turn.sandboxPolicy).toEqual({ type: 'readOnly' })
+    expect(turn.approvalsReviewer).toBe(mode === 'plan' ? undefined : access === 'workspace-write' ? 'auto_review' : 'user')
+    // Asking pins read-only as well, but retains on-request approvals.
+    if (sandbox === 'read-only') expect(turn.sandboxPolicy).toEqual({ type: 'readOnly' })
     else expect(turn).not.toHaveProperty('sandboxPolicy')
   })
   it('accepts the user\'s native network setting under 工作区内修改 instead of failing before launch', async () => {
@@ -521,7 +626,7 @@ describe('native primary runners (synthetic protocol processes, no real accounts
   it.each([
     ['allow-once', 'allow', 'SUCCESS'],
     ['allow-session', 'allow', 'SUCCESS'],
-    ['deny', 'deny', 'ERROR'],
+    ['deny', 'deny', 'SUCCESS'],
   ] as const)('relays a Claude can_use_tool request to the Host: %s', async (decision, behavior, status) => {
     const { config, log } = setup('claude', 'ask', true)
     config.approvalNonce = 'synthetic-nonce'
@@ -543,12 +648,14 @@ describe('native primary runners (synthetic protocol processes, no real accounts
       // The CLI's own suggestion, scoped to this session only.
       expect(reply.updatedPermissions).toEqual([{ type: 'addRules', rules: [{ toolName: 'Bash', ruleContent: 'synthetic' }], behavior: 'allow', destination: 'session' }])
     else expect(reply).not.toHaveProperty('updatedPermissions')
-    // A Claude denial interrupts the native turn, so it stays a failure.
-    if (decision === 'deny') expect(reply.interrupt).toBe(true)
+    // A denial rejects only the tool; the completed native turn remains successful.
+    if (decision === 'deny') {
+      expect(reply.interrupt).toBe(false)
+      expect(frames.at(-1)).not.toHaveProperty('notice')
+    }
     expect(frames.at(-1).status).toBe(status)
   })
-  it('names a Claude denial as the cause when the interrupted CLI then exits non-zero', async () => {
-    // Real Claude 2.1.287 ends an interrupted turn with error_during_execution and exit code 1.
+  it('keeps a nonzero Claude exit as a failure even after a non-interrupting denial', async () => {
     const { config } = setup('claude', 'ask-nonzero-exit', true)
     config.approvalNonce = 'synthetic-nonce'
     const frames: any[] = []
@@ -560,22 +667,38 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     let error
     try { await runNativeClaude(config, io) } catch (caught) { error = caught }
     await io.close(error)
-    expect(frames.at(-1)).toMatchObject({ type: 'result', status: 'ERROR', error: 'CLI 额外授权被拒绝，本轮已中断' })
+    expect(frames.at(-1)).toMatchObject({ type: 'result', status: 'ERROR', error: 'Claude 原生进程非零退出' })
   })
   it('lets Claude ask the Host only when the approval channel exists, and maps the DSH tier', () => {
     const { config } = setup('claude', 'success', true)
     expect(nativeClaudeArgv(config).slice(-2)).toEqual(['--permission-prompts', 'none'])
     expect(nativeClaudeArgv({ ...config, approvalNonce: 'synthetic' }).slice(-4)).toEqual(['--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'])
     expect(claudePermissionMode({ mode: 'plan', access: 'danger-full-access' })).toBe('plan')
-    expect(claudePermissionMode({ mode: 'accept-edits', access: 'workspace-write' })).toBe('acceptEdits')
+    expect(claudePermissionMode({ mode: 'accept-edits', access: 'read-only' })).toBe('manual')
+    expect(claudePermissionMode({ mode: 'accept-edits', access: 'workspace-write' })).toBe('auto')
     expect(claudePermissionMode({ mode: 'accept-edits', access: 'danger-full-access' })).toBe('bypassPermissions')
     // The launched mode must match the tier, or the run is refused before start.
     expect(() => nativeClaudeArgv({ ...config, access: 'danger-full-access' })).toThrow('原生权限模式与任务不一致')
   })
-  it('denies Claude reverse permission requests without upgrading successful native status', async () => {
+  it('denies Claude requests without a Host channel and lets the native turn complete', async () => {
     const { result, messages } = await run('claude', 'deny')
+    expect(result.status).toBe('SUCCESS')
+    expect(result).not.toHaveProperty('notice')
+    expect(messages.find((value) => value.type === 'control_response').response.response).toMatchObject({ behavior: 'deny', interrupt: false })
+  })
+  it('preserves Claude output after a denied tool result without a failure notice', async () => {
+    const { result, frames, messages } = await run('claude', 'deny-continue')
+    expect(messages.find((value) => value.type === 'control_response').response.response.interrupt).toBe(false)
+    expect(frames.some((frame) => frame.event?.text === '模拟拒绝后继续')).toBe(true)
+    expect(frames.some((frame) => frame.event?.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
+    expect(result.status).toBe('SUCCESS')
+    expect(result).not.toHaveProperty('notice')
+    expect(result).not.toHaveProperty('error')
+  })
+  it('still interrupts an unsupported Claude interactive callback', async () => {
+    const { result, messages } = await run('claude', 'unsupported-interaction')
+    expect(messages.find((value) => value.type === 'control_response').response.response).toMatchObject({ behavior: 'deny', interrupt: true })
     expect(result.status).toBe('ERROR')
-    expect(messages.find((value) => value.type === 'control_response').response.response.behavior).toBe('deny')
   })
   it.each(['codex', 'claude', 'antigravity'] as const)('%s never promotes native failure, unfinished tools, nonzero exit, missing or duplicate terminal to success', async (cli) => {
     for (const scenario of ['failure', 'tool-failure-turn-failed', 'tool-failure-nonzero-exit', 'unfinished-tool', 'nonzero-exit', 'no-terminal', 'duplicate-terminal']) {

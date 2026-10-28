@@ -125,6 +125,7 @@ const suppressed = (auth, provider, source) => {
 
 /** Selected own account snapshot only; never copy cron, skills, messaging or old CLI sessions. */
 export async function prepareHermesHttpHome(config, provider, model, key, port) {
+  if (config.mode === 'plan' || config.access === 'read-only') throw new Error('Hermes 当前原生通路不支持询问或只读派遣')
   const environment = config.env ?? process.env
   const source = environment.HERMES_HOME
   if (!isAbsolute(source ?? '') || !isAbsolute(config.stateDirectory ?? ''))
@@ -258,6 +259,7 @@ export async function prepareHermesHttpHome(config, provider, model, key, port) 
     platforms.api_server = api
     const safe = {
       auth: { adopt_external_logins: false },
+      approvals: { mode: config.access === 'danger-full-access' ? 'off' : 'smart' },
       model: { ...nativeConfig.model, default: model, provider },
       ...(object(nativeConfig.providers?.[provider])
         ? { providers: { [provider]: nativeConfig.providers[provider] } }
@@ -324,7 +326,7 @@ export async function prepareHermesHttpHome(config, provider, model, key, port) 
         API_SERVER_PORT: String(port),
         HERMES_SAFE_MODE: '1',
         HERMES_IGNORE_RULES: '1',
-        HERMES_YOLO_MODE: '0',
+        HERMES_YOLO_MODE: config.access === 'danger-full-access' ? '1' : '0',
         HERMES_ACCEPT_HOOKS: '0',
         TERMINAL_CWD: config.project,
         MESSAGING_CWD: config.project,

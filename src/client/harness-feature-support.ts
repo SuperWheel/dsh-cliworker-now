@@ -18,8 +18,3 @@ export function harnessFeatureReason(
     ? undefined
     : hostText(binding.reasons?.[feature]) || t(reasons[feature] ?? '当前 CLI 不支持此功能')
 }
-
-/** Without plan mode, accept-edits is the only permission mode, so there is nothing to switch. */
-export function harnessPermissionReason(binding: HarnessConversationBinding) {
-  return binding.capabilities.plan ? undefined : t('当前 CLI 只有“允许编辑”一种权限模式')
-}

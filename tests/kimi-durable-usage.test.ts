@@ -161,8 +161,9 @@ describe('Kimi ACP supplemental reader remains private, bounded and read only', 
   })
   it('captures its cursor before the ACP prompt and emits bills before process close', async () => {
     const f = fixture(), order: string[] = []
-    const state = { sessionId: 'session', modes: { currentModeId: 'default', availableModes: [{ id: 'default' }] },
-      configOptions: [{ id: 'model', currentValue: 'chosen', options: [{ value: 'chosen' }] }] }
+    const state = { sessionId: 'session', modes: { currentModeId: 'yolo', availableModes: [{ id: 'default' }, { id: 'yolo' }] },
+      configOptions: [{ id: 'model', currentValue: 'chosen', options: [{ value: 'chosen' }] },
+        { id: 'mode', currentValue: 'yolo', options: [{ value: 'default' }, { value: 'yolo' }] }] }
     const peer = { request: async (method: string) => {
       if (method === 'initialize') return { protocolVersion: 1 }
       if (method === 'session/new') return state

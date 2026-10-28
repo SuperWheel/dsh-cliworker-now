@@ -152,16 +152,21 @@ function fixture() {
       }),
       permissionForWorker: vi.fn(async () =>
         receipt({
-          currentValue: snapshot.selected!.mode,
+          currentValue: snapshot.selected!.level ?? 'auto',
           writable: true,
           options: [
-            { value: 'plan', name: '计划' },
-            { value: 'accept-edits', name: '允许编辑' },
+            { value: 'ask', name: '询问' },
+            { value: 'auto', name: '自动审批' },
           ],
+          plan: { supported: true, active: snapshot.selected!.mode === 'plan' },
         }),
       ),
-      configureWorkerPermission: vi.fn(async (_parent: string, _worker: string, mode: string) =>
-        receipt({ ...snapshot.selected!, mode }),
+      configureWorkerPermission: vi.fn(async (_parent: string, _worker: string, setting: string) =>
+        receipt(
+          setting === 'plan' || setting === 'accept-edits'
+            ? { ...snapshot.selected!, mode: setting }
+            : { ...snapshot.selected!, level: setting },
+        ),
       ),
     },
     $stream: vi.fn(() => {
@@ -342,20 +347,20 @@ describe('owned CLI commands through actual native trigger and Popup controllers
     expect(f.effects.size).toBe(0)
     expect(f.streams.every((stream) => stream.dispose.mock.calls.length === 1)).toBe(true)
   })
-  it.each(['permission', 'plan'])(
+  it.each([
+    ['permission', ['ask', 'auto']],
+    ['plan', ['plan', 'accept-edits']],
+  ] as const)(
     'uses the real permission contract for /%s without touching DSH parent permissions',
-    async (command) => {
+    async (command, ids) => {
       const f = fixture()
       await f.open(command)
-      expect(f.popup.state.getSnapshot().options.map((item: any) => item.id)).toEqual([
-        'plan',
-        'accept-edits',
-      ])
+      expect(f.popup.state.getSnapshot().options.map((item: any) => item.id)).toEqual(ids)
       await f.popup.select(0)
       expect(f.api.cliworker.configureWorkerPermission).toHaveBeenCalledExactlyOnceWith(
         'parent',
         'worker',
-        'plan',
+        ids[0],
         expect.any(AbortSignal),
       )
       expect(f.api.cliworker.configureWorker).not.toHaveBeenCalled()
@@ -375,8 +380,9 @@ describe('owned CLI commands through actual native trigger and Popup controllers
     f.api.cliworker.permissionForWorker.mockResolvedValueOnce(
       receipt({
         writable: true,
-        currentValue: 'accept-edits',
-        options: [{ value: 'accept-edits', name: '允许编辑' }],
+        currentValue: 'auto',
+        options: [{ value: 'auto', name: '自动审批' }],
+        plan: { supported: false, active: false },
       }),
     )
     await f.trigger.adjudicate('/plan', new AbortController().signal, { attachments: 0 })
@@ -435,7 +441,7 @@ describe('owned CLI commands through actual native trigger and Popup controllers
     gate.resolve(receipt(catalog))
     await Promise.resolve()
     expect(f.popup.state.getSnapshot().command).toBe('permission')
-    expect(f.popup.state.getSnapshot().options[0].id).toBe('plan')
+    expect(f.popup.state.getSnapshot().options[0].id).toBe('ask')
     expect(f.consume).not.toHaveBeenCalled()
   })
   it.each(['scope', 'registry', 'plugin'])(
@@ -452,7 +458,7 @@ describe('owned CLI commands through actual native trigger and Popup controllers
       else if (kind === 'registry') f.bindings.clear()
       else f.dispose()
       expect(signal.aborted).toBe(true)
-      gate.resolve(receipt({ ...worker, mode: 'plan' }))
+      gate.resolve(receipt({ ...worker, level: 'ask' }))
       await selecting
       expect(f.consume).not.toHaveBeenCalled()
       expect(f.popup.state.getSnapshot().open).toBe(false)

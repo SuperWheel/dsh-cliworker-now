@@ -3,7 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-plan-mode/client'
 import type { PropsRuntime, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import { harnessFeatureReason, harnessPermissionReason } from './harness-feature-support.ts'
+import { harnessFeatureReason } from './harness-feature-support.ts'
 import {
   useHarnessSessionBinding,
   type HarnessBindingRegistry,
@@ -11,8 +11,8 @@ import {
 } from './harness-binding-registry.ts'
 import { NativeCliModelDirectory } from './native-cli-model-directory.ts'
 import { useWorkers, value, type API } from './workers.ts'
-import { active, type TaskMode, type Worker } from '../shared/types.ts'
-import { workerPermissionOptions, type WorkerPermissionState } from '../shared/worker-permissions.ts'
+import { active, cliOf, type TaskMode, type Worker, type WorkerLevel } from '../shared/types.ts'
+import { cliLevelOptions, type WorkerPermissionState } from '../shared/worker-permissions.ts'
 import { t, useT, type MessageKey } from './i18n.ts'
 import { hostText } from './operation-error.ts'
 
@@ -26,13 +26,12 @@ type Feature = (typeof seats)[keyof typeof seats]['feature']
 type ControlProps = PropsRuntime<'conversation.input.model'> & Record<string, unknown>
 type NativeControl = ComponentType<ControlProps>
 
-// PermissionSelect uses these public preset values to choose its native glyph
-// and narrow-container layout. Keep CLI modes at the Gateway boundary.
-const nativePermissionPreset = { plan: 'read-only', 'accept-edits': 'workspace-write' } as const
-function cliPermissionMode(preset: string): TaskMode | undefined {
-  if (preset === 'read-only') return 'plan'
-  if (preset === 'workspace-write') return 'accept-edits'
-  return undefined
+// PermissionSelect uses these public preset values to choose its native glyph,
+// narrow-container layout and full-access confirmation. Not `auto`: DSH would
+// relabel it 自动审查. Keep Worker levels at the Gateway boundary.
+const nativePermissionPreset = { ask: 'read-only', auto: 'workspace-write', full: 'danger-full-access' } as const
+function cliPermissionLevel(preset: string): WorkerLevel | undefined {
+  return (Object.keys(nativePermissionPreset) as WorkerLevel[]).find((level) => nativePermissionPreset[level] === preset)
 }
 
 /** Native components own every menu, focus rule, confirmation and interaction. */
@@ -132,15 +131,18 @@ function CliControl({
         if (!request.signal.aborted) setToast(failure instanceof Error ? failure.message : String(failure))
       })
     return () => request.abort()
-  }, [api, feature, binding.parentSessionId, binding.workerId, worker?.mode, worker?.status, locked, parentAuthority])
-  const selectPermission = async (mode: TaskMode): Promise<boolean> => {
+  }, [api, feature, binding.parentSessionId, binding.workerId, worker?.mode, worker?.level, worker?.status, locked, parentAuthority])
+  /** @param setting - A level from the menu, or the plan switch (`plan` / `accept-edits`). */
+  const selectPermission = async (setting: TaskMode | WorkerLevel): Promise<boolean> => {
     if (
       locked ||
       saving.current ||
       !worker ||
       !permission?.writable ||
       !api.cliworker.configureWorkerPermission ||
-      !permission.options.some((option) => option.value === mode)
+      (setting === 'plan'
+        ? !permission.plan.supported
+        : setting !== 'accept-edits' && !permission.options.some((option) => option.value === setting))
     )
       return false
     permissionRead.current?.abort()
@@ -153,7 +155,7 @@ function CliControl({
           await api.cliworker.configureWorkerPermission(
             binding.parentSessionId,
             worker.id,
-            mode,
+            setting,
             request.signal,
           ),
         ),
@@ -162,7 +164,15 @@ function CliControl({
       if (saved.id !== worker.id || saved.parentSessionId !== binding.parentSessionId)
         throw new Error(t('收到不匹配的 Worker 设置'))
       if (version === permissionVersion.current)
-        setPermissionState({ authority: parentAuthority, value: { ...permission, currentValue: saved.mode } })
+        setPermissionState({
+          authority: parentAuthority,
+          value: {
+            ...permission,
+            // A saved level is never above the parent cap the Host checked.
+            currentValue: setting === 'plan' || setting === 'accept-edits' ? permission.currentValue : (saved.level ?? 'full'),
+            plan: { ...permission.plan, active: saved.mode === 'plan' },
+          },
+        })
       return true
     } catch (failure) {
       if (!request.signal.aborted && mounted.current)
@@ -186,12 +196,14 @@ function CliControl({
         })
       : createElement(Native, { ...props, locked: true })
   } else {
-    const options = (permission?.options ?? (worker ? workerPermissionOptions(worker) : [])).map((option) => ({
+    // Until the Host answers, the control stays locked; the CLI's own levels stand in.
+    const options = (permission?.options ?? (worker ? cliLevelOptions(cliOf(worker.preference)) : [])).map((option) => ({
       ...option,
       value: nativePermissionPreset[option.value],
     }))
-    const currentMode = permission?.currentValue ?? worker?.mode
-    const currentValue = currentMode && nativePermissionPreset[currentMode]
+    const currentLevel = permission?.currentValue ?? worker?.level
+    const currentValue = currentLevel && nativePermissionPreset[currentLevel]
+    const planActive = permission?.plan.active ?? worker?.mode === 'plan'
     const catalog = {
       value: { options, defaultOptions: options, defaultPreset: currentValue ?? 'workspace-write' },
     }
@@ -204,7 +216,7 @@ function CliControl({
             ? currentValue
               ? { currentValue }
               : undefined
-            : { active: currentMode === 'plan', pending: false }
+            : { active: planActive, pending: false }
         return selector ? selector(state) : state
       }
       return originalProjection(key as never, selector as never)
@@ -216,8 +228,8 @@ function CliControl({
       usePermissionCatalog: (selector?: (state: typeof catalog) => unknown) =>
         selector ? selector(catalog) : catalog,
       select: (preset: string) => {
-        const mode = cliPermissionMode(preset)
-        return mode ? selectPermission(mode) : Promise.resolve(false)
+        const level = cliPermissionLevel(preset)
+        return level ? selectPermission(level) : Promise.resolve(false)
       },
       exitPlanMode: async () =>
         (await selectPermission('accept-edits')) ? null : t('权限设置未保存，请核对当前任务与权限状态'),
@@ -299,7 +311,7 @@ function registerHarnessControlGuards(
           const binding = useHarnessSessionBinding(bindings, props.sessionId)
           if (!binding) return createElement(Native, props)
           const unavailable =
-            feature === 'plan' ? harnessFeatureReason(binding, 'plan') : feature === 'permission' && harnessPermissionReason(binding)
+            feature === 'plan' ? harnessFeatureReason(binding, 'plan') : undefined
           // Locked, but mapped to the CLI's real mode instead of the parent's preset.
           if (unavailable && feature === 'permission' && api && binding.workerId)
             return (

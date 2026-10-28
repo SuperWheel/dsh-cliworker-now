@@ -271,10 +271,11 @@ describe('模拟：能力与菜单', () => {
     expect(candidates.find((candidate: any) => candidate.name === 'plan').description).toBe(
       '当前 CLI 不支持规划模式',
     )
+    // Without plan mode the permission levels still apply, so /permission stays usable.
     expect(candidates.find((candidate: any) => candidate.name === 'permission').description).toBe(
-      '当前 CLI 只有“允许编辑”一种权限模式',
+      '选择当前 CLI 的权限模式',
     )
-    for (const name of ['permission', 'plan', 'goal', 'feedback', 'fork']) {
+    for (const name of ['plan', 'goal', 'feedback', 'fork']) {
       expect(f.source.onPick(pick(name))).toBe('handled')
       await expect(
         f.source.matchEnter({ sessionId: 'child' }, `/${name}`, req().signal, { attachments: 0 }),

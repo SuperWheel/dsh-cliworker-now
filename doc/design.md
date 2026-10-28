@@ -1231,7 +1231,7 @@ OpenSpec 变更 `reenable-native-cli-features`（用户「先做 reenable」）�
 
 - Grok：`GROK_NATIVE_WEB` 打开网页搜索与抓取（去掉 `--disable-web-search`，`GROK_WEB_FETCH=1`、`features.web_fetch = true`）；规划 `--tools` 加 `web_search,web_fetch`；仅可查看的 `[permission] allow` 加 `WebSearch`、`WebFetch`（grok 1.0.62：搜索不询问，抓取非白名单域名会经 ACP 询问，按授权通路处理）。
 - Pi：`piOmpNativeTools(cli, mode, access)`，Pi 只在写任务且完全权限时加 `bash`，能力表随之加 `shell`，DSH 命令备选退出目录。
-- OMP（16.4.4 核实）：`approvalMode` 为 `always-ask/write/yolo`；`write` 下写入与 bash 经 RPC `extension_ui_request`（`select`，标题 `Allow tool: X…`，选项 `Approve/Deny`）询问，无超时。OMP 写任务在工作区内修改与完全权限下加 `bash`；`--approval-mode` 与 `tools.approvalMode` 按档位取 `write`/`yolo`。桥把审批询问转为 `approval` 帧（bash→command、write/edit→file），Host 经 `BridgeProtocol` 中继并经私有邮箱 `approval` 命令回写，桥回 `extension_ui_response`。拒绝后正常结束为结果待核实；停止或桥关闭时回 Deny。其他交互请求仍取消并判失败。Host 对 OMP 也按审批等待暂停空闲时限。
+- OMP（16.4.4 核实）：`approvalMode` 为 `always-ask/write/yolo`；`write` 下写入与 bash 经 RPC `extension_ui_request`（`select`，标题 `Allow tool: X…`，选项 `Approve/Deny`）询问，无超时（2026-10-29 更正：按安装包设置说明，`write` 自动批准读与写类工具，只有 bash 等执行类工具询问；`always-ask` 才对写入询问，见下文「Worker 权限三档」）。OMP 写任务在工作区内修改与完全权限下加 `bash`；`--approval-mode` 与 `tools.approvalMode` 按档位取 `write`/`yolo`。桥把审批询问转为 `approval` 帧（bash→command、write/edit→file），Host 经 `BridgeProtocol` 中继并经私有邮箱 `approval` 命令回写，桥回 `extension_ui_response`。拒绝后正常结束为结果待核实；停止或桥关闭时回 Deny。其他交互请求仍取消并判失败。Host 对 OMP 也按审批等待暂停空闲时限。
 - OpenCode/MiMo：skill 权限改为 `allow`（替代上节「task/skill/question 仍 deny」中的 skill；各档位，skill 只读取用户指令）；`nativeSkillPaths` 把用户自己的 skill 根目录（`<配置目录>/{skill,skills}`、`~/.opencode|.mimocode/{skill,skills}`、项目 `.opencode|.mimocode/{skill,skills}`，仅现存目录）写入 `skills.paths`。OpenCode 由 Host 写入启动配置；MiMo 由运行器按自身环境计算。外部兼容目录与 Claude 配置导入、项目配置、外部插件保持关闭。
 - ZCode：`Skill` 只加载指令、可单独开启，但按设计随子 Agent 决定处理；浏览器 REPL 可执行任意代码，保持关闭。
 - 已知隔离缺口（未改）：OpenCode/MiMo 仍会读取 `~/.opencode`、`~/.mimocode` 下的配置；MiMo Worker 环境只经 `firstPartyEnvironment('mimo')`，使用真实配置目录。下节处理。
@@ -1265,3 +1265,15 @@ OpenSpec 变更 `close-approval-relay-gaps`，处理此前 Desktop 验收留下�
   - 其他待核实情况（最后一步工具失败后直接结束、AGY 汇总冲突、ACP 无正文）不变。
 - 空闲时限：`task.holdIdle()` 在 DSH 备选工具等待授权时暂停空闲计时。Host 计时的 Pi、OMP 与 CLI 原生审批共用 `holdHostIdle`；运行器计时的 CLI 只在启用空闲时限时经该轮审批邮箱发送 `idle-<n>:hold` / `idle-<n>:release`（邮箱同 id 只收一种内容），`release` 等 `hold` 回执后再发；`native-bridge.mjs` 交给 `createIdleHolds`，先到的 `release` 作废该键。审批邮箱每轮 200 次提交上限由授权回复与此共享。
 - 工具桥等待上限（验收中发现）：载体客户端原用 Node `fetch`，300 秒收不到响应头即放弃，Host 等工具结束才回复，所以等待授权超过 5 分钟的调用会失败，提问卡却仍留着，之后允许仍会执行。客户端改用 `node:http`（无响应等待上限）；Host 账本按等待中的请求计数，响应未写完即关闭且计数归零时中止该调用，授权提问随之撤回。
+
+## 2026-10-29 Worker 权限三档，不高于主对话（未发布）
+
+OpenSpec 变更 `worker-permission-levels`（用户 2026-10-28/29 决定）。替代上文「CLI 权限跟随 DSH 预设」中按主对话档位直接选原生模式、仅可查看一律以规划启动的做法。
+
+- 档位模型：`Worker.level`（`ask | auto | full`，可选，缺省视为 `full` 即跟随主对话）。实际档位 = min(选择, 主对话上限)，上限为仅可查看 → ask、工作区内修改 → auto、完全权限 → full。适配器与运行器仍收 `(mode, access)`，`access` 改为实际档位（ask → read-only、auto → workspace-write、full → danger-full-access），新组合 `accept-edits + read-only` 表示第一项。`worker.mode` 只作规划开关，存储无迁移。
+- 菜单与 RPC：`permissionForWorker` 返回 `{ currentValue, options, plan: { supported, active }, writable }`，选项只含不高于上限的档位，受限时说明追加「主对话为…，最高可选…」。Client 把档位映射为 DSH 预设值（ask → read-only、auto → workspace-write、full → danger-full-access）以复用原生图标与完全权限确认；`configureWorkerPermission` 接受档位或规划开关，超上限拒绝保存。`/plan` 只开关规划，`/permission` 列档位。
+- 名称（`src/shared/worker-permissions.ts`）：第一项一般为「询问」（OpenCode/MiMo 命令一律先问）；Kimi「仅工作区编辑」（原生 default 自动批准 Git 仓库内 Write/Edit，`git-cwd-write-approve` 无注入入口）、Antigravity「仅规划」、Pi「只读」，Hermes 无第一项。中档一般为「自动审批」；ZCode、OpenCode「仅工作区编辑」，OMP、Pi「自动批准编辑」。仅可查看下 Kimi、Antigravity、Hermes 不列档位并拒绝派遣（`runsUnderViewOnly`）。
+- 审批判定：规划 → 拒；实际档位 full 且主对话 `never` → 放行；非 ask 且 `never` → 拒；其余询问（按轮次来源）。子会话 DSH 沙箱跟随实际档位，审批策略仅在 full 时跟随主对话，否则为 `ask`。
+- 原生映射（安装版本核实，详见变更 design.md 第 6 节）：Codex `read-only/workspace-write/danger-full-access` + `approvals_reviewer` user/`auto_review`；Claude `manual/auto/bypassPermissions`，拒绝改为 `interrupt:false` 不中断本轮；Kimi ACP `default/yolo/auto`；Qoder/CN `default/auto/bypass_permissions`（ACP `yolo`）；Grok 私有配置 `ui.permission_mode` ask（加 `ask=[Bash, Edit, Write]`）/ auto，完全权限 `--always-approve`；ZCode `build/edit/yolo`；Hermes `approvals.mode` smart/off（YOLO 0/1）；Antigravity `--mode plan/auto`，完全权限 `accept-edits` + 跳过确认 + 关闭终端沙箱；OpenCode `edit/bash/external_directory` ask 或 allow；MiMo 同 OpenCode 询问规则 + HTTP `skip-all`/`auto-approve-delete` 开关；Pi 读工具 / +write,edit / +bash；OMP `--approval-mode always-ask/write/yolo` 并开放 bash。
+- 降级：目标模式缺失或回读不符时按更严一档运行并写诊断，第一项不可确认则拒绝启动。Antigravity、OMP 每轮先跑 `--help` 确认模式目录。降级不回传 Host，审批仍按实际档位判定，只会更严。
+- 时间线「本轮权限：<CLI 档位名>」，受主对话限制时附「（受主对话限制）」。删除了 Kimi/Hermes/Antigravity「没有已确认的原生完全权限模式」提示（三者现均有原生完全权限）。

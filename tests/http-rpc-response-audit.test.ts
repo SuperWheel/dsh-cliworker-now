@@ -19,6 +19,7 @@ const rpcFixture = String.raw`
 import { createInterface } from 'node:readline';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+if (process.argv.includes('--help')) { process.stdout.write('--approval-mode=<value> (always-ask|write|yolo)'); process.exit(0) }
 const root = process.env.PI_CODING_AGENT_DIR, path = join(root,'sessions','simulated.jsonl');
 mkdirSync(join(root,'sessions'),{recursive:true});writeFileSync(path,'SIMULATED SESSION');
 const cli=process.env.CWN_SIMULATED_CLI, overhead=process.env.CWN_OVERHEAD==='1';

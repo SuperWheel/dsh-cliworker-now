@@ -35,7 +35,7 @@ export interface PiOmpInput extends PiOmpNativeOptions {
   project: string
   preference: { model: string; effort: string }
   mode: TaskMode
-  /** The run's DSH tier snapshot; only 完全权限 adds Pi's native bash. */
+  /** The Worker's effective level; only full access adds Pi's native bash. */
   access?: NativeAccess
   prompt: string
   attachments?: readonly NativeAttachment[]
@@ -243,6 +243,7 @@ export async function preparePiOmp(
     throw new Error('Unsupported native model effort')
   if (!['plan', 'accept-edits'].includes(input.mode)) throw new Error('Unsupported task mode')
   if (!input.prompt.trim()) throw new Error('Prompt must not be empty')
+  if (input.cli === 'pi' && input.access === 'read-only') input = { ...input, mode: 'plan' }
   const context = await contextFor(input)
   // Preparing a request is reversible. Execution requires the Host's two
   // captures on this exact snapshot; an unconfirmed request cannot send prompts.

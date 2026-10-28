@@ -152,6 +152,7 @@ export async function extendedLaunch(
     cli === 'zcode'
       ? await prepareZCode({
           ...input,
+          ...(config.access ? { access: config.access } : {}),
           authDirectory: zcodeAuthDirectory(config.zcodeAuthDirectory, config.stateDirectory),
           builtinConfig: config.zcodeBuiltinConfig,
         })
@@ -180,7 +181,11 @@ export async function extendedLaunch(
           : cli === 'hermes'
             ? await prepareHermes({ ...input, hermesHome: effectiveHermesHome(config), renewal })
             : cli === 'grok'
-              ? await prepareGrok({ ...input, ...(config.harnessTools ? { harnessTools: config.harnessTools } : {}) })
+              ? await prepareGrok({
+                  ...input,
+                  ...(config.access ? { access: config.access } : {}),
+                  ...(config.harnessTools ? { harnessTools: config.harnessTools } : {}),
+                })
               : undefined
   if (!prepared) throw new Error('未知 CLI')
   let launch = prepared

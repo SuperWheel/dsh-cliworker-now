@@ -42,6 +42,8 @@ async function bridge(
     executable,
     `#!/usr/bin/env node
 import { writeFileSync } from 'node:fs'
+// The runner first confirms Antigravity's native modes from --help.
+if (process.argv.includes('--help')) { console.log('  --mode Set mode (accept-edits, auto, plan)'); process.exit(0) }
 writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
 ${output.stderrEveryMs ? `setInterval(() => process.stderr.write('SIMULATED progress\\n'), ${output.stderrEveryMs})` : ''}
 ${output.keepAliveEveryMs ? `setInterval(() => process.stdout.write(JSON.stringify({ type: 'keep_alive' }) + '\\n'), ${output.keepAliveEveryMs})` : ''}

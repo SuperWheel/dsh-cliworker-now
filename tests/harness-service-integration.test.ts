@@ -471,7 +471,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   } finally {
     brokenJob.mockRestore()
   }
-  // 仅可查看 admits read-only dispatch, except a CLI without whole-process read-only.
+  // 仅可查看 admits the first level, except CLIs whose first level would not ask first.
   setSandboxMode(parent.agent.session, 'read-only')
   await expect(
     service.launch(
@@ -484,8 +484,8 @@ it('runs real native child submissions through CLI once and preserves owned clea
       undefined,
       new AbortController().signal,
     ),
-  ).rejects.toThrow('没有整进程只读模式')
-  for (const [cli, message] of [['hermes', 'Hermes 未公开只读模式'], ['qoder', 'Qoder 未公开只读模式']] as const)
+  ).rejects.toThrow('仅可查看；Antigravity 无法把授权请求转给你')
+  for (const [cli, message] of [['hermes', 'Hermes 没有可询问的档位'], ['kimi', 'Kimi 的第一项会自动批准 Git 仓库内的编辑']] as const)
     await expect(
       service.launch(parent.agent, 'Rejected read-only', 'blocked', { ...activeWorker.preference, cli },
         'plan', undefined, undefined, new AbortController().signal),

@@ -16,6 +16,7 @@ vi.mock('../src/host/native-http.mjs', async (load) => {
       const path = raw.split('?')[0]
       if (path === '/doc') return { paths: { '/event': {}, '/session/{sessionID}/prompt_async': {}, '/session/{sessionID}/abort': {} } }
       if (path === '/provider') return { all: [{ id: 'simulated', models: { model: { id: 'model', limit: { context: 1000 } } } }] }
+      if (path === '/permission/skip-all' || path === '/permission/auto-approve-delete') return false
       if (path === '/session') return { id: 'ses_SIMULATED', directory: process.cwd() }
       if (path === '/session/ses_SIMULATED') return { id: 'ses_SIMULATED', directory: process.cwd() }
       if (path.endsWith('/prompt_async')) {

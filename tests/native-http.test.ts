@@ -10,6 +10,7 @@ import { nativeTelemetryProjections } from '../src/client/harness-telemetry-data
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeOpenCode } from '../src/host/native-opencode.mjs'
 import { serverConfiguration } from '../src/host/native-session-http.mjs'
+import { HARNESS_MCP_SERVER } from '../src/host/native-harness-injection.mjs'
 import { firstPartyEnvironment } from '../src/host/first-party-models.ts'
 import { runNativeMimo } from '../src/host/native-mimo.mjs'
 import { runNativeHermes } from '../src/host/native-hermes.mjs'
@@ -31,6 +32,7 @@ const record=value=>{records.push(value);writeFileSync(process.env.CWN_FIXTURE_R
 const hermes=cli==='hermes', name=cli==='mimo'?'MIMOCODE':'OPENCODE', username=cli==='mimo'?'mimocode':'opencode'
 const expected=hermes?'Bearer '+process.env.API_SERVER_KEY:'Basic '+Buffer.from(username+':'+process.env[name+'_SERVER_PASSWORD']).toString('base64')
 let sse, prompt, denied=false
+const switches={'skip-all':process.env.CWN_FIXTURE_STALE_SWITCHES==='1','auto-approve-delete':process.env.CWN_FIXTURE_STALE_SWITCHES==='1'}
 const sid=hermes?'api_SYNTHETIC':'ses_SYNTHETIC', aid='msg_SYNTHETIC_ASSISTANT', run='run_SYNTHETIC'
 const info=()=>({id:aid,sessionID:sid,role:'assistant',parentID:prompt?.messageID,providerID:'synthetic',modelID:'model',variant:'low',time:{created:1,completed:2},finish:'stop',tokens:{input:2,output:3,reasoning:0,cache:{read:0,write:0}},cost:0,path:{cwd:process.cwd(),root:process.cwd()},agent:'build',mode:'build'})
 const part={id:'prt_SYNTHETIC',sessionID:sid,messageID:aid,type:'text',text:mode==='fragmented'?'开发任务， 好的':'模拟正文'}
@@ -41,11 +43,26 @@ function emit(values){sse.write(values.map(value=>'data: '+JSON.stringify(value)
 const server=createServer(async(req,res)=>{
  let text='';for await(const chunk of req)text+=chunk
  const body=text?JSON.parse(text):undefined, path=new URL(req.url,'http://localhost').pathname
- record({method:req.method,path,body,authenticated:req.headers.authorization===expected})
+ record({method:req.method,path,body,authenticated:req.headers.authorization===expected,
+   ...(!hermes?{directory:new URL(req.url,'http://localhost').searchParams.get('directory'),args:process.argv.slice(2),permission:JSON.parse(process.env[name+'_PERMISSION']||'{}'),configPermission:JSON.parse(process.env[name+'_CONFIG_CONTENT']||'{}').permission,switches:{...switches},deleteEnv:process.env.MIMOCODE_AUTO_APPROVE_DELETE,bypassEnv:process.env.MIMOCODE_DANGEROUSLY_SKIP_PERMISSIONS}:{})})
  if(req.headers.authorization!==expected)return json(res,{error:'synthetic auth failure'},401)
  if(path==='/v1/capabilities')return json(res,{object:'hermes.api_server.capabilities',auth:{type:'bearer',required:true},features:{run_submission:true,run_status:true,run_events_sse:true,run_stop:true,run_steer:mode!=='steer-unsupported',run_approval_response:true,session_resources:true}})
  if(path==='/doc')return json(res,mode==='incomplete-spec'?{info:{version:'0.0.3'},paths:{'/auth/{providerID}':{},'/log':{}}}:{paths:{'/event':{},'/session/{sessionID}/prompt_async':{},'/session/{sessionID}/abort':{}}})
  if(path==='/global/health')return json(res,{healthy:true,version:'0.1.15'})
+ if(cli==='mimo'&&['/permission/skip-all','/permission/auto-approve-delete'].includes(path)){
+   const name=path.split('/').at(-1),failure=process.env.CWN_FIXTURE_SWITCH_FAILURE
+   if(failure==='missing'||(failure==='delete-missing'&&name==='auto-approve-delete'))return json(res,{error:'SIMULATED unsupported route'},404)
+   if(req.method==='GET'){
+     if(failure==='get-missing')return json(res,{},405)
+     return json(res,failure==='readback'&&name==='skip-all'&&switches[name]?false:switches[name])
+   }
+   if(failure==='disable-failed'&&!body.enabled)return json(res,{},500)
+   switches[name]=body.enabled
+   if(['enable-failed','rollback-failed'].includes(failure)&&name==='skip-all'&&body.enabled)return json(res,{},500)
+   if(failure==='rollback-failed'&&name==='skip-all'&&records.some(row=>row.path===path&&row.body?.enabled))return json(res,{},500)
+   if(failure==='receipt'&&name==='skip-all'&&body.enabled)return json(res,false)
+   return json(res,switches[name])
+ }
  if(path==='/session'&&req.method==='GET')return json(res,[])
  if(path==='/config'&&mode==='context-relay')return json(res,JSON.parse(process.env[name+'_CONFIG_CONTENT']||'{}'))
  if(path==='/provider'&&mode==='context-relay'){
@@ -83,7 +100,7 @@ const server=createServer(async(req,res)=>{
      {type:'message.updated',properties:{info:{...start,id:'msg_SECOND'}}},
      {type:'message.part.updated',properties:{part:{...second,messageID:'msg_SECOND',text:''}}},
      {type:'message.part.delta',properties:{sessionID:sid,messageID:'msg_SECOND',partID:second.id,field:'text',delta:second.text}})
-   if(mode.startsWith('permission'))values.push({type:'permission.asked',properties:{sessionID:sid,id:'per_SYNTHETIC',permission:'bash'}})
+   if(mode.startsWith('permission'))values.push({type:'permission.asked',properties:{sessionID:sid,id:'per_SYNTHETIC',permission:mode==='permission-continue'?'edit':'bash'}})
    if(mode==='tool-failure'||mode==='permission-tool-failure'||mode==='tool-recovered')for(const status of ['running','error'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'bash',state:{status}}}})
    if(mode==='tool-recovered')for(const status of ['running','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_RETRY',messageID:aid,sessionID:sid,type:'tool',tool:'write',state:{status}}}})
    if(mode==='tools')for(const status of ['pending','running','completed','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'read',state:{status}}}})
@@ -98,12 +115,19 @@ const server=createServer(async(req,res)=>{
     {type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:'prt_THOUGHT',field:'text',delta:'公开'}} ,
     {type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:'prt_THOUGHT',field:'text',delta:'思考'}})
    if(mode==='partial-failure')values.push({type:'session.error',properties:{sessionID:sid}})
-   if(mode!=='cancel'&&mode!=='disconnect'&&mode!=='partial-failure')values.push({type:'session.idle',properties:{sessionID:sid}})
+   if(mode!=='cancel'&&mode!=='disconnect'&&mode!=='partial-failure'&&mode!=='permission-continue')values.push({type:'session.idle',properties:{sessionID:sid}})
    if(mode==='late')values.push({type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:part.id,field:'text',delta:'迟到'}})
    emit(values);if(mode==='disconnect')sse.end();return
  }
  if(path==='/session/'+sid+'/message')return json(res,[{info:info(),parts:mode==='multi-part'?[part,second]:[part]},...(mode==='multi-message'?[{info:{...info(),id:'msg_SECOND'},parts:[{...second,messageID:'msg_SECOND'}]}]:[])])
- if(path.startsWith('/permission/')){denied=true;return json(res,true)}
+ if(path.startsWith('/permission/')){
+   denied=true
+   if(mode==='permission-continue'){
+     part.text+='，拒绝后继续'
+     emit([{type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:part.id,field:'text',delta:'，拒绝后继续'}},{type:'session.idle',properties:{sessionID:sid}}])
+   }
+   return json(res,true)
+ }
  if(path==='/session/'+sid+'/abort')return json(res,true)
  if(path==='/v1/runs'&&req.method==='POST'){prompt=body;return json(res,{run_id:run,status:'queued'},202)}
  if(path==='/v1/runs/'+run&&req.method==='GET')return json(res,{run_id:run,session_id:sid,status:mode==='cancel'?'running':mode.startsWith('run-')?mode.slice(4):'completed',output:['tool-boundary','final-unstreamed','interim-boundary'].includes(mode)?'第二段':part.text,runtime:{provider:mode==='wrong-model'?'other':'openrouter',model:'synthetic/model'},usage:{input_tokens:2,output_tokens:3,total_tokens:5}})
@@ -193,11 +217,13 @@ async function setup(cli: 'opencode' | 'mimo' | 'hermes', mode = 'success') {
 async function run(cli: 'opencode' | 'mimo' | 'hermes', mode = 'success', resume = false,
   guide?: (io: any, controller: AbortController) => Promise<void>, extraEnv: Record<string, string> = {},
   /** Simulated Host decision; enables the approval channel. */
-  decision?: 'allow-once' | 'allow-session' | 'deny') {
+  decision?: 'allow-once' | 'allow-session' | 'deny',
+  permissionConfig: { mode?: 'plan' | 'accept-edits'; access?: string } = {}) {
   const task = await setup(cli, mode),
     frames: any[] = [],
     controller = new AbortController()
   Object.assign(task.config.env, extraEnv)
+  Object.assign(task.config, permissionConfig)
   if (resume) task.config.conversationId = cli === 'hermes' ? 'api_SYNTHETIC' : 'ses_SYNTHETIC'
   if (decision) task.config.approvalNonce = 'synthetic-nonce'
   const children: any[] = []
@@ -291,6 +317,55 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
     },
   )
   for (const cli of ['opencode', 'mimo'] as const) {
+    it.each([
+      ['plan', 'danger-full-access', 'plan', 'deny', 'deny', false, false],
+      ['accept-edits', 'read-only', 'build', 'ask', 'ask', false, false],
+      ['accept-edits', 'workspace-write', 'build', cli === 'mimo' ? 'ask' : 'allow', 'ask', true, false],
+      ['accept-edits', 'danger-full-access', 'build', 'allow', 'allow', true, true],
+    ] as const)(`${cli}: launches %s / %s with native permissions before resuming`, async (mode, access, agent, edit, bash, skipAll, deleteAuto) => {
+      const { frames, requests, root } = await run(cli, 'success', true, undefined, {
+        CWN_FIXTURE_STALE_SWITCHES: '1', MIMOCODE_AUTO_APPROVE_DELETE: '1', MIMOCODE_DANGEROUSLY_SKIP_PERMISSIONS: '1',
+      }, undefined, { mode, access })
+      expect(frames.at(-1).status).toBe('SUCCESS')
+      const prompt = requests.find((row: any) => row.path?.endsWith('/prompt_async'))
+      expect(prompt.body.agent).toBe(agent)
+      expect(prompt.args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '0'])
+      expect(prompt.permission).toMatchObject({ edit, bash, read: 'allow', glob: 'allow', grep: 'allow', list: 'allow', skill: 'allow', task: 'deny', question: 'deny' })
+      expect(prompt.configPermission).toEqual(prompt.permission)
+      if (mode !== 'plan') expect(prompt.permission.external_directory).toBe(access === 'danger-full-access' ? 'allow' : 'ask')
+      else expect(prompt.permission).not.toHaveProperty('external_directory')
+      const controls = requests.filter((row: any) => ['/permission/skip-all', '/permission/auto-approve-delete'].includes(row.path))
+      if (cli === 'opencode') expect(controls).toEqual([])
+      else {
+        expect(prompt).toMatchObject({ deleteEnv: '0', bypassEnv: '0', switches: { 'skip-all': skipAll, 'auto-approve-delete': deleteAuto } })
+        expect(controls.length).toBeGreaterThanOrEqual(4)
+        const resume = requests.findIndex((row: any) => row.path === '/session/ses_SYNTHETIC')
+        for (const control of controls) {
+          expect(control.directory).toBe(root)
+          expect(requests.indexOf(control)).toBeLessThan(resume)
+        }
+        expect(controls.some((row: any) => row.method === 'GET')).toBe(true)
+      }
+      expectServerCloseReceipt(requests)
+    })
+
+    it(`${cli}: preserves ready DSH tools in ask rules`, () => {
+      const env = { CLIWORKER_HARNESS_TOOLS: JSON.stringify({ url: 'http://127.0.0.1:1234/rpc', token: 's'.repeat(43), binding: {}, executionReady: true }) }
+      const configured = serverConfiguration({ mode: 'accept-edits', access: 'read-only', preference: { model: 'synthetic/model' }, env }, cli)
+      expect(JSON.parse(configured.env[`${cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'}_PERMISSION`]))
+        .toMatchObject({ [`${HARNESS_MCP_SERVER}_*`]: 'allow', edit: 'ask', bash: 'ask' })
+    })
+
+    it(`${cli}: continues the ask turn after a rejected edit without abort or notice`, async () => {
+      const { frames, requests } = await run(cli, 'permission-continue', false, undefined, {}, 'deny', { access: 'read-only' })
+      expect(frames.find(row => row.type === 'approval')?.request).toMatchObject({ kind: 'file', summary: 'edit' })
+      expect(requests.find((row: any) => row.path?.endsWith('/reply')).body.reply).toBe('reject')
+      expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: '模拟正文，拒绝后继续' })
+      expect(frames.at(-1)).not.toHaveProperty('notice')
+      expect(requests.some((row: any) => row.path?.endsWith('/abort'))).toBe(false)
+      expect(requests.filter((row: any) => row.path?.endsWith('/prompt_async'))).toHaveLength(1)
+    })
+
     it(`${cli}: validates its effective route and projects only numeric native request composition through the shared telemetry chain`, async () => {
       let calls = 0
       const provider = createServer(async (req, res) => { for await (const _chunk of req) {} calls++; res.setHeader('Content-Type', 'application/json'); res.end('{}') })
@@ -405,7 +480,7 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(frames.at(-1)).not.toHaveProperty('error')
       expect(frames.at(-1)).not.toHaveProperty('notice')
       expect(frames.some((row) => row.type === 'event' && row.event.kind === 'diagnostic' && row.event.text === '原生额外授权已拒绝')).toBe(true)
-      expect(requests.find((row: any) => row.path?.startsWith('/permission/')).body.reply).toBe('reject')
+      expect(requests.find((row: any) => row.path?.endsWith('/reply')).body.reply).toBe('reject')
       expect(requests.filter((row: any) => row.path?.endsWith('prompt_async'))).toHaveLength(1)
       expectServerCloseReceipt(requests)
     })
@@ -417,15 +492,16 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
     ] as const)(`${cli}: relays permission.asked to the Host: %s → %s`, async (decision, reply, status) => {
       const { frames, requests } = await run(cli, 'permission', false, undefined, {}, decision)
       expect(frames.find((row) => row.type === 'approval').request).toEqual({ kind: 'command', summary: 'bash', allowSession: false })
-      expect(requests.find((row: any) => row.path?.startsWith('/permission/')).body.reply).toBe(reply)
+      expect(requests.find((row: any) => row.path?.endsWith('/reply')).body.reply).toBe(reply)
       expect(frames.at(-1).status).toBe(status)
       expectServerCloseReceipt(requests)
     })
     it(`${cli}: maps the DSH tier to the native permission rules, never wider`, () => {
       const base = { mode: 'accept-edits', preference: { model: 'synthetic/model' }, env: {} }
       const rules = (config: any) => JSON.parse(serverConfiguration(config, cli).env[`${cli === 'mimo' ? 'MIMOCODE' : 'OPENCODE'}_PERMISSION`])
-      expect(rules({ ...base, access: 'workspace-write' })).toMatchObject({ '*': 'ask', edit: 'allow', bash: 'ask' })
-      expect(rules({ ...base, access: 'danger-full-access' })).toMatchObject({ '*': 'allow', edit: 'allow', bash: 'allow', task: 'deny' })
+      expect(rules({ ...base, access: 'read-only' })).toMatchObject({ '*': 'ask', edit: 'ask', bash: 'ask', external_directory: 'ask' })
+      expect(rules({ ...base, access: 'workspace-write' })).toMatchObject({ '*': 'ask', edit: cli === 'mimo' ? 'ask' : 'allow', bash: 'ask', external_directory: 'ask' })
+      expect(rules({ ...base, access: 'danger-full-access' })).toMatchObject({ '*': 'allow', edit: 'allow', bash: 'allow', external_directory: 'allow', task: 'deny' })
       expect(rules({ ...base, mode: 'plan', access: 'danger-full-access' })).toMatchObject({ '*': 'ask', edit: 'deny', bash: 'deny' })
       for (const access of ['read-only', 'workspace-write', 'danger-full-access'])
         expect(rules({ ...base, mode: 'plan', access })).toMatchObject({ skill: 'allow', task: 'deny', question: 'deny' })
@@ -450,7 +526,7 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
     it(`${cli}: reports a turn that ends right after a tool error as unverified`, async () => {
       const { frames, requests } = await run(cli, 'tool-failure')
       expect(frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
-      expect(requests.some((row: any) => row.path?.startsWith('/permission/'))).toBe(false)
+      expect(requests.some((row: any) => row.path?.endsWith('/reply'))).toBe(false)
       expectServerCloseReceipt(requests)
     })
     it(`${cli}: reports a turn that carries on after a tool error as success with the failed step count`, async () => {
@@ -479,6 +555,48 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
     const other = await run('opencode', 'incomplete-spec')
     expect(other.frames.at(-1).status).toBe('ERROR')
     expect(other.requests.some((row: any) => row.path?.endsWith('prompt_async'))).toBe(false)
+  })
+
+  it.each(['missing', 'enable-failed', 'receipt', 'readback'])('mimo: falls back to ask before session creation when native auto is %s', async failure => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { CWN_FIXTURE_SWITCH_FAILURE: failure }, undefined, { access: 'workspace-write' })
+    expect(frames.at(-1).status).toBe('SUCCESS')
+    expect(frames.some(row => row.event?.text === 'MiMo 原生自动审批不可用，本轮按询问运行。')).toBe(true)
+    const prompt = requests.find((row: any) => row.path?.endsWith('/prompt_async'))
+    expect(prompt.permission).toMatchObject({ '*': 'ask', edit: 'ask', bash: 'ask', external_directory: 'ask', task: 'deny', question: 'deny' })
+    expect(prompt.switches).toEqual({ 'skip-all': false, 'auto-approve-delete': false })
+    expect(prompt.body.agent).toBe('build')
+    const create = requests.findIndex((row: any) => row.path === '/session' && row.method === 'POST')
+    expect(requests.slice(create).some((row: any) => row.path?.startsWith('/permission/'))).toBe(false)
+    expectServerCloseReceipt(requests)
+  })
+
+  it.each(['missing', 'delete-missing', 'enable-failed', 'receipt', 'readback'])('mimo: preserves full native allow rules with a diagnostic when a switch is %s', async failure => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { CWN_FIXTURE_SWITCH_FAILURE: failure }, undefined, { access: 'danger-full-access' })
+    expect(frames.at(-1).status).toBe('SUCCESS')
+    expect(frames.some(row => row.event?.text?.includes('保留全部 allow 规则'))).toBe(true)
+    const prompt = requests.find((row: any) => row.path?.endsWith('/prompt_async'))
+    expect(prompt.permission).toMatchObject({ '*': 'allow', edit: 'allow', bash: 'allow', external_directory: 'allow', task: 'deny', question: 'deny' })
+    expect(requests.filter((row: any) => row.path?.startsWith('/permission/') && row.method === 'POST').map((row: any) => row.body)).toEqual([{ enabled: true }, { enabled: true }])
+  })
+
+  it.each([
+    ['accept-edits', 'read-only', 'disable-failed'],
+    ['accept-edits', 'workspace-write', 'disable-failed'],
+    ['plan', 'danger-full-access', 'disable-failed'],
+    ['accept-edits', 'workspace-write', 'rollback-failed'],
+  ] as const)('mimo: refuses %s / %s before any prompt when reset is %s', async (mode, access, failure) => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { CWN_FIXTURE_SWITCH_FAILURE: failure, CWN_FIXTURE_STALE_SWITCHES: '1' }, undefined, { mode, access })
+    expect(frames.at(-1).status).toBe('ERROR')
+    expect(frames.at(-1).error).toMatch(/无法确认关闭/)
+    expect(requests.some((row: any) => row.path === '/session' || row.path?.endsWith('/prompt_async'))).toBe(false)
+    expectServerCloseReceipt(requests)
+  })
+
+  it('mimo: accepts the explicit setter receipt when only optional readback is unavailable', async () => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { CWN_FIXTURE_SWITCH_FAILURE: 'get-missing' }, undefined, { access: 'workspace-write' })
+    expect(frames.at(-1).status).toBe('SUCCESS')
+    expect(requests.find((row: any) => row.path?.endsWith('/prompt_async')).switches).toEqual({ 'skip-all': true, 'auto-approve-delete': false })
+    expect(frames.some(row => row.event?.text?.includes('按询问运行'))).toBe(false)
   })
 })
 

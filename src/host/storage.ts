@@ -132,6 +132,7 @@ const workerSchema = z.object({
   role: roleSnapshotSchema.optional(),
   preference: storedPreferenceSchema,
   mode: z.enum(['plan', 'accept-edits']),
+  level: z.enum(['ask', 'auto', 'full']).optional().catch(undefined),
   conversationId: z.string().optional(),
   previousConversationIds: z.array(z.string().min(1)).max(64).optional().catch(undefined),
   reboundConversationId: z.string().min(1).max(1024).optional().catch(undefined),

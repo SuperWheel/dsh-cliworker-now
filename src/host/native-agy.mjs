@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process'
+import { nativeLaunchArgv } from './native-launch.mjs'
 import { summarizeNativeRecord } from './native-transport.mjs'
 import { agyResponseUsage } from './native-response.mjs'
 import { recordAgyHarnessSession } from './native-agy-harness.mjs'
@@ -7,22 +9,72 @@ const object = (value) => value && typeof value === 'object' && !Array.isArray(v
 const string = (value) => typeof value === 'string' && value.trim().length > 0
 const fail = (message) => new Error(`Antigravity stream-json: ${message}`)
 
-export function nativeAgyArgv(config) {
+export function agyPermissionMode(config, modes) {
+  const plan = config.mode === 'plan' || config.access === 'read-only'
+  const full = !plan && config.access === 'danger-full-access'
+  let mode = plan ? 'plan' : full ? 'accept-edits' : 'auto'
+  let skip = full, notice
+  if (modes && !modes.includes(mode)) {
+    if (!plan && modes.includes('accept-edits')) {
+      mode = 'accept-edits'
+      skip = true
+      notice = 'Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行'
+    } else if (!plan && modes.includes('plan')) {
+      mode = 'plan'
+      skip = false
+      notice = 'Antigravity 原生权限模式不可用，本轮按仅规划运行'
+    } else throw fail('原生规划模式不可用，已拒绝启动')
+  }
+  return { mode, skip, sandbox: !full || mode === 'plan', notice }
+}
+
+/** Probe help only, before any task input; never retry a task on mode errors. */
+export async function probeAgyModes(config, signal) {
+  const start = config.argv.indexOf('--add-dir')
+  if (start < 1) throw fail('无法确认原生启动入口')
+  const [executable, ...args] = nativeLaunchArgv([...config.argv.slice(0, start), '--help'])
+  const help = await new Promise((resolve, reject) => {
+    let failure, output
+    const child = execFile(executable, args, { cwd: config.project, env: { ...process.env, ...config.env },
+      windowsHide: true, timeout: 5000, killSignal: 'SIGKILL', maxBuffer: 262144, signal },
+    (error, stdout, stderr) => { failure = error; output = `${stdout}\n${stderr}` })
+    // An aborted execFile can report its error before close. Await pipe/process cleanup.
+    child.once('close', () => failure ? reject(failure) : resolve(output))
+  })
+  const declaration = String(help).split(/\r?\n/).find(line => /^\s*--mode\s/.test(line)) ?? ''
+  return ['accept-edits', 'auto', 'plan'].filter(mode => new RegExp(`(?:^|[\\s,(|])${mode}(?=$|[\\s,)|])`).test(declaration))
+}
+
+export function nativeAgyArgv(config, modes) {
   const argv = config.argv
   if (!Array.isArray(argv) || argv.at(-2) !== '--print' || argv.at(-1) !== `任务：\n${config.prompt}`) throw fail('不支持的原生命令参数')
   const args = argv.slice(0, -2)
-  if (args[args.indexOf('--output-format') + 1] !== 'stream-json' || args[args.indexOf('--model') + 1] !== config.preference.model || args[args.indexOf('--mode') + 1] !== config.mode)
+  const permission = agyPermissionMode(config, modes)
+  const requestedMode = agyPermissionMode(config).mode
+  const suppliedMode = args[args.indexOf('--mode') + 1]
+  if (args.filter(arg => arg === '--mode').length !== 1) throw fail('重复的原生权限模式')
+  if (args[args.indexOf('--output-format') + 1] !== 'stream-json' || args[args.indexOf('--model') + 1] !== config.preference.model || (suppliedMode !== requestedMode && suppliedMode !== config.mode))
     throw fail('原生格式、模型或权限模式与任务不一致')
   if (config.preference.effort === 'default' ? args.includes('--effort') : args[args.indexOf('--effort') + 1] !== config.preference.effort) throw fail('原生思考强度与选型不一致')
   if (config.conversationId && args[args.indexOf('--conversation') + 1] !== config.conversationId) throw fail('恢复参数与会话不一致')
   if (!config.conversationId && args.includes('--conversation')) throw fail('缺少恢复会话绑定')
   if (args.includes('--input-format')) throw fail('重复的原生输入选项')
-  return [...args, '--input-format', 'stream-json']
+  const normalized = args.filter((arg, index) => index !== args.indexOf('--mode') + 1 && arg !== '--mode' &&
+    !/^--(?:sandbox|dangerously-skip-permissions)(?:=|$)/.test(arg))
+  return [...normalized, ...(permission.sandbox ? ['--sandbox'] : ['--sandbox=false']),
+    ...(permission.skip ? ['--dangerously-skip-permissions'] : []),
+    '--mode', permission.mode, '--input-format', 'stream-json']
 }
 
 /** One native stdin turn; result and process exit remain separate evidence. */
 export async function runNativeAgy(config, io) {
-  const peer = await io.openStdio(nativeAgyArgv(config), { env: config.env, cwd: config.project })
+  nativeAgyArgv(config)
+  let modes
+  try { modes = await probeAgyModes(config, io.signal) }
+  catch (error) { throw fail(`无法核实原生权限模式，已拒绝启动：${error.message}`) }
+  const permission = agyPermissionMode(config, modes)
+  if (permission.notice) io.event({ kind: 'diagnostic', text: permission.notice })
+  const peer = await io.openStdio(nativeAgyArgv(config, modes), { env: config.env, cwd: config.project })
   let sessionId, result, invalidStep = false, failedStep = false
   const steps = new Map(), responses = new Map(), toolOutputs = new Map()
   const toolOutcomes = createToolOutcomes()
