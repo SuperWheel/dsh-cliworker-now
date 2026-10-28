@@ -52,7 +52,9 @@ import {
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
   type RuntimeConfig,
+  type TaskTimeLimit,
 } from './process.ts'
+import { bridgeTimeLimit, remainingMs, taskTimeLimit, timeLimitMessage } from './task-time-limit.ts'
 import { join } from 'node:path'
 import { AgyContextReader } from './agy-context.ts'
 import { attachTelemetry, TelemetryReader } from './telemetry.ts'
@@ -141,6 +143,8 @@ interface Task {
   /** The turn continues in a new native session after the original could not be resumed. */
   // A Claude branch that never started has no conversation of its own, only its pending fork.
   carryover?: { previousConversationId?: string; previousSessionUsage?: TokenUsage; forkState?: WorkerForkState }
+  /** Fixed when the turn first starts; a carried-over attempt keeps the same deadline. */
+  timeLimit?: TaskTimeLimit
 }
 /** A message for a run whose account has since changed is queued instead of steered. */
 class AccountChangedDuringRunError extends Error {
@@ -1024,6 +1028,10 @@ export class WorkerRuntime {
       language: this.storage.generalSettings().language ?? 'follow',
       isolatedParallelWrites: this.storage.generalSettings().isolatedParallelWrites ?? false,
       askBeforeDispatch: this.storage.generalSettings().askBeforeDispatch ?? true,
+      // The plugin config value stays the initial limit until the user chooses one.
+      taskTimeLimitMs: this.storage.generalSettings().taskTimeLimitMs ?? this.config.timeoutMs,
+      defaultTaskTimeLimitMs: this.config.timeoutMs,
+      idleTimeLimitMs: this.storage.generalSettings().idleTimeLimitMs ?? 0,
     }
   }
   setGeneralSettings(patch: unknown): GeneralSettings {
@@ -2165,11 +2173,26 @@ export class WorkerRuntime {
     let harnessLease: { connection?: NativeHarnessConnection; close(): Promise<void> } | undefined
     let stderr = ''
     let totalBytes = 0
-    const timeout = setTimeout(() => controller.abort(new Error('任务超时')), this.config.timeoutMs)
+    // Settings saved while this turn runs apply to later turns only.
+    const settings = this.generalSettings()
+    const limit = (task.timeLimit ??= taskTimeLimit(settings.taskTimeLimitMs, settings.idleTimeLimitMs))
+    const timeout = setTimeout(
+      () => controller.abort(new Error(timeLimitMessage('total', limit))),
+      remainingMs(limit),
+    )
+    let idleTimer: ReturnType<typeof setTimeout> | undefined
     const pendingFork = readWorkerForkState(this.storage.directory, worker.id)
     const resumeConversation = worker.conversationId ?? pendingFork?.sourceConversationId
     const expectedConversation = worker.conversationId
     const nativeTransport = usesNativeBridge(worker)
+    // The native bridge renews its own idle window; other transports are timed on their output here.
+    const touchIdle =
+      !nativeTransport && limit.idleMs > 0
+        ? () => {
+            clearTimeout(idleTimer)
+            idleTimer = setTimeout(() => controller.abort(new Error(timeLimitMessage('idle', limit))), limit.idleMs)
+          }
+        : undefined
     const createProtocol = nativeTransport
       ? (
           _cli: CliId,
@@ -2291,7 +2314,7 @@ export class WorkerRuntime {
       await assertFirstPartyConfiguration(cliOf(worker.preference), directory, controller.signal)
       metadataReady = true
       harnessLease = await this.harnessPreparation?.(worker, controller.signal, { submissionId: task.submissionId, isolated })
-      const executionConfig = { ...this.config,
+      const executionConfig = { ...this.config, timeLimit: limit,
         ...(task.attachments?.length ? { attachments: task.attachments } : {}),
         ...(harnessLease?.connection ? { harnessTools: harnessLease.connection } : {}),
       }
@@ -2348,7 +2371,7 @@ export class WorkerRuntime {
                 worker.preference,
                 worker.mode,
                 prompt,
-                this.config.timeoutMs,
+                Math.max(1000, remainingMs(limit)),
                 resumeConversation,
                 nativeTransport,
               ),
@@ -2368,7 +2391,7 @@ export class WorkerRuntime {
                 worker.preference,
                 worker.mode,
                 prompt,
-                this.config.timeoutMs,
+                Math.max(1000, remainingMs(limit)),
                 resumeConversation,
                 nativeTransport,
               ),
@@ -2467,6 +2490,7 @@ export class WorkerRuntime {
       task.delivered = true
       // Observe spawn rejection immediately even while draining protocol streams.
       void handle.done.catch(() => undefined)
+      touchIdle?.()
       controller.signal.throwIfAborted()
       if ('steer' in execution && typeof execution.steer === 'function') {
         task.steer = execution.steer
@@ -2480,6 +2504,7 @@ export class WorkerRuntime {
         if (!stream) throw new Error('CLI pipe unavailable')
         const decoder = new StringDecoder('utf8')
         for await (const chunk of stream) {
+          touchIdle?.()
           totalBytes += Buffer.byteLength(chunk)
           if (totalBytes > this.config.maxRunBytes)
             throw new Error('CLI output exceeded the configured per-run limit')
@@ -2494,6 +2519,13 @@ export class WorkerRuntime {
       const outcome = await handle.done
       controller.signal.throwIfAborted()
       protocol.end()
+      // A bridge that ended on its own timer stops the turn like the Host timer does.
+      const expired =
+        protocol instanceof BridgeProtocol && protocol.result?.status === 'ERROR'
+          ? bridgeTimeLimit(protocol.result.error)
+          : undefined
+      if (expired) controller.abort(new Error(timeLimitMessage(expired, limit)))
+      controller.signal.throwIfAborted()
       // Native cancellation may close its bridge before the mailbox sender has
       // polled the receipt and aborted the outer Host range. Warnings on stderr
       // must not replace this exact, run-scoped cancellation evidence.
@@ -2530,6 +2562,9 @@ export class WorkerRuntime {
       }
     } catch (error) {
       failure = error
+      // A bridge timer that expired before any session arrives as the protocol error itself.
+      const expired = nativeTransport && !controller.signal.aborted ? bridgeTimeLimit(error) : undefined
+      if (expired) controller.abort(new Error(timeLimitMessage(expired, limit)))
       // Per attempt: a carryover after a spawned resume can still wait for its account.
       busyAccount = accountBusy(error) && !spawned
       // Nothing reached a CLI yet, so the turn can be authorized again under the new account.
@@ -2547,6 +2582,7 @@ export class WorkerRuntime {
       }
     } finally {
       clearTimeout(timeout)
+      clearTimeout(idleTimer)
       task.steer = undefined
       task.nativeStop = undefined
       task.steeringController.abort(new Error('当前运行已结束，引导通路已关闭'))
@@ -2696,8 +2732,9 @@ export class WorkerRuntime {
     if (!task.accountWait && delay > 0)
       this.storage.append(worker, { kind: 'diagnostic', text: '账号正被另一个任务使用，排队等待' })
     task.accountWait = { retryAt: Date.now() + delay }
-    // Nothing was spawned; the next attempt opens its own steering channel.
+    // Nothing was spawned; the next attempt opens its own steering channel and time limit.
     task.steeringController = new AbortController()
+    task.timeLimit = undefined
     worker.status = 'queued'
     worker.error = undefined
     this.storage.save(worker)

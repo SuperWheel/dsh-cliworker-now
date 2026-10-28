@@ -3,9 +3,12 @@ import { t, uiLanguage } from './i18n.ts'
 
 /**
  * Host messages with variable parts. A `reason` capture is itself Host text and
- * is mapped again; paths, counts and other details stay verbatim.
+ * is mapped again; a `duration` capture translates its unit. Paths, counts and
+ * other details stay verbatim.
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
+  [/^任务超时：已达到总时限 (\d+ (?:小时|分钟|秒))$/u, '任务超时：已达到总时限 {duration}', 'duration'],
+  [/^任务超时：连续 (\d+ (?:小时|分钟|秒))没有收到 CLI 事件（空闲时限）$/u, '任务超时：连续 {duration}没有收到 CLI 事件（空闲时限）', 'duration'],
   [/^(.+) 已关闭，请先在 CLI Worker 设置中开启$/u, '{cli} 已关闭，请先在 CLI Worker 设置中开启', 'cli'],
   [/^正在启动 (.+)…$/u, '正在启动 {cli}…', 'cli'],
   [/^浏览器已打开 (.+) 登录页面。选择账号并授权后会自动完成。$/u, '浏览器已打开 {cli} 登录页面。选择账号并授权后会自动完成。', 'cli'],
@@ -48,6 +51,11 @@ export function hostText(text: string | undefined): string | undefined {
     if (match)
       return t(key, Object.fromEntries(names.map((name, index) => {
         const captured = match[index + 1]!
+        if (name === 'duration') {
+          const [, count, unit] = /^(\d+) (小时|分钟|秒)$/u.exec(captured)!
+          const key = unit === '小时' ? '{count} 小时' : unit === '分钟' ? '{count} 分钟' : '{count} 秒'
+          return [name, t(key, { count: count! })]
+        }
         return [name, name === 'reason' ? hostText(captured) : captured]
       })))
   }

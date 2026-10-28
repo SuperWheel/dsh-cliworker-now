@@ -75,6 +75,32 @@ it('keeps asking before dispatch for older settings and persists turning it off 
   expect(runtime.setGeneralSettings({ askBeforeDispatch: null }).askBeforeDispatch).toBe(true)
 })
 
+it('persists the task time limits privately and falls back to the plugin config timeoutMs', async () => {
+  const state = join(directory(), 'state')
+  let storage = new WorkerStorage(state)
+  const backend = { resolveExecutable: vi.fn(), spawn: vi.fn() } as unknown as ProcessBackend
+  let runtime = new WorkerRuntime(storage, backend, { ...DEFAULT_CONFIG, timeoutMs: 2_700_000 })
+  expect(runtime.generalSettings()).toMatchObject({
+    taskTimeLimitMs: 2_700_000,
+    defaultTaskTimeLimitMs: 2_700_000,
+    idleTimeLimitMs: 0,
+  })
+  expect(runtime.setGeneralSettings({ taskTimeLimitMs: 86_400_000, idleTimeLimitMs: 600_000 })).toMatchObject({
+    taskTimeLimitMs: 86_400_000,
+    defaultTaskTimeLimitMs: 2_700_000,
+    idleTimeLimitMs: 600_000,
+  })
+  if (process.platform !== 'win32') expect(statSync(join(state, 'general-settings.json')).mode & 0o777).toBe(0o600)
+  await runtime.close()
+  storage = new WorkerStorage(state)
+  runtime = new WorkerRuntime(storage, backend, { ...DEFAULT_CONFIG, timeoutMs: 2_700_000 })
+  cleanup.push(() => runtime.close())
+  expect(storage.generalSettings()).toEqual({ taskTimeLimitMs: 86_400_000, idleTimeLimitMs: 600_000 })
+  expect(runtime.setGeneralSettings({ idleTimeLimitMs: 0 }).idleTimeLimitMs).toBe(0)
+  expect(runtime.setGeneralSettings({ taskTimeLimitMs: null }).taskTimeLimitMs).toBe(2_700_000)
+  expect(storage.generalSettings()).toEqual({ idleTimeLimitMs: 0 })
+})
+
 it.each([
   { maxConcurrent: 0 },
   { maxConcurrent: 9 },
@@ -85,6 +111,12 @@ it.each([
   { language: '' },
   { language: 1 },
   { askBeforeDispatch: 'no' },
+  { taskTimeLimitMs: 999 },
+  { taskTimeLimitMs: 86_400_001 },
+  { taskTimeLimitMs: 1.5 * 60_000 + 0.5 },
+  { idleTimeLimitMs: 30_000 },
+  { idleTimeLimitMs: -1 },
+  { idleTimeLimitMs: '600000' },
 ])(
   'rejects an invalid patch without changing the stored value (%j)',
   (patch) => {
@@ -128,6 +160,9 @@ it('uses the saved limit over the config and admits queued work as soon as it is
     language: 'follow',
     isolatedParallelWrites: false,
     askBeforeDispatch: true,
+    taskTimeLimitMs: 1_800_000,
+    defaultTaskTimeLimitMs: 1_800_000,
+    idleTimeLimitMs: 0,
   })
   expect(backend.resolveExecutable).not.toHaveBeenCalled()
 
@@ -137,6 +172,9 @@ it('uses the saved limit over the config and admits queued work as soon as it is
     language: 'follow',
     isolatedParallelWrites: false,
     askBeforeDispatch: true,
+    taskTimeLimitMs: 1_800_000,
+    defaultTaskTimeLimitMs: 1_800_000,
+    idleTimeLimitMs: 0,
   })
   await vi.waitFor(() => expect(storage.workers.get(worker.id)?.status).not.toBe('queued'))
 })

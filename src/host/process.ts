@@ -26,7 +26,18 @@ export class ProcessCleanupUnconfirmedError extends Error {
     this.name = 'ProcessCleanupUnconfirmedError'
   }
 }
+/** One task's limits, fixed when it starts; settings changed later apply to later tasks only. */
+export interface TaskTimeLimit {
+  /** Absolute end of the task (epoch ms), shared by every timer of the run. */
+  deadlineAt: number
+  /** Total limit this deadline came from, for the timeout note. */
+  totalMs: number
+  /** No native event for this long stops the task; 0 is off. */
+  idleMs: number
+}
 export interface RuntimeConfig {
+  /** Per-run time limit snapshot, never deployment settings. */
+  timeLimit?: TaskTimeLimit
   /** Host-resolved upload references for one task, never deployment settings. */
   attachments?: readonly NativeAttachment[]
   /** Per-run Host-private tool connection; never persisted as deployment settings. */
@@ -55,6 +66,7 @@ export interface RuntimeConfig {
   /** @deprecated Test/old API compatibility only; must never be invoked. */
   resolveCredential?: (ref: string) => Promise<string | undefined>
   maxConcurrent: number
+  /** Initial total task time limit until one is chosen in the CLI Worker settings. */
   timeoutMs: number
   graceMs: number
   maxLineBytes: number

@@ -2692,6 +2692,109 @@ it('opens CLI Worker settings above agents and saves the shared concurrency limi
   expect(t.text()).not.toContain('同时对话数已保存')
   expect(t.text()).not.toContain('正在保存同时对话数')
 })
+// Simulated Gateway settings only: no task, CLI or model is started.
+it('shows deployment and current time limits as sorted, deduplicated choices and saves both fields', async () => {
+  let current = {
+    maxConcurrent: 2, defaultMaxConcurrent: 2,
+    taskTimeLimitMs: 2_700_000, defaultTaskTimeLimitMs: 2_700_000, idleTimeLimitMs: 420_000,
+  }
+  const saveGeneralSettings = vi.fn(async (_session, raw: string) => {
+    current = { ...current, ...JSON.parse(raw) }
+    return remote(current)
+  })
+  const t = await setup({ generalSettings: vi.fn(async () => remote(current)), saveGeneralSettings })
+  await t.click('CLI Worker 设置')
+  expect(t.r.root.findAllByType('h3').map(visibleText)).toEqual(['语言', '任务调度', '任务时限'])
+  expect(visibleText(t.button('总时限')).trim()).toBe('45 分钟（默认）')
+  expect(visibleText(t.button('空闲时限')).trim()).toBe('7 分钟')
+  await t.click('总时限')
+  const menu = t.r.root.findByProps({ role: 'menu' })
+  expect(menu.findAllByType('button').map(visibleText)).toEqual([
+    '30 分钟', '45 分钟（默认）', '1 小时', '2 小时', '4 小时', '8 小时', '不限制（最长 24 小时）',
+  ])
+  await t.click('2 小时')
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"taskTimeLimitMs":7200000}', expect.any(AbortSignal))
+  expect(visibleText(t.button('总时限')).trim()).toBe('2 小时')
+  await t.click('空闲时限')
+  expect(t.r.root.findByProps({ role: 'menu' }).findAllByType('button').map(visibleText)).toEqual([
+    '不启用', '5 分钟', '7 分钟', '10 分钟', '30 分钟',
+  ])
+  await t.click('10 分钟')
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"idleTimeLimitMs":600000}', expect.any(AbortSignal))
+  expect(visibleText(t.button('空闲时限')).trim()).toBe('10 分钟')
+  expect(t.text()).not.toContain('正在保存')
+  expect(t.text()).not.toContain('已保存')
+  expect(t.configure).not.toHaveBeenCalled()
+})
+
+it('keeps a custom current total limit and labels a seconds-based deployment default', async () => {
+  const t = await setup({ generalSettings: vi.fn(async () => remote({
+    maxConcurrent: 2, defaultMaxConcurrent: 2,
+    taskTimeLimitMs: 1250, defaultTaskTimeLimitMs: 90_000, idleTimeLimitMs: 0,
+  })) })
+  await t.click('CLI Worker 设置')
+  expect(visibleText(t.button('总时限')).trim()).toBe('2 秒')
+  await t.click('总时限')
+  expect(t.r.root.findByProps({ role: 'menu' }).findAllByType('button').map(visibleText).slice(0, 3)).toEqual([
+    '2 秒', '90 秒（默认）', '30 分钟',
+  ])
+})
+
+it('shows the older Host time limit defaults without writing settings', async () => {
+  const saveGeneralSettings = vi.fn()
+  const t = await setup({
+    generalSettings: vi.fn(async () => remote({ maxConcurrent: 2, defaultMaxConcurrent: 2 })),
+    saveGeneralSettings,
+  })
+  await t.click('CLI Worker 设置')
+  expect(visibleText(t.button('总时限')).trim()).toBe('30 分钟（默认）')
+  expect(visibleText(t.button('空闲时限')).trim()).toBe('不启用')
+  expect(saveGeneralSettings).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['总时限', '2 小时', '30 分钟（默认）', '正在保存总时限…', '总时限未保存，请重新选择重试'],
+  ['空闲时限', '10 分钟', '不启用', '正在保存空闲时限…', '空闲时限未保存，请重新选择重试'],
+])('keeps the previous %s on save failure and allows retrying the same choice', async (label, choice, previous, saving, unsaved) => {
+  const pending = deferred()
+  const original = { maxConcurrent: 2, defaultMaxConcurrent: 2, taskTimeLimitMs: 1_800_000, defaultTaskTimeLimitMs: 1_800_000, idleTimeLimitMs: 0 }
+  const saveGeneralSettings = vi.fn((_session, _raw: string) => pending.promise)
+  const t = await setup({ generalSettings: vi.fn(async () => remote(original)), saveGeneralSettings })
+  await t.click('CLI Worker 设置')
+  await t.click(label)
+  await t.click(choice)
+  expect(t.text()).toContain(saving)
+  expect(t.button(label).props.disabled).toBe(true)
+  // The Host answered without applying the choice.
+  await act(async () => pending.resolve(remote(original)))
+  expect(t.text()).toContain(unsaved)
+  expect(visibleText(t.button(label)).trim()).toBe(previous)
+  expect(t.button(label).props.disabled).toBe(false)
+  saveGeneralSettings.mockImplementation(async (_session, raw: string) => remote({ ...original, ...JSON.parse(raw) }))
+  await t.click(label)
+  await t.click(choice)
+  expect(saveGeneralSettings).toHaveBeenCalledTimes(2)
+  expect(visibleText(t.button(label)).trim()).toBe(choice)
+  expect(t.text()).not.toContain(unsaved)
+})
+
+it.each([
+  { taskTimeLimitMs: 999 }, { taskTimeLimitMs: 86_400_001 }, { taskTimeLimitMs: 1000.5 },
+  { taskTimeLimitMs: null }, { taskTimeLimitMs: '1800000' },
+  { defaultTaskTimeLimitMs: 0 }, { defaultTaskTimeLimitMs: 86_400_001 }, { defaultTaskTimeLimitMs: 1000.5 },
+  { defaultTaskTimeLimitMs: null }, { defaultTaskTimeLimitMs: '1800000' },
+  { idleTimeLimitMs: -1 }, { idleTimeLimitMs: 59_999 }, { idleTimeLimitMs: 60_000.5 },
+  { idleTimeLimitMs: 86_400_001 }, { idleTimeLimitMs: null }, { idleTimeLimitMs: '0' },
+])('rejects invalid Host time limits %j and keeps retry in task scheduling', async (invalid) => {
+  const t = await setup({ generalSettings: vi.fn(async () => remote({ maxConcurrent: 2, defaultMaxConcurrent: 2, ...invalid })) })
+  await t.click('CLI Worker 设置')
+  expect(t.text()).toContain('收到无效的通用设置，请重试')
+  const scheduling = t.r.root.findByProps({ className: 'cwn-settings-section', 'aria-label': '任务调度' })
+  expect(scheduling.findAllByType('button').some(button => button.children.includes('重试读取通用设置'))).toBe(true)
+  expect(t.button('总时限').props.disabled).toBe(true)
+  expect(t.button('空闲时限').props.disabled).toBe(true)
+})
+
 it('switches the whole dialog to English as soon as the language is saved', async () => {
   let current: Record<string, unknown> = { maxConcurrent: 2, defaultMaxConcurrent: 2 }
   const generalSettings = vi.fn(async () => remote(current))
@@ -2709,6 +2812,9 @@ it('switches the whole dialog to English as soon as the language is saved', asyn
   expect(t.text()).not.toContain('Interface language saved')
   expect(t.text()).toContain('Maximum concurrent conversations')
   expect(t.text()).toContain('Parallel writes in the same directory')
+  expect(t.text()).toContain('Time limits')
+  expect(visibleText(t.button('Total time limit')).trim()).toBe('30 min (default)')
+  expect(visibleText(t.button('Idle time limit')).trim()).toBe('Off')
   expect(t.button('Agent settings')).toBeDefined()
   expect(t.text()).not.toContain('最高同时对话数')
   expect(t.text()).not.toContain('同目录写任务并行')

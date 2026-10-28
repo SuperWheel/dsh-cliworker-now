@@ -8,8 +8,11 @@ const bounded = (value, max) => Buffer.byteLength(value) <= max
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const steerRejected = () => Object.assign(new Error('原生引导通路已关闭或尚未准备，请保留消息后重试'), { code: 'STEER_REJECTED' })
 
-/** One owned native process; descendants remain inside the Host's enclosing process range. */
-export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) {
+/**
+ * One owned native process; descendants remain inside the Host's enclosing process range.
+ * `onNativeOutput` hears of every raw child chunk, including frames a runner later drops, never its content.
+ */
+export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, onNativeOutput = () => {}) {
   const children = new Set()
   const controls = new Set()
   const steering = new Map()
@@ -136,6 +139,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
       const read = (chunk, callback, isError) => {
         total += chunk.length
         if (total > config.maxRunBytes) return fail(failure('Native stream exceeds run limit'))
+        onNativeOutput()
         if (isError) {
           stderr = (stderr + chunk.toString('utf8')).slice(-8192)
           onNativeStderr(chunk)
