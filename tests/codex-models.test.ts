@@ -95,13 +95,13 @@ describe('Codex native capability intersection', () => {
       discoverCodexModels(f.backend, DEFAULT_CONFIG, '/synthetic/codex', '/synthetic', new AbortController().signal),
     ).rejects.toThrow('Codex 路由配置已变化，请刷新')
   })
-  it('pages native metadata and rejects hidden, restricted and unsupported effort candidates', async () => {
+  it('pages native metadata, keeps promoted models and rejects hidden and unsupported effort candidates', async () => {
     const f = fixture([
       [entry('allowed'), entry('hidden', { hidden: true })],
-      [entry('restricted', { availabilityNux: { message: 'upgrade' } }), entry('other')],
+      [entry('promoted', { availabilityNux: { message: 'Try the new model' } }), entry('other')],
     ])
     expect(await f.run()).toEqual(
-      ['allowed', 'other'].map((id) => ({ id, label: id, efforts: ['low', 'high'] })),
+      ['allowed', 'promoted', 'other'].map((id) => ({ id, label: id, efforts: ['low', 'high'] })),
     )
     expect(f.messages.map((value) => value.method)).toEqual([
       'initialize',

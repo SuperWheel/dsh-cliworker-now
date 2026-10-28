@@ -9,7 +9,8 @@ const validId = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0
 export function parseCodexNativeModels(values: unknown[]): ModelChoice[] {
   const models = new Map<string, ModelChoice>()
   for (const value of values) {
-    if (!record(value) || !validId(value.model) || value.hidden === true || value.availabilityNux) continue
+    // availabilityNux is promotional copy for a new model, not an availability denial.
+    if (!record(value) || !validId(value.model) || value.hidden === true) continue
     const efforts = EFFORTS.filter(
       (e) =>
         Array.isArray(value.supportedReasoningEfforts) &&
