@@ -1173,3 +1173,14 @@ Kimi、Pi、OMP 接入（同日，用户要求「继续做 Kimi、Pi、OMP 的�
 - Pi 没有单服务商退出命令，插件自带的 `pi-login.mjs` 调用 Pi 运行时的 `modelRuntime.logout(provider)`；登录以 `login <服务商>` 进入 Pi 自身的流程。
 - 引擎新增 `pick`：用于只能在原生列表里选的退出（OMP `/logout`、Kimi Code）。每次按一次 ↓ 读高亮行，只有能核对为目标的行才按回车；重复或超过 40 行转原生终端。新增 `watches: 'login'`：Pi、OMP 授权后不退出，Host 每 3 秒核对、最长 15 分钟。
 - Pi/OMP 账号行只列任务实际使用的凭据，并带 `source` 分组；OMP 自身退出写入 `disabled_cause='deleted by user'` 保留行，此类行不覆盖其他位置、不显示失效，其他禁用原因仍显示失效。
+
+## 2026-10-28 整轮结果按原生终态判定（未发布）
+
+OpenSpec 变更 `judge-run-outcome-by-native-terminal`（起因：用户反馈 Windows 上 28 个 Worker 有 12 个显示失败，多数是单个工具失败后 CLI 已自行完成，主 Agent 据此重做，浪费额度）。
+
+- 单个工具失败不再写入本轮 `failure`。共用模块 `src/host/native-tool-outcomes.mjs` 按原生工具身份去重计数，并记录最近的证据是失败还是成功；之后的成功工具或非空回复都算 CLI 已继续。
+- 终态顺序：本轮失败（协议/身份不一致、原生轮次失败或中断、缺少终态、仍有未完成工具、非零退出、需要额外交互输入）→ 失败；有授权拒绝 → 结果待核实（既有规则）；最后一步工具失败后直接结束 → 结果待核实，提示核查产物、不要自动重试；否则成功，有失败步骤时附说明「本轮有 N 个工具步骤失败，CLI 已自行处理」。
+- 成功帧新增可选 `notice`（仅 SUCCESS，≤2000 字符）：`native-transport.mjs` → `bridge-protocol.ts` → `Worker.resultNotice`（每轮重置）→ 时间线诊断「本轮结果说明」与主 Agent 结果的 `notice`/guidance。runtime 待核实与说明分支改按 `BridgeProtocol` 判断，Pi/OMP 同样生效。
+- 各 CLI 的工具失败信号沿用原识别：Codex 条目 `failed`（`inProgress` 收尾改为未完成工具）、Claude `is_error`、ACP `status==='failed'`、ZCode 单工具 error 与批次 `errorCount`（扣除已知失败和被拒工具）、OpenCode/MiMo `state.status==='error'`、Hermes `tool.failed`、Antigravity `tool_info.error`、Pi/OMP `isError`。
+- Antigravity 步骤状态 `ERROR` 仍判本轮失败（无法确认是否只是工具级信号）；`tool_info.error` 仍阻止续聊汇总冲突转为结果待核实。Pi/OMP 未新增未完成工具检查。
+- 持久化无迁移，历史 failed 记录不重算。

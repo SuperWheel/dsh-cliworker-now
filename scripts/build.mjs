@@ -41,6 +41,7 @@ for (const name of [
   'native-spawn',
   'native-bridge',
   'native-transport',
+  'native-tool-outcomes',
   'native-harness-injection',
   'native-agy-harness',
   'native-attachments',

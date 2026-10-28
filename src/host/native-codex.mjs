@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { CodexRunUsage } from './codex-run-usage.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
@@ -60,6 +61,7 @@ export async function runNativeCodex(config, io) {
   // Items whose approval was declined; their declined/failed completion is the denial itself.
   const deniedItems = new Set()
   const runUsage = new CodexRunUsage(config.conversationId)
+  const toolOutcomes = createToolOutcomes()
   const step = (id) => {
     if (!steps.has(id)) steps.set(id, steps.size)
     return steps.get(id)
@@ -111,7 +113,10 @@ export async function runNativeCodex(config, io) {
       const remaining = item.text.slice(previous.length)
       if (remaining || previous) io.event({ kind: 'assistant', step: step(item.id), text: remaining, state: 'COMPLETED' })
       messages.set(item.id, item.text)
-      if (item.text.trim()) response = item.text
+      if (item.text.trim()) {
+        response = item.text
+        toolOutcomes.succeeded()
+      }
     } else if (item.type === 'reasoning') {
       if (Array.isArray(item.summary)) item.summary.forEach((summary, index) => {
         if (typeof summary === 'string') io.event({ kind: 'reasoning', step: step(`reasoning:${item.id}:${index}`), text: 'Codex 思考摘要', detail: summary, state: 'COMPLETED' })
@@ -120,7 +125,9 @@ export async function runNativeCodex(config, io) {
       tools.delete(item.id)
       // Every typed tool except webSearch has an explicit native completion status.
       const failed = (item.type !== 'webSearch' && item.status !== 'completed') || item.success === false || !!item.error || !!item.failure || (typeof item.exitCode === 'number' && item.exitCode !== 0)
-      if (failed && !deniedItems.has(item.id)) markFailure('原生工具失败或权限被拒绝')
+      if (item.status === 'inProgress') markFailure('原生轮次结束时仍有未完成工具')
+      else if (failed && !deniedItems.has(item.id)) toolOutcomes.failed(item.id)
+      else if (!failed) toolOutcomes.succeeded()
       io.event({ kind: 'tool', step: step(item.id), text: item.command ?? item.tool ?? item.type, state: failed ? 'FAILED' : 'COMPLETED', detail: JSON.stringify(safeItem(item)), toolCall: { ...publicTool(item),
         ...(item.type === 'commandExecution' && item.aggregatedOutput == null && toolOutput.has(item.id) ? { output: toolOutput.get(item.id) } : {}) } })
     }
@@ -272,7 +279,7 @@ export async function runNativeCodex(config, io) {
     if (outcome.exitCode !== 0) markFailure('Codex 原生进程非零退出')
     if (failure) io.result('ERROR', response, failure, 'response')
     else if (denied) io.result('UNCERTAIN', response, 'Codex 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'response')
-    else io.result('SUCCESS', response, undefined, 'response')
+    else toolOutcomes.settle(io, response, 'response')
   } finally {
     releaseSteer?.()
     io.signal?.removeEventListener('abort', abort)

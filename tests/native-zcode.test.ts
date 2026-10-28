@@ -102,6 +102,18 @@ createInterface({input:process.stdin}).on('line',line=>{
   event('model.streaming',{kind:'text_delta',delta:'HELLO'},{eventId:'delta-one'});
   if(scenario==='cancel')return;
   if(scenario.startsWith('permission')){event('tool.updated',{toolCallId:'denied-tool',toolName:'Bash',kind:'scheduled'});return out({id:'permission',method:'interaction/requestPermission',params:{sessionId,toolCallId:'denied-tool',toolName:'Bash'}});}
+  if(['tool-failure','tool-recovered','batch-failure'].includes(scenario)){
+   // Simulated order: a write fails, the batch closes it, and the CLI may carry on.
+   event('tool.updated',{kind:'call',toolCallId:'write-tool',toolName:'write',input:{path:'synthetic'}});
+   if(scenario!=='batch-failure')event('tool.updated',{kind:'error',toolCallId:'write-tool',toolName:'write',result:{success:false,text:'synthetic failure'}});
+   else event('tool.updated',{kind:'result',toolCallId:'write-tool',toolName:'write',result:{success:true,text:'synthetic result'}});
+   event('tool.updated',{kind:'batch',toolCallIds:['write-tool'],successCount:0,errorCount:1});
+   if(scenario==='tool-recovered'){
+    event('tool.updated',{kind:'call',toolCallId:'retry-tool',toolName:'edit',input:{path:'synthetic'}});
+    event('tool.updated',{kind:'result',toolCallId:'retry-tool',toolName:'edit',result:{success:true,text:'synthetic edit'}});
+    event('model.streaming',{kind:'text_delta',delta:'AFTER'});
+   }
+  }
   if(scenario==='missing-terminal')return out({method:'state.updated',params:{sessionId,reason:'prompt_completed'}});
   finish();return;
  }
@@ -315,9 +327,18 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     // The denied call is closed by its batch, so it does not stay running in the timeline.
     expect(frames.filter((frame) => frame.event?.toolCall?.callId === 'denied-tool').at(-1)?.event.state).toBe('FAILED')
   })
-  it('keeps an error when another tool in the batch fails besides the denied one', async () => {
+  it('keeps a denied turn unverified when another tool in the batch fails besides the denied one', async () => {
     const { result } = await fixture('permission-other-failure')
-    expect(result).toMatchObject({ status: 'ERROR', error: 'ZCode 工具批次失败' })
+    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('结果待核实') })
+  })
+  it('counts a failed call once when its batch reports it again, and succeeds after the CLI carries on', async () => {
+    const { result, frames } = await fixture('tool-recovered')
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
+    expect(frames.some((frame) => frame.event?.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
+  })
+  it.each(['tool-failure', 'batch-failure'])('reports a turn that ends right after a failed tool (%s) as unverified', async (scenario) => {
+    const { result } = await fixture(scenario)
+    expect(result).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
   })
   it('keeps an error when the turn fails after a denied permission', async () => {
     const { result, records } = await fixture('permission-failed')

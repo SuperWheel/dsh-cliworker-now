@@ -196,7 +196,8 @@ send({type:'message_update',assistantMessageEvent:{type:'thinking_delta',content
 }
 for(const delta of scenario==='fragmented'?['H','E','L','L','O']:[resumed?'RESUMED':'HELLO'])send({type:'message_update',assistantMessageEvent:{type:'text_delta',delta}});
 if(scenario==='cancel'||scenario.startsWith('steer-'))return;
-if(scenario==='tool-error'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
+if(scenario==='tool-error'||scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
+if(scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'retry',toolName:'edit'});send({type:'tool_execution_end',toolCallId:'retry',toolName:'edit',isError:false,result:{content:[{type:'text',text:'edited'}]}})}
 if(scenario==='malformed'){process.stdout.write('not-json\\n');return}
 streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:scenario==='public-thinking'?[{type:'thinking',thinking:'模拟公开过程（权威快照）',thinkingSignature:'OPAQUE_SIGNATURE'},{type:'text',text:'HELLO'},{type:'thinking',thinking:'REDACTED_TEXT',redacted:true,thinkingSignature:'OPAQUE_SIGNATURE'},{type:'redactedThinking',data:'ENCRYPTED_DATA'},{type:'thinking',thinking:'模拟仅完成时提供'}]:[{type:'text',text:resumed?'RESUMED':'HELLO'}],stopReason:'stop'}});
 send({type:'agent_end'});if(cli==='pi'&&scenario!=='unsettled')send({type:'agent_settled'});
@@ -770,12 +771,18 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
       if (process.platform !== 'win32') expect((await stat(prepared.argv[2]!)).mode & 0o077).toBe(0)
     },
   )
-  it.each(['pi', 'omp'] as const)('%s refuses a failed tool even when native CLI exits zero', async (cli) => {
+  it.each(['pi', 'omp'] as const)('%s never reports a turn that ends right after a failed tool as success', async (cli) => {
     const { input } = await fixture(cli, 'tool-error')
     const result = await launch({ ...input, mode: 'accept-edits' })
-    expect(result.code).toBe(1)
-    expect(result.frames.at(-1)).toMatchObject({ status: 'ERROR' })
+    expect(result.code).toBe(0)
+    expect(result.frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
     expect(result.frames.some((frame: any) => frame.event?.state === 'FAILED')).toBe(true)
+  })
+  it.each(['pi', 'omp'] as const)('%s reports a turn that carries on after a failed tool as success with the failed step count', async (cli) => {
+    const { input } = await fixture(cli, 'tool-recovered')
+    const result = await launch({ ...input, mode: 'accept-edits' })
+    expect(result.code).toBe(0)
+    expect(result.frames.at(-1)).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
   })
   it.each(['pi', 'omp'] as const)('%s keeps optional unavailable/timed-out usage independent of native success', async (cli) => {
     for (const scenario of ['usage-unavailable', 'usage-timeout']) {

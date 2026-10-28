@@ -1,5 +1,6 @@
 import { agyResponseUsage } from './native-response.mjs'
 import { recordAgyHarnessSession } from './native-agy-harness.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
@@ -23,6 +24,7 @@ export async function runNativeAgy(config, io) {
   const peer = await io.openStdio(nativeAgyArgv(config), { env: config.env, cwd: config.project })
   let sessionId, result, invalidStep = false, failedStep = false
   const steps = new Map(), responses = new Map()
+  const toolOutcomes = createToolOutcomes()
   const currentResponse = () => [...responses.values()].filter((text) => text.trim()).join('\n')
   const identify = (id, model) => {
     if (id === undefined) return
@@ -65,11 +67,15 @@ export async function runNativeAgy(config, io) {
       if ((state && !['PENDING', 'QUEUED', 'ACTIVE', 'RUNNING', 'IN_PROGRESS', 'DONE'].includes(state)) ||
         (item.state !== undefined && typeof item.state !== 'string') ||
         (item.text_delta !== undefined && typeof item.text_delta !== 'string') ||
-        (item.error !== undefined && item.error !== null && item.error !== '' && item.error !== false) || item.is_error === true || toolError) invalidItem = true
+        (item.error !== undefined && item.error !== null && item.error !== '' && item.error !== false) || item.is_error === true) invalidItem = true
       if (invalidItem) { invalidStep = true; failedStep = true }
+      // A tool's own error is that step's outcome; it still keeps the steps from proving a summary conflict.
+      if (toolError) { invalidStep = true; toolOutcomes.failed(index) }
+      else if (!invalidItem && item.step_type === 'tool' && state === 'DONE') toolOutcomes.succeeded()
       if (item.step_type === 'agent_response') {
         const text = typeof item.text_delta === 'string' ? item.text_delta : ''
         responses.set(index, (responses.get(index) ?? '') + text)
+        if (!invalidItem && text.trim()) toolOutcomes.succeeded()
         const usage = state === 'DONE' ? agyResponseUsage(item.usage) : undefined
         io.event({ kind: 'assistant', step: index, text, state,
           ...(Number.isSafeInteger(index) && index >= 0 ? { response: {
@@ -119,7 +125,7 @@ export async function runNativeAgy(config, io) {
       io.result('UNCERTAIN', observed, `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${result.error || '未提供错误详情'}`, 'run')
     } else if (outcome.exitCode !== 0 || result.status !== 'SUCCESS' || failedStep || unfinishedTool) {
       io.result('ERROR', observed, outcome.exitCode !== 0 ? 'Antigravity 原生进程非零退出' : typeof result.error === 'string' && result.error ? result.error : `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`, 'run')
-    } else io.result('SUCCESS', result.response, undefined, 'run')
+    } else toolOutcomes.settle(io, result.response, 'run')
   } finally {
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()

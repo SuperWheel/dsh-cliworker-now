@@ -1,6 +1,7 @@
 // ACP is JSON-RPC 2.0 over NDJSON. Kimi and Grok retain their own config wire.
 import { nativeHarnessMcpServers, nativeHarnessAcpApproval } from './native-harness-injection.mjs'
 import { nativeAttachmentInput } from './native-attachments.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 export const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
 export const nonempty = (value) => typeof value === 'string' && value.trim().length > 0
 
@@ -78,7 +79,8 @@ export async function runNativeAcp(config, io, settings) {
     // Tool calls whose permission was denied; their failure is the denial itself.
     deniedTools = new Set(),
     seen = new Set(),
-    early = []
+    early = [],
+    toolOutcomes = createToolOutcomes()
   const fail = (message) => {
     failure ??= message
   }
@@ -160,6 +162,7 @@ export async function runNativeAcp(config, io, settings) {
         return
       }
       response += update.content.text
+      if (update.content.text.trim()) toolOutcomes.succeeded()
       if (update.content.text) {
         if (!assistantSegmentOpen) { assistantStep++; assistantSegmentOpen = true }
         emit({ kind: 'assistant', step: assistantStep, text: update.content.text })
@@ -190,7 +193,8 @@ export async function runNativeAcp(config, io, settings) {
         ...(nonempty(update.status) ? { status: update.status } : {}),
       }
       tools.set(update.toolCallId, value)
-      if (value.status === 'failed' && !deniedTools.has(update.toolCallId)) fail('CLI 工具执行失败')
+      if (value.status === 'failed' && !deniedTools.has(update.toolCallId)) toolOutcomes.failed(update.toolCallId)
+      else if (value.status === 'completed' && previous.status !== 'completed') toolOutcomes.succeeded()
       emit({
         kind: 'tool',
         step: value.step,
@@ -310,17 +314,11 @@ export async function runNativeAcp(config, io, settings) {
     if ([...tools.values()].some((tool) => !['completed', 'failed'].includes(tool.status)))
       fail('CLI 工具缺少终态')
     if (io.signal.aborted) fail('任务已停止')
-    io.result(
-      failure ? 'ERROR' : response && !denied ? 'SUCCESS' : 'UNCERTAIN',
-      response,
-      failure ??
-        (denied
-          ? 'CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
-          : response
-            ? undefined
-            : 'CLI 未返回可核查的本轮正文'),
-      'run',
-    )
+    if (failure) io.result('ERROR', response, failure, 'run')
+    else if (denied)
+      io.result('UNCERTAIN', response, 'CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'run')
+    else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
+    else toolOutcomes.settle(io, response, 'run')
   } finally {
     io.signal.removeEventListener('abort', cancel)
     active = false

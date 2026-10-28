@@ -19,6 +19,8 @@ const cli=process.env.CWN_NATIVE_FIXTURE_CLI, scenario=process.env.CWN_NATIVE_FI
 const log=process.env.CWN_NATIVE_FIXTURE_LOG;
 const id='synthetic-session', turn='synthetic-turn';
 let waiting=false;
+const toolFails=['tool-failure','tool-recovered','tool-failure-turn-failed','tool-failure-nonzero-exit'].includes(scenario);
+const cancel=['cancel','tool-failure-cancel'].includes(scenario);
 const send=value=>process.stdout.write(JSON.stringify(value)+'\\n');
 const note=(method,params)=>send({method,params});
 const thread=()=>({thread:{id:scenario==='identity-mismatch'?'other-session':id},model:scenario==='model-mismatch'?'other-model':'synthetic-model',cwd:process.cwd(),approvalPolicy:'never',sandbox:{type:'workspaceWrite',networkAccess:false},reasoningEffort:'low'});
@@ -34,7 +36,8 @@ function codexTurn(){
   send({id:'synthetic-approval',method,params:{threadId:id,turnId:turn,itemId:'command'}});return;
  }
  if(['user-input','unknown-request'].includes(scenario)){send({id:'synthetic-interaction',method:scenario==='user-input'?'item/tool/requestUserInput':'synthetic/unknownRequest',params:{threadId:id,turnId:turn}});return;}
- if(scenario==='cancel'){note('item/agentMessage/delta',{threadId:id,turnId:turn,itemId:'reply',delta:'运行中'});waiting=true;return;}
+ if(scenario==='tool-failure-cancel')note('item/completed',{threadId:id,turnId:turn,item:{id:'tool',type:'commandExecution',command:'synthetic read',status:'failed',exitCode:1}});
+ if(cancel){note('item/agentMessage/delta',{threadId:id,turnId:turn,itemId:'reply',delta:'运行中'});waiting=true;return;}
  if(scenario.startsWith('steer-')){note('item/agentMessage/delta',{threadId:id,turnId:turn,itemId:'reply',delta:'运行中'});return;}
  for(const delta of scenario==='fragmented'?['合','成']:['合成'])note('item/agentMessage/delta',{threadId:id,turnId:turn,itemId:'reply',delta});
  note('item/completed',{threadId:id,turnId:turn,item:{id:'reply',type:'agentMessage',text:'合成回复'}});
@@ -47,7 +50,11 @@ function codexTurn(){
   note('item/commandExecution/outputDelta',{threadId:id,turnId:turn,itemId:'tool',delta:'模拟'});
   note('item/commandExecution/outputDelta',{threadId:id,turnId:turn,itemId:'tool',delta:'输出'});
  }
- if(scenario!=='unfinished-tool')note('item/completed',{threadId:id,turnId:turn,item:{id:'tool',type:'commandExecution',command:'synthetic read',status:scenario==='tool-failure'?'failed':'completed',exitCode:scenario==='tool-failure'?1:0}});
+ if(scenario!=='unfinished-tool')note('item/completed',{threadId:id,turnId:turn,item:{id:'tool',type:'commandExecution',command:'synthetic read',status:toolFails?'failed':'completed',exitCode:toolFails?1:0}});
+ if(scenario==='tool-recovered'){
+  note('item/completed',{threadId:id,turnId:turn,item:{id:'retry',type:'commandExecution',command:'synthetic write',status:'completed',exitCode:0}});
+  note('item/completed',{threadId:id,turnId:turn,item:{id:'after',type:'agentMessage',text:'模拟恢复后的回复'}});
+ }
  if(scenario==='tool-progress'){
   note('item/commandExecution/outputDelta',{threadId:id,turnId:turn,itemId:'tool',delta:'LATE TOOL OUTPUT'});
   note('item/started',{threadId:id,turnId:turn,item:{id:'mcp',type:'mcpToolCall',tool:'synthetic',status:'inProgress',arguments:{}}});
@@ -62,7 +69,7 @@ function codexTurn(){
  }
  note('thread/tokenUsage/updated',{threadId:id,turnId:turn,tokenUsage:{last:{inputTokens:2,outputTokens:1,totalTokens:3,cachedInputTokens:0},total:{inputTokens:20,outputTokens:10,totalTokens:30,cachedInputTokens:4},modelContextWindow:1000}});
  if(scenario==='no-terminal')return;
- codexEnd(scenario==='failure'?'failed':'completed');
+ codexEnd(['failure','tool-failure-turn-failed'].includes(scenario)?'failed':'completed');
  if(scenario==='duplicate-terminal')codexEnd();
 }
 function claudeEnd(error=false){send({type:'result',subtype:'success',session_id:id,is_error:error,result:error?'synthetic failure':'合成回复',permission_denials:scenario==='deny'?[{tool_name:'Bash'}]:[],usage:{input_tokens:2,output_tokens:1}});}
@@ -73,6 +80,10 @@ function claudeTurn(){
  if(scenario==='identity-mismatch')return;
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
  if(scenario==='child-model')send({type:'assistant',session_id:id,parent_tool_use_id:'synthetic-task',message:{id:'child',model:'synthetic-child-model',content:[{type:'text',text:'子任务公开进度'}]}});
+ if(scenario==='tool-failure-cancel'){
+  send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Read',input:{file_path:'synthetic'}}]}});
+  send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:'synthetic error',is_error:true}]}});
+ }
  send({type:'stream_event',session_id:id,event:{type:'message_start',message:{id:'reply'}}});
  if(scenario==='multiple-blocks'){
   send({type:'stream_event',session_id:id,event:{type:'content_block_start',index:0,content_block:{type:'thinking',thinking:'',signature:'HIDDEN_SIGNATURE'}}});
@@ -91,15 +102,20 @@ function claudeTurn(){
   claudeEnd();return;
  }
  send({type:'stream_event',session_id:id,event:{type:'content_block_start',index:0,content_block:{type:'text'}}});
- for(const text of scenario==='fragmented'?['合','成']:[scenario==='cancel'?'运行中':'合成'])send({type:'stream_event',session_id:id,event:{type:'content_block_delta',index:0,delta:{type:'text_delta',text}}});
- if(scenario==='cancel'){waiting=true;return;}
+ for(const text of scenario==='fragmented'?['合','成']:[cancel?'运行中':'合成'])send({type:'stream_event',session_id:id,event:{type:'content_block_delta',index:0,delta:{type:'text_delta',text}}});
+ if(cancel){waiting=true;return;}
  send({type:'assistant',session_id:id,message:{id:'reply',model:scenario==='assistant-model-mismatch'?'other-model':canonical,content:[{type:'text',text:'合成回复'},{type:'thinking',thinking:'公开思考'}]}});
- if(['tool-failure','unfinished-tool'].includes(scenario)){
+ if(toolFails||scenario==='unfinished-tool'){
   send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Read',input:{file_path:'synthetic'}}]}});
   if(scenario!=='unfinished-tool')send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:'synthetic error',is_error:true}]}});
  }
+ if(scenario==='tool-recovered'){
+  send({type:'assistant',session_id:id,message:{id:'retrymsg',content:[{type:'tool_use',id:'retry',name:'Write',input:{file_path:'synthetic'}}]}});
+  send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'retry',content:'synthetic written'}]}});
+  send({type:'assistant',session_id:id,message:{id:'after',content:[{type:'text',text:'模拟恢复后的回复'}]}});
+ }
  if(scenario==='no-terminal')return;
- claudeEnd(scenario==='failure');
+ claudeEnd(['failure','tool-failure-turn-failed'].includes(scenario));
  if(scenario==='duplicate-terminal')claudeEnd();
 }
 function agyEnd(status='SUCCESS'){
@@ -108,8 +124,9 @@ function agyEnd(status='SUCCESS'){
 function agyTurn(){
  send({event:'init',conversation_id:scenario==='identity-mismatch'?'other-session':id,init:{model:scenario==='model-mismatch'?'other-model':'synthetic-model'}});
  if(scenario==='identity-mismatch')return;
- if(scenario==='cancel'){send({event:'step_update',step_update:{conversation_id:id,step_index:1,step_type:'agent_response',state:'RUNNING',text_delta:'运行中'}});waiting=true;return;}
- if(scenario==='tool-failure')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'ERROR',tool_name:'Read'}});
+ if(scenario==='tool-failure-cancel')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'DONE',tool_name:'Read',tool_info:{name:'Read',error:{type:'SyntheticToolError',message:'synthetic read failure'}}}});
+ if(cancel){send({event:'step_update',step_update:{conversation_id:id,step_index:1,step_type:'agent_response',state:'RUNNING',text_delta:'运行中'}});waiting=true;return;}
+ if(scenario==='tool-error-state')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'ERROR',tool_name:'Read'}});
  if(scenario==='unfinished-tool')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'RUNNING',tool_name:'Read'}});
  if(scenario==='user-input')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'user_input',state:'DONE'}});
  if(['metadata','metadata-conflict','unknown','unknown-conflict'].includes(scenario)){
@@ -119,8 +136,13 @@ function agyTurn(){
  if(scenario==='tool-info-error')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'tool',state:'DONE',tool_name:'Read',tool_info:{name:'Read',error:{type:'SyntheticToolError',message:'explicit synthetic failure'}}}});
  if(scenario==='invalid-step-state')send({event:'step_update',step_update:{conversation_id:id,step_index:0,step_type:'checkpoint',state:'NOT_A_NATIVE_STATE'}});
  const chunks=scenario==='fragmented'?['合','成','回','复']:['合成回复'];chunks.forEach((text_delta,index)=>send({event:'step_update',step_update:{conversation_id:id,step_index:1,step_type:'agent_response',state:index===chunks.length-1?'DONE':'RUNNING',text_delta,...(scenario==='response-usage'?{usage:{input_tokens:100,output_tokens:20,cache_read_tokens:300,total_tokens:120,thinking_tokens:0}}:{})}}));
+ if(toolFails)send({event:'step_update',step_update:{conversation_id:id,step_index:3,step_type:'tool',state:'DONE',tool_name:'Write',tool_info:{name:'Write',error:{type:'SyntheticToolError',message:'synthetic write failure'}}}});
+ if(scenario==='tool-recovered'){
+  send({event:'step_update',step_update:{conversation_id:id,step_index:4,step_type:'tool',state:'DONE',tool_name:'Write',tool_info:{name:'Write'}}});
+  send({event:'step_update',step_update:{conversation_id:id,step_index:5,step_type:'agent_response',state:'DONE',text_delta:'模拟恢复后的回复'}});
+ }
  if(scenario==='no-terminal')return;
- agyEnd(['failure','summary-conflict','metadata-conflict','unknown-conflict'].includes(scenario)?'ERROR':'SUCCESS');
+ agyEnd(['failure','tool-failure-turn-failed','summary-conflict','metadata-conflict','unknown-conflict'].includes(scenario)?'ERROR':'SUCCESS');
  if(scenario==='duplicate-terminal')agyEnd();
 }
 process.on('SIGINT',()=>{if(cli==='antigravity'&&waiting){waiting=false;agyEnd('INTERRUPTED');}});
@@ -160,7 +182,7 @@ lines.on('line',line=>{
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
-lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit'].includes(scenario)?7:0);});
+lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit'].includes(scenario)?7:0);});
 `
 
 function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true) {
@@ -195,7 +217,7 @@ async function run(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success'
   const io = createNativeIO(config, (line: string) => {
     const frame = JSON.parse(line)
     frames.push(frame)
-    if (scenario === 'cancel' && frame.type === 'event' && frame.event.kind === 'assistant') controller.abort(new Error('synthetic stop'))
+    if (['cancel', 'tool-failure-cancel'].includes(scenario) && frame.type === 'event' && frame.event.kind === 'assistant') controller.abort(new Error('synthetic stop'))
     if (guide && !guidance && frame.type === 'event' && frame.event.kind === 'assistant') {
       guidance = guide(io, controller)
       void guidance.catch(() => {})
@@ -336,12 +358,17 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect((await run('antigravity', 'metadata-conflict')).result.status).toBe('UNCERTAIN')
     expect((await run('antigravity', 'unknown-conflict')).result.status).toBe('ERROR')
   })
-  it.each(['tool-info-error', 'invalid-step-state'])('keeps Antigravity %s failed without poisoning later valid reply frames', async scenario => {
+  it.each(['tool-error-state', 'invalid-step-state'])('keeps Antigravity %s failed without poisoning later valid reply frames', async scenario => {
     const { result, frames } = await run('antigravity', scenario)
     expect(result.status).toBe('ERROR')
     expect(frames.filter(frame => frame.event?.kind === 'diagnostic' && frame.event.state === 'FAILED')).toHaveLength(1)
     expect(frames.some(frame => frame.event?.kind === 'assistant' && frame.event.text === '合成回复')).toBe(true)
-    if (scenario === 'tool-info-error') expect(frames.find(frame => frame.event?.kind === 'tool')?.event.state).toBe('FAILED')
+  })
+  it('keeps an Antigravity tool_info error as a failed step that a later reply recovers from', async () => {
+    const { result, frames } = await run('antigravity', 'tool-info-error')
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
+    expect(frames.find(frame => frame.event?.kind === 'tool')?.event.state).toBe('FAILED')
+    expect(frames.some(frame => frame.event?.kind === 'diagnostic' && frame.event.state === 'FAILED')).toBe(false)
   })
   it('publishes Antigravity response-scoped usage without using its aggregate result counters', async () => {
     const { result, frames } = await run('antigravity', 'response-usage')
@@ -362,9 +389,13 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(diagnostic?.text).toBe('Codex 原生交互请求已拒绝')
     expect(diagnostic?.state).not.toBe('FAILED')
   })
-  it.each(['deny-failed', 'deny-interrupted', 'deny-tool-failure', 'deny-nonzero-exit'])('keeps Codex %s as an error despite a denied approval', async (scenario) => {
+  it.each(['deny-failed', 'deny-interrupted', 'deny-nonzero-exit'])('keeps Codex %s as an error despite a denied approval', async (scenario) => {
     const { result } = await run('codex', scenario)
     expect(result.status).toBe('ERROR')
+  })
+  it('keeps a denied Codex turn with another failed tool unverified, never successful', async () => {
+    const { result } = await run('codex', 'deny-tool-failure')
+    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('额外授权已拒绝') })
   })
   it.each(['user-input', 'unknown-request'])('keeps Codex %s server requests as failures even when the turn completes', async (scenario) => {
     const { result, messages, frames } = await run('codex', scenario)
@@ -378,12 +409,23 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(result.status).toBe('ERROR')
     expect(messages.find((value) => value.type === 'control_response').response.response.behavior).toBe('deny')
   })
-  it.each(['codex', 'claude', 'antigravity'] as const)('%s never promotes native failure, failed tools, nonzero exit, missing or duplicate terminal to success', async (cli) => {
-    for (const scenario of ['failure', 'tool-failure', 'unfinished-tool', 'nonzero-exit', 'no-terminal', 'duplicate-terminal']) {
+  it.each(['codex', 'claude', 'antigravity'] as const)('%s never promotes native failure, unfinished tools, nonzero exit, missing or duplicate terminal to success', async (cli) => {
+    for (const scenario of ['failure', 'tool-failure-turn-failed', 'tool-failure-nonzero-exit', 'unfinished-tool', 'nonzero-exit', 'no-terminal', 'duplicate-terminal']) {
       const { result } = await run(cli, scenario, false)
       expect(result.status, `${cli}: ${scenario}`).toBe('ERROR')
     }
   }, 10_000)
+  it.each(['codex', 'claude', 'antigravity'] as const)('%s reports a recovered tool failure as success with the failed step count', async (cli) => {
+    const { result, frames } = await run(cli, 'tool-recovered', false)
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
+    expect(result.error).toBeUndefined()
+    expect(frames.some((frame) => frame.type === 'event' && frame.event.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
+  })
+  it.each(['codex', 'claude', 'antigravity'] as const)('%s reports a turn that ends right after a failed tool as unverified', async (cli) => {
+    const { result } = await run(cli, 'tool-failure', false)
+    expect(result).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
+    expect(result.notice).toBeUndefined()
+  })
   it.each(['codex', 'claude', 'antigravity'] as const)('rejects %s resume identity changes', async (cli) => {
     const { result, messages } = await run(cli, 'identity-mismatch')
     expect(result.status).toBe('ERROR')
@@ -424,7 +466,8 @@ describe('native primary runners (synthetic protocol processes, no real accounts
   })
   it.each(['collab-interrupted', 'image-failed', 'image-in-progress', 'image-failure-receipt', 'image-unfinished'])('keeps a completed Codex turn with %s from reporting success', async (scenario) => {
     const { result, frames } = await run('codex', scenario)
-    expect(result.status).toBe('ERROR')
+    // A last failed step is unverified; a tool still in progress at the terminal fails the turn.
+    expect(result.status).toBe(['image-in-progress', 'image-unfinished'].includes(scenario) ? 'ERROR' : 'UNCERTAIN')
     const tools = frames.filter((frame) => frame.type === 'event' && frame.event.kind === 'tool')
     if (scenario === 'image-unfinished') expect(result.error).toContain('未完成工具')
     else expect(tools.some((frame) => frame.event.state === 'FAILED')).toBe(true)
@@ -480,6 +523,11 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     if (cli === 'codex') expect(messages.some((value) => value.method === 'turn/interrupt')).toBe(true)
     if (cli === 'claude') expect(messages.some((value) => value.request?.subtype === 'interrupt')).toBe(true)
     expect(result.response).toContain('运行中')
+  })
+  it.each(['codex', 'claude', 'antigravity'] as const)('keeps a stopped %s turn interrupted after an earlier failed tool', async (cli) => {
+    const { result } = await run(cli, 'tool-failure-cancel')
+    expect(result.status, JSON.stringify(result)).toBe('ERROR')
+    expect(result.notice).toBeUndefined()
   })
 })
 

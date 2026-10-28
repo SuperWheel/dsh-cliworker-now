@@ -1700,6 +1700,7 @@ export class WorkerRuntime {
     worker.updatedAt = now
     worker.jobId = undefined
     worker.isolationNotice = undefined
+    worker.resultNotice = undefined
     this.storage.save(worker)
     if (!queuedAdmission || queuedAdmission.priority) {
       this.storage.append(worker, {
@@ -2515,13 +2516,18 @@ export class WorkerRuntime {
         protocol.result.completedStepResponse
       )
         summaryConflict = `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${protocol.result.error || '未提供错误详情'}`
-      else if (nativeTransport && protocol.result.status === 'UNCERTAIN')
+      // Native runners and the Pi/OMP bridge share this frame and its unverified outcome.
+      else if (protocol instanceof BridgeProtocol && protocol.result.status === 'UNCERTAIN')
         summaryConflict =
           protocol.result.error || 'CLI 汇总状态冲突，结果待核实，请先核查实际产物，不要自动重试'
       else if (protocol.result.status !== 'SUCCESS')
         throw new Error(
           `CLI ${protocol.result.status}: ${protocol.result.error || protocol.result.response || stderr || '请检查 CLI 认证及模型/强度兼容性'}`,
         )
+      else if (protocol instanceof BridgeProtocol && protocol.result.notice) {
+        worker.resultNotice = protocol.result.notice
+        this.storage.append(worker, { kind: 'diagnostic', text: '本轮结果说明', detail: protocol.result.notice })
+      }
     } catch (error) {
       failure = error
       // Per attempt: a carryover after a spawned resume can still wait for its account.

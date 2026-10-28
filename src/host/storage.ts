@@ -180,6 +180,7 @@ const workerSchema = z.object({
     })
     .optional(),
   isolationNotice: z.string().max(2000).optional(),
+  resultNotice: z.string().max(2000).optional(),
 })
 const eventSchema = z.object({
   requestState: z.object({

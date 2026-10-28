@@ -176,6 +176,8 @@ export interface Worker {
   isolation?: WorkerIsolation
   /** Why the last turn waited for the main directory instead of using a copy. */
   isolationNotice?: string
+  /** Set on a completed turn whose CLI recovered from failed tool steps. */
+  resultNotice?: string
 }
 /**
  * `released` keeps the conversation bound to its copy path after merge or

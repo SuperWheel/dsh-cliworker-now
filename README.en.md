@@ -165,6 +165,7 @@ flowchart LR
 
 - **Runs what you chose**: a missing or failing CLI is never replaced by another one, and CLIs started outside the plugin are not taken over.
 - **Native permissions**: each CLI uses its own permission modes; no extra OS sandbox is added. Write tasks are refused while Harness is in plan or read-only mode.
+- **Results follow the CLI's own turn outcome**: one failed tool step does not fail the whole turn. When the CLI recovers and finishes, the task is completed with a note "N tool steps failed this turn; the CLI handled them". When the CLI stops right after a failed tool step, the task is marked "Result unverified". Only a failed or interrupted turn, a missing end signal, an unfinished tool or an abnormal CLI exit counts as a failure.
 - **Two levels**: main conversation → direct child agents, two concurrent tasks by default (adjustable in "CLI Worker settings", shared by all CLIs, up to 8), no recursive dispatch.
 - **Interface language**: "CLI Worker settings → Language" offers Follow DSH (default), 中文 or English. A saved choice switches every open CLI Worker panel at once, without a reload. CLI output, model names, your own content and Host errors that are not in the dictionary stay as they are; the tool descriptions given to the main agent do not change with the interface language.
 - **Local records**: stored in `~/.dsh/cliworker-now` (folders `0700`, files `0600`). Each CLI still sends model requests to its provider according to its own configuration.

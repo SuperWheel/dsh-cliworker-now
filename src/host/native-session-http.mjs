@@ -4,6 +4,7 @@ import { realpath } from 'node:fs/promises'
 import { nativeHttpEndpoint, startHttpContextRelay } from './http-context-relay.mjs'
 import { NativeBlockResponses, sessionHttpResponseUsage, sessionHttpSessionUsage } from './http-rpc-response.mjs'
 import { HARNESS_MCP_SERVER } from './native-harness-injection.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 import { readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import {
   deferred,
@@ -142,7 +143,8 @@ export async function runNativeSessionHttp(original, io, cli) {
   let activeResponse
   let active = false,
     terminal = false,
-    toolFailed = false,
+    unfinishedTool = false,
+    toolOutcomes = createToolOutcomes(),
     permissionDenied = false,
     step = 0
   const abortRun = () =>
@@ -180,6 +182,7 @@ export async function runNativeSessionHttp(original, io, cli) {
       responses.event(part.messageID, part.id, { kind: 'assistant', step: assistantSteps.get(key), text: delta,
         ...(Number.isFinite(part.time?.end) ? { state: 'COMPLETED' } : { state: 'RUNNING' }) })
     response += delta
+    if (delta.trim()) toolOutcomes.succeeded()
   }
   const reasoning = (part) => {
     const current = reasoningText.get(part.id) ?? ''
@@ -198,8 +201,9 @@ export async function runNativeSessionHttp(original, io, cli) {
     const state = part.state
     if (!object(state) || !['pending', 'running', 'completed', 'error'].includes(state.status))
       throw new Error('原生工具状态无效')
-    if (state.status === 'error') toolFailed = true
     if (previous?.type === 'tool' && JSON.stringify(previous.state) === JSON.stringify(state)) return
+    if (state.status === 'error') toolOutcomes.failed(part.id)
+    else if (state.status === 'completed' && previous?.state?.status !== 'completed') toolOutcomes.succeeded()
     if (!toolSteps.has(part.id)) toolSteps.set(part.id, ++step)
     responses.event(part.messageID, part.id, {
       kind: 'tool', text: part.tool ?? '工具', step: toolSteps.get(part.id),
@@ -494,14 +498,15 @@ export async function runNativeSessionHttp(original, io, cli) {
         parts.set(part.id, part)
       }
       responses.finish(info.id, sessionHttpResponseUsage(info.tokens))
-      if (row.parts.some((part) => part.type === 'tool' && part.state?.status !== 'completed'))
-        toolFailed = true
+      if (row.parts.some((part) => part.type === 'tool' && !['completed', 'error'].includes(part.state?.status)))
+        unfinishedTool = true
       io.native({ type: 'message.updated', properties: { info } })
     }
     const last = current.at(-1)
     if (last.info.finish !== 'stop') throw new Error('原生轮次未正常完成')
-    if ([...parts.values()].some((part) => part.type === 'tool' && part.state?.status !== 'completed'))
-      toolFailed = true
+    if ([...parts.values()].some((part) => part.type === 'tool' && !['completed', 'error'].includes(part.state?.status)))
+      unfinishedTool = true
+
     // The run aggregate is the exact concatenation of public segments. Message
     // boundaries live in their steps; synthetic separators must not enter them.
     const finalText = current.map((row) => textParts(row.parts)).join('')
@@ -509,10 +514,10 @@ export async function runNativeSessionHttp(original, io, cli) {
     await readSessionUsage()
     signal.throwIfAborted()
     if (failure) throw new Error(failure)
+    if (unfinishedTool) throw new Error('原生轮次结束时仍有未完成工具')
     if (permissionDenied)
       io.result('UNCERTAIN', response, '原生额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'run')
-    else if (toolFailed) throw new Error('原生工具执行失败')
-    else io.result('SUCCESS', response, undefined, 'run')
+    else toolOutcomes.settle(io, response, 'run')
   } catch (error) {
     if (submitted && !terminal && !stopped) await abortRun()
     throw error

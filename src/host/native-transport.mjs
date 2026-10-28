@@ -80,7 +80,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
       submission.promise = pending
       return io.trackControl(pending)
     },
-    result(status, text, error, resultScope) {
+    result(status, text, error, resultScope, notice) {
       if (result || !['SUCCESS', 'ERROR', 'UNCERTAIN'].includes(status) || typeof text !== 'string')
         throw failure('Invalid native terminal result')
       result = {
@@ -89,6 +89,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
         response: text,
         ...(['run', 'response'].includes(resultScope) ? { resultScope } : {}),
         ...(error ? { error: String(error).slice(0, 4096) } : {}),
+        // A note for a successful turn; it never changes the status.
+        ...(status === 'SUCCESS' && notice ? { notice: String(notice).slice(0, 2000) } : {}),
       }
     },
     spawn(argv, options = {}) {

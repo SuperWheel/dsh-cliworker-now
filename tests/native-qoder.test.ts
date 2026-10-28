@@ -77,7 +77,8 @@ createInterface({input:process.stdin}).on('line',line=>{
    update({sessionUpdate:'tool_call_update',toolCallId:'read-simulated',title:'Read synthetic.txt',status:'completed',rawOutput:'synthetic content',_meta:{qoder:{toolName:'Read'}}});
    text('AF','answer-two');text('TER','answer-three');
   }
-  if(scenario==='tool-failure'||scenario==='tool-pending')update({sessionUpdate:'tool_call',toolCallId:'failed-simulated',title:'Edit synthetic.txt',status:scenario==='tool-failure'?'failed':'in_progress',rawInput:{file_path:'synthetic.txt'},_meta:{qoder:{toolName:'Edit'}}});
+  if(scenario==='tool-failure'||scenario==='tool-pending'||scenario==='tool-recovered')update({sessionUpdate:'tool_call',toolCallId:'failed-simulated',title:'Edit synthetic.txt',status:scenario==='tool-pending'?'in_progress':'failed',rawInput:{file_path:'synthetic.txt'},_meta:{qoder:{toolName:'Edit'}}});
+  if(scenario==='tool-recovered')text('AFTER','answer-after');
   if(scenario==='changed-model'||scenario==='changed-mode'){
    pending=request;return update({sessionUpdate:'config_option_update',configOptions:[{id:scenario==='changed-model'?'model':'mode',currentValue:scenario==='changed-model'?'wrong':'yolo'}]});
   }
@@ -298,16 +299,22 @@ describe('Native Qoder ACP runner (simulated native processes; no real model)', 
     },
   )
 
-  it('keeps an error when a tool other than the denied one fails', async () => {
+  it('keeps a denied turn unverified when a tool other than the denied one fails', async () => {
     const { result } = await fixture('permission-other-failure')
-    expect(result).toMatchObject({ status: 'ERROR', error: 'CLI 工具执行失败' })
+    expect(result).toMatchObject({ status: 'UNCERTAIN', error: expect.stringMatching(/额外权限请求已拒绝.*结果待核实/) })
+  })
+
+  it('reports a turn that carries on after a failed tool as success with the failed step count', async () => {
+    const { result } = await fixture('tool-recovered')
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
   })
 
   it.each(['tool-failure', 'tool-pending'])(
-    'rejects failed or unterminated tools despite end_turn (%s)',
+    'never reports failed or unterminated tools as success despite end_turn (%s)',
     async (scenario) => {
       const { frames, result } = await fixture(scenario)
-      expect(result.status).toBe('ERROR')
+      // A last failed step is unverified; a tool without a terminal fails the turn.
+      expect(result.status).toBe(scenario === 'tool-failure' ? 'UNCERTAIN' : 'ERROR')
       expect(frames.find((frame) => frame.event?.kind === 'tool')?.event).toMatchObject({
         state: scenario === 'tool-failure' ? 'FAILED' : 'RUNNING',
       })

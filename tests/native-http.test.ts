@@ -82,7 +82,8 @@ const server=createServer(async(req,res)=>{
      {type:'message.part.updated',properties:{part:{...second,messageID:'msg_SECOND',text:''}}},
      {type:'message.part.delta',properties:{sessionID:sid,messageID:'msg_SECOND',partID:second.id,field:'text',delta:second.text}})
    if(mode.startsWith('permission'))values.push({type:'permission.asked',properties:{sessionID:sid,id:'per_SYNTHETIC',permission:'bash'}})
-   if(mode==='tool-failure'||mode==='permission-tool-failure')for(const status of ['running','error'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'bash',state:{status}}}})
+   if(mode==='tool-failure'||mode==='permission-tool-failure'||mode==='tool-recovered')for(const status of ['running','error'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'bash',state:{status}}}})
+   if(mode==='tool-recovered')for(const status of ['running','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_RETRY',messageID:aid,sessionID:sid,type:'tool',tool:'write',state:{status}}}})
    if(mode==='tools')for(const status of ['pending','running','completed','completed'])values.push({type:'message.part.updated',properties:{part:{id:'prt_TOOL',messageID:aid,sessionID:sid,type:'tool',tool:'read',state:{status}}}})
    if(mode==='reasoning')values.push({type:'message.part.updated',properties:{part:{id:'prt_THOUGHT',messageID:aid,sessionID:sid,type:'reasoning',text:'',metadata:{anthropic:{signature:'OPAQUE_SIGNATURE_MUST_NOT_COPY'}}}}},
     {type:'message.part.delta',properties:{sessionID:sid,messageID:aid,partID:'prt_THOUGHT',field:'signature',delta:'OPAQUE_SIGNATURE_MUST_NOT_COPY'}},
@@ -102,7 +103,8 @@ const server=createServer(async(req,res)=>{
    sse=res;res.writeHead(200,{'Content-Type':'text/event-stream'});res.flushHeaders()
    const values=(mode==='fragmented'?['开','发','任','务','，',' ','好','的']:['模拟正文']).map((delta,i)=>({event:'message.delta',run_id:run,seq:i+1,delta}))
    if(mode.startsWith('permission'))values.push({event:'approval.request',run_id:run,seq:2,request_id:'approval_SYNTHETIC',choices:['once','deny']})
-   if(mode==='tool-failure'||mode==='permission-tool-failure')values.push({event:'tool.started',run_id:run,seq:3,tool:'terminal'},{event:'tool.failed',run_id:run,seq:4,tool:'terminal',error:true})
+   if(mode==='tool-failure'||mode==='permission-tool-failure'||mode==='tool-recovered')values.push({event:'tool.started',run_id:run,seq:3,tool:'terminal'},{event:'tool.failed',run_id:run,seq:4,tool:'terminal',error:true})
+   if(mode==='tool-recovered')values.push({event:'tool.started',run_id:run,seq:5,tool:'write_file'},{event:'tool.completed',run_id:run,seq:6,tool:'write_file',error:false})
    if(mode==='tools')values.push({event:'tool.started',run_id:run,seq:2,tool:'read_file'},{event:'tool.completed',run_id:run,seq:3,tool:'read_file',error:false})
    if(mode==='tool-boundary'||mode==='final-unstreamed')values.push({event:'tool.started',run_id:run,seq:2,tool:'read_file'},{event:'tool.completed',run_id:run,seq:3,tool:'read_file',error:false})
    if(mode==='tool-boundary')values.push({event:'message.delta',run_id:run,seq:4,delta:'第'},{event:'message.delta',run_id:run,seq:5,delta:'二段'})
@@ -383,11 +385,15 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expect(requests.filter((row: any) => row.path?.endsWith('prompt_async'))).toHaveLength(1)
       expectServerCloseReceipt(requests)
     })
-    it(`${cli}: fails on a tool error without a permission denial`, async () => {
+    it(`${cli}: reports a turn that ends right after a tool error as unverified`, async () => {
       const { frames, requests } = await run(cli, 'tool-failure')
-      expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: '原生工具执行失败' })
+      expect(frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
       expect(requests.some((row: any) => row.path?.startsWith('/permission/'))).toBe(false)
       expectServerCloseReceipt(requests)
+    })
+    it(`${cli}: reports a turn that carries on after a tool error as success with the failed step count`, async () => {
+      const { frames } = await run(cli, 'tool-recovered')
+      expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
     })
     for (const mode of ['disconnect', 'late', 'wrong-model']) {
       it(`${cli}: fails closed on ${mode} without retrying the prompt`, async () => {
@@ -510,11 +516,15 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
     expect(requests.filter((row: any) => row.path === '/v1/runs' && row.method === 'POST')).toHaveLength(1)
     expectServerCloseReceipt(requests)
   })
-  it('fails on a Hermes tool error without an approval denial', async () => {
+  it('reports a Hermes run that ends right after a tool error as unverified', async () => {
     const { frames, requests } = await run('hermes', 'tool-failure')
-    expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: 'Hermes 工具执行失败' })
+    expect(frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
     expect(requests.some((row: any) => row.path?.endsWith('/approval'))).toBe(false)
     expectServerCloseReceipt(requests)
+  })
+  it('reports a Hermes run that carries on after a tool error as success with the failed step count', async () => {
+    const { frames } = await run('hermes', 'tool-recovered')
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
   })
   for (const mode of ['disconnect', 'late', 'wrong-model']) {
     it(`fails closed on ${mode}`, async () => {

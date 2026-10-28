@@ -77,7 +77,8 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(scenario==='changed-model'){pending=q;return out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'config_option_update',configOptions:[{id:'model',currentValue:'wrong'}]}}});}
   if(scenario==='cancel'){pending=q;return;}
   if(scenario==='permission'){pending=q;return out({jsonrpc:'2.0',id:'permission-fixture',method:'session/request_permission',params:{sessionId:'session-fixture',options:[{kind:'allow_once',optionId:'allow'},{kind:'reject_once',optionId:'reject'}]}});}
-  if(scenario==='tool-failure')out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'tool_call',toolCallId:'tool-fixture',title:'Simulated edit',status:'failed'}}});
+  if(scenario==='tool-failure'||scenario==='tool-recovered')out({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session-fixture',update:{sessionUpdate:'tool_call',toolCallId:'tool-fixture',title:'Simulated edit',status:'failed'}}});
+  if(scenario==='tool-recovered')update('session-fixture','AFTER','delta-recovered');
   if(scenario==='bad-envelope')return out({id:q.id,result:{stopReason:'end_turn'}});
   if(cli==='kimi'){
    reply(q,{stopReason:'end_turn'});
@@ -345,8 +346,14 @@ describe('Native ACP runners (simulated native processes)', () => {
       expect(records.some((record) => record.method === 'session/cancel')).toBe(true)
     },
   )
-  it('keeps failed tool evidence even if Kimi returns end_turn', async () => {
-    expect((await fixture('kimi', 'tool-failure')).result.status).toBe('ERROR')
+  it('reports a Kimi turn that ends right after a failed tool as unverified, never successful', async () => {
+    expect((await fixture('kimi', 'tool-failure')).result).toMatchObject({
+      status: 'UNCERTAIN', error: '本轮最后的工具步骤失败后 CLI 直接结束；结果待核实，请先核查实际产物，不要自动重试' })
+  })
+  it('reports a Kimi turn that carries on after a failed tool as success with the failed step count', async () => {
+    const { result } = await fixture('kimi', 'tool-recovered')
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })
+    expect(result.error).toBeUndefined()
   })
   it('rejects a changed native session identity', async () => {
     expect((await fixture('kimi', 'wrong-session', true)).result.status).toBe('ERROR')

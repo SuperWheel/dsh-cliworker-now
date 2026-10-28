@@ -1131,9 +1131,11 @@ export class CliWorkerService extends TypertRemoteService {
               status: worker.status,
               response: worker.lastResult,
               error: worker.error,
+              ...(worker.status === 'completed' && worker.resultNotice ? { notice: worker.resultNotice } : {}),
               guidance:
                 [
                   worker.status === 'uncertain' ? '结果待核实；请先核查本轮输出和实际产物，不要自动重试。' : undefined,
+                  worker.status === 'completed' && worker.resultNotice ? worker.resultNotice : undefined,
                   isolationGuidance(worker),
                 ]
                   .filter(Boolean)

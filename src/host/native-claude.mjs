@@ -1,4 +1,5 @@
 import { ClaudeResponseTracker } from './primary-response.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
@@ -49,6 +50,7 @@ export async function runNativeClaude(config, io) {
   let sessionId, result, response = '', failure, submitted = false, models
   const steps = new Map(), text = new Map(), thinking = new Map(), finished = new Set(), tools = new Set(), answers = new Map(), toolMetadata = new Map()
   const childEvents = []
+  const toolOutcomes = createToolOutcomes()
   let childFrame = false
   const emit = (event) => {
     if (childFrame && !event.response && responses.id) childEvents.push(event)
@@ -162,6 +164,7 @@ export async function runNativeClaude(config, io) {
           if (!answers.has(value.message.id)) answers.set(value.message.id, new Map())
           answers.get(value.message.id).set(key, block.text)
           response = [...answers.get(value.message.id).values()].join('')
+          if (value.parent_tool_use_id == null && block.text.trim()) toolOutcomes.succeeded()
         } else if (block.type === 'thinking' && typeof block.thinking === 'string' && block.redacted !== true) {
           if (!finished.has(`thinking:${key}`)) responses.emit({ kind: 'reasoning', step: step(`thinking:${key}`), text: 'Claude Code 公开思考', detail: block.thinking, state: 'COMPLETED' }, value.parent_tool_use_id == null ? value.message.id : undefined, blockIndex)
           finished.add(`thinking:${key}`)
@@ -185,7 +188,8 @@ export async function runNativeClaude(config, io) {
         if (finished.has(`tool:${block.tool_use_id}`)) continue
         tools.delete(block.tool_use_id)
         finished.add(`tool:${block.tool_use_id}`)
-        if (block.is_error) failure ??= '原生工具执行失败'
+        if (block.is_error) toolOutcomes.failed(block.tool_use_id)
+        else toolOutcomes.succeeded()
         emit({ kind: 'tool', step: step(`tool:${block.tool_use_id}`), text: '工具结果', detail: typeof block.content === 'string' ? block.content : JSON.stringify(block.content), state: block.is_error ? 'FAILED' : 'COMPLETED',
           ...(toolResponses.has(block.tool_use_id) ? { response: toolResponses.get(block.tool_use_id) } : {}),
           toolCall: { ...toolMetadata.get(block.tool_use_id), callId: block.tool_use_id, output: block.content,
@@ -250,7 +254,8 @@ export async function runNativeClaude(config, io) {
     const outcome = await peer.done
     io.signal?.throwIfAborted()
     if (outcome.exitCode !== 0) failure ??= 'Claude 原生进程非零退出'
-    io.result(failure ? 'ERROR' : 'SUCCESS', response, failure, 'response')
+    if (failure) io.result('ERROR', response, failure, 'response')
+    else toolOutcomes.settle(io, response, 'response')
   } finally {
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()

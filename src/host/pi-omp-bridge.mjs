@@ -4,6 +4,7 @@ import { NativeBlockResponses, piOmpResponseUsage, piOmpReportedUsage } from './
 import { OmpContextInspection } from './omp-context-inspection.mjs'
 import { PI_CONTEXT_ENV, preparePiContextObserver, readPiContextObservation } from './pi-context-observer.mjs'
 import { spawnNativeProcess } from './native-spawn.mjs'
+import { createToolOutcomes, LAST_TOOL_FAILED, recoveredNotice } from './native-tool-outcomes.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, writeFile, rename, realpath, unlink, rmdir, lstat, open, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -102,6 +103,7 @@ let child,
   stopReceiver,
   nativeStop,
   closeGuidance = () => {}
+const toolOutcomes = createToolOutcomes()
 const metadataController = new AbortController()
 const stop = (reason) => {
   failure ??= reason
@@ -758,6 +760,7 @@ try {
         return
       }
       if (value.type === 'message_update' && value.assistantMessageEvent?.type === 'text_delta') {
+        if (typeof value.assistantMessageEvent.delta === 'string' && value.assistantMessageEvent.delta.trim()) toolOutcomes.succeeded()
         publicText(value.assistantMessageEvent.contentIndex, value.assistantMessageEvent.delta)
         return
       }
@@ -804,7 +807,10 @@ try {
         // blocks; do not apply an uncorrelated final snapshot to an invented block.
         if (!textBlocks.has(`${responseId()}:text:stream`)) {
           for (const [index, block] of content.entries())
-            if (block.type === 'text') publicText(index, block.text, true)
+            if (block.type === 'text') {
+              if (typeof block.text === 'string' && block.text.trim()) toolOutcomes.succeeded()
+              publicText(index, block.text, true)
+            }
         }
         for (const [index, block] of content.entries()) {
           if (block.type !== 'toolCall' || typeof block.id !== 'string') continue
@@ -837,7 +843,8 @@ try {
         return
       }
       if (value.type === 'tool_execution_end') {
-        if (value.isError) failure ??= '至少一个 CLI 工具执行失败'
+        if (value.isError) toolOutcomes.failed(value.toolCallId)
+        else toolOutcomes.succeeded()
         const detail = (value.result?.content ?? [])
           .filter((c) => c.type === 'text')
           .map((c) => c.text ?? '')
@@ -942,7 +949,10 @@ try {
     } catch (error) {
       failure ??= errorMessage(error)
     }
-    output({ type: 'result', status: failure || stopped ? 'ERROR' : 'SUCCESS', response, error: failure, resultScope: 'run' })
+    if (failure || stopped) output({ type: 'result', status: 'ERROR', response, error: failure, resultScope: 'run' })
+    else if (toolOutcomes.lastFailed) output({ type: 'result', status: 'UNCERTAIN', response, error: LAST_TOOL_FAILED, resultScope: 'run' })
+    else output({ type: 'result', status: 'SUCCESS', response, resultScope: 'run',
+      ...(toolOutcomes.count ? { notice: recoveredNotice(toolOutcomes.count) } : {}) })
     finalized = true
     if (failure || stopped) process.exitCode = 1
   }

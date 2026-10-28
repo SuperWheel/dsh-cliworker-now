@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 import {
   commandPrefix,
   closeServer,
@@ -233,7 +234,7 @@ export async function runNativeHermes(config, io) {
     streamTask,
     terminal,
     permissionDenied = false,
-    toolFailed = false
+    toolOutcomes = createToolOutcomes()
   let releaseSteer, stopObserverPolling, acceptedGuidance = false
   let response = '',
     stopped = false,
@@ -361,6 +362,7 @@ export async function runNativeHermes(config, io) {
       if (event.event === 'message.delta') {
         if (typeof event.delta !== 'string') throw new Error('Hermes 文本增量无效')
         response += event.delta
+        if (event.delta.trim()) toolOutcomes.succeeded()
         assistant(event.delta)
       } else if (event.event === 'message.interim') {
         if (typeof event.text !== 'string') throw new Error('Hermes 公开进度无效')
@@ -382,7 +384,6 @@ export async function runNativeHermes(config, io) {
       } else if (['tool.started', 'tool.completed', 'tool.failed'].includes(event.event)) {
         assistantSegmentOpen = false
         if (!string(event.tool)) throw new Error('Hermes 工具事件缺少名称')
-        if (event.error === true || event.event === 'tool.failed') toolFailed = true
         const queue = activeTools.get(event.tool) ?? []
         let step
         if (event.event === 'tool.started') {
@@ -393,6 +394,10 @@ export async function runNativeHermes(config, io) {
           if (step === undefined) throw new Error('Hermes 工具结束事件缺少开始记录')
         }
         activeTools.set(event.tool, queue)
+        if (event.event !== 'tool.started') {
+          if (event.error === true || event.event === 'tool.failed') toolOutcomes.failed(step)
+          else toolOutcomes.succeeded()
+        }
         io.event({
           kind: 'tool',
           step,
@@ -456,12 +461,11 @@ export async function runNativeHermes(config, io) {
       throw new Error('Hermes 实际执行模型与明确选型不一致')
     if (typeof final.output !== 'string') throw new Error('Hermes 运行结果缺失')
     if ([...activeTools.values()].some((queue) => queue.length)) throw new Error('Hermes 工具缺少完成事件')
-    if (toolFailed && !permissionDenied) throw new Error('Hermes 工具执行失败')
     if (!assistantSegmentOpen && final.output) assistant(final.output)
     response = final.output
     if (permissionDenied)
       io.result('UNCERTAIN', response, 'Hermes 额外授权已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试', 'response')
-    else io.result('SUCCESS', response, undefined, 'response')
+    else toolOutcomes.settle(io, response, 'response')
   } catch (error) {
     if (runID && !terminal) await stopRun()
     throw error

@@ -5,6 +5,7 @@ import { isAbsolute, join, dirname, basename } from 'node:path'
 import { isRecord, nonempty, replaceNativeArguments } from './native-acp.mjs'
 import { nativeHarnessMcpServers } from './native-harness-injection.mjs'
 import { ZcodeResponseTracker, ZcodeToolInputs } from './zcode-response.mjs'
+import { createToolOutcomes } from './native-tool-outcomes.mjs'
 import { zcodeContextBinding, unknownZcodeContextInspection, readZcodeContextInspections } from './zcode-context-observation.mjs'
 
 const ZCODE_DENIED = 'ZCode 额外权限请求已拒绝，但 CLI 报告本轮已完成；结果待核实，请先核查实际产物，不要自动重试'
@@ -212,7 +213,10 @@ export async function runNativeZcode(config, io) {
     tools = new Map(),
     // Tool calls whose permission was denied; their failure is the denial itself.
     deniedTools = new Set(),
-    early = []
+    // Calls whose own result frame already reported the failure the batch counts again.
+    failedTools = new Set(),
+    early = [],
+    toolOutcomes = createToolOutcomes()
   const failure = (message) => {
     failed ??= message
   }
@@ -339,6 +343,7 @@ export async function runNativeZcode(config, io) {
         return
       }
       response += payload.delta
+      if (payload.delta.trim()) toolOutcomes.succeeded()
       if (payload.delta) {
         if (!assistantSegmentOpen) { assistantStep++; assistantSegmentOpen = true }
         responses.emit({ kind: 'assistant', step: assistantStep, text: payload.delta },
@@ -362,10 +367,12 @@ export async function runNativeZcode(config, io) {
     } else if (event.type === 'tool.updated') {
       finishThought()
       if (payload.kind === 'batch') {
-        const deniedInBatch = (Array.isArray(payload.toolCallIds) ? payload.toolCallIds : []).filter((id) =>
-          deniedTools.has(id),
-        )
-        if (payload.errorCount > deniedInBatch.length) failure('ZCode 工具批次失败')
+        const batchIds = Array.isArray(payload.toolCallIds) ? payload.toolCallIds : []
+        const deniedInBatch = batchIds.filter((id) => deniedTools.has(id))
+        const known = deniedInBatch.length + batchIds.filter((id) => failedTools.has(id)).length
+        const errors = Number.isSafeInteger(payload.errorCount) ? payload.errorCount : 0
+        // Only failures no call result reported are new; the same batch replayed counts once.
+        for (let index = known; index < errors; index++) toolOutcomes.failed(`batch:${batchIds.join(',')}:${index}`)
         // A denied call gets no result frame of its own; the batch closes it.
         for (const id of deniedInBatch) {
           const value = tools.get(id)
@@ -387,7 +394,10 @@ export async function runNativeZcode(config, io) {
         const value = { ...previous, name: payload.toolName ?? previous.name, done, assistantMessageId, input,
           inputFromStream: explicitInput ? false : cachedInput !== undefined || previous.inputFromStream }
         tools.set(payload.toolCallId, value)
-        if (error && !deniedTools.has(payload.toolCallId)) failure('ZCode 工具执行失败')
+        if (error && !deniedTools.has(payload.toolCallId)) {
+          failedTools.add(payload.toolCallId)
+          toolOutcomes.failed(payload.toolCallId)
+        } else if (done && !error && !previous.done) toolOutcomes.succeeded()
         responses.tool({
           kind: 'tool',
           step: value.step,
@@ -555,7 +565,7 @@ export async function runNativeZcode(config, io) {
     if (closed?.closed !== true) throw new Error('ZCode session did not close')
     if (failed) io.result('ERROR', response, failed, 'run')
     else if (denied) io.result('UNCERTAIN', response, ZCODE_DENIED, 'run')
-    else io.result('SUCCESS', response, undefined, 'run')
+    else toolOutcomes.settle(io, response, 'run')
   } finally {
     io.signal.removeEventListener('abort', cancel)
     active = false
