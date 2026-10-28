@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,6 +20,14 @@ import { WorkerRuntime } from '../src/host/runtime.ts'
 import { workerArguments } from '../src/host/adapters.ts'
 import { claudePermissionMode } from '../src/host/native-claude.mjs'
 import { grokAcpArgv } from '../src/host/native-grok.mjs'
+import { CliWorkerService } from '../src/host/index.ts'
+import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+
+// The policy write goes to a real session log; record it instead.
+vi.mock('@deepseek-ai/dsh-user-approval', async (original) => ({
+  ...(await original<typeof import('@deepseek-ai/dsh-user-approval')>()),
+  setApprovalPolicy: vi.fn(),
+}))
 
 // Synthetic fixtures only: no CLI process, model or DSH Desktop is involved.
 const cleanups: Array<() => void | Promise<void>> = []
@@ -183,6 +191,21 @@ describe('runner ↔ Host approval channel', () => {
   })
 })
 
+describe('runner caps approvals at the mailbox lifetime', () => {
+  it('denies request 201 without publishing it, since the Host could not answer it', async () => {
+    const frames: any[] = []
+    const io: any = createNativeIO({ project: process.cwd(), maxLineBytes: 8192, maxRunBytes: 1048576, approvalNonce: 'synthetic' } as any, (line: string) => {
+      const frame = JSON.parse(line)
+      frames.push(frame)
+      if (frame.type === 'approval') void io.answerApproval(JSON.stringify({ decision: 'deny', source: 'user' }), frame.id)
+    }, new AbortController().signal)
+    for (let index = 0; index < 200; index++) await io.approval(request)
+    expect(await io.approval(request)).toEqual({ decision: 'deny', source: 'unavailable' })
+    expect(frames.filter((frame) => frame.type === 'approval')).toHaveLength(200)
+    await io.close()
+  })
+})
+
 describe('Host relay answers every request and records it', () => {
   // Synthetic runtime shell: only the members relayApproval touches.
   const relay = (handler?: (...args: any[]) => Promise<any>) => {
@@ -192,13 +215,14 @@ describe('Host relay answers every request and records it', () => {
       changed: () => {},
       approvalHandler: handler,
     }
-    const worker: any = { id: 'w', runId: 'run-1' }
+    const worker: any = { id: 'w', runId: 'run-1', mode: 'accept-edits' }
     const controller = new AbortController()
+    const task: any = { worker, controller, approvals: new AbortController() }
     const answers: any[] = []
     let failAnswer = false
     const run = (answer = (decision: unknown) => (failAnswer ? Promise.reject(new Error('closed')) : (answers.push(decision), Promise.resolve()))) =>
-      (WorkerRuntime.prototype as any).relayApproval.call(shell, { worker, controller }, request, answer)
-    return { events, worker, controller, answers, run, failNext: () => (failAnswer = true) }
+      (WorkerRuntime.prototype as any).relayApproval.call(shell, task, request, answer)
+    return { events, worker, controller, task, answers, run, failNext: () => (failAnswer = true) }
   }
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
   it('records the request, waits visibly, then records and sends the decision', async () => {
@@ -241,6 +265,32 @@ describe('Host relay answers every request and records it', () => {
     expect(g.answers).toEqual([{ decision: 'deny', source: 'stopped' }])
     // The newer run's timeline does not receive the old decision.
     expect(g.events.some((event) => String(event.text).startsWith('授权决定'))).toBe(false)
+  })
+  it('denies an allow that arrives once stopping has begun, before the process aborts', async () => {
+    let release!: (value: unknown) => void
+    const f = relay(() => new Promise((resolve) => (release = resolve)))
+    f.run()
+    f.task.nativeStopRequested = true
+    release({ decision: 'allow-once', source: 'user' })
+    await settle()
+    expect(f.answers).toEqual([{ decision: 'deny', source: 'stopped' }])
+  })
+  it('withdraws an open prompt when the run ends, and decides with the launch mode', async () => {
+    let seen: any
+    const f = relay((_worker, _request, signal, mode) => {
+      seen = { signal, mode }
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason)))
+    })
+    f.task.launchMode = 'plan'
+    f.run()
+    await settle()
+    // A 仅可查看 run launched as plan: the Host must judge it as plan.
+    expect(seen.mode).toBe('plan')
+    f.task.approvals.abort(new Error('run ended'))
+    await settle()
+    await settle()
+    expect(seen.signal.aborted).toBe(true)
+    expect(f.answers).toEqual([{ decision: 'deny', source: 'stopped' }])
   })
   it('records an undelivered decision; the runner denies on its own', async () => {
     const f = relay(async () => ({ decision: 'allow-once', source: 'user' }))
@@ -285,5 +335,47 @@ describe('each CLI launches no wider than the DSH tier (argument mapping, no pro
   ] as const)('Grok %s', (access, tail) => {
     const argv = grokAcpArgv({ argv: ['grok', '--permission-mode', 'default', '--single', 'x'], mode: launch(access), access })
     expect(argv).toEqual(['grok', ...tail])
+  })
+})
+
+describe('Host permission boundaries (synthetic agents, no DSH Desktop)', () => {
+  const agent = (sandbox: string, extra: Record<string, unknown> = {}) => ({
+    id: 'parent',
+    session: { header: { origin: 'user' } },
+    ctx: {
+      get: (name: string) =>
+        ({
+          planMode: { get: () => ({ active: false }) },
+          sandboxPolicy: { resolve: () => ({ mode: sandbox }) },
+          approval: { overrideOf: () => 'ask', config: { policy: 'ask' } },
+          ...extra,
+        })[name],
+    },
+  })
+  it('仅可查看 admits CLI dispatch but still refuses project/account writes such as merging a copy', () => {
+    const service: any = Object.create(CliWorkerService.prototype)
+    expect(() => service.assertExecution(agent('read-only'))).toThrow('只读权限')
+    expect(() => service.assertExecution(agent('read-only'), true)).not.toThrow()
+    expect(() => service.assertExecution(agent('workspace-write'))).not.toThrow()
+  })
+  it('a Worker-UI turn asks in the child with its policy refreshed, and a plan launch never asks', async () => {
+    const request = vi.fn(async () => 'allowed-once')
+    const parent = agent('workspace-write')
+    const child = { id: 'child', session: { id: 'child-session' }, ctx: { get: () => ({ overrideOf: () => 'never', request }) } }
+    const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+      ctx: { agents: { get: (id: string) => (id === 'parent' ? parent : id === 'child' ? child : undefined) } },
+      disposed: new AbortController(),
+    })
+    const worker = { id: 'worker-synthetic', agentName: 'w', parentSessionId: 'parent', runId: 'run-1', preference: { cli: 'kimi' }, project: '/p', title: 'w',
+      harnessConversation: { sessionId: 'child' } }
+    const ask = { kind: 'network', summary: 'x', allowSession: false }
+    expect(await service.decideNativeApproval(worker, ask, new AbortController().signal, 'accept-edits'))
+      .toEqual({ decision: 'allow-once', source: 'user' })
+    // Launched under full access (child pinned to never), parent now asks: the child asks too.
+    expect(setApprovalPolicy).toHaveBeenCalledWith(child.session, 'ask')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(await service.decideNativeApproval(worker, ask, new AbortController().signal, 'plan'))
+      .toEqual({ decision: 'deny', source: 'plan' })
+    expect(request).toHaveBeenCalledTimes(1)
   })
 })

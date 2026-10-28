@@ -125,6 +125,10 @@ interface Task {
   steer?: (message: string, requestId: string, signal?: AbortSignal) => Promise<void>
   nativeStop?: () => Promise<void>
   nativeStopRequested?: boolean
+  /** Mode the CLI actually launched in this run (仅可查看 → plan). */
+  launchMode?: TaskMode
+  /** Withdraws this run's pending authorization prompts on stop or exit. */
+  approvals?: AbortController
   steering: Map<string, { prompt: string; done: Promise<void> }>
   steeringController: AbortController
   /** Admission order; a task returned from a refused copy keeps its place. */
@@ -222,6 +226,8 @@ export class WorkerRuntime {
     worker: Worker,
     request: NativeApprovalRequest,
     signal: AbortSignal,
+    /** The run's launch mode, which decisions must not exceed. */
+    mode: TaskMode,
   ) => Promise<NativeApprovalDecision>
   /** Host decision for each native authorization request; absent denies. */
   setApprovalHandler(handler: NonNullable<WorkerRuntime['approvalHandler']>): () => void {
@@ -249,6 +255,10 @@ export class WorkerRuntime {
   ): void {
     const { worker, controller } = task
     const runId = worker.runId
+    const approvals = task.approvals ?? new AbortController()
+    const signal = AbortSignal.any([controller.signal, approvals.signal])
+    // Stopping starts before the controller aborts; deny from that moment.
+    const withdrawn = () => signal.aborted || !!task.nativeStopRequested
     this.storage.append(worker, {
       kind: 'status',
       text: `CLI 请求授权：${request.summary}`,
@@ -258,23 +268,24 @@ export class WorkerRuntime {
     this.changed()
     const decide = async (): Promise<NativeApprovalDecision> => {
       if (!this.approvalHandler) return { decision: 'deny', source: 'unavailable' }
+      if (withdrawn()) return { decision: 'deny', source: 'stopped' }
       try {
-        return await this.approvalHandler(worker, request, controller.signal)
+        return await this.approvalHandler(worker, request, signal, task.launchMode ?? worker.mode)
       } catch {
-        return { decision: 'deny', source: controller.signal.aborted ? 'stopped' : 'unavailable' }
+        return { decision: 'deny', source: withdrawn() ? 'stopped' : 'unavailable' }
       }
     }
     void decide().then(async (decided) => {
       const current = worker.runId === runId
       const decision: NativeApprovalDecision =
-        controller.signal.aborted || !current ? { decision: 'deny', source: 'stopped' } : decided
+        withdrawn() || !current ? { decision: 'deny', source: 'stopped' } : decided
       if (worker.approvalWaiting) worker.approvalWaiting -= 1
       if (!worker.approvalWaiting) delete worker.approvalWaiting
       if (current) this.storage.append(worker, { kind: 'status', text: approvalDecisionText(decision) })
       this.changed()
       await answer(decision).catch(() => {
         // The runner denies on its own once its bridge or run ends.
-        if (worker.runId === runId && !controller.signal.aborted)
+        if (worker.runId === runId && !withdrawn())
           this.storage.append(worker, { kind: 'diagnostic', text: '授权决定未送达 CLI，CLI 按拒绝处理' })
       })
     })
@@ -1925,6 +1936,7 @@ export class WorkerRuntime {
       worker.status = 'stopping'
       if (task.nativeStop && this.running.has(task)) {
         task.nativeStopRequested = true
+        task.approvals?.abort(new UserStoppedError())
         void Promise.resolve()
           .then(() => task.nativeStop?.())
           .catch(() => undefined)
@@ -2238,6 +2250,7 @@ export class WorkerRuntime {
     const resumeConversation = worker.conversationId ?? pendingFork?.sourceConversationId
     const expectedConversation = worker.conversationId
     const nativeTransport = usesNativeBridge(worker)
+    task.approvals = new AbortController()
     // Bound to the prepared launch's approval mailbox once it exists.
     let answerApproval: ((id: string, decision: NativeApprovalDecision) => Promise<void>) | undefined
     const createProtocol = nativeTransport
@@ -2370,6 +2383,7 @@ export class WorkerRuntime {
         this.storage.append(worker, { kind: 'status', text: '该 CLI 没有已确认的原生完全权限模式，本轮按其写入模式运行；授权请求自动放行' })
       // 仅可查看 launches every CLI in its native read-only/plan mode.
       const launchMode: TaskMode = access === 'read-only' ? 'plan' : worker.mode
+      task.launchMode = launchMode
       const executionConfig = { ...this.config,
         ...(access ? { access } : {}),
         ...(task.attachments?.length ? { attachments: task.attachments } : {}),
@@ -2632,6 +2646,12 @@ export class WorkerRuntime {
       }
     } finally {
       clearTimeout(timeout)
+      // Withdraw prompts still open when the CLI exits or the protocol fails.
+      task.approvals?.abort(new Error('当前运行已结束，授权请求已撤回'))
+      if (worker.approvalWaiting) {
+        delete worker.approvalWaiting
+        this.changed()
+      }
       task.steer = undefined
       task.nativeStop = undefined
       task.steeringController.abort(new Error('当前运行已结束，引导通路已关闭'))

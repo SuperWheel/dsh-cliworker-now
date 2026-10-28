@@ -88,7 +88,9 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}) 
       }
       if (!config.approvalNonce || closed || result || signal?.aborted)
         return Promise.resolve(deniedApproval(signal?.aborted ? 'stopped' : 'unavailable'))
-      if (approvals.size >= 50) return Promise.resolve(deniedApproval('unavailable'))
+      // The Host answers through a mailbox that accepts at most 200 submissions
+      // per run; a request it could never answer is denied here instead.
+      if (approvals.size >= 50 || approvalSequence >= 200) return Promise.resolve(deniedApproval('unavailable'))
       const id = `approval-${++approvalSequence}`
       return new Promise((resolve) => {
         const abort = () => settle(deniedApproval('stopped'))

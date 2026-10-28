@@ -548,7 +548,7 @@ export class CliWorkerService extends TypertRemoteService {
                 !['queued', 'running'].includes(current.status)
               )
                 throw new Error('工具桥运行身份已失效')
-              this.assertExecution(parent)
+              this.assertExecution(parent, true)
               if (this.project(parent) !== worker.project) throw new Error('工具桥项目已变更')
               this.runtime.assertCliEnabled(cli)
             },
@@ -640,7 +640,7 @@ export class CliWorkerService extends TypertRemoteService {
     this.runtime.setQueuedExecutionGuard((worker) => {
       const agent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
       if (!agent) throw new Error('父会话已关闭，请重新打开后继续发送')
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       this.assertAccessSupported(agent, cliOf(worker.preference), worker.mode)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       this.runtime.assertCliEnabled(cliOf(worker.preference))
@@ -658,7 +658,7 @@ export class CliWorkerService extends TypertRemoteService {
       'cliworker:lifetime',
     )
     ctx.effect(
-      () => this.runtime.setApprovalHandler((worker, request, signal) => this.decideNativeApproval(worker, request, signal)),
+      () => this.runtime.setApprovalHandler((worker, request, signal, mode) => this.decideNativeApproval(worker, request, signal, mode)),
       'cliworker:approvals',
     )
     ctx.effect(
@@ -692,10 +692,17 @@ export class CliWorkerService extends TypertRemoteService {
     if (!agent.session.header.cwd) throw new Error('此主对话没有工作目录，请先选择项目')
     return projectDirectory(agent.session.header.cwd)
   }
-  private assertExecution(agent: Agent): void {
+  /**
+   * @param dispatch - A CLI run (or its control), which 仅可查看 admits in the
+   * CLI's native read-only mode. Other project or account writes (merging an
+   * isolated copy, account login) stay refused under read-only.
+   */
+  private assertExecution(agent: Agent, dispatch = false): void {
     if (agent.session.header.origin === 'subagent') throw new Error('MVP 只支持主对话下的直接 CLI 子 Agent')
     if (agent.ctx.get('planMode')?.get(agent).active)
       throw new Error('请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界')
+    if (!dispatch && agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode === 'read-only')
+      throw new Error('Harness 当前为只读权限；此操作会写入项目或账号状态，请先明确切换项目权限')
   }
   /**
    * 仅可查看 runs the CLI in its native read-only mode. A CLI without a
@@ -732,10 +739,12 @@ export class CliWorkerService extends TypertRemoteService {
     worker: Worker,
     request: Parameters<typeof approvalQuestion>[0],
     signal: AbortSignal,
+    /** The run's launch mode: a 仅可查看 run launched as plan denies. */
+    mode: TaskMode,
   ): Promise<NativeApprovalDecision> {
     const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
     if (!parent) return { decision: 'deny', source: 'unavailable' }
-    const decided = decideApproval(worker.mode, this.permissionState(parent))
+    const decided = decideApproval(mode, this.permissionState(parent))
     if (decided !== 'ask') return decided
     const cli = cliOf(worker.preference)
     const context = { worker: workerName(worker), cli: CLI_LABELS[cli], project: worker.project }
@@ -751,6 +760,8 @@ export class CliWorkerService extends TypertRemoteService {
     const child = binding && this.ctx.agents.get(binding.sessionId as Agent['id'])
     const approval = child?.ctx.get('approval')
     if (!child || !approval) return { decision: 'deny', source: 'unavailable' }
+    // The parent may have switched presets since preparation: ask with its policy now.
+    if (approval.overrideOf(child.session) !== 'ask') setApprovalPolicy(child.session, 'ask')
     const outcome = await approval.request({
       agent: child,
       toolName: `cliworker:${cli}`,
@@ -889,7 +900,7 @@ export class CliWorkerService extends TypertRemoteService {
     this.runtime.changed()
     try {
       await waitForInput(previous, signal)
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const resolution = await this.resolveDispatchName(name, signal)
       signal.throwIfAborted()
       let cli: 'qoder' | 'qodercn'
@@ -922,7 +933,7 @@ export class CliWorkerService extends TypertRemoteService {
         cli = answer.selected[0] === 'Qoder' ? 'qoder' : 'qodercn'
       } else throw new Error('未找到 Qoder 或 Qoder CN 安装，请先安装或配置 CLI 路径；任务尚未启动')
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
       this.runtime.assertCliEnabled(cli)
       return cli
@@ -968,7 +979,7 @@ export class CliWorkerService extends TypertRemoteService {
         try {
           await waitForInput(previous, signal)
           signal.throwIfAborted()
-          this.assertExecution(agent)
+          this.assertExecution(agent, true)
           this.runtime.assertCliEnabled(cli)
           if (!queued && this.runtime.storage.conversationSetup(agent.id, project, cli)) {
             release()
@@ -1097,7 +1108,7 @@ export class CliWorkerService extends TypertRemoteService {
             setup = { ...setup, binding }
           }
           signal.throwIfAborted()
-          this.assertExecution(agent)
+          this.assertExecution(agent, true)
           this.runtime.assertCliEnabled(cli)
           if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
           if (selected) this.runtime.storage.setDispatchSetup(project, setup)
@@ -1156,7 +1167,7 @@ export class CliWorkerService extends TypertRemoteService {
           ),
         queuedAdmission?.priority ? queuedAdmission.id : undefined,
       )
-    this.assertExecution(agent)
+    this.assertExecution(agent, true)
     this.assertAccessSupported(agent, cliOf(preference), mode)
     this.runtime.assertCliEnabled(cliOf(preference))
     if (this.accounts.isBusy(cliOf(preference)))
@@ -1177,7 +1188,7 @@ export class CliWorkerService extends TypertRemoteService {
     )
     if (authorizedPreference.model !== preference.model) throw new Error('模型与思考强度不匹配，请重新选择')
     signal.throwIfAborted()
-    this.assertExecution(agent)
+    this.assertExecution(agent, true)
     this.runtime.assertCliEnabled(cliOf(preference))
     if (this.accounts.isBusy(cliOf(preference))) throw new Error('请先关闭账号终端')
     if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
@@ -1438,7 +1449,7 @@ export class CliWorkerService extends TypertRemoteService {
             isConcurrencySafe: () => true,
             execute: async (args, exec) => {
               if (!exec.agent) throw new Error('A parent Agent is required')
-              this.assertExecution(exec.agent)
+              this.assertExecution(exec.agent, true)
               let cli = requireCliName(args.cli)
               if (isGenericQoderName(args.cli))
                 cli = await this.chooseQoderVariant(exec.agent, exec.signal, args.cli)
@@ -2501,7 +2512,7 @@ export class CliWorkerService extends TypertRemoteService {
           control.throwIfAborted()
           if (this.ctx.agents.get(parent.id) !== parent)
             throw new Error('所属主对话已关闭，未修改权限')
-          this.assertExecution(parent)
+          this.assertExecution(parent, true)
           const current = this.runtime.get(parent.id, worker.id)
           const record = this.harnessConversation?.lookup(sessionId)
           if (
@@ -2591,7 +2602,7 @@ export class CliWorkerService extends TypertRemoteService {
       if (this.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       let reason: string | undefined
       try {
-        this.assertExecution(parent)
+        this.assertExecution(parent, true)
         this.assertNativeWorkerSettingsIdle(worker)
         const snapshot = this.runtime.snapshot(parent.id, worker.id)
         if (snapshot.selectedBusy) throw new Error('请等待本轮结束后再修改权限')
@@ -2610,7 +2621,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const parent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(parent)
+      this.assertExecution(parent, true)
       const worker = this.runtime.get(parent.id, workerId)
       if (this.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       const selected = validate.enum(['plan', 'accept-edits']).parse(mode)
@@ -2680,7 +2691,7 @@ export class CliWorkerService extends TypertRemoteService {
         const agent = await this.parent(parentSessionId)
         control.throwIfAborted()
         reservation.assertCurrent()
-        this.assertExecution(agent)
+        this.assertExecution(agent, true)
         const worker = this.runtime.get(agent.id, workerId)
         if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
         if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -2750,7 +2761,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       return JSON.stringify(this.runtime.queueFollowup(agent.id, workerId, prompt, expectedRunId, requestId))
@@ -2781,7 +2792,7 @@ export class CliWorkerService extends TypertRemoteService {
       const control = AbortSignal.any([signal, this.disposed.signal])
       const agent = await this.parent(parentSessionId)
       control.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -2811,7 +2822,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -2842,7 +2853,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -2865,7 +2876,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -2902,7 +2913,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       this.runtime.retryQueuedFollowups(agent.id, workerId, expectedRunId)
@@ -2931,7 +2942,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.get(agent.id, workerId)
       this.runtime.assertCliEnabled(cliOf(worker.preference))
       return this.launch(
@@ -2965,7 +2976,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const agent = await this.parent(parentSessionId)
       signal.throwIfAborted()
-      this.assertExecution(agent)
+      this.assertExecution(agent, true)
       const worker = this.runtime.assertLegacyRestart(agent.id, workerId)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目新建对话')
       return await this.launch(

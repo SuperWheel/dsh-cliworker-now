@@ -35,7 +35,7 @@
 - [x] 2.5 Claude、ACP 系、ZCode、OpenCode/MiMo、Hermes、Antigravity：按映射调整启动参数，授权请求改走 Host。
   - 按 1.3 核实结果：Claude（`bypassPermissions`、`--permission-prompts host`、`can_use_tool` 中继，拒绝仍 `interrupt:true` 判失败）；ACP 系（`session/request_permission` 中继，Qoder 完全权限 `bypass_permissions`/`yolo`，Grok `--always-approve`，Kimi 不变）；ZCode（`yolo`，`interaction/requestPermission` 中继）；OpenCode/MiMo（完全权限 `"*": allow`、`bash: allow`，`permission.asked` 中继）；Hermes（`approval.request` 中继，完全权限保持现有）。Antigravity 按核实结果保持原参数、无中继（无已知审批协议）。runner 等待期间不阻塞读循环（Codex、Claude、ACP、ZCode）；Hermes 与 HTTP 会话系在事件循环内顺序等待。
 - [x] 2.6 `index.ts`：仅可查看模式允许只读派遣（Antigravity 等无整进程只读的 CLI 仍拒绝）。
-  - `assertExecution` 不再拒绝只读；`assertAccessSupported` 仅在父会话沙箱为只读时拒绝 Antigravity、Qoder、Qoder CN、Hermes（Worker 规划任务本身不受影响）；派遣与排队续聊两处均检查。
+  - `assertExecution(agent, dispatch)` 仅对 CLI 派遣及其控制入口放行仅可查看（合并隔离副本、账号操作仍拒绝，见 3.3 审查第 1 项）；`assertAccessSupported` 仅在父会话沙箱为只读时拒绝 Antigravity、Qoder、Qoder CN、Hermes（Worker 规划任务本身不受影响）；派遣与排队续聊两处均检查。
 - [x] 2.7 完全权限下残余授权请求自动放行（不弹窗），规划模式除外。
   - `decideApproval`：规划 → 拒绝（「规划模式」）；`never`+完全权限 → 允许一次（「完全权限自动放行」）；`never`+其他 → 拒绝（「权限预设」）；`ask` → 按来源弹窗。
 - [x] 2.8 时间线记录授权请求、决定与决定来源。
@@ -55,6 +55,14 @@
   - 关联测试：native-approval-relay 43、native-primary-runners 93、native-acp 36、native-qoder 52、native-zcode 35、native-http 87、harness-service-integration、routing、worker-permissions、followup-queue、agy-run-outcome 均通过。
   - 全量 `corepack pnpm test`：4802 通过、13 跳过、1 失败。失败为 `build-dependencies.test.ts`「keeps Host Typert classes external…」，需要完整 `pnpm build` 生成的 `lib/types/host/index.js`；基线提交 ac288ab 在同环境下同样失败（2 个），与本变更无关。
   - 本变更引起并已修复的回归：`followup-queue`、`agy-run-outcome` 测试的服务桩没有 DSH 权限服务，补 `assertAccessSupported` 桩（与既有 `assertExecution` 桩同一约定）。
+  - 2026-10-28 Codex 审查（gpt-6-astra high，只读，范围 `git diff c1e85a3`）的 6 项发现均经我对照代码确认并修复，补测试于 `native-approval-relay.test.ts`：
+    1. 去掉只读拒绝也放开了合并隔离副本：`assertExecution` 恢复默认拒绝仅可查看，只有 CLI 派遣及其控制入口（选型、派遣、续聊、排队、引导、中断、重跑、工具桥、Worker 权限设置）传 `dispatch=true`；合并隔离副本与账号登录/输入仍拒绝。
+    2. 审批按 `worker.mode` 判定，仅可查看下以规划启动的轮次仍会弹窗：runtime 记录本轮 `launchMode` 并传给 Host 判定。
+    3. 停止开始后、进程中止前仍可送达允许：`nativeStopRequested` 或本轮审批撤回信号触发即改为拒绝。
+    4. CLI 退出或协议失败时未撤回待决弹窗、`approvalWaiting` 残留：每轮建 `task.approvals`，结束与停止时中止并清除等待计数。
+    5. 审批邮箱一轮最多 200 次提交，runner 只限并发：runner 第 201 个请求直接拒绝，不再发出无法应答的请求。
+    6. 完全权限下启动的用户轮次子会话策略为 `never`，父会话中途改为询问后子会话直接拒绝：每次子会话审批前同步为 `ask`。
+  - 修复后复验：`corepack pnpm typecheck` 通过；`corepack pnpm build:preview` 通过；全量 `corepack pnpm test` 4807 通过、13 跳过，仅 `build-dependencies.test.ts` 同一既有失败（需完整构建产物）。
 
 ## 4. 验收
 
