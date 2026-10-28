@@ -18,6 +18,7 @@ import { assertPiOmpRefreshSources, assertPiOmpRefreshCache } from './pi-omp-ref
 import { receivePiOmpControl, receiveNativeStopControl } from './pi-omp-control.mjs'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import { prepareNativeHarnessExtension } from './native-harness-extension.mjs'
+import { nativeFirstGuidance, piOmpNativeTools } from './cli-native-capabilities.mjs'
 import {
   queryNativeCandidates,
   snapshotNativeCandidates,
@@ -415,9 +416,9 @@ try {
       ? await nativeAttachmentInput('pi', config.prompt, config.attachments, metadataController.signal)
       : { message: await nativeAttachmentInput('text', config.prompt, config.attachments, metadataController.signal) }
     const harnessExtension = await prepareNativeHarnessExtension(harnessTools, { signal: metadataController.signal })
-    const tools = config.cli === 'pi' ? ['read', 'grep', 'find', 'ls'] : ['read', 'grep', 'glob']
-    if (config.mode === 'accept-edits') tools.push('write', 'edit')
-    tools.push(...harnessExtension.tools)
+    const tools = [...piOmpNativeTools(config.cli, config.mode), ...harnessExtension.tools]
+    // Pi's addendum keeps its native preamble; the note names the extension tools Pi sees.
+    const guidance = nativeFirstGuidance(harnessExtension.tools)
     const nativeArgs = [
       '--mode',
       'rpc',
@@ -433,6 +434,7 @@ try {
         : ['--thinking', config.preference.effort === 'none' ? 'off' : config.preference.effort]),
       '--tools',
       tools.join(','),
+      ...(guidance ? ['--append-system-prompt', guidance] : []),
       ...(resume ? [config.cli === 'pi' ? '--session' : '--resume', resume] : []),
     ]
     const launch = nativeLaunchArgv([config.executable, ...nativeArgs])

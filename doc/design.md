@@ -1200,3 +1200,13 @@ OpenSpec 变更 `bound-native-tool-output`（起因：Windows 用户反馈 Codex
 - HTTP/SSE（OpenCode、MiMo、Hermes）：`httpLimits` 累计字节只统计；单个 SSE 帧按 `maxNativeLineBytes` 保护并报告上限。单次 JSON 响应仍以 `maxRunBytes` 为上限。
 - 工具桥：Host 响应按 UTF-8 字节判断，并为下一层 JSON-RPC 包装预留 4096 字节，两层判定一致；超限返回明确错误，工具桥仍可继续使用。
 - 不做：不映射 Codex `max_output_tokens`/`tool_output_token_limit`。模型可见输出由 CLI 决定；插件启动的 Codex 读取 `$CODEX_HOME/config.toml`（默认 `~/.codex/config.toml`），插件只传 `model_reasoning_effort`、`sandbox_mode`、`approval_policy` 三个 `-c`。
+
+## 2026-10-28 CLI 原生工具优先，DSH 工具作为备选（未发布）
+
+OpenSpec 变更 `scope-harness-bridge-tools`（起因：Windows 用户反馈插件内 Codex 不太会用工具；DSH 工具桥交给 CLI 的工具与原生工具大量重复。用户决定原生优先、DSH 工具只作备选）。
+
+- 新增 `src/host/cli-native-capabilities.mjs`：按 CLI 与任务模式给出启动参数下实际启用的原生能力类别，Pi `--tools` 与 Grok 网页开关读取同一模块。Host 准备工具桥时把能力表与 CLI 原生 MCP 名称（只读名称）交给 `createNativeHarnessTools`；目录与调用都排除已覆盖的 DSH 工具，交出的描述加「备选」前缀。规划模式的写入属刻意关闭，不作备选。能力表为空即恢复全部交出。
+- 技能 `requiredTools` 改按获准目录判断，被原生覆盖的工具仍算满足。
+- 原生优先说明只走已核实的追加入口：Codex `developerInstructions`（用户已配置 `developer_instructions` 时不发）、Claude `--append-system-prompt`、Pi `--append-system-prompt`、OpenCode/MiMo `prompt_async.system`、Grok 新会话 `_meta.rules`；Kimi、Qoder、Antigravity 无已核实入口，不加。说明列出运行开始时实际交出的工具（`NativeHarnessConnection.tools` 快照）。
+- ZCode 不再注入目录并记录原因；Codex MCP 设 `tool_timeout_sec` 为任务时限；支持 MCP 图片的 CLI（Claude、OpenCode、MiMo、Kimi）透传图片结果，其余保持错误投影。
+- 逐 CLI 表与核实依据见 `doc/native-harness-tools.md`「原生工具优先」。真实模型验收待合并后执行。

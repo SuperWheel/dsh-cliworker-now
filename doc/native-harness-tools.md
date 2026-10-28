@@ -1,6 +1,6 @@
 # 原生 CLI 的 Harness 工具与技能桥
 
-适用开发版本：v0.8.1。更新日期：2026-10-18。CLI 继续运行自己的 Agent、已选模型、思考强度及原生会话；Harness 提供真实子 Agent 身份、工具权限链和完整原生对话页。CLI Worker 通过宿主公开导航打开该直接子会话，保留父绑定和 `origin: subagent`；不在普通会话列表新增根会话。本文区分当前实现、模拟回归及此前冻结预览的真实证据。
+适用开发版本：v0.8.4 之后的开发版。更新日期：2026-10-28（原生优先目录，见 `openspec/changes/scope-harness-bridge-tools/`）。CLI 继续运行自己的 Agent、已选模型、思考强度及原生会话；Harness 提供真实子 Agent 身份、工具权限链和完整原生对话页。CLI Worker 通过宿主公开导航打开该直接子会话，保留父绑定和 `origin: subagent`；不在普通会话列表新增根会话。本文区分当前实现、模拟回归及此前冻结预览的真实证据。
 
 ## 能力与验收等级
 
@@ -15,15 +15,41 @@
 | Kimi | ACP / stdio | `session/new`、`session/load` 的 `mcpServers` stdio 描述符 | 本轮实时目录内精确结构化工具名可选 allow_once，Host 再逐次鉴权 | 配置和准入分支的模拟回归通过；真实模型工具调用待核验 |
 | Grok Build | ACP / stdio | 同 ACP 的 run 专属 stdio MCP 描述符 | 同 Kimi 的精确目录与一次准入 | 配置和准入分支的模拟回归通过；真实模型工具调用待核验 |
 | Qoder | ACP / stdio | 原生 session/new、load 的本轮 stdio MCP 描述符 | 同 Kimi 的精确目录与一次准入 | 结构化工具名及 prompt 附件回归通过；Windows 实际验收见 doc/tasks.md |
-| ZCode | app-server JSON-RPC / stdio | session create/resume 的 `mcpServers`；明确 `isolation=session` | 未准入执行；未知反向请求继续拒绝 | 安装版 schema 与定向回归；未做真实模型工具验收 |
+| ZCode | app-server JSON-RPC / stdio | 不注入目录（2026-10-28 起）；session create/resume 的 `mcpServers` 入口保留在代码中，待执行核验后再启用 | 未准入执行；任务记录写明「ZCode 工具桥执行尚未核验，未注入 DSH 工具目录」 | 安装版 schema 与定向回归；未做真实模型工具验收 |
 | Pi | `--mode rpc` | 保留 `--no-extensions`，只显式加载插件扩展；先读取获准 schema，再精确扩展 `--tools` | 只注册 run 目录内工具；每次调用使用原生 toolCallId，经 Host 执行 | 安装版 loader 无模型往返及冻结预览真实只读 canary 一轮均通过；真实 Host 调用 1 次 |
 | OMP | `--mode rpc` | 当前不可用；不移除 `--no-extensions` | 禁用，给出隔离模式忽略显式扩展的原因 | OMP 16.4.4 零 prompt `get_state` 正常退出，但未加载扩展、无桥 schema 请求；见下文 |
 | Hermes | 私有 gateway Runs HTTP + SSE | 当前 `HERMES_SAFE_MODE` 的隔离运行没有已核验的 run 专属注入方案 | 禁用并说明原因 | 不因普通 MCP 配置存在就解除当前隔离；未做真实模型工具验收 |
-| Antigravity | 双向 stream-json / stdio | 尚无已核验、保持当前配置隔离的临时 MCP 注入入口 | 禁用并说明原因 | stream-json 双向能力只证明任务通信，不能证明工具注入 |
+| Antigravity | 双向 stream-json / stdio | 本轮私有 `agy-tools` 工作区（`.agents/mcp_config.json` + PreToolUse Hook）经 `--add-dir` 加入；服务器名 `dsh_worker_<绑定哈希>`，不改用户项目与全局配置，见 [antigravity-harness-bridge.md](antigravity-harness-bridge.md) | Hook 仅对与本轮实时目录完全匹配的桥工具返回 `auto_approve`，Host 仍逐次鉴权 | 离线回归与隔离构建通过；Windows Desktop 真实工具/Skill 验收未完成（`integrate-native-cli-conversations` 20.4 未勾选） |
 
 2026-10-18 的附件、平台及逐 CLI 当前状态统一见 [能力矩阵](cli-harness-capabilities.md)。下文冻结预览的真实 canary 属此前证据，不等于本次 Windows 已验证所有 CLI。
 
 此矩阵只描述新增 DSH 工具桥。CLI 自己的工具、既有登录、模型路由、严格引导或排队能力继续按各自协议处理；工具桥不会把双向 stdin 解释成当前轮引导。
+
+## 原生工具优先（2026-10-28）
+
+CLI 默认使用自己的原生工具和 skill，DSH 工具只作备选。`src/host/cli-native-capabilities.mjs` 按 CLI 与任务模式给出当前启动参数下实际启用的原生能力类别（file-read、file-write、search、shell、web、image-read、skills）；Pi 的 `--tools` 白名单与 Grok 的网页开关直接读同一模块，日后重新启用某原生能力时，对应 DSH 工具自动退出目录。
+
+- DSH 工具按精确名称映射类别（dsh-base 0.2.1-rc.2 的子 Agent 目录已用无模型方式导出核对）：`read`→file-read；`write`/`edit`/`str_replace_editor`→file-write；`grep`/`glob`→search；`bash`/`pwsh`/`working_directory`/`terminal_*`/`job_*`→shell；`web_search`/`web_fetch`→web；`read_image`→image-read；`skill` 不交出（DSH 技能只经 `dsh_read_skill` 按需读取）。`tools.schemas()` 不暴露来源插件，因此不按插件判断；未列名称视为 DSH 独有，照常作为备选。
+- 类别已被原生覆盖 → 不交出，也不可经桥调用；规划模式刻意不提供写入，DSH 写工具同样不作备选。其余交出，描述前缀「备选（DSH）：仅在 CLI 自身工具无法完成时使用。」。能力表为空（未知 CLI）时恢复全部交出。
+- 同名 MCP：Host 只读取 CLI 原生配置中的服务器名称（不读值），DSH 中只有身份确定的 `mcp__<同名>__<工具>` 不交出；名称经过规范化或加哈希，或剩余部分仍含 `__` 时，仍保留为备选。已禁用的原生服务器不算覆盖。来源：Codex `$CODEX_HOME/config.toml` 与项目各上级目录的 `.codex/config.toml`，后层 `enabled` 生效，多行字符串内的示例行不计；Claude `~/.claude.json` 的用户与当前项目服务器（扣除 `disabledMcpServers`），以及项目 `.mcp.json` 中已批准的服务器；Kimi `$KIMI_CODE_HOME/mcp.json`、git 根 `.mcp.json`、项目 `.kimi-code/mcp.json`；Grok（私有 `GROK_HOME` 不继承 `~/.grok`，但仍扫描）`~/.claude.json`、`~/.cursor/mcp.json`、项目 `.mcp.json`；Antigravity `~/.gemini/config/mcp_config.json`。Qoder 的用户 MCP 位置未核实，不去重；OpenCode/MiMo/Pi 的用户 MCP 已被插件隔离。
+- 技能声明的 `requiredTools` 按「获准」而非「交出」判断：被原生覆盖而未交出的工具仍算满足，技能步骤由 CLI 原生工具完成。2026-10-28 本机已安装技能均未声明 `requiredTools`。
+
+| CLI | 原生类别（写任务） | 原生优先说明入口 | MCP 图片结果 |
+|---|---|---|---|
+| Codex | 读、写、搜索、shell、看图、skills | `thread/start`/`thread/resume` 的 `developerInstructions`；用户已配置 `developer_instructions` 时不发送（该字段会取代而非拼接） | 未核实，按不支持处理 |
+| Claude Code | 读、写、搜索、shell、web、看图、skills | `--append-system-prompt`（追加；恢复会话默认沿用首轮系统提示快照） | 支持 |
+| OpenCode / MiMo | 读、写、搜索、shell、web、看图 | `prompt_async` 的 `system`（MiMo 加 `systemMode: "append"`，只取首轮） | 支持 |
+| Pi | 读、搜索、看图（写任务加写）；无 shell、web | `--append-system-prompt`（进入原生 addendum） | 扩展桥当前只接受文本，按不支持处理 |
+| Grok | 读、写、搜索、shell、skills；web 关闭（规划模式无写和 shell） | 新会话 ACP `_meta.rules`（追加）；恢复会话不重发，持久性未核实 | 未核实 |
+| Kimi | 读、写、搜索、shell、web、skills | 当前 ACP 无已核实入口，不加说明 | 支持 |
+| Qoder | 读、写、搜索、shell、web、skills | `--append-system-prompt` 在 ACP 下是否生效未核实，不加说明 | 未核实 |
+| Antigravity | 读、写、shell；原生 grep/glob 已退役、web 暴露未核实，DSH 搜索与网页保留为备选 | 无追加入口（自定义 agent 会替换提示），不加说明 | 未核实 |
+
+说明只列实际交出的工具名（目录在运行开始时的快照），内容为三行：原生工具与 skill 优先；`dsh_worker_tools` 仅在原生工具缺失或失败时使用；备选工具执行仍需宿主授权。不改写用户任务，不覆盖 AGENTS.md/CLAUDE.md 等指令文件。
+
+Codex 注入同时设置 `mcp_servers.dsh_worker_tools.tool_timeout_sec` 为本次任务时限（秒）：宿主审批没有独立等待上限，Codex 默认 60 秒会先于审批或长工具超时。
+
+非文本结果：CLI 的 MCP 支持图片时，Host 把 `ToolExecutionResult` 中的图片附件读为内联 base64 透传（受桥 1 MiB 响应上限约束）；不支持的 CLI 保持「非文本内容尚不支持」并标为错误。`read_image` 只能返回图片：CLI 原生能看图时按重叠排除，原生不能看图且 MCP 不支持图片时在目录阶段排除。
 
 ## 身份、权限与模型边界
 
@@ -35,7 +61,7 @@
 
 明确的 CLI Worker/Agent 递归派遣入口、run_code 与子 Agent 管理入口继续排除。工具中的 DSH 额外模型生成由 `withinCliTool` 的异步调用归属和 `llm/stream` 守卫明确拒绝，不能回退到 DSH API。已配置 MCP 的服务端模型能力仍归该 MCP 服务本身；桥不接管外部服务的内部执行。该目录继承并不等于每个第三方服务均已完成真实调用验收。
 
-`ToolExecutionResult` 的公开 text 内容按原文及顺序转成 MCP content，并保留 `isError`，不把 Host 拒绝转换为 MCP 成功文本。执行内部的 value/error/meta 不作为另一段 JSON 泄露。图片、文件附件引用和额外上下文尚无忠实的跨 CLI 投影：混合结果保留已有文本，在不支持的内容位置给出明确说明，并将整体标为 `isError: true`；额外上下文以附加说明标明。桥不读取 execution-local value 绕过宿主输出策略，也不泄露附件引用。
+`ToolExecutionResult` 的公开 text 内容按原文及顺序转成 MCP content，并保留 `isError`，不把 Host 拒绝转换为 MCP 成功文本。执行内部的 value/error/meta 不作为另一段 JSON 泄露。图片在支持的 CLI 上按上一节透传；其余图片、文件附件引用和额外上下文尚无忠实的跨 CLI 投影：混合结果保留已有文本，在不支持的内容位置给出明确说明，并将整体标为 `isError: true`；额外上下文以附加说明标明。桥不读取 execution-local value 绕过宿主输出策略，也不泄露附件引用。
 
 每个 carrier 的请求 ID 保持稳定。同一 ID、同一参数共用同一个执行结果；同一 ID 改参数拒绝。连接中断或状态不明不会自动重试。MCP cancellation 和 Pi 的原生 AbortSignal 取消精确调用；停止后拒绝新请求，并等待已在执行的工具结束，随后回收端点和子进程。忽略取消的 Host 工具仍必须结束后才能确认清理完成。
 

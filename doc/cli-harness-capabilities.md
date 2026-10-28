@@ -8,12 +8,12 @@
 
 | CLI | 文件输入 | 图片输入 | Harness Skill / MCP 工具桥 |
 | --- | --- | --- | --- |
-| Antigravity | 原生文本中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 暂无经过验证的本轮隔离注入入口 |
+| Antigravity | 原生文本中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 本轮私有 `agy-tools` 工作区的 MCP + PreToolUse Hook；真实工具验收未完成 |
 | Codex | 文件路径提示 | app-server `localImage` | 临时 stdio MCP；Host 执行权限链保留 |
 | Claude Code | 文件路径提示 | stream-json 原生 base64 图片块 | 临时 `--mcp-config`，仅专属 server 准入 |
 | Kimi | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；只对结构化、精确命名的桥工具回复 `allow_once` |
 | 官方 MiMo Code | 原生 HTTP data URL file part | 同原生 file part | 本轮 `MIMOCODE_CONFIG_CONTENT` 中合并专属 MCP |
-| ZCode | 原生消息中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | session 级 MCP 描述符已接入，额外交互尚未准入执行 |
+| ZCode | 原生消息中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 执行尚未核验，2026-10-28 起不注入目录 |
 | Grok Build | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
 | OMP | RPC prompt 中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 当前安装版在 `--no-extensions` 下忽略显式扩展，保留限制 |
 | Pi | RPC prompt 中的文件路径 | RPC `images` 原生图片块 | 只加载本轮显式扩展并注册获准工具 |
@@ -21,6 +21,8 @@
 | OpenCode | 原生 HTTP data URL file part | 同原生 file part | 本轮 `OPENCODE_CONFIG_CONTENT` 中合并专属 MCP |
 | Qoder | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
 | Qoder CN | 同品牌 ACP `resource_link` 与路径提示 | 同品牌 ACP 公示 image 能力时用图片块，否则图片路径 | 独立品牌绑定的 stdio MCP，精确准入；真实模型未验收 |
+
+2026-10-28 起工具桥只提供 CLI 原生未覆盖的 DSH 工具作为备选，见 [native-harness-tools.md](native-harness-tools.md)「原生工具优先」。
 
 路径输入表示 CLI 使用自身工具按需读取，不等同于图片已直接送达视觉模型。模型能否理解特定图片/文档，继续由该 CLI 的真实能力决定。旧 `legacy` 会话不开放附件，也不能靠新增附件切换原生会话身份。
 

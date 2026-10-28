@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { realpath } from 'node:fs/promises'
 import { nativeHttpEndpoint, startHttpContextRelay } from './http-context-relay.mjs'
 import { NativeBlockResponses, sessionHttpResponseUsage, sessionHttpSessionUsage } from './http-rpc-response.mjs'
-import { HARNESS_MCP_SERVER } from './native-harness-injection.mjs'
+import { HARNESS_MCP_SERVER, nativeHarnessGuidance } from './native-harness-injection.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
 import { readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import {
@@ -457,11 +457,14 @@ export async function runNativeSessionHttp(original, io, cli) {
     streamTask.catch((error) => finished.reject(error))
     io.signal?.throwIfAborted()
     submitted = true
+    const guidance = nativeHarnessGuidance({ ...config, cli })
     const accepted = await request(`/session/${encodeURIComponent(sessionID)}/prompt_async${query}`, 'POST', {
       messageID: userID,
       model: selected,
       agent: config.mode === 'plan' ? 'plan' : 'build',
       ...(config.preference.effort === 'default' ? {} : { variant: config.preference.effort }),
+      // Added after the native agent prompt; MiMo keeps the first turn's value.
+      ...(guidance ? { system: guidance, ...(cli === 'mimo' ? { systemMode: 'append' } : {}) } : {}),
       parts: inputParts,
     })
     if (accepted !== undefined) throw new Error('原生 HTTP 没有返回预期的任务受理回执')

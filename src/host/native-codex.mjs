@@ -1,6 +1,8 @@
 import { resolve } from 'node:path'
 import { CodexRunUsage } from './codex-run-usage.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
+import { nativeHarnessGuidance } from './native-harness-injection.mjs'
+import { codexDeveloperInstructionsConfigured } from './cli-native-capabilities.mjs'
 
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
@@ -235,8 +237,10 @@ export async function runNativeCodex(config, io) {
     await peer.send({ method: 'initialized', params: {} })
     const mode = config.mode === 'plan' ? 'read-only' : 'workspace-write'
     const options = { cwd: config.project, model: config.preference.model, approvalPolicy: 'never', sandbox: mode }
+    const guidance = codexDeveloperInstructionsConfigured(config.project, { ...process.env, ...config.env }) ? undefined : nativeHarnessGuidance(config)
     const result = await peer.request(config.conversationId ? 'thread/resume' : 'thread/start', {
       ...options,
+      ...(guidance ? { developerInstructions: guidance } : {}),
       ...(config.conversationId ? { threadId: config.conversationId, excludeTurns: true } : {}),
     })
     if (!string(result?.thread?.id) || (config.conversationId && result.thread.id !== config.conversationId)) throw fail('原生会话身份与绑定不一致')

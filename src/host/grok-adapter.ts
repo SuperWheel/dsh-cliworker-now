@@ -10,6 +10,7 @@ import type { EventInput, ProtocolResult } from './protocol.ts'
 import { assertGrokNativeEnvironment, discoverGrokAccountModels } from './grok-models.ts'
 import { GrokResponseTracker, grokResponseUsage } from './grok-response.mjs'
 import { HARNESS_MCP_SERVER, nativeHarnessReadyConnection } from './native-harness-injection.mjs'
+import { GROK_NATIVE_WEB, GROK_PLAN_TOOLS } from './cli-native-capabilities.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 
 export interface GrokInput {
@@ -130,7 +131,7 @@ async function state(stateDirectory: string, project?: string, readOnly?: { brid
       GROK_MEMORY: '0',
       GROK_SUBAGENTS: '0',
       GROK_WORKFLOWS: '0',
-      GROK_WEB_FETCH: '0',
+      ...(GROK_NATIVE_WEB ? {} : { GROK_WEB_FETCH: '0' }),
       GROK_TELEMETRY_ENABLED: '0',
       GROK_TELEMETRY_TRACE_UPLOAD: '0',
       GROK_TELEMETRY_MIXPANEL_ENABLED: '0',
@@ -163,8 +164,8 @@ export async function prepareGrok(
       input.mode === 'plan' ? 'default' : 'acceptEdits',
       '--no-memory',
       '--no-subagents',
-      '--disable-web-search',
-      ...(input.mode === 'plan' ? ['--tools', 'read_file,grep,list_dir'] : []),
+      ...(GROK_NATIVE_WEB ? [] : ['--disable-web-search']),
+      ...(input.mode === 'plan' ? ['--tools', GROK_PLAN_TOOLS.join(',')] : []),
       ...(input.conversationId ? ['--resume', input.conversationId] : []),
       '--single',
       `任务：\n${input.prompt}`,
