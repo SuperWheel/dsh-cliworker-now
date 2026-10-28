@@ -29,9 +29,9 @@
 | `openspec/changes/<变更名>/` | 本次提案、规格增量、设计及任务清单 |
 | [`../openspec/changes/archive/`](../openspec/changes/archive/) | 已完成变更及其决策记录 |
 | [`design.md`](design.md) | 既有设计和版本演进历史，继续保留 |
-| [`tasks.md`](tasks.md) | 实际执行的验证、结果、证据位置和发布记录 |
+| [`tasks.md`](tasks.md) | 2026-10-28 之前的验证与发布历史，不再追加 |
 
-新步骤放在变更 `tasks.md`，`doc/tasks.md` 记录结果，避免重复维护。
+任务清单与实际验证结果都写在各变更自己的 `tasks.md`（结果作为对应任务的缩进子项），不集中写入 `doc/tasks.md`。
 旧设计和待办先对照当前源码、测试及后续记录，再提取主规格。
 规格表达预期行为，测试与运行证据说明验证程度，二者不能替代。
 

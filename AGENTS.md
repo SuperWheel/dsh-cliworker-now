@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-为 DeepSeek Harness 0.2.0-rc.2 提供独立的多 CLI 可视化插件，支持 Antigravity、Codex、Claude Code、Kimi、官方 MiMo Code、ZCode、Grok Build、OMP、Pi、Hermes Agent、OpenCode 和 Qoder CLI。支持明确派遣、项目级模型偏好、实时过程、两层任务树、停止及结束后续聊。遵循 `doc/design.md`；实施进度与实际验证写入 `doc/tasks.md`。
+为 DeepSeek Harness 0.2.0-rc.2 提供独立的多 CLI 可视化插件，支持 Antigravity、Codex、Claude Code、Kimi、官方 MiMo Code、ZCode、Grok Build、OMP、Pi、Hermes Agent、OpenCode 和 Qoder CLI。支持明确派遣、项目级模型偏好、实时过程、两层任务树、停止及结束后续聊。遵循 `doc/design.md`；任务清单、实施进度与实际验证写入对应 `openspec/changes/<change-name>/tasks.md`，每个变更各自维护，不再集中写入 `doc/tasks.md`。
 
 ## 开发约定
 
@@ -31,7 +31,7 @@
 ## OpenSpec 工作流
 
 - 阅读 `doc/openspec.md` 和 `openspec/config.yaml`。新增能力、行为/协议/权限变更及跨模块重构，先创建或续用 `openspec/changes/<change-name>/`，再按提案、增量规格、设计、任务清单实施；拼写、排版等无行为变化的小修正可直接完成并记录验证。
-- `openspec/specs/` 表示已落实的规格；未覆盖的业务域应在实际变更触及时，对照源码、测试与当前文档逐步补齐。`doc/design.md` 保留架构及历史决策，`doc/tasks.md` 保留实际验证记录；旧版本未勾选项不自动成为当前待办。
+- `openspec/specs/` 表示已落实的规格；未覆盖的业务域应在实际变更触及时，对照源码、测试与当前文档逐步补齐。`doc/design.md` 保留架构及历史决策，`doc/tasks.md` 只保留 2026-10-28 之前的历史验证记录，不再追加；旧版本未勾选项不自动成为当前待办。
 - OpenSpec 使用项目锁定版本：将技能示例中的 `openspec …` 命令写成 `pnpm spec …`，不要依赖全局安装。常用 `pnpm spec:list`、`pnpm spec status --change <name>`、`pnpm spec:check`。配置和规则使用中文，保留 OpenSpec 要求的英文结构标题及 SHALL/MUST、WHEN/THEN。
 - `.agents/skills/openspec-*` 为官方生成的项目级技能，不手改生成内容；定制写入本文件和 `openspec/config.yaml`。显式选择 explore/propose 时先完成探索/方案；实施仍按用户本次及此前已给出的授权范围执行，不因流程重复索取已有授权。
 - 任务完成后先核对规格、实现和验收证据，再运行严格校验并归档。OpenSpec 格式通过或文件存在不等于业务验收通过；必须保留未验证、权限/订阅阻塞及待授权事项，不能虚勾任务或通过归档隐藏缺口。

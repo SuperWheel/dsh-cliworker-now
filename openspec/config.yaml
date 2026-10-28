@@ -6,7 +6,7 @@ context: |
   TypeScript ESM、React、Cordis、Harness Gateway/Typert；Node >=22.19.0，pnpm 版本以 package.json 为准。
   Host 管理进程与持久化，Client 仅通过原生 Gateway；不修改 Harness 核心或用户现有 skill。
   当前实现与边界先读 AGENTS.md、README.md、src/shared/types.ts 及相关源码和测试。
-  doc/design.md 是按版本演进的设计记录，doc/tasks.md 是历史实施及实际验证日志，不可将旧段落当作最新现状。
+  doc/design.md 是按版本演进的设计记录，doc/tasks.md 是 2026-10-28 之前的历史实施及验证日志（不再追加），不可将旧段落当作最新现状。
   openspec/specs 保存已落实的规格，changes 保存当前增量；未覆盖域在实际变更触及时逐步提取，不批量搬运历史。
   Worker 必须明确选择 CLI；项目和 CLI 隔离模型偏好，模型/强度/会话 ID 必须有原生证据，不静默换 CLI。
   只允许父会话和直接子 Agent；同会话互斥、同目录写任务串行（用户打开「同目录写任务并行」时，冲突的新写任务改在插件私有隔离副本运行，合并为未提交改动、冲突不写主目录、绝不提交）。停止必须等进程范围清理确认。
@@ -36,7 +36,7 @@ rules:
   tasks:
     - 使用可勾选的编号任务；区分实施、自动检查、真实模型或 Desktop 验收和文档同步。
     - 检查按变更风险选择；纯文档或工具接入不强制模型调用和 Desktop 更新。
-    - 只有实际执行并核对结果后才勾选；在 doc/tasks.md 记录命令、结果与未验证边界。
+    - 只有实际执行并核对结果后才勾选；命令、结果、证据位置与未验证边界以缩进子项记在本 change 的 tasks.md 对应任务下，不写入 doc/tasks.md。
 
 operations:
   apply:
