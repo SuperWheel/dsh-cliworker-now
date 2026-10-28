@@ -82,7 +82,8 @@ function nativeAccount(config, model) {
   return account
 }
 async function confirmAccount(account, config) {
-  if (Date.now() > account.createdAt + config.timeoutMs) throw new Error('ZCode 私有账号材料已过期')
+  // The bridge turns timeoutMs into the time left at its start; the material lasts until the task's deadline.
+  if (Date.now() > (config.deadlineAt ?? account.createdAt + config.timeoutMs)) throw new Error('ZCode 私有账号材料已过期')
   const auth = account.credential.authDirectory
   for (const path of [auth, join(auth, '.zcode'), join(auth, '.zcode/v2')]) {
     const directory = await lstat(path)

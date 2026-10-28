@@ -23,7 +23,7 @@ import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
 import { conversationTelemetrySchema, lastRunUsageSnapshotSchema, sessionUsageSchema } from './conversation-telemetry.ts'
 import { contextTelemetrySchema } from './context-telemetry.ts'
-import { LANGUAGE_PREFERENCES, MAX_CONCURRENT_LIMIT, type CliSettings } from '../shared/cli-settings.ts'
+import { LANGUAGE_PREFERENCES, MAX_CONCURRENT_LIMIT, MAX_TASK_TIME_LIMIT_MS, type CliSettings } from '../shared/cli-settings.ts'
 import { parseNativeResponse } from './native-response.mjs'
 import {
   RUNNING_MESSAGE_MODES,
@@ -98,12 +98,17 @@ const conversationSetupSchema = z.object({
 const storedCliSchema = z.enum([...CLI_IDS, 'harness'])
 const storedPreferenceSchema = preferenceSchema.extend({ cli: storedCliSchema.optional() })
 const cliSettingsSchema = z.object({ enabled: z.partialRecord(storedCliSchema, z.boolean()) })
+// Same bounds as the plugin config `timeoutMs`, so its value can also be chosen explicitly.
+const taskTimeLimitSchema = z.int().min(1000).max(MAX_TASK_TIME_LIMIT_MS)
+const idleTimeLimitSchema = z.union([z.literal(0), z.int().min(60_000).max(MAX_TASK_TIME_LIMIT_MS)])
 /** Every field is optional: an absent value keeps the deployment default. */
 const generalSettingsSchema = z.object({
   maxConcurrent: z.int().min(1).max(MAX_CONCURRENT_LIMIT).optional(),
   language: z.enum(LANGUAGE_PREFERENCES).optional(),
   isolatedParallelWrites: z.boolean().optional(),
   askBeforeDispatch: z.boolean().optional(),
+  taskTimeLimitMs: taskTimeLimitSchema.optional(),
+  idleTimeLimitMs: idleTimeLimitSchema.optional(),
 })
 export type StoredGeneralSettings = z.infer<typeof generalSettingsSchema>
 const enabledByDefault = () => Object.fromEntries(CLI_IDS.map((cli) => [cli, true])) as CliSettings['enabled']
@@ -526,6 +531,8 @@ export class WorkerStorage {
         language: z.enum(LANGUAGE_PREFERENCES).nullable().optional(),
         isolatedParallelWrites: z.boolean().nullable().optional(),
         askBeforeDispatch: z.boolean().nullable().optional(),
+        taskTimeLimitMs: taskTimeLimitSchema.nullable().optional(),
+        idleTimeLimitMs: idleTimeLimitSchema.nullable().optional(),
       })
       .strict()
       .parse(patch)

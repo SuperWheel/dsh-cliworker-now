@@ -40,6 +40,7 @@ for (const name of [
   'native-launch',
   'native-spawn',
   'native-bridge',
+  'native-time-limit',
   'native-transport',
   'native-tool-outcomes',
   'native-harness-injection',

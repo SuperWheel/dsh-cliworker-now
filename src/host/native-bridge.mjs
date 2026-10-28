@@ -3,6 +3,7 @@ import { constants } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { createNativeIO } from './native-transport.mjs'
 import { receiveNativeStopControl, receiveNativeGuidanceControl } from './pi-omp-control.mjs'
+import { readTimeLimit, startRunTimers, TIME_LIMIT_ERRORS } from './native-time-limit.mjs'
 
 process.umask(0o077)
 const modules = {
@@ -19,7 +20,7 @@ const modules = {
   hermes: ['native-hermes', 'runNativeHermes'],
 }
 const controller = new AbortController()
-let io, emergency, timer, error, control, guidance
+let io, emergency, timers, error, control, guidance
 const stop = () => {
   if (controller.signal.aborted) return
   controller.abort(new Error('任务已停止'))
@@ -44,7 +45,7 @@ try {
   )
     throw new Error('Unsafe native bridge request')
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0))
-  let config
+  let config, limit
   try {
     const opened = await handle.stat()
     if (opened.ino !== before.ino || opened.dev !== before.dev)
@@ -79,16 +80,23 @@ try {
     config.maxLineBytes > 16_777_216 ||
     !Number.isSafeInteger(config.maxRunBytes) ||
     config.maxRunBytes < config.maxLineBytes ||
-    !Number.isSafeInteger(config.timeoutMs) ||
-    config.timeoutMs < 1 ||
-    config.timeoutMs > 86_400_000
+    !(limit = readTimeLimit(config))
   )
     throw new Error('Invalid native bridge configuration')
+  // Runner waits count down the time left to the Host's deadline, not a fresh total.
+  config.deadlineAt = limit.deadlineAt
+  config.timeoutMs = Math.max(1, limit.deadlineAt - Date.now())
   io = createNativeIO(
     config.forkOperation ? { ...config, conversationId: undefined } : config,
-    (line) => process.stdout.write(line),
+    (line) => {
+      timers?.touch()
+      process.stdout.write(line)
+    },
     controller.signal,
-    (chunk) => process.stderr.write(chunk),
+    (chunk) => {
+      timers?.touch()
+      process.stderr.write(chunk)
+    },
   )
   control = await receiveNativeStopControl(config.stopDirectory, config.stopNonce, async () => {
     stop()
@@ -100,10 +108,11 @@ try {
     guidance = await receiveNativeGuidanceControl(config.controlDirectory, config.controlNonce,
       (message, id, attempt) => io.steer(message, id, attempt))
   }
-  timer = setTimeout(() => {
-    error = new Error('Native task timed out')
+  timers = startRunTimers(limit, (kind) => {
+    if (controller.signal.aborted) return
+    error = new Error(TIME_LIMIT_ERRORS[kind])
     stop()
-  }, config.timeoutMs)
+  })
   const [module, entry] = modules[config.cli]
   const runner = (await import(`./${module}.mjs`))[config.forkOperation ? entry.replace('runNative', 'forkNative') : entry]
   await runner(config, io)
@@ -111,7 +120,7 @@ try {
 } catch (caught) {
   error = controller.signal.aborted ? (error ?? new Error('任务已停止')) : caught
 } finally {
-  clearTimeout(timer)
+  timers?.close()
   clearTimeout(emergency)
   process.removeListener('SIGTERM', stop)
   process.removeListener('SIGINT', stop)
