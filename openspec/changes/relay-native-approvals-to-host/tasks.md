@@ -5,6 +5,11 @@
 - [x] 1.1 核实 DSH 三档预设的沙箱/审批组合与审批接口语义（Desktop 安装包内置配置与包文档）。
   - 2026-10-28：仅可查看＝read-only+ask，工作区内修改＝workspace-write+ask，完全权限＝danger-full-access+never；另有实验性 auto；`approval.request` 需在 agent 未结束轮次中调用，无应答者即拒绝；DSH 委派子 Agent 审批固定 never。结论已写入 design.md。
 - [ ] 1.2 核实插件子 Agent（或父 Agent）在 CLI 运行期间能否发起 `approval.request` 并在 Desktop 弹窗；确认子 Agent 审批策略是否被固定为 never、轮次是否处于活动状态。不可行时回到用户重新决策。
+  - 2026-10-28 只读核实（开发依赖 0.2.1-rc.3 源码；DSH Desktop 0.12.1 安装包 `app.asar` 内置 0.2.1-rc.2，相关实现一致；未启动 Desktop）。结论：**按现方案不能保证「每次都弹窗」，已停下等待用户决定**。
+  - 子 Agent 审批策略：`dsh-subagent` `captureDelegatedPolicyOverrides` 把子会话固定为 `never`（`source: 'delegation'`），但「之后的子会话切换优先」；插件可用公开的 `approval.setPolicy(child, 'ask')` 或 `setApprovalPolicy(child.session, 'ask')` 改回 ask（前者会给子会话下一步注入一条「由用户更改」消息）。目前插件未改，桥接 DSH 工具的审批也因此被 `never` 直接拒绝。
+  - 轮次：CLI 运行期间子 Agent 的 AgentLoop 正在流式输出本轮（`harness-conversation-stream.ts` `segment(agent, turn, step, signal)`），满足 `approval.request` 的开放轮次要求。父 Agent 不满足：派遣在后台执行（`routing.ts` 指引「任务在后台执行并报告完成」），父轮次通常已结束，侧栏续聊也没有父轮次，此时 `request` 会抛错。
+  - 弹窗可见性（关键）：Host `approval/request` waterfall 经 `dsh-api-remotes` 按 agentId 转发；客户端 Gateway（`dsh-api-gateway` `client.browser.js` `answer()`）用 typert `agent` 适配器解析 agentId，客户端未持有该会话时直接 `next`，Host 结果为 `unavailable`（拒绝）。`dsh-client-ui-approval` 的面板注册为该会话的待处理交互，只在该会话的 `conversation.composer` 中显示。插件客户端仅在用户打开某 Worker 的原生会话时才 `sessions.retain` 子会话（`src/client/harness-conversation.tsx`）。因此以子 Agent 发起时，只有用户正好打开该 Worker 会话才会看到弹窗，否则静默拒绝；主对话不会出现弹窗。
+  - 结果词汇只有 `allowed-once | rejected | cancelled | unavailable`，没有「本会话始终允许」（关系到 1.4）。
 - [ ] 1.3 逐个核实 design.md 映射表中「待核实」的 CLI 原生模式与审批事件（Kimi/Grok/Qoder 免确认模式、ZCode、Hermes、Antigravity 去掉免确认后的审批事件），更新映射表。
 - [ ] 1.4 核实 DSH 审批结果是否提供「本会话始终允许」语义，以及 Codex 等 CLI 的对应回复。
 - [ ] 1.5 用 openspec-update-change 修订 `report-denied-permission-as-unverified` 与 `worker-dispatch` 相关规格（拒绝来源、仅可查看可只读派遣）。
