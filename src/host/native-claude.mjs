@@ -56,9 +56,11 @@ export function nativeClaudeArgv(config) {
   const resumeId = config.conversationId ?? config.forkSource?.conversationId
   if (resumeId && args[args.indexOf('--resume') + 1] !== resumeId) throw fail('恢复参数与会话不一致')
   if (!resumeId && args.includes('--resume')) throw fail('缺少恢复会话绑定')
-  if (args.includes('--input-format') || args.includes('--permission-prompts')) throw fail('重复的原生输入或权限控制选项')
+  if (['--input-format', '--permission-prompts', '--permission-prompt-tool'].some((flag) => args.includes(flag))) throw fail('重复的原生输入或权限控制选项')
   if (config.forkSource && (!string(config.forkSource.messageId) || config.conversationId)) throw fail('延迟分支截点无效')
-  return [...args, ...(config.forkSource ? ['--fork-session', '--resume-session-at', config.forkSource.messageId] : []), '--input-format', 'stream-json', ...(args.includes('--include-partial-messages') ? [] : ['--include-partial-messages']), '--permission-prompts', config.approvalNonce ? 'host' : 'none']
+  return [...args, ...(config.forkSource ? ['--fork-session', '--resume-session-at', config.forkSource.messageId] : []), '--input-format', 'stream-json', ...(args.includes('--include-partial-messages') ? [] : ['--include-partial-messages']), '--permission-prompts', config.approvalNonce ? 'host' : 'none',
+    // Claude 2.1.287 sends can_use_tool over stdio only with this tool; `host` alone auto-denies.
+    ...(config.approvalNonce ? ['--permission-prompt-tool', 'stdio'] : [])]
 }
 
 export async function runNativeClaude(config, io) {

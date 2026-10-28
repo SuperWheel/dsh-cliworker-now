@@ -68,8 +68,11 @@
 
 - [ ] 4.1 Desktop 实机：三档预设下派遣 Codex，核对弹窗出现与否、批准/拒绝结果、产物与时间线（真实模型调用需已有选型授权）。
   - 待合并后由主会话执行。本分支未启动或退出 DSH Desktop，未发真实 CLI 或模型请求。
-- [ ] 4.2 至少一个 ACP 系 CLI 与 Claude Code 同类复验；未验证的 CLI 在本任务下列出。
-  - 待合并后由主会话执行。全部 CLI 的真实审批往返均未实测：Codex、Claude Code、Kimi、Grok、Qoder、Qoder CN、ZCode、OpenCode、MiMo、Hermes；另需实测 Claude `--permission-prompts host` 在 `--print` 下确实发出 `can_use_tool`、`bypassPermissions` 在 print 模式可用，Grok `--always-approve` 对 `agent stdio` 生效，Qoder ACP 接受 `yolo` 回读。
+- [x] 4.2 至少一个 ACP 系 CLI 与 Claude Code 同类复验；未验证的 CLI 在本任务下列出。
+  - 2026-10-28 合并后真实验收（macOS，`.test-data/accept-merged.ts` 用隔离预览包快照的 `WorkerRuntime` 跑真实 CLI 与模型；DSH 审批弹窗由脚本按预设决定并记录，CLI 端、进程退出与产物均为真实；证据在 `.test-data/accept-merged/<场景>-<cli>-*/report.json`，不入 Git）。场景：工作区内修改下写工作区外文件（`printf <标记> > <工作区外>/outside.txt`）。
+  - **发现并修复缺陷**：Claude Code 2.1.287 只带 `--permission-prompts host` 时不发 `can_use_tool`，所有需确认的操作被 CLI 自动拒绝（首轮验收任务失败，`approval` 帧 0；直接探测 `curl` 同样）。加 `--permission-prompt-tool stdio` 后发出 `can_use_tool`（直接探测确认）。`nativeClaudeArgv` 在有审批通道时追加该参数，并拒绝重复传入。另：Claude 拒绝后以 `error_during_execution` 退出码 1 结束，传输层原先用「Native process exited unsuccessfully (1)」覆盖了「CLI 额外授权被拒绝，本轮已中断」；改为运行器已报 ERROR 时保留其原因（新增回归测试，修复前失败）。
+  - 修复后：Claude `sonnet`/low 允许 → 完成，工作区外文件内容正确；拒绝 → 失败「CLI 额外授权被拒绝，本轮已中断」，文件未创建。Codex `gpt-6-luna`/low 主动请求提权 → 弹出「执行命令…」→ 允许后完成、文件正确（未要求提权时模型在沙箱内失败后直接结束，没有请求审批）。ACP：Qoder `qfmodel`/low、Grok `grok-4.5`/low 允许 → 完成、文件正确。OMP 见 `reenable-native-cli-features` 4.1。
+  - 未验证：Kimi、Qoder CN、ZCode、OpenCode、MiMo、Hermes 的真实审批往返；会话级授权（allow-session）真实往返；Desktop 弹窗本身（4.1）；Windows。
 
 ## 5. 文档
 

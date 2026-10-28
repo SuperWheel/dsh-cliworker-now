@@ -408,7 +408,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
           error ??= issue
         }
       }
-      if (error)
+      // A runner's own failure names the cause; a non-zero exit only confirms it.
+      if (error && result?.status !== 'ERROR')
         result = {
           type: 'result',
           status: 'ERROR',

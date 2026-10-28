@@ -1221,6 +1221,7 @@ OpenSpec 变更 `relay-native-approvals-to-host`（用户 2026-10-28 决定）�
 - 原生回复：Codex `accept/acceptForSession/decline`（permissions 请求回显授予子集与 `scope`）；Claude `--permission-prompts host`，`behavior:allow`+`updatedInput`，会话级把 CLI 自己的 `permission_suggestions` 改为 `destination:'session'` 放入 `updatedPermissions`，拒绝仍 `interrupt:true` 失败；ACP 选原生 `optionId`，会话级仅 Kimi `approve_always`、Qoder `proceed_always`（不选 `proceed_always_and_save`，Grok 的 always 会持久到项目，不提供）；ZCode `{decision:'allow'|'deny'}`，不发 `permissionUpdates`（会写项目规则）；Hermes `choice` 为 `once/session/deny`（仅事件 `choices` 含 `session` 时提供会话级，不发 `always`）；OpenCode/MiMo `reply:'once'|'reject'`（`always` 超出会话，不提供）。
 - runner 等待期间不阻塞读循环（Codex、Claude、ACP、ZCode）；Hermes 与 HTTP 会话系在事件循环内顺序等待。停止、桥关闭或无答复时回复拒绝；拒绝后正常结束仍为结果待核实（Claude 除外）。
 - 等待审批期间暂停空闲时限（合并时接入：`startRunTimers().hold()`，经 `createNativeIO` 的 `onApprovalWait` 持有至决定、停止或关闭；总时限照常）。未做：子会话持有仅在 CLI Worker 面板挂载时有效；所有 CLI 的真实审批往返未实测。
+- 真实验收修正（2026-10-28）：Claude Code 2.1.287 只带 `--permission-prompts host` 时不发 `can_use_tool`、需确认的操作被自动拒绝；有审批通道时追加 `--permission-prompt-tool stdio`。传输层在运行器已报 ERROR 时保留其原因，不再以非零退出码的笼统信息覆盖（Claude 拒绝后退出码为 1）。真实往返已覆盖 Codex、Claude、Qoder、Grok、OMP，记录见各变更 tasks.md。
 
 ## 2026-10-28 重新启用 CLI 原生功能（未发布）
 

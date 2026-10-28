@@ -79,7 +79,7 @@ function claudeTurn(){
  send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical});
  if(scenario==='identity-mismatch')return;
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
- if(scenario==='ask'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
+ if(scenario==='ask'||scenario==='ask-nonzero-exit'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
  if(scenario==='child-model')send({type:'assistant',session_id:id,parent_tool_use_id:'synthetic-task',message:{id:'child',model:'synthetic-child-model',content:[{type:'text',text:'子任务公开进度'}]}});
  if(scenario==='tool-failure-cancel'){
   send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Read',input:{file_path:'synthetic'}}]}});
@@ -203,7 +203,7 @@ lines.on('line',line=>{
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
-lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit'].includes(scenario)?7:0);});
+lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit','ask-nonzero-exit'].includes(scenario)?7:0);});
 `
 
 function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true) {
@@ -544,10 +544,25 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     if (decision === 'deny') expect(reply.interrupt).toBe(true)
     expect(frames.at(-1).status).toBe(status)
   })
+  it('names a Claude denial as the cause when the interrupted CLI then exits non-zero', async () => {
+    // Real Claude 2.1.287 ends an interrupted turn with error_during_execution and exit code 1.
+    const { config } = setup('claude', 'ask-nonzero-exit', true)
+    config.approvalNonce = 'synthetic-nonce'
+    const frames: any[] = []
+    const io: any = createNativeIO(config, (line: string) => {
+      const frame = JSON.parse(line)
+      frames.push(frame)
+      if (frame.type === 'approval') setTimeout(() => void io.answerApproval(JSON.stringify({ decision: 'deny', source: 'user' }), frame.id), 5)
+    }, new AbortController().signal)
+    let error
+    try { await runNativeClaude(config, io) } catch (caught) { error = caught }
+    await io.close(error)
+    expect(frames.at(-1)).toMatchObject({ type: 'result', status: 'ERROR', error: 'CLI 额外授权被拒绝，本轮已中断' })
+  })
   it('lets Claude ask the Host only when the approval channel exists, and maps the DSH tier', () => {
     const { config } = setup('claude', 'success', true)
     expect(nativeClaudeArgv(config).slice(-2)).toEqual(['--permission-prompts', 'none'])
-    expect(nativeClaudeArgv({ ...config, approvalNonce: 'synthetic' }).slice(-2)).toEqual(['--permission-prompts', 'host'])
+    expect(nativeClaudeArgv({ ...config, approvalNonce: 'synthetic' }).slice(-4)).toEqual(['--permission-prompts', 'host', '--permission-prompt-tool', 'stdio'])
     expect(claudePermissionMode({ mode: 'plan', access: 'danger-full-access' })).toBe('plan')
     expect(claudePermissionMode({ mode: 'accept-edits', access: 'workspace-write' })).toBe('acceptEdits')
     expect(claudePermissionMode({ mode: 'accept-edits', access: 'danger-full-access' })).toBe('bypassPermissions')

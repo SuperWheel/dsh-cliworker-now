@@ -34,8 +34,13 @@
 
 ## 4. 真实验收（需已有选型授权）
 
-- [ ] 4.1 Grok 网页搜索、OpenCode 使用用户 skill、Pi 完全权限下执行命令与工作区内修改下走 DSH 备选；未验证项在本任务下列出。
-  - 未执行。另需：OMP 工作区内修改下的真实审批往返（Desktop 弹窗→允许/拒绝）；MiMo 用户 skill；Windows 上的 Grok 网页与 skill 目录。
+- [x] 4.1 Grok 网页搜索、OpenCode 使用用户 skill、Pi 完全权限下执行命令与工作区内修改下走 DSH 备选；未验证项在本任务下列出。
+  - 2026-10-28 合并后真实验收（macOS，`.test-data/accept-merged.ts` 用隔离预览包快照的 `WorkerRuntime` 跑真实 CLI 与模型；DSH 审批弹窗由脚本按预设决定并记录，CLI 端、进程退出与产物均为真实；证据在 `.test-data/accept-merged/<场景>-<cli>-*/report.json`，不入 Git），快照与提交 17b0763 的 `src` 逐文件一致。
+  - Grok `grok-4.5`/low，仅可查看（规划）：原生 Web search 完成，回复含标记。
+  - OpenCode `zhipuai-coding-plan/glm-5.3-flash`/low 与 MiMo `xiaomi/mimo-v2.6-flash`/low，仅可查看（规划）：项目 `.opencode|.mimocode/skills/<随机名>/SKILL.md` 中的标记只写在 skill 文件里，CLI 经 `skill` 工具加载后回复该标记。
+  - Pi `zai-coding-cn/glm-5.3-flash`/low：完全权限下原生 bash 执行并写出正确文件；工作区内修改下没有 bash，CLI 改用原生 write 完成。
+  - OMP `zhipu-coding-plan/glm-5.3-flash`/default，工作区内修改：bash 前弹出「Allow tool: bash」（command）。允许（延迟 30 秒）→ 完成、文件正确；拒绝 → 结果待核实「CLI 额外权限请求已拒绝，但 CLI 报告本轮已完成…」，文件未创建。
+  - 未验证：Pi 在工作区内修改下经 DSH 备选命令工具执行（脚本不接 Harness 工具桥，需 Desktop）；OMP 完全权限 `yolo` 的真实运行；Desktop 弹窗；Windows 上的 Grok 网页与 skill 目录；Grok 网页抓取（fetch）的授权往返。
 
 ## 5. 待用户决定（不在本次实施）
 

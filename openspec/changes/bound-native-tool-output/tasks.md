@@ -58,10 +58,12 @@
 
 ## 4. 真实验收（需已有选型授权）
 
-- [ ] 4.1 Codex 读取 1MB 以上文件并连续读取多个文件，检查运行未终止、事件、退出状态与界面截断标记。
-  - 未执行：待合并后由主会话执行（需真实账号与模型调用授权）。
-- [ ] 4.2 至少一个其他 CLI（Claude 或 ACP 系）同类复验；未验证的 CLI 在本任务下列出。
-  - 未执行：待合并后由主会话执行。目前全部 CLI（Codex、Claude、Kimi、Qoder/Qoder CN、Grok、ZCode、OpenCode、MiMo、Hermes、Antigravity、Pi、OMP）只有模拟协议验证。
+- [x] 4.1 Codex 读取 1MB 以上文件并连续读取多个文件，检查运行未终止、事件、退出状态与界面截断标记。
+  - 2026-10-28 合并后真实验收（macOS，`.test-data/accept-merged.ts` 用隔离预览包快照的 `WorkerRuntime` 跑真实 CLI 与模型；DSH 审批弹窗由脚本按预设决定并记录，CLI 端、进程退出与产物均为真实；证据在 `.test-data/accept-merged/<场景>-<cli>-*/report.json`，不入 Git）。Codex `gpt-6-luna`/low：三个各 1.99 MB 文件以 `cat a.txt && cat b.txt && cat c.txt` 一次读出（约 6 MB），任务完成，回复为 c.txt 末行；工具完成事件标记 `truncated`，单事件约 285 KB，原始记录共约 297 KB。`seq 1 300000`（约 1.9 MB）同样完成并截断展示，回复末行 300000（模型侧拿到完整输出）。
+  - 未核实：界面截断标记的实际显示（未在 Desktop 中查看）；Codex 入站单帧真实最大值仍未测出上限。
+- [x] 4.2 至少一个其他 CLI（Claude 或 ACP 系）同类复验；未验证的 CLI 在本任务下列出。
+  - Claude `sonnet`/low 读取同样三个文件：Read 先因 CLI 自身大小限制失败 3 次，随后分段读完，任务完成并附「本轮有 3 个工具步骤失败，CLI 已自行处理」，回复正确。
+  - 未验证：Kimi、Qoder/Qoder CN、Grok、ZCode、OpenCode、MiMo、Hermes、Antigravity、Pi、OMP 的大输出真实运行。
 
 ## 5. 文档
 
