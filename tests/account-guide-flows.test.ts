@@ -215,13 +215,43 @@ describe('removable login handles (simulated stores)', () => {
     expect(loginProviders('hermes', [])?.find((item) => item.id === 'nous')).toEqual({ id: 'nous', label: 'Nous' })
     expect(loginProviders('hermes', [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous', authMethod: 'oauth' }])?.find((item) => item.id === 'nous'))
       .toEqual({ id: 'nous', label: 'Nous', signedIn: true })
-    // The Nous device flow must never ask for an API key or auto-answer native shared import.
+    // Choosing Nous answers Hermes' shared-login import (user request 2026-10-29); it never asks for an API key.
     const guide = createAccountGuide('hermes', 'login', { provider: 'nous' })!
-    expect(guide.output('Import these credentials? [Y/n]: ')).toEqual([])
-    expect(guides(guide.settled())[0]).toMatchObject({ template: 'native' })
+    const imported = guide.output('\nFound existing Nous OAuth credentials at /synthetic/shared/nous_auth.json\nImport these credentials? [Y/n]: ')
+    expect(guides(imported)[0]).toMatchObject({ step: 'import', template: 'waiting' })
+    expect(imported).toContainEqual({ write: 'y\r' })
+    expect(guide.output('Rehydrating Nous session from shared credentials...\n')).toEqual([])
+    expect(guide.settled()).toEqual([])
+    const saved = guide.output('Imported nous OAuth credentials: "synthetic-label"\n')
+    expect(saved).toContainEqual({ confirm: 'login' })
     expect(guide.proves('login', { state: 'unconfigured' }, { state: 'authenticated', logins: [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous', authMethod: 'oauth' }] }, 0)).toBe(true)
     expect(guide.proves('login', { state: 'unconfigured' }, { state: 'unconfigured' }, 0)).toBe(false)
     expect(createAccountGuide('hermes', 'login', { provider: 'deepseek' })).toBeDefined()
+  })
+  it('模拟 Nous 无共享登录或导入失败时显示设备码，等待授权且不展开原生终端', async () => {
+    const { createAccountGuide } = await import('../src/host/account-guide/flows.ts')
+    const guide = createAccountGuide('hermes', 'login', { provider: 'nous' })!
+    guide.output('Import these credentials? [Y/n]: ')
+    guide.output('Rehydrating Nous session from shared credentials...\nCould not refresh shared credentials — falling back to device-code login.\n')
+    expect(guides(guide.output('Starting Hermes login via Nous Portal...\nPortal: https://portal.nousresearch.com\n'))[0])
+      .toMatchObject({ step: 'starting', template: 'waiting' })
+    const device = guide.output(
+      '\nTo continue:\n  1. Open: https://portal.nousresearch.com/device?user_code=SYNT-HETC\n  2. If prompted, enter code: SYNT-HETC\n  (Opened browser for verification)\nWaiting for approval (polling every 5s)...\n',
+    )
+    expect(guides(device)[0]).toMatchObject({
+      step: 'device',
+      template: 'deviceCode',
+      code: 'SYNT-HETC',
+      link: 'https://portal.nousresearch.com/device?user_code=SYNT-HETC',
+      text: expect.stringContaining('浏览器已打开'),
+    })
+    expect(device).toContainEqual({ watch: 'login' })
+    expect(device).not.toContainEqual({ write: expect.anything() })
+    expect(guide.settled()).toEqual([])
+    expect(guide.output('Saved nous OAuth device-code credentials: "synthetic-label"\n')).toContainEqual({ confirm: 'login' })
+    // Another host on the screen is never offered as the authorization page.
+    const other = createAccountGuide('hermes', 'login', { provider: 'nous' })!
+    expect(guides(other.output('To continue:\n  1. Open: https://phish.example.test/device\n  2. If prompted, enter code: SYNT-HETC\n'))[0]?.link).toBeUndefined()
   })
   it('keeps two Hermes keys of one provider as two rows with their pool ids', async () => {
     const { projectHermesIdentity } = await import('../src/host/hermes-accounts.ts')

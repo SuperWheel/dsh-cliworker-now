@@ -44,7 +44,11 @@
 
 #### Scenario: Hermes 的 Nous
 - **WHEN** 用户在 Hermes 的「登录到」中选择 Nous
-- **THEN** 以 `hermes auth add nous --type oauth` 启动原生设备码登录，不进入 API Key 输入；Nous 登录不因当前选用的推理服务商是其他服务商而显示为未登录，确认以重新读取的原生 Nous 凭据为准
+- **THEN** 以 `hermes auth add nous --type oauth` 启动原生登录，不进入 API Key 输入：Hermes 询问是否导入该目录已保存的共享 Nous 登录时由插件确认，否则窗口显示设备码与 Nous Portal 授权链接，全程不展开原生终端；Nous 登录不因当前选用的推理服务商是其他服务商而显示为未登录，确认以重新读取的原生 Nous 凭据为准
+
+#### Scenario: 退出 Hermes 的 Nous
+- **WHEN** 用户在账号窗口退出 Nous 登录（无论凭据池是否已有条目）
+- **THEN** 以 `hermes logout --provider nous` 一并清除该目录的 Nous 凭据、凭据池与共享登录，Hermes 下次启动不会把共享登录重新采用回来
 
 #### Scenario: Kimi、Pi、OMP 的服务商
 - **WHEN** 用户在 Kimi、Pi 或 OMP 的「登录到」中选择服务商

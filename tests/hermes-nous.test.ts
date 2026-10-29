@@ -138,7 +138,8 @@ describe('Hermes own Nous OAuth identity, binding and native account models', ()
     expect(result).toMatchObject({
       state: 'authenticated',
       verification: 'local',
-      logins: [{ providerLabel: 'Nous', authMethod: 'oauth' }],
+      // Not in the pool yet, yet still removable as the home's one Nous identity.
+      logins: [{ id: 'hermes:nous:oauth', providerLabel: 'Nous', authMethod: 'oauth' }],
     })
     expect(result.accountLabel).toBeUndefined()
     expect(JSON.stringify(result)).not.toMatch(/synthetic|agent_key|refresh_token/)

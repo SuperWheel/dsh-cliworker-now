@@ -79,7 +79,8 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
         logins.push({
           ...providerLogin('nous', 'oauth'),
           ...(nous.email ? { accountLabel: nous.email } : {}),
-          ...(pooled ? { id: pooled } : {}),
+          // Nous is one identity per Hermes home, so its row signs out even before the pool holds it.
+          id: pooled ?? accountLoginId('hermes', 'nous', 'oauth'),
         })
       } catch (error) {
         if (error instanceof Error && /过期/.test(error.message)) {
@@ -428,7 +429,10 @@ export async function prepareHermesAccount(
     const args =
       action === 'login' && target.provider
         ? ['auth', 'add', target.provider, '--type', target.provider === 'nous' ? 'oauth' : 'api-key']
-        : action === 'logout' && removed?.cli === 'hermes' && removed.entry
+        : action === 'logout' && removed?.cli === 'hermes' && removed.provider === 'nous'
+          ? // `auth remove` leaves the shared Nous login, which Hermes re-adopts on its next start.
+            ['logout', '--provider', 'nous']
+          : action === 'logout' && removed?.cli === 'hermes' && removed.entry
           ? ['auth', 'remove', removed.provider, removed.entry]
           : [action === 'login' ? 'model' : 'auth']
     const command = await hermesNativeCommand(executable, args, signal)

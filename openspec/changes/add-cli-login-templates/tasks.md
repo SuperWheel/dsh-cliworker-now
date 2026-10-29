@@ -45,6 +45,10 @@
   - 子 agent 已核对：以上为源码与模拟复现确认的缺陷，用户实际终端登录命中哪一条需真实登录后确认。选定插件私有 Hermes 目录后不回退读取普通终端默认目录的隔离规则保持不变。
 - [x] 6.4 自动检查：账号窗口 `account-terminal`、`accounts`、`account-logout`、`account-guide-flows` 4 个文件 268 项通过、1 项跳过（Windows 专属）；Hermes `hermes-accounts`、`hermes-nous`、`hermes-renewal`、`account-guide-flows`、`hermes-models`、`native-hermes-binding`、`hermes-integration` 7 个文件 148 项通过；`pnpm typecheck` 通过。新增夹具均标注模拟。
   - 2026-10-29 合并四处修复后：全量 `pnpm test` 243 个文件通过、3 个跳过，5212 项通过、13 项跳过；`pnpm typecheck` 通过；`pnpm build:preview` 隔离包构建成功。未执行 `pnpm build`，Desktop 链接未更新。
+- [x] 6.6 Hermes Nous（用户 2026-10-29 反馈「无法退出」「登录时菜单下出现终端确认」，要求直接确认并隐藏终端）：
+  - 退出：原先 `auth remove nous <条目>` 只删本地凭据，`<目录>/shared/nous_auth.json` 保留，Hermes 下次启动会重新采用（`auth.py` logout_command 注释、`anon_auth.py` `_reconcile_and_provision`）；凭据池不是恰好一条时 Nous 行也没有可退出的标识，只能走原生菜单。改为 Nous 行始终带标识（无池条目时 `hermes:nous:oauth`），退出执行 `hermes logout --provider nous`，同时清除 providers、凭据池与共享登录。
+  - 登录：`Import these credentials? [Y/n]` 由插件回答 `y`；无共享登录或导入失败时按 `To continue` / `enter code` 显示设备码与 `portal.nousresearch.com` 链接并后台确认；`Imported` / `Saved nous OAuth … credentials` 进入确认。依据 `auth_commands.py`、`auth_nous.py`、`auth_device_flow.py` 源码。
+  - 自动检查：`account-guide-flows`、`hermes-accounts`、`hermes-nous`、`hermes-renewal`、`accounts`、`account-terminal`、`account-logout`、`hermes-models` 8 个文件 382 项通过、1 项跳过；`pnpm typecheck` 通过；已正式构建并重启 Mac Desktop。真实登录与退出待用户核对（见 6.5）。
 - [ ] 6.5 真实验收：用户在 Desktop 中重新登录 Hermes Nous，核对菜单出现 Nous、登录后账号窗口显示已登录；任选单账号与多账号 CLI 各退出一次，核对终端保持隐藏、结果页无小字。
   - 2026-10-29 Mac Desktop（证据 `.test-data/mac-desktop-20261029b/`）：
     - Hermes「登录到」列出 Nous（共 15 项，含「其他服务商（在原生终端中选择）」）；未登录，登录后的状态待用户亲自登录后核对。

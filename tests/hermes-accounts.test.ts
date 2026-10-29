@@ -57,15 +57,18 @@ const oauth = (email = 'fixture@example.test') => ({
 afterEach(() => roots.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })))
 
 describe('Hermes native accounts (explicit synthetic fixtures)', () => {
-  it('模拟 Nous 菜单登录使用原生 OAuth，并按凭据 ID 退出', async () => {
+  it('模拟 Nous 菜单登录使用原生 OAuth，退出用原生 logout 一并清除共享登录', async () => {
     const { config, project } = fixture()
     const login = await prepareHermesAccount('login', accountExecutable, project, config, signal(), undefined, { provider: 'nous' })
     expect(login.argv.slice(-5)).toEqual(['auth', 'add', 'nous', '--type', 'oauth'])
     expect(login.env.HERMES_HOME).toBe(effectiveHermesHome(config))
     save(login.env.HERMES_HOME!, 'auth.json', { credential_pool: { nous: [{ id: 'a1b2c3', auth_type: 'api_key', access_token: 'synthetic-key' }] } })
-    const logout = await prepareHermesAccount('logout', accountExecutable, project, config, signal(), undefined, { login: 'hermes:nous:a1b2c3' })
-    expect(logout.argv.slice(-4)).toEqual(['auth', 'remove', 'nous', 'a1b2c3'])
-    await logout.cleanup()
+    // `auth remove` would leave <home>/shared/nous_auth.json, which Hermes re-adopts on its next start.
+    for (const id of ['hermes:nous:a1b2c3', 'hermes:nous:oauth']) {
+      const logout = await prepareHermesAccount('logout', accountExecutable, project, config, signal(), undefined, { login: id })
+      expect(logout.argv.slice(-3)).toEqual(['logout', '--provider', 'nous'])
+      await logout.cleanup()
+    }
     await login.cleanup()
   })
   it.skipIf(process.platform === 'win32')(
