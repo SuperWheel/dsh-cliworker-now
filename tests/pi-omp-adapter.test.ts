@@ -136,6 +136,13 @@ async function fixture(cli: PiOmpCli, scenario = 'success', version = '1.0.2') {
     join(root, 'package.json'),
     JSON.stringify({ type: 'module', name: '@earendil-works/pi-coding-agent', version }),
   )
+  if (scenario.startsWith('gate')) {
+    // SIMULATED Pi 1.0.4 declarations the permission gate checks for.
+    await mkdir(join(root, 'dist/core/extensions'), { recursive: true })
+    await mkdir(join(root, 'dist/modes/rpc'), { recursive: true })
+    await writeFile(join(root, 'dist/core/extensions/types.d.ts'), 'export interface ToolCallEventResult {\n    block?: boolean;\n    reason?: string;\n}\n')
+    await writeFile(join(root, 'dist/modes/rpc/rpc-mode.js'), 'const request = { method: "confirm" }\n')
+  }
   await writeFile(
     join(root, 'dist/core/model-runtime.js'),
     `// SIMULATED SDK, no model/network.\nexport class ModelRuntime { static async create() { return new ModelRuntime() } getError() { return undefined } getAvailableSnapshot() { return ${JSON.stringify(catalog)} } }`,
@@ -144,8 +151,11 @@ async function fixture(cli: PiOmpCli, scenario = 'success', version = '1.0.2') {
   await writeFile(
     executable,
     `
-import {mkdirSync,writeFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {createInterface} from 'node:readline';
+import {mkdirSync,writeFileSync,existsSync} from 'node:fs';import {join} from 'node:path';import {createInterface} from 'node:readline';import {pathToFileURL} from 'node:url';
 const cli=${JSON.stringify(cli)},scenario=${JSON.stringify(scenario)},marker=${JSON.stringify(join(root, 'native-stopped'))};
+// SIMULATED Pi extension loading: the real plugin gate registers on this stand-in API.
+let gateHandler,pendingConfirm;const gatePath=process.argv.find(a=>a.endsWith('pi-permission-gate.mjs'));
+if(gatePath&&scenario!=='gate-silent'){const gate=await import(pathToFileURL(gatePath).href);gate.default({on:(name,handler)=>{if(name==='tool_call')gateHandler=handler}})}
 const provider=${JSON.stringify(provider)},modelId=${JSON.stringify(modelId)},agent=process.env.PI_CODING_AGENT_DIR;
 if(process.argv.includes('--help')){
 writeFileSync(${JSON.stringify(join(root, 'help-observed.json'))},JSON.stringify({home:process.env.HOME,cwd:process.cwd(),accountKey:!!process.env.FIXTURE_API_KEY}));
@@ -180,6 +190,7 @@ if(cmd.type==='get_session_stats'){if(scenario==='usage-timeout')return;send({id
 if(cmd.type==='set_model'){model={provider:cmd.provider,id:cmd.modelId};send({id:cmd.id,type:'response',command:cmd.type,success:true,data:model});return}
 if(cmd.type==='set_thinking_level'){thinkingLevel=cmd.level;send({id:cmd.id,type:'response',command:cmd.type,success:true});return}
 if(cmd.type==='get_available_models'){send({id:cmd.id,type:'response',command:cmd.type,success:true,data:{models:[model]}});return}
+if(cmd.type==='extension_ui_response'&&pendingConfirm){writeFileSync(join(agent,'observed-ui-response.json'),JSON.stringify(cmd));const settle=pendingConfirm;pendingConfirm=undefined;settle(cmd.confirmed===true);return}
 if(cmd.type==='extension_ui_response'){writeFileSync(join(agent,'observed-ui-response.json'),JSON.stringify(cmd));const ok=cmd.value==='Approve';const toolName=scenario==='approval-write'?'write':scenario==='approval-edit'?'edit':'bash';send({type:'tool_execution_start',toolCallId:cmd.id,toolName});send({type:'tool_execution_end',toolCallId:cmd.id,toolName,isError:!ok,result:{content:[{type:'text',text:ok?'ran':'denied by user'}]}});
 if(scenario==='approval-repeat'&&cmd.id==='ui-1'){send({type:'extension_ui_request',id:'ui-2',method:'select',title:'Allow tool: write',options:['Approve','Deny']});return}
 streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[{type:'text',text:'HELLO'}],stopReason:'stop'}});send({type:'agent_end'});return}
@@ -214,6 +225,12 @@ if(scenario==='cancel'||scenario.startsWith('steer-'))return;
 // SIMULATED OMP 16.4 tool approval (approval.ts): an RPC select answered with Approve/Deny.
 if(scenario.startsWith('approval')){const tool=scenario==='approval-write'?'write':scenario==='approval-edit'?'edit':'bash';send({type:'extension_ui_request',id:'ui-1',method:'select',title:'Allow tool: '+tool+'\\n'+(tool==='bash'?'Command: ls -la':'Path: fixture.txt'),options:['Approve','Deny']});return}
 if(scenario==='ui-input'){send({type:'extension_ui_request',id:'ui-2',method:'input',title:'Name?'});}
+// SIMULATED Pi tool call through the loaded gate: blocked calls end as tool errors.
+if(scenario.startsWith('gate')&&scenario!=='gate-silent'){const call=scenario==='gate-bash'?{toolName:'bash',input:{command:'ls -la'}}:{toolName:'write',input:{path:'fixture.txt',content:'abc'}};
+const context={ui:{confirm:(title,message)=>new Promise(resolve=>{pendingConfirm=resolve;send({type:'extension_ui_request',id:'ui-1',method:'confirm',title,message})})}};
+Promise.resolve(gateHandler?gateHandler(call,context):undefined).then(result=>{writeFileSync(join(agent,'observed-gate-result.json'),JSON.stringify(result??null));const blocked=!!result?.block;
+send({type:'tool_execution_start',toolCallId:'gate-1',toolName:call.toolName});send({type:'tool_execution_end',toolCallId:'gate-1',toolName:call.toolName,isError:blocked,result:{content:[{type:'text',text:blocked?result.reason:'ran'}]}});
+streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[{type:'text',text:'HELLO'}],stopReason:'stop'}});send({type:'agent_end'});send({type:'agent_settled'})});return}
 if(scenario==='tool-error'||scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
 if(scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'retry',toolName:'edit'});send({type:'tool_execution_end',toolCallId:'retry',toolName:'edit',isError:false,result:{content:[{type:'text',text:'edited'}]}})}
 if(scenario==='malformed'){process.stdout.write('not-json\\n');return}
@@ -1045,14 +1062,15 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     const observed = JSON.parse(await readFile(join(state, 'agent/observed-ui-response.json'), 'utf8'))
     expect(observed).toEqual({ type: 'extension_ui_response', id: 'ui-1', value: answer })
   })
-  it('keeps the relay to OMP only and still refuses other interactive requests', async () => {
+  it('relays only tool approvals and still refuses other interactive requests', async () => {
     const { input } = await fixture('omp', 'ui-input')
     const { frames } = await relayRun({ ...input, mode: 'accept-edits', access: 'workspace-write' }, () => 'allow-once')
     expect(frames.some((frame) => frame.type === 'approval')).toBe(false)
     expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: 'CLI 需要额外原生交互授权' })
+    // Pi's tool_call gate answers through the same mailbox.
     const pi = await fixture('pi')
     const prepared = await preparePiOmp({ ...pi.input, mode: 'accept-edits', access: 'workspace-write' })
-    expect(prepared.answerApproval).toBeUndefined()
+    expect(prepared.answerApproval).toBeTypeOf('function')
     await prepared.cleanup()
   })
   it.each([
@@ -1085,6 +1103,56 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
     expect(argv[argv.indexOf('--tools') + 1].split(',')).toEqual(tools)
     expect(argv).not.toContain('--approval-mode')
+  })
+  it.each([
+    ['allow-once', true, false],
+    ['deny', false, true],
+  ] as const)('Pi 询问 relays its gated write to the Host (%s → confirmed %s)', async (decision, confirmed, blocked) => {
+    const { input } = await fixture('pi', 'gate')
+    const { frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => decision)
+    expect(frames.find((frame) => frame.type === 'approval')).toEqual({ type: 'approval', id: 'approval-1',
+      request: { kind: 'file', summary: '写入文件：fixture.txt', detail: '3 字节', allowSession: false } })
+    expect(JSON.parse(await readFile(join(state, 'agent/observed-ui-response.json'), 'utf8')))
+      .toEqual({ type: 'extension_ui_response', id: 'ui-1', confirmed })
+    const result = JSON.parse(await readFile(join(state, 'agent/observed-gate-result.json'), 'utf8'))
+    expect(!!result?.block).toBe(blocked)
+    expect(frames.at(-1)).toMatchObject({ type: 'result', status: 'SUCCESS' })
+    expect(frames.at(-1)).not.toHaveProperty('error')
+    const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
+    expect(argv[argv.indexOf('--tools') + 1].split(',')).toEqual(['read', 'grep', 'find', 'ls', 'write', 'edit', 'bash'])
+    expect(argv.some((value: string) => value.endsWith('pi-permission-gate.mjs'))).toBe(true)
+  })
+  it('Pi 自动批准编辑 writes without asking and asks before a command', async () => {
+    const write = await fixture('pi', 'gate')
+    const edits = await relayRun({ ...write.input, mode: 'accept-edits', access: 'workspace-write' }, () => 'deny')
+    expect(edits.frames.some((frame) => frame.type === 'approval')).toBe(false)
+    expect(JSON.parse(await readFile(join(edits.state, 'agent/observed-gate-result.json'), 'utf8'))).toBeNull()
+    const bash = await fixture('pi', 'gate-bash')
+    const command = await relayRun({ ...bash.input, mode: 'accept-edits', access: 'workspace-write' }, () => 'deny')
+    expect(command.frames.find((frame) => frame.type === 'approval')?.request)
+      .toEqual({ kind: 'command', summary: '执行命令：ls -la', allowSession: false })
+    expect(JSON.parse(await readFile(join(command.state, 'agent/observed-gate-result.json'), 'utf8')))
+      .toMatchObject({ block: true })
+  })
+  it('Pi 完全权限 loads no gate', async () => {
+    const { input } = await fixture('pi', 'gate')
+    const { frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'danger-full-access' }, () => 'deny')
+    expect(frames.some((frame) => frame.type === 'approval')).toBe(false)
+    const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
+    expect(argv.some((value: string) => value.endsWith('pi-permission-gate.mjs'))).toBe(false)
+  })
+  it('starts no Pi turn when the gate never reports itself registered', async () => {
+    const { input } = await fixture('pi', 'gate-silent')
+    const { frames } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => 'allow-once')
+    expect(frames.some((frame) => frame.event?.kind === 'assistant')).toBe(false)
+    expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: 'Pi 权限确认扩展未加载，本轮未开始' })
+  }, 15000)
+  it('runs Pi 询问 read-only and says so when the install has no tool_call gate', async () => {
+    const { input } = await fixture('pi')
+    const { frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => undefined)
+    expect(frames.some((frame) => frame.event?.text === 'Pi 当前安装版不支持工具确认，本轮按只读运行')).toBe(true)
+    const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
+    expect(argv[argv.indexOf('--tools') + 1].split(',')).toEqual(['read', 'grep', 'find', 'ls'])
   })
   it.each(['approval', 'approval-write', 'approval-edit'] as const)('relays and denies OMP ask-level %s, then completes normally', async scenario => {
     const { input } = await fixture('omp', scenario)

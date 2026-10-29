@@ -13,6 +13,7 @@ import {
   outcomeFromDecision,
   parseNativeApprovalRequest,
   runAccess,
+  workerApproval,
   type NativeAccess,
   type PermissionState,
 } from '../src/host/native-approval-policy.ts'
@@ -45,7 +46,7 @@ const presets: Record<string, PermissionState> = {
 }
 const request = { kind: 'network', summary: '访问 registry.npmjs.org 安装依赖', allowSession: true } as const
 
-describe('permission tier and decisions follow the Worker level capped by the DSH preset', () => {
+describe("permission tier and decisions follow the Worker's own level, else the DSH preset", () => {
   it.each(Object.entries(presets))('%s: a Worker without a level follows the parent', (name, state) => {
     expect(runAccess('accept-edits', undefined, state)).toBe(name as NativeAccess)
     expect(runAccess('plan', undefined, state)).toBe('read-only')
@@ -55,14 +56,15 @@ describe('permission tier and decisions follow the Worker level capped by the DS
     ['ask', 'danger-full-access', 'read-only'],
     ['auto', 'danger-full-access', 'workspace-write'],
     ['full', 'danger-full-access', 'danger-full-access'],
-    ['full', 'workspace-write', 'workspace-write'],
-    ['auto', 'read-only', 'read-only'],
+    ['full', 'workspace-write', 'danger-full-access'],
+    ['auto', 'read-only', 'workspace-write'],
+    ['full', 'read-only', 'danger-full-access'],
     ['ask', 'workspace-write', 'read-only'],
-  ] as const)('level %s under %s runs at %s, never wider than the parent', (level, parent, access) => {
+  ] as const)('a chosen level %s under %s runs at %s, as the user chose', (level, parent, access) => {
     expect(runAccess('accept-edits', level, presets[parent]!)).toBe(access)
     expect(runAccess('plan', level, presets[parent]!)).toBe('read-only')
   })
-  it('asks below full access, auto-allows the residue only when Worker and parent are both full', () => {
+  it('asks below full access and auto-allows the residue at full access', () => {
     expect(decideApproval('accept-edits', undefined, presets['read-only']!)).toBe('ask')
     expect(decideApproval('accept-edits', undefined, presets['workspace-write']!)).toBe('ask')
     expect(decideApproval('accept-edits', undefined, presets['danger-full-access']!)).toEqual({
@@ -70,6 +72,16 @@ describe('permission tier and decisions follow the Worker level capped by the DS
       source: 'full-access',
     })
     expect(decideApproval('accept-edits', 'full', presets['danger-full-access']!)).toMatchObject({ decision: 'allow-once' })
+    // A Worker the user set to full under a lower parent does not ask either.
+    for (const parent of ['read-only', 'workspace-write'])
+      expect(decideApproval('accept-edits', 'full', presets[parent]!)).toEqual({ decision: 'allow-once', source: 'full-access' })
+  })
+  it("keeps a full parent's own approval policy and never asks for a full Worker under a lower parent", () => {
+    expect(workerApproval('danger-full-access', presets['workspace-write']!)).toBe('never')
+    expect(workerApproval('danger-full-access', presets['read-only']!)).toBe('never')
+    expect(workerApproval('danger-full-access', { ...presets['danger-full-access']!, approval: 'ask' })).toBe('ask')
+    for (const access of ['read-only', 'workspace-write'] as const)
+      expect(workerApproval(access, presets['danger-full-access']!)).toBe('ask')
   })
   it('a Worker that chose to be asked is asked even when the parent never asks', () => {
     expect(decideApproval('accept-edits', 'ask', presets['danger-full-access']!)).toBe('ask')
@@ -88,9 +100,11 @@ describe('permission tier and decisions follow the Worker level capped by the DS
   })
   it('each request reads the state current when it arrives (preset switched mid-run)', () => {
     const state = { ...presets['danger-full-access']! }
-    expect(decideApproval('accept-edits', 'full', state)).toMatchObject({ decision: 'allow-once' })
+    expect(decideApproval('accept-edits', undefined, state)).toMatchObject({ decision: 'allow-once' })
     Object.assign(state, presets['workspace-write'])
-    expect(decideApproval('accept-edits', 'full', state)).toBe('ask')
+    expect(decideApproval('accept-edits', undefined, state)).toBe('ask')
+    // The user's own full level does not follow the parent down.
+    expect(decideApproval('accept-edits', 'full', state)).toMatchObject({ decision: 'allow-once' })
   })
 })
 

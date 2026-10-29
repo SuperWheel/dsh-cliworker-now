@@ -68,6 +68,7 @@ for (const name of [
   'kimi-durable-usage',
   'omp-context-inspection',
   'pi-context-observer',
+  'pi-permission-gate',
   'http-context-observer',
   'http-context-relay',
   'hermes-observer',

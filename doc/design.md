@@ -1266,7 +1266,7 @@ OpenSpec 变更 `close-approval-relay-gaps`，处理此前 Desktop 验收留下�
 - 空闲时限：`task.holdIdle()` 在 DSH 备选工具等待授权时暂停空闲计时。Host 计时的 Pi、OMP 与 CLI 原生审批共用 `holdHostIdle`；运行器计时的 CLI 只在启用空闲时限时经该轮审批邮箱发送 `idle-<n>:hold` / `idle-<n>:release`（邮箱同 id 只收一种内容），`release` 等 `hold` 回执后再发；`native-bridge.mjs` 交给 `createIdleHolds`，先到的 `release` 作废该键。审批邮箱每轮 200 次提交上限由授权回复与此共享。
 - 工具桥等待上限（验收中发现）：载体客户端原用 Node `fetch`，300 秒收不到响应头即放弃，Host 等工具结束才回复，所以等待授权超过 5 分钟的调用会失败，提问卡却仍留着，之后允许仍会执行。客户端改用 `node:http`（无响应等待上限）；Host 账本按等待中的请求计数，响应未写完即关闭且计数归零时中止该调用，授权提问随之撤回。
 
-## 2026-10-29 Worker 权限三档，不高于主对话（未发布）
+## 2026-10-29 Worker 权限三档（未发布）
 
 OpenSpec 变更 `worker-permission-levels`（用户 2026-10-28/29 决定）。替代上文「CLI 权限跟随 DSH 预设」中按主对话档位直接选原生模式、仅可查看一律以规划启动的做法。
 
@@ -1277,3 +1277,7 @@ OpenSpec 变更 `worker-permission-levels`（用户 2026-10-28/29 决定）。�
 - 原生映射（安装版本核实，详见变更 design.md 第 6 节）：Codex `read-only/workspace-write/danger-full-access` + `approvals_reviewer` user/`auto_review`；Claude `manual/auto/bypassPermissions`，拒绝改为 `interrupt:false` 不中断本轮；Kimi ACP `default/yolo/auto`；Qoder/CN `default/auto/bypass_permissions`（ACP `yolo`）；Grok 私有配置 `ui.permission_mode` ask（加 `ask=[Bash, Edit, Write]`）/ auto，完全权限 `--always-approve`；ZCode `build/edit/yolo`；Hermes `approvals.mode` smart/off（YOLO 0/1）；Antigravity `--mode plan/auto`，完全权限 `accept-edits` + 跳过确认 + 关闭终端沙箱；OpenCode `edit/bash/external_directory` ask 或 allow；MiMo 同 OpenCode 询问规则 + HTTP `skip-all`/`auto-approve-delete` 开关；Pi 读工具 / +write,edit / +bash；OMP `--approval-mode always-ask/write/yolo` 并开放 bash。
 - 降级：目标模式缺失或回读不符时按更严一档运行并写诊断，第一项不可确认则拒绝启动。Antigravity、OMP 每轮先跑 `--help` 确认模式目录。降级不回传 Host，审批仍按实际档位判定，只会更严。
 - 时间线「本轮权限：<CLI 档位名>」，受主对话限制时附「（受主对话限制）」。删除了 Kimi/Hermes/Antigravity「没有已确认的原生完全权限模式」提示（三者现均有原生完全权限）。
+- 同日修订（取消上限与 Pi 询问）：用户看到工作区内修改下 Pi 菜单只剩两项后决定菜单一直列出三项，用户选的档位按所选运行（含主 Agent 派遣与续聊），主 Agent 不另询问；Pi 第一项改为「询问」。上文的上限、超上限拒绝保存与「（受主对话限制）」均已删除：
+  - 实际档位 = `level ?? 跟随值`（仅可查看 → ask、工作区内修改 → auto、完全权限 → full）；Worker 有档位时跳过仅可查看下的派遣拒绝。
+  - `workerApproval`：Worker 为 full 时，主对话也为 full 则沿用其审批策略，否则为 `never`（残余请求与子会话 DSH 备选工具自动放行）；非 full 为 `ask`。
+  - Pi：新增 `src/host/pi-permission-gate.mjs`，询问与自动批准编辑以 `--extension` 加载（`--no-extensions` 下显式路径仍加载）。扩展用 Pi 1.0.4 文档化的 `tool_call` 返回 `{ block, reason }`，不在放行清单（询问：`read/grep/find/ls`；自动批准编辑另加 `write/edit`；DSH 备选工具自行审批）的调用经 RPC `confirm` 交桥转 Host 审批，未批准或出错即阻止。确认只带工具名、命令、路径、编辑处数与字节数，标题带每轮 nonce。扩展经 fd 3 报告就绪，桥在就绪前不发提示，5 秒未就绪报错。安装版缺少接口时询问档以只读工具运行、自动批准编辑不开 bash 并在时间线说明。三档都开放原生 `write/edit/bash`，由扩展拦截；完全权限不加载扩展。Pi 因此改走 `BridgeProtocol` 审批转发。

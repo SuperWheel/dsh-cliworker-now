@@ -58,6 +58,7 @@ import {
   harnessApprovalRequest,
   outcomeFromDecision,
   runAccess,
+  workerApproval,
   type ApprovalOutcome,
   type NativeApprovalDecision,
   type PermissionState,
@@ -485,7 +486,7 @@ export class CliWorkerService extends TypertRemoteService {
         // Delegation pins a child to `never`; a Worker-UI turn asks in this child.
         // Below full access it always asks. Direct log write: no model notice.
         const childApproval = child.ctx.get('approval')
-        const policy = (input.access ?? permission.sandbox) === 'danger-full-access' ? permission.approval : 'ask'
+        const policy = workerApproval(input.access ?? permission.sandbox, this.permissionState(parent))
         if (childApproval && childApproval.overrideOf(child.session) !== policy) setApprovalPolicy(child.session, policy)
         // Host tools act on the parent's project; an isolated run must not write there.
         const support = input.isolated
@@ -672,7 +673,7 @@ export class CliWorkerService extends TypertRemoteService {
       const agent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
       if (!agent) throw new Error('父会话已关闭，请重新打开后继续发送')
       this.assertExecution(agent, true)
-      this.assertAccessSupported(agent, cliOf(worker.preference), worker.mode)
+      this.assertAccessSupported(agent, cliOf(worker.preference), worker.level)
       if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       this.runtime.assertCliEnabled(cliOf(worker.preference))
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
@@ -702,9 +703,7 @@ export class CliWorkerService extends TypertRemoteService {
           const state = this.permissionState(parent)
           const access = runAccess(worker.mode, worker.level, state)
           if (worker.mode === 'plan' || state.planMode) return { access, label: '规划模式' }
-          const level = effectiveLevel(worker.level, state.sandbox)
-          const capped = worker.level !== undefined && level !== worker.level
-          return { access, label: `${levelName(cliOf(worker.preference), level)}${capped ? '（受主对话限制）' : ''}` }
+          return { access, label: levelName(cliOf(worker.preference), effectiveLevel(worker.level, state.sandbox)) }
         }),
       'cliworker:access',
     )
@@ -744,14 +743,15 @@ export class CliWorkerService extends TypertRemoteService {
       throw new Error('Harness 当前为只读权限；此操作会写入项目或账号状态，请先明确切换项目权限')
   }
   /**
-   * 仅可查看 runs the Worker at its first item: the CLI's native ask mode, or
-   * Pi's read-only tools. A CLI whose first item cannot ask before a change is
-   * refused rather than silently weakened: agy's plan launch keeps its terminal
-   * sandbox state writable, and Hermes offers no first item. A Worker plan task
-   * alone keeps each CLI's existing plan handling.
+   * Under 仅可查看 a Worker without its own level runs at its first item: the
+   * CLI's native ask mode, or Pi's tool_call gate. A CLI whose first item
+   * cannot ask before a change is refused rather than silently weakened: agy's
+   * plan launch keeps its terminal sandbox state writable, Kimi's default
+   * auto-approves Git workspace edits, and Hermes offers no first item. A level
+   * the user picked in the Worker menu runs as picked.
    */
-  private assertAccessSupported(agent: Agent, cli: CliId, _mode: TaskMode): void {
-    if (this.permissionState(agent).sandbox !== 'read-only') return
+  private assertAccessSupported(agent: Agent, cli: CliId, level: WorkerLevel | undefined): void {
+    if (level !== undefined || this.permissionState(agent).sandbox !== 'read-only') return
     if (cli === 'antigravity')
       throw new Error('Harness 当前为仅可查看；Antigravity 无法把授权请求转给你，请切换权限预设或改用其他 CLI')
     if (cli === 'hermes')
@@ -763,7 +763,7 @@ export class CliWorkerService extends TypertRemoteService {
   private childPermission(parent: Agent, worker: Pick<Worker, 'mode' | 'level'>): Pick<PermissionState, 'sandbox' | 'approval'> {
     const state = this.permissionState(parent)
     const sandbox = runAccess(worker.mode, worker.level, state)
-    return { sandbox, approval: sandbox === 'danger-full-access' ? state.approval : 'ask' }
+    return { sandbox, approval: workerApproval(sandbox, state) }
   }
   /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
   private permissionState(agent: Agent): PermissionState {
@@ -1244,7 +1244,7 @@ export class CliWorkerService extends TypertRemoteService {
         queuedAdmission?.priority ? queuedAdmission.id : undefined,
       )
     this.assertExecution(agent, true)
-    this.assertAccessSupported(agent, cliOf(preference), mode)
+    this.assertAccessSupported(agent, cliOf(preference), workerId ? this.runtime.get(agent.id, workerId).level : undefined)
     this.runtime.assertCliEnabled(cliOf(preference))
     if (this.accounts.isBusy(cliOf(preference)))
       throw new Error('此 CLI 正在管理账号，请先关闭账号终端再启动任务')
@@ -2684,12 +2684,9 @@ export class CliWorkerService extends TypertRemoteService {
         if (snapshot.queuedFollowups?.length)
           throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改权限')
       } catch (error) { reason = error instanceof Error ? error.message : String(error) }
-      const sandbox = this.permissionState(parent).sandbox
-      const options = workerLevelOptions(worker, sandbox)
-      if (!reason && !options.length) reason = 'Harness 当前为仅可查看；此 CLI 没有可用档位'
       const state: WorkerPermissionState = {
-        currentValue: effectiveLevel(worker.level, sandbox),
-        options,
+        currentValue: effectiveLevel(worker.level, this.permissionState(parent).sandbox),
+        options: workerLevelOptions(worker),
         plan: { supported: workerPlanSupported(worker), active: worker.mode === 'plan' },
         writable: !reason,
         ...(reason ? { reason } : {}),
@@ -2708,12 +2705,9 @@ export class CliWorkerService extends TypertRemoteService {
       if (this.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
       const selected = validate.enum(['plan', 'accept-edits', 'ask', 'auto', 'full']).parse(mode)
       if (selected === 'plan' && !workerPlanSupported(worker)) throw new Error('当前 CLI 不支持规划模式')
-      if (selected !== 'plan' && selected !== 'accept-edits') {
-        if (!cliLevelOptions(cliOf(worker.preference)).some((option) => option.value === selected))
-          throw new Error('当前 CLI 通路不支持此权限模式')
-        if (!workerLevelOptions(worker, this.permissionState(parent).sandbox).some((option) => option.value === selected))
-          throw new Error('所选档位高于主对话的权限，未修改')
-      }
+      if (selected !== 'plan' && selected !== 'accept-edits' &&
+        !cliLevelOptions(cliOf(worker.preference)).some((option) => option.value === selected))
+        throw new Error('当前 CLI 通路不支持此权限模式')
       this.assertNativeWorkerSettingsIdle(worker)
       const binding = worker.harnessConversation
       const child = binding && this.ctx.agents.get(binding.sessionId as Agent['id'])

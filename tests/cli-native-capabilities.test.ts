@@ -56,10 +56,14 @@ describe('native capability table (synthetic)', () => {
     expect(pi.authorize).toHaveBeenCalledWith(expect.objectContaining({ cli: 'pi' }), { method: 'tools/call', name: 'bash' })
     expect(pi.execute).toHaveBeenCalledOnce()
   })
-  it('gives Pi its native bash only under 完全权限, which then withdraws the DSH shell fallback', async () => {
-    expect(piOmpNativeTools('pi', 'accept-edits', 'danger-full-access')).toContain('bash')
-    for (const [mode, access] of [['accept-edits', 'workspace-write'], ['plan', 'danger-full-access'], ['accept-edits', undefined]] as const)
-      expect(piOmpNativeTools('pi', mode, access)).not.toContain('bash')
+  it('gives Pi native bash wherever its tool_call gate can ask, and only under 完全权限 without the gate', async () => {
+    for (const access of ['read-only', 'workspace-write', 'danger-full-access'])
+      expect(piOmpNativeTools('pi', 'accept-edits', access)).toContain('bash')
+    expect(piOmpNativeTools('pi', 'accept-edits', 'danger-full-access', false)).toContain('bash')
+    for (const [mode, access, gate] of [
+      ['accept-edits', 'workspace-write', false], ['accept-edits', 'read-only', false], ['plan', 'danger-full-access', true], ['accept-edits', undefined, true],
+    ] as const)
+      expect(piOmpNativeTools('pi', mode, access, gate)).not.toContain('bash')
     // OMP asks before each bash call and relays that question to DSH.
     for (const access of ['read-only', 'workspace-write', 'danger-full-access'])
       expect(piOmpNativeTools('omp', 'accept-edits', access)).toContain('bash')
@@ -75,13 +79,14 @@ describe('native capability table (synthetic)', () => {
     for (const name of ['write', 'edit']) expect(await plan.names()).not.toContain(name)
     expect(piOmpNativeTools('pi', 'plan')).toEqual(['read', 'grep', 'find', 'ls'])
   })
-  it('treats Pi accept-edits/read-only as plan in both native tools and DSH write coverage', async () => {
+  it('gives Pi 询问 native writes and bash behind its gate, and reads only for an install without it', async () => {
     const native = nativeCliCapabilities({ cli: 'pi', mode: 'accept-edits', access: 'read-only' })
     const pi = await lease('pi', 'accept-edits', { native })
-    expect(piOmpNativeTools('pi', 'accept-edits', 'read-only')).toEqual(['read', 'grep', 'find', 'ls'])
-    expect(native.classes).not.toContain('file-write')
-    expect(native.classes).not.toContain('shell')
-    for (const name of ['write', 'edit']) expect(await pi.names()).not.toContain(name)
+    expect(piOmpNativeTools('pi', 'accept-edits', 'read-only')).toEqual(['read', 'grep', 'find', 'ls', 'write', 'edit', 'bash'])
+    expect(piOmpNativeTools('pi', 'accept-edits', 'read-only', false)).toEqual(['read', 'grep', 'find', 'ls'])
+    expect(native.classes).toEqual(expect.arrayContaining(['file-write', 'shell']))
+    // The native tools are covered, so no DSH duplicate is offered.
+    for (const name of ['write', 'edit', 'bash']) expect(await pi.names()).not.toContain(name)
     expect(pi.execute).not.toHaveBeenCalled()
   })
   it.each([

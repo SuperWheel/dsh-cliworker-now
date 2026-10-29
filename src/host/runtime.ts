@@ -2366,8 +2366,8 @@ export class WorkerRuntime {
         return answerApproval ? answerApproval(id, decision) : Promise.reject(new Error('授权通路未就绪'))
       })
     }
-    // OMP's tool approvals reach the Host through its RPC bridge as well.
-    const createProtocol = nativeTransport || cliOf(worker.preference) === 'omp'
+    // OMP's tool approvals and Pi's gate confirms reach the Host through their RPC bridge as well.
+    const createProtocol = nativeTransport || cliOf(worker.preference) === 'omp' || cliOf(worker.preference) === 'pi'
       ? (
           _cli: CliId,
           emit: Parameters<typeof protocolFor>[1],

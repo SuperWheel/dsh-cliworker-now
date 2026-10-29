@@ -56,11 +56,21 @@ export interface PermissionState {
 }
 
 /**
- * The access tier a run starts with. Plan wins; otherwise the Worker's level
- * capped by the parent's sandbox. Never wider than the parent.
+ * The access tier a run starts with. Plan wins; otherwise the level the user
+ * chose for this Worker, or the parent's tier when there is none.
  */
 export function runAccess(mode: TaskMode, level: WorkerLevel | undefined, state: PermissionState): NativeAccess {
   return mode === 'plan' || state.planMode ? 'read-only' : levelAccess(effectiveLevel(level, state.sandbox))
+}
+
+/**
+ * The DSH approval policy a Worker runs under. Full access keeps the parent's
+ * policy when the parent is full too; a Worker the user set to full under a
+ * lower parent never asks, as 完全权限 promises. Lower tiers ask.
+ */
+export function workerApproval(access: NativeAccess, state: PermissionState): ApprovalPolicy {
+  if (access !== 'danger-full-access') return 'ask'
+  return state.sandbox === 'danger-full-access' ? state.approval : 'never'
 }
 
 /**
@@ -75,8 +85,9 @@ export function decideApproval(
 ): NativeApprovalDecision | 'ask' {
   if (mode === 'plan' || state.planMode) return { decision: 'deny', source: 'plan' }
   const effective = effectiveLevel(level, state.sandbox)
-  if (state.approval === 'never' && effective === 'full') return { decision: 'allow-once', source: 'full-access' }
-  if (state.approval === 'never' && effective !== 'ask') return { decision: 'deny', source: 'preset' }
+  const approval = effective === 'full' ? workerApproval('danger-full-access', state) : state.approval
+  if (approval === 'never' && effective === 'full') return { decision: 'allow-once', source: 'full-access' }
+  if (approval === 'never' && effective !== 'ask') return { decision: 'deny', source: 'preset' }
   return 'ask'
 }
 

@@ -9,14 +9,15 @@ import { dirname, join, resolve } from 'node:path'
 export const CAPABILITY_CLASSES = ['file-read', 'file-write', 'search', 'shell', 'web', 'image-read', 'skills']
 
 /**
- * Pi/OMP `--tools`. Pi has no native approval to relay, so its bash runs only
- * when the DSH tier is 完全权限; otherwise the DSH shell fallback asks the Host.
- * OMP relays approvals in both restricted tiers, so ask also exposes bash.
+ * Pi/OMP `--tools`. OMP relays its native approvals in both restricted tiers.
+ * Pi asks through the plugin's `tool_call` gate (pi-permission-gate.mjs); an
+ * install without that hook (`piGate` false) keeps the stricter old split:
+ * reads only for 询问, edits without bash for 自动批准编辑.
  */
-export function piOmpNativeTools(cli, mode, access) {
-  const writable = mode === 'accept-edits' && !(cli === 'pi' && access === 'read-only')
+export function piOmpNativeTools(cli, mode, access, piGate = true) {
+  const writable = mode === 'accept-edits' && !(cli === 'pi' && !piGate && access === 'read-only')
   const bash = mode === 'accept-edits' &&
-    (cli === 'pi' ? access === 'danger-full-access' : ['read-only', 'workspace-write', 'danger-full-access'].includes(access))
+    (cli === 'pi' && !piGate ? access === 'danger-full-access' : ['read-only', 'workspace-write', 'danger-full-access'].includes(access))
   return [
     ...(cli === 'pi' ? ['read', 'grep', 'find', 'ls'] : ['read', 'grep', 'glob']),
     ...(writable ? ['write', 'edit'] : []),
@@ -74,7 +75,6 @@ const mcpImages = new Set(['claude', 'opencode', 'mimo', 'kimi'])
  * offers every granted DSH tool as before (the documented rollback).
  */
 export function nativeCliCapabilities({ cli, mode, access, mcpServers = [] }) {
-  if (cli === 'pi' && access === 'read-only') mode = 'plan'
   const classes = tables[cli]?.(mode, access) ?? []
   // Plan mode withholds native writes on purpose; a DSH write is no fallback there.
   const withheld = tables[cli] && mode === 'plan' ? ['file-write'] : []

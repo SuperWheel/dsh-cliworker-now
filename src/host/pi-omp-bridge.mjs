@@ -3,6 +3,7 @@
 import { NativeBlockResponses, piOmpResponseUsage, piOmpReportedUsage } from './http-rpc-response.mjs'
 import { OmpContextInspection } from './omp-context-inspection.mjs'
 import { PI_CONTEXT_ENV, preparePiContextObserver, readPiContextObservation } from './pi-context-observer.mjs'
+import { PI_GATE_ENV, preparePiPermissionGate, readPiGateConfirm } from './pi-permission-gate.mjs'
 import { createEventBudget, summarizeNativeRecord } from './native-transport.mjs'
 import { spawnNativeProcess } from './native-spawn.mjs'
 import { createToolOutcomes, LAST_TOOL_FAILED, recoveredNotice } from './native-tool-outcomes.mjs'
@@ -111,10 +112,12 @@ let child,
   approvalReceiver,
   approvalSequence = 0,
   permissionDenied = false,
+  /** Pi's tool_call gate for this run: prepared, `false` when the install cannot ask, or unused. */
+  permissionGate,
   nativeStop,
   closeGuidance = () => {}
 const toolOutcomes = createToolOutcomes()
-// Pending OMP approvals relayed to the Host, by bridge id; each settles exactly once.
+// Pending OMP and Pi gate approvals relayed to the Host, by bridge id; each settles exactly once.
 const approvals = new Map()
 /**
  * OMP 16.4.4 asks for write/edit/bash approval as an RPC `select` titled "Allow tool: <name>"
@@ -217,7 +220,7 @@ try {
       await stop('任务已停止')
     })
   if (config.approvalNonce) {
-    if (config.cli !== 'omp' || config.approvalDirectory !== join(dirname(requestPath), 'approval'))
+    if (config.approvalDirectory !== join(dirname(requestPath), 'approval'))
       throw new Error('Unbound native approval control')
     approvalReceiver = await receiveNativeApprovalControl(config.approvalDirectory, config.approvalNonce, async (message, id) => {
       const settle = approvals.get(id)
@@ -301,7 +304,6 @@ try {
   // Pi's SDK is loaded in this process and consults process.env itself. Apply
   // the same own-source environment before importing it, not only at spawn.
   process.env = env
-  if (config.cli === 'pi' && config.access === 'read-only') config.mode = 'plan'
   const ompPermissions = config.cli === 'omp'
     ? ompPermissionSettings(config.access, config.discover || config.metadataPhase
       ? ['always-ask', 'write', 'yolo']
@@ -461,7 +463,20 @@ try {
       ? await nativeAttachmentInput('pi', config.prompt, config.attachments, metadataController.signal)
       : { message: await nativeAttachmentInput('text', config.prompt, config.attachments, metadataController.signal) }
     const harnessExtension = await prepareNativeHarnessExtension(harnessTools, { signal: metadataController.signal })
-    const tools = [...piOmpNativeTools(config.cli, config.mode, config.access), ...harnessExtension.tools]
+    // Pi asks through the plugin's tool_call gate. An install without that hook
+    // runs stricter: 询问 reads only, 自动批准编辑 edits without commands.
+    delete env[PI_GATE_ENV]
+    permissionGate = config.cli === 'pi' && config.mode === 'accept-edits' && config.access !== 'danger-full-access'
+      ? (await preparePiPermissionGate(config.executable, config.access, harnessExtension.tools)) ?? false
+      : undefined
+    if (permissionGate) Object.assign(env, permissionGate.env)
+    else if (permissionGate === false) {
+      if (config.access === 'read-only') config.mode = 'plan'
+      event({ kind: 'status', text: config.access === 'read-only'
+        ? 'Pi 当前安装版不支持工具确认，本轮按只读运行'
+        : 'Pi 当前安装版不支持工具确认，本轮只自动批准编辑，不执行命令' })
+    }
+    const tools = [...piOmpNativeTools(config.cli, config.mode, config.access, permissionGate !== false), ...harnessExtension.tools]
     // Pi's addendum keeps its native preamble; the note names the extension tools Pi sees.
     const guidance = nativeFirstGuidance(harnessExtension.tools)
     const nativeArgs = [
@@ -470,6 +485,7 @@ try {
       ...isolated,
       ...harnessExtension.argv,
       ...contextObserver.argv,
+      ...(permissionGate ? permissionGate.argv : []),
       '--provider',
       selectedProvider,
       '--model',
@@ -653,6 +669,20 @@ try {
       session = { id: state.sessionId, path: resolve(state.sessionFile) }
     }
     let contextSequence = 0
+    // A gated Pi turn starts only after the gate reports its hook registered;
+    // without that record nothing would ask before a write or command.
+    let stateReady = false, gateReady = false, gateTimer
+    const sendPrompt = () => {
+      if (!stateReady || sent || stopped || failure) return
+      if (permissionGate && !gateReady) {
+        gateTimer ??= setTimeout(() => stop('Pi 权限确认扩展未加载，本轮未开始'), 5000)
+        return
+      }
+      clearTimeout(gateTimer)
+      sent = true
+      requestLiveStats()
+      send({ id: 'prompt', type: 'prompt', ...attachmentInput })
+    }
     const consume = (value) => {
       if (!value || typeof value !== 'object' || typeof value.type !== 'string')
         throw new Error('Invalid native RPC record')
@@ -786,11 +816,8 @@ try {
             text: `${config.cli === 'pi' ? 'Pi' : 'OMP'} 原生模型已确认`,
             observedModel: `${value.data.model.provider}/${value.data.model.id}`,
           })
-          if (!stopped && !failure) {
-            sent = true
-            requestLiveStats()
-            send({ id: 'prompt', type: 'prompt', ...attachmentInput })
-          }
+          stateReady = true
+          sendPrompt()
         } else if (value.id === 'final') {
           validateState(value.data)
           if (value.data.isStreaming || value.data.isCompacting || (value.data.pendingMessageCount ?? 0) > 0)
@@ -805,7 +832,14 @@ try {
       if (value.type === 'extension_ui_request') {
         // Notifications carry no obligation. A tool approval goes to the Host; other interactive requests are denied.
         if (['confirm', 'select', 'input', 'editor'].includes(value.method)) {
-          const request = config.approvalNonce && !stopped ? ompApprovalRequest(value) : undefined
+          const gate = config.cli === 'pi' && !!permissionGate
+          const request = config.approvalNonce && !stopped
+            ? (gate ? readPiGateConfirm(value, permissionGate.nonce) : ompApprovalRequest(value))
+            : undefined
+          // OMP answers a select with Approve/Deny; the Pi gate's confirm takes a boolean.
+          const answer = (decision) => send(gate
+            ? { type: 'extension_ui_response', id: value.id, confirmed: decision !== 'deny' }
+            : { type: 'extension_ui_response', id: value.id, value: decision === 'deny' ? 'Deny' : 'Approve' })
           if (request && approvals.size < 50 && approvalSequence < 200) {
             const id = `approval-${++approvalSequence}`
             void new Promise((resolve) => approvals.set(id, (decision) => {
@@ -813,14 +847,14 @@ try {
               resolve(decision)
             })).then((decision) => {
               if (decision === 'deny') permissionDenied = true
-              send({ type: 'extension_ui_response', id: value.id, value: decision === 'deny' ? 'Deny' : 'Approve' })
+              answer(decision)
             })
             output({ type: 'approval', id, request })
             return
           }
           if (request) {
             permissionDenied = true
-            send({ type: 'extension_ui_response', id: value.id, value: 'Deny' })
+            answer('deny')
             return
           }
           failure ??= 'CLI 需要额外原生交互授权'
@@ -956,6 +990,13 @@ try {
         contextPending = contextPending.slice(index + 1)
         try {
           const value = JSON.parse(line)
+          if (value.type === 'cliworker.pi_permission_gate') {
+            if (permissionGate && value.nonce === permissionGate.nonce && value.ready === true && !gateReady) {
+              gateReady = true
+              sendPrompt()
+            }
+            continue
+          }
           if (value.type === 'cliworker.pi_context_observation') {
             if (!sent || settled || stopped || !session) continue
             const context = readPiContextObservation(value, { nonce: contextObserver.nonce,
@@ -998,6 +1039,7 @@ try {
     for (const block of thinkingBlocks.values())
       publicThinking(block.messageKey, block.index, block.text, block.state, true)
     clearTimeout(startupTimer)
+    clearTimeout(gateTimer)
     clearTimeout(statsTimer)
     clearTimeout(liveStatsTimer)
     clearTimeout(closeTimer)

@@ -35,7 +35,7 @@ export interface PiOmpInput extends PiOmpNativeOptions {
   project: string
   preference: { model: string; effort: string }
   mode: TaskMode
-  /** The Worker's effective level; only full access adds Pi's native bash. */
+  /** The Worker's effective level; below full access Pi asks through its tool_call gate. */
   access?: NativeAccess
   prompt: string
   attachments?: readonly NativeAttachment[]
@@ -118,8 +118,8 @@ async function contextFor(
       if (!('discover' in input) && !extra.metadataPhase) {
         control = await createPiOmpControl(join(requestDirectory, 'control'))
         stopControl = await createNativeStopControl(join(requestDirectory, 'stop'))
-        // OMP's native tool approvals are relayed to the Host through this mailbox.
-        if (input.cli === 'omp') approvalControl = await createNativeApprovalControl(join(requestDirectory, 'approval'))
+        // OMP's native tool approvals and Pi's tool_call gate reach the Host through this mailbox.
+        approvalControl = await createNativeApprovalControl(join(requestDirectory, 'approval'))
       }
       await writeFile(
         temporary,
@@ -243,7 +243,6 @@ export async function preparePiOmp(
     throw new Error('Unsupported native model effort')
   if (!['plan', 'accept-edits'].includes(input.mode)) throw new Error('Unsupported task mode')
   if (!input.prompt.trim()) throw new Error('Prompt must not be empty')
-  if (input.cli === 'pi' && input.access === 'read-only') input = { ...input, mode: 'plan' }
   const context = await contextFor(input)
   // Preparing a request is reversible. Execution requires the Host's two
   // captures on this exact snapshot; an unconfirmed request cannot send prompts.
