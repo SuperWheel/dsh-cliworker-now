@@ -24,10 +24,11 @@ import type { AccountIdentity } from './account-identity.ts'
 import { probeAccountModels } from './account-models.mjs'
 import { readZCodeAccountApiKeys, readZCodeAccountBindings } from './zcode-account-models.ts'
 import { ZcodeResponseTracker } from './zcode-response.mjs'
+import { shareNativeMemory, unshareNativeMemory } from './cli-native-capabilities.mjs'
 
 // Native ZCode uses exact tool-name sets, not globs. Deny its own delegation
-// surface and bundled browser REPL. This is not a general MCP isolation policy;
-// arbitrary MCP tool names cannot be safely represented by "mcp__*" here.
+// surface (Skill stays with it) and bundled browser REPL. This is not a general
+// MCP isolation policy; arbitrary MCP tool names cannot be safely represented by "mcp__*" here.
 export const ZCODE_DENIED_TOOLS = [
   'Agent',
   'Task',
@@ -129,6 +130,25 @@ export function zcodeEnvironment(executable: string, state: string, auth?: strin
     TMPDIR: join(state, 'tmp'),
   }
 }
+/** Handed to the bridge only; it removes the variable before starting the CLI. */
+export const ZCODE_MEMORY_ENVIRONMENT = 'CLIWORKER_ZCODE_NATIVE_MEMORY'
+const zcodeNativeBase = (options: Pick<ZCodeInput, 'nativeHome'>) =>
+  options.nativeHome ?? process.env.ZCODE_DATA_BASE_DIR?.trim() ?? homedir()
+/** Where the native CLI keeps its storage (ZCODE_STORAGE_DIR, else ~/.zcode). */
+function zcodeNativeStorage(options: Pick<ZCodeInput, 'nativeHome'>) {
+  return options.nativeHome !== undefined
+    ? join(options.nativeHome, '.zcode')
+    : process.env.ZCODE_STORAGE_DIR?.trim() || join(homedir(), '.zcode')
+}
+/** The desktop setting `memoryEnabled`; unset or unreadable counts as off, its default. */
+function zcodeNativeMemory(options: Pick<ZCodeInput, 'nativeHome'>): boolean {
+  try {
+    const setting = readZCodeConfig(join(zcodeNativeBase(options), '.zcode/v2/setting.json'), true, true)
+    return record(setting) && setting.memoryEnabled === true
+  } catch {
+    return false
+  }
+}
 function writePersonalConfig(path: string, value: unknown): void {
   const temporary = join(dirname(path), `.personal-${randomUUID()}.tmp`)
   try {
@@ -213,6 +233,13 @@ export async function prepareZCode(input: ZCodeInput) {
       }),
     })
   }
+  // The desktop client's own memory switch (off by default) decides; its memory
+  // directory is shared, never copied. The bridge answers the CLI's preference request.
+  const memory = zcodeNativeMemory(input)
+  const memoryPath = join(env.ZCODE_STORAGE_DIR, 'cli', 'memories')
+  if (memory) await shareNativeMemory(memoryPath, join(zcodeNativeStorage(input), 'cli', 'memories'))
+  else await unshareNativeMemory(memoryPath)
+  if (input.nativeTransport) Object.assign(env, { [ZCODE_MEMORY_ENVIRONMENT]: memory ? '1' : '0' })
   // Preserve private provider/model overlays. Only this worker's default selection changes.
   writePersonalConfig(env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE, {
     ...personal,
@@ -444,7 +471,7 @@ function personalPaths(authDirectory?: string, options: ZCodeDiscoveryOptions = 
   const explicit =
     options.personalConfig ??
     (options.nativeHome === undefined ? process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE?.trim() : undefined)
-  const nativeBase = options.nativeHome ?? process.env.ZCODE_DATA_BASE_DIR?.trim() ?? homedir()
+  const nativeBase = zcodeNativeBase(options)
   const paths = new Map<string, boolean>([
     [resolve(explicit || join(nativeBase, '.zcode/v2/provider_config.json')), !explicit],
   ])

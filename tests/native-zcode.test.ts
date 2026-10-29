@@ -18,14 +18,14 @@ const out=x=>process.stdout.write(JSON.stringify(x)+'\n'), log=x=>appendFileSync
 const scenario=process.env.SCENARIO, sessionId=scenario.startsWith('context-')?'sess_context-fixture':'zcode-fixture', project=process.env.PROJECT;
 const state={session:{sessionId,workspace:{workspacePath:project}},settings:{model:{current:{providerId:'chosen',modelId:'model'},available:[{ref:{providerId:'chosen',modelId:'model'},reasoning:{defaultLevel:'high',levels:[{value:'high'},{value:'low'}]}}]},mode:{current:'edit'}},runtime:{pendingRequestIds:[]},projection:{status:'idle',pendingPermissions:[],activeToolCalls:[]}};
 let inputId, awaiting, stopped=false;
-log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT});
+log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT,leakedMemoryEnvironment:process.env.CLIWORKER_ZCODE_NATIVE_MEMORY!==undefined});
 if(process.argv.indexOf('app-server')>process.argv.indexOf('--disallowedTools'))process.exit(22);
 const reply=(q,result)=>out({id:q.id,result});
 const event=(type,payload,extra={})=>out({method:'session/event',params:{sessionId,turnId:'turn-fixture',type,payload,...extra}});
 const finish=()=>{event('turn.completed',{inputId,resultType:stopped?'cancelled':'success',response:scenario==='tool-boundary'||scenario==='model-usage'?'AFTER':'HELLO',usage:scenario==='model-usage'?{inputTokens:99999,outputTokens:1}:undefined});out({method:'state.updated',params:{sessionId,reason:'prompt_completed'}});};
 createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
- if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==false)process.exit(23);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
+ if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
  if(q.jsonrpc!==undefined)process.exit(20);
  if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1}});
  if(q.method==='provider/updateAccountConfig')return reply(q,{receivedRevision:q.params.revision,providerCount:1,status:'received'});
@@ -193,6 +193,7 @@ async function fixture(scenario = 'success', continuation = false,
       ZCODE_STORAGE_DIR: join(root, 'storage'),
       ROLLOUT_FILE: join(rollout, 'model-io-sess_context-fixture.jsonl'),
       ...(scenario === 'account-env' ? { CLIWORKER_ZCODE_NATIVE_ACCOUNT: JSON.stringify(account) } : {}),
+      ...(scenario.startsWith('memory-') ? { CLIWORKER_ZCODE_NATIVE_MEMORY: scenario === 'memory-on' ? '1' : '0' } : {}),
     },
     ...(scenario.startsWith('account-') && scenario !== 'account-env' ? { zcodeNativeAccount: account } : {}),
     timeoutMs: 600,
@@ -232,6 +233,12 @@ async function fixture(scenario = 'success', continuation = false,
 }
 
 describe('Native ZCode app-server (simulated native processes)', () => {
+  it.each(['memory-on', 'memory-off'])('answers the desktop memory switch the adapter read (%s) without handing the variable to the CLI', async scenario => {
+    const { records, result } = await fixture(scenario)
+    expect(result.status).toBe('SUCCESS')
+    expect(records[0].leakedMemoryEnvironment).toBe(false)
+    expect(records.find(record => record.id === 'preferences')?.result.memoryEnabled).toBe(scenario === 'memory-on')
+  })
   it.each(['context-composition', 'context-next-unknown'])('publishes exact native request estimates and newer explicit unknown (%s)', async scenario => {
     const { frames, result } = await fixture(scenario)
     expect(result.status).toBe('SUCCESS')

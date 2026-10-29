@@ -179,10 +179,11 @@ flowchart LR
   - 主 Agent 派出的任务（`cliworker_start` / `cliworker_followup`）在主对话页弹出授权问题；你在子会话中续聊、排队或重新运行的轮次在该子会话中审批，任务卡显示「等待审批」。CLI 原生提供会话级授权（Codex、Claude Code、Kimi、Qoder、Hermes）时，主对话页另有「本会话始终允许」，由 CLI 自己记住；子会话审批面板只有允许一次 / 拒绝。Worker 经 DSH 备选工具（例如备选命令工具申请更宽的沙箱）请求审批时按同样规则询问，只有允许一次 / 拒绝。无人应答或任务停止时按拒绝处理。
   - Harness 处于规划模式时仍拒绝派遣写任务。OMP 三档都开放原生命令，每次需要确认的命令和写入同样按上述规则交给 DSH。Antigravity 和 Pi 没有可回复的原生授权协议：Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
 - **关闭的原生功能**：插件默认保留 CLI 原生功能（Grok 网页搜索与抓取、OpenCode/MiMo 用户自己的 skill 已启用），只因以下理由关闭：
-  - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（是否启用待定）。
-  - 账号隔离：OpenCode/MiMo 外部插件与 Claude Code 命令、MCP 导入；OpenCode 项目配置、主目录 `~/.opencode` 配置（其中 skill 照常提供）、CLAUDE.md 与 `.claude`/`.agents` 兼容 skill 目录；MiMo 启动时导入 Claude Code 会话记录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件、MCP 与记忆。MiMo 的项目配置与 `~/.mimocode` 是它自己的账号与模型来源，不关闭。
+  - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（2026-10-29 决定不启用；Claude Code 的 Task 与 Codex 的多 Agent 维持原样）。
+  - 账号隔离：OpenCode/MiMo 外部插件与 Claude Code 命令、MCP 导入；OpenCode 项目配置、主目录 `~/.opencode` 配置（其中 skill 照常提供）、CLAUDE.md 与 `.claude`/`.agents` 兼容 skill 目录；MiMo 启动时导入 Claude Code 会话记录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件与 MCP（包括外部记忆服务）。MiMo 的项目配置与 `~/.mimocode` 是它自己的账号与模型来源，不关闭。
   - 无法遵循 DSH 权限：Pi 原生命令（「完全权限」除外）。
-  - 其他：OpenCode/MiMo/OMP 的 LSP（避免自动下载）；ZCode 浏览器 REPL（可执行任意代码，待核实后再议）；Grok 与 OMP 的记忆（是否启用待定）。
+  - 其他：OpenCode/MiMo/OMP 的 LSP（避免自动下载）；ZCode 浏览器 REPL（可执行任意代码，待核实后再议）；OMP 记忆（OMP 按 Worker 私有的会话库整理并整份重写记忆文件，库里有账号凭据，与原生或其他 Worker 共用会互相覆盖）。
+- **CLI 记忆跟随你自己的设置**：Grok、Hermes、ZCode 的记忆是否开启，与你在原生 CLI 里的设置一致。Grok 读 `~/.grok/config.toml`（以及 `requirements.toml`、`GROK_MEMORY`），默认关闭；Hermes 读当前账号目录 `config.yaml` 的记忆段，默认开启；ZCode 读桌面端设置里的记忆开关，默认关闭。开启时 Worker 与你直接使用该 CLI 共用同一份记忆（Grok `~/.grok/memory-v2`、Hermes 账号目录下的 `memories`、ZCode `~/.zcode/cli/memories`），Worker 的任务内容也会被记进去；CLI 会按自己的方式在后台整理记忆，可能额外调用模型。远端托管设置插件看不到，按未设置处理。
 - **两层结构**：主对话 → 直接子智能体，默认两个并发（可在「CLI Worker 设置」调整，所有 CLI 共用，最多 8 个），不支持递归派遣。
 - **任务时限**：「CLI Worker 设置 → 任务时限」可设总时限（默认 30 分钟，可选 1–8 小时或不限制，最长 24 小时）与空闲时限（默认不启用，可选 5/10/30 分钟：CLI 连续这么久没有任何回复、工具或思考事件才停止；等待你回答授权期间不计，包括 DSH 备选工具的授权）。每个任务开始时确定截止时间，运行中修改只影响之后的任务；超时后等 CLI 进程全部退出才标记为中断，并说明是总时限还是空闲时限。此前在插件配置文件里设置的 `timeoutMs` 作为总时限的默认值。
 - **界面语言**：「CLI Worker 设置 → 语言」可选跟随 DSH（默认）、中文或 English，保存后所有已打开的 CLI Worker 面板立即切换，不需要重载。CLI 输出、模型名、用户内容和未收录的 Host 错误保持原文；给主 Agent 的工具说明不随界面语言变化。

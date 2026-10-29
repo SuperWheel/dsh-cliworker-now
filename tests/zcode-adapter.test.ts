@@ -10,6 +10,7 @@ import {
   symlinkSync,
   existsSync,
   linkSync,
+  realpathSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
@@ -140,6 +141,28 @@ function fixture(maxLineBytes = 8192) {
 }
 
 describe('ZCode adapter (explicitly synthetic fixtures)', () => {
+  it('shares the desktop memory only while the user has it turned on', async () => {
+    const f = setup(),
+      memories = join(f.state, 'storage/cli/memories'),
+      native = join(f.input.nativeHome, '.zcode/cli/memories'),
+      setting = (value: unknown) => {
+        mkdirSync(join(f.input.nativeHome, '.zcode/v2'), { recursive: true, mode: 0o700 })
+        writeFileSync(join(f.input.nativeHome, '.zcode/v2/setting.json'), JSON.stringify(value), { mode: 0o600 })
+      }
+    // Never set: the desktop default is off, and nothing is linked or created.
+    expect((await prepareZCode({ ...f.input, nativeTransport: true })).env).toMatchObject({ CLIWORKER_ZCODE_NATIVE_MEMORY: '0' })
+    expect(existsSync(native)).toBe(false)
+    setting({ memoryEnabled: true })
+    expect((await prepareZCode({ ...f.input, nativeTransport: true })).env).toMatchObject({ CLIWORKER_ZCODE_NATIVE_MEMORY: '1' })
+    expect(lstatSync(memories).isSymbolicLink()).toBe(true)
+    expect(realpathSync(memories)).toBe(realpathSync(native))
+    // A legacy headless launch hands the CLI no bridge variable.
+    expect((await prepareZCode(f.input)).env).not.toHaveProperty('CLIWORKER_ZCODE_NATIVE_MEMORY')
+    setting({ memoryEnabled: 'yes' })
+    expect((await prepareZCode({ ...f.input, nativeTransport: true })).env).toMatchObject({ CLIWORKER_ZCODE_NATIVE_MEMORY: '0' })
+    expect(existsSync(memories)).toBe(false)
+    expect(existsSync(native)).toBe(true)
+  })
   it('prepares an exact single-account app-server bundle only in its private child environment', async () => {
     const f = setup(),
       data: any = builtin(),

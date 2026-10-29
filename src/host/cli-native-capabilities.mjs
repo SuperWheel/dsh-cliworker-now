@@ -1,8 +1,9 @@
 // What each CLI can do natively under the exact launch this plugin builds.
 // Launch builders read the same constants, so re-enabling a native feature here
 // also drops the overlapping DSH fallback from the bridge catalog.
+import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { lstat, mkdir, readdir, readFile, readlink, realpath, rename, rm, symlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 
@@ -42,6 +43,100 @@ export function nativeSkillPaths(cli, { env = process.env, project, home = homed
   const roots = [config, join(home, `.${name}`), ...(project ? [join(project, `.${name}`)] : [])]
   return [...new Set(roots.flatMap(root => ['skill', 'skills'].map(directory => join(root, directory))))]
     .filter(path => { try { return statSync(path).isDirectory() } catch { return false } })
+}
+
+/**
+ * A worker runs in a private home, so a native memory the user turned on is
+ * shared, never copied: the private memory path becomes a link to the CLI's
+ * own memory directory. A private directory that already holds files is kept
+ * aside instead of being deleted.
+ */
+export async function shareNativeMemory(privatePath, nativePath) {
+  await mkdir(nativePath, { recursive: true, mode: 0o700 })
+  const target = await realpath(nativePath)
+  let info
+  try {
+    info = await lstat(privatePath)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+  if (info?.isSymbolicLink()) {
+    if (resolve(dirname(privatePath), await readlink(privatePath)) === target) return
+    await rm(privatePath, { force: true })
+  } else if (info?.isDirectory()) {
+    if (await holdsFiles(privatePath)) await rename(privatePath, `${privatePath}.private-${Date.now()}`)
+    else await rm(privatePath, { recursive: true, force: true })
+  } else if (info) throw new Error('Worker 私有记忆路径不是目录')
+  await mkdir(dirname(privatePath), { recursive: true, mode: 0o700 })
+  // Starts that share a private home may link together: publish the link whole.
+  const link = `${privatePath}.${randomUUID()}.tmp`
+  await symlink(target, link, process.platform === 'win32' ? 'junction' : 'dir')
+  try {
+    await rename(link, privatePath)
+  } finally {
+    await rm(link, { force: true })
+  }
+}
+/** Memory off: drop a link left by an earlier run; a private directory stays. */
+export async function unshareNativeMemory(privatePath) {
+  try {
+    if ((await lstat(privatePath)).isSymbolicLink()) await rm(privatePath)
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+  }
+}
+async function holdsFiles(path) {
+  for (const entry of await readdir(path, { withFileTypes: true }))
+    if (!entry.isDirectory() || (await holdsFiles(join(path, entry.name)))) return true
+  return false
+}
+const switchValue = value => (/^(?:1|true|yes|on)$/i.test(value ?? '') ? true : /^(?:0|false|no|off)$/i.test(value ?? '') ? false : undefined)
+/** `[memory_v2] enabled`, then `[memory] enabled`; anything this cannot read counts as unset. */
+export function grokTomlMemory(text) {
+  const values = new Map()
+  let table = ''
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.replace(/\s+#.*$/, '').trim()
+    if (line.startsWith('[[')) table = '\0'
+    else if (line.startsWith('[')) table = /^\[\s*([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\s*\]$/.exec(line)?.[1] ?? '\0'
+    else {
+      const pair = /^([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)\s*=\s*(true|false)$/.exec(line)
+      const key = pair && (table ? `${table}.${pair[1]}` : pair[1])
+      if (key && !values.has(key)) values.set(key, pair[2] === 'true')
+    }
+  }
+  return values.get('memory_v2.enabled') ?? values.get('memory.enabled')
+}
+/**
+ * Whether the user's own Grok starts with memory (grok 1.0.62 priority order):
+ * requirements.toml, then GROK_MEMORY, then config.toml. Memory is off by
+ * default; a managed remote setting is not visible here and counts as unset.
+ */
+export async function grokNativeMemory({ env = process.env, home = homedir() } = {}) {
+  const read = async name => {
+    try {
+      return grokTomlMemory(await readFile(join(home, '.grok', name), 'utf8'))
+    } catch (error) {
+      if (error.code === 'ENOENT') return undefined
+      return false
+    }
+  }
+  return (await read('requirements.toml')) ?? switchValue(env.GROK_MEMORY?.trim()) ?? (await read('config.toml')) ?? false
+}
+/**
+ * Hermes' built-in memory keys as the user's own config sets them. Both stores
+ * default to on (hermes-agent `get_builtin_memory_store_flags`); an external
+ * memory provider needs plugins, which stay off.
+ */
+export function hermesNativeMemory(config) {
+  const section = config?.memory !== null && typeof config?.memory === 'object' && !Array.isArray(config.memory) ? config.memory : {}
+  const flag = value => (value === undefined || value === null ? true : typeof value === 'string' ? /^(?:1|true|yes|on)$/i.test(value.trim()) : Boolean(value))
+  return {
+    memory_enabled: flag(section.memory_enabled),
+    user_profile_enabled: flag(section.user_profile_enabled),
+    ...Object.fromEntries(['memory_char_limit', 'user_char_limit', 'nudge_interval']
+      .filter(key => Number.isFinite(section[key])).map(key => [key, section[key]])),
+  }
 }
 
 const write = mode => (mode === 'plan' ? [] : ['file-write'])

@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -22,6 +23,13 @@ function directory() {
   directories.push(path)
   return path
 }
+beforeEach(() => {
+  // Synthetic native home: never read an installed Grok account or memory config.
+  const home = directory()
+  vi.stubEnv('HOME', home)
+  vi.stubEnv('USERPROFILE', home)
+  vi.stubEnv('GROK_MEMORY', '')
+})
 afterEach(() => {
   vi.unstubAllEnvs()
   for (const path of directories.splice(0)) rmSync(path, { recursive: true, force: true })
@@ -326,4 +334,44 @@ it('parallel starts in one project all get the own Grok auth reference and full 
     }
   }
   expect(readdirSync(home).filter((name) => name.endsWith('.tmp'))).toEqual([])
+})
+
+describe('Grok native memory (synthetic homes and config)', () => {
+  it('defaults memory off with no private memory path and keeps subagents disabled', async () => {
+    const prepared = await prepareGrok({ executable: '/fixture/grok', project: directory(), stateDirectory: directory(),
+      preference: { model: 'grok-fixture', effort: 'default' }, mode: 'accept-edits', prompt: 'synthetic task' })
+    expect(prepared.argv).toContain('--no-memory')
+    expect(prepared.env.GROK_MEMORY).toBe('0')
+    expect(() => lstatSync(join(prepared.env.GROK_HOME!, 'memory-v2'))).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+    expect(prepared.argv).toContain('--no-subagents')
+    expect(prepared.env.GROK_SUBAGENTS).toBe('0')
+  })
+
+  it('shares enabled native memory and removes only the link when turned off again', async () => {
+    const nativeHome = join(process.env.HOME!, '.grok'), nativeMemory = join(nativeHome, 'memory-v2')
+    mkdirSync(nativeHome)
+    const config = join(nativeHome, 'config.toml')
+    writeFileSync(config, '[memory]\nenabled = true\n')
+    const input = { executable: '/fixture/grok', project: directory(), stateDirectory: directory(),
+      preference: { model: 'grok-fixture', effort: 'default' as const }, mode: 'accept-edits' as const, prompt: 'synthetic task' }
+    const enabled = await prepareGrok(input), link = join(enabled.env.GROK_HOME!, 'memory-v2')
+    expect(enabled.argv).not.toContain('--no-memory')
+    expect(enabled.env.GROK_MEMORY).toBe('1')
+    if (process.platform !== 'win32') expect(lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(realpathSync(link)).toBe(realpathSync(nativeMemory))
+    expect(enabled.argv).toContain('--no-subagents')
+    expect(enabled.env.GROK_SUBAGENTS).toBe('0')
+    writeFileSync(join(nativeMemory, 'synthetic-memory.txt'), 'synthetic native memory')
+
+    writeFileSync(config, '[memory]\nenabled = false\n')
+    const disabled = await prepareGrok(input)
+    expect(disabled.env.GROK_HOME).toBe(enabled.env.GROK_HOME)
+    expect(disabled.argv).toContain('--no-memory')
+    expect(disabled.env.GROK_MEMORY).toBe('0')
+    expect(() => lstatSync(link)).toThrow(expect.objectContaining({ code: 'ENOENT' }))
+    expect(statSync(nativeMemory).isDirectory()).toBe(true)
+    expect(readFileSync(join(nativeMemory, 'synthetic-memory.txt'), 'utf8')).toBe('synthetic native memory')
+    expect(disabled.argv).toContain('--no-subagents')
+    expect(disabled.env.GROK_SUBAGENTS).toBe('0')
+  })
 })

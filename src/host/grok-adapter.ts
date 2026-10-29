@@ -10,7 +10,7 @@ import type { EventInput, ProtocolResult } from './protocol.ts'
 import { assertGrokNativeEnvironment, discoverGrokAccountModels } from './grok-models.ts'
 import { GrokResponseTracker, grokResponseUsage } from './grok-response.mjs'
 import { HARNESS_MCP_SERVER, nativeHarnessReadyConnection } from './native-harness-injection.mjs'
-import { GROK_NATIVE_WEB, GROK_PLAN_TOOLS } from './cli-native-capabilities.mjs'
+import { GROK_NATIVE_WEB, GROK_PLAN_TOOLS, grokNativeMemory, shareNativeMemory, unshareNativeMemory } from './cli-native-capabilities.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAccess } from './native-approval-policy.ts'
 
@@ -66,7 +66,7 @@ async function publish(from: string, to: string) {
     }
   }
 }
-async function state(stateDirectory: string, project?: string, readOnly?: { bridge: boolean }, level?: 'ask' | 'auto') {
+async function state(stateDirectory: string, project?: string, readOnly?: { bridge: boolean }, level?: 'ask' | 'auto', memory = false) {
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
   if ((await lstat(stateDirectory)).isSymbolicLink()) throw new Error('Unsafe Grok state symlink')
   await chmod(stateDirectory, 0o700)
@@ -126,6 +126,9 @@ async function state(stateDirectory: string, project?: string, readOnly?: { brid
       } catch (e) {
         if (!record(e) || e.code !== 'ENOENT') throw e
       }
+    // The user's own Grok memory, shared rather than copied; off unless they turned it on.
+    if (memory) await shareNativeMemory(join(home, 'memory-v2'), join(homedir(), '.grok', 'memory-v2'))
+    else await unshareNativeMemory(join(home, 'memory-v2'))
   }
   return {
     root,
@@ -137,7 +140,7 @@ async function state(stateDirectory: string, project?: string, readOnly?: { brid
       XAI_API_KEY: '',
       GROK_CODE_XAI_API_KEY: '',
       TMPDIR: tmp,
-      GROK_MEMORY: '0',
+      GROK_MEMORY: memory ? '1' : '0',
       GROK_SUBAGENTS: '0',
       GROK_WORKFLOWS: '0',
       GROK_WEB_FETCH: GROK_NATIVE_WEB ? '1' : '0',
@@ -156,9 +159,10 @@ export async function prepareGrok(
   if (!EFFORTS.includes(input.preference.effort)) throw new Error('Invalid Grok effort')
   if (!['plan', 'accept-edits'].includes(input.mode)) throw new Error('Invalid Grok mode')
   if (!input.prompt.trim()) throw new Error('Prompt must not be empty')
+  const memory = await grokNativeMemory()
   const prepared = await state(input.stateDirectory, input.project, input.mode === 'plan'
     ? { bridge: !!nativeHarnessReadyConnection({ cli: 'grok', harnessTools: input.harnessTools }, {}) }
-    : undefined, input.mode === 'plan' || input.access === 'danger-full-access' ? undefined : input.access === 'workspace-write' ? 'auto' : 'ask')
+    : undefined, input.mode === 'plan' || input.access === 'danger-full-access' ? undefined : input.access === 'workspace-write' ? 'auto' : 'ask', memory)
   return {
     argv: [
       input.executable,
@@ -171,7 +175,8 @@ export async function prepareGrok(
       'streaming-json',
       '--permission-mode',
       input.mode !== 'plan' && input.access === 'danger-full-access' ? 'bypassPermissions' : 'default',
-      '--no-memory',
+      ...(memory ? [] : ['--no-memory']),
+      // CLI-internal sub-agents stay off: the task tree is main agent → Worker.
       '--no-subagents',
       ...(GROK_NATIVE_WEB ? [] : ['--disable-web-search']),
       ...(input.mode === 'plan' ? ['--tools', GROK_PLAN_TOOLS.join(',')] : []),

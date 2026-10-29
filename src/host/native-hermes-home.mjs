@@ -5,6 +5,7 @@ import { isAbsolute, join, parse as parsePath, resolve, sep, toNamespacedPath } 
 import { parseEnv } from 'node:util'
 import { parse, stringify } from 'yaml'
 import { object } from './native-http.mjs'
+import { hermesNativeMemory, shareNativeMemory, unshareNativeMemory } from './cli-native-capabilities.mjs'
 
 const pathKey = (path) => (process.platform === 'win32' ? toNamespacedPath(path).toLowerCase() : path)
 async function directoryPins(path, optional = false) {
@@ -123,7 +124,7 @@ const suppressed = (auth, provider, source) => {
   return Array.isArray(entries) ? entries.includes(source) : object(entries) && Object.hasOwn(entries, source)
 }
 
-/** Selected own account snapshot only; never copy cron, skills, messaging or old CLI sessions. */
+/** Selected own account snapshot only; never copy cron, skills, messaging or old CLI sessions. Memory is linked, not copied. */
 export async function prepareHermesHttpHome(config, provider, model, key, port) {
   if (config.mode === 'plan' || config.access === 'read-only') throw new Error('Hermes 当前原生通路不支持询问或只读派遣')
   const environment = config.env ?? process.env
@@ -257,6 +258,9 @@ export async function prepareHermesHttpHome(config, provider, model, key, port) 
       ].map((name) => [name, { enabled: false }]),
     )
     platforms.api_server = api
+    // The account's own built-in memory: same switches, shared directory.
+    const memory = hermesNativeMemory(nativeConfig),
+      remembers = memory.memory_enabled || memory.user_profile_enabled
     const safe = {
       auth: { adopt_external_logins: false },
       approvals: { mode: config.access === 'danger-full-access' ? 'off' : 'smart' },
@@ -267,7 +271,7 @@ export async function prepareHermesHttpHome(config, provider, model, key, port) 
       fallback_providers: [],
       fallback_model: null,
       mcp_servers: {},
-      platform_toolsets: { api_server: ['terminal', 'file'] },
+      platform_toolsets: { api_server: ['terminal', 'file', ...(remembers ? ['memory'] : [])] },
       terminal: { backend: 'local', cwd: config.project },
       gateway: {
         multiplex_profiles: false,
@@ -276,10 +280,12 @@ export async function prepareHermesHttpHome(config, provider, model, key, port) 
       },
       platforms,
       agent: { max_iterations: nativeConfig.agent?.max_iterations ?? 90 },
-      memory: { memory_enabled: false, user_profile_enabled: false },
+      memory,
       plugins: { enabled: [] },
     }
     await privateWrite(join(home, 'config.yaml'), stringify(safe))
+    if (remembers) await shareNativeMemory(join(home, 'memories'), join(source, 'memories'))
+    else await unshareNativeMemory(join(home, 'memories'))
     await privateWrite(
       join(home, 'auth.json'),
       JSON.stringify({

@@ -20,10 +20,10 @@
 
 **保留（账号隔离类）：** 外部插件、项目级/全局 provider 配置导入、导入其他 CLI 配置与凭据的入口（OpenCode `OPENCODE_DISABLE_CLAUDE_CODE`、OMP `disabledProviders`、Hermes `plugins`、Pi/OMP `--no-extensions`）。LSP 保持关闭。
 
-**待用户决定，本次不实施：**
+**用户决定（2026-10-29）：**
 
-- CLI 内部子 Agent（Grok subagents、ZCode Agent/Task/工作流）：两层任务树规则本意针对 DSH 层面的递归派遣；Claude Task 与 Codex 多 Agent 当前未禁用，标准不一致。
-- CLI 记忆（Grok、Hermes、OMP）：可能跨会话带入其他任务内容。
+- CLI 内部子 Agent（Grok subagents、ZCode Agent/Task/工作流，及随之关闭的 ZCode Skill）：不启用，按两层任务树保留关闭。Claude Task 与 Codex 多 Agent 不在本次调整。
+- CLI 记忆：跟随用户原生 CLI 的设置——用户开过就启用，没设置过就取该 CLI 默认值（Grok、ZCode 默认关，Hermes 默认开）。启用时 Worker 与用户直接使用该 CLI 共用同一份原生记忆，不复制。ZCode 记忆（原清单漏列）一并处理。OMP 记忆保持关闭：它按 Worker 私有、含账号的会话库整理并整份重写记忆文件，共用会互相覆盖。
 
 ## Capabilities
 
@@ -37,6 +37,6 @@
 
 ## Impact
 
-- Host：`grok-adapter.ts`、`opencode-adapter.ts`（及 MiMo 对应配置）、`pi-omp-bridge.mjs` 的启动参数；与 `relay-native-approvals-to-host`（读取 DSH 预设）、`scope-harness-bridge-tools`（能力表）联动。
+- Host：`grok-adapter.ts`、`opencode-adapter.ts`（及 MiMo 对应配置）、`pi-omp-bridge.mjs` 的启动参数；与 `relay-native-approvals-to-host`（读取 DSH 预设）、`scope-harness-bridge-tools`（能力表）联动。记忆：`cli-native-capabilities.mjs`（原生开关读取与记忆目录链接）、`grok-adapter.ts`、`native-hermes-home.mjs`、`zcode-adapter.ts`、`native-zcode.mjs`。
 - 测试：各 adapter 参数测试。
 - 文档：README 支持范围中各 CLI 的已关闭功能及理由。

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdtemp, mkdir, readdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createNativeHarnessTools, type NativeHarnessToolsOptions } from '../src/host/native-harness-tools.ts'
@@ -7,6 +7,7 @@ import { runNativeGrok } from '../src/host/native-grok.mjs'
 import { buildNativeHarnessInjection, nativeHarnessGuidance, nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 import {
   codexDeveloperInstructionsConfigured, HARNESS_FALLBACK_PREFIX, nativeCliCapabilities, nativeCliMcpServers, nativeCoverage, nativeFirstGuidance, nativeSkillPaths, piOmpNativeTools,
+  grokNativeMemory, grokTomlMemory, hermesNativeMemory, shareNativeMemory, unshareNativeMemory,
 } from '../src/host/cli-native-capabilities.mjs'
 
 // Catalog names follow the exported dsh-base 0.2.1-rc.2 child catalog; every
@@ -258,5 +259,171 @@ describe('native MCP server names (synthetic config)', () => {
     await writeFile(join(home, '.gemini', 'config', 'mcp_config.json'), JSON.stringify({ mcpServers: { agyuser: { env: { TOKEN: 'secret' } } } }))
     expect(await nativeCliMcpServers('antigravity', project, { HOME: home })).toEqual(['agyuser'])
     for (const cli of ['opencode', 'mimo', 'pi', 'qoder']) expect(await nativeCliMcpServers(cli, project, { HOME: home })).toEqual([])
+  })
+})
+
+describe('native memory settings and shared directories (synthetic fixtures)', () => {
+  async function memoryRoot() {
+    const root = await mkdtemp(join(tmpdir(), 'cwn-native-memory-SYNTHETIC-'))
+    directories.push(root)
+    return root
+  }
+
+  it.each([
+    ['memory section', '[memory]\nenabled = true\n', true],
+    ['memory_v2 section', '[memory_v2]\nenabled = false\n', false],
+    ['memory_v2 false takes precedence', '[memory_v2]\nenabled = false\n[memory]\nenabled = true\n', false],
+    ['memory_v2 true takes precedence', '[memory]\nenabled = false\n[memory_v2]\nenabled = true\n', true],
+    ['top-level dotted memory key', 'memory.enabled = true\n', true],
+    ['top-level dotted memory_v2 precedence', 'memory_v2.enabled = false\nmemory.enabled = true\n', false],
+    ['comments and whitespace', '# synthetic config\r\n[ memory ] # synthetic table\r\n  enabled = true # synthetic setting\r\n', true],
+    ['unrelated table', '[other]\nenabled = true\n', undefined],
+    ['nested memory index table', '[memory.index]\nenabled = true\n', undefined],
+    ['nested memory_v2 index table', '[memory_v2.index]\nenabled = true\n', undefined],
+    ['array memory table', '[[memory]]\nenabled = true\n', undefined],
+    ['array memory_v2 table', '[[memory_v2]]\nenabled = true\n', undefined],
+    ['array and unrelated tables keep earlier setting', '[memory]\nenabled = false\n[[other]]\nenabled = true\n[other]\nenabled = true\n', false],
+    ['quoted boolean', '[memory]\nenabled = "true"\n', undefined],
+    ['single-quoted boolean', "memory_v2.enabled = 'false'\n", undefined],
+    ['inline table', 'memory = { enabled = true }\n', undefined],
+    ['inline enabled value', '[memory]\nenabled = { value = true }\n', undefined],
+    ['unreadable memory_v2 falls back', '[memory]\nenabled = true\n[memory_v2]\nenabled = "false"\n', true],
+    ['unset', '', undefined],
+  ] as const)('reads synthetic Grok TOML: %s', (_name, text, expected) => {
+    expect(grokTomlMemory(text)).toBe(expected)
+  })
+
+  it.each([
+    ['default off', undefined, undefined, undefined, false],
+    ['config enables memory', '[memory]\nenabled = true\n', undefined, undefined, true],
+    ['environment disables config', '[memory]\nenabled = true\n', '0', undefined, false],
+    ['requirements override environment', '[memory]\nenabled = true\n', '1', '[memory]\nenabled = false\n', false],
+    ['garbage environment falls through', '[memory]\nenabled = true\n', 'synthetic-garbage', undefined, true],
+  ] as const)('resolves synthetic Grok native memory: %s', async (_name, config, switchValue, requirements, expected) => {
+    const home = await memoryRoot()
+    await mkdir(join(home, '.grok'))
+    if (config !== undefined) await writeFile(join(home, '.grok', 'config.toml'), config)
+    if (requirements !== undefined) await writeFile(join(home, '.grok', 'requirements.toml'), requirements)
+    expect(await grokNativeMemory({ home, env: { GROK_MEMORY: switchValue } })).toBe(expected)
+  })
+
+  it.each([
+    ['1', true], ['TRUE', true], [' yes ', true], ['on', true],
+    ['0', false], ['FALSE', false], [' no ', false], ['off', false],
+  ] as const)('reads synthetic GROK_MEMORY switch %s', async (value, expected) => {
+    const home = await memoryRoot()
+    expect(await grokNativeMemory({ home, env: { GROK_MEMORY: value } })).toBe(expected)
+  })
+
+  it('treats a synthetic requirements read error as off instead of falling through', async () => {
+    const home = await memoryRoot()
+    await mkdir(join(home, '.grok', 'requirements.toml'), { recursive: true })
+    await writeFile(join(home, '.grok', 'config.toml'), '[memory]\nenabled = true\n')
+    expect(await grokNativeMemory({ home, env: { GROK_MEMORY: '1' } })).toBe(false)
+  })
+
+  it.each([undefined, null, {}, { memory: null }, { memory: [] }, { memory: { memory_enabled: null, user_profile_enabled: null } }])(
+    'defaults both synthetic Hermes memory flags on for %j', config => {
+      expect(hermesNativeMemory(config)).toEqual({ memory_enabled: true, user_profile_enabled: true })
+    },
+  )
+
+  it('disables synthetic Hermes memory for off/no strings and drops an external provider', () => {
+    expect(hermesNativeMemory({ memory: { memory_enabled: ' off ', user_profile_enabled: 'NO', provider: 'honcho' } }))
+      .toEqual({ memory_enabled: false, user_profile_enabled: false })
+  })
+
+  it.each(['1', 'true', 'YES', ' on '])('enables synthetic Hermes memory for truthy string %s', value => {
+    expect(hermesNativeMemory({ memory: { memory_enabled: value, user_profile_enabled: value } }))
+      .toEqual({ memory_enabled: true, user_profile_enabled: true })
+  })
+
+  it('uses Boolean coercion for synthetic Hermes non-string flags', () => {
+    expect(hermesNativeMemory({ memory: { memory_enabled: 0, user_profile_enabled: 1 } }))
+      .toEqual({ memory_enabled: false, user_profile_enabled: true })
+  })
+
+  it('copies only finite numeric synthetic Hermes memory limits', () => {
+    expect(hermesNativeMemory({ memory: { memory_char_limit: 1200, user_char_limit: 600, nudge_interval: 0,
+      provider: 'honcho', synthetic_extra: true } }))
+      .toEqual({ memory_enabled: true, user_profile_enabled: true, memory_char_limit: 1200, user_char_limit: 600, nudge_interval: 0 })
+    expect(hermesNativeMemory({ memory: { memory_char_limit: '1200', user_char_limit: Infinity, nudge_interval: NaN } }))
+      .toEqual({ memory_enabled: true, user_profile_enabled: true })
+  })
+
+  it('creates a fresh synthetic native memory link and is idempotent', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'worker', 'memories'), nativePath = join(root, 'native')
+    await shareNativeMemory(privatePath, nativePath)
+    const first = await lstat(privatePath)
+    if (process.platform !== 'win32') {
+      expect(first.isSymbolicLink()).toBe(true)
+      expect((await lstat(nativePath)).mode & 0o777).toBe(0o700)
+    }
+    expect(await realpath(privatePath)).toBe(await realpath(nativePath))
+    await writeFile(join(nativePath, 'synthetic-memory.txt'), 'synthetic shared memory')
+    await shareNativeMemory(privatePath, nativePath)
+    if (process.platform !== 'win32') expect((await lstat(privatePath)).ino).toBe(first.ino)
+    expect(await realpath(privatePath)).toBe(await realpath(nativePath))
+    expect(await readFile(join(privatePath, 'synthetic-memory.txt'), 'utf8')).toBe('synthetic shared memory')
+    expect(await readdir(join(root, 'worker'))).toEqual(['memories'])
+  })
+
+  it('replaces an empty synthetic directory tree with a native memory link', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories'), nativePath = join(root, 'native')
+    await mkdir(join(privatePath, 'empty', 'nested'), { recursive: true })
+    await shareNativeMemory(privatePath, nativePath)
+    if (process.platform !== 'win32') expect((await lstat(privatePath)).isSymbolicLink()).toBe(true)
+    expect(await realpath(privatePath)).toBe(await realpath(nativePath))
+    expect(await readdir(nativePath)).toEqual([])
+    expect((await readdir(root)).filter(name => name.startsWith('memories.private-'))).toEqual([])
+  })
+
+  it('keeps a non-empty synthetic private directory aside with its nested file intact', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories'), nativePath = join(root, 'native')
+    await mkdir(join(privatePath, 'nested'), { recursive: true })
+    await writeFile(join(privatePath, 'nested', 'synthetic-memory.txt'), 'synthetic private memory')
+    await shareNativeMemory(privatePath, nativePath)
+    const backups = (await readdir(root)).filter(name => /^memories\.private-\d+$/.test(name))
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(root, backups[0]!, 'nested', 'synthetic-memory.txt'), 'utf8')).toBe('synthetic private memory')
+    expect(await realpath(privatePath)).toBe(await realpath(nativePath))
+    expect(await readdir(nativePath)).toEqual([])
+  })
+
+  it('repoints a stale synthetic memory link without changing its previous target', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories'), nativePath = join(root, 'native'), oldPath = join(root, 'old')
+    await mkdir(oldPath)
+    await writeFile(join(oldPath, 'synthetic-memory.txt'), 'synthetic old memory')
+    await symlink(oldPath, privatePath, process.platform === 'win32' ? 'junction' : 'dir')
+    await shareNativeMemory(privatePath, nativePath)
+    expect(await realpath(privatePath)).toBe(await realpath(nativePath))
+    expect(await readFile(join(oldPath, 'synthetic-memory.txt'), 'utf8')).toBe('synthetic old memory')
+  })
+
+  it('rejects a synthetic regular file at the private memory path without changing it', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories')
+    await writeFile(privatePath, 'synthetic file')
+    await expect(shareNativeMemory(privatePath, join(root, 'native'))).rejects.toThrow('Worker 私有记忆路径不是目录')
+    expect(await readFile(privatePath, 'utf8')).toBe('synthetic file')
+  })
+
+  it('unshares only the synthetic link and preserves native memory files', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories'), nativePath = join(root, 'native')
+    await shareNativeMemory(privatePath, nativePath)
+    await writeFile(join(nativePath, 'synthetic-memory.txt'), 'synthetic shared memory')
+    await unshareNativeMemory(privatePath)
+    await expect(lstat(privatePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect((await lstat(nativePath)).isDirectory()).toBe(true)
+    expect(await readFile(join(nativePath, 'synthetic-memory.txt'), 'utf8')).toBe('synthetic shared memory')
+    await expect(unshareNativeMemory(privatePath)).resolves.toBeUndefined()
+  })
+
+  it('leaves a real synthetic private memory directory and its files when unsharing', async () => {
+    const root = await memoryRoot(), privatePath = join(root, 'memories')
+    await mkdir(privatePath)
+    await writeFile(join(privatePath, 'synthetic-memory.txt'), 'synthetic private memory')
+    await unshareNativeMemory(privatePath)
+    expect((await lstat(privatePath)).isDirectory()).toBe(true)
+    expect(await readFile(join(privatePath, 'synthetic-memory.txt'), 'utf8')).toBe('synthetic private memory')
   })
 })

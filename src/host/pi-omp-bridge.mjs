@@ -357,6 +357,8 @@ try {
         ],
         mcp: { enableProjectConfig: false },
         retry: { modelFallback: false },
+        // OMP rebuilds its memory files from this private agent.db (which holds
+        // the account): a shared directory would be overwritten by each store.
         memory: { backend: 'off' },
         tools: ompPermissions.tools,
       }),

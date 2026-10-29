@@ -39,3 +39,33 @@ Pi Worker 的原生 bash SHALL 仅在父会话为完全权限时启用；其他�
 #### Scenario: 工作区内修改下的 OMP
 - **WHEN** 父会话为工作区内修改，OMP 写任务需要执行命令
 - **THEN** OMP 原生工具集包含 bash，每次原生确认经 DSH 审批后回复 OMP，拒绝时 OMP 不执行该命令
+
+### Requirement: CLI 内部子 Agent 保持关闭
+Grok 的子 Agent 与 ZCode 的 Agent、Task、SendMessage、工作流工具 SHALL 保持关闭，文档 MUST 记为两层任务树类别；ZCode 的 Skill 工具 SHALL 随之保持关闭。
+
+#### Scenario: 派遣 Grok 或 ZCode 任务
+- **WHEN** 插件启动 Grok 或 ZCode Worker
+- **THEN** Grok 带 `--no-subagents` 启动，ZCode 的禁用工具列表含 Agent、Task、SendMessage、Skill 与工作流工具
+
+### Requirement: CLI 记忆跟随用户原生设置
+Grok、Hermes 与 ZCode Worker 的记忆 SHALL 与用户原生 CLI 当前生效的设置一致：用户设置过的按其设置，未设置时取该 CLI 的默认值（Grok 关、Hermes 开、ZCode 桌面端关）。启用时 Worker MUST 与用户直接使用该 CLI 共用同一份原生记忆目录，不得复制；关闭时 MUST NOT 读写原生记忆。插件判断开关时 MUST NOT 读取凭据文件。OMP 记忆 SHALL 保持关闭，文档 MUST 记录理由。
+
+#### Scenario: 用户开启了 Grok 记忆
+- **WHEN** 用户的 `~/.grok/config.toml` 含 `[memory] enabled = true`，插件派遣 Grok 任务
+- **THEN** Grok 不带 `--no-memory` 启动，Worker 的记忆目录指向 `~/.grok/memory-v2`
+
+#### Scenario: 用户从未设置 Grok 记忆
+- **WHEN** 用户的 Grok 配置与环境都没有记忆设置
+- **THEN** Grok 带 `--no-memory` 启动，Worker 不链接原生记忆
+
+#### Scenario: Hermes 未设置记忆段
+- **WHEN** 所选 Hermes 账号的 `config.yaml` 没有 `memory` 段
+- **THEN** Worker 按 Hermes 默认开启内置记忆与用户档案，工具集含 `memory`，记忆目录指向该账号的 `memories`
+
+#### Scenario: ZCode 桌面端关闭记忆
+- **WHEN** ZCode 桌面端设置未开启记忆
+- **THEN** 桥对 `session/requestRuntimePreferences` 回复 `memoryEnabled: false`，Worker 不链接原生记忆
+
+#### Scenario: OMP 记忆
+- **WHEN** 插件启动 OMP Worker
+- **THEN** OMP 配置为 `memory.backend: off`，即使用户原生 OMP 开启了本地记忆

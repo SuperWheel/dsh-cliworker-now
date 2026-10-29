@@ -1281,3 +1281,16 @@ OpenSpec 变更 `worker-permission-levels`（用户 2026-10-28/29 决定）。�
   - 实际档位 = `level ?? 跟随值`（仅可查看 → ask、工作区内修改 → auto、完全权限 → full）；Worker 有档位时跳过仅可查看下的派遣拒绝。
   - `workerApproval`：Worker 为 full 时，主对话也为 full 则沿用其审批策略，否则为 `never`（残余请求与子会话 DSH 备选工具自动放行）；非 full 为 `ask`。
   - Pi：新增 `src/host/pi-permission-gate.mjs`，询问与自动批准编辑以 `--extension` 加载（`--no-extensions` 下显式路径仍加载）。扩展用 Pi 1.0.4 文档化的 `tool_call` 返回 `{ block, reason }`，不在放行清单（询问：`read/grep/find/ls`；自动批准编辑另加 `write/edit`；DSH 备选工具自行审批）的调用经 RPC `confirm` 交桥转 Host 审批，未批准或出错即阻止。确认只带工具名、命令、路径、编辑处数与字节数，标题带每轮 nonce。扩展经 fd 3 报告就绪，桥在就绪前不发提示，5 秒未就绪报错。安装版缺少接口时询问档以只读工具运行、自动批准编辑不开 bash 并在时间线说明。三档都开放原生 `write/edit/bash`，由扩展拦截；完全权限不加载扩展。Pi 因此改走 `BridgeProtocol` 审批转发。
+
+## 2026-10-29 CLI 内部子 Agent 与记忆（未发布）
+
+OpenSpec 变更 `reenable-native-cli-features` 任务 5.1/5.2（用户 2026-10-29 决定：「内部子agent不启用，然后记忆要启用」，随后补充「记忆要看原生cli默认有没有开启，如果用户在之前的cli里开启了记忆那就启用记忆，如果用户之前没管理过，那就不开启」；记忆位置选「与直接使用共用」，OMP 选「保持关闭并记理由」，ZCode 选「一起核实并启用」）。
+
+- 子 Agent：Grok `--no-subagents`/`[subagents] enabled = false`/`GROK_SUBAGENTS=0`、ZCode Agent/Task/SendMessage/工作流保持关闭（两层任务树）。ZCode `Skill` 按原设计随子 Agent 决定一起保留关闭。Claude Task、Codex 多 Agent 不在本次调整。
+- 判定规则：Worker 的记忆开关等于用户原生 CLI 当前生效的设置；用户设置优先，未设置时取该 CLI 的默认值。插件只读开关字段，不读凭据文件。
+  - Grok（1.0.62 内置文档）：`~/.grok/requirements.toml` → `GROK_MEMORY`（Host 进程环境）→ `~/.grok/config.toml`，各文件中 `[memory_v2] enabled` 优先于 `[memory] enabled`；默认关闭。远端托管设置不可见，按未设置。`grokTomlMemory` 只认表头与点分键下的布尔值，其余写法按未设置（即关闭）。
+  - Hermes：所选账号 `HERMES_HOME/config.yaml` 的 `memory.memory_enabled`、`memory.user_profile_enabled`，缺省为开（hermes-agent `get_builtin_memory_store_flags`），并带上 `memory_char_limit`、`user_char_limit`、`nudge_interval`。外部记忆服务需要插件，仍关闭。
+  - ZCode：桌面端 `~/.zcode/v2/setting.json` 的 `memoryEnabled`（schema 默认 false）。ZCode CLI 自身默认 `features.memory = true`，但桌面客户端通过 `session/requestRuntimePreferences` 回复用户开关；Worker 桥同样回复，值由 adapter 经私有环境变量 `CLIWORKER_ZCODE_NATIVE_MEMORY` 交给桥，桥在启动 CLI 前删除。分支与元数据操作不发模型任务，仍回复关闭。
+- 共用方式：Worker 各自的私有目录（`native/<Worker>`）不复制记忆，而是把私有记忆路径换成指向原生目录的链接（Windows 用 junction）：Grok `<GROK_HOME>/memory-v2` → `~/.grok/memory-v2`；Hermes `hermes-http-home/memories` → `<账号 HERMES_HOME>/memories`，并给 `api_server` 工具集加 `memory`；ZCode `<ZCODE_STORAGE_DIR>/cli/memories` → `<原生存储目录>/cli/memories`（`ZCODE_STORAGE_DIR` 或 `~/.zcode`）。链接先建临时名再改名发布；原有空目录直接替换，含文件的目录改名保留；关闭时只删除链接。旧通路 Hermes 直接使用账号目录，不受影响；旧通路 ZCode 只建链接，不传开关。
+- 后台整理：Grok 每轮后后台捕获并定期整理（Dream），所用模型文档未写明；Hermes 按 `nudge_interval` 用同一模型复盘；ZCode 用本轮模型提取。均为 CLI 原生行为，可能额外消耗额度。
+- OMP：保持 `memory.backend: off`。本地记忆按 `agent.db`（Worker 私有，含账号）里的会话整理，第二阶段把记忆目录整份重写为本库结果，与原生或其他 Worker 共用会互相覆盖；只在单个 Worker 内打开又基本不会触发（只整理闲置足够久的旧会话）。整理模型取 `smol` 角色。

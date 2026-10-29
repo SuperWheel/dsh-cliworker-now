@@ -12,6 +12,17 @@ export interface NativeCliCapabilities {
 export const CAPABILITY_CLASSES: readonly CapabilityClass[]
 export function piOmpNativeTools(cli: string, mode: string, access?: string): string[]
 export function nativeSkillPaths(cli: string, options?: { env?: Record<string, string | undefined>; project?: string; home?: string }): string[]
+export function shareNativeMemory(privatePath: string, nativePath: string): Promise<void>
+export function unshareNativeMemory(privatePath: string): Promise<void>
+export function grokTomlMemory(text: string): boolean | undefined
+export function grokNativeMemory(options?: { env?: Record<string, string | undefined>; home?: string }): Promise<boolean>
+export function hermesNativeMemory(config: unknown): {
+  memory_enabled: boolean
+  user_profile_enabled: boolean
+  memory_char_limit?: number
+  user_char_limit?: number
+  nudge_interval?: number
+}
 export const GROK_NATIVE_WEB: boolean
 export const GROK_PLAN_TOOLS: readonly string[]
 export function nativeCliCapabilities(input: { cli: string; mode: string; access?: string; mcpServers?: readonly string[] }): NativeCliCapabilities

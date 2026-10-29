@@ -661,7 +661,9 @@ describe('Hermes private gateway Runs API (simulated local native process)', () 
         .filter(([, value]: any) => value.enabled)
         .map(([name]) => name),
     ).toEqual(['api_server'])
-    expect(saved.platform_toolsets.api_server).toEqual(['terminal', 'file'])
+    // The synthetic source has no memory section, so Hermes' own default (on) applies.
+    expect(saved.platform_toolsets.api_server).toEqual(['terminal', 'file', 'memory'])
+    expect(saved.memory).toEqual({ memory_enabled: true, user_profile_enabled: true })
     expect(saved.terminal.cwd).toBe(root)
     expect(requests.find((row: any) => row.path === '/v1/runs' && row.method === 'POST').body).toMatchObject({
       provider: 'openrouter',
