@@ -9,7 +9,7 @@
 - [x] 20.3 完成关联回归、类型检查及隔离 preview，覆盖 Mac/Windows 路径、拒绝、撤销和清理。
   - 2026-10-29 核对：2026-10-18 已完成（`doc/antigravity-harness-bridge.md` 第 3 节）：关联离线回归 macOS 107 项及宿主权限链 4 项、Windows 111 项，打包入口修正后专属 7 项复验，两端类型检查与隔离构建通过。
 - [ ] 20.4 沿 Windows 已保存 AGY 选型完成最小 Desktop 工具/Skill 真实验收，核对事件与数据保留；受限项保持未验证。
-  - 2026-10-29：已列入本日 Windows 全量验收（子 agent 执行），结果回填本任务。
+  - 2026-10-29 Windows：AGY 账号只读状态为 authenticated，但模型目录在磁盘清理前后各超时一次，未能选型，Desktop 工具/Skill 验收未执行。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 - [ ] 20.5 同步能力矩阵、设计和实际验收记录，严格规格校验，保持 v0.8.1 且不推送发布。
   - 2026-10-29 核对：能力矩阵（`doc/cli-harness-capabilities.md` 写明「真实工具验收未完成」）与设计文档已同步，验收记录待 20.4。「保持 v0.8.1」已过时，当前为 v0.8.4 之后的 `feat/general-settings`。
 
@@ -84,6 +84,7 @@
 ## 7. 可见的后续验收边界
 
 - [ ] 7.1 Windows 实机与全部 CLI/订阅的完整原生交互验收；本轮仅已执行 macOS Desktop 和隔离浏览器，不补记通过。
+  - 2026-10-29 Windows（0.8.4 冻结包，安装包 Electron SDK 与独立 WorkerRuntime，不经 Desktop 网关）：Claude `deepseek-flash`、ZCode GLM-5.3-Flash·low、Pi glm-5.3-flash·low、Qoder CN fast、Qoder fast 的派遣、续聊、停止通过，文件与进程范围均核对。OpenCode 首次进程清理未确认，磁盘清理后重试派遣通过。OMP 派遣与续聊通过，停止场景两次未取得会话。Antigravity 目录超时、Codex/MiMo 目录读取错误、Kimi `KIMI_OAUTH_UNAVAILABLE`、Grok `GrokModelsError`，均未真实调用；Hermes 为避免 Nous 续期未调用。MiMo 目录查询期间出现 3 个可见终端窗口。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git），`summary.md`。
 - [ ] 7.2 全部 CLI、外部 MCP 和各 CLI 工具桥全链路验收。第 11 节已新增五个 CLI 隔离真实单轮通过、两个阻塞、四个未启动；这些结果及最后定向修复的离线重放不等于全部协议、续聊、停止和工具桥全链路通过。
 - 未接通附件、分支以及特定 CLI 工具入口仍保留具体禁用原因。此 change 保持活动状态，不以格式校验或归档隐藏上述缺口。
 

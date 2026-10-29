@@ -13,4 +13,5 @@
 ## 3. 真实验收
 
 - [ ] 3.1 Windows 实机（agy 1.4.x 凭据只有 `id_token_email`）执行帮助脚本，输出 `authenticated` 与邮箱，不含令牌；CLI Worker 连接 Antigravity 成功。macOS 无 PowerShell 与凭据管理器，未执行；需用户提供 Windows 远程环境并授权。
+  - 2026-10-29 Windows：只读帮助脚本输出 authenticated、emailPresent=true，不含令牌；未读取凭据结构，`id_token_email` 单字段条件未核实。Antigravity 模型目录在磁盘清理前后各超时一次，CLI Worker 连接未验证。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 - [ ] 3.2 macOS 本机 agy 1.4.7 的凭据文件目前仍含 `id_token`（10-23 写入），未观察到仅邮箱格式；POSIX 回退只有模拟测试覆盖。

@@ -22,7 +22,8 @@
 ## 3. 未执行与已知限制
 
 - [ ] 3.1 DSH Desktop 实机查看英文界面（窄栏换行、明暗主题、Windows）。
-  - 2026-10-29 核对：Mac Desktop 浅色默认窗口下切换 English 已查（2026-10-25）；窄栏、暗色未查，Windows 已列入本日 Windows 全量验收。
+  - 2026-10-29 核对：Mac Desktop 浅色默认窗口下切换 English 已查（2026-10-25）；Mac 窄栏、暗色未查。
+  - 2026-10-29 Windows Desktop 实机（0.8.4 冻结包，UI Automation，窗口观察覆盖）：插件 English 窄宽布局与浅色通用页布局通过（`ui-english-narrow.json`、`ui-layout-light.json`）。Host 应用菜单没有主题/语言入口，暗色主题未查；Mac Desktop 未查。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 - [ ] 3.2 真实 DSH 切换语言后 `ctx.locale` 的实际订阅行为（本次仅模拟 locale 服务）。
 - [ ] 3.3 未收录的 Host/CLI 错误、Host 生成的标题与摘要、内置角色预设内容、默认名称 `智能体-xxx`、发给 CLI 的附件说明保持中文。
   - 范围说明，不是待办：这些文字保持中文属已知限制。

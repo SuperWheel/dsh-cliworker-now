@@ -35,7 +35,7 @@
   - 未执行：本次没有真实模型调用授权；本机没有 `~/.opencode`，未用真实配置复现。
 - [ ] 4.2 Windows：OpenCode 桌面版启动路径与 MiMo 直连登录（真实主目录）下的同样检查。
   - 未执行。
-  - 2026-10-29：已列入本日 Windows 全量验收。
+  - 2026-10-29 Windows：OpenCode 真实派遣（`zai-coding-plan/glm-5.3-flash`·low，独立 WorkerRuntime）首次进程清理未确认，磁盘清理后重试通过（文件与清理均确认）；`~/.opencode` 前后均不存在；调用前后的账号来源对比未取得。MiMo 目录读取两次失败，直连登录检查未执行。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 
 ## 5. 文档
 

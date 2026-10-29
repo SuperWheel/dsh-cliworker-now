@@ -42,7 +42,8 @@
 - [ ] 4.2 DSH Desktop 实机查看开关与任务卡（明暗主题、窄屏）。
   - 2026-10-25 Mac 浅色默认窗口：开关、任务卡状态、合并/丢弃弹窗通过；暗色、窄屏未查。之后按用户要求移除任务卡状态与弹窗。
 - [ ] 4.3 隔离被绕过：CLI 按提示词写入原项目绝对路径（ZCode Edit 实测成功），主 Agent 未被告知改动待合并而要求在真实目录重做。已加完成通知提示（3b.3）；CLI 原生权限仍允许绝对路径写出副本，未做强制隔离，需复验提示是否足够。
-- [ ] 4.4 Windows 实机（仅以平台条件单元测试覆盖路径分隔符；复制回退到普通复制未在 Windows 验证）。
+- [x] 4.4 Windows 实机（仅以平台条件单元测试覆盖路径分隔符；复制回退到普通复制未在 Windows 验证）。
+  - 2026-10-29 Windows 实机（真实 Pi `zai-coding-cn/glm-5.3-flash`·low，经安装包 Electron SDK 与独立 WorkerRuntime，非 Desktop 网关）：非 Git 目录中两个同目录写任务，一个在主目录写 a.txt，一个在隔离副本写 b.txt。基线复制、Windows 路径分隔符、丢弃后副本消失且主目录不出现 b.txt 均通过（`real-extra.json` 的 parallel）。Windows 上 `COPYFILE_FICLONE` 由 libuv 直接走 CopyFileW 普通复制，即本次覆盖的路径。Windows 上的任务卡界面未查（见 4.2）。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 - [ ] 4.5 Linux reflink / 非 APFS 文件系统上的复制性能与回退。
 
 ## Workflow follow-up

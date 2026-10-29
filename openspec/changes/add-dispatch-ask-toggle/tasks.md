@@ -18,8 +18,8 @@
 
 - [ ] 3.1 真实 CLI 派遣与 DSH Desktop 实际界面检查（需用户授权更新 Desktop 链接）。
   - 2026-10-29 核对：Windows 2026-10-27 只读核对通用页四个选项齐全（含本开关）；关闭开关后的真实派遣与 Mac Desktop 界面未执行。
-- [ ] 3.2 Windows 平台界面检查。
-  - 2026-10-29：已列入本日 Windows 全量验收。
+- [x] 3.2 Windows 平台界面检查。
+  - 2026-10-29 Windows Desktop 实机（0.8.4 冻结包）：「调用前询问模型」On→Off→On、「同目录写任务并行」Off→On→Off 各往返一次并恢复，窗口观察覆盖；浅色布局、English 窄宽、窄宽滚动后两个开关可见均通过。暗色主题未查（Host 无入口）。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git），`ui-roundtrip-covered.json`。
 
 ## 4. 文档
 
