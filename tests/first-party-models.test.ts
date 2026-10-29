@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   discoverFirstPartySources,
+  discoverMimoModels,
   assertFirstPartyConfiguration,
   firstPartyEnvironment,
   mimoModelSources,
@@ -259,6 +260,69 @@ describe('first-party model scopes', () => {
     await expect(
       discoverFirstPartySources(parseKimiModelSources(kimi(), '/synthetic'), controller.signal, { fetch }),
     ).rejects.toThrow()
+  })
+})
+
+describe('MiMo stale native model cache', () => {
+  // 模拟：Windows 实测 MiMo 0.1.15 的 models.dev 缓存停在 2026-06，只列 v2.5；
+  // 账号目录已只给 v2.6。模型 ID、Key 与网址均为虚构。
+  const record = (id: string) => mimo({ id, providerID: 'own', api: { id, npm: '@ai-sdk/anthropic', url: 'https://mimo.example.test/v1' } })
+  const listing = (ids: string[]) => ids.map((id) => `own/${id}\n${JSON.stringify(record(id), null, 2)}`).join('\n') + '\n'
+  async function staleFixture(refreshed: string[] | Error) {
+    const root = await mkdtemp(join(tmpdir(), 'cwn-mimo-stale-'))
+    roots.push(root)
+    for (const path of ['data', 'config', 'project']) await mkdir(join(root, path))
+    vi.stubEnv('MIMOCODE_HOME', root)
+    vi.stubEnv('HOME', root)
+    await writeFile(join(root, 'data/auth.json'), JSON.stringify({ own: { type: 'api', key: 'synthetic-mimo-key' } }))
+    let fresh = false
+    const capture = vi.fn(async (argv: string[], _env?: Record<string, string>) => {
+      if (argv.includes('--refresh')) {
+        if (refreshed instanceof Error) throw refreshed
+        fresh = true
+        return 'Models cache refreshed\n'
+      }
+      if (argv.includes('paths')) return `data ${join(root, 'data')}\nconfig ${join(root, 'config')}\n`
+      if (argv.includes('config')) return '{}'
+      return listing(fresh && Array.isArray(refreshed) ? refreshed : ['mimo-v2.5', 'mimo-v2.5-pro'])
+    })
+    return { project: join(root, 'project'), capture }
+  }
+  const account = () => fetchModels(['mimo-v2.6-flash', 'mimo-v2.6-pro', 'mimo-v2.5-tts'])
+
+  it('refreshes the cache with MiMo itself once when the account lists none of its models', async () => {
+    const f = await staleFixture(['mimo-v2.6-flash', 'mimo-v2.6-pro'])
+    const fetch = account()
+    const result = await discoverMimoModels('/synthetic/mimo-refresh-a', f.project, f.capture, signal(), { fetch }, 1_000)
+    expect(result.stale).toBe(false)
+    expect(result.models.map((model) => [model.id, model.efforts])).toEqual([
+      ['own/mimo-v2.6-flash', ['default', 'high']],
+      ['own/mimo-v2.6-pro', ['default', 'high']],
+    ])
+    const refresh = f.capture.mock.calls.filter((call) => call[0].includes('--refresh'))
+    expect(refresh).toHaveLength(1)
+    expect(refresh[0]![0].slice(1)).toEqual(['models', '--refresh'])
+    expect(refresh[0]![1]).toEqual(firstPartyEnvironment('mimo'))
+  })
+
+  it('never refreshes when the account catalog is unreadable or already matches', async () => {
+    const denied = await staleFixture(['mimo-v2.6-pro'])
+    const none = await discoverMimoModels('/synthetic/mimo-refresh-b', denied.project, denied.capture, signal(), { fetch: fetchModels([], 401) })
+    expect(none).toEqual({ models: [], stale: false })
+    const matching = await staleFixture(['mimo-v2.6-pro'])
+    const ok = await discoverMimoModels('/synthetic/mimo-refresh-c', matching.project, matching.capture, signal(), { fetch: fetchModels(['mimo-v2.5']) })
+    expect(ok.models.map((model) => model.id)).toEqual(['own/mimo-v2.5'])
+    for (const f of [denied, matching]) expect(f.capture.mock.calls.some((call) => call[0].includes('--refresh'))).toBe(false)
+  })
+
+  it('reports the mismatch when the refresh fails, and waits before trying again', async () => {
+    const f = await staleFixture(new Error('simulated offline'))
+    const first = await discoverMimoModels('/synthetic/mimo-refresh-d', f.project, f.capture, signal(), { fetch: account() }, 10_000)
+    expect(first).toEqual({ models: [], stale: true })
+    await discoverMimoModels('/synthetic/mimo-refresh-d', f.project, f.capture, signal(), { fetch: account() }, 10_000 + 60_000)
+    expect(f.capture.mock.calls.filter((call) => call[0].includes('--refresh'))).toHaveLength(1)
+    await discoverMimoModels('/synthetic/mimo-refresh-d', f.project, f.capture, signal(), { fetch: account() }, 10_000 + 10 * 60_000)
+    expect(f.capture.mock.calls.filter((call) => call[0].includes('--refresh'))).toHaveLength(2)
   })
 })
 

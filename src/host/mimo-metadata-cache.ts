@@ -100,6 +100,10 @@ export class MimoMetadataCache {
     return sources
   }
 
+  clear(): void {
+    this.entries.clear()
+  }
+
   set(key: string | undefined, sources: FirstPartyModelSource[], own: MimoOwnSnapshot): void {
     if (!key || !sources.length) return
     const metadata: Metadata[] = []

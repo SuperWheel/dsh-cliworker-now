@@ -505,9 +505,12 @@ export async function discoverFirstPartySources(
   sources: FirstPartyModelSource[],
   signal: AbortSignal,
   options: Parameters<typeof probeAccountModels>[1] = {},
+  /** Set when an account catalog was read but lists none of the native candidates. */
+  outcome: { unmatched?: boolean } = {},
 ): Promise<ModelChoice[]> {
   const models = new Map<string, ModelChoice>(),
     scopes = new Map<string, Awaited<ReturnType<typeof probeAccountModels>>>()
+  let listed = false
   for (const source of sources) {
     signal.throwIfAborted()
     const route = JSON.stringify([
@@ -569,6 +572,7 @@ export async function discoverFirstPartySources(
     const candidates = source.claudeConfiguredModels
       ? [...source.nativeModels, ...nativeModels]
       : nativeModels
+    if (scope.models.length) listed = true
     for (const { remoteId, choice } of candidates) {
       const available = scope.models.find(
         (model) =>
@@ -578,5 +582,47 @@ export async function discoverFirstPartySources(
       if (available) models.set(choice.id, { ...choice, cost: available.cost })
     }
   }
+  outcome.unmatched = listed && !models.size
   return [...models.values()]
+}
+
+const MIMO_REFRESH_INTERVAL_MS = 10 * 60_000
+const mimoRefreshed = new Map<string, number>()
+
+/**
+ * MiMo lists models from its own models.dev cache, which the plugin never lets it fetch
+ * (`MIMOCODE_DISABLE_MODELS_FETCH`). A cache older than every model the account still
+ * offers matches none of them; then refresh it once with MiMo's own `models --refresh`,
+ * as native MiMo does on a normal start, and read again. `stale` reports a mismatch left.
+ */
+export async function discoverMimoModels(
+  executable: string,
+  project: string,
+  capture: Capture,
+  signal: AbortSignal,
+  options: Parameters<typeof probeAccountModels>[1] = {},
+  now = Date.now(),
+): Promise<{ models: ModelChoice[]; stale: boolean }> {
+  const read = async () => {
+    const outcome: { unmatched?: boolean } = {}
+    const sources = await readFirstPartyModelSources('mimo', executable, project, capture, signal)
+    const models = await discoverFirstPartySources(sources, signal, options, outcome)
+    return { models, stale: !!outcome.unmatched }
+  }
+  const first = await read()
+  if (first.models.length || !first.stale) return first
+  const last = mimoRefreshed.get(executable)
+  if (last !== undefined && now >= last && now - last < MIMO_REFRESH_INTERVAL_MS) return first
+  mimoRefreshed.set(executable, now)
+  try {
+    await capture([executable, 'models', '--refresh'], firstPartyEnvironment('mimo'))
+  } catch {
+    signal.throwIfAborted()
+    return first
+  } finally {
+    // Reused native metadata predates the refreshed catalogue.
+    mimoMetadataCache.clear()
+  }
+  signal.throwIfAborted()
+  return read()
 }

@@ -7,7 +7,7 @@ import { readCodexCustomRouteVersion } from './cli-account-binding.ts'
 import { discoverAgyAccountModels } from './agy-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { discoverQoderModels } from './qoder-accounts.ts'
-import { discoverFirstPartySources, readFirstPartyModelSources } from './first-party-models.ts'
+import { discoverFirstPartySources, discoverMimoModels, readFirstPartyModelSources } from './first-party-models.ts'
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
 import { extendedCatalog, isExtendedCli } from './extended-adapters.ts'
 import { ZCodeProtocol, managedZCodeEntry } from './zcode-adapter.ts'
@@ -195,7 +195,22 @@ export async function catalogFor(
     if (!models.length) throw new Error('Codex 当前账号暂无可确认模型，请刷新')
     return { cli, models, notice: relay ? 'Codex 自定义路由模型；来自 Codex 自带列表，中转是否支持以实际调用为准' : '当前账号可用模型' }
   }
-  if (cli === 'claude' || cli === 'kimi' || cli === 'mimo') {
+  if (cli === 'mimo') {
+    const { models, stale } = await discoverMimoModels(
+      executable,
+      cwd,
+      (argv, env) => capture(backend, config, argv, cwd, signal, env),
+      signal,
+    )
+    if (!models.length)
+      throw new Error(
+        stale
+          ? 'MiMo 本地模型列表与当前账号可用模型不一致，请更新 MiMo 或运行 mimo models --refresh 后刷新'
+          : 'MiMo 当前账号暂无可确认模型，请检查配置',
+      )
+    return { cli, models, notice: '当前账号可用模型' }
+  }
+  if (cli === 'claude' || cli === 'kimi') {
     const claudeRoute = cli === 'claude' ? await readClaudeOwnRoute(cwd, signal) : undefined
     if (claudeRoute?.kind === 'native') {
       const { models, quota } = await discoverClaudeNativeOAuth(
