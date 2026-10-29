@@ -19,6 +19,10 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   omp: ['claude.ai', 'auth.openai.com', 'www.kimi.com', 'github.com'],
   // Device pages of `kimi login --region mainland-cn|global` (Kimi Code 2.3.3, 2026-10-27).
   kimi: ['www.kimi.com', 'www.kimi.ai'],
+  // OpenCode 1.19.0 ChatGPT browser login (Windows ConPTY, 2026-10-29).
+  opencode: ['auth.openai.com'],
+  // Hermes `auth add nous` device page (2026-10-29).
+  hermes: ['portal.nousresearch.com'],
 }
 
 /** An https address on one of `hosts`, without user info; trailing punctuation is not part of it. */

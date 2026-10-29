@@ -58,6 +58,7 @@ function fixture(ready = true) {
     cwd: process.cwd(),
     rows: 24,
     cols: 80,
+    terminalType: 'xterm-256color',
     graceMs: 5,
   }
   // Real Windows file scheduling under parallel workers can exceed 60 ms.
@@ -84,6 +85,70 @@ it('waits for a Job receipt, exposes the bootstrap pid and preserves literal arg
   await f.closeJob()
   await closing
   expect(f.terminal.terminate).toHaveBeenCalledOnce()
+  await expect(access(f.directory())).rejects.toThrow()
+})
+
+it.each(['\x1b[c', '\x1b[0c'])('answers a split bootstrap DA query %j before adoption and preserves all other bytes (模拟)', async query => {
+  const f = fixture(false)
+  const before = Buffer.from('\x1b[1t中文'), after = Buffer.from('\x1b[?1004h\x1b[?9001h')
+  // Sanitized ConPTY startup bytes captured on Windows; the Chinese text and
+  // chunk boundaries are simulated. No real CLI/account output is recorded.
+  f.terminal.write.mockImplementation(async data => {
+    expect(data).toBe('\x1b[?1;2c')
+    await writeFile(join(f.directory(), 'ready'), 'ready')
+  })
+  vi.mocked(f.backend.spawnTerminal!).mockImplementation(async () => {
+    await writeFile(join(f.directory(), 'pid'), '321')
+    for (const byte of Buffer.concat([before, Buffer.from(query), after])) f.terminal.output.write(Buffer.from([byte]))
+    return f.terminal as any
+  })
+  const handle = await spawnAccountTerminal(f.backend, f.spec, f.options)
+  const chunks: Buffer[] = []
+  const reading = (async () => { for await (const chunk of handle.output) chunks.push(Buffer.from(chunk)) })()
+  // After adoption queries belong to the actual terminal UI, never the shim.
+  f.terminal.output.write(query)
+  await f.closeJob()
+  await handle.terminate()
+  await reading
+  expect(Buffer.concat(chunks)).toEqual(Buffer.concat([before, after, Buffer.from(query)]))
+  expect(f.terminal.write).toHaveBeenCalledOnce()
+})
+
+it('flushes an incomplete startup escape on adoption and leaves non-DA commands unchanged (模拟)', async () => {
+  const f = fixture()
+  f.terminal.output.write('\x1b[>c\x1b[6n\x1b[')
+  const handle = await spawnAccountTerminal(f.backend, f.spec, f.options)
+  const chunks: Buffer[] = []
+  const reading = (async () => { for await (const chunk of handle.output) chunks.push(Buffer.from(chunk)) })()
+  await f.closeJob()
+  await handle.terminate()
+  await reading
+  expect(Buffer.concat(chunks).toString()).toBe('\x1b[>c\x1b[6n\x1b[')
+  expect(f.terminal.write).not.toHaveBeenCalled()
+})
+
+it('does not answer startup queries for a different declared terminal type (模拟)', async () => {
+  const f = fixture()
+  f.terminal.output.write('\x1b[c')
+  const handle = await spawnAccountTerminal(f.backend, { ...f.spec, terminalType: 'dumb' }, f.options)
+  expect(handle.output).toBe(f.terminal.output)
+  expect(f.terminal.write).not.toHaveBeenCalled()
+  await f.closeJob()
+  await handle.terminate()
+})
+
+it('still requires adoption and an empty Job receipt when the bootstrap reply fails (模拟)', async () => {
+  const f = fixture(false)
+  f.terminal.write.mockRejectedValueOnce(new Error('SIMULATED input failure'))
+  f.terminal.output.write('\x1b[c')
+  const starting = spawnAccountTerminal(f.backend, f.spec, f.options)
+  void starting.catch(() => undefined)
+  await vi.waitFor(async () => expect(await readFile(join(f.directory(), 'cancel'), 'utf8')).toBe('cancel'))
+  expect(f.terminal.terminate).not.toHaveBeenCalled()
+  await writeFile(join(f.directory(), 'ready'), 'ready')
+  await vi.waitFor(() => expect(f.terminal.terminate).toHaveBeenCalledOnce())
+  await f.closeJob()
+  await expect(starting).rejects.toThrow('Windows 账号终端托管不可用')
   await expect(access(f.directory())).rejects.toThrow()
 })
 it('preserves identity and the Job receipt when SDK disposal fails and retries the same terminal', async () => {

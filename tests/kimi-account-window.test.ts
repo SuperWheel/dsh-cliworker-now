@@ -108,6 +108,23 @@ describe('Kimi account window (模拟画面)', () => {
     expect(shown!.link).toBeUndefined()
   })
 
+  it('模拟 Windows ConPTY 实采提示分片：整行到齐前不显示截断的验证码', () => {
+    // Windows isolated ConPTY, 2026-10-29: wording/CRLF from the native login;
+    // URL/code are synthetic replacements. Chunk boundaries exercise streaming,
+    // not a claim that the real authorization code had these values or boundaries.
+    const guide = createAccountGuide('kimi', 'login', { provider: 'kimi-code-global', stores: 'kimi-code' })!
+    const prefix = '\r\nOpening browser for Kimi device login: https://www.kimi.ai/code/authorize_device?user_code=SYNT-HETC\r\n' +
+      'If the browser did not open, paste the URL above and enter code: '
+    for (const chunk of [prefix, 'SYNT', '-', 'HE', 'TC', '\r']) {
+      const events = guide.output(chunk)
+      expect(guides(events).some((shown) => shown.template === 'deviceCode')).toBe(false)
+      expect(writes(events)).toEqual([])
+    }
+    const events = guide.output('\nCode expires in 1800s.\r\nWaiting for authorization to complete…\r\n')
+    expect(guides(events)).toMatchObject([{ template: 'deviceCode', code: 'SYNT-HETC' }])
+    expect(writes(events)).toEqual([])
+  })
+
   it('proves a region login only by the Kimi Code login it files', () => {
     const guide = createAccountGuide('kimi', 'login', { provider: 'kimi-code-cn', stores: 'kimi-code' })!
     const api = { providerLabel: 'DeepSeek', authMethod: 'api' as const, id: 'kimi:deepseek' }

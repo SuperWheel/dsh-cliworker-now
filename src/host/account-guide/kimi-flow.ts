@@ -77,7 +77,9 @@ export const KIMI_FLOW: FlowDefinition = {
   name: NAME,
   targets: true,
   links: ACCOUNT_LOGIN_HOSTS.kimi,
-  deviceCode: /enter code:\s*([A-Z0-9]{3,12}(?:-[A-Z0-9]{3,12})?)/i,
+  // ConPTY may split a code between reads. The native prompt ends its code line
+  // before printing the expiry; never display a prefix as a complete code.
+  deviceCode: /enter code:[ \t]*([A-Z0-9]{3,12}(?:-[A-Z0-9]{3,12})?)[ \t]*\n/i,
   login: {
     plan: DEVICE_PLAN,
     steps: [

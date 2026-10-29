@@ -12,6 +12,7 @@ import {
   snapshotOpenCodeAuth,
   type OpenCodeNativeOptions,
   OPENCODE_OAUTH_UNSUPPORTED,
+  openCodeNativePaths,
 } from './opencode-native.ts'
 import { probeAccountModels, type AccountModelScope } from './account-models.mjs'
 import { NativeBlockResponses, sessionHttpResponseUsage } from './http-rpc-response.mjs'
@@ -90,7 +91,7 @@ export async function openCodeEnvironment(
   } finally {
     await rm(temporary, { force: true })
   }
-  const nativeModels = modelsPath ?? join(homedir(), '.cache', 'opencode', 'models.json')
+  const nativeModels = openCodeNativePaths({ modelsPath }).models
   return {
     XDG_CONFIG_HOME: paths[0]!,
     XDG_DATA_HOME: authDirectory,

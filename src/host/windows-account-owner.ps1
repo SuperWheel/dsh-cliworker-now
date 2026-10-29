@@ -11,6 +11,10 @@ public sealed class CwnAccountJob : IDisposable {
  [StructLayout(LayoutKind.Sequential)] struct Io { public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes; }
  [StructLayout(LayoutKind.Sequential)] struct ExtendedLimits { public BasicLimits Basic; public Io Io; public UIntPtr ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory; }
  [StructLayout(LayoutKind.Sequential)] struct Accounting { public long User, Kernel, PeriodUser, PeriodKernel; public uint PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses; }
+ [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct ProcessEntry { public uint Size, Usage, ProcessId; public UIntPtr DefaultHeap; public uint ModuleId, Threads, ParentProcessId; public int Priority; public uint Flags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=260)] public string Image; }
+ [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr CreateToolhelp32Snapshot(uint flags, uint pid);
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32FirstW(IntPtr snapshot, ref ProcessEntry entry);
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool Process32NextW(IntPtr snapshot, ref ProcessEntry entry);
  [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attr, string name);
  [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job, int kind, ref ExtendedLimits limits, uint size);
  [DllImport("kernel32.dll", SetLastError=true)] static extern bool QueryInformationJobObject(IntPtr job, int kind, out Accounting info, uint size, IntPtr length);
@@ -27,6 +31,27 @@ public sealed class CwnAccountJob : IDisposable {
  IntPtr job; Process root;
  public CwnAccountJob() { job=CreateJobObject(IntPtr.Zero,null); if(job==IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error()); var l=new ExtendedLimits(); l.Basic.Flags=0x2000; if(!SetInformationJobObject(job,9,ref l,(uint)Marshal.SizeOf(l))) { var error=Marshal.GetLastWin32Error(); Dispose(); throw new Win32Exception(error); } }
  public void Attach(int pid, DateTime receiptTime, DateTime earliest) { root=Process.GetProcessById(pid); var handle=root.Handle; var started=root.StartTime.ToUniversalTime(); if(started>receiptTime || started<earliest) throw new Exception("process identity changed"); if(!AssignProcessToJobObject(job,handle)) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+ // The parent check needs one PID, not WMI/CIM provider initialization. Keep
+ // the process handle open while taking the snapshot to prevent PID recycling.
+ // A missing/exited process or snapshot error still fails closed.
+ public static int ParentProcessId(int pid) {
+  using(var process=Process.GetProcessById(pid)) {
+   var handle=process.Handle;
+   var snapshot=CreateToolhelp32Snapshot(2,0);
+   if(snapshot==new IntPtr(-1)) throw new Win32Exception(Marshal.GetLastWin32Error());
+   try {
+    var entry=new ProcessEntry(); entry.Size=(uint)Marshal.SizeOf(typeof(ProcessEntry));
+    if(!Process32FirstW(snapshot,ref entry)) throw new Win32Exception(Marshal.GetLastWin32Error());
+    do {
+     if(entry.ProcessId==(uint)pid) {
+      if(process.HasExited || entry.ParentProcessId==0 || entry.ParentProcessId>Int32.MaxValue) throw new Exception("process identity changed");
+      return (int)entry.ParentProcessId;
+     }
+    } while(Process32NextW(snapshot,ref entry));
+    throw new Exception("process parent unavailable");
+   } finally { CloseHandle(snapshot); }
+  }
+ }
  public static int ConsoleOwner(int pid) {
   FreeConsole(); if(!AttachConsole((uint)pid)) throw new Win32Exception(Marshal.GetLastWin32Error());
   try {
@@ -176,9 +201,8 @@ try {
   $stage='resolve-console'
   $consolePid=[CwnAccountJob]::ConsoleOwner($childPid)
   $stage='validate-console-parent'
-  $console=Get-CimInstance Win32_Process -Filter "ProcessId=$consolePid"
-  if ($null -ne $console) { $consoleParentPid=$console.ParentProcessId }
-  if ($null -eq $console -or $console.ParentProcessId -ne $HostProcessId) { throw 'console owner mismatch' }
+  $consoleParentPid=[CwnAccountJob]::ParentProcessId($consolePid)
+  if ($consoleParentPid -ne $HostProcessId) { throw 'console owner mismatch' }
   $stage='attach-console'
   $consoleImage=(Get-Process -Id $consolePid).MainModule.FileName
   $packageRoot=Get-TrustedNodePtyRoot $consoleImage

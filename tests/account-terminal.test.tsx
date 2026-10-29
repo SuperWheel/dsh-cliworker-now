@@ -12,6 +12,7 @@ import type {
 } from '../src/shared/accounts.ts'
 import type { CliId } from '../src/shared/types.ts'
 import { AGY_GUIDES } from '../src/host/agy-account-guide.ts'
+import { loginLink } from '../src/client/account-login/login-window.tsx'
 
 // Simulated PTY/Gateway and renderer only; these tests never invoke an installed CLI.
 const terminals = vi.hoisted(() => [] as any[])
@@ -25,6 +26,7 @@ vi.mock('@xterm/xterm', () => ({
     input?: (text: string) => void
     keyHandler?: (event: KeyboardEvent) => boolean
     write = vi.fn()
+    resize = vi.fn()
     paste = vi.fn((text: string) => this.input?.(text))
     dispose = vi.fn()
     focus = vi.fn()
@@ -1294,6 +1296,17 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
   const buttons = (f: Awaited<ReturnType<typeof setup>>) =>
     f.renderer.root.findAllByType('button').map((button) => button.children.join(''))
 
+  it('uses the Host grid for hidden output before fitting the visible terminal', async () => {
+    const f = await setup(false)
+    await f.update('codex', 'login')
+    await act(async () => {
+      f.starts[0].resolve(ok(JSON.stringify({ id: 'terminal-a', instruction: '模拟', size: { cols: 200, rows: 60 } })))
+    })
+    expect(terminals[0].resize).toHaveBeenCalledWith(200, 60)
+    expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(true)
+    expect(f.api.cliworker.accountResize).not.toHaveBeenCalled()
+  })
+
   it('hides the native terminal, keeps it unsized and offers it as a fallback', async () => {
     const f = await setup(false)
     await f.update('antigravity', 'login')
@@ -1306,6 +1319,30 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     expect(buttons(f)).not.toContain('关闭终端')
     await f.click('显示原生终端')
     expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(false)
+  })
+
+  it('asks Grok for the callback address instead of an authorization code', async () => {
+    const f = await setup(false)
+    await f.update('grok', 'login')
+    await f.start()
+    // 模拟：Grok 浏览器回调未自动完成时的粘贴步骤（链接为虚构地址）。
+    await push(f, {
+      guide: {
+        step: 'callback', tone: 'action', template: 'browserCode', stage: 0, text: '模拟',
+        plan: ['在浏览器中授权', '粘贴回调网址（如未自动完成）', '确认登录'], link: 'https://auth.x.ai/simulated',
+      },
+    }, 1)
+    const input = f.renderer.root.findByProps({ 'aria-label': '回调网址' })
+    expect(input.props.placeholder).toContain('完整网址')
+    expect(f.renderer.root.findAllByProps({ 'aria-label': '授权码' })).toHaveLength(0)
+  })
+
+  it.each([
+    ['opencode', 'https://auth.openai.com/oauth/authorize?simulated=1'],
+    ['hermes', 'https://portal.nousresearch.com/device?simulated=1'],
+  ] as const)('opens the %s sign-in page its login prints', (cli, url) => {
+    expect(loginLink(cli, url)).toBe(url)
+    expect(loginLink(cli, 'https://example.com/')).toBeUndefined()
   })
 
   it('selects Google sign-in, opens only the Google page and submits a pasted code once', async () => {

@@ -1,7 +1,12 @@
 import { ACCOUNT_LOGIN_HOSTS, ACCOUNT_NAME, parseAccountLoginId } from '../../shared/account-links.ts'
-import { FlowGuide, guideTexts, type FlowContext, type FlowDefinition } from './engine.ts'
+import { FlowGuide, guideTexts, type FlowContext, type FlowDefinition, type ScreenView } from './engine.ts'
 
 const LOGIN_PLAN = ['完成服务商授权', '确认登录']
+
+// 18.8.7 (Windows ConPTY) replaced the 16.x footer. Its welcome tip is random;
+// wait for the editor's stable shortcut hint, not model-discovery progress.
+const ready = (screen: ScreenView) => screen.has('for commands') ||
+  screen.has('to change thinking effort')
 
 function logoutTarget(ctx: FlowContext) {
   const target = ctx.login ? parseAccountLoginId(ctx.login) : undefined
@@ -25,7 +30,7 @@ export const OMP_FLOW: FlowDefinition = {
     steps: [
       {
         id: 'ready',
-        when: (_screen, ctx) => _screen.has('for commands') && !!ctx.provider && ACCOUNT_NAME.test(ctx.provider),
+        when: (screen, ctx) => ready(screen) && !!ctx.provider && ACCOUNT_NAME.test(ctx.provider),
         guide: () => ({ step: 'ready', tone: 'info', template: 'waiting', text: '正在打开所选服务商的登录步骤…' }),
         auto: (_screen, ctx) => `/login ${ctx.provider}\r`,
       },
@@ -65,6 +70,22 @@ export const OMP_FLOW: FlowDefinition = {
         watches: 'login',
       },
       {
+        id: 'browser-input',
+        // 18.x keeps focus in LoginDialog's manual-code input, rather than the
+        // editor where 16.x accepted `/login <redirect URL>` as a command.
+        when: (screen) => screen.has('Paste the authorization code (or full redirect URL)'),
+        guide: (screen) => ({
+          step: 'browser-input', tone: 'action', template: 'browserCode', plan: LOGIN_PLAN, stage: 0,
+          text: '在浏览器中完成授权。如果授权后没有自动完成，请将授权码或完整的跳转地址粘贴到下方。',
+          link: screen.link,
+        }),
+        respond: (response, ctx) => 'code' in response
+          ? { keys: FlowGuide.paste(response.code.trim(), ctx), enter: true, confirm: 'login' }
+          : undefined,
+        typedConfirms: 'login',
+        watches: 'login',
+      },
+      {
         id: 'device',
         when: (screen) => screen.has('Enter code:') && !!screen.code,
         guide: (screen) => ({
@@ -86,7 +107,7 @@ export const OMP_FLOW: FlowDefinition = {
     steps: [
       {
         id: 'ready',
-        when: (screen, ctx) => screen.has('for commands') && !!logoutTarget(ctx),
+        when: (screen, ctx) => ready(screen) && !!logoutTarget(ctx),
         guide: () => guideTexts('OMP').loggingOut,
         auto: (_screen, ctx) => `/logout ${logoutTarget(ctx)!.provider}\r`,
       },

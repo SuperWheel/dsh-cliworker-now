@@ -11,6 +11,7 @@ import type { AccountAction, AccountGuide, AccountResponse, AccountStatus } from
 import { ACCOUNT_LOGIN_HOSTS, allowedLink } from '../../shared/account-links.ts'
 import { CLI_LABELS, type CliId } from '../../shared/types.ts'
 import { t, useT } from '../i18n.ts'
+import type { MessageKey } from '../i18n-messages.ts'
 import { BrandIcon } from '../icons.tsx'
 import { hostText } from '../operation-error.ts'
 
@@ -184,7 +185,15 @@ function TermsAnswer({
   )
 }
 
-/** One pasted value: an authorization code (shown) or a key (masked, cleared on submit). */
+type AnswerKind = 'code' | 'callback' | 'secret'
+const ANSWER_COPY = {
+  code: { label: '授权码', placeholder: '在这里粘贴授权码（⌘V / Ctrl+V）', pasted: '授权码已粘贴。', typed: '已输入授权码。' },
+  // Grok asks for the address the browser landed on when its callback cannot reach the CLI.
+  callback: { label: '回调网址', placeholder: '在这里粘贴浏览器最后跳转的完整网址（⌘V / Ctrl+V）', pasted: '网址已粘贴。', typed: '已输入网址。' },
+  secret: { label: 'API 密钥', placeholder: '在这里粘贴 API Key（⌘V / Ctrl+V）', pasted: 'API Key 已粘贴。', typed: '已输入 API Key。' },
+} as const satisfies Record<AnswerKind, Record<'label' | 'placeholder' | 'pasted' | 'typed', MessageKey>>
+
+/** One pasted value: an authorization code or callback address (shown), or a key (masked, cleared on submit). */
 function AnswerForm({
   kind,
   running,
@@ -192,7 +201,7 @@ function AnswerForm({
   onSubmit,
   onRestart,
 }: {
-  kind: 'code' | 'secret'
+  kind: AnswerKind
   running: boolean
   retry: boolean
   onSubmit: (value: string) => void
@@ -206,7 +215,8 @@ function AnswerForm({
     setPasted(false)
   }, [retry])
   const content = value.replace(/[\r\n]/g, '').trim()
-  const label = kind === 'code' ? t('授权码') : t('API 密钥')
+  const copy = ANSWER_COPY[kind]
+  const label = t(copy.label)
   return (
     <form
       className="cwn-login-code"
@@ -225,7 +235,7 @@ function AnswerForm({
         spellCheck={false}
         autoComplete="off"
         aria-label={label}
-        placeholder={kind === 'code' ? t('在这里粘贴授权码（⌘V / Ctrl+V）') : t('在这里粘贴 API Key（⌘V / Ctrl+V）')}
+        placeholder={t(copy.placeholder)}
         disabled={!running}
         onPaste={() => setPasted(true)}
         onChange={(event) => {
@@ -237,7 +247,7 @@ function AnswerForm({
         <p className="cwn-login-callout" data-tone="success" role="status">
           <IconCheckCircleFillRegular size={16} />
           <span>
-            {kind === 'code' ? (pasted ? t('授权码已粘贴。') : t('已输入授权码。')) : pasted ? t('API Key 已粘贴。') : t('已输入 API Key。')}
+            {t(pasted ? copy.pasted : copy.typed)}
             <strong>{t('按回车键完成登录')}</strong>
           </span>
         </p>
@@ -476,7 +486,7 @@ export function LoginWindow({
               template === 'secret' && <p>{hostText(guide.text)}</p>
             )}
             <AnswerForm
-              kind={template === 'secret' ? 'secret' : 'code'}
+              kind={template === 'secret' ? 'secret' : guide.step === 'callback' ? 'callback' : 'code'}
               running={running}
               retry={guide.tone === 'warning'}
               onSubmit={(value) => respond(template === 'secret' ? { secret: value } : { code: value })}

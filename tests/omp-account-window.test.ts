@@ -27,6 +27,52 @@ const logout = (id = '2', provider = 'openrouter', source = 'native') =>
   new FlowGuide(OMP_FLOW, { action: 'logout', login: `omp:${provider}:${source}.${id}` })
 const login = (provider = 'openrouter') => new FlowGuide(OMP_FLOW, { action: 'login', provider })
 
+// 模拟画面：提示取自 2026-10-29/30 Windows OMP 18.8.7 实采；行号为模拟值。
+// 删除启动日志路径、图标动画及授权链接；输入值仅为模拟值。
+const WINDOWS_READY = '\x1b[14;1H╰─ ⇧⇥ to change thinking effort\r\n'
+const WINDOWS_BROWSER_INPUT = '\x1b[30;1H│ Waiting for browser authentication... │\r\n' +
+  '\x1b[32;1H│ Paste the authorization code (or full redirect URL), then press ⏎: │\r\n'
+
+describe('OMP 18.8.7 Windows ConPTY（模拟画面）', () => {
+  it('waits through native model discovery and random welcome tips until the editor is ready', () => {
+    const guide = login('deepseek')
+    expect(writes(guide.output('Still starting after 10s — phase: createAgentSession > resolveModelDiscoveryFallback\r\n'))).toEqual([])
+    expect(writes(guide.output('Tip: Spaghetti code? Try complaining with /omfg\r\n'))).toEqual([])
+    expect(writes(guide.output('Tip: Type `/` at the start of your prompt to browse every command\r\n'))).toEqual([])
+    expect(writes(guide.output(WINDOWS_READY))).toEqual(['/login deepseek\r'])
+    expect(writes(guide.output(WINDOWS_READY))).toEqual([])
+    const events = guide.output('\x1b[26;1H│ Paste your DeepSeek API key │\r\n')
+    expect(guides(events).at(-1)?.template).toBe('secret')
+    expect(writes(events)).toEqual([])
+  })
+
+  it('also recognizes the new editor footer for a precisely identified logout', () => {
+    expect(writes(logout('2').output(WINDOWS_READY))).toEqual(['/logout openrouter\r'])
+    expect(writes(new FlowGuide(OMP_FLOW, { action: 'login' }).output(WINDOWS_READY))).toEqual([])
+  })
+
+  it.each([false, true])('pastes only the code into the native manual input, bracketed=%s', (bracketed) => {
+    const guide = login('openai-codex')
+    const events = guide.output((bracketed ? '\x1b[?2004h' : '') + WINDOWS_BROWSER_INPUT)
+    expect(guides(events).at(-1)).toMatchObject({ step: 'browser-input', template: 'browserCode' })
+    expect(events).toContainEqual({ watch: 'login' })
+    expect(writes(events)).toEqual([])
+    const result = guide.respond({ code: ' synthetic-code ' })
+    expect(result[0]).toEqual({ write: bracketed ? '\x1b[200~synthetic-code\x1b[201~' : 'synthetic-code', enter: true })
+    expect(result).toContainEqual({ confirm: 'login' })
+    expect(JSON.stringify(guides(result))).not.toContain('synthetic-code')
+  })
+
+  it('switches from the waiting message to direct input when ConPTY draws the prompt later', () => {
+    const guide = login('openai-codex')
+    guide.output('Waiting for browser authentication...\r\n')
+    expect(guides(guide.output(WINDOWS_BROWSER_INPUT)).at(-1)?.step).toBe('browser-input')
+    expect(guide.respond({ code: 'http://localhost/callback?code=synthetic' })[0]).toEqual({
+      write: 'http://localhost/callback?code=synthetic', enter: true,
+    })
+  })
+})
+
 // These two native rows are actual captures, including styles and partial redraws.
 const FIRST_SCREEN = MENU + API_FIRST + API_SECOND
 

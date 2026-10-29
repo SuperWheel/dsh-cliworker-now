@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -18,6 +19,43 @@ const methods = (name: string, second: 'Copy' | 'Device') =>
 const keyScreen = (name: string) => `Login to ${name}\r\nEnter ${name} API key\r\n>\r\n(escape/ctrl+c to cancel, enter to submit)`
 const browserPrompt = 'Complete login in your browser, or paste the authorization code / redirect URL here:'
 const device = (url: string, code = 'SYNT-HETIC') => `${url}\r\nEnter code: ${code}\r\nWaiting for authentication...`
+
+describe('Pi 1.1.0 Windows ConPTY（实采脱敏后的模拟画面）', () => {
+  it('uses the full OSC hyperlink, preserving the OAuth state and PKCE parameters across terminal chunks', () => {
+    const fixture = JSON.parse(readFileSync(new URL('./fixtures/pi-windows-login-simulated.json', import.meta.url), 'utf8'))
+    expect(fixture.simulation).toBe(true)
+    for (const chunkSize of [1, 17, fixture.raw.length]) {
+      const guide = flow('openai')
+      const events: GuideEvent[] = []
+      for (let offset = 0; offset < fixture.raw.length; offset += chunkSize)
+        events.push(...guide.output(fixture.raw.slice(offset, offset + chunkSize)))
+      const browser = guides(events).at(-1)!
+      expect(browser).toMatchObject({ step: 'browser-code', template: 'browserCode' })
+      const url = new URL(browser.link!)
+      expect([...url.searchParams.keys()]).toEqual([
+        'client_id', 'agent_name_hint', 'ext_agent_host_id', 'response_type', 'redirect_uri',
+        'resource', 'scope', 'state', 'code_challenge', 'code_challenge_method', 'nonce',
+      ])
+      expect(url.searchParams.get('state')).toBe('x'.repeat(43))
+      expect(url.searchParams.get('code_challenge')).toBe('x'.repeat(43))
+      expect(url.searchParams.get('nonce')).toBe('x'.repeat(43))
+      expect(events).toContainEqual({ watch: 'login' })
+      expect(events.some((event) => 'confirm' in event || 'write' in event)).toBe(false)
+    }
+  })
+
+  it('answers the selected provider with native Down then CR, and recognizes its cursor-positioned API key prompt', () => {
+    const guide = flow('openai')
+    // 原始 Windows 输出使用 H/K 定位和清行，而非用换行分隔每行。
+    guide.output('\x1b[?2004h\x1b[52;1H\x1b[2KSelect authentication method for OpenAI:' +
+      '\x1b[54;1H\x1b[2K→ Sign in with ChatGPT\x1b[55;1H\x1b[2K  Sign in with an API key')
+    expect(guide.respond({ option: 'api-key' })).toEqual([{ write: '\x1b[B', enter: true }])
+    const events = guide.output('\x1b[53;1H\x1b[2KLogin to OpenAI\x1b[55;1H\x1b[2KEnter OpenAI API key' +
+      '\x1b[56;1H\x1b[2K> \x1b[57;1H\x1b[2K(escape/ctrl+c to cancel, enter to submit)')
+    expect(guides(events).at(-1)?.template).toBe('secret')
+    expect(events.some((event) => 'write' in event || 'confirm' in event)).toBe(false)
+  })
+})
 
 describe('Pi 1.0.4 账号窗口（模拟画面）', () => {
   it.each([

@@ -1753,8 +1753,25 @@ describe('guided login windows of other CLIs (synthetic screens)', () => {
     fast()
     const f = fixture()
     account(f, () => false)
-    await f.manager.start('p', 'codex', 'login', f.cwd, f.signal)
+    const started = await f.manager.start('p', 'codex', 'login', f.cwd, f.signal)
     expect(vi.mocked(f.backend.spawnTerminal!).mock.calls[0][0]).toMatchObject({ cols: 200, rows: 60 })
+    expect(started.size).toEqual({ cols: 200, rows: 60 })
+  })
+
+  it('ignores simulated ConPTY negotiation and emits fallback once despite repeated redraws', async () => {
+    fast()
+    const f = fixture()
+    account(f, () => false)
+    const { id } = await f.manager.start('p', 'codex', 'login', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write('\x1b[1t\x1b[c\x1b[?1004h\x1b]0;WindowsPowerShell\x1b\\')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(watched.steps()).toEqual([])
+    f.output.write('模拟未知提示')
+    await vi.waitFor(() => expect(watched.steps()).toEqual(['native']))
+    f.output.write('\r\x1b[K模拟未知提示')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(watched.steps()).toEqual(['native'])
   })
 
   it('confirms a Codex sign-in from its account status after codex exits, typing nothing', async () => {

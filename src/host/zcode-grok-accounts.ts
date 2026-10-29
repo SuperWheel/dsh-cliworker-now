@@ -134,7 +134,7 @@ export function projectZCodeIdentity(raw: unknown, secret: string): AccountIdent
         state: 'configured',
         verification: 'local',
         ...(apiBinding ? { authMethod: 'api' as const } : {}),
-        summary: apiBinding ? '已配置 ZCode API' : '已配置 ZCode 账号',
+        summary: apiBinding ? '已配置 ZCode API' : 'ZCode 账号绑定未确认，请重新登录',
       }
     if (
       !provider &&
@@ -170,7 +170,7 @@ export function projectZCodeIdentity(raw: unknown, secret: string): AccountIdent
       authMethod: 'oauth',
       verification: 'local',
       accountLabel: label(userInfo(provider)),
-      summary: access ? '已配置 ZCode OAuth' : '已保存 ZCode 续期凭据',
+      summary: access ? 'ZCode 登录凭据已保存，账号绑定未确认，请重新登录' : '已保存 ZCode 续期凭据',
     }
   } finally {
     key.fill(0)

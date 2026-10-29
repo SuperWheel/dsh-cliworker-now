@@ -671,7 +671,7 @@ export class AccountManager {
     source?: AccountSource,
     provider?: string,
     login?: string,
-  ): Promise<{ id: string; instruction: string }> {
+  ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     validateCli(cli)
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')
     if (
@@ -974,7 +974,7 @@ export class AccountManager {
           () => this.finish(published, 'failed', '账号终端连接失败，请重新打开'),
         )
         .catch(() => undefined)
-      return { id: session.id, instruction }
+      return { id: session.id, instruction, size: guide?.size ?? { cols: 80, rows: 24 } }
     } catch (error) {
       // An allocation still in flight may own a process already; never permit a
       // second login until its late handle/rejection establishes cleanup.
@@ -1177,6 +1177,7 @@ export class AccountManager {
     const capped = session.firstOutputAt + (agy ? AGY_GUIDE_TIMING.settleCapMs : quiet + AGY_GUIDE_TIMING.settleCapMs) - now
     session.settleTimer = setTimeout(
       () => {
+        session.firstOutputAt = undefined
         if (session.state === 'running' && !session.stopping) this.guided(session, session.guide!.settled())
       },
       Math.max(0, Math.min(quiet, capped)),
@@ -1281,6 +1282,7 @@ export class AccountManager {
     if (session.state !== 'running' || session.stopping) return
     try {
       await session.terminal.resize(cols, rows)
+      session.guide?.resize?.(cols, rows)
     } catch {
       throw new Error('无法调整账号终端尺寸，请重新打开')
     }

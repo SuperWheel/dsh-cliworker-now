@@ -104,13 +104,36 @@ export const QODERCN_FLOW = qoder('Qoder CN')
 export const GROK_FLOW: FlowDefinition = {
   name: 'Grok',
   links: ACCOUNT_LOGIN_HOSTS.grok,
-  deviceCode: /Confirm this code in your browser:\s*([A-Z0-9]{4,8}-[A-Z0-9]{4,8})/,
+  // Grok prints "Then enter" when the verification URL does not embed the code.
+  deviceCode: /(?:Confirm this code in your browser|Then enter this code):\s*([A-Z0-9]{4,8}-[A-Z0-9]{4,8})/,
   login: {
     plan: ['在浏览器中确认验证码', '确认登录'],
     steps: [
+      browser(
+        'browser',
+        ['Open this URL to sign in'],
+        '打开 xAI 登录页面完成授权；如果浏览器没有自动打开，请点击下方链接。',
+      ),
+      {
+        ...browserCode(
+          'callback',
+          ["Paste the URL here if it doesn't connect"],
+          '在浏览器中完成 xAI 授权；如果未自动完成，请复制浏览器最后跳转的完整网址并粘贴到下方。',
+        ),
+        guide: (screen) => ({
+          step: 'callback',
+          tone: 'action',
+          template: 'browserCode',
+          plan: ['在浏览器中授权', '粘贴回调网址（如未自动完成）', '确认登录'],
+          stage: 0,
+          text: '在浏览器中完成 xAI 授权；如果未自动完成，请复制浏览器最后跳转的完整网址并粘贴到下方。',
+          link: screen.link,
+        }),
+      },
       {
         id: 'device',
-        when: (screen) => screen.has('Confirm this code in your browser') && !!screen.code,
+        when: (screen) =>
+          (screen.has('Confirm this code in your browser') || screen.has('Then enter this code')) && !!screen.code,
         guide: (screen) => ({
           step: 'device',
           tone: 'action',
@@ -120,6 +143,21 @@ export const GROK_FLOW: FlowDefinition = {
           text: '在浏览器中打开 xAI 验证页面，核对页面上的验证码与下方一致后再授权。只确认你自己发起的验证码。',
           link: screen.link,
           code: screen.code,
+        }),
+      },
+      {
+        // Windows 1.0.50 ConPTY capture: login can fail before printing any URL.
+        // Show a fixed diagnosis, never echo the request URL or native error.
+        id: 'networkError',
+        when: (screen) =>
+          screen.has('Error: error sending request for url') &&
+          (screen.has('operation timed out') || screen.has('tcp connect error')),
+        ends: true,
+        guide: () => ({
+          step: 'networkError',
+          tone: 'warning',
+          template: 'result',
+          text: 'Grok 无法连接登录服务。请检查网络或 Grok 的代理设置，然后重新登录。',
         }),
       },
     ],

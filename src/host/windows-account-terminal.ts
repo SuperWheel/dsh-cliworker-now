@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { Transform } from 'node:stream'
 import { attestElectronConsoleManifest } from './windows-console-manifest.mjs'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend } from './process.ts'
@@ -12,6 +13,57 @@ export class WindowsAccountTerminalError extends Error {
   constructor() {
     super('Windows 账号终端托管不可用，请检查 PowerShell 后重试')
   }
+}
+
+/** ConPTY asks for primary device attributes before PowerShell executes the
+ * bootstrap. The client cannot answer until we return the adopted terminal.
+ * Answer its first startup query as the account UI's xterm, and consume that
+ * query so replaying buffered output cannot inject a second reply into the CLI.
+ * All other bytes, including split UTF-8 and subsequent queries, pass unchanged.
+ */
+function bootstrapOutput(terminal: SubprocessTerminalHandle) {
+  const queries = [Buffer.from('\x1b[c'), Buffer.from('\x1b[0c')]
+  let pending = Buffer.alloc(0), active = true
+  const finish = () => {
+    active = false
+    if (pending.length) output.push(pending)
+    pending = Buffer.alloc(0)
+  }
+  const output = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (!active) { callback(null, chunk); return }
+      const bytes = Buffer.concat([pending, chunk])
+      pending = Buffer.alloc(0)
+      for (let i = 0; i < bytes.length; i++) {
+        const rest = bytes.subarray(i)
+        for (const query of queries) {
+          if (rest.length >= query.length && rest.subarray(0, query.length).equals(query)) {
+            active = false
+            output.push(Buffer.concat([bytes.subarray(0, i), rest.subarray(query.length)]))
+            // xterm 6's primary DA response (VT100 with advanced video).
+            void Promise.resolve().then(() => terminal.write('\x1b[?1;2c')).then(
+              () => callback(), () => callback(new WindowsAccountTerminalError()),
+            )
+            return
+          }
+          if (rest.length < query.length && query.subarray(0, rest.length).equals(rest)) {
+            pending = Buffer.from(rest)
+            callback(null, bytes.subarray(0, i))
+            return
+          }
+        }
+      }
+      callback(null, bytes)
+    },
+    flush(callback) { finish(); callback() },
+  })
+  const failed = (error: Error) => output.destroy(error)
+  terminal.output.on('error', failed)
+  output.once('close', () => { terminal.output.off('error', failed); terminal.output.unpipe(output) })
+  // A handshake failure can precede the caller's output reader.
+  output.on('error', () => undefined)
+  terminal.output.pipe(output)
+  return { output, finish }
 }
 
 /** ConPTY publishes pid=0 during async allocation in the pinned Windows SDK.
@@ -34,6 +86,7 @@ export async function spawnAccountTerminal(
   const directory = await mkdtemp(join(tmpdir(), 'cwn-account-job-'))
   const windows = process.env.SystemRoot ?? 'C:\\Windows'
   let terminal: SubprocessTerminalHandle | undefined
+  let startupOutput: ReturnType<typeof bootstrapOutput> | undefined
   const owner = await (async () => {
     try {
       return backend.spawn({
@@ -157,8 +210,11 @@ export async function spawnAccountTerminal(
       env: { ...spec.env, ELECTRON_RUN_AS_NODE: '1' },
     })
     void terminal.done.catch(() => undefined)
+    if (spec.terminalType === 'xterm-256color' || spec.terminalType === 'xterm')
+      startupOutput = bootstrapOutput(terminal)
     const until = Date.now() + (options.handshakeMs ?? 15_000)
     while (!(await exists('ready'))) {
+      if (startupOutput?.output.errored) throw new WindowsAccountTerminalError()
       await serviceManifest()
       spec.signal?.throwIfAborted()
       if (Date.now() >= until) throw new Error('Windows account terminal handshake timed out')
@@ -169,6 +225,8 @@ export async function spawnAccountTerminal(
         }),
       ])
     }
+    if (startupOutput?.output.errored) throw new WindowsAccountTerminalError()
+    startupOutput?.finish()
     const current = terminal
     const done = (async () => {
       for (;;) {
@@ -185,7 +243,7 @@ export async function spawnAccountTerminal(
     void done.catch(() => undefined)
     return {
       pid: Number(await readFile(join(directory, 'pid'), 'utf8')),
-      output: current.output,
+      output: startupOutput?.output ?? current.output,
       done,
       write: (data) => current.write(data),
       resize: (cols, rows) => current.resize(cols, rows),
@@ -195,6 +253,7 @@ export async function spawnAccountTerminal(
       terminate,
     }
   } catch (error) {
+    startupOutput?.finish()
     if (terminal) {
       // A cancellation can precede ready: the bootstrap keeps waiting until
       // the owner adopts its console/Job, then observes stop without running

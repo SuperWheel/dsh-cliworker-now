@@ -495,13 +495,18 @@ export function AccountTerminal({
                   ? api.cliworker.accountStartForSource(sessionId, cli, action, source, startup.signal)
                   : api.cliworker.accountStart(sessionId, cli, action, startup.signal)),
             ),
-          ) as { id: string; instruction: string }
+          ) as { id: string; instruction: string; size?: { cols: number; rows: number } }
           clearTimeout(startupTimer)
           id = result.id
           if (!alive || startup.signal.aborted) {
             await stopSession()
             return
           }
+          // Hidden xterm still interprets cursor coordinates. Match the Host's initial
+          // grid before replaying output; FitAddon takes over when the view is visible.
+          if (result.size && Number.isInteger(result.size.cols) && Number.isInteger(result.size.rows) &&
+              result.size.cols >= 10 && result.size.cols <= 500 && result.size.rows >= 5 && result.size.rows <= 200)
+            view.resize(result.size.cols, result.size.rows)
           setInstruction(result.instruction)
           setPhase('running')
           view.options.disableStdin = false

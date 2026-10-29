@@ -28,6 +28,7 @@ export type AccountEvidence = Pick<AccountStatus, 'state'> & Partial<Pick<Accoun
 export interface AccountGuideDriver {
   readonly size: { cols: number; rows: number }
   output(text: string): GuideEvent[]
+  resize?(cols: number, rows: number): void
   /** Raw keys typed in the visible native terminal. */
   input(data: string): GuideEvent[]
   /** An answer from the plugin window; throws when the current step does not take it. */
@@ -52,18 +53,203 @@ export class GuideResponseError extends Error {
 // Drawing sequences carry no text: drop CSI/OSC/charset controls before matching.
 export const CONTROL = /\x1b\[[0-9;?<=>]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>78]/g
 export const compact = (text: string) => text.replace(/\s+/g, '').toLowerCase()
-const OSC8 = /\x1b\]8;[^;\x07\x1b]*;([^\x07\x1b]+)(?:\x07|\x1b\\)/g
 const URL_TEXT = /https:\/\/[^\s"'<>\x00-\x1f\x7f]+/g
-const SCREEN_LIMIT = 8192
 const RAW_LIMIT = 16_384
 const MAX_ANSWER = 4096
 // No control characters, no line breaks: an answer is one pasted value.
 const ANSWER = /^[^\x00-\x1f\x7f]+$/
 
+/** Bounded text-only VT screen. OSC / APC payloads never become screen text or commands. */
+class GuideScreen {
+  private lines: string[][] = [[]]
+  private wrapped = new Set<number>()
+  private row = 0
+  private col = 0
+  private saved = [0, 0]
+  private pending = ''
+  private wrap = true
+  private endings = new Map<number, number>()
+  private drawn = new Map<number, number>()
+  private sequence = 0
+  bracketed = false
+  links: string[] = []
+
+  constructor(private cols: number, private rows: number) {}
+
+  resize(cols: number, rows: number) {
+    this.cols = Math.max(1, Math.min(500, cols))
+    this.rows = Math.max(1, Math.min(200, rows))
+    this.lines = this.lines.slice(0, this.rows).map((line) => line.slice(0, this.cols))
+    this.row = Math.min(this.row, this.rows - 1)
+    this.col = Math.min(this.col, this.cols - 1)
+  }
+
+  clear() {
+    this.lines = [[]]
+    this.wrapped.clear()
+    this.links = []
+    this.endings.clear()
+    this.drawn.clear()
+  }
+
+  get plain() {
+    return this.lines.map((line) => line.join('').trimEnd()).join('\n')
+  }
+
+  get linkText() {
+    return this.lines.map((line, i) => (i && !this.wrapped.has(i) ? '\n' : '') +
+      (this.wrapped.has(i + 1) ? line.join('') : line.join('').trimEnd())).join('')
+  }
+
+  get pickLines() {
+    // Existing list readers use trailing style resets as evidence that a label
+    // finished drawing. Keep that boundary without inserting spaces inside words.
+    return [...this.drawn].sort((a, b) => a[1] - b[1]).map(([row]) =>
+      (this.lines[row] ?? []).join('').trimEnd() + ' '.repeat(Math.min(2, this.endings.get(row) ?? 0)))
+  }
+
+  private nextLine(soft = false) {
+    this.row++
+    if (this.row >= this.rows) {
+      this.lines.shift()
+      this.row = this.rows - 1
+      this.wrapped = new Set([...this.wrapped].filter((row) => row > 0).map((row) => row - 1))
+      this.endings = new Map([...this.endings].filter(([row]) => row > 0).map(([row, count]) => [row - 1, count]))
+      this.drawn = new Map([...this.drawn].filter(([row]) => row > 0).map(([row, count]) => [row - 1, count]))
+    }
+    this.lines[this.row] ??= []
+    if (soft) this.wrapped.add(this.row)
+    else this.wrapped.delete(this.row)
+  }
+
+  write(text: string) {
+    const input = this.pending + text
+    this.pending = ''
+    for (let i = 0; i < input.length;) {
+      if (input[i] === '\x1b') {
+        const rest = input.slice(i)
+        const kind = input[i + 1]
+        if (!kind) { this.pending = rest; break }
+        if (kind === '[') {
+          const match = /^\x1b\[([0-?]*)([ -/]*)([@-~])/.exec(rest)
+          if (!match) {
+            if (/^\x1b\[[0-?]*[ -/]*$/.test(rest) && rest.length < RAW_LIMIT) this.pending = rest
+            break
+          }
+          this.csi(match[1]!, match[2]!, match[3]!)
+          i += match[0].length
+          continue
+        }
+        if (']P_^X'.includes(kind)) {
+          const end = /\x07|\x1b\\/.exec(rest.slice(2))
+          if (!end) { if (rest.length < RAW_LIMIT) this.pending = rest; break }
+          const payload = rest.slice(2, 2 + end.index)
+          if (kind === ']' && payload.startsWith('8;')) {
+            const link = payload.slice(payload.indexOf(';', 2) + 1)
+            if (link) this.links = [...this.links.slice(-15), link]
+            this.endings.set(this.row, (this.endings.get(this.row) ?? 0) + 1)
+          }
+          i += 2 + end.index + end[0].length
+          continue
+        }
+        if ('()*+'.includes(kind)) {
+          if (rest.length < 3) { this.pending = rest; break }
+          i += 3
+          continue
+        }
+        if (kind === '7') this.saved = [this.row, this.col]
+        if (kind === '8') [this.row, this.col] = this.saved as [number, number]
+        i += 2
+        continue
+      }
+      const point = input.codePointAt(i)!
+      // A stream chunk may end between the two UTF-16 units of a wide glyph.
+      if (point >= 0xd800 && point <= 0xdbff && i === input.length - 1) { this.pending = input[i]!; break }
+      const char = String.fromCodePoint(point)
+      i += char.length
+      if (char === '\r') { this.col = 0; continue }
+      if (char === '\n') { this.endings.set(this.row, 2); this.nextLine(); this.col = 0; continue }
+      if (char === '\b') { this.col = Math.max(0, this.col - 1); continue }
+      if (char === '\t') { this.col = Math.min(this.cols - 1, (Math.floor(this.col / 8) + 1) * 8); continue }
+      if (point < 32 || (point >= 127 && point < 160)) continue
+      const combining = /[\p{Mark}\u200d\ufe0f]/u.test(char)
+      const wide = point >= 0x1100 && (point <= 0x115f || point === 0x2329 || point === 0x232a ||
+        (point >= 0x2e80 && point <= 0xa4cf && point !== 0x303f) || (point >= 0xac00 && point <= 0xd7a3) ||
+        (point >= 0xf900 && point <= 0xfaff) || (point >= 0xfe10 && point <= 0xfe6f) ||
+        (point >= 0xff00 && point <= 0xff60) || (point >= 0xffe0 && point <= 0xffe6) || point >= 0x1f300)
+      const width = combining ? 0 : wide ? 2 : 1
+      if (width && this.col + width > this.cols) {
+        if (this.wrap) { this.nextLine(true); this.col = 0 }
+        else this.col = Math.max(0, this.cols - width)
+      }
+      const line = this.lines[this.row] ??= []
+      this.endings.delete(this.row)
+      this.drawn.set(this.row, ++this.sequence)
+      while (line.length < this.col) line.push(' ')
+      if (!width) { if (this.col) line[this.col - 1] = (line[this.col - 1] ?? '') + char; continue }
+      line[this.col] = char
+      if (wide) line[this.col + 1] = ''
+      this.col += width
+    }
+  }
+
+  private csi(parameters: string, intermediate: string, final: string) {
+    if (intermediate) return
+    if (/^[<=>]/.test(parameters)) return
+    if (parameters.startsWith('?')) {
+      if (final === 'h' || final === 'l') {
+        const modes = parameters.slice(1).split(';')
+        if (modes.includes('2004')) this.bracketed = final === 'h'
+        if (modes.includes('7')) this.wrap = final === 'h'
+        if (modes.includes('1049')) { this.clear(); this.row = this.col = 0 }
+      }
+      return
+    }
+    const values = parameters.split(';').map(Number), n = values[0] || 1
+    if (final === 'm') this.endings.set(this.row, (this.endings.get(this.row) ?? 0) + 1)
+    const oldRow = this.row, oldCol = this.col
+    if (final === 'H' || final === 'f') { this.row = n - 1; this.col = (values[1] || 1) - 1 }
+    if (final === 'A') this.row -= n
+    if (final === 'B') this.row += n
+    if (final === 'C') this.col += n
+    if (final === 'D') this.col -= n
+    if (final === 'G' || final === '`') this.col = n - 1
+    if (final === 'd') this.row = n - 1
+    if (final === 'E' || final === 'F') { this.row += final === 'E' ? n : -n; this.col = 0 }
+    if (final === 's') this.saved = [this.row, this.col]
+    if (final === 'u') [this.row, this.col] = this.saved as [number, number]
+    this.row = Math.max(0, Math.min(this.rows - 1, this.row))
+    // SGR and visibility controls do not consume a pending soft wrap.
+    if ('ABCDEFGH`dfu'.includes(final)) this.col = Math.max(0, Math.min(this.cols - 1, this.col))
+    // ConPTY may encode a wrapped line as CR + CUP instead of a newline.
+    if (this.row === oldRow + 1 && this.col === 0 &&
+        (oldCol >= this.cols || (this.lines[oldRow]?.length ?? 0) >= this.cols)) this.wrapped.add(this.row)
+    if (final === 'J') {
+      if (values[0] === 2) this.clear()
+      else if (!values[0]) { this.lines = this.lines.slice(0, this.row + 1); this.erase(0) }
+      else if (values[0] === 1) { for (let r = 0; r < this.row; r++) this.lines[r] = []; this.erase(1) }
+    }
+    if (final === 'K') this.erase(values[0] || 0)
+    if (final === 'X') {
+      const line = this.lines[this.row] ??= []
+      for (let c = this.col; c < Math.min(this.cols, this.col + n); c++) line[c] = ' '
+    }
+  }
+
+  private erase(mode: number) {
+    this.endings.delete(this.row)
+    const line = this.lines[this.row] ??= []
+    if (mode === 2) this.lines[this.row] = []
+    else if (mode === 0) line.length = Math.min(line.length, this.col)
+    else for (let c = 0; c <= Math.min(this.col, this.cols - 1); c++) line[c] = ' '
+    this.wrapped.delete(this.row + 1)
+  }
+}
+
 export interface ScreenView {
   /** Every marker, compared without whitespace or case, is on the recent screen. */
   has(...markers: string[]): boolean
-  /** Recent screen text with controls replaced by spaces. */
+  /** Visible screen text after cursor movement and erasure. */
   readonly plain: string
   readonly link?: string
   readonly code?: string
@@ -177,7 +363,7 @@ export class FlowGuide implements AccountGuideDriver {
   private readonly steps: FlowStep[]
   private screen = ''
   private plain = ''
-  private raw = ''
+  private readonly terminal: GuideScreen
   private link?: string
   private code?: string
   private index = -1
@@ -190,7 +376,6 @@ export class FlowGuide implements AccountGuideDriver {
   private confirming = false
   private done = false
   private bracketed = false
-  private drawn = ''
   private picked = new Set<string>()
   private lastPicked?: string
   private pickDone = false
@@ -201,6 +386,7 @@ export class FlowGuide implements AccountGuideDriver {
     private readonly ctx: Omit<FlowContext, 'bracketedPaste'>,
   ) {
     this.size = flow.size ?? GUIDE_SIZE
+    this.terminal = new GuideScreen(this.size.cols, this.size.rows)
     this.texts = guideTexts(flow.name)
     this.steps = (ctx.action === 'login' ? flow.login?.steps : ctx.action === 'logout' ? flow.logout?.steps : undefined) ?? []
   }
@@ -221,16 +407,13 @@ export class FlowGuide implements AccountGuideDriver {
 
   output(text: string): GuideEvent[] {
     if (this.ctx.action === 'manage' || this.done) return []
-    const stripped = text.replace(CONTROL, ' ')
-    const on = text.lastIndexOf('\x1b[?2004h'),
-      off = text.lastIndexOf('\x1b[?2004l')
-    if (on !== off) this.bracketed = on > off
-    this.screen = (this.screen + compact(stripped)).slice(-SCREEN_LIMIT)
-    this.plain = (this.plain + stripped).slice(-SCREEN_LIMIT)
-    this.readLinks(text)
-    this.drawn = (this.drawn + text).slice(-RAW_LIMIT)
+    this.terminal.write(text)
+    this.bracketed = this.terminal.bracketed
+    this.plain = this.terminal.plain
+    this.screen = compact(this.plain)
+    this.readLinks()
     if (this.commandSent) {
-      this.afterCommand = (this.afterCommand + compact(stripped)).slice(-SCREEN_LIMIT)
+      this.afterCommand = this.screen
       return []
     }
     const command = this.ctx.action === 'logout' ? this.flow.logout?.command : undefined
@@ -240,6 +423,10 @@ export class FlowGuide implements AccountGuideDriver {
       if (command.ready?.length && screen.has(...command.ready)) return this.sendCommand(command.text)
     }
     return this.advance()
+  }
+
+  resize(cols: number, rows: number) {
+    this.terminal.resize(cols, rows)
   }
 
   private advance(): GuideEvent[] {
@@ -271,13 +458,17 @@ export class FlowGuide implements AccountGuideDriver {
       if (step.pick) events.push(...this.pick(step))
       return events
     }
+    // Incremental list redraws may replace the header; the active picker still
+    // requires its own fully drawn, highlighted target before submitting anything.
+    const current = this.steps[this.index]
+    if (current?.pick) return this.pick(current)
     return []
   }
 
   /** One key per drawn screen: Enter on the chosen row, the down arrow on any other. */
   private pick(step: FlowStep): GuideEvent[] {
     if (this.pickDone || !step.pick) return []
-    const lines = this.drawn.split(/\r\n|\r|\n/).map((line) => line.replace(CONTROL, ' '))
+    const lines = this.terminal.pickLines
     const found = step.pick(lines, this.context)
     // The row highlighted before the last key may still be on screen until the key lands.
     if (!found || found.row === this.lastPicked) return []
@@ -291,7 +482,6 @@ export class FlowGuide implements AccountGuideDriver {
     }
     this.picked.add(found.row)
     this.lastPicked = found.row
-    this.drawn = ''
     return [{ write: DOWN }]
   }
 
@@ -316,6 +506,8 @@ export class FlowGuide implements AccountGuideDriver {
     if (answer.resets) {
       this.screen = ''
       this.plain = ''
+      this.terminal.clear()
+      this.link = this.code = undefined
       this.index = -1
       this.shown = undefined
     }
@@ -330,6 +522,8 @@ export class FlowGuide implements AccountGuideDriver {
 
   settled(): GuideEvent[] {
     if (this.ctx.action === 'manage' || this.done || this.confirming || this.commandSent || this.identifying) return []
+    // ConPTY initially emits only title / terminal negotiation, before the CLI draws anything.
+    if (!this.plain.trim()) return []
     // A list that went quiet before its row was found cannot move on (one row, a lost key): hand it over.
     if (this.steps[this.index]?.pick && !this.pickDone) {
       this.pickDone = true
@@ -340,7 +534,7 @@ export class FlowGuide implements AccountGuideDriver {
       this.identifying = true
       return [{ identify: true }]
     }
-    return this.show(this.texts.native)
+    return sameGuide(this.texts.native, this.shown) ? [] : this.show(this.texts.native)
   }
 
   identified(state: AccountEvidence | undefined): GuideEvent[] {
@@ -417,6 +611,7 @@ export class FlowGuide implements AccountGuideDriver {
 
   private sendCommand(text: string): GuideEvent[] {
     this.commandSent = true
+    this.terminal.clear()
     return [...this.show(this.texts.loggingOut), { command: text }]
   }
 
@@ -430,14 +625,16 @@ export class FlowGuide implements AccountGuideDriver {
     return [{ guide }]
   }
 
-  private readLinks(text: string) {
+  private readLinks() {
     const hosts = this.flow.links
-    this.raw = (this.raw + text).slice(-RAW_LIMIT)
+    this.link = undefined
+    this.code = undefined
     if (hosts?.length) {
       let found: string | undefined
-      for (const match of this.raw.matchAll(OSC8)) found = allowedLink(match[1], hosts) ?? found
-      for (const match of this.raw.replace(CONTROL, ' ').matchAll(URL_TEXT)) found = allowedLink(match[0], hosts) ?? found
-      if (found) this.link = found
+      for (const match of this.terminal.linkText.matchAll(URL_TEXT)) found = allowedLink(match[0], hosts) ?? found
+      // The OSC target is complete even when its visible label is shortened or wrapped.
+      for (const link of this.terminal.links) found = allowedLink(link, hosts) ?? found
+      this.link = found
     }
     const device = this.flow.deviceCode?.exec(this.plain)
     if (device && DEVICE_CODE.test(device[1])) this.code = device[1]

@@ -12,6 +12,7 @@ import { inspectPiOmpNativeAccount } from './pi-omp-native.ts'
 import {
   assertOpenCodeManagedAuth,
   inspectOpenCodeProfile,
+  readOpenCodeProfile,
   type OpenCodeNativeOptions,
 } from './opencode-native.ts'
 
@@ -97,6 +98,20 @@ export async function prepareOpenCodeAccount(
     signal.throwIfAborted()
     // A provider or one login chosen in the account window skips OpenCode's own picker.
     const removed = target.login ? parseAccountLoginId(target.login) : undefined
+    if (target.login && (action !== 'logout' || removed?.cli !== 'opencode' || removed.entry))
+      throw new Error('不支持单独退出该 OpenCode 账号')
+    if (action === 'logout' && removed) {
+      const profile = await readOpenCodeProfile(data, { signal })
+      const directory = profile.removableAuth[removed.provider]
+      if (!directory && Object.hasOwn(profile.auth, removed.provider))
+        throw new Error('该 OpenCode 服务商存在多处凭据或配置凭据，请在原生配置中管理')
+      if (directory) {
+        await assertOpenCodeManagedAuth(directory, signal)
+        // Keep runtime/config private; only native auth logout targets the original store.
+        // Do not create, chmod, copy, or snapshot the user's native account directory.
+        env.XDG_DATA_HOME = directory
+      }
+    }
     const argv = [
       executable,
       ...(action === 'manage'
