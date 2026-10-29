@@ -1305,4 +1305,5 @@ OpenSpec 变更 `fix-windows-account-login-bridge`（用户 2026-10-29 报告 ZC
 - 登录引导：`FlowGuide` 改用有界 VT 屏幕（`GuideScreen`，最多 500×200），处理 CUP/CUF/擦除/折行/备用屏幕；`has()` 只看当前屏幕，链接取当前屏幕文本与 OSC 8 目标（只保留白名单域名），设备码须整段在屏。启动结果带 Host 终端尺寸，隐藏的 xterm 按此初始化，避免光标坐标错位。CLI 尚未画出文字时不判定为改用原生终端。
 - 终端启动：基线（模拟 CLI，3 次）启动到首屏中位数 7.58 秒，其中 ConPTY 等待首个设备属性查询的回应约 4.3 秒、`Get-CimInstance` 校验父进程约 1.3 秒。现由 Host 以 xterm 身份回应首个 `CSI c` 并从回放中去掉该查询，父进程改用 Toolhelp 快照（持有进程句柄防 PID 复用）；优化后中位数 1.50 秒，进程与临时目录均清理。
 - 登录域名：OpenCode（`auth.openai.com`）与 Hermes Nous（`portal.nousresearch.com`）此前只写在流程内，客户端按共享 `ACCOUNT_LOGIN_HOSTS` 再查一次会把链接过滤掉；现统一登记。
+- MiMo 模型缓存（同日用户追加）：插件读取 MiMo 元数据与运行任务时都设 `MIMOCODE_DISABLE_MODELS_FETCH=1`（2026-10-08 账号隔离改造引入），MiMo 只用自己的 models.dev 缓存；缓存一旦存在就优先于程序内置列表。Windows 上该缓存停在 2026-06-19（只有 v2.5），账号目录已只给 v2.6，交集为空。`discoverMimoModels` 在账号目录可读且交集为空时运行一次 MiMo 自带的 `models --refresh`（显式刷新不受该环境变量限制，同一可执行文件 10 分钟内最多一次），清空 `mimoMetadataCache` 后重读；仍对不上时报不一致，不按账号目录猜模型或强度。刷新写的是 MiMo 自己的缓存，与原生 MiMo 正常启动时的行为相同；不改用户配置与凭据。
 - 未确认：ZCode 登录后仍显示「已配置」的根因（最可能是 OAuth 结果未写入插件私有凭据目录而回落到原生 API 配置），文案已改为「账号绑定未确认，请重新登录」，待新包复测。

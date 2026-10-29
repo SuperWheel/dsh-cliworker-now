@@ -40,3 +40,14 @@
 ## 5. 文档
 
 - [x] 5.1 README 常见问题新增 Windows 系统代理说明；`doc/design.md` 新增本次设计记录。
+- [x] 5.2 `doc/usage-details.md` 与 `doc/design.md` 补 MiMo 缓存刷新说明。
+
+## 6. MiMo 模型缓存过期（2026-10-30 用户追加）
+
+- [x] 6.1 Windows 只读定位（`.test-data/windows-remote/desktop-audit/mimo-catalog-diagnostic.mjs`，调用已安装插件自身代码，只输出模型 ID、档位、状态）：`debug paths` 与插件推算目录一致；`models --verbose` 只有 `xiaomi/mimo-v2.5`、`v2.5-pro`、`v2.5-pro-ultraspeed`（另有无凭据的 `mimo/mimo-auto`），各有 low/medium/high；账号目录 `supported`，返回 `mimo-v2.6-flash/pro/pro-ultraspeed` 及 ASR/TTS，交集为空。直连与经代理访问模型接口均在 1 秒内返回 401（未带凭据），`hostFetch` 经代理同样正常，与代理无关。
+  - Windows 的 `~\.cache\mimocode\models.json` 修改时间 2026-06-19，不含 v2.6；Mac 的同一缓存为 2026-10-05，含 v2.6。Mac 用空的临时缓存目录实测：同版本无缓存时内置列表含 v2.5 与 v2.6；`MIMOCODE_DISABLE_MODELS_FETCH=1` 下显式 `models --refresh` 仍会刷新（约 2 秒），之后只列 v2.6。
+  - 排查中为确认 v2.6 出现在哪，曾对两台机器的 `auth.json` 做过字符串计数（只输出次数 0，未输出内容）；之后未再触碰凭据文件。
+- [x] 6.2 实现 `discoverMimoModels`：账号目录可读且交集为空时运行一次 `models --refresh`（同一可执行文件 10 分钟内最多一次），清空 MiMo 元数据缓存后重读；仍不一致时报「MiMo 本地模型列表与当前账号可用模型不一致…」。`discoverFirstPartySources` 新增 `unmatched` 结果。
+- [x] 6.3 模拟测试 `tests/first-party-models.test.ts`「MiMo stale native model cache」三项：过期刷新一次后列出 v2.6 与原生档位；账号 401 或已有交集时不刷新；刷新失败报告不一致且 10 分钟内不重试。`first-party-models` 与 `first-party-capability-cache` 共 92 项通过；`pnpm typecheck` 通过。
+- [x] 6.4 Windows 实测（新包 `preview-20261030-005543.tgz`，SHA256 `c84265e8…cf70`，解压到私有目录 `mimo-fix-20261030`，未改动已安装插件）：首次读取交集为空 → `models --refresh` 退出码 0、约 4.3 秒 → 重读列出 `xiaomi/mimo-v2.6-flash`、`v2.6-pro`、`v2.6-pro-ultraspeed`，强度 default/low/medium/high，总耗时约 17.6 秒；MiMo 缓存更新为 2026-10-30。验证后先移除联接点再删除私有目录，Desktop 插件依赖完好。
+  - 这次刷新更新了 Windows 上 MiMo 自己的模型缓存，已安装的旧包此后也能读到 v2.6；新包尚未安装到 Desktop，界面未实测。
