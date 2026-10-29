@@ -16,10 +16,10 @@
 
 ### Modified Capabilities
 
-- `worker-permission-levels`：「原生模式不可用时降级」补充运行时才报告不可用的情形、降级重启的会话绑定，以及发送任务后不重试的边界。
+- `worker-permission-levels`：「原生模式不可用时降级」补充运行时才报告不可用的情形、降级重启的会话绑定、发送任务后不重试的边界，以及 Antigravity 按「仅工作区编辑」降级的例外。
 
 ## Impact
 
 - Host：`src/host/native-claude.mjs`、`src/host/native-agy.mjs`。
 - 测试：`tests/native-primary-runners.test.ts`（Claude 钩子先报会话的降级重启）、`tests/native-agy-account-permissions.test.ts`（新增，模拟 agy 输入前/后警告、取消、只读与规划档）。
-- 未决：Antigravity 降级目标沿用现有「仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`）。主规格要求按更严一档运行、不得以更宽模式代替，Antigravity 更严一档是「仅规划」；二者不一致，待用户决定（见 tasks.md 3.1）。
+- 决定：Antigravity 降级目标沿用现有「仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`）。主规格原要求按更严一档（Antigravity 为「仅规划」）运行、不得以更宽模式代替；用户 2026-10-29 选择「保留仅工作区编辑」，规格增量写明这一例外（见 tasks.md 3.1）。

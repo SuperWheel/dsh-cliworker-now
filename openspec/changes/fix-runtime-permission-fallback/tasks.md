@@ -16,5 +16,5 @@
 
 ## 3. 待决与真实验收
 
-- [ ] 3.1 待用户决定 Antigravity 的降级目标：沿用现有「仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`，能写文件），还是按主规格「更严一档」改为「仅规划」。本变更未改变降级目标本身。
+- [x] 3.1 Antigravity 的降级目标：用户 2026-10-29 决定「保留仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`，能写文件），不改为「仅规划」。规格增量把它写成「不得以更宽模式代替」的唯一例外，代码未变。
 - [ ] 3.2 真实验收：用户重新登录 Antigravity 后，按最便宜选型派遣一次写文件任务，核对时间线降级说明、只有一个会话、文件实际写出；Claude 在当前账号下派遣并续聊一次，核对会话一致。
