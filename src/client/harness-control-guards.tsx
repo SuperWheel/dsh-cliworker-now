@@ -2,8 +2,9 @@ import { createElement, useEffect, useLayoutEffect, useRef, useState, type Compo
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-plan-mode/client'
 import type { PropsRuntime, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
-import { Toast, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 import { harnessFeatureReason } from './harness-feature-support.ts'
+import { HarnessReasonTooltip } from './harness-native-tooltip.tsx'
 import {
   useHarnessSessionBinding,
   type HarnessBindingRegistry,
@@ -168,7 +169,7 @@ function CliControl({
           authority: parentAuthority,
           value: {
             ...permission,
-            // A saved level is never above the parent cap the Host checked.
+            // The Host saved this level; it runs as chosen.
             currentValue: setting === 'plan' || setting === 'accept-edits' ? permission.currentValue : (saved.level ?? 'full'),
             plan: { ...permission.plan, active: saved.mode === 'plan' },
           },
@@ -239,11 +240,9 @@ function CliControl({
   return (
     <>
       {explanation ? (
-        <Tooltip label={explanation} side="top" portal>
-          <span tabIndex={0} aria-label={explanation}>
-            {control}
-          </span>
-        </Tooltip>
+        <HarnessReasonTooltip label={explanation} side="top">
+          {control}
+        </HarnessReasonTooltip>
       ) : (
         control
       )}
@@ -328,11 +327,9 @@ function registerHarnessControlGuards(
           // No plan mode: leave the seat empty; the "+" menu still explains why.
           if (unavailable && feature === 'plan') return null
           if (unavailable) return (
-            <Tooltip label={unavailable} side="top" portal>
-              <span tabIndex={0} aria-label={unavailable}>
-                {createElement(Native, { ...props, locked: true, select: async () => false, exitPlanMode: async () => null })}
-              </span>
-            </Tooltip>
+            <HarnessReasonTooltip label={unavailable} side="top">
+              {createElement(Native, { ...props, locked: true, select: async () => false, exitPlanMode: async () => null })}
+            </HarnessReasonTooltip>
           )
           if (api && binding.workerId)
             return (
@@ -347,11 +344,9 @@ function registerHarnessControlGuards(
             )
           const reason = hostText(binding.reasons?.[feature]) || t('{label}正在等待 CLI 连接信息', { label: t(label) })
           return (
-            <Tooltip label={reason} side="top" portal>
-              <span tabIndex={0} aria-label={reason}>
-                {createElement(Native, { ...props, locked: true })}
-              </span>
-            </Tooltip>
+            <HarnessReasonTooltip label={reason} side="top">
+              {createElement(Native, { ...props, locked: true })}
+            </HarnessReasonTooltip>
           )
         }
         const unregister = ctx.slots.register(

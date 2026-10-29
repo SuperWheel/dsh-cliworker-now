@@ -6,9 +6,9 @@ import {
   IconBranchOutlineRegular,
   MenuItemButton,
   Toast,
-  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { active } from '../shared/types.ts'
+import { HarnessReasonTooltip } from './harness-native-tooltip.tsx'
 import { harnessFeatureReason } from './harness-feature-support.ts'
 import { useHarnessSessionBinding, type HarnessBindingRegistry } from './harness-binding-registry.ts'
 import { shadowHarnessSlot } from './harness-slot-shadow.ts'
@@ -241,12 +241,11 @@ function WorkerForkMenu({
       {t('分支')}
     </MenuItemButton>
   )
+  // Below, like the native message branch button's tooltip.
   return reason ? (
-    <Tooltip label={reason} side="top" portal>
-      <span tabIndex={0} aria-label={reason}>
-        {row}
-      </span>
-    </Tooltip>
+    <HarnessReasonTooltip label={reason} side="bottom">
+      {row}
+    </HarnessReasonTooltip>
   ) : (
     row
   )

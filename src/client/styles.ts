@@ -139,7 +139,10 @@ export const processStyles = `
 
 // Pinned to Harness 0.2.0-rc.2: WorkStatus, MessageIconActions, StatsPills,
 // TurnUsagePanel, ContextMeter and ModelSelect. Native Tooltip/Menu own animations.
+// A non-portal native Tooltip renders its bubble right after its anchor; a guarded
+// button's plugin reason (harness-dom-guard.ts) replaces that bubble.
 export const nativeInteractionStyles = `
+[data-cwn-reason-tooltip]+[role=tooltip]{display:none!important}
 .cwn-progress{padding-bottom:0;border:0}.cwn-progress>summary{height:calc(33px + var(--dsh-content-font-delta,0px));width:100%;padding:0 0 8px;border-radius:0;border-bottom:.5px solid var(--dsw-alias-border-l2);transition:color .1s;line-height:calc(24px + var(--dsh-content-font-delta,0px));gap:4px}.cwn-progress>summary:hover{color:var(--dsw-alias-label-secondary);background:transparent}.cwn-progress-chevron{transition:transform .1s}.cwn-progress-chevron svg{width:14px;height:14px}
 .cwn-message-label{height:calc(28px + var(--dsh-content-font-delta,0px));gap:8px}.cwn-message-label time{line-height:calc(24px + var(--dsh-content-font-delta,0px))}.cwn-message.assistant .cwn-message-label time{font-size:calc(var(--dsh-content-font-size-secondary,13px) - 1px)}
 .cwn-copy .cwn-copy-icon{width:calc(28px + var(--dsh-content-font-delta,0px));height:calc(28px + var(--dsh-content-font-delta,0px));padding:6px;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-tertiary)}.cwn-copy-icon svg{width:calc(15px + var(--dsh-content-font-delta,0px));height:calc(15px + var(--dsh-content-font-delta,0px))}.cwn-message.assistant .cwn-copy-icon svg{width:calc(17px + var(--dsh-content-font-delta,0px));height:calc(17px + var(--dsh-content-font-delta,0px))}.cwn-copy .cwn-copy-icon:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}

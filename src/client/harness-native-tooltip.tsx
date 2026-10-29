@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, type HTMLAttributes } from 'react'
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type HTMLAttributes, type ReactNode } from 'react'
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GuardedNativeControl } from './harness-dom-guard.ts'
 
@@ -19,6 +19,9 @@ export function bindHarnessTooltipAnchor(
   ] as const
   const removers = bindings.flatMap(([eventName, handler]) => {
     if (!handler) return []
+    // Events keep propagating: React derives the native tooltip's enter from the
+    // previous element's mouseout, so stopping them here never hid it and only
+    // left its leave undelivered. The native bubble is hidden by style instead.
     const listener = (event: Event) => {
       if (
         (eventName === 'mouseover' || eventName === 'mouseout') &&
@@ -26,7 +29,6 @@ export function bindHarnessTooltipAnchor(
         element.contains((event as MouseEvent).relatedTarget as Node)
       )
         return
-      if (eventName === 'mouseover' || eventName === 'mouseout') event.stopPropagation()
       handler(event as never)
     }
     element.addEventListener(eventName, listener, true)
@@ -56,14 +58,57 @@ const ExistingNativeAnchor = forwardRef<HTMLElement, AnchorProps>(function Exist
   return null
 })
 
-export function HarnessNativeTooltips({ targets }: { targets: readonly Pick<GuardedNativeControl, 'element' | 'reason'>[] }) {
+/** The side each native control's own tooltip uses, so the reason appears where the user expects it. */
+const NATIVE_SIDE = { fork: 'bottom', attachments: 'top' } as const
+
+export function HarnessNativeTooltips({
+  targets,
+}: {
+  targets: readonly Pick<GuardedNativeControl, 'element' | 'reason' | 'feature'>[]
+}) {
   return (
     <>
-      {targets.map(({ element, reason }, index) => (
-        <Tooltip key={index} label={reason} side="top" portal>
+      {targets.map(({ element, reason, feature }, index) => (
+        <Tooltip key={index} label={reason} side={NATIVE_SIDE[feature]} portal>
           <ExistingNativeAnchor element={element} />
         </Tooltip>
       ))}
     </>
+  )
+}
+
+/**
+ * Explain why a wrapped native control is unavailable. The control's own browser
+ * `title` would show as a second tooltip, so it is removed while the reason shows;
+ * the control remounts without this wrapper once the reason clears.
+ */
+export function HarnessReasonTooltip({
+  label,
+  side,
+  children,
+}: {
+  label: string
+  side: 'top' | 'bottom'
+  children: ReactNode
+}) {
+  const anchor = useRef<HTMLSpanElement>(null)
+  useLayoutEffect(() => {
+    const element = anchor.current
+    if (!element) return
+    const strip = () => {
+      for (const node of element.querySelectorAll('[title]')) node.removeAttribute('title')
+    }
+    strip()
+    const Observer = element.ownerDocument.defaultView?.MutationObserver
+    const observer = Observer ? new Observer(strip) : undefined
+    observer?.observe(element, { subtree: true, childList: true, attributes: true, attributeFilter: ['title'] })
+    return () => observer?.disconnect()
+  }, [])
+  return (
+    <Tooltip label={label} side={side} portal>
+      <span ref={anchor} tabIndex={0} aria-label={label}>
+        {children}
+      </span>
+    </Tooltip>
   )
 }

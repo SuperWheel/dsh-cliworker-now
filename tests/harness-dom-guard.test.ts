@@ -97,6 +97,8 @@ it('leaves native send, stop, command menus and input handling with their origin
   expect(commands.getAttribute('title')).toBeNull()
   expect(f.branch.disabled).toBe(true)
   expect(f.branch.getAttribute('title')).toBeNull()
+  // The native tooltip bubble beside a guarded button is hidden; the reason replaces it.
+  for (const button of [f.branch, commands]) expect(button.getAttribute('data-cwn-reason-tooltip')).toBe('')
   const reasons = targets.mock.lastCall![0].map((target: { reason: string }) => target.reason)
   expect(reasons).toContain('CLI 尚未接通分支')
   expect(reasons.some((reason: string) => reason.includes('仍可打开此菜单调用可用指令'))).toBe(true)
@@ -111,6 +113,7 @@ it('leaves native send, stop, command menus and input handling with their origin
   expect(f.listeners.size).toBe(0)
   expect(f.branch.disabled).toBe(false)
   expect(commands.getAttribute('aria-label')).toBe('添加文件或调用指令')
+  for (const button of [f.branch, commands]) expect(button.getAttribute('data-cwn-reason-tooltip')).toBeNull()
 })
 it('leaves native context readings, Popup clicks and keyboard interaction untouched', () => {
   const f = fixture()

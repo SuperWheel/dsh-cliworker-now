@@ -5,6 +5,8 @@ import { hostText } from './operation-error.ts'
 // These rc.2 controls have no separate public leaf slot. Match only their exact
 // accessible labels inside a verified CLI child. Input and command ownership stays native.
 type GuardedFeature = 'fork' | 'attachments'
+/** Marks a native button whose own adjacent tooltip bubble is hidden while the plugin's reason shows. */
+export const HARNESS_REASON_TOOLTIP = 'data-cwn-reason-tooltip'
 interface Saved {
   feature: GuardedFeature
   disabled: boolean
@@ -45,6 +47,7 @@ export function installHarnessDomGuard(
     return undefined
   }
   const restore = (button: HTMLButtonElement, previous: Saved) => {
+    button.removeAttribute(HARNESS_REASON_TOOLTIP)
     if (previous.feature !== 'attachments') button.disabled = previous.disabled
     for (const [name, old] of [
       ['title', previous.title],
@@ -91,8 +94,12 @@ export function installHarnessDomGuard(
       else if (button.getAttribute('title') !== title) button.setAttribute('title', title)
       if (capability === 'attachments' && button.getAttribute('aria-label') !== t('调用指令（附件不可用）'))
         button.setAttribute('aria-label', t('调用指令（附件不可用）'))
-      // An available fork keeps the native button's own tooltip.
-      if (reason) targets.push({ element: button, feature: capability, reason })
+      // An available fork keeps the native button's own tooltip; otherwise the
+      // reason replaces it, so the two never show together.
+      if (reason) {
+        if (button.getAttribute(HARNESS_REASON_TOOLTIP) === null) button.setAttribute(HARNESS_REASON_TOOLTIP, '')
+        targets.push({ element: button, feature: capability, reason })
+      } else button.removeAttribute(HARNESS_REASON_TOOLTIP)
     }
     onTargets?.(targets)
   }

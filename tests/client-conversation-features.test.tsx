@@ -773,6 +773,7 @@ it('模拟：消息分支按钮捕获点击及键盘，禁用不调用，清理�
   // An available fork keeps only the native button's tooltip.
   expect(targets).toHaveBeenLastCalledWith([])
   expect(attrs.has('title')).toBe(false)
+  expect(attrs.has('data-cwn-reason-tooltip')).toBe(false)
   expect(attrs.has('data-unavailable')).toBe(false)
   const event = (extra = {}) => ({
     type: 'click',
