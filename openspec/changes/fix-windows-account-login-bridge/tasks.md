@@ -26,7 +26,12 @@
 
 ## 4. 真实验收（待用户）
 
-- [ ] 4.1 Windows 安装新预览包（需用户确认无活动任务后再装），在开启系统代理的情况下：Grok、OMP、Pi（添加账号选服务商）、OpenCode（OpenAI 浏览器/设备码/API Key）、Kimi 各完成一次登录，核对窗口步骤与登录后状态；登录由用户本人完成。
+- [x] 4.0 Windows 安装新预览包（用户 2026-10-30 确认「现在安装」）。
+  - 包 `.test-data/windows-remote/desktop-audit/preview-20261030-003734.tgz`（版本号仍为 0.8.4，SHA256 `0531c9c1…7ccc2`，lib 725 个文件，含 `host-fetch.mjs`），由提交 `1eab75f` 的工作区隔离构建。
+  - 安装前只读门禁：`activeWorkers=0`、`workerReadErrors=0`、`accountReadyScopes=0`、账号 owner 与原生认证进程 0。经应用菜单正常退出原 Desktop（PID 31748），确认进程数为 0。
+  - 原生安装器 `dsh.cmd plugin --profile desktop add --save-exact` 退出码 0；正式插件 lib 725/725 个文件 SHA256 与清单一致，无多余文件。
+  - 交互桌面正常启动（新 PID 29808，5 个进程）；启动后门禁同样为空闲，插件存储文件在启动后写入。界面加载与登录未实测。
+- [ ] 4.1 在开启系统代理的情况下：Grok、OMP、Pi（添加账号选服务商）、OpenCode（OpenAI 浏览器/设备码/API Key）、Kimi 各完成一次登录，核对窗口步骤与登录后状态；登录由用户本人完成。
 - [ ] 4.2 Windows Codex 设置页刷新模型，核对模型与思考强度列出。
 - [ ] 4.3 ZCode：新包上重新登录，记录 CLI 退出码与插件凭据目录文件是否变化（不读内容），确认「已配置」根因。
 - [ ] 4.4 Windows 打开登录窗口的实际耗时（真实 CLI），对照 3.2 的模拟结果。
