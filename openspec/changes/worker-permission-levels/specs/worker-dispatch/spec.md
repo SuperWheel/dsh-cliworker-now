@@ -11,11 +11,11 @@
 - **WHEN** 主会话处于规划模式，或调用来自子 Agent
 - **THEN** 返回原有权限拒绝，名称别名不得绕过边界
 
-#### Scenario: 仅可查看下派遣
+#### Scenario: 仅可查看下的只读派遣
 - **WHEN** 主会话为仅可查看，用户要求 Codex 修改代码
 - **THEN** 任务以 Codex 原生询问模式运行（`read-only` 沙箱、按需申请），每次改动前询问用户
 
-#### Scenario: 不能询问的 CLI
+#### Scenario: 无整进程只读模式的 CLI
 - **WHEN** 主会话为仅可查看，用户派遣没有保存档位的 Antigravity、Hermes 或 Kimi
 - **THEN** 拒绝派遣并说明需切换权限预设、为该 Worker 选定档位或改用其他 CLI
 

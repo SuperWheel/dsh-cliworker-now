@@ -38,6 +38,7 @@
 
 - [x] 6.1 README（中、英）权限说明；`doc/design.md` 本变更小节。
 - [ ] 6.2 归档顺序：`relay-native-approvals-to-host`、`reenable-native-cli-features` 归档之后再归档本变更（MODIFIED 需求来自两者）。
+  - 2026-10-29：`relay-native-approvals-to-host` 已归档；归档后主规格的两条需求多出旧场景名，本变更增量中的场景「中档」「仅可查看下派遣」「不能询问的 CLI」改用原名「工作区内修改」「仅可查看下的只读派遣」「无整进程只读模式的 CLI」（内容为新行为），严格校验通过。仍待 `reenable-native-cli-features`（5.1、5.2 待用户决定）归档。
 
 ## 7. 取消主对话上限与 Pi 询问（用户 2026-10-29 追加决定）
 

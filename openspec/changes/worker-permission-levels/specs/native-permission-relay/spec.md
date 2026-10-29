@@ -7,7 +7,7 @@
 - **WHEN** 父会话为完全权限，Worker 档位为完全权限，派遣 Codex 写任务
 - **THEN** Codex 以原生完全权限模式运行，不出现审批弹窗
 
-#### Scenario: 中档
+#### Scenario: 工作区内修改
 - **WHEN** 父会话为工作区内修改，Worker 跟随主对话，Claude Code 编辑工作区内文件
 - **THEN** Claude Code 以原生自动审批模式运行，由 CLI 自行判断放行
 

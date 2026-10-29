@@ -1,6 +1,6 @@
 # 原生 CLI 的 Harness 工具与技能桥
 
-适用开发版本：v0.8.4 之后的开发版。更新日期：2026-10-28（原生优先目录，见 `openspec/changes/scope-harness-bridge-tools/`）。CLI 继续运行自己的 Agent、已选模型、思考强度及原生会话；Harness 提供真实子 Agent 身份、工具权限链和完整原生对话页。CLI Worker 通过宿主公开导航打开该直接子会话，保留父绑定和 `origin: subagent`；不在普通会话列表新增根会话。本文区分当前实现、模拟回归及此前冻结预览的真实证据。
+适用开发版本：v0.8.4 之后的开发版。更新日期：2026-10-28（原生优先目录，见 `openspec/changes/archive/2026-10-29-scope-harness-bridge-tools/`）。CLI 继续运行自己的 Agent、已选模型、思考强度及原生会话；Harness 提供真实子 Agent 身份、工具权限链和完整原生对话页。CLI Worker 通过宿主公开导航打开该直接子会话，保留父绑定和 `origin: subagent`；不在普通会话列表新增根会话。本文区分当前实现、模拟回归及此前冻结预览的真实证据。
 
 ## 能力与验收等级
 
