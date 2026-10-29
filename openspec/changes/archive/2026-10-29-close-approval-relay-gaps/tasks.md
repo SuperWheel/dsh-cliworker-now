@@ -31,7 +31,8 @@
 
 - [x] 4.1 README（中、英）结果与时限说明；`doc/design.md` 本变更小节；相关变更的发现记录注明由本变更处理。
 - [x] 4.2 拒绝结果改为已完成：README（中、英）、`doc/design.md`（本变更小节与 2026-10-25 小节的取代说明）、`report-denied-permission-as-unverified` 与 `relay-harness-tool-approvals` 的 tasks.md。
-- [ ] 4.3 归档顺序：先归档 `judge-run-outcome-by-native-terminal` 与 `report-denied-permission-as-unverified`，再归档本变更（`worker-run-outcomes` 的 MODIFIED 需求来自这两者）。
+- [x] 4.3 归档顺序：先归档 `judge-run-outcome-by-native-terminal` 与 `report-denied-permission-as-unverified`，再归档本变更（`worker-run-outcomes` 的 MODIFIED 需求来自这两者）。
+  - 2026-10-29：`judge-run-outcome-by-native-terminal` 已归档；`report-denied-permission-as-unverified` 于本日核对 3.2 后归档，随后归档本变更。
 
 ## 验证记录（2026-10-28）
 

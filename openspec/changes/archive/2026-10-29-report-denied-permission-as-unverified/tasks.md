@@ -23,7 +23,8 @@
   - 同一任务详情仍显示「处理失败 / 本轮运行失败 / CLI_RUN_FAILED」，用户要求改掉，见 1.5。
 - [x] 3.3 Desktop 实机确认任务详情不再显示「处理失败」（1.5）。
   - 2026-10-25 新 Host 15:05（b5f50f2）：任务卡「结果待核实」，详情顶部为待核实警示，逐段滚动未见「处理失败 / 本轮运行失败 / CLI_RUN_FAILED」；Bash 步骤失败，CLI 最终回复保留；Worker `uncertain`，deny.txt 为 alpha、beta、gamma。
-- [ ] 3.2 其他 CLI 真实拒绝场景（未调用真实模型）。
+- [x] 3.2 其他 CLI 真实拒绝场景（未调用真实模型）。
+  - 2026-10-29 核对：除 ZCode（2026-10-25 Desktop）外，以下 CLI 已真实执行拒绝。OMP：原生 bash 被拒 → 结果待核实，文件未创建（`reenable-native-cli-features` 4.1）。Codex：拒绝 → 结果待核实，`deny.txt` 未创建（`relay-native-approvals-to-host` 4.1）。Pi：DSH 备选命令被拒 → 结果待核实，文件未生成（`close-approval-relay-gaps` 3.1）。Claude Code：按原生 deny+interrupt 以失败结束，文件未创建（`relay-native-approvals-to-host` 4.2）。之后用户 2026-10-28 决定：拒绝后正常结束的轮次改为「已完成」，由 `close-approval-relay-gaps` 修改。未真实复验：Kimi、Grok、Qoder/Qoder CN、OpenCode、MiMo、Hermes、Antigravity。
 
 ## 后续
 

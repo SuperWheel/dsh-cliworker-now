@@ -3,10 +3,15 @@
 ## 20. 2026-10-18 Antigravity 工具桥
 
 - [ ] 20.1 对照两个参考项目及 AGY 官方协议，验证 Windows 安装版附加目录、MCP 和 Hook 接口，记录差异。
-- [ ] 20.2 接入本轮私有 MCP/Hook，精确校验实时工具目录和会话，保留原生及宿主权限与生命周期清理。
-- [ ] 20.3 完成关联回归、类型检查及隔离 preview，覆盖 Mac/Windows 路径、拒绝、撤销和清理。
+  - 2026-10-29 核对：参考项目（固定提交）与官方 MCP/Hook 协议的差异已记在 `doc/antigravity-harness-bridge.md` 第 1–2 节。Windows 安装版是否真的加载附加目录里的 MCP/Hook，无模型的 `mcp list` 证明不了，并入 20.4 由本日 Windows 全量验收核对。
+- [x] 20.2 接入本轮私有 MCP/Hook，精确校验实时工具目录和会话，保留原生及宿主权限与生命周期清理。
+  - 2026-10-29 核对：已实现于 911a830（2026-10-20）。`native-worker.ts` 调 `prepareAgyHarnessWorkspace`，为本轮私有 `agy-tools` 工作区写 `.agents/mcp_config.json` 与 PreToolUse Hook；`native-agy.mjs` 在原生 init/resume 身份校验后调 `recordAgyHarnessSession`。Hook 只对结构化会话、步骤与本轮实时目录精确匹配的桥工具返回 `auto_approve`，其余走原生默认策略，运行结束一并清理（`doc/antigravity-harness-bridge.md` 第 2 节）。`tests/native-agy-harness.test.ts` 7 项本日复跑通过。
+- [x] 20.3 完成关联回归、类型检查及隔离 preview，覆盖 Mac/Windows 路径、拒绝、撤销和清理。
+  - 2026-10-29 核对：2026-10-18 已完成（`doc/antigravity-harness-bridge.md` 第 3 节）：关联离线回归 macOS 107 项及宿主权限链 4 项、Windows 111 项，打包入口修正后专属 7 项复验，两端类型检查与隔离构建通过。
 - [ ] 20.4 沿 Windows 已保存 AGY 选型完成最小 Desktop 工具/Skill 真实验收，核对事件与数据保留；受限项保持未验证。
+  - 2026-10-29：已列入本日 Windows 全量验收（子 agent 执行），结果回填本任务。
 - [ ] 20.5 同步能力矩阵、设计和实际验收记录，严格规格校验，保持 v0.8.1 且不推送发布。
+  - 2026-10-29 核对：能力矩阵（`doc/cli-harness-capabilities.md` 写明「真实工具验收未完成」）与设计文档已同步，验收记录待 20.4。「保持 v0.8.1」已过时，当前为 v0.8.4 之后的 `feat/general-settings`。
 
 ## 19. 2026-10-18 附件与 Harness Skill/MCP 接入
 

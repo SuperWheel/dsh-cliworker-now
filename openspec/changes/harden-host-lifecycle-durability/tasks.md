@@ -18,7 +18,9 @@
 ## 3. 未执行（需另行授权或平台）
 
 - [ ] 3.1 Windows 实机验证 Codex 后台启动环境与 `host.lock` 候选锁行为。
-- [ ] 3.2 真实 CLI / Desktop 更新验收。
+  - 2026-10-29：已列入本日 Windows 全量验收（Windows 全量测试含 `native-worker-windows-env`、`storage-lock`、`storage-torn-tail`，另加 Codex 后台启动的实际环境检查）。
+- [x] 3.2 真实 CLI / Desktop 更新验收。
+  - 2026-10-29 核对：本变更 2026-10-20 合入当日，Windows 以原生安装器更新 Desktop：636 个 lib 文件一致，正常启动，无活动 Worker（`doc/tasks.md`「2026-10-20 v0.8.1：Windows 实机验收…」）。此后 Mac/Windows 的 Desktop 更新与真实 CLI 运行都基于该代码。停止时持久化失败、断尾恢复等故障路径只能靠测试注入覆盖。
 
 ## 4. 文档
 
