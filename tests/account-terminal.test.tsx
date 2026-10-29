@@ -1156,6 +1156,17 @@ it('drops unsent input once the user starts closing the terminal', async () => {
   })
 })
 
+it.each(['end', 'fail'] as const)('uses a connection diagnostic after startup when the stream %s (模拟)', async (method) => {
+  const f = await setup()
+  await f.start()
+  await act(async () => f.streams[0][method]())
+  const text = JSON.stringify(f.renderer.toJSON())
+  expect(text).toContain('账号终端连接已结束，请重试')
+  expect(text).not.toContain('账号终端暂不可用')
+  expect(f.accountStop).toHaveBeenCalledWith('parent', 'terminal-a')
+  expect(f.onFinished).toHaveBeenCalledOnce()
+})
+
 it('immediately releases a failed stream even while process cleanup is still pending', async () => {
   const fixture = await setup()
   await fixture.start()
@@ -1173,6 +1184,102 @@ it('immediately releases a failed stream even while process cleanup is still pen
   expect(fixture.accountStop).toHaveBeenCalledOnce()
   await act(async () => {
     cleanup.resolve(ok())
+  })
+})
+
+describe('退出终端与结果页（模拟 Host 帧）', () => {
+  const cases: { cli: CliId; login?: string }[] = [
+    { cli: 'antigravity' }, { cli: 'codex' }, { cli: 'claude' }, { cli: 'qoder' },
+    { cli: 'qodercn' }, { cli: 'grok' }, { cli: 'zcode' }, { cli: 'mimo' },
+    { cli: 'kimi', login: 'kimi:kimi-code' }, { cli: 'omp', login: 'omp:anthropic:1' },
+    { cli: 'pi', login: 'pi:anthropic' }, { cli: 'opencode', login: 'opencode:deepseek' },
+    { cli: 'hermes', login: 'hermes:deepseek:a1b2c3' },
+  ]
+  const hidden = (f: Awaited<ReturnType<typeof setup>>) =>
+    f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
+
+  it.each(cases)('$cli keeps native fallback and result hidden until manually opened', async ({ cli, login }) => {
+    const f = await setup(false)
+    await f.update(cli, 'logout', undefined, undefined, false, { login })
+    await f.start()
+    expect(hidden(f)).toBe(true)
+    await act(async () => f.streams[0].push({
+      seq: 1, guide: { step: 'native', tone: 'warning', template: 'native', text: '模拟未识别步骤' },
+    }))
+    expect(hidden(f)).toBe(true)
+    expect(terminals[0].focus).not.toHaveBeenCalled()
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('请点击「显示原生终端」')
+    await f.click('显示原生终端')
+    expect(hidden(f)).toBe(false)
+    expect(terminals[0].focus).toHaveBeenCalled()
+    await act(async () => terminals[0].input('模拟菜单输入\r'))
+    expect(f.accountWrite).toHaveBeenCalledWith('parent', 'terminal-a', '模拟菜单输入\r')
+    await f.click('隐藏原生终端')
+    await act(async () => {
+      f.streams[0].push({
+        seq: 2, guide: { step: 'loggedOut', tone: 'success', template: 'result', text: '模拟已退出' },
+        message: '账号终端暂不可用，请确认此 CLI 没有运行任务且当前项目允许执行，再重试',
+      })
+      f.streams[0].push({ seq: 3, status: 'closed', cleanupConfirmed: true, message: '账号终端已关闭' })
+    })
+    expect(hidden(f)).toBe(true)
+    expect(f.renderer.root.findByProps({ className: 'cwn-login-notice' }).children).toEqual([])
+    expect(JSON.stringify(f.renderer.toJSON())).not.toContain('账号终端暂不可用')
+    expect(JSON.stringify(f.renderer.toJSON())).not.toContain('账号终端已关闭')
+    await f.click('显示原生终端')
+    expect(hidden(f)).toBe(false)
+    await f.click('完成')
+    expect(f.onClose).toHaveBeenCalledOnce()
+    expect(f.accountStop).not.toHaveBeenCalled()
+  })
+
+  it.each(['kimi', 'omp', 'pi', 'opencode', 'hermes'] as const)('%s preserves manual source-menu input without a login id', async (cli) => {
+    const f = await setup(false)
+    await f.update(cli, 'logout', 'native')
+    await f.start()
+    expect(f.accountStartForSource).toHaveBeenCalledWith('parent', cli, 'logout', 'native', expect.any(AbortSignal))
+    expect(hidden(f)).toBe(true)
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('模拟账号交互')
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('请点击「显示原生终端」')
+    await f.click('显示原生终端')
+    await act(async () => terminals[0].input('/logout\r'))
+    expect(f.accountWrite).toHaveBeenCalledExactlyOnceWith('parent', 'terminal-a', '/logout\r')
+    await f.click('隐藏原生终端')
+    await act(async () => f.streams[0].push({ seq: 1, status: 'closed', cleanupConfirmed: true }))
+    expect(hidden(f)).toBe(true)
+    expect(JSON.stringify(f.renderer.toJSON())).not.toContain('模拟已退出')
+  })
+
+  it.each([
+    { cli: 'qoder' as const, action: 'login' as const, step: 'signedIn', tone: 'success' as const },
+    { cli: 'zcode' as const, action: 'logout' as const, step: 'loggedOut', tone: 'success' as const },
+    { cli: 'grok' as const, action: 'logout' as const, step: 'logoutUnconfirmed', tone: 'warning' as const },
+  ])('$cli result suppresses notices even when the stream fails afterwards', async ({ cli, action, step, tone }) => {
+    const f = await setup(false)
+    await f.update(cli, action)
+    await f.start()
+    await act(async () => f.streams[0].push({
+      seq: 1, guide: { step, tone, template: 'result', text: '模拟结果' },
+      message: '账号终端暂不可用，请确认此 CLI 没有运行任务且当前项目允许执行，再重试',
+    }))
+    expect(JSON.stringify(f.renderer.toJSON())).not.toContain('账号终端暂不可用')
+    await act(async () => f.streams[0].fail())
+    expect(f.renderer.root.findByProps({ className: 'cwn-login-notice' }).children).toEqual([])
+    expect(JSON.stringify(f.renderer.toJSON())).not.toContain('账号终端暂不可用')
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('模拟结果')
+    expect(hidden(f)).toBe(true)
+    expect(f.accountStop).toHaveBeenCalledWith('parent', 'terminal-a')
+  })
+
+  it('does not carry an expanded login terminal into the next sign-out', async () => {
+    const f = await setup(false)
+    await f.update('codex', 'login')
+    await f.start()
+    await f.click('显示原生终端')
+    expect(hidden(f)).toBe(false)
+    await f.update('codex', 'logout')
+    await f.start('logout-terminal', 1)
+    expect(hidden(f)).toBe(true)
   })
 })
 

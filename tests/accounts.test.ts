@@ -995,6 +995,39 @@ describe('user-operated account terminals (synthetic PTY)', () => {
     expect(f.terminal.terminate).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['closed', 'failed'] as const)('delivers %s after cleanup completes while watch is paused at yield (模拟)', async (status) => {
+    const f = fixture()
+    const { id } = await f.manager.start('p', 'claude', 'login', f.cwd, f.signal)
+    const watch = f.manager.watch('p', id, f.signal)[Symbol.asyncIterator]()
+    expect((await watch.next()).value).toMatchObject({ status: 'running' })
+    if (status === 'failed') {
+      vi.mocked(f.terminal.terminate).mockRejectedValueOnce(new Error('模拟清理失败'))
+      await expect(f.manager.stop('p', id)).rejects.toThrow('账号终端尚未确认完全退出')
+    } else {
+      await f.manager.stop('p', id)
+    }
+    const frames = []
+    for (;;) {
+      const next = await watch.next()
+      if (next.done) break
+      frames.push(next.value)
+    }
+    expect(frames.at(-1)).toMatchObject({ status })
+    expect(frames.at(-1)?.cleanupConfirmed).toBe(status === 'closed' ? true : undefined)
+    expect(frames.filter((frame) => frame.status === status)).toHaveLength(1)
+  })
+
+  it('ends a paused watch when closed frames have expired (模拟)', async () => {
+    const f = fixture()
+    const { id } = await f.manager.start('p', 'claude', 'login', f.cwd, f.signal)
+    const watch = f.manager.watch('p', id, f.signal)[Symbol.asyncIterator]()
+    await watch.next()
+    vi.useFakeTimers()
+    await f.manager.stop('p', id)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect((await watch.next()).done).toBe(true)
+  })
+
   it('bounds retained output and preserves UTF8 chunks without persisting to worker records', async () => {
     const f = fixture()
     const { id } = await f.manager.start('p', 'codex', 'login', f.cwd, f.signal)

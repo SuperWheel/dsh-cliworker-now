@@ -94,6 +94,41 @@ afterEach(() => {
 })
 
 describe('Hermes own Nous OAuth identity, binding and native account models', () => {
+  it('模拟退出残留、终端重新登录和再次退出，每次读取当前文件而非缓存', async () => {
+    const f = fixture()
+    const runtime = { ...DEFAULT_CONFIG, stateDirectory: join(f.home, 'state'), hermesHome: f.home }
+    const removed = {
+      active_provider: 'nous',
+      providers: { nous: { portal_base_url: NOUS_PORTAL }, copilot: {} },
+      credential_pool: {
+        nous: [],
+        copilot: [{ auth_type: 'api_key', source: 'gh_cli', secret_fingerprint: 'synthetic-fingerprint' }],
+      },
+      suppressed_sources: { nous: ['device_code'] },
+    }
+    writeFileSync(join(f.home, 'auth.json'), JSON.stringify(removed))
+    expect(await readHermesAccount(runtime, signal())).toMatchObject({ state: 'unconfigured', summary: '尚未配置 Hermes 账号' })
+    const fetch = http()
+    await expect(hermesAccountModels(f.home, 'nous', { fetch })).rejects.toThrow('Nous 账号尚未登录')
+    expect(fetch).not.toHaveBeenCalled()
+    const loggedIn = auth({ email: 'fixture@example.test' })
+    loggedIn.credential_pool.nous[0].id = 'a1b2c3'
+    writeFileSync(join(f.home, 'auth.json'), JSON.stringify(loggedIn))
+    const result = await readHermesAccount(runtime, signal())
+    expect(result).toMatchObject({
+      state: 'authenticated', verification: 'local',
+      logins: [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous', accountLabel: 'fixture@example.test' }],
+    })
+    expect(JSON.stringify(result)).not.toMatch(/synthetic|access_token|agent_key|refresh_token/)
+    writeFileSync(join(f.home, 'auth.json'), JSON.stringify(removed))
+    expect((await readHermesAccount(runtime, signal())).state).toBe('unconfigured')
+  })
+  it('模拟未选中的 Nous 登录仍显示，但模型调用仍要求选中 Nous', () => {
+    const raw = auth()
+    raw.active_provider = 'copilot'
+    expect(projectHermesIdentity(raw)?.state).toBe('authenticated')
+    expect(() => selectHermesNousSource({ auth: raw, config: { model: { provider: 'nous' } }, env: {} })).toThrow('当前账号无法确认')
+  })
   it('recognizes the flat native OAuth schema without requiring email and never exposes bearer or principal', async () => {
     const f = fixture()
     const result = await readHermesAccount(

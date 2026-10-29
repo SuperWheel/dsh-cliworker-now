@@ -14,6 +14,7 @@ import { hermesNativeCommand } from './hermes-installation.ts'
 import {
   HermesNousError,
   hermesNousMinimumTtl,
+  projectHermesNousSource,
   selectHermesNousSource,
   type HermesNousSource,
 } from './hermes-nous.ts'
@@ -105,8 +106,12 @@ async function snapshot(home: string, signal: AbortSignal) {
   }
   // Suppressed/deleted credentials never become a renewal source.
   if (!material.auth.providers?.nous) return
-  const source = selectHermesNousSource(material, { allowExpired: true })
   const ttl = hermesNousMinimumTtl(material.env)
+  // A healthy singleton already proves local login, even before native pool initialization.
+  // Leave it alone; an actual renewal still requires the full runtime source below.
+  const local = projectHermesNousSource(material.auth, 0, { allowExpired: true })
+  if (local.expires > Date.now() + ttl * 1000 && !material.auth.credential_pool?.nous?.length) return
+  const source = selectHermesNousSource(material, { allowExpired: true })
   const state = material.auth.providers.nous
   return {
     material,

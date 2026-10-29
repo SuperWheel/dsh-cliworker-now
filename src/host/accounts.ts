@@ -583,6 +583,11 @@ export class AccountManager {
         return { cli, installed, state: 'unavailable', summary: error.message, actions: [] }
       if (error instanceof HermesExecutableError)
         return { cli, installed, state: 'unavailable', summary: error.message, actions: [] }
+      // Signing in again is the way out of both, so the window still offers every provider (Nous included).
+      const hermesActions = () =>
+        actionsFor(cli, this.config).map((item) =>
+          item.id === 'login' ? { ...item, providers: loginProviders(cli, undefined) } : item,
+        )
       if (error instanceof HermesAccountSourceError)
         return {
           cli,
@@ -590,7 +595,7 @@ export class AccountManager {
           state: 'unavailable',
           verification: 'local',
           summary: error.message,
-          actions: actionsFor(cli, this.config),
+          actions: hermesActions(),
         }
       if (error instanceof HermesRenewalError)
         return {
@@ -599,7 +604,7 @@ export class AccountManager {
           state: error.state === 'relogin' ? 'unauthenticated' : 'unavailable',
           verification: 'local',
           summary: error.message,
-          actions: actionsFor(cli, this.config),
+          actions: hermesActions(),
         }
       if (code === 'CLI_LAUNCHER_UNSUPPORTED')
         return {
@@ -1057,7 +1062,11 @@ export class AccountManager {
           seq = frame.seq
           yield frame
         }
-        if (session.state !== 'running' || signal.aborted) return
+        if (signal.aborted) return
+        // Cleanup can append its final frame while the consumer is paused at yield.
+        // Drain that frame before ending the stream, even if the session is now closed.
+        if (session.frames.some((frame) => frame.seq > seq)) continue
+        if (session.state !== 'running') return
         await new Promise<void>((resolve) => {
           const wake = () => {
             signal.removeEventListener('abort', wake)

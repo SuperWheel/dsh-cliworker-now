@@ -166,8 +166,9 @@ export function AccountTerminal({
   const send = useRef<(data: string) => void>(() => {})
   const refit = useRef<() => void>(() => {})
   // Guided sign-in/out is drawn by the plugin; the native terminal stays behind it.
-  // OpenCode/Hermes draw a window only for a provider or login picked in the account window.
-  const guided = action !== 'manage' && (GUIDED_ACCOUNT_CLIS.has(cli) || !!login || (!!provider && cli !== 'zcode'))
+  // Source-only sign-out still needs the CLI's menu, offered behind the manual toggle.
+  const nativeLogout = action === 'logout' && !GUIDED_ACCOUNT_CLIS.has(cli) && !login
+  const guided = action !== 'manage' && (action === 'logout' || GUIDED_ACCOUNT_CLIS.has(cli) || !!login || (!!provider && cli !== 'zcode'))
   const [rawVisible, setRawVisible] = useState(false)
   const rawShown = useRef(false)
   rawShown.current = !guided || rawVisible
@@ -185,6 +186,7 @@ export function AccountTerminal({
     setInstruction('')
     setNotice('')
     setGuide(undefined)
+    if (action === 'logout') setRawVisible(false)
     let alive = true,
       id = '',
       ended = false,
@@ -544,7 +546,7 @@ export function AccountTerminal({
         } catch (error) {
           clearTimeout(startupTimer)
           if (alive && !startup.signal.aborted) {
-            setNotice(startupMessage(error))
+            setNotice(id ? t('账号终端连接已结束，请重试') : startupMessage(error))
             finish(true)
           }
           // Start process cleanup independently so a slow stop RPC cannot keep
@@ -609,10 +611,10 @@ export function AccountTerminal({
     // Keys typed right after the terminal opens belong to it, e.g. a CLI's own setup screen.
     focus.current()
   }, [rawVisible])
-  // The Host could not follow the screen: show the native terminal for the user to continue.
+  // Sign-in keeps its native fallback; sign-out opens it only at the user's request.
   useEffect(() => {
-    if (guide?.template === 'native') setRawVisible(true)
-  }, [guide])
+    if (action !== 'logout' && guide?.template === 'native') setRawVisible(true)
+  }, [action, guide])
   useEffect(() => {
     if (!switching.current || action !== 'logout' || (guide?.step !== 'loggedOut' && guide?.step !== 'notSignedIn')) return
     switching.current = false
@@ -664,7 +666,9 @@ export function AccountTerminal({
               ? { step: 'alreadySignedIn', tone: 'info', template: 'result', text: t('当前已登录 {cli}', { cli: CLI_LABELS[cli] }) }
               : replacing.current && guide?.step === 'loggedOut'
                 ? { ...guide, text: t('已添加新凭据，并移除了原凭据') }
-                : guide
+                : guide ?? (nativeLogout && phase === 'running'
+                  ? { step: 'native', tone: 'info', template: 'native', text: instruction }
+                  : undefined)
           }
           rawVisible={rawVisible}
           notice={notice}

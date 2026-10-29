@@ -23,7 +23,8 @@ if(cli==='claude'&&process.argv.includes('--help')){
  console.log('--permission-mode <mode> (choices: "acceptEdits", '+(scenario==='level-no-auto'?'':'"auto", ')+(scenario==='level-no-manual'?'':'"manual", ')+'"plan", "bypassPermissions")');process.exit(0);
 }
 const permissionMode=process.argv[process.argv.indexOf('--permission-mode')+1];
-const id='synthetic-session', turn='synthetic-turn';
+// A new Claude process gets its own session; -hook scenarios also name it before any input, as SessionStart hooks do.
+const id=cli==='claude'&&scenario.endsWith('-hook')&&!process.argv.includes('--resume')&&permissionMode==='auto'?'discarded-session':'synthetic-session', turn='synthetic-turn';
 let waiting=false;
 const toolFails=['tool-failure','tool-recovered','tool-failure-turn-failed','tool-failure-nonzero-exit'].includes(scenario);
 const cancel=['cancel','tool-failure-cancel'].includes(scenario);
@@ -211,8 +212,9 @@ lines.on('line',line=>{
    const selected=process.argv[process.argv.indexOf('--model')+1];
    const models=['claude-proxy','claude-unknown-alias'].includes(scenario)?[{value:'unrelated-alias',resolvedModel:'unrelated-model'}]:[{value:selected,resolvedModel:scenario==='claude-alias'?'synthetic-resolved-model':selected,supportsEffort:true,supportedEffortLevels:scenario==='unsupported-effort'?['high']:['low']}];
    if(scenario==='ambiguous-alias')models.push({value:selected,resolvedModel:'other-model'});
-   const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario==='level-fallback'&&permissionMode==='auto'?'acceptEdits':permissionMode;
-   send({type:'control_response',response:{subtype:scenario==='init-rejected'||scenario==='level-rejected'&&permissionMode==='auto'?'error':'success',request_id:value.request_id,response:{models,current_permission_mode:actual}}});
+   const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario.startsWith('level-fallback')&&permissionMode==='auto'?'acceptEdits':permissionMode;
+   if(scenario.endsWith('-hook'))send({type:'system',subtype:'hook_response',session_id:id});
+   send({type:'control_response',response:{subtype:scenario==='init-rejected'||scenario.startsWith('level-rejected')&&permissionMode==='auto'?'error':'success',request_id:value.request_id,response:{models,current_permission_mode:actual}}});
   }else if(value.request?.subtype==='get_context_usage'){
    if(scenario==='context-timeout')return;
    send({type:'control_response',response:{subtype:scenario==='context-unsupported'?'error':'success',request_id:value.request_id,response:{model:scenario==='context-other-model'?'wrong-model':'synthetic-model',totalTokens:17,maxTokens:128000,categories:[{name:'System prompt',tokens:7,kind:'used'},{name:'Messages',tokens:10,kind:'used'}],systemPromptSections:[{name:'PRIVATE_BODY_MUST_NOT_LEAK',text:'PRIVATE_BODY_MUST_NOT_LEAK'}]}}});
@@ -344,6 +346,14 @@ describe('permission levels (synthetic native processes, no accounts/models)', (
       expect(last[last.indexOf('--permission-mode') + 1]).toBe('manual')
     }
     expect(f.frames.some((f) => f.event?.text === 'Claude Code 原生自动审批不可用，本轮按询问运行')).toBe(true)
+  })
+  it.each(['level-fallback-hook', 'level-rejected-hook'])('Claude %s reports only the session that received the task', async (scenario) => {
+    const f = await runLevel('claude', scenario, 'workspace-write', 'accept-edits', false)
+    expect(f.result.status, JSON.stringify(f.result)).toBe('SUCCESS')
+    expect(f.launches).toHaveLength(2)
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
+    // The first process never got the task, so its session must not become the run's or a follow-up's.
+    expect(f.frames.filter((frame) => frame.type === 'session')).toEqual([{ type: 'session', id: 'synthetic-session', model: 'synthetic-model' }])
   })
   it.each(['level-missing', 'level-wide', 'level-no-manual'])('Claude %s refuses before user input when manual cannot be confirmed', async (scenario) => {
     const f = await runLevel('claude', scenario, 'workspace-write')

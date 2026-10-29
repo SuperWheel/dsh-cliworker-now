@@ -1163,9 +1163,9 @@ OpenSpec 变更 `add-cli-login-templates`（用户 2026-10-26 要求：其他 CL
 - Host `account-guide/engine.ts` 抽出通用引导引擎 `FlowGuide`，每个 CLI 只写一份流程定义（`single-account.ts`、`multi-account.ts`）：按屏幕标记只前进的步骤、白名单登录链接与设备码提取、括号粘贴开关、自动退出命令。`AgyAccountGuide` 实现同一驱动接口。
 - Client 不再拼按键：用户回应经 `accountRespond` 只有 option / code / secret / confirm 四种，Host 校验属于当前步骤后译成该 CLI 自己的按键。授权码和 API Key 不进入事件、日志、引导帧或 Client 持久状态。
 - 登录、退出成功只以原生账号状态确认；多账号时以目标凭据的 `cli:provider[:entry]` 句柄为准（OpenCode 服务商键、Hermes 凭据池 6 位 id），其他条目变化不算数。启动单条退出前 Host 重新读取原生状态，目标已不存在则拒绝。
-- 「登录到」服务商表是固定表，逐项对照已安装版本：OpenCode 1.19.0 的 models.dev 目录 id，Hermes `auth add` 的 Known providers。表外服务商和 OAuth 仍走原生菜单。
+- 「登录到」服务商表是固定表，逐项对照已安装版本：OpenCode 1.19.0 的 models.dev 目录 id，Hermes `auth add` 的 Known providers。表外服务商和其他 OAuth 仍走原生菜单；Hermes 的 Nous 在表内，以 `auth add nous --type oauth` 启动并在原生终端完成设备码授权（2026-10-29）。
 - Hermes「替换」由 Client 串联：先添加并确认新凭据，再按旧句柄单独退出；退出未确认则保留结果页。单账号「切换账号」同样串联：先退出并确认，再登录。
-- 画面静止 8 秒仍未命中任何步骤时显示原生终端后备，此后不再自动写入。OpenCode 首次读取服务商目录约 15 秒，为它单设等待步骤，避免误入后备。
+- 画面静止 8 秒仍未命中任何步骤时显示原生终端后备，此后不再自动写入。2026-10-29 起退出流程不自动展开终端，后备只提示用户点「显示原生终端」；结果页不显示终端状态，启动之后的连接中断也不再套用「账号终端暂不可用」的启动失败提示。Host 账号 watch 先发完收尾时追加的结束帧再结束，避免窗口错过关闭帧。OpenCode 首次读取服务商目录约 15 秒，为它单设等待步骤，避免误入后备。
 - 未做：Qoder 已登录 TUI 的 `/logout` 画面未实测，依赖静止后的原生状态判断。真实账号验收尚未执行。
 - 2026-10-27 Windows 首次运行设置（变更 D14）：配色页由插件按回车采用默认配色；服务条款由用户在插件窗口点击「同意并继续」后，Host 才按勾选状态切换并选中 `[Done]`；数据收集选项默认不勾。无法跟随的向导画面转原生终端，不读取账号状态，也不输入 `/logout`。
 
@@ -1281,6 +1281,7 @@ OpenSpec 变更 `worker-permission-levels`（用户 2026-10-28/29 决定）。�
   - 实际档位 = `level ?? 跟随值`（仅可查看 → ask、工作区内修改 → auto、完全权限 → full）；Worker 有档位时跳过仅可查看下的派遣拒绝。
   - `workerApproval`：Worker 为 full 时，主对话也为 full 则沿用其审批策略，否则为 `never`（残余请求与子会话 DSH 备选工具自动放行）；非 full 为 `ask`。
   - Pi：新增 `src/host/pi-permission-gate.mjs`，询问与自动批准编辑以 `--extension` 加载（`--no-extensions` 下显式路径仍加载）。扩展用 Pi 1.0.4 文档化的 `tool_call` 返回 `{ block, reason }`，不在放行清单（询问：`read/grep/find/ls`；自动批准编辑另加 `write/edit`；DSH 备选工具自行审批）的调用经 RPC `confirm` 交桥转 Host 审批，未批准或出错即阻止。确认只带工具名、命令、路径、编辑处数与字节数，标题带每轮 nonce。扩展经 fd 3 报告就绪，桥在就绪前不发提示，5 秒未就绪报错。安装版缺少接口时询问档以只读工具运行、自动批准编辑不开 bash 并在时间线说明。三档都开放原生 `write/edit/bash`，由扩展拦截；完全权限不加载扩展。Pi 因此改走 `BridgeProtocol` 审批转发。
+- 运行时降级（变更 `fix-runtime-permission-fallback`，2026-10-29 Mac 实测后）：Claude 在发送任务前只在本地记下会话 ID，任务发出后才向 Host 绑定，初始化回读后改用询问模式重启时不再撞会话身份，续聊也不会恢复从未收到任务的会话。Antigravity 的 `--help` 总列出 `auto`，账号不支持时 agy 约 1.2 秒内在 stderr 警告并回到会自动拒绝工具的无头默认模式；插件在发送任务前最多观察 5 秒，识别到即结束原进程、按 help 缺 `auto` 的同一降级参数重启；任务发出后才出现警告则停止本轮，不重发。不保存跨运行的账号能力缓存。
 
 ## 2026-10-29 CLI 内部子 Agent 与记忆（未发布）
 

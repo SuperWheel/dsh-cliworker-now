@@ -106,7 +106,7 @@ export async function runNativeClaude(config, io) {
 
 async function runClaudeSession(config, io) {
   const peer = await io.openStdio(nativeClaudeArgv(config), { env: config.env, cwd: config.project })
-  let sessionId, result, response = '', failure, submitted = false, models, denied = false
+  let sessionId, reported = false, result, response = '', failure, submitted = false, models, denied = false
   let permissionMode = claudePermissionMode(config)
   const steps = new Map(), text = new Map(), thinking = new Map(), finished = new Set(), tools = new Set(), answers = new Map(), toolMetadata = new Map()
   const childEvents = []
@@ -127,7 +127,10 @@ async function runClaudeSession(config, io) {
     if (id === undefined) return
     if (!string(id) || (sessionId && sessionId !== id) || (config.conversationId && config.conversationId !== id)) throw fail('原生会话身份与绑定不一致')
     if (config.forkSource?.conversationId === id) throw fail('分支回执仍指向原会话')
-    if (!sessionId) { sessionId = id; io.session(id, model) }
+    sessionId ??= id
+    // Hooks can name a session before input, but Claude keeps it only once the task arrives,
+    // and a permission fallback before that starts a new process. Bind the one that got the task.
+    if (submitted && !reported) { reported = true; io.session(id, model) }
   }
   const abort = () => {
     if (!submitted || result) return

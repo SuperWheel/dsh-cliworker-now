@@ -64,6 +64,8 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
   if (!record(raw)) throw new Error('Invalid Hermes auth metadata')
   const providers = record(raw.providers) ? raw.providers : {}
   const ids = nonempty(raw.active_provider) ? [raw.active_provider] : Object.keys(providers)
+  // The selected inference provider does not sign out a saved Nous account.
+  if (record(providers.nous) && !ids.includes('nous')) ids.push('nous')
   const logins: AccountLogin[] = []
   let expired = false
   let renewable = false
@@ -71,16 +73,19 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
     const state = providers[id]
     if (id === 'nous' && record(state)) {
       try {
-        const nous = projectHermesNousSource(raw)
+        const nous = projectHermesNousSource(raw, 0, { allowInactive: true })
+        const entries = record(raw.credential_pool) ? raw.credential_pool.nous : undefined
+        const pooled = Array.isArray(entries) && entries.length === 1 ? poolEntryLogin('nous', entries[0]) : undefined
         logins.push({
           ...providerLogin('nous', 'oauth'),
           ...(nous.email ? { accountLabel: nous.email } : {}),
+          ...(pooled ? { id: pooled } : {}),
         })
       } catch (error) {
         if (error instanceof Error && /过期/.test(error.message)) {
           expired = true
           try {
-            projectHermesNousSource(raw, 0, { allowExpired: true })
+            projectHermesNousSource(raw, 0, { allowExpired: true, allowInactive: true })
             renewable = nonempty(state.refresh_token)
           } catch {
             /* A stale bearer is not sufficient without the same valid own source. */
@@ -180,7 +185,15 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
       entry.auth_type === 'api_key' &&
       (nonempty(entry.access_token) || nonempty(entry.runtime_api_key)),
   )
-  if (Object.keys(providers).length || pool.length) return configured(api ? 'api' : undefined)
+  // Empty provider declarations and ambient pool fingerprints survive native removal.
+  // They are not saved account credentials (notably Copilot's gh_cli seed).
+  const hasCredentials = (state: unknown): boolean =>
+    record(state) &&
+    [state, ...(record(state.tokens) ? [state.tokens] : [])].some((tokens) =>
+      ['access_token', 'refresh_token', 'agent_key', 'runtime_api_key', 'api_key'].some((key) => nonempty(tokens[key])),
+    )
+  if (Object.values(providers).some(hasCredentials) || pool.some(hasCredentials))
+    return configured(api ? 'api' : undefined)
   return undefined
 }
 
@@ -414,7 +427,7 @@ export async function prepareHermesAccount(
     const removed = target.login ? parseAccountLoginId(target.login) : undefined
     const args =
       action === 'login' && target.provider
-        ? ['auth', 'add', target.provider, '--type', 'api-key']
+        ? ['auth', 'add', target.provider, '--type', target.provider === 'nous' ? 'oauth' : 'api-key']
         : action === 'logout' && removed?.cli === 'hermes' && removed.entry
           ? ['auth', 'remove', removed.provider, removed.entry]
           : [action === 'login' ? 'model' : 'auth']

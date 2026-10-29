@@ -208,6 +208,21 @@ describe('guided login flows (synthetic screens)', () => {
 })
 
 describe('removable login handles (simulated stores)', () => {
+  it('模拟 Nous 退出后菜单可添加，重新登录后使用同一条原生账号记录', async () => {
+    const { loginProviders, isLoginProvider } = await import('../src/host/account-guide/providers.ts')
+    const { createAccountGuide } = await import('../src/host/account-guide/flows.ts')
+    expect(isLoginProvider('hermes', 'nous')).toBe(true)
+    expect(loginProviders('hermes', [])?.find((item) => item.id === 'nous')).toEqual({ id: 'nous', label: 'Nous' })
+    expect(loginProviders('hermes', [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous', authMethod: 'oauth' }])?.find((item) => item.id === 'nous'))
+      .toEqual({ id: 'nous', label: 'Nous', signedIn: true })
+    // The Nous device flow must never ask for an API key or auto-answer native shared import.
+    const guide = createAccountGuide('hermes', 'login', { provider: 'nous' })!
+    expect(guide.output('Import these credentials? [Y/n]: ')).toEqual([])
+    expect(guides(guide.settled())[0]).toMatchObject({ template: 'native' })
+    expect(guide.proves('login', { state: 'unconfigured' }, { state: 'authenticated', logins: [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous', authMethod: 'oauth' }] }, 0)).toBe(true)
+    expect(guide.proves('login', { state: 'unconfigured' }, { state: 'unconfigured' }, 0)).toBe(false)
+    expect(createAccountGuide('hermes', 'login', { provider: 'deepseek' })).toBeDefined()
+  })
   it('keeps two Hermes keys of one provider as two rows with their pool ids', async () => {
     const { projectHermesIdentity } = await import('../src/host/hermes-accounts.ts')
     const identity = projectHermesIdentity({

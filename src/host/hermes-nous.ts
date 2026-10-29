@@ -64,12 +64,12 @@ export interface HermesNousSource {
 export function projectHermesNousSource(
   auth: any,
   minTtlSeconds = 0,
-  options: { allowExpired?: boolean } = {},
+  options: { allowExpired?: boolean; allowInactive?: boolean } = {},
 ): HermesNousSource {
   const state = auth?.providers?.nous
   if (
     !object(state) ||
-    auth.active_provider !== 'nous' ||
+    (!options.allowInactive && auth.active_provider !== 'nous') ||
     state.auth_method === 'anonymous' ||
     state.account_tier === 'anonymous' ||
     (state.last_auth_error?.relogin_required === true && !state.access_token && !state.refresh_token) ||
@@ -149,6 +149,8 @@ export function selectHermesNousSource(
   const { config, auth, env } = material
   const cfg = config.model
   if (!object(cfg) || cfg.provider !== 'nous' || config.providers?.nous?.enabled === false) invalid()
+  if (!text(auth.providers?.nous?.access_token) || !text(auth.providers?.nous?.agent_key))
+    throw new HermesNousError('Nous 账号尚未登录，请在 Hermes 登录设置中登录')
   if (!Array.isArray(auth.credential_pool?.nous) || !auth.credential_pool.nous.length)
     throw new HermesNousError('Nous 登录已保存，请在 Hermes 登录设置中完成原生账号初始化')
   if (

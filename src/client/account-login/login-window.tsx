@@ -348,8 +348,9 @@ export function LoginWindow({
   }
   const foot = (
     <div className="cwn-login-foot">
+      {/* A finished window shows its result only; a late terminal status would contradict it. */}
       <span className="cwn-login-notice" role="status">
-        {notice}
+        {guide?.template === 'result' ? undefined : notice}
       </span>
       <Button variant="ghost" size="sm" onClick={onToggleRaw}>
         {rawVisible ? t('隐藏原生终端') : t('显示原生终端')}
@@ -485,9 +486,14 @@ export function LoginWindow({
         )
       case 'native':
         return (
-          <p className="cwn-login-callout" data-tone="warning" role="status">
-            {hostText(guide.text)}
-          </p>
+          <>
+            <p className="cwn-login-callout" data-tone="warning" role="status">
+              {hostText(guide.text)}
+            </p>
+            {action === 'logout' && !rawVisible && (
+              <p className="cwn-login-hint">{t('请点击「显示原生终端」，在 CLI 原生菜单中继续退出。')}</p>
+            )}
+          </>
         )
       default:
         return <Waiting text={hostText(guide.text)} />

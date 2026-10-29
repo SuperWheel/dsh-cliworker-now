@@ -8,6 +8,85 @@ import { createToolOutcomes } from './native-tool-outcomes.mjs'
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
 const fail = (message) => new Error(`Antigravity stream-json: ${message}`)
+const autoUnavailable = 'warning: --mode auto is not available for this account; continuing in the default mode.'
+
+/**
+ * `--help` lists auto even when the account cannot use it; agy then warns on stderr and
+ * runs its headless default, which denies every tool. agy 1.4.x warns about a second
+ * before init and before reading input (2026-10-29), so the turn is held back briefly
+ * and restarted in the fallback mode. A later warning stops the turn: input is never resent.
+ */
+async function openAgyInput(config, io, modes) {
+  for (;;) {
+    const permission = agyPermissionMode(config, modes)
+    if (permission.notice) io.event({ kind: 'diagnostic', text: permission.notice })
+    let peer, unavailable = false, sent = false, listener, stderr = '', lateError, closing
+    let ready, timer, initTimer
+    const buffered = []
+    const startup = new Promise(resolve => { ready = resolve })
+    const stop = () => closing ??= peer.close()
+    peer = await io.openStdio(nativeAgyArgv(config, modes), { env: config.env, cwd: config.project,
+      onMessage(value) {
+        if (listener) return listener(value)
+        if (buffered.length >= 256) throw fail('原生初始化事件过多')
+        buffered.push(value)
+        // stdout/stderr are separate pipes; allow an already emitted warning to drain.
+        if (value.event === 'init' && !initTimer) initTimer = setTimeout(ready, 50)
+      },
+      onStderr(chunk) {
+        if (permission.mode !== 'auto' || unavailable) return
+        const output = stderr + chunk.toString('utf8')
+        stderr = output.slice(-8192)
+        if (!output.includes(autoUnavailable)) return
+        unavailable = true
+        ready()
+        if (sent) {
+          lateError = fail('Antigravity 账号不支持自动审批，本轮已停止且未自动重试，请重新派遣')
+          void stop().catch(() => {})
+        }
+      },
+    })
+    const abort = () => ready()
+    try {
+      if (permission.mode === 'auto') {
+        // Older versions may wait for input before init. Bound that observation,
+        // and retain the no-retry guard for warnings arriving after this window.
+        timer = setTimeout(ready, Math.min(5000, Math.max(1, config.timeoutMs / 4)))
+        io.signal?.addEventListener('abort', abort, { once: true })
+        io.signal?.throwIfAborted()
+        await Promise.race([startup, peer.done.then(() => { throw fail('原生进程在输入前退出') })])
+      }
+      io.signal?.throwIfAborted()
+      if (unavailable) {
+        await stop()
+        modes = modes.filter(mode => mode !== 'auto')
+        continue
+      }
+      return { ...peer,
+        onMessage(callback) {
+          listener = callback
+          for (const value of buffered.splice(0)) callback(value)
+          return () => { listener = () => {} }
+        },
+        send(value) {
+          // This check and the first write must have no asynchronous gap.
+          if (unavailable) throw fail('Antigravity 账号不支持自动审批，输入尚未发送，请重新派遣')
+          sent = true
+          return peer.send(value)
+        },
+        permissionError: () => lateError,
+        close: stop,
+      }
+    } catch (error) {
+      await stop()
+      throw error
+    } finally {
+      clearTimeout(timer)
+      clearTimeout(initTimer)
+      io.signal?.removeEventListener('abort', abort)
+    }
+  }
+}
 
 export function agyPermissionMode(config, modes) {
   const plan = config.mode === 'plan' || config.access === 'read-only'
@@ -72,9 +151,8 @@ export async function runNativeAgy(config, io) {
   let modes
   try { modes = await probeAgyModes(config, io.signal) }
   catch (error) { throw fail(`无法核实原生权限模式，已拒绝启动：${error.message}`) }
-  const permission = agyPermissionMode(config, modes)
-  if (permission.notice) io.event({ kind: 'diagnostic', text: permission.notice })
-  const peer = await io.openStdio(nativeAgyArgv(config, modes), { env: config.env, cwd: config.project })
+  const content = await nativeAttachmentInput('text', `任务：\n${config.prompt}`, config.attachments, io.signal)
+  const peer = await openAgyInput(config, io, modes)
   let sessionId, result, invalidStep = false, failedStep = false
   const steps = new Map(), responses = new Map(), toolOutputs = new Map()
   const toolOutcomes = createToolOutcomes()
@@ -86,7 +164,8 @@ export async function runNativeAgy(config, io) {
   }
   const abort = () => { if (!result) { try { peer.kill('SIGINT') } catch {} } }
   io.signal?.addEventListener('abort', abort, { once: true })
-  const unsubscribe = peer.onMessage((value) => {
+  let unsubscribe = () => {}
+  const onMessage = (value) => {
     if (!object(value) || !string(value.event)) throw fail('无效的原生事件')
     if (result) throw fail('原生终态后仍有事件')
     if (value.event === 'init' && (!string(value.init?.model) || value.init.model !== config.preference.model))
@@ -171,16 +250,18 @@ export async function runNativeAgy(config, io) {
     io.native(info ? { ...value, step_update: { ...value.step_update, tool_info: { ...info,
       ...(info.output !== undefined ? { output: summarizeNativeRecord(info.output, 0) } : {}),
       ...(info.result !== undefined ? { result: summarizeNativeRecord(info.result, 0) } : {}) } } } : value)
-  })
+  }
   try {
     io.signal?.throwIfAborted()
+    unsubscribe = peer.onMessage(onMessage)
     const completion = peer.waitFor((value) => value.event === 'result', { timeoutMs: config.timeoutMs })
     completion.catch(() => {})
-    await peer.send({ event: 'user', message: { content: await nativeAttachmentInput('text', `任务：\n${config.prompt}`, config.attachments, io.signal) } })
+    await peer.send({ event: 'user', message: { content } })
     await completion
     if (!result || !sessionId) throw fail('缺少原生终态或会话身份')
     peer.end()
     const outcome = await peer.done
+    if (peer.permissionError()) throw peer.permissionError()
     io.signal?.throwIfAborted()
     const observed = currentResponse()
     const unfinishedTool = [...steps.values()].some((item) => item.type === 'tool' && item.state !== 'DONE' && !(item.state === 'ERROR' && item.failedTool))
@@ -191,6 +272,11 @@ export async function runNativeAgy(config, io) {
     } else if (outcome.exitCode !== 0 || result.status !== 'SUCCESS' || failedStep || unfinishedTool) {
       io.result('ERROR', observed, outcome.exitCode !== 0 ? 'Antigravity 原生进程非零退出' : typeof result.error === 'string' && result.error ? result.error : `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`, 'run')
     } else toolOutcomes.settle(io, result.response, 'run')
+  } catch (error) {
+    unsubscribe()
+    await peer.close()
+    if (peer.permissionError()) io.event({ kind: 'diagnostic', text: peer.permissionError().message, state: 'FAILED' })
+    throw peer.permissionError() ?? error
   } finally {
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()

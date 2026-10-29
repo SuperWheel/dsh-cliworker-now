@@ -2,7 +2,7 @@ import type { AccountAction, AccountLoginMode } from '../../shared/accounts.ts'
 import type { CliId } from '../../shared/types.ts'
 import { AgyAccountGuide } from '../agy-account-guide.ts'
 import { FlowGuide, type AccountGuideDriver, type FlowDefinition } from './engine.ts'
-import { HERMES_FLOW, OPENCODE_FLOW } from './multi-account.ts'
+import { HERMES_FLOW, HERMES_NOUS_FLOW, OPENCODE_FLOW } from './multi-account.ts'
 import { KIMI_FLOW } from './kimi-flow.ts'
 import { OMP_FLOW } from './omp-flow.ts'
 import { PI_FLOW } from './pi-flow.ts'
@@ -39,6 +39,9 @@ export function createAccountGuide(
 ): AccountGuideDriver | undefined {
   if (action === 'manage') return undefined
   if (cli === 'antigravity') return new AgyAccountGuide(action)
+  // Nous uses native device OAuth (including an optional shared-login prompt), not the API-key flow.
+  if (cli === 'hermes' && action === 'login' && options.provider === 'nous')
+    return new FlowGuide(HERMES_NOUS_FLOW, { action, ...options })
   // A provider picked in the window, or one login to remove; the native pickers stay native.
   const several = MULTI_FLOWS[cli]
   if (several) {

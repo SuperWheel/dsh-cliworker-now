@@ -57,6 +57,17 @@ const oauth = (email = 'fixture@example.test') => ({
 afterEach(() => roots.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })))
 
 describe('Hermes native accounts (explicit synthetic fixtures)', () => {
+  it('模拟 Nous 菜单登录使用原生 OAuth，并按凭据 ID 退出', async () => {
+    const { config, project } = fixture()
+    const login = await prepareHermesAccount('login', accountExecutable, project, config, signal(), undefined, { provider: 'nous' })
+    expect(login.argv.slice(-5)).toEqual(['auth', 'add', 'nous', '--type', 'oauth'])
+    expect(login.env.HERMES_HOME).toBe(effectiveHermesHome(config))
+    save(login.env.HERMES_HOME!, 'auth.json', { credential_pool: { nous: [{ id: 'a1b2c3', auth_type: 'api_key', access_token: 'synthetic-key' }] } })
+    const logout = await prepareHermesAccount('logout', accountExecutable, project, config, signal(), undefined, { login: 'hermes:nous:a1b2c3' })
+    expect(logout.argv.slice(-4)).toEqual(['auth', 'remove', 'nous', 'a1b2c3'])
+    await logout.cleanup()
+    await login.cleanup()
+  })
   it.skipIf(process.platform === 'win32')(
     'rejects a broken fixed exec shim without running any launcher',
     async () => {

@@ -162,6 +162,27 @@ afterEach(async () => {
 })
 
 describe('shared native Hermes Nous renewal', () => {
+  it('模拟新登录的有效 singleton 尚无凭据池，状态查询不误报未登录或触发续期', async () => {
+    const f = fixture(600), b = backend(f)
+    delete f.raw.credential_pool
+    f.save()
+    const manager = new AccountManager(b, f.runtime)
+    managers.push(manager)
+    expect((await manager.status('hermes', f.home, signal())).state).toBe('authenticated')
+    expect(b.spawn).not.toHaveBeenCalled()
+    const saved = f.raw.providers.nous
+    f.raw.providers = { copilot: {} }
+    f.raw.credential_pool = { copilot: [ambientCopilot], nous: [] }
+    f.save()
+    expect((await manager.status('hermes', f.home, signal())).state).toBe('unconfigured')
+    f.raw.providers.nous = saved
+    f.raw.credential_pool.nous = [{ ...saved, id: 'a1b2c3', source: 'device_code', auth_type: 'oauth' }]
+    f.save()
+    expect(await manager.status('hermes', f.home, signal())).toMatchObject({
+      state: 'authenticated', logins: [{ id: 'hermes:nous:a1b2c3', providerLabel: 'Nous' }],
+    })
+    expect(b.spawn).not.toHaveBeenCalled()
+  })
   it('leaves healthy credentials read-only and projects expired refreshable login as pending, not revoked', async () => {
     const f = fixture(600),
       b = backend(f)
@@ -229,6 +250,9 @@ describe('shared native Hermes Nous renewal', () => {
       )
       expect(JSON.stringify(status)).not.toMatch(/synthetic|refresh_token|agent_key|version/)
       expect(b.spawn).toHaveBeenCalledTimes(1)
+      // Signing in again must still be able to pick Nous (simulated renewal receipt).
+      if (state === 'relogin')
+        expect(status.actions.find((item) => item.id === 'login')?.providers?.map((item) => item.id)).toContain('nous')
     },
   )
   it('renews once, passes only the principal digest, and rereads native persistence before accepting', async () => {

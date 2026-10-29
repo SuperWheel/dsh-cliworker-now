@@ -36,3 +36,13 @@
 ## 5. 文档
 
 - [x] 5.1 `doc/settings-ui-design.md`（模板与账号窗口规则）、`doc/usage-details.md`、`doc/design.md`、README、`doc/tasks.md`。
+
+## 6. 2026-10-29 Mac 实测后的修正
+
+- [x] 6.1 退出流程（13 个 CLI，含按位置交给原生菜单的退出）默认隐藏原生终端：无法识别画面时不再自动展开，提示用户点「显示原生终端」接手；出结果后也不展开。登录流程的后备展开保持不变。
+- [x] 6.2 结果页不显示终端状态小字；启动成功后的连接中断不再套用「账号终端暂不可用…」的启动失败提示。Host 账号 watch 修正收尾竞态：消费方停在 `yield` 时追加的关闭帧先发完再结束，窗口不再错过 closed 帧。
+- [x] 6.3 Hermes：「登录到」补 Nous，以 `hermes auth add nous --type oauth` 在原生终端完成设备码授权（已在本机 Hermes 源码 `auth_commands.py` 核对该参数）。当前选用其他推理服务商时已保存的 Nous 登录仍计入账号；凭据池尚未初始化的有效 Nous 登录不再因续期预检报错；空服务商声明与 Copilot `gh_cli` 占位不再算作「已配置」；来源异常或续期失败时登录菜单仍列出全部服务商。
+  - 子 agent 已核对：以上为源码与模拟复现确认的缺陷，用户实际终端登录命中哪一条需真实登录后确认。选定插件私有 Hermes 目录后不回退读取普通终端默认目录的隔离规则保持不变。
+- [x] 6.4 自动检查：账号窗口 `account-terminal`、`accounts`、`account-logout`、`account-guide-flows` 4 个文件 268 项通过、1 项跳过（Windows 专属）；Hermes `hermes-accounts`、`hermes-nous`、`hermes-renewal`、`account-guide-flows`、`hermes-models`、`native-hermes-binding`、`hermes-integration` 7 个文件 148 项通过；`pnpm typecheck` 通过。新增夹具均标注模拟。
+  - 2026-10-29 合并四处修复后：全量 `pnpm test` 243 个文件通过、3 个跳过，5212 项通过、13 项跳过；`pnpm typecheck` 通过；`pnpm build:preview` 隔离包构建成功。未执行 `pnpm build`，Desktop 链接未更新。
+- [ ] 6.5 真实验收：用户在 Desktop 中重新登录 Hermes Nous，核对菜单出现 Nous、登录后账号窗口显示已登录；任选单账号与多账号 CLI 各退出一次，核对终端保持隐藏、结果页无小字。

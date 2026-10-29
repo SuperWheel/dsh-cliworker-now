@@ -56,3 +56,12 @@ export const HERMES_FLOW: FlowDefinition = {
   },
   logout: { steps: [] },
 }
+
+/** Nous OAuth has a native shared-login prompt and device authorization, never an API-key prompt.
+ * The empty steps deliberately hand the screen to the native terminal; completion still
+ * requires the target's reread account evidence, not the CLI's success message. */
+export const HERMES_NOUS_FLOW: FlowDefinition = {
+  name: 'Hermes',
+  targets: true,
+  login: { steps: [] },
+}

@@ -37,6 +37,7 @@ const OPENCODE: Entry[] = [
 ]
 
 const HERMES: Entry[] = [
+  { id: 'nous', label: 'Nous' },
   { id: 'openrouter', label: 'OpenRouter', multi: true },
   { id: 'deepseek', label: 'DeepSeek', multi: true },
   { id: 'anthropic', label: 'Anthropic', multi: true },
