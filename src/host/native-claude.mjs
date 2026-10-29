@@ -27,6 +27,9 @@ function modelEvidence(config, initialized) {
   return new Set([selected, ...canonical])
 }
 
+// Claude 2.1.287 takes `manual` on the command line but reports that mode back as `default`.
+const reportedMode = (mode) => mode === 'default' ? 'manual' : mode
+
 /** Native permission mode for the run's DSH tier; plan wins. */
 export const claudePermissionMode = (config) =>
   config.mode === 'plan' ? 'plan' : config.access === 'danger-full-access' ? 'bypassPermissions'
@@ -185,10 +188,10 @@ async function runClaudeSession(config, io) {
     }
     if (value.type === 'system' && value.subtype === 'init') {
       if (!sessionId) throw fail('初始化缺少会话身份')
-      if (permissionMode === 'auto' && value.permissionMode === 'manual') {
+      if (permissionMode === 'auto' && reportedMode(value.permissionMode) === 'manual') {
         permissionMode = 'manual'
         io.event({ kind: 'diagnostic', text: 'Claude Code 原生自动审批不可用，本轮按询问运行' })
-      } else if ((config.access && config.mode !== 'plan' || value.permissionMode !== undefined) && value.permissionMode !== permissionMode)
+      } else if ((config.access && config.mode !== 'plan' || value.permissionMode !== undefined) && reportedMode(value.permissionMode) !== permissionMode)
         throw fail('原生初始化权限模式不一致，已拒绝继续')
       io.event({ kind: 'status', text: 'Claude Code 原生流已连接', observedModel: typeof value.model === 'string' ? value.model : undefined })
     } else if (value.type === 'stream_event') {
@@ -316,7 +319,7 @@ async function runClaudeSession(config, io) {
       throw Object.assign(fail('原生初始化被拒绝'), { code: permissionMode === 'auto' ? 'CLAUDE_PERMISSION_UNAVAILABLE' : undefined })
     models = modelEvidence(config, initialized.response)
     // Claude 2.1.287 exposes this before user input, unlike system/init.
-    if (config.access && config.mode !== 'plan' && initialized.response.current_permission_mode !== permissionMode)
+    if (config.access && config.mode !== 'plan' && reportedMode(initialized.response.current_permission_mode) !== permissionMode)
       throw Object.assign(fail('原生初始化未确认所选权限；询问模式不可确认时拒绝启动'), { code: 'CLAUDE_PERMISSION_UNAVAILABLE' })
     if (failure) throw fail(failure)
     io.signal?.throwIfAborted()

@@ -83,7 +83,7 @@ function claudeEnd(error=false){send({type:'result',subtype:'success',session_id
 function claudeTurn(){
  const selected=process.argv[process.argv.indexOf('--model')+1];
  const canonical=['claude-alias','claude-proxy','claude-unknown-alias'].includes(scenario)?'synthetic-resolved-model':selected;
- send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical,permissionMode:scenario==='level-system-manual'?'manual':scenario==='level-system-wide'?'bypassPermissions':permissionMode});
+ send({type:'system',subtype:'init',session_id:scenario==='identity-mismatch'?'other-session':id,model:scenario==='model-mismatch'?'other-model':canonical,permissionMode:scenario==='level-system-manual'?'manual':scenario.startsWith('level-default')&&permissionMode==='manual'?'default':scenario==='level-system-wide'?'bypassPermissions':permissionMode});
  if(scenario==='identity-mismatch')return;
  if(scenario==='deny-continue'||scenario==='unsupported-interaction'){
   send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Bash',input:{command:'synthetic'}}]}});
@@ -212,7 +212,7 @@ lines.on('line',line=>{
    const selected=process.argv[process.argv.indexOf('--model')+1];
    const models=['claude-proxy','claude-unknown-alias'].includes(scenario)?[{value:'unrelated-alias',resolvedModel:'unrelated-model'}]:[{value:selected,resolvedModel:scenario==='claude-alias'?'synthetic-resolved-model':selected,supportsEffort:true,supportedEffortLevels:scenario==='unsupported-effort'?['high']:['low']}];
    if(scenario==='ambiguous-alias')models.push({value:selected,resolvedModel:'other-model'});
-   const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario.startsWith('level-fallback')&&permissionMode==='auto'?'acceptEdits':permissionMode;
+   const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario.startsWith('level-fallback')&&permissionMode==='auto'?'acceptEdits':scenario.startsWith('level-default')&&['auto','manual'].includes(permissionMode)?'default':permissionMode;
    if(scenario.endsWith('-hook'))send({type:'system',subtype:'hook_response',session_id:id});
    send({type:'control_response',response:{subtype:scenario==='init-rejected'||scenario.startsWith('level-rejected')&&permissionMode==='auto'?'error':'success',request_id:value.request_id,response:{models,current_permission_mode:actual}}});
   }else if(value.request?.subtype==='get_context_usage'){
@@ -354,6 +354,21 @@ describe('permission levels (synthetic native processes, no accounts/models)', (
     expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
     // The first process never got the task, so its session must not become the run's or a follow-up's.
     expect(f.frames.filter((frame) => frame.type === 'session')).toEqual([{ type: 'session', id: 'synthetic-session', model: 'synthetic-model' }])
+  })
+  // Claude 2.1.287 reports both an unavailable `auto` and a granted `manual` as `default`.
+  it.each(['level-default', 'level-default-hook'])('Claude %s falls back to manual when the CLI reads it back as default', async (scenario) => {
+    const f = await runLevel('claude', scenario, 'workspace-write', 'accept-edits', false)
+    expect(f.result.status, JSON.stringify(f.result)).toBe('SUCCESS')
+    expect(f.launches.map((argv) => argv[argv.indexOf('--permission-mode') + 1])).toEqual(['auto', 'manual'])
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
+    expect(f.frames.filter((frame) => frame.type === 'session')).toEqual([{ type: 'session', id: 'synthetic-session', model: 'synthetic-model' }])
+    expect(f.frames.some((f) => f.event?.text === 'Claude Code 原生自动审批不可用，本轮按询问运行')).toBe(true)
+  })
+  it('Claude asks in manual when the CLI reads it back as default', async () => {
+    const f = await runLevel('claude', 'level-default', 'read-only')
+    expect(f.result.status, JSON.stringify(f.result)).toBe('SUCCESS')
+    expect(f.launches).toHaveLength(1)
+    expect(f.messages.filter((m) => m.type === 'user')).toHaveLength(1)
   })
   it.each(['level-missing', 'level-wide', 'level-no-manual'])('Claude %s refuses before user input when manual cannot be confirmed', async (scenario) => {
     const f = await runLevel('claude', scenario, 'workspace-write')

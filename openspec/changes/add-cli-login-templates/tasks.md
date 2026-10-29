@@ -46,3 +46,9 @@
 - [x] 6.4 自动检查：账号窗口 `account-terminal`、`accounts`、`account-logout`、`account-guide-flows` 4 个文件 268 项通过、1 项跳过（Windows 专属）；Hermes `hermes-accounts`、`hermes-nous`、`hermes-renewal`、`account-guide-flows`、`hermes-models`、`native-hermes-binding`、`hermes-integration` 7 个文件 148 项通过；`pnpm typecheck` 通过。新增夹具均标注模拟。
   - 2026-10-29 合并四处修复后：全量 `pnpm test` 243 个文件通过、3 个跳过，5212 项通过、13 项跳过；`pnpm typecheck` 通过；`pnpm build:preview` 隔离包构建成功。未执行 `pnpm build`，Desktop 链接未更新。
 - [ ] 6.5 真实验收：用户在 Desktop 中重新登录 Hermes Nous，核对菜单出现 Nous、登录后账号窗口显示已登录；任选单账号与多账号 CLI 各退出一次，核对终端保持隐藏、结果页无小字。
+  - 2026-10-29 Mac Desktop（证据 `.test-data/mac-desktop-20261029b/`）：
+    - Hermes「登录到」列出 Nous（共 15 项，含「其他服务商（在原生终端中选择）」）；未登录，登录后的状态待用户亲自登录后核对。
+    - Pi、OpenCode、OMP 的 API Key 条目：先出现「退出后会删除这条凭据，其他账号保留。」，原生终端未展开、无多余小字，取消后账号保留。
+    - Antigravity 真实退出一次：终端默认隐藏，结果页「已退出 Antigravity」「需要时可在设置中重新登录。」，底部无小字，设置随后为未登录。
+    - 未覆盖：「请点击「显示原生终端」…」提示分支本轮未出现。
+    - 发现：设置页单账号 CLI 的「退出」按钮没有确认，点击即真实退出（MiMo API Key 因此被删除）；账号窗口条目上的「退出」有确认。属既有行为，未改。
