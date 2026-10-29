@@ -200,6 +200,13 @@ Desktop 不读取 `.zshrc`。插件会识别常见安装位置；仍找不到时
 </details>
 
 <details>
+<summary><strong>Windows 上登录页面打不开，或已登录却显示无可用模型？</strong></summary>
+
+很多代理软件在 Windows 上只打开「Internet 选项」里的系统代理，命令行工具读不到。插件会在你没有设置 `HTTP_PROXY`/`HTTPS_PROXY` 时读取这个系统代理，交给它启动的 CLI 和登录窗口，插件自己查询模型目录时也经过它；本机地址始终直连。你自己设置了代理环境变量时以你的设置为准。关掉系统代理后，约 15 秒后新启动的 CLI 不再使用它。
+
+</details>
+
+<details>
 <summary><strong>更新后模型菜单报错或出现 HTTP 404？</strong></summary>
 
 结束运行中的任务后，完全退出并重新打开 Harness。只刷新插件列表可能留下旧 Host 与新 Client。

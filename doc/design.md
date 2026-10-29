@@ -1295,3 +1295,14 @@ OpenSpec 变更 `reenable-native-cli-features` 任务 5.1/5.2（用户 2026-10-2
 - 共用方式：Worker 各自的私有目录（`native/<Worker>`）不复制记忆，而是把私有记忆路径换成指向原生目录的链接（Windows 用 junction）：Grok `<GROK_HOME>/memory-v2` → `~/.grok/memory-v2`；Hermes `hermes-http-home/memories` → `<账号 HERMES_HOME>/memories`，并给 `api_server` 工具集加 `memory`；ZCode `<ZCODE_STORAGE_DIR>/cli/memories` → `<原生存储目录>/cli/memories`（`ZCODE_STORAGE_DIR` 或 `~/.zcode`）。链接先建临时名再改名发布；原有空目录直接替换，含文件的目录改名保留；关闭时只删除链接。旧通路 Hermes 直接使用账号目录，不受影响；旧通路 ZCode 只建链接，不传开关。
 - 后台整理：Grok 每轮后后台捕获并定期整理（Dream），所用模型文档未写明；Hermes 按 `nudge_interval` 用同一模型复盘；ZCode 用本轮模型提取。均为 CLI 原生行为，可能额外消耗额度。
 - OMP：保持 `memory.backend: off`。本地记忆按 `agent.db`（Worker 私有，含账号）里的会话整理，第二阶段把记忆目录整份重写为本库结果，与原生或其他 Worker 共用会互相覆盖；只在单个 Worker 内打开又基本不会触发（只整理闲置足够久的旧会话）。整理模型取 `smol` 角色。
+
+## 2026-10-30 Windows 登录窗口桥接与系统代理（未发布）
+
+OpenSpec 变更 `fix-windows-account-login-bridge`（用户 2026-10-29 报告 ZCode/Grok/OMP/Pi/OpenCode 登录与终端启动问题，2026-10-30 报告 Codex 无可用模型；代理处理方式由用户选择「插件自动处理」）。
+
+- 系统代理：Windows 代理软件通常只打开「Internet 选项」开关（WinINET），不导出 `HTTP(S)_PROXY`；macOS 由 launchd 导出，DSH 与 CLI 直接继承。`WindowsSystemProxySource` 用 `reg.exe query` 读 `HKCU\…\Internet Settings`（5 秒超时、64 KB 上限、15 秒 TTL；读取失败即视为无代理，不沿用旧值），只接受单一 `host:port` 或 `https=`/`http=` 项。`nativeProcessBackend` 的 `systemProxy` 选项只在 Host 入口于 win32 注入：环境与 spec 都没有决定代理时，给任务进程（用 `current()`，不阻塞启动）和账号终端（用 `fresh()`）补 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`。`NO_PROXY` 合并继承值、回环地址与 `ProxyOverride` 中主机/前导通配项，统一一种拼写；`<local>`、`10.*` 无法表达，不转换。
+- Host 查询：`host-fetch.mjs` 的 `hostFetch` 按同一规则判断 HTTPS 目标是否走代理，走代理时用 Node `https.Agent({ proxyEnv })` 以 CONNECT 建隧道（TLS 仍终止在目标；DSH Electron 内置 Node 24 与本机 Node 22.23 均已实测支持），只承载无请求体的 GET；否则调用全局 `fetch`。账号模型目录（`probeAccountModels`：Codex、Pi、OpenCode、Hermes、ZCode、Kimi 等）、Grok、Hermes Nous、Kimi OAuth 的默认 fetcher 改为 `hostFetch`；测试注入的 fetcher 不变。Pi/OMP 桥是子进程，拿不到 Host 的查询函数，Windows 上改读 Host 注入给它的 `HTTPS_PROXY`/`NO_PROXY`（仅 http/https 代理，`*` 全部直连）；用户自己导出代理变量时 Host 查询也按这组变量。macOS 仍直接用 `fetch`。Codex 子任务曾把目录改为只读本地缓存，与「远端账号目录确认模型」的规格冲突，已撤回。
+- 登录引导：`FlowGuide` 改用有界 VT 屏幕（`GuideScreen`，最多 500×200），处理 CUP/CUF/擦除/折行/备用屏幕；`has()` 只看当前屏幕，链接取当前屏幕文本与 OSC 8 目标（只保留白名单域名），设备码须整段在屏。启动结果带 Host 终端尺寸，隐藏的 xterm 按此初始化，避免光标坐标错位。CLI 尚未画出文字时不判定为改用原生终端。
+- 终端启动：基线（模拟 CLI，3 次）启动到首屏中位数 7.58 秒，其中 ConPTY 等待首个设备属性查询的回应约 4.3 秒、`Get-CimInstance` 校验父进程约 1.3 秒。现由 Host 以 xterm 身份回应首个 `CSI c` 并从回放中去掉该查询，父进程改用 Toolhelp 快照（持有进程句柄防 PID 复用）；优化后中位数 1.50 秒，进程与临时目录均清理。
+- 登录域名：OpenCode（`auth.openai.com`）与 Hermes Nous（`portal.nousresearch.com`）此前只写在流程内，客户端按共享 `ACCOUNT_LOGIN_HOSTS` 再查一次会把链接过滤掉；现统一登记。
+- 未确认：ZCode 登录后仍显示「已配置」的根因（最可能是 OAuth 结果未写入插件私有凭据目录而回落到原生 API 配置），文案已改为「账号绑定未确认，请重新登录」，待新包复测。
