@@ -33,6 +33,7 @@
 
 - [ ] 4.1 OpenCode 与 MiMo 真实账号下派遣 Worker：确认模型与账号来源不变、任务正常完成、用户 skill 可被调用，且真实 `~/.opencode` 不再被写入、MiMo 数据库不新增 Claude 导入会话。
   - 未执行：本次没有真实模型调用授权；本机没有 `~/.opencode`，未用真实配置复现。
+  - 2026-10-29 Mac Desktop：OpenCode（glm-5.3-flash·Low）与 MiMo（mimo-v2.6-flash·Low）真实派遣完成，写出文件内容正确；`~/.opencode` 运行后仍不存在。调用前后账号来源对比、用户 skill 调用未检查。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
 - [ ] 4.2 Windows：OpenCode 桌面版启动路径与 MiMo 直连登录（真实主目录）下的同样检查。
   - 未执行。
   - 2026-10-29 Windows：OpenCode 真实派遣（`zai-coding-plan/glm-5.3-flash`·low，独立 WorkerRuntime）首次进程清理未确认，磁盘清理后重试通过（文件与清理均确认）；`~/.opencode` 前后均不存在；调用前后的账号来源对比未取得。MiMo 目录读取两次失败，直连登录检查未执行。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。

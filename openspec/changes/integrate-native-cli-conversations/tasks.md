@@ -85,6 +85,7 @@
 
 - [ ] 7.1 Windows 实机与全部 CLI/订阅的完整原生交互验收；本轮仅已执行 macOS Desktop 和隔离浏览器，不补记通过。
   - 2026-10-29 Windows（0.8.4 冻结包，安装包 Electron SDK 与独立 WorkerRuntime，不经 Desktop 网关）：Claude `deepseek-flash`、ZCode GLM-5.3-Flash·low、Pi glm-5.3-flash·low、Qoder CN fast、Qoder fast 的派遣、续聊、停止通过，文件与进程范围均核对。OpenCode 首次进程清理未确认，磁盘清理后重试派遣通过。OMP 派遣与续聊通过，停止场景两次未取得会话。Antigravity 目录超时、Codex/MiMo 目录读取错误、Kimi `KIMI_OAUTH_UNAVAILABLE`、Grok `GrokModelsError`，均未真实调用；Hermes 为避免 Nous 续期未调用。MiMo 目录查询期间出现 3 个可见终端窗口。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git），`summary.md`。
+  - 2026-10-29 Mac Desktop 实操（主对话经 CLI Worker 网关依次派遣，写文件、读回、列目录）：Codex gpt-6-luna、MiMo mimo-v2.6-flash、ZCode GLM-5.3-Flash、Grok grok-4.6、OMP glm-5.3-flash、Pi glm-5.3-flash、Hermes step-3.7-flash:free、OpenCode glm-5.3-flash、Qoder 共 9 个完成，磁盘文件内容核对正确。Antigravity 结果待核实：「自动审批」对应的 `--mode auto` 对该账号不可用，agy 退回默认模式，无界面运行时自动拒绝 `write_file`。Claude（haiku）首轮权限降级重试后报「Native session identity changed」，续聊恢复一个未落盘的会话 ID 失败。Kimi 凭据过期，未启动。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
 - [ ] 7.2 全部 CLI、外部 MCP 和各 CLI 工具桥全链路验收。第 11 节已新增五个 CLI 隔离真实单轮通过、两个阻塞、四个未启动；这些结果及最后定向修复的离线重放不等于全部协议、续聊、停止和工具桥全链路通过。
 - 未接通附件、分支以及特定 CLI 工具入口仍保留具体禁用原因。此 change 保持活动状态，不以格式校验或归档隐藏上述缺口。
 

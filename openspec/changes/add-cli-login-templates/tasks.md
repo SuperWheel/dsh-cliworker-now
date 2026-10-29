@@ -30,6 +30,7 @@
 
 - [ ] 4.1 至少每类一个 CLI 真实登录与退出（单账号、多服务商、同服务商多账号），记录原生状态证据。
   - 2026-10-29 核对：单账号类已有真实证据。Antigravity：macOS 经插件窗口真实登录与退出（2026-10-26，钥匙串条目新建/消失，无残留进程），Windows 真实退出（2026-10-27，用户确认条款后完成）。多服务商（OpenCode/Hermes/Pi/OMP/Kimi）与同服务商多账号的真实登录、退出与切换未执行。
+  - 2026-10-29 Mac Desktop 实操（Codex Computer Use）经插件账号窗口真实退出：单账号 Antigravity、Grok、Qoder；ZCode（确认文字「BigModel 和 Z.AI 的登录会一起退出。」）；Kimi Code（先确认信任空账号目录，终端显示 `Logged out from Kimi Code.`）；Hermes Nous（原生终端 Remove credential）；同服务商多账号 OMP 两个 OpenAI 登录逐个退出，API Key 保留。Pi、OpenCode 的 API Key 点「退出」后出现「退出后会删除这条凭据，其他账号保留。」，取消后仍在。Codex、Claude 官方与 MiMo 未点退出。重新登录由用户本人完成，尚未验证。异常：ZCode、Hermes 退出后设置摘要仍显示「已配置」；ZCode、Grok 退出完成窗口同时提示「账号终端暂不可用…」；OMP 中途提示「无法安全保存账号续期…」。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
 - [ ] 4.2 其余 CLI 列出未实测项。
 
 ## 5. 文档
