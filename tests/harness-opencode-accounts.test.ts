@@ -332,6 +332,8 @@ describe('Managed API/OpenCode accounts (explicit synthetic fixtures)', () => {
       mcp: { simulated: { type: 'local', command: ['/bin/false'] } },
     }))
     vi.stubEnv('HOME', home)
+    // Windows homedir() reads USERPROFILE, not HOME.
+    vi.stubEnv('USERPROFILE', home)
     vi.stubEnv('XDG_CONFIG_HOME', '')
     try {
       const worker = await prepareOpenCode({

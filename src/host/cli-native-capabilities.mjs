@@ -239,14 +239,42 @@ export function nativeFirstGuidance(tools) {
 async function json(path) {
   try { return JSON.parse(await readFile(path, 'utf8')) } catch { return undefined }
 }
-/** Codex's config layers, lowest precedence first: CODEX_HOME, then project ancestors down to the cwd. */
+/**
+ * Codex's config layers, lowest precedence first: CODEX_HOME, then each folder from the
+ * nearest project root down to the cwd. Codex 0.162 finds the root by `project_root_markers`
+ * (default `.git`); with no root, or `[]`, only the cwd's own layer applies.
+ */
 function codexConfigPaths(project, env) {
-  const ancestors = []
-  for (let directory = resolve(project); ; directory = dirname(directory)) {
-    ancestors.unshift(join(directory, '.codex', 'config.toml'))
-    if (dirname(directory) === directory) break
+  const user = join(env.CODEX_HOME || join(env.HOME || homedir(), '.codex'), 'config.toml')
+  let markers = ['.git']
+  try { markers = codexRootMarkers(readFileSync(user, 'utf8')) ?? markers } catch {}
+  const start = resolve(project)
+  let root = start
+  if (markers.length)
+    for (let directory = start; ; directory = dirname(directory)) {
+      if (markers.some(marker => codexRootMarker(directory, marker))) { root = directory; break }
+      if (dirname(directory) === directory) break
+    }
+  const layers = []
+  for (let directory = start; ; directory = dirname(directory)) {
+    layers.unshift(join(directory, '.codex', 'config.toml'))
+    if (directory === root) break
   }
-  return [...new Set([join(env.CODEX_HOME || join(env.HOME || homedir(), '.codex'), 'config.toml'), ...ancestors])]
+  return [...new Set([user, ...layers])]
+}
+/** Top-level `project_root_markers` as a one-line string array; anything else keeps the default. */
+function codexRootMarkers(text) {
+  const entry = tomlEntries(text).find(({ path }) => path.length === 1 && path[0] === 'project_root_markers')
+  const value = entry?.value
+  if (!value?.startsWith('[') || !value.endsWith(']')) return undefined
+  return [...value.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/gu)].map(match => match[1] ?? match[2])
+}
+// Codex takes a `.git` file (worktree, submodule) or a `.git` folder with HEAD, not an empty folder.
+function codexRootMarker(directory, marker) {
+  const path = join(directory, marker)
+  try {
+    return marker === '.git' && statSync(path).isDirectory() ? existsSync(join(path, 'HEAD')) : existsSync(path)
+  } catch { return false }
 }
 // Dotted TOML key split outside quotes, quotes removed.
 function keyPath(text) {

@@ -178,7 +178,8 @@ describe('native injection details (synthetic)', () => {
     await writeFile(join(home, '.codex', 'config.toml'), 'model = "x"\ndeveloper_instructions = "mine"\n')
     expect(codexDeveloperInstructionsConfigured(nested, { HOME: home })).toBe(true)
     expect(codexDeveloperInstructionsConfigured(nested, { HOME: '/nonexistent', CODEX_HOME: join(home, '.codex') })).toBe(true)
-    // An ancestor project layer applies to a nested working directory.
+    // A layer up to the Git root applies to a nested working directory.
+    await mkdir(join(repo, '.git')); await writeFile(join(repo, '.git', 'HEAD'), 'ref: refs/heads/main\n')
     await writeFile(join(home, '.codex', 'config.toml'), 'model = "x"\n')
     await writeFile(join(repo, '.codex', 'config.toml'), '[profiles.team]\ndeveloper_instructions = "team"\n')
     expect(codexDeveloperInstructionsConfigured(nested, { HOME: home })).toBe(true)
@@ -242,16 +243,28 @@ describe('native MCP server names (synthetic config)', () => {
       '[mcp_servers.off]', 'command = "x"', 'enabled = false', '[mcp_servers]', 'inline = { command = "x", enabled = false }',
       'developer_note = """', '[mcp_servers.docs]', 'example only', '"""', '[mcp_servers.later]', 'command = "x"', '[profiles.x]', '',
     ].join('\n'))
-    // A nested project inherits the ancestor layer, which can disable a server.
+    // A nested folder inherits the layers up to its Git root, which can disable a server.
+    await mkdir(join(project, '.git')); await writeFile(join(project, '.git', 'HEAD'), 'ref: refs/heads/main\n')
     const nested = join(project, 'packages', 'app'); await mkdir(nested, { recursive: true })
     await writeFile(join(project, '.codex', 'config.toml'), '[mcp_servers.local]\ncommand = "x"\n[mcp_servers.later]\nenabled = false\n')
     expect(await nativeCliMcpServers('codex', nested, { HOME: home })).toEqual(['github', 'my.server', 'local'])
+    // Layers above the root are not Codex's; `project_root_markers` picks the root, `[]` keeps only the cwd.
+    const markerHome = join(home, 'marker-home'), outer = join(home, 'outer'), root = join(outer, 'repo'), leaf = join(root, 'sub')
+    for (const path of [join(markerHome, '.codex'), join(outer, '.codex'), join(root, '.codex'), join(leaf, '.codex')]) await mkdir(path, { recursive: true })
+    await writeFile(join(outer, '.codex', 'config.toml'), '[mcp_servers.above]\ncommand = "x"\n')
+    await writeFile(join(root, '.codex', 'config.toml'), '[mcp_servers.inroot]\ncommand = "x"\n')
+    await writeFile(join(leaf, '.codex', 'config.toml'), '[mcp_servers.leaf]\ncommand = "x"\n')
+    await writeFile(join(root, '.cwn-root'), '')
+    await writeFile(join(markerHome, '.codex', 'config.toml'), 'project_root_markers = [".cwn-root"]\n')
+    expect(await nativeCliMcpServers('codex', leaf, { HOME: markerHome })).toEqual(['inroot', 'leaf'])
+    await writeFile(join(markerHome, '.codex', 'config.toml'), 'project_root_markers = []\n')
+    expect(await nativeCliMcpServers('codex', leaf, { HOME: markerHome })).toEqual(['leaf'])
     await writeFile(join(home, '.claude.json'), JSON.stringify({ mcpServers: { user: { command: 'secret' }, paused: { disabled: true } },
       projects: { [project]: { mcpServers: { scoped: {} }, enabledMcpjsonServers: ['shared'], disabledMcpServers: ['scoped'] } } }))
     await writeFile(join(project, '.mcp.json'), JSON.stringify({ mcpServers: { shared: {}, unapproved: {} } }))
     expect(await nativeCliMcpServers('claude', project, { HOME: home })).toEqual(['user', 'shared'])
     expect(await nativeCliMcpServers('grok', project, { HOME: home })).toEqual(['user', 'shared', 'unapproved'])
-    await mkdir(join(home, '.kimi-code')); await mkdir(join(project, '.kimi-code')); await mkdir(join(project, '.git'))
+    await mkdir(join(home, '.kimi-code')); await mkdir(join(project, '.kimi-code'))
     await writeFile(join(home, '.kimi-code', 'mcp.json'), JSON.stringify({ mcpServers: { kimiuser: {} } }))
     await writeFile(join(project, '.kimi-code', 'mcp.json'), JSON.stringify({ mcpServers: { kimiproject: {} } }))
     expect(await nativeCliMcpServers('kimi', project, { HOME: home })).toEqual(['kimiuser', 'shared', 'unapproved', 'kimiproject'])
