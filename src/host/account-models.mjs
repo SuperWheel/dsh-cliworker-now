@@ -1,5 +1,7 @@
 // Read-only account metadata. Never refresh OAuth, submit prompts, or return
 // credentials, account IDs, headers, endpoint URLs, or raw exception messages.
+import { hostFetch } from './host-fetch.mjs'
+
 const unknown = () => ({ state: 'unknown', source: 'unknown', models: [] })
 const denied = (denialReason) => ({
   state: 'denied',
@@ -185,7 +187,7 @@ export async function probeAccountModels(input, options = {}) {
       headers.originator = input.codexClientVersion ? 'cli_worker_models' : 'pi'
       headers.version = codexVersion
     }
-    const fetcher = options.fetch ?? globalThis.fetch
+    const fetcher = options.fetch ?? hostFetch
     const request = async (path) => {
       const target = `${base}${path}${codex && path !== '/wham/usage' ? `?client_version=${encodeURIComponent(codexVersion)}` : ''}`
       const response = await fetcher(target, { method: 'GET', headers, signal, redirect: 'error' })

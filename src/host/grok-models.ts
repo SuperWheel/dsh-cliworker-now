@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { accountEmail, localTokenExpired } from './account-identity.ts'
+import { hostFetch } from './host-fetch.mjs'
 import { EFFORTS, type Effort, type ModelChoice } from '../shared/types.ts'
 
 export const GROK_MODELS_URL = 'https://cli-chat-proxy.grok.com/v1/models'
@@ -263,7 +264,7 @@ export async function discoverGrokAccountModels(
   try {
     // Native 1.0.0-era remote/client.rs:715-787, xai-grok-http/src/lib.rs:247-261.
     const request = async (target: string) => {
-      const response = await (options.fetch ?? fetch)(target, {
+      const response = await (options.fetch ?? hostFetch)(target, {
         method: 'GET',
         redirect: 'error',
         signal,

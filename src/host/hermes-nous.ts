@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { Effort } from '../shared/types.ts'
 import type { AccountModelScope } from './account-models.mjs'
 import { accountEmail } from './account-identity.ts'
+import { hostFetch } from './host-fetch.mjs'
 
 const object = (value: unknown): value is Record<string, any> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -279,7 +280,7 @@ async function get(
   const chunks: Uint8Array[] = []
   try {
     signal.throwIfAborted()
-    const response = await (options.fetch ?? fetch)(url, {
+    const response = await (options.fetch ?? hostFetch)(url, {
       method: 'GET',
       redirect: 'error',
       signal,

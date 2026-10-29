@@ -87,6 +87,8 @@ import {
   type RuntimeConfig,
 } from './process.ts'
 import { nativeProcessBackend } from './native-process.ts'
+import { hostProxyLookup, WindowsSystemProxySource } from './windows-system-proxy.ts'
+import { setHostProxy } from './host-fetch.mjs'
 import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
 import { CliExecutablePathStore } from './cli-executable-paths.ts'
 import type { CliExecutablePathStatus } from '../shared/cli-settings.ts'
@@ -315,7 +317,14 @@ export class CliWorkerService extends TypertRemoteService {
     const stateDirectory =
       config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
     this.options.cliExecutablePaths = new CliExecutablePathStore(stateDirectory)
-    this.backend = nativeProcessBackend(ctx.subprocess)
+    // Windows: CLIs and the Host's own HTTPS reads follow the Internet Options proxy.
+    const raw = nativeProcessBackend(ctx.subprocess)
+    const systemProxy = process.platform === 'win32' ? new WindowsSystemProxySource((spec) => raw.spawn(spec)) : undefined
+    this.backend = nativeProcessBackend(ctx.subprocess, process.platform, { systemProxy })
+    if (systemProxy) {
+      void systemProxy.refresh()
+      setHostProxy(hostProxyLookup(systemProxy))
+    }
     this.accounts = new AccountManager(this.backend, this.options, undefined, (cli, error) =>
       this.runtime.blockCatalogOnCleanup(cli, error),
     )
@@ -681,6 +690,7 @@ export class CliWorkerService extends TypertRemoteService {
     ctx.effect(
       () => () => {
         this.disposed.abort()
+        setHostProxy(undefined)
         return Promise.all([
           this.runtime.close(),
           this.accounts.close(),

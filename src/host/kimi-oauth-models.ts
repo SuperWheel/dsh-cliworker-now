@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { readKimiOwnToken } from './kimi-accounts.ts'
+import { hostFetch } from './host-fetch.mjs'
 import type { FirstPartyModelSource } from './first-party-models.ts'
 import type { AccountModelScope, probeAccountModels } from './account-models.mjs'
 
@@ -197,7 +198,7 @@ export async function probeKimiOAuthModels(
   const control = AbortSignal.any([signal, cancel.signal, AbortSignal.timeout(options.timeoutMs ?? 8_000)])
   const request = async (name: 'models' | 'usages') => {
     try {
-      const response = await (options.fetch ?? fetch)(`${source.baseUrl}/${name}`, {
+      const response = await (options.fetch ?? hostFetch)(`${source.baseUrl}/${name}`, {
         headers: { Authorization: `Bearer ${source.credential.access}`, Accept: 'application/json' },
         redirect: 'error',
         signal: control,

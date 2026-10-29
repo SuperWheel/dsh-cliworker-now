@@ -29,6 +29,7 @@ const allowlist = ['README.md', 'README.en.md', 'LICENSE', 'cordis.patch.yml']
 const helperNames = [
   'account-models',
   'grok-catalog',
+  'host-fetch',
   'native-launch',
   'native-spawn',
   'own-account-lease',
@@ -137,6 +138,7 @@ for (const name of [
   'pi-omp-control',
   'own-account-lease',
   'pi-omp-refresh',
+  'host-fetch',
 ]) {
   required.add(`lib/types/host/${name}.mjs`)
   required.add(`lib/types/host/${name}.d.mts`)

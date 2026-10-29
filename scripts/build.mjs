@@ -92,6 +92,7 @@ for (const name of [
   'grok-catalog',
   'own-account-lease',
   'pi-omp-refresh',
+  'host-fetch',
 ]) {
   const source = `src/host/${name}.mjs`
   if (existsSync(source)) cpSync(source, `lib/${name}.mjs`)
@@ -120,7 +121,7 @@ for (const extension of ['mjs', 'ps1', 'd.mts']) {
 cpSync('src/host/private-launch.mjs', 'lib/types/host/private-launch.mjs')
 cpSync('src/host/pi-omp-environment.mjs', 'lib/types/host/pi-omp-environment.mjs')
 cpSync('src/host/pi-omp-environment.d.mts', 'lib/types/host/pi-omp-environment.d.mts')
-for (const name of ['own-account-lease', 'pi-omp-refresh', 'pi-omp-control']) {
+for (const name of ['own-account-lease', 'pi-omp-refresh', 'pi-omp-control', 'host-fetch']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }
