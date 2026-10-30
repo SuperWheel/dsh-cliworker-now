@@ -53,6 +53,11 @@
 - **WHEN** 用户在账号窗口退出 Nous 登录（无论凭据池是否已有条目）
 - **THEN** 以 `hermes logout --provider nous` 一并清除该目录的 Nous 凭据、凭据池与共享登录，Hermes 下次启动不会把共享登录重新采用回来
 
+#### Scenario: Windows Nous 目录经过系统代理
+- **WHEN** Nous 登录已确认且 Host 模型目录请求经过 Windows 系统代理
+- **THEN** 代理请求 SHALL 在调用方没有显式提供 User-Agent 时保留 Node fetch 的默认客户端标识；模型与强度仍只来自当前账号目录，不依赖默认模型是否存在或属于该目录
+- **AND** HTML 403 或明确的 Cloudflare challenge 403 SHALL 提示网络拦截，不当作登录失效；不增加认证续期、重试、公共目录回退或模型调用，JSON 权限拒绝继续报账号权限错误
+
 #### Scenario: Kimi、Pi、OMP 的服务商
 - **WHEN** 用户在 Kimi、Pi 或 OMP 的「登录到」中选择服务商
 - **THEN** Kimi 以 `kimi login --region mainland-cn|global` 启动设备码登录，Pi 以 `login <服务商>` 启动，OMP 在原生界面输入 `/login <服务商>`；之后的登录方式、平台选项与密钥由用户在窗口中回应

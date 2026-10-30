@@ -57,12 +57,16 @@ export async function hostFetch(input, init = {}) {
 function proxiedFetch(target, init, proxy) {
   if (init.body != null) return Promise.reject(new TypeError('Proxied Host requests carry no body'))
   init.signal?.throwIfAborted()
+  // https.request has no fetch defaults. Nous rejects a missing User-Agent at
+  // its edge; preserve Node fetch's client identity.
+  const requestHeaders = new Headers(init.headers)
+  if (!requestHeaders.has('user-agent')) requestHeaders.set('user-agent', 'node')
   return new Promise((resolve, reject) => {
     const outgoing = request(
       target,
       {
         method: init.method ?? 'GET',
-        headers: Object.fromEntries(new Headers(init.headers)),
+        headers: Object.fromEntries(requestHeaders),
         agent: new Agent({ proxyEnv: { HTTPS_PROXY: proxy }, keepAlive: false }),
         signal: init.signal,
       },

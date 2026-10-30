@@ -388,6 +388,35 @@ describe('Hermes own Nous OAuth identity, binding and native account models', ()
     await expect(hermesAccountModels(f.home, 'nous', { fetch })).rejects.not.toThrow('synthetic-private')
     expect(fetch).toHaveBeenCalledOnce()
   })
+  it.each([
+    { 'content-type': 'text/html; charset=UTF-8' },
+    { 'content-type': 'TEXT/HTML' },
+    { 'content-type': 'application/json', 'cf-mitigated': 'challenge' },
+  ])('模拟 Nous 目录网络拦截：提示检查网络而非重新登录，清除旧强度 %j', async (headers) => {
+    const f = fixture(), source = selectHermesNousSource(await assertHermesOwnAccounts(f.home))
+    await hermesAccountModels(f.home, 'nous', { fetch: http() })
+    const good = http()
+    const fetch = vi.fn(async (url: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) =>
+      String(url).endsWith('/models')
+        ? new Response('synthetic-private-block-page', { status: 403, headers })
+        : good(url, init),
+    )
+    await expect(hermesAccountModels(f.home, 'nous', { fetch })).rejects.toThrow(
+      'Nous 元数据请求被网络服务拦截，请检查代理或网络后重试',
+    )
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(hermesNousEfforts(f.home, source, 'synthetic/free')).toEqual(['default'])
+  })
+  it.each([401, 403])('模拟 JSON %i 权限拒绝仍提示检查登录，不重试', async (status) => {
+    const f = fixture()
+    const fetch = vi.fn(async () => new Response('{"error":"synthetic-private"}', {
+      status, headers: { 'content-type': 'application/json', server: 'cloudflare' },
+    }))
+    await expect(hermesAccountModels(f.home, 'nous', { fetch })).rejects.toThrow(
+      'Nous 账号权限查询被拒绝，请检查登录状态',
+    )
+    expect(fetch).toHaveBeenCalledOnce()
+  })
   it('sanitizes malformed and oversized responses', async () => {
     const f = fixture()
     for (const body of ['private-invalid-json', 'x'.repeat(1024 * 1024 + 1)]) {
@@ -490,11 +519,11 @@ describe('Hermes own Nous OAuth identity, binding and native account models', ()
       }),
     ).rejects.toThrow('账号')
   })
-  it('模拟新账号目录登录 Nous 后只有服务商、尚无默认模型：仍按账号列出 Nous 模型', async () => {
+  it.each([undefined, 'stealth/missingno'])('模拟 Nous 默认模型为 %s：仍按账号列出模型和强度', async (model) => {
     const f = fixture()
     writeFileSync(
       join(f.home, 'config.yaml'),
-      JSON.stringify({ auth: { adopt_external_logins: false }, model: { provider: 'nous' } }),
+      JSON.stringify({ auth: { adopt_external_logins: false }, model: { provider: 'nous', default: model } }),
     )
     const capture = vi.fn()
     const result = await discoverHermes(f.executable, capture, join(f.home, 'worker'), f.home, { fetch: http() })

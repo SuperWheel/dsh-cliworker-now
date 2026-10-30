@@ -92,3 +92,20 @@
   - 设置页（Codex gpt-6.1-sol high 经 Computer Use 只读查看，只点了一次「刷新模型」）：Hermes Agent 显示绿色「Nous账号登录」，无「无法确认当前自身账号」或其他警告。模型下拉框可用，共 6 个 Nous 免费模型（laguna-s-2.1:free、laguna-xs-2.1:free、solar-mini4:free、step-3.7-flash:free、beam-1.0-501b-a23b:free、ornith-1.5-122b:free），当前为 step-3.7-flash:free；思考强度可用，有「默认」「High」「Medium」「Low」，当前为 Low。
   - 未派遣任务，未调用模型。
 
+## 9. 2026-10-30 Windows Nous 登录后模型及强度不加载
+
+- [x] 9.1 只读取证并定位根因：经 `desktop-audit/remote.py` heredoc，读取 WinINET 非敏感设置、代理变量存在性、过滤后的 config 标量及安装包源码。
+  - WinINET `ProxyEnable=1`、`ProxyServer=127.0.0.1:7897`；HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY 均不存在。插件配置 `provider: nous`、`default: stealth/missingno`，安装包版本 0.8.4，含 Host 代理初始化和 Nous 目录路径。
+  - 单独 Node 无宿主 SDK，首次整包加载报 `Cannot find module @deepseek-ai/dsh-subprocess`，未执行查询。随后在内存加载安装包中原样 Nous/Host 代理模块，调用 `hermesAccountModels`（不走续期、不写认证），只打印状态/计数/白名单响应头：两目标均命中系统代理；portal 为 200/application/json，inference models 为 403/text/html、server=cloudflare。错误被统一译为「Nous 账号权限查询被拒绝，请检查登录状态」。
+  - 同路径只在请求内存中补 `User-Agent: node`：两目标均为 200/application/json，`state=supported`、6 个模型；强度分别为 default、default、default/max/xhigh/high/medium/low/minimal/none、default/high/medium/low、default/max/xhigh/high/medium/low、default/max/xhigh/high/medium/low/minimal。没有原始凭据或响应正文输出，没有登录、续期、配置写入或模型调用。
+  - 根因：Windows 代理分支的 `https.request` 丢失 Node fetch 默认 User-Agent，模型端点被拦截；不是代理未注入或默认模型占位阻断。13:12 旧登录失败原因不能由本轮结果倒推。
+- [x] 9.2 修复 Host 代理默认 User-Agent、区分 Nous HTML 拦截与 JSON 认证拒绝，补合成回归和默认模型占位回归。
+  - `host-fetch.mjs` 在代理请求未显式提供 User-Agent 时补 `node`，保留显式值和原请求头；`hermes-nous.ts` 将 HTML 403 / challenge 403 译为固定网络提示，不读取阻断页正文，JSON 401/403 保留账号权限错误。同步 README、设计与增量规格。
+  - `hermes-nous-proxy` 合成传输回归与 `hermes-nous` 新增错误分类用例在旧实现上 4 项失败（其余 48 项通过），修复后通过；占位默认模型与无默认模型均能读到合成账号目录和强度。
+- [x] 9.3 运行相关 Vitest、typecheck、隔离 preview 和 change 严格校验，记录实际结果。
+  - 所有 pnpm 命令前按用户要求执行 `export PATH=/private/tmp/claude-501/-Users-leeyl-AI-Project-DeepSeekHarness-cliworker-now/2f8fa750-5e53-440a-be75-3325ede92abb/scratchpad/bin:$PATH`。
+  - `pnpm test tests/hermes-nous-proxy.test.ts tests/hermes-nous.test.ts tests/windows-system-proxy.test.ts tests/hermes-adapter.test.ts tests/hermes-models.test.ts tests/hermes-renewal.test.ts`：6 文件、140 项全部通过。首次沙箱运行因本机模拟代理监听 `127.0.0.1` 被 EPERM 阻止而失败，获准沙箱外重跑后通过。
+  - `pnpm typecheck`：Host/Client 对 DSH 0.2.1-rc.5 通过。`pnpm build:preview`：通过，产物 `.cache/preview-package`，已核对 bundle 与独立 `host-fetch.mjs` 包含修复；这是共享工作区快照，也包含其他会话当时已有的改动，未安装到 Desktop。
+  - `pnpm spec validate add-cli-login-templates --strict`：通过。限定本次文件的 `git diff --check`：通过。未运行全量测试、正式 build、Windows 新包安装/界面验收或真实模型；未提交、归档或修改版本号。
+- [ ] 9.4 安装新包后 Windows Desktop 复测：刷新 Hermes Nous 模型，确认 6 个账号模型及对应强度可选，未出现误导登录错误；本轮不安装或操作 Windows UI。
+

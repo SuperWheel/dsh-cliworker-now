@@ -126,6 +126,12 @@ Client 选择后调用 `accountStartWith(session, cli, action, { provider, mode 
 - 原生终端会回显输入，但仍只存在于隐藏的 xterm 中，与原生行为一致。
 - 链接只打开流程定义白名单中的 https 主机。
 
+### D10 Windows Nous 目录查询（2026-10-30）
+
+现场已安装 0.8.4 的 Nous 请求经过 `hostFetch` 和 WinINET 系统代理。原样只读路径中，账号接口为 JSON 200，模型接口为 Cloudflare HTML 403；在同一路径仅补 `User-Agent: node` 后，两接口均为 JSON 200，读出 6 个模型及强度。`https.request` 不像 Node fetch 自动提供 User-Agent，Windows 专用代理分支丢失该默认头是本次根因；`model.default: stealth/missingno` 不参与 Nous 目录查询。
+
+`host-fetch.mjs` 仅在代理分支没有显式 User-Agent 时补 `node`，保留调用方的值（含显式空值）、认证头、取消和拒绝重定向规则；不增加请求、重试、磁盘状态或续期。Nous 的 HTML 403 与明确的 Cloudflare challenge 403 回执使用固定网络拦截提示，不读响应正文、不输出认证材料；JSON 401/403 继续作为权限拒绝。测试使用合成响应和凭据，Windows 新包 Desktop 验收单独保留。
+
 ## Per-CLI mapping（实测后回填，未实测项标「待实测」）
 
 见 `tasks.md` 第 0 节与 `doc/tasks.md` 的探测记录。

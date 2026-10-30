@@ -288,6 +288,14 @@ async function get(
     })
     if (!response.ok || response.redirected) {
       await response.body?.cancel()
+      // An HTML block page is not an OAuth rejection. Never surface its body or
+      // ask users to replace healthy credentials because an edge blocked HTTP.
+      if (
+        response.status === 403 &&
+        (/^text\/html(?:\s*;|\s*$)/i.test(response.headers.get('content-type') ?? '') ||
+          response.headers.get('cf-mitigated') === 'challenge')
+      )
+        throw new HermesNousError('Nous 元数据请求被网络服务拦截，请检查代理或网络后重试')
       throw new HermesNousError(
         [401, 403].includes(response.status)
           ? 'Nous 账号权限查询被拒绝，请检查登录状态'
