@@ -16,8 +16,10 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { z } from 'zod'
@@ -271,6 +273,56 @@ function processAlive(pid: number): boolean {
   } catch (error) {
     return (error as NodeJS.ErrnoException).code !== 'ESRCH'
   }
+}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/** Start time (ms since epoch) of a running process, or undefined when the OS does not say. */
+function processStartedAt(pid: number): number | undefined {
+  try {
+    if (process.platform === 'win32') {
+      // CIM reports every process's creation time, including services Get-Process may not open.
+      const script =
+        "$p=Get-CimInstance Win32_Process -Filter ('ProcessId=' + [int]$env:CWN_LOCK_PID); if($p){[DateTimeOffset]::new($p.CreationDate.ToUniversalTime()).ToUnixTimeMilliseconds()}"
+      const output = execFileSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
+        encoding: 'utf8',
+        env: { ...process.env, CWN_LOCK_PID: String(pid) },
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 15_000,
+        windowsHide: true,
+      })
+      const started = Number(output.trim())
+      return Number.isSafeInteger(started) && started > 0 ? started : undefined
+    }
+    const output = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      encoding: 'utf8',
+      env: { ...process.env, LC_ALL: 'C' },
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000,
+    })
+    const match = /^\s*\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d{4})\s*$/.exec(output)
+    const month = match ? MONTHS.indexOf(match[1]) : -1
+    if (!match || month < 0) return undefined
+    return new Date(+match[6], month, +match[2], +match[3], +match[4], +match[5]).getTime()
+  } catch {
+    return undefined
+  }
+}
+/** Lock mtimes and process start times may be truncated to whole seconds. */
+const LOCK_CLOCK_SLACK_MS = 2_000
+/**
+ * A Host starts before it writes its lock, so a live PID whose process started
+ * after the lock was written is a reused PID and the Host behind the lock has
+ * exited (Windows reuses PIDs quickly). An unknown start time counts as live.
+ */
+function lockOwnerAlive(pid: number, path: string, startedAt: (pid: number) => number | undefined): boolean {
+  if (!processAlive(pid)) return false
+  let written: number
+  try {
+    written = statSync(path).mtimeMs
+  } catch {
+    return true
+  }
+  const started = startedAt(pid)
+  return started === undefined || started <= written + LOCK_CLOCK_SLACK_MS
 }
 
 /** One host owns a private store; a live second host cannot resume the same CLI session. */
@@ -749,6 +801,12 @@ export class WorkerStorage {
    */
   private acquireLock(): void {
     const body = JSON.stringify({ pid: process.pid, token: this.token })
+    // Asked only for live PIDs; one query per PID covers every retry.
+    const starts = new Map<number, number | undefined>()
+    const startedAt = (pid: number) => {
+      if (!starts.has(pid)) starts.set(pid, processStartedAt(pid))
+      return starts.get(pid)
+    }
     for (let attempt = 0; ; attempt++) {
       const temp = join(this.directory, `.host.lock.${this.token}.tmp`)
       try {
@@ -765,7 +823,7 @@ export class WorkerStorage {
         const owner = readLockOwner(path)
         if (owner === 'missing') continue
         if (owner === 'invalid') conflict = { invalid: name }
-        else if (processAlive(owner.pid)) conflict ??= 'live'
+        else if (lockOwnerAlive(owner.pid, path, startedAt)) conflict ??= 'live'
         else if (name !== 'host.lock') stale.push(path)
         if (conflict && conflict !== 'live') break
       }
@@ -788,7 +846,7 @@ export class WorkerStorage {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
         const owner = readLockOwner(this.lock)
         if (owner === 'invalid') throw new Error('Invalid store lock; inspect host.lock before recovery')
-        if (owner !== 'missing' && processAlive(owner.pid))
+        if (owner !== 'missing' && lockOwnerAlive(owner.pid, this.lock, startedAt))
           throw new Error('CLI Worker store is already owned by another Harness host')
         rmSync(this.lock, { force: true })
         writeFileSync(this.lock, body, { mode: 0o600, flag: 'wx' })

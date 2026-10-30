@@ -26,3 +26,10 @@
 ## 4. 文档
 
 - [x] 4.1 在 `doc/tasks.md` 记录命令、结果与未验证边界。
+
+## 5. 进程号复用导致锁误判（2026-10-30 Windows）
+
+- [x] 5.1 定位（Codex gpt-6-astra high 只读排查，证据在 `.test-data/windows-desktop-20261030/diagnosis/`，不入 Git）：Windows Desktop 界面报 `cliworker/watch: active Service "cliworker" is unavailable`。`.dsh\cliworker-now\host.lock` 与一个候选锁都记录 PID 37876、写于 00:39:33；当前 PID 37876 是 18:49:44 启动的 GameInputSvc.exe。旧逻辑只做 `process.kill(pid, 0)`，判定存储被占用并抛 `CLI Worker store is already owned by another Harness host`，服务因此未注册；包与 runtime-host 205 个文件校验一致，与 rc.5 无关。
+- [x] 5.2 实现 `lockOwnerAlive`：PID 存活时比较进程启动时间与锁文件 mtime，晚于 mtime + 2 秒判定为复用；查询失败按存活处理。规格与设计已同步。
+- [x] 5.3 回归：`storage-lock` 新增「进程号复用后回收」用例（锁文件日期设为一周前、PID 为正在运行的父进程）；撤回修复时该用例失败。`storage-lock`、`storage`、`storage-torn-tail`、`dispatch-storage` 共 46 项通过；`pnpm typecheck` 通过（DSH 0.2.1-rc.5）。
+- [ ] 5.4 Windows 实机：新包启动后自动回收遗留锁、cliworker 服务注册、派遣可用；Windows 上 CIM 查询在 Host 内可用。

@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from 'vitest'
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -47,6 +47,25 @@ it('never deletes a live claim published by another Host while reclaiming a stal
   writeFileSync(join(directory, liveClaim), JSON.stringify({ pid: process.ppid, token: 'other' }), { mode: 0o600 })
   expect(() => new WorkerStorage(directory)).toThrow('already owned')
   expect(locks(directory)).toEqual(['host.lock', liveClaim])
+})
+
+it('reclaims locks whose PID now runs a process started after the lock was written', () => {
+  const directory = store()
+  // SIMULATED PID reuse: a running PID (our parent) named by lock files dated a week
+  // before it started, as when Windows hands an exited Host's PID to a new process.
+  const claim = `host.lock.${randomUUID()}`
+  const written = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  for (const name of ['host.lock', claim]) {
+    writeFileSync(join(directory, name), JSON.stringify({ pid: process.ppid, token: 'reused' }), { mode: 0o600 })
+    utimesSync(join(directory, name), written, written)
+  }
+  const storage = new WorkerStorage(directory)
+  const owned = locks(directory)
+  expect(owned).toHaveLength(2)
+  expect(owned).not.toContain(claim)
+  expect(JSON.parse(readFileSync(join(directory, 'host.lock'), 'utf8')).pid).toBe(process.pid)
+  storage.close()
+  expect(locks(directory)).toEqual([])
 })
 
 it('refuses an unreadable claim without removing it', () => {
