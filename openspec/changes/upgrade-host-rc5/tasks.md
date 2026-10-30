@@ -53,8 +53,8 @@
     - 以上五项现在等用户本人重新登录。
   - API Key 只到确认步骤，点「取消」后账号仍在：Pi、OpenCode、OMP 插件目录 Key，确认文字为「退出后会删除这条凭据，其他账号保留。」。OMP 外部配置显示「在原配置中管理」，未改。
   - MiMo API Key 未点退出：账号窗口里只有可删除的条目才弹确认，不可删除的条目直接调用 `signOut`（`src/client/account-login/accounts-window.tsx`）。MiMo、Antigravity、Grok、Qoder 都走这条路径。
-  - [ ] 失败一：Hermes Nous 两次确认退出，都显示「原生终端已关闭，请重试。」和「该账号已不存在，请刷新后重试」。刷新后账号仍列出，复现一致，未退出。
-  - [ ] 失败二：Kimi（凭据已过期）确认并信任空账号目录后，提示「无法识别当前步骤，请在原生终端中继续。」。原生菜单「Select a provider to log out」里没有可辨认的条目，按 Esc 取消，未退出。设置页改为显示「Kimi 当前账号剩余额度暂无法确认…」。
+  - [x] 失败一（已修复，见 `add-cli-login-templates` 7.1、7.4）：Hermes Nous 两次确认退出，都显示「原生终端已关闭，请重试。」和「该账号已不存在，请刷新后重试」。刷新后账号仍列出，复现一致，未退出。
+  - [x] 失败二（已修复，见 `add-cli-login-templates` 7.2、7.4）：Kimi（凭据已过期）确认并信任空账号目录后，提示「无法识别当前步骤，请在原生终端中继续。」。原生菜单「Select a provider to log out」里没有可辨认的条目，按 Esc 取消，未退出。设置页改为显示「Kimi 当前账号剩余额度暂无法确认…」。
   - [ ] 偏差：ZCode 退出后账号列表为空，设置摘要仍是「已配置」，与 10-29 一致，见 `fix-windows-account-login-bridge` 4.3。
 - [ ] 5.3 Windows：
   - 已完成：codex-bridge 0.3.0 不经模型直连可用（列窗口约 0.5 秒，绑定约 0.4 秒，截图约 0.9 秒）；Windows DSH 已带 `--force-renderer-accessibility` 重启，测试工作区为 `live-codex`。

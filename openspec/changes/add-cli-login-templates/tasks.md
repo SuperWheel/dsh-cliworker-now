@@ -70,4 +70,7 @@
 - [x] 7.3 自动检查：
   - 新增 `kimi-account-window`「模拟 2.4.1：…← current…」及 `kimiOAuthRow` 断言；新增 `hermes-renewal`「模拟 Nous 单条退出…」，其中目标不存在时仍拒绝。两项在旧代码上均失败，修复后通过。
   - `pnpm typecheck` 通过；`kimi-account-window`、`kimi-accounts`、`hermes-renewal`、`hermes-accounts`、`hermes-nous`、`accounts`、`account-terminal`、`account-logout`、`account-guide-flows` 共 9 个文件，450 项通过、1 项跳过。
-- [ ] 7.4 Mac Desktop 真实复测：Hermes Nous 与 Kimi Code 各真实退出一次（浏览器登录类，按用户此前授权），核对结果页与设置页状态。
+- [x] 7.4 Mac Desktop 真实复测（2026-10-30 正式构建 `ef4e3ae` 后重启，Codex gpt-6.1-sol high 经 Computer Use 操作；证据 `.test-data/mac-desktop-20261030/retest-logout.json`、`retest-logout.md`）：
+  - Hermes Nous：账号窗口 1 行。确认退出后，结果页「已退出 Hermes」「需要时可在设置中重新登录。」；底部无小字，原生终端未展开，未出现交给原生终端的提示。之后账号窗口「尚未登录 Hermes Agent 的任何账号。」，设置页「未登录」。
+  - Kimi Code（凭据已过期）：确认退出，在空账号目录信任提示里点「信任并继续」，结果页「已退出 Kimi」；底部无小字，原生终端未展开。之后账号窗口「尚未登录 Kimi 的任何账号。」，设置页「未登录」，提示「Kimi OAuth 尚未登录或已退出，请打开账号终端登录」。
+  - 上一轮的「原生终端已关闭，请重试。」「该账号已不存在…」「无法识别当前步骤…」都未再出现。两项均未重新登录，等用户本人登录。
