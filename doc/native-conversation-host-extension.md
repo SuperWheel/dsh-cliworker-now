@@ -1,5 +1,7 @@
 # 原生子对话与主对话体验的宿主接口缺口
 
+2026-10-30 当前源码候选迁移至 **0.2.1-rc.5**，公开 tag commit 为 `b830ec950faba0a46dda564be3e2d854afed94f1`。rc.3 的 48 文件扩展在 rc.5 上无冲突应用，增删行与 rc.3 相同；随源码保留官方 rc.4/rc.5 的推理显示文本（去掉开头 `<signature>…</signature>`、Body Slot 增加 `rawText`）与视图标签提示调整。新输入见 `host-extensions/dsh-0.2.1-rc.5`，验证与未验证边界见 `openspec/changes/upgrade-host-rc5/tasks.md`。
+
 2026-10-24 当前源码候选已完整迁移至 **0.2.1-rc.3**，公开 tag commit 为 `1f81c047fc48fa190a683e469daa699857e9afe8`，应用 build identity `be72761` 未解析为公开提交。新输入见 `host-extensions/dsh-0.2.1-rc.3`；保留 rc.3 的视图动作、草稿和快照语义，隔离 rc.2/rc.3 界面与原生设置均可用。下文 rc.2 记录保留为历史，实际最终验收见 `doc/tasks.md`。
 
 2026-10-17 当前候选：本次四包构建输入为用户实际更新的 Desktop **0.2.1-rc.2**。官方源码 tag `dsh-v0.2.1-rc.2` 对应 `687f282e8625c6b8d11ff58211a90524be2e4317`，实际应用构建标记为 `332895e0f7c9d4dbfb29729f5eb367fa263ff986`，两者分别记录，不视为同一提交。源码补丁位于 `host-extensions/dsh-0.2.1-rc.2`，独立候选为 `artifacts/dsh-host-extension-021rc2-data`。四包 manifest 的 220 个文件已校验；实际 Node 24 下四包类型检查与 8 文件、268 项定向回归通过。此处记录构建及验收事实，不作为插件加载的宿主版本白名单；实际安装与 Desktop 验收以 `doc/tasks.md` 对应阶段记录为准。

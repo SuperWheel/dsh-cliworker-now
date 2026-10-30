@@ -65,7 +65,7 @@ Captured from a real demo session in Harness Desktop (taken with v0.6.5; details
 | Grok Build | ACP | | |
 
 - **Platforms**: macOS / Windows. Install the native build of each CLI you use and complete that CLI's own login or API setup.
-- **Host**: DeepSeek Harness (bundled resources target 0.2.1-rc.3; isolated enable/disable, page boot and native settings checks cover 0.2.1-rc.2 and rc.3); Node.js ≥ 22.19.0.
+- **Host**: DeepSeek Harness (bundled resources target 0.2.1-rc.5; the earlier rc.3 resources passed isolated enable/disable, page boot and native settings checks on 0.2.1-rc.2 and rc.3); Node.js ≥ 22.19.0.
 - **Verification**: tested versions and what has or has not been verified for each CLI are in [usage details](doc/usage-details.en.md#42-adapter-coverage-and-verification) and the [implementation log](doc/tasks.md). Listing models does not prove you can call them.
 
 Installation, login and path notes for Qoder, Claude Code (including CC Switch), ZCode, Hermes and others are in [usage details](doc/usage-details.en.md).

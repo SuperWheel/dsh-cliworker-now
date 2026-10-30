@@ -30,7 +30,7 @@ const entries = (items: ReturnType<typeof rows>, stock = stockRows()) => [
 it('ships four canonical browser packages, exact source provenance, licenses and no private build input', () => {
   const manifest = verifyHostRuntime(root)
   expect(manifest.packages.map((pkg: any) => pkg.name)).toEqual(ids.map(id => `@deepseek-ai/dsh-client-${id}`))
-  expect(manifest.upstream.commit).toBe('1f81c047fc48fa190a683e469daa699857e9afe8')
+  expect(manifest.upstream).toMatchObject({ version: '0.2.1-rc.5', commit: 'b830ec950faba0a46dda564be3e2d854afed94f1' })
   expect(manifest.packages.find((pkg: any) => pkg.id === 'ui-chat').externalRequirements['@tanstack/react-virtual']).toBe('3.14.10')
   expect(manifest.files.some((file: any) => /build-inputs|\.map$|node_modules|\.cache/.test(file.path))).toBe(false)
   for (const pkg of manifest.packages) expect(readFileSync(join(root, 'runtime-host', pkg.directory, 'LICENSE'), 'utf8')).toContain('MIT')

@@ -1307,3 +1307,11 @@ OpenSpec 变更 `fix-windows-account-login-bridge`（用户 2026-10-29 报告 ZC
 - 登录域名：OpenCode（`auth.openai.com`）与 Hermes Nous（`portal.nousresearch.com`）此前只写在流程内，客户端按共享 `ACCOUNT_LOGIN_HOSTS` 再查一次会把链接过滤掉；现统一登记。
 - MiMo 模型缓存（同日用户追加）：插件读取 MiMo 元数据与运行任务时都设 `MIMOCODE_DISABLE_MODELS_FETCH=1`（2026-10-08 账号隔离改造引入），MiMo 只用自己的 models.dev 缓存；缓存一旦存在就优先于程序内置列表。Windows 上该缓存停在 2026-06-19（只有 v2.5），账号目录已只给 v2.6，交集为空。`discoverMimoModels` 在账号目录可读且交集为空时运行一次 MiMo 自带的 `models --refresh`（显式刷新不受该环境变量限制，同一可执行文件 10 分钟内最多一次），清空 `mimoMetadataCache` 后重读；仍对不上时报不一致，不按账号目录猜模型或强度。刷新写的是 MiMo 自己的缓存，与原生 MiMo 正常启动时的行为相同；不改用户配置与凭据。
 - 未确认：ZCode 登录后仍显示「已配置」的根因（最可能是 OAuth 结果未写入插件私有凭据目录而回落到原生 API 配置），文案已改为「账号绑定未确认，请重新登录」，待新包复测。
+
+## 2026-10-30 随包原生界面升级到 Harness 0.2.1-rc.5（未发布）
+
+OpenSpec 变更 `upgrade-host-rc5`（用户 2026-10-30 把 Mac 与 Windows 的 DSH Desktop 更新到 0.2.1-rc.5 后要求先处理兼容再安装）。
+
+- 差异：官方 rc.3 → rc.5 共 388 个文件变化，绝大多数只是版本号。随包四包里只有 `ui-chat`（rc.4 起去掉推理开头的 `<signature>…</signature>` 再显示，全为签名时不渲染推理行；`conversation.chat.reasoning.body` 增加 `rawText`）和 `ui-conversation`（视图标签只在预计溢出时显示提示，「更多会话视图」不再拼当前名称）有源码变化；Host 端插件引用的 SDK 只有版本号变化。插件启用时随包四包整体替换官方同名包，继续用 rc.3 包会让主对话和子对话丢掉推理显示处理。
+- 做法：沿用 rc.3 流程，从 tag `dsh-v0.2.1-rc.5`（`b830ec95`）重建四包。48 文件补丁无冲突应用，增删行与 rc.3 相同；构建依赖由 rc.3 冻结输入只改 DSH pin 得到，第三方 953 个包与插件根 855 个包均无漂移；`dependency-links.json` 用新增的 `generate-dependency-links.mjs` 从 rc.3 清单逐行映射并重新计算摘要。开发 SDK 39 个 pin 与根 workspace 300 条发布期限例外改为 rc.5。
+- 验证边界：四包源码类型检查与插件 typecheck 通过；上游四包 Vitest 未在本机运行（自动模式不允许执行外部仓库代码）；未重复 rc.3 的多宿主隔离矩阵，以 rc.5 实装检查作为本次验收，结果记在变更任务清单。

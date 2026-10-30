@@ -1,5 +1,5 @@
 # CLI Worker 原生界面运行资源
 
-基于 DeepSeek Harness 官方 0.2.1-rc.3 四包及同目录 source.patch。各包保留原模块身份和 MIT 许可；修改版由 CLI Worker 分发，不代表上游官方发布。生成的机器路径注释已归一化，不分发未使用的 source map；代码与已验收候选仅有注释差异。详细摘要见 manifest.json。
+基于 DeepSeek Harness 官方 0.2.1-rc.5 四包及同目录 source.patch。各包保留原模块身份和 MIT 许可；修改版由 CLI Worker 分发，不代表上游官方发布。生成的机器路径注释已归一化，不分发未使用的 source map；代码与已验收候选仅有注释差异。详细摘要见 manifest.json。
 
 经本插件 bundle 层使用独立 cliworker-ui-* 行 ID 接入，浏览器模块身份保持官方名称；安装、更新或卸载前结束任务并退出宿主，完成后冷启动。其他自定义覆盖或带旧来源断言的设置可能冲突；预检拒绝时保留配置，由用户明确迁移或移除本插件恢复。兼容性按接口能力检查，实际验收范围以 Release 为准。

@@ -2087,7 +2087,7 @@ index 08a7432e1e5f4fbbd165576ad6887ad264dbc5d3..1037f1ceeaf92bd7f55437aa5f06b78e
 +
 +export type { TelemetryUnavailable, TelemetryAvailability, ExternalRequestState } from './contract/external-status.ts'
 diff --git a/packages/client/ui-conversation/src/client/locales.ts b/packages/client/ui-conversation/src/client/locales.ts
-index 938326df751cc5effa5885db86bb8e6918297377..c747281191dba10c4d9c93bf03e20f7b8211e10e 100644
+index 5a221bc9a12eb44e083e3ef37fb25dc9164e3312..1dde0c3d4dc9d9feb7cd012b8c211234141f90a9 100644
 --- a/packages/client/ui-conversation/src/client/locales.ts
 +++ b/packages/client/ui-conversation/src/client/locales.ts
 @@ -66,7 +66,19 @@ export const zh = {
@@ -2110,7 +2110,7 @@ index 938326df751cc5effa5885db86bb8e6918297377..c747281191dba10c4d9c93bf03e20f7b
    'context.system': '系统提示词',
    'context.tools': '工具定义',
    'context.messages': '对话消息',
-@@ -448,7 +460,19 @@ export const en = {
+@@ -447,7 +459,19 @@ export const en = {
    'file.notStaged': 'The file has not finished uploading; re-add it and try again',
    'file.label': 'File',
    'context.aria': '{percent} of context used',
@@ -2789,7 +2789,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
      const toggleCommandMenu = vi.fn()
      const { view, shell, menuLauncher } = bench({ draft: 'draft text', toggleCommandMenu })
 diff --git a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-index bda16c8a081e645afc96ba4f0ffff5a60bb96fd6..b496e60df99b3cb36f18f56b559625dc7a152955 100644
+index d86ad463fe12e7a274107a8bb26e58bfe22353a6..75a818868c8ea94bccd9fc38ddc0cdfb66a745ac 100644
 --- a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 @@ -139,6 +139,9 @@ function mount(

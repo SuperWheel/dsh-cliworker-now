@@ -108,7 +108,7 @@ it('keeps Host Typert classes external while the resolver is limited to Client',
   expect(emitted).not.toContain('class RemoteError')
 })
 
-for (const [target, directory] of [['0.2.0-rc.2', '020rc2'], ['0.2.1-rc.1', '021rc1'], ['0.2.1-rc.2', '021rc2'], ['0.2.1-rc.3', '021rc3']]) {
+for (const [target, directory] of [['0.2.0-rc.2', '020rc2'], ['0.2.1-rc.1', '021rc1'], ['0.2.1-rc.2', '021rc2'], ['0.2.1-rc.3', '021rc3'], ['0.2.1-rc.5', '021rc5']]) {
   it(`selects only the exact verified ${target} graph without touching root links`, () => {
     const root = fixture(target); sdk(root, '0.0.0-wrong')
     const isolated = join(root, `.cache/cliworker-build-deps-${directory}`)
@@ -118,7 +118,7 @@ for (const [target, directory] of [['0.2.0-rc.2', '020rc2'], ['0.2.1-rc.1', '021
   })
 }
 it('rejects an unverified later SDK target without expanding the supported version range', () => {
-  const root = fixture('0.2.1-rc.4'); sdk(root, '0.2.1-rc.4')
+  const root = fixture('0.2.1-rc.6'); sdk(root, '0.2.1-rc.6')
   expect(() => selectBuildDependencies(root, {})).toThrow('Unsupported pinned')
 })
 
@@ -132,13 +132,13 @@ it('uses actual app-boot preflight without a DSH version gate while keeping deve
   expect(peers.length).toBeGreaterThan(0)
   expect(peers.every(([, range]) => range === '*')).toBe(true)
   expect(manifest.engines).not.toHaveProperty('dsh')
-  expect(manifest.devDependencies['@deepseek-ai/dsh']).toBe('0.2.1-rc.3')
+  expect(manifest.devDependencies['@deepseek-ai/dsh']).toBe('0.2.1-rc.5')
   const selected = selectBuildDependencies(root, {})
   // Resolve through the selected dsh package, never a root/transitive fallback.
   const requireDsh = createRequire(selected.require.resolve('@deepseek-ai/dsh/package.json'))
   const { evaluatePluginCompatibility } = await import(pathToFileURL(requireDsh.resolve('@deepseek-ai/dsh-app-boot')).href)
   // rc.99 checks metadata admission only; it does not claim its runtime APIs work.
-  for (const runtime of ['0.2.0-rc.2', '0.2.1-rc.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.99'])
+  for (const runtime of ['0.2.0-rc.2', '0.2.1-rc.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.1-rc.99'])
     expect(evaluatePluginCompatibility(manifest, {}, runtime)).toBeUndefined()
   const gated = structuredClone(manifest)
   gated.peerDependencies['@deepseek-ai/dsh-agent'] = '0.2.1-rc.1'

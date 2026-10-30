@@ -8,7 +8,7 @@ type ReasoningBodyProps = PropsRuntime<'conversation.chat.reasoning.body'> & Pro
 export declare const ReasoningContent: import("react").MemoExoticComponent<({ text, running, labels, t }: FactoryComponentPropsOf<"conversation.chat.reasoning.content">) => import("react").JSX.Element>;
 /**
  * Render the default Body through the same Factory available to third-party wrappers.
- * @param props - original reasoning and the framework's Factory renderer.
+ * @param props - display-ready reasoning and the framework's Factory renderer.
  * @returns an occurrence of the official reasoning Content Factory.
  */
 export declare function DefaultReasoningBody({ text, running, renderFactorySlot }: ReasoningBodyProps): import("react").ReactNode;
