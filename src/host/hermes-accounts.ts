@@ -344,16 +344,46 @@ export async function readHermesAccount(
   }
 }
 
-export async function listHermesAccountSources(config: RuntimeConfig, signal: AbortSignal) {
-  const status = await readHermesAccount(config, signal)
-  if (!['authenticated', 'configured', 'unauthenticated'].includes(status.state)) return []
-  const plugin = resolve(
+const pluginHermesHome = (config: RuntimeConfig) =>
+  resolve(
     config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now'),
     'accounts',
     'hermes',
   )
-  const id: AccountSource = effectiveHermesHome(config) === plugin ? 'plugin' : 'native'
+
+export async function listHermesAccountSources(config: RuntimeConfig, signal: AbortSignal) {
+  const status = await readHermesAccount(config, signal)
+  if (!['authenticated', 'configured', 'unauthenticated'].includes(status.state)) return []
+  const id: AccountSource = effectiveHermesHome(config) === pluginHermesHome(config) ? 'plugin' : 'native'
   return [{ id, label: id === 'plugin' ? '插件目录' : '原生目录' }]
+}
+
+/**
+ * Hermes' own Nous sign-in (`hermes model`, then Nous) also makes Nous the inference provider;
+ * `hermes auth add nous` only stores the login, and `hermes logout --provider nous` resets the
+ * provider to auto (rechecked with Hermes 2026-10-30). With no explicit provider no account's
+ * models can be listed, so after a Nous login in the plugin's account home the provider is set
+ * with Hermes' own `config set`, which also drops the previous provider's route. A provider the
+ * user chose stays theirs, and the user's own Hermes home is never changed.
+ */
+export async function selectHermesNousAfterLogin(
+  config: RuntimeConfig,
+  executable: string,
+  run: (argv: string[], cwd: string, env: Record<string, string>) => Promise<unknown>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted()
+  const home = effectiveHermesHome(config)
+  if (home !== pluginHermesHome(config)) return false
+  const provider = (await assertHermesOwnAccounts(home, signal)).config?.model?.provider
+  if (nonempty(provider) && provider.trim().toLowerCase() !== 'auto') return false
+  const command = await hermesNativeCommand(executable, ['config', 'set', 'model.provider', 'nous'], signal)
+  await run([process.execPath, fileURLToPath(new URL('./private-launch.mjs', import.meta.url)), ...command], home, {
+    ...hermesAccountEnvironment(home),
+    PYTHONDONTWRITEBYTECODE: '1',
+    ELECTRON_RUN_AS_NODE: '1',
+  })
+  return true
 }
 
 export async function prepareHermesAccount(

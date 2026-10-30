@@ -209,10 +209,12 @@ export async function discoverHermes(
   // runtime. Parallel scalar queries can race that first initialization.
   // Nous has an authenticated native catalog contract. Its bounded own config is
   // sufficient; the dedicated bounded renewal above is the only metadata write path.
-  const model =
-    material.config.model?.provider === 'nous' ? material.config.model.default : await get('model.default')
-  const provider = material.config.model?.provider === 'nous' ? 'nous' : await get('model.provider')
-  if (!nonempty(model) || !nonempty(provider) || provider === 'auto')
+  // The Nous catalog comes from the signed-in account, not from a default model, which a Nous
+  // login in a new account home does not have until a model is chosen.
+  const nous = material.config.model?.provider === 'nous'
+  const model = nous ? undefined : await get('model.default')
+  const provider = nous ? 'nous' : await get('model.provider')
+  if ((!nous && !nonempty(model)) || !nonempty(provider) || provider === 'auto')
     throw new Error('请在 Hermes 登录设置中明确选择服务商和模型，然后刷新')
   const scope = await hermesAccountModels(home, provider, options)
   options.signal?.throwIfAborted()

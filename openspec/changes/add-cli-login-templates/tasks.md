@@ -74,3 +74,18 @@
   - Hermes Nous：账号窗口 1 行。确认退出后，结果页「已退出 Hermes」「需要时可在设置中重新登录。」；底部无小字，原生终端未展开，未出现交给原生终端的提示。之后账号窗口「尚未登录 Hermes Agent 的任何账号。」，设置页「未登录」。
   - Kimi Code（凭据已过期）：确认退出，在空账号目录信任提示里点「信任并继续」，结果页「已退出 Kimi」；底部无小字，原生终端未展开。之后账号窗口「尚未登录 Kimi 的任何账号。」，设置页「未登录」，提示「Kimi OAuth 尚未登录或已退出，请打开账号终端登录」。
   - 上一轮的「原生终端已关闭，请重试。」「该账号已不存在…」「无法识别当前步骤…」都未再出现。两项均未重新登录，等用户本人登录。
+
+## 8. 2026-10-30 Hermes Nous 重新登录后未确认、模型不加载（用户反馈）
+
+- [x] 8.1 登录确认失败。现象：账号窗口 Nous 登录后提示「未能确认登录。请重新开始登录，或查看原生终端中的提示。」
+  - 根因：登录窗口保留 Hermes 账号目录，挡住 Nous 续期；核对登录时 `readStatus` 先调用 `ensureHermesNousFresh`，报 `busy` 后只能返回不带账号行的「不可用」，新登录因此无法被证明。上一轮退出能确认，是因为退出后已无 Nous 行，不会触发续期。
+  - 修复：账号窗口内的核对改用 `readStatus(..., { renew: false })`，只读原生账号存储；窗口外的状态读取仍先续期。
+- [x] 8.2 模型和思考强度不加载。现象：设置页模型、强度为空，提示「Hermes Agent 无法确认当前自身账号…」。
+  - 根因（只读诊断插件目录与 Hermes 源码）：Hermes 原生 `logout --provider nous` 在配置选用 Nous 时把 `model.provider` 重置为 `auto`，并把 `model.base_url` 改为 OpenRouter（`auth.py` `_reset_config_provider`）；`auth add nous` 只保存登录，不恢复服务商。插件的模型查询与账号绑定都只接受明确的服务商，`auto` 不被猜测。
+  - 修复：Nous 登录确认后，插件账号目录的服务商为 `auto` 或未设置时，以 Hermes 原生 `config set model.provider nous` 选定 Nous，再报告登录成功；已明确选择的服务商不变，用户自己的 Hermes 目录不改。Nous 模型列表不再要求已有默认模型（新账号目录登录后没有默认模型）。
+  - 原生行为核对：在只含模拟配置、无任何凭据的临时 `HERMES_HOME` 中，经插件原生入口运行该命令，退出码 0，输出「Cleared model.base_url (https://openrouter.ai/api/v1) — that route belonged to auto, not nous」，配置变为 `provider: nous`、保留默认模型、不含 `base_url`。
+- [x] 8.3 自动检查：
+  - 新增 `hermes-renewal`「模拟 Hermes 退出 Nous 后服务商为 auto：重登 Nous…」及两个服务商已明确时不改动的用例；新增 `hermes-nous`「模拟新账号目录登录 Nous 后…尚无默认模型」。把核对改回先续期后，前三项均失败。
+  - `pnpm typecheck` 通过；`hermes-nous`、`hermes-adapter`、`hermes-renewal`、`accounts`、`kimi-account-window`、`cli-account-binding*`、`windows-cli-account-status`、`qoder-accounts` 共 8 个文件，407 项通过。
+- [ ] 8.4 Mac Desktop 真实复测：用户本人在账号窗口登录 Nous，确认窗口显示已登录，设置页加载 Nous 模型与思考强度。
+

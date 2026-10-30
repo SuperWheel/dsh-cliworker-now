@@ -490,4 +490,15 @@ describe('Hermes own Nous OAuth identity, binding and native account models', ()
       }),
     ).rejects.toThrow('账号')
   })
+  it('模拟新账号目录登录 Nous 后只有服务商、尚无默认模型：仍按账号列出 Nous 模型', async () => {
+    const f = fixture()
+    writeFileSync(
+      join(f.home, 'config.yaml'),
+      JSON.stringify({ auth: { adopt_external_logins: false }, model: { provider: 'nous' } }),
+    )
+    const capture = vi.fn()
+    const result = await discoverHermes(f.executable, capture, join(f.home, 'worker'), f.home, { fetch: http() })
+    expect(capture).not.toHaveBeenCalled()
+    expect(result[0]).toMatchObject({ id: '["nous","synthetic/free"]', efforts: ['default', 'low', 'high'] })
+  })
 })

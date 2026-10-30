@@ -26,7 +26,7 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
-import { executableFor, resolveCliExecutable } from './adapters.ts'
+import { captureCatalogMetadata, executableFor, resolveCliExecutable } from './adapters.ts'
 import {
   projectDirectory,
   ProcessCleanupUnconfirmedError,
@@ -58,7 +58,12 @@ import {
   ZCodeAccountCapabilityError,
 } from './zcode-grok-accounts.ts'
 import { readPiOmpAccount, readOpenCodeAccount, prepareOpenCodeAccount } from './harness-opencode-accounts.ts'
-import { prepareHermesAccount, readHermesAccount, listHermesAccountSources } from './hermes-accounts.ts'
+import {
+  prepareHermesAccount,
+  readHermesAccount,
+  listHermesAccountSources,
+  selectHermesNousAfterLogin,
+} from './hermes-accounts.ts'
 import { listPiOmpAccountSources } from './pi-omp-native.ts'
 import { verifyHermesExecutable, HermesExecutableError } from './hermes-installation.ts'
 import { preparePiOmpAccountTerminal } from './pi-omp-accounts.ts'
@@ -285,6 +290,8 @@ interface AccountSession {
   attachDeadline?: ReturnType<typeof setTimeout>
   expiry?: ReturnType<typeof setTimeout>
   exitCode?: number
+  /** A native step that must follow a proven login before the window reports it. */
+  afterLogin?: (signal: AbortSignal) => Promise<unknown>
 }
 
 /** User-only auth processes. Only allowlisted identity metadata leaves the Host. */
@@ -362,7 +369,13 @@ export class AccountManager {
     }
   }
 
-  private async readStatus(cli: CliId, cwd: string, signal: AbortSignal): Promise<AccountStatus> {
+  /** `renew: false` reads Hermes' own store as it is, for a window that holds off Nous renewal. */
+  private async readStatus(
+    cli: CliId,
+    cwd: string,
+    signal: AbortSignal,
+    { renew = true }: { renew?: boolean } = {},
+  ): Promise<AccountStatus> {
     if (this.unsafeTerminals.has(cli))
       return {
         cli,
@@ -405,8 +418,9 @@ export class AccountManager {
         await verifyHermesExecutable(executable, control)
         const local = await readHermesAccount(this.config, control)
         if (
-          local.logins?.some((login) => login.providerLabel === 'Nous') ||
-          local.summary === 'Hermes 登录已保存，等待自动续期'
+          renew &&
+          (local.logins?.some((login) => login.providerLabel === 'Nous') ||
+            local.summary === 'Hermes 登录已保存，等待自动续期')
         )
           await ensureHermesNousFresh({
             home: effectiveHermesHome(this.config),
@@ -757,6 +771,7 @@ export class AccountManager {
     let session: AccountSession | undefined
     let allocation: Promise<AccountSession> | undefined
     let release: (() => void | Promise<void>) | undefined
+    let afterLogin: AccountSession['afterLogin']
     let instruction = instructionFor(cli, action)
     try {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, startup)
@@ -872,6 +887,14 @@ export class AccountManager {
         }
         const selectedHome = effectiveHermesHome(this.config)
         if (selectedHome !== oldHome) releases.push(await reserveHermesAccount(selectedHome, startup))
+        if (action === 'login' && provider === 'nous')
+          afterLogin = (signal) =>
+            selectHermesNousAfterLogin(
+              this.config,
+              executable,
+              (argv, home, env) => captureCatalogMetadata(this.backend, this.config, argv, home, signal, env),
+              signal,
+            )
         launch = prepared
         instruction = prepared.instruction
       } else if (cli === 'opencode') {
@@ -912,6 +935,7 @@ export class AccountManager {
             ...(guide ? { guide, guideControl: new AbortController() } : {}),
             project: cwd,
             release,
+            ...(afterLogin ? { afterLogin } : {}),
           }
           const own = session
           void terminal.done.then(
@@ -1152,9 +1176,18 @@ export class AccountManager {
 
   /** The native account: agy's own credential store, or this CLI's account status. */
   private evidence(session: AccountSession, signal: AbortSignal): Promise<AccountEvidence | undefined> {
-    return session.cli === 'antigravity'
-      ? this.identity(session.cli, signal)
-      : this.readStatus(session.cli, session.project, signal)
+    if (session.cli === 'antigravity') return this.identity(session.cli, signal)
+    // A Hermes window holds off Nous renewal, which a renewing read reports as busy (no rows):
+    // Hermes' own account store shows whether the login or logout took effect.
+    return this.readStatus(session.cli, session.project, signal, { renew: session.cli !== 'hermes' })
+  }
+
+  /** Report a proven change, after the native step a login still needs. */
+  private async proven(session: AccountSession, change: AccountChange, signal: AbortSignal) {
+    // The login itself took effect; a failed follow-up leaves the model list to say what is missing.
+    if (change === 'login') await session.afterLogin?.(signal).catch(() => undefined)
+    signal.throwIfAborted()
+    this.guided(session, session.guide!.confirmed(change))
   }
 
   /** The CLI ended its own login/logout: read the account before reporting the window closed. */
@@ -1237,7 +1270,7 @@ export class AccountManager {
         const after = await this.evidence(session, signal).catch(() => undefined)
         signal.throwIfAborted()
         if (guide.proves('login', before, after, session.exitCode)) {
-          this.guided(session, guide.confirmed('login'))
+          await this.proven(session, 'login', signal)
           return
         }
       }
@@ -1259,7 +1292,7 @@ export class AccountManager {
         signal.throwIfAborted()
         if (guide.proves(change, before, after, session.exitCode)) {
           // Nothing is left for the user to do in the native terminal.
-          this.guided(session, guide.confirmed(change))
+          await this.proven(session, change, signal)
           return
         }
         // A finished process will not change the account any more.

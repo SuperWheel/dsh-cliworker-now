@@ -45,6 +45,9 @@
 #### Scenario: Hermes 的 Nous
 - **WHEN** 用户在 Hermes 的「登录到」中选择 Nous
 - **THEN** 以 `hermes auth add nous --type oauth` 启动原生登录，不进入 API Key 输入：Hermes 询问是否导入该目录已保存的共享 Nous 登录时由插件确认，否则窗口显示设备码与 Nous Portal 授权链接，全程不展开原生终端；Nous 登录不因当前选用的推理服务商是其他服务商而显示为未登录，确认以重新读取的原生 Nous 凭据为准
+- **AND** 登录窗口运行期间的核对 MUST 直接读取该目录的原生账号存储，不得因窗口自身挡住 Nous 续期而把已保存的登录判为未完成
+- **AND** 登录确认后，若插件账号目录的推理服务商为 `auto` 或未设置（如 Hermes 原生退出 Nous 后的状态），插件以 Hermes 原生 `config set model.provider nous` 选定 Nous（同时由 Hermes 清除上一服务商的路由），再报告登录成功；已明确选择的服务商保持不变，用户自己的 Hermes 目录不被改动
+- **AND** Nous 模型列表按所登录账号读取，不要求目录里已有默认模型
 
 #### Scenario: 退出 Hermes 的 Nous
 - **WHEN** 用户在账号窗口退出 Nous 登录（无论凭据池是否已有条目）

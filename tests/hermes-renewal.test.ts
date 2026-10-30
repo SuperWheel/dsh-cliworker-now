@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ import { projectHermesIdentity } from '../src/host/hermes-accounts.ts'
 import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
 import { discoverHermes, prepareHermes } from '../src/host/hermes-adapter.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
-import { AccountManager } from '../src/host/accounts.ts'
+import { AccountManager, AGY_GUIDE_TIMING } from '../src/host/accounts.ts'
 import { effectiveHermesHome, prepareHermesAccountHome } from '../src/host/hermes-account-context.ts'
 import { HermesAccountSourceError } from '../src/host/hermes-models.ts'
 import { hermesNativeCommand } from '../src/host/hermes-installation.ts'
@@ -645,5 +645,98 @@ describe('Hermes ambient Copilot row seeded by the native picker', () => {
     await expect(
       manager.start('synthetic-parent', 'hermes', 'logout', f.home, signal()),
     ).rejects.toThrow('Hermes 含外部账号来源，请使用自身登录')
+  })
+})
+
+describe('Hermes Nous login from the account window (synthetic terminal and native config)', () => {
+  const timing = { ...AGY_GUIDE_TIMING }
+  afterEach(() => Object.assign(AGY_GUIDE_TIMING, timing))
+  /** Hermes' own `logout --provider nous` leaves `provider: auto` and the OpenRouter route
+   * (auth.py _reset_config_provider); `auth add nous` then saves only the login. */
+  async function nousLogin(model: Record<string, unknown>) {
+    Object.assign(AGY_GUIDE_TIMING, { commandDelayMs: 1, pollMs: 5, loginConfirmMs: 500, flowQuietMs: 5, settleCapMs: 50 })
+    const f = fixture(600)
+    f.raw.credential_pool.nous[0].id = 'a1b2c3'
+    const own = prepareHermesAccountHome(f.runtime)
+    const configPath = join(own, 'config.yaml')
+    writeFileSync(configPath, JSON.stringify({ auth: { adopt_external_logins: false }, model }), { mode: 0o600 })
+    const order: string[] = []
+    const runs: any[] = []
+    const spawn = vi.fn((spec: any) => {
+      runs.push(spec)
+      const end = deferred<void>()
+      const stdout = (async function* () {
+        // Native `config set model.provider nous` also drops the previous provider's route.
+        const saved = JSON.parse(readFileSync(configPath, 'utf8'))
+        saved.model = { ...saved.model, provider: 'nous' }
+        delete saved.model.base_url
+        writeFileSync(configPath, JSON.stringify(saved))
+        order.push('set')
+        end.resolve()
+        yield 'Set model.provider = nous\n'
+      })()
+      return {
+        stdout,
+        stderr: (async function* () {})(),
+        done: end.promise.then(() => ({ exitCode: 0, signal: null })),
+        terminate: vi.fn(),
+        waitForExit: vi.fn(async () => true),
+      } as any
+    })
+    const output = new PassThrough(),
+      terminalDone = deferred<any>()
+    const spawnTerminal = vi.fn(async () => {
+      setTimeout(() => {
+        writeFileSync(join(own, 'auth.json'), JSON.stringify(f.raw), { mode: 0o600 })
+        output.write('Saved nous OAuth device-code credentials\r\n')
+        setTimeout(() => terminalDone.resolve({ exitCode: 0, signal: null }), 20)
+      }, 20)
+      return {
+        pid: 100,
+        output,
+        done: terminalDone.promise,
+        write: vi.fn(async () => {}),
+        resize: vi.fn(async () => {}),
+        terminate: vi.fn(async () => {
+          output.end()
+          terminalDone.resolve({ exitCode: 0, signal: null })
+        }),
+      } as any
+    })
+    const manager = new AccountManager(
+      { resolveExecutable: vi.fn(async () => f.executable), spawn, spawnTerminal },
+      f.runtime,
+    )
+    managers.push(manager)
+    const { id } = await manager.start('synthetic-parent', 'hermes', 'login', f.home, signal(), undefined, 'nous')
+    const steps: string[] = []
+    for await (const frame of manager.watch('synthetic-parent', id, signal()))
+      if (frame.guide) {
+        steps.push(frame.guide.step)
+        if (frame.guide.step === 'signedIn') order.push('signedIn')
+      }
+    return { own, steps, order, runs, config: JSON.parse(readFileSync(configPath, 'utf8')) }
+  }
+
+  it('模拟 Hermes 退出 Nous 后服务商为 auto：重登 Nous 以本地账号确认成功，确认前用原生 config set 选定 Nous', async () => {
+    const result = await nousLogin({ provider: 'auto', default: 'synthetic/free', base_url: 'https://openrouter.ai/api/v1' })
+    expect(result.steps).toContain('signedIn')
+    expect(result.steps).not.toContain('unconfirmed')
+    expect(result.order).toEqual(['set', 'signedIn'])
+    expect(result.runs).toHaveLength(1)
+    expect(result.runs[0].argv.slice(-4)).toEqual(['config', 'set', 'model.provider', 'nous'])
+    expect(result.runs[0].cwd).toBe(result.own)
+    expect(result.runs[0].env).toMatchObject({ HERMES_HOME: result.own, HERMES_SAFE_MODE: '1' })
+    expect(result.config.model).toEqual({ provider: 'nous', default: 'synthetic/free' })
+  })
+
+  it.each([
+    ['已明确选择的其他服务商', { provider: 'openrouter', default: 'synthetic/free', base_url: 'https://openrouter.ai/api/v1' }],
+    ['已选定 Nous', { provider: 'nous', default: 'synthetic/free', base_url: NOUS_INFERENCE }],
+  ])('模拟 Nous 登录时%s保持不变，只确认登录', async (_label, model) => {
+    const result = await nousLogin(model)
+    expect(result.steps).toContain('signedIn')
+    expect(result.runs).toHaveLength(0)
+    expect(result.config.model).toEqual(model)
   })
 })
