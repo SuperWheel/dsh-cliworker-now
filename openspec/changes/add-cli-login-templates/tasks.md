@@ -87,5 +87,8 @@
 - [x] 8.3 自动检查：
   - 新增 `hermes-renewal`「模拟 Hermes 退出 Nous 后服务商为 auto：重登 Nous…」及两个服务商已明确时不改动的用例；新增 `hermes-nous`「模拟新账号目录登录 Nous 后…尚无默认模型」。把核对改回先续期后，前三项均失败。
   - `pnpm typecheck` 通过；`hermes-nous`、`hermes-adapter`、`hermes-renewal`、`accounts`、`kimi-account-window`、`cli-account-binding*`、`windows-cli-account-status`、`qoder-accounts` 共 8 个文件，407 项通过。
-- [ ] 8.4 Mac Desktop 真实复测：用户本人在账号窗口登录 Nous，确认窗口显示已登录，设置页加载 Nous 模型与思考强度。
+- [x] 8.4 Mac Desktop 真实复测（2026-10-30 正式构建 `6dbb478` 后重启 Desktop；用户本人在账号窗口重新登录 Nous）：
+  - 插件目录只读核对：账号「已登录」，唯一账号行为新的 Nous 登录；`model.provider` 由 `auto` 变为 `nous`，`base_url` 已清除，默认模型保留；配置改写时间 21:16 与这次登录一致。这一步只在窗口证明登录后执行，说明登录已在窗口内确认。Nous 来源核对通过。
+  - 设置页（Codex gpt-6.1-sol high 经 Computer Use 只读查看，只点了一次「刷新模型」）：Hermes Agent 显示绿色「Nous账号登录」，无「无法确认当前自身账号」或其他警告。模型下拉框可用，共 6 个 Nous 免费模型（laguna-s-2.1:free、laguna-xs-2.1:free、solar-mini4:free、step-3.7-flash:free、beam-1.0-501b-a23b:free、ornith-1.5-122b:free），当前为 step-3.7-flash:free；思考强度可用，有「默认」「High」「Medium」「Low」，当前为 Low。
+  - 未派遣任务，未调用模型。
 
