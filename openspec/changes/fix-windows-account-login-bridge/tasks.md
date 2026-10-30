@@ -51,3 +51,11 @@
 - [x] 6.3 模拟测试 `tests/first-party-models.test.ts`「MiMo stale native model cache」三项：过期刷新一次后列出 v2.6 与原生档位；账号 401 或已有交集时不刷新；刷新失败报告不一致且 10 分钟内不重试。`first-party-models` 与 `first-party-capability-cache` 共 92 项通过；`pnpm typecheck` 通过。
 - [x] 6.4 Windows 实测（新包 `preview-20261030-005543.tgz`，SHA256 `c84265e8…cf70`，解压到私有目录 `mimo-fix-20261030`，未改动已安装插件）：首次读取交集为空 → `models --refresh` 退出码 0、约 4.3 秒 → 重读列出 `xiaomi/mimo-v2.6-flash`、`v2.6-pro`、`v2.6-pro-ultraspeed`，强度 default/low/medium/high，总耗时约 17.6 秒；MiMo 缓存更新为 2026-10-30。验证后先移除联接点再删除私有目录，Desktop 插件依赖完好。
   - 这次刷新更新了 Windows 上 MiMo 自己的模型缓存，已安装的旧包此后也能读到 v2.6；新包尚未安装到 Desktop，界面未实测。
+
+## 7. 任务选项菜单被代码块盖住（2026-10-30 用户追加）
+
+- [x] 7.1 定位：子 Agent 对话页右上角「任务选项」菜单 `.cwn-action-menu` 是 `z-index:5`；Harness 原生代码块标题栏（`dsh-client-ui-primitives` 的 `CodeBlock.module.css` `.bannerWrap`）是 `position:sticky; z-index:6`。两者在 `.cwn` 同一层叠上下文里（用户截图只有标题栏压住菜单，正文没有，与此一致），标题栏因此盖在菜单上。插件「回到最新」按钮 `.cwn-jump` 是 8，也比菜单高。
+- [x] 7.2 修复：菜单改为 `z-index:100`，与 Harness 就地菜单（`Menu.module.css` `.list`）同层；面板其他浮层（`.cwn-worker-menu`、`.cwn-stat-panel` 经 portal 为 1100）不变。
+- [x] 7.3 新增 `tests/panel-layering.test.ts`：合并客户端全部样式，断言菜单层级高于已安装 Harness 的代码块标题栏与「回到最新」按钮；改回旧值 5 时该测试失败（`expected 5 to be greater than 6`）。`pnpm typecheck` 通过；`panel-layering`、`panel`、`panel-native-composer` 共 130 项通过；`pnpm build:preview` 成功，`lib/client.js` 只含新层级。
+- [x] 7.4 Windows 预览包 `.test-data/windows-remote/desktop-audit/preview-20261030-185933.tgz`（版本号仍为 0.8.4，SHA256 `fb5ba716…189b1f`，lib 725 个文件，含 MiMo 修复与本条修复），尚未安装。
+- [ ] 7.5 界面实测：打开含代码块的子 Agent 对话，展开「任务选项」，确认菜单完整盖住代码块标题栏。Mac Desktop 链接未更新（未执行 `pnpm build`，用户正在使用 Desktop，未重启）。
