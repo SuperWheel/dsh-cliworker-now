@@ -656,6 +656,58 @@ it('clears a native ZCode login after its native identity, bound key and OAuth r
   expect(projectZCodeIdentity(nativeZCodeOAuth(), 'synthetic-secret').state).toBe('authenticated')
   expect(projectZCodeIdentity({}, 'synthetic-secret')).toMatchObject({ state: 'unconfigured' })
 })
+it.each(['residual-binding', 'personal-api', 'manual-api-binding', 'empty'] as const)(
+  'reads the synthetic post-logout %s state from the same auth source without changing it',
+  async (remaining) => {
+    const f = fixture()
+    const launch = await zcodeGrokAccountLaunch(
+      'zcode', 'logout', '/synthetic/zcode.cjs', f.config, f.backend, f.signal, f,
+    )
+    expect(launch.argv).toEqual(wrapped([process.execPath, '/synthetic/zcode.cjs', 'logout']))
+    const auth = launch.env.ZCODE_DATA_BASE_DIR!
+    expect(auth).toBe(zcodeAuthDirectory(f.config.zcodeAuthDirectory, f.stateDirectory))
+    const directory = join(auth, '.zcode/v2')
+    mkdirSync(directory, { recursive: true })
+    const credentials = join(directory, 'credentials.json')
+    const personal = join(directory, 'provider_config.json')
+    const raw: Record<string, string> = nativeZCodeOAuth()
+    writeFileSync(credentials, JSON.stringify(raw), { mode: 0o600 })
+    expect((await zcodeGrokAccountStatus('zcode', f.config, f.signal, f)).state).toBe('authenticated')
+
+    // Simulate persisted results, never execute a real CLI logout.
+    for (const name of Object.keys(raw)) {
+      if (name.startsWith('oauth:') || remaining !== 'residual-binding') delete raw[name]
+    }
+    if (remaining === 'manual-api-binding') {
+      const identity = `key-${createHash('sha256').update('SYNTHETIC_BOUND_KEY').digest('hex').slice(0, 24)}`
+      Object.assign(raw, Object.fromEntries(
+        Object.entries(nativeZCodeOAuth('bigmodel', identity)).filter(([name]) => name.startsWith('account-provider:')),
+      ))
+    }
+    writeFileSync(credentials, JSON.stringify(raw), { mode: 0o600 })
+    writeFileSync(personal, JSON.stringify({
+      schemaVersion: 1,
+      config: {
+        providerConfigRules: { providerRules: remaining === 'personal-api' ? [{
+          providerId: 'synthetic-api',
+          config: { access: { type: 'api-key', apiKey: 'SYNTHETIC_PERSONAL_KEY' } },
+        }] : [] },
+        modelConfigRules: { providerModelRules: [], manualProviderModelRules: [] },
+      },
+    }), { mode: 0o600 })
+    const before = [readFileSync(credentials, 'utf8'), readFileSync(personal, 'utf8')]
+    const status = await zcodeGrokAccountStatus('zcode', f.config, f.signal, f)
+    expect(status).toEqual(remaining === 'residual-binding'
+      ? { state: 'configured', verification: 'local', summary: 'ZCode 账号绑定未确认，请重新登录' }
+      : remaining === 'empty'
+        ? { state: 'unconfigured', verification: 'local', summary: '尚未配置 ZCode API' }
+        : { state: 'configured', authMethod: 'api', verification: 'local', summary: '已配置 ZCode API' })
+    expect(JSON.stringify(status)).not.toMatch(/SYNTHETIC|synthetic-current-user/)
+    expect([readFileSync(credentials, 'utf8'), readFileSync(personal, 'utf8')]).toEqual(before)
+    // Only the mocked native help probe was spawned; no login/logout/model process.
+    expect(f.backend.spawn).toHaveBeenCalledTimes(1)
+  },
+)
 it('preserves unknown native provider records without promoting them or calling them absent', () => {
   const raw = {
     'account-provider:account:future-individual-coding-plan:identity': 'SYNTHETIC_ID',

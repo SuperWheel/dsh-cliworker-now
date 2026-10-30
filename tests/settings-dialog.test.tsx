@@ -1144,7 +1144,7 @@ it.each(['zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode'] as const)(
     expect(t.button(nav).findByProps({ className: 'cwn-connection-dot' }).props['data-state']).toBe(
       'unverified',
     )
-    expect(visibleText(accountSummary(t.r))).toContain('已配置')
+    expect(visibleText(accountSummary(t.r))).toContain(`${cli} 模拟状态待确认`)
     expect(visibleText(accountSummary(t.r))).not.toContain('已登录')
     expect(terminal.started).not.toHaveBeenCalled()
     expect(t.configure).not.toHaveBeenCalled()
@@ -1211,7 +1211,7 @@ it('waits for a refreshed account before reading its new model scope and ignores
   )
   expect(catalogForCli).toHaveBeenCalledTimes(2)
   expect(t.button('默认模型').props.disabled).toBe(true)
-  expect(visibleText(accountSummary(t.r))).toContain('已配置')
+  expect(visibleText(accountSummary(t.r))).toContain('antigravity 模拟状态待确认')
   expect(
     t.button('Antigravity 设置').findByProps({ className: 'cwn-connection-dot' }).props['data-state'],
   ).toBe('unverified')
@@ -1338,7 +1338,7 @@ it('keeps unknown accounts grey even after reading models and shows configured c
   expect(t.button('Kimi 设置').findByProps({ className: 'cwn-connection-dot' }).props['data-state']).toBe(
     'unverified',
   )
-  expect(t.button('Kimi 设置').findByProps({ role: 'img' }).props['aria-label']).toBe('已配置')
+  expect(t.button('Kimi 设置').findByProps({ role: 'img' }).props['aria-label']).toBe('kimi 模拟状态待确认')
   await act(async () => models.resolve(catalog('antigravity')))
   expect(
     t.button('Antigravity 设置').findByProps({ className: 'cwn-connection-dot' }).props['data-state'],
@@ -1450,6 +1450,64 @@ function accountFixture(changes: Partial<AccountStatus>, selected: CliId = 'anti
   return vi.fn(async (_parent, cli: CliId) => status(cli, cli === selected ? changes : {}))
 }
 
+it.each([
+  ['zcode', 'ZCode 账号绑定未确认，请重新登录'],
+  ['zcode', 'ZCode 登录凭据已保存，账号绑定未确认，请重新登录'],
+  ['zcode', '已保存 ZCode 续期凭据'],
+  ['zcode', '已配置 ZCode API'],
+  ['mimo', '已配置 MiMo 账号，请检查登录'],
+  ['pi', '尚未配置有效凭据'],
+  ['omp', '尚未配置有效凭据'],
+  ['opencode', '尚未配置有效凭据'],
+  ['hermes', 'Hermes 登录已保存，等待自动续期'],
+  ['codex', 'CLI 已配置令牌，账号类型待确认'],
+  ['qoder', '已配置 Qoder PAT，待原生目录验证'],
+  ['kimi', '已配置 Kimi API'],
+  ['zcode', ''],
+  ['zcode', '   '],
+] as const)('preserves the configured %s reason in navigation and account summary: %s', async (cli, summary) => {
+  const t = await setup({ accountStatus: accountFixture({ state: 'configured', summary }, cli) }, undefined, cli)
+  const expected = summary.trim() || '已配置'
+  const nav = t.button(`${CLI_LABELS[cli]} 设置`)
+  expect(nav.findByProps({ role: 'img' }).props['aria-label']).toBe(expected)
+  expect(visibleText(accountSummary(t.r)).trim()).toBe(expected)
+  expect(nav.findByProps({ className: 'cwn-connection-dot' }).props['data-state']).toBe('unverified')
+  expect(accountSummary(t.r).findByProps({ className: 'cwn-account-status-dot' }).props['data-state']).toBe('unverified')
+  expect(accountSummary(t.r).findAllByProps({ className: 'cwn-account-detail' })).toHaveLength(0)
+  expect(terminal.started).not.toHaveBeenCalled()
+  expect(t.configure).not.toHaveBeenCalled()
+})
+
+it.each([
+  { state: 'configured', summary: 'ZCode 账号绑定未确认，请重新登录', label: 'ZCode 账号绑定未确认，请重新登录' },
+  { state: 'configured', authMethod: 'api', summary: '已配置 ZCode API', label: '已配置 ZCode API' },
+  { state: 'unconfigured', summary: '尚未配置 ZCode API', label: '未登录' },
+] as const)('refreshes the ZCode window and settings after synthetic logout: $summary', async (after) => {
+  let current: Partial<AccountStatus> = {
+    state: 'authenticated', authMethod: 'oauth', summary: '已登录 ZCode', accountLabel: 'fixture@example.invalid',
+  }
+  const t = await setup({
+    accountStatus: vi.fn(async (_parent, cli: CliId) => status(cli, cli === 'zcode'
+      ? { ...current, actions: accountActions } : {})),
+  }, undefined, 'zcode')
+  await t.click('账号')
+  await t.click('退出')
+  expect(t.text()).toContain('BigModel 和 Z.AI 的登录会一起退出。')
+  expect(terminal.started).not.toHaveBeenCalled()
+  await t.click('确认退出')
+  expect(terminal.started).toHaveBeenCalledExactlyOnceWith('zcode', 'logout')
+  current = after
+  await t.click('完成模拟账号操作')
+  await t.click('关闭模拟账号操作')
+  expect(t.text()).toContain('尚未登录 ZCode 的任何账号')
+  expect(t.r.root.findAllByProps({ className: 'cwn-accounts-card' })).toHaveLength(0)
+  expect(t.text()).not.toContain('fixture@example.invalid')
+  expect(visibleText(accountSummary(t.r)).trim()).toBe(after.label)
+  expect(t.button('ZCode 设置').findByProps({ role: 'img' }).props['aria-label']).toBe(after.label)
+  expect(t.button('登录账号')).toBeDefined()
+  expect(t.configure).not.toHaveBeenCalled()
+})
+
 it.each(['unconfigured', 'unauthenticated', 'unavailable', 'unknown', 'configured'] as const)(
   'keeps both health indicators consistent for %s while preserving model error evidence',
   async (state) => {
@@ -1501,7 +1559,7 @@ it('keeps account indicators unchanged after retrying a failed catalog without r
   expect(t.refreshCatalogForCli).toHaveBeenCalledTimes(1)
   expect(read).toHaveBeenCalledTimes(1)
   expect(t.button('默认模型').props.disabled).toBe(false)
-  expect(visibleText(accountSummary(t.r))).toContain('已配置')
+  expect(visibleText(accountSummary(t.r))).toContain('antigravity 模拟状态待确认')
   expect(terminal.started).not.toHaveBeenCalled()
 })
 
@@ -1545,7 +1603,7 @@ it('refreshes an invalid login to a readable configuration without writing prefe
   )
   await t.click('刷新状态')
   expect(dots()).toEqual(['unverified', 'unverified'])
-  expect(visibleText(accountSummary(t.r))).toContain('已配置')
+  expect(visibleText(accountSummary(t.r))).toContain('antigravity 模拟状态待确认')
   expect(t.button('默认模型').findAllByType('span')[0].children).toContain('simulation-saved')
   expect(t.configure).not.toHaveBeenCalled()
   expect(terminal.started).not.toHaveBeenCalled()
@@ -1889,7 +1947,7 @@ it('adds a Kimi account in its native terminal from the account window without l
 })
 it.each([
   { state: 'authenticated', authMethod: 'api', verification: 'local', label: 'API 登录' },
-  { state: 'configured', authMethod: 'api', verification: 'cli', label: '已配置' },
+  { state: 'configured', authMethod: 'api', verification: 'cli', label: '已配置 API' },
   { state: 'unconfigured', authMethod: undefined, verification: 'local', label: '未登录' },
 ] as const)(
   'shows only the short $label state without repeating Host summary or static protocol notes',
@@ -1899,7 +1957,7 @@ it.each([
         state,
         authMethod,
         verification,
-        summary: '模拟：Host 账号说明；未进行远程验证；本地凭据不代表登录有效',
+        summary: state === 'configured' ? '已配置 API' : '模拟：Host 账号说明；未进行远程验证；本地凭据不代表登录有效',
       }),
       catalogForCli: vi.fn(async (_parent, cli: CliId) =>
         remote({

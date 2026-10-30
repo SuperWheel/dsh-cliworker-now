@@ -1315,3 +1315,9 @@ OpenSpec 变更 `upgrade-host-rc5`（用户 2026-10-30 把 Mac 与 Windows 的 D
 - 差异：官方 rc.3 → rc.5 共 388 个文件变化，绝大多数只是版本号。随包四包里只有 `ui-chat`（rc.4 起去掉推理开头的 `<signature>…</signature>` 再显示，全为签名时不渲染推理行；`conversation.chat.reasoning.body` 增加 `rawText`）和 `ui-conversation`（视图标签只在预计溢出时显示提示，「更多会话视图」不再拼当前名称）有源码变化；Host 端插件引用的 SDK 只有版本号变化。插件启用时随包四包整体替换官方同名包，继续用 rc.3 包会让主对话和子对话丢掉推理显示处理。
 - 做法：沿用 rc.3 流程，从 tag `dsh-v0.2.1-rc.5`（`b830ec95`）重建四包。48 文件补丁无冲突应用，增删行与 rc.3 相同；构建依赖由 rc.3 冻结输入只改 DSH pin 得到，第三方 953 个包与插件根 855 个包均无漂移；`dependency-links.json` 用新增的 `generate-dependency-links.mjs` 从 rc.3 清单逐行映射并重新计算摘要。开发 SDK 39 个 pin 与根 workspace 300 条发布期限例外改为 rc.5。
 - 验证边界：四包源码类型检查与插件 typecheck 通过；上游四包 Vitest 未在本机运行（自动模式不允许执行外部仓库代码）；未重复 rc.3 的多宿主隔离矩阵，以 rc.5 实装检查作为本次验收，结果记在变更任务清单。
+
+## configured 账号摘要保留具体原因（2026-10-30，未发布）
+
+OpenSpec：`fix-configured-account-status`。设置导航与账号摘要复用 Host 的安全摘要，configured 不再统一覆盖成「已配置」；空摘要保留旧回退，长原因自然换行，仍使用灰色待确认状态。MiMo 检查登录、Pi/OMP/OpenCode 缺少有效凭据、Hermes 等待续期等原因一并保留。
+
+ZCode 退出调用原生 `logout`，来源与 Worker 相同，插件不另删绑定。OAuth 清除后残留身份和绑定密钥会返回「绑定未确认，请重新登录」；无绑定时个人 API 配置仍可返回「已配置 ZCode API」，无两者则未登录。账号窗口对这两种 configured 均可能没有账号行，退出结果页也不能据此定位来源。本次仅用合成夹具确认分支，Windows c7a5eb2 实机走哪支未证实，不修改真实认证数据或原生退出行为。

@@ -117,7 +117,7 @@ function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, 
   }
   if (account.data.state === 'authenticated')
     return { state: 'connected', label: authenticatedLabel(account.data) }
-  return { state: 'unverified', label: t('已配置') }
+  return { state: 'unverified', label: hostText(account.data.summary)?.trim() || t('已配置') }
 }
 
 /** Native modal owns focus, dismissal, theme, elevation and entrance animation. */
@@ -510,7 +510,7 @@ function AccountSummary({
                         : t('未登录')
                       : t('未安装')
                     : data?.state === 'configured'
-                      ? t('已配置')
+                      ? connection.label
                       : hostText(data?.summary) || t('状态待确认')
   return (
     <div
