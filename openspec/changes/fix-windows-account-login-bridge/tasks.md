@@ -58,4 +58,4 @@
 - [x] 7.2 修复：菜单改为 `z-index:100`，与 Harness 就地菜单（`Menu.module.css` `.list`）同层；面板其他浮层（`.cwn-worker-menu`、`.cwn-stat-panel` 经 portal 为 1100）不变。
 - [x] 7.3 新增 `tests/panel-layering.test.ts`：合并客户端全部样式，断言菜单层级高于已安装 Harness 的代码块标题栏与「回到最新」按钮；改回旧值 5 时该测试失败（`expected 5 to be greater than 6`）。`pnpm typecheck` 通过；`panel-layering`、`panel`、`panel-native-composer` 共 130 项通过；`pnpm build:preview` 成功，`lib/client.js` 只含新层级。
 - [x] 7.4 Windows 预览包 `.test-data/windows-remote/desktop-audit/preview-20261030-185933.tgz`（版本号仍为 0.8.4，SHA256 `fb5ba716…189b1f`，lib 725 个文件，含 MiMo 修复与本条修复），尚未安装。
-- [ ] 7.5 界面实测：打开含代码块的子 Agent 对话，展开「任务选项」，确认菜单完整盖住代码块标题栏。Mac Desktop 链接未更新（未执行 `pnpm build`，用户正在使用 Desktop，未重启）。
+- [x] 7.5 界面实测（Mac，rc.5，提交 `2e0ad72` 正式构建）：打开含代码块的 `codex-1` 对话，展开「任务选项」，菜单完整盖住代码块标题栏右侧与复制、换行图标，未见穿透；代码块标题栏无法滚到紧贴面板顶部（约差 300 像素），见 `openspec/changes/upgrade-host-rc5/tasks.md` 4.2。Windows 界面未实测。
