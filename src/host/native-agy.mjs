@@ -8,7 +8,8 @@ import { createToolOutcomes } from './native-tool-outcomes.mjs'
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
 const string = (value) => typeof value === 'string' && value.trim().length > 0
 const fail = (message) => new Error(`Antigravity stream-json: ${message}`)
-const autoUnavailable = 'warning: --mode auto is not available for this account; continuing in the default mode.'
+// agy 1.4.x: the account cannot use auto, or the host has no terminal sandbox (Windows, 2026-10-30).
+const autoUnavailable = /warning: --mode auto is not available (for this account|because the terminal sandbox is not available on this host); continuing in the default mode\./
 
 /**
  * `--help` lists auto even when the account cannot use it; agy then warns on stderr and
@@ -17,15 +18,16 @@ const autoUnavailable = 'warning: --mode auto is not available for this account;
  * and restarted in the fallback mode. A later warning stops the turn: input is never resent.
  */
 async function openAgyInput(config, io, modes) {
+  let sandboxless = false
   for (;;) {
-    const permission = agyPermissionMode(config, modes)
+    const permission = agyPermissionMode(config, modes, { sandboxless })
     if (permission.notice) io.event({ kind: 'diagnostic', text: permission.notice })
     let peer, unavailable = false, sent = false, listener, stderr = '', lateError, closing
     let ready, timer, initTimer
     const buffered = []
     const startup = new Promise(resolve => { ready = resolve })
     const stop = () => closing ??= peer.close()
-    peer = await io.openStdio(nativeAgyArgv(config, modes), { env: config.env, cwd: config.project,
+    peer = await io.openStdio(nativeAgyArgv(config, modes, { sandboxless }), { env: config.env, cwd: config.project,
       onMessage(value) {
         if (listener) return listener(value)
         if (buffered.length >= 256) throw fail('原生初始化事件过多')
@@ -37,11 +39,13 @@ async function openAgyInput(config, io, modes) {
         if (permission.mode !== 'auto' || unavailable) return
         const output = stderr + chunk.toString('utf8')
         stderr = output.slice(-8192)
-        if (!output.includes(autoUnavailable)) return
+        const warning = autoUnavailable.exec(output)
+        if (!warning) return
         unavailable = true
+        sandboxless ||= warning[1] !== 'for this account'
         ready()
         if (sent) {
-          lateError = fail('Antigravity 账号不支持自动审批，本轮已停止且未自动重试，请重新派遣')
+          lateError = fail(`${sandboxless ? '此主机没有终端沙箱，Antigravity 不能自动审批' : 'Antigravity 账号不支持自动审批'}，本轮已停止且未自动重试，请重新派遣`)
           void stop().catch(() => {})
         }
       },
@@ -70,7 +74,7 @@ async function openAgyInput(config, io, modes) {
         },
         send(value) {
           // This check and the first write must have no asynchronous gap.
-          if (unavailable) throw fail('Antigravity 账号不支持自动审批，输入尚未发送，请重新派遣')
+          if (unavailable) throw fail(`${sandboxless ? '此主机没有终端沙箱，Antigravity 不能自动审批' : 'Antigravity 账号不支持自动审批'}，输入尚未发送，请重新派遣`)
           sent = true
           return peer.send(value)
         },
@@ -88,7 +92,8 @@ async function openAgyInput(config, io, modes) {
   }
 }
 
-export function agyPermissionMode(config, modes) {
+/** `sandboxless`: agy reported that this host has no terminal sandbox. */
+export function agyPermissionMode(config, modes, { sandboxless = false } = {}) {
   const plan = config.mode === 'plan' || config.access === 'read-only'
   const full = !plan && config.access === 'danger-full-access'
   let mode = plan ? 'plan' : full ? 'accept-edits' : 'auto'
@@ -96,8 +101,12 @@ export function agyPermissionMode(config, modes) {
   if (modes && !modes.includes(mode)) {
     if (!plan && modes.includes('accept-edits')) {
       mode = 'accept-edits'
-      skip = true
-      notice = 'Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行'
+      // Skipping confirmations relies on the terminal sandbox to confine commands. Without
+      // one, accept-edits alone approves workspace edits and headless agy denies commands.
+      skip = !sandboxless
+      notice = sandboxless
+        ? 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮按仅工作区编辑运行，不执行命令'
+        : 'Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行'
     } else if (!plan && modes.includes('plan')) {
       mode = 'plan'
       skip = false
@@ -124,11 +133,11 @@ export async function probeAgyModes(config, signal) {
   return ['accept-edits', 'auto', 'plan'].filter(mode => new RegExp(`(?:^|[\\s,(|])${mode}(?=$|[\\s,)|])`).test(declaration))
 }
 
-export function nativeAgyArgv(config, modes) {
+export function nativeAgyArgv(config, modes, options) {
   const argv = config.argv
   if (!Array.isArray(argv) || argv.at(-2) !== '--print' || argv.at(-1) !== `任务：\n${config.prompt}`) throw fail('不支持的原生命令参数')
   const args = argv.slice(0, -2)
-  const permission = agyPermissionMode(config, modes)
+  const permission = agyPermissionMode(config, modes, options)
   const requestedMode = agyPermissionMode(config).mode
   const suppliedMode = args[args.indexOf('--mode') + 1]
   if (args.filter(arg => arg === '--mode').length !== 1) throw fail('重复的原生权限模式')

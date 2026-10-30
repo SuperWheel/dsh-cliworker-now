@@ -18,7 +18,9 @@ const id = mode === 'auto' ? 'simulated-auto-session' : 'simulated-final-session
 const audit = value => appendFileSync(process.env.AUDIT, JSON.stringify({ mode, ...value }) + '\\n');
 const out = value => process.stdout.write(JSON.stringify(value) + '\\n');
 const init = () => out({ event: 'init', conversation_id: id, init: { model: 'simulated-flash' } });
-const warning = 'warning: --mode auto is not available for this account; continuing in the default mode.\\n';
+const warning = process.env.WARNING === 'host'
+  ? 'warning: --mode auto is not available because the terminal sandbox is not available on this host; continuing in the default mode.\\n'
+  : 'warning: --mode auto is not available for this account; continuing in the default mode.\\n';
 audit({ event: 'start', argv: process.argv.slice(2) });
 process.on('SIGTERM', () => { audit({ event: 'stopped' }); process.exit(143); });
 if (!['no-init', 'early-no-init', 'cancel'].includes(scenario)) init();
@@ -47,7 +49,7 @@ lines.on('close', () => {
 });
 `
 
-async function setup(scenario = 'early') {
+async function setup(scenario = 'early', warning = 'account') {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'agy-account-SIMULATED-')))
   roots.push(root)
   const entry = join(root, 'cli.mjs'), audit = join(root, 'audit.jsonl')
@@ -58,7 +60,7 @@ async function setup(scenario = 'early') {
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
     return { cli: 'antigravity', project: root, stateDirectory, preference, mode, access, prompt: '模拟任务',
       argv: [process.execPath, entry, ...agyArguments('simulated-agy', root, preference, mode, '模拟任务', 3000, undefined, access as any).slice(1)],
-      env: { AUDIT: audit, SCENARIO: scenario }, timeoutMs: 3000, maxLineBytes: 65536, maxRunBytes: 1048576 }
+      env: { AUDIT: audit, SCENARIO: scenario, WARNING: warning }, timeoutMs: 3000, maxLineBytes: 65536, maxRunBytes: 1048576 }
   }
   const rows = async () => (await readFile(audit, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
   return { root, task, rows }
@@ -86,6 +88,27 @@ it.each(['early', 'early-no-init'])('模拟：%s 输入前分块警告先清理�
   expect(JSON.stringify(frames)).not.toContain('simulated-auto-session')
   expect(frames.some(frame => frame.event?.text === 'Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行')).toBe(true)
   expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS' })
+})
+
+it('模拟：主机没有终端沙箱（Windows）时按仅工作区编辑重启，不跳过确认', async () => {
+  const f = await setup('early', 'host'), { frames, error } = await run(await f.task())
+  expect(error).toBeUndefined()
+  const rows = await f.rows(), starts = rows.filter(row => row.event === 'start')
+  expect(starts.map(row => row.mode)).toEqual(['auto', 'accept-edits'])
+  expect(rows.filter(row => row.event === 'input')).toMatchObject([{ mode: 'accept-edits' }])
+  // Without a terminal sandbox, skipping confirmations would run commands unconfined.
+  expect(starts[1].argv).toContain('--sandbox')
+  expect(starts[1].argv).not.toContain('--dangerously-skip-permissions')
+  expect(frames.some(frame => frame.event?.text === 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮按仅工作区编辑运行，不执行命令')).toBe(true)
+  expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS' })
+})
+
+it('模拟：主机没有终端沙箱的警告在输入后才出现时停止本轮并说明原因', async () => {
+  const f = await setup('late', 'host'), { frames } = await run(await f.task())
+  expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: expect.stringContaining('此主机没有终端沙箱，Antigravity 不能自动审批，本轮已停止且未自动重试') })
+  const rows = await f.rows()
+  expect(rows.filter(row => row.event === 'start').map(row => row.mode)).toEqual(['auto'])
+  expect(rows.filter(row => row.event === 'input')).toHaveLength(1)
 })
 
 it.each(['late', 'late-success'])('模拟：%s 输入后才警告时停止本轮，不重发也不重启', async scenario => {

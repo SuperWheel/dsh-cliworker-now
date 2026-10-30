@@ -26,3 +26,11 @@
     - Antigravity（Gemini 3.8 Flash / Low）通过：首轮与续聊两次运行均 completed，时间线各一条「Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行」，`write_file` 均为 DONE，Worker 只绑定一个会话；`od -c` 核对文件为 `MAC-TOOL-agy-OK`、空行、`FOLLOWUP-agy-OK`（空行由 CLI 追加时写入）。
     - Claude Code（Haiku / 默认）首次失败：「原生初始化未确认所选权限；询问模式不可确认时拒绝启动」，即 1.5 的回读问题。修复、正式构建并重启 Desktop 后重测通过：首轮 Write、续聊 Edit 各一次审批卡（均为工作区内目标文件，选允许一次），两次运行均 completed，时间线各一条「Claude Code 原生自动审批不可用，本轮按询问运行」，Worker 只绑定会话 `5e203744…`，未出现会话身份、找不到会话或 RPC 断开错误；文件为 `MAC-TOOL-claude-OK`、`FOLLOWUP-claude-OK` 两行。
     - Windows 尚未复验（Windows 安装包冻结于 1.5 修复之前）。
+
+## 4. Windows 主机没有终端沙箱（2026-10-30）
+
+- [x] 4.1 定位（Windows 实机，证据 `.test-data/windows-desktop-20261030/cu-run-A.json` 与 Worker 原始记录，不入 Git）：agy 1.4.7 在 Windows 上 stderr 为 `warning: --mode auto is not available because the terminal sandbox is not available on this host; continuing in the default mode.`，`init` 回读 `permission_mode: request-review`。原匹配只认账号那句，降级未触发，`write_file` 被无头默认模式拒绝；同一轮模型把文件写到了插件私有 `native-request-*/agy-tools`，不是 `init.cwd` 的 live-codex。
+- [x] 4.2 实现：`native-agy.mjs` 识别两种 auto 不可用警告；主机没有终端沙箱时降级为 `accept-edits` + `--sandbox`，不加 `--dangerously-skip-permissions`，时间线写「Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮按仅工作区编辑运行，不执行命令」；输入后才出现时的报错写明主机原因。账号那句的降级不变。`native-agy-harness.mjs` 的 PreToolUse Hook 拒绝参数中出现私有 `agy-tools` 目录的原生工具调用，并给出项目目录。
+- [x] 4.3 依据：agy 1.4.11 程序文本说明 `accept-edits` 为「auto-approve file edits, prompt for commands」，`auto` 需要终端沙箱。Mac 实测（最便宜的 Gemini 3.8 Flash Low，一轮，空临时目录）：无头 `--sandbox --mode accept-edits`、不跳过确认时 `write_file` 为 DONE、文件写出、结果 SUCCESS；零模型探测 `init` 回读为 `request-review`（权限预设与执行模式是两个维度）。Windows 的 agy 1.4.7 是否同样生效待 5 项实机确认。
+- [x] 4.4 模拟回归：主机警告输入前出现时以 accept-edits 重启且不跳过确认、输入后出现时停止并说明主机原因；Hook 拒绝私有目录的路径、`file://`、命令与 JSON 文本，Windows 路径不区分大小写和分隔符，项目目录与同名前缀目录放行。撤掉修复时 3 个新用例失败，还原后 `native-agy-account-permissions`、`native-agy-harness`、`native-agy-permission-levels`、`agy-run-outcome` 共 64 项通过。
+- [ ] 4.5 Windows 实机：用户重新登录 Antigravity 后，装入含本修复的预览包，在「自动审批」档派遣一次写文件任务，核对时间线降级说明、文件写入 live-codex、没有执行命令、`agy-tools` 无任务文件。

@@ -12,15 +12,18 @@
 - Antigravity：「自动审批」启动后，在发送任务前短暂观察（最多 5 秒且不超过时限的四分之一，收到 `init` 后再等 50 毫秒让 stderr 排空）。识别到账号不支持 `auto` 时，先确认旧进程退出，再按与 help 缺少 `auto` 相同的降级参数重启，时间线写明实际模式；旧进程的事件与会话一律丢弃。任务发出后才出现警告时立即停止本轮并报错，不重发任务、不自动重试。
 - Claude：`--permission-mode manual` 的初始化与 `system/init` 回读为 `default`（2.1.287 实测，二者同一模式），视为询问已确认；此前降级重启后因此拒绝启动。
 - 不保存跨运行的账号能力缓存：每轮都按原生实际反馈判断，账号升级后自然恢复 `auto`。
+- Windows（2026-10-30 实机）：agy 1.4.7 在没有终端沙箱的主机上警告 `warning: --mode auto is not available because the terminal sandbox is not available on this host; continuing in the default mode.`，原匹配只认账号那句，降级没有触发，`write_file` 被无头默认模式拒绝。两种警告都识别；主机没有终端沙箱时降级为 `accept-edits` 但不加 `--dangerously-skip-permissions`：跳过确认原本依赖终端沙箱约束命令，这里没有沙箱，只自动批准工作区内编辑，命令由无头 agy 拒绝。
+- 同一次 Windows 运行中，模型把任务文件写到了插件为工具桥加入 `--add-dir` 的私有 `agy-tools` 目录（降级后 accept-edits 会批准这类写入，清理时随之删除）。PreToolUse Hook 对参数中出现该目录（路径、URI、命令或 JSON 文本）的原生工具调用返回拒绝，并提示改在项目目录操作。
 
 ## Capabilities
 
 ### Modified Capabilities
 
 - `worker-permission-levels`：「原生模式不可用时降级」补充运行时才报告不可用的情形、降级重启的会话绑定、发送任务后不重试的边界，以及 Antigravity 按「仅工作区编辑」降级的例外。
+- `harness-cli-tool-bridge`：新增 Antigravity 工具桥私有工作区不得用于任务文件的要求。
 
 ## Impact
 
-- Host：`src/host/native-claude.mjs`、`src/host/native-agy.mjs`。
+- Host：`src/host/native-claude.mjs`、`src/host/native-agy.mjs`、`src/host/native-agy-harness.mjs`。
 - 测试：`tests/native-primary-runners.test.ts`（Claude 钩子先报会话的降级重启）、`tests/native-agy-account-permissions.test.ts`（新增，模拟 agy 输入前/后警告、取消、只读与规划档）。
 - 决定：Antigravity 降级目标沿用现有「仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`）。主规格原要求按更严一档（Antigravity 为「仅规划」）运行、不得以更宽模式代替；用户 2026-10-29 选择「保留仅工作区编辑」，规格增量写明这一例外（见 tasks.md 3.1）。

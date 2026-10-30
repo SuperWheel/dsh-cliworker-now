@@ -59,6 +59,32 @@ it('only admits a fully named live bridge tool and leaves unrelated native tools
   expect(await agyHarnessHookDecision(f.payload, { env: f.env })).toMatchObject({ decision: 'deny' })
   expect(f.execute).not.toHaveBeenCalled()
 })
+it('refuses native tool calls that name the private tools workspace and points to the project (synthetic)', async () => {
+  const f = await fixture(), directory = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-agy-project-')))
+  cleanup.push(() => rmSync(directory, { recursive: true, force: true }))
+  // Prepared like a real run: the project is the first --add-dir workspace.
+  const prepared = prepareAgyHarnessWorkspace({ directory, argv: ['agy', '--add-dir', f.root, ...f.argv.slice(1)], connection: f.lease.connection })
+  const env = { ...prepared.env, [HARNESS_CONNECTION_ENV]: JSON.stringify(f.lease.connection) }
+  const tools = join(directory, 'agy-tools')
+  const decide = (toolCall: any, values = env) => agyHarnessHookDecision({ ...f.payload, toolCall }, { env: values })
+  for (const toolCall of [
+    { name: 'write_file', args: { Path: join(tools, 'cwn-task.txt') } },
+    { name: 'write_to_file', input: { TargetFile: `file://${tools}/cwn-task.txt` } },
+    { name: 'run_command', args: { CommandLine: `cat "${tools}/cwn-task.txt"` } },
+    { name: 'write_file', args: JSON.stringify({ Path: join(tools, 'cwn-task.txt') }) },
+    { name: 'list_dir', args: { DirectoryPath: tools } },
+  ]) expect(await decide(toolCall)).toEqual({ decision: 'deny', reason: `这是本轮 Harness 工具桥的私有目录，不属于项目；请改在项目目录 ${f.root} 中操作` })
+  for (const toolCall of [
+    { name: 'write_file', args: { Path: join(f.root, 'cwn-task.txt') } },
+    { name: 'write_file', args: { Path: `${tools}-other/cwn-task.txt` } },
+    { name: 'list_dir', args: { DirectoryPath: directory } },
+  ]) expect(await decide(toolCall)).toEqual({ decision: 'allow' })
+  // A Windows host: case-insensitive, either separator, JSON-escaped backslashes.
+  const windows = { ...env, CLIWORKER_AGY_TOOLS_DIR: 'C:\\Users\\SIMULATED\\.dsh\\native\\r\\agy-tools', CLIWORKER_AGY_PROJECT: 'C:\\Users\\SIMULATED\\live' }
+  for (const Path of ['c:/users/simulated/.dsh/native/r/agy-tools/x.txt', JSON.stringify('C:\\Users\\SIMULATED\\.dsh\\native\\r\\agy-tools\\x.txt')])
+    expect(await decide({ name: 'write_file', args: { Path } }, windows)).toMatchObject({ decision: 'deny', reason: expect.stringContaining('C:\\Users\\SIMULATED\\live') })
+  expect(await decide({ name: 'write_file', args: { Path: 'C:\\Users\\SIMULATED\\live\\x.txt' } }, windows)).toEqual({ decision: 'allow' })
+})
 it('refuses changed native identities, missing steps, stale leases and missing private state (synthetic)', async () => {
   const f = await fixture()
   for (const payload of [{ ...f.payload, conversationId: 'other' }, { ...f.payload, stepIdx: -1 }, { ...f.payload, stepIdx: undefined }])

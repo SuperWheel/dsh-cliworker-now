@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import { constants, lstatSync, openSync, readFileSync, closeSync, fstatSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join, dirname, isAbsolute } from 'node:path'
+import { join, dirname, isAbsolute, posix, win32 } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection, createNativeHarnessClient } from './native-harness-mcp.mjs'
 
 export const AGY_HARNESS_SESSION_FILE = 'CLIWORKER_AGY_HARNESS_SESSION_FILE'
+const AGY_TOOLS_DIRECTORY = 'CLIWORKER_AGY_TOOLS_DIR', AGY_PROJECT = 'CLIWORKER_AGY_PROJECT'
 export function agyHarnessServerName(connection) {
   return `dsh_worker_${createHash('sha256').update(JSON.stringify(connection.binding)).digest('hex').slice(0, 12)}`
 }
@@ -55,11 +56,43 @@ export function prepareAgyHarnessWorkspace({ directory, argv, connection, nodeEx
   writeFileSync(join(agents, 'hooks.json'), JSON.stringify({ 'dsh-worker-tools': { PreToolUse: [{
     matcher: '.*', hooks: [{ type: 'command', command, timeout: 10 }],
   }] } }), { flag: 'wx', mode: 0o600 })
+  const project = argv[argv.indexOf('--add-dir') + 1]
   return { argv: [...argv.slice(0, -2), '--add-dir', workspace, ...argv.slice(-2)], env: {
     [AGY_HARNESS_SESSION_FILE]: join(directory, 'agy-harness-session.json'),
+    [AGY_TOOLS_DIRECTORY]: workspace,
+    ...(argv.includes('--add-dir') && project ? { [AGY_PROJECT]: project } : {}),
     CLIWORKER_AGY_HOOK_NODE: `"${nodeExecutable.replaceAll('\\', '/')}"`,
     CLIWORKER_AGY_HOOK_ENTRY: `"${hookEntry.replaceAll('\\', '/')}"`,
   } }
+}
+
+const absolute = value => typeof value === 'string' && (posix.isAbsolute(value) || win32.isAbsolute(value))
+/**
+ * The tools workspace is an `--add-dir` workspace only so agy loads its `.agents` config; the
+ * model sees it beside the project and has written task files there, which accept-edits
+ * approves and cleanup then deletes. Any argument naming it (path, URI, command or JSON text,
+ * whose escaped separators collapse) counts.
+ */
+function namesToolsWorkspace(call, directory) {
+  const windows = /^[A-Za-z]:[\\/]/.test(directory)
+  const comparable = value => {
+    const path = value.replace(/[\\/]+/g, '/')
+    return windows ? path.toLowerCase() : path
+  }
+  const root = comparable(directory).replace(/\/+$/, '')
+  const strings = [], pending = [[call?.args, 0], [call?.input, 0], [call?.parameters, 0], [call?.arguments, 0]]
+  while (pending.length && strings.length < 256) {
+    const [value, depth] = pending.pop()
+    if (typeof value === 'string') strings.push(value)
+    else if (value && typeof value === 'object' && depth < 6)
+      for (const item of Object.values(value)) pending.push([item, depth + 1])
+  }
+  return strings.some(value => {
+    const path = comparable(value)
+    for (let index = path.indexOf(root); index >= 0; index = path.indexOf(root, index + 1))
+      if (!/[\w.-]/.test(path[index + root.length] ?? '')) return true
+    return false
+  })
 }
 
 /** Only the current, fully qualified carrier tools may reach Host approval.
@@ -75,7 +108,12 @@ export async function agyHarnessHookDecision(payload, { env = process.env, signa
     if (typeof name !== 'string') return deny
     // Other native tools retain their original policy, with no permission override.
     const prefixes = [`mcp_${server}_`, `mcp__${server}__`, `${server}.`]
-    if (!prefixes.some(prefix => name.startsWith(prefix))) return allow
+    if (!prefixes.some(prefix => name.startsWith(prefix))) {
+      const tools = env[AGY_TOOLS_DIRECTORY], project = env[AGY_PROJECT]
+      if (absolute(tools) && namesToolsWorkspace(payload.toolCall, tools))
+        return { decision: 'deny', reason: `这是本轮 Harness 工具桥的私有目录，不属于项目${absolute(project) ? `；请改在项目目录 ${project} 中操作` : ''}` }
+      return allow
+    }
     const session = readSession(env[AGY_HARNESS_SESSION_FILE])
     if (JSON.stringify(session.binding) !== JSON.stringify(connection.binding) ||
       typeof payload.conversationId !== 'string' || payload.conversationId !== session.conversationId ||
