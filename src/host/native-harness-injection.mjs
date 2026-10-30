@@ -12,7 +12,7 @@ export const nativeHarnessExecutionReady = cli => ['codex', 'claude', 'opencode'
  */
 /** The run's ready bridge connection for this CLI, or undefined. */
 export function nativeHarnessReadyConnection(config, env = process.env) {
-  const connection = config.harnessTools ?? readNativeHarnessConnection(env)
+  const connection = config.harnessTools ?? readNativeHarnessConnection({ ...env, ...config.env })
   return connection?.executionReady && connection.binding.cli === config.cli ? connection : undefined
 }
 /** The native-first note for this run's ready bridge, naming only offered tools. */
@@ -33,6 +33,7 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   if (!Array.isArray(catalog?.tools)) return undefined
   const authorized = catalog.tools.some(tool => typeof tool.name === 'string' && [
     `mcp__${serverName}__${tool.name}`, `${serverName}.${tool.name}`, `${serverName}_${tool.name}`,
+    ...(config.cli === 'antigravity' ? [`mcp_${serverName}_${tool.name}`] : []),
   ].includes(candidates[0]))
   return authorized ? selected.optionId : undefined
 }
@@ -55,7 +56,7 @@ export function buildNativeHarnessInjection({ cli, argv, env = {}, connection, t
   const privateEnv = { ...env, [HARNESS_CONNECTION_ENV]: JSON.stringify(connection), ELECTRON_RUN_AS_NODE: '1' }
   // Pi's bridge adds the explicit extension only after fetching its exact
   // tool names; keep this private connection out of its persisted request.
-  if (cli === 'pi' || cli === 'antigravity') return { ...capability, argv: [...argv], env: privateEnv }
+  if (cli === 'pi') return { ...capability, argv: [...argv], env: privateEnv }
   const command = { command: nodeExecutable, args: [mcpEntryPath] }
   const acpMcpServers = [{ name: serverName, ...command, env: [{ name: HARNESS_CONNECTION_ENV, value: JSON.stringify(connection) }, { name: 'ELECTRON_RUN_AS_NODE', value: '1' }] }]
   // Appended to, never replacing, the CLI's own system prompt and instruction files.
@@ -81,7 +82,7 @@ export function buildNativeHarnessInjection({ cli, argv, env = {}, connection, t
   return { ...capability, argv: [...argv], env: privateEnv, acpMcpServers: cli === 'zcode' ? acpMcpServers.map(server => ({ ...server, isolation: 'session' })) : acpMcpServers }
 }
 export function nativeHarnessMcpServers(config, env = process.env) {
-  const connection = config.harnessTools ?? readNativeHarnessConnection(env)
+  const connection = config.harnessTools ?? readNativeHarnessConnection({ ...env, ...config.env })
   if (!connection) return []
   return buildNativeHarnessInjection({ cli: config.cli, argv: config.argv, connection }).acpMcpServers ?? []
 }

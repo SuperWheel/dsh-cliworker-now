@@ -1336,3 +1336,15 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 回复使用 elicitation 的 action/content，不复用 item 审批的 decision：允许一次 accept + 空对象，拒绝 decline + null；仅 persist 数组明确含 session 且用户选会话允许时附 `_meta: {persist: 'session'}`。不回显整份元数据、不发送 always、不缓存授权。
 - 同一 elicitation ID 只处理一次；等待期间不阻塞读取。停止、超时、关闭或轮次结束后的决定不再发送；发送中的回复在结算前等待，发送失败仍按授权回复未送达判失败。拒绝只写诊断并设置既有 denied，正常 completed 且进程退出为零仍为已完成；真实轮次错误、非零退出和协议错误继续失败。
 - 非空表单、URL 登录、未知元数据、跨线程/跨轮次仍走原有 -32601 与失败。请求样本来自用户提供的静态重建，回归均为模拟；Windows 实机抓取真实请求帧与 DSH 审批往返保留未验证。
+
+
+## Antigravity ACP 迁移（未发布，保持 0.8.4）
+
+- OpenSpec `migrate-agy-acp` 取代未完成的命令 Hook relay 方案。Windows 1.4.7/Mac 1.4.11 诊断确认，缺 Cwd 的命令使用排序最前工作区，overwrite.Cwd 只改记录；ACP 不加额外工作区且双 cwd 为项目时命令在项目。原始探针保留 `.test-data/agy-command-relay-validation/`，详细依据移入新 change design。
+- 每轮通过实际入口 `acp --help` 确认 --stdio；agy 1.4.11 起支持。旧版/探测失败走 stream，规划也保留 stream --mode plan：ACP 无 modes/规划 config，不能猜 --agent 名称。持久化 transport 保持历史 bridge 身份，由运行器逐轮协商，不迁移用户数据。
+- native-agy-acp 复用通用 ACP；双 cwd 均为项目，无私有 --add-dir、PreToolUse 命令 relay。Host 不预建 agy-tools，只有 stream 后备仍使用旧载体隔离。MCP 通过 new/load.mcpServers 注入，每轮连接独立，仍受 Host 准入和审批。
+- model 以 models.availableModels 精确 ID 通过 set_model 设置，load 回读。configOptions.model 返回基础名，thought_level 返回实际强度；只接受返回目录，不用拼接字符串猜模型。读回不符输入前失败。旧 stream ID 已在 ACP list 找到，仍逐次 load 核对身份；只有输入前原生加载拒绝才同 ID 后备，发送后不重试。
+- ACP 不公开 auto 或沙箱状态。自动档每轮先以 stream 入口 `--mode auto --sandbox` 零输入启动一次（去掉 `--conversation`，不写入输入，退出后才启动 ACP），读取输入前的 stderr 与 `init`，与 stream 降级同一依据：账号警告或无警告的 `init` 表示主机有终端沙箱，ACP 用 `--sandbox --dangerously-skip-permissions`，与原 Mac 自动审批等价；主机无沙箱警告时省略 `--sandbox`；超时或没有报告时不 skip（非 Windows 仅 `--sandbox`）。不 skip 时逐条转交实际 request_permission，仅 allow_once/reject_once。2026-10-31 Mac 实测：ACP 只加 `--sandbox` 时命令仍发 request_permission，等价只能靠 skip。完全权限关闭沙箱、原生 skip；仅规划保持 stream。
+- 通用 ACP 防止原生结束后的迟到 allow；停止/超时尝试 session/cancel，再关闭并确认进程范围退出。原有互斥、时限、审批期间空闲暂停与换号机制不变。工具状态/stopReason/用户决定及进程退出独立判定；stream 保留 denied_actions/finished_reason 修复，删除无效命令 relay。
+- ACP usage 独立映射本轮 input/output/total/cache/thought 指标，不冒充 stream 会话累计；无 promptCapabilities.image 时图片仅提供路径，不支持 fork。
+- 本次零模型记录与待执行真实脚本在 `.test-data/agy-acp-migration/`，实际命令和未验证事项见 change tasks。未进行真实 prompt、Windows 或 Desktop 更新；不以模拟或回读代替工具执行验收。

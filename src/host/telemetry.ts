@@ -294,6 +294,10 @@ function metricRecords(v: Record<string, any>): unknown[] {
     contextCapacitySource: ['qoder.native-runtime-config', 'qoder.native-session-log', 'qodercn.native-runtime-config', 'qodercn.native-session-log'].includes(v.contextCapacitySource)
       ? v.contextCapacitySource : undefined,
   })
+  else if (v.type === 'cliworker.agy_prompt_usage') entries.push({
+    type: v.type, sessionId: textId(v.sessionId), model: textId(v.model),
+    usage: metricCounts(v.usage, ['inputTokens', 'outputTokens', 'totalTokens', 'cachedReadTokens', 'cachedWriteTokens', 'thoughtTokens']),
+  })
   else if (v.type === 'cliworker.grok_prompt_usage') entries.push({
     type: v.type, sessionId: textId(v.sessionId) ?? null,
     usageIsIncomplete: v.usageIsIncomplete === true || (v.usageIsIncomplete !== undefined && v.usageIsIncomplete !== false),
@@ -793,6 +797,16 @@ export function extractTelemetry(
         }
       }
       if (duration(v.providerCredits) !== undefined) result.providerCredits = v.providerCredits
+    } else if (cli === 'antigravity' && v.type === 'cliworker.agy_prompt_usage' && textId(v.sessionId) && ownSession(v.sessionId) &&
+      (!model || v.model === model)) {
+      const u = obj(v.usage)
+      delete result.runUsage
+      delete result.usage
+      if (['inputTokens', 'outputTokens', 'totalTokens'].every(key => count(u[key]) !== undefined) && u.totalTokens > 0)
+        result.runUsage = result.usage = { input: u.inputTokens, output: u.outputTokens, total: u.totalTokens,
+          ...(count(u.cachedReadTokens) !== undefined ? { cacheRead: u.cachedReadTokens } : {}),
+          ...(count(u.cachedWriteTokens) !== undefined ? { cacheWrite: u.cachedWriteTokens } : {}),
+          ...(count(u.thoughtTokens) !== undefined ? { reasoning: u.thoughtTokens } : {}), scope: 'run' }
     } else if (cli === 'grok' && v.type === 'cliworker.grok_prompt_usage' && textId(v.sessionId) && ownSession(v.sessionId)) {
       const raw = grokPromptUsage({ ...obj(v.usage), usageIsIncomplete: v.usageIsIncomplete })
       delete result.runUsage

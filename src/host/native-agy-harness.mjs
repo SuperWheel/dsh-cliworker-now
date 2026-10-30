@@ -39,14 +39,19 @@ export function recordAgyHarnessSession(config, id, env = process.env) {
 export function prepareAgyHarnessWorkspace({ directory, argv, connection, nodeExecutable = process.execPath,
   mcpEntryPath = join(dirname(fileURLToPath(import.meta.url)), 'native-harness-mcp.mjs'), platform = process.platform }) {
   if (!connection?.executionReady || connection.binding.cli !== 'antigravity') throw new Error('AGY 工具桥没有本轮执行授权')
-  readNativeHarnessConnection({ [HARNESS_CONNECTION_ENV]: JSON.stringify(connection) })
+  if (connection) {
+    readNativeHarnessConnection({ [HARNESS_CONNECTION_ENV]: JSON.stringify(connection) })
+    if (connection.binding?.cli !== 'antigravity') throw new Error('AGY 工具桥运行身份不匹配')
+  }
   if (argv.at(-2) !== '--print') throw new Error('无法确认 AGY 原生输入入口')
   const workspace = join(directory, 'agy-tools'), agents = join(workspace, '.agents')
   mkdirSync(workspace, { mode: 0o700 }); mkdirSync(agents, { mode: 0o700 })
-  const server = agyHarnessServerName(connection)
-  writeFileSync(join(agents, 'mcp_config.json'), JSON.stringify({ mcpServers: { [server]: {
-    command: nodeExecutable, args: [mcpEntryPath], env: { ELECTRON_RUN_AS_NODE: '1' },
-  } } }), { flag: 'wx', mode: 0o600 })
+  if (connection?.executionReady) {
+    const server = agyHarnessServerName(connection)
+    writeFileSync(join(agents, 'mcp_config.json'), JSON.stringify({ mcpServers: { [server]: {
+      command: nodeExecutable, args: [mcpEntryPath], env: { ELECTRON_RUN_AS_NODE: '1' },
+    } } }), { flag: 'wx', mode: 0o600 })
+  }
   // This function is also bundled into Host index.js. Always launch the
   // standalone carrier, rather than executing the Host plugin as a Hook.
   const hookEntry = join(dirname(fileURLToPath(import.meta.url)), 'native-agy-harness.mjs')
@@ -58,7 +63,7 @@ export function prepareAgyHarnessWorkspace({ directory, argv, connection, nodeEx
   }] } }), { flag: 'wx', mode: 0o600 })
   const project = argv[argv.indexOf('--add-dir') + 1]
   return { argv: [...argv.slice(0, -2), '--add-dir', workspace, ...argv.slice(-2)], env: {
-    [AGY_HARNESS_SESSION_FILE]: join(directory, 'agy-harness-session.json'),
+    ...(connection?.executionReady ? { [AGY_HARNESS_SESSION_FILE]: join(directory, 'agy-harness-session.json') } : {}),
     [AGY_TOOLS_DIRECTORY]: workspace,
     ...(argv.includes('--add-dir') && project ? { [AGY_PROJECT]: project } : {}),
     CLIWORKER_AGY_HOOK_NODE: `"${nodeExecutable.replaceAll('\\', '/')}"`,
@@ -102,24 +107,24 @@ function namesToolsWorkspace(call, directory) {
 export async function agyHarnessHookDecision(payload, { env = process.env, signal } = {}) {
   const allow = { decision: 'allow' }, deny = { decision: 'deny', reason: '本轮 Harness 工具桥身份或授权无法确认，未自动重试' }
   try {
-    const connection = readNativeHarnessConnection(env)
-    if (!connection?.executionReady || connection.binding.cli !== 'antigravity') return deny
-    const name = payload?.toolCall?.name, server = agyHarnessServerName(connection)
+    const name = payload?.toolCall?.name
     if (typeof name !== 'string') return deny
+    const connection = readNativeHarnessConnection(env)
+    const server = connection?.executionReady && connection.binding.cli === 'antigravity' ? agyHarnessServerName(connection) : undefined
+    const prefixes = server ? [`mcp_${server}_`, `mcp__${server}__`, `${server}.`] : []
+    const carrier = prefixes.some(prefix => name.startsWith(prefix))
+    const tools = env[AGY_TOOLS_DIRECTORY], project = env[AGY_PROJECT]
+    if (!carrier && absolute(tools) && namesToolsWorkspace(payload.toolCall, tools))
+      return { decision: 'deny', reason: `这是本轮 Harness 工具桥的私有目录，不属于项目${absolute(project) ? `；请改在项目目录 ${project} 中操作` : ''}` }
+    if (!connection?.executionReady || connection.binding.cli !== 'antigravity') return deny
     // Other native tools retain their original policy, with no permission override.
-    const prefixes = [`mcp_${server}_`, `mcp__${server}__`, `${server}.`]
-    if (!prefixes.some(prefix => name.startsWith(prefix))) {
-      const tools = env[AGY_TOOLS_DIRECTORY], project = env[AGY_PROJECT]
-      if (absolute(tools) && namesToolsWorkspace(payload.toolCall, tools))
-        return { decision: 'deny', reason: `这是本轮 Harness 工具桥的私有目录，不属于项目${absolute(project) ? `；请改在项目目录 ${project} 中操作` : ''}` }
-      return allow
-    }
+    if (!carrier) return allow
     const session = readSession(env[AGY_HARNESS_SESSION_FILE])
     if (JSON.stringify(session.binding) !== JSON.stringify(connection.binding) ||
       typeof payload.conversationId !== 'string' || payload.conversationId !== session.conversationId ||
       !Number.isSafeInteger(payload.stepIdx) || payload.stepIdx < 0) return deny
     const client = createNativeHarnessClient(connection)
-    const catalog = await client.request('agy-hook-catalogue', 'tools/list', {}, signal)
+    const catalog = await client.request('agy-hook-catalogue', 'tools/list', {}, AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(8000)]))
     if (!Array.isArray(catalog?.tools) || !catalog.tools.some(tool => typeof tool.name === 'string' &&
         prefixes.some(prefix => name === prefix + tool.name))) return deny
     return { decision: 'auto_approve', reason: '仅进入本轮 Harness 工具桥，实际执行仍须宿主审批' }
@@ -136,6 +141,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       if (Buffer.byteLength(input) > maximum) { tooLarge = true; break }
     }
     if (tooLarge) throw new Error('Hook input exceeds limit')
-    process.stdout.write(JSON.stringify(await agyHarnessHookDecision(JSON.parse(input), { signal: AbortSignal.timeout(8000) })))
+    process.stdout.write(JSON.stringify(await agyHarnessHookDecision(JSON.parse(input))))
   } catch { process.stdout.write(JSON.stringify({ decision: 'deny', reason: 'Harness 工具桥准入失败，未自动重试' })) }
 }

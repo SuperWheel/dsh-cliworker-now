@@ -9,7 +9,7 @@ process.umask(0o077)
 const modules = {
   codex: ['native-codex', 'runNativeCodex'],
   claude: ['native-claude', 'runNativeClaude'],
-  antigravity: ['native-agy', 'runNativeAgy'],
+  antigravity: ['native-agy-acp', 'runNativeAgyAuto'],
   kimi: ['native-kimi', 'runNativeKimi'],
   qoder: ['native-qoder', 'runNativeQoder'],
   qodercn: ['native-qoder', 'runNativeQoder'],

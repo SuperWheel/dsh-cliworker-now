@@ -1,8 +1,10 @@
+import { dirname } from 'node:path'
+import { readNativeHarnessConnection } from './native-harness-mcp.mjs'
 import { execFile } from 'node:child_process'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { summarizeNativeRecord } from './native-transport.mjs'
 import { agyResponseUsage } from './native-response.mjs'
-import { recordAgyHarnessSession } from './native-agy-harness.mjs'
+import { prepareAgyHarnessWorkspace, recordAgyHarnessSession } from './native-agy-harness.mjs'
 import { createToolOutcomes } from './native-tool-outcomes.mjs'
 
 const object = (value) => value && typeof value === 'object' && !Array.isArray(value)
@@ -92,6 +94,45 @@ async function openAgyInput(config, io, modes) {
   }
 }
 
+/**
+ * For ACP, which reports no sandbox state: start the stream entry with `--mode auto` and
+ * never write input. agy's pre-input report is the same evidence the stream fallback acts
+ * on: an account warning or a plain `init` means the host check passed ('available'); the
+ * host warning means no terminal sandbox ('unavailable'); neither in time is undefined.
+ */
+export async function probeAgyHostSandbox(config, io) {
+  const modes = await probeAgyModes(config, io.signal)
+  if (!modes.includes('auto')) return undefined
+  // The probe must never touch the bound conversation.
+  const at = config.argv.indexOf('--conversation')
+  const argv = at < 0 ? config.argv : config.argv.filter((_, index) => index !== at && index !== at + 1)
+  const probe = { ...config, argv, conversationId: undefined, mode: 'accept-edits', access: 'workspace-write' }
+  let settle, stderr = '', initTimer
+  const report = new Promise(resolve => { settle = resolve })
+  const peer = await io.openStdio(nativeAgyArgv(probe, modes), { env: config.env, cwd: config.project,
+    onMessage(value) { if (value?.event === 'init') initTimer ??= setTimeout(() => settle('available'), 50) },
+    onStderr(chunk) {
+      stderr = (stderr + chunk.toString('utf8')).slice(-8192)
+      const warning = autoUnavailable.exec(stderr)
+      if (warning) settle(warning[1] === 'for this account' ? 'available' : 'unavailable')
+    },
+  })
+  const timer = setTimeout(() => settle(undefined), Math.min(10000, Math.max(1, config.timeoutMs / 4)))
+  const abort = () => settle(undefined)
+  io.signal?.addEventListener('abort', abort, { once: true })
+  void peer.done.then(() => settle(undefined), () => settle(undefined))
+  let found
+  try { found = await report }
+  finally {
+    clearTimeout(timer)
+    clearTimeout(initTimer)
+    io.signal?.removeEventListener('abort', abort)
+    await peer.close()
+  }
+  io.signal?.throwIfAborted()
+  return found
+}
+
 /** `sandboxless`: agy reported that this host has no terminal sandbox. */
 export function agyPermissionMode(config, modes, { sandboxless = false } = {}) {
   const plan = config.mode === 'plan' || config.access === 'read-only'
@@ -101,11 +142,11 @@ export function agyPermissionMode(config, modes, { sandboxless = false } = {}) {
   if (modes && !modes.includes(mode)) {
     if (!plan && modes.includes('accept-edits')) {
       mode = 'accept-edits'
-      // Skipping confirmations relies on the terminal sandbox to confine commands. Without
-      // one, accept-edits alone approves workspace edits and headless agy denies commands.
+      // Skipping confirmations relies on the terminal sandbox to confine commands.
+      // Without it, legacy headless stream has no supported approval channel.
       skip = !sandboxless
       notice = sandboxless
-        ? 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮按仅工作区编辑运行，不执行命令'
+        ? 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮仅工作区编辑，旧版 stream 没有命令审批通道，命令可能被原生拒绝；升级至支持 ACP 的 agy 后重试'
         : 'Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行'
     } else if (!plan && modes.includes('plan')) {
       mode = 'plan'
@@ -161,7 +202,7 @@ export async function runNativeAgy(config, io) {
   try { modes = await probeAgyModes(config, io.signal) }
   catch (error) { throw fail(`无法核实原生权限模式，已拒绝启动：${error.message}`) }
   const content = await nativeAttachmentInput('text', `任务：\n${config.prompt}`, config.attachments, io.signal)
-  const peer = await openAgyInput(config, io, modes)
+  let peer
   let sessionId, result, invalidStep = false, failedStep = false
   const steps = new Map(), responses = new Map(), toolOutputs = new Map()
   const toolOutcomes = createToolOutcomes()
@@ -169,9 +210,9 @@ export async function runNativeAgy(config, io) {
   const identify = (id, model) => {
     if (id === undefined) return
     if (!string(id) || (sessionId && sessionId !== id) || (config.conversationId && config.conversationId !== id)) throw fail('原生会话身份与绑定不一致')
-    if (!sessionId) { recordAgyHarnessSession(config, id); sessionId = id; io.session(id, model) }
+    if (!sessionId) { recordAgyHarnessSession(config, id, { ...process.env, ...config.env }); sessionId = id; io.session(id, model) }
   }
-  const abort = () => { if (!result) { try { peer.kill('SIGINT') } catch {} } }
+  const abort = () => { if (!result) { try { peer?.kill('SIGINT') } catch {} } }
   io.signal?.addEventListener('abort', abort, { once: true })
   let unsubscribe = () => {}
   const onMessage = (value) => {
@@ -195,7 +236,8 @@ export async function runNativeAgy(config, io) {
       else if (knownType) {
         const previous = steps.get(index)
         if (previous && previous.type !== item.step_type) invalidItem = true
-        steps.set(index, { type: item.step_type, state: state ?? previous?.state })
+        steps.set(index, { ...previous, type: item.step_type, state: state ?? previous?.state,
+          ...(item.step_type === 'tool' ? { name: item.tool_info?.name ?? item.tool_name ?? previous?.name, args: item.tool_info?.parameters ?? previous?.args } : {}) })
       }
       if (!knownType) {
         // Preserve unrecognized native metadata without claiming all steps
@@ -261,6 +303,15 @@ export async function runNativeAgy(config, io) {
       ...(info.result !== undefined ? { result: summarizeNativeRecord(info.result, 0) } : {}) } } } : value)
   }
   try {
+    const connection = readNativeHarnessConnection({ ...process.env, ...config.env })
+    if (connection?.executionReady && !config.env?.CLIWORKER_AGY_TOOLS_DIR && !process.env.CLIWORKER_AGY_TOOLS_DIR) {
+      const directory = config.stopDirectory ? dirname(config.stopDirectory) : config.stateDirectory
+      if (!directory) throw fail('旧版工具桥缺少私有运行目录')
+      const prepared = prepareAgyHarnessWorkspace({ directory, argv: config.argv, connection })
+      config = { ...config, argv: prepared.argv, env: { ...config.env, ...prepared.env } }
+      io.event({ kind: 'diagnostic', text: 'Antigravity stream 后备使用私有工具工作区；原生命令默认目录可能受工作区排序影响，请核查实际目录' })
+    }
+    peer = await openAgyInput(config, io, modes)
     io.signal?.throwIfAborted()
     unsubscribe = peer.onMessage(onMessage)
     const completion = peer.waitFor((value) => value.event === 'result', { timeoutMs: config.timeoutMs })
@@ -275,21 +326,35 @@ export async function runNativeAgy(config, io) {
     const observed = currentResponse()
     const unfinishedTool = [...steps.values()].some((item) => item.type === 'tool' && item.state !== 'DONE' && !(item.state === 'ERROR' && item.failedTool))
     const allDone = !invalidStep && steps.size > 0 && [...steps.values()].every((item) => item.state === 'DONE') && [...responses].some(([index, text]) => index !== undefined && steps.get(index)?.state === 'DONE' && text.trim()) && (result.error === undefined || typeof result.error === 'string')
-    const conflict = outcome.exitCode === 0 && config.conversationId && sessionId === config.conversationId && result.status === 'ERROR' && allDone
+    // agy 1.4.11 omits finished_reason on normal completion; every present value is partial.
+    const partial = result.finished_reason !== undefined
+    const conflict = !partial && outcome.exitCode === 0 && config.conversationId && sessionId === config.conversationId && result.status === 'ERROR' && allDone
     if (conflict) {
       io.result('UNCERTAIN', observed, `CLI 汇总状态冲突，结果待核实：本轮回复及已观察步骤均为 DONE，但 CLI 最终报告 ERROR。请核查本轮输出和实际产物，不要自动重试。原始汇总错误：${result.error || '未提供错误详情'}`, 'run')
-    } else if (outcome.exitCode !== 0 || result.status !== 'SUCCESS' || failedStep || unfinishedTool) {
-      io.result('ERROR', observed, outcome.exitCode !== 0 ? 'Antigravity 原生进程非零退出' : typeof result.error === 'string' && result.error ? result.error : `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`, 'run')
-    } else toolOutcomes.settle(io, result.response, 'run')
+    } else if (outcome.exitCode !== 0 || result.status !== 'SUCCESS' || partial || failedStep || unfinishedTool) {
+      io.result('ERROR', observed || (partial ? result.response : ''), outcome.exitCode !== 0 ? 'Antigravity 原生进程非零退出' : partial ? `Antigravity 部分结果，结束原因：${String(result.finished_reason)}` : typeof result.error === 'string' && result.error ? result.error : `Antigravity 原生结果 ${result.status}${failedStep || unfinishedTool ? '，且步骤未全部确认' : ''}`, 'run')
+    } else {
+      const denied = result.denied_actions
+      // Legacy stream has no DSH command-permission decisions to correlate.
+      const unexecuted = denied !== undefined && (!Array.isArray(denied) || denied.length > 0)
+      if (Array.isArray(denied) && denied.length) {
+        io.event({ kind: 'diagnostic', state: 'DENIED', text: 'Antigravity 报告操作被拒绝、未执行', detail: JSON.stringify(denied) })
+        for (const [index, item] of steps) if (item.name === 'run_command' && !toolOutputs.has(index))
+          io.event({ kind: 'tool', step: index, text: 'run_command', state: 'DENIED', detail: '原生汇总报告拒绝，未观察到此命令输出' })
+      }
+      if (unexecuted) io.result('UNCERTAIN', observed || result.response,
+        'Antigravity 命令未执行：原生策略或审批通道拒绝，结果待核实；请核查实际产物，不要自动重试', 'run')
+      else toolOutcomes.settle(io, result.response, 'run')
+    }
   } catch (error) {
     unsubscribe()
-    await peer.close()
-    if (peer.permissionError()) io.event({ kind: 'diagnostic', text: peer.permissionError().message, state: 'FAILED' })
-    throw peer.permissionError() ?? error
+    await peer?.close()
+    if (peer?.permissionError()) io.event({ kind: 'diagnostic', text: peer.permissionError().message, state: 'FAILED' })
+    throw io.signal?.aborted ? io.signal.reason : peer?.permissionError() ?? error
   } finally {
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()
-    await peer.close()
+    await peer?.close()
   }
 }
 import { nativeAttachmentInput } from './native-attachments.mjs'

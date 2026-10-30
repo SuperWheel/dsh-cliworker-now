@@ -59,7 +59,7 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 
 | CLI | 原生通路 | CLI | 原生通路 |
 | --- | --- | --- | --- |
-| Antigravity | stream-json | OMP（Oh My Pi） | RPC |
+| Antigravity | ACP（旧版 stream-json 后备） | OMP（Oh My Pi） | RPC |
 | Codex | app-server | Pi | RPC |
 | Claude Code | stream-json | Hermes Agent | Runs API |
 | Kimi Code | ACP | OpenCode | HTTP + SSE |
@@ -171,16 +171,16 @@ flowchart LR
 
 - **按明确选择执行**：CLI 缺失或失败不会换用其他 CLI；不接管插件外启动的 CLI。
 - **Worker 权限三档**：子会话的权限菜单（`/permission`）列出该 CLI 的三档，每轮以 CLI 自己的原生模式运行，不附加系统沙箱：
-  - **第一项（多数 CLI 叫「询问」）**：读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改；OpenCode/MiMo 无法区分只读命令，所有命令都先问。做不到「改动先问」的 CLI 按实际行为命名：Kimi 叫「仅工作区编辑」（工作目录是 Git 仓库时，仓库内的编辑由 Kimi 自动批准，其余先问）；Antigravity 叫「仅规划」（无法转交授权，以原生规划模式运行）；Hermes 没有这一档。Pi 没有原生审批，插件每轮给 Pi 加载一个私有扩展，用 Pi 官方的工具拦截和确认接口先问你，读文件不问。
-  - **中档「自动审批」**：使用 CLI 原生的自动审批（Codex `auto_review`、Claude Code `auto`、Kimi `yolo`、Qoder `auto`、Grok 自动审核、Hermes `smart`、Antigravity `--mode auto`、MiMo `skip-all`），由 CLI 自行判断放行，可能放行工作区外的操作；它仍要确认的请求会问你。没有原生自动审批的 CLI 用原生编辑模式：ZCode（`edit`）和 OpenCode 叫「仅工作区编辑」，OMP（`write`）和 Pi 叫「自动批准编辑」，编辑自动批准、命令仍先问你，二者都不限制编辑目录。
+  - **第一项（多数 CLI 叫「询问」）**：读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改；OpenCode/MiMo 无法区分只读命令，所有命令都先问。做不到「改动先问」的 CLI 按实际行为命名：Kimi 叫「仅工作区编辑」（工作目录是 Git 仓库时，仓库内的编辑由 Kimi 自动批准，其余先问）；Antigravity 叫「仅规划」（ACP 未确认规划模式，保留 stream 原生规划）；Hermes 没有这一档。Pi 没有原生审批，插件每轮给 Pi 加载一个私有扩展，用 Pi 官方的工具拦截和确认接口先问你，读文件不问。
+  - **中档「自动审批」**：使用 CLI 原生的自动审批（Codex `auto_review`、Claude Code `auto`、Kimi `yolo`、Qoder `auto`、Grok 自动审核、Hermes `smart`、Antigravity ACP 在终端沙箱内跳过确认，主机没有终端沙箱时逐条确认（旧版 `--mode auto`）、MiMo `skip-all`），由 CLI 自行判断放行，可能放行工作区外的操作；它仍要确认的请求会问你。没有原生自动审批的 CLI 用原生编辑模式：ZCode（`edit`）和 OpenCode 叫「仅工作区编辑」，OMP（`write`）和 Pi 叫「自动批准编辑」，编辑自动批准、命令仍先问你，二者都不限制编辑目录。
   - **完全权限**：使用 CLI 原生的免确认/完全访问模式（Codex `danger-full-access`、Claude Code `bypassPermissions`、Kimi ACP `auto`、Qoder `bypass_permissions`/`yolo`、ZCode `yolo`、Grok `--always-approve`、Hermes 关闭审批、Antigravity 跳过确认并关闭终端沙箱、OMP `yolo`、OpenCode/MiMo 全部工具允许、Pi 开放原生命令），不再询问。**此档下 CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用。**
   - **你选的档位优先**：菜单一直列出该 CLI 的全部档位。没选过的 Worker 跟随主对话（仅可查看 → 第一项；工作区内修改 → 中档；完全权限 → 完全权限）；你选过档位后，该 Worker 的每一轮——包括主 Agent 派遣和续聊——都按你选的档位运行，可以高于主对话，主 Agent 不再另外询问。选择完全权限仍会弹出 DSH 的确认。主对话为「仅可查看」时，没选过档位的 Antigravity、Hermes 和 Kimi 拒绝派遣。运行中改动主对话权限，对跟随主对话的 Worker 从下一轮生效，本轮的授权请求按当时的主对话权限判定。
   - **规划模式与档位分开**：`/plan` 或规划标记只开关原生规划模式，退出规划后档位不变；Hermes、Qoder、Qoder CN 没有规划模式。
-  - **原生模式不可用时降级**：安装的 CLI 版本没有目标模式，或设置后回读不一致时，按更严一档运行并在时间线说明（如「本轮按询问运行」）；第一项也无法确认时拒绝启动，绝不改用更宽的模式。唯一例外是 Antigravity：自动审批不可用时按「仅工作区编辑」运行（终端仍在沙箱内），不退到仅规划；主机没有终端沙箱（如 Windows）时只自动批准工作区内编辑、不执行命令。Antigravity 工具桥的私有目录不承载任务文件，模型对它的读写会被拒绝并提示改用项目目录。当前账号在运行时才报告不可用时同样降级：在发送任务前识别到（如 Antigravity 的账号警告），先结束原进程再以降级模式重启，只保留收到任务的会话；任务发出后才识别到则停止本轮并说明原因，不重发、不自动重试。
+  - **原生模式不可用时降级**：安装的 CLI 版本没有目标模式，或设置后回读不一致时，按更严一档运行并在时间线说明（如「本轮按询问运行」）；第一项也无法确认时拒绝启动，绝不改用更宽的模式。Antigravity 需要 **agy 1.4.11 及以上且实际帮助确认 `acp --stdio`** 才使用 ACP；探测失败、旧版或仅规划使用 stream。ACP 进程和会话目录均为项目，工具桥经 `mcpServers` 注入，不添加私有工作区；用户项目额外工作区仍可能影响原生命令默认目录。ACP 不报告沙箱状态，自动档每轮先以 stream 入口零输入启动一次，读取 agy 自己在输入前报告的原因（与 stream 降级同一依据）：确认主机有终端沙箱时以 `--sandbox --dangerously-skip-permissions` 运行，与原先 Mac 自动审批一致；报告没有终端沙箱（如 Windows 11 23H2）或无法确认时不跳过确认，实际权限请求逐条经 DSH「允许一次／拒绝」，无会话授权。工作区编辑是否请求确认由 agy 决定：Windows 实测中，项目内写文件没有请求确认，只有命令请求了确认。完全权限关闭终端沙箱并跳过确认。模型及强度以原生目录设置并回读；旧会话先尝试 ACP load，不兼容时保留同一 ID 走 stream，绝不静默新建。stream 无沙箱后备没有可用的命令审批通道，提示命令可能被拒；`denied_actions` 为待核实，`finished_reason` 为部分结束失败。ACP 取消、超时仍须确认进程范围退出；usage 记为本轮。真实 MCP 加载与调用、续聊及停止验收见 `openspec/changes/migrate-agy-acp/tasks.md`。
   - **授权请求交给 DSH**：Harness 处于规划模式时一律拒绝；Worker 为完全权限时自动放行（主对话也是完全权限时按它的审批策略）；中档且主对话「从不询问」时拒绝；其余情况询问你。
   - **Codex Computer Use 应用授权**：已核实的 `cua_repl` 空表单应用授权（如「Allow Codex to use DeepSeek Harness?」）也按上述档位转交 DSH，规划模式拒绝，完全权限按现有规则自动放行。仅原生请求明确支持时提供「本会话始终允许」，不发送永久授权、不由插件缓存；拒绝后 Codex 正常结束仍为「已完成」，时间线保留拒绝记录。需要填写内容的表单、URL 登录及未知 elicitation 仍不支持并判失败。当前已覆盖模拟回归，Windows 真实请求帧及 DSH 审批往返尚未验证。
   - 主 Agent 派出的任务（`cliworker_start` / `cliworker_followup`）在主对话页弹出授权问题；你在子会话中续聊、排队或重新运行的轮次在该子会话中审批，任务卡显示「等待审批」。CLI 原生提供会话级授权（Codex、Claude Code、Kimi、Qoder、Hermes）时，主对话页另有「本会话始终允许」，由 CLI 自己记住；子会话审批面板只有允许一次 / 拒绝。Worker 经 DSH 备选工具（例如备选命令工具申请更宽的沙箱）请求审批时按同样规则询问，只有允许一次 / 拒绝。无人应答或任务停止时按拒绝处理。
-  - Harness 处于规划模式时仍拒绝派遣写任务。OMP 三档都开放原生命令，每次需要确认的命令和写入同样按上述规则交给 DSH。Antigravity 和 Pi 没有可回复的原生授权协议：Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
+  - Harness 处于规划模式时仍拒绝派遣写任务。OMP 三档都开放原生命令，每次需要确认的命令和写入同样按上述规则交给 DSH。Antigravity ACP 的原生授权请求逐条转交 DSH；Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
 - **关闭的原生功能**：插件默认保留 CLI 原生功能（Grok 网页搜索与抓取、OpenCode/MiMo 用户自己的 skill 已启用），只因以下理由关闭：
   - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（2026-10-29 决定不启用；Claude Code 的 Task 与 Codex 的多 Agent 维持原样）。
   - 账号隔离：OpenCode/MiMo 外部插件与 Claude Code 命令、MCP 导入；OpenCode 项目配置、主目录 `~/.opencode` 配置（其中 skill 照常提供）、CLAUDE.md 与 `.claude`/`.agents` 兼容 skill 目录；MiMo 启动时导入 Claude Code 会话记录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件与 MCP（包括外部记忆服务）。MiMo 的项目配置与 `~/.mimocode` 是它自己的账号与模型来源，不关闭。

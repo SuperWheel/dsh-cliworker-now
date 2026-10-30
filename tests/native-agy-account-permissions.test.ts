@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, realpath, mkdir, rm, writeFile, readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,10 +13,11 @@ const roots: string[] = []
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 const fixture = `import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 if (process.argv.includes('--help')) { console.log('  --mode Set mode (accept-edits, auto, plan)'); process.exit(0); }
 const mode = process.argv[process.argv.indexOf('--mode') + 1], scenario = process.env.SCENARIO;
 const id = mode === 'auto' ? 'simulated-auto-session' : 'simulated-final-session';
-const audit = value => appendFileSync(process.env.AUDIT, JSON.stringify({ mode, ...value }) + '\\n');
+const audit = value => appendFileSync(process.env.AUDIT, JSON.stringify({ mode, pid: process.pid, ...value }) + '\\n');
 const out = value => process.stdout.write(JSON.stringify(value) + '\\n');
 const init = () => out({ event: 'init', conversation_id: id, init: { model: 'simulated-flash' } });
 const warning = process.env.WARNING === 'host'
@@ -32,7 +34,7 @@ if (scenario === 'early' || scenario === 'early-no-init') {
   }, 10);
 }
 const lines = createInterface({ input: process.stdin });
-lines.on('line', line => {
+lines.on('line', async line => {
   audit({ event: 'input', value: JSON.parse(line) });
   if (scenario.startsWith('late') && mode === 'auto') {
     process.stderr.write(warning);
@@ -40,6 +42,10 @@ lines.on('line', line => {
     return;
   }
   if (scenario === 'no-init') init();
+  if (scenario.startsWith('partial-') || scenario === 'policy-denied') {
+    out({ event: 'result', result: { conversation_id: id, status: 'SUCCESS', response: '模拟部分回复', ...(scenario === 'policy-denied' ? { denied_actions: [{ action: 'command', display_name: 'RunCommand' }] } : { finished_reason: scenario.slice(8) }) } }); return;
+  }
+
   out({ event: 'result', result: { conversation_id: id, status: 'SUCCESS', response: '模拟完成' } });
 });
 lines.on('close', () => {
@@ -60,14 +66,14 @@ async function setup(scenario = 'early', warning = 'account') {
     await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
     return { cli: 'antigravity', project: root, stateDirectory, preference, mode, access, prompt: '模拟任务',
       argv: [process.execPath, entry, ...agyArguments('simulated-agy', root, preference, mode, '模拟任务', 3000, undefined, access as any).slice(1)],
-      env: { AUDIT: audit, SCENARIO: scenario, WARNING: warning }, timeoutMs: 3000, maxLineBytes: 65536, maxRunBytes: 1048576 }
+      env: { AUDIT: audit, SCENARIO: scenario, WARNING: warning, HOOK_ENTRY: fileURLToPath(new URL('../src/host/native-agy-harness.mjs', import.meta.url)) }, approvalNonce: 'simulated-approval-nonce', timeoutMs: 3000, maxLineBytes: 65536, maxRunBytes: 1048576 }
   }
   const rows = async () => (await readFile(audit, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
   return { root, task, rows }
 }
-async function run(task: any, controller = new AbortController(), observe?: (frame: any) => void) {
+async function run(task: any, controller = new AbortController(), observe?: (frame: any, io: any) => void) {
   const frames: any[] = []
-  const io = createNativeIO(task, (line: string) => { const frame = JSON.parse(line); frames.push(frame); observe?.(frame) }, controller.signal)
+  const io = createNativeIO(task, (line: string) => { const frame = JSON.parse(line); frames.push(frame); observe?.(frame, io) }, controller.signal)
   let error
   try { await runNativeAgy(task, io) } catch (caught) { error = caught }
   await io.close(error)
@@ -99,7 +105,7 @@ it('模拟：主机没有终端沙箱（Windows）时按仅工作区编辑重启
   // Without a terminal sandbox, skipping confirmations would run commands unconfined.
   expect(starts[1].argv).toContain('--sandbox')
   expect(starts[1].argv).not.toContain('--dangerously-skip-permissions')
-  expect(frames.some(frame => frame.event?.text === 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮按仅工作区编辑运行，不执行命令')).toBe(true)
+  expect(frames.some(frame => frame.event?.text === 'Antigravity 原生自动审批在此主机不可用（没有终端沙箱），本轮仅工作区编辑，旧版 stream 没有命令审批通道，命令可能被原生拒绝；升级至支持 ACP 的 agy 后重试')).toBe(true)
   expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS' })
 })
 
@@ -153,4 +159,16 @@ it('模拟：输入前取消会清理进程，不发布会话、不发送输入�
   expect(rows.some(row => row.event === 'stopped')).toBe(true)
   expect(frames.filter(frame => frame.type === 'session')).toHaveLength(0)
   expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: expect.stringContaining('模拟取消') })
+})
+
+
+it.each(['print_timeout', 'timeout', 'interrupted', 'error', 'future_partial'])('模拟：finished_reason=%s 的 SUCCESS/0 仍非完整成功', async reason => {
+  const f = await setup(`partial-${reason}`)
+  const { frames } = await run(await f.task())
+  expect(frames.at(-1)).toMatchObject({ status: 'ERROR', response: '模拟部分回复', error: expect.stringContaining(reason) })
+})
+it('模拟：denied_actions 的 SUCCESS/0 假成功变为待核实', async () => {
+  const f = await setup('policy-denied')
+  const { frames } = await run(await f.task())
+  expect(frames.at(-1)).toMatchObject({ status: 'UNCERTAIN', error: expect.stringContaining('命令未执行') })
 })

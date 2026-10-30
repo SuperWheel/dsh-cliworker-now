@@ -41,3 +41,4 @@
   - 模型为列目录调用 `run_command`，被无头 agy 拒绝：`user denied permission to run command`。没有执行命令，与设计一致。
   - 随后 agy stderr 报 `no output produced — a tool required the "command" permission that headless mode cannot prompt for`，本轮结束，没有最终回复。插件按 `agy-run-outcome` 判为「本轮最后的工具步骤失败后 CLI 直接结束；结果待核实」。主 Agent 用 glob 核验文件一致。
   - 结论：降级本身符合规格。但在 Windows 上，只要任务需要命令，Worker 就拿不到最终回复。是否放行只读命令或调整提示属于产品决定，未改动。
+  - 2026-10-31 后续：用户决定改走 ACP，见 `migrate-agy-acp`。Windows 已升级到 agy 1.4.11；生产 runner 实测中，命令以 DSH 审批请求到达，允许一次后在项目目录执行，本轮 SUCCESS（该 change 的 4.3）。stream 后备仍保持本项的降级行为。

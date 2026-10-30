@@ -7,12 +7,12 @@ import { windowsCodexBackgroundLaunch } from './windows-codex-launch.ts'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { createNativeStopControl, createNativeGuidanceControl, createNativeApprovalControl } from './pi-omp-control.mjs'
 import { buildNativeHarnessInjection } from './native-harness-injection.mjs'
-import { prepareAgyHarnessWorkspace } from './native-agy-harness.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 import type { NativeAccess, NativeApprovalDecision } from './native-approval-policy.ts'
 
 export const NATIVE_TRANSPORTS = {
+  // Stable persisted bridge identity; the runner negotiates ACP or legacy stream per turn.
   antigravity: 'agy-stream-v1',
   codex: 'codex-app-v1',
   claude: 'claude-stream-v1',
@@ -91,11 +91,6 @@ export async function prepareNativeWorker<
       env: baseEnv ? Object.fromEntries(Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : undefined,
       connection: harnessTools, toolTimeoutMs: config.timeLimit?.totalMs ?? config.timeoutMs })
     let nativeArgv = injected.argv
-    if (input.cli === 'antigravity' && harnessTools) {
-      const prepared = prepareAgyHarnessWorkspace({ directory, argv: nativeArgv, connection: harnessTools })
-      nativeArgv = prepared.argv
-      Object.assign(injected.env, prepared.env)
-    }
     if (input.cli === 'codex' && harnessTools) {
       // The verified exec parser requires the prompt to remain last.
       const promptIndex = nativeArgv.indexOf(`任务：\n${input.prompt}`)

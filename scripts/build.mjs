@@ -52,6 +52,7 @@ for (const name of [
   'native-codex',
   'native-claude',
   'native-agy',
+  'native-agy-acp',
   'native-response',
   'primary-response',
   'codex-run-usage',

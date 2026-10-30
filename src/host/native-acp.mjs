@@ -23,7 +23,7 @@ export function acpApprovalRequest(params, sessionOption) {
   const call = isRecord(params?.toolCall) ? params.toolCall : {}
   const input = isRecord(call.rawInput) ? call.rawInput : {}
   const paths = Array.isArray(call.locations) ? call.locations.map((item) => item?.path).filter(nonempty) : []
-  const detail = nonempty(input.command) ? input.command : paths.join('\n')
+  const detail = nonempty(input.command) ? input.command : nonempty(input.CommandLine) ? input.CommandLine : paths.join('\n')
   return {
     kind: ACP_KINDS[call.kind] ?? 'tool',
     summary: (nonempty(call.title) ? call.title : '工具调用').slice(0, 500),
@@ -139,11 +139,13 @@ export async function runNativeAcp(config, io, settings) {
         }
         if (!(active && !ended && message.params?.sessionId === sessionId)) return deny()
         const approved = await nativeHarnessAcpApproval(config, message.params, io.signal)
+        if (!active || ended || io.signal.aborted) return deny()
         if (approved) return peer.send({ jsonrpc: '2.0', id: message.id,
           result: { outcome: { outcome: 'selected', optionId: approved } } })
         // Other requests go to the Host (DSH preset and user) without blocking this reader.
         const sessionOption = settings.sessionOption?.(options)
         void io.approval(acpApprovalRequest(message.params, sessionOption)).then((answer) => {
+          if (!active || ended || io.signal.aborted) return deny()
           // The Host may still hold the requested full-access tier. A native
           // downgrade must not inherit its automatic residual approvals.
           if (permissionDowngraded && answer.source === 'full-access') {
@@ -181,7 +183,8 @@ export async function runNativeAcp(config, io, settings) {
     }
     if (update.sessionUpdate === 'config_option_update') {
       const observed = optionValue(findOption(update, 'model')?.currentValue)
-      if (observed !== undefined && observed !== config.preference.model) {
+      if (settings.validateConfigUpdate ? !settings.validateConfigUpdate(update) :
+        observed !== undefined && observed !== config.preference.model) {
         fail('ACP 实际模型与所选模型不匹配')
         cancel()
       }
@@ -295,13 +298,12 @@ export async function runNativeAcp(config, io, settings) {
     let state
     if (config.conversationId) {
       if (initialized.agentCapabilities?.loadSession !== true)
-        throw new Error('ACP cannot restore the existing session')
+        throw settings.sessionUnavailable?.() ?? new Error('ACP cannot restore the existing session')
       sessionId = config.conversationId
-      state = await peer.request(
-        'session/load',
-        { sessionId, cwd: config.project, mcpServers: nativeHarnessMcpServers(config) },
-        { jsonrpc: true },
-      )
+      const loadParams = { sessionId, cwd: config.project, mcpServers: nativeHarnessMcpServers(config) }
+      state = settings.loadSession
+        ? await settings.loadSession(peer, loadParams)
+        : await peer.request('session/load', loadParams, { jsonrpc: true })
       if (state?.sessionId !== undefined && state.sessionId !== sessionId)
         throw new Error('ACP restored a different session')
     } else {
@@ -311,8 +313,9 @@ export async function runNativeAcp(config, io, settings) {
       if (!nonempty(state?.sessionId)) throw new Error('ACP did not return a session identity')
       sessionId = state.sessionId
     }
-    state = await selectOption(peer, sessionId, state, 'model', config.preference.model, settings.encode)
-    if (config.preference.effort !== 'default')
+    if (settings.selectModel) state = await settings.selectModel(peer, sessionId, state)
+    else state = await selectOption(peer, sessionId, state, 'model', config.preference.model, settings.encode)
+    if (!settings.selectModel && config.preference.effort !== 'default')
       state = await selectOption(
         peer,
         sessionId,
@@ -387,6 +390,8 @@ export async function runNativeAcp(config, io, settings) {
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
     else toolOutcomes.settle(io, response, 'run', denied)
   } finally {
+    if (active && !ended) cancel()
+    ended = true
     io.signal.removeEventListener('abort', cancel)
     active = false
     if (peer) {
