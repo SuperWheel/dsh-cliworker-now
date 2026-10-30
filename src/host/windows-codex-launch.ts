@@ -4,9 +4,13 @@ import { createRequire } from 'node:module'
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep, win32 } from 'node:path'
 import { WindowsCliInstallationError } from './windows-cli-installation.ts'
 
-// Verified against the installed official @openai/codex 0.162.1 bin/codex.js.
+// Verified official @openai/codex bin/codex.js wrappers: 0.162.1, and 0.166.0,
+// whose Windows path (binary lookup, manager flags, async spawn) is unchanged.
 // A package name/version alone does not establish a launcher's environment semantics.
-const supportedWrapper = '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70'
+const supportedWrappers = new Set([
+  '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70',
+  'e14fc83739c13c1074b12bd1acce4010c893c7f6fbfc1593b4a31d74cabb57af',
+])
 const packageName = '@openai/codex'
 const managerFlags = ['CODEX_MANAGED_BY_NPM', 'CODEX_MANAGED_BY_BUN', 'CODEX_MANAGED_BY_PNPM', 'CODEX_MANAGED_BY_VITE_PLUS'] as const
 type Manager = 'NPM' | 'BUN' | 'PNPM' | 'VITE_PLUS'
@@ -135,7 +139,7 @@ export function windowsCodexBackgroundLaunch(
   try { source = boundedFile(argv[1]) } catch { return undefined }
   // Unknown wrappers preserve their existing launch behavior. In particular, do
   // not guess an older vendor layout or inject a historical PATH directory.
-  if (createHash('sha256').update(source).digest('hex') !== supportedWrapper) return undefined
+  if (!supportedWrappers.has(createHash('sha256').update(source).digest('hex'))) return undefined
   try {
     const arch = options.arch ?? process.arch
     if (arch !== 'x64' && arch !== 'arm64') throw unavailable()

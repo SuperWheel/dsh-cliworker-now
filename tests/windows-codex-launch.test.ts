@@ -7,13 +7,13 @@ import { windowsCodexBackgroundLaunch } from '../src/host/windows-codex-launch.t
 // Small synthetic installations only: no official wrapper source, CLI, account,
 // environment secret, or model request is used. The real hash gate is mocked
 // only for the fixture payload, keeping a production API without test bypasses.
-const fixtureHash = vi.hoisted(() => ({ recognized: true }))
+const fixtureHash = vi.hoisted(() => ({ recognized: true, value: '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70' }))
 vi.mock('node:crypto', async importOriginal => {
   const actual = await importOriginal<typeof import('node:crypto')>()
   return { ...actual, createHash: (...args: Parameters<typeof actual.createHash>) => {
     const hash = actual.createHash(...args), digest = hash.digest.bind(hash)
     hash.digest = ((encoding?: string) => fixtureHash.recognized && encoding === 'hex'
-      ? '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70'
+      ? fixtureHash.value
       : digest(encoding as 'hex')) as typeof hash.digest
     return hash
   } }
@@ -21,7 +21,6 @@ vi.mock('node:crypto', async importOriginal => {
 
 const roots: string[] = []
 const options = { platform: 'win32' as const, arch: 'x64' }
-const version = '0.162.1'
 function put(path: string, data: string | Buffer) {
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, data)
@@ -36,7 +35,7 @@ function pe(arch = 'x64', subsystem = 3) {
   data.writeUInt16LE(0x20b, 88); data.writeUInt16LE(subsystem, 156)
   return data
 }
-function fixture(arch = 'x64', main?: string) {
+function fixture(arch = 'x64', main?: string, version = '0.162.1') {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'synthetic-codex-launch-')))
   roots.push(directory)
   const root = main ?? join(directory, '自定义 & 工具', 'node_modules', '@openai', 'codex')
@@ -58,6 +57,7 @@ function launch(f: ReturnType<typeof fixture>, env?: NodeJS.ProcessEnv, arch = '
 }
 beforeEach(() => {
   fixtureHash.recognized = true
+  fixtureHash.value = '61b0194f3bb6534439c8d26a3ed57d0805f84b884588b761795323eeb92fcf70'
   vi.stubEnv('npm_config_user_agent', '')
   vi.stubEnv('npm_execpath', '')
 })
@@ -74,6 +74,13 @@ describe('verified Codex Windows background launch (synthetic offline fixtures)'
     expect(result.argv).toEqual([realpathSync(f.executable), ...args])
     expect(result.env).toMatchObject({ ...env, CODEX_MANAGED_PACKAGE_ROOT: realpathSync(f.root), CODEX_MANAGED_BY_NPM: '1' })
     expect(env).toEqual({ Path: 'C:\\custom path;D:\\tools', ELECTRON_RUN_AS_NODE: '1', SYNTHETIC: 'keep' })
+  })
+  it('also recognizes the verified 0.166.0 wrapper with its own platform package', () => {
+    fixtureHash.value = 'e14fc83739c13c1074b12bd1acce4010c893c7f6fbfc1593b4a31d74cabb57af'
+    const f = fixture('x64', undefined, '0.166.0')
+    expect(launch(f)!.argv).toEqual([realpathSync(f.executable), 'app-server'])
+    fixtureHash.value = '0'.repeat(64)
+    expect(launch(f)).toBeUndefined()
   })
   it('keeps unknown wrappers and other platforms/runtimes on their existing path', () => {
     const f = fixture()
