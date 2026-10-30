@@ -21,6 +21,9 @@
   - 未执行真实模型/CLI 会话、Windows/Desktop 验收、全量测试或构建部署；未修改版本号、未提交 Git，未读取凭据。共享目录的其他会话改动原样保留。
 - [ ] 2.2 Windows 实机抓取真实请求帧并验证 DSH 审批。
   - 本次未授权真实 CLI/模型调用，保留未验证；静态重建请求与模拟用例不能代替现场证据。
+  - 2026-10-30 23:14：新包 `preview-20261030-230544` 已装入（含本修复）。Windows Codex 升级到 0.166.0 后，经 DSH 在 Windows 派遣 GPT-5.6-Luna / Low，结果 SUCCESS。
+    - 文件改动与 PowerShell 命令都正常完成，模型没有改用 Computer Use，所以没有产生授权请求。
+    - 真实请求帧和 DSH 审批仍未验证。
 
 ## Workflow follow-up
 

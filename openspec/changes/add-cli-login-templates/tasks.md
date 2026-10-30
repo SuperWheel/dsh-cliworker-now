@@ -107,5 +107,13 @@
   - `pnpm test tests/hermes-nous-proxy.test.ts tests/hermes-nous.test.ts tests/windows-system-proxy.test.ts tests/hermes-adapter.test.ts tests/hermes-models.test.ts tests/hermes-renewal.test.ts`：6 文件、140 项全部通过。首次沙箱运行因本机模拟代理监听 `127.0.0.1` 被 EPERM 阻止而失败，获准沙箱外重跑后通过。
   - `pnpm typecheck`：Host/Client 对 DSH 0.2.1-rc.5 通过。`pnpm build:preview`：通过，产物 `.cache/preview-package`，已核对 bundle 与独立 `host-fetch.mjs` 包含修复；这是共享工作区快照，也包含其他会话当时已有的改动，未安装到 Desktop。
   - `pnpm spec validate add-cli-login-templates --strict`：通过。限定本次文件的 `git diff --check`：通过。未运行全量测试、正式 build、Windows 新包安装/界面验收或真实模型；未提交、归档或修改版本号。
-- [ ] 9.4 安装新包后 Windows Desktop 复测：刷新 Hermes Nous 模型，确认 6 个账号模型及对应强度可选，未出现误导登录错误；本轮不安装或操作 Windows UI。
+- [x] 9.4 安装新包后 Windows Desktop 复测：刷新 Hermes Nous 模型，确认 6 个账号模型及对应强度可选，未出现误导登录错误；本轮不安装或操作 Windows UI。
+  - 2026-10-30 23:14 起复测，使用预览包 `preview-20261030-230544`，用户已于 22:46 重新登录 Nous。Codex Computer Use 只读打开 CLI Worker 设置：
+    - Hermes 显示「Nous账号登录」。
+    - 模型下拉框列出 6 个免费模型：laguna-s-2.1、laguna-xs-2.1、solar-mini4、step-3.7-flash、beam-1.0-501b-a23b、ornith-1.5-122b，均带 `:free`。没有错误文字，没有保存设置。
+    - 设置页默认模型的强度菜单只有「默认」。
+  - 在新会话中派遣：
+    - 选型卡中 step-3.7-flash:free 提供 Low/Medium/High。选 Low 后 Worker 完成：`write_file`、`read_file`、`search_files` 均成功。
+    - 经 SSH 回读文件，内容为 `WIN-TOOL-hermes-OK`。
+  - 只逐项核对了 step-3.7-flash 的强度。其余 5 个模型的强度菜单没有逐一打开。证据见 `.test-data/windows-desktop-20261030/cu-run-final.json`。
 

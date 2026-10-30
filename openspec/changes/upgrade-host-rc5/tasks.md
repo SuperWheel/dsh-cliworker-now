@@ -86,20 +86,38 @@
     - Antigravity：复测时按用户选择点「信任并退出」。
     - Hermes Nous：首轮失效；装入借鉴 Mac 修复的 `c7a5eb2` 预览包后复测，退出成功。
   - API Key 只到确认步骤，点「取消」后账号仍在：OMP、Pi、OpenCode。MiMo API Key 未点退出，记为「已知无确认，跳过」。
-  - [ ] 偏差：ZCode 退出后账号窗口为空，设置页仍显示灰色「已配置」，与 Mac 一致，修复中。
+  - [ ] 偏差：ZCode 退出后账号窗口为空，设置页仍显示灰色「已配置」，与 Mac 一致。已修复（`e35ec99`，`fix-configured-account-status`）。新包上用户已重新登录，显示「已登录 11****10@qq.com」；退出后的分支未复测。
 - [ ] 5.5 Windows 待办：
-  - 安装 `a3fb397` 预览包（`preview-20261030-220606`，已上传，未安装）并在用户重新登录 Antigravity 后复测；
+  - 安装新包（用户批准「全部修完装一次」）：`preview-20261030-220606` 未安装，改为装入包含全部修复的 `preview-20261030-230544`。该包在 `2a2d8a7` 提交后构建，SHA256 为 `ae766f4a…1196fd`。
+    - 安装前确认没有活动 Worker，用 `quit-harness.ps1` 经应用菜单正常退出 Desktop，确认 0 个进程。
+    - 安装结果：`installerExit` 0，lib 文件 725/725，0 个不一致；runtime manifest 一致，版本 `0.2.1-rc.5`。
+    - 之后带 `--force-renderer-accessibility` 在交互桌面（会话 23）重启 Desktop，共 5 个进程，`host.lock` 23:08:58 更新。
+    - Antigravity 仍待用户重新登录后复测。
   - Codex 升级（用户批准「升级并复测」）。
     - 已完成：Windows 上执行 `npm install -g @openai/codex@0.166.0`（npmmirror 源，退出码 0），版本从 0.162.1 升到 0.166.0，平台包为 0.166.0-win32-x64。上游从 0.163.0 起修复这一问题（openai/codex PR #51822）。
     - 新版 `bin/codex.js` 的 SHA256 为 `e14fc837…57af`，与 0.162.1 的 Windows 分支语义一致，已加入 `windows-codex-launch.ts` 的白名单；`windows-codex-launch`、`windows-codex-background`、`native-worker-windows-env` 共 41 项测试通过。
     - 在交互桌面（会话 23）中，Codex 桌面应用的 CU 助手仍在占用文件时，执行 `codex sandbox -- cmd /c "type … && dir /b …"`：退出码 0，输出 `WIN-TOOL-codex-OK`，用时 0.7 秒，setup refresh 的 `errors=[]`。
     - 同一命令经 SSH 会话执行报 `timed out … connecting runner pipe-in`。原因是 SSH 会话不是交互桌面，Worker 实际运行在交互桌面，不受影响。
-    - 待办：装新包后经 DSH 再派遣一次 Codex。
+    - 新包上的复测（23:16）：经 DSH 派遣 GPT-5.6-Luna / Low。
+      - `fileChange` 完成，PowerShell 命令 `Get-Content` 与 `Get-ChildItem -Name` 完成，结果 SUCCESS。
+      - 经 SSH 回读，文件内容为 `WIN-TOOL-codex-OK`；`codex --version` 回读为 `codex-cli 0.166.0`。
   - Codex 派遣中途改用 Computer Use 时的应用授权，按用户选择「转交审批，按档位」修复，见 `relay-codex-computer-use-approvals`。
   - 用户重新登录 Hermes Nous 后，模型和思考强度仍不加载。根因：Host 经 WinINET 代理请求时没带 User-Agent，Nous 模型接口返回 Cloudflare 的 HTML 403，插件把它误报成登录问题。已修复，见 `add-cli-login-templates` 第 9 节。
   - 合并检查（2026-10-30，四路修复合并后）：
     - `pnpm typecheck` 通过。
     - `pnpm test`：5357 项通过、14 项跳过、2 项失败。失败的 2 项都在 `native-bridge-time-limit`，全量并发时 pid 文件尚未写出；单独连跑 3 次均 4/4 通过，与本轮改动无关。
     - 以下 6 个 change 的 `pnpm spec validate --strict` 全部通过：`relay-codex-computer-use-approvals`、`add-cli-login-templates`、`fix-configured-account-status`、`upgrade-host-rc5`、`fix-runtime-permission-fallback`、`harden-host-lifecycle-durability`。
-  - 验收工具链问题：codex-bridge 关闭 agent 后不释放线程的 MCP 子进程，Windows 端的 cua_node 运行时一直存活。已在 codex-bridge 仓库修复：每个 agent 使用独立 app-server，关闭时回收它的进程组（Windows 用 `taskkill /T`）。已安装的插件缓存未更新。本轮验收结束后由我手动结束遗留的 ssh。
-  - Windows 界面与推理正文显示仍未专门核对（4.4）。
+  - 验收工具链问题：codex-bridge 关闭 agent 后不释放线程的 MCP 子进程，Windows 端的 cua_node 运行时一直存活。已在 codex-bridge 仓库修复：每个 agent 使用独立 app-server，关闭时回收它的进程组（Windows 用 `taskkill /T`）。已安装的插件缓存未更新。
+    - 最终复测后手动结束 1 条遗留 ssh。Windows 端只剩常驻 relay 和 ChatGPT 自带的 `codex-computer-use-swift.exe`，没有遗留的 cua_node。
+  - 新包上的最终复测（23:14–23:27，Codex Computer Use 用时 23 分钟，证据 `cu-run-final.json`）。主对话保持 GLM-5.3-Flash / Low、工作区内修改，没有出现审批卡片。
+    - 设置页状态：Antigravity、Grok Build、Qoder CLI、Qoder CN CLI、ZCode 均已登录，Hermes 显示 Nous 账号登录；Kimi 仍显示凭据已过期或即将过期。
+    - Codex：通过（见上）。
+    - Hermes Agent：step-3.7-flash:free / Low 完成，文件一致（`add-cli-login-templates` 9.4）。
+    - Grok Build：Grok 4.5 / Low 完成。Edit、Execute、ReadFile 均成功，文件内容为 `WIN-TOOL-grok-OK`。
+    - Antigravity：Gemini 3.8 Flash / Low，降级说明出现，文件写入 live-codex，命令按设计被拒。Worker 判「结果待核实」，原因是无头 agy 在命令被拒后直接结束本轮（`fix-runtime-permission-fallback` 4.5）。
+    - 四个测试文件都经 SSH 回读核对。主 Agent 核验 Grok 时，pwsh 再次报 0xC0000142（Harness 核心问题），改用 glob 完成。
+  - 仍未完成：
+    - Kimi 等用户重新登录后再派遣；
+    - Codex Computer Use 授权的真实请求帧（`relay-codex-computer-use-approvals` 2.2）；
+    - ZCode 退出后「已配置」分支（`fix-configured-account-status` 3.1）；
+    - Windows 界面与推理正文显示仍未专门核对（4.4）。
