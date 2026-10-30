@@ -32,4 +32,7 @@
 - [x] 5.1 定位（Codex gpt-6-astra high 只读排查，证据在 `.test-data/windows-desktop-20261030/diagnosis/`，不入 Git）：Windows Desktop 界面报 `cliworker/watch: active Service "cliworker" is unavailable`。`.dsh\cliworker-now\host.lock` 与一个候选锁都记录 PID 37876、写于 00:39:33；当前 PID 37876 是 18:49:44 启动的 GameInputSvc.exe。旧逻辑只做 `process.kill(pid, 0)`，判定存储被占用并抛 `CLI Worker store is already owned by another Harness host`，服务因此未注册；包与 runtime-host 205 个文件校验一致，与 rc.5 无关。
 - [x] 5.2 实现 `lockOwnerAlive`：PID 存活时比较进程启动时间与锁文件 mtime，晚于 mtime + 2 秒判定为复用；查询失败按存活处理。规格与设计已同步。
 - [x] 5.3 回归：`storage-lock` 新增「进程号复用后回收」用例（锁文件日期设为一周前、PID 为正在运行的父进程）；撤回修复时该用例失败。`storage-lock`、`storage`、`storage-torn-tail`、`dispatch-storage` 共 46 项通过；`pnpm typecheck` 通过（DSH 0.2.1-rc.5）。
-- [ ] 5.4 Windows 实机：新包启动后自动回收遗留锁、cliworker 服务注册、派遣可用；Windows 上 CIM 查询在 Host 内可用。
+- [x] 5.4 Windows 实机：新包启动后自动回收遗留锁、cliworker 服务注册、派遣可用；Windows 上 CIM 查询在 Host 内可用。
+  - 2026-10-30（用户批准「安装新包」；证据 `.test-data/windows-desktop-20261030/install-fix.json`、`cu-run-A.json`，不入 Git）：预检无活动 Worker，经应用菜单退出 Desktop 后用原生安装器装入 `81d69b4` 预览包（725/725 lib 文件、runtime-host 清单与 rc.5 一致）。安装前两个锁文件都记 PID 37876（写于 00:39:33），该 PID 当时是 18:49:44 启动的 GameInputSvc.exe。带 `--force-renderer-accessibility` 重启后，Host 21072 在 20:46:38/40 写入两个新锁，遗留候选锁已删除；能回收就说明 Host 内的 CIM 启动时间查询返回了有效值，查询失败时会按存活处理、仍拒绝启动。
+  - 界面不再报 `Service "cliworker" is unavailable`。Codex gpt-6.1-sol high 经 Windows Computer Use 派遣 10 个 CLI：MiMo、ZCode、OMP、Pi、OpenCode、Qoder 由各自 Worker 完成，`live-codex` 中的 `cwn-win-20261030b-<slug>.txt` 已逐字核对；其余 4 项失败与锁无关（Antigravity 写入被 agy 自身拒绝，Kimi、Grok 登录待续期，Hermes Nous 查询被拒）。
+  - 21:45 再装 `c7a5eb2` 预览包重启，Host 25228 正常取得两个锁（无遗留锁可回收，属正常启动）。
