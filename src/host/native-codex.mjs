@@ -36,7 +36,31 @@ export function nativeCodexArgv(config) {
 }
 
 const APPROVAL_METHODS = ['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/permissions/requestApproval']
+const ELICITATION_METHOD = 'mcpServer/elicitation/request'
 const SANDBOX_TYPES = { 'read-only': 'readOnly', 'workspace-write': 'workspaceWrite', 'danger-full-access': 'dangerFullAccess' }
+
+/** Only the verified, input-free Computer Use app grant is an authorization. */
+function computerUseApproval(params, threadId, turnId) {
+  const schema = params.requestedSchema, meta = params._meta
+  if (!threadId || !turnId || params.threadId !== threadId || (params.turnId !== null && params.turnId !== turnId) ||
+    params.serverName !== 'cua_repl' || params.mode !== 'form' || !object(schema) || schema.type !== 'object' ||
+    !object(schema.properties) || Object.keys(schema.properties).length !== 0 ||
+    // Empty properties alone does not exclude required fields or schema combinators.
+    Object.keys(schema).some((key) => !['type', 'properties', 'required', 'additionalProperties', 'title', 'description', '$schema'].includes(key)) ||
+    (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.length !== 0)) ||
+    (schema.additionalProperties !== undefined && schema.additionalProperties !== false) ||
+    !object(meta) || meta.codex_approval_kind !== 'mcp_tool_call' || meta.connector_id !== 'computer-use' ||
+    meta.codex_requires_user_input === true) return
+  const display = Array.isArray(meta.tool_params_display)
+    ? meta.tool_params_display.find((entry) => object(entry) && entry.name === 'app' && string(entry.value))?.value : undefined
+  const app = display ?? (object(meta.tool_params) && string(meta.tool_params.app) ? meta.tool_params.app : undefined)
+  if (!app) return
+  return {
+    kind: 'permission', summary: `允许 Computer Use 使用应用：${app}`,
+    detail: [`MCP：${params.serverName}`, string(params.message) ? params.message : undefined].filter(Boolean).join('\n'),
+    allowSession: Array.isArray(meta.persist) && meta.persist.includes('session'),
+  }
+}
 
 /**
  * Native thread settings for this run's DSH tier. Plan never asks; 完全权限
@@ -94,11 +118,12 @@ function publicTool(item) {
 
 export async function runNativeCodex(config, io) {
   const peer = await io.openStdio(nativeCodexArgv(config), { env: config.env, cwd: config.project })
-  let threadId, turnId, response = '', failure, denied = false, completed = false, started = false
+  let threadId, turnId, response = '', failure, denied = false, completed = false, started = false, closed = false
   const steps = new Map(), messages = new Map(), finished = new Set(), tools = new Set(), receipts = new Map()
   const steerReceipts = new Map(), toolItems = new Map(), toolOutput = new Map()
   // Items whose approval was declined; their declined/failed completion is the denial itself.
   const deniedItems = new Set()
+  const elicitations = new Set(), elicitationSends = new Set()
   const runUsage = new CodexRunUsage(config.conversationId)
   const toolOutcomes = createToolOutcomes()
   const step = (id) => {
@@ -181,9 +206,33 @@ export async function runNativeCodex(config, io) {
     }
     if (typeof message.method !== 'string') return
     const params = object(message.params) ? message.params : {}
-    // Authorization requests go to the Host (DSH preset and user); other
-    // interactive requests (user input, elicitation) remain unsupported.
+    // Authorization requests go to the Host; input/unknown elicitations remain unsupported.
     if (message.id !== undefined) {
+      if (message.method === ELICITATION_METHOD) {
+        if (elicitations.has(message.id)) return
+        elicitations.add(message.id)
+        const request = computerUseApproval(params, threadId, turnId)
+        if (request) {
+          if (closed || completed || io.signal?.aborted) return
+          // A run that has already failed declines at once, so Codex is not left waiting on the tool.
+          void (failure ? Promise.resolve({ decision: 'deny', source: 'invalid' }) : io.approval(request)).then((answer) => {
+            // The turn may end while DSH is waiting. A late answer cannot grant access.
+            if (closed || completed || io.signal?.aborted || answer.source === 'stopped') return
+            const allowed = !failure && (answer.decision === 'allow-once' || (answer.decision === 'allow-session' && request.allowSession))
+            if (!allowed) denied = true
+            io.event({ kind: 'diagnostic', text: allowed ? 'Codex Computer Use 应用授权已批准' : 'Codex Computer Use 应用授权已拒绝' })
+            const result = allowed
+              ? { action: 'accept', content: {}, ...(answer.decision === 'allow-session' ? { _meta: { persist: 'session' } } : {}) }
+              : { action: 'decline', content: null }
+            // Observe delivery before settling the run, even if completion races the write callback.
+            const sending = Promise.resolve(peer.send({ id: message.id, result }))
+              .catch(() => markFailure('Codex 授权回复未送达'))
+            elicitationSends.add(sending)
+            void sending.finally(() => elicitationSends.delete(sending))
+          }).catch(() => { if (!closed && !io.signal?.aborted) markFailure('Codex 授权回复未送达') })
+          return
+        }
+      }
       if (APPROVAL_METHODS.includes(message.method)) {
         const itemId = typeof params.itemId === 'string' ? params.itemId : undefined
         void io.approval(codexApprovalRequest(message.method, params)).then((answer) => {
@@ -345,6 +394,7 @@ export async function runNativeCodex(config, io) {
     if (!completed) throw fail('缺少原生轮次完成证据')
     const billing = runUsage.finish(turnId)
     if (billing) io.native({ type: 'cliworker.codex_run_usage', sessionId: threadId, turnId, usage: billing })
+    await Promise.all(elicitationSends)
     peer.end()
     const outcome = await peer.done
     io.signal?.throwIfAborted()
@@ -352,6 +402,7 @@ export async function runNativeCodex(config, io) {
     if (failure) io.result('ERROR', response, failure, 'response')
     else toolOutcomes.settle(io, response, 'response', denied)
   } finally {
+    closed = true
     releaseSteer?.()
     io.signal?.removeEventListener('abort', abort)
     unsubscribe()

@@ -7,6 +7,7 @@ import { nativeCodexArgv, runNativeCodex } from '../src/host/native-codex.mjs'
 import { claudePermissionMode, nativeClaudeArgv, runNativeClaude } from '../src/host/native-claude.mjs'
 import { nativeAgyArgv, runNativeAgy } from '../src/host/native-agy.mjs'
 import { workerArguments } from '../src/host/adapters.ts'
+import { decideApproval } from '../src/host/native-approval-policy.ts'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
 
 const directories: string[] = []
@@ -25,6 +26,8 @@ if(cli==='claude'&&process.argv.includes('--help')){
 const permissionMode=process.argv[process.argv.indexOf('--permission-mode')+1];
 // A new Claude process gets its own session; -hook scenarios also name it before any input, as SessionStart hooks do.
 const id=cli==='claude'&&scenario.endsWith('-hook')&&!process.argv.includes('--resume')&&permissionMode==='auto'?'discarded-session':'synthetic-session', turn='synthetic-turn';
+// 模拟：按静态重建的 Computer Use 授权形状生成，不是现场抓包。
+const cuaRequest={id:'synthetic-cua',method:'mcpServer/elicitation/request',params:JSON.parse(process.env.CWN_CUA_REQUEST||'{}')};
 let waiting=false;
 const toolFails=['tool-failure','tool-recovered','tool-failure-turn-failed','tool-failure-nonzero-exit'].includes(scenario);
 const cancel=['cancel','tool-failure-cancel'].includes(scenario);
@@ -38,6 +41,14 @@ function codexTurn(){
  note('turn/started',{threadId:id,turn:{id:turn,status:'inProgress',items:[]}});
  note('item/agentMessage/delta',{threadId:'other-session',turnId:turn,itemId:'other',delta:'MUST NOT APPEAR'});
  note('item/agentMessage/delta',{threadId:id,turnId:'old-turn',itemId:'old',delta:'MUST NOT APPEAR'});
+ if(scenario.startsWith('cua')){
+  if(scenario==='cua-after-completed')codexEnd();
+  if(scenario==='cua-after-failure')send({id:'synthetic-interaction',method:'synthetic/unknownRequest',params:{threadId:id,turnId:turn}});
+  send(cuaRequest);
+  if(scenario==='cua-duplicate')send(cuaRequest);
+  if(['cua-completed-pending','cua-send-failure'].includes(scenario))setTimeout(()=>codexEnd(),30);
+  return;
+ }
  if(scenario.startsWith('deny')||scenario==='tier-ask'){
   const method=scenario==='deny-file'?'item/fileChange/requestApproval':scenario==='deny-permissions'?'item/permissions/requestApproval':'item/commandExecution/requestApproval';
   send({id:'synthetic-approval',method,params:{threadId:id,turnId:turn,itemId:'command'}});return;
@@ -185,7 +196,7 @@ lines.on('line',line=>{
   if(value.method==='initialize')send({id:value.id,result:{userAgent:'synthetic/0.162.1'}});
   else if(['thread/start','thread/resume'].includes(value.method)){
    if(scenario==='tier-rejected'&&value.params.approvalsReviewer==='auto_review'){send({id:value.id,error:{code:-32602,message:'synthetic unsupported reviewer'}});return;}
-   const result=scenario.startsWith('tier')?{...thread(),approvalPolicy:value.params.approvalPolicy,approvalsReviewer:value.params.approvalsReviewer,sandbox:{type:{'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[value.params.sandbox],networkAccess:scenario==='tier-network'}}:thread();
+   const result=scenario.startsWith('tier')||scenario.startsWith('cua')?{...thread(),approvalPolicy:value.params.approvalPolicy,approvalsReviewer:value.params.approvalsReviewer,sandbox:{type:{'read-only':'readOnly','workspace-write':'workspaceWrite','danger-full-access':'dangerFullAccess'}[value.params.sandbox],networkAccess:scenario==='tier-network'}}:thread();
    if(scenario==='tier-fallback')result.approvalsReviewer='user';
    if(scenario==='tier-missing-reviewer')delete result.approvalsReviewer;
    if(scenario==='tier-wide')result.sandbox.type='dangerFullAccess';
@@ -200,7 +211,12 @@ lines.on('line',line=>{
    else send({id:value.id,result:{turnId:scenario==='steer-wrong-turn'?'other-turn':turn}});
    setTimeout(()=>codexEnd(),30);
   }
-  else if(['synthetic-approval','synthetic-interaction'].includes(value.id)){
+  else if(value.id==='synthetic-cua'){
+   if(scenario==='cua-duplicate')send(cuaRequest);
+   note('item/completed',{threadId:id,turnId:turn,item:{id:'cua-tool',type:'mcpToolCall',tool:'cua_repl',status:value.result?.action==='accept'?'completed':'failed'}});
+   if(scenario!=='cua-send-failure')setTimeout(()=>codexEnd(scenario==='cua-failed'?'failed':'completed'),10);
+  }
+  else if(['synthetic-approval','synthetic-interaction'].includes(value.id)&&scenario!=='cua-after-failure'){
    if(value.id==='synthetic-approval'&&scenario!=='deny-permissions')note('item/completed',{threadId:id,turnId:turn,item:{id:'command',type:scenario==='deny-file'?'fileChange':'commandExecution',...(value.result?.decision==='decline'?{status:'declined'}:{status:'completed',exitCode:0})}});
    note('item/completed',{threadId:id,turnId:turn,item:{id:'reply',type:'agentMessage',text:'合成回复'}});
    if(scenario==='deny-tool-failure')note('item/completed',{threadId:id,turnId:turn,item:{id:'tool',type:'commandExecution',status:'failed',exitCode:1}});
@@ -229,7 +245,7 @@ lines.on('line',line=>{
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
-lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit','ask-nonzero-exit'].includes(scenario)?7:0);});
+lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit','ask-nonzero-exit','cua-nonzero-exit'].includes(scenario)?7:0);});
 `
 
 function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true) {
@@ -294,6 +310,74 @@ async function runLevel(cli: 'codex' | 'claude', scenario: string, access: 'read
   await io.close(error)
   const messages = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
   return { frames, launches, messages, result: frames.at(-1), config }
+}
+
+// 模拟：普通应用授权没有 codex_request_type / tool_name，应用路径不是显示名。
+function computerUseParams() {
+  return {
+    threadId: 'synthetic-session', turnId: 'synthetic-turn', serverName: 'cua_repl', mode: 'form',
+    message: 'Allow Codex to use DeepSeek Harness?', requestedSchema: { type: 'object', properties: {} },
+    _meta: {
+      codex_approval_kind: 'mcp_tool_call', connector_id: 'computer-use', connector_name: 'Computer Use',
+      persist: ['session', 'always'], riskLevel: 'unknown', tool_params: { app: '/Applications/DeepSeek Harness.app' },
+      tool_params_display: [{ name: 'app', display_name: 'App', value: 'DeepSeek Harness' }],
+    },
+  }
+}
+
+async function runComputerUse(options: {
+  scenario?: string, params?: any, decision?: 'allow-once' | 'allow-session' | 'deny',
+  pending?: 'stop' | 'timeout' | 'completed',
+  policy?: { mode: 'plan' | 'accept-edits', level: 'ask' | 'auto' | 'full' },
+} = {}) {
+  const { config, log } = setup('codex', options.scenario ?? 'cua')
+  const decision = options.decision ?? 'allow-once'
+  Object.assign(config, { access: 'workspace-write', approvalNonce: 'synthetic-nonce', mode: options.policy?.mode ?? 'accept-edits' })
+  if (options.pending === 'timeout') config.timeoutMs = 150
+  config.env.CWN_CUA_REQUEST = JSON.stringify(options.params ?? computerUseParams())
+  const frames: any[] = [], controller = new AbortController()
+  const answers: Promise<void>[] = []
+  const io = createNativeIO(config, (line: string) => {
+    const frame = JSON.parse(line)
+    frames.push(frame)
+    if (frame.type !== 'approval') return
+    if (options.pending === 'stop') controller.abort(new Error('模拟停止'))
+    if (options.pending) return
+    // Promise continuation also exercises a repeated Host answer after settlement.
+    answers.push(Promise.resolve().then(async () => {
+      await io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id)
+      await expect(io.answerApproval(JSON.stringify({ decision, source: 'user' }), frame.id)).rejects.toThrow()
+    }))
+  }, controller.signal)
+  if (options.policy) {
+    const approval = io.approval
+    io.approval = (request: any) => {
+      const answer = decideApproval(options.policy!.mode, options.policy!.level, { planMode: false, sandbox: 'workspace-write', approval: 'ask' })
+      return answer === 'ask' ? approval(request) : Promise.resolve(answer)
+    }
+  }
+  if (options.scenario === 'cua-send-failure') {
+    const open = io.openStdio
+    io.openStdio = async (...args: any[]) => {
+      const peer = await open(...args), send = peer.send
+      peer.send = (message: any) => message.id === 'synthetic-cua'
+        ? new Promise((_resolve, reject) => setTimeout(() => reject(new Error('模拟回复未送达')), 70))
+        : send(message)
+      return peer
+    }
+  }
+  let error
+  try { await runNativeCodex(config, io) } catch (caught) { error = caught }
+  await io.close(error)
+  await Promise.all(answers)
+  if (options.pending) {
+    const approval = frames.find((frame) => frame.type === 'approval')
+    expect(approval).toBeDefined()
+    await expect(io.answerApproval(JSON.stringify({ decision: 'allow-once', source: 'user' }), approval.id)).rejects.toThrow()
+  }
+  const messages = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  return { frames, messages, result: frames.at(-1), approvals: frames.filter((frame) => frame.type === 'approval'),
+    replies: messages.filter((message) => message.id === 'synthetic-cua') }
 }
 
 describe('permission levels (synthetic native processes, no accounts/models)', () => {
@@ -640,6 +724,106 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     const { result } = await run('codex', 'deny-tool-failure')
     expect(result).toMatchObject({ status: 'SUCCESS' })
     expect(result).not.toHaveProperty('notice')
+  })
+  it.each([
+    ['allow-once', { action: 'accept', content: {} }],
+    ['allow-session', { action: 'accept', content: {}, _meta: { persist: 'session' } }],
+    ['deny', { action: 'decline', content: null }],
+  ] as const)('模拟 Computer Use 应用授权：%s，正常完成且只回复一次', async (decision, reply) => {
+    const f = await runComputerUse({ scenario: 'cua-duplicate', decision })
+    expect(f.approvals).toHaveLength(1)
+    expect(f.approvals[0].request).toEqual({ kind: 'permission', summary: '允许 Computer Use 使用应用：DeepSeek Harness',
+      detail: 'MCP：cua_repl\nAllow Codex to use DeepSeek Harness?', allowSession: true })
+    expect(f.replies).toEqual([{ id: 'synthetic-cua', result: reply }])
+    expect(f.result).toMatchObject({ status: 'SUCCESS' })
+    expect(f.result).not.toHaveProperty('notice')
+    if (decision === 'deny') {
+      expect(f.frames.some((frame) => frame.event?.text === 'Codex Computer Use 应用授权已拒绝')).toBe(true)
+      expect(f.frames.some((frame) => frame.event?.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
+      expect(f.result.error).toBeUndefined()
+    }
+  })
+  it('模拟 Computer Use：本轮已失败时立即拒绝，不弹审批也不让 Codex 一直等待', async () => {
+    const f = await runComputerUse({ scenario: 'cua-after-failure', decision: 'allow-once' })
+    expect(f.approvals).toHaveLength(0)
+    expect(f.replies).toEqual([{ id: 'synthetic-cua', result: { action: 'decline', content: null } }])
+    expect(f.result.status).toBe('ERROR')
+    expect(f.result.error).toBe('CLI 请求额外交互授权，插件未批准')
+  })
+  it.each(['cua-failed', 'cua-nonzero-exit', 'cua-send-failure'])('模拟 Computer Use 拒绝不能掩盖真实失败：%s', async (scenario) => {
+    const f = await runComputerUse({ scenario, decision: 'deny' })
+    expect(f.result.status).toBe('ERROR')
+    if (scenario === 'cua-send-failure') expect(f.result.error).toBe('Codex 授权回复未送达')
+  })
+  it.each([
+    ['plan', 'full', 'decline', 0],
+    ['accept-edits', 'full', 'accept', 0],
+    ['accept-edits', 'ask', 'accept', 1],
+    ['accept-edits', 'auto', 'accept', 1],
+  ] as const)('模拟 Computer Use 复用审批策略：%s/%s', async (mode, level, action, prompts) => {
+    const f = await runComputerUse({ policy: { mode, level } })
+    expect(f.replies[0].result.action).toBe(action)
+    expect(f.approvals).toHaveLength(prompts)
+    expect(f.result.status).toBe('SUCCESS')
+  })
+  it.each([undefined, ['always'], 'session'])('模拟 persist=%j 不提供会话授权或回传 always', async (persist) => {
+    const params: any = computerUseParams()
+    params._meta.persist = persist
+    const f = await runComputerUse({ params, decision: 'allow-session' })
+    expect(f.approvals[0].request.allowSession).toBe(false)
+    expect(f.replies[0].result).toEqual({ action: 'decline', content: null })
+  })
+  it('模拟 null turnId、应用路径回退、字面文本与现有长度上限', async () => {
+    const params: any = computerUseParams()
+    params.turnId = null
+    delete params._meta.tool_params_display
+    params._meta.persist = ['session']
+    params._meta.tool_params.app = '<b>[App](https://example.invalid)</b>' + '应'.repeat(600)
+    params.message = '<b>[literal](https://example.invalid)</b>\n' + '文'.repeat(5000)
+    const f = await runComputerUse({ params, decision: 'allow-session' })
+    expect(f.approvals[0].request.summary).toBe(`允许 Computer Use 使用应用：${params._meta.tool_params.app}`.slice(0, 500))
+    expect(f.approvals[0].request.detail).toBe(`MCP：cua_repl\n${params.message}`.slice(0, 4000))
+    expect(f.replies[0].result).toEqual({ action: 'accept', content: {}, _meta: { persist: 'session' } })
+  })
+  it('模拟仅有应用显示名时仍可审批', async () => {
+    const params: any = computerUseParams()
+    delete params._meta.tool_params
+    const f = await runComputerUse({ params })
+    expect(f.approvals[0].request.summary).toBe('允许 Computer Use 使用应用：DeepSeek Harness')
+    expect(f.result.status).toBe('SUCCESS')
+  })
+  it.each([
+    ['非空表单', { requestedSchema: { type: 'object', properties: { input: { type: 'string' } } } }],
+    ['额外必填项', { requestedSchema: { type: 'object', properties: {}, required: ['input'] } }],
+    ['未知 schema 约束', { requestedSchema: { type: 'object', properties: {}, allOf: [{ required: ['input'] }] } }],
+    ['非对象 schema', { requestedSchema: { type: 'string', properties: {} } }],
+    ['缺少 properties', { requestedSchema: { type: 'object' } }],
+    ['URL 登录', { mode: 'url', url: 'https://example.invalid/login' }],
+    ['未知 MCP', { serverName: 'other_mcp' }],
+    ['跨线程', { threadId: 'other-thread' }],
+    ['跨轮次', { turnId: 'other-turn' }],
+    ['缺失轮次', { turnId: undefined }],
+    ['缺少元数据', { _meta: undefined }],
+    ['错误授权类型', { _meta: { ...computerUseParams()._meta, codex_approval_kind: 'other' } }],
+    ['错误连接器', { _meta: { ...computerUseParams()._meta, connector_id: 'other' } }],
+    ['用户输入', { _meta: { ...computerUseParams()._meta, codex_requires_user_input: true } }],
+    ['空应用', { _meta: { ...computerUseParams()._meta, tool_params: { app: ' ' }, tool_params_display: [] } }],
+  ])('模拟无效 elicitation 保留失败：%s', async (_name, patch) => {
+    const f = await runComputerUse({ params: { ...computerUseParams(), ...patch } })
+    expect(f.approvals).toHaveLength(0)
+    expect(f.replies).toHaveLength(1)
+    expect(f.replies[0].error.code).toBe(-32601)
+    expect(f.result).toMatchObject({ status: 'ERROR', error: 'CLI 请求额外交互授权，插件未批准' })
+  })
+  it.each(['stop', 'timeout', 'completed'] as const)('模拟审批等待时 %s，迟到决定不放行', async (pending) => {
+    const f = await runComputerUse({ pending, scenario: pending === 'completed' ? 'cua-completed-pending' : 'cua' })
+    expect(f.replies).toHaveLength(0)
+    expect(f.result.status).toBe(pending === 'completed' ? 'SUCCESS' : 'ERROR')
+  })
+  it('模拟完成后才收到授权请求，不弹审批也不回复允许', async () => {
+    const f = await runComputerUse({ scenario: 'cua-after-completed' })
+    expect(f.approvals).toHaveLength(0)
+    expect(f.replies).toHaveLength(0)
   })
   it.each(['user-input', 'unknown-request'])('keeps Codex %s server requests as failures even when the turn completes', async (scenario) => {
     const { result, messages, frames } = await run('codex', scenario)
