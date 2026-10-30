@@ -652,7 +652,7 @@ Windows 官方源码安装的 distlib 入口在隔离 `HERMES_HOME` 下无法定
 - 首次打开设置会查询全部启用 CLI 的账号，再读当前 CLI 目录；模型／思考强度自动保存经授权目录校验，包含前后账号绑定检查。这些必要查询保留，不以省略校验消除窗口。
 - 实机确认 Codex npm 0.162.1 的 `codex.js` 内部使用 `spawn(binaryPath, argv, { stdio: "inherit", env })`，无隐藏选项。外层 Electron GUI 启动正确，但内部原生子进程仍触发 Windows Terminal。后台专用 `windows-codex-launch.ts` 对已核验脚本指纹生成同安装原生描述符，进入既有 GUI 引导器／管道／私有退出回执，保留完整 Job 范围清理。
 - 核对主包声明、可选平台 npm 别名、版本／os／cpu、真实包根及原生 PE。平台依赖真正缺失时才按原脚本回退本包 vendor；已有损坏平台包不得换安装。沿用 npm/Bun/pnpm/Vite+ 管理器环境增量与删除标记，不回填 SDK 已清理的父环境、不猜旧版 PATH 注入。
-- 已存储 JS/shim 路径、解析优先级、macOS 和显式账号终端不变；不修改第三方 CLI 安装或父进程全局模块。未核验源码指纹继续原有启动方式，不能宣称任意第三方脚本内部派生均已验证。本轮确认的是当前安装的 0.162.1 脚本；后续新脚本按其真实语义扩展。
+- 已存储 JS/shim 路径、解析优先级、macOS 和显式账号终端不变；不修改第三方 CLI 安装或父进程全局模块。未核验源码指纹继续原有启动方式，不能宣称任意第三方脚本内部派生均已验证。本轮确认的是当前安装的 0.162.1 脚本；后续新脚本按其真实语义扩展。2026-10-30 加入 0.166.0 的脚本指纹：与 0.162.1 相比，Windows 分支的原生可执行文件查找、包管理器标记和异步 spawn 都没有变化（`execve` 只在非 Windows 平台使用）。Windows 实机用 npm 升级到 0.166.0 后，指纹与此一致。
 - Antigravity 热读原生入口及账号 PowerShell 已进入隐藏层；随后冷开仍复现 AGY 自身派生两层与可见窗口。本机 `auto_updater.go` 日志记录的更新进程 PID 28472 与实际父链一致，确认后台自动更新为该窗口来源。官方 [自动更新说明](https://antigravity.google/docs/cli/troubleshooting/) 给出 15 分钟 TTL 与 `AGY_CLI_DISABLE_AUTO_UPDATE=true`。Windows 当前／旧模型读取和任务仅合并本次子进程禁自动更新变量；helper 独立于交互共用的 firstPartyEnvironment，不改用户更新标记、系统环境或账号终端。具体实机核对以 doc/tasks.md 为准。
 
 ## 2026-10-13：v0.7.8 发布收尾与模型目录生命周期
@@ -1308,6 +1308,10 @@ OpenSpec 变更 `fix-windows-account-login-bridge`（用户 2026-10-29 报告 ZC
 - MiMo 模型缓存（同日用户追加）：插件读取 MiMo 元数据与运行任务时都设 `MIMOCODE_DISABLE_MODELS_FETCH=1`（2026-10-08 账号隔离改造引入），MiMo 只用自己的 models.dev 缓存；缓存一旦存在就优先于程序内置列表。Windows 上该缓存停在 2026-06-19（只有 v2.5），账号目录已只给 v2.6，交集为空。`discoverMimoModels` 在账号目录可读且交集为空时运行一次 MiMo 自带的 `models --refresh`（显式刷新不受该环境变量限制，同一可执行文件 10 分钟内最多一次），清空 `mimoMetadataCache` 后重读；仍对不上时报不一致，不按账号目录猜模型或强度。刷新写的是 MiMo 自己的缓存，与原生 MiMo 正常启动时的行为相同；不改用户配置与凭据。
 - 未确认：ZCode 登录后仍显示「已配置」的根因（最可能是 OAuth 结果未写入插件私有凭据目录而回落到原生 API 配置），文案已改为「账号绑定未确认，请重新登录」，待新包复测。
 
+## 2026-10-30 Windows Hermes Nous 目录请求（未发布）
+
+`add-cli-login-templates` 第 9 节记录：Windows Nous 登录后 provider 已为 nous，Host 也已命中系统代理，但 `https.request` 代理分支没有 Node fetch 默认的 User-Agent。原样账号接口返回 JSON 200，模型接口返回 Cloudflare HTML 403；同一路径只在内存补 `User-Agent: node` 后返回 6 个模型及对应强度。`hostFetch` 现在仅在未显式提供时补该头；Nous 的 HTML 403 / challenge 403 使用固定网络拦截提示，JSON 认证拒绝保持原行为。不改变凭据、续期、请求次数、TLS 或模型过滤；`stealth/missingno` 默认值不参与 Nous 目录读取。此为只读目录实测，新包 Windows Desktop 验收仍待执行。
+
 ## 2026-10-30 随包原生界面升级到 Harness 0.2.1-rc.5（未发布）
 
 OpenSpec 变更 `upgrade-host-rc5`（用户 2026-10-30 把 Mac 与 Windows 的 DSH Desktop 更新到 0.2.1-rc.5 后要求先处理兼容再安装）。
@@ -1321,3 +1325,14 @@ OpenSpec 变更 `upgrade-host-rc5`（用户 2026-10-30 把 Mac 与 Windows 的 D
 OpenSpec：`fix-configured-account-status`。设置导航与账号摘要复用 Host 的安全摘要，configured 不再统一覆盖成「已配置」；空摘要保留旧回退，长原因自然换行，仍使用灰色待确认状态。MiMo 检查登录、Pi/OMP/OpenCode 缺少有效凭据、Hermes 等待续期等原因一并保留。
 
 ZCode 退出调用原生 `logout`，来源与 Worker 相同，插件不另删绑定。OAuth 清除后残留身份和绑定密钥会返回「绑定未确认，请重新登录」；无绑定时个人 API 配置仍可返回「已配置 ZCode API」，无两者则未登录。账号窗口对这两种 configured 均可能没有账号行，退出结果页也不能据此定位来源。本次仅用合成夹具确认分支，Windows c7a5eb2 实机走哪支未证实，不修改真实认证数据或原生退出行为。
+
+
+## 2026-10-30 Codex Computer Use 应用授权转交 DSH（未发布）
+
+OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原生审批档位策略。
+
+- `native-codex.mjs` 在通用交互失败分支前单独识别 `mcpServer/elicitation/request`：当前 threadId，turnId 为 null 或当前轮次；`cua_repl`、`form`、object 空 properties 且无额外输入约束；元数据为 `mcp_tool_call` + `computer-use`、非用户输入，并有应用显示名或 `tool_params.app`。不要求 `codex_request_type` 或 `tool_name`。
+- 转为 `io.approval` 的 permission，摘要写明应用，详情仅保留原文 message 与 MCP 名称，沿用 500/4000 字符上限和字面文本呈现。Host 原有 `decideApproval` 决定：询问/工作区档按现有策略询问、规划拒绝、完全权限按现有规则自动放行（父会话同为完全权限且策略 ask 时仍询问），不设 Computer Use 例外。
+- 回复使用 elicitation 的 action/content，不复用 item 审批的 decision：允许一次 accept + 空对象，拒绝 decline + null；仅 persist 数组明确含 session 且用户选会话允许时附 `_meta: {persist: 'session'}`。不回显整份元数据、不发送 always、不缓存授权。
+- 同一 elicitation ID 只处理一次；等待期间不阻塞读取。停止、超时、关闭或轮次结束后的决定不再发送；发送中的回复在结算前等待，发送失败仍按授权回复未送达判失败。拒绝只写诊断并设置既有 denied，正常 completed 且进程退出为零仍为已完成；真实轮次错误、非零退出和协议错误继续失败。
+- 非空表单、URL 登录、未知元数据、跨线程/跨轮次仍走原有 -32601 与失败。请求样本来自用户提供的静态重建，回归均为模拟；Windows 实机抓取真实请求帧与 DSH 审批往返保留未验证。

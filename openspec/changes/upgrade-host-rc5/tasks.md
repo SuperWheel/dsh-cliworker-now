@@ -56,6 +56,50 @@
   - [x] 失败一（已修复，见 `add-cli-login-templates` 7.1、7.4）：Hermes Nous 两次确认退出，都显示「原生终端已关闭，请重试。」和「该账号已不存在，请刷新后重试」。刷新后账号仍列出，复现一致，未退出。
   - [x] 失败二（已修复，见 `add-cli-login-templates` 7.2、7.4）：Kimi（凭据已过期）确认并信任空账号目录后，提示「无法识别当前步骤，请在原生终端中继续。」。原生菜单「Select a provider to log out」里没有可辨认的条目，按 Esc 取消，未退出。设置页改为显示「Kimi 当前账号剩余额度暂无法确认…」。
   - [ ] 偏差：ZCode 退出后账号列表为空，设置摘要仍是「已配置」，与 10-29 一致，见 `fix-windows-account-login-bridge` 4.3。
-- [ ] 5.3 Windows：
-  - 已完成：codex-bridge 0.3.0 不经模型直连可用（列窗口约 0.5 秒，绑定约 0.4 秒，截图约 0.9 秒）；Windows DSH 已带 `--force-renderer-accessibility` 重启，测试工作区为 `live-codex`。
-  - 阻塞：Codex 子代理路线第一步就报 `sandboxCwd is not a local file URI: file:///Users/…`。中继把 Mac 工作目录原样转给 Windows 的 cua_repl，所以 10 个 CLI 都没有派遣，等待用户选择修复 codex-bridge 还是改由会话直接驱动。证据：`.test-data/windows-desktop-20261030/`。
+- [x] 5.3 Windows 工具调用派遣（codex-bridge 0.3.0 Windows Computer Use，Codex gpt-6.1-sol high 操作 rc.5 Desktop，工作区 `C:\Users\admin\cw081f1\live-codex`）。证据：`.test-data/windows-desktop-20261030/`（`cu-run-A.json`、`cu-run-retest.json`、`report.json`、`summary.md`）。
+  - 前置：
+    - 子代理路线最初报 `sandboxCwd is not a local file URI`。用户选择先修 codex-bridge：中继丢弃 `codex/sandbox-state-meta`，提交 `e78a2d7`、`dbec4d4`，未推送。
+    - 插件服务不可用是锁的 PID 被复用，见 `harden-host-lifecycle-durability` 5。
+  - 7 个通过：`live-codex` 中的 `cwn-win-20261030b-<cli>.txt` 逐字核对为 `WIN-TOOL-<cli>-OK`。
+    - MiMo：mimo-v2.6-flash / Low。
+    - ZCode：GLM-5.3-Flash / Low。
+    - OMP：glm-5.3-flash / Low。
+    - Pi：glm-5.3-flash / Low。
+    - OpenCode：glm-5.3-flash / Low。
+    - Qoder：Qwen3.8-Flash / None。
+    - Claude Code：deepseek-flash / 默认（用户追加「codex和claude的工具调用也要测」）。
+  - Antigravity 失败：agy 把文件写进本轮工具桥的私有目录 `agy-tools`，被拒；Windows 也没有终端沙箱。已修复 `a3fb397`，见 `fix-runtime-permission-fallback` 4。
+  - Kimi、Grok、Hermes 未启动，都是账号状态：
+    - Kimi：凭据过期；
+    - Grok：登录需续期；
+    - Hermes：Nous 权限查询被拒。
+  - Codex 失败：
+    - 文件已写入，内容一致，末尾多一个换行。
+    - 读文件和列目录的命令全部报 `helper_unknown_error: setup refresh had errors`。Codex 自己的沙箱日志显示，npm 版 Codex 0.162.1 的 setup refresh 在校验 Computer Use 运行时（`runtimes\cua_node\…`）的读/执行权限时遇到被占用的文件（os error 32），就整体失败。
+    - 占用方有两个：验收用的 CU 会话遗留的运行时，以及 Codex 桌面应用自己的 `codex-computer-use-swift.exe`。桌面自带的 0.165-alpha 能容忍这种占用。这是上游 CLI 问题，不是插件问题。
+    - 模型随后改用 Computer Use，Codex 发出应用授权请求，插件按 `worker-run-outcomes`（需要额外交互输入的请求判失败）拒绝，本轮为 ERROR。
+- [x] 5.4 Windows 账号窗口与退出登录（Codex 与 Claude 不测）。证据：`cu-run-BC.json`、`cu-run-retest.json`。
+  - 真实退出成功，等用户本人重新登录：
+    - ZCode：确认文字同 Mac。
+    - Grok Build、Qoder。
+    - Kimi Code：复测时按用户选择点「信任并继续」。
+    - Antigravity：复测时按用户选择点「信任并退出」。
+    - Hermes Nous：首轮失效；装入借鉴 Mac 修复的 `c7a5eb2` 预览包后复测，退出成功。
+  - API Key 只到确认步骤，点「取消」后账号仍在：OMP、Pi、OpenCode。MiMo API Key 未点退出，记为「已知无确认，跳过」。
+  - [ ] 偏差：ZCode 退出后账号窗口为空，设置页仍显示灰色「已配置」，与 Mac 一致，修复中。
+- [ ] 5.5 Windows 待办：
+  - 安装 `a3fb397` 预览包（`preview-20261030-220606`，已上传，未安装）并在用户重新登录 Antigravity 后复测；
+  - Codex 升级（用户批准「升级并复测」）。
+    - 已完成：Windows 上执行 `npm install -g @openai/codex@0.166.0`（npmmirror 源，退出码 0），版本从 0.162.1 升到 0.166.0，平台包为 0.166.0-win32-x64。上游从 0.163.0 起修复这一问题（openai/codex PR #51822）。
+    - 新版 `bin/codex.js` 的 SHA256 为 `e14fc837…57af`，与 0.162.1 的 Windows 分支语义一致，已加入 `windows-codex-launch.ts` 的白名单；`windows-codex-launch`、`windows-codex-background`、`native-worker-windows-env` 共 41 项测试通过。
+    - 在交互桌面（会话 23）中，Codex 桌面应用的 CU 助手仍在占用文件时，执行 `codex sandbox -- cmd /c "type … && dir /b …"`：退出码 0，输出 `WIN-TOOL-codex-OK`，用时 0.7 秒，setup refresh 的 `errors=[]`。
+    - 同一命令经 SSH 会话执行报 `timed out … connecting runner pipe-in`。原因是 SSH 会话不是交互桌面，Worker 实际运行在交互桌面，不受影响。
+    - 待办：装新包后经 DSH 再派遣一次 Codex。
+  - Codex 派遣中途改用 Computer Use 时的应用授权，按用户选择「转交审批，按档位」修复，见 `relay-codex-computer-use-approvals`。
+  - 用户重新登录 Hermes Nous 后，模型和思考强度仍不加载。根因：Host 经 WinINET 代理请求时没带 User-Agent，Nous 模型接口返回 Cloudflare 的 HTML 403，插件把它误报成登录问题。已修复，见 `add-cli-login-templates` 第 9 节。
+  - 合并检查（2026-10-30，四路修复合并后）：
+    - `pnpm typecheck` 通过。
+    - `pnpm test`：5357 项通过、14 项跳过、2 项失败。失败的 2 项都在 `native-bridge-time-limit`，全量并发时 pid 文件尚未写出；单独连跑 3 次均 4/4 通过，与本轮改动无关。
+    - 以下 6 个 change 的 `pnpm spec validate --strict` 全部通过：`relay-codex-computer-use-approvals`、`add-cli-login-templates`、`fix-configured-account-status`、`upgrade-host-rc5`、`fix-runtime-permission-fallback`、`harden-host-lifecycle-durability`。
+  - 验收工具链问题：codex-bridge 关闭 agent 后不释放线程的 MCP 子进程，Windows 端的 cua_node 运行时一直存活。已在 codex-bridge 仓库修复：每个 agent 使用独立 app-server，关闭时回收它的进程组（Windows 用 `taskkill /T`）。已安装的插件缓存未更新。本轮验收结束后由我手动结束遗留的 ssh。
+  - Windows 界面与推理正文显示仍未专门核对（4.4）。
