@@ -86,7 +86,11 @@
 
 #### Scenario: 在原生列表中核对后选中
 - **WHEN** 单条退出只能在原生列表中选择（OMP 的 `/logout` 列表、Kimi Code 的托管 OAuth 登录、MiMo `auth logout` 的凭据列表）
-- **THEN** Host 逐行移动，只有高亮行可核对为目标（OMP 凭据行的唯一编号、Kimi 的 Kimi Code 行、MiMo 的 Xiaomi 行）时才按回车；列表走完、重复、超过上限，或画面静止仍未见目标时转原生终端，MUST 不在其他行上按回车
+- **THEN** Host 逐行移动，只有高亮行可核对为目标（OMP 凭据行的唯一编号、Kimi 的 Kimi Code 行、MiMo 的 Xiaomi 行）时才按回车；Kimi Code 行带有当前模型标记（`← current`）时仍按 Kimi Code 行核对；列表走完、重复、超过上限，或画面静止仍未见目标时转原生终端，MUST 不在其他行上按回车
+
+#### Scenario: 退出前核对目标仍在
+- **WHEN** 用户确认退出某一行，Host 已为该 CLI 的账号目录保留账号终端
+- **THEN** Host 在本地原生状态中核对该行仍在后才启动退出；核对 MUST 不因同一目录的续期（如 Hermes Nous）被保留挡住而把仍在的行误报为不存在；目标确已不在时提示刷新后重试，不启动原生退出
 
 #### Scenario: 按所在位置分组
 - **WHEN** Pi 或 OMP 同时有原生目录与插件目录中的凭据

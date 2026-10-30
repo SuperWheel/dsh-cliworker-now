@@ -56,3 +56,18 @@
     - Antigravity 真实退出一次：终端默认隐藏，结果页「已退出 Antigravity」「需要时可在设置中重新登录。」，底部无小字，设置随后为未登录。
     - 未覆盖：「请点击「显示原生终端」…」提示分支本轮未出现。
     - 发现：设置页单账号 CLI 的「退出」按钮没有确认，点击即真实退出（MiMo API Key 因此被删除）；账号窗口条目上的「退出」有确认。属既有行为，未改。
+
+## 7. 2026-10-30 Mac 实操后的修正（用户「修这两个」）
+
+- [x] 7.1 Hermes Nous 单条退出失败。现象：两次确认退出都显示「原生终端已关闭，请重试。」和「该账号已不存在，请刷新后重试」，账号仍在（证据 `.test-data/mac-desktop-20261030/summary-bc.md`）。
+  - 根因：启动退出时先 `reserveHermesAccount` 保留账号目录，再用 `assertLogin` → `readStatus` 复核。对 Nous 账号，`readStatus` 会先调用 `ensureHermesNousFresh`；目录已被保留，续期报 `busy`，状态读取只能返回不带账号行的「不可用」，复核因此必然失败。
+  - 修复：Hermes 分支在保留目录后改用 `readHermesAccount` 只读本地原生状态核对目标，不触发续期。
+- [x] 7.2 Kimi Code 退出停在「无法识别当前步骤」。现象：原生菜单停在「Select a provider to log out」，引导未选中 Kimi Code 行。
+  - 根因：当前模型属于 Kimi Code 时，Kimi 在该行后追加 `CURRENT_MARK`（`← current`），`kimiOAuthRow` 读到的标签是「Kimi Code ← current」，与「Kimi Code」不等。列表本来就停在首行，40 次「↑」不触发重绘，画面静止后转原生终端。
+  - 复现：在隔离 HOME / `KIMI_CODE_HOME`、模拟凭据、`KIMI_CODE_NO_AUTO_UPDATE=1`、代理指向不可达端口的条件下，录 Kimi Code 2.4.1 的 `/logout` 列表三份：只有托管登录；当前模型为 Kimi Code；另加 API 服务商。真实安装的大小与修改时间探测前后一致。
+  - 回放进插件引导：后两份在修复前停在原生终端；修复后三份在不同分片位置下都只在 Kimi Code 行按一次回车。原始输出只留在会话临时目录，不入库。
+  - 修复：识别高亮行时去掉行尾的 `← current`；仍须下一行是完整的「OAuth login」说明才按回车。
+- [x] 7.3 自动检查：
+  - 新增 `kimi-account-window`「模拟 2.4.1：…← current…」及 `kimiOAuthRow` 断言；新增 `hermes-renewal`「模拟 Nous 单条退出…」，其中目标不存在时仍拒绝。两项在旧代码上均失败，修复后通过。
+  - `pnpm typecheck` 通过；`kimi-account-window`、`kimi-accounts`、`hermes-renewal`、`hermes-accounts`、`hermes-nous`、`accounts`、`account-terminal`、`account-logout`、`account-guide-flows` 共 9 个文件，450 项通过、1 项跳过。
+- [ ] 7.4 Mac Desktop 真实复测：Hermes Nous 与 Kimi Code 各真实退出一次（浏览器登录类，按用户此前授权），核对结果页与设置页状态。

@@ -5,7 +5,8 @@ import { guideTexts, type FlowDefinition, type FlowStep } from './engine.ts'
 /*
  * Kimi login windows for a provider picked in the account window, and the sign-out of
  * one login. Markers come from screens captured in isolated homes with simulated
- * credentials on 2026-10-27 (Kimi Code 2.1.1 and its auto-installed 2.3.3; see doc/tasks.md).
+ * credentials on 2026-10-27 (Kimi Code 2.1.1 and its auto-installed 2.3.3; see doc/tasks.md),
+ * rechecked with 2.4.1 on 2026-10-30.
  *
  * - `kimi login --region mainland-cn|global` prints a device code and its kimi.com /
  *   kimi.ai page, then exits by itself once the browser authorizes it.
@@ -24,6 +25,8 @@ const LOGOUT_TITLE = 'Select a provider to log out'
 const OAUTH_LABEL = 'Kimi Code'
 const OAUTH_DESCRIPTION = 'OAuth login'
 const POINTER = '❯'
+/** Kimi's CURRENT_MARK after the row of the current model's provider, often Kimi Code itself. */
+const CURRENT_MARK = /\s+← current$/
 /** More than the list can hold; Kimi clamps the cursor at the first row. */
 const TO_TOP = '\x1b[A'.repeat(40)
 
@@ -39,7 +42,7 @@ export function kimiOAuthRow(lines: string[]): { row: string; target: boolean } 
   let at = lines.length - 1
   while (at >= 0 && !lines[at]!.includes(POINTER)) at--
   if (at < 0) return undefined
-  const label = highlightedRow.exec(lines[at]!)?.[1]
+  const label = highlightedRow.exec(lines[at]!)?.[1]?.replace(CURRENT_MARK, '')
   // Another row stays highlighted until the moves up land; never press anything on it.
   if (label !== OAUTH_LABEL) return undefined
   const next = lines.slice(at + 1).find((line) => line.trim())

@@ -860,7 +860,10 @@ export class AccountManager {
         release = () => {
           for (const free of releases) free()
         }
-        if (login) await this.assertLogin(cli, cwd, login, startup)
+        // The reservation holds off Nous renewal, which a full status read would report as busy
+        // (no rows): the target is checked in the local native store instead.
+        if (login && !(await readHermesAccount(this.config, startup)).logins?.some((item) => item.id === login))
+          throw new AccountLoginGoneError()
         const prepared = await prepareHermesAccount(action, executable, cwd, this.config, startup, source, { provider, login })
         const cleanup = release
         release = async () => {

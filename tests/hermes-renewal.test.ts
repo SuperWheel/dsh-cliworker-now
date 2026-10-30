@@ -453,6 +453,40 @@ describe('shared native Hermes Nous renewal', () => {
     await ensureHermesNousFresh({ home: selected, backend: b, signal: signal() })
     expect(b.spawn).toHaveBeenCalledTimes(1)
   })
+  it('模拟 Nous 单条退出：预留后只读本地账号核对目标，不因续期忙误报账号不存在', async () => {
+    const f = fixture(600),
+      b = backend(f)
+    f.raw.credential_pool.nous[0].id = 'a1b2c3'
+    f.save()
+    const output = new PassThrough(),
+      terminalDone = deferred<any>()
+    const spawnTerminal = vi.fn(
+      async () =>
+        ({
+          pid: 100,
+          output,
+          done: terminalDone.promise,
+          write: vi.fn(async () => {}),
+          resize: vi.fn(async () => {}),
+          terminate: vi.fn(async () => {
+            output.end()
+            terminalDone.resolve({ exitCode: 0, signal: null })
+          }),
+        }) as any,
+    )
+    const manager = new AccountManager({ ...b, spawnTerminal }, f.runtime)
+    managers.push(manager)
+    const login = (await manager.status('hermes', f.home, signal())).logins?.find((item) => item.providerLabel === 'Nous')?.id
+    expect(login).toBe('hermes:nous:a1b2c3')
+    await expect(
+      manager.start('synthetic-parent', 'hermes', 'logout', f.home, signal(), undefined, undefined, 'hermes:nous:ffffff'),
+    ).rejects.toThrow('该账号已不存在，请刷新后重试')
+    const terminal = await manager.start('synthetic-parent', 'hermes', 'logout', f.home, signal(), undefined, undefined, login)
+    expect(spawnTerminal).toHaveBeenCalledTimes(1)
+    expect(b.spawn).not.toHaveBeenCalled()
+    await manager.stop('synthetic-parent', terminal.id)
+  })
+
   it('blocks subsequent operations when a managed process range cannot be confirmed exited', async () => {
     const f = fixture(),
       b = backend(f, { cleanup: Promise.resolve(false) })

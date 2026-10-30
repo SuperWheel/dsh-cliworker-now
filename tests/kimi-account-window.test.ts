@@ -177,6 +177,16 @@ describe('Kimi account window (模拟画面)', () => {
     expect(writes(guide.output(MOVED_UP))).toEqual(['\r'])
   })
 
+  it('模拟 2.4.1：Kimi Code 即当前模型的服务商、行尾带 ← current 时仍按回车', () => {
+    // Same bytes as Kimi Code 2.4.1 drew in an isolated home on 2026-10-30 (simulated credentials).
+    const guide = trusted()
+    const frame = picker([{ ...OAUTH, current: true }, DEEPSEEK], 0)
+    const cut = frame.indexOf(' \x1b[38;5;29m← current')
+    expect(writes(guide.output(frame.slice(0, cut)))).toEqual([UP])
+    expect(writes(guide.output(frame.slice(cut)))).toEqual(['\r'])
+    expect(writes(trusted().output(frame))).toEqual([UP, '\r'])
+  })
+
   it('hands a list over when the moves up never land, pressing nothing else', () => {
     const guide = trusted()
     expect(writes(guide.output(picker([OAUTH, { ...DEEPSEEK, current: true }, MOONSHOT], 1)))).toEqual([UP])
@@ -201,6 +211,8 @@ describe('Kimi account window (模拟画面)', () => {
     const lines = (text: string) => text.split(/\r\n|\r|\n/).map((line) => line.replace(/\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07/g, ' '))
     expect(kimiOAuthRow(lines(picker([OAUTH, DEEPSEEK], 0)))).toEqual({ row: 'Kimi Code', target: true })
     expect(kimiOAuthRow(lines(picker([OAUTH, DEEPSEEK], 1)))).toBeUndefined()
+    expect(kimiOAuthRow(lines(picker([{ ...OAUTH, current: true }, DEEPSEEK], 0)))).toEqual({ row: 'Kimi Code', target: true })
+    expect(kimiOAuthRow(lines(picker([OAUTH, { ...DEEPSEEK, current: true }], 1)))).toBeUndefined()
     expect(kimiOAuthRow(lines(picker([{ label: 'Kimi Code', description: 'https://api.kimi.com/coding/v1' }], 0)))).toBeUndefined()
     expect(kimiOAuthRow(lines(TRUST))).toBeUndefined()
   })
