@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -223,6 +224,79 @@ describe('durable Host cleanup quarantine', () => {
     expect(authorizedCatalog).toHaveBeenCalledTimes(2)
     expect(() => rebuilt.assertAccountIdle('codex')).not.toThrow()
     expect(f.backend.spawn).not.toHaveBeenCalled()
+  })
+
+  it('reports a CLI pause as account status and releases it, durably, only on the user request', async () => {
+    const f = fixture()
+    faults.catalog = true
+    await expect(f.service.catalogForCli('parent', 'antigravity', f.signal)).rejects.toThrow('cleanup')
+    faults.catalog = false
+    const { reopened, rebuilt, service } = await f.reopen()
+    const accounts = {
+      assertCleanupRecoverable: vi.fn(),
+      recoverCleanup: vi.fn(),
+      status: vi.fn(async (cli: string) => ({ cli, installed: true, state: 'authenticated', actions: [] })),
+    }
+    service.accounts = accounts
+    const held = JSON.parse(await service.accountStatus('parent', 'antigravity', f.signal))
+    expect(held).toMatchObject({ cli: 'antigravity', state: 'unavailable', cleanupBlocked: true, actions: [] })
+    expect(held.summary).toContain('已暂停此 CLI')
+    expect(held.summary).not.toContain('重启')
+    expect(accounts.status).not.toHaveBeenCalled()
+    expect(JSON.parse(await service.recoverCliCleanup('parent', 'antigravity', f.signal))).toEqual({
+      cli: 'antigravity',
+      recovered: true,
+    })
+    expect(accounts.assertCleanupRecoverable).toHaveBeenCalledWith('antigravity')
+    expect(accounts.recoverCleanup).toHaveBeenCalledWith('antigravity')
+    expect(reopened.cleanupBlockState('antigravity')).toBe('none')
+    expect(() => rebuilt.assertCliEnabled('antigravity')).not.toThrow()
+    expect(JSON.parse(await service.accountStatus('parent', 'antigravity', f.signal)).state).toBe('authenticated')
+    await expect(service.catalogForCli('parent', 'antigravity', f.signal)).resolves.toContain('antigravity')
+    await rebuilt.close()
+    const again = new WorkerRuntime(new WorkerStorage(f.directory), f.backend, DEFAULT_CONFIG)
+    cleanups.push(() => again.close())
+    expect(() => again.assertCliEnabled('antigravity')).not.toThrow()
+    expect(f.backend.spawn).not.toHaveBeenCalled()
+  })
+
+  it('keeps a CLI paused while it has work, while its account terminal refuses, and under the global quarantine', async () => {
+    const f = fixture()
+    f.runtime.blockCatalogOnCleanup('antigravity', new ProcessCleanupUnconfirmedError())
+    const refusing = {
+      assertCleanupRecoverable: vi.fn(() => {
+        throw new Error('此 CLI 的账号终端仍在运行或等待关闭，请先关闭账号终端')
+      }),
+      recoverCleanup: vi.fn(),
+    }
+    f.service.accounts = refusing
+    await expect(f.service.recoverCliCleanup('parent', 'antigravity', f.signal)).rejects.toThrow('账号终端')
+    expect(f.storage.cleanupBlockState('antigravity')).toBe('blocked')
+    f.service.accounts = { assertCleanupRecoverable: vi.fn(), recoverCleanup: vi.fn() }
+    f.storage.save({ ...f.legacy, status: 'queued' })
+    await expect(f.service.recoverCliCleanup('parent', 'antigravity', f.signal)).rejects.toThrow('排队')
+    expect(f.service.accounts.recoverCleanup).not.toHaveBeenCalled()
+    expect(f.storage.cleanupBlockState('antigravity')).toBe('blocked')
+    expect(() => f.runtime.assertCliEnabled('antigravity')).toThrow('已暂停此 CLI')
+    f.storage.save({ ...f.legacy, status: 'completed' })
+    f.runtime.blockOnCleanup(new ProcessCleanupUnconfirmedError())
+    await expect(f.service.recoverCliCleanup('parent', 'antigravity', f.signal)).rejects.toThrow('清理')
+    await expect(f.service.accountStatus('parent', 'antigravity', f.signal)).rejects.toThrow('清理')
+    expect(f.storage.cleanupBlockState()).toBe('blocked')
+    expect(f.storage.cleanupBlockState('antigravity')).toBe('blocked')
+  })
+
+  it('releases a damaged CLI record the same way and never removes a directory in its place', async () => {
+    const f = fixture()
+    writeFileSync(join(f.directory, 'cleanup-blocked-antigravity.json'), '{synthetic damaged', { mode: 0o600 })
+    const { reopened, rebuilt } = await f.reopen()
+    expect(reopened.cleanupBlockState('antigravity')).toBe('invalid')
+    expect(() => rebuilt.assertCliEnabled('antigravity')).toThrow('无法核验')
+    rebuilt.recoverCatalogCleanup('antigravity')
+    expect(reopened.cleanupBlockState('antigravity')).toBe('none')
+    mkdirSync(join(f.directory, 'cleanup-blocked-grok.json'))
+    expect(() => reopened.clearCleanupBlock('grok')).toThrow('不是文件')
+    expect(statSync(join(f.directory, 'cleanup-blocked-grok.json')).isDirectory()).toBe(true)
   })
 
   it.each(['admission', 'prepare', 'process-exit', 'account-release'] as const)(

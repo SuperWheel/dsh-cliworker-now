@@ -432,7 +432,23 @@ export const en = {
   // account-terminal
   '此 CLI 已有账号终端，请先关闭后重试': 'This CLI already has an account terminal open. Close it and try again',
   '当前宿主不支持交互终端': 'This host does not support interactive terminals',
-  '账号终端尚未确认完全退出，请重启应用': 'The account terminal has not confirmed a full exit. Restart the app',
+  '账号终端未能确认完全退出，已暂停此 CLI；确认没有残留进程后可在设置中解除暂停': 'The account terminal did not confirm a full exit, so this CLI is paused. After confirming no process is left, release the pause in settings',
+  // recover-cli-cleanup-quarantine
+  '账号终端未能确认完全退出，已暂停此 CLI': 'The account terminal did not confirm a full exit, so this CLI is paused',
+  '账号查询未能确认进程已退出，已暂停此 CLI': 'An account check could not confirm its process exited, so this CLI is paused',
+  '账号查询未能确认进程已退出，已暂停此 CLI：{detail}': 'An account check could not confirm its process exited, so this CLI is paused: {detail}',
+  '{cli} 元数据进程清理尚未确认，已暂停此 CLI': '{cli} metadata process cleanup is unconfirmed, so this CLI is paused',
+  '{cli} 元数据进程清理尚未确认，已暂停此 CLI：{detail}': '{cli} metadata process cleanup is unconfirmed, so this CLI is paused: {detail}',
+  '{cli} 元数据清理记录无法核验，已暂停此 CLI': 'The {cli} metadata cleanup record cannot be verified, so this CLI is paused',
+  '此 CLI 还有运行或排队中的任务，请等待结束后再解除暂停': 'This CLI still has running or queued tasks. Wait for them to finish before releasing the pause',
+  '此 CLI 的账号终端仍在运行或等待关闭，请先关闭账号终端': 'An account terminal of this CLI is still running or closing. Close it first',
+  '此 CLI 的账号状态仍在读取，请稍后再试': 'The account status of this CLI is still being read. Try again shortly',
+  '清理隔离记录不是文件，无法解除': 'The cleanup quarantine record is not a file and cannot be released',
+  '解除暂停': 'Release pause',
+  '确认解除': 'Release',
+  '正在解除暂停…': 'Releasing the pause…',
+  '请先在任务管理器（Windows）或活动监视器（macOS）中确认没有 {cli} 的残留进程，再解除暂停。解除后会重新读取账号和模型。':
+    'First check Task Manager (Windows) or Activity Monitor (macOS) that no {cli} process is left, then release the pause. The account and models are read again afterwards.',
   'Windows 账号终端托管不可用，请检查 PowerShell 后重试': 'Windows account terminal hosting is unavailable. Check PowerShell and try again',
   '账号终端启动超时，正在回收启动过程；请稍后重试': 'The account terminal timed out while starting and is being cleaned up. Try again later',
   '无法启动账号终端，请检查 CLI 安装': 'Could not start the account terminal. Check the CLI installation',
@@ -834,6 +850,8 @@ export const en = {
   '请点击「显示原生终端」，在 CLI 原生菜单中继续退出。': 'Click “Show native terminal” to continue signing out in the CLI’s native menu.',
   '未能确认已退出': 'Could not confirm the sign-out',
   '未能确认已退出，请查看原生终端中的提示。': 'Could not confirm the sign-out. Check the native terminal for details.',
+  'Antigravity 显示了登录菜单，但未能确认当前未登录，插件没有自动退出，也不会在菜单中输入。请点击「显示原生终端」查看当前画面。':
+    'Antigravity showed its login menu, but the plugin could not confirm you are signed out, so it did not sign out and will not type into the menu. Click “Show native terminal” to see the current screen.',
   '未能确认登录：授权码可能不完整或已过期。请重新开始登录，或查看原生终端中的提示。': 'Could not confirm the sign-in: the authorization code may be incomplete or expired. Start the sign-in again, or check the native terminal for details.',
   '正在启动 Antigravity…': 'Starting Antigravity…',
   '正在检查登录状态…': 'Checking the sign-in state…',

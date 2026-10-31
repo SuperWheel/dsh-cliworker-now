@@ -48,6 +48,7 @@ import { CliProtocol } from './cli-protocol.ts'
 import type { NativeAccess } from './native-approval-policy.ts'
 import {
   agyArguments,
+  METADATA_EXIT_GRACE_MS,
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
   type RuntimeConfig,
@@ -129,9 +130,11 @@ export async function captureCatalogMetadata(
     if (keep) output += decoder.end()
   }
   const readers = [read(process.stdout, true), read(process.stderr, false)]
+  let finished = false
   try {
     await Promise.all(readers)
     const outcome = await process.done
+    finished = true
     control.throwIfAborted()
     if (outcome.exitCode === null || !allowedExitCodes.includes(outcome.exitCode))
       throw new Error('CLI 模型查询失败，请在终端检查该 CLI 配置')
@@ -139,10 +142,14 @@ export async function captureCatalogMetadata(
   } finally {
     let exited = false
     try {
-      process.terminate()
-      exited = await process.waitForExit()
-    } catch {
-      throw new ProcessCleanupUnconfirmedError()
+      // A query that ran to completion normally empties its own range; terminate only what outlives it.
+      if (finished && !control.aborted) exited = await process.waitForExit(AbortSignal.timeout(METADATA_EXIT_GRACE_MS))
+      if (!exited) {
+        process.terminate()
+        exited = await process.waitForExit()
+      }
+    } catch (error) {
+      throw new ProcessCleanupUnconfirmedError({ cause: error })
     }
     if (!exited) throw new ProcessCleanupUnconfirmedError()
     await Promise.allSettled([...readers, process.done])

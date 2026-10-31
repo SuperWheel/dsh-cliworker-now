@@ -95,7 +95,8 @@ it('uses two native identity reads per authorized directory and does not reuse t
   await authorizedCatalog('antigravity', f.backend, DEFAULT_CONFIG, state.home, signal(), first.binding)
   expect(f.counts()).toEqual({ accountReads: 4, modelReads: 2 })
   for (const handle of f.handles) {
-    expect(handle.terminate).toHaveBeenCalledOnce()
+    // Each read emptied its own range, so none was terminated.
+    expect(handle.terminate).not.toHaveBeenCalled()
     expect(handle.waitForExit).toHaveBeenCalledOnce()
   }
 })

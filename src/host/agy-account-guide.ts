@@ -15,7 +15,9 @@ import {
  * Screen texts of agy 1.4.7 (checked on macOS 2026-10-26). Whitespace is
  * ignored when matching, since a TUI may draw spaces as cursor moves.
  * `signedOut` is drawn before every sign-in check, also for a signed-in
- * account, so only the login method menu proves a signed-out start.
+ * account. The login method menu does not prove a signed-out start either (a
+ * signed-in macOS Desktop run drew it, 2026-10-31): a sign-out drawn with it
+ * asks the Host's native account read, and only an unconfigured read ends it.
  * `scheme` and `terms` are agy's first-run setup screens (Windows, 2026-10-27): a color
  * scheme list with `[Next]`, then the terms with a data-sharing checkbox that starts
  * ticked and `[Previous] [Done]`. On the checkbox Enter toggles it; ↓ moves to
@@ -88,6 +90,12 @@ export const AGY_GUIDES = {
   loggedOut: { step: 'loggedOut', tone: 'success', template: 'result', text: '已退出 Antigravity' },
   notSignedIn: { step: 'notSignedIn', tone: 'info', template: 'result', text: '当前未登录 Antigravity，无需退出。' },
   logoutUnconfirmed: { step: 'logoutUnconfirmed', tone: 'warning', template: 'result', text: '未能确认已退出，请查看原生终端中的提示。' },
+  menuUnresolved: {
+    step: 'menuUnresolved',
+    tone: 'warning',
+    template: 'result',
+    text: 'Antigravity 显示了登录菜单，但未能确认当前未登录，插件没有自动退出，也不会在菜单中输入。请点击「显示原生终端」查看当前画面。',
+  },
 } as const satisfies Record<string, AccountGuide>
 
 export type AgyGuideEvent = GuideEvent
@@ -124,6 +132,8 @@ export class AgyAccountGuide implements AccountGuideDriver {
   private typed = false
   private commandSent = false
   private identifying = false
+  /** A sign-out drew the login menu: the pending native account read decides it. */
+  private menuDrawn = false
   private afterCommand = ''
   /** The trust or setup question on screen was answered with Enter; judge what agy draws next. */
   private gateAnswered = false
@@ -153,7 +163,13 @@ export class AgyAccountGuide implements AccountGuideDriver {
       if (this.waiting()) return []
       const gate = this.gate(seen)
       if (gate) return gate
-      if (seen('method')) return this.show(AGY_GUIDES.notSignedIn)
+      // The menu wins over a main screen in the same text: nothing is typed while it may be drawn.
+      if (seen('method')) {
+        this.menuDrawn = true
+        if (this.identifying) return []
+        this.identifying = true
+        return [{ identify: true }]
+      }
       if (!seen('ready')) return []
       this.commandSent = true
       return [...this.show(AGY_GUIDES.loggingOut), { command: '/logout' }]
@@ -207,6 +223,9 @@ export class AgyAccountGuide implements AccountGuideDriver {
     const state = typeof evidence === 'string' ? evidence : evidence?.state
     this.identifying = false
     if (this.waiting() || this.commandSent) return []
+    // `/logout` is never typed into a login menu; a signed-in or unread account is the user's to check.
+    if (this.menuDrawn && this.action === 'logout')
+      return this.show(state === 'unconfigured' ? AGY_GUIDES.notSignedIn : AGY_GUIDES.menuUnresolved)
     if (state === 'authenticated') {
       if (this.action === 'login') return this.show(AGY_GUIDES.alreadySignedIn)
       this.commandSent = true

@@ -70,7 +70,9 @@ it('types /logout once, only after the signed-in main screen is ready', () => {
 
 it('never types for a signed-out or untrusted logout terminal, or for manage', () => {
   const signedOut = new AgyAccountGuide('logout')
-  expect(signedOut.output(SIGNED_OUT + METHOD)).toEqual([{ guide: AGY_GUIDES.notSignedIn }])
+  expect(signedOut.output(SIGNED_OUT + METHOD)).toEqual([{ identify: true }])
+  expect(signedOut.output(READY)).toEqual([])
+  expect(signedOut.identified('unconfigured')).toEqual([{ guide: AGY_GUIDES.notSignedIn }])
   expect(signedOut.output(READY)).toEqual([])
   const untrusted = new AgyAccountGuide('logout')
   expect(untrusted.output(TRUST)).toEqual([{ guide: AGY_GUIDES.trust }])
@@ -78,6 +80,28 @@ it('never types for a signed-out or untrusted logout terminal, or for manage', (
   const manage = new AgyAccountGuide('manage')
   expect(manage.output(READY + METHOD + CODE + CODE_TAIL)).toEqual([])
   expect(manage.input('\x1b[200~synthetic\x1b[201~\r')).toEqual([])
+})
+
+it('never ends or types into a sign-out on the login menu unless the native account is signed out', () => {
+  // 2026-10-31 macOS Desktop: a signed-in agy drew the menu and the sign-out closed as "not signed in".
+  for (const state of ['authenticated', 'unavailable', undefined] as const) {
+    const guide = new AgyAccountGuide('logout')
+    expect(guide.output(SIGNED_OUT + METHOD)).toEqual([{ identify: true }])
+    expect(guide.output(METHOD)).toEqual([])
+    expect(guide.identified(state)).toEqual([{ guide: AGY_GUIDES.menuUnresolved }])
+    expect(guide.output(READY)).toEqual([])
+    expect(guide.settled()).toEqual([])
+  }
+  // A menu drawn together with the main screen still waits for the native account.
+  const mixed = new AgyAccountGuide('logout')
+  expect(mixed.output(METHOD + '\x1b[2J' + READY)).toEqual([{ identify: true }])
+  expect(mixed.identified('authenticated')).toEqual([{ guide: AGY_GUIDES.menuUnresolved }])
+  // The menu arriving while a settled screen's read is in flight: that read decides, once.
+  const late = new AgyAccountGuide('logout')
+  late.output('\x1b[2J synthetic main screen without the guessed marker')
+  expect(late.settled()).toEqual([{ identify: true }])
+  expect(late.output(METHOD)).toEqual([])
+  expect(late.identified('authenticated')).toEqual([{ guide: AGY_GUIDES.menuUnresolved }])
 })
 
 it('keeps every guide text Host-authored', () => {

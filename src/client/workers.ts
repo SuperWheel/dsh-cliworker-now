@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountStartWith'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountStartWith' | 'recoverCliCleanup'> & {
     /** Optional until an older Host has upgraded its native-conversation bridge. */
     ensureHarnessConversation?: (parentId: string, workerId: string) => Promise<RemoteResult<string>>
     /** Explicitly repair an unreadable owned display binding; never submits a CLI prompt. */
@@ -22,6 +22,8 @@ export type API = Pick<ClientRemote, '$stream'> & {
     accountRespond?: (parentId: string, accountId: string, response: string) => Promise<RemoteResult<boolean>>
     /** A provider picked in the account window, or one login to sign out; absent on older Hosts. */
     accountStartWith?: (parentId: string, cli: CliId, action: string, options: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
+    /** Release one CLI paused after an unconfirmed cleanup, once the user confirmed; absent on older Hosts. */
+    recoverCliCleanup?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
   }
 }
 export const value = <T>(result: RemoteResult<T>): T => {

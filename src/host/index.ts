@@ -9,7 +9,7 @@ import { z as validate } from 'zod'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import type { AccountResponse } from '../shared/accounts.ts'
+import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
 import { createHarnessConversationBridge } from './harness-conversation.ts'
 import { workerGoalCommand } from './harness-conversation-commands.ts'
@@ -2118,14 +2118,44 @@ export class CliWorkerService extends TypertRemoteService {
       queriedCli = id
       const project = this.project(await this.parent(parentSessionId))
       signal.throwIfAborted()
+      const held = () => this.cleanupHeldStatus(id)
+      const before = held()
+      if (before) return JSON.stringify(before)
       this.runtime.assertCliEnabled(id)
       const status = await this.accounts.status(id, project, signal)
       signal.throwIfAborted()
+      const after = held()
+      if (after) return JSON.stringify(after)
       this.runtime.assertCliEnabled(id)
       return JSON.stringify(status)
     } catch (error) {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)
+      throw failure(error)
+    }
+  }
+  /** A CLI paused by its own unconfirmed cleanup reports that state instead of failing the read. */
+  private cleanupHeldStatus(cli: CliId): AccountStatus | undefined {
+    const message = this.runtime.catalogCleanupMessage(cli)
+    if (!message) return undefined
+    // Shutdown and the unattributed global quarantine are not this CLI's to release.
+    this.runtime.assertHostOpen()
+    return { cli, installed: true, state: 'unavailable', summary: message, cleanupBlocked: true, actions: [] }
+  }
+  /** @param parentSessionId - Owning session. @param cli - CLI the user confirmed has no leftover process. @param signal - Mutation lifetime. @returns Fresh account status JSON. */
+  @Remote('recoverCliCleanup')
+  async recoverCliCleanup(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    try {
+      const id = validate.enum(CLI_IDS).parse(cli)
+      await this.parent(parentSessionId)
+      signal.throwIfAborted()
+      // Both checks precede either release, so a refusal leaves the CLI paused as it was.
+      this.accounts.assertCleanupRecoverable(id)
+      this.runtime.recoverCatalogCleanup(id)
+      this.accounts.recoverCleanup(id)
+      this.invalidateSettingsDisplay(id)
+      return JSON.stringify({ cli: id, recovered: true })
+    } catch (error) {
       throw failure(error)
     }
   }

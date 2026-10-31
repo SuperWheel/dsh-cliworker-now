@@ -3046,3 +3046,50 @@ it('explains a Codex relay route catalog the way it does a Claude route', async 
   const t = await setup({ catalogForCli: relay, refreshCatalogForCli: relay }, undefined, 'codex')
   await vi.waitFor(() => expect(t.text()).toContain(notice))
 })
+
+it('releases a CLI paused after an unconfirmed cleanup only after the inline confirmation', async () => {
+  // Simulated Host pause and release; no native process is inspected or stopped.
+  let paused = true
+  const summary = 'Antigravity 元数据进程清理尚未确认，已暂停此 CLI：isJobEmpty failed for <path>'
+  const accountStatus = vi.fn(async (_session, cli: CliId) =>
+    cli === 'antigravity' && paused
+      ? status(cli, { state: 'unavailable', summary, cleanupBlocked: true })
+      : status(cli, { state: 'authenticated', summary: '已登录', actions: accountActions }),
+  )
+  const recoverCliCleanup = vi.fn(async (_session, cli: CliId) => {
+    paused = false
+    return remote({ cli, recovered: true })
+  })
+  const t = await setup({ accountStatus, recoverCliCleanup })
+  await vi.waitFor(() => expect(t.text()).toContain('isJobEmpty failed for <path>'))
+  expect(t.button('账号终端')).toBeUndefined()
+  await t.click('解除暂停')
+  expect(t.text()).toContain('活动监视器')
+  expect(recoverCliCleanup).not.toHaveBeenCalled()
+  await t.click('取消')
+  expect(t.text()).not.toContain('活动监视器')
+  const reads = accountStatus.mock.calls.filter((call) => call[1] === 'antigravity').length
+  await t.click('解除暂停')
+  await t.click('确认解除')
+  expect(recoverCliCleanup).toHaveBeenCalledExactlyOnceWith('simulation-parent', 'antigravity', expect.any(AbortSignal))
+  await vi.waitFor(() =>
+    expect(accountStatus.mock.calls.filter((call) => call[1] === 'antigravity').length).toBeGreaterThan(reads),
+  )
+  await vi.waitFor(() => expect(t.text()).not.toContain('解除暂停'))
+})
+
+it('keeps the pause and shows why when the Host refuses to release it', async () => {
+  const accountStatus = vi.fn(async (_session, cli: CliId) =>
+    status(cli, { state: 'unavailable', summary: '账号查询未能确认进程已退出，已暂停此 CLI', cleanupBlocked: true }),
+  )
+  const recoverCliCleanup = vi.fn(async () => ({
+    ok: false,
+    error: { message: '此 CLI 还有运行或排队中的任务，请等待结束后再解除暂停' },
+  }))
+  const t = await setup({ accountStatus, recoverCliCleanup })
+  await vi.waitFor(() => expect(t.button('解除暂停')).toBeDefined())
+  await t.click('解除暂停')
+  await t.click('确认解除')
+  await vi.waitFor(() => expect(t.text()).toContain('此 CLI 还有运行或排队中的任务'))
+  expect(t.text()).toContain('确认解除')
+})

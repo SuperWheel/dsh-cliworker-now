@@ -28,6 +28,8 @@ import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
 import { captureCatalogMetadata, executableFor, resolveCliExecutable } from './adapters.ts'
 import {
+  cleanupCauseText,
+  METADATA_EXIT_GRACE_MS,
   projectDirectory,
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
@@ -298,7 +300,8 @@ interface AccountSession {
 export class AccountManager {
   private readonly sessions = new Map<string, AccountSession>()
   private readonly reserved = new Set<CliId>()
-  private readonly unsafeQueries = new Set<CliId>()
+  /** CLIs whose account read left an unconfirmed range, with its display-safe reason. */
+  private readonly unsafeQueries = new Map<CliId, string | undefined>()
   private readonly unsafeTerminals = new Map<CliId, string>()
   private readonly statusQueries = new Map<string, StatusQuery>()
   private readonly pending = new Set<Promise<unknown>>()
@@ -317,6 +320,43 @@ export class AccountManager {
   isBusy(cli: CliId): boolean {
     validateCli(cli)
     return this.reserved.has(cli) || this.unsafeQueries.has(cli) || this.unsafeTerminals.has(cli)
+  }
+
+  /** The paused state a CLI reports while an account process range is unconfirmed. */
+  private cleanupHold(cli: CliId): AccountStatus | undefined {
+    if (!this.unsafeQueries.has(cli) && !this.unsafeTerminals.has(cli)) return undefined
+    const reason = this.unsafeQueries.get(cli)
+    return {
+      cli,
+      installed: true,
+      state: 'unavailable',
+      summary: this.unsafeQueries.has(cli)
+        ? `账号查询未能确认进程已退出，已暂停此 CLI${reason ? `：${reason}` : ''}`
+        : '账号终端未能确认完全退出，已暂停此 CLI',
+      cleanupBlocked: true,
+      actions: [],
+    }
+  }
+
+  /** An account read whose process range is unconfirmed holds the CLI until the user releases it. */
+  private quarantineQuery(cli: CliId, error: ProcessCleanupUnconfirmedError) {
+    this.unsafeQueries.set(cli, cleanupCauseText(error))
+    this.onQueryCleanup?.(cli, error)
+  }
+
+  /** The user confirmed no account process of this CLI is left; refuse while one is still owned here. */
+  assertCleanupRecoverable(cli: CliId): void {
+    validateCli(cli)
+    if (this.controller.signal.aborted) throw new Error('插件正在关闭')
+    if (this.reserved.has(cli)) throw new Error('此 CLI 的账号终端仍在运行或等待关闭，请先关闭账号终端')
+    for (const query of this.statusQueries.values())
+      if (query.cli === cli && !query.settled) throw new Error('此 CLI 的账号状态仍在读取，请稍后再试')
+  }
+
+  recoverCleanup(cli: CliId): void {
+    this.assertCleanupRecoverable(cli)
+    this.unsafeQueries.delete(cli)
+    this.unsafeTerminals.delete(cli)
   }
 
   async status(cli: CliId, cwd: string, signal: AbortSignal): Promise<AccountStatus> {
@@ -376,22 +416,8 @@ export class AccountManager {
     signal: AbortSignal,
     { renew = true }: { renew?: boolean } = {},
   ): Promise<AccountStatus> {
-    if (this.unsafeTerminals.has(cli))
-      return {
-        cli,
-        installed: true,
-        state: 'unavailable',
-        summary: '账号终端尚未确认完全退出，请重启应用',
-        actions: [],
-      }
-    if (this.unsafeQueries.has(cli))
-      return {
-        cli,
-        installed: true,
-        state: 'unavailable',
-        summary: '账号查询未完成清理，请重启应用',
-        actions: [],
-      }
+    const held = this.cleanupHold(cli)
+    if (held) return held
     const timer = new AbortController()
     // Qoder's native account budget includes its acknowledged session teardown.
     const timeout = setTimeout(() => timer.abort(), (cli === 'qoder' || cli === 'qodercn') ? 15_000 : STATUS_TIMEOUT)
@@ -535,8 +561,10 @@ export class AccountManager {
         raw += decoder.end()
       }
       const readers = [read(child.stdout), read(child.stderr)]
+      let finished = false
       try {
         const [outcome] = await abortable(Promise.all([child.done, ...readers]), control)
+        finished = true
         const status = claudeRoute
           ? claudeRouteIdentity(claudeRoute, raw, outcome.exitCode)
           : cli === 'kimi' && outcome.exitCode === 0
@@ -557,27 +585,26 @@ export class AccountManager {
             : [],
         }
       } finally {
+        let exited = false
         try {
-          child.terminate()
-          if (!(await child.waitForExit())) throw new ProcessCleanupUnconfirmedError()
-        } catch {
-          throw new ProcessCleanupUnconfirmedError()
+          // A status command that ran to completion normally empties its own range; terminate only what outlives it.
+          if (finished && !control.aborted) exited = await child.waitForExit(AbortSignal.timeout(METADATA_EXIT_GRACE_MS))
+          if (!exited) {
+            child.terminate()
+            exited = await child.waitForExit()
+          }
+        } catch (error) {
+          throw new ProcessCleanupUnconfirmedError({ cause: error })
         }
+        if (!exited) throw new ProcessCleanupUnconfirmedError()
         await Promise.allSettled([child.done, ...readers])
         raw = ''
         if ('cleanup' in launch) await launch.cleanup?.()
       }
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) {
-        this.unsafeQueries.add(cli)
-        this.onQueryCleanup?.(cli, error)
-        return {
-          cli,
-          installed,
-          state: 'unavailable',
-          summary: '账号查询未完成清理，请重启应用',
-          actions: [],
-        }
+        this.quarantineQuery(cli, error)
+        return { ...this.cleanupHold(cli)!, installed }
       }
       if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
       const code = (error as NodeJS.ErrnoException)?.code
@@ -729,7 +756,7 @@ export class AccountManager {
     if (!capability || capability.target === 'models')
       throw new Error('此版本 CLI 未提供终端登录或账号管理入口')
     if (!this.backend.spawnTerminal) throw new Error('当前宿主不支持交互终端')
-    if (this.unsafeTerminals.has(cli)) throw new Error('账号终端尚未确认完全退出，请重启应用')
+    if (this.unsafeTerminals.has(cli)) throw new Error('账号终端未能确认完全退出，已暂停此 CLI；确认没有残留进程后可在设置中解除暂停')
     if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
     if (this.reserved.has(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
     const directory = projectDirectory(cwd)
@@ -1016,7 +1043,7 @@ export class AccountManager {
         await this.finish(session, 'closed', '启动已取消').catch(() => undefined)
       if (error instanceof Error && error.message === '此 CLI 已有账号终端，请先关闭后重试') throw error
       if (error instanceof ProcessCleanupUnconfirmedError)
-        throw new Error('账号终端尚未确认完全退出，请重启应用')
+        throw new Error('账号终端未能确认完全退出，已暂停此 CLI；确认没有残留进程后可在设置中解除暂停')
       if (timeout.signal.aborted) throw new Error('账号终端启动超时，正在回收启动过程；请稍后重试')
       if (error instanceof ZCodeAccountCapabilityError) throw error
       if (error instanceof AccountLoginGoneError) throw error
@@ -1176,10 +1203,23 @@ export class AccountManager {
 
   /** The native account: agy's own credential store, or this CLI's account status. */
   private evidence(session: AccountSession, signal: AbortSignal): Promise<AccountEvidence | undefined> {
-    if (session.cli === 'antigravity') return this.identity(session.cli, signal)
+    if (session.cli === 'antigravity')
+      return this.identity(session.cli, signal).catch((error: unknown) => {
+        // readStatus quarantines its own unconfirmed reads; the agy identity read is quarantined here.
+        if (error instanceof ProcessCleanupUnconfirmedError) this.quarantineQuery(session.cli, error)
+        throw error
+      })
     // A Hermes window holds off Nous renewal, which a renewing read reports as busy (no rows):
     // Hermes' own account store shows whether the login or logout took effect.
     return this.readStatus(session.cli, session.project, signal, { renew: session.cli !== 'hermes' })
+  }
+
+  /** An ordinary failed read is retried by the caller's poll; an unconfirmed process range ends it. */
+  private readEvidence(session: AccountSession, signal: AbortSignal): Promise<AccountEvidence | undefined> {
+    return this.evidence(session, signal).catch((error: unknown) => {
+      if (error instanceof ProcessCleanupUnconfirmedError) throw error
+      return undefined
+    })
   }
 
   /** Report a proven change, after the native step a login still needs. */
@@ -1223,7 +1263,13 @@ export class AccountManager {
   /** A settled screen with no known step: the native account decides whether it is signed in. */
   private async identifyScreen(session: AccountSession) {
     const signal = session.guideControl!.signal
-    const identity = await this.evidence(session, signal).catch(() => undefined)
+    let identity: AccountEvidence | undefined
+    try {
+      identity = await this.readEvidence(session, signal)
+    } catch {
+      // The unconfirmed read is quarantined; nothing is typed on a guess.
+      return
+    }
     if (signal.aborted || session.state !== 'running' || session.stopping) return
     this.guided(session, session.guide!.identified(identity))
   }
@@ -1242,7 +1288,7 @@ export class AccountManager {
       // The first Enter may only accept the slash-command completion. Never press it
       // again once the account is gone or agy shows its login menu (Enter would sign in).
       await sleep(AGY_GUIDE_TIMING.confirmEnterMs, undefined, { signal })
-      const identity = await this.evidence(session, signal).catch(() => undefined)
+      const identity = await this.readEvidence(session, signal)
       signal.throwIfAborted()
       if (
         identity?.state === 'authenticated' &&
@@ -1267,7 +1313,7 @@ export class AccountManager {
       const before = await session.before
       while (Date.now() < until && session.state === 'running' && !session.stopping) {
         await sleep(AGY_GUIDE_TIMING.watchPollMs, undefined, { signal })
-        const after = await this.evidence(session, signal).catch(() => undefined)
+        const after = await this.readEvidence(session, signal)
         signal.throwIfAborted()
         if (guide.proves('login', before, after, session.exitCode)) {
           await this.proven(session, 'login', signal)
@@ -1288,7 +1334,7 @@ export class AccountManager {
       const before = await session.before
       while (Date.now() < until) {
         await sleep(AGY_GUIDE_TIMING.pollMs, undefined, { signal })
-        const after = await this.evidence(session, signal).catch(() => undefined)
+        const after = await this.readEvidence(session, signal)
         signal.throwIfAborted()
         if (guide.proves(change, before, after, session.exitCode)) {
           // Nothing is left for the user to do in the native terminal.
@@ -1298,8 +1344,9 @@ export class AccountManager {
         // A finished process will not change the account any more.
         if (exited && after) break
       }
-    } catch {
-      return
+    } catch (error) {
+      // Closing the window aborts the poll; an unconfirmed read ends it as unconfirmed.
+      if (signal.aborted || !(error instanceof ProcessCleanupUnconfirmedError)) return
     }
     this.guided(session, guide.unconfirmed(change))
   }

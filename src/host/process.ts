@@ -22,11 +22,25 @@ export interface ProcessBackend {
 }
 /** A process range is still unconfirmed; callers must stop admitting work. */
 export class ProcessCleanupUnconfirmedError extends Error {
-  constructor() {
-    super('CLI catalog process cleanup did not reach quiescence')
+  constructor(options?: ErrorOptions) {
+    super('CLI catalog process cleanup did not reach quiescence', options)
     this.name = 'ProcessCleanupUnconfirmedError'
   }
 }
+/** The host's own reason for an unconfirmed cleanup, for display only: paths removed, one short line. */
+export function cleanupCauseText(error: ProcessCleanupUnconfirmedError): string | undefined {
+  const cause = error.cause
+  const text = cause instanceof AggregateError
+    ? cause.errors.map((item) => (item instanceof Error ? item.message : String(item))).join('; ')
+    : cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause)
+  const line = text
+    .replace(/[A-Za-z]:[\\/][^\s'"]*|\\\\[^\s'"]+|\/(?:[^\s/'"]+\/)+[^\s'"]*/g, '<path>')
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .trim()
+  return line ? (line.length > 160 ? `${line.slice(0, 159)}…` : line) : undefined
+}
+/** How long a finished metadata query may take to empty its own process range before it is terminated. */
+export const METADATA_EXIT_GRACE_MS = 3000
 /** One task's limits, fixed when it starts; settings changed later apply to later tasks only. */
 export interface TaskTimeLimit {
   /** Absolute end of the task (epoch ms), shared by every timer of the run. */

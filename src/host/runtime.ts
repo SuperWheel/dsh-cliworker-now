@@ -49,6 +49,7 @@ import { prepareNativeWorker, transportFor, usesNativeBridge } from './native-wo
 import { BridgeProtocol } from './bridge-protocol.ts'
 import { mkdirSync } from 'node:fs'
 import {
+  cleanupCauseText,
   projectDirectory,
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
@@ -1104,9 +1105,13 @@ export class WorkerRuntime {
     this.revision++
     for (const callback of this.listeners) callback()
   }
-  assertCliEnabled(cli: CliId): void {
+  /** Shutdown and the unattributed global quarantine refuse every CLI. */
+  assertHostOpen(): void {
     if (this.disposed) throw new Error('插件正在关闭')
     if (this.blocked) throw new Error(this.blocked)
+  }
+  assertCliEnabled(cli: CliId): void {
+    this.assertHostOpen()
     if (this.catalogBlocked.has(cli)) throw new Error(this.catalogBlocked.get(cli))
     if (isRetiredCli(cli)) throw new Error(RETIRED_HARNESS_NOTICE)
     if (!this.storage.cliSettings().enabled[cli])
@@ -1118,13 +1123,34 @@ export class WorkerRuntime {
   }
   /** Read-only metadata owns one CLI's account/cache, never another CLI's admission. */
   blockCatalogOnCleanup(cli: CliId, error: ProcessCleanupUnconfirmedError): void {
-    let message = `${CLI_LABELS[cli]} 元数据进程清理尚未确认，已暂停此 CLI：${error.message}`
+    let message = `${CLI_LABELS[cli]} 元数据进程清理尚未确认，已暂停此 CLI：${cleanupCauseText(error) ?? error.message}`
     this.catalogBlocked.set(cli, message)
     try { this.storage.blockCleanup(cli) }
     catch {
       message += '；清理隔离记录保存失败'
       this.catalogBlocked.set(cli, message)
     }
+    this.drain()
+    this.changed()
+  }
+  /** The CLI's own metadata quarantine, if any; the unattributed global one is reported by assertCliEnabled. */
+  catalogCleanupMessage(cli: CliId): string | undefined {
+    return this.catalogBlocked.get(cli)
+  }
+  /**
+   * The user confirmed no process of this CLI is left. Only a CLI-scoped
+   * quarantine is released, and never while this CLI still has work here.
+   */
+  recoverCatalogCleanup(cli: CliId): void {
+    this.assertHostOpen()
+    if (
+      [...this.storage.workers.values()].some(
+        (worker) => !!this.busyReason(worker) && cliOf(worker.preference) === cli,
+      )
+    )
+      throw new Error('此 CLI 还有运行或排队中的任务，请等待结束后再解除暂停')
+    this.storage.clearCleanupBlock(cli)
+    this.catalogBlocked.delete(cli)
     this.drain()
     this.changed()
   }

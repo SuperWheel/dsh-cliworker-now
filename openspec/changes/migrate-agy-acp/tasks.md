@@ -103,7 +103,16 @@
     - ACP 以 `session/load` 载入同一会话 `8e7b768c…`，Worker 仍只绑定这一个会话。
     - 时间线同样先给出「agy 报告此主机没有终端沙箱…」诊断。追加文件的编辑请求出现在子会话的原生审批面板（Worker 框发起），选允许一次，事件为「授权决定：允许一次（DSH 用户）」。
     - 两步文件工具 COMPLETED，结果 SUCCESS。SSH 回读文件 31 字节 `WIN-ACP-agy-OK\nFOLLOWUP-agy-OK\n`，结束后没有 agy 进程残留。
-  - 仍未验证：旧 stream 会话 ID 经 ACP 载入、换号后恢复、附件。本项保持未勾选。
+  - 2026-10-31 Windows 复测（预览包 `preview-20261031-100709`，测试代理按界面操作，每项只发一条、不重试；模型、权限档位与设置未改动）：
+    - 续聊：同一 agy-1 Worker 框（10:47–10:48，Gemini 3.8 Flash Low）要求追加 `BRIDGE-RESUME-agy-OK` 再读回。历史消息连续；编辑请求出现在子会话审批卡，选允许一次；显示「已完成，用时 59秒」。SSH 回读文件三行 `WIN-ACP-agy-OK / FOLLOWUP-agy-OK / BRIDGE-RESUME-agy-OK`（10:48:35 写入）。
+    - 附件：同一 Worker 框用「+ → 文件」选 `cwn-attach-20261031.txt` 后提问（10:50）。消息附带插件的附件路径前缀；事件为 `read_file` 读取该路径 COMPLETED，结果 SUCCESS，回复内容与文件实际内容 `ATTACH-CONTENT-OK-7319` 一致；无「附件尚未接入」提示。
+    - 两次运行的 ACP `session/update` 均为原会话 `8e7b768c…`；Worker 记录 `transport` 仍为 `agy-stream-v1`，状态 completed，无暂停标记。
+    - 同包顺带复测 ZCode 续聊（zcode-1，GLM-5.3-Flash）：新建 `cwn-win-20261031-zcode.txt`，SSH 回读为 `BRIDGE-RESUME-zcode-OK`；ZCode 自述读回被判为冗余，界面上没有读回工具调用。
+  - 2026-10-31 Mac 复测（正式构建 11:01:49；Antigravity 刚退出并由用户重新登录同一账号；测试代理每项只发一条、不重试）：
+    - 旧 stream 会话：Worker「agy-cwn-mac-20261030」于 10-30 19:44 由 stream 创建并只运行过一次（`transport` 为 `agy-stream-v1`，原始记录带 stream 的 stderr 文件）。11:10 在其 Worker 框续聊，历史连续；两次 ACP 运行的 `session/update` 都是原会话 `5d5911cd…`，诊断为「agy 报告此主机有终端沙箱…与 stream 自动审批一致」，无审批卡。文件工具两步 COMPLETED、结果 SUCCESS；回读文件 41 字节 `MAC-TOOL-agy-OK\n\nBRIDGE-RESUME-mac-agy-OK`（11:11:05 写入）。
+    - 附件：同一 Worker 框「+ → 文件」选 `cwn-attach-mac-20261031.txt`，消息带附件路径前缀；事件为读取该文件 COMPLETED，回复 `ATTACH-MAC-OK-4826` 与文件一致。
+    - 结束后无残留 agy 进程。
+  - 仍未验证：换到另一个账号后的恢复（本次只是同一账号退出后重新登录）。Windows 侧那个会话最初是否由 stream 创建无法从记录区分；Mac 侧已有明确的旧 stream 会话经 ACP 续聊证据。本项保持未勾选。
 
 ## Workflow follow-up
 

@@ -599,6 +599,9 @@ function CliSettings({
   const [chosenAction, setChosenAction] = useState<AccountStatus['actions'][number]>()
   const [accountSource, setAccountSource] = useState<AccountSource>()
   const [pathChanging, setPathChanging] = useState(false)
+  // A CLI paused after an unconfirmed cleanup: the user confirms inline before it is released.
+  const [release, setRelease] = useState<'confirm' | 'running'>()
+  const [releaseError, setReleaseError] = useState('')
   const selection = useRef({ model: '', effort: 'default' as Preference['effort'] })
   useEffect(() => {
     const update = () => setWriteState(preferenceSaves.snapshot(cli))
@@ -717,6 +720,26 @@ function CliSettings({
     selection.current = { model: chosen.id, effort }
     setEffort(effort)
     savePreference({ cli, model: chosen.id, effort })
+  }
+  const cleanupBlocked = enabled === true && !account?.error && !!account?.data?.cleanupBlocked
+  useEffect(() => {
+    if (cleanupBlocked) return
+    setRelease(undefined)
+    setReleaseError('')
+  }, [cleanupBlocked])
+  const releasePause = async () => {
+    setRelease('running')
+    setReleaseError('')
+    try {
+      if (!api.cliworker.recoverCliCleanup) throw new Error(t('当前插件 Host 不支持此账号操作，请更新插件后重试'))
+      value(await api.cliworker.recoverCliCleanup(sessionId, cli, new AbortController().signal))
+      setRelease(undefined)
+      preferenceSaves.invalidate(cli)
+      onRefreshAccount(true)
+    } catch (error) {
+      setRelease('confirm')
+      setReleaseError(operationMessage(error))
+    }
   }
   const finishedAccountAction = () => {
     onRefreshAccount(true)
@@ -871,7 +894,21 @@ function CliSettings({
             logout={multiAccount ? undefined : accountAction('logout')}
           />
           <div className="cwn-account-actions">
-            {multiAccount ? (
+            {cleanupBlocked ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                className="cwn-account-login-action"
+                disabled={inactive || accountLoading || !!release || saving || pathChanging}
+                onClick={() => {
+                  setReleaseError('')
+                  setRelease('confirm')
+                }}
+              >
+                {t('解除暂停')}
+              </Button>
+            ) : multiAccount ? (
               <Button
                 type="button"
                 variant="outline"
@@ -897,9 +934,40 @@ function CliSettings({
             ) : (
               accountAction('login')
             )}
-            {accountAction('manage')}
+            {!cleanupBlocked && accountAction('manage')}
           </div>
         </div>
+        {cleanupBlocked && release && (
+          <div className="cwn-cleanup-release" role="group" aria-label={t('解除暂停')}>
+            <div className="cwn-accounts-confirm">
+              <span>
+                {t('请先在任务管理器（Windows）或活动监视器（macOS）中确认没有 {cli} 的残留进程，再解除暂停。解除后会重新读取账号和模型。', { cli: CLI_LABELS[cli] })}
+              </span>
+              <div className="cwn-login-actions">
+                <Button
+                  variant="ghost"
+                  size="md"
+                  disabled={release === 'running'}
+                  onClick={() => {
+                    setRelease(undefined)
+                    setReleaseError('')
+                  }}
+                >
+                  {t('取消')}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={release === 'running' || inactive}
+                  onClick={() => void releasePause()}
+                >
+                  {release === 'running' ? t('正在解除暂停…') : t('确认解除')}
+                </Button>
+              </div>
+            </div>
+            <p className="cwn-settings-feedback-slot" role="status">{releaseError}</p>
+          </div>
+        )}
         {accountsOpen && enabled && (
           <Modal
             open

@@ -51,7 +51,7 @@ function startupMessage(error: unknown): string {
   const safe: MessageKey[] = [
     '此 CLI 已有账号终端，请先关闭后重试',
     '当前宿主不支持交互终端',
-    '账号终端尚未确认完全退出，请重启应用',
+    '账号终端未能确认完全退出，已暂停此 CLI；确认没有残留进程后可在设置中解除暂停',
     'Windows 账号终端托管不可用，请检查 PowerShell 后重试',
     '账号终端启动超时，正在回收启动过程；请稍后重试',
     '无法启动账号终端，请检查 CLI 安装',

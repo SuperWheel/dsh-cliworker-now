@@ -560,7 +560,8 @@ describe('synthetic shared latest Windows PATH resolution', () => {
       spawn: () => ({ stdout, stderr, done: Promise.resolve({ exitCode: 0 }), terminate, waitForExit }) as never,
     }
     await expect(resolveCliExecutable('claude', lookup, DEFAULT_CONFIG)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
-    expect(terminate).toHaveBeenCalledOnce(); expect(waitForExit).toHaveBeenCalledOnce()
+    // A bounded natural-exit wait, then terminate and the confirming wait.
+    expect(terminate).toHaveBeenCalledOnce(); expect(waitForExit).toHaveBeenCalledTimes(2)
   })
   it('keeps explicit known Qoder CN and international native entries isolated', async () => {
     for (const [cli, other] of [['qoder', 'qoderclicn'], ['qodercn', 'qodercli']] as const) {

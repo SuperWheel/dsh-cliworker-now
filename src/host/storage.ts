@@ -407,6 +407,20 @@ export class WorkerStorage {
   blockCleanup(cli?: CliId): void {
     atomicJSON(this.cleanupBlockPath(cli), { policy: 1, state: 'cleanup-unconfirmed' })
   }
+  /** The user's confirmed release of one CLI's metadata quarantine; the unattributed global record has none. */
+  clearCleanupBlock(cli: CliId): void {
+    const path = this.cleanupBlockPath(z.enum(CLI_IDS).parse(cli))
+    let entry
+    try {
+      entry = lstatSync(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    // A damaged record is released the same way; a directory is never ours to remove.
+    if (entry.isDirectory()) throw new Error('清理隔离记录不是文件，无法解除')
+    rmSync(path, { force: true })
+  }
   private cleanupBlockPath(cli?: CliId): string {
     // Only a known read-only query boundary may choose this narrower scope.
     // Old unattributed/task markers retain their original global meaning.

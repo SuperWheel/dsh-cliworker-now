@@ -231,6 +231,15 @@ These are two different budgets:
 
 </details>
 
+<details>
+<summary><strong>Settings say “this CLI is paused”.</strong></summary>
+
+When a CLI process that read the account or models cannot be confirmed to have exited, the plugin pauses sign-in, sign-out, model refresh and dispatch for that CLI so nothing collides with a process that may be left. Other CLIs are unaffected, and restarting Harness does not release it. The notice ends with the reason, with paths removed.
+
+First check Task Manager (Windows) or Activity Monitor (macOS) that no process of that CLI is left, then choose “Release pause” on the account row and confirm. The plugin refuses, and says why, while that CLI still has a running or queued task, an open account terminal or a status read in progress. A failed cleanup of a real task still pauses all dispatch and has no such release.
+
+</details>
+
 More account, path and model rules are in [usage details](doc/usage-details.en.md).
 
 ## Development

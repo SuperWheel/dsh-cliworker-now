@@ -22,7 +22,7 @@ import type {
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import { AccountManager, AGY_GUIDE_TIMING } from '../src/host/accounts.ts'
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
-import { DEFAULT_CONFIG, type ProcessBackend, type RuntimeConfig } from '../src/host/process.ts'
+import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from '../src/host/process.ts'
 import type { CliId } from '../src/shared/types.ts'
 import type { AccountIdentitySource } from '../src/host/account-identity.ts'
 import * as zcodeAccounts from '../src/host/zcode-grok-accounts.ts'
@@ -346,7 +346,10 @@ describe('account status safety (synthetic CLI output)', () => {
       summary: 'Claude 官方登录来源无法确认，请使用原生登录',
     })
     expect(JSON.stringify(claude)).not.toMatch(/SECRET|private@example/)
-    expect(f.statusProcesses.every((child) => vi.mocked(child.terminate).mock.calls.length === 1)).toBe(true)
+    // The Codex app-server stays up and is terminated; a finished one-shot read empties its own range.
+    expect(f.statusProcesses.map((child) => vi.mocked(child.terminate).mock.calls.length)).toEqual(
+      f.statusProcesses.map((child) => (child.stdin ? 1 : 0)),
+    )
     expect(f.statusProcesses.every((child) => vi.mocked(child.waitForExit).mock.calls.length === 1)).toBe(
       true,
     )
@@ -1542,6 +1545,44 @@ describe('Antigravity account terminal guide (synthetic agy screens)', () => {
     expect(f.manager.isBusy('antigravity')).toBe(false)
   })
 
+  it('stops confirming a sign-out and pauses agy when an identity read cannot confirm its cleanup', async () => {
+    fast()
+    const onQueryCleanup = vi.fn()
+    const f = fixture({}, onQueryCleanup)
+    const typed = () => vi.mocked(f.terminal.write).mock.calls.map(([data]) => data)
+    f.identity.mockImplementation(async () => {
+      if (typed().includes('\r')) throw new ProcessCleanupUnconfirmedError({ cause: new Error('isJobEmpty failed for /Users/synthetic/job') })
+      return state('authenticated')
+    })
+    const { id } = await f.manager.start('p', 'antigravity', 'logout', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write(READY)
+    await vi.waitFor(() => expect(watched.steps().at(-1)).toBe('logoutUnconfirmed'))
+    const reads = f.identity.mock.calls.length
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    // No further read is started once a range is unconfirmed.
+    expect(f.identity.mock.calls.length).toBe(reads)
+    expect(onQueryCleanup).toHaveBeenCalledExactlyOnceWith('antigravity', expect.any(ProcessCleanupUnconfirmedError))
+    expect(typed()).toEqual(['/logout', '\r'])
+    await f.manager.stop('p', id)
+    const held = await f.manager.status('antigravity', f.cwd, f.signal)
+    expect(held).toMatchObject({ state: 'unavailable', cleanupBlocked: true, actions: [] })
+    expect(held.summary).toContain('isJobEmpty failed for <path>')
+    expect(f.identity.mock.calls.length).toBe(reads)
+    f.manager.recoverCleanup('antigravity')
+    expect(f.manager.isBusy('antigravity')).toBe(false)
+  })
+
+  it('refuses to release an agy pause while its account terminal is open', async () => {
+    fast()
+    const f = fixture()
+    f.identity.mockResolvedValue(state('authenticated'))
+    const { id } = await f.manager.start('p', 'antigravity', 'login', f.cwd, f.signal)
+    expect(() => f.manager.recoverCleanup('antigravity')).toThrow('账号终端')
+    await f.manager.stop('p', id)
+    expect(() => f.manager.recoverCleanup('antigravity')).not.toThrow()
+  })
+
   it('skips the agy color scheme, waits for the user to agree to the terms, then signs out', async () => {
     fast()
     const f = fixture()
@@ -1604,12 +1645,29 @@ describe('Antigravity account terminal guide (synthetic agy screens)', () => {
   it('types nothing for a signed-out logout terminal and closes it', async () => {
     fast()
     const f = fixture()
+    f.identity.mockResolvedValue(state('unconfigured'))
     const { id } = await f.manager.start('p', 'antigravity', 'logout', f.cwd, f.signal)
     const watched = frames(f, id)
     f.output.write(SIGNED_OUT + METHOD)
     await vi.waitFor(() => expect(watched.seen.at(-1)).toMatchObject({ status: 'closed' }))
     expect(f.terminal.write).not.toHaveBeenCalled()
     expect(watched.steps()).toEqual(['notSignedIn'])
+  })
+
+  it('keeps a logout terminal open and untouched when the login menu shows for a signed-in account', async () => {
+    fast()
+    const f = fixture()
+    f.identity.mockResolvedValue(state('authenticated'))
+    const { id } = await f.manager.start('p', 'antigravity', 'logout', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write(SIGNED_OUT + METHOD)
+    await vi.waitFor(() => expect(watched.steps()).toEqual(['menuUnresolved']))
+    f.output.write(READY)
+    await tick()
+    expect(f.identity).toHaveBeenCalledTimes(1)
+    expect(f.terminal.write).not.toHaveBeenCalled()
+    expect(watched.seen.at(-1)).not.toMatchObject({ status: 'closed' })
+    expect(watched.steps()).toEqual(['menuUnresolved'])
   })
 
   it('logs out from the real signed-in start, which first prints the signed-out line', async () => {

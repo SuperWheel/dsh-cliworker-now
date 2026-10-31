@@ -49,6 +49,8 @@ export interface AccountStatus {
   logins?: AccountLogin[]
   /** A CLI status report or local session metadata, not a remote credential check. */
   verification?: 'cli' | 'local'
+  /** Paused after an unconfirmed process cleanup; the user may release it from settings. Absent on older Hosts. */
+  cleanupBlocked?: boolean
   actions: AccountActionDescriptor[]
 }
 /** How the plugin draws a step of its own sign-in window. */
