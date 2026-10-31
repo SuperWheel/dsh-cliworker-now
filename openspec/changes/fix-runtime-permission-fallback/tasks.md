@@ -21,12 +21,18 @@
 ## 3. 待决与真实验收
 
 - [x] 3.1 Antigravity 的降级目标：用户 2026-10-29 决定「保留仅工作区编辑」（accept-edits + `--dangerously-skip-permissions` + `--sandbox`，能写文件），不改为「仅规划」。规格增量把它写成「不得以更宽模式代替」的唯一例外，代码未变。
-- [ ] 3.2 真实验收：用户重新登录 Antigravity 后，按最便宜选型派遣一次写文件任务，核对时间线降级说明、只有一个会话、文件实际写出；Claude 在当前账号下派遣并续聊一次，核对会话一致。
+- [x] 3.2 真实验收：用户重新登录 Antigravity 后，按最便宜选型派遣一次写文件任务，核对时间线降级说明、只有一个会话、文件实际写出；Claude 在当前账号下派遣并续聊一次，核对会话一致。
   - 2026-10-29 Mac Desktop（正式构建；证据 `.test-data/mac-desktop-20261029b/`，主模型 GLM-5.3-Flash / Max、工作区内修改，Worker 档位默认）：
     - Antigravity（Gemini 3.8 Flash / Low）通过：首轮与续聊两次运行均 completed，时间线各一条「Antigravity 原生自动审批不可用，本轮按仅工作区编辑运行」，`write_file` 均为 DONE，Worker 只绑定一个会话；`od -c` 核对文件为 `MAC-TOOL-agy-OK`、空行、`FOLLOWUP-agy-OK`（空行由 CLI 追加时写入）。
     - Claude Code（Haiku / 默认）首次失败：「原生初始化未确认所选权限；询问模式不可确认时拒绝启动」，即 1.5 的回读问题。修复、正式构建并重启 Desktop 后重测通过：首轮 Write、续聊 Edit 各一次审批卡（均为工作区内目标文件，选允许一次），两次运行均 completed，时间线各一条「Claude Code 原生自动审批不可用，本轮按询问运行」，Worker 只绑定会话 `5e203744…`，未出现会话身份、找不到会话或 RPC 断开错误；文件为 `MAC-TOOL-claude-OK`、`FOLLOWUP-claude-OK` 两行。
     - Windows 尚未复验（Windows 安装包冻结于 1.5 修复之前）。
     - 2026-10-30 Windows 补充：Antigravity 见 4.5。Claude Code 只在 Windows 首轮派遣过一次并成功（`upgrade-host-rc5` 5.3），续聊和会话一致性没有在 Windows 复测，本项仍保持未勾选。
+    - 2026-10-31 Windows 复测（预览包 `preview-20261031-085351`，含 1.5 修复；主模型 GLM-5.3-Flash Low、访问模式与 Worker 档位均未改动；证据 `.test-data/windows-desktop-20261031/ui-claude.{events.jsonl,worker.json,run-a.stderr,run-b.stderr}`）：
+      - Claude Code 用 Claude 自身配置的 API 登录，模型 deepseek-flash / 默认。主 Agent 派遣首轮（08:59，Write 后 Read），随后在 Worker 框续聊一次（09:00，Edit 后 Read）。
+      - 两轮都是「本轮权限：自动审批」，原生自动审批可用，没有降级，也没有审批卡。两轮均 completed，Worker 只绑定会话 `13522f7a…`，没有会话身份、找不到会话或 RPC 断开错误。
+      - 两轮各有一条「CLI 诊断」，内容是 Claude Code 自己报的 `[claude-code:unrecognized_model] {"model":"deepseek-flash",…}`。这是第三方模型名的原生提示，不影响运行。
+      - SSH 回读文件 38 字节 `WIN-TOOL-claude-OK\nFOLLOWUP-claude-OK\n`，结束后没有 claude 进程残留。
+      - Antigravity 在 Windows 已改走 ACP，降级说明与单会话见 4.5 和 `migrate-agy-acp` 的 4.3、4.4。至此 Mac 与 Windows 两边的要求都已实测，本项勾选。
 
 ## 4. Windows 主机没有终端沙箱（2026-10-30）
 

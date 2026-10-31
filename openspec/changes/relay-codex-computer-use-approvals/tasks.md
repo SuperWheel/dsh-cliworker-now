@@ -19,11 +19,17 @@
   - `pnpm typecheck`：Host/Client 通过，当前依赖目标为 DSH 0.2.1-rc.5。
   - `pnpm spec validate relay-codex-computer-use-approvals --strict`：通过。
   - 未执行真实模型/CLI 会话、Windows/Desktop 验收、全量测试或构建部署；未修改版本号、未提交 Git，未读取凭据。共享目录的其他会话改动原样保留。
-- [ ] 2.2 Windows 实机抓取真实请求帧并验证 DSH 审批。
+- [x] 2.2 Windows 实机抓取真实请求帧并验证 DSH 审批。
   - 本次未授权真实 CLI/模型调用，保留未验证；静态重建请求与模拟用例不能代替现场证据。
   - 2026-10-30 23:14：新包 `preview-20261030-230544` 已装入（含本修复）。Windows Codex 升级到 0.166.0 后，经 DSH 在 Windows 派遣 GPT-5.6-Luna / Low，结果 SUCCESS。
     - 文件改动与 PowerShell 命令都正常完成，模型没有改用 Computer Use，所以没有产生授权请求。
     - 真实请求帧和 DSH 审批仍未验证。
+  - 2026-10-31 复测（预览包 `preview-20261031-085351`；Codex GPT-5.6-Luna / Low，Worker 档位为默认的自动审批，主模型 GLM-5.3-Flash Low，均未改动；证据 `.test-data/windows-desktop-20261031/ui-codex-cu-deny.{events.jsonl,raw.jsonl,jpg}`）：
+    - 首轮由主 Agent 派遣，要求只读获取 DSH 窗口标题。Codex 用 `cua.getState()` 列出窗口就拿到了标题，没有连接应用，所以没有授权请求。
+    - 在 Worker 框续聊一次，明确要求用 `cua.getApp` 连接 DSH 窗口再读 `getAXState`。Codex 的 `cua_repl` 调用触发了应用授权。插件发出审批帧：摘要「允许 Computer Use 使用应用：DeepSeek Harness」，详情「MCP：cua_repl / Allow Codex to use DeepSeek Harness?」，`allowSession: true`。审批出现在子会话的原生审批面板，并带工作目录 live-codex。
+    - 09:04:27 选「拒绝」。事件依次为「授权决定：拒绝（DSH 用户）」和诊断「Codex Computer Use 应用授权已拒绝」。随后原生工具调用 failed，返回 `Computer Use was not approved to use DeepSeek Harness`。
+    - Codex 如实报告被拒并停止，没有改用其他方法。本轮结果 SUCCESS（只是回复成功），Worker 已完成，没有误判 ERROR，也没有等到超时。
+    - 为免让 Codex 获得操作 DSH 的权限，只测了拒绝。允许一次和 session 的真实回复没有在 Windows 实测，这两条只有 1.1 的模拟用例。
 
 ## Workflow follow-up
 

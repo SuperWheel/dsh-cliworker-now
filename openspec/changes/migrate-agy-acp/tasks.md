@@ -40,6 +40,7 @@
   - 修复：`spawn`/`openStdio` 新增选项 `reportStderr: false`。设了它的子进程，stderr 仍交给自己的 `onStderr` 和本地尾部，不转给 run。只有 `probeAgyHostSandbox` 使用它；stream 正式运行（含降级重启）照旧上报。
   - 模拟回归：沙箱报告用例核对 run 的 stderr 不含探测警告；撤掉修复时 `account-auto` 与 `host-sandboxless` 两项失败，还原后通过。stream 降级用例新增断言：本轮自己的账号警告仍进 run 的 stderr。
   - 关联测试：agy、ACP、审批转交、输出预算、主路 runner、Hermes 停止共 10 个文件 400 项通过；native-http、native-transport、qoder、zcode 共 258 项通过；`pnpm typecheck` 通过。没有构建预览包，也没有装到 Windows。
+  - Windows 实机（2026-10-31 08:56，用户「装包补测」批准安装）：基于 `3ad34f9` 构建 `preview-20261031-085351`（lib 726 个文件），装入 Windows Desktop 后，在原 agy-1 的 Worker 框续聊一次。时间线没有出现探测的「CLI 诊断」，Windows 上也没有生成本轮的 stderr 文件。修复前同一 Worker 的首轮（08:23）最后一条仍是那条诊断，可对照。证据 `.test-data/windows-desktop-20261031/ui-agy-followup.{events.jsonl,worker.json,raw.jsonl}`。
 
 ## 3. 集成检查
 
@@ -98,6 +99,11 @@
     - SSH 回读：文件 15 字节 `WIN-ACP-agy-OK\n`，用户目录下只有这一份；结束后 Windows 没有 agy 进程残留。
     - 结论：Windows 上命令与需确认的编辑都以 DSH 审批卡片到达主对话页，允许一次后在项目目录实际执行。
 - [ ] 4.4 真实旧 stream ID load/续聊与换号恢复，附件及实际模型执行待验收。
+  - 2026-10-31 Windows 部分（预览包 `preview-20261031-085351`；主模型 GLM-5.3-Flash Low、访问模式与 Worker 档位均未改动）：在 4.3 那个 agy-1 的 Worker 框续聊一次（08:56–08:57，Gemini 3.8 Flash Low），要求追加一行再读回。
+    - ACP 以 `session/load` 载入同一会话 `8e7b768c…`，Worker 仍只绑定这一个会话。
+    - 时间线同样先给出「agy 报告此主机没有终端沙箱…」诊断。追加文件的编辑请求出现在子会话的原生审批面板（Worker 框发起），选允许一次，事件为「授权决定：允许一次（DSH 用户）」。
+    - 两步文件工具 COMPLETED，结果 SUCCESS。SSH 回读文件 31 字节 `WIN-ACP-agy-OK\nFOLLOWUP-agy-OK\n`，结束后没有 agy 进程残留。
+  - 仍未验证：旧 stream 会话 ID 经 ACP 载入、换号后恢复、附件。本项保持未勾选。
 
 ## Workflow follow-up
 
@@ -107,6 +113,6 @@
 
 - 本次 `ps -o pid,ppid,etime,command -p 42276,42388` 被 sandbox 拒绝，未提权；没有用全机进程列表作为清理证据。模拟验证使用自身 PID/进程组的退出读回。
 - 真实 ACP sandbox/auto 报告仍未知，当前保守逐条确认可能比旧 Mac auto 更严格；不能宣称原生等价已验收。旧 stream 工具桥仍有默认目录排序风险，时间线已提示。（2026-10-31 已由 2.6 修复，Mac 等价见 4.1。）
-- 真实模型调用：Windows runner 1 轮（Write-Output 当前目录、写测试文件）。主控 Mac 共 5 轮（new、resume 换项目、new --keep、resume 同项目、stop），均为 Gemini 3.8 Flash Low、空临时目录、命令仅 `pwd -P`，无重试。Windows 界面复测 1 次派遣：Worker 为 Gemini 3.8 Flash Low 1 轮，主 Agent 为用户原有的 GLM-5.3-Flash Low 2 轮，无重试。
+- 真实模型调用：Windows runner 1 轮（Write-Output 当前目录、写测试文件）。主控 Mac 共 5 轮（new、resume 换项目、new --keep、resume 同项目、stop），均为 Gemini 3.8 Flash Low、空临时目录、命令仅 `pwd -P`，无重试。Windows 界面复测 1 次派遣：Worker 为 Gemini 3.8 Flash Low 1 轮，主 Agent 为用户原有的 GLM-5.3-Flash Low 2 轮，无重试。2.7 装包补测时 Worker 框续聊 1 轮（Gemini 3.8 Flash Low），无重试；续聊不经过主 Agent。
 - Windows 界面复测中 agy 原生 `run_command` 输出把中文控制台的 GBK 字节按 UTF-8 解码，「目录」显示为 `Ŀ¼`。原生帧里已经是这样，插件只是原样转交；属于上游 agy，未处理。
 - 同一轮结束时，时间线最后有一条「CLI 诊断」，内容是 `--mode auto is not available …` 的主机警告。ACP 启动参数里没有 `--mode`，这条来自同一 run 的 stream 零输入探测：`native-transport.mjs` 把本 run 所有子进程的 stderr 都经 `onNativeStderr` 记入 run 的 stderr，结束时由 `runtime.ts` 汇总成「CLI 诊断」。内容属实但出现位置容易误解，已由 2.7 修复。
