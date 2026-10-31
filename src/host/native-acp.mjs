@@ -24,10 +24,13 @@ export function acpApprovalRequest(params, sessionOption) {
   const input = isRecord(call.rawInput) ? call.rawInput : {}
   const paths = Array.isArray(call.locations) ? call.locations.map((item) => item?.path).filter(nonempty) : []
   const detail = nonempty(input.command) ? input.command : nonempty(input.CommandLine) ? input.CommandLine : paths.join('\n')
+  const title = nonempty(call.title) ? call.title : '工具调用'
+  // Antigravity titles a command request with the command itself; don't show it twice.
+  const plain = (text) => text.trim().replace(/^`+|`+$/g, '').trim()
   return {
     kind: ACP_KINDS[call.kind] ?? 'tool',
-    summary: (nonempty(call.title) ? call.title : '工具调用').slice(0, 500),
-    ...(detail ? { detail: detail.slice(0, 4000) } : {}),
+    summary: title.slice(0, 500),
+    ...(detail && plain(detail) !== plain(title) ? { detail: detail.slice(0, 4000) } : {}),
     allowSession: !!sessionOption,
   }
 }

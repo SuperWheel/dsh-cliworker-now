@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeKimi } from '../src/host/native-kimi.mjs'
 import { grokAcpArgv, runNativeGrok } from '../src/host/native-grok.mjs'
-import { runNativeAcp } from '../src/host/native-acp.mjs'
+import { acpApprovalRequest, runNativeAcp } from '../src/host/native-acp.mjs'
 import { foldNativeFrames } from './fixtures/bridge-timeline.ts'
 
 const roots: string[] = []
@@ -490,5 +490,18 @@ describe('Native ACP runners (simulated native processes)', () => {
     const { result, records } = await fixture('kimi', 'changed-model')
     expect(result.status).toBe('ERROR')
     expect(records.some((record) => record.method === 'session/cancel')).toBe(true)
+  })
+})
+
+// 模拟：Windows 上 agy 1.4.11 的命令请求以命令本身作为标题。
+describe('ACP approval summary', () => {
+  const ask = (title: string | undefined, command: string) => acpApprovalRequest({ toolCall: { kind: 'execute', title, rawInput: { CommandLine: command } } }, undefined)
+  it('omits the detail when the title already is the command', () => {
+    expect(ask('cmd /c echo ok > out.txt', 'cmd /c echo ok > out.txt')).toEqual({ kind: 'command', summary: 'cmd /c echo ok > out.txt', allowSession: false })
+    expect(ask('`pwd -P` ', 'pwd -P')).not.toHaveProperty('detail')
+  })
+  it('keeps the command when the title differs or is missing', () => {
+    expect(ask('模拟只读命令', 'pwd -P')).toMatchObject({ summary: '模拟只读命令', detail: 'pwd -P' })
+    expect(ask(undefined, 'pwd -P')).toMatchObject({ summary: '工具调用', detail: 'pwd -P' })
   })
 })
