@@ -35,6 +35,11 @@
     - 无报告：不跳过确认（非 Windows 仅 `--sandbox`）。
     时间线分别说明依据；完全权限不探测。规格增量、design、README 双语与 doc/design 已同步。
   - 模拟回归：新增 5 项，覆盖账号警告、无警告 `init`、主机无沙箱、无报告超时、完全权限不探测。核对探测进程不收输入、不带 `--conversation`、已退出，ACP 参数与时间线说明对应。撤掉 `available` 分支后其中 2 项失败，还原后 36/36 通过。
+- [x] 2.7 探测 stderr 不再进 Worker 诊断（2026-10-31，用户要求修掉 Windows 界面复测中看到的问题）。
+  - 问题：`native-transport.mjs` 把同一 run 所有子进程的 stderr 都交给 `onNativeStderr`。沙箱探测读到的 `--mode auto is not available …` 因此记进 run 的 stderr，结束时成了时间线最后一条「CLI 诊断」，看起来像 ACP 本轮报的。
+  - 修复：`spawn`/`openStdio` 新增选项 `reportStderr: false`。设了它的子进程，stderr 仍交给自己的 `onStderr` 和本地尾部，不转给 run。只有 `probeAgyHostSandbox` 使用它；stream 正式运行（含降级重启）照旧上报。
+  - 模拟回归：沙箱报告用例核对 run 的 stderr 不含探测警告；撤掉修复时 `account-auto` 与 `host-sandboxless` 两项失败，还原后通过。stream 降级用例新增断言：本轮自己的账号警告仍进 run 的 stderr。
+  - 关联测试：agy、ACP、审批转交、输出预算、主路 runner、Hermes 停止共 10 个文件 400 项通过；native-http、native-transport、qoder、zcode 共 258 项通过；`pnpm typecheck` 通过。没有构建预览包，也没有装到 Windows。
 
 ## 3. 集成检查
 
@@ -104,4 +109,4 @@
 - 真实 ACP sandbox/auto 报告仍未知，当前保守逐条确认可能比旧 Mac auto 更严格；不能宣称原生等价已验收。旧 stream 工具桥仍有默认目录排序风险，时间线已提示。（2026-10-31 已由 2.6 修复，Mac 等价见 4.1。）
 - 真实模型调用：Windows runner 1 轮（Write-Output 当前目录、写测试文件）。主控 Mac 共 5 轮（new、resume 换项目、new --keep、resume 同项目、stop），均为 Gemini 3.8 Flash Low、空临时目录、命令仅 `pwd -P`，无重试。Windows 界面复测 1 次派遣：Worker 为 Gemini 3.8 Flash Low 1 轮，主 Agent 为用户原有的 GLM-5.3-Flash Low 2 轮，无重试。
 - Windows 界面复测中 agy 原生 `run_command` 输出把中文控制台的 GBK 字节按 UTF-8 解码，「目录」显示为 `Ŀ¼`。原生帧里已经是这样，插件只是原样转交；属于上游 agy，未处理。
-- 同一轮结束时，时间线最后有一条「CLI 诊断」，内容是 `--mode auto is not available …` 的主机警告。ACP 启动参数里没有 `--mode`，这条来自同一 run 的 stream 零输入探测：`native-transport.mjs` 把本 run 所有子进程的 stderr 都经 `onNativeStderr` 记入 run 的 stderr，结束时由 `runtime.ts` 汇总成「CLI 诊断」。内容属实但出现位置容易误解，未改动。
+- 同一轮结束时，时间线最后有一条「CLI 诊断」，内容是 `--mode auto is not available …` 的主机警告。ACP 启动参数里没有 `--mode`，这条来自同一 run 的 stream 零输入探测：`native-transport.mjs` 把本 run 所有子进程的 stderr 都经 `onNativeStderr` 记入 run 的 stderr，结束时由 `runtime.ts` 汇总成「CLI 诊断」。内容属实但出现位置容易误解，已由 2.7 修复。

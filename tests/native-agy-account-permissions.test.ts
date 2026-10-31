@@ -73,16 +73,20 @@ async function setup(scenario = 'early', warning = 'account') {
 }
 async function run(task: any, controller = new AbortController(), observe?: (frame: any, io: any) => void) {
   const frames: any[] = []
-  const io = createNativeIO(task, (line: string) => { const frame = JSON.parse(line); frames.push(frame); observe?.(frame, io) }, controller.signal)
+  let stderr = ''
+  const io = createNativeIO(task, (line: string) => { const frame = JSON.parse(line); frames.push(frame); observe?.(frame, io) }, controller.signal,
+    (chunk: Buffer) => { stderr += chunk.toString('utf8') })
   let error
   try { await runNativeAgy(task, io) } catch (caught) { error = caught }
   await io.close(error)
-  return { frames, error }
+  return { frames, error, stderr }
 }
 
 it.each(['early', 'early-no-init'])('模拟：%s 输入前分块警告先清理旧进程再回退，只发布最终会话且只发送一次任务', async scenario => {
-  const f = await setup(scenario), task = await f.task(), { frames, error } = await run(task)
+  const f = await setup(scenario), task = await f.task(), { frames, error, stderr } = await run(task)
   expect(error).toBeUndefined()
+  // The run's own native warning still reaches the Worker diagnostics; only pre-run probes are quiet.
+  expect(stderr).toContain('--mode auto is not available for this account')
   const rows = await f.rows(), starts = rows.filter(row => row.event === 'start')
   expect(starts.map(row => row.mode)).toEqual(['auto', 'accept-edits'])
   expect(rows.findIndex(row => row.event === 'stopped')).toBeLessThan(rows.indexOf(starts[1]))

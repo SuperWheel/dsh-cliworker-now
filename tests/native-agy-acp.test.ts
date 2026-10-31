@@ -92,7 +92,7 @@ function setup(scenario = 'normal', overrides: any = {}) {
   return { config, rows: () => readFileSync(audit, 'utf8').trim().split('\n').map(line => JSON.parse(line)) }
 }
 async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?: string, auto = true) {
-  const controller = new AbortController(), frames: any[] = []; let error: any
+  const controller = new AbortController(), frames: any[] = []; let error: any, stderr = ''
   const io = createNativeIO(f.config, (line: string) => {
     const frame = JSON.parse(line); frames.push(frame)
     if (frame.type === 'approval') {
@@ -100,10 +100,10 @@ async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?:
       else if (decide !== 'pending') setTimeout(() => void io.answerApproval(JSON.stringify({ decision: decide, source: 'user' }), frame.id).catch(() => {}), f.config.env.SCENARIO === 'permission-late' ? 50 : 0)
     }
     if (abortAt === 'text' && frame.event?.kind === 'assistant') controller.abort(new Error('模拟停止'))
-  }, controller.signal)
+  }, controller.signal, (chunk: Buffer) => { stderr += chunk.toString('utf8') })
   try { await (auto ? runNativeAgyAuto : runNativeAgyAcp)(f.config, io) } catch (e) { error = e }
   await io.close(error)
-  return { frames, error, result: frames.at(-1), rows: f.rows() }
+  return { frames, error, result: frames.at(-1), rows: f.rows(), stderr }
 }
 
 it('模拟：按实际 --stdio 能力探测，不猜版本', async () => {
@@ -261,6 +261,8 @@ it.each([
   expect(probe.argv).not.toContain('--conversation')
   expect(r.rows.filter(x => x.event === 'user')).toHaveLength(0)
   expect(() => process.kill(probe.start, 0)).toThrow()
+  // The probe's warning decides the argv but is not reported as the run's CLI diagnostics.
+  expect(r.stderr).not.toMatch(/--mode auto is not available/)
   expect(acp.argv).toContain('acp')
   expect(acp.argv.includes('--dangerously-skip-permissions')).toBe(skip)
   expect(acp.argv.includes('--sandbox')).toBe(report === 'available' || (report === undefined && process.platform !== 'win32'))

@@ -321,7 +321,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
         onNativeOutput()
         if (isError) {
           stderr = (stderr + chunk.toString('utf8')).slice(-8192)
-          onNativeStderr(chunk)
+          // A pre-run probe reads its own stderr; only the run's CLI output becomes Worker diagnostics.
+          if (options.reportStderr !== false) onNativeStderr(chunk)
         }
         try {
           Promise.resolve(callback?.(chunk)).catch(fail)

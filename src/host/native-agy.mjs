@@ -109,7 +109,7 @@ export async function probeAgyHostSandbox(config, io) {
   const probe = { ...config, argv, conversationId: undefined, mode: 'accept-edits', access: 'workspace-write' }
   let settle, stderr = '', initTimer
   const report = new Promise(resolve => { settle = resolve })
-  const peer = await io.openStdio(nativeAgyArgv(probe, modes), { env: config.env, cwd: config.project,
+  const peer = await io.openStdio(nativeAgyArgv(probe, modes), { env: config.env, cwd: config.project, reportStderr: false,
     onMessage(value) { if (value?.event === 'init') initTimer ??= setTimeout(() => settle('available'), 50) },
     onStderr(chunk) {
       stderr = (stderr + chunk.toString('utf8')).slice(-8192)
