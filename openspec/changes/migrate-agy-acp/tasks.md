@@ -64,11 +64,11 @@
   - `real-mac-resume-same.json`：同一项目续聊会话 `4ee0675e…`，加载后 ID 一致，沙箱探测为 `available`、无审批，`pwd -P` 仍为同一项目目录，MCP 再次加载并调用，结果 SUCCESS；临时目录已删除。
   - `real-mac-stop.json`：发出 prompt 3 秒后停止，结果 ERROR，进程范围退出，没有强制清理，临时目录已删除。
   - 额外观察 `real-mac-resume.json`：续聊会话 `99a5c4ab…` 改用另一个新建的临时项目（原项目已删除），会话 ID 一致、命令执行、MCP 正常，但本轮输出不等于新项目。当时没有记录输出，无法判断命令实际在哪个目录执行。生产中续聊总在同一项目，此情形不影响结论，记录备查。
-- [ ] 4.2 核实 ACP 工作区编辑是否请求权限、Mac 自动审批等价行为、无沙箱与账号不支持时的原生报告；零模型不足以证明。
-  - Mac 自动审批等价：已由 2.6 与 4.1 实测确认（探测为 `available` → 跳过确认，命令在沙箱内执行，无审批）。
-  - 无沙箱时 ACP 的原生报告：零模型探测显示 ACP 自身不报告；Windows 实际依据为 stream 零输入探测，见 4.3。
-  - 工作区编辑是否请求权限：Mac 跳过确认时无从观察。Windows 实测（4.3 runner 一轮）中，项目内 `write_file` 没有发 `request_permission`，由 agy 自行放行并写出；只有命令请求了审批。这只是一次观察，时间线仍说「由原生请求决定」，不宣称一定不询问。
-- [ ] 4.3 Windows 升级获准后补验。
+- [x] 4.2 核实 ACP 工作区编辑是否请求权限、Mac 自动审批等价行为、无沙箱与账号不支持时的原生报告；零模型不足以证明。
+  - Mac 自动审批等价：已由 2.6 与 4.1 实测确认（探测为 `available` → 跳过确认，命令在沙箱内执行，无审批）。Mac 的探测依据是账号不支持 `auto` 的那句警告，这也是账号不支持时的原生报告。
+  - 无沙箱时 ACP 的原生报告：零模型探测显示 ACP 自身不报告；Windows 实际依据为 stream 零输入探测读到的主机警告，runner 与界面两轮都判定 `unavailable`，见 4.3。
+  - 工作区编辑是否请求权限：Mac 跳过确认时无从观察。Windows 两轮真实结果不同：runner 一轮中项目内 `write_file` 没有发 `request_permission`，由 agy 自行放行；界面一轮中同样是项目内 `write_file`，却发了 `kind: edit` 的 `request_permission`（选项只有 allow_once/reject_once），经 DSH 卡片允许一次后写出。所以是否询问由 agy 决定，时间线「由原生请求决定」的说法成立，插件两种情况都能处理。
+- [x] 4.3 Windows 升级获准后补验。
   - 2026-10-31 用户批准升级并复测。Windows 自带 `agy update` 下载超时失败（`Download interrupted: context deadline exceeded`），版本仍为 1.4.7。改为按官方 install.ps1 的方式手动替换：在 Mac 下载官方 manifest 指向的 1.4.11 Windows 版并校验 SHA512，传到 Windows 后再次校验；确认无 agy 进程，备份 1.4.7，用 `Copy-Item` 覆盖 `%LOCALAPPDATA%\agy\bin\agy.EXE`。`agy --version` 为 1.4.11，`acp --help` 列出 `--stdio`。
   - 预览包 `preview-20261031-020458` 已装入 Windows Desktop：确认 Harness 下没有 CLI 子进程后从应用菜单退出；installerExit 0，lib 726/726 一致，runtime 0.2.1-rc.5；以 `--force-renderer-accessibility` 重启。
   - 零模型 ACP 探测（`sandbox-probe-win*.json`）：Windows 1.4.11 只发 `initialize`/`session/new`，三种参数下都没有沙箱提示。经 SSH 启动时 `session/new` 返回 `Authentication required`；在交互式桌面会话中正常（账号档位 Google AI Pro）。
@@ -80,6 +80,18 @@
     - `run_command` 只来了一条 `command` 审批，`detail` 正是该命令，`allowSession` 为 false，选允许一次。命令 COMPLETED，exit_code 0，输出 `PWD=C:\Users\admin\AppData\Local\Temp\agy-acp-win-D2CuAR\project`，即项目目录。脚本的 `cwdVerified` 为 false，是比对 bug：输出被 JSON 转义，反斜杠成双，没有匹配上；原始输出与项目路径一致。
     - 结果 SUCCESS，回复包含三步输出；进程在 `io.close` 时已全部退出（`aliveAfterClose` 为空）；临时目录已删除。
     - 结论：Windows 自动审批档的命令经审批后在项目目录实际执行，修复了 4.5（`fix-runtime-permission-fallback`）记录的「命令被拒、无最终回复」。DSH 界面上的审批卡片仍待解锁后验证。
+  - Desktop 界面复测（08:22–08:25，用户解锁后；预览包同上，主模型 GLM-5.3-Flash Low、访问模式工作区内修改，均未改动；证据 `.test-data/windows-desktop-20261031/ui-agy-acp.{events,raw}.jsonl`、`ui-agy-acp.worker.json`、`ui-agy-acp.raw.stderr`）：
+    - 解锁后 Computer Use 两次截到 DSH 窗口全黑（`cu-run-agy-acp-retest{,2}.json`，均未发送消息）；同时在交互桌面用 GDI 截屏有画面。中继是 02:08 锁屏期间启动的，停止并重启后截图正常。之后由主控直接驱动 Computer Use，不经模型。
+    - 在 live-codex 的空新会话发送派遣请求；问题卡片「是否沿用 Gemini 3.8 Flash · Low · 不使用角色预设？」选沿用。Worker 档位为默认的「自动审批」，未改动。
+    - 时间线第 5 条诊断为「Antigravity ACP 自动审批：agy 报告此主机没有终端沙箱，原生请求逐条经 DSH 审批，仅允许一次；工作区编辑是否询问由原生请求决定」，Worker 记录 `mode: accept-edits`。
+    - 主对话页先后出现两张「agy-1（Antigravity）请求授权」卡片，都带工作目录 `C:\Users\admin\cw081f1\live-codex`，选项只有「允许一次」「拒绝」：
+      - 第一张是 `File cwn-win-20261031-agy.txt`，路径在 live-codex 内，原生帧为 `write_file` 的 `kind: edit`；
+      - 第二张是命令 `Get-ChildItem`，原生帧为 `run_command` 的 `kind: execute`。
+      - 两张都选允许一次。事件记为「授权决定：允许一次（DSH 用户）」，随后是「CLI 额外权限请求已批准」。
+    - 三步工具全部 COMPLETED：`write_file`、`read_file`、`run_command`。命令退出码 0，输出标题为 `C:\Users\admin\cw081f1\live-codex`。
+    - 结果 SUCCESS，Worker 已完成（1 分 11 秒），回复含三步结果；主 Agent 回复一致。主 Agent 自己调 pwsh 复核时仍报 0xC0000142，改用文件工具，这是 Harness 核心的已知问题。
+    - SSH 回读：文件 15 字节 `WIN-ACP-agy-OK\n`，用户目录下只有这一份；结束后 Windows 没有 agy 进程残留。
+    - 结论：Windows 上命令与需确认的编辑都以 DSH 审批卡片到达主对话页，允许一次后在项目目录实际执行。
 - [ ] 4.4 真实旧 stream ID load/续聊与换号恢复，附件及实际模型执行待验收。
 
 ## Workflow follow-up
@@ -90,4 +102,6 @@
 
 - 本次 `ps -o pid,ppid,etime,command -p 42276,42388` 被 sandbox 拒绝，未提权；没有用全机进程列表作为清理证据。模拟验证使用自身 PID/进程组的退出读回。
 - 真实 ACP sandbox/auto 报告仍未知，当前保守逐条确认可能比旧 Mac auto 更严格；不能宣称原生等价已验收。旧 stream 工具桥仍有默认目录排序风险，时间线已提示。（2026-10-31 已由 2.6 修复，Mac 等价见 4.1。）
-- 真实模型调用：Windows runner 1 轮（Write-Output 当前目录、写测试文件）。主控 Mac 共 5 轮（new、resume 换项目、new --keep、resume 同项目、stop），均为 Gemini 3.8 Flash Low、空临时目录、命令仅 `pwd -P`，无重试。
+- 真实模型调用：Windows runner 1 轮（Write-Output 当前目录、写测试文件）。主控 Mac 共 5 轮（new、resume 换项目、new --keep、resume 同项目、stop），均为 Gemini 3.8 Flash Low、空临时目录、命令仅 `pwd -P`，无重试。Windows 界面复测 1 次派遣：Worker 为 Gemini 3.8 Flash Low 1 轮，主 Agent 为用户原有的 GLM-5.3-Flash Low 2 轮，无重试。
+- Windows 界面复测中 agy 原生 `run_command` 输出把中文控制台的 GBK 字节按 UTF-8 解码，「目录」显示为 `Ŀ¼`。原生帧里已经是这样，插件只是原样转交；属于上游 agy，未处理。
+- 同一轮结束时，时间线最后有一条「CLI 诊断」，内容是 `--mode auto is not available …` 的主机警告。ACP 启动参数里没有 `--mode`，这条来自同一 run 的 stream 零输入探测：`native-transport.mjs` 把本 run 所有子进程的 stderr 都经 `onNativeStderr` 记入 run 的 stderr，结束时由 `runtime.ts` 汇总成「CLI 诊断」。内容属实但出现位置容易误解，未改动。
