@@ -116,4 +116,3 @@
     - 选型卡中 step-3.7-flash:free 提供 Low/Medium/High。选 Low 后 Worker 完成：`write_file`、`read_file`、`search_files` 均成功。
     - 经 SSH 回读文件，内容为 `WIN-TOOL-hermes-OK`。
   - 只逐项核对了 step-3.7-flash 的强度。其余 5 个模型的强度菜单没有逐一打开。证据见 `.test-data/windows-desktop-20261030/cu-run-final.json`。
-

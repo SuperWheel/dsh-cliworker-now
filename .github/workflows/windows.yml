@@ -43,6 +43,11 @@ jobs:
           tests/native-launch.test.ts tests/pi-omp-identity.test.ts
           tests/adapters.test.ts tests/account-login.test.ts
           tests/model-presentation.test.ts
+          tests/windows-account-owner.test.ts tests/windows-account-terminal.test.ts
+          tests/windows-cli-resolution.test.ts tests/windows-codex-launch.test.ts
+          tests/windows-system-proxy.test.ts tests/opencode-windows-login.test.ts
+          tests/zcode-grok-windows-regression.test.ts tests/authorized-catalog-windows-agy.test.ts
+          tests/native-agy-acp.test.ts tests/agy-account-guide.test.ts
           --reporter=default --reporter=json
           --outputFile=.test-data/windows-ci-tests.json
       - name: Install official CLI fixtures

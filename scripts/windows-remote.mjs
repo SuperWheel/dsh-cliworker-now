@@ -107,7 +107,7 @@ export function verifyRemoteReport(report, testBytes, state) {
   if (!tests.success || report.tests?.success !== true || tests.numFailedTests !== 0 || !tests.numPassedTests || tests.numPassedTests + tests.numPendingTests !== tests.numTotalTests) throw new Error('Windows test JSON does not confirm passed tests')
   for (const [key, source] of Object.entries({ passed: 'numPassedTests', failed: 'numFailedTests', pending: 'numPendingTests', total: 'numTotalTests' })) if (report.tests?.[key] !== tests[source]) throw new Error('Windows report and test JSON disagree')
   const paths = tests.testResults?.map((result) => result.name.replaceAll('\\', '/')) ?? []
-  if (paths.length !== WINDOWS_TESTS.length || WINDOWS_TESTS.some((file) => !paths.some((path) => path.endsWith(`/${file}`)))) throw new Error('Windows evidence does not cover the seven CI test files')
+  if (paths.length !== WINDOWS_TESTS.length || WINDOWS_TESTS.some((file) => !paths.some((path) => path.endsWith(`/${file}`)))) throw new Error('Windows evidence does not cover every Windows CI test file')
   const skipped = tests.testResults.flatMap((result) => result.assertionResults.filter((assertion) => assertion.status === 'pending' || assertion.status === 'skipped').map((assertion) => ({ file: result.name.replaceAll('\\', '/'), title: assertion.title })))
   if (skipped.length !== tests.numPendingTests || skipped.some((skip) => !skip.file.endsWith('/tests/pi-omp-identity.test.ts') || skip.title !== 'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry')) throw new Error('Unexpected skipped Windows test; inspect its evidence')
   return true
@@ -122,7 +122,7 @@ Config (local private JSON; all fields required):
 {"host":"WINDOWS-LAN-HOST","user":"WINDOWS-USER","identity":"/absolute/private-key","knownHosts":"/absolute/verified-known-hosts","remoteRoot":"C:/Users/WINDOWS-USER/AppData/Local/cliworker-now-remote"}
 
 Builds an isolated Mac preview, transfers allowlisted source and that package,
-runs frozen native dependencies, typecheck, seven Windows CI files and Host load.
+runs frozen native dependencies, typecheck, the Windows CI files and Host load.
 Evidence: .test-data/windows-remote/runs/<id>. No model calls or Desktop changes.
 Requires pnpm and system ssh/scp on Mac, native Node >=22.19 and Windows tar.
 Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys into config.`)

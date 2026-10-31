@@ -914,7 +914,8 @@ describe('native primary runners (synthetic protocol processes, no real accounts
       const { result } = await run(cli, scenario, false)
       expect(result.status, `${cli}: ${scenario}`).toBe('ERROR')
     }
-  }, 10_000)
+    // Antigravity launches a --help mode probe before each run: twice the processes per scenario.
+  }, 20_000)
   it.each(['codex', 'claude', 'antigravity'] as const)('%s reports a recovered tool failure as success with the failed step count', async (cli) => {
     const { result, frames } = await run(cli, 'tool-recovered', false)
     expect(result).toMatchObject({ status: 'SUCCESS', notice: '本轮有 1 个工具步骤失败，CLI 已自行处理' })

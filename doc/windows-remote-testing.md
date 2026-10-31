@@ -47,10 +47,10 @@ pnpm --config.verifyDepsBeforeRun=false test:windows:remote --help
 这个入口按以下阶段执行：
 
 1. 校验连接配置及允许列表源码，构建 Mac 隔离 preview 并打包；不会运行覆盖当前 Desktop `lib` 的正式构建。
-2. 传送源码快照、清单和 Mac 包，核对接收文件哈希。快照包含允许的包配置、锁文件、`pnpm-workspace.yaml`、整个 `src` 和 `tests` 目录、构建脚本（`build.mjs`、`build-preview.mjs`、`build-dependencies.mjs`、`host-runtime.mjs`、`host-extension-guard.mjs`）、`runtime-host/` 及构建/测试配置；`runtime-host/` 必须与其 `manifest.json` 清单逐项一致（文件集合、字节数与 SHA-256）。测试源码随快照传送，执行限定为下列七个文件。不包含 Mac `node_modules`、凭据和用户运行数据，不跟随目录链接。
+2. 传送源码快照、清单和 Mac 包，核对接收文件哈希。快照包含允许的包配置、锁文件、`pnpm-workspace.yaml`、整个 `src` 和 `tests` 目录、构建脚本（`build.mjs`、`build-preview.mjs`、`build-dependencies.mjs`、`host-runtime.mjs`、`host-extension-guard.mjs`）、`runtime-host/` 及构建/测试配置；`runtime-host/` 必须与其 `manifest.json` 清单逐项一致（文件集合、字节数与 SHA-256）。测试源码随快照传送，执行限定为下列定向文件。不包含 Mac `node_modules`、凭据和用户运行数据，不跟随目录链接。
 3. 在 Windows 专用根目录准备工具。`tools` 中安装项目固定的 pnpm（当前为 `11.25.0`），各次运行放入不同编号的 `runs` 目录；不做全局 pnpm 或 Harness 安装。
 4. 在该次 Windows 源码目录使用 `--frozen-lockfile` 安装依赖，继承 `pnpm-workspace.yaml` 的 native 构建许可。Windows native 库必须在 Windows 本机安装，不能复用 Mac 依赖，也不能省略必要的 native 安装来凑出通过结果。
-5. 按源码快照中的 `runtime-host/manifest.json` 校验包条目：`package/runtime-host/` 只能含清单文件及其上级目录，缺项或多项均拒绝；解包后再逐文件核对摘要。随后将其生成的 lib/协议声明复制到本次源码测试目录，执行类型检查和下列现有 Windows CI 七个测试文件；Host 入口加载仍指向原 Mac 包，并使用 Windows 本机依赖。
+5. 按源码快照中的 `runtime-host/manifest.json` 校验包条目：`package/runtime-host/` 只能含清单文件及其上级目录，缺项或多项均拒绝；解包后再逐文件核对摘要。随后将其生成的 lib/协议声明复制到本次源码测试目录，执行类型检查和下列 Windows CI 定向测试文件；Host 入口加载仍指向原 Mac 包，并使用 Windows 本机依赖。
 6. 取回报告、Vitest JSON 及阶段日志，核对测试结果、阶段退出码和包哈希。工具保留证据目录，只清理自身锁及进程。
 
 定向测试文件与 [Windows CI](../.github/workflows/windows.yml) 一致：
@@ -63,13 +63,25 @@ tests/pi-omp-identity.test.ts
 tests/adapters.test.ts
 tests/account-login.test.ts
 tests/model-presentation.test.ts
+tests/windows-account-owner.test.ts
+tests/windows-account-terminal.test.ts
+tests/windows-cli-resolution.test.ts
+tests/windows-codex-launch.test.ts
+tests/windows-system-proxy.test.ts
+tests/opencode-windows-login.test.ts
+tests/zcode-grok-windows-regression.test.ts
+tests/authorized-catalog-windows-agy.test.ts
+tests/native-agy-acp.test.ts
+tests/agy-account-guide.test.ts
 ```
+
+发布验收不再在 Windows 上跑隔离环境全量 vitest：v0.8.2–v0.8.4 每轮失败集合都不同、正常环境串行重跑全部通过、根因未定位，排查成本高于收益。涉及 Windows 平台代码的改动，应把对应测试文件加入此清单和 Windows CI。
 
 子进程的用户目录、npm 配置、缓存和 Harness 配置使用隔离环境。工具不改变现有 CLI 安装、账号或 Desktop 配置，也不要求把 Harness 命令加入全局 PATH。首次工具或依赖安装需要联网；测试过程中不发送模型任务。
 
 ## 4. 验收结果及边界
 
-以本次回传的报告和实际日志为准。成功至少需要：源码与包校验完成、锁文件依赖安装成功、类型检查成功、七个定向文件的测试结果成功、Mac 包 Host 入口加载成功，以及结果下载和哈希核对成功。测试数量由本次 Vitest JSON 统计，不能套用历史版本数字。
+以本次回传的报告和实际日志为准。成功至少需要：源码与包校验完成、锁文件依赖安装成功、类型检查成功、全部定向文件的测试结果成功、Mac 包 Host 入口加载成功，以及结果下载和哈希核对成功。测试数量由本次 Vitest JSON 统计，不能套用历史版本数字。
 
 报告记录 Windows 架构、Node/pnpm 版本、源码和插件包哈希、阶段状态及测试结果。任一阶段失败时整体非零退出，并尽可能取回已产生的日志；缺失或中断的阶段不等于通过。Windows 上只允许 `pi-omp-identity.test.ts` 中已知的 POSIX Pi launcher 用例跳过，并保留跳过计数；它不算通过，其他跳过项会使验收失败。
 
