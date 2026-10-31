@@ -84,7 +84,7 @@ dsh plugin --profile desktop add dsh-cliworker-now@latest
 完成后重新打开 Harness。`dsh` 命令可在 Desktop 菜单“管理 dsh 命令…”中启用。Web profile 把 `desktop` 换成 `web`；也可以在插件页“添加插件”中输入 `dsh-cliworker-now@latest`。
 
 - 启动 Harness 不会自动更新插件。pnpm 11 默认等待新版本发布满 24 小时，期间可能仍装到旧版，可用 `dsh plugin --profile desktop ls dsh-cliworker-now --depth=0` 核对。
-- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.8.4/dsh-cliworker-now-0.8.4.tgz`，每个 Release 附 `SHA256SUMS.txt`。
+- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.8.5/dsh-cliworker-now-0.8.5.tgz`，每个 Release 附 `SHA256SUMS.txt`。
 - 安装包自带原生子对话所需的界面扩展，无需手工构建宿主；卸载插件即恢复官方界面。与已有界面覆盖冲突时启动预检会明确拒绝，不改动你的配置，详见 [runtime-host](runtime-host/README.md)。
 - 已知限制：在 dshmarket 1.70.1 中热切换启用/禁用此插件可能使当前窗口白屏，市场的重启提示不能保证热切换安全；切换后请完全重启 Harness，停用后的冷启动可恢复 stock 界面。根因在市场热切换流程，已向上游报告（[dsh-market/dsh-market#1010](https://github.com/dsh-market/dsh-market/issues/1010)），详见 [白屏调查及验证边界](doc/blank-toggle-investigation.md)。聊天展示和忙时 Enter 等原生偏好仍保存在原设置项中。
 - 卸载：`dsh plugin --profile desktop remove dsh-cliworker-now`，保留本机账号、历史会话和偏好。

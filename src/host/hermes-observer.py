@@ -200,7 +200,7 @@ def install_observer():
         except Exception:
             pass
 
-    context = PluginContext(PluginManifest(name="cliworker-observer", version="0.8.4", source="user"), get_plugin_manager())
+    context = PluginContext(PluginManifest(name="cliworker-observer", version="0.8.5", source="user"), get_plugin_manager())
     try:
         for hook, phase in (("pre_api_request", "request"), ("post_api_request", "response"), ("api_request_error", "error")):
             handles.append(context.register_hook(hook, lambda _phase=phase, **payload: observe(_phase, **payload)))
