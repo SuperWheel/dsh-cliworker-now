@@ -230,3 +230,35 @@ it('keeps proven response identity and per-call usage when Worker events are reo
   expect(cold.history(f.worker.id).at(-1)?.response).toEqual(response)
   expect(foldEvents(cold.history(f.worker.id)).at(-1)?.response).toEqual(response)
 })
+
+describe('over-long tool commands', () => {
+  const longCommand = `powershell.exe -Command '${'x'.repeat(40_000)}'`
+
+  it('loads a persisted log whose tool command exceeds the display limit', () => {
+    const f = fixture()
+    const row = JSON.parse(readFileSync(f.eventPath, 'utf8'))
+    const tool = { seq: 2, runId: f.worker.runId, time: f.worker.updatedAt, kind: 'tool', text: 'shell', toolCall: { callId: 'call-1', command: longCommand } }
+    writeFileSync(f.eventPath, [row, tool].map((value) => JSON.stringify(value) + '\n').join(''))
+    const store = new WorkerStorage(f.dir)
+    cleanup.push(() => store.close())
+    const history = store.history(f.worker.id)
+    expect(history).toHaveLength(2)
+    expect(history[1].toolCall?.callId).toBe('call-1')
+    expect(history[1].toolCall?.command).toBe(longCommand.slice(0, 32768))
+  })
+
+  it('clips a long command when appending so the next start reads it back', () => {
+    const f = fixture()
+    const store = new WorkerStorage(f.dir)
+    store.append(f.worker, { kind: 'tool', text: 'shell', toolCall: { callId: 'call-1', command: longCommand } })
+    // A surrogate pair straddling the limit is dropped whole rather than split.
+    store.append(f.worker, { kind: 'tool', text: 'shell', toolCall: { command: 'a'.repeat(32767) + '😀tail' } })
+    store.close()
+    const persisted = readFileSync(f.eventPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    expect(persisted[1].toolCall.command).toHaveLength(32768)
+    expect(persisted[2].toolCall.command).toBe('a'.repeat(32767))
+    const reopened = new WorkerStorage(f.dir)
+    cleanup.push(() => reopened.close())
+    expect(reopened.history(f.worker.id).map((event) => event.toolCall?.command?.length)).toEqual([undefined, 32768, 32767])
+  })
+})

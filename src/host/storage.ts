@@ -190,6 +190,17 @@ const workerSchema = z.object({
   isolationNotice: z.string().max(2000).optional(),
   resultNotice: z.string().max(2000).optional(),
 })
+/**
+ * A tool command is display text. An over-long one (a long inline script) is
+ * clipped rather than rejected, so it can never stop the Host from loading its
+ * own event log.
+ */
+export const TOOL_COMMAND_LIMIT = 32768
+function clipToolCommand(command: string): string {
+  if (command.length <= TOOL_COMMAND_LIMIT) return command
+  const end = /[\uD800-\uDBFF]/.test(command[TOOL_COMMAND_LIMIT - 1]) ? TOOL_COMMAND_LIMIT - 1 : TOOL_COMMAND_LIMIT
+  return command.slice(0, end)
+}
 const eventSchema = z.object({
   requestState: z.object({
     nativeRunId: z.string().regex(/^[\w-]{1,256}$/),
@@ -224,7 +235,8 @@ const eventSchema = z.object({
       name: z.string().min(1).max(1024).optional(),
       input: z.unknown().optional(),
       output: z.unknown().optional(),
-      command: z.string().max(32768).optional(),
+      // Logs written before append clipped commands may hold longer ones; they still load.
+      command: z.string().transform(clipToolCommand).optional(),
       exitCode: z.number().int().safe().optional(),
     })
     .optional(),
@@ -797,6 +809,9 @@ export class WorkerStorage {
   }
   append(worker: Worker, event: Omit<WorkerEvent, 'seq' | 'runId' | 'time'>): void {
     const rows = this.history(worker.id)
+    const command = event.toolCall?.command
+    if (command !== undefined && command.length > TOOL_COMMAND_LIMIT)
+      event = { ...event, toolCall: { ...event.toolCall, command: clipToolCommand(command) } }
     const row = { ...event, seq: rows.length + 1, runId: worker.runId, time: new Date().toISOString() }
     appendFileSync(join(this.directory, `${worker.id}.events.jsonl`), JSON.stringify(row) + '\n', {
       mode: 0o600,
