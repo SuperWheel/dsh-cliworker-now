@@ -1,9 +1,10 @@
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { agentEvents, assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { CliWorkerService } from '../src/host/index.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
@@ -195,7 +196,7 @@ async function fixture() {
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   const agent = {
     id: 'synthetic-parent',
     session: { header: { cwd: '/synthetic/project' } },

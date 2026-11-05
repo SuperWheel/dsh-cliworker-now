@@ -25,7 +25,12 @@ export interface InboxState {
     /** Message ids in the current claim, shared until the next claim. */
     readonly currentClaimed: ReadonlySet<string>;
     readonly claimSeq: number;
-    readonly claimedHuman: boolean;
+    /**
+     * First human message id of the current claim in Inbox order; undefined
+     * when the claim took no human message. The AgentLoop logs a claim's
+     * messages in this order, so this message is the claim's first steering row.
+     */
+    readonly firstClaimedHuman: string | undefined;
 }
 /** Persistent next-step claims identify messages admitted into a running Turn. */
 export declare const nextStepInboxDefinition: ConversationNodeDefinition<InboxState>;

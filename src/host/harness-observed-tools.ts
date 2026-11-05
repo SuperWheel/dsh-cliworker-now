@@ -1,6 +1,6 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId, type ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { ToolRunContext, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
+import type { ToolDefinition, ToolRunContext, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { truncationNote, type TimelineItem } from '../shared/types.ts'
 import type {
   HarnessConversationDependencies,
@@ -11,6 +11,42 @@ const json = (value: unknown) => JSON.stringify(value) ?? 'null'
 const terminal = (state?: string) =>
   /^(?:COMPLETED|COMPLETE|DONE|SUCCESS|FAILED|ERROR|CANCELLED|CANCELED)$/u.test(state ?? '')
 const failed = (state?: string) => /^(?:FAILED|ERROR|CANCELLED|CANCELED)$/u.test(state ?? '')
+
+const receiptExecutors = new WeakMap<Agent, Promise<Set<ToolDefinition>>>()
+
+/**
+ * CLI receipt names arrive after model-step admission has been snapshotted.
+ * This child-owned executor admits only our live receipt definitions, whose
+ * bodies verify the exact run/call/arguments and never execute real tools.
+ * It lives with the Agent so disposing one run does not leave the next turn
+ * with an unavailable executor. The MCP bridge uses its separate pipeline.
+ */
+function receiptDefinitions(agent: Agent): Promise<Set<ToolDefinition>> {
+  let pending = receiptExecutors.get(agent)
+  if (pending) return pending
+  pending = (async () => {
+    const definitions = new Set<ToolDefinition>()
+    // Legacy tools has live lookup already and no executor subpath.
+    if ('presentAs' in agent.ctx.tools) return definitions
+    const [{ ToolExecutionPipeline, executeToolBatch }, { projectToolSchema }] = await Promise.all([
+      import('@deepseek-ai/dsh-tools/pipeline'), import('@deepseek-ai/dsh-tools'),
+    ])
+    const pipeline = new ToolExecutionPipeline(agent.ctx, {
+      get(name, scope) {
+        if (scope !== agent) return undefined
+        const definition = agent.ctx.tools.get(name, agent)
+        return definition && definitions.has(definition) ? definition : undefined
+      },
+    })
+    agent.ctx.tools.setExecutor({
+      describe: tools => ({ schemas: tools.map(tool => projectToolSchema(tool, false)) }),
+      execute: input => executeToolBatch(input, pipeline, () => 1),
+    })
+    return definitions
+  })()
+  receiptExecutors.set(agent, pending)
+  return pending
+}
 
 /** Call arguments of an observed CLI tool; a command-only entry (Codex commandExecution) shows its command. */
 export function observedToolInput(toolCall: NonNullable<TimelineItem['toolCall']>): unknown {
@@ -115,7 +151,7 @@ export class HarnessObservedTools {
     return JSON.parse(json(output))
   }
 
-  declare(row: TimelineItem): Extract<ContentBlock, { type: 'tool-call' }> {
+  async declare(row: TimelineItem): Promise<Extract<ContentBlock, { type: 'tool-call' }>> {
     if (this.disposed || !row.response || !row.toolCall?.callId || !row.toolCall.name)
       throw new Error('CLI 工具声明缺少响应或调用身份')
     const name = row.toolCall.name
@@ -126,8 +162,10 @@ export class HarnessObservedTools {
     const previous = this.receipts.get(callId)
     if (previous && (previous.rowId !== row.id || previous.name !== name || previous.arguments !== args))
       throw new Error('CLI 工具调用身份或参数发生变化')
+    const definitions = await receiptDefinitions(this.agent)
+    if (this.disposed) throw new Error('CLI 工具回执已关闭')
     if (!this.names.has(name)) {
-      const dispose = this.agent.ctx.tools.register({
+      const definition: ToolDefinition = {
         name,
         description: '读取已由 CLI 执行的这次调用回执，不执行工具',
         parameters: {},
@@ -137,9 +175,11 @@ export class HarnessObservedTools {
         },
         execute: (_args, exec) => this.receipt(exec),
         isConcurrencySafe: () => true,
-      })
+      }
+      const dispose = this.agent.ctx.tools.register(definition)
+      definitions.add(definition)
       this.names.add(name)
-      this.disposers.push(dispose)
+      this.disposers.push(() => { definitions.delete(definition); dispose() })
     }
     this.receipts.set(callId, { rowId: row.id, name, arguments: args })
     return { type: 'tool-call', id: callId, name, arguments: args }

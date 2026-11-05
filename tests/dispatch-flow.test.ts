@@ -1,10 +1,10 @@
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import type { AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions/types'
 import { CliWorkerService } from '../src/host/index.ts'
 import { ACCOUNT_CHANGED } from '../src/host/authorized-catalog.ts'
@@ -501,7 +501,7 @@ it('replays omitted CLI then explicit Hermes without consuming the previous Anti
   const f = fixture()
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   const launch = vi.fn(async (_agent, _title, _prompt, preference) => JSON.stringify(preference))
   Object.assign(f.service, { ctx, launch })
   f.service.registerTools()
@@ -659,7 +659,7 @@ it('asking off reaches launch through cliworker_start with the saved setup and n
   const f = fixture()
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   const launch = vi.fn(async (_agent, _title, _prompt, preference) => JSON.stringify(preference))
   Object.assign(f.service, { ctx, launch })
   f.service.registerTools()

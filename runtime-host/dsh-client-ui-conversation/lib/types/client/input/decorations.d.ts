@@ -2,16 +2,16 @@
  * Plain-text reference scan (the plain-text-reference decision;
  * see .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
  * a `/name` or `@name` token whose name is on the trigger's lexicon, and
- * syntax-recognizable `@dir/` folder tokens. Pure derivation — the editor's
+ * syntax-recognizable `@path` file and folder tokens. Pure derivation — the editor's
  * text-ref entity transform consumes these ranges; editing the text out of
  * match shape simply drops the range next scan.
  */
 /**
  * One plain-text reference range (the plain-text-reference decision;
  * see .agents/notes/archived/architecture/2026-07-25-web-input-machine-and-slash-pipeline.md):
- * a `/name` or `@name` token
- * whose name is on the trigger's lexicon. Pure derivation — editing the text
- * out of match shape simply drops the range next scan.
+ * a `/name` or `@name` token whose name is on the trigger's lexicon, or an
+ * `@path` file or folder token. Pure derivation — editing the text out of
+ * match shape simply drops the range next scan.
  */
 export interface TextRefRange {
     readonly start: number;

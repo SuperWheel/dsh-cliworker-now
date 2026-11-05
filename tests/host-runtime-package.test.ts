@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest'
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { normalizeHostClient, verifyHostRuntime } from '../scripts/host-runtime.mjs'
@@ -30,12 +30,49 @@ const entries = (items: ReturnType<typeof rows>, stock = stockRows()) => [
 it('ships four canonical browser packages, exact source provenance, licenses and no private build input', () => {
   const manifest = verifyHostRuntime(root)
   expect(manifest.packages.map((pkg: any) => pkg.name)).toEqual(ids.map(id => `@deepseek-ai/dsh-client-${id}`))
-  expect(manifest.upstream).toMatchObject({ version: '0.2.1-rc.5', commit: 'b830ec950faba0a46dda564be3e2d854afed94f1' })
+  expect(manifest.upstream).toMatchObject({ version: '0.2.2-rc.1', commit: '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db' })
   expect(manifest.packages.find((pkg: any) => pkg.id === 'ui-chat').externalRequirements['@tanstack/react-virtual']).toBe('3.14.10')
   expect(manifest.files.some((file: any) => /build-inputs|\.map$|node_modules|\.cache/.test(file.path))).toBe(false)
   for (const pkg of manifest.packages) expect(readFileSync(join(root, 'runtime-host', pkg.directory, 'LICENSE'), 'utf8')).toContain('MIT')
   const json = JSON.stringify(manifest)
   expect(json).not.toMatch(/\/Users\/|\/home\/|installedDesktopBuildCommit/)
+})
+
+it('exports ui-chat PNG assets from the verified runtime inventory', () => {
+  const manifest = verifyHostRuntime(root)
+  const packagePath = join(root, 'runtime-host/dsh-client-ui-chat/package.json')
+  const pkg = JSON.parse(readFileSync(packagePath, 'utf8'))
+  expect(manifest.files.some((file: any) => file.path === 'dsh-client-ui-chat/package.json')).toBe(true)
+  expect(pkg.exports['./assets/*']).toBe('./lib/assets/*')
+  const assets = manifest.files.filter((file: any) => /^dsh-client-ui-chat\/lib\/assets\/.+\.png$/.test(file.path))
+  expect(assets.length).toBeGreaterThan(0)
+  const require = createRequire(packagePath)
+  for (const asset of assets) {
+    const name = asset.path.slice('dsh-client-ui-chat/lib/assets/'.length)
+    expect(require.resolve(`@deepseek-ai/dsh-client-ui-chat/assets/${name}`)).toBe(join(root, 'runtime-host', asset.path))
+    expect(readFileSync(join(root, 'runtime-host', asset.path)).subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+  }
+})
+
+const sdkRequire = createRequire(selectBuildDependencies(root).require.resolve('@deepseek-ai/dsh/package.json'))
+function officialChatFixture() {
+  try { return dirname(sdkRequire.resolve('@deepseek-ai/dsh-client-ui-chat/package.json')) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') return undefined
+    throw error
+  }
+}
+const officialChat = officialChatFixture()
+it.skipIf(!officialChat || !existsSync(join(officialChat, 'package.json')))('keeps vendored ui-chat PNGs byte-identical to the official npm package', () => {
+  const manifest = verifyHostRuntime(root)
+  const official = JSON.parse(readFileSync(join(officialChat!, 'package.json'), 'utf8'))
+  expect(official.version).toBe(manifest.upstream.version)
+  const assets = manifest.files.filter((file: any) => /^dsh-client-ui-chat\/lib\/assets\/.+\.png$/.test(file.path))
+  expect(assets.length).toBeGreaterThan(0)
+  for (const asset of assets) {
+    const path = asset.path.slice('dsh-client-ui-chat/'.length)
+    expect(readFileSync(join(root, 'runtime-host', asset.path))).toEqual(readFileSync(join(officialChat!, path)))
+  }
 })
 
 it('only normalizes generated region comments and removes an unused map link', () => {

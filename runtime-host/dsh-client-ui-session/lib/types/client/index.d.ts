@@ -2,7 +2,7 @@
 import { Service, type Context } from '@deepseek-ai/cordis';
 import type { ISessions, SessionBinding, SessionListState, SessionReference, SessionRetainInfo, SessionSnapshot, UseProjection } from '@deepseek-ai/dsh-api-session-controller/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
-import type { RemoteEndpoint } from '@deepseek-ai/dsh-api-remote-access/client';
+import type { AccessEffect, RemoteEndpoint } from '@deepseek-ai/dsh-api-remote-access/client';
 import type { HostObservable, KeyedStandardSource, MaybeSnapshotSelectorHook, SlotScopeAdapter, SnapshotSelectorHook, StandardSourceBinding } from '@deepseek-ai/dsh-client-ui-slots';
 /** Selector hook over the Session Controller list and current selection. */
 export type UseSessions = SnapshotSelectorHook<SessionListState>;
@@ -161,6 +161,17 @@ export declare class UiSession extends Service {
      * @throws when the reference does not belong to the active Controller generation.
      */
     bindingSource(reference: SessionReference | undefined): HostObservable<StandardSourceBinding>;
+    /**
+     * Keep `callback`'s effects installed while the current Peer may call
+     * `action` on one Session resource, with the semantics of
+     * `ctx.remoteAccess.whenAccess`: `useSessionAccess` answers the same
+     * question during render.
+     * @param sessionId - the Session resource the guarded effects depend on.
+     * @param action - endpoint action the guarded effects depend on.
+     * @param callback - creates one disposer or an iterable of disposers.
+     * @returns idempotent disposer owned by the caller's Cordis fiber.
+     */
+    whenAccess(sessionId: SessionId, action: RemoteEndpoint, callback: () => AccessEffect): () => void;
     /**
      * Register one Session-scoped standard-source contribution.
      * @param descriptor - static member roster and per-binding resolver.

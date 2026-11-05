@@ -1,10 +1,10 @@
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionStore, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { SandboxPolicyService, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { PlanModeController } from '@deepseek-ai/dsh-plan-mode'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
@@ -58,7 +58,7 @@ async function fixture(cli: Worker['preference']['cli'] = 'codex') {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   await ctx.plugin(Persistence, { root: join(directory, 'native-sessions'), compression: 'none' })
   await ctx.plugin(Query)
   await ctx.plugin(AgentLoop, { agents: [], maxParallelToolCalls: 2 })

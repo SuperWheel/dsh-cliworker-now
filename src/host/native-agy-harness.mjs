@@ -102,7 +102,7 @@ function namesToolsWorkspace(call, directory) {
 
 /** Only the current, fully qualified carrier tools may reach Host approval.
  * auto_approve preserves AGY's explicit user deny/ask rules. It is not a grant
- * to execute Host tools: the carrier still enters tools.execute per call.
+ * to execute Host tools: each carrier call still enters the Harness tool policy pipeline.
  */
 export async function agyHarnessHookDecision(payload, { env = process.env, signal } = {}) {
   const allow = { decision: 'allow' }, deny = { decision: 'deny', reason: '本轮 Harness 工具桥身份或授权无法确认，未自动重试' }

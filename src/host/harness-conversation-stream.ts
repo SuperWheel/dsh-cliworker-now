@@ -283,7 +283,7 @@ export class HarnessConversationStream {
             },
             stop: () => this.stop(),
           })
-          const block = this.observedTools.declare(row)
+          const block = await this.observedTools.declare(row)
           const previous = tools.get(identity.blockId)
           if (previous) {
             if (previous.index !== identity.index || previous.serialized !== json(block))

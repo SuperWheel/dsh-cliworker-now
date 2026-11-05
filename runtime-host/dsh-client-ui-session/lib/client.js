@@ -843,6 +843,22 @@ window.__ModuleLoader__.load({
 				return this.sourceFor(owner);
 			}
 			/**
+			* Keep `callback`'s effects installed while the current Peer may call
+			* `action` on one Session resource, with the semantics of
+			* `ctx.remoteAccess.whenAccess`: `useSessionAccess` answers the same
+			* question during render.
+			* @param sessionId - the Session resource the guarded effects depend on.
+			* @param action - endpoint action the guarded effects depend on.
+			* @param callback - creates one disposer or an iterable of disposers.
+			* @returns idempotent disposer owned by the caller's Cordis fiber.
+			*/
+			whenAccess(sessionId, action, callback) {
+				const access = this.ctx.get("remoteAccess");
+				/* v8 ignore next -- this plugin injects remoteAccess, so the service is active while uiSession is reachable. */
+				if (access === void 0) throw new Error("ui-session: whenAccess requires the remoteAccess service");
+				return access.whenResourceAccess("session", sessionId, action, callback);
+			}
+			/**
 			* Register one Session-scoped standard-source contribution.
 			* @param descriptor - static member roster and per-binding resolver.
 			* @returns disposer owned by the caller's Cordis fiber.

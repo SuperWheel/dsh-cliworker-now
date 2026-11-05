@@ -11,6 +11,11 @@ interface ReferencedSteeringMessageNode extends SteeringMessageNode {
     readonly referenceLabels?: readonly string[];
     /** Skill names the same step's `skill-invocation` injections loaded. */
     readonly skillNames?: readonly string[];
+    /**
+     * First human message of its `next-step` claim that Chat orders after its Turn's process control;
+     * the row keeps the Turn tail slot above it.
+     */
+    readonly batchStart?: true;
 }
 type MessageNode = ReferencedUserMessageNode | ReferencedSteeringMessageNode | (ContextMessageNode & {
     readonly waking?: boolean;

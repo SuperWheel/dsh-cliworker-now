@@ -17,6 +17,8 @@ interface AssistantState {
     readonly turn: number;
     readonly step: number;
     readonly blocks: readonly (AssistantBlock | undefined)[];
+    /** Missing indices are invisible; same-kind appends preserve already-visible blocks. */
+    readonly visibleByIndex: readonly boolean[];
     readonly visibleBlocks: number;
     readonly firstVisibleSeq: number | undefined;
     readonly firstVisibleTime: number | undefined;

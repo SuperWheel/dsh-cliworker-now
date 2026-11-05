@@ -1,3 +1,5 @@
+import { createNativeHarnessExecutor } from '../src/host/native-harness-executor.ts'
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, realpath, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,7 +12,6 @@ import { type Agent } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { classifyHarnessTool, createNativeHarnessTools } from '../src/host/native-harness-tools.ts'
 import { installHarnessModelGuard, withinCliTool } from '../src/host/harness-model-guard.ts'
 import { HARNESS_CONNECTION_ENV } from '../src/host/native-harness-mcp.mjs'
@@ -32,17 +33,25 @@ async function registryBridge() {
   const { createMcpToolDefinition } = await import(pathToFileURL(runtimeRequire.resolve('@deepseek-ai/dsh-mcp-client')).href)
   const ctx = new Context()
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   const parent = { id: 'synthetic-parent' } as Agent, child = { id: 'synthetic-child' } as Agent
   const parentScope = createScope(ctx, parent), childScope = createScope(ctx, child, { parent })
   let parentContext!: Context, childContext!: Context
   await parentScope.ctx.inject(['tools'], inner => { parentContext = inner })
   await childScope.ctx.inject(['tools'], inner => { childContext = inner })
+  // A simulated PTC-shaped provider is already selected in this exact child.
+  // Bridge calls must reach capability tools without replacing or using it.
+  const selectedExecutor = {
+    describe: () => ({ schemas: [{ name: 'run_code', description: 'Synthetic program executor', parameters: { type: 'object' as const } }] }),
+    execute: vi.fn(async () => ({ results: [], additionalContexts: [], concluded: false })),
+  }
+  childContext.tools.setExecutor(selectedExecutor)
   const binding = { parentSessionId: parent.id, harnessSessionId: child.id, workerId: 'synthetic-worker', runId: 'synthetic-run', cli: 'codex' }
   const register = (name: string, call: (args: Record<string, unknown>, exec: { signal: AbortSignal }) => Promise<unknown>) =>
     ctx.tools.register(createMcpToolDefinition(ctx, { name, rawName: 'synthetic-tool', description: '模拟 MCP 工具', inputSchema: { type: 'object' }, call }))
-  const execute = vi.fn(async (call) => withinCliTool(binding.runId, () => childContext.tools.execute({
-    callId: ToolCallId(call.callId), name: call.name, arguments: call.arguments, agent: child, signal: call.signal,
+  const executor = await createNativeHarnessExecutor(childContext)
+  const execute = vi.fn(async (call) => withinCliTool(binding.runId, () => executor.execute({
+    callId: ToolCallId(`cliworker:${call.callId}`), name: call.name, arguments: call.arguments, agent: child, signal: call.signal,
   })))
   const target = await createNativeHarnessTools({ binding, executionReady: true, authorize: () => {}, execute,
     tools: () => {
@@ -55,8 +64,8 @@ async function registryBridge() {
       body: JSON.stringify({ binding, clientId: '00000000-0000-4000-8000-000000000001', method, params, id }) })
     return { status: response.status, ...await response.json() as Record<string, any> }
   }
-  return { ctx, child, parentContext, childContext, register, execute, rpc, close: async () => {
-    await target.close(); await childScope.dispose(); await parentScope.dispose(); await ctx.fiber.dispose()
+  return { ctx, child, parentContext, childContext, selectedExecutor, executor, register, execute, rpc, close: async () => {
+    await target.close(); executor.dispose(); await childScope.dispose(); await parentScope.dispose(); await ctx.fiber.dispose()
   } }
 }
 
@@ -89,6 +98,35 @@ it('routes registered MCP tools through real inherited visibility and pre-execut
     expect((await target.rpc('tools/list', {}, 5)).result.tools).toEqual([])
     for (const id of [4, 6]) expect((await target.rpc('tools/call', { name }, id)).error).toContain('授权目录')
     expect(body).toHaveBeenCalledOnce()
+    expect(target.selectedExecutor.execute).not.toHaveBeenCalled()
+    target.executor.dispose()
+    await target.childContext.tools.execute({ calls: [], agent: target.child, signal: new AbortController().signal })
+    expect(target.selectedExecutor.execute).toHaveBeenCalledOnce()
+  } finally { await target.close() }
+})
+
+it('preserves approval identity, inherited guards and post-execution policy under a different scoped executor (synthetic)', async () => {
+  const target = await registryBridge()
+  try {
+    const name = 'mcp__synthetic__approved'
+    const body = vi.fn(async () => ({ content: [{ type: 'text', text: 'upstream result' }] }))
+    target.register(name, body)
+    const request = vi.fn(async () => 'allowed-once')
+    // Only the approval UI response is simulated; the shared pipeline routes it.
+    target.ctx.provide('approval', { request } as never)
+    target.parentContext.on('tools/pre-execute', async () => ({ kind: 'ask', reason: 'synthetic approval' }))
+    const removeGuard = target.parentContext.tools.guard(() => 'synthetic inherited guard')
+    const denied = await target.rpc('tools/call', { name }, 1)
+    expect(denied.result).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('inherited guard') }] })
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      agent: target.child, callId: expect.stringMatching(/^cliworker:cwn-harness-/), toolName: name,
+    }))
+    expect(body).not.toHaveBeenCalled()
+    removeGuard()
+    target.parentContext.on('tools/post-execute', async () => ({ kind: 'block', feedback: [{ type: 'text', text: 'synthetic post block' }] }))
+    expect((await target.rpc('tools/call', { name }, 2)).result).toMatchObject({ isError: true, content: [{ text: 'synthetic post block' }] })
+    expect(body).toHaveBeenCalledOnce()
+    expect(target.selectedExecutor.execute).not.toHaveBeenCalled()
   } finally { await target.close() }
 })
 

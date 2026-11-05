@@ -68,7 +68,24 @@ export function inspectHostRuntimeEntries(entries, rawRows, patches, root) {
  * Only the two browser-only UI schemas are projected; no Host task config is
  * forwarded. Their apply() functions only register settings presentation.
  */
-export function installHostSettingsAliases(ctx, { resolveConfig, interpolate }, root) {
+/**
+ * Register the stock row's no-auto-page policy for its vendor fiber proxy.
+ * Hosts up to 0.2.1 key policies by the passed fiber object, so the proxy needs its own.
+ * 0.2.2 normalizes both registration and lookup to `owner.ctx.fiber`: the proxy then
+ * resolves to the vendor fiber, which the official package already configured itself
+ * with `{ auto: false }`, so that policy is reused instead of registered twice.
+ */
+function configurePresentation(ctx, fiber) {
+  const real = fiber.ctx?.fiber
+  try {
+    return ctx.settings.configure({ auto: false }, fiber)
+  } catch (error) {
+    if (real === undefined || real === fiber || !/already configured/u.test(String(error?.message))) throw error
+    return () => {}
+  }
+}
+
+export function installHostSettingsAliases(ctx,{ resolveConfig, interpolate }, root) {
   const editor = ctx.configEditor
   const original = editor.entries
   if (typeof original !== 'function' || typeof ctx.settings.configure !== 'function') fail('missing-settings-interface')
@@ -96,13 +113,14 @@ export function installHostSettingsAliases(ctx, { resolveConfig, interpolate }, 
       if (record?.stock !== stock || record?.vendor !== vendor.fiber) {
         release(id)
         const fiber = new Proxy(vendor.fiber, { get(target, key) {
-          if (key === 'config') return resolveConfig(target.runtime, interpolate(target.ctx, stock.options.config ?? {}))
+          // 0.2.2 settings read the resolved `effectiveConfig`; earlier hosts read `config`.
+          if (key === 'config' || key === 'effectiveConfig') return resolveConfig(target.runtime, interpolate(target.ctx, stock.options.config ?? {}))
           return Reflect.get(target, key, target)
         } })
         const entry = new Proxy(stock, { get(target, key) {
           return key === 'fiber' ? fiber : Reflect.get(target, key, target)
         } })
-        record = { stock, vendor: vendor.fiber, entry, dispose: ctx.settings.configure({ auto: false }, fiber) }
+        record = { stock, vendor: vendor.fiber, entry, dispose: configurePresentation(ctx, fiber) }
         cached.set(id, record)
       }
       hidden.add(vendor)

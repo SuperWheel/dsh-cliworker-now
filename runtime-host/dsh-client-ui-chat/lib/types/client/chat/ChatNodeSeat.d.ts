@@ -20,6 +20,6 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
  * Policy reads select this seat's own conclusion, so a mode change re-renders
  * only seats whose visibility actually changes.
  */
-export declare const ChatNodeSeat: import("react").MemoExoticComponent<({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, inspectCall, forkAt, loadImage, fileMentions, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction, }: ChatNodeSeatProps) => import("react").JSX.Element | null>;
+export declare const ChatNodeSeat: import("react").MemoExoticComponent<({ nodeKey, groupPart, useChatNode, useChatNodeProcess, usePresentation, cwd, openFile, inspectCall, forkAt, loadImage, useStore, actions, renderSlot, t, useChatNodeBottom, deferCollapse, useGroupAction, }: ChatNodeSeatProps) => import("react").JSX.Element | null>;
 export {};
 //# sourceMappingURL=ChatNodeSeat.d.ts.map

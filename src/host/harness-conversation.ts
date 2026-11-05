@@ -321,6 +321,19 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       } })
       : ctx.subagents.registerProvider(provider))
     this.disposers.push(
+      ctx.on('agent/created', ({ agent }) => {
+        const record = this.records.get(agent.id)
+        if (!record || !this.forkSeeds.has(agent.id)) return
+        this.assertLive(record, agent)
+        // A fork inherits the source Worker's recorded model route. rc.1
+        // snapshots that selection before pre-step/request middleware, so
+        // AgentOptions and our request override alone cannot rebind the fork.
+        // Creation listeners run before queued work; select on the new Session
+        // without rewriting its inherited history. Older hosts have no model API.
+        agent.model?.select({ provider: HARNESS_CLI_PROVIDER, model: this.model(record) })
+      }, { global: true }),
+    )
+    this.disposers.push(
       ctx.on(
         'agent/inbox/inserted',
         ({ agent, message }) => {

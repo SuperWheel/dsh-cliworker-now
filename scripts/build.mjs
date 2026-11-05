@@ -5,6 +5,90 @@ import { pathToFileURL } from 'node:url'
 import { selectBuildDependencies, buildTypeConfig, clientBundleDependencies, clientBundleDefines, selectedTypertResolver } from './build-dependencies.mjs'
 import { verifyHostRuntime } from './host-runtime.mjs'
 
+// Declaration emit can elide imports used only inside module augmentations:
+// the augmented module's exports are already in scope there. Typert requires an
+// explicit import even for those valid references. Resolve symbols with the
+// selected SDK's TypeScript, then normalize only the staged declaration copies.
+// When a name is used elsewhere, unique aliases preserve binding identity
+// without capturing those uses (including shadowed names). Other analyzer errors
+// remain errors; this does not filter packages or relax Typert's checks.
+export function normalizeAugmentationImports(ts, declarationFiles, compilerOptions) {
+  const program = ts.createProgram({ rootNames: declarationFiles, options: { ...compilerOptions, noEmit: true } })
+  const checker = program.getTypeChecker()
+  const unalias = symbol => symbol?.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol
+  const changes = []
+  for (const file of declarationFiles) {
+    const source = program.getSourceFile(file)
+    if (!source?.isDeclarationFile || !ts.isExternalModule(source)) continue
+    const identifiers = new Set()
+    const identifierCounts = new Map()
+    const collect = node => {
+      if (ts.isIdentifier(node)) {
+        identifiers.add(node.text)
+        identifierCounts.set(node.text, (identifierCounts.get(node.text) ?? 0) + 1)
+      }
+      ts.forEachChild(node, collect)
+    }
+    collect(source)
+    const importedNames = new Set()
+    for (const statement of source.statements) {
+      if (!ts.isImportDeclaration(statement)) continue
+      const clause = statement.importClause
+      if (clause?.name) importedNames.add(clause.name.text)
+      const bindings = clause?.namedBindings
+      if (bindings && ts.isNamespaceImport(bindings)) importedNames.add(bindings.name.text)
+      else if (bindings) for (const binding of bindings.elements) importedNames.add(binding.name.text)
+    }
+    const imports = new Map()
+    const edits = []
+    for (const statement of source.statements) {
+      if (!ts.isModuleDeclaration(statement) || !ts.isStringLiteral(statement.name) || !statement.body) continue
+      const moduleSymbol = checker.getSymbolAtLocation(statement.name)
+      if (!moduleSymbol) continue
+      const exports = new Map(checker.getExportsOfModule(moduleSymbol).map(symbol => [symbol.name, unalias(symbol)]))
+      const visit = node => {
+        let name = ts.isTypeReferenceNode(node) ? node.typeName
+          : ts.isExpressionWithTypeArguments(node) ? node.expression
+          : ts.isTypeQueryNode(node) ? node.exprName : undefined
+        while (name && (ts.isQualifiedName(name) || ts.isPropertyAccessExpression(name))) {
+          name = ts.isQualifiedName(name) ? name.left : name.expression
+        }
+        if (name && ts.isIdentifier(name) && !importedNames.has(name.text)) {
+          const symbol = unalias(checker.getSymbolAtLocation(name))
+          if (symbol && exports.get(name.text) === symbol && symbol.declarations?.some(declaration => declaration.getSourceFile() !== source)) {
+            const key = `${statement.name.text}\0${name.text}`
+            let entry = imports.get(key)
+            if (!entry) {
+              let alias = `__typertAugmentation${imports.size}`
+              while (identifiers.has(alias)) alias += '_'
+              identifiers.add(alias)
+              entry = { module: statement.name.text, name: name.text, alias }
+              imports.set(key, entry)
+            }
+            edits.push({ start: name.getStart(source), end: name.end, entry })
+          }
+        }
+        ts.forEachChild(node, visit)
+      }
+      visit(statement.body)
+    }
+    if (!imports.size) continue
+    for (const entry of imports.values()) {
+      // Keep authored spelling where every use belongs to this same binding;
+      // Typert also retains declaration text in its runtime metadata.
+      if (edits.filter(edit => edit.entry === entry).length === identifierCounts.get(entry.name)) entry.alias = entry.name
+    }
+    let text = source.text
+    for (const edit of edits.sort((a, b) => b.start - a.start)) text = text.slice(0, edit.start) + edit.entry.alias + text.slice(edit.end)
+    // Append to preserve leading triple-slash directives and original comments.
+    text += '\n' + [...imports.values()].map(entry => `import type { ${entry.name}${entry.alias === entry.name ? '' : ` as ${entry.alias}`} } from ${JSON.stringify(entry.module)};`).join('\n') + '\n'
+    writeFileSync(file, text)
+    changes.push({ file, imports: [...imports.values()] })
+  }
+  return changes
+}
+
+async function buildPlugin() {
 const root = resolve('.')
 const dependencies = selectBuildDependencies(root)
 const { build } = await import(pathToFileURL(dependencies.require.resolve('tsdown')).href)
@@ -190,6 +274,8 @@ writeFileSync(
 // preserving every actual typed export; never mutate or invent SDK source.
 const sdkPaths = {}
 const sdkReferences = []
+const sdkDeclarations = []
+const ts = dependencies.require('typescript')
 for (const leaf of readdirSync(join(stageModules, '@deepseek-ai')).filter(name => name.startsWith('dsh-')).sort()) {
   const name = `@deepseek-ai/${leaf}`
   const installed = join(stageModules, name)
@@ -198,6 +284,7 @@ for (const leaf of readdirSync(join(stageModules, '@deepseek-ai')).filter(name =
   const directory = join(stage, 'packages', name.replace('@deepseek-ai/', 'sdk-'))
   mkdirSync(directory, { recursive: true })
   cpSync(join(installed, 'lib/types'), join(directory, 'declarations'), { recursive: true })
+  sdkDeclarations.push(...ts.sys.readDirectory(join(directory, 'declarations'), ['.d.ts']))
   for (const [subpath, value] of Object.entries(packageManifest.exports ?? {})) {
     if (typeof value?.types !== 'string' || !value.types.startsWith('./lib/types/')) continue
     const declaration = value.types.replace('./lib/types/', './declarations/')
@@ -212,6 +299,11 @@ writeFileSync(join(stage, 'tsconfig.host.json'), JSON.stringify({
   compilerOptions: { ...JSON.parse(readFileSync('tsconfig.base.json')).compilerOptions, paths: sdkPaths },
   files: [], references: [{ path: './packages/cliworker/tsconfig.host.json' }, ...sdkReferences],
 }))
+const stageConfig = ts.readConfigFile(join(stage, 'tsconfig.host.json'), ts.sys.readFile)
+if (stageConfig.error) throw new Error(ts.flattenDiagnosticMessageText(stageConfig.error.messageText, '\n'))
+const parsedStageConfig = ts.parseJsonConfigFileContent(stageConfig.config, ts.sys, stage)
+const normalized = normalizeAugmentationImports(ts, sdkDeclarations, parsedStageConfig.options)
+if (normalized.length) console.log(`Normalized staged augmentation imports in ${normalized.length} SDK declaration files`)
 const generator = new WorkspaceTypertGenerator(stage, { checkDiagnostics: false })
 const artifacts = generator.generate([manifest.name], ['host'])
 if (artifacts.length !== 1 || !artifacts[0].remote) throw new Error('Missing generated Host/Remote contract')
@@ -243,3 +335,6 @@ await build({
     entryFileNames: '[name].js',
   },
 })
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) await buildPlugin()

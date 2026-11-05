@@ -71,7 +71,7 @@ export function validateSourcePath(value) {
     throw new Error(`Sensitive or excluded source path: ${value}`)
   if (SOURCE_ROOT_FILES.includes(value) || SOURCE_SCRIPTS.has(value)) return value
   if (/^(?:src|tests)\/.+\.(?:ts|tsx|mts|mjs|js|json|py|cmd|ps1|txt)$/.test(value) || /^src\/client\/assets\/.+\.(?:png|svg)$/.test(value)) return value
-  if (/^runtime-host\/(?:manifest\.json|README\.md|source\.patch|dsh-client-ui-(?:session|conversation|subagent|chat)\/(?:LICENSE|package\.json|lib\/.+\.(?:js|d\.ts)))$/.test(value)) return value
+  if (/^runtime-host\/(?:manifest\.json|README\.md|source\.patch|dsh-client-ui-(?:session|conversation|subagent|chat)\/(?:LICENSE|package\.json|lib\/.+\.(?:js|d\.ts))|dsh-client-ui-chat\/lib\/assets\/[^/]+\.png)$/.test(value)) return value
   throw new Error(`Source path is outside the allowlist: ${value}`)
 }
 

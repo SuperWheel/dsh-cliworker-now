@@ -1,10 +1,11 @@
+import { createNativeHarnessExecutor } from '../src/host/native-harness-executor.ts'
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry, type Agent } from '@deepseek-ai/dsh-agent'
 import { LlmRuntime, ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionStore, SessionId, Session } from '@deepseek-ai/dsh-session'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
 import { createRequire } from 'node:module'
 import { existsSync, realpathSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -12,11 +13,12 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { runNativeClaude } from '../src/host/native-claude.mjs'
 import { HarnessConversationStream } from '../src/host/harness-conversation-stream.ts'
+import { HarnessObservedTools } from '../src/host/harness-observed-tools.ts'
 import type {
   HarnessConversationDependencies,
   HarnessConversationRecord,
 } from '../src/host/harness-conversation-types.ts'
-import type { Worker, WorkerEvent } from '../src/shared/types.ts'
+import type { TimelineItem, Worker, WorkerEvent } from '../src/shared/types.ts'
 
 // Actual installed rc.2 AgentLoop and Session; synthetic Worker events only.
 // No CLI, account, filesystem task, provider or network is invoked.
@@ -62,7 +64,7 @@ async function fixture(
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   const realTool = vi.fn(async () => 'must not execute')
   ctx.tools.register({
     name: 'synthetic_cli_tool',
@@ -374,6 +376,33 @@ it('lets the official loop settle an observed tool response once without executi
   )
 })
 
+it('keeps receipt execution available for the next run while withdrawing expired receipts (synthetic)', async () => {
+  const f = await fixture()
+  const row: TimelineItem = {
+    id: 'synthetic-row', kind: 'tool', text: 'synthetic_cli_tool', time: f.worker.updatedAt, state: 'COMPLETED',
+    toolCall: { callId: 'receipt', name: 'synthetic_cli_tool', input: {}, output: 'existing result' },
+    response: { id: 'response', blockId: 'tool', index: 0, complete: true },
+  }
+  for (const runId of ['synthetic-first-run', 'synthetic-next-run']) {
+    f.worker.runId = runId
+    const receipts = new HarnessObservedTools(f.agent, {
+      workerId: f.worker.id, parentSessionId: f.worker.parentSessionId, sessionId: f.agent.id,
+    }, runId, f.deps, {
+      rows: () => [row], changed: async () => {}, settled: () => true, completed: () => true,
+      hasFollowing: () => false, close: () => receipts.close(), inputsSettled: async () => {}, stop: async () => {},
+    })
+    try {
+      const block = await receipts.declare(row)
+      const input = { calls: [block], agent: f.agent, signal: new AbortController().signal }
+      const result = await f.agent.ctx.tools.execute(input)
+      expect(result.results[0]?.result).toMatchObject({ isError: false, content: [{ type: 'text', text: 'existing result' }] })
+      const replay = await f.agent.ctx.tools.execute(input)
+      expect(replay.results[0]?.result.isError).toBe(true)
+      expect(f.realTool).not.toHaveBeenCalled()
+    } finally { receipts.close() }
+  }
+})
+
 it('rejects foreign receipt identities and removes the scoped waiter after a tool-only response', async () => {
   const usage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }
   const f = await fixture({
@@ -398,7 +427,8 @@ it('rejects foreign receipt identities and removes the scoped waiter after a too
   await vi.waitFor(() =>
     expect(f.agent.ctx.tools.get('synthetic_cli_tool', f.agent)?.description).toContain('读取已由 CLI'),
   )
-  const rejected = await f.agent.ctx.tools.execute({
+  const executor = await createNativeHarnessExecutor(f.agent.ctx)
+  const rejected = await executor.execute({
     name: 'synthetic_cli_tool',
     callId: ToolCallId('foreign-call'),
     arguments: { observed: true },
@@ -406,13 +436,14 @@ it('rejects foreign receipt identities and removes the scoped waiter after a too
     signal: new AbortController().signal,
   })
   expect(rejected.isError).toBe(true)
-  const argumentsRejected = await f.agent.ctx.tools.execute({
+  const argumentsRejected = await executor.execute({
     name: 'synthetic_cli_tool',
     callId: ToolCallId(`cliworker:${f.worker.runId}:existing-call`),
     arguments: { observed: false },
     agent: f.agent,
     signal: new AbortController().signal,
   })
+  executor.dispose()
   expect(argumentsRejected.isError).toBe(true)
   expect(f.realTool).not.toHaveBeenCalled()
   await f.finish('completed')

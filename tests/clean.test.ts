@@ -15,7 +15,7 @@ type Item = { path: string; action: 'keep' | 'remove'; reason: string; bytes: nu
 function repository() {
   const root = mkdtempSync(join(tmpdir(), 'cliworker-clean-test-'))
   roots.push(root)
-  file(root, 'package.json', JSON.stringify({ devDependencies: { '@deepseek-ai/dsh': '0.2.1-rc.2' } }))
+  file(root, 'package.json', JSON.stringify({ devDependencies: { '@deepseek-ai/dsh': '0.2.2-rc.1' } }))
   file(root, 'lib/index.js', 'synthetic build output')
   file(root, 'node_modules/dep/index.js', 'synthetic dependency')
   file(root, 'doc/local/runbook.md', 'synthetic private note')
@@ -44,7 +44,7 @@ const removed = (items: Item[]) => items.filter((item) => item.action === 'remov
 
 describe('clean retention rules (synthetic repository fixtures)', () => {
   it('parses options strictly and maps the pinned SDK to its cache tag', () => {
-    expect(targetTag('0.2.1-rc.2')).toBe('021rc2')
+    expect(targetTag('0.2.2-rc.1')).toBe('022rc1')
     expect(parseDuration('14d')).toBe(14 * DAY)
     expect(parseDuration('36h')).toBe(36 * 3_600_000)
     expect(parseDuration('2w')).toBe(14 * DAY)
@@ -147,7 +147,7 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
 
   it('keeps the pinned cache target and fixed build caches; old targets need --older-than', () => {
     const root = repository()
-    for (const name of ['cliworker-build-deps-021rc2', 'dsh-host-build-deps', 'preview-package', 'typert', 'build-configs', 'cliworker-build-deps-020rc2', 'reference-dump', 'dsh-host-extension-output-4242', 'cited-ui'])
+    for (const name of ['cliworker-build-deps-022rc1', 'dsh-host-build-deps', 'preview-package', 'typert', 'build-configs', 'cliworker-build-deps-020rc2', 'reference-dump', 'dsh-host-extension-output-4242', 'cited-ui'])
       file(root, `.cache/${name}/data.bin`)
     file(root, '.cache/run.lock', '4242')
     file(root, 'doc/tasks.md', 'Screenshot: .cache/cited-ui/verification.json')
@@ -156,7 +156,7 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     expect(find(plan(root).items, '.cache/cliworker-build-deps-020rc2').reason).toBe('old DSH target (020rc2) (pass --older-than to prune)')
     const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
     expect(removed(items)).toEqual(['.cache/cliworker-build-deps-020rc2', '.cache/reference-dump'])
-    expect(find(items, '.cache/cliworker-build-deps-021rc2').reason).toBe('current DSH 0.2.1-rc.2 target')
+    expect(find(items, '.cache/cliworker-build-deps-022rc1').reason).toBe('current DSH 0.2.2-rc.1 target')
     expect(find(items, '.cache/dsh-host-build-deps').reason).toContain('build-host-extension')
     expect(find(items, '.cache/dsh-host-extension-output-4242').reason).toBe('active build (pid 4242)')
     expect(find(items, '.cache/cited-ui').reason).toBe('referenced in doc/tasks.md')

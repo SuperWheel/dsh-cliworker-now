@@ -57,9 +57,10 @@ export declare class ChatReading {
     followTail(behavior?: 'instant' | 'smooth'): void;
     /**
      * Follow the tail on the active fold's animation clock.
+     * @param input - whether the reader's own input requests the landing rather than a content change.
      * @returns whether a fold batch owns the tail movement instead of a separate scroll animation.
      */
-    followInputFold(): boolean;
+    followInputFold(input: boolean): boolean;
     /**
      * Let fold batches read follow intent and commit their tail landings.
      * @returns a disposer that disconnects this reading policy from the viewport.

@@ -1330,6 +1330,15 @@ OpenSpec 变更 `upgrade-host-rc5`（用户 2026-10-30 把 Mac 与 Windows 的 D
 - 做法：沿用 rc.3 流程，从 tag `dsh-v0.2.1-rc.5`（`b830ec95`）重建四包。48 文件补丁无冲突应用，增删行与 rc.3 相同；构建依赖由 rc.3 冻结输入只改 DSH pin 得到，第三方 953 个包与插件根 855 个包均无漂移；`dependency-links.json` 用新增的 `generate-dependency-links.mjs` 从 rc.3 清单逐行映射并重新计算摘要。开发 SDK 39 个 pin 与根 workspace 300 条发布期限例外改为 rc.5。
 - 验证边界：四包源码类型检查与插件 typecheck 通过；上游四包 Vitest 未在本机运行（自动模式不允许执行外部仓库代码）；未重复 rc.3 的多宿主隔离矩阵，以 rc.5 实装检查作为本次验收，结果记在变更任务清单。
 
+## 2026-11-05 随包原生界面升级到 Harness 0.2.2-rc.1（未发布）
+
+OpenSpec 变更 `upgrade-host-022rc1`；开发 SDK 与随包四个原生界面包跟随同一目标版本。
+
+- 做法：从官方 tag `dsh-v0.2.2-rc.1`（`66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`）重建并重新纳入四包。rc.5 的 48 文件扩展在新基线上有 8 个文件冲突，逐处人工合并，保留官方文字交互、断线暂停计时、停止与用量呈现的新行为；输入及合并说明见 `host-extensions/dsh-0.2.2-rc.1/README.md`。
+- 依赖与资源：Cordis 升到 4.1.0，插件 peer 范围保留旧版并接纳 `~4.1.0`。ui-chat 保留官方 `lib/assets/` 图片及 `./assets/*` 导出，供宿主资源路由读取。0.2.2 的官方 tsdown 预设传递 `RolldownMagicString`，构建改从源码 checkout 加载 tsdown，使预设与构建器共用同一个 rolldown 实例。
+- 语言：官方新增日、西、法、德、俄、葡六种语言；插件新增的 conversation 与 chat 词条暂用英文，中英文保持原文。
+- 验证边界：定向回归、资源清单校验及未验证事项记在变更任务清单；本次未运行真实 CLI／模型或启动 Desktop，不将自动检查视为真实平台验收。
+
 ## configured 账号摘要保留具体原因（2026-10-30，未发布）
 
 OpenSpec：`fix-configured-account-status`。设置导航与账号摘要复用 Host 的安全摘要，configured 不再统一覆盖成「已配置」；空摘要保留旧回退，长原因自然换行，仍使用灰色待确认状态。MiMo 检查登录、Pi/OMP/OpenCode 缺少有效凭据、Hermes 等待续期等原因一并保留。

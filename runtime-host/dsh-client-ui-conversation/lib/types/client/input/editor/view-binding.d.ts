@@ -2,8 +2,15 @@
 import type { MouseEvent, MutableRefObject, RefObject } from 'react';
 import type { LexicalEditor } from 'lexical';
 import type { ComposerKeyboard } from '../../contract/draft-editor.ts';
-import type { ComposerBarProps } from '../../contract/slots.ts';
 import type { BusyEnterBehavior } from '../../contract/composer-submission.ts';
+/**
+ * Transfer mobile editor focus after a submission empties the draft.
+ * A control the user already focused retains focus.
+ * @param editor - the Session-owned editor.
+ * @param destination - stable, focusable non-text element that retains the composer's keyboard position.
+ * @returns the update-listener cleanup.
+ */
+export declare function installDraftKeyboardDismissal(editor: LexicalEditor, destination: RefObject<HTMLElement>): () => void;
 interface DraftViewGate {
     locked: boolean;
     machineBusy: boolean;
@@ -13,8 +20,9 @@ interface DraftViewGate {
     busyEnter: BusyEnterBehavior;
     intakeFiles: (files: readonly File[], directories?: ReadonlySet<File>) => void;
     uploadsPending: boolean;
+    /** Toast text explaining why pending uploads hold the send. */
+    uploadsHeldText: string;
     showToast: (text: string) => void;
-    t: ComposerBarProps['t'];
     canAcceptDrop: boolean;
 }
 /**

@@ -15,6 +15,8 @@ export interface ChatScrollInput extends ChatNavigationInput {
     readonly lastIsUser: boolean;
     readonly steeringId: string | null;
     readonly submissionId: string | null;
+    /** The latest visible submission steers the running Turn instead of opening a new one. */
+    readonly submissionSteers: boolean;
     readonly running: boolean;
     /** Enable the browser-local delayed-fold experiment and its input reveal animation. */
     readonly deferCompletedTurns: boolean;

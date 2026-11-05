@@ -13,6 +13,12 @@ export interface FlowMotionRows {
     reveal(element: HTMLElement): void;
     /** @param element - row whose active transition should be cancelled without hiding it. */
     cancelMotion(element: HTMLElement): void;
+    /**
+     * Hide a row at once, outside a motion scope; the owning viewport measures the layout first.
+     * @param element - visible row.
+     * @param commit - applies the hidden state.
+     */
+    hideNow?(element: HTMLElement, commit: () => void): void;
 }
 /** Geometry captured before one fold batch changes its boxes. */
 export interface InputFoldBox {
@@ -82,9 +88,10 @@ export declare function hiddenOrCollapsing(element: HTMLElement): boolean;
  * Create animation coordination without cross-viewport broadcasts.
  * @param driver - the viewport's driver for the next batch; null while detached.
  * @param foldingChanged - disable or restore this viewport's native scroll anchoring.
+ * @param beforeInstantHide - measures the layout before a row hides at once outside a motion scope.
  * @returns stable callbacks and cleanup for this viewport's animations.
  */
-export declare function createFlowMotion(driver: () => InputFoldDriver | null, foldingChanged: (active: boolean) => void): FlowMotion;
+export declare function createFlowMotion(driver: () => InputFoldDriver | null, foldingChanged: (active: boolean) => void, beforeInstantHide?: (element: HTMLElement) => void): FlowMotion;
 /**
  * Apply searchable hiding with the containing Chat viewport's optional fold animation.
  * @param hidden - desired visibility.

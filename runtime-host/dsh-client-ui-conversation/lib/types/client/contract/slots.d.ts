@@ -20,7 +20,11 @@ import type { ViewTab } from './views.ts';
 import type { UserTextDocumentInput, UserTextEvaluator, UserTextId, UserTextNode } from './user-text.ts';
 /** Browser-owned draft attachment that has not crossed the durable Host boundary. */
 export type ComposerAttachment = ComposerImageAttachment | ComposerFileAttachment;
-/** Browser-owned image, base64-encoded into the prompt at send time. */
+/**
+ * Browser-owned image. An ordinary Session's draft uploads it to the Host as
+ * soon as it is added, and the prompt cites the receipt; a subagent
+ * continuation's draft base64-encodes it into the prompt at send time.
+ */
 export interface ComposerImageAttachment {
     kind: 'image';
     id: DraftAttachmentId;
@@ -37,7 +41,12 @@ export interface ComposerFileAttachment {
     id: DraftAttachmentId;
     file: File;
 }
-/** Upload lifecycle of one picked file draft (files upload on pick, not on send). */
+/**
+ * Upload lifecycle of one draft that uploads when it is added, not on send:
+ * every file draft, and every image draft of an ordinary Session. A failed
+ * upload the Host refused keeps the attachment refusal `reason`, because
+ * retrying the same bytes cannot succeed.
+ */
 export type DraftFileUpload = {
     readonly status: 'uploading';
     readonly loaded: number;
@@ -47,8 +56,12 @@ export type DraftFileUpload = {
     readonly receiptId: FileUploadReceiptId;
     readonly file: FileAttachmentRef;
 } | {
+    readonly status: 'ready';
+    readonly receiptId: FileUploadReceiptId;
+} | {
     readonly status: 'error';
     readonly message: string;
+    readonly reason?: string;
 };
 /** Per-draft upload states keyed by draft attachment id. */
 export type DraftFileUploads = Readonly<Record<string, DraftFileUpload>>;
@@ -70,6 +83,13 @@ export interface ComposerAttachmentsOwnerProps {
     uploads: DraftFileUploads;
     /** Restart one failed file upload. */
     onRetryFile: (id: DraftAttachmentId) => void;
+    /**
+     * Explain one upload the Host refused; such a draft cannot be retried and
+     * stays until it is removed.
+     * @param reason - the refusal `reason` the failed upload carries.
+     * @returns localized text naming the limit or the way out.
+     */
+    uploadFailureText: (reason: string) => string;
     /** Display-ready limits for the drop invitation. */
     dropLimits?: {
         readonly count: number;
@@ -103,7 +123,7 @@ export type MessageImageLoader = ((attachment: ImageAttachmentRef) => Promise<st
 export interface MessageImagesOwnerProps {
     /** Durable references or submission-echo previews in source order. */
     images: readonly MessageImageSource[];
-    /** Session-authorized image URL loader for the durable arm. */
+    /** Gateway-authorized image URL loader for the durable arm. */
     loadImage: MessageImageLoader;
     /** Horizontal placement inside the owning record. */
     align: 'start' | 'end';
@@ -178,6 +198,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         'conversation.images.content': {
             scope: 'root';
             props: MessageImagesContentInput;
+            inject: {
+                readonly fileDrag: import('@deepseek-ai/dsh-client-ui-primitives').FileDragActions;
+            };
             locale: 'conversation';
         };
     }
@@ -221,13 +244,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
                 hideChrome: boolean;
             };
         };
-        /** Optional replacement for one Session breadcrumb title. */
+        /** Optional replacement for one Session breadcrumb title; overlays must portal because the title area clips overflow. */
         'conversation.session.header.lineage': {
             kind: 'single';
             scope: 'session';
             owner: ConversationHeaderLineageOwnerProps;
         };
-        /** Title-adjacent Session actions in ascending order. */
+        /** Title-adjacent Session actions in ascending order; overflow is clipped and faded before the utilities, so overlays must portal. */
         'conversation.session.header.actions': {
             kind: 'list';
             scope: 'session';
@@ -268,7 +291,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
             scope: 'session';
             owner: ConvViewOwnerProps;
         };
-        /** Selector-routed replacements for the current Session's resident composer. */
+        /**
+         * Selector-routed replacements for the current Session's resident composer; fixed overlays must
+         * portal to the document body because the docked composer contains them.
+         */
         'conversation.composer': {
             kind: 'chain';
             scope: 'session';
@@ -297,57 +323,88 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
             kind: 'list';
             scope: 'session';
         };
-        /** Full-width entries above the composer card. */
+        /**
+         * Full-width entries above the composer card; fixed overlays must portal to the document body
+         * because the docked composer contains them.
+         */
         'conversation.input.dock': {
             kind: 'list';
             scope: 'session';
             owner: InputZone;
         };
-        /** Floating entries rendered inside the resident composer card. */
+        /**
+         * Floating entries rendered inside the resident composer card; fixed overlays must portal to
+         * the document body because the docked composer contains them.
+         */
         'conversation.input.overlay': {
             kind: 'list';
             scope: 'session';
         };
-        /** Ambient entries below the composer card. */
+        /**
+         * Ambient entries below the composer card; fixed overlays must portal to the document body
+         * because the docked composer contains them.
+         */
         'conversation.composer.dock': {
             kind: 'list';
             scope: 'session';
         };
-        /** Compact controls at the left of the composer tool row. */
+        /**
+         * Compact controls at the left of the composer tool row; fixed overlays must portal to the
+         * document body because the docked composer contains them.
+         */
         'conversation.input.left': {
             kind: 'list';
             scope: 'session';
         };
-        /** Compact controls before the composer submit action. */
+        /**
+         * Compact controls before the composer submit action; fixed overlays must portal to the
+         * document body because the docked composer contains them.
+         */
         'conversation.input.right': {
             kind: 'list';
             scope: 'session';
         };
-        /** Compact action after the model selector; it can expand across the toolbar while retaining the editor and submit action. */
+        /**
+         * Compact action after the model selector; it can expand across the toolbar while retaining the
+         * editor and submit action, and fixed overlays must portal to the document body because the
+         * docked composer contains them.
+         */
         'conversation.input.activity': {
             kind: 'single';
             scope: 'session';
             owner: InputActivityOwnerProps;
         };
-        /** Resident composer body, including the no-Session inert state. */
+        /**
+         * Resident composer body, including the no-Session inert state; fixed overlays must portal to
+         * the document body because the docked composer contains them.
+         */
         'conversation.composer.bar': {
             kind: 'single';
             scope: 'session-maybe';
             owner: ComposerBarOwnerProps;
         };
-        /** Optional draft-attachment rail and drop target. */
+        /**
+         * Optional draft-attachment rail and drop target; fixed overlays must portal to the document
+         * body because the docked composer contains them.
+         */
         'conversation.input.attachments': {
             kind: 'single';
             scope: 'session-maybe';
             owner: ComposerAttachmentsOwnerProps;
         };
-        /** Plan control inside the composer tool row. */
+        /**
+         * Plan control inside the composer tool row; fixed overlays must portal to the document body
+         * because the docked composer contains them.
+         */
         'conversation.input.plan': {
             kind: 'single';
             scope: 'session';
             owner: InputControlOwnerProps;
         };
-        /** Current-session permission control inside the composer tool row. */
+        /**
+         * Current-session permission control inside the composer tool row; fixed overlays must portal
+         * to the document body because the docked composer contains them.
+         */
         'conversation.input.permission': {
             kind: 'single';
             scope: 'session';
@@ -357,6 +414,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
          * Model selector inside the composer tool row. When expanded controls cannot
          * share a line, the row sets --dsh-composer-model-text-display to none and
          * --dsh-composer-model-icon-display to block for an occupant's compact display.
+         * Fixed overlays must portal to the document body because the docked composer contains them.
          */
         'conversation.input.model': {
             kind: 'single';
@@ -536,6 +594,7 @@ export interface ConversationViewActionsOwnerProps {
 }
 /** Business callbacks injected into the strict Session header. */
 export interface ConversationSessionHeaderInjected {
+    /** Open the clicked title's actions. */
     /** Package-owned View roster source bound only for the Conversation header. */
     readonly hooks: {
         readonly conversationViews: ObservableSnapshot<readonly ViewTab[]>;
@@ -598,7 +657,7 @@ export interface ComposerBarInjected {
          * and the primary Send button use while the addressed agent is busy.
          */
         busyEnter: ObservableSnapshot<BusyEnterBehavior>;
-        /** Live per-draft upload states for file-kind drafts. */
+        /** Live per-draft upload states for drafts that upload when added. */
         fileUploads: ObservableSnapshot<DraftFileUploads>;
         notices: ObservableSnapshot<InputNotice | null>;
         lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>;

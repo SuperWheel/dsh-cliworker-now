@@ -45,7 +45,7 @@ export { ConversationViewRegistry } from './conversation/view-registry.ts';
 export type { ConversationKey } from './locales.ts';
 export type { ComposerAttachment, ComposerAttachmentsOwnerProps, ComposerAttachmentsProps, ComposerFileAttachment, ComposerImageAttachment, DraftFileUpload, DraftFileUploads, ComposerBarInjected, ComposerBarOwnerProps, ComposerBarProps, ComposerChainProps, ConversationHeaderActionOwnerProps, ConversationHeaderCornerOwnerProps, ConversationHeaderLineageOwnerProps, ConversationContentInputProps, ConversationContentProps, ConversationInjected, ConversationSessionHeaderInjected, ConversationSessionHeaderSlotProps, ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps, ConversationViewActionEntry, ConversationViewActionsOwnerProps, ConversationViewsProps, ConversationWidthControlsInputProps, ConversationWidthControlsProps, ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps, HeroAgentPresetOwnerProps, HeroBrandMarkOwnerProps, InputControlOwnerProps, InputZone, MessageImageLabels, MessageImageLoader, MessageImageSource, MessageImagesContentInput, MessageImagesOwnerProps, UseConversation, UserTextInput, UserTextInjected, UserTextNodeOwnerProps, UserTextNodeProps, UseConversationViews, } from './contract/slots.ts';
 export type { BeginCommandRequest, CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions, DraftInitializationResult, InputActions, InputState, InsertReferenceRequest, InsertTextRequest, PickOutcome, SessionInput, SessionInputResolver, SubmitAttachment, SubmitOutcome, } from './contract/input.ts';
-export type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftReference, DraftSnapshot, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts';
+export type { ArbitrateKey, ArbitrateOutcome, DraftInput, DraftQuote, DraftReference, DraftSnapshot, ReferenceInsert, TokenSpan } from './contract/draft-editor.ts';
 export type { ComposerBlock, ComposerBlocks } from './contract/composer-blocks.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
@@ -55,4 +55,6 @@ declare module '@deepseek-ai/cordis' {
         uiConversation: import('./conversation/assembly.ts').UiConversation;
     }
 }
+export type { TextInteractionDefinition, TextInteractionGesture, TextInteractionRequest, TextInteractionSurface, TextInteractionTrigger } from './contract/text-interaction.ts';
+export type { ConversationInteractionRegistry } from './conversation/interaction-registry.ts';
 //# sourceMappingURL=index.d.ts.map

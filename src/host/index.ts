@@ -29,6 +29,8 @@ import {
   type NativeHarnessSkill,
 } from './native-harness-tools.ts'
 import { nativeHarnessToolCapability, nativeHarnessExecutionReady } from './native-harness-injection.mjs'
+import { createNativeHarnessExecutor } from './native-harness-executor.ts'
+import { readNativeColdSessionState } from './native-cold-session-state.ts'
 import { installHarnessModelGuard, withinCliTool } from './harness-model-guard.ts'
 import { readHarnessImage, resolveHarnessAttachments } from './harness-attachments.ts'
 import { nativeCliCapabilities, nativeCliMcpServers } from './cli-native-capabilities.mjs'
@@ -514,9 +516,9 @@ export class CliWorkerService extends TypertRemoteService {
           this.runtime.changed()
           return undefined
         }
-        // Public scoped presentation affects only this internal child. Tool policy
-        // and inherited restrictions still run inside tools.execute.
-        const resetPresentation = child.ctx.tools.presentAs('native')
+        // Native per-call dispatch retains policy/approvals without replacing
+        // the child's model executor (which may be PTC).
+        const executor = await createNativeHarnessExecutor(child.ctx)
         let lease: Awaited<ReturnType<typeof createNativeHarnessTools>>
         try {
           // The real child scope owns its tool/MCP catalog. Refresh for every
@@ -591,7 +593,7 @@ export class CliWorkerService extends TypertRemoteService {
               this.bridgeCalls.set(callId, { worker, runId: call.binding.runId, child, name: call.name, arguments: call.arguments })
               try {
                 return await withinCliTool(worker.runId, async () =>
-                  child.ctx.tools.execute({
+                  executor.execute({
                     callId,
                     name: call.name,
                     arguments: call.arguments,
@@ -622,11 +624,11 @@ export class CliWorkerService extends TypertRemoteService {
               : {}),
           })
         } catch (error) {
-          resetPresentation()
+          executor.dispose()
           throw error
         }
         const owned = lease
-        return adoptNativeHarnessLease(owned, resetPresentation, () => {
+        return adoptNativeHarnessLease(owned, executor.dispose, () => {
           if (worker.harnessConversation) {
             worker.harnessConversation = {
               ...worker.harnessConversation,
@@ -2665,11 +2667,11 @@ export class CliWorkerService extends TypertRemoteService {
             inheritedEventCount: writer.inheritedEventCount,
             eventState: read.eventState,
           })
-          const inbox = projections.stateOf(session, 'inbox')
-          const turn = projections.stateOf(session, 'turnBoundary')
-          const plan = projections.stateOf(session, 'plan')
-          if (!inbox || !turn || !plan)
-            throw new Error('原生历史会话投影尚未就绪，未修改权限')
+          const { inbox, turn, plan } = readNativeColdSessionState(
+            projections.stateOf(session, 'inbox'),
+            projections.stateOf(session, 'turnBoundary'),
+            projections.stateOf(session, 'plan'),
+          )
           if (plan.running !== null)
             throw new Error('原生规划命令尚未完成，未修改权限')
           if (inbox['next-turn'].length || inbox['next-step'].length || turn.openTurnStartSeq !== null)

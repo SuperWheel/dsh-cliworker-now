@@ -8,7 +8,7 @@
  * All $-functions must run inside `editor.read()` / `editor.update()`.
  */
 import type { LexicalNode, NodeKey, Point } from 'lexical';
-import type { Occurrence } from '../../contract/draft-editor.ts';
+import type { DraftQuote, Occurrence } from '../../contract/draft-editor.ts';
 import type { CommandClaim } from '../../contract/input.ts';
 /** The detect-projection stand-in for one chip (object replacement character). */
 export declare const ATOMIC_CHAR = "\uFFFC";
@@ -69,6 +69,8 @@ export interface EditorProjection {
     readonly clipboardText: string;
     /** InputState-compatible occurrence view (clipboardText coordinates). */
     readonly occurrences: readonly Occurrence[];
+    /** Atomic quotes in clipboard coordinates. */
+    readonly quotes: readonly DraftQuote[];
     /** Range selection in detect coordinates (ordered); null while absent or non-range. */
     readonly selection: {
         readonly start: number;

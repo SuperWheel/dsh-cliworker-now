@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-session",
   "description": "Session Controller adapter for React and session-scoped slots",
-  "version": "0.2.1-rc.5",
+  "version": "0.2.2-rc.1",
   "type": "module",
   "license": "MIT",
   "main": "lib/index.js",
@@ -18,7 +18,7 @@
     }
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5"
+    "@deepseek-ai/cordis": "~4.1.0"
   },
   "repository": {
     "type": "git",

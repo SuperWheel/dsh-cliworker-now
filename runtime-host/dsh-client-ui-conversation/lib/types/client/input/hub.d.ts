@@ -64,10 +64,10 @@ export declare class InputHub implements SessionInputResolver {
      */
     inputTriggers(id: SessionId): InputTriggerController | undefined;
     /**
-     * Default sink: optimistic clear + prompt. The session is always a real
-     * host entity (materialized when its workspace was picked), so there is
-     * exactly one path; a failed first prompt is an ordinary prompt failure
-     * (banner via promptError, draft restored only while untouched).
+     * Default sink: prompt while the composer holds the sent draft. The session
+     * is always a real host entity (materialized when its workspace was picked),
+     * so there is exactly one path; a refused or failed prompt is an ordinary
+     * prompt failure (banner via promptError, draft kept in the composer).
      */
     private sink;
     /**

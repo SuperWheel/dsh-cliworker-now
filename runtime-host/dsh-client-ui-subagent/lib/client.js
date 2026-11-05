@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 		let _deepseek_ai_dsh_client_ui_primitives = require("@deepseek-ai/dsh-client-ui-primitives");
 		let react_jsx_runtime = require("react/jsx-runtime");
 		//#region \0dsh-css:packages/client/ui-subagent/src/client/SubagentHeaderLineage.module.css.mjs
-		const css$2 = ".Agvava_root{align-items:center;gap:10px;min-width:0;display:inline-flex;position:relative}.Agvava_switcherRoot{min-width:0;margin-left:6px}.Agvava_trigger,.Agvava_switcherTrigger{border-radius:var(--dsw-radius-sm);min-height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;align-items:center;padding:3px 2px;font-size:12px;line-height:18px;display:inline-flex}.Agvava_trigger{gap:4px}.Agvava_switcherTrigger{min-width:0;max-width:244px;color:var(--dsw-alias-label-primary);gap:4px;font-weight:500}.Agvava_ancestorSwitcherTrigger{color:var(--dsw-alias-label-tertiary);font-weight:400}.Agvava_switcherTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.Agvava_switcherTrigger svg{flex:none}.Agvava_activitySlot{flex:none;justify-content:center;align-items:center;width:14px;height:14px;display:inline-flex}.Agvava_trigger:hover,.Agvava_trigger:focus-visible,.Agvava_switcherTrigger:hover,.Agvava_switcherTrigger:focus-visible{color:var(--dsw-alias-label-primary)}.Agvava_ancestorSwitcherTrigger:hover,.Agvava_ancestorSwitcherTrigger:focus-visible{color:var(--dsw-alias-label-tertiary)}.Agvava_trigger svg,.Agvava_switcherTrigger svg{transition:transform .12s}.Agvava_triggerOpen{transform:rotate(180deg)}.Agvava_menu{z-index:100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);width:336px;max-width:min(400px,100vw - 32px);max-height:min(560px,100vh - 140px);box-shadow:var(--dsw-elevation-prominent);flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}.Agvava_menu:before{content:\"\";z-index:-1;border-radius:inherit;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);position:absolute;inset:0}.Agvava_menuBody{flex-direction:column;flex:auto;min-height:0;display:flex;overflow:auto}.Agvava_node{min-width:0;position:relative}.Agvava_menuBody>.Agvava_node{margin-left:-2px}.Agvava_row{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:100%;min-height:44px;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:0;outline:none;align-items:flex-start;gap:6px;padding:6px 7px 6px 9px;font-size:12px;line-height:17px;display:flex;position:relative}.Agvava_row:hover>.Agvava_clickarea,.Agvava_row:focus-visible>.Agvava_clickarea{background:var(--dsw-alias-interactive-bg-hover)}.Agvava_clickarea{box-sizing:border-box;border-radius:var(--dsw-radius-md);flex:1;align-self:stretch;align-items:flex-start;gap:6px;min-width:0;margin:-6px -7px;padding:6px 7px;display:flex}.Agvava_rowActivitySlot{flex:none;justify-content:center;align-items:center;width:14px;height:17px;display:inline-flex}.Agvava_disclosure,.Agvava_disclosureSpace{flex:none;width:14px;height:17px}.Agvava_disclosure{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;justify-content:center;align-items:center;padding:0;transition:transform .12s;display:inline-flex}.Agvava_disclosure svg{width:12px;height:12px}.Agvava_disclosure:hover{color:var(--dsw-alias-label-primary)}.Agvava_disclosureOpen{transform:rotate(90deg)}.Agvava_content{flex-direction:column;flex:1;min-width:0;display:flex}.Agvava_label,.Agvava_summary{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.Agvava_label{color:inherit;font-weight:400}.Agvava_currentLabel{font-weight:600}.Agvava_summary,.Agvava_metrics{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px}.Agvava_metrics{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;flex:none;grid-template-rows:17px 15px;display:grid}.Agvava_metricToken{grid-row:1;line-height:17px}.Agvava_metricDuration{grid-row:2}.Agvava_sidebarButton{border-radius:var(--dsw-radius-sm);width:28px;height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;flex:none;justify-content:center;align-items:center;margin:4px 0;padding:6px;display:inline-flex}.Agvava_sidebarButton:hover,.Agvava_sidebarButton:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.Agvava_children{margin-left:16px;padding-left:3px;position:relative}.Agvava_children:before,.Agvava_children>.Agvava_node:before{content:\"\";border-left:.5px solid var(--dsw-alias-border-l2);position:absolute;left:0}.Agvava_children:before{height:23px;top:-23px}.Agvava_children[aria-busy=true]:before{content:none}.Agvava_children>.Agvava_node:before{top:0;bottom:0;left:-3px}.Agvava_children>.Agvava_node:last-child:before{height:15px;bottom:auto}.Agvava_children>.Agvava_node>.Agvava_row:before{content:\"\";border-top:.5px solid var(--dsw-alias-border-l2);width:12px;position:absolute;top:14px;left:-3px}.Agvava_notice,.Agvava_error{color:var(--dsw-alias-label-tertiary);padding:8px 10px;font-size:11px;line-height:16px}.Agvava_error{color:var(--dsw-alias-state-error-primary);justify-content:space-between;align-items:center;gap:10px;display:flex}.Agvava_refresh{border-radius:var(--dsw-radius-sm);color:inherit;cursor:pointer;background:0 0;border:0;flex:none;align-items:center;gap:3px;padding:3px 5px;display:inline-flex}.Agvava_refresh svg{width:12px;height:12px}.Agvava_refresh:hover{background:var(--dsw-alias-interactive-bg-hover)}";
+		const css$2 = ".Bi2Gzq_root{align-items:center;gap:10px;min-width:0;display:inline-flex;position:relative}.Bi2Gzq_switcherRoot{min-width:0;margin-left:6px}.Bi2Gzq_trigger,.Bi2Gzq_switcherTrigger{border-radius:var(--dsw-radius-sm);min-height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;align-items:center;padding:3px 2px;font-size:12px;line-height:18px;display:inline-flex}.Bi2Gzq_trigger{gap:4px}.Bi2Gzq_switcherTrigger{min-width:0;max-width:244px;color:var(--dsw-alias-label-primary);gap:4px;font-weight:500}.Bi2Gzq_ancestorSwitcherTrigger{color:var(--dsw-alias-label-tertiary);font-weight:400}.Bi2Gzq_switcherTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}.Bi2Gzq_switcherTrigger svg{flex:none}.Bi2Gzq_activitySlot{flex:none;justify-content:center;align-items:center;width:14px;height:14px;display:inline-flex}.Bi2Gzq_trigger:focus-visible{color:var(--dsw-alias-label-primary)}@media (hover:hover){.Bi2Gzq_trigger:hover{color:var(--dsw-alias-label-primary)}}.Bi2Gzq_switcherTrigger:focus-visible{color:var(--dsw-alias-label-primary)}@media (hover:hover){.Bi2Gzq_switcherTrigger:hover{color:var(--dsw-alias-label-primary)}}.Bi2Gzq_ancestorSwitcherTrigger:focus-visible{color:var(--dsw-alias-label-tertiary)}@media (hover:hover){.Bi2Gzq_ancestorSwitcherTrigger:hover{color:var(--dsw-alias-label-tertiary)}}.Bi2Gzq_trigger svg,.Bi2Gzq_switcherTrigger svg{transition:transform .12s}.Bi2Gzq_triggerOpen{transform:rotate(180deg)}.Bi2Gzq_menu{z-index:100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);width:336px;max-width:min(400px,100vw - 32px);max-height:min(560px,100vh - 140px);box-shadow:var(--dsw-elevation-prominent);flex-direction:column;padding:4px;display:flex;position:fixed;overflow:hidden}.Bi2Gzq_menu:before{content:\"\";z-index:-1;border-radius:inherit;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);position:absolute;inset:0}.Bi2Gzq_menuBody{flex-direction:column;flex:auto;min-height:0;display:flex;overflow:auto}.Bi2Gzq_node{min-width:0;position:relative}.Bi2Gzq_menuBody>.Bi2Gzq_node{margin-left:-2px}.Bi2Gzq_row{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:100%;min-height:44px;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:0;outline:none;align-items:flex-start;gap:6px;padding:6px 7px 6px 9px;font-size:12px;line-height:17px;display:flex;position:relative}.Bi2Gzq_row:focus-visible>.Bi2Gzq_clickarea{background:var(--dsw-alias-interactive-bg-hover)}@media (hover:hover){.Bi2Gzq_row:hover>.Bi2Gzq_clickarea{background:var(--dsw-alias-interactive-bg-hover)}}.Bi2Gzq_clickarea{box-sizing:border-box;border-radius:var(--dsw-radius-md);flex:1;align-self:stretch;align-items:flex-start;gap:6px;min-width:0;margin:-6px -7px;padding:6px 7px;display:flex}.Bi2Gzq_rowActivitySlot{flex:none;justify-content:center;align-items:center;width:14px;height:17px;display:inline-flex}.Bi2Gzq_disclosure,.Bi2Gzq_disclosureSpace{flex:none;width:14px;height:17px}.Bi2Gzq_disclosure{color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;justify-content:center;align-items:center;padding:0;transition:transform .12s;display:inline-flex}.Bi2Gzq_disclosure svg{width:12px;height:12px}@media (hover:hover){.Bi2Gzq_disclosure:hover{color:var(--dsw-alias-label-primary)}}.Bi2Gzq_disclosureOpen{transform:rotate(90deg)}.Bi2Gzq_content{flex-direction:column;flex:1;min-width:0;display:flex}.Bi2Gzq_label,.Bi2Gzq_summary{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.Bi2Gzq_label{color:inherit;font-weight:400}.Bi2Gzq_currentLabel{font-weight:600}.Bi2Gzq_summary,.Bi2Gzq_metrics{color:var(--dsw-alias-label-tertiary);font-size:10px;line-height:15px}.Bi2Gzq_metrics{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;flex:none;grid-template-rows:17px 15px;display:grid}.Bi2Gzq_metricToken{grid-row:1;line-height:17px}.Bi2Gzq_metricDuration{grid-row:2}.Bi2Gzq_sidebarButton,.Bi2Gzq_sidebarSpace{box-sizing:border-box;flex:none;width:28px;height:28px;margin:4px 0}.Bi2Gzq_sidebarButton{border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;justify-content:center;align-items:center;padding:6px;display:inline-flex}.Bi2Gzq_sidebarButton:focus-visible{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}@media (hover:hover){.Bi2Gzq_sidebarButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}}.Bi2Gzq_children{margin-left:16px;padding-left:3px;position:relative}.Bi2Gzq_children:before,.Bi2Gzq_children>.Bi2Gzq_node:before{content:\"\";border-left:.5px solid var(--dsw-alias-border-l2);position:absolute;left:0}.Bi2Gzq_children:before{height:23px;top:-23px}.Bi2Gzq_children[aria-busy=true]:before{content:none}.Bi2Gzq_children>.Bi2Gzq_node:before{top:0;bottom:0;left:-3px}.Bi2Gzq_children>.Bi2Gzq_node:last-child:before{height:15px;bottom:auto}.Bi2Gzq_children>.Bi2Gzq_node>.Bi2Gzq_row:before{content:\"\";border-top:.5px solid var(--dsw-alias-border-l2);width:12px;position:absolute;top:14px;left:-3px}.Bi2Gzq_notice,.Bi2Gzq_error{color:var(--dsw-alias-label-tertiary);padding:8px 10px;font-size:11px;line-height:16px}.Bi2Gzq_error{color:var(--dsw-alias-state-error-primary);justify-content:space-between;align-items:center;gap:10px;display:flex}.Bi2Gzq_refresh{border-radius:var(--dsw-radius-sm);color:inherit;cursor:pointer;background:0 0;border:0;flex:none;align-items:center;gap:3px;padding:3px 5px;display:inline-flex}.Bi2Gzq_refresh svg{width:12px;height:12px}@media (hover:hover){.Bi2Gzq_refresh:hover{background:var(--dsw-alias-interactive-bg-hover)}}";
 		const tagId$2 = "@deepseek-ai/dsh-client-ui-subagent/SubagentHeaderLineage.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
 			const tag = document.createElement("style");
@@ -19,35 +19,36 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var SubagentHeaderLineage_module_css_default = {
-			"activitySlot": "Agvava_activitySlot",
-			"ancestorSwitcherTrigger": "Agvava_ancestorSwitcherTrigger",
-			"children": "Agvava_children",
-			"clickarea": "Agvava_clickarea",
-			"content": "Agvava_content",
-			"currentLabel": "Agvava_currentLabel",
-			"disclosure": "Agvava_disclosure",
-			"disclosureOpen": "Agvava_disclosureOpen",
-			"disclosureSpace": "Agvava_disclosureSpace",
-			"error": "Agvava_error",
-			"label": "Agvava_label",
-			"menu": "Agvava_menu",
-			"menuBody": "Agvava_menuBody",
-			"metricDuration": "Agvava_metricDuration",
-			"metricToken": "Agvava_metricToken",
-			"metrics": "Agvava_metrics",
-			"node": "Agvava_node",
-			"notice": "Agvava_notice",
-			"refresh": "Agvava_refresh",
-			"root": "Agvava_root",
-			"row": "Agvava_row",
-			"rowActivitySlot": "Agvava_rowActivitySlot",
-			"sidebarButton": "Agvava_sidebarButton",
-			"summary": "Agvava_summary",
-			"switcherRoot": "Agvava_switcherRoot",
-			"switcherTitle": "Agvava_switcherTitle",
-			"switcherTrigger": "Agvava_switcherTrigger",
-			"trigger": "Agvava_trigger",
-			"triggerOpen": "Agvava_triggerOpen"
+			"activitySlot": "Bi2Gzq_activitySlot",
+			"ancestorSwitcherTrigger": "Bi2Gzq_ancestorSwitcherTrigger",
+			"children": "Bi2Gzq_children",
+			"clickarea": "Bi2Gzq_clickarea",
+			"content": "Bi2Gzq_content",
+			"currentLabel": "Bi2Gzq_currentLabel",
+			"disclosure": "Bi2Gzq_disclosure",
+			"disclosureOpen": "Bi2Gzq_disclosureOpen",
+			"disclosureSpace": "Bi2Gzq_disclosureSpace",
+			"error": "Bi2Gzq_error",
+			"label": "Bi2Gzq_label",
+			"menu": "Bi2Gzq_menu",
+			"menuBody": "Bi2Gzq_menuBody",
+			"metricDuration": "Bi2Gzq_metricDuration",
+			"metricToken": "Bi2Gzq_metricToken",
+			"metrics": "Bi2Gzq_metrics",
+			"node": "Bi2Gzq_node",
+			"notice": "Bi2Gzq_notice",
+			"refresh": "Bi2Gzq_refresh",
+			"root": "Bi2Gzq_root",
+			"row": "Bi2Gzq_row",
+			"rowActivitySlot": "Bi2Gzq_rowActivitySlot",
+			"sidebarButton": "Bi2Gzq_sidebarButton",
+			"sidebarSpace": "Bi2Gzq_sidebarSpace",
+			"summary": "Bi2Gzq_summary",
+			"switcherRoot": "Bi2Gzq_switcherRoot",
+			"switcherTitle": "Bi2Gzq_switcherTitle",
+			"switcherTrigger": "Bi2Gzq_switcherTrigger",
+			"trigger": "Bi2Gzq_trigger",
+			"triggerOpen": "Bi2Gzq_triggerOpen"
 		};
 		//#endregion
 		//#region src/client/SubagentHeaderLineage.tsx
@@ -292,7 +293,7 @@ window.__ModuleLoader__.load({
 											children: durationMetric.compact
 										})]
 									}),
-									!isCurrent && !external && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+									isCurrent || external ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: SubagentHeaderLineage_module_css_default.sidebarSpace }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
 										label: t("open.sidebar"),
 										side: "bottom",
 										align: "end",
@@ -532,10 +533,12 @@ window.__ModuleLoader__.load({
 				className: `${SubagentHeaderLineage_module_css_default.root} ${variant === "switcher" ? SubagentHeaderLineage_module_css_default.switcherRoot : ""}`,
 				ref: rootRef,
 				onKeyDown: navigate,
-				onMouseLeave: scheduleHoverClose,
+				onPointerLeave: scheduleHoverClose,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 					ref: triggerRef,
-					onMouseEnter: scheduleHoverOpen,
+					onPointerEnter: (event) => {
+						if (event.pointerType !== "touch") scheduleHoverOpen();
+					},
 					type: "button",
 					className: variant === "switcher" ? `${SubagentHeaderLineage_module_css_default.switcherTrigger} ${ancestorSwitcher ? SubagentHeaderLineage_module_css_default.ancestorSwitcherTrigger : ""}` : SubagentHeaderLineage_module_css_default.trigger,
 					"aria-haspopup": "tree",
@@ -573,8 +576,10 @@ window.__ModuleLoader__.load({
 					ref: menuRef,
 					className: SubagentHeaderLineage_module_css_default.menu,
 					style: menuPosition,
-					onMouseEnter: cancelHoverClose,
-					onMouseLeave: scheduleHoverClose,
+					onPointerEnter: (event) => {
+						if (event.pointerType !== "touch") cancelHoverClose();
+					},
+					onPointerLeave: scheduleHoverClose,
 					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: SubagentHeaderLineage_module_css_default.menuBody,
 						role: "tree",
@@ -658,7 +663,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-subagent/src/client/SubagentReadOnlyComposer.module.css.mjs
-		const css$1 = ".ZRM5UG_frame{border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);min-height:54px;color:var(--dsw-alias-label-tertiary);justify-content:center;align-items:center;gap:8px;margin:0 24px 20px;padding:10px 16px;font-size:13px;line-height:20px;display:flex}.ZRM5UG_frame strong{color:var(--dsw-alias-label-primary);font-weight:510}";
+		const css$1 = ".cUoRgq_frame{border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);background:var(--dsw-alias-bg-layer-1);min-height:54px;color:var(--dsw-alias-label-tertiary);justify-content:center;align-items:center;gap:8px;margin:0 24px 20px;padding:10px 16px;font-size:13px;line-height:20px;display:flex}.cUoRgq_frame strong{color:var(--dsw-alias-label-primary);font-weight:510}";
 		const tagId$1 = "@deepseek-ai/dsh-client-ui-subagent/SubagentReadOnlyComposer.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
 			const tag = document.createElement("style");
@@ -667,7 +672,7 @@ window.__ModuleLoader__.load({
 			tag.textContent = css$1;
 			document.head.appendChild(tag);
 		}
-		var SubagentReadOnlyComposer_module_css_default = { "frame": "ZRM5UG_frame" };
+		var SubagentReadOnlyComposer_module_css_default = { "frame": "cUoRgq_frame" };
 		//#endregion
 		//#region src/client/SubagentReadOnlyComposer.tsx
 		/**
@@ -685,7 +690,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-subagent/src/client/sidebar-chat/SidebarChat.module.css.mjs
-		const css = ".aRQXma_root{width:100%;min-width:0;height:100%;min-height:0;display:flex}";
+		const css = ".yG-UZq_root{width:100%;min-width:0;height:100%;min-height:0;display:flex}";
 		const tagId = "@deepseek-ai/dsh-client-ui-subagent/SidebarChat.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -694,7 +699,7 @@ window.__ModuleLoader__.load({
 			tag.textContent = css;
 			document.head.appendChild(tag);
 		}
-		var SidebarChat_module_css_default = { "root": "aRQXma_root" };
+		var SidebarChat_module_css_default = { "root": "yG-UZq_root" };
 		//#endregion
 		//#region src/client/sidebar-chat/index.tsx
 		/** Stable implementation identity for the Sidebar tab body. */
@@ -882,6 +887,7 @@ window.__ModuleLoader__.load({
 			"switcher.aria": "切换子智能体：{title}",
 			"tree.aria": "子智能体会话",
 			"open.sidebar": "在侧边栏打开",
+			"open.floatWindow": "在浮窗中打开",
 			"open.sidebar.aria": "在侧边栏打开 {label}",
 			"sidebar.chat": "聊天",
 			"readonly.oneShot.title": "一次性子智能体记录",
@@ -926,12 +932,283 @@ window.__ModuleLoader__.load({
 			"switcher.aria": "Switch subagent: {title}",
 			"tree.aria": "Subagent sessions",
 			"open.sidebar": "Open in sidebar",
+			"open.floatWindow": "Open in floating panel",
 			"open.sidebar.aria": "Open {label} in sidebar",
 			"sidebar.chat": "Chat",
 			"readonly.oneShot.title": "One-shot subagent record",
 			"readonly.title": "This subagent is read-only for now",
 			"readonly.oneShot.body": "One-shot tasks do not accept follow-ups; review the full execution record here.",
 			"readonly.body": "The parent session is offline; reopen it to continue sending messages."
+		};
+		/** Japanese copy, checked against the English keys. */
+		const ja = {
+			"duration.seconds": "{seconds}秒",
+			"duration.minutes": "{minutes}分{seconds}秒",
+			"duration.hours": "{hours}時間{minutes}分{seconds}秒",
+			"duration.days": "{days}日",
+			"duration.daysHours": "{days}日{hours}時間",
+			"duration.months": "約{months}ヶ月",
+			"duration.monthsDays": "約{months}ヶ月{days}日",
+			"duration.years": "約{years}年",
+			"duration.yearsMonths": "約{years}年{months}ヶ月",
+			"duration.exactDays": "{days}日{hours}時間{minutes}分{seconds}秒",
+			"duration.exactTitle": "合計アクティブ時間: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "{value} tok",
+			"loading.label": "サブエージェントを読み込み中…",
+			"load.error": "サブエージェントを読み込めません",
+			"catalog.migrationRequired": "移行が必要です",
+			"retry": "再試行",
+			"mode.external": "外部タスク",
+			"mode.oneShot": "単発",
+			"mode.continuable": "継続可能",
+			"mode.unknown": "不明なモード",
+			"readonly.unknown.body": "子セッションを確認して、継続できるかどうかを判断してください。",
+			"activity.running": "実行中",
+			"activity.completed": "完了",
+			"activity.inactive": "停止中",
+			"branch.collapse": "{label}の子孫を折りたたむ",
+			"branch.expand": "{label}の子孫を展開",
+			"count.total.one": "サブエージェント{count}件",
+			"count.total.other": "サブエージェント{count}件",
+			"count.running.one": "実行中のサブエージェント{count}件",
+			"count.running.other": "実行中のサブエージェント{count}件",
+			"switcher.aria": "サブエージェントを切り替え: {title}",
+			"tree.aria": "サブエージェントセッション",
+			"open.sidebar": "サイドバーで開く",
+			"open.floatWindow": "フローティングパネルで開く",
+			"open.sidebar.aria": "{label}をサイドバーで開く",
+			"sidebar.chat": "チャット",
+			"readonly.oneShot.title": "単発サブエージェントの記録",
+			"readonly.title": "このサブエージェントは現在読み取り専用です",
+			"readonly.oneShot.body": "単発タスクは追加のメッセージを受け付けません。ここで実行記録の全体を確認できます。",
+			"readonly.body": "親セッションがオフラインです。再度開いてメッセージの送信を続けてください。"
+		};
+		/** Spanish dictionary, checked against the English keys. */
+		const es = {
+			"duration.seconds": "{seconds}s",
+			"duration.minutes": "{minutes}m {seconds}s",
+			"duration.hours": "{hours}h {minutes}m {seconds}s",
+			"duration.days": "{days}d",
+			"duration.daysHours": "{days}d {hours}h",
+			"duration.months": "~{months}mo",
+			"duration.monthsDays": "~{months}mo {days}d",
+			"duration.years": "~{years}y",
+			"duration.yearsMonths": "~{years}y {months}mo",
+			"duration.exactDays": "{days}d {hours}h {minutes}m {seconds}s",
+			"duration.exactTitle": "Duración total activa: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "Tok {value}",
+			"loading.label": "Cargando subagentes…",
+			"load.error": "No se pueden cargar subagentes",
+			"catalog.migrationRequired": "Migración requerida",
+			"retry": "Reintentar",
+			"mode.external": "tarea externa",
+			"mode.oneShot": "un solo disparo",
+			"mode.continuable": "continuable",
+			"mode.unknown": "modo desconocido",
+			"readonly.unknown.body": "Lea la sesión secundaria para determinar si se puede continuar.",
+			"activity.running": "corriendo",
+			"activity.completed": "completado",
+			"activity.inactive": "no corriendo",
+			"branch.collapse": "Contraer descendientes de {label}",
+			"branch.expand": "Ampliar descendientes de {label}",
+			"count.total.one": "Subagente {count}",
+			"count.total.other": "Subagentes {count}",
+			"count.running.one": "Subagente {count} ejecutándose",
+			"count.running.other": "Subagentes {count} ejecutándose",
+			"switcher.aria": "Cambiar subagente: {title}",
+			"tree.aria": "Sesiones de subagente",
+			"open.sidebar": "Abrir en la barra lateral",
+			"open.floatWindow": "Abrir en un panel flotante",
+			"open.sidebar.aria": "Abra {label} en la barra lateral",
+			"sidebar.chat": "Chat",
+			"readonly.oneShot.title": "Registro de subagente de una sola vez",
+			"readonly.title": "Este subagente es de solo lectura por ahora",
+			"readonly.oneShot.body": "Las tareas únicas no aceptan seguimientos; revise el registro de ejecución completo aquí.",
+			"readonly.body": "La sesión para padres está fuera de línea; Vuelva a abrirlo para continuar enviando mensajes."
+		};
+		/** French dictionary, checked against the English keys. */
+		const fr = {
+			"duration.seconds": "{seconds}s",
+			"duration.minutes": "{minutes}m {seconds}s",
+			"duration.hours": "{hours}h {minutes}m {seconds}s",
+			"duration.days": "{days}d",
+			"duration.daysHours": "{days}d {hours}h",
+			"duration.months": "~{months}mo",
+			"duration.monthsDays": "~{months}mo {days}d",
+			"duration.years": "~{years}y",
+			"duration.yearsMonths": "~{years}y {months}mo",
+			"duration.exactDays": "{days}d {hours}h {minutes}m {seconds}s",
+			"duration.exactTitle": "Durée totale d'activité\xA0: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "Jeton {value}",
+			"loading.label": "Chargement des sous-agents…",
+			"load.error": "Impossible de charger les sous-agents",
+			"catalog.migrationRequired": "Migration requise",
+			"retry": "Réessayer",
+			"mode.external": "Tâche externe",
+			"mode.oneShot": "un coup",
+			"mode.continuable": "continu",
+			"mode.unknown": "mode inconnu",
+			"readonly.unknown.body": "Lisez la séance enfant pour déterminer si elle peut être poursuivie.",
+			"activity.running": "courir",
+			"activity.completed": "terminé",
+			"activity.inactive": "ne fonctionne pas",
+			"branch.collapse": "Réduire les descendants de {label}",
+			"branch.expand": "Développer les descendants de {label}",
+			"count.total.one": "Sous-agent {count}",
+			"count.total.other": "Sous-agents {count}",
+			"count.running.one": "Sous-agent {count} en cours d'exécution",
+			"count.running.other": "Sous-agents {count} en cours d'exécution",
+			"switcher.aria": "Changer de sous-agent\xA0: {title}",
+			"tree.aria": "Sessions de sous-agents",
+			"open.sidebar": "Ouvrir dans la barre latérale",
+			"open.floatWindow": "Ouvrir dans un panneau flottant",
+			"open.sidebar.aria": "Ouvrir {label} dans la barre latérale",
+			"sidebar.chat": "Discussion",
+			"readonly.oneShot.title": "Enregistrement de sous-agent unique",
+			"readonly.title": "Ce sous-agent est actuellement en lecture seule",
+			"readonly.oneShot.body": "Les tâches ponctuelles n’acceptent pas de messages de suivi ; consultez leur journal d’exécution complet ici.",
+			"readonly.body": "La session parente est hors ligne ; rouvrez-la pour continuer à envoyer des messages."
+		};
+		/** German dictionary, checked against the English keys. */
+		const de = {
+			"duration.seconds": "{seconds}s",
+			"duration.minutes": "{minutes}m {seconds}s",
+			"duration.hours": "{hours}h {minutes}m {seconds}s",
+			"duration.days": "{days}d",
+			"duration.daysHours": "{days}d {hours}h",
+			"duration.months": "~{months}mo",
+			"duration.monthsDays": "~{months}mo {days}d",
+			"duration.years": "~{years}y",
+			"duration.yearsMonths": "~{years}y {months}mo",
+			"duration.exactDays": "{days}d {hours}h {minutes}m {seconds}s",
+			"duration.exactTitle": "Gesamte aktive Dauer: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "{value}-Token",
+			"loading.label": "Subagenten werden geladen…",
+			"load.error": "Subagenten können nicht geladen werden",
+			"catalog.migrationRequired": "Migration erforderlich",
+			"retry": "Erneut versuchen",
+			"mode.external": "Externe Aufgabe",
+			"mode.oneShot": "One-Shot",
+			"mode.continuable": "fortsetzbar",
+			"mode.unknown": "Unbekannter Modus",
+			"readonly.unknown.body": "Lesen Sie die untergeordnete Sitzung, um festzustellen, ob sie fortgesetzt werden kann.",
+			"activity.running": "laufen",
+			"activity.completed": "abgeschlossen",
+			"activity.inactive": "läuft nicht",
+			"branch.collapse": "{label}-Nachkommen reduzieren",
+			"branch.expand": "Erweitern Sie {label}-Nachkommen",
+			"count.total.one": "{count}-Subagent",
+			"count.total.other": "{count}-Subagenten",
+			"count.running.one": "{count}-Subagent läuft",
+			"count.running.other": "{count} Subagenten laufen",
+			"switcher.aria": "Subagent wechseln: {title}",
+			"tree.aria": "Subagentensitzungen",
+			"open.sidebar": "In der Seitenleiste öffnen",
+			"open.floatWindow": "In schwebendem Panel öffnen",
+			"open.sidebar.aria": "Öffnen Sie {label} in der Seitenleiste",
+			"sidebar.chat": "Chat",
+			"readonly.oneShot.title": "Einmaliger Subagentendatensatz",
+			"readonly.title": "Dieser Subagent ist derzeit schreibgeschützt",
+			"readonly.oneShot.body": "Einmalige Aufgaben akzeptieren keine Folgeaufgaben; Sehen Sie sich hier den vollständigen Ausführungsbericht an.",
+			"readonly.body": "Die übergeordnete Sitzung ist offline. Öffnen Sie es erneut, um weiterhin Nachrichten zu senden."
+		};
+		/** Russian dictionary, checked against the English keys. */
+		const ru = {
+			"duration.seconds": "{seconds}s",
+			"duration.minutes": "{minutes}m {seconds}s",
+			"duration.hours": "{hours}h {minutes}m {seconds}s",
+			"duration.days": "{days}d",
+			"duration.daysHours": "{days}d {hours}h",
+			"duration.months": "~{months}mo",
+			"duration.monthsDays": "~{months}mo {days}d",
+			"duration.years": "~{years}y",
+			"duration.yearsMonths": "~{years}y {months}mo",
+			"duration.exactDays": "{days}d {hours}h {minutes}m {seconds}s",
+			"duration.exactTitle": "Общая активная продолжительность: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "{value} ток",
+			"loading.label": "Загрузка субагентов…",
+			"load.error": "Невозможно загрузить субагенты",
+			"catalog.migrationRequired": "Требуется миграция",
+			"retry": "Повторить",
+			"mode.external": "Внешняя задача",
+			"mode.oneShot": "одноразовый",
+			"mode.continuable": "продолжаемый",
+			"mode.unknown": "неизвестный режим",
+			"readonly.unknown.body": "Прочтите дочерний сеанс, чтобы определить, можно ли его продолжить.",
+			"activity.running": "бег",
+			"activity.completed": "завершено",
+			"activity.inactive": "не работает",
+			"branch.collapse": "Свернуть потомков {label}",
+			"branch.expand": "Развернуть потомков {label}",
+			"count.total.one": "Субагент {count}",
+			"count.total.other": "Субагенты {count}",
+			"count.running.one": "Субагент {count} работает",
+			"count.running.other": "Субагенты {count} работают",
+			"switcher.aria": "Переключить субагент: {title}",
+			"tree.aria": "Сеансы субагента",
+			"open.sidebar": "Открыть в боковой панели",
+			"open.floatWindow": "Открыть на плавающей панели",
+			"open.sidebar.aria": "Откройте {label} на боковой панели.",
+			"sidebar.chat": "Чат",
+			"readonly.oneShot.title": "Разовая запись субагента",
+			"readonly.title": "Этот субагент пока доступен только для чтения.",
+			"readonly.oneShot.body": "Одноразовые задачи не допускают последующих действий; просмотреть полную запись выполнения можно здесь.",
+			"readonly.body": "Родительский сеанс находится в автономном режиме; откройте его повторно, чтобы продолжить отправку сообщений."
+		};
+		/** Portuguese dictionary, checked against the English keys. */
+		const pt = {
+			"duration.seconds": "{seconds}s",
+			"duration.minutes": "{minutes}m {seconds}s",
+			"duration.hours": "{hours}h {minutes}m {seconds}s",
+			"duration.days": "{days}d",
+			"duration.daysHours": "{days}d {hours}h",
+			"duration.months": "~{months} mês",
+			"duration.monthsDays": "~{months}mês {days}d",
+			"duration.years": "~{years}y",
+			"duration.yearsMonths": "~{years}a {months}mês",
+			"duration.exactDays": "{days}d {hours}h {minutes}m {seconds}s",
+			"duration.exactTitle": "Duração total ativa: {duration}",
+			"tokens.thousand": "{value}K",
+			"tokens.million": "{value}M",
+			"tokens.total": "{value} valor",
+			"loading.label": "Carregando subagentes…",
+			"load.error": "Não foi possível carregar subagentes",
+			"catalog.migrationRequired": "Migração necessária",
+			"retry": "Tentar novamente",
+			"mode.external": "Tarefa externa",
+			"mode.oneShot": "tiro único",
+			"mode.continuable": "continuável",
+			"mode.unknown": "modo desconhecido",
+			"readonly.unknown.body": "Leia a sessão secundária para determinar se ela pode continuar.",
+			"activity.running": "correndo",
+			"activity.completed": "concluído",
+			"activity.inactive": "não está funcionando",
+			"branch.collapse": "Recolher {label} descendentes",
+			"branch.expand": "Expandir {label} descendentes",
+			"count.total.one": "{count} subagente",
+			"count.total.other": "{count} subagentes",
+			"count.running.one": "{count} subagente em execução",
+			"count.running.other": "{count} subagentes em execução",
+			"switcher.aria": "Alternar subagente: {title}",
+			"tree.aria": "Sessões de subagente",
+			"open.sidebar": "Abrir na barra lateral",
+			"open.floatWindow": "Abrir em painel flutuante",
+			"open.sidebar.aria": "Abra {label} na barra lateral",
+			"sidebar.chat": "Chat",
+			"readonly.oneShot.title": "Registro de subagente único",
+			"readonly.title": "Este subagente é somente leitura por enquanto",
+			"readonly.oneShot.body": "Tarefas únicas não aceitam acompanhamentos; revise o registro completo da execução aqui.",
+			"readonly.body": "A sessão pai está offline; reabra-o para continuar enviando mensagens."
 		};
 		//#endregion
 		//#region src/client/index.ts
@@ -959,7 +1236,13 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			ctx.effect(() => ctx.locale.register(NS, {
 				zh,
-				en
+				en,
+				ja,
+				es,
+				fr,
+				de,
+				ru,
+				pt
 			}), "ui-subagent: dictionaries");
 			ctx.inject(["resources", "sidebarRightTabs"], (scope) => {
 				registerSidebarChat(scope, ctx.locale.bind(NS));

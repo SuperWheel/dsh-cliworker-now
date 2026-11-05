@@ -23,10 +23,22 @@ interface TurnProcessState {
     readonly toolCallCount: number;
     readonly subagentCount: number;
 }
+/** Turn of one Step that recorded durable process evidence. */
+export interface ProcessEvidenceState {
+    readonly turn: number;
+}
+/**
+ * State-only record of each Step whose durable events include process evidence, keyed by Turn and Step.
+ * An input follows its Turn's process control exactly when its Turn recorded evidence before it, so an
+ * input reads the nearest earlier record through `reader.previous`. A Step's evidence is logged before
+ * a later Step admits input, so the record a later input reads no longer changes; transient live chunks
+ * are not needed because a Step's durable settlement precedes the next Step's input.
+ */
+export declare const processEvidenceDefinition: ConversationNodeDefinition<ProcessEvidenceState>;
 /** Turn-scoped process range and answer-boundary Definition. */
 export declare const turnProcessDefinition: ConversationNodeDefinition<TurnProcessState>;
 /**
- * Register the Turn-scoped process disclosure projection.
+ * Register the Turn-scoped process disclosure projection and its per-Step evidence record.
  * @param ctx - owning UI Conversation context.
  */
 export declare function registerTurnProcess(ctx: Context): void;

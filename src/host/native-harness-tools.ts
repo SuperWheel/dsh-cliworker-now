@@ -63,7 +63,7 @@ const reserved = new Set(['dsh_list_skills', 'dsh_read_skill', 'dsh_read_skill_r
 const forbidden = /^(?:run_code|cliworker|cli_worker|agent|subagents?|spawn|delegate|task|send_message|interrupt_agent|(?:send|resume|close|interrupt|wait|list)_subagents?)(?:[_.-]|$)/iu
 /**
  * The scoped registry establishes availability; a familiar name or MCP prefix
- * establishes nothing. Effects and approvals still belong to tools.execute.
+ * establishes nothing. Effects and approvals still belong to the Harness tool pipeline.
  * Auxiliary model calls are additionally rejected by withinCliTool's guard.
  */
 export function classifyHarnessTool(name: string, visibleSchemas: readonly { name: string }[] = []): NativeHarnessTool['execution'] {
@@ -89,7 +89,7 @@ async function body(request: IncomingMessage, maximum: number): Promise<unknown>
 }
 const resultText = (value: unknown) => ({ content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value ?? null) }] })
 async function hostToolResult(value: unknown, image?: (attachment: unknown) => Promise<{ data: string; mimeType: string } | undefined>) {
-  // tools.execute's public rc.2 result is already its model-visible projection.
+  // The executor adapter supplies one ToolExecutionResult, never a whole batch.
   // Never JSON-wrap an execution failure into a successful MCP result, or leak
   // execution-local value/error/meta/additionalContexts as unreviewed content.
   if (record(value) && typeof value.isError === 'boolean') {
@@ -309,18 +309,18 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
 /**
  * A lease is owned from the moment it is created. Until the caller receives the
  * returned handle, any publication failure closes the listening bridge and
- * restores the child presentation before the original error is reported.
+ * releases the executor adapter before the original error is reported.
  */
 export async function adoptNativeHarnessLease<T extends { connection: unknown; close(): Promise<void> }>(
   lease: T,
-  resetPresentation: () => void,
+  disposeExecutor: () => void,
   publish: () => void,
 ): Promise<{ connection: T['connection']; close(): Promise<void> }> {
   const release = async () => {
     try {
       await lease.close()
     } finally {
-      resetPresentation()
+      disposeExecutor()
     }
   }
   try {

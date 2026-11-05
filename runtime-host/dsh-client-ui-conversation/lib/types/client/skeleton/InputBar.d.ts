@@ -14,5 +14,5 @@
  */
 import type { ComposerBarProps } from '../contract/slots.ts';
 export type InputBarProps = ComposerBarProps;
-export declare const InputBar: import("react").MemoExoticComponent<({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert, blocked, workspacePickerOpen, onRequestWorkspace, placeholder, accessory, }: InputBarProps) => import("react").JSX.Element>;
+export declare const InputBar: import("react").MemoExoticComponent<({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useAccess, useProjection, sessionId, variant, disabled: inert, blocked, workspacePickerOpen, onRequestWorkspace, placeholder, accessory, }: InputBarProps) => import("react").JSX.Element>;
 //# sourceMappingURL=InputBar.d.ts.map

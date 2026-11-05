@@ -20,6 +20,8 @@ export interface AssistantMarkdownProps extends Pick<PropsRenderSlots<'conversat
     useDisclosure: UseDisclosure;
     blocks: readonly AssistantBlock[];
     streaming: boolean;
+    /** Only finalized durable Assistant messages supply selection sources. */
+    textInteractionSource?: boolean;
     /** Frozen partial of an aborted turn: rendered with a stopped marker. */
     interrupted?: boolean | undefined;
     /** Hide reasoning that belongs to the Turn-level process disclosure. */
@@ -36,5 +38,5 @@ export interface AssistantMarkdownProps extends Pick<PropsRenderSlots<'conversat
     t: ChatViewSlotProps['t'];
 }
 /** Renders non-blank reasoning blocks as independent disclosures alongside the response. */
-export declare const AssistantMarkdown: import("react").MemoExoticComponent<({ blocks, streaming, interrupted, loadImage, groupPart, useDisclosure, reasoningHidden, usePresentation, revealProcess, mentions, renderSlot, useGroupAction, t, }: AssistantMarkdownProps) => import("react").JSX.Element | null>;
+export declare const AssistantMarkdown: import("react").MemoExoticComponent<({ blocks, streaming, textInteractionSource, interrupted, loadImage, groupPart, useDisclosure, reasoningHidden, usePresentation, revealProcess, mentions, renderSlot, useGroupAction, t, }: AssistantMarkdownProps) => import("react").JSX.Element | null>;
 //# sourceMappingURL=AssistantMarkdown.d.ts.map

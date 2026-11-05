@@ -1,4 +1,4 @@
-import type { InputEffect, InputEvent, InputState } from '../contract/input.ts';
+import type { InputEffect, InputEvent, InputState, SubmitAttempt } from '../contract/input.ts';
 /** The submit-plane slice of the published InputState. */
 export interface SubmitSnapshot {
     readonly phase: InputState['phase'];
@@ -10,10 +10,10 @@ export declare class SubmitMachine {
     private claim;
     private seq;
     private inflight;
-    /** Ordinary sends detached from the editor, retained for settlement validation and cancellation. */
-    private readonly detached;
     /** Read-only snapshot of the submit-plane state. */
     get state(): SubmitSnapshot;
+    /** The attempt of the message being sent; undefined outside the sending phase. */
+    get sendingAttempt(): SubmitAttempt | undefined;
     /**
      * Feed one event through the machine.
      * @param ev - submit-plane event.
@@ -28,23 +28,17 @@ export declare class SubmitMachine {
      * refuse both.
      */
     private followCommand;
-    /** Mint an attempt and controller without assigning its lifecycle owner. */
-    private mintAttempt;
-    /** Mint the frozen command/adjudication attempt. */
+    /** Occupy the frozen slot with the draft, references, quotes, and attachments the user sent. */
     private beginAttempt;
-    /** Mint an ordinary send that leaves the phase plain. */
-    private beginDetached;
-    /** Default-send effects capture the sink input before the editor commit. */
-    private detachedEffects;
+    /** Send the frozen message; the editor stays read-only until the Host accepts it. */
+    private send;
     private onEnter;
     private onAdjudicated;
     private onAdjudicationFailed;
     /** Claimed command settlement; after a failure the claim follows the leading command chip again. */
     private onSubmitSettled;
-    /** Settle one ordinary send independently of current phase and other detached sends. */
+    /** An accepted message clears the editor; a refused or failed one returns to editing unchanged. */
     private onSinkSettled;
-    /** Clear after an accepted attachment-only send; it has no text suffix to retain. */
-    private onSendCommitted;
     private onRelease;
 }
 //# sourceMappingURL=machine.d.ts.map

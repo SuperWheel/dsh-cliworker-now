@@ -1,3 +1,5 @@
+import { createNativeHarnessExecutor } from '../src/host/native-harness-executor.ts'
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { AgentRegistry, assembleContextFor } from '@deepseek-ai/dsh-agent'
@@ -5,7 +7,7 @@ import { LlmRuntime, ToolCallId, createUserMessage, type StreamChunk } from '@de
 import { SessionStore, SessionId } from '@deepseek-ai/dsh-session'
 import { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime, defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -63,7 +65,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' })
+  await mountNativeTools(ctx)
   await ctx.plugin(Commands)
   const nativeCommand = vi.fn(() => ({ kind: 'success', text: 'native parent command' }))
   ctx.commands.register({ name: 'plan', description: 'Synthetic native command', handler: nativeCommand })
@@ -322,13 +324,15 @@ it('uses real continuable child identity, preserves ordered native history and r
       .schemas(assembleContextFor(child))
       .some((schema) => schema.name === 'synthetic_policy_tool'),
   ).toBe(true)
-  const result = await child.ctx.tools.execute({
+  const executor = await createNativeHarnessExecutor(child.ctx)
+  const result = await executor.execute({
     agent: child,
     callId: ToolCallId('controlled-bridge-call'),
     name: 'synthetic_policy_tool',
     arguments: {},
     signal: new AbortController().signal,
   })
+  executor.dispose()
   expect(result.isError).toBe(false)
   expect(policy).toHaveBeenCalledTimes(1)
   expect(execute).toHaveBeenCalledTimes(1)

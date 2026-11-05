@@ -1,8 +1,8 @@
 diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
-index fb8ba31f8a1286dceffda387a687e783427bf5aa..66d76e39b10c48777dc5448260c666d6a5d73963 100644
+index 87f36a095128a16ea35736de3e3d12ee31bc2244..ce4eb5f539f93d37c674323a09d71de90ca9be19 100644
 --- a/docs/subsystems/slots.md
 +++ b/docs/subsystems/slots.md
-@@ -101,6 +101,10 @@ The renderer also creates `useStore` from a declared store and `t` from a declar
+@@ -107,6 +107,10 @@ The renderer also creates `useStore` from a declared store and `t` from a declar
  
  Framework and domain-adapter owners may extend the standard set through `ctx.slots.provideRoot()` or `ctx.uiSession.provide()` together with the corresponding `GlobalStandardProps`, `SessionStandardProps`, or `SessionMaybeStandardProps` declaration merge. A feature component should not create a React hook prop itself or add a global standard prop for entry-private data.
  
@@ -14,10 +14,10 @@ index fb8ba31f8a1286dceffda387a687e783427bf5aa..66d76e39b10c48777dc5448260c666d6
  
  The `inject` option on a registration is the ordinary feature-owned injection point. Its factory runs in the plugin's `apply` world, may close over injected Cordis services, and returns only the data and callbacks that the component needs. For a `session` slot it receives `sessionId`; for `session-maybe` it receives `sessionId | undefined`; when a store is declared it also receives the store's bound actions.
 diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
-index 1ced4db4fafd0a6b3c86923cf2af3648d098a7b9..c2b431368af2a487e07ef1df9f8ffd5c111e4ae4 100644
+index 8b70a2810008adeb3bf93f0aa567fc2863e15b0d..cde02745c2e1ff34df4dd90be73bd993ed51c2f3 100644
 --- a/docs/subsystems/slots.zh.md
 +++ b/docs/subsystems/slots.zh.md
-@@ -103,6 +103,10 @@ Renderer 还会根据声明的 store 创建 `useStore`，并根据声明的 loca
+@@ -109,6 +109,10 @@ Renderer 还会根据声明的 store 创建 `useStore`，并根据声明的 loca
  
  框架与领域 adapter owner 可以通过 `ctx.slots.provideRoot()` 或 `ctx.uiSession.provide()` 扩展标准集合，同时提供对应的 `GlobalStandardProps`、`SessionStandardProps` 或 `SessionMaybeStandardProps` 声明合并。普通功能组件不应自行创建 React hook prop，也不应为 entry 私有数据添加全局标准 prop。
  
@@ -29,27 +29,28 @@ index 1ced4db4fafd0a6b3c86923cf2af3648d098a7b9..c2b431368af2a487e07ef1df9f8ffd5c
  
  注册项的 `inject` 选项是通常使用的功能私有注入点。它的 factory 在插件的 `apply` 世界中运行，可以闭包捕获已经注入的 Cordis service，并且只返回组件所需的数据与 callback。对于 `session` slot，它会收到 `sessionId`；对于 `session-maybe`，它收到 `sessionId | undefined`；声明 store 后，它还会收到该 store 绑定后的 actions。
 diff --git a/packages/client/ui-chat/src/client/chat/ChatFlow.tsx b/packages/client/ui-chat/src/client/chat/ChatFlow.tsx
-index c54e8a108fb3b9c3f8f9ba723671f17d83b30c70..683b209ebfc7db5bbe60ac967c980e8188f5cb53 100644
+index d83a3043ccf7e9f0d17e6c31b606ac5b390927d1..922c1cb679bdc1adc835eb0086f50f305d016024 100644
 --- a/packages/client/ui-chat/src/client/chat/ChatFlow.tsx
 +++ b/packages/client/ui-chat/src/client/chat/ChatFlow.tsx
-@@ -1,6 +1,8 @@
+@@ -1,7 +1,9 @@
  /** Ordered Chat rows, local echoes, and running status share the flow slot's parent. */
--import { memo } from 'react'
-+import { memo, useMemo } from 'react'
+-import { memo, type ReactElement } from 'react'
++import { memo, useMemo, type ReactElement } from 'react'
+ import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
  import { assertNever } from '@deepseek-ai/dsh-util-values'
 +import { externalTurnProcessPresentation, resolveExternalTurnAnswers } from '../contract/external-turn-answer.ts'
 +import type { ChatTurnProcessPresentation } from '../contract/snapshot.ts'
  import type { ChatFlowSlotProps } from '../contract/slots.ts'
  import { ChatNodeSeat } from './ChatNodeSeat.tsx'
  import { ChatGroupSeat } from './ChatGroupSeat.tsx'
-@@ -11,10 +13,19 @@ import { RunningStatus } from './RunningStatus.tsx'
+@@ -25,10 +27,19 @@ function isTranscriptEcho(item: PendingInput): boolean {
  /** Render the flow without adding a DOM parent or changing keyed row positions. */
  export const ChatFlow = memo(function ChatFlow({
    entries, pendingInputs, lastInputTurn, deferCollapse,
--  useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation,
-+  useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useProjection,
+-  useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useConnectionState,
++  useSession, useChat, useChatNode, useChatNodeBottom, useChatNodeProcess, useChatGroup, usePresentation, useConnectionState, useProjection,
    useStore, actions, renderSlot, renderFactorySlot, t, useGroupAction, useGroupHeaderAction,
-   cwd, openFile, inspectCall, forkAt, loadImage, fileMentions,
+   cwd, openFile, inspectCall, forkAt, loadImage,
  }: ChatFlowSlotProps) {
 +  const answerProofs = useProjection('externalTurnAnswer')
 +  const answerSnapshot = useChat(s => answerProofs === undefined ? undefined : s)
@@ -62,30 +63,32 @@ index c54e8a108fb3b9c3f8f9ba723671f17d83b30c70..683b209ebfc7db5bbe60ac967c980e81
 +  const externalRequest = useProjection('externalRequestState')
    const nodeStore = useChat(snapshot => snapshot.nodes)
    const running = useSession(snapshot => snapshot.running)
-   const latestTurnAnchor = useChat(snapshot => snapshot.navigation.items().at(-1)?.anchorKey)
-@@ -25,7 +36,7 @@ export const ChatFlow = memo(function ChatFlow({
-       : undefined
+   const disconnected = useConnectionState(state => state === 'disconnected' || state === 'connecting')
+@@ -45,7 +56,7 @@ export const ChatFlow = memo(function ChatFlow({
    })
+   const holding = !running && latestTurnOpen
    const seatProps = {
 -    nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess, usePresentation,
 +    nodeStore, useChatNode, useChatNodeBottom, useChatNodeProcess: useEffectiveChatNodeProcess, usePresentation,
      useStore, actions, renderSlot, t, useGroupAction, deferCollapse,
-     cwd, openFile, inspectCall, forkAt, loadImage, fileMentions,
+     cwd, openFile, inspectCall, forkAt, loadImage,
    }
-@@ -57,5 +68,5 @@ export const ChatFlow = memo(function ChatFlow({
-     const index = pendingInputs.findIndex(item => 'requestId' in item && item.placement === 'transcript')
-     if (index !== -1) rows.splice(rows.length - 1, 0, ...pendingRows.splice(index, 1))
-   }
--  return [...rows, ...pendingRows, ...running ? [<RunningStatus key="running" startTime={runningStartTime} t={t} />] : []]
-+  return [...rows, ...pendingRows, ...running ? [<RunningStatus key="running" startTime={runningStartTime} request={externalRequest} t={t} />] : []]
+@@ -94,7 +105,7 @@ export const ChatFlow = memo(function ChatFlow({
+   return [
+     ...rows, ...leadingRows, ...openingRows,
+     ...running || holding ? [<RunningStatus key="running" startTime={runningStartTime} paused={disconnected}
+-      holding={holding} t={t} />] : [],
++      holding={holding} request={externalRequest} t={t} />] : [],
+     ...pendingRows,
+   ]
  })
 diff --git a/packages/client/ui-chat/src/client/chat/ChatView.module.css b/packages/client/ui-chat/src/client/chat/ChatView.module.css
-index 6696330f0a39085815da0200ca0887835ddeb29e..0af74da4fc4d06c5ed2fd14648f546fa7e6e16a1 100644
+index 9929770b35ce50767884e8117cc77262e3fc6822..47c78d16444c5f4442c319d803097ba22a7653f0 100644
 --- a/packages/client/ui-chat/src/client/chat/ChatView.module.css
 +++ b/packages/client/ui-chat/src/client/chat/ChatView.module.css
-@@ -302,3 +302,14 @@
- .modalAction {
-   min-width: 72px;
+@@ -407,3 +407,14 @@
+   margin: 0;
+   width: max-content;
  }
 +
 +/* An observed request is status, not synthetic reasoning or a Tool group. */
@@ -99,7 +102,7 @@ index 6696330f0a39085815da0200ca0887835ddeb29e..0af74da4fc4d06c5ed2fd14648f546fa
 +  line-height: 20px;
 +}
 diff --git a/packages/client/ui-chat/src/client/chat/ChatView.tsx b/packages/client/ui-chat/src/client/chat/ChatView.tsx
-index 1e0741f31fb462d33aab36626fcfa92d2b356ba2..575e8804985b4f9b1105360ce7b5858b4602dee9 100644
+index e265ab635f61bfa7d1d396a8ad37d9ef422d00a5..e5bc48481250b4d419e5c53763ea520c551bbf27 100644
 --- a/packages/client/ui-chat/src/client/chat/ChatView.tsx
 +++ b/packages/client/ui-chat/src/client/chat/ChatView.tsx
 @@ -13,6 +13,7 @@ import {
@@ -109,10 +112,10 @@ index 1e0741f31fb462d33aab36626fcfa92d2b356ba2..575e8804985b4f9b1105360ce7b5858b
 +import { externalTurnAnswerEntries, resolveExternalTurnAnswers } from '../contract/external-turn-answer.ts'
  import { TurnNavigator } from './TurnNavigator.tsx'
  import { mergeTurnRailItems } from './turn-rail-items.ts'
- import { useChatScroll } from './use-chat-scroll.ts'
-@@ -63,9 +64,15 @@ export function ChatView({
-   usePresentation, useProjection, t,
- }: ChatViewSlotProps) {
+ import { useTextInteraction } from './text-interaction.ts'
+@@ -77,9 +78,15 @@ export function ChatView({
+     }
+   }), [getTriggerProps, resolveFilePath, sessionId])
    const order = useChat(s => s.order)
 +  const grouped = useConversation(snapshot => snapshot.views.grouped('chat'))
    const groupedEntries = useConversation(snapshot => snapshot.views.grouped('chat')?.entries)
@@ -163,7 +166,7 @@ index 0000000000000000000000000000000000000000..dc8c9a03b046901f0a20c9d57df11d3d
 +  </>
 +}
 diff --git a/packages/client/ui-chat/src/client/chat/RunningStatus.tsx b/packages/client/ui-chat/src/client/chat/RunningStatus.tsx
-index fd145b6324df5e5804fa675ee3e2616f90381723..cf86e894eb0e38f30e6a3d51f0943baf5bce5611 100644
+index 33dfba7c35cf4ae4b452ca1ba49c0622529abd50..7e52985323200357ba55089461b4fcd1a4e68db0 100644
 --- a/packages/client/ui-chat/src/client/chat/RunningStatus.tsx
 +++ b/packages/client/ui-chat/src/client/chat/RunningStatus.tsx
 @@ -1,4 +1,6 @@
@@ -179,18 +182,18 @@ index fd145b6324df5e5804fa675ee3e2616f90381723..cf86e894eb0e38f30e6a3d51f0943baf
  interface RunningStatusProps {
 +  readonly request?: ExternalRequestState | undefined
    readonly startTime: number | undefined
-   readonly t: ChatViewSlotProps['t']
- }
-@@ -17,7 +20,7 @@ interface RunningStatusProps {
-  * @param props - Current Turn start time and localized copy.
-  * @returns the blue running indicator; mount only while the Session is running.
+   /** Freeze the shown duration while the Client cannot observe the Session. */
+   readonly paused: boolean
+@@ -22,7 +25,7 @@ interface RunningStatusProps {
+  * @returns the blue running indicator; mount while the Session is running, or holding its slot hidden until the
+  * Turn's actions row replaces it.
   */
--export const RunningStatus = memo(function RunningStatus({ startTime, t }: RunningStatusProps) {
-+export const RunningStatus = memo(function RunningStatus({ startTime, request, t }: RunningStatusProps) {
+-export const RunningStatus = memo(function RunningStatus({ startTime, paused, holding = false, t }: RunningStatusProps) {
++export const RunningStatus = memo(function RunningStatus({ startTime, paused, holding = false, request, t }: RunningStatusProps) {
    const [now, setNow] = useState(Date.now)
    useEffect(() => {
-     if (startTime === undefined) return
-@@ -28,8 +31,26 @@ export const RunningStatus = memo(function RunningStatus({ startTime, t }: Runni
+     if (startTime === undefined || paused || holding) return
+@@ -33,8 +36,26 @@ export const RunningStatus = memo(function RunningStatus({ startTime, paused, ho
    const label = startTime === undefined ? t('chat.deepDiving') : t('chat.deepDivingFor', {
      duration: formatRunDuration(Math.max(1000, now - startTime), t).map(part => part.text).join(''),
    })
@@ -205,8 +208,8 @@ index fd145b6324df5e5804fa675ee3e2616f90381723..cf86e894eb0e38f30e6a3d51f0943baf
 +  const requestLabel = observed === undefined ? undefined
 +    : observed.phase === 'requesting' ? t('chat.external.requesting') : t('chat.external.failed')
    return (
-     <div className={css.running} data-chat-running>
-+      {observed !== undefined && <div className={css.externalRequest} data-external-request-phase={observed.phase}
+     <div className={css.running} data-chat-running data-holding={holding ? '' : undefined} aria-hidden={holding || undefined}>
++      {!holding && observed !== undefined && <div className={css.externalRequest} data-external-request-phase={observed.phase}
 +        role="status" aria-live="polite" aria-atomic="true">
 +        <TextShimmer active={observed.phase === 'requesting'}>{requestLabel}</TextShimmer>
 +        {failureKind !== undefined && <span>{t(`chat.external.${failureKind}`)}</span>}
@@ -214,11 +217,11 @@ index fd145b6324df5e5804fa675ee3e2616f90381723..cf86e894eb0e38f30e6a3d51f0943baf
 +        {observed.retryCount !== undefined && observed.retryCount > 0
 +          && <span>{t('chat.external.retries', { count: observed.retryCount })}</span>}
 +      </div>}
-       <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{t('chat.deepDiving')}</span>
-       <span className={css.runningDivider} aria-hidden="true" />
-       <span className={css.runningContent}>
+       {holding ? null : (
+         <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{t('chat.deepDiving')}</span>
+       )}
 diff --git a/packages/client/ui-chat/src/client/chat/StatsPills.tsx b/packages/client/ui-chat/src/client/chat/StatsPills.tsx
-index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984c55d6401 100644
+index 7108c44719ae64355a8ea2a545953ce61667b2b1..6053616138fb7a0b23644eadc53dc50d34297387 100644
 --- a/packages/client/ui-chat/src/client/chat/StatsPills.tsx
 +++ b/packages/client/ui-chat/src/client/chat/StatsPills.tsx
 @@ -4,6 +4,8 @@
@@ -229,7 +232,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
 +import { telemetryUnavailable } from '../contract/external-status.ts'
  import { memo, useMemo, type ReactNode } from 'react'
  import { createPortal } from 'react-dom'
- import { IconDatabaseOutlineRegular, IconGaugeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+ import { IconDatabaseOutlineRegular, IconGaugeOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 @@ -16,6 +18,8 @@ import type { ChatViewSlotProps, PerformanceUsageInjected } from '../contract/sl
  import type { ChatSnapshot } from '../contract/snapshot.ts'
  import { formatTokensPerSecond } from './message-chrome.ts'
@@ -239,16 +242,16 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
  import { formatCacheHitPercent, formatExactTokens, formatTokens } from './token-format.ts'
  import { MEASURE_STYLE, useStatDialog } from './stat-dialog.ts'
  import css from './StatsPills.module.css'
-@@ -189,7 +193,7 @@ function PlainPill({ stat, icon, label }: PillContent) {
- function DialogPill({ stat, icon, label, ariaLabel, title, titleValue, children }: PillContent & {
-   ariaLabel: string
+@@ -200,7 +204,7 @@ function PlainPill({ stat, icon, label, text }: PillContent) {
+  */
+ function DialogPill({ stat, icon, label, text, title, titleValue, children }: PillContent & {
    title: string
 -  titleValue?: string
 +  titleValue?: string | undefined
    children: ReactNode
  }) {
    const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
-@@ -230,6 +234,21 @@ function DialogPill({ stat, icon, label, ariaLabel, title, titleValue, children
+@@ -244,6 +248,21 @@ function DialogPill({ stat, icon, label, text, title, titleValue, children }: Pi
    )
  }
  
@@ -262,7 +265,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
 +}
 +function UnknownPill({ kind, t }: { kind: 'statistics' | 'tokenUsage'; availability: TelemetryUnavailable; t: Translate }) {
 +  const title = t(kind === 'statistics' ? 'stats.dialog.title' : 'stats.dialog.usageTitle')
-+  return <DialogPill stat={kind === 'statistics' ? 'activity' : 'usage'} icon={kind === 'statistics' ? <IconGaugeOutlineRegular /> : <IconDatabaseOutlineRegular />} label={t(`stats.unknown.${kind}`)} ariaLabel={t(`stats.unknown.${kind}`)} title={title} titleValue="—">
++  return <DialogPill stat={kind === 'statistics' ? 'activity' : 'usage'} icon={kind === 'statistics' ? <IconGaugeOutlineRegular /> : <IconDatabaseOutlineRegular />} label={t(`stats.unknown.${kind}`)} text={t(`stats.unknown.${kind}`)} title={title} titleValue="—">
 +    {null}
 +  </DialogPill>
 +}
@@ -270,7 +273,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
  /**
   * Turn and step counts with whole-session speed, opening the time and speed
   * dialog; Compact keeps only the speed reading.
-@@ -237,6 +256,9 @@ function DialogPill({ stat, icon, label, ariaLabel, title, titleValue, children
+@@ -251,6 +270,9 @@ function DialogPill({ stat, icon, label, text, title, titleValue, children }: Pi
  export const ActivityPill = memo(function ActivityPill({ useChat, useProjection, usePerformanceUsage, t }: StatPillProps) {
    const mode = usePerformanceUsage(value => value)
    const stats = useSessionStats(useChat, useProjection)
@@ -279,8 +282,8 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
 +  if (stats.steps === 0 && unknown) return <UnknownPill kind="statistics" availability={unknown} t={t} />
    const speed = stats.decodeMs > 0 ? decodeSpeed(stats, t) : null
    const icon = <IconGaugeOutlineRegular />
-   if (mode === 'compact') return speed === null ? null : <PlainPill stat="activity" icon={icon} label={speed} />
-@@ -281,25 +303,54 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
+   if (mode === 'compact') return speed === null ? null : <PlainPill stat="activity" icon={icon} {...reading(speed, null)} />
+@@ -296,24 +318,53 @@ export const ActivityPill = memo(function ActivityPill({ useChat, useProjection,
  /** Whole-log token total and cache hit; Compact keeps only the cache hit. */
  export const UsagePill = memo(function UsagePill({ useProjection, usePerformanceUsage, t }: StatPillProps) {
    const mode = usePerformanceUsage(value => value)
@@ -298,7 +301,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
 +  if (credits !== undefined || availability?.usageUnit === 'credits') {
 +    const title = t('stats.dialog.creditUsageTitle')
 +    const label = creditsText ?? t('stats.unknown.creditUsage')
-+    return <DialogPill stat="usage" icon={<IconDatabaseOutlineRegular />} label={label} ariaLabel={label} title={title} titleValue={creditsText}>
++    return <DialogPill stat="usage" icon={<IconDatabaseOutlineRegular />} label={label} text={label} title={title} titleValue={creditsText}>
 +      {credits !== undefined ? <dl className={dialogCss.details} data-session-stats-usage>
 +        <dt>{t('stats.dialog.creditsSource')}</dt><dd>{t('stats.dialog.qoderRunCredits')}</dd>
 +        <dt>{t('stats.dialog.credits')}</dt><dd>{credits.toLocaleString(undefined, { maximumFractionDigits: 12 })}</dd>
@@ -321,7 +324,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
    const icon = <IconDatabaseOutlineRegular />
 -  if (mode === 'compact') {
 +  if (mode === 'compact' && unknown === undefined && !cacheUnknown) {
-     return cacheHitText === null ? null : <PlainPill stat="usage" icon={icon} label={cacheHitText} />
+     return cacheHitText === null ? null : <PlainPill stat="usage" icon={icon} {...reading(cacheHitText, null)} />
    }
    // Same aggregate as the Turn pill's totalTokens: every prompt-side billing bucket plus output.
 -  const total = billedInputTokens(usage) + usage.outputTokens
@@ -336,14 +339,12 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
      <DialogPill
        stat="usage"
        icon={icon}
--      label={joined(totalText, cacheHitText)}
--      ariaLabel={cacheHitText === null ? totalText : `${totalText} · ${cacheHitText}`}
-+      label={mode === 'compact' && cacheUnknown ? cacheHitText : joined(totalText, cacheHitText)}
-+      ariaLabel={mode === 'compact' && cacheUnknown && cacheHitText !== null ? cacheHitText : cacheHitText === null ? totalText : `${totalText} · ${cacheHitText}`}
+-      {...reading(totalText, cacheHitText)}
++      {...(mode === 'compact' && cacheUnknown && cacheHitText !== null ? reading(cacheHitText, null) : reading(totalText, cacheHitText))}
        title={t('stats.dialog.usageTitle')}
        titleValue={exactCount(total, t)}
      >
-@@ -309,12 +360,14 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
+@@ -323,12 +374,14 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
            session that never wrote cache drops the row, as the per-turn panel
            drops its absent fields. */}
        <dl className={dialogCss.details} data-session-stats-usage>
@@ -360,7 +361,7 @@ index 838effb768a02f6230c8bcbe6593a5bd0d1870c3..64c8e03bd75fa7120149611ee6c5a984
          <dt>{t('message.turnUsage.input')}</dt>
          <dd>{exactCount(usage.uncachedInputTokens, t)}</dd>
          <dt>{t('message.turnUsage.cacheRead')}</dt>
-@@ -327,6 +380,7 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
+@@ -341,6 +394,7 @@ export const UsagePill = memo(function UsagePill({ useProjection, usePerformance
          )}
          <dt>{t('message.turnUsage.output')}</dt>
          <dd>{exactCount(usage.outputTokens, t)}</dd>
@@ -575,13 +576,13 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
          </div>,
          document.body,
 diff --git a/packages/client/ui-chat/src/client/chat/stat-dialog.module.css b/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
-index 4c5de52c51153962cf3b627498f424f5526dec3b..0f3fc47363e6fbb578ef5a0844bf98cb43000d48 100644
+index 769718d5138f5a9d6a26e61445223747af5011f9..fd7eb3e8c9a41232e8192112a3c4dad0ff1a5b13 100644
 --- a/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
 +++ b/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
 @@ -17,7 +17,7 @@
    width: max-content;
-   min-width: min(300px, calc(100vw - 24px));
-   max-width: min(440px, calc(100vw - 24px));
+   min-width: min(300px, calc(100vw - 24px), var(--dsh-anchored-max-width, 100vw));
+   max-width: min(440px, calc(100vw - 24px), var(--dsh-anchored-max-width, 100vw));
 -  padding: 16px;
 +  padding: 12px;
    border: 0;
@@ -972,10 +973,10 @@ index 0000000000000000000000000000000000000000..cd87f7bdf2f1da8485552bb413d609b9
 +  return count(input) && count(cached) && cached <= input ? { cached, input } : undefined
 +}
 diff --git a/packages/client/ui-chat/src/client/index.ts b/packages/client/ui-chat/src/client/index.ts
-index 275d76b96b6cc5caa8034ace334e517ac1e824dd..e2748817f140e97e09a51ed62b157ce143979128 100644
+index c785329f0a4ef877b55d810df5b0329885364cc6..e1ee96eb3c53a40d468d3b70004ace688d784037 100644
 --- a/packages/client/ui-chat/src/client/index.ts
 +++ b/packages/client/ui-chat/src/client/index.ts
-@@ -45,6 +45,8 @@ export type {
+@@ -47,6 +47,8 @@ export type {
    TurnProcessSpec,
  } from './contract/turn-process.ts'
  export type { ChatKey } from './locale.ts'
@@ -984,14 +985,14 @@ index 275d76b96b6cc5caa8034ace334e517ac1e824dd..e2748817f140e97e09a51ed62b157ce1
  export type { ConversationContext, ConversationContextOriginKind } from './model/conversation-context.ts'
  export type {
    ContextProducerView, ContextRole, KnownContextForm,
-@@ -65,3 +67,5 @@ declare module './contract/chat-nodes.ts' {
+@@ -67,3 +69,5 @@ declare module './contract/chat-nodes.ts' {
    interface ChatNodeDataMap extends PublicChatNodeDataMap {}
  }
  export type { ProcessActivity, ProcessActivitySummary, ProcessGroupData } from './contract/process-groups.ts'
 +
 +export type { ExternalTurnAnswer, ExternalTurnAnswerProjection } from './contract/external-turn-answer.ts'
 diff --git a/packages/client/ui-chat/src/client/locale.ts b/packages/client/ui-chat/src/client/locale.ts
-index 48cfcc8e132c319199cf0fb95c456ab4e32a5211..c99676c91bbc6e4e8cb315d055aeaabd0e561383 100644
+index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643084e449a 100644
 --- a/packages/client/ui-chat/src/client/locale.ts
 +++ b/packages/client/ui-chat/src/client/locale.ts
 @@ -74,9 +74,34 @@ export const zh = {
@@ -1029,7 +1030,7 @@ index 48cfcc8e132c319199cf0fb95c456ab4e32a5211..c99676c91bbc6e4e8cb315d055aeaabd
    'stats.dialog.usageTitle': 'Token 用量',
    'stats.dialog.llmTime': '模型用时',
    'stats.dialog.toolTime': '工具调用用时',
-@@ -176,9 +201,22 @@ export const zh = {
+@@ -180,9 +205,22 @@ export const zh = {
    'message.tokensPerSecond': '{tps} tok/s',
    'message.turnUsage.title': '本轮用量',
    'message.turnUsage.consumed': '用量 {total}',
@@ -1052,7 +1053,7 @@ index 48cfcc8e132c319199cf0fb95c456ab4e32a5211..c99676c91bbc6e4e8cb315d055aeaabd
    'message.turnUsage.cacheRead': '缓存读取',
    'message.turnUsage.cacheWrite': '缓存写入',
    'message.turnUsage.output': '输出',
-@@ -272,9 +310,34 @@ export const en = {
+@@ -276,9 +314,34 @@ export const en = {
    'duration.compactSeconds': '{seconds}s',
    'duration.compactMinutes': '{minutes}m{seconds}s',
    'duration.milliseconds': '{milliseconds}ms',
@@ -1087,7 +1088,7 @@ index 48cfcc8e132c319199cf0fb95c456ab4e32a5211..c99676c91bbc6e4e8cb315d055aeaabd
    'stats.dialog.usageTitle': 'Token usage',
    'stats.dialog.llmTime': 'LLM time',
    'stats.dialog.toolTime': 'Tool time',
-@@ -374,9 +437,22 @@ export const en = {
+@@ -382,9 +445,22 @@ export const en = {
    'message.tokensPerSecond': '{tps} tok/s',
    'message.turnUsage.title': 'Turn usage',
    'message.turnUsage.consumed': 'Usage {total}',
@@ -1110,28 +1111,304 @@ index 48cfcc8e132c319199cf0fb95c456ab4e32a5211..c99676c91bbc6e4e8cb315d055aeaabd
    'message.turnUsage.cacheRead': 'Cached input',
    'message.turnUsage.cacheWrite': 'Cache write',
    'message.turnUsage.output': 'Output',
+@@ -601,6 +677,45 @@ export const ja = {
+   'json.truncated': '… 省略表示、全{total}文字',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Spanish dictionary, checked against the English keys. */
+@@ -800,6 +915,45 @@ export const es = {
+   'json.truncated': '… truncado, caracteres {total} en total',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** French dictionary, checked against the English keys. */
+@@ -999,6 +1153,45 @@ export const fr = {
+   'json.truncated': '… tronqué, nombre total de caractères {total}',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** German dictionary, checked against the English keys. */
+@@ -1198,6 +1391,45 @@ export const de = {
+   'json.truncated': '… gekürzt, {total} Zeichen insgesamt',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Russian dictionary, checked against the English keys. */
+@@ -1397,6 +1629,45 @@ export const ru = {
+   'json.truncated': '… усечено, всего символов {total}',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Portuguese dictionary, checked against the English keys. */
+@@ -1596,4 +1867,43 @@ export const pt = {
+   'json.truncated': '… truncado, {total} caracteres no total',
+   'clock.md': '{m}/{d}',
+   'clock.ymd': '{y}-{m}-{d}',
++  // CLI Worker additions: English until translated.
++  'stats.unknown.statistics': 'Session statistics —',
++  'stats.unknown.tokenUsage': 'Token usage —',
++  'stats.providerCredits': '{credits} credits',
++  'stats.unknown.creditUsage': 'Credits usage —',
++  'stats.dialog.creditUsageTitle': 'Credits usage',
++  'stats.dialog.credits': 'Credits',
++  'stats.dialog.creditsSource': 'Credits source',
++  'stats.dialog.qoderRunCredits': 'Qoder native requests in this run',
++  'stats.availability.pending': 'Awaiting data',
++  'stats.availability.unavailable': 'Data unavailable',
++  'stats.availability.awaiting-data': 'Waiting for the first confirmed data receipt.',
++  'stats.availability.not-reported': 'The CLI has not reported this data.',
++  'stats.availability.disconnected': 'The data connection is disconnected; this data is temporarily unavailable.',
++  'chat.external.requesting': 'CLI model request in progress',
++  'chat.external.failed': 'CLI model request failed',
++  'chat.external.rate-limit': 'Request rate limited',
++  'chat.external.billing': 'Quota or billing limit',
++  'chat.external.authentication': 'Authentication failed',
++  'chat.external.denied': 'Access denied',
++  'chat.external.service': 'Upstream service unavailable',
++  'chat.external.http': 'HTTP {status}',
++  'chat.external.retries': 'Retried {count} times',
++  'stats.cacheHitUnknown': 'Cache hit —',
++  'stats.cacheHitUnavailable': 'The CLI has not provided enough cache statistics to calculate a hit rate.',
++  'stats.dialog.cliCallBasis': 'These turns, steps, and timings describe Harness calls to the CLI. First-token latency includes CLI startup and session preparation.',
++  'message.turnUsage.unknown': 'Usage unknown',
++  'message.turnUsage.unavailable': 'Verified token usage is unavailable for this CLI turn.',
++  'message.turnUsage.source': 'Accounting source',
++  'message.turnUsage.externalRun': 'CLI turn total',
++  'stats.dialog.currentRun': 'Current run',
++  'stats.dialog.previousRun': 'Last verified run',
++  'stats.dialog.reportedResponses': 'Reported response statistics',
++  'message.turnUsage.inclusiveInput': 'Input (including cache)',
++  'message.turnUsage.reportedInput': 'CLI-reported input',
++  'message.turnUsage.reasoningOnly': 'Reasoning (output subset)',
++  'message.turnUsage.orchestrationInput': 'Orchestration uncached input',
++  'message.turnUsage.orchestrationOutput': 'Orchestration output',
++  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
+ } satisfies Record<keyof typeof en, string>
 diff --git a/packages/client/ui-chat/tests/chat-view.client.spec.tsx b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
-index 241a0a204863e2d77b24715642fc6f57c8b10d36..ac543c33c868eee619ff5d5b080482f00ad34ab9 100644
+index 2bc8286e93585af92b864a545b9cfb77744b2e53..9a39c160f97c8bced8ec66e84d511f2e01743bc3 100644
 --- a/packages/client/ui-chat/tests/chat-view.client.spec.tsx
 +++ b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
-@@ -1,4 +1,5 @@
+@@ -1,5 +1,6 @@
  // @vitest-environment jsdom
+ import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 +import { proof as recoveryProof, recoveryEntries, recoverySnapshot, sameStepLateReasoningSnapshot } from './external-turn-answer-fixture.ts'
  
  import type { ProcessGroupData } from '../src/client/contract/process-groups.ts'
  import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-@@ -537,6 +538,7 @@ function makeHarness(
-   return {
+@@ -576,6 +577,7 @@ function makeHarness(
      set, setSession: session.set, setChat: chatSource.set, ChatView, props,
+     setConnection: (state: ConnectionState) => { connection.set(state) },
      openFile, openUserFile, loadOlder, loadThrough, openView,
 +    setProjection: (value: typeof props.useProjection) => { props.useProjection = ((...args: Parameters<typeof value>) => value(...args)) as typeof value },
      setOutline: (value: unknown) => { outlineValue = value },
      chatScroll, forkAt, toolOwners,
      setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
-@@ -4404,4 +4406,121 @@ describe('ChatView', () => {
-     act(() => { h.setSession({ running: false }) })
-     expect(column.querySelector('[data-chat-running]')).toBeNull()
+@@ -4747,6 +4749,124 @@ describe('ChatView', () => {
+       .map(element => element.closest<HTMLElement>('[data-chat-node-key]')?.dataset.chatNodeKey)
+     expect(rows).toEqual(['fixture:steering:3'])
    })
++
 +  it('projects a real external request before any chunk and clears it at Session settlement', () => {
 +    const h = makeHarness({}, { running: true })
 +    const original = h.props.useProjection
@@ -1250,6 +1527,8 @@ index 241a0a204863e2d77b24715642fc6f57c8b10d36..ac543c33c868eee619ff5d5b080482f0
 +  })
 +
  })
+ 
+ const fileDrag = { prepare: vi.fn(async () => ({ start: () => true, release: () => {} })), reportFailure: vi.fn() }
 diff --git a/packages/client/ui-chat/tests/external-status.client.spec.tsx b/packages/client/ui-chat/tests/external-status.client.spec.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..e7e9f3a2855a7e0861f1c5fb422a7a6d4a0b5d25
@@ -1941,10 +2220,10 @@ index 0000000000000000000000000000000000000000..bc76a1a42fbc40d4ebf83bbd71b02376
 +  expect(dialog.textContent).toContain('43 tok')
 +})
 diff --git a/packages/client/ui-conversation/src/client/apply.ts b/packages/client/ui-conversation/src/client/apply.ts
-index 6594c9581210eed5524fa0bbd858362daf5501e3..3e6ab10d127487d23758d72abc7905fb87363e78 100644
+index 3328e1e5da84ae045cc834d7e26bdeb0a38e31a0..fdfa0157af67be0e67742b35c730ee1ed047fa10 100644
 --- a/packages/client/ui-conversation/src/client/apply.ts
 +++ b/packages/client/ui-conversation/src/client/apply.ts
-@@ -541,10 +541,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
+@@ -550,10 +550,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
          },
          toggleCommandMenu: inputTriggers === undefined
            ? undefined
@@ -2038,10 +2317,10 @@ index 0000000000000000000000000000000000000000..faaa0610ff5fa5378df1526f97dfa4c6
 +    ? state as TelemetryUnavailable : undefined
 +}
 diff --git a/packages/client/ui-conversation/src/client/contract/slots.ts b/packages/client/ui-conversation/src/client/contract/slots.ts
-index 4a0bd3a7391aa72cf215c25cf80ffcb16b434103..f1a0431f13ff0a00e776fbcb73cdbf7918498bc1 100644
+index 0c438e0f4cee8d8eed1f3c3ef70ab43bcedaf9cb..7997d26cd72a3cc505c65c5b5230636517aacf8c 100644
 --- a/packages/client/ui-conversation/src/client/contract/slots.ts
 +++ b/packages/client/ui-conversation/src/client/contract/slots.ts
-@@ -481,6 +481,12 @@ export interface ConversationSessionHeaderInjected {
+@@ -535,6 +535,12 @@ export interface ConversationSessionHeaderInjected {
  export interface ComposerBarOwnerProps {
    /** Hero uses centered placement; composer uses the active bottom placement. */
    variant: 'hero' | 'composer'
@@ -2054,7 +2333,7 @@ index 4a0bd3a7391aa72cf215c25cf80ffcb16b434103..f1a0431f13ff0a00e776fbcb73cdbf79
    /** A feature-owned reason that makes message input inert while leaving model selection live. */
    blocked?: { readonly reason: string }
    /** Lock all message actions while preserving the resident composer surface. */
-@@ -509,7 +515,7 @@ export interface ComposerBarInjected {
+@@ -563,7 +569,7 @@ export interface ComposerBarInjected {
    resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
    /** Restart one failed file upload; absent without a session. */
    retryFileUpload: ((id: DraftAttachmentId) => void) | undefined
@@ -2063,7 +2342,7 @@ index 4a0bd3a7391aa72cf215c25cf80ffcb16b434103..f1a0431f13ff0a00e776fbcb73cdbf79
    stop: (() => void) | undefined
    hooks: {
      /** Readable sequence while the fixed Stop command is registered. */
-@@ -581,6 +587,12 @@ export interface ConversationContentInputProps {
+@@ -635,6 +641,12 @@ export interface ConversationContentInputProps {
    variant: 'main' | 'embedded'
    phase: 'settling' | 'hero' | 'active'
    hero: boolean
@@ -2077,20 +2356,19 @@ index 4a0bd3a7391aa72cf215c25cf80ffcb16b434103..f1a0431f13ff0a00e776fbcb73cdbf79
  
  /** Values passed from shared content to its occurrence-selected width controls. */
 diff --git a/packages/client/ui-conversation/src/client/index.ts b/packages/client/ui-conversation/src/client/index.ts
-index 08a7432e1e5f4fbbd165576ad6887ad264dbc5d3..1037f1ceeaf92bd7f55437aa5f06b78e5f6699fc 100644
+index 7a39200c30905ce5bf740cb286001119957c47b6..963792fc4b4382ccfbf319a772a09ab58f72231b 100644
 --- a/packages/client/ui-conversation/src/client/index.ts
 +++ b/packages/client/ui-conversation/src/client/index.ts
-@@ -113,3 +113,5 @@ declare module '@deepseek-ai/cordis' {
-     uiConversation: import('./conversation/assembly.ts').UiConversation
-   }
- }
-+
+@@ -117,3 +117,4 @@ declare module '@deepseek-ai/cordis' {
+ 
+ export type { TextInteractionDefinition, TextInteractionGesture, TextInteractionRequest, TextInteractionSurface, TextInteractionTrigger } from './contract/text-interaction.ts'
+ export type { ConversationInteractionRegistry } from './conversation/interaction-registry.ts'
 +export type { TelemetryUnavailable, TelemetryAvailability, ExternalRequestState } from './contract/external-status.ts'
 diff --git a/packages/client/ui-conversation/src/client/locales.ts b/packages/client/ui-conversation/src/client/locales.ts
-index 5a221bc9a12eb44e083e3ef37fb25dc9164e3312..1dde0c3d4dc9d9feb7cd012b8c211234141f90a9 100644
+index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634f3ddbe07 100644
 --- a/packages/client/ui-conversation/src/client/locales.ts
 +++ b/packages/client/ui-conversation/src/client/locales.ts
-@@ -66,7 +66,19 @@ export const zh = {
+@@ -68,7 +68,19 @@ export const zh = {
    'file.notStaged': '文件尚未上传成功，请重新添加后再试',
    'file.label': '文件',
    'context.aria': '上下文已用 {percent}',
@@ -2110,7 +2388,7 @@ index 5a221bc9a12eb44e083e3ef37fb25dc9164e3312..1dde0c3d4dc9d9feb7cd012b8c211234
    'context.system': '系统提示词',
    'context.tools': '工具定义',
    'context.messages': '对话消息',
-@@ -447,7 +459,19 @@ export const en = {
+@@ -458,7 +470,19 @@ export const en = {
    'file.notStaged': 'The file has not finished uploading; re-add it and try again',
    'file.label': 'File',
    'context.aria': '{percent} of context used',
@@ -2130,11 +2408,129 @@ index 5a221bc9a12eb44e083e3ef37fb25dc9164e3312..1dde0c3d4dc9d9feb7cd012b8c211234
    'context.system': 'System prompt',
    'context.tools': 'Tool definitions',
    'context.messages': 'Messages',
+@@ -1171,6 +1195,19 @@ export const ja = {
+   'terminal.expandRest': '… 残り{n}行',
+   'terminal.sendInput': '(入力を送信)',
+   'terminal.session': 'ターミナル {sessionId}',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Spanish dictionary, checked against the English keys. */
+@@ -1560,6 +1597,19 @@ export const es = {
+   'detail.schedule.active': 'Habilitado',
+   'detail.schedule.paused': 'Pausada',
+   'detail.schedule.ended': 'Finalizada',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** French dictionary, checked against the English keys. */
+@@ -1949,6 +1999,19 @@ export const fr = {
+   'detail.schedule.active': 'Activé',
+   'detail.schedule.paused': 'Suspendue',
+   'detail.schedule.ended': 'Terminée',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** German dictionary, checked against the English keys. */
+@@ -2338,6 +2401,19 @@ export const de = {
+   'detail.schedule.active': 'Aktiviert',
+   'detail.schedule.paused': 'Pausiert',
+   'detail.schedule.ended': 'Beendet',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Russian dictionary, checked against the English keys. */
+@@ -2727,6 +2803,19 @@ export const ru = {
+   'detail.schedule.active': 'Включено',
+   'detail.schedule.paused': 'Приостановлена',
+   'detail.schedule.ended': 'Завершена',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
+ 
+ /** Portuguese dictionary, checked against the English keys. */
+@@ -3116,4 +3205,17 @@ export const pt = {
+   'detail.schedule.active': 'Habilitado',
+   'detail.schedule.paused': 'Pausada',
+   'detail.schedule.ended': 'Concluída',
++  // CLI Worker additions: English until translated.
++  'context.unknown': 'Context —',
++  'context.availability.pending': 'Awaiting data',
++  'context.availability.unavailable': 'Data unavailable',
++  'context.availability.awaiting-data': 'Waiting for confirmed context usage and capacity.',
++  'context.availability.not-reported': 'The CLI has not reported both context usage and capacity.',
++  'context.availability.disconnected': 'The data connection is disconnected; context data is temporarily unavailable.',
++  'context.source': 'Source',
++  'context.ratioOnly': 'The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.',
++  'context.compositionSource': 'Composition source',
++  'context.compositionMissing': 'This record does not report context composition.',
++  'context.compositionPartial': 'This record reports only part of the context composition.',
++  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
+ } satisfies Record<keyof typeof en, string>
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
-index 9d94b96e766424bcfe0e5c2e540101b3eb8b2490..7397d5f2e8003166ad8c0f8014d58ffd8f8485c6 100644
+index a563c66d1b7b7553aee59de15c29fc812495ffb3..a4a2b766ec6890bf0ad24a16c760375a6c4e1474 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
 +++ b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
-@@ -92,7 +92,7 @@
+@@ -104,7 +104,7 @@
  .bar {
    display: flex;
    gap: 1px;
@@ -2143,7 +2539,7 @@ index 9d94b96e766424bcfe0e5c2e540101b3eb8b2490..7397d5f2e8003166ad8c0f8014d58ffd
    height: 4px;
    border-radius: 999px;
    corner-shape: round;
-@@ -132,7 +132,7 @@
+@@ -144,7 +144,7 @@
  }
  
  .rows {
@@ -2153,7 +2549,7 @@ index 9d94b96e766424bcfe0e5c2e540101b3eb8b2490..7397d5f2e8003166ad8c0f8014d58ffd
  
  .row {
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
-index 4af5274b8a10e2645184a8f3cf04ecafc259ab24..82baf11b7f40b8dffac6f4e211e62a10888f74f3 100644
+index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c6068edb9 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
 @@ -11,7 +11,8 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
@@ -2321,27 +2717,27 @@ index 218082ae3155f5f1040c82ca26b17378fbecb175..eed9566cf6952a4663a2c7cea8a48621
        ? {
          disabled: true,
 diff --git a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
-index ef95796577c6f53c0280a3e8c39c4a8eb10ec5eb..f345fd48233a6d554fb74aaff78ff11caafe2a1e 100644
+index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec4421d019da 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
-@@ -49,6 +49,7 @@ export const InputBar = memo(function InputBar({
-   toggleCommandMenu, stop, t,
+@@ -50,6 +50,7 @@ export const InputBar = memo(function InputBar({
    renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
+   useAccess,
    useProjection, sessionId, variant, disabled: inert = false, blocked,
 +  composerPresentation = 'default', commandSource, childImageUploads = false,
    workspacePickerOpen = false, onRequestWorkspace,
    placeholder, accessory,
  }: InputBarProps) {
-@@ -57,7 +58,7 @@ export const InputBar = memo(function InputBar({
-   const busyEnter = useBusyEnter(s => s)
-   const stopKeys = useStopShortcut(keys => keys)
+@@ -65,7 +66,7 @@ export const InputBar = memo(function InputBar({
+   const uploadDenied = useAccess('fileUploads/upload') === false
+   const stopAction = cancelDenied ? undefined : stop
    void useLexicon // hook seat stays bound by the inject compartment; text-ref decoration rides the shell's editor transforms
 -  const commandMenuOpen = useMenuLauncher(source => source === 'command')
 +  const commandMenuOpen = useMenuLauncher(source => source === (commandSource ?? 'command'))
    const [activity, setActivity] = useState(false)
    useEffect(() => { setActivity(false) }, [sessionId])
    const promptError = useSession(s => s.promptError) ?? null
-@@ -130,7 +131,7 @@ export const InputBar = memo(function InputBar({
+@@ -144,7 +145,7 @@ export const InputBar = memo(function InputBar({
    const scrollRef = useRef<HTMLDivElement | null>(null)
  
    // A continuable child without its live parent cannot accept human input,
@@ -2350,7 +2746,7 @@ index ef95796577c6f53c0280a3e8c39c4a8eb10ec5eb..f345fd48233a6d554fb74aaff78ff11c
    const continuable = subagent?.address.mode === 'continuable'
    const parentOffline = continuable && subagent.parentAvailable !== true
    // Running input stays free; locked = session removed, the
-@@ -298,7 +299,8 @@ export const InputBar = memo(function InputBar({
+@@ -338,7 +339,8 @@ export const InputBar = memo(function InputBar({
      // leaves focus on the button, and restoring it afterwards would re-track an
      // empty draft and close the menu again.
      if (editor !== null) focusDraftEditor(editor, revealSelection)
@@ -2360,38 +2756,42 @@ index ef95796577c6f53c0280a3e8c39c4a8eb10ec5eb..f345fd48233a6d554fb74aaff78ff11c
    }
  
    // The no-session Workspace trigger: the resident editable div acts as the
-@@ -318,12 +320,13 @@ export const InputBar = memo(function InputBar({
+@@ -358,13 +360,16 @@ export const InputBar = memo(function InputBar({
    // button (no pending upload) over a non-empty draft that is neither a
    // claimed command nor a `/` line headed for adjudication — so it never
    // describes a delivery the click cannot or does not perform; every other
 -  // state keeps plain Send. A continuable child keeps Send primary and
--  // exposes Stop independently.
--  const primaryStops = running && subagent === null && (empty || blocked !== undefined)
+-  // exposes Stop independently, and so does a running session while a
+-  // message waits for the Host.
+-  const primaryStops = running && subagent === null && !sending && (empty || blocked !== undefined)
 +  // state keeps plain Send. A continuable child defaults to independent Stop;
-+  // its presentation host can select the ordinary primary-button placement.
-+  const primaryStops = running && (subagent === null || composerPresentation === 'main')
++  // its presentation host can select the ordinary primary-button placement,
++  // which then behaves like a parent session. A running session exposes Stop
++  // independently while a message waits for the Host.
++  const mainPlacement = subagent === null || composerPresentation === 'main'
++  const primaryStops = running && mainPlacement && !sending
 +    && (empty || blocked !== undefined || (composerPresentation === 'main' && parentOffline))
    // Disabled native buttons may omit mouseleave; their tooltip must close from state.
-   const primaryDisabled = primaryStops ? stop === undefined : empty || disabled || machineBusy || uploadsPending
--  const interruptible = running && continuable
-+  const interruptible = running && continuable && composerPresentation !== 'main'
+   const primaryDisabled = primaryStops ? stopAction === undefined : empty || disabled || machineBusy || uploadsPending
+-  const interruptible = running && (continuable || (sending && subagent === null))
++  const interruptible = running && ((continuable && composerPresentation !== 'main') || (sending && mainPlacement))
    const primarySubmitMode = resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)
    const plainMessageDraft = !empty && input?.phase === 'plain' && !draft.trimStart().startsWith('/')
    const primaryLabel = primaryStops
-@@ -456,7 +459,7 @@ export const InputBar = memo(function InputBar({
+@@ -501,7 +506,7 @@ export const InputBar = memo(function InputBar({
                ref={fileInputRef}
                type="file"
                multiple
--              disabled={subagent !== null}
-+              disabled={subagent !== null && !(continuable && childImageUploads)}
+-              disabled={!canAcceptDrop || subagent !== null}
++              disabled={!canAcceptDrop || (subagent !== null && !(continuable && childImageUploads))}
                hidden
                onChange={onPickFiles}
              />
 diff --git a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
-index 83d6db85c9c17c81d3ec4bc9f1246f357da7a4ac..0b81abd3ac4129edd1a001879969413c03b4bdb9 100644
+index d968bdc4d861824395a920798a34c6980d6ed06b..be66197f672a994b7341b54af84a79d91262b9f4 100644
 --- a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
-@@ -3,6 +3,7 @@ import { render, cleanup } from '@testing-library/react'
+@@ -4,6 +4,7 @@ import { render, cleanup } from '@testing-library/react'
  import { $getRoot, $isTextNode, PASTE_COMMAND } from 'lexical'
  import { createUserTextFixture } from './user-text-component-fixture.client.tsx'
  import { registerComposerKeymap } from '../src/client/input/editor/keymap.ts'
@@ -2399,7 +2799,7 @@ index 83d6db85c9c17c81d3ec4bc9f1246f357da7a4ac..0b81abd3ac4129edd1a001879969413c
  import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
  import { describe, expect, it, onTestFinished, vi } from 'vitest'
  import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
-@@ -489,6 +490,29 @@ describe('Conversation inject API', () => {
+@@ -517,6 +518,29 @@ describe('Conversation inject API', () => {
      }
    })
  
@@ -2430,10 +2830,10 @@ index 83d6db85c9c17c81d3ec4bc9f1246f357da7a4ac..0b81abd3ac4129edd1a001879969413c
      const b = await bench()
      const entry = b.entryOf('conversation.composer.bar')
 diff --git a/packages/client/ui-conversation/tests/context-meter.client.spec.tsx b/packages/client/ui-conversation/tests/context-meter.client.spec.tsx
-index 9250c0b48053bae8e407b2429a963cd8da4f7eca..5899e2e8b089f2a630dcb23951692359507c0f8a 100644
+index 86271de69f610f74d40b2d3845efd4c2b6629e59..01c9ccc38eda52f2688f439ecba159db37960f32 100644
 --- a/packages/client/ui-conversation/tests/context-meter.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/context-meter.client.spec.tsx
-@@ -5,12 +5,35 @@ import { cleanup, fireEvent, render } from '@testing-library/react'
+@@ -5,12 +5,35 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
  import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
  import { en as commonEn, zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/index.ts'
  import { ContextMeter, type ContextMeterProps } from '../src/client/skeleton/ContextMeter.tsx'
@@ -2479,7 +2879,7 @@ index 9250c0b48053bae8e407b2429a963cd8da4f7eca..5899e2e8b089f2a630dcb23951692359
      expect(contextOccupancy({ pressureTokens: 32_000, contextWindow: 128_000 }))
        .toEqual({ percent: 25, usedTokens: 32_000, contextWindow: 128_000 })
      expect(contextOccupancy({ pressureTokens: 32_000 })).toBeNull()
-@@ -94,6 +117,7 @@ describe('ContextMeter', () => {
+@@ -108,6 +131,7 @@ describe('ContextMeter', () => {
      // `.segment` carries a min-width, so a zero-width part would still paint a
      // filled sliver over an empty context.
      expect(panel.getElementsByClassName(segmentClass)).toHaveLength(0)
@@ -2487,7 +2887,7 @@ index 9250c0b48053bae8e407b2429a963cd8da4f7eca..5899e2e8b089f2a630dcb23951692359
      expect(panel.textContent).toContain('~0 / 128K')
    })
  
-@@ -163,4 +187,158 @@ describe('ContextMeter', () => {
+@@ -177,4 +201,158 @@ describe('ContextMeter', () => {
      fireEvent.keyDown(document, { key: 'Escape' })
      expect(view.queryByRole('dialog')).toBeNull()
    })
@@ -2647,10 +3047,10 @@ index 9250c0b48053bae8e407b2429a963cd8da4f7eca..5899e2e8b089f2a630dcb23951692359
 +
  })
 diff --git a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
-index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c527273aa 100644
+index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a333f66dcb2 100644
 --- a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
-@@ -93,6 +93,9 @@ interface BenchOptions {
+@@ -95,6 +95,9 @@ interface BenchOptions {
    /** The hub's steer-all face (empty-draft accelerated Enter). */
    steerQueue?: () => void
    variant?: 'hero' | 'composer'
@@ -2660,7 +3060,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
    placeholder?: string
    t?: InputBarProps['t']
    accessory?: React.ReactNode
-@@ -108,7 +111,7 @@ interface BenchOptions {
+@@ -112,7 +115,7 @@ interface BenchOptions {
    addFiles?: (files: readonly File[], directories?: ReadonlySet<File>) => string | null
    commandMenuOpen?: boolean
    busyEnter?: 'queue' | 'steer'
@@ -2669,7 +3069,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
  }
  
  /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
-@@ -220,6 +223,9 @@ function bench(over?: BenchOptions) {
+@@ -226,6 +229,9 @@ function bench(over?: BenchOptions) {
      t: over?.t ?? makeTranslate(zh, commonZh),
      renderSlot,
      variant: over?.variant ?? 'composer',
@@ -2679,7 +3079,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
      ...(over?.inert === true ? { disabled: true } : {}),
      ...(over?.blocked !== undefined ? { blocked: over.blocked } : {}),
      ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
-@@ -230,8 +236,8 @@ function bench(over?: BenchOptions) {
+@@ -236,8 +242,8 @@ function bench(over?: BenchOptions) {
    const view = render(<InputBar {...props} />)
    const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
    const sendableDraft = (over?.draft?.trim() ?? '') !== '' || (over?.attachments?.length ?? 0) > 0
@@ -2690,7 +3090,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
    // A running steer-capable composer (ordinary session or continuable child
    // with its parent online) labels Send by the delivery mode it performs over
    // a plain message draft; idle sessions, one-shot children, locked
-@@ -1204,6 +1210,75 @@ describe('running and lock semantics', () => {
+@@ -1403,6 +1409,75 @@ describe('running and lock semantics', () => {
      expect(empty.button.disabled).toBe(true)
    })
  
@@ -2766,7 +3166,7 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
    it.each([
      ['active plan', { plan: { active: true, pending: false } }],
      ['active goal', { goal: { phase: 'active' as const, objective: 'inspect files' } }],
-@@ -1818,6 +1893,21 @@ describe('command launcher chrome and control seats', () => {
+@@ -2101,6 +2176,21 @@ describe('command launcher chrome and control seats', () => {
      expect(view.queryByLabelText('Model')).toBeNull()
    })
  
@@ -2789,10 +3189,10 @@ index 4ee04fe8a7d55faf0d278b4954f789704a06e747..ec5343747ec495af16ebb5c9e2878f5c
      const toggleCommandMenu = vi.fn()
      const { view, shell, menuLauncher } = bench({ draft: 'draft text', toggleCommandMenu })
 diff --git a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-index d86ad463fe12e7a274107a8bb26e58bfe22353a6..75a818868c8ea94bccd9fc38ddc0cdfb66a745ac 100644
+index 8eb125df031efc57e5c7caa31ffcfa44924d437b..8542908fde99a765c56aa46c3edc12947889e697 100644
 --- a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-@@ -139,6 +139,9 @@ function mount(
+@@ -140,6 +140,9 @@ function mount(
      nestedSubagent?: boolean
      /** A composer block another plugin raised for this session. */
      composerBlock?: { reason: string }
@@ -2802,7 +3202,7 @@ index d86ad463fe12e7a274107a8bb26e58bfe22353a6..75a818868c8ea94bccd9fc38ddc0cdfb
      /** Mutable view ledger used by registration-order regressions. */
      viewTabs?: ViewTab[]
      /** Persisted ids of unpinned View tabs. */
-@@ -204,7 +207,7 @@ function mount(
+@@ -205,7 +208,7 @@ function mount(
    const setPinned = vi.fn<(id: string, pinned: boolean) => void>()
    const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
      slotCalls.push(key)
@@ -2811,7 +3211,7 @@ index d86ad463fe12e7a274107a8bb26e58bfe22353a6..75a818868c8ea94bccd9fc38ddc0cdfb
        seatOwners.push({ key, owner })
      }
      if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
-@@ -373,7 +376,10 @@ function mount(
+@@ -375,7 +378,10 @@ function mount(
      )) as ConversationContentProps['useFactorySlot']
      return (
        <FactoryViewsTestContext.Provider value={common}>
@@ -2823,7 +3223,7 @@ index d86ad463fe12e7a274107a8bb26e58bfe22353a6..75a818868c8ea94bccd9fc38ddc0cdfb
        </FactoryViewsTestContext.Provider>
      )
    }) as ConversationSlotProps['renderFactorySlot']
-@@ -407,6 +413,23 @@ function mount(
+@@ -410,6 +416,23 @@ function mount(
    }
  }
  
@@ -2901,7 +3301,7 @@ index 0000000000000000000000000000000000000000..a2fbd21b20b9a16bf274cc4d24047809
 +  expect(view.queryByRole('button', { name: '上下文 —' })).toBeNull()
 +})
 diff --git a/packages/client/ui-session/README.i18n.yaml b/packages/client/ui-session/README.i18n.yaml
-index 447f8f489b3567550c7a6ce7997bf5ee35f69c68..263104e129303abd76a25fcc725ff34736097064 100644
+index 3a3d92d9d57fa23d03572859ce7f4f6554ef5e7f..fd551879a9d0c502ea5d29086f378ad7ca68bed8 100644
 --- a/packages/client/ui-session/README.i18n.yaml
 +++ b/packages/client/ui-session/README.i18n.yaml
 @@ -9,8 +9,8 @@
@@ -2916,7 +3316,7 @@ index 447f8f489b3567550c7a6ce7997bf5ee35f69c68..263104e129303abd76a25fcc725ff347
    en: 12e1ffc25a2d6695
    zh: 321156dea1356e55
 diff --git a/packages/client/ui-session/README.md b/packages/client/ui-session/README.md
-index 79ac9f0e73e7409ffc1e79a1f5c99716353c171f..948ee62b6fab459ed6a74678f49d03adb6dd6915 100644
+index 4c3928b35de0a4b30ce934005e28240acb74f31b..7667d3b34feb5b6b52f1e891baf5d042cdebea3f 100644
 --- a/packages/client/ui-session/README.md
 +++ b/packages/client/ui-session/README.md
 @@ -12,6 +12,8 @@ Use this package to expose Session catalog, retain information, and unified UI s
@@ -2929,7 +3329,7 @@ index 79ac9f0e73e7409ffc1e79a1f5c99716353c171f..948ee62b6fab459ed6a74678f49d03ad
  
  - [Access Hooks](#access-hooks)
 diff --git a/packages/client/ui-session/README.zh.md b/packages/client/ui-session/README.zh.md
-index 157cc79a7f70e9eccdd76ce147a2b8d4ffd7cd42..d082eaf2a92a3d2c2217780c6e8550a0921d2e42 100644
+index fb63e227cd25d359bffaa44350724a1b8ed9fff4..667c0aa5a34029f4849ef47244f727d2deb3db91 100644
 --- a/packages/client/ui-session/README.zh.md
 +++ b/packages/client/ui-session/README.zh.md
 @@ -12,6 +12,8 @@ kind: "package-reference"
@@ -2942,7 +3342,7 @@ index 157cc79a7f70e9eccdd76ce147a2b8d4ffd7cd42..d082eaf2a92a3d2c2217780c6e8550a0
  
  - [访问 Hook](#access-hooks)
 diff --git a/packages/client/ui-session/src/client/index.ts b/packages/client/ui-session/src/client/index.ts
-index 29aeebce04d4c0e2c54236a92ce30a4fb0df1520..c85fe7b134bb2855b881098ea551f2d68697c8c7 100644
+index 860a82287ca5973bb159847f6549593ad2ff4de9..96fe8eb5f9cccb8336edeb5cf7037cb39b982233 100644
 --- a/packages/client/ui-session/src/client/index.ts
 +++ b/packages/client/ui-session/src/client/index.ts
 @@ -4,6 +4,7 @@ import type {
@@ -2973,7 +3373,7 @@ index 29aeebce04d4c0e2c54236a92ce30a4fb0df1520..c85fe7b134bb2855b881098ea551f2d6
    private readonly absent: BindingSource
    private readonly current: BindingSource
    private readonly pendingDomains: RuntimePendingDomain[] = []
-@@ -388,6 +395,57 @@ export class UiSession extends Service {
+@@ -406,6 +413,57 @@ export class UiSession extends Service {
      return () => { void dispose() }
    }
  
@@ -3031,7 +3431,7 @@ index 29aeebce04d4c0e2c54236a92ce30a4fb0df1520..c85fe7b134bb2855b881098ea551f2d6
    /**
     * Register one pending-interaction domain and return its publication function.
     * Domain teardown first removes its visible values, then delegates and awaits
-@@ -574,6 +632,11 @@ export class UiSession extends Service {
+@@ -592,6 +650,11 @@ export class UiSession extends Service {
        copyDeclared('keyed hook', keyedHooks, descriptor.keyedHooks, contribution.keyedHooks, finalProps)
        copyDeclared('prop', props, descriptor.props, contribution.props, finalProps)
      }
@@ -3044,10 +3444,10 @@ index 29aeebce04d4c0e2c54236a92ce30a4fb0df1520..c85fe7b134bb2855b881098ea551f2d6
        key: binding.sessionId,
        ctx: binding.ctx,
 diff --git a/packages/client/ui-session/tests/ui-session.client.spec.ts b/packages/client/ui-session/tests/ui-session.client.spec.ts
-index ae105e7b8efac63027c17bde468b0277ca776975..2b038a12541877c795fdde4c6ada0ac3d33bdae0 100644
+index c12901a0d8a1b7dde79699b8c35322411f953b7c..dd0fff972c084c4f5ac3a8ee3977cf72a76188d9 100644
 --- a/packages/client/ui-session/tests/ui-session.client.spec.ts
 +++ b/packages/client/ui-session/tests/ui-session.client.spec.ts
-@@ -38,6 +38,13 @@ const sessionId = (value: string): SessionId => value as SessionId
+@@ -39,6 +39,13 @@ const sessionId = (value: string): SessionId => value as SessionId
  
  const roots: Context[] = []
  
@@ -3061,7 +3461,7 @@ index ae105e7b8efac63027c17bde468b0277ca776975..2b038a12541877c795fdde4c6ada0ac3
  function createSessionsBench(ctx: Context): SessionsBench {
    roots.push(ctx)
    let statusListener: ((id: SessionId, running: boolean) => void) | undefined
-@@ -188,6 +195,136 @@ function createUiSession(ctx: Context, bench: SessionsBench): UiSession {
+@@ -189,6 +196,136 @@ function createUiSession(ctx: Context, bench: SessionsBench): UiSession {
    return new UiSession(ctx, bench.sessions)
  }
  

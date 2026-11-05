@@ -11,6 +11,7 @@ import { type SystemPromptState } from '../contract/system-prompt.ts';
 import { ConversationEventRegistry } from './event-registry.ts';
 import { ConversationViewRegistry } from './view-registry.ts';
 import { ConversationGroupRegistry } from './group-registry.ts';
+import { ConversationInteractionRegistry } from './interaction-registry.ts';
 import { UserTextRegistry } from './user-text-registry.ts';
 /** Observable faces published for one Session's Conversation assembly. */
 export interface ConversationBinding {
@@ -45,6 +46,8 @@ export declare class UiConversation extends Service {
     readonly groups: ConversationGroupRegistry;
     /** Pure text rules and parser snapshots, independent of durable Session assembly. */
     readonly userText: UserTextRegistry;
+    /** Plugin-owned handlers for selection and context-menu gestures. */
+    readonly interactions: ConversationInteractionRegistry;
     private readonly bindings;
     private readonly images;
     /**
@@ -60,16 +63,16 @@ export declare class UiConversation extends Service {
      */
     binding(source: SessionBinding | SessionId): ConversationBinding;
     /**
-     * Resolve one session-authorized durable image URL, cached per Session so
+     * Resolve one Gateway-authorized durable image URL, cached per Session so
      * every Conversation target shares one read and one browser URL.
-     * @param sessionId - Session authorization and lifetime scope.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference from a session event.
      * @returns browser URL valid until the Session binding is released.
      */
     imageUrl(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string>;
     /**
      * Read a cached durable image URL synchronously when one is available.
-     * @param sessionId - Session authorization and lifetime scope.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference from a session event.
      * @returns current preview or canonical URL, if cached.
      */
@@ -78,7 +81,7 @@ export declare class UiConversation extends Service {
      * Adopt an already-displayable URL for one durable reference (see
      * HistoricalImageCache.seed): the transcript node then renders it without a
      * byte round-trip.
-     * @param sessionId - Session authorization and lifetime scope.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference the URL displays.
      * @param url - browser URL to adopt.
      * @returns whether the cache took URL ownership.

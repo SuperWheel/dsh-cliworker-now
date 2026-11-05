@@ -12,6 +12,14 @@ export declare const COLLAPSE_TIMINGS: readonly ["completion", "next-input"];
 export type CollapseTiming = typeof COLLAPSE_TIMINGS[number];
 /** Preserve completion-time folding when no timing preference is saved. */
 export declare const DEFAULT_COLLAPSE_TIMING: CollapseTiming;
+/** Field carrying which Assistant replies stay visible in a folded Turn. */
+export declare const FOLDED_REPLIES_FIELD = "foldedReplies";
+/** Assistant replies kept visible while a completed Turn folds its process: every reply, or only the final answer. */
+export declare const FOLDED_REPLIES: readonly ["all", "final"];
+/** Which Assistant replies stay visible while a completed Turn folds its process. */
+export type FoldedReplies = typeof FOLDED_REPLIES[number];
+/** Keep every Assistant reply visible when no folded-reply preference is saved. */
+export declare const DEFAULT_FOLDED_REPLIES: FoldedReplies;
 /** Work-details presentation modes a user can choose. */
 export declare const TRANSCRIPT_VIEW_MODES: readonly ["compact", "standard", "detailed", "verbose"];
 /** Work-details presentation mode. */
@@ -41,6 +49,8 @@ export interface ChatSettings {
     transcriptView?: TranscriptViewMode | typeof LEGACY_TRANSCRIPT_VIEW_MODE | typeof LEGACY_EXPANDED_TRANSCRIPT_VIEW_MODE | null;
     /** Independent collapse timing; absence preserves completion-time folding. */
     collapseTiming?: CollapseTiming;
+    /** Replies kept visible in a folded Turn; absence keeps every reply. */
+    foldedReplies?: FoldedReplies;
     /** Detail level for composer statistics and completed-Turn usage. */
     performanceUsage: PerformanceUsageMode;
     /** Default destination for Chat HTTP(S) links. */
@@ -49,6 +59,7 @@ export interface ChatSettings {
 /** Durable Chat schema; also the wire envelope the browser scope validates against. */
 export declare const ChatSettingsFields: {
     collapseTiming: z<"completion" | "next-input", "completion" | "next-input", "defined">;
+    foldedReplies: z<"all" | "final", "all" | "final", "defined">;
     linkOpening: z<"sidebar" | "new-tab", "sidebar" | "new-tab", "defined">;
     performanceUsage: z<"compact" | "detailed", "compact" | "detailed", "defined">;
     transcriptView: z<"compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "plain">;
@@ -56,11 +67,13 @@ export declare const ChatSettingsFields: {
 /** Schema for shared configuration values. */
 export declare const ChatSettingsSchema: z<Schemastery.ObjectS<NoInfer<{
     collapseTiming: z<"completion" | "next-input", "completion" | "next-input", "defined">;
+    foldedReplies: z<"all" | "final", "all" | "final", "defined">;
     linkOpening: z<"sidebar" | "new-tab", "sidebar" | "new-tab", "defined">;
     performanceUsage: z<"compact" | "detailed", "compact" | "detailed", "defined">;
     transcriptView: z<"compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "plain">;
 }>>, Schemastery.ObjectT<NoInfer<{
     collapseTiming: z<"completion" | "next-input", "completion" | "next-input", "defined">;
+    foldedReplies: z<"all" | "final", "all" | "final", "defined">;
     linkOpening: z<"sidebar" | "new-tab", "sidebar" | "new-tab", "defined">;
     performanceUsage: z<"compact" | "detailed", "compact" | "detailed", "defined">;
     transcriptView: z<"compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "compact" | "standard" | "detailed" | "verbose" | "normal" | "expanded", "plain">;

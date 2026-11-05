@@ -16,15 +16,15 @@ export declare class HistoricalImageCache {
      */
     constructor(ctx: Context, sessions: ISessions);
     /**
-     * Resolve and cache one session-authorized image URL.
-     * @param sessionId - Session authorization and lifetime scope.
+     * Resolve and cache one stored image URL.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference.
      * @returns browser URL valid until the Session binding is released.
      */
     resolve(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string>;
     /**
      * Return an already-displayable URL without starting a read.
-     * @param sessionId - Session authorization and lifetime scope.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference.
      * @returns current preview or canonical URL when cached.
      */
@@ -33,7 +33,7 @@ export declare class HistoricalImageCache {
      * Adopt a submission preview while fetching the durable admitted bytes.
      * The preview is available synchronously, then replaced and revoked when
      * the canonical attachment read completes.
-     * @param sessionId - Session authorization and lifetime scope.
+     * @param sessionId - Session binding that owns the cached URL lifetime.
      * @param attachment - Durable image reference the URL temporarily displays.
      * @param url - browser URL to adopt.
      * @returns whether the cache took ownership.

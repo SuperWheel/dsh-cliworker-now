@@ -68,7 +68,7 @@ export declare class ConversationController extends Service implements IConversa
     readonly input: SessionInputResolver;
     /** The per-session composer-block registry. */
     readonly blocks: ComposerBlocks;
-    /** Live upload state per file-kind draft; images never appear here. */
+    /** Live upload state per draft that uploads when added: every file draft and every uploaded image draft. */
     readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>>;
     private readonly draftAttachments;
     private readonly fileUploadOperations;
@@ -96,43 +96,52 @@ export declare class ConversationController extends Service implements IConversa
      */
     send(text: string): Promise<void>;
     /**
-     * Submit ordered draft attachments with text through one host admission. A local
-     * submission echo enters the session snapshot synchronously; serialization
-     * and the prompt round-trip start after the browser can paint it. On the
-     * echo's observed retirement seeds admitted image previews into the durable
-     * cache and removes every attachment from the draft registry. On failure,
-     * every attachment remains registered so the composer can restore it.
+     * Submit ordered draft attachments with text through one host admission. A
+     * local submission echo is registered first and enters the session snapshot
+     * once the Host accepts the prompt; serialization and the prompt round-trip
+     * start after the browser can paint the composer's sending state. The
+     * outcome is success as soon as the Host accepts the prompt, which an Inbox
+     * row carrying the request id can show before the receipt. The echo's
+     * observed retirement seeds admitted image previews into the durable cache
+     * and removes every attachment from the draft registry; an accepted prompt
+     * whose echo retires unobserved also releases them. Until the Host accepts
+     * the prompt, every attachment remains registered for the composer.
      * @param session - target session.
      * @param text - serialized prompt text.
      * @param attachmentIds - ordered draft-local attachment ids.
      * @param mode - queue or steer delivery selected by composer policy.
      * @param signal - optional cancellation for the complete Host admission.
+     * @param accept - called inside the Session's acceptance, before the echo renders, so the composer settles with it.
      * @returns the Host admission outcome; local attachment preparation failures reject.
      */
-    sendSession(session: SessionFace, text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode, signal?: AbortSignal): Promise<SubmitOutcome>;
+    sendSession(session: SessionFace, text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode, signal?: AbortSignal, accept?: () => void): Promise<SubmitOutcome>;
     /**
      * Create runtime-only draft attachments. Files whose browser MIME is an
-     * accepted image type become image drafts (object URL preview, bytes sent
-     * with the prompt); every other file becomes a file draft whose background
-     * upload starts immediately and remains owned by this service across Session
-     * navigation until completion or explicit removal.
+     * accepted image type become image drafts with an object URL preview; every
+     * other file becomes a file draft. A file draft's background upload starts
+     * immediately, and so does an image draft's when `uploadImages` is set; the
+     * upload remains owned by this service across Session navigation until
+     * completion or explicit removal. An image draft without an upload sends its
+     * bytes with the prompt.
      * @param sessionId - target Agent-scope identity.
      * @param files - browser files to register.
+     * @param uploadImages - whether the Session accepts image uploads; a subagent continuation does not.
      * @returns ordered draft descriptors.
      */
-    createDrafts(sessionId: SessionId, files: readonly File[]): readonly ComposerAttachment[];
+    createDrafts(sessionId: SessionId, files: readonly File[], uploadImages: boolean): readonly ComposerAttachment[];
     /**
-     * Restart one failed file upload.
+     * Restart one failed file or image upload.
      * @param sessionId - target Agent-scope identity.
      * @param id - draft attachment id whose upload previously failed.
      */
     retryFileUpload(sessionId: SessionId, id: DraftAttachmentId): void;
     /**
-     * Stage carried file drafts again for a new Session.
+     * Stage carried file and image drafts again for a new Session.
      * @param sessionId - target Agent-scope identity after a Workspace switch.
      * @param ids - carried draft attachment ids.
+     * @param uploadImages - whether the target Session stages image uploads; an image draft otherwise sends inline.
      */
-    rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[]): void;
+    rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[], uploadImages: boolean): void;
     private beginFileUpload;
     /** Start queued upload Workers until the configured concurrency is occupied. */
     private pumpFileUploads;
@@ -144,8 +153,9 @@ export declare class ConversationController extends Service implements IConversa
     resolveDraftAttachments(ids: readonly DraftAttachmentId[]): readonly ComposerAttachment[];
     /**
      * Serialize ordered draft attachments to command-submit wire payloads without
-     * sending or releasing them. Images are encoded; generic files cite receipts
-     * from their completed background uploads and never reread browser bytes.
+     * sending or releasing them. Images are encoded even when an upload already
+     * stored them, because commands accept only file receipts; generic files cite
+     * receipts from their completed background uploads and never reread browser bytes.
      * @param attachmentIds - ordered draft-local attachment ids.
      * @returns wire payloads in id order.
      */
@@ -155,6 +165,10 @@ export declare class ConversationController extends Service implements IConversa
      * @param id - draft attachment id.
      */
     releaseDraftAttachment(id: DraftAttachmentId): void;
+    /** Abort one draft's active upload and drop its upload state. */
+    private dropUpload;
+    /** Drop one draft's upload state. */
+    private forgetUpload;
     /**
      * Release a set of browser-owned draft attachments.
      * @param attachments - descriptors to release.
@@ -172,12 +186,11 @@ export declare class ConversationController extends Service implements IConversa
     private scopeId;
     private requireSessions;
     /**
-     * Settle one submission's draft attachments when its echo retires. Observed:
-     * each image leaves the registry, handing its preview URL to the durable
-     * image cache (seeded under the admitted reference so the transcript node
-     * renders immediately while the cache reads canonical bytes) or revoking it
-     * when the cache already holds that reference. Failed: nothing changes;
-     * the ids stay registered for the composer's rail restore.
+     * Settle one submission's draft attachments when its echo is observed: each
+     * file is released, and each image leaves the registry, handing its preview
+     * URL to the durable image cache (seeded under the admitted reference so the
+     * transcript node renders immediately while the cache reads canonical
+     * bytes) or revoking it when the cache already holds that reference.
      */
     private settleSubmittedAttachments;
     /** Canonical base64 wire form of one browser image file. */

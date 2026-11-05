@@ -35,7 +35,7 @@ window.__ModuleLoader__.load({
 		let react_jsx_runtime = require("react/jsx-runtime");
 		let zod = require("zod");
 		let react_dom = require("react-dom");
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.6/node_modules/@deepseek-ai/cosmokit/lib/index.js
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@deepseek-ai+cosmokit@1.9.0/node_modules/@deepseek-ai/cosmokit/lib/index.js
 		/** Return true when a value is `null` or `undefined`. */
 		function isNullable(value) {
 			return value === null || value === void 0;
@@ -3494,8 +3494,8 @@ window.__ModuleLoader__.load({
 				}, "ui-conversation historical image cache");
 			}
 			/**
-			* Resolve and cache one session-authorized image URL.
-			* @param sessionId - Session authorization and lifetime scope.
+			* Resolve and cache one stored image URL.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference.
 			* @returns browser URL valid until the Session binding is released.
 			*/
@@ -3517,7 +3517,7 @@ window.__ModuleLoader__.load({
 			}
 			/**
 			* Return an already-displayable URL without starting a read.
-			* @param sessionId - Session authorization and lifetime scope.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference.
 			* @returns current preview or canonical URL when cached.
 			*/
@@ -3529,7 +3529,7 @@ window.__ModuleLoader__.load({
 			* Adopt a submission preview while fetching the durable admitted bytes.
 			* The preview is available synchronously, then replaced and revoked when
 			* the canonical attachment read completes.
-			* @param sessionId - Session authorization and lifetime scope.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference the URL temporarily displays.
 			* @param url - browser URL to adopt.
 			* @returns whether the cache took ownership.
@@ -3559,7 +3559,7 @@ window.__ModuleLoader__.load({
 				return true;
 			}
 			loadCanonical(key, entry, attachment) {
-				return entry.binding.session.readAttachment(attachment.attachmentId).then((result) => {
+				return entry.binding.session.readAttachment(attachment).then((result) => {
 					if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
 					this.assertLive(key, entry);
 					let url;
@@ -3664,6 +3664,60 @@ window.__ModuleLoader__.load({
 			*/
 			forTarget(target) {
 				return this.definitions.get(target);
+			}
+		};
+		//#endregion
+		//#region src/client/conversation/interaction-registry.ts
+		/** Effect-owned registrations; active surfaces belong to individual Chat views. */
+		var ConversationInteractionRegistry = class extends ConversationDefinitionRegistry {
+			ids = [];
+			/**
+			* Register a synchronous handler and its keyed renderer identity.
+			* @param definition - uniquely named plugin handler.
+			* @returns idempotent disposer tied to the registering plugin's lifetime.
+			*/
+			register(definition) {
+				if (definition.id === "") throw new Error("text interaction ID must not be empty");
+				return this.registerDefinition(definition.id, definition, `Duplicate text interaction: ${definition.id}`, `uiConversation.interactions.register(${JSON.stringify(definition.id)})`);
+			}
+			/**
+			* Offer a gesture until one handler opens its surface; opening never prevents browser defaults.
+			* @param sessionId - conversation where the gesture occurred.
+			* @param gesture - synchronous access to the browser event and DOM text.
+			* @returns selected renderer ID, or null when no plugin opens a surface.
+			*/
+			dispatch(sessionId, gesture) {
+				for (const definition of this.entries()) {
+					const state = { opened: false };
+					let dispatching = true;
+					try {
+						definition.onInteraction({
+							...gesture,
+							sessionId,
+							open: () => {
+								if (dispatching) state.opened = true;
+							},
+							preventDefault: () => {
+								if (dispatching) gesture.preventDefault();
+							}
+						});
+					} finally {
+						dispatching = false;
+					}
+					if (state.opened) return definition.id;
+				}
+				return null;
+			}
+			/**
+			* Observe registration changes so Chat views can dismiss stale surfaces.
+			* @returns stable IDs until the registry changes.
+			*/
+			getSnapshot() {
+				return this.ids;
+			}
+			refresh() {
+				this.ids = [...this.definitions.keys()];
+				super.refresh();
 			}
 		};
 		//#endregion
@@ -4034,6 +4088,8 @@ window.__ModuleLoader__.load({
 			groups;
 			/** Pure text rules and parser snapshots, independent of durable Session assembly. */
 			userText;
+			/** Plugin-owned handlers for selection and context-menu gestures. */
+			interactions;
 			bindings = new WeakMapWithValues();
 			images;
 			/**
@@ -4047,6 +4103,7 @@ window.__ModuleLoader__.load({
 				this.views = new ConversationViewRegistry(ctx);
 				this.groups = new ConversationGroupRegistry(ctx, this.views);
 				this.userText = new UserTextRegistry(ctx);
+				this.interactions = new ConversationInteractionRegistry(ctx);
 				this.images = new HistoricalImageCache(ctx, sessions);
 				const rebuild = () => {
 					for (const record of this.bindings.values) record.binding.rebuild();
@@ -4101,9 +4158,9 @@ window.__ModuleLoader__.load({
 				return binding;
 			}
 			/**
-			* Resolve one session-authorized durable image URL, cached per Session so
+			* Resolve one Gateway-authorized durable image URL, cached per Session so
 			* every Conversation target shares one read and one browser URL.
-			* @param sessionId - Session authorization and lifetime scope.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference from a session event.
 			* @returns browser URL valid until the Session binding is released.
 			*/
@@ -4112,7 +4169,7 @@ window.__ModuleLoader__.load({
 			}
 			/**
 			* Read a cached durable image URL synchronously when one is available.
-			* @param sessionId - Session authorization and lifetime scope.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference from a session event.
 			* @returns current preview or canonical URL, if cached.
 			*/
@@ -4123,7 +4180,7 @@ window.__ModuleLoader__.load({
 			* Adopt an already-displayable URL for one durable reference (see
 			* HistoricalImageCache.seed): the transcript node then renders it without a
 			* byte round-trip.
-			* @param sessionId - Session authorization and lifetime scope.
+			* @param sessionId - Session binding that owns the cached URL lifetime.
 			* @param attachment - Durable image reference the URL displays.
 			* @param url - browser URL to adopt.
 			* @returns whether the cache took URL ownership.
@@ -4164,7 +4221,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/user-text/UserText.module.css.mjs
-		const css$9 = ".SOAQnq_root{display:contents}.SOAQnq_ellipsis{text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;display:block;overflow:hidden}";
+		const css$9 = "._7LCcVa_root{display:contents}._7LCcVa_ellipsis{text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;display:block;overflow:hidden}";
 		const tagId$9 = "@deepseek-ai/dsh-client-ui-conversation/UserText.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$9) + "]") === null) {
 			const tag = document.createElement("style");
@@ -4174,8 +4231,8 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var UserText_module_css_default = {
-			"ellipsis": "SOAQnq_ellipsis",
-			"root": "SOAQnq_root"
+			"ellipsis": "_7LCcVa_ellipsis",
+			"root": "_7LCcVa_root"
 		};
 		//#endregion
 		//#region src/client/user-text/UserText.tsx
@@ -4223,7 +4280,8 @@ window.__ModuleLoader__.load({
 				interactive,
 				renderSlot
 			]);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.HoverCardGroup, {
+				as: "span",
 				className: ellipsis ? UserText_module_css_default.ellipsis : UserText_module_css_default.root,
 				children: content
 			});
@@ -4347,10 +4405,16 @@ window.__ModuleLoader__.load({
 			invalid: zod.z.boolean().optional()
 		});
 		const commandSchema = zod.z.object({ token: zod.z.string() });
+		const quoteSchema = zod.z.object({
+			offset: zod.z.number().int().nonnegative(),
+			length: zod.z.number().int().positive(),
+			text: zod.z.string().refine((text) => text.trim() !== "")
+		});
 		const snapshotSchema = zod.z.object({
 			text: zod.z.string(),
 			references: zod.z.array(referenceSchema),
-			command: commandSchema.optional()
+			command: commandSchema.optional(),
+			quotes: zod.z.array(quoteSchema).optional()
 		}).refine((draft) => {
 			const spelling = draft.command?.token.trimEnd();
 			if (spelling !== void 0 && (!/^\/\S/u.test(spelling) || !draft.text.startsWith(spelling))) return false;
@@ -4359,6 +4423,13 @@ window.__ModuleLoader__.load({
 				if (reference.offset < end || reference.length !== reference.clipboardText.length) return false;
 				end = reference.offset + reference.length;
 				if (end > draft.text.length || draft.text.slice(reference.offset, end) !== reference.clipboardText) return false;
+			}
+			for (const quote of draft.quotes ?? []) if (quote.length !== (0, _deepseek_ai_dsh_client_ui_primitives.formatQuoteText)(quote.text).length || draft.text.slice(quote.offset, quote.offset + quote.length) !== (0, _deepseek_ai_dsh_client_ui_primitives.formatQuoteText)(quote.text)) return false;
+			end = spelling?.length ?? 0;
+			for (const span of [...draft.references, ...draft.quotes ?? []].sort((a, b) => a.offset - b.offset)) {
+				if (span.offset < end) return false;
+				end = span.offset + span.length;
+				if (end > draft.text.length) return false;
 			}
 			return true;
 		}, "Draft references must identify ordered, non-overlapping text spans after the leading command token");
@@ -4375,7 +4446,8 @@ window.__ModuleLoader__.load({
 			return {
 				text: input.text,
 				references: input.references.map(copyReference),
-				...input.command === void 0 ? {} : { command: { token: input.command.token } }
+				...input.command === void 0 ? {} : { command: { token: input.command.token } },
+				...input.quotes === void 0 ? {} : { quotes: input.quotes.map((quote) => ({ ...quote })) }
 			};
 		}
 		/**
@@ -4389,6 +4461,7 @@ window.__ModuleLoader__.load({
 			if (!parsed.success) return void 0;
 			return {
 				text: parsed.data.text,
+				...parsed.data.quotes === void 0 ? {} : { quotes: parsed.data.quotes },
 				references: parsed.data.references.map(({ appearance, invalid, ...reference }) => ({
 					...reference,
 					...appearance === void 0 ? {} : { appearance },
@@ -4402,13 +4475,15 @@ window.__ModuleLoader__.load({
 		* @param text - current clipboard projection.
 		* @param occurrences - matching reference projections from the same document revision.
 		* @param commandToken - claim token of the command chip opening the document, if any.
+		* @param quotes - atomic quotes from the same document revision.
 		* @returns an editor-independent snapshot.
 		*/
-		function snapshotDraft(text, occurrences, commandToken) {
+		function snapshotDraft(text, occurrences, commandToken, quotes = []) {
 			return {
 				text,
 				references: occurrences.map(copyReference),
-				...commandToken === void 0 ? {} : { command: { token: commandToken } }
+				...commandToken === void 0 ? {} : { command: { token: commandToken } },
+				...quotes.length === 0 ? {} : { quotes: quotes.map((quote) => ({ ...quote })) }
 			};
 		}
 		function copyReference(reference) {
@@ -4627,7 +4702,7 @@ window.__ModuleLoader__.load({
 			input;
 			/** The per-session composer-block registry. */
 			blocks;
-			/** Live upload state per file-kind draft; images never appear here. */
+			/** Live upload state per draft that uploads when added: every file draft and every uploaded image draft. */
 			fileUploads = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)({});
 			draftAttachments = /* @__PURE__ */ new Map();
 			fileUploadOperations = /* @__PURE__ */ new Map();
@@ -4672,20 +4747,25 @@ window.__ModuleLoader__.load({
 				if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`);
 			}
 			/**
-			* Submit ordered draft attachments with text through one host admission. A local
-			* submission echo enters the session snapshot synchronously; serialization
-			* and the prompt round-trip start after the browser can paint it. On the
-			* echo's observed retirement seeds admitted image previews into the durable
-			* cache and removes every attachment from the draft registry. On failure,
-			* every attachment remains registered so the composer can restore it.
+			* Submit ordered draft attachments with text through one host admission. A
+			* local submission echo is registered first and enters the session snapshot
+			* once the Host accepts the prompt; serialization and the prompt round-trip
+			* start after the browser can paint the composer's sending state. The
+			* outcome is success as soon as the Host accepts the prompt, which an Inbox
+			* row carrying the request id can show before the receipt. The echo's
+			* observed retirement seeds admitted image previews into the durable cache
+			* and removes every attachment from the draft registry; an accepted prompt
+			* whose echo retires unobserved also releases them. Until the Host accepts
+			* the prompt, every attachment remains registered for the composer.
 			* @param session - target session.
 			* @param text - serialized prompt text.
 			* @param attachmentIds - ordered draft-local attachment ids.
 			* @param mode - queue or steer delivery selected by composer policy.
 			* @param signal - optional cancellation for the complete Host admission.
+			* @param accept - called inside the Session's acceptance, before the echo renders, so the composer settles with it.
 			* @returns the Host admission outcome; local attachment preparation failures reject.
 			*/
-			async sendSession(session, text, attachmentIds, mode, signal) {
+			async sendSession(session, text, attachmentIds, mode, signal, accept) {
 				const attachments = this.resolveDraftAttachments(attachmentIds);
 				if (attachments.length !== attachmentIds.length) throw new Error("conversation.sendSession: one or more draft attachments are no longer available");
 				const uploads = this.fileUploads.getSnapshot();
@@ -4694,6 +4774,8 @@ window.__ModuleLoader__.load({
 					if (upload === void 0 || upload.status !== "ready") throw new Error("conversation.sendSession: one or more files have not finished uploading");
 					return upload;
 				};
+				const storedFileOf = (attachment) => uploadFor(attachment).file;
+				const imageReceipts = new Map(attachments.flatMap((attachment) => attachment.kind === "image" && uploads[attachment.id] !== void 0 ? [[attachment.id, uploadFor(attachment).receiptId]] : []));
 				const pendingAttachments = attachments.map((attachment) => attachment.kind === "image" ? {
 					type: "image",
 					value: {
@@ -4704,26 +4786,40 @@ window.__ModuleLoader__.load({
 					}
 				} : {
 					type: "file",
-					value: uploadFor(attachment).file
+					value: storedFileOf(attachment)
 				});
-				const serializeAttachments = () => Promise.all(attachments.map(async (attachment) => attachment.kind === "image" ? {
-					type: "image",
-					...await this.encodeImage(attachment.file)
-				} : {
-					type: "file",
-					receiptId: uploadFor(attachment).receiptId
+				const serializeAttachments = () => Promise.all(attachments.map(async (attachment) => {
+					if (attachment.kind === "file") return {
+						type: "file",
+						receiptId: uploadFor(attachment).receiptId
+					};
+					const receiptId = imageReceipts.get(attachment.id);
+					return receiptId === void 0 ? {
+						type: "image",
+						...await this.encodeImage(attachment.file)
+					} : {
+						type: "file",
+						receiptId
+					};
 				}));
-				let finishRetirement;
-				const retirement = attachments.length === 0 ? void 0 : new Promise((resolve) => {
-					finishRetirement = resolve;
-				});
+				const ownership = {
+					accepted: false,
+					retiredUnobserved: false
+				};
+				const acceptance = Promise.withResolvers();
 				const submission = session.beginSubmission({
 					mode,
 					text,
 					attachments: pendingAttachments,
+					onAccept: () => {
+						ownership.accepted = true;
+						accept?.();
+						acceptance.resolve(void 0);
+					},
 					onRetire: (settlement) => {
-						this.settleSubmittedAttachments(session.sessionId, attachments, settlement);
-						finishRetirement?.(settlement);
+						if (settlement.reason === "observed") this.settleSubmittedAttachments(session.sessionId, attachments, settlement);
+						else if (ownership.accepted) this.releaseDraftAttachments(attachments);
+						else ownership.retiredUnobserved = true;
 					}
 				});
 				let content;
@@ -4737,26 +4833,32 @@ window.__ModuleLoader__.load({
 					submission.abandon();
 					throw error;
 				}
-				if (!(await session.prompt(content, mode, signal, submission.requestId)).ok) return { kind: "error" };
-				if (retirement !== void 0 && (await retirement).reason !== "observed") return { kind: "error" };
+				const result = await Promise.race([session.prompt(content, mode, signal, submission.requestId), acceptance.promise]);
+				if (result !== void 0 && !result.ok) return { kind: "error" };
+				ownership.accepted = true;
+				if (ownership.retiredUnobserved) this.releaseDraftAttachments(attachments);
 				return { kind: "success" };
 			}
 			/**
 			* Create runtime-only draft attachments. Files whose browser MIME is an
-			* accepted image type become image drafts (object URL preview, bytes sent
-			* with the prompt); every other file becomes a file draft whose background
-			* upload starts immediately and remains owned by this service across Session
-			* navigation until completion or explicit removal.
+			* accepted image type become image drafts with an object URL preview; every
+			* other file becomes a file draft. A file draft's background upload starts
+			* immediately, and so does an image draft's when `uploadImages` is set; the
+			* upload remains owned by this service across Session navigation until
+			* completion or explicit removal. An image draft without an upload sends its
+			* bytes with the prompt.
 			* @param sessionId - target Agent-scope identity.
 			* @param files - browser files to register.
+			* @param uploadImages - whether the Session accepts image uploads; a subagent continuation does not.
 			* @returns ordered draft descriptors.
 			*/
-			createDrafts(sessionId, files) {
+			createDrafts(sessionId, files, uploadImages) {
 				return files.map((file) => {
 					if (isImageMediaType(file.type)) {
 						const attachment = browserDraftAttachment(file);
 						this.draftAttachments.set(attachment.id, attachment);
 						probeDimensions(attachment);
+						if (uploadImages) this.beginFileUpload(sessionId, attachment);
 						return attachment;
 					}
 					const attachment = {
@@ -4770,25 +4872,28 @@ window.__ModuleLoader__.load({
 				});
 			}
 			/**
-			* Restart one failed file upload.
+			* Restart one failed file or image upload.
 			* @param sessionId - target Agent-scope identity.
 			* @param id - draft attachment id whose upload previously failed.
 			*/
 			retryFileUpload(sessionId, id) {
 				const attachment = this.draftAttachments.get(id);
-				if (attachment === void 0 || attachment.kind !== "file") return;
+				if (attachment === void 0) return;
 				if (this.fileUploads.getSnapshot()[id]?.status !== "error") return;
 				this.beginFileUpload(sessionId, attachment);
 			}
 			/**
-			* Stage carried file drafts again for a new Session.
+			* Stage carried file and image drafts again for a new Session.
 			* @param sessionId - target Agent-scope identity after a Workspace switch.
 			* @param ids - carried draft attachment ids.
+			* @param uploadImages - whether the target Session stages image uploads; an image draft otherwise sends inline.
 			*/
-			rebindDraftFiles(sessionId, ids) {
+			rebindDraftFiles(sessionId, ids, uploadImages) {
 				for (const id of ids) {
 					const attachment = this.draftAttachments.get(id);
-					if (attachment?.kind === "file") this.beginFileUpload(sessionId, attachment);
+					if (attachment === void 0) continue;
+					if (attachment.kind === "image" && !uploadImages) this.dropUpload(id);
+					else this.beginFileUpload(sessionId, attachment);
 				}
 			}
 			beginFileUpload(sessionId, attachment) {
@@ -4812,30 +4917,44 @@ window.__ModuleLoader__.load({
 				done.then(() => {
 					this.pendingFileUploads.delete(done);
 				});
+				const name = attachment.file.name === "" ? void 0 : attachment.file.name;
+				const onProgress = (progress) => {
+					if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return;
+					this.fileUploads.update((draft) => {
+						if (!(attachment.id in draft)) return;
+						draft[attachment.id] = {
+							status: "uploading",
+							loaded: progress.loaded,
+							...progress.total === void 0 ? {} : { total: progress.total }
+						};
+					});
+				};
 				const run = async () => {
 					try {
 						if (controller.signal.aborted || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return;
-						const result = await this.ctx.fileUpload.upload(sessionId, attachment.file, attachment.file.name === "" ? void 0 : attachment.file.name, controller.signal, (progress) => {
-							if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return;
-							this.fileUploads.update((draft) => {
-								if (!(attachment.id in draft)) return;
-								draft[attachment.id] = {
-									status: "uploading",
-									loaded: progress.loaded,
-									...progress.total === void 0 ? {} : { total: progress.total }
-								};
-							});
-						});
+						const result = attachment.kind === "image" ? await this.ctx.fileUpload.uploadImage(sessionId, attachment.file, imageMediaType(attachment.file.type), name, controller.signal, onProgress) : await this.ctx.fileUpload.upload(sessionId, attachment.file, name, controller.signal, onProgress);
 						if (this.fileUploadOperations.get(attachment.id)?.controller !== controller) return;
 						this.fileUploads.update((draft) => {
 							if (!(attachment.id in draft)) return;
-							draft[attachment.id] = result.ok ? {
-								status: "ready",
-								receiptId: result.value.receiptId,
-								file: result.value.file
+							if (result.ok) {
+								draft[attachment.id] = "file" in result.value ? {
+									status: "ready",
+									receiptId: result.value.receiptId,
+									file: result.value.file
+								} : {
+									status: "ready",
+									receiptId: result.value.receiptId
+								};
+								return;
+							}
+							const { error } = result;
+							draft[attachment.id] = error.code === "session/attachment-invalid" || error.code === "subagent/attachment-invalid" ? {
+								status: "error",
+								message: error.message,
+								reason: error.details.reason
 							} : {
 								status: "error",
-								message: result.error.message
+								message: error.message
 							};
 						});
 					} catch (error) {
@@ -4885,8 +5004,9 @@ window.__ModuleLoader__.load({
 			}
 			/**
 			* Serialize ordered draft attachments to command-submit wire payloads without
-			* sending or releasing them. Images are encoded; generic files cite receipts
-			* from their completed background uploads and never reread browser bytes.
+			* sending or releasing them. Images are encoded even when an upload already
+			* stored them, because commands accept only file receipts; generic files cite
+			* receipts from their completed background uploads and never reread browser bytes.
 			* @param attachmentIds - ordered draft-local attachment ids.
 			* @returns wire payloads in id order.
 			*/
@@ -4914,15 +5034,22 @@ window.__ModuleLoader__.load({
 			releaseDraftAttachment(id) {
 				const attachment = this.draftAttachments.get(id);
 				if (attachment === void 0) return;
+				this.draftAttachments.delete(id);
+				if (attachment.kind === "image") revokePreview(attachment.previewUrl);
+				this.dropUpload(id);
+			}
+			/** Abort one draft's active upload and drop its upload state. */
+			dropUpload(id) {
 				const operation = this.fileUploadOperations.get(id);
 				this.fileUploadOperations.delete(id);
 				operation?.controller.abort();
-				this.draftAttachments.delete(id);
-				if (attachment.kind === "image") {
-					revokePreview(attachment.previewUrl);
-					return;
-				}
-				this.fileUploads.set(Object.fromEntries(Object.entries(this.fileUploads.getSnapshot()).filter(([key]) => key !== id)));
+				this.forgetUpload(id);
+			}
+			/** Drop one draft's upload state. */
+			forgetUpload(id) {
+				const uploads = this.fileUploads.getSnapshot();
+				if (!(id in uploads)) return;
+				this.fileUploads.set(Object.fromEntries(Object.entries(uploads).filter(([key]) => key !== id)));
 			}
 			/**
 			* Release a set of browser-owned draft attachments.
@@ -4967,15 +5094,13 @@ window.__ModuleLoader__.load({
 				return sessions;
 			}
 			/**
-			* Settle one submission's draft attachments when its echo retires. Observed:
-			* each image leaves the registry, handing its preview URL to the durable
-			* image cache (seeded under the admitted reference so the transcript node
-			* renders immediately while the cache reads canonical bytes) or revoking it
-			* when the cache already holds that reference. Failed: nothing changes;
-			* the ids stay registered for the composer's rail restore.
+			* Settle one submission's draft attachments when its echo is observed: each
+			* file is released, and each image leaves the registry, handing its preview
+			* URL to the durable image cache (seeded under the admitted reference so the
+			* transcript node renders immediately while the cache reads canonical
+			* bytes) or revoking it when the cache already holds that reference.
 			*/
 			settleSubmittedAttachments(sessionId, attachments, retirement) {
-				if (retirement.reason !== "observed") return;
 				const uiConversation = this.ctx.get("uiConversation");
 				let observedIndex = 0;
 				for (const attachment of attachments) {
@@ -4987,6 +5112,7 @@ window.__ModuleLoader__.load({
 						continue;
 					}
 					this.draftAttachments.delete(attachment.id);
+					this.forgetUpload(attachment.id);
 					if (ref !== void 0 && "mediaType" in ref && uiConversation?.seedImageUrl(sessionId, ref, attachment.previewUrl) === true) continue;
 					revokePreview(attachment.previewUrl);
 				}
@@ -5058,6 +5184,89 @@ window.__ModuleLoader__.load({
 			}
 		};
 		//#endregion
+		//#region src/client/input/prompt.ts
+		/** Serialize semantic draft spans without turning quoted references into gestures. */
+		const QUOTE_SEPARATOR = "\n\n";
+		function pushText(tokens, text) {
+			if (text === "") return;
+			const last = tokens.at(-1);
+			if (last?.kind === "text") last.text += text;
+			else tokens.push({
+				kind: "text",
+				text
+			});
+		}
+		function normalizeQuoteBoundaries(tokens) {
+			const normalized = [];
+			for (const token of tokens) {
+				if (token.kind === "text") {
+					pushText(normalized, token.text);
+					continue;
+				}
+				const previous = normalized.at(-1);
+				if (previous?.kind === "text") {
+					previous.text = previous.text.trimEnd();
+					if (previous.text !== "") previous.text += QUOTE_SEPARATOR;
+					else normalized.pop();
+				}
+				if (normalized.at(-1)?.kind === "quote") normalized.push({
+					kind: "text",
+					text: QUOTE_SEPARATOR
+				});
+				normalized.push(token);
+			}
+			for (let index = 0; index < normalized.length; index++) {
+				if (normalized[index]?.kind !== "quote") continue;
+				const next = normalized[index + 1];
+				if (next?.kind !== "text") continue;
+				if (next.text === QUOTE_SEPARATOR && normalized[index + 2]?.kind === "quote") continue;
+				next.text = next.text.trimStart();
+				if (next.text !== "") next.text = `${QUOTE_SEPARATOR}${next.text}`;
+			}
+			return normalized.filter((token) => token.kind === "quote" || token.text !== "");
+		}
+		/**
+		* Serialize the captured draft through reference codecs, formatting quotes as Markdown.
+		* @param draft - one semantic draft revision.
+		* @param serializeReference - owner-routed reference serializer.
+		* @returns synchronous content without references, otherwise the resolving promise.
+		*/
+		function serializeDraftPrompt(draft, serializeReference) {
+			const build = (references) => {
+				const spans = [...references, ...(draft.quotes ?? []).map((quote) => ({
+					offset: quote.offset,
+					length: quote.length,
+					token: {
+						kind: "quote",
+						text: quote.text
+					}
+				}))].sort((a, b) => a.offset - b.offset);
+				const tokens = [];
+				let cursor = 0;
+				for (const span of spans) {
+					pushText(tokens, draft.text.slice(cursor, span.offset));
+					if (span.token.kind === "text") pushText(tokens, span.token.text);
+					else tokens.push(span.token);
+					cursor = span.offset + span.length;
+				}
+				pushText(tokens, draft.text.slice(cursor));
+				const first = tokens[0];
+				if (first?.kind === "text") first.text = first.text.trimStart();
+				const last = tokens.at(-1);
+				if (last?.kind === "text") last.text = last.text.trimEnd();
+				return normalizeQuoteBoundaries(tokens).map((token) => token.kind === "quote" ? (0, _deepseek_ai_dsh_client_ui_primitives.formatQuoteText)(token.text) : token.text).join("");
+			};
+			if (draft.references.length === 0) return build([]);
+			return Promise.all(draft.references.map(async (reference) => ({
+				offset: reference.offset,
+				length: reference.length,
+				token: {
+					kind: "text",
+					text: await serializeReference(reference.source, reference.ref)
+				}
+			}))).then(build);
+		}
+		//#endregion
 		//#region src/client/input/machine.ts
 		/** Exhaustiveness backstop for the closed InputEvent union. */
 		function unreachable(value) {
@@ -5080,8 +5289,6 @@ window.__ModuleLoader__.load({
 			claim;
 			seq = 0;
 			inflight;
-			/** Ordinary sends detached from the editor, retained for settlement validation and cancellation. */
-			detached = /* @__PURE__ */ new Map();
 			/** Read-only snapshot of the submit-plane state. */
 			get state() {
 				const c = this.claim;
@@ -5095,6 +5302,10 @@ window.__ModuleLoader__.load({
 					} } : {}
 				};
 			}
+			/** The attempt of the message being sent; undefined outside the sending phase. */
+			get sendingAttempt() {
+				return this.phase === "sending" ? this.inflight?.attempt : void 0;
+			}
 			/**
 			* Feed one event through the machine.
 			* @param ev - submit-plane event.
@@ -5104,12 +5315,11 @@ window.__ModuleLoader__.load({
 				switch (ev.type) {
 					case "draft-changed": return this.followCommand(ev.command);
 					case "claim": return this.followCommand(ev.claim);
-					case "enter": return this.onEnter(ev.mode, ev.draft, ev.submission);
+					case "enter": return this.onEnter(ev);
 					case "adjudicated": return this.onAdjudicated(ev.attempt, ev.outcome);
 					case "adjudication-failed": return this.onAdjudicationFailed(ev.attempt, ev.message);
 					case "submit-settled": return this.onSubmitSettled(ev);
 					case "sink-settled": return this.onSinkSettled(ev);
-					case "send-committed": return this.onSendCommitted();
 					case "release": return this.onRelease();
 					default: return unreachable(ev);
 				}
@@ -5127,51 +5337,42 @@ window.__ModuleLoader__.load({
 				this.phase = command === void 0 ? "plain" : "claimed";
 				return [];
 			}
-			/** Mint an attempt and controller without assigning its lifecycle owner. */
-			mintAttempt(mode, draft, submission) {
+			/** Occupy the frozen slot with the draft, references, quotes, and attachments the user sent. */
+			beginAttempt(mode, draft, occurrences, quotes, attachmentIds, submission) {
 				const controller = new AbortController();
 				this.seq += 1;
-				return {
-					attempt: {
-						seq: this.seq,
-						signal: controller.signal,
-						draftSnapshot: draft,
-						mode,
-						...submission === void 0 ? {} : { submission }
-					},
+				const attempt = {
+					seq: this.seq,
+					signal: controller.signal,
+					draftSnapshot: draft,
+					occurrences,
+					quotes,
+					attachmentIds,
+					mode,
+					...submission === void 0 ? {} : { submission }
+				};
+				this.inflight = {
+					attempt,
 					controller
 				};
+				return attempt;
 			}
-			/** Mint the frozen command/adjudication attempt. */
-			beginAttempt(mode, draft, submission) {
-				const flight = this.mintAttempt(mode, draft, submission);
-				this.inflight = flight;
-				return flight.attempt;
-			}
-			/** Mint an ordinary send that leaves the phase plain. */
-			beginDetached(mode, draft, submission) {
-				const flight = this.mintAttempt(mode, draft, submission);
-				this.detached.set(flight.attempt.seq, flight.controller);
+			/** Send the frozen message; the editor stays read-only until the Host accepts it. */
+			send(attempt) {
 				this.claim = void 0;
-				this.phase = "plain";
-				return flight.attempt;
-			}
-			/** Default-send effects capture the sink input before the editor commit. */
-			detachedEffects(attempt) {
+				this.phase = "sending";
 				return [{
 					type: "default-sink",
 					attempt,
 					draft: attempt.draftSnapshot,
 					mode: attempt.mode
-				}, {
-					type: "commit-draft",
-					retainSuffixOf: attempt.draftSnapshot
 				}];
 			}
-			onEnter(mode, draft, submission) {
-				if (this.phase === "adjudicating" || this.phase === "submitting") return [];
+			onEnter(ev) {
+				if (this.phase === "adjudicating" || this.phase === "submitting" || this.phase === "sending") return [];
+				const { mode, draft, occurrences, quotes, attachmentIds, submission } = ev;
 				if (this.phase === "claimed" && this.claim !== void 0) {
-					const attempt = this.beginAttempt(mode, draft, submission);
+					const attempt = this.beginAttempt(mode, draft, occurrences, quotes, attachmentIds, submission);
 					this.phase = "submitting";
 					return [{
 						type: "begin-submit",
@@ -5181,9 +5382,9 @@ window.__ModuleLoader__.load({
 					}];
 				}
 				const trimmed = draft.trim();
-				if (trimmed === "") return [];
+				if (trimmed === "" && attachmentIds.length === 0) return [];
+				const attempt = this.beginAttempt(mode, draft, occurrences, quotes, attachmentIds, submission);
 				if (trimmed.startsWith("/")) {
-					const attempt = this.beginAttempt(mode, draft, submission);
 					this.phase = "adjudicating";
 					return [{
 						type: "adjudicate",
@@ -5191,7 +5392,7 @@ window.__ModuleLoader__.load({
 						draft
 					}];
 				}
-				return this.detachedEffects(this.beginDetached(mode, draft, submission));
+				return this.send(attempt);
 			}
 			onAdjudicated(attempt, outcome) {
 				const flight = this.inflight;
@@ -5206,11 +5407,10 @@ window.__ModuleLoader__.load({
 						args: argsAfter(attempt.draftSnapshot, outcome.claim.token)
 					}];
 				}
+				if (outcome === void 0) return this.send(attempt);
 				this.inflight = void 0;
 				this.phase = "plain";
-				if (outcome !== void 0) return [];
-				this.detached.set(attempt.seq, flight.controller);
-				return this.detachedEffects(attempt);
+				return [];
 			}
 			onAdjudicationFailed(attempt, message) {
 				if (this.phase !== "adjudicating" || this.inflight?.attempt.seq !== attempt.seq) return [];
@@ -5250,40 +5450,36 @@ window.__ModuleLoader__.load({
 					text
 				}];
 			}
-			/** Settle one ordinary send independently of current phase and other detached sends. */
+			/** An accepted message clears the editor; a refused or failed one returns to editing unchanged. */
 			onSinkSettled(ev) {
-				if (!this.detached.delete(ev.attempt.seq)) return [];
+				const flight = this.inflight;
+				if (this.phase !== "sending" || flight === void 0 || flight.attempt.seq !== ev.attempt.seq) return [];
+				this.inflight = void 0;
+				this.phase = "plain";
+				const effects = ev.ok ? [{
+					type: "commit-draft",
+					retainSuffixOf: null
+				}] : [];
 				const text = ev.message ?? ev.outcome?.text;
-				if (text === void 0) return [];
-				return [{
+				if (text !== void 0) effects.push({
 					type: "notice",
 					level: ev.ok && ev.outcome?.kind !== "error" ? "info" : "error",
 					text
-				}];
-			}
-			/** Clear after an accepted attachment-only send; it has no text suffix to retain. */
-			onSendCommitted() {
-				if (this.phase !== "plain") return [];
-				this.claim = void 0;
-				return [{
-					type: "commit-draft",
-					retainSuffixOf: null
-				}];
+				});
+				return effects;
 			}
 			onRelease() {
 				if (this.inflight !== void 0) {
 					this.inflight.controller.abort();
 					this.inflight = void 0;
 				}
-				for (const controller of this.detached.values()) controller.abort();
-				this.detached.clear();
 				this.phase = "plain";
 				this.claim = void 0;
 				return [];
 			}
 		};
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/lexical@0.49.0_typescript@6.0.3/node_modules/lexical/dist/Lexical.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/lexical@0.49.0_typescript@6.0.3/node_modules/lexical/dist/Lexical.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -6036,14 +6232,14 @@ window.__ModuleLoader__.load({
 		function fe$1(t, e) {
 			t.setProperty("text-align", e);
 		}
-		const de$1 = "40px";
+		const de$2 = "40px";
 		function he(t, e) {
 			const n = Wt$1.theme.indent;
 			if ("string" == typeof n) {
 				const o = t.classList.contains(n);
 				e > 0 && !o ? t.classList.add(n) : e < 1 && o && t.classList.remove(n);
 			}
-			t.style.setProperty("padding-inline-start", 0 === e ? "" : `calc(${e} * var(--lexical-indent-base-value, ${de$1}))`);
+			t.style.setProperty("padding-inline-start", 0 === e ? "" : `calc(${e} * var(--lexical-indent-base-value, ${de$2}))`);
 		}
 		function ge$1(t, e) {
 			const n = t.style;
@@ -7545,7 +7741,7 @@ window.__ModuleLoader__.load({
 				return !1;
 			}
 			createParentElementNode() {
-				return es();
+				return es$1();
 			}
 			selectStart() {
 				return this.selectPrevious();
@@ -8182,11 +8378,11 @@ window.__ModuleLoader__.load({
 			const r = t.getNode(), i = r.getChildAtIndex(t.offset), s = Go();
 			if (s.setFormat(n), s.setStyle(o), ns(i)) i.splice(0, 0, [s]);
 			else if (null !== i) {
-				const t = Bl(r) ? es().append(s) : s;
+				const t = Bl(r) ? es$1().append(s) : s;
 				i.insertBefore(t);
 			} else if (Bl(r)) {
 				const t = r.getLastChild();
-				Pi(t) && !t.isInline() && t.isEmpty() ? t.append(s) : r.append(es().append(s));
+				Pi(t) && !t.isInline() && t.isEmpty() ? t.append(s) : r.append(es$1().append(s));
 			} else r.append(s);
 			t.is(e) && e.set(s.__key, 0, "text"), t.set(s.__key, 0, "text");
 		}
@@ -8293,14 +8489,14 @@ window.__ModuleLoader__.load({
 		function ar() {
 			const t = nl();
 			if (t.isEmpty()) {
-				const e = es();
+				const e = es$1();
 				t.append(e), e.select();
 			}
 		}
 		function ur(t) {
-			return t instanceof fr;
+			return t instanceof fr$1;
 		}
-		var fr = class fr {
+		var fr$1 = class fr$1 {
 			format;
 			style;
 			anchor;
@@ -8349,7 +8545,7 @@ window.__ModuleLoader__.load({
 						e.push(i);
 					}
 					return e;
-				}(du(ru(this), "next"));
+				}(du(ru$1(this), "next"));
 				return ui() || (this._cachedNodes = e), e;
 			}
 			setTextNodeRange(t, e, n, o) {
@@ -8385,7 +8581,7 @@ window.__ModuleLoader__.load({
 			}
 			clone() {
 				const t = this.anchor, e = this.focus;
-				return new fr(or(t.key, t.offset, t.type), or(e.key, e.offset, e.type), this.format, this.style);
+				return new fr$1(or(t.key, t.offset, t.type), or(e.key, e.offset, e.type), this.format, this.style);
 			}
 			toggleFormat(t) {
 				this.format = Ws(this.format, t, null), this.dirty = !0;
@@ -8459,7 +8655,7 @@ window.__ModuleLoader__.load({
 			}
 			removeText() {
 				const t = Kr() === this;
-				ou(this, cu(ru(this))), t && Kr() !== this && ol(this);
+				ou(this, cu(ru$1(this))), t && Kr() !== this && ol(this);
 			}
 			formatText(t, e = null) {
 				_r(this, t, e);
@@ -8469,9 +8665,9 @@ window.__ModuleLoader__.load({
 				this.isCollapsed() || this.removeText();
 				const n = this.anchor.getNode();
 				if ("element" === this.anchor.type && Pi(n) && null !== ta(n)) {
-					let o = n.isShadowRoot() ? n.getFirstChild() ?? n.append(es()).getFirstChild() : n.getFirstChild();
+					let o = n.isShadowRoot() ? n.getFirstChild() ?? n.append(es$1()).getFirstChild() : n.getFirstChild();
 					if (n.isShadowRoot() && null !== o && !Pi(o)) {
-						const t = es();
+						const t = es$1();
 						o.insertBefore(t), o = t;
 					}
 					if (null !== o) {
@@ -8543,7 +8739,7 @@ window.__ModuleLoader__.load({
 			insertParagraph() {
 				const e = this.anchor.getNode();
 				if ("element" === this.anchor.type && Bl(e)) {
-					const t = es();
+					const t = es$1();
 					return e.splice(this.anchor.offset, 0, [t]), t.select(), t;
 				}
 				const n = Xr(this), o = qc(this.anchor.getNode(), Sc);
@@ -8635,7 +8831,7 @@ window.__ModuleLoader__.load({
 					const e = this.anchor;
 					let n = e.getNode();
 					if (this.forwardDeletion(e, n, t)) return;
-					const o = ja(tu(e, t ? "previous" : "next"));
+					const o = ja$1(tu(e, t ? "previous" : "next"));
 					if (o.getTextSlices().every((t) => null === t || 0 === t.distance)) {
 						let t = { type: "initial" };
 						for (const e of o.iterNodeCarets("shadowRoot")) if (Aa(e)) if (e.origin.isInline());
@@ -9024,11 +9220,11 @@ window.__ModuleLoader__.load({
 			return Pi(t) && !t.isInline();
 		}
 		function Dr(t, e, n, o, r, i) {
-			const s = hi(), l = new fr(or(t, e, r), or(n, o, i), 0, "");
+			const s = hi(), l = new fr$1(or(t, e, r), or(n, o, i), 0, "");
 			return l.dirty = !0, s._selection = l, l;
 		}
 		function Fr() {
-			return new fr(or("root", 0, "element"), or("root", 0, "element"), 0, "");
+			return new fr$1(or("root", 0, "element"), or("root", 0, "element"), 0, "");
 		}
 		function Pr() {
 			return new cr(/* @__PURE__ */ new Set());
@@ -9056,7 +9252,7 @@ window.__ModuleLoader__.load({
 					Xo(t) ? (y = t.getFormat(), m = t.getStyle()) : Pi(t) && (y = t.getTextFormat(), m = t.getTextStyle());
 				}
 			}
-			const x = new fr(g, _, y, m);
+			const x = new fr$1(g, _, y, m);
 			return p && (x.dirty = !0), x;
 		}
 		function Kr() {
@@ -9244,7 +9440,7 @@ window.__ModuleLoader__.load({
 		function Qr(t, e) {
 			const n = t.getParent();
 			if (!n) {
-				const t = es();
+				const t = es$1();
 				return nl().append(t), t.select(), [nl(), 0];
 			}
 			if (Xo(t)) {
@@ -9256,7 +9452,7 @@ window.__ModuleLoader__.load({
 			if (!Pi(t) || 0 === e) return [n, t.getIndexWithinParent()];
 			const o = t.getChildAtIndex(e);
 			if (o) {
-				const n = new fr(or(t.__key, e, "element"), or(t.__key, e, "element"), 0, ""), r = t.insertNewAfter(n);
+				const n = new fr$1(or(t.__key, e, "element"), or(t.__key, e, "element"), 0, ""), r = t.insertNewAfter(n);
 				r && r.append(o, ...o.getNextSiblings());
 			}
 			return [n, t.getIndexWithinParent() + 1];
@@ -9265,7 +9461,7 @@ window.__ModuleLoader__.load({
 			return Yi(t) || Ll(t) || Xo(t) || t.isParentRequired();
 		}
 		function ti(t) {
-			const e = es();
+			const e = es$1();
 			let n = null;
 			for (let o = 0; o < t.length; o++) {
 				const r = t[o];
@@ -9293,7 +9489,7 @@ window.__ModuleLoader__.load({
 					const { origin: e } = t;
 					if (!Ki(e) || e.isIsolated() || (c = t, !s || !e.isInline())) break;
 				}
-				if (a) for (const t of ja(i).iterNodeCarets("extend" === e ? "shadowRoot" : "root")) {
+				if (a) for (const t of ja$1(i).iterNodeCarets("extend" === e ? "shadowRoot" : "root")) {
 					if (Aa(t)) t.origin.isInline() || (c = t);
 					else {
 						if (Pi(t.origin)) continue;
@@ -10293,7 +10489,7 @@ window.__ModuleLoader__.load({
 				return t;
 			}
 			insertNewAfter(t, e) {
-				const n = es();
+				const n = es$1();
 				n.setTextFormat(t.format), n.setTextStyle(t.style);
 				const o = this.getDirection();
 				return n.setDirection(o), n.setFormat(this.getFormatType()), n.setStyle(this.getStyle()), this.insertAfter(n, e), n;
@@ -10308,14 +10504,14 @@ window.__ModuleLoader__.load({
 			}
 		};
 		function ts(t) {
-			const e = es();
+			const e = es$1();
 			if (Lc(e, t), Pc(t, e), "" === e.getFormatType()) {
 				const n = t.getAttribute("align");
 				n && n && n in R$1 && e.setFormat(n);
 			}
 			return Ic(e, t), { node: e };
 		}
-		function es() {
+		function es$1() {
 			return Wl(new Zi());
 		}
 		function ns(t) {
@@ -11934,7 +12130,7 @@ window.__ModuleLoader__.load({
 				return La(t.setTextContent(r.slice(0, n) + r.slice(o)), e, n);
 			}
 		};
-		function ja(t) {
+		function ja$1(t) {
 			return Va(t, Ia(nl(), t.direction));
 		}
 		function Ja(t) {
@@ -12031,7 +12227,7 @@ window.__ModuleLoader__.load({
 		function ou(t, e) {
 			eu(t.anchor, e.anchor), eu(t.focus, e.focus);
 		}
-		function ru(t) {
+		function ru$1(t) {
 			const { anchor: e, focus: n } = t, o = tu(e, "next"), r = tu(n, "next"), i = Ya(o, r) <= 0 ? "next" : "previous";
 			return Va(fu(o, i), fu(r, i));
 		}
@@ -12214,7 +12410,7 @@ window.__ModuleLoader__.load({
 			let r = fu(n, "next");
 			wa(r) && (0 === r.offset ? r = Ia(r.origin, "previous").getFlipped() : r.offset === r.origin.getTextContentSize() && (r = Ia(r.origin, "next"))), r.origin.is(e) && (Ma(r) || t(342, e.getKey(), e.getType()), r = iu(r)), (e.is(r.getNodeAtCaret()) || e.is(r.getFlipped().getNodeAtCaret())) && e.remove(!0);
 			for (let t = r; t; t = yu(t, o)) r = t;
-			return wa(r) && t(283), r.insert(e.isInline() ? es().append(e) : e), fu(Ia(e.getLatest(), "next"), n.direction);
+			return wa(r) && t(283), r.insert(e.isInline() ? es$1().append(e) : e), fu(Ia(e.getLatest(), "next"), n.direction);
 		}
 		function xu(t) {
 			return t;
@@ -12246,7 +12442,7 @@ window.__ModuleLoader__.load({
 			};
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+selection@0.49.0_typescript@6.0.3/node_modules/@lexical/selection/dist/LexicalSelection.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+selection@0.49.0_typescript@6.0.3/node_modules/@lexical/selection/dist/LexicalSelection.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -12296,7 +12492,7 @@ window.__ModuleLoader__.load({
 				const e = l.getNodeAtCaret();
 				if (Xo(e) && !er(e)) return !0;
 			}
-			for (const e of ja(l)) {
+			for (const e of ja$1(l)) {
 				if (Aa(e)) return !e.origin.isInline();
 				if (!Pi(e.origin)) {
 					if (Ki(e.origin)) return !0;
@@ -12318,12 +12514,12 @@ window.__ModuleLoader__.load({
 			l = Z(e) || o ? !n : n, ne(e, t, l, "character");
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+utils@0.49.0_typescript@6.0.3/node_modules/@lexical/utils/dist/LexicalUtils.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+utils@0.49.0_typescript@6.0.3/node_modules/@lexical/utils/dist/LexicalUtils.prod.mjs
 		function Mt(t, e) {
 			return null !== t && Object.getPrototypeOf(t).constructor.name === e.name;
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+extension@0.49.0_typescript@6.0.3/node_modules/@lexical/extension/dist/LexicalExtension.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+extension@0.49.0_typescript@6.0.3/node_modules/@lexical/extension/dist/LexicalExtension.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -12758,7 +12954,7 @@ window.__ModuleLoader__.load({
 		const Ze$1 = { tag: xo };
 		function He$1() {
 			const t = nl();
-			t.isEmpty() && t.append(es());
+			t.isEmpty() && t.append(es$1());
 		}
 		const Je$1 = /* @__PURE__ */ xu({
 			config: /* @__PURE__ */ vu({
@@ -12987,7 +13183,7 @@ window.__ModuleLoader__.load({
 		}
 		Date.now;
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+html@0.49.0_typescript@6.0.3/node_modules/@lexical/html/dist/LexicalHtml.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+html@0.49.0_typescript@6.0.3/node_modules/@lexical/html/dist/LexicalHtml.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -13044,7 +13240,7 @@ window.__ModuleLoader__.load({
 				ot = s;
 			}
 		}
-		function pt$1(t, n = () => {}) {
+		function pt$2(t, n = () => {}) {
 			return (o, r = vc()) => (e) => {
 				const s = st(r), i = s && s[t], c = lt(o, i || n(r));
 				return c && c !== i ? dt(t, c, e, r) : e();
@@ -13074,7 +13270,7 @@ window.__ModuleLoader__.load({
 			const n = Ot(t);
 			return n ? n.getSessionConfig() : Tc(t);
 		}
-		const Et = pt$1(xt$1, Dt);
+		const Et = pt$2(xt$1, Dt);
 		const re = Symbol.for("@lexical/html/SelectorImpl");
 		function se(t, e) {
 			const n = {
@@ -13157,10 +13353,10 @@ window.__ModuleLoader__.load({
 			predicate: (t) => 8 === t.nodeType,
 			tags: /* @__PURE__ */ new Set()
 		};
-		const de = { [re]: ae };
+		const de$1 = { [re]: ae };
 		const pe = {
 			any: () => se(/* @__PURE__ */ new Set(), []),
-			comment: () => de,
+			comment: () => de$1,
 			tag(...t) {
 				t.length > 0 || nt$1(363);
 				const e = /* @__PURE__ */ new Set();
@@ -13210,7 +13406,7 @@ window.__ModuleLoader__.load({
 			return l;
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+clipboard@0.49.0_typescript@6.0.3/node_modules/@lexical/clipboard/dist/LexicalClipboard.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+clipboard@0.49.0_typescript@6.0.3/node_modules/@lexical/clipboard/dist/LexicalClipboard.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -13286,7 +13482,7 @@ window.__ModuleLoader__.load({
 			for (const t of e) o.append("v", t);
 			throw n.search = o.toString(), Error(`Minified Lexical error #${t}; visit ${n.toString()} for the full message or use the non-minified dev environment for full errors and additional helpful warnings.`);
 		}
-		function pt(t, e = Kr()) {
+		function pt$1(t, e = Kr()) {
 			return e ?? nt(166), ur(e) && e.isCollapsed() || 0 === e.getNodes().length ? "" : On(t, e);
 		}
 		function mt(t, e) {
@@ -13331,7 +13527,7 @@ window.__ModuleLoader__.load({
 			if (c) {
 				if (!ur(u) || u.isCollapsed()) return !1;
 				if (function(t, e) {
-					const { anchor: n, focus: o } = du(ru(e), "next");
+					const { anchor: n, focus: o } = du(ru$1(e), "next");
 					return Ya(n, t) < 0 && Ya(t, o) < 0;
 				}(i, u)) return t.preventDefault(), !0;
 				u.removeText();
@@ -13357,7 +13553,7 @@ window.__ModuleLoader__.load({
 			return ht(t, e, (t, e) => mt(t, e));
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+plain-text@0.49.0_typescript@6.0.3/node_modules/@lexical/plain-text/dist/LexicalPlainText.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+plain-text@0.49.0_typescript@6.0.3/node_modules/@lexical/plain-text/dist/LexicalPlainText.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -13371,7 +13567,7 @@ window.__ModuleLoader__.load({
 					const r = Mt(e, KeyboardEvent) ? null : e.clipboardData, o = Kr();
 					if (null !== o && !o.isCollapsed() && null != r) {
 						e.preventDefault();
-						const a = pt(t);
+						const a = pt$1(t);
 						null !== a && r.setData("text/html", a), r.setData("text/plain", o.getTextContent());
 					}
 				}
@@ -13455,7 +13651,7 @@ window.__ModuleLoader__.load({
 			}, 0));
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+history@0.49.0_typescript@6.0.3/node_modules/@lexical/history/dist/LexicalHistory.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+history@0.49.0_typescript@6.0.3/node_modules/@lexical/history/dist/LexicalHistory.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -13568,7 +13764,108 @@ window.__ModuleLoader__.load({
 		}
 		Date.now;
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs
+		//#region src/client/input/editor/QuoteNode.tsx
+		const EMPTY_LABELS = { remove: "" };
+		/** Remove one quote occurrence by its Lexical identity. */
+		const REMOVE_QUOTE_COMMAND = Pe$2("REMOVE_QUOTE_COMMAND");
+		/** Pure React face of one quote node. */
+		function QuoteNodeView({ editor, nodeKey, text, labels }) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.QuotePreview, {
+				text,
+				removal: {
+					label: labels.remove,
+					onRemove: () => {
+						editor.dispatchCommand(REMOVE_QUOTE_COMMAND, nodeKey);
+					}
+				}
+			});
+		}
+		/** One selected transcript range represented as an atomic inline decorator. */
+		var QuoteNode = class QuoteNode extends Li {
+			__text;
+			__labels;
+			/** Lexical node registry type tag. */
+			static getType() {
+				return "quote";
+			}
+			/** @param node - node to clone. @returns a copy carrying the same NodeKey. */
+			static clone(node) {
+				return new QuoteNode(node.__text, node.__labels, node.__key);
+			}
+			/** @param json - serialized editor node. @returns a fresh node with default runtime labels. */
+			static importJSON(json) {
+				return new QuoteNode(json.text);
+			}
+			/**
+			* @param text - selected text.
+			* @param labels - runtime-only localized labels.
+			* @param key - Lexical clone-path key; absent for fresh nodes.
+			*/
+			constructor(text, labels = EMPTY_LABELS, key) {
+				super(key);
+				this.__text = text;
+				this.__labels = labels;
+			}
+			/** Serialize the quote data without its runtime presentation state. */
+			exportJSON() {
+				return {
+					...super.exportJSON(),
+					type: "quote",
+					version: 1,
+					text: this.__text
+				};
+			}
+			/** Mount one non-editable inline host. */
+			createDOM(_config) {
+				const element = document.createElement("span");
+				element.setAttribute("data-composer-quote", "");
+				element.setAttribute("contenteditable", "false");
+				return element;
+			}
+			/** Updates reuse the existing host element. */
+			updateDOM() {
+				return false;
+			}
+			/** Quotes flow with draft text and wrap at their own text boundary. */
+			isInline() {
+				return true;
+			}
+			/** Arrow movement crosses the quote without entering a NodeSelection. */
+			isKeyboardSelectable() {
+				return false;
+			}
+			/** Clipboard text is the exact model-visible Markdown blockquote. */
+			getTextContent() {
+				return (0, _deepseek_ai_dsh_client_ui_primitives.formatQuoteText)(this.__text);
+			}
+			/** Selected visible quote text. */
+			getQuoteText() {
+				return this.getLatest().__text;
+			}
+			/** Update the localized remove label without changing persisted quote data. */
+			setLabels(labels) {
+				if (this.getLatest().__labels.remove !== labels.remove) this.getWritable().__labels = labels;
+			}
+			/** Render the quote body and its independent close control. */
+			decorate(editor) {
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(QuoteNodeView, {
+					editor,
+					nodeKey: this.__key,
+					text: this.__text,
+					labels: this.__labels
+				});
+			}
+		};
+		/** @param text - selected quote text. @param labels - runtime labels. @returns a fresh node. */
+		function $createQuoteNode(text, labels) {
+			return new QuoteNode(text, labels);
+		}
+		/** @param node - possible Lexical node. @returns whether it is a QuoteNode. */
+		function $isQuoteNode(node) {
+			return node instanceof QuoteNode;
+		}
+		//#endregion
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/clsx@2.1.1/node_modules/clsx/dist/clsx.mjs
 		function r(e) {
 			var t, f, n = "";
 			if ("string" == typeof e || "number" == typeof e) n += e;
@@ -13584,7 +13881,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/input/editor/ReferenceChip.module.css.mjs
-		const css$8 = ".xDwqBq_chip{max-width:240px;color:var(--dsw-alias-state-business-primary);user-select:none;align-items:baseline;gap:3px;display:inline-flex}.xDwqBq_marker{flex:none;font-weight:500}.xDwqBq_icon{flex:none;align-self:center}.xDwqBq_label{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.xDwqBq_invalid{color:var(--dsw-alias-state-error-primary);opacity:.7;text-decoration:line-through}";
+		const css$8 = ".nJcU5a_chip{max-width:240px;color:var(--dsw-alias-state-business-primary);user-select:none;align-items:baseline;gap:3px;display:inline-flex}.nJcU5a_marker{flex:none;font-weight:500}.nJcU5a_icon{flex:none;align-self:center}.nJcU5a_label{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.nJcU5a_invalid{color:var(--dsw-alias-state-error-primary);opacity:.7;text-decoration:line-through}";
 		const tagId$8 = "@deepseek-ai/dsh-client-ui-conversation/ReferenceChip.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$8) + "]") === null) {
 			const tag = document.createElement("style");
@@ -13594,15 +13891,15 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var ReferenceChip_module_css_default = {
-			"chip": "xDwqBq_chip",
-			"icon": "xDwqBq_icon",
-			"invalid": "xDwqBq_invalid",
-			"label": "xDwqBq_label",
-			"marker": "xDwqBq_marker"
+			"chip": "nJcU5a_chip",
+			"icon": "nJcU5a_icon",
+			"invalid": "nJcU5a_invalid",
+			"label": "nJcU5a_label",
+			"marker": "nJcU5a_marker"
 		};
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/input/editor/composer-editor.module.css.mjs
-		const css$7 = ".BKZbaG_reference{border-radius:var(--dsw-radius-sm);line-height:inherit;vertical-align:baseline;color:var(--dsw-alias-state-business-primary);-webkit-box-decoration-break:clone;box-decoration-break:clone;background:0 0;padding:0 4px}.BKZbaG_reference:hover{background:var(--dsw-alias-state-business-tertiary)}.BKZbaG_openable{cursor:pointer}[data-composer-command][data-selected]>.BKZbaG_reference{background:var(--dsw-alias-state-business-tertiary)}.BKZbaG_textRef{max-width:100%;display:inline-block}";
+		const css$7 = ".wR6a8W_reference{border-radius:var(--dsw-radius-sm);line-height:inherit;vertical-align:baseline;color:var(--dsw-alias-state-business-primary);-webkit-box-decoration-break:clone;box-decoration-break:clone;background:0 0;padding:0 4px}@media (hover:hover){.wR6a8W_reference:hover{background:var(--dsw-alias-state-business-tertiary)}}.wR6a8W_openable{cursor:pointer}[data-composer-command][data-selected]>.wR6a8W_reference{background:var(--dsw-alias-state-business-tertiary)}.wR6a8W_textRef{max-width:100%;display:inline-block}";
 		const tagId$7 = "@deepseek-ai/dsh-client-ui-conversation/composer-editor.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$7) + "]") === null) {
 			const tag = document.createElement("style");
@@ -13612,9 +13909,9 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var composer_editor_module_css_default = {
-			"openable": "BKZbaG_openable",
-			"reference": "BKZbaG_reference",
-			"textRef": "BKZbaG_textRef"
+			"openable": "wR6a8W_openable",
+			"reference": "wR6a8W_reference",
+			"textRef": "wR6a8W_textRef"
 		};
 		//#endregion
 		//#region src/client/input/editor/ReferenceChip.tsx
@@ -13808,7 +14105,7 @@ window.__ModuleLoader__.load({
 			return node instanceof ReferenceChipNode;
 		}
 		//#endregion
-		//#region ../../../../dsh-host-build-deps-021rc5/node_modules/.pnpm/@lexical+text@0.49.0_typescript@6.0.3/node_modules/@lexical/text/dist/LexicalText.prod.mjs
+		//#region ../../../../dsh-host-build-deps-022rc1/node_modules/.pnpm/@lexical+text@0.49.0_typescript@6.0.3/node_modules/@lexical/text/dist/LexicalText.prod.mjs
 		/**
 		* Copyright (c) Meta Platforms, Inc. and affiliates.
 		*
@@ -13885,7 +14182,41 @@ window.__ModuleLoader__.load({
 		//#region src/client/input/decorations.ts
 		/** Token matcher: a trigger char at line start or after whitespace, then a word-ish name (never crosses \n). */
 		const TEXT_REF_RE = /(^|\s)([/@])([\w-]+)/g;
-		const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g;
+		/** One `@` path token: a quoted path through its closing quote or line end, or an unquoted run. */
+		const PATH_TOKEN_RE = /(^|\s)(@(?:"[^"\n]*"?|[^\s"]\S*))/g;
+		/**
+		* Punctuation that ends prose rather than a path: the characters the
+		* sent-message file and folder rules in ui-reference strip from the end of an
+		* unquoted token.
+		*/
+		const TRAILING_PUNCTUATION = /* @__PURE__ */ new Set(".,;:!?，。；：！？");
+		/** An unquoted token names a path only with a separator or an extension; a bare `@name` stays plain until a lexicon claims it. */
+		const PATH_LIKE_RE = /^@.*[/\\.]/u;
+		/**
+		* End of the whole `@path` file or folder token at `start`, so a path is never
+		* cut at its directory prefix. A closed quote ends at its quote and an
+		* unquoted token with a separator or extension drops trailing punctuation,
+		* the spans the sent-message rules render. An open quote (a folder drill in
+		* progress) ends at its last slash when only trailing punctuation and
+		* whitespace or the draft end follow it.
+		* @param draft - draft text.
+		* @param start - offset of the token's `@`.
+		* @param token - the path token at `start`.
+		* @returns the token's end offset, or undefined when it names no path.
+		*/
+		function pathEnd(draft, start, token) {
+			if (!token.startsWith("@\"")) {
+				let length = token.length;
+				while (TRAILING_PUNCTUATION.has(token.charAt(length - 1))) length -= 1;
+				return PATH_LIKE_RE.test(token.slice(0, length)) ? start + length : void 0;
+			}
+			if (token.length > 3 && token.endsWith("\"")) return start + token.length;
+			const slash = token.lastIndexOf("/");
+			if (slash < 0) return void 0;
+			let next = start + slash + 1;
+			while (TRAILING_PUNCTUATION.has(draft.charAt(next))) next += 1;
+			return next === draft.length || /\s/u.test(draft.charAt(next)) ? start + slash + 1 : void 0;
+		}
 		/**
 		* What may follow a `/name` token: whitespace or the draft end, the boundary
 		* the host skill gesture (`dsh-tool-skill`) requires, so `/nfs-hg/xxx`,
@@ -13920,13 +14251,12 @@ window.__ModuleLoader__.load({
 					});
 				}
 			}
-			FOLDER_REF_RE.lastIndex = 0;
-			let folder;
-			while ((folder = FOLDER_REF_RE.exec(draft)) !== null) {
-				const token = folder[2] ?? "";
-				const start = folder.index + (folder[1]?.length ?? 0);
-				const end = start + token.length;
-				if (!out.some((range) => range.start < end && range.end > start)) out.push({
+			PATH_TOKEN_RE.lastIndex = 0;
+			let path;
+			while ((path = PATH_TOKEN_RE.exec(draft)) !== null) {
+				const start = path.index + (path[1]?.length ?? 0);
+				const end = pathEnd(draft, start, path[2] ?? "");
+				if (end !== void 0 && !out.some((range) => range.start < end && range.end > start)) out.push({
 					start,
 					end,
 					trigger: "@"
@@ -14300,7 +14630,7 @@ window.__ModuleLoader__.load({
 				const start = detect.length;
 				const kids = element.getChildren();
 				children.set(element.getKey(), kids.map((kid) => kid.getKey()));
-				for (const kid of kids) if ($isReferenceChipNode(kid) || $isCommandChipNode(kid)) pushLeaf("chip", kid, "￼", kid.getTextContent());
+				for (const kid of kids) if ($isReferenceChipNode(kid) || $isCommandChipNode(kid) || $isQuoteNode(kid)) pushLeaf("chip", kid, "￼", kid.getTextContent());
 				else if (Xo(kid)) {
 					const text = kid.getTextContent();
 					pushLeaf("text", kid, text, text);
@@ -14401,8 +14731,18 @@ window.__ModuleLoader__.load({
 		function $projectComposer(idOf) {
 			const layout = $composerLayout();
 			const occurrences = [];
+			const quotes = [];
 			for (const segment of layout.segments) {
-				if (segment.kind !== "chip" || !$isReferenceChipNode(segment.node)) continue;
+				if (segment.kind !== "chip") continue;
+				if ($isQuoteNode(segment.node)) {
+					quotes.push({
+						offset: segment.clipboardStart,
+						length: segment.clipboardLength,
+						text: segment.node.getQuoteText()
+					});
+					continue;
+				}
+				if (!$isReferenceChipNode(segment.node)) continue;
 				const chip = segment.node;
 				occurrences.push({
 					occurrenceId: idOf(chip.getKey()),
@@ -14431,6 +14771,7 @@ window.__ModuleLoader__.load({
 				detectText: layout.detectText,
 				clipboardText: layout.clipboardText,
 				occurrences,
+				quotes,
 				selection: range,
 				caret: range !== null && range.start === range.end ? range.start : null,
 				command: $isCommandChipNode(lead) ? lead.getClaim() : void 0
@@ -14551,7 +14892,7 @@ window.__ModuleLoader__.load({
 		function $appendParagraphs(text) {
 			const root = nl();
 			for (const line of text.split("\n")) {
-				const paragraph = es();
+				const paragraph = es$1();
 				if (line !== "") paragraph.append(Go(line));
 				root.append(paragraph);
 			}
@@ -14559,6 +14900,8 @@ window.__ModuleLoader__.load({
 		}
 		/** Undo merge window for contiguous typing, in ms (the old machine's mergeWindowMs). */
 		const HISTORY_MERGE_DELAY_MS = 1e3;
+		/** Editor update that removes submitted content while retaining any newer draft suffix. */
+		const DRAFT_SUBMITTED_TAG = "dsh-draft-submitted";
 		/** One model-owned editor; registration and disposal remain with its model. */
 		var DraftEditorRuntime = class {
 			deps;
@@ -14568,6 +14911,7 @@ window.__ModuleLoader__.load({
 				detectText: "",
 				clipboardText: "",
 				occurrences: [],
+				quotes: [],
 				selection: null,
 				caret: null,
 				command: void 0
@@ -14586,7 +14930,8 @@ window.__ModuleLoader__.load({
 					nodes: [
 						ReferenceChipNode,
 						CommandChipNode,
-						TextRefNode
+						TextRefNode,
+						QuoteNode
 					],
 					onError: (error) => {
 						throw error;
@@ -14603,7 +14948,9 @@ window.__ModuleLoader__.load({
 					if (root !== null && !root.contains(root.ownerDocument.activeElement)) Al(bo);
 					return false;
 				};
-				const unregister = Eu(O$1(this.editor), this.editor.registerCommand(Mn$1, () => {
+				const unregister = Eu(O$1(this.editor), this.editor.registerNodeTransform(QuoteNode, (node) => {
+					node.setLabels(this.deps.quoteLabels());
+				}), this.editor.registerCommand(REMOVE_QUOTE_COMMAND, (key) => this.removeQuote(key), 4), this.editor.registerCommand(un, (event) => this.deleteAdjacentQuote(event, true), -4), this.editor.registerCommand(dn, (event) => this.deleteAdjacentQuote(event, false), -4), this.editor.registerCommand(Mn$1, () => {
 					this.editor.update(preserveExternalSelection, { discrete: true });
 					return false;
 				}, 4), this.editor.registerCommand(Ie$2, preserveExternalSelection, 4), this.editor.registerNodeTransform(zi, preserveExternalSelection), registerReferenceActivation(this.editor, (source, reference) => this.deps.openReference(source, reference)), O(this.editor, z(), HISTORY_MERGE_DELAY_MS), this.editor.registerUpdateListener(() => {
@@ -14680,7 +15027,7 @@ window.__ModuleLoader__.load({
 			*/
 			setDraft(text) {
 				const clean = text.replace(REFERENCE_PLACEHOLDER_RE, "");
-				if (clean === this.projection.clipboardText && this.projection.occurrences.length === 0) return;
+				if (clean === this.projection.clipboardText && this.projection.occurrences.length === 0 && this.projection.quotes.length === 0) return;
 				this.editor.update(() => {
 					nl().clear();
 					$appendParagraphs(clean);
@@ -14727,7 +15074,7 @@ window.__ModuleLoader__.load({
 						return;
 					}
 					const root = nl();
-					if (root.getChildrenSize() === 0) root.append(es());
+					if (root.getChildrenSize() === 0) root.append(es$1());
 					root.selectEnd().insertText(clean);
 				}, Co);
 			}
@@ -14826,6 +15173,58 @@ window.__ModuleLoader__.load({
 				return applied;
 			}
 			/**
+			* Insert one quote after the retained draft selection as an independent undo edit.
+			* @param text - nonblank selected transcript text.
+			* @param labels - current localized editor controls.
+			* @returns whether the insertion position accepted the node.
+			*/
+			insertQuote(text, labels) {
+				let applied = false;
+				this.applyEdit(() => {
+					const projection = $projectComposer((key) => this.occurrenceIdOf(key));
+					const at = projection.selection?.end ?? projection.detectText.length;
+					applied = $replaceDetectSpanWithNodes({
+						start: at,
+						end: at
+					}, [$createQuoteNode(text, labels), Go(" ")]);
+				}, Co);
+				return applied;
+			}
+			/** Remove one quote node and leave the editor caret at its former position. */
+			removeQuote(key) {
+				const node = Ys(key);
+				if (!$isQuoteNode(node)) return false;
+				const parent = node.getParent();
+				const offset = node.getIndexWithinParent();
+				const separator = node.getNextSibling();
+				Al(mo);
+				if (Xo(separator) && separator.getTextContent().startsWith(" ")) {
+					const remaining = separator.getTextContent().slice(1);
+					if (remaining === "") separator.remove();
+					else separator.setTextContent(remaining);
+				}
+				node.remove();
+				const caret = Math.min(offset, parent?.getChildrenSize() ?? 0);
+				parent?.select(caret, caret);
+				queueMicrotask(() => {
+					this.editor.getRootElement()?.focus({ preventScroll: true });
+				});
+				return true;
+			}
+			/** Delete the QuoteNode immediately beside one collapsed caret. */
+			deleteAdjacentQuote(event, backward) {
+				const selection = Kr();
+				if (!ur(selection) || !selection.isCollapsed()) return false;
+				let adjacent = kl(selection.anchor, backward);
+				if (!$isQuoteNode(adjacent) && backward && selection.anchor.type === "text") {
+					const anchor = selection.anchor.getNode();
+					if (Xo(anchor) && selection.anchor.offset === 1 && anchor.getTextContent().startsWith(" ")) adjacent = anchor.getPreviousSibling();
+				}
+				if (!$isQuoteNode(adjacent)) return false;
+				event.preventDefault();
+				return this.removeQuote(adjacent.getKey());
+			}
+			/**
 			* Clear committed content using the model's suffix decision inside the editor update.
 			* @param prefixLength - returns the clipboard-prefix length to remove, or null to clear the root.
 			*/
@@ -14845,19 +15244,21 @@ window.__ModuleLoader__.load({
 					root.selectEnd();
 				}, {
 					discrete: true,
-					tag: xo
+					tag: [xo, DRAFT_SUBMITTED_TAG]
 				});
 			}
 			/**
 			* Import semantic content or a model-selected failure snapshot with fresh reference nodes.
 			* @param draft - clipboard text.
 			* @param occurrences - reference occurrences in clipboard order.
+			* @param quotes - atomic quotes in clipboard order.
+			* @param labels - localized quote controls.
 			*/
-			restoreDraft(draft, occurrences) {
+			restoreDraft(draft, occurrences, quotes = [], labels = { remove: "" }) {
 				this.editor.update(() => {
 					const root = nl();
 					root.clear();
-					let paragraph = es();
+					let paragraph = es$1();
 					root.append(paragraph);
 					const appendText = (text) => {
 						const lines = text.replace(REFERENCE_PLACEHOLDER_RE, "").split("\n");
@@ -14865,21 +15266,35 @@ window.__ModuleLoader__.load({
 							const line = lines[i];
 							if (line !== "") paragraph.append(Go(line));
 							if (i < lines.length - 1) {
-								paragraph = es();
+								paragraph = es$1();
 								root.append(paragraph);
 							}
 						}
 					};
 					let cursor = 0;
-					for (const occurrence of occurrences) {
+					const spans = [...occurrences.map((reference) => ({
+						kind: "reference",
+						value: reference
+					})), ...quotes.map((quote) => ({
+						kind: "quote",
+						value: quote
+					}))].sort((a, b) => a.value.offset - b.value.offset);
+					for (const span of spans) {
+						const occurrence = span.value;
 						appendText(draft.slice(cursor, occurrence.offset));
+						if (span.kind === "quote") {
+							paragraph.append($createQuoteNode(span.value.text, labels));
+							cursor = occurrence.offset + occurrence.length;
+							continue;
+						}
+						const reference = span.value;
 						paragraph.append(new ReferenceChipNode({
-							source: occurrence.source,
-							ref: occurrence.ref,
-							label: occurrence.label,
-							...occurrence.appearance === void 0 ? {} : { appearance: occurrence.appearance },
-							clipboardText: occurrence.clipboardText
-						}, occurrence.invalid === true));
+							source: reference.source,
+							ref: reference.ref,
+							label: reference.label,
+							...reference.appearance === void 0 ? {} : { appearance: reference.appearance },
+							clipboardText: reference.clipboardText
+						}, reference.invalid === true));
 						cursor = occurrence.offset + occurrence.length;
 					}
 					appendText(draft.slice(cursor));
@@ -14904,15 +15319,27 @@ window.__ModuleLoader__.load({
 				default: return "frozen";
 			}
 		}
+		/** Whether an attempt owns the draft: the editor and attachments are read-only until it settles. */
+		function frozen(phase) {
+			return phase === "adjudicating" || phase === "submitting" || phase === "sending";
+		}
 		/** Whether two projections differ in content (selection and caret excluded). */
 		function projectionContentChanged(prev, next) {
 			if (prev.clipboardText !== next.clipboardText || prev.detectText !== next.detectText) return true;
 			if (prev.command !== next.command) return true;
+			if (prev.quotes.length !== next.quotes.length || prev.quotes.some((quote, i) => {
+				const old = next.quotes[i];
+				return old?.text !== quote.text || old.offset !== quote.offset;
+			})) return true;
 			if (prev.occurrences.length !== next.occurrences.length) return true;
 			return next.occurrences.some((occ, i) => {
 				const old = prev.occurrences[i];
 				return old === void 0 || old.occurrenceId !== occ.occurrenceId || old.invalid !== occ.invalid;
 			});
+		}
+		/** Message of a failure surfaced as a composer notice. */
+		function errorText(error) {
+			return error instanceof Error ? error.message : String(error);
 		}
 		const EMPTY_QUEUE$1 = [];
 		/** Unavailable catalogs contain no named text references. */
@@ -14934,12 +15361,13 @@ window.__ModuleLoader__.load({
 			}
 			/** The public provide-channel action face (one stable identity per session). */
 			actions = {
+				insertQuote: (text) => this.insertQuote(text),
 				captureInsertion: () => ({
 					...this.caretSpan(),
 					draftRev: this.rev
 				}),
 				insertText: (text, span) => {
-					if (this.snapshot.phase === "adjudicating" || this.snapshot.phase === "submitting" || this.disposed) return false;
+					if (frozen(this.snapshot.phase) || this.disposed) return false;
 					if (span.draftRev !== this.rev) return false;
 					return this.draftEditor.insertAsyncText(span, text);
 				},
@@ -14980,16 +15408,6 @@ window.__ModuleLoader__.load({
 			commandRestore;
 			/** The mounted composer's file-picker opener (scoped pick-files event target). */
 			filePicker;
-			/** Default sends retained until admission settles or scope disposal releases their attachments. */
-			detachedDrafts = /* @__PURE__ */ new Map();
-			/** Failed default sends waiting to be restored together in submission order. */
-			failedDetached = /* @__PURE__ */ new Map();
-			/** Revision of the last automatic failure restoration. */
-			failedRestoreRev;
-			restoringFailures = false;
-			attachmentFlightSeq = 0;
-			/** Attachment-only sends retained until admission settles or scope disposal releases their attachments. */
-			attachmentFlights = /* @__PURE__ */ new Map();
 			unsubscribeInbox;
 			constructor(deps) {
 				this.deps = deps;
@@ -14997,6 +15415,7 @@ window.__ModuleLoader__.load({
 					onUpdate: () => {
 						this.onEditorUpdate();
 					},
+					quoteLabels: () => ({ remove: this.deps.quoteRemoveLabel?.() ?? "" }),
 					openReference: (source, reference) => this.deps.inputTriggers?.()?.openReference(source, reference) ?? false,
 					lexicon: () => this.lexicon.getSnapshot(),
 					resolveLexicon: () => this.deps.inputTriggers?.()?.lexicon
@@ -15011,10 +15430,6 @@ window.__ModuleLoader__.load({
 			onEditorUpdate() {
 				if (projectionContentChanged(this.draftEditor.refreshProjection(), this.projection)) {
 					this.rev += 1;
-					if (!this.restoringFailures && this.failedRestoreRev !== void 0) {
-						this.failedDetached.clear();
-						this.failedRestoreRev = void 0;
-					}
 					this.dispatchRun({
 						type: "draft-changed",
 						command: this.projection.command
@@ -15032,14 +15447,21 @@ window.__ModuleLoader__.load({
 			setDraft(text) {
 				const draft = resolveDraftInput(text);
 				this.cancelCommandRestore();
-				if (draft.references.length === 0) this.draftEditor.setDraft(draft.text);
-				else this.draftEditor.restoreDraft(draft.text, draft.references);
+				if (draft.references.length === 0 && (draft.quotes?.length ?? 0) === 0) this.draftEditor.setDraft(draft.text);
+				else this.draftEditor.restoreDraft(draft.text, draft.references, draft.quotes, { remove: this.deps.quoteRemoveLabel?.() ?? "" });
 				if (draft.command === void 0) return;
 				this.pendingCommand = {
 					token: draft.command.token,
 					rev: this.rev
 				};
 				this.restoreCommand();
+			}
+			/** @param text - selected transcript text. @returns whether the editable draft accepted the quote. */
+			insertQuote(text) {
+				if (this.disposed || this.snapshot.phase !== "plain" || this.deps.quoteInsertionAllowed?.() === false || text.trim() === "") return false;
+				const inserted = this.draftEditor.insertQuote(text.replace(/\r\n?/gu, "\n"), { remove: this.deps.quoteRemoveLabel?.() ?? "" });
+				if (inserted) this.focus();
+				return inserted;
 			}
 			/**
 			* Reconnect optional catalog notifications and resume a pending command
@@ -15085,7 +15507,7 @@ window.__ModuleLoader__.load({
 			/** Current semantic document, stable until its content revision changes. */
 			get draftSnapshot() {
 				if (this.draftSnapshotCache?.revision === this.rev) return this.draftSnapshotCache.value;
-				const value = snapshotDraft(this.projection.clipboardText, this.projection.occurrences, this.projection.command?.token);
+				const value = snapshotDraft(this.projection.clipboardText, this.projection.occurrences, this.projection.command?.token, this.projection.quotes);
 				this.draftSnapshotCache = {
 					revision: this.rev,
 					value
@@ -15119,12 +15541,11 @@ window.__ModuleLoader__.load({
 				return "applied";
 			}
 			draftInitializationBlocked() {
-				const { phase } = this.core.state;
-				return this.disposed || phase === "adjudicating" || phase === "submitting" || this.detachedDrafts.size > 0 || this.attachmentFlights.size > 0;
+				return this.disposed || frozen(this.core.state.phase);
 			}
 			/** Append ordered attachment ids unless an admission transaction is locked. */
 			addAttachments(ids) {
-				if (this.snapshot.phase === "adjudicating" || this.snapshot.phase === "submitting") return false;
+				if (frozen(this.snapshot.phase)) return false;
 				if (ids.length === 0) return true;
 				this.attachmentIds = [...this.attachmentIds, ...ids];
 				this.publish();
@@ -15137,7 +15558,7 @@ window.__ModuleLoader__.load({
 			* @returns false when admission is locked or the editor refuses the insertion.
 			*/
 			addFiles(references, ids) {
-				if (this.snapshot.phase === "adjudicating" || this.snapshot.phase === "submitting") return false;
+				if (frozen(this.snapshot.phase)) return false;
 				if (!this.draftEditor.insertFileReferences(references)) return false;
 				this.attachmentIds = [...this.attachmentIds, ...ids];
 				this.publish();
@@ -15145,11 +15566,11 @@ window.__ModuleLoader__.load({
 			}
 			/**
 			* Remove one attachment id from this draft. Busy admission phases refuse, like
-			* {@link addAttachments}: a removal landing while a command submit serializes
-			* would otherwise vanish from the rail yet still ride the in-flight send.
+			* {@link addAttachments}: a removal landing while a send serializes would
+			* otherwise vanish from the rail yet still ride the in-flight send.
 			*/
 			removeAttachment(id) {
-				if (this.snapshot.phase === "adjudicating" || this.snapshot.phase === "submitting") return false;
+				if (frozen(this.snapshot.phase)) return false;
 				const next = this.attachmentIds.filter((candidate) => candidate !== id);
 				if (next.length === this.attachmentIds.length) return false;
 				this.attachmentIds = next;
@@ -15168,17 +15589,6 @@ window.__ModuleLoader__.load({
 				this.publish();
 			}
 			/**
-			* Clear the draft as a successful-send commit: the editor empties (no undo
-			* unit) and the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent
-			* content (the command path gets the same discipline from submit-settled).
-			* @param attachmentIds - admitted attachment ids to remove from this draft.
-			*/
-			commitSend(attachmentIds) {
-				const submitted = new Set(attachmentIds);
-				this.attachmentIds = this.attachmentIds.filter((id) => !submitted.has(id));
-				this.dispatchRun({ type: "send-committed" });
-			}
-			/**
 			* Insert pasted plain text over the current editor selection
 			* (placeholder-sanitized). The paste event's own default is suppressed by
 			* the caller; PASTE_TAG makes the paste its own history boundary, so one
@@ -15189,10 +15599,11 @@ window.__ModuleLoader__.load({
 				this.draftEditor.paste(text);
 			}
 			/**
-			* Enter adjudication + submit transaction + default sink. Effects fan out
-			* from the machine; this method only feeds the event. Lock entry
-			* (adjudicating/submitting) force-closes the transient layers: the popup
-			* dismisses and the menu tracks frozen.
+			* Enter adjudication + submit transaction + default sink with the draft, its
+			* reference chips, and its attachments as the user sent them. Effects fan
+			* out from the machine; this method only feeds the event. Lock entry
+			* (adjudicating/submitting/sending) force-closes the transient layers: the
+			* popup dismisses and the menu tracks frozen.
 			*/
 			submit(mode = "queue", source) {
 				if (this.disposed) return;
@@ -15207,31 +15618,6 @@ window.__ModuleLoader__.load({
 					...source === void 0 ? {} : { source },
 					...state === void 0 ? {} : { state }
 				});
-				if (this.snapshot.draft.trim() === "" && this.attachmentIds.length > 0) {
-					if (this.snapshot.phase === "plain") {
-						const attachmentIds = [...this.attachmentIds];
-						const controller = new AbortController();
-						this.attachmentFlightSeq += 1;
-						const flight = this.attachmentFlightSeq;
-						this.attachmentFlights.set(flight, {
-							controller,
-							attachmentIds
-						});
-						this.commitSend(attachmentIds);
-						this.notifySubmission(submission);
-						this.deps.defaultSink("", attachmentIds, mode, controller.signal).then((outcome) => {
-							if (this.disposed || !this.attachmentFlights.delete(flight)) return;
-							if (outcome.kind === "success") return;
-							this.restoreAttachments(attachmentIds);
-							if (outcome.text !== void 0) this.notify("error", outcome.text);
-						}, (error) => {
-							if (this.disposed || !this.attachmentFlights.delete(flight)) return;
-							this.restoreAttachments(attachmentIds);
-							this.notify("error", error instanceof Error ? error.message : String(error));
-						});
-					}
-					return;
-				}
 				const before = this.snapshot;
 				if (before.phase === "claimed" && this.attachmentIds.length > 0 && before.claim?.attachments !== true) {
 					this.notify("error", this.deps.commandAttachments.unsupportedNotice(before.claim?.token ?? before.draft));
@@ -15241,10 +15627,12 @@ window.__ModuleLoader__.load({
 					type: "enter",
 					mode,
 					draft: this.projection.clipboardText,
+					occurrences: [...this.projection.occurrences],
+					quotes: [...this.projection.quotes],
+					attachmentIds: [...this.attachmentIds],
 					submission
 				});
-				const phase = this.snapshot.phase;
-				if (phase === "adjudicating" || phase === "submitting") {
+				if (frozen(this.snapshot.phase)) {
 					this.deps.popup?.()?.dismiss();
 					this.deps.inputTriggers?.()?.track(this.projection.detectText, 0, { tier: "frozen" }, this.rev);
 				}
@@ -15402,27 +15790,20 @@ window.__ModuleLoader__.load({
 				this.editor.focus();
 			}
 			/**
-			* Teardown the shell and return every browser-owned attachment still retained by
-			* the draft or an unsettled default send.
+			* Teardown the shell, abort the in-flight attempt, and return every
+			* browser-owned attachment the draft still holds, including those of a
+			* message the Host has not accepted yet.
 			* @returns attachment ids the scope disposer must release.
 			*/
 			dispose() {
 				if (this.disposed) return [];
-				const retained = new Set(this.attachmentIds);
-				for (const record of this.detachedDrafts.values()) for (const attachmentId of record.attachmentIds) retained.add(attachmentId);
-				for (const flight of this.attachmentFlights.values()) {
-					for (const attachmentId of flight.attachmentIds) retained.add(attachmentId);
-					flight.controller.abort();
-				}
+				const retained = [...this.attachmentIds];
 				this.disposed = true;
 				this.cancelCommandRestore();
 				this.dispatchRun({ type: "release" });
 				this.unsubscribeInbox?.();
 				this.unregister();
-				this.detachedDrafts.clear();
-				this.failedDetached.clear();
-				this.attachmentFlights.clear();
-				return [...retained];
+				return retained;
 			}
 			/** Read the live input state (guard derivation reads here). */
 			get snapshot() {
@@ -15511,52 +15892,33 @@ window.__ModuleLoader__.load({
 				this.draftEditor.clearHistory();
 			}
 			/**
-			* Prompt serialization before the sink: expand each chip occurrence to its
-			* owner's model form via the session controller's codec routing. Owner
-			* missing or serialization failure rejects the detached send and restores
-			* its editor snapshot. Chip-free drafts skip the async detour.
+			* Prompt serialization before the sink: expand each chip occurrence of the
+			* sent draft to its owner's model form via the session controller's codec
+			* routing and format each quote as Markdown, then send it with the
+			* attachments captured at Enter. Owner missing or serialization failure
+			* settles the send as failed, which keeps the draft. Chip-free drafts skip
+			* the async detour.
 			*/
 			sinkSerialized(attempt, draft, mode) {
 				this.notifySubmission(attempt.submission);
-				const attachmentIds = [...this.attachmentIds];
-				this.attachmentIds = [];
-				const occurrences = this.projection.occurrences;
-				const record = {
-					draft,
-					occurrences,
-					attachmentIds
+				const { occurrences, quotes, attachmentIds } = attempt;
+				const inputTriggers = this.deps.inputTriggers?.();
+				const prompt = serializeDraftPrompt(snapshotDraft(draft, occurrences, void 0, quotes), async (source, ref) => {
+					if (inputTriggers === void 0) throw new Error(`no serializer for reference source "${source}"`);
+					return inputTriggers.serializeReference(source, ref, attempt.signal);
+				});
+				const send = (text) => {
+					if (this.dead(attempt)) return;
+					this.settleSink(attempt, this.deps.defaultSink(text, attachmentIds, mode, attempt.signal, () => {
+						this.acceptSink(attempt);
+					}));
 				};
-				this.detachedDrafts.set(attempt.seq, record);
-				if (this.failedRestoreRev === this.rev) {
-					this.failedDetached.clear();
-					this.failedRestoreRev = void 0;
-				}
-				if (occurrences.length === 0) {
-					this.settleSink(attempt, this.deps.defaultSink(draft.trim(), attachmentIds, mode, attempt.signal));
+				if (!(prompt instanceof Promise)) {
+					send(prompt);
 					return;
 				}
-				const inputTriggers = this.deps.inputTriggers?.();
-				Promise.all(occurrences.map(async (o) => {
-					if (inputTriggers === void 0) throw new Error(`no serializer for reference source "${o.source}"`);
-					return {
-						offset: o.offset,
-						length: o.length,
-						text: await inputTriggers.serializeReference(o.source, o.ref, attempt.signal)
-					};
-				})).then((parts) => {
-					if (this.disposed) return;
-					let out = "";
-					let cursor = 0;
-					for (const part of parts) {
-						out += draft.slice(cursor, part.offset) + part.text;
-						cursor = part.offset + part.length;
-					}
-					out += draft.slice(cursor);
-					this.settleSink(attempt, this.deps.defaultSink(out.trim(), attachmentIds, mode, attempt.signal));
-				}, (error) => {
-					if (this.dead(attempt)) return;
-					const message = error instanceof Error ? error.message : String(error);
-					this.settleDetachedFailure(attempt, message);
+				prompt.then(send, (error) => {
+					this.failSink(attempt, error);
 				});
 			}
 			notifySubmission(submission) {
@@ -15565,74 +15927,46 @@ window.__ModuleLoader__.load({
 					this.deps.messageSubmitted?.(submission);
 				} catch (_error) {}
 			}
-			/** Settle one detached default send independently of other sends. */
+			/**
+			* Settle the message being sent. Once the Host accepts it, its attachments
+			* leave the draft before the editor clears; ConversationController releases
+			* them when the message's echo retires. Any other outcome keeps the draft
+			* and its attachments for correction.
+			*/
 			settleSink(attempt, pending) {
 				pending.then((outcome) => {
-					if (this.dead(attempt)) return;
-					if (outcome.kind !== "success") {
-						this.settleDetachedFailure(attempt, outcome.text);
-						return;
-					}
-					this.detachedDrafts.delete(attempt.seq);
-					this.dispatchRun({
-						type: "sink-settled",
-						attempt,
-						ok: true,
-						outcome
-					});
+					if (!this.dead(attempt)) this.applySinkOutcome(attempt, outcome);
 				}, (error) => {
-					if (this.dead(attempt)) return;
-					this.settleDetachedFailure(attempt, error instanceof Error ? error.message : String(error));
+					this.failSink(attempt, error);
 				});
 			}
-			/** Restore one failed detached send without overwriting text entered after a restoration. */
-			settleDetachedFailure(attempt, message) {
-				const record = this.detachedDrafts.get(attempt.seq);
-				if (record === void 0) return;
-				this.detachedDrafts.delete(attempt.seq);
-				this.restoreAttachments(record.attachmentIds);
-				this.failedDetached.set(attempt.seq, record);
-				if (this.projection.clipboardText === "" || this.failedRestoreRev === this.rev) this.restoreFailedDrafts();
+			/** Settle the message being sent as accepted when the sink learns the Host's acceptance before its outcome. */
+			acceptSink(attempt) {
+				if (this.dead(attempt) || this.core.sendingAttempt !== attempt) return;
+				this.applySinkOutcome(attempt, { kind: "success" });
+			}
+			applySinkOutcome(attempt, outcome) {
+				const accepted = outcome.kind === "success";
+				if (accepted && attempt.attachmentIds.length > 0) {
+					const sent = new Set(attempt.attachmentIds);
+					this.attachmentIds = this.attachmentIds.filter((id) => !sent.has(id));
+				}
+				this.dispatchRun({
+					type: "sink-settled",
+					attempt,
+					ok: accepted,
+					outcome
+				});
+			}
+			/** Settle a send that ended without a Host outcome; the draft stays for correction. */
+			failSink(attempt, error) {
+				if (this.dead(attempt)) return;
 				this.dispatchRun({
 					type: "sink-settled",
 					attempt,
 					ok: false,
-					...message === void 0 ? {} : { message }
+					message: errorText(error)
 				});
-			}
-			/** Rebuild all currently failed snapshots in submission order. */
-			restoreFailedDrafts() {
-				const records = [...this.failedDetached.entries()].sort(([a], [b]) => a - b).map(([, record]) => record);
-				if (records.length === 0) return;
-				const separator = "\n\n";
-				let draft = "";
-				const occurrences = [];
-				for (const record of records) {
-					const base = draft.length + (draft === "" ? 0 : 2);
-					if (draft !== "") draft += separator;
-					draft += record.draft;
-					for (const occurrence of record.occurrences) occurrences.push({
-						...occurrence,
-						offset: base + occurrence.offset
-					});
-				}
-				this.restoringFailures = true;
-				try {
-					this.draftEditor.restoreDraft(draft, occurrences);
-					this.draftEditor.clearHistory();
-					this.failedRestoreRev = this.rev;
-				} finally {
-					this.restoringFailures = false;
-				}
-			}
-			/** Return failed-send attachments to the head of the rail; release happens only after success. */
-			restoreAttachments(attachmentIds) {
-				if (attachmentIds.length === 0) return;
-				const current = new Set(this.attachmentIds);
-				const restored = attachmentIds.filter((id) => !current.has(id));
-				if (restored.length === 0) return;
-				this.attachmentIds = [...restored, ...this.attachmentIds];
-				this.publish();
 			}
 			/** Enter adjudication: poll the session controller; failure = notice + draft retained (never a silent downgrade). */
 			adjudicate(attempt, draft) {
@@ -15670,7 +16004,7 @@ window.__ModuleLoader__.load({
 			* for correction.
 			*/
 			beginSubmit(attempt, claim, args) {
-				const attachmentIds = claim.attachments === true ? [...this.attachmentIds] : [];
+				const attachmentIds = claim.attachments === true ? attempt.attachmentIds : [];
 				Promise.resolve().then(async () => {
 					const attachments = attachmentIds.length > 0 ? await this.deps.commandAttachments.serialize(attachmentIds) : [];
 					if (this.dead(attempt)) return void 0;
@@ -15835,7 +16169,12 @@ window.__ModuleLoader__.load({
 					inputTriggers: () => this.controller(actx),
 					popup: () => this.popup(actx),
 					inbox: session.projections.faceOf("inbox"),
-					defaultSink: (text, attachmentIds, mode, signal) => this.sink(session, text, attachmentIds, mode, signal),
+					defaultSink: (text, attachmentIds, mode, signal, accept) => this.sink(session, text, attachmentIds, mode, signal, accept),
+					quoteRemoveLabel: () => this.t("quote.remove"),
+					quoteInsertionAllowed: () => {
+						const state = session.getSnapshot();
+						return !state.removed && (state.subagent === null || state.subagent.address.mode === "continuable" && state.subagent.parentAvailable === true) && this.conversation().blocks.storeFor(session.sessionId).getSnapshot() === void 0;
+					},
 					steerQueue: () => {
 						this.steerQueue(session, shell);
 					},
@@ -15926,14 +16265,14 @@ window.__ModuleLoader__.load({
 				return binding === void 0 ? void 0 : this.controller(binding.ctx);
 			}
 			/**
-			* Default sink: optimistic clear + prompt. The session is always a real
-			* host entity (materialized when its workspace was picked), so there is
-			* exactly one path; a failed first prompt is an ordinary prompt failure
-			* (banner via promptError, draft restored only while untouched).
+			* Default sink: prompt while the composer holds the sent draft. The session
+			* is always a real host entity (materialized when its workspace was picked),
+			* so there is exactly one path; a refused or failed prompt is an ordinary
+			* prompt failure (banner via promptError, draft kept in the composer).
 			*/
-			sink(session, text, attachmentIds, mode, signal) {
+			sink(session, text, attachmentIds, mode, signal, accept) {
 				if (text === "" && attachmentIds.length === 0) return Promise.resolve({ kind: "success" });
-				return this.conversation().sendSession(session, text, attachmentIds, mode, signal);
+				return this.conversation().sendSession(session, text, attachmentIds, mode, signal, accept);
 			}
 			/**
 			* Submit every still-pending queued message through QueueDock Steer, in FIFO
@@ -16070,6 +16409,7 @@ window.__ModuleLoader__.load({
 		const PLAN_NEXT_ACTION_EN = "describe your task to generate plan";
 		/** Simplified Chinese dictionary (the key-set source of truth). */
 		const zh = {
+			"quote.remove": "移除引用",
 			"shortcut.newline": "换行",
 			"shortcut.complementary": "使用互补的 Queue／Steer 方式",
 			"shortcut.slash": "打开命令菜单",
@@ -16088,6 +16428,7 @@ window.__ModuleLoader__.load({
 			"input.file": "文件",
 			"input.stop": "停止生成",
 			"input.send": "发送消息",
+			"input.sending": "正在发送消息",
 			"input.send.queue": "排队发送",
 			"input.send.steer": "插话发送",
 			"attachment.pending": "待发送附件",
@@ -16164,10 +16505,12 @@ window.__ModuleLoader__.load({
 			"tool.title.getGoal": "查看目标",
 			"tool.title.updateGoal": "更新目标",
 			"tool.preparing.content": "{kilobytes}KB",
-			"tool.title.createSchedule": "创建定时任务",
-			"tool.title.listSchedules": "查看定时任务",
-			"tool.title.deleteSchedule": "删除定时任务",
-			"tool.title.updateSchedule": "修改定时任务",
+			"tool.title.createSchedule": "创建自动化任务",
+			"tool.title.listSchedules": "查看自动化任务",
+			"tool.title.viewSchedule": "查看自动化任务详情",
+			"tool.title.editSchedule": "编辑自动化任务",
+			"tool.title.deleteSchedule": "删除自动化任务",
+			"tool.title.updateSchedule": "修改自动化任务",
 			"detail.state": "状态",
 			"detail.todo.completed": "已完成",
 			"detail.todo.in_progress": "进行中",
@@ -16203,12 +16546,16 @@ window.__ModuleLoader__.load({
 			"detail.schedule.frequency": "重复",
 			"detail.schedule.scheduled": "等待触发",
 			"detail.schedule.overdue": "已到期，等待会话恢复",
-			"detail.schedule.empty": "没有定时任务",
+			"detail.schedule.active": "已开启",
+			"detail.schedule.paused": "已暂停",
+			"detail.schedule.ended": "已结束",
+			"detail.schedule.empty": "没有自动化任务",
 			"detail.schedule.deleted": "已删除",
-			"detail.schedule.count": "{count} 个定时任务",
+			"detail.schedule.count": "{count} 个自动化任务",
 			"detail.schedule.daily": "每天 {time}（{zone}）",
 			"detail.schedule.weekly": "每周 {days} {time}（{zone}）",
 			"detail.schedule.cron": "Cron {expression}（{zone}）",
+			"detail.schedule.custom": "自定义",
 			"detail.weekday.1": "周一",
 			"detail.weekday.2": "周二",
 			"detail.weekday.3": "周三",
@@ -16393,6 +16740,7 @@ window.__ModuleLoader__.load({
 			"tool.title.bash": "运行命令",
 			"tool.title.write": "写入",
 			"tool.title.edit": "编辑",
+			"tool.title.applyPatch": "应用补丁",
 			"tool.title.code": "代码",
 			"tool.title.generic": "工具调用",
 			"tool.title.inspect": "查询 Cordis 环境",
@@ -16459,6 +16807,7 @@ window.__ModuleLoader__.load({
 		};
 		/** English dictionary, checked complete against the zh key set. */
 		const en = {
+			"quote.remove": "Remove quote",
 			"shortcut.newline": "New line",
 			"shortcut.complementary": "Use the complementary Queue / Steer action",
 			"shortcut.slash": "Open command menu",
@@ -16477,6 +16826,7 @@ window.__ModuleLoader__.load({
 			"input.file": "File",
 			"input.stop": "Stop generating",
 			"input.send": "Send message",
+			"input.sending": "Sending message",
 			"input.send.queue": "Queue message",
 			"input.send.steer": "Steer message",
 			"attachment.pending": "Pending attachments",
@@ -16553,10 +16903,12 @@ window.__ModuleLoader__.load({
 			"tool.title.getGoal": "View goal",
 			"tool.title.updateGoal": "Update goal",
 			"tool.preparing.content": "{kilobytes}KB",
-			"tool.title.createSchedule": "Create reminder",
-			"tool.title.listSchedules": "List reminders",
-			"tool.title.deleteSchedule": "Delete reminder",
-			"tool.title.updateSchedule": "Update reminder",
+			"tool.title.createSchedule": "Create automation task",
+			"tool.title.listSchedules": "List automation tasks",
+			"tool.title.viewSchedule": "View automation task",
+			"tool.title.editSchedule": "Edit automation task",
+			"tool.title.deleteSchedule": "Delete automation task",
+			"tool.title.updateSchedule": "Update automation task",
 			"detail.state": "Status",
 			"detail.todo.completed": "Completed",
 			"detail.todo.in_progress": "In progress",
@@ -16592,12 +16944,16 @@ window.__ModuleLoader__.load({
 			"detail.schedule.frequency": "Repeat",
 			"detail.schedule.scheduled": "Scheduled",
 			"detail.schedule.overdue": "Overdue, awaiting session resume",
-			"detail.schedule.empty": "No reminders",
+			"detail.schedule.active": "Enabled",
+			"detail.schedule.paused": "Paused",
+			"detail.schedule.ended": "Ended",
+			"detail.schedule.empty": "No automation tasks",
 			"detail.schedule.deleted": "Deleted",
-			"detail.schedule.count": "{count} reminders",
+			"detail.schedule.count": "{count} automation tasks",
 			"detail.schedule.daily": "Every day at {time} ({zone})",
 			"detail.schedule.weekly": "Weekly on {days} at {time} ({zone})",
 			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "Custom",
 			"detail.weekday.1": "Mon",
 			"detail.weekday.2": "Tue",
 			"detail.weekday.3": "Wed",
@@ -16782,6 +17138,7 @@ window.__ModuleLoader__.load({
 			"tool.title.bash": "Bash",
 			"tool.title.write": "Write",
 			"tool.title.edit": "Edit",
+			"tool.title.applyPatch": "Apply patch",
 			"tool.title.code": "Code",
 			"tool.title.generic": "Tool call",
 			"tool.title.inspect": "Query Cordis environment",
@@ -16846,9 +17203,2397 @@ window.__ModuleLoader__.load({
 			"terminal.sendInput": "(send input)",
 			"terminal.session": "Terminal {sessionId}"
 		};
+		/** Japanese copy, checked against the English keys. */
+		const ja = {
+			"quote.remove": "引用を削除",
+			"shortcut.newline": "改行",
+			"shortcut.complementary": "補助のキュー / 実行中の指示変更を使用",
+			"shortcut.slash": "コマンドメニューを開く",
+			"shortcut.mention": "参照メニューを開く",
+			"hint.plan": "計画を生成するにはタスクを説明してください",
+			"hint.goal": "長時間実行するタスクの目標を説明してください",
+			"hint.goal.active": "目標アクティブ — 編集 / 一時停止 / 再開 / クリア",
+			"placeholder.plan": "計画を生成するにはタスクを説明してください",
+			"placeholder.default": "メッセージを送信するかタスクを実行、/ コマンド、@ ファイルやセッション",
+			"placeholder.unavailable": "セッションを利用できません",
+			"placeholder.parentOffline": "親セッションがオフラインです。送信はできませんが、実行は停止できます",
+			"placeholder.hero": "作りたいものを説明してください。/ コマンド、@ ファイルやセッション",
+			"placeholder.workspace": "開始するワークスペースを選択",
+			"placeholder.steerQueue": "Cmd/Ctrl+Enterでキュー内のすべてのメッセージを実行中の指示に追加",
+			"input.commands": "ファイルを追加またはコマンドを実行",
+			"input.file": "ファイル",
+			"input.stop": "生成を停止",
+			"input.send": "メッセージを送信",
+			"input.sending": "メッセージを送信中",
+			"input.send.queue": "メッセージをキューに追加",
+			"input.send.steer": "実行中の指示にメッセージを追加",
+			"attachment.pending": "保留中の添付ファイル",
+			"attachment.scrollLeft": "添付ファイルを左にスクロール",
+			"attachment.scrollRight": "添付ファイルを右にスクロール",
+			"attachment.dropTitle": "ファイルや画像をここにドラッグして追加",
+			"attachment.dropDesc": "画像の上限: 最大{count}枚、各{size}",
+			"attachment.dropBlocked": "現在ファイルや画像を追加できません",
+			"attachment.directoryDesktopOnly": "フォルダはデスクトップアプリでのみ追加できます。ブラウザでは個別のファイルを追加してください",
+			"attachment.pathUnavailable": "フォルダのパスを取得できませんでした。もう一度ドラッグしてください",
+			"attachment.pathUnsupported": "パスに参照できない文字が含まれています。名前を変更して再試行してください",
+			"image.pending": "保留中の画像",
+			"image.openOriginal": "元の画像を表示",
+			"image.openOriginalLabel": "{label}、クリックで元の画像を表示",
+			"image.remove": "画像{name}を削除",
+			"image.original": "元の画像",
+			"image.label": "画像",
+			"image.loadFailed": "画像を読み込めませんでした。クリックで再試行",
+			"image.loading": "画像を読み込み中…",
+			"image.preview": "元の画像のプレビュー",
+			"image.closePreview": "元の画像のプレビューを閉じる",
+			"image.unsupportedType": "対応している画像形式はPNG、JPG、WebP、GIFのみです",
+			"image.tooMany": "1つのメッセージに最大{count}枚の画像を含められます",
+			"image.fileTooLarge": "各画像は{size}未満である必要があります",
+			"image.totalTooLarge": "画像の合計が{size}を超えています。一部を削除して再試行してください",
+			"image.tooManyPixels": "画像の解像度が高すぎます。圧縮して再試行してください",
+			"image.dimensionTooLarge": "画像の各辺は最大{size}pxです。縮小して再試行してください",
+			"image.modelUnsupported": "現在のモデルは画像に対応していません。対応モデルに切り替えてください",
+			"image.sendFailed": "画像の送信に失敗しました（{reason}）。再度追加して再試行してください",
+			"file.pending": "保留中のファイル",
+			"file.remove": "ファイル{name}を削除",
+			"file.uploading": "アップロード中…",
+			"file.uploadFailed": "アップロードに失敗しました。クリックで再試行",
+			"file.retry": "{name}のアップロードを再試行",
+			"file.stillUploading": "ファイルをアップロード中です。完了後に送信してください",
+			"file.sessionUnavailable": "セッションを利用できないため、ファイルをアップロードできません",
+			"file.notStaged": "ファイルのアップロードが完了していません。再度追加して再試行してください",
+			"file.label": "ファイル",
+			"context.aria": "コンテキストの{percent}を使用中",
+			"context.used": "コンテキスト使用量",
+			"context.system": "システムプロンプト",
+			"context.tools": "ツール定義",
+			"context.messages": "メッセージ",
+			"settings.enter.title": "実行中の送信動作",
+			"settings.enter.description": "エージェントの実行中にEnterキーと送信ボタンが行う動作。Cmd/Ctrl+Enterではもう一方の動作になります",
+			"settings.enter.queue": "キュー",
+			"settings.enter.steer": "指示を変更",
+			"hero.headline": "未知への挑戦",
+			"hero.preview": "プレビュー",
+			"hero.chooseWorkspace": "ワークスペースを選択",
+			"session.hierarchy": "セッション階層",
+			"session.moreViews": "その他の会話ビュー",
+			"todo.title": "ToDo",
+			"todo.progress.done": "{done}件完了",
+			"todo.progress.active": "{active}件進行中",
+			"todo.progress.pending": "{pending}件保留中",
+			"todo.status.completed": "完了",
+			"todo.status.inProgress": "進行中",
+			"todo.status.pending": "保留中",
+			"todo.rowTitle": "ToDoリストを更新",
+			"tool.title.createGoal": "目標を作成",
+			"tool.title.getGoal": "目標を表示",
+			"tool.title.updateGoal": "目標を更新",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "自動化タスクを作成",
+			"tool.title.viewSchedule": "自動化タスクを表示",
+			"tool.title.editSchedule": "自動化タスクを編集",
+			"tool.title.listSchedules": "自動化タスクを一覧表示",
+			"tool.title.deleteSchedule": "自動化タスクを削除",
+			"tool.title.updateSchedule": "自動化タスクを更新",
+			"detail.state": "ステータス",
+			"detail.todo.completed": "完了",
+			"detail.todo.in_progress": "進行中",
+			"detail.todo.pending": "保留中",
+			"detail.todo.empty": "ToDoリストは空です",
+			"todo.diff.initial": "初期リスト",
+			"todo.diff.compare": "前回のリストからの変更",
+			"todo.diff.unavailable": "前回のリストは利用できません",
+			"todo.diff.noChanges": "リストに変更はありません",
+			"todo.diff.added": "{count}件追加",
+			"todo.diff.updated": "{count}件更新",
+			"todo.diff.removed": "{count}件削除",
+			"todo.diff.unchanged": "{count}件変更なし",
+			"todo.diff.addedItem": "追加",
+			"todo.diff.updatedItem": "ステータス変更",
+			"todo.diff.movedItem": "順序変更",
+			"todo.diff.removedItem": "削除",
+			"detail.goal.empty": "目標なし",
+			"detail.goal.active": "アクティブ",
+			"detail.goal.disarmed": "継続待ち",
+			"detail.goal.paused": "一時停止",
+			"detail.goal.blocked": "ブロック中",
+			"detail.goal.complete": "完了",
+			"detail.goal.rounds": "ラウンド",
+			"detail.goal.reason": "ブロッカー",
+			"detail.days": "{count} 日",
+			"detail.hours": "{count} 時間",
+			"detail.minutes": "{count} 分",
+			"detail.seconds": "{count} 秒",
+			"detail.schedule.once": "1回のみ",
+			"detail.schedule.every": "{interval} ごと",
+			"detail.schedule.when": "スケジュール設定",
+			"detail.schedule.frequency": "繰り返し",
+			"detail.schedule.active": "有効",
+			"detail.schedule.paused": "一時停止中",
+			"detail.schedule.ended": "終了",
+			"detail.schedule.scheduled": "スケジュール済み",
+			"detail.schedule.overdue": "期限超過、セッション再開待ち",
+			"detail.schedule.empty": "自動化タスクなし",
+			"detail.schedule.deleted": "削除済み",
+			"detail.schedule.count": "{count}件の自動化タスク",
+			"detail.schedule.daily": "毎日 {time} ({zone})",
+			"detail.schedule.weekly": "毎週 {days} の {time} ({zone})",
+			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "カスタム",
+			"detail.weekday.1": "月",
+			"detail.weekday.2": "火",
+			"detail.weekday.3": "水",
+			"detail.weekday.4": "木",
+			"detail.weekday.5": "金",
+			"detail.weekday.6": "土",
+			"detail.weekday.7": "日",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "プロバイダーを検査",
+			"tool.title.queryRuntime": "ランタイムを照会",
+			"tool.title.inspectPlugins": "プラグインを検査",
+			"tool.title.workflow": "ワークフローを実行",
+			"tool.title.ralph": "ralph ループを実行",
+			"tool.title.readEvent": "イベントを読み取り",
+			"tool.title.searchEvents": "イベントを検索",
+			"tool.title.traceEvent": "イベントをトレース",
+			"tool.title.searchSessions": "セッションを検索",
+			"tool.title.traceSession": "セッションをトレース",
+			"tool.title.listModels": "モデルを一覧表示",
+			"tool.title.subagent": "サブエージェントを作成",
+			"tool.title.listAgents": "サブエージェントを一覧表示",
+			"tool.title.sendMessage": "メッセージを送信",
+			"tool.title.interruptAgent": "エージェントを中断",
+			"tool.title.listJobs": "バックグラウンドジョブを一覧表示",
+			"tool.title.readJob": "ジョブ出力を読み取り",
+			"tool.title.killJob": "バックグラウンドジョブをキャンセル",
+			"tool.title.openTerminal": "ターミナルを開く",
+			"tool.title.readTerminal": "ターミナルを読み取り",
+			"tool.title.listTerminals": "ターミナルを一覧表示",
+			"tool.title.signalTerminal": "ターミナルにシグナル送信",
+			"tool.title.closeTerminal": "ターミナルを閉じる",
+			"tool.title.lsp": "コードシンボルを照会",
+			"tool.title.findDefinition": "定義を検索",
+			"tool.title.findReferences": "参照を検索",
+			"tool.title.findImplementation": "実装を検索",
+			"tool.title.hoverSymbol": "シンボルを検査",
+			"tool.title.spawnTeammate": "チームメイトを作成",
+			"tool.title.createTeamTask": "チームタスクを作成",
+			"tool.title.getTeamTask": "チームタスクを読み取り",
+			"tool.title.updateTeamTask": "チームタスクを更新",
+			"tool.title.listTeamTasks": "チームタスクを一覧表示",
+			"tool.title.waitAgent": "サブエージェントを待機",
+			"detail.recordedResult": "記録された結果",
+			"detail.empty": "結果なし",
+			"detail.none": "なし",
+			"detail.yes": "はい",
+			"detail.no": "いいえ",
+			"detail.moreInInspect": "Inspect で残り {count}件を表示できます",
+			"detail.status.running": "実行中",
+			"detail.status.idle": "待機中",
+			"detail.status.ready": "準備完了",
+			"detail.status.inactive": "非アクティブ",
+			"detail.status.provisioning": "プロビジョニング中",
+			"detail.status.failed": "失敗",
+			"detail.status.completed": "完了",
+			"detail.status.deleted": "削除済み",
+			"detail.status.killed": "キャンセル済み",
+			"detail.status.accepted": "承認済み",
+			"detail.status.queued": "キュー待ち",
+			"detail.status.exited": "終了",
+			"detail.field.id": "ID",
+			"detail.field.revision": "リビジョン",
+			"detail.field.platform": "プラットフォーム",
+			"detail.field.provider": "プロバイダー",
+			"detail.field.model": "モデル",
+			"detail.field.role": "ロール",
+			"detail.field.context": "コンテキスト",
+			"detail.field.owner": "オーナー",
+			"detail.field.ready": "準備完了",
+			"detail.field.dependencies": "依存関係",
+			"detail.field.writeScopes": "書き込みスコープ",
+			"detail.field.warnings": "警告",
+			"detail.field.diagnostics": "診断",
+			"detail.field.methods": "メソッド",
+			"detail.field.inputSchema": "入力スキーマ",
+			"detail.field.outputSchema": "出力スキーマ",
+			"detail.field.currentPackage": "現在のパッケージ",
+			"detail.field.nextPackage": "次のパッケージ",
+			"detail.field.latestRun": "最新の実行",
+			"detail.field.packages": "パッケージ",
+			"detail.field.registrations": "登録",
+			"detail.field.props": "Props",
+			"detail.field.data": "データ",
+			"detail.field.source": "ソース",
+			"detail.field.content": "内容",
+			"detail.field.message": "メッセージ",
+			"detail.field.messageId": "メッセージ ID",
+			"detail.field.root": "ルート",
+			"detail.field.pid": "プロセス ID",
+			"detail.field.type": "種類",
+			"detail.field.time": "時刻",
+			"detail.field.seq": "イベントシーケンス",
+			"detail.field.turn": "ターン",
+			"detail.field.step": "ステップ",
+			"detail.field.callId": "呼び出し ID",
+			"detail.field.agents": "起動したエージェント",
+			"detail.field.result": "結果",
+			"detail.field.parent": "親",
+			"detail.field.depth": "深さ",
+			"detail.field.exitCode": "終了コード",
+			"detail.field.signal": "シグナル",
+			"detail.field.previousStatus": "以前のステータス",
+			"detail.field.agent": "エージェント ID",
+			"detail.field.job": "ジョブ ID",
+			"detail.field.task": "タスク",
+			"detail.field.processGroup": "プロセスグループ",
+			"detail.field.availability": "可用性",
+			"detail.field.bestMatch": "最適な一致",
+			"detail.field.target": "対象イベント",
+			"detail.field.surface": "レコードステータス",
+			"detail.agents.count": "{count} エージェント",
+			"detail.jobs.count": "{count} バックグラウンドジョブ",
+			"detail.terminals.count": "{count} ターミナル",
+			"detail.tasks.count": "{count} チームタスク",
+			"detail.tasks.nextPage": "さらにタスクがあります。次のカーソルは {cursor} です",
+			"detail.locations.count": "{count}件の場所",
+			"detail.location": "{line} 行目、{column} 列目",
+			"detail.receipt.delivered": "メッセージを配信しました",
+			"detail.receipt.interrupt": "中断を要求しました",
+			"detail.receipt.started": "開始済み",
+			"detail.receipt.cancel": "キャンセルを要求しました",
+			"detail.receipt.alreadyFinished": "既に完了",
+			"detail.receipt.signal": "シグナル送信済み",
+			"detail.receipt.closed": "クローズ済み",
+			"detail.receipt.closing": "クローズ中",
+			"detail.wait.noProgress": "アクティブなサブエージェントなし",
+			"detail.wait.title": "サブエージェントのアクティビティ",
+			"detail.wait.timeout": "待機がタイムアウトしました",
+			"detail.wait.changed": "変更を検出",
+			"detail.agent.reply": "エージェントの応答",
+			"detail.models.title": "利用可能なモデル",
+			"detail.output.lines": "{total} 行中 {begin}–{end} 行",
+			"detail.output.truncated": "出力は切り詰められています",
+			"detail.providers.count": "{count}件の inspect プロバイダー",
+			"detail.plugins.count": "{count}件の動的プラグイン",
+			"detail.workflow.script": "ワークフロースクリプト",
+			"detail.ralph.reportedComplete": "ワーカーが完了を報告",
+			"detail.ralph.reportedBlocker": "ワーカーがブロッカーを報告",
+			"detail.ralph.limit": "ラウンド上限に達しました",
+			"detail.report.nextSteps": "残りの作業",
+			"detail.trace.replacedBy": "置き換え元",
+			"detail.trace.replacementChain": "置き換えチェーン",
+			"detail.trace.replaces": "置き換えられたイベント",
+			"detail.trace.sources": "ソースイベント",
+			"detail.trace.derived": "派生イベント",
+			"detail.trace.ancestors": "祖先セッション",
+			"detail.trace.descendants": "子孫セッション",
+			"detail.matches.count": "{count}件の一致",
+			"detail.matches.capped": "結果の上限に達しました。さらに絞り込んでください",
+			"detail.event.neighbors": "周辺のイベント",
+			"todo.completed": "{done}/{total} 完了",
+			"command.attachmentsUnsupported": "/{command} は添付ファイルを受け付けません。先に削除してください",
+			"ask.rowTitle": "質問する",
+			"ask.waiting": "待機中",
+			"ask.pending": "継続中。引き続き回答できます",
+			"ask.pendingDetail": "これらの保留中の質問は、コンポーザーから引き続き回答できます。",
+			"ask.reopen": "回答",
+			"ask.review": "回答を表示",
+			"ask.closed": "クローズ済み",
+			"ask.closedDetail": "この質問はクローズされました。結果は下の会話にあります。",
+			"ask.cancelled": "キャンセル済み",
+			"ask.cancelledDetail": "この質問セットは回答が送信される前にキャンセルされました。",
+			"ask.interrupted": "中断済み",
+			"ask.interruptedDetail": "この質問セットは回答が送信される前に中断されました。",
+			"ask.answered": "{answered}/{total} 回答済み",
+			"ask.skipped": "未回答",
+			"bash.running": "実行中",
+			"bash.failed": "失敗",
+			"bash.stopped": "停止",
+			"row.running": "実行中",
+			"row.preparing": "ツール呼び出しを準備中",
+			"row.failed": "失敗",
+			"row.stopped": "停止",
+			"row.commandArguments": "コマンド引数",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "検査",
+			"row.imageSize": "{width}x{height}px、{bytes} バイト",
+			"row.imageSizeDownscaled": "{width}x{height}px（{originalWidth}x{originalHeight}px から縮小）、{bytes} バイト",
+			"tool.title.search": "検索",
+			"tool.title.read": "読み取り",
+			"tool.title.bash": "Bash",
+			"tool.title.write": "書き込み",
+			"tool.title.edit": "編集",
+			"tool.title.applyPatch": "パッチを適用",
+			"tool.title.code": "コード",
+			"tool.title.generic": "ツール呼び出し",
+			"tool.title.inspect": "Cordis 環境を照会",
+			"tool.title.runCordis": "Cordis プラグインを実行",
+			"tool.title.stopCordis": "Cordis プラグインを停止",
+			"tool.title.removeCordis": "Cordis プラグインを削除",
+			"tool.title.pwsh": "Pwsh",
+			"tool.title.readImage": "画像を読み取り",
+			"tool.title.grep": "Grep",
+			"tool.title.glob": "Glob",
+			"tool.title.webSearch": "検索",
+			"tool.title.webFetch": "取得",
+			"tool.autoReviewRejected": "自動認可レビューにより拒否されました",
+			"tool.autoReviewNotExecuted": "ツールは実行されませんでした。理由: {reason}",
+			"tool.autoReviewReasonFallback": "自動認可レビューがこの操作を承認しませんでした",
+			"diff.collapseAria": "差分を折りたたむ",
+			"diff.expandAria": "差分の残り{count}行を表示",
+			"diff.expandRest": "… 残り{count}行",
+			"read.window": "{total}行中{shown}行を表示",
+			"read.collapseAria": "内容を折りたたむ",
+			"read.expandAria": "残り{count}行を表示",
+			"read.expandRest": "… 残り{count}行",
+			"search.paths": "{shown}件のパス",
+			"search.paths.truncated": "{total}件中{shown}件のパスを表示",
+			"search.matches": "{shown}件の一致 · {files}ファイル",
+			"search.matches.truncated": "{total}件中{shown}件の一致を表示 · {files}ファイル",
+			"search.noResults": "結果なし",
+			"search.collapseAria": "結果を折りたたむ",
+			"search.expandAria": "残り{count}行の結果を表示",
+			"search.expandRest": "… 残り{count}行",
+			"web.noResults": "結果が見つかりません",
+			"web.sourcesTruncated": "ソース一覧を切り詰めました",
+			"web.http": "HTTP",
+			"web.contentTruncated": "内容を切り詰めました",
+			"details.running": "実行中…",
+			"queue.count": "{n}件のキュー済みメッセージ",
+			"queue.sending": "送信中…",
+			"queue.image": "キュー済みメッセージの画像",
+			"queue.file": "キュー済みファイル {name}",
+			"queue.edit": "キュー済みメッセージを編集",
+			"queue.edit.unsupported": "テキスト以外の内容を含むため、まだ編集できません",
+			"queue.save": "キュー済みメッセージを保存",
+			"queue.cancelEdit": "編集をキャンセル",
+			"queue.remove": "キュー済みメッセージを削除",
+			"queue.steer": "キュー内のメッセージを実行中の指示に追加",
+			"queue.steer.unavailable": "指示の変更はエージェントの実行中のみ利用できます",
+			"error.sessionInUse": "このセッションはすでに使用中です。別の実行中のDSHインスタンス（dsh webやデスクトップアプリなど）が使用している可能性があります。他のDSHインスタンスを終了して再試行してください。",
+			"queue.editFailed": "編集に失敗しました。このメッセージはすでに送信が開始されている可能性があります。",
+			"queue.removeFailed": "削除に失敗しました。このメッセージはすでに送信が開始されている可能性があります。",
+			"queue.steerFailed": "指示の変更に失敗しました。再試行してください。",
+			"terminal.signal": "シグナル {signal}",
+			"terminal.exitCode": "終了コード {code}",
+			"terminal.noExitCode": "終了コードなし",
+			"terminal.commandLine": "コマンドライン {n}",
+			"terminal.running": "実行中",
+			"terminal.failed": "失敗",
+			"terminal.done": "完了",
+			"terminal.noOutput": "出力なし",
+			"terminal.collapseAria": "出力を折りたたむ",
+			"terminal.expandAria": "残り{n}行の出力を表示",
+			"terminal.expandRest": "… 残り{n}行",
+			"terminal.sendInput": "(入力を送信)",
+			"terminal.session": "ターミナル {sessionId}",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
+		/** Spanish dictionary, checked against the English keys. */
+		const es = {
+			"quote.remove": "Eliminar cotización",
+			"shortcut.newline": "Nueva linea",
+			"shortcut.complementary": "Usar la acción alternativa de poner en cola o redirigir",
+			"shortcut.slash": "Abrir menú de comandos",
+			"shortcut.mention": "Abrir menú de referencia",
+			"hint.plan": PLAN_NEXT_ACTION_EN,
+			"hint.goal": "describir el objetivo de una tarea de larga duración",
+			"hint.goal.active": "Objetivo activo: editar/pausar/reanudar/borrar",
+			"placeholder.plan": PLAN_NEXT_ACTION_EN,
+			"placeholder.default": "Envía mensajes o ejecuta una tarea, / comandos, @ archivos o sesiones",
+			"placeholder.unavailable": "Sesión no disponible",
+			"placeholder.parentOffline": "Sesión para padres sin conexión; El envío no está disponible pero aún puedes detener la ejecución.",
+			"placeholder.hero": "Describe lo que quieres construir, / comandos, @ archivos o sesiones",
+			"placeholder.workspace": "Elija un espacio de trabajo para comenzar",
+			"placeholder.steerQueue": "Cmd/Ctrl+Enter dirige todos los mensajes en cola",
+			"input.commands": "Agregar archivos o ejecutar comandos",
+			"input.file": "Archivo",
+			"input.stop": "Detener generación",
+			"input.send": "Enviar mensaje",
+			"input.sending": "Enviando mensaje",
+			"input.send.queue": "mensaje de cola",
+			"input.send.steer": "Redirigir mensaje",
+			"attachment.pending": "Anexos pendientes",
+			"attachment.scrollLeft": "Desplazar archivos adjuntos hacia la izquierda",
+			"attachment.scrollRight": "Desplazar archivos adjuntos hacia la derecha",
+			"attachment.dropTitle": "Arrastre archivos o imágenes aquí para agregarlos",
+			"attachment.dropDesc": "Límite de imágenes: hasta imágenes {count}, {size} cada una",
+			"attachment.dropBlocked": "No se pueden agregar archivos e imágenes en este momento",
+			"attachment.directoryDesktopOnly": "Las carpetas sólo se pueden agregar en la aplicación de escritorio; agregar archivos individuales en el navegador",
+			"attachment.pathUnavailable": "No se pudo obtener la ruta de la carpeta; arrástralo de nuevo",
+			"attachment.pathUnsupported": "La ruta contiene caracteres que una referencia no puede contener; cámbiale el nombre y vuelve a intentarlo.",
+			"image.pending": "Imágenes pendientes",
+			"image.openOriginal": "Ver original",
+			"image.openOriginalLabel": "{label}, haga clic para ver el original",
+			"image.remove": "Eliminar imagen {name}",
+			"image.original": "imagen original",
+			"image.label": "Imagen",
+			"image.loadFailed": "La imagen no se pudo cargar; haga clic para volver a intentar",
+			"image.loading": "Cargando imagen…",
+			"image.preview": "Vista previa de la imagen original",
+			"image.closePreview": "Cerrar vista previa de la imagen original",
+			"image.unsupportedType": "Solo se admiten imágenes PNG, JPG, WebP y GIF",
+			"image.tooMany": "Un mensaje puede incluir hasta imágenes {count}.",
+			"image.fileTooLarge": "Cada imagen debe ser más pequeña que {size}.",
+			"image.totalTooLarge": "Las imágenes superan {size} en total; elimina algunos y vuelve a intentarlo",
+			"image.tooManyPixels": "La resolución de la imagen es demasiado alta; comprímelo y vuelve a intentarlo.",
+			"image.dimensionTooLarge": "Los lados de la imagen deben ser como máximo {size}px; reduce la escala y vuelve a intentarlo",
+			"image.modelUnsupported": "El modelo actual no admite imágenes; cambiar a un modelo que lo haga",
+			"image.sendFailed": "Error al enviar imágenes ({reason}); Vuelve a agregarlos y vuelve a intentarlo.",
+			"file.pending": "Archivos pendientes",
+			"file.remove": "Eliminar archivo {name}",
+			"file.uploading": "Subiendo…",
+			"file.uploadFailed": "La carga falló; haga clic para volver a intentar",
+			"file.retry": "Reintente cargar {name}",
+			"file.stillUploading": "Los archivos todavía se están cargando; enviar después de que terminen",
+			"file.sessionUnavailable": "Sesión no disponible; los archivos no se pueden cargar",
+			"file.notStaged": "El archivo no ha terminado de cargarse; vuelve a agregarlo y vuelve a intentarlo",
+			"file.label": "Archivo",
+			"context.aria": "{percent} de contexto utilizado",
+			"context.used": "de contexto utilizado",
+			"context.system": "Aviso del sistema",
+			"context.tools": "Definiciones de herramientas",
+			"context.messages": "Mensajes",
+			"settings.enter.title": "Enviar comportamiento mientras está ocupado",
+			"settings.enter.description": "Qué hacen los botones Intro y Enviar mientras el agente se está ejecutando; Cmd/Ctrl+Enter usa el otro comportamiento",
+			"settings.enter.queue": "cola",
+			"settings.enter.steer": "Redirigir",
+			"hero.headline": "Hacia lo desconocido",
+			"hero.preview": "Vista previa",
+			"hero.chooseWorkspace": "Elige espacio de trabajo",
+			"session.hierarchy": "Jerarquía de sesiones",
+			"session.moreViews": "Más vistas de conversación",
+			"todo.title": "Tareas pendientes",
+			"todo.progress.done": "{done} completado",
+			"todo.progress.active": "{active} en progreso",
+			"todo.progress.pending": "{pending} pendiente",
+			"todo.status.completed": "Completado",
+			"todo.status.inProgress": "En progreso",
+			"todo.status.pending": "Pendiente",
+			"todo.rowTitle": "Actualizar lista de tareas pendientes",
+			"tool.title.createGoal": "Crear objetivo",
+			"tool.title.getGoal": "Ver objetivo",
+			"tool.title.updateGoal": "Actualizar objetivo",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "Crear tarea de automatización",
+			"tool.title.listSchedules": "Listar tareas de automatización",
+			"tool.title.deleteSchedule": "Eliminar tarea de automatización",
+			"tool.title.updateSchedule": "Actualizar tarea de automatización",
+			"detail.state": "Estado",
+			"detail.todo.completed": "Completado",
+			"detail.todo.in_progress": "En progreso",
+			"detail.todo.pending": "Pendiente",
+			"detail.todo.empty": "La lista de tareas pendientes está vacía",
+			"todo.diff.initial": "lista inicial",
+			"todo.diff.compare": "Cambios desde la lista anterior",
+			"todo.diff.unavailable": "Lista anterior no disponible",
+			"todo.diff.noChanges": "No hay cambios en la lista.",
+			"todo.diff.added": "{count} añadido",
+			"todo.diff.updated": "{count} actualizado",
+			"todo.diff.removed": "{count} eliminado",
+			"todo.diff.unchanged": "{count} sin cambios",
+			"todo.diff.addedItem": "Añadido",
+			"todo.diff.updatedItem": "Estado cambiado",
+			"todo.diff.movedItem": "Reordenado",
+			"todo.diff.removedItem": "Eliminado",
+			"detail.goal.empty": "Sin gol",
+			"detail.goal.active": "Activo",
+			"detail.goal.disarmed": "En espera de continuación",
+			"detail.goal.paused": "En pausa",
+			"detail.goal.blocked": "Bloqueado",
+			"detail.goal.complete": "Completado",
+			"detail.goal.rounds": "Rondas",
+			"detail.goal.reason": "bloqueador",
+			"detail.days": "{count} d",
+			"detail.hours": "{count} h",
+			"detail.minutes": "{count} mín.",
+			"detail.seconds": "{count}",
+			"detail.schedule.once": "una vez",
+			"detail.schedule.every": "Cada {interval}",
+			"detail.schedule.when": "Programado para",
+			"detail.schedule.frequency": "repetir",
+			"detail.schedule.scheduled": "Programado",
+			"detail.schedule.overdue": "Atrasado, a la espera de reanudar la sesión.",
+			"detail.schedule.empty": "Sin tareas de automatización",
+			"detail.schedule.deleted": "Eliminado",
+			"detail.schedule.count": "{count} tareas de automatización",
+			"detail.schedule.daily": "Todos los días en {time} ({zone})",
+			"detail.schedule.weekly": "Semanalmente en {days} en {time} ({zone})",
+			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "Personalizado",
+			"detail.weekday.1": "lun",
+			"detail.weekday.2": "mar",
+			"detail.weekday.3": "mié",
+			"detail.weekday.4": "jueves",
+			"detail.weekday.5": "viernes",
+			"detail.weekday.6": "sábado",
+			"detail.weekday.7": "sol",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "Inspeccionar proveedores",
+			"tool.title.queryRuntime": "Tiempo de ejecución de consultas",
+			"tool.title.inspectPlugins": "Inspeccionar complementos",
+			"tool.title.workflow": "Ejecutar flujo de trabajo",
+			"tool.title.ralph": "Ejecutar bucle ralph",
+			"tool.title.readEvent": "Leer evento",
+			"tool.title.searchEvents": "Buscar eventos",
+			"tool.title.traceEvent": "Evento de seguimiento",
+			"tool.title.searchSessions": "Buscar sesiones",
+			"tool.title.traceSession": "Sesión de seguimiento",
+			"tool.title.listModels": "Listar modelos",
+			"tool.title.subagent": "Crear subagente",
+			"tool.title.listAgents": "Listar subagentes",
+			"tool.title.sendMessage": "Enviar mensaje",
+			"tool.title.interruptAgent": "agente de interrupción",
+			"tool.title.listJobs": "Listar trabajos en segundo plano",
+			"tool.title.readJob": "Leer la salida del trabajo",
+			"tool.title.killJob": "Cancelar trabajo en segundo plano",
+			"tool.title.openTerminal": "terminal abierta",
+			"tool.title.readTerminal": "Leer terminal",
+			"tool.title.listTerminals": "Lista de terminales",
+			"tool.title.signalTerminal": "terminal de señal",
+			"tool.title.closeTerminal": "Cerrar terminal",
+			"tool.title.lsp": "Símbolos de código de consulta",
+			"tool.title.findDefinition": "encontrar definición",
+			"tool.title.findReferences": "encontrar referencias",
+			"tool.title.findImplementation": "Encontrar implementación",
+			"tool.title.hoverSymbol": "Símbolo de inspección",
+			"tool.title.spawnTeammate": "Crear compañero de equipo",
+			"tool.title.createTeamTask": "Crear tarea de equipo",
+			"tool.title.getTeamTask": "Leer tarea de equipo",
+			"tool.title.updateTeamTask": "Actualizar tarea de equipo",
+			"tool.title.listTeamTasks": "Listar tareas del equipo",
+			"tool.title.waitAgent": "Espere al subagente",
+			"detail.recordedResult": "Resultado registrado",
+			"detail.empty": "Sin resultados",
+			"detail.none": "Ninguno",
+			"detail.yes": "si",
+			"detail.no": "No",
+			"detail.moreInInspect": "{count} más artículos disponibles en Inspeccionar",
+			"detail.status.running": "corriendo",
+			"detail.status.idle": "inactivo",
+			"detail.status.ready": "Listo",
+			"detail.status.inactive": "Inactivo",
+			"detail.status.provisioning": "Aprovisionamiento",
+			"detail.status.failed": "Fallido",
+			"detail.status.completed": "Completado",
+			"detail.status.deleted": "Eliminado",
+			"detail.status.killed": "Cancelado",
+			"detail.status.accepted": "Aceptado",
+			"detail.status.queued": "En cola",
+			"detail.status.exited": "Salido",
+			"detail.field.id": "ID",
+			"detail.field.revision": "Revisión",
+			"detail.field.platform": "Plataforma",
+			"detail.field.provider": "Proveedor",
+			"detail.field.model": "modelo",
+			"detail.field.role": "Rol",
+			"detail.field.context": "Contexto",
+			"detail.field.owner": "propietario",
+			"detail.field.ready": "Listo",
+			"detail.field.dependencies": "Dependencias",
+			"detail.field.writeScopes": "Escribir alcances",
+			"detail.field.warnings": "Advertencias",
+			"detail.field.diagnostics": "Diagnóstico",
+			"detail.field.methods": "Métodos",
+			"detail.field.inputSchema": "Esquema de entrada",
+			"detail.field.outputSchema": "Esquema de salida",
+			"detail.field.currentPackage": "Paquete actual",
+			"detail.field.nextPackage": "Siguiente paquete",
+			"detail.field.latestRun": "Última ejecución",
+			"detail.field.packages": "Paquetes",
+			"detail.field.registrations": "Inscripciones",
+			"detail.field.props": "Accesorios",
+			"detail.field.data": "Datos",
+			"detail.field.source": "Fuente",
+			"detail.field.content": "Contenido",
+			"detail.field.message": "Mensaje",
+			"detail.field.messageId": "ID de mensaje",
+			"detail.field.root": "raíz",
+			"detail.field.pid": "ID de proceso",
+			"detail.field.type": "Tipo",
+			"detail.field.time": "tiempo",
+			"detail.field.seq": "Secuencia de eventos",
+			"detail.field.turn": "Turno",
+			"detail.field.step": "paso",
+			"detail.field.callId": "ID de llamada",
+			"detail.field.agents": "Los agentes comenzaron",
+			"detail.field.result": "Resultado",
+			"detail.field.parent": "Padre",
+			"detail.field.depth": "Profundidad",
+			"detail.field.exitCode": "código de salida",
+			"detail.field.signal": "señal",
+			"detail.field.previousStatus": "Estado anterior",
+			"detail.field.agent": "ID del agente",
+			"detail.field.job": "ID de trabajo",
+			"detail.field.task": "Tarea",
+			"detail.field.processGroup": "grupo de procesos",
+			"detail.field.availability": "Disponibilidad",
+			"detail.field.bestMatch": "mejor partido",
+			"detail.field.target": "Evento objetivo",
+			"detail.field.surface": "Estado de registro",
+			"detail.agents.count": "Agentes {count}",
+			"detail.jobs.count": "Trabajos en segundo plano {count}",
+			"detail.terminals.count": "Terminales {count}",
+			"detail.tasks.count": "Tareas del equipo {count}",
+			"detail.tasks.nextPage": "Más tareas disponibles; el siguiente cursor es {cursor}",
+			"detail.locations.count": "Ubicaciones de {count}",
+			"detail.location": "Línea {line}, columna {column}",
+			"detail.receipt.delivered": "Mensaje entregado",
+			"detail.receipt.interrupt": "Interrupción solicitada",
+			"detail.receipt.started": "iniciado",
+			"detail.receipt.cancel": "Cancelación solicitada",
+			"detail.receipt.alreadyFinished": "ya terminé",
+			"detail.receipt.signal": "Señal entregada",
+			"detail.receipt.closed": "Cerrado",
+			"detail.receipt.closing": "Cierre",
+			"detail.wait.noProgress": "No hay subagentes activos",
+			"detail.wait.title": "Actividad del subagente",
+			"detail.wait.timeout": "Se agotó el tiempo de espera",
+			"detail.wait.changed": "Cambio detectado",
+			"detail.agent.reply": "Respuesta del agente",
+			"detail.models.title": "Modelos disponibles",
+			"detail.output.lines": "Líneas {begin}–{end} de {total}",
+			"detail.output.truncated": "Salida truncada",
+			"detail.providers.count": "{count} inspeccionar proveedores",
+			"detail.plugins.count": "Complementos dinámicos {count}",
+			"detail.workflow.script": "Guión de flujo de trabajo",
+			"detail.ralph.reportedComplete": "finalización reportada por el trabajador",
+			"detail.ralph.reportedBlocker": "Trabajador reportó un bloqueador",
+			"detail.ralph.limit": "Límite de ronda alcanzado",
+			"detail.report.nextSteps": "Trabajo restante",
+			"detail.trace.replacedBy": "Reemplazado por",
+			"detail.trace.replacementChain": "Cadena de repuesto",
+			"detail.trace.replaces": "Eventos reemplazados",
+			"detail.trace.sources": "Eventos de origen",
+			"detail.trace.derived": "Eventos derivados",
+			"detail.trace.ancestors": "Sesiones de antepasados",
+			"detail.trace.descendants": "Sesiones de descendientes",
+			"detail.matches.count": "Partidos {count}",
+			"detail.matches.capped": "Límite de resultados alcanzado; acotar la búsqueda para más",
+			"detail.event.neighbors": "Eventos circundantes",
+			"todo.completed": "{done}/{total} completado",
+			"command.attachmentsUnsupported": "/{command} no acepta archivos adjuntos; eliminarlos primero",
+			"ask.rowTitle": "hacer pregunta",
+			"ask.waiting": "esperando",
+			"ask.pending": "continuó; respuesta aún disponible",
+			"ask.pendingDetail": "Estas cuestiones pendientes siguen siendo responsabilidad del compositor.",
+			"ask.reopen": "respuesta",
+			"ask.review": "Ver respuestas",
+			"ask.closed": "cerrado",
+			"ask.closedDetail": "Esta pregunta está cerrada; su resultado está en la conversación a continuación.",
+			"ask.cancelled": "cancelado",
+			"ask.cancelledDetail": "Este conjunto de preguntas se canceló antes de enviar las respuestas.",
+			"ask.interrupted": "interrumpido",
+			"ask.interruptedDetail": "Este conjunto de preguntas se interrumpió antes de que se enviaran las respuestas.",
+			"ask.answered": "{answered}/{total} respondió",
+			"ask.skipped": "No respondido",
+			"bash.running": "corriendo",
+			"bash.failed": "Fallido",
+			"bash.stopped": "Detenido",
+			"row.running": "corriendo",
+			"row.preparing": "Preparando la llamada a la herramienta",
+			"row.failed": "Fallido",
+			"row.stopped": "Detenido",
+			"row.commandArguments": "Argumentos de comando",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "inspeccionar",
+			"row.imageSize": "{width}x{height}px, {bytes} bytes",
+			"row.imageSizeDownscaled": "{width}x{height}px (reducido de {originalWidth}x{originalHeight}px), {bytes} bytes",
+			"tool.title.search": "Buscar",
+			"tool.title.read": "leer",
+			"tool.title.bash": "golpe",
+			"tool.title.write": "escribir",
+			"tool.title.edit": "Editar",
+			"tool.title.applyPatch": "Aplicar parche",
+			"tool.title.code": "Código",
+			"tool.title.generic": "llamada de herramienta",
+			"tool.title.inspect": "Consulta entorno Cordis",
+			"tool.title.runCordis": "Ejecute el complemento Cordis",
+			"tool.title.stopCordis": "Detener el complemento Cordis",
+			"tool.title.removeCordis": "Eliminar el complemento Cordis",
+			"tool.title.pwsh": "Pwsh",
+			"tool.title.readImage": "Leer imagen",
+			"tool.title.grep": "grep",
+			"tool.title.glob": "globo",
+			"tool.title.webSearch": "Buscar",
+			"tool.title.webFetch": "buscar",
+			"tool.autoReviewRejected": "Rechazado por Auto review",
+			"tool.autoReviewNotExecuted": "La herramienta no fue ejecutada. Razón: {reason}",
+			"tool.autoReviewReasonFallback": "Auto review no autorizó esta acción",
+			"diff.collapseAria": "Contraer diferencia",
+			"diff.expandAria": "Expanda {count} más líneas diferenciales",
+			"diff.expandRest": "… {count} más líneas",
+			"read.window": "Mostrando {shown} de líneas {total}",
+			"read.collapseAria": "Contraer contenido",
+			"read.expandAria": "Ampliar {count} más líneas",
+			"read.expandRest": "… {count} más líneas",
+			"search.paths": "Rutas {shown}",
+			"search.paths.truncated": "Mostrando {shown} de las rutas {total}",
+			"search.matches": "Coincidencias {shown} · Archivos {files}",
+			"search.matches.truncated": "Mostrando {shown} de coincidencias {total} · Archivos {files}",
+			"search.noResults": "Sin resultados",
+			"search.collapseAria": "Contraer resultados",
+			"search.expandAria": "Expandir {count} más líneas de resultados",
+			"search.expandRest": "… {count} más líneas",
+			"web.noResults": "No se encontraron resultados",
+			"web.sourcesTruncated": "Lista de fuentes truncada",
+			"web.http": "HTTP",
+			"web.contentTruncated": "Contenido truncado",
+			"details.running": "Corriendo…",
+			"queue.count": "Mensajes en cola {n}",
+			"queue.sending": "Enviando…",
+			"queue.image": "Imagen de mensaje en cola",
+			"queue.file": "Archivo en cola {name}",
+			"queue.edit": "Editar mensaje en cola",
+			"queue.edit.unsupported": "Contiene contenido que no es texto; la edición aún no es compatible",
+			"queue.save": "Guardar mensaje en cola",
+			"queue.cancelEdit": "Cancelar edición",
+			"queue.remove": "Eliminar mensaje en cola",
+			"queue.steer": "Redirigir mensaje en cola",
+			"queue.steer.unavailable": "La dirección solo está disponible mientras el agente está en ejecución",
+			"error.sessionInUse": "Esta sesión ya está en uso, posiblemente por otra instancia de DSH en ejecución (como la web dsh o la aplicación de escritorio). Salga de otras instancias de DSH en ejecución y vuelva a intentarlo.",
+			"queue.editFailed": "Error de edición: es posible que este mensaje ya haya comenzado a enviarse.",
+			"queue.removeFailed": "Error al eliminar: es posible que este mensaje ya haya comenzado a enviarse.",
+			"queue.steerFailed": "La dirección falló. Intentar otra vez.",
+			"terminal.signal": "señal {signal}",
+			"terminal.exitCode": "código de salida {code}",
+			"terminal.noExitCode": "sin código de salida",
+			"terminal.commandLine": "Línea de comando {n}",
+			"terminal.running": "corriendo",
+			"terminal.failed": "Fallido",
+			"terminal.done": "hecho",
+			"terminal.noOutput": "Sin salida",
+			"terminal.collapseAria": "Contraer salida",
+			"terminal.expandAria": "Expanda las líneas de salida {n} restantes",
+			"terminal.expandRest": "… {n} más líneas",
+			"terminal.sendInput": "(enviar entrada)",
+			"terminal.session": "Terminal {sessionId}",
+			"tool.title.viewSchedule": "Ver tarea de automatización",
+			"tool.title.editSchedule": "Editar tarea de automatización",
+			"detail.schedule.active": "Habilitado",
+			"detail.schedule.paused": "Pausada",
+			"detail.schedule.ended": "Finalizada",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
+		/** French dictionary, checked against the English keys. */
+		const fr = {
+			"quote.remove": "Supprimer le devis",
+			"shortcut.newline": "Nouvelle ligne",
+			"shortcut.complementary": "Utiliser l’action alternative de mise en attente ou de guidage",
+			"shortcut.slash": "Ouvrir le menu des commandes",
+			"shortcut.mention": "Ouvrir le menu de référence",
+			"hint.plan": PLAN_NEXT_ACTION_EN,
+			"hint.goal": "décrire l'objectif d'une tâche de longue durée",
+			"hint.goal.active": "objectif actif — modifier/mettre en pause/reprendre/effacer",
+			"placeholder.plan": PLAN_NEXT_ACTION_EN,
+			"placeholder.default": "Envoyez un message ou exécutez une tâche, des commandes /, des fichiers @ ou des sessions",
+			"placeholder.unavailable": "Séance indisponible",
+			"placeholder.parentOffline": "Session parent hors ligne\xA0; l'envoi n'est pas disponible mais vous pouvez toujours arrêter l'exécution",
+			"placeholder.hero": "Décrivez ce que vous souhaitez construire, / commandes, @ fichiers ou sessions",
+			"placeholder.workspace": "Choisissez un espace de travail pour commencer",
+			"placeholder.steerQueue": "Cmd/Ctrl+Entrée dirige tous les messages en file d'attente",
+			"input.commands": "Ajouter des fichiers ou exécuter des commandes",
+			"input.file": "Fichier",
+			"input.stop": "Arrêter la génération",
+			"input.send": "Envoyer le message",
+			"input.sending": "Envoi du message",
+			"input.send.queue": "Message de file d'attente",
+			"input.send.steer": "Guider avec ce message",
+			"attachment.pending": "Pièces jointes en attente",
+			"attachment.scrollLeft": "Faire défiler les pièces jointes vers la gauche",
+			"attachment.scrollRight": "Faire défiler les pièces jointes vers la droite",
+			"attachment.dropTitle": "Faites glisser des fichiers ou des images ici pour les ajouter",
+			"attachment.dropDesc": "Limite d'images\xA0: jusqu'à des images {count}, {size} chacune",
+			"attachment.dropBlocked": "Les fichiers et les images ne peuvent pas être ajoutés pour le moment",
+			"attachment.directoryDesktopOnly": "Les dossiers ne peuvent être ajoutés que dans l'application de bureau\xA0; ajouter des fichiers individuels dans le navigateur",
+			"attachment.pathUnavailable": "Impossible d'obtenir le chemin du dossier\xA0; fais-le glisser à nouveau",
+			"attachment.pathUnsupported": "Le chemin contient des caractères qu'une référence ne peut pas transporter\xA0; renommez-le et réessayez",
+			"image.pending": "Images en attente",
+			"image.openOriginal": "Voir l'original",
+			"image.openOriginalLabel": "{label}, cliquez pour voir l'original",
+			"image.remove": "Supprimer l'image {name}",
+			"image.original": "Image originale",
+			"image.label": "Images",
+			"image.loadFailed": "L'image n'a pas pu être chargée\xA0; cliquez pour réessayer",
+			"image.loading": "Chargement de l'image…",
+			"image.preview": "Aperçu de l'image originale",
+			"image.closePreview": "Fermer l'aperçu de l'image d'origine",
+			"image.unsupportedType": "Seules les images PNG, JPG, WebP et GIF sont prises en charge",
+			"image.tooMany": "Un message peut inclure jusqu'à des images {count}",
+			"image.fileTooLarge": "Chaque image doit être plus petite que {size}",
+			"image.totalTooLarge": "Les images dépassent {size} au total\xA0; enlève-en un peu et réessaye",
+			"image.tooManyPixels": "La résolution de l'image est trop élevée\xA0; compressez-le et réessayez",
+			"image.dimensionTooLarge": "Les côtés de l'image doivent être au maximum {size}px\xA0; réduisez-le et réessayez",
+			"image.modelUnsupported": "Le modèle actuel ne prend pas en charge les images\xA0; passer à un modèle qui le fait",
+			"image.sendFailed": "L'envoi des images a échoué ({reason})\xA0; rajoutez-les et réessayez",
+			"file.pending": "Fichiers en attente",
+			"file.remove": "Supprimer le fichier {name}",
+			"file.uploading": "Téléchargement…",
+			"file.uploadFailed": "Échec du téléchargement\xA0; cliquez pour réessayer",
+			"file.retry": "Réessayez de télécharger {name}",
+			"file.stillUploading": "Les fichiers sont toujours en cours de téléchargement\xA0; envoyer après avoir fini",
+			"file.sessionUnavailable": "Séance indisponible\xA0; les fichiers ne peuvent pas être téléchargés",
+			"file.notStaged": "Le téléchargement du fichier n'est pas terminé\xA0; rajoutez-le et réessayez",
+			"file.label": "Fichier",
+			"context.aria": "{percent} de contexte utilisé",
+			"context.used": "du contexte utilisé",
+			"context.system": "Invite système",
+			"context.tools": "Définitions d'outils",
+			"context.messages": "Messages",
+			"settings.enter.title": "Comportement d'envoi lorsque vous êtes occupé",
+			"settings.enter.description": "Ce que font Entrée et le bouton Envoyer pendant l'exécution de l'agent\xA0; Cmd/Ctrl+Entrée utilise l'autre comportement",
+			"settings.enter.queue": "File d'attente",
+			"settings.enter.steer": "Guider",
+			"hero.headline": "Dans l'inconnu",
+			"hero.preview": "Aperçu",
+			"hero.chooseWorkspace": "Choisir un espace de travail",
+			"session.hierarchy": "Hiérarchie des sessions",
+			"session.moreViews": "Plus de vues de conversations",
+			"todo.title": "À faire",
+			"todo.progress.done": "{done} terminé",
+			"todo.progress.active": "{active} en cours",
+			"todo.progress.pending": "{pending} en attente",
+			"todo.status.completed": "Terminé",
+			"todo.status.inProgress": "En cours",
+			"todo.status.pending": "En attente",
+			"todo.rowTitle": "Mettre à jour la liste de tâches",
+			"tool.title.createGoal": "Créer un objectif",
+			"tool.title.getGoal": "Afficher l'objectif",
+			"tool.title.updateGoal": "Objectif de mise à jour",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "Créer une tâche d'automatisation",
+			"tool.title.listSchedules": "Lister les tâches d'automatisation",
+			"tool.title.deleteSchedule": "Supprimer la tâche d'automatisation",
+			"tool.title.updateSchedule": "Mettre à jour la tâche d'automatisation",
+			"detail.state": "Statut",
+			"detail.todo.completed": "Terminé",
+			"detail.todo.in_progress": "En cours",
+			"detail.todo.pending": "En attente",
+			"detail.todo.empty": "La liste de tâches est vide",
+			"todo.diff.initial": "Liste initiale",
+			"todo.diff.compare": "Changements depuis la liste précédente",
+			"todo.diff.unavailable": "Liste précédente indisponible",
+			"todo.diff.noChanges": "Aucun changement dans la liste",
+			"todo.diff.added": "{count} ajouté",
+			"todo.diff.updated": "{count} mis à jour",
+			"todo.diff.removed": "{count} supprimé",
+			"todo.diff.unchanged": "{count} inchangé",
+			"todo.diff.addedItem": "Ajouté",
+			"todo.diff.updatedItem": "Statut modifié",
+			"todo.diff.movedItem": "Réorganisé",
+			"todo.diff.removedItem": "Supprimé",
+			"detail.goal.empty": "Aucun but",
+			"detail.goal.active": "Actif",
+			"detail.goal.disarmed": "En attente de suite",
+			"detail.goal.paused": "En pause",
+			"detail.goal.blocked": "Bloqué",
+			"detail.goal.complete": "Terminé",
+			"detail.goal.rounds": "Tours",
+			"detail.goal.reason": "Bloqueur",
+			"detail.days": "{count}d",
+			"detail.hours": "{count} h",
+			"detail.minutes": "{count} min.",
+			"detail.seconds": "{count}s",
+			"detail.schedule.once": "Une fois",
+			"detail.schedule.every": "Chaque {interval}",
+			"detail.schedule.when": "Prévu pour",
+			"detail.schedule.frequency": "Répéter",
+			"detail.schedule.scheduled": "Programmé",
+			"detail.schedule.overdue": "En retard, en attente de reprise de la session",
+			"detail.schedule.empty": "Aucune tâche d'automatisation",
+			"detail.schedule.deleted": "Supprimé",
+			"detail.schedule.count": "{count} tâches d'automatisation",
+			"detail.schedule.daily": "Tous les jours à {time} ({zone})",
+			"detail.schedule.weekly": "Hebdomadaire sur {days} à {time} ({zone})",
+			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "Personnalisé",
+			"detail.weekday.1": "lundi",
+			"detail.weekday.2": "mar.",
+			"detail.weekday.3": "mer",
+			"detail.weekday.4": "jeu.",
+			"detail.weekday.5": "vendredi",
+			"detail.weekday.6": "Samedi",
+			"detail.weekday.7": "Soleil",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "Inspecter les fournisseurs",
+			"tool.title.queryRuntime": "Exécution de la requête",
+			"tool.title.inspectPlugins": "Inspecter les plugins",
+			"tool.title.workflow": "Exécuter le flux de travail",
+			"tool.title.ralph": "Exécuter la boucle Ralph",
+			"tool.title.readEvent": "Lire l'événement",
+			"tool.title.searchEvents": "Rechercher des événements",
+			"tool.title.traceEvent": "Événement de trace",
+			"tool.title.searchSessions": "Rechercher des sessions",
+			"tool.title.traceSession": "Session de traçage",
+			"tool.title.listModels": "Liste des modèles",
+			"tool.title.subagent": "Créer un sous-agent",
+			"tool.title.listAgents": "Liste des sous-agents",
+			"tool.title.sendMessage": "Envoyer le message",
+			"tool.title.interruptAgent": "Agent d'interruption",
+			"tool.title.listJobs": "Répertorier les tâches en arrière-plan",
+			"tool.title.readJob": "Lire le résultat de la tâche",
+			"tool.title.killJob": "Annuler le travail en arrière-plan",
+			"tool.title.openTerminal": "Terminal ouvert",
+			"tool.title.readTerminal": "Lire le terminal",
+			"tool.title.listTerminals": "Liste des terminaux",
+			"tool.title.signalTerminal": "Borne de signal",
+			"tool.title.closeTerminal": "Fermer le terminal",
+			"tool.title.lsp": "Symboles du code de requête",
+			"tool.title.findDefinition": "Trouver une définition",
+			"tool.title.findReferences": "Trouver des références",
+			"tool.title.findImplementation": "Trouver la mise en œuvre",
+			"tool.title.hoverSymbol": "Inspecter le symbole",
+			"tool.title.spawnTeammate": "Créer un coéquipier",
+			"tool.title.createTeamTask": "Créer une tâche d'équipe",
+			"tool.title.getTeamTask": "Lire la tâche d'équipe",
+			"tool.title.updateTeamTask": "Mettre à jour la tâche de l'équipe",
+			"tool.title.listTeamTasks": "Répertorier les tâches de l'équipe",
+			"tool.title.waitAgent": "Attendez le sous-agent",
+			"detail.recordedResult": "Résultat enregistré",
+			"detail.empty": "Aucun résultat",
+			"detail.none": "Aucun",
+			"detail.yes": "Oui",
+			"detail.no": "Non",
+			"detail.moreInInspect": "{count} plus d'articles disponibles dans Inspecter",
+			"detail.status.running": "Courir",
+			"detail.status.idle": "Inactif",
+			"detail.status.ready": "Prêt",
+			"detail.status.inactive": "Inactif",
+			"detail.status.provisioning": "Approvisionnement",
+			"detail.status.failed": "Échec",
+			"detail.status.completed": "Terminé",
+			"detail.status.deleted": "Supprimé",
+			"detail.status.killed": "Annulé",
+			"detail.status.accepted": "Accepté",
+			"detail.status.queued": "En file d'attente",
+			"detail.status.exited": "Quitté",
+			"detail.field.id": "ID",
+			"detail.field.revision": "Révision",
+			"detail.field.platform": "Plateforme",
+			"detail.field.provider": "Fournisseur",
+			"detail.field.model": "Modèle",
+			"detail.field.role": "Rôle",
+			"detail.field.context": "Contexte",
+			"detail.field.owner": "Propriétaire",
+			"detail.field.ready": "Prêt",
+			"detail.field.dependencies": "Dépendances",
+			"detail.field.writeScopes": "Écrire des étendues",
+			"detail.field.warnings": "Avertissements",
+			"detail.field.diagnostics": "Diagnostic",
+			"detail.field.methods": "Méthodes",
+			"detail.field.inputSchema": "Schéma d'entrée",
+			"detail.field.outputSchema": "Schéma de sortie",
+			"detail.field.currentPackage": "Forfait actuel",
+			"detail.field.nextPackage": "Forfait suivant",
+			"detail.field.latestRun": "Dernière course",
+			"detail.field.packages": "Forfaits",
+			"detail.field.registrations": "Inscriptions",
+			"detail.field.props": "Accessoires",
+			"detail.field.data": "Données",
+			"detail.field.source": "Source",
+			"detail.field.content": "Contenu",
+			"detail.field.message": "Message",
+			"detail.field.messageId": "Identifiant du message",
+			"detail.field.root": "Racine",
+			"detail.field.pid": "ID de processus",
+			"detail.field.type": "Tapez",
+			"detail.field.time": "Temps",
+			"detail.field.seq": "Séquence d'événements",
+			"detail.field.turn": "Tour",
+			"detail.field.step": "Étape",
+			"detail.field.callId": "Identifiant d'appel",
+			"detail.field.agents": "Les agents ont commencé",
+			"detail.field.result": "Résultat",
+			"detail.field.parent": "Parent",
+			"detail.field.depth": "Profondeur",
+			"detail.field.exitCode": "Code de sortie",
+			"detail.field.signal": "Signal",
+			"detail.field.previousStatus": "Statut précédent",
+			"detail.field.agent": "ID d'agent",
+			"detail.field.job": "ID de travail",
+			"detail.field.task": "Tâche",
+			"detail.field.processGroup": "Groupe de processus",
+			"detail.field.availability": "Disponibilité",
+			"detail.field.bestMatch": "Meilleure correspondance",
+			"detail.field.target": "Événement cible",
+			"detail.field.surface": "Statut d'enregistrement",
+			"detail.agents.count": "Agents {count}",
+			"detail.jobs.count": "Travaux d'arrière-plan {count}",
+			"detail.terminals.count": "Bornes {count}",
+			"detail.tasks.count": "Tâches de l'équipe {count}",
+			"detail.tasks.nextPage": "Plus de tâches disponibles\xA0; le curseur suivant est {cursor}",
+			"detail.locations.count": "Localisations {count}",
+			"detail.location": "Ligne {line}, colonne {column}",
+			"detail.receipt.delivered": "Message délivré",
+			"detail.receipt.interrupt": "Interruption demandée",
+			"detail.receipt.started": "Commencé",
+			"detail.receipt.cancel": "Annulation demandée",
+			"detail.receipt.alreadyFinished": "Déjà fini",
+			"detail.receipt.signal": "Signal délivré",
+			"detail.receipt.closed": "Fermé",
+			"detail.receipt.closing": "Clôture",
+			"detail.wait.noProgress": "Aucun sous-agent actif",
+			"detail.wait.title": "Activité du sous-agent",
+			"detail.wait.timeout": "Le délai d'attente a expiré",
+			"detail.wait.changed": "Changement détecté",
+			"detail.agent.reply": "Réponse de l'agent",
+			"detail.models.title": "Modèles disponibles",
+			"detail.output.lines": "Lignes {begin}–{end} de {total}",
+			"detail.output.truncated": "Sortie tronquée",
+			"detail.providers.count": "{count} inspecte les fournisseurs",
+			"detail.plugins.count": "Plugins dynamiques {count}",
+			"detail.workflow.script": "Script de flux de travail",
+			"detail.ralph.reportedComplete": "Le travailleur a signalé l'achèvement",
+			"detail.ralph.reportedBlocker": "Le travailleur a signalé un bloqueur",
+			"detail.ralph.limit": "Limite de tours atteinte",
+			"detail.report.nextSteps": "Travail restant",
+			"detail.trace.replacedBy": "Remplacé par",
+			"detail.trace.replacementChain": "Chaîne de remplacement",
+			"detail.trace.replaces": "Événements remplacés",
+			"detail.trace.sources": "Événements sources",
+			"detail.trace.derived": "Événements dérivés",
+			"detail.trace.ancestors": "Séances d'ancêtres",
+			"detail.trace.descendants": "Séances descendantes",
+			"detail.matches.count": "Correspondances {count}",
+			"detail.matches.capped": "Limite de résultat atteinte\xA0; affiner la recherche pour en savoir plus",
+			"detail.event.neighbors": "Événements environnants",
+			"todo.completed": "{done}/{total} terminé",
+			"command.attachmentsUnsupported": "/{command} n'accepte pas les pièces jointes\xA0; retirez-les d'abord",
+			"ask.rowTitle": "Poser une question",
+			"ask.waiting": "en attendant",
+			"ask.pending": "suite\xA0; réponse toujours disponible",
+			"ask.pendingDetail": "Ces questions en suspens restent à la charge du compositeur.",
+			"ask.reopen": "Réponse",
+			"ask.review": "Afficher les réponses",
+			"ask.closed": "fermé",
+			"ask.closedDetail": "Cette question est fermée ; son résultat est dans la conversation ci-dessous.",
+			"ask.cancelled": "annulé",
+			"ask.cancelledDetail": "Cet ensemble de questions a été annulé avant que les réponses ne soient soumises.",
+			"ask.interrupted": "interrompu",
+			"ask.interruptedDetail": "Cette série de questions a été interrompue avant que les réponses ne soient soumises.",
+			"ask.answered": "{answered}/{total} répondu",
+			"ask.skipped": "Pas de réponse",
+			"bash.running": "Courir",
+			"bash.failed": "Échec",
+			"bash.stopped": "Arrêté",
+			"row.running": "Courir",
+			"row.preparing": "Préparation de l'appel à l'outil",
+			"row.failed": "Échec",
+			"row.stopped": "Arrêté",
+			"row.commandArguments": "Arguments de commande",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "Inspecter",
+			"row.imageSize": "{width}x{height}px, {bytes} octets",
+			"row.imageSizeDownscaled": "{width}x{height}px (réduction de {originalWidth}x{originalHeight}px), {bytes} octets",
+			"tool.title.search": "Rechercher",
+			"tool.title.read": "Lire",
+			"tool.title.bash": "Frapper",
+			"tool.title.write": "Écrire",
+			"tool.title.edit": "Modifier",
+			"tool.title.applyPatch": "Appliquer le patch",
+			"tool.title.code": "Coder",
+			"tool.title.generic": "Appel d'outil",
+			"tool.title.inspect": "Interroger l'environnement Cordis",
+			"tool.title.runCordis": "Exécuter le plugin Cordis",
+			"tool.title.stopCordis": "Arrêter le plug-in Cordis",
+			"tool.title.removeCordis": "Supprimer le plug-in Cordis",
+			"tool.title.pwsh": "Pwsh",
+			"tool.title.readImage": "Lire l'image",
+			"tool.title.grep": "Grep",
+			"tool.title.glob": "Glob",
+			"tool.title.webSearch": "Rechercher",
+			"tool.title.webFetch": "Récupérer",
+			"tool.autoReviewRejected": "Rejeté par Auto review",
+			"tool.autoReviewNotExecuted": "L'outil n'a pas été exécuté. Raison\xA0: {reason}",
+			"tool.autoReviewReasonFallback": "Auto review n'a pas autorisé cette action",
+			"diff.collapseAria": "Réduire la différence",
+			"diff.expandAria": "Développez {count} plus de lignes de différence",
+			"diff.expandRest": "… {count} plus de lignes",
+			"read.window": "Affichage des lignes {shown} des lignes {total}",
+			"read.collapseAria": "Réduire le contenu",
+			"read.expandAria": "Développez {count} plus de lignes",
+			"read.expandRest": "… {count} plus de lignes",
+			"search.paths": "Chemins {shown}",
+			"search.paths.truncated": "Affichage des chemins {shown} sur {total}",
+			"search.matches": "Correspondances {shown} · Fichiers {files}",
+			"search.matches.truncated": "Affichage des correspondances {shown} des correspondances {total} · Fichiers {files}",
+			"search.noResults": "Aucun résultat",
+			"search.collapseAria": "Réduire les résultats",
+			"search.expandAria": "Développez {count} plus de lignes de résultats",
+			"search.expandRest": "… {count} plus de lignes",
+			"web.noResults": "Aucun résultat trouvé",
+			"web.sourcesTruncated": "Liste source tronquée",
+			"web.http": "HTTP",
+			"web.contentTruncated": "Contenu tronqué",
+			"details.running": "Courir…",
+			"queue.count": "Messages en file d'attente {n}",
+			"queue.sending": "Envoi…",
+			"queue.image": "Image du message en file d'attente",
+			"queue.file": "Fichier en file d'attente {name}",
+			"queue.edit": "Modifier le message en file d'attente",
+			"queue.edit.unsupported": "Contient du contenu non textuel\xA0; l'édition n'est pas encore prise en charge",
+			"queue.save": "Enregistrer le message en file d'attente",
+			"queue.cancelEdit": "Annuler la modification",
+			"queue.remove": "Supprimer le message en file d'attente",
+			"queue.steer": "Guider avec le message en attente",
+			"queue.steer.unavailable": "Le pilotage est disponible uniquement lorsque l'agent est en cours d'exécution",
+			"error.sessionInUse": "Cette session est déjà utilisée, éventuellement par une autre instance DSH en cours d'exécution (telle que le Web dsh ou l'application de bureau). Quittez les autres instances DSH en cours d'exécution et réessayez.",
+			"queue.editFailed": "Échec de la modification\xA0: l'envoi de ce message a peut-être déjà commencé.",
+			"queue.removeFailed": "Échec de la suppression\xA0: l'envoi de ce message a peut-être déjà commencé.",
+			"queue.steerFailed": "La direction a échoué. Essayer à nouveau.",
+			"terminal.signal": "signal {signal}",
+			"terminal.exitCode": "code de sortie {code}",
+			"terminal.noExitCode": "pas de code de sortie",
+			"terminal.commandLine": "Ligne de commande {n}",
+			"terminal.running": "Courir",
+			"terminal.failed": "Échec",
+			"terminal.done": "Terminé",
+			"terminal.noOutput": "Aucune sortie",
+			"terminal.collapseAria": "Réduire la sortie",
+			"terminal.expandAria": "Développez les lignes de sortie {n} restantes",
+			"terminal.expandRest": "… {n} plus de lignes",
+			"terminal.sendInput": "(envoyer une entrée)",
+			"terminal.session": "Borne {sessionId}",
+			"tool.title.viewSchedule": "Voir la tâche d'automatisation",
+			"tool.title.editSchedule": "Modifier la tâche d'automatisation",
+			"detail.schedule.active": "Activé",
+			"detail.schedule.paused": "Suspendue",
+			"detail.schedule.ended": "Terminée",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
+		/** German dictionary, checked against the English keys. */
+		const de = {
+			"quote.remove": "Zitat entfernen",
+			"shortcut.newline": "Neue Zeile",
+			"shortcut.complementary": "Die alternative Aktion zum Vormerken oder Lenken verwenden",
+			"shortcut.slash": "Befehlsmenü öffnen",
+			"shortcut.mention": "Referenzmenü öffnen",
+			"hint.plan": PLAN_NEXT_ACTION_EN,
+			"hint.goal": "Beschreiben Sie das Ziel einer lang andauernden Aufgabe",
+			"hint.goal.active": "Ziel aktiv – Bearbeiten / Anhalten / Fortsetzen / Löschen",
+			"placeholder.plan": PLAN_NEXT_ACTION_EN,
+			"placeholder.default": "Senden Sie eine Nachricht oder führen Sie eine Aufgabe, /-Befehle, @-Dateien oder Sitzungen aus",
+			"placeholder.unavailable": "Sitzung nicht verfügbar",
+			"placeholder.parentOffline": "Elternsitzung offline; Das Senden ist nicht möglich, aber Sie können den Lauf trotzdem stoppen",
+			"placeholder.hero": "Beschreiben Sie, was Sie erstellen möchten: /-Befehle, @-Dateien oder Sitzungen",
+			"placeholder.workspace": "Wählen Sie einen Arbeitsbereich zum Starten aus",
+			"placeholder.steerQueue": "Cmd/Strg+Enter steuert alle Nachrichten in der Warteschlange",
+			"input.commands": "Fügen Sie Dateien hinzu oder führen Sie Befehle aus",
+			"input.file": "Datei",
+			"input.stop": "Generierung stoppen",
+			"input.send": "Nachricht senden",
+			"input.sending": "Nachricht wird gesendet",
+			"input.send.queue": "Warteschlangennachricht",
+			"input.send.steer": "Mit Nachricht lenken",
+			"attachment.pending": "Ausstehende Anhänge",
+			"attachment.scrollLeft": "Anhänge nach links scrollen",
+			"attachment.scrollRight": "Anhänge nach rechts scrollen",
+			"attachment.dropTitle": "Ziehen Sie Dateien oder Bilder hierher, um sie hinzuzufügen",
+			"attachment.dropDesc": "Bildbeschränkung: bis zu {count} Bilder, jeweils {size}",
+			"attachment.dropBlocked": "Dateien und Bilder können derzeit nicht hinzugefügt werden",
+			"attachment.directoryDesktopOnly": "Ordner können nur in der Desktop-App hinzugefügt werden; einzelne Dateien im Browser hinzufügen",
+			"attachment.pathUnavailable": "Der Ordnerpfad konnte nicht abgerufen werden; Ziehen Sie es erneut hinein",
+			"attachment.pathUnsupported": "Der Pfad enthält Zeichen, die eine Referenz nicht enthalten kann; Benennen Sie es um und versuchen Sie es erneut",
+			"image.pending": "Ausstehende Bilder",
+			"image.openOriginal": "Original ansehen",
+			"image.openOriginalLabel": "{label}, klicken Sie, um das Original anzuzeigen",
+			"image.remove": "Bild {name} entfernen",
+			"image.original": "Originalbild",
+			"image.label": "Bild",
+			"image.loadFailed": "Bild konnte nicht geladen werden; Klicken Sie, um es noch einmal zu versuchen",
+			"image.loading": "Bild wird geladen…",
+			"image.preview": "Originalbildvorschau",
+			"image.closePreview": "Originalbildvorschau schließen",
+			"image.unsupportedType": "Es werden nur PNG-, JPG-, WebP- und GIF-Bilder unterstützt",
+			"image.tooMany": "Eine Nachricht kann bis zu {count} Bilder enthalten",
+			"image.fileTooLarge": "Jedes Bild muss kleiner als {size} sein",
+			"image.totalTooLarge": "Die Anzahl der Bilder übersteigt insgesamt {size}; Entfernen Sie einige davon und versuchen Sie es erneut",
+			"image.tooManyPixels": "Die Bildauflösung ist zu hoch; Komprimieren Sie es und versuchen Sie es erneut",
+			"image.dimensionTooLarge": "Bildseiten dürfen höchstens {size}px sein; Skalieren Sie es herunter und versuchen Sie es erneut",
+			"image.modelUnsupported": "Das aktuelle Modell unterstützt keine Bilder; Wechseln Sie zu einem Modell, das dies tut",
+			"image.sendFailed": "Das Senden von Bildern ist fehlgeschlagen ({reason}); Fügen Sie sie erneut hinzu und versuchen Sie es erneut",
+			"file.pending": "Ausstehende Dateien",
+			"file.remove": "Datei {name} entfernen",
+			"file.uploading": "Hochladen…",
+			"file.uploadFailed": "Hochladen fehlgeschlagen; Klicken Sie, um es noch einmal zu versuchen",
+			"file.retry": "Versuchen Sie erneut, {name} hochzuladen",
+			"file.stillUploading": "Dateien werden noch hochgeladen; senden, nachdem sie fertig sind",
+			"file.sessionUnavailable": "Sitzung nicht verfügbar; Dateien können nicht hochgeladen werden",
+			"file.notStaged": "Der Upload der Datei wurde noch nicht abgeschlossen. Fügen Sie es erneut hinzu und versuchen Sie es erneut",
+			"file.label": "Datei",
+			"context.aria": "{percent} des verwendeten Kontexts",
+			"context.used": "des verwendeten Kontexts",
+			"context.system": "Systemaufforderung",
+			"context.tools": "Werkzeugdefinitionen",
+			"context.messages": "Nachrichten",
+			"settings.enter.title": "Sendeverhalten, während beschäftigt ist",
+			"settings.enter.description": "Was die Eingabetaste und die Schaltfläche „Senden“ bewirken, während der Agent ausgeführt wird; Cmd/Strg+Enter verwendet das andere Verhalten",
+			"settings.enter.queue": "Warteschlange",
+			"settings.enter.steer": "Lenken",
+			"hero.headline": "Ins Unbekannte",
+			"hero.preview": "Vorschau",
+			"hero.chooseWorkspace": "Wählen Sie einen Arbeitsbereich",
+			"session.hierarchy": "Sitzungshierarchie",
+			"session.moreViews": "Weitere Konversationsansichten",
+			"todo.title": "Aufgaben",
+			"todo.progress.done": "{done} abgeschlossen",
+			"todo.progress.active": "{active} in Bearbeitung",
+			"todo.progress.pending": "{pending} ausstehend",
+			"todo.status.completed": "Abgeschlossen",
+			"todo.status.inProgress": "In Bearbeitung",
+			"todo.status.pending": "Ausstehend",
+			"todo.rowTitle": "To-Do-Liste aktualisieren",
+			"tool.title.createGoal": "Ziel erstellen",
+			"tool.title.getGoal": "Ziel ansehen",
+			"tool.title.updateGoal": "Ziel aktualisieren",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "Automatisierungsaufgabe erstellen",
+			"tool.title.listSchedules": "Automatisierungsaufgaben auflisten",
+			"tool.title.deleteSchedule": "Automatisierungsaufgabe löschen",
+			"tool.title.updateSchedule": "Automatisierungsaufgabe aktualisieren",
+			"detail.state": "Status",
+			"detail.todo.completed": "Abgeschlossen",
+			"detail.todo.in_progress": "In Bearbeitung",
+			"detail.todo.pending": "Ausstehend",
+			"detail.todo.empty": "Die To-Do-Liste ist leer",
+			"todo.diff.initial": "Erste Liste",
+			"todo.diff.compare": "Änderungen gegenüber der vorherigen Liste",
+			"todo.diff.unavailable": "Vorherige Liste nicht verfügbar",
+			"todo.diff.noChanges": "Keine Änderungen an der Liste",
+			"todo.diff.added": "{count} hinzugefügt",
+			"todo.diff.updated": "{count} aktualisiert",
+			"todo.diff.removed": "{count} entfernt",
+			"todo.diff.unchanged": "{count} unverändert",
+			"todo.diff.addedItem": "Hinzugefügt",
+			"todo.diff.updatedItem": "Status geändert",
+			"todo.diff.movedItem": "Nachbestellt",
+			"todo.diff.removedItem": "Entfernt",
+			"detail.goal.empty": "Kein Ziel",
+			"detail.goal.active": "Aktiv",
+			"detail.goal.disarmed": "Warten auf Fortsetzung",
+			"detail.goal.paused": "Angehalten",
+			"detail.goal.blocked": "Blockiert",
+			"detail.goal.complete": "Abgeschlossen",
+			"detail.goal.rounds": "Runden",
+			"detail.goal.reason": "Blocker",
+			"detail.days": "{count} d",
+			"detail.hours": "{count} h",
+			"detail.minutes": "{count} min",
+			"detail.seconds": "{count} s",
+			"detail.schedule.once": "Einmal",
+			"detail.schedule.every": "Jeder {interval}",
+			"detail.schedule.when": "Geplant für",
+			"detail.schedule.frequency": "Wiederholen",
+			"detail.schedule.scheduled": "Geplant",
+			"detail.schedule.overdue": "Überfällig, ich warte auf die Fortsetzung der Sitzung",
+			"detail.schedule.empty": "Keine Automatisierungsaufgaben",
+			"detail.schedule.deleted": "Gelöscht",
+			"detail.schedule.count": "{count} Automatisierungsaufgaben",
+			"detail.schedule.daily": "Täglich um {time} ({zone})",
+			"detail.schedule.weekly": "Wöchentlich auf {days} um {time} ({zone})",
+			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "Benutzerdefiniert",
+			"detail.weekday.1": "Mo",
+			"detail.weekday.2": "Di",
+			"detail.weekday.3": "Mi",
+			"detail.weekday.4": "Do",
+			"detail.weekday.5": "Fr",
+			"detail.weekday.6": "Sa",
+			"detail.weekday.7": "Sonne",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "Anbieter prüfen",
+			"tool.title.queryRuntime": "Abfragelaufzeit",
+			"tool.title.inspectPlugins": "Plugins prüfen",
+			"tool.title.workflow": "Workflow ausführen",
+			"tool.title.ralph": "Führen Sie die Ralph-Schleife aus",
+			"tool.title.readEvent": "Veranstaltung lesen",
+			"tool.title.searchEvents": "Suchen Sie nach Ereignissen",
+			"tool.title.traceEvent": "Trace-Ereignis",
+			"tool.title.searchSessions": "Sitzungen suchen",
+			"tool.title.traceSession": "Trace-Sitzung",
+			"tool.title.listModels": "Modelle auflisten",
+			"tool.title.subagent": "Subagent erstellen",
+			"tool.title.listAgents": "Subagenten auflisten",
+			"tool.title.sendMessage": "Nachricht senden",
+			"tool.title.interruptAgent": "Interrupt-Agent",
+			"tool.title.listJobs": "Hintergrundjobs auflisten",
+			"tool.title.readJob": "Jobausgabe lesen",
+			"tool.title.killJob": "Hintergrundjob abbrechen",
+			"tool.title.openTerminal": "Terminal öffnen",
+			"tool.title.readTerminal": "Terminal lesen",
+			"tool.title.listTerminals": "Terminals auflisten",
+			"tool.title.signalTerminal": "Signalklemme",
+			"tool.title.closeTerminal": "Terminal schließen",
+			"tool.title.lsp": "Codesymbole abfragen",
+			"tool.title.findDefinition": "Definition finden",
+			"tool.title.findReferences": "Finden Sie Referenzen",
+			"tool.title.findImplementation": "Umsetzung finden",
+			"tool.title.hoverSymbol": "Symbol prüfen",
+			"tool.title.spawnTeammate": "Teamkollege erstellen",
+			"tool.title.createTeamTask": "Teamaufgabe erstellen",
+			"tool.title.getTeamTask": "Teamaufgabe lesen",
+			"tool.title.updateTeamTask": "Teamaufgabe aktualisieren",
+			"tool.title.listTeamTasks": "Teamaufgaben auflisten",
+			"tool.title.waitAgent": "Warten Sie auf den Subagenten",
+			"detail.recordedResult": "Aufgezeichnetes Ergebnis",
+			"detail.empty": "Keine Ergebnisse",
+			"detail.none": "Keine",
+			"detail.yes": "Ja",
+			"detail.no": "Nein",
+			"detail.moreInInspect": "{count} weitere Artikel in Inspect verfügbar",
+			"detail.status.running": "Laufen",
+			"detail.status.idle": "Leerlauf",
+			"detail.status.ready": "Bereit",
+			"detail.status.inactive": "Inaktiv",
+			"detail.status.provisioning": "Bereitstellung",
+			"detail.status.failed": "Fehlgeschlagen",
+			"detail.status.completed": "Abgeschlossen",
+			"detail.status.deleted": "Gelöscht",
+			"detail.status.killed": "Abgesagt",
+			"detail.status.accepted": "Akzeptiert",
+			"detail.status.queued": "In der Warteschlange",
+			"detail.status.exited": "Ausgegangen",
+			"detail.field.id": "ID",
+			"detail.field.revision": "Überarbeitung",
+			"detail.field.platform": "Plattform",
+			"detail.field.provider": "Anbieter",
+			"detail.field.model": "Modell",
+			"detail.field.role": "Rolle",
+			"detail.field.context": "Kontext",
+			"detail.field.owner": "Besitzer",
+			"detail.field.ready": "Bereit",
+			"detail.field.dependencies": "Abhängigkeiten",
+			"detail.field.writeScopes": "Bereiche schreiben",
+			"detail.field.warnings": "Warnungen",
+			"detail.field.diagnostics": "Diagnose",
+			"detail.field.methods": "Methoden",
+			"detail.field.inputSchema": "Eingabeschema",
+			"detail.field.outputSchema": "Ausgabeschema",
+			"detail.field.currentPackage": "Aktuelles Paket",
+			"detail.field.nextPackage": "Nächstes Paket",
+			"detail.field.latestRun": "Letzter Lauf",
+			"detail.field.packages": "Pakete",
+			"detail.field.registrations": "Anmeldungen",
+			"detail.field.props": "Requisiten",
+			"detail.field.data": "Daten",
+			"detail.field.source": "Quelle",
+			"detail.field.content": "Inhalt",
+			"detail.field.message": "Nachricht",
+			"detail.field.messageId": "Nachrichten-ID",
+			"detail.field.root": "Wurzel",
+			"detail.field.pid": "Prozess-ID",
+			"detail.field.type": "Typ",
+			"detail.field.time": "Zeit",
+			"detail.field.seq": "Ereignissequenz",
+			"detail.field.turn": "Runde",
+			"detail.field.step": "Schritt",
+			"detail.field.callId": "Aufruf-ID",
+			"detail.field.agents": "Agenten begannen",
+			"detail.field.result": "Ergebnis",
+			"detail.field.parent": "Eltern",
+			"detail.field.depth": "Tiefe",
+			"detail.field.exitCode": "Exit-Code",
+			"detail.field.signal": "Signal",
+			"detail.field.previousStatus": "Vorheriger Stand",
+			"detail.field.agent": "Agenten-ID",
+			"detail.field.job": "Job-ID",
+			"detail.field.task": "Aufgabe",
+			"detail.field.processGroup": "Prozessgruppe",
+			"detail.field.availability": "Verfügbarkeit",
+			"detail.field.bestMatch": "Beste Übereinstimmung",
+			"detail.field.target": "Zielereignis",
+			"detail.field.surface": "Aufnahmestatus",
+			"detail.agents.count": "{count}-Agenten",
+			"detail.jobs.count": "{count} Hintergrundjobs",
+			"detail.terminals.count": "{count}-Klemmen",
+			"detail.tasks.count": "{count} Teamaufgaben",
+			"detail.tasks.nextPage": "Weitere Aufgaben verfügbar; Der nächste Cursor ist {cursor}",
+			"detail.locations.count": "{count}-Standorte",
+			"detail.location": "Zeile {line}, Spalte {column}",
+			"detail.receipt.delivered": "Nachricht zugestellt",
+			"detail.receipt.interrupt": "Unterbrechung angefordert",
+			"detail.receipt.started": "Begonnen",
+			"detail.receipt.cancel": "Stornierung beantragt",
+			"detail.receipt.alreadyFinished": "Schon fertig",
+			"detail.receipt.signal": "Signal geliefert",
+			"detail.receipt.closed": "Geschlossen",
+			"detail.receipt.closing": "Schließung",
+			"detail.wait.noProgress": "Keine aktiven Subagenten",
+			"detail.wait.title": "Aktivität des Subagenten",
+			"detail.wait.timeout": "Wartezeit abgelaufen",
+			"detail.wait.changed": "Änderung erkannt",
+			"detail.agent.reply": "Antwort des Agenten",
+			"detail.models.title": "Verfügbare Modelle",
+			"detail.output.lines": "Linien {begin}–{end} von {total}",
+			"detail.output.truncated": "Ausgabe abgeschnitten",
+			"detail.providers.count": "{count} prüft Anbieter",
+			"detail.plugins.count": "Dynamische {count}-Plugins",
+			"detail.workflow.script": "Workflow-Skript",
+			"detail.ralph.reportedComplete": "Der Arbeiter hat die Fertigstellung gemeldet",
+			"detail.ralph.reportedBlocker": "Der Arbeiter hat einen Blocker gemeldet",
+			"detail.ralph.limit": "Rundenlimit erreicht",
+			"detail.report.nextSteps": "Verbleibende Arbeit",
+			"detail.trace.replacedBy": "Ersetzt durch",
+			"detail.trace.replacementChain": "Ersatzkette",
+			"detail.trace.replaces": "Ereignisse ersetzt",
+			"detail.trace.sources": "Quellereignisse",
+			"detail.trace.derived": "Abgeleitete Ereignisse",
+			"detail.trace.ancestors": "Ahnensitzungen",
+			"detail.trace.descendants": "Nachkommende Sitzungen",
+			"detail.matches.count": "{count} Übereinstimmungen",
+			"detail.matches.capped": "Ergebnisgrenze erreicht; Grenzen Sie die Suche auf mehr ein",
+			"detail.event.neighbors": "Umliegende Veranstaltungen",
+			"todo.completed": "{done}/{total} abgeschlossen",
+			"command.attachmentsUnsupported": "/{command} akzeptiert keine Anhänge; Entfernen Sie sie zuerst",
+			"ask.rowTitle": "Frage stellen",
+			"ask.waiting": "warten",
+			"ask.pending": "Fortsetzung; Antwort noch verfügbar",
+			"ask.pendingDetail": "Diese offenen Fragen bleiben vom Komponisten zu beantworten.",
+			"ask.reopen": "Antwort",
+			"ask.review": "Antworten anzeigen",
+			"ask.closed": "geschlossen",
+			"ask.closedDetail": "Diese Frage ist geschlossen; Das Ergebnis finden Sie im folgenden Gespräch.",
+			"ask.cancelled": "abgesagt",
+			"ask.cancelledDetail": "Dieser Fragensatz wurde gelöscht, bevor die Antworten übermittelt wurden.",
+			"ask.interrupted": "unterbrochen",
+			"ask.interruptedDetail": "Dieser Fragensatz wurde unterbrochen, bevor Antworten übermittelt wurden.",
+			"ask.answered": "{answered}/{total} antwortete",
+			"ask.skipped": "Nicht beantwortet",
+			"bash.running": "Laufen",
+			"bash.failed": "Fehlgeschlagen",
+			"bash.stopped": "Angehalten",
+			"row.running": "Laufen",
+			"row.preparing": "Werkzeugaufruf wird vorbereitet",
+			"row.failed": "Fehlgeschlagen",
+			"row.stopped": "Angehalten",
+			"row.commandArguments": "Befehlsargumente",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "Inspizieren",
+			"row.imageSize": "{width}x{height}px, {bytes} Bytes",
+			"row.imageSizeDownscaled": "{width}x{height}px (herunterskaliert von {originalWidth}x{originalHeight}px), {bytes} Bytes",
+			"tool.title.search": "Suchen",
+			"tool.title.read": "Lesen",
+			"tool.title.bash": "Bash",
+			"tool.title.write": "Schreiben",
+			"tool.title.edit": "Bearbeiten",
+			"tool.title.applyPatch": "Patch anwenden",
+			"tool.title.code": "Code",
+			"tool.title.generic": "Werkzeugaufruf",
+			"tool.title.inspect": "Fragen Sie die Cordis-Umgebung ab",
+			"tool.title.runCordis": "Führen Sie das Cordis-Plugin aus",
+			"tool.title.stopCordis": "Stoppen Sie das Cordis-Plugin",
+			"tool.title.removeCordis": "Entfernen Sie das Cordis-Plugin",
+			"tool.title.pwsh": "Pwsh",
+			"tool.title.readImage": "Bild lesen",
+			"tool.title.grep": "Grep",
+			"tool.title.glob": "Globus",
+			"tool.title.webSearch": "Suchen",
+			"tool.title.webFetch": "Holen",
+			"tool.autoReviewRejected": "Abgelehnt von Auto review",
+			"tool.autoReviewNotExecuted": "Werkzeug wurde nicht ausgeführt. Grund: {reason}",
+			"tool.autoReviewReasonFallback": "Auto review hat diese Aktion nicht autorisiert",
+			"diff.collapseAria": "Differenz ausblenden",
+			"diff.expandAria": "Erweitern Sie {count} um weitere Diff-Linien",
+			"diff.expandRest": "… {count} weitere Zeilen",
+			"read.window": "Zeigt {shown} der {total}-Linien",
+			"read.collapseAria": "Inhalt reduzieren",
+			"read.expandAria": "Erweitern Sie {count} um weitere Zeilen",
+			"read.expandRest": "… {count} weitere Zeilen",
+			"search.paths": "{shown}-Pfade",
+			"search.paths.truncated": "Zeigt {shown} von {total}-Pfaden",
+			"search.matches": "{shown} entspricht · {files}-Dateien",
+			"search.matches.truncated": "Zeigt {shown} von {total}-Übereinstimmungen · {files}-Dateien",
+			"search.noResults": "Keine Ergebnisse",
+			"search.collapseAria": "Ergebnisse reduzieren",
+			"search.expandAria": "Erweitern Sie {count} um weitere Ergebniszeilen",
+			"search.expandRest": "… {count} weitere Zeilen",
+			"web.noResults": "Keine Ergebnisse gefunden",
+			"web.sourcesTruncated": "Quellenliste gekürzt",
+			"web.http": "HTTP",
+			"web.contentTruncated": "Inhalt abgeschnitten",
+			"details.running": "Laufen…",
+			"queue.count": "{n} Nachrichten in der Warteschlange",
+			"queue.sending": "Senden…",
+			"queue.image": "Nachrichtenbild in der Warteschlange",
+			"queue.file": "Datei in der Warteschlange {name}",
+			"queue.edit": "Bearbeiten Sie die Nachricht in der Warteschlange",
+			"queue.edit.unsupported": "Enthält Nicht-Textinhalte; Bearbeitung wird noch nicht unterstützt",
+			"queue.save": "Speichern Sie die Nachricht in der Warteschlange",
+			"queue.cancelEdit": "Bearbeitung abbrechen",
+			"queue.remove": "Entfernen Sie die Nachricht in der Warteschlange",
+			"queue.steer": "Mit vorgemerkter Nachricht lenken",
+			"queue.steer.unavailable": "Die Steuerung ist nur verfügbar, während der Agent ausgeführt wird",
+			"error.sessionInUse": "Diese Sitzung wird bereits verwendet, möglicherweise von einer anderen laufenden DSH-Instanz (z. B. dsh Web oder der Desktop-App). Beenden Sie andere laufende DSH-Instanzen und versuchen Sie es erneut.",
+			"queue.editFailed": "Bearbeitung fehlgeschlagen: Der Versand dieser Nachricht wurde möglicherweise bereits gestartet.",
+			"queue.removeFailed": "Fehler beim Entfernen: Der Versand dieser Nachricht wurde möglicherweise bereits gestartet.",
+			"queue.steerFailed": "Lenkung versagt. Versuchen Sie es erneut.",
+			"terminal.signal": "Signal {signal}",
+			"terminal.exitCode": "Exit-Code {code}",
+			"terminal.noExitCode": "kein Exit-Code",
+			"terminal.commandLine": "Befehlszeile {n}",
+			"terminal.running": "Laufen",
+			"terminal.failed": "Fehlgeschlagen",
+			"terminal.done": "Fertig",
+			"terminal.noOutput": "Keine Ausgabe",
+			"terminal.collapseAria": "Ausgabe reduzieren",
+			"terminal.expandAria": "Erweitern Sie die verbleibenden {n}-Ausgabezeilen",
+			"terminal.expandRest": "… {n} weitere Zeilen",
+			"terminal.sendInput": "(Eingabe senden)",
+			"terminal.session": "Terminal {sessionId}",
+			"tool.title.viewSchedule": "Automatisierungsaufgabe anzeigen",
+			"tool.title.editSchedule": "Automatisierungsaufgabe bearbeiten",
+			"detail.schedule.active": "Aktiviert",
+			"detail.schedule.paused": "Pausiert",
+			"detail.schedule.ended": "Beendet",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
+		/** Russian dictionary, checked against the English keys. */
+		const ru = {
+			"quote.remove": "Удалить цитату",
+			"shortcut.newline": "Новая линия",
+			"shortcut.complementary": "Использовать альтернативное действие: поставить в очередь или направить",
+			"shortcut.slash": "Открыть командное меню",
+			"shortcut.mention": "Открыть справочное меню",
+			"hint.plan": PLAN_NEXT_ACTION_EN,
+			"hint.goal": "описать цель долгосрочной задачи",
+			"hint.goal.active": "цель активна — изменить/приостановить/возобновить/очистить",
+			"placeholder.plan": PLAN_NEXT_ACTION_EN,
+			"placeholder.default": "Отправьте сообщение или запустите задачу, /команды, @файлы или сеансы",
+			"placeholder.unavailable": "Сеанс недоступен",
+			"placeholder.parentOffline": "Родительская сессия в автономном режиме; отправка недоступна, но вы все равно можете остановить запуск",
+			"placeholder.hero": "Опишите, что вы хотите построить: /команды, @файлы или сеансы.",
+			"placeholder.workspace": "Выберите рабочее пространство для начала",
+			"placeholder.steerQueue": "Cmd/Ctrl+Enter управляет всеми сообщениями в очереди.",
+			"input.commands": "Добавляйте файлы или запускайте команды",
+			"input.file": "Файл",
+			"input.stop": "Остановить генерацию",
+			"input.send": "Отправить сообщение",
+			"input.sending": "Отправка сообщения",
+			"input.send.queue": "Сообщение в очереди",
+			"input.send.steer": "Направить сообщение",
+			"attachment.pending": "Ожидающие вложения",
+			"attachment.scrollLeft": "Прокрутить вложения влево",
+			"attachment.scrollRight": "Прокрутить вложения вправо",
+			"attachment.dropTitle": "Перетащите файлы или изображения сюда, чтобы добавить их.",
+			"attachment.dropDesc": "Ограничение изображений: до изображений {count}, по {size} каждое.",
+			"attachment.dropBlocked": "Файлы и изображения не могут быть добавлены прямо сейчас.",
+			"attachment.directoryDesktopOnly": "Папки можно добавлять только в настольном приложении; добавлять отдельные файлы в браузере",
+			"attachment.pathUnavailable": "Не удалось получить путь к папке; перетащите это снова",
+			"attachment.pathUnsupported": "Путь содержит символы, которые не может содержать ссылка; переименуй его и попробуй еще раз",
+			"image.pending": "Ожидающие изображения",
+			"image.openOriginal": "Посмотреть оригинал",
+			"image.openOriginalLabel": "{label}, нажмите, чтобы посмотреть оригинал",
+			"image.remove": "Удалить изображение {name}",
+			"image.original": "Исходное изображение",
+			"image.label": "Изображение",
+			"image.loadFailed": "Изображение не удалось загрузить; нажмите, чтобы повторить попытку",
+			"image.loading": "Загрузка изображения…",
+			"image.preview": "Предварительный просмотр исходного изображения",
+			"image.closePreview": "Закрыть предварительный просмотр исходного изображения",
+			"image.unsupportedType": "Поддерживаются только изображения PNG, JPG, WebP и GIF.",
+			"image.tooMany": "Сообщение может содержать до {count} изображений.",
+			"image.fileTooLarge": "Каждое изображение должно быть меньше {size}.",
+			"image.totalTooLarge": "Общее количество изображений превышает {size}; удалите некоторые и попробуйте еще раз",
+			"image.tooManyPixels": "Разрешение изображения слишком высокое; сожми его и попробуй еще раз",
+			"image.dimensionTooLarge": "Стороны изображения должны быть не более {size}px; уменьшите масштаб и попробуйте еще раз",
+			"image.modelUnsupported": "Текущая модель не поддерживает изображения; переключиться на модель, которая делает",
+			"image.sendFailed": "Отправка изображений не удалась ({reason}); добавьте их повторно и попробуйте еще раз",
+			"file.pending": "Ожидающие файлы",
+			"file.remove": "Удалить файл {name}",
+			"file.uploading": "Загрузка…",
+			"file.uploadFailed": "Загрузка не удалась; нажмите, чтобы повторить попытку",
+			"file.retry": "Повторите загрузку {name}.",
+			"file.stillUploading": "Файлы все еще загружаются; отправить после того, как они закончат",
+			"file.sessionUnavailable": "Сессия недоступна; файлы не могут быть загружены",
+			"file.notStaged": "Загрузка файла не завершена; добавьте его еще раз и попробуйте еще раз",
+			"file.label": "Файл",
+			"context.aria": "{percent} используемого контекста",
+			"context.used": "используемого контекста",
+			"context.system": "Системная подсказка",
+			"context.tools": "Определения инструментов",
+			"context.messages": "Сообщения",
+			"settings.enter.title": "Отправлять поведение во время занятости",
+			"settings.enter.description": "Что делают кнопки «Ввод» и «Отправить» во время работы агента; Cmd/Ctrl+Enter использует другое поведение.",
+			"settings.enter.queue": "Очередь",
+			"settings.enter.steer": "Направить",
+			"hero.headline": "В неизвестность",
+			"hero.preview": "Предварительный просмотр",
+			"hero.chooseWorkspace": "Выберите рабочее пространство",
+			"session.hierarchy": "Иерархия сеансов",
+			"session.moreViews": "Больше просмотров беседы",
+			"todo.title": "Дела",
+			"todo.progress.done": "{done} завершено",
+			"todo.progress.active": "{active} в процессе",
+			"todo.progress.pending": "{pending} в ожидании",
+			"todo.status.completed": "Завершено",
+			"todo.status.inProgress": "В процессе",
+			"todo.status.pending": "Ожидается",
+			"todo.rowTitle": "Обновить список дел",
+			"tool.title.createGoal": "Создать цель",
+			"tool.title.getGoal": "Посмотреть цель",
+			"tool.title.updateGoal": "Обновить цель",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "Создать задачу автоматизации",
+			"tool.title.listSchedules": "Показать задачи автоматизации",
+			"tool.title.deleteSchedule": "Удалить задачу автоматизации",
+			"tool.title.updateSchedule": "Обновить задачу автоматизации",
+			"detail.state": "Статус",
+			"detail.todo.completed": "Завершено",
+			"detail.todo.in_progress": "В процессе",
+			"detail.todo.pending": "Ожидается",
+			"detail.todo.empty": "Список дел пуст",
+			"todo.diff.initial": "Первоначальный список",
+			"todo.diff.compare": "Изменения по сравнению с предыдущим списком",
+			"todo.diff.unavailable": "Предыдущий список недоступен",
+			"todo.diff.noChanges": "Никаких изменений в списке",
+			"todo.diff.added": "{count} добавлен",
+			"todo.diff.updated": "{count} обновлен",
+			"todo.diff.removed": "{count} удален.",
+			"todo.diff.unchanged": "{count} без изменений",
+			"todo.diff.addedItem": "Добавлено",
+			"todo.diff.updatedItem": "Статус изменен",
+			"todo.diff.movedItem": "Переупорядочен",
+			"todo.diff.removedItem": "Удален",
+			"detail.goal.empty": "Нет цели",
+			"detail.goal.active": "Активный",
+			"detail.goal.disarmed": "Ожидание продолжения",
+			"detail.goal.paused": "Приостановлено",
+			"detail.goal.blocked": "Заблокировано",
+			"detail.goal.complete": "Завершено",
+			"detail.goal.rounds": "Раунды",
+			"detail.goal.reason": "Блокатор",
+			"detail.days": "{count} д",
+			"detail.hours": "{count} ч",
+			"detail.minutes": "{count} мин.",
+			"detail.seconds": "{count} с",
+			"detail.schedule.once": "Однажды",
+			"detail.schedule.every": "Каждый {interval}",
+			"detail.schedule.when": "Запланировано на",
+			"detail.schedule.frequency": "Повторить",
+			"detail.schedule.scheduled": "Запланировано",
+			"detail.schedule.overdue": "Просрочено, ждём возобновления сеанса",
+			"detail.schedule.empty": "Нет задач автоматизации",
+			"detail.schedule.deleted": "Удалено",
+			"detail.schedule.count": "{count} задачи автоматизации",
+			"detail.schedule.daily": "Каждый день в {time} ({zone})",
+			"detail.schedule.weekly": "Еженедельно на {days} по адресу {time} ({zone})",
+			"detail.schedule.cron": "Крон {expression} ({zone})",
+			"detail.schedule.custom": "Произвольно",
+			"detail.weekday.1": "Пн.",
+			"detail.weekday.2": "Вт",
+			"detail.weekday.3": "ср.",
+			"detail.weekday.4": "Чт",
+			"detail.weekday.5": "Пт",
+			"detail.weekday.6": "Суббота",
+			"detail.weekday.7": "Солнце",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "Проверка поставщиков",
+			"tool.title.queryRuntime": "Время выполнения запроса",
+			"tool.title.inspectPlugins": "Проверьте плагины",
+			"tool.title.workflow": "Запустить рабочий процесс",
+			"tool.title.ralph": "Запустить цикл Ральфа",
+			"tool.title.readEvent": "Чтение события",
+			"tool.title.searchEvents": "Поиск событий",
+			"tool.title.traceEvent": "Отследить событие",
+			"tool.title.searchSessions": "Поиск сеансов",
+			"tool.title.traceSession": "Трассировка сеанса",
+			"tool.title.listModels": "Список моделей",
+			"tool.title.subagent": "Создать субагент",
+			"tool.title.listAgents": "Список субагентов",
+			"tool.title.sendMessage": "Отправить сообщение",
+			"tool.title.interruptAgent": "Агент прерываний",
+			"tool.title.listJobs": "Список фоновых заданий",
+			"tool.title.readJob": "Чтение результатов задания",
+			"tool.title.killJob": "Отменить фоновое задание",
+			"tool.title.openTerminal": "Открыть терминал",
+			"tool.title.readTerminal": "Чтение терминала",
+			"tool.title.listTerminals": "Список терминалов",
+			"tool.title.signalTerminal": "Сигнальный терминал",
+			"tool.title.closeTerminal": "Закрыть терминал",
+			"tool.title.lsp": "Символы кода запроса",
+			"tool.title.findDefinition": "Найти определение",
+			"tool.title.findReferences": "Найдите ссылки",
+			"tool.title.findImplementation": "Найти реализацию",
+			"tool.title.hoverSymbol": "Символ проверки",
+			"tool.title.spawnTeammate": "Создать товарища по команде",
+			"tool.title.createTeamTask": "Создать командную задачу",
+			"tool.title.getTeamTask": "Прочитать командное задание",
+			"tool.title.updateTeamTask": "Обновить групповую задачу",
+			"tool.title.listTeamTasks": "Перечислить командные задачи",
+			"tool.title.waitAgent": "Подождите субагента",
+			"detail.recordedResult": "Записанный результат",
+			"detail.empty": "Нет результатов",
+			"detail.none": "Нет",
+			"detail.yes": "Да",
+			"detail.no": "Нет",
+			"detail.moreInInspect": "{count} больше элементов доступно в Inspect",
+			"detail.status.running": "Бег",
+			"detail.status.idle": "Простой",
+			"detail.status.ready": "Готово",
+			"detail.status.inactive": "Неактивный",
+			"detail.status.provisioning": "обеспечение",
+			"detail.status.failed": "Не удалось",
+			"detail.status.completed": "Завершено",
+			"detail.status.deleted": "Удалено",
+			"detail.status.killed": "Отменено",
+			"detail.status.accepted": "Принято",
+			"detail.status.queued": "В очереди",
+			"detail.status.exited": "Вышел",
+			"detail.field.id": "ID",
+			"detail.field.revision": "Редакция",
+			"detail.field.platform": "Платформа",
+			"detail.field.provider": "Поставщик",
+			"detail.field.model": "Модель",
+			"detail.field.role": "Роль",
+			"detail.field.context": "Контекст",
+			"detail.field.owner": "Владелец",
+			"detail.field.ready": "Готово",
+			"detail.field.dependencies": "Зависимости",
+			"detail.field.writeScopes": "Запись областей",
+			"detail.field.warnings": "Предупреждения",
+			"detail.field.diagnostics": "Диагностика",
+			"detail.field.methods": "Методы",
+			"detail.field.inputSchema": "Входная схема",
+			"detail.field.outputSchema": "Выходная схема",
+			"detail.field.currentPackage": "Текущий пакет",
+			"detail.field.nextPackage": "Следующий пакет",
+			"detail.field.latestRun": "Последний запуск",
+			"detail.field.packages": "Пакеты",
+			"detail.field.registrations": "Регистрации",
+			"detail.field.props": "Реквизит",
+			"detail.field.data": "Данные",
+			"detail.field.source": "Источник",
+			"detail.field.content": "Содержание",
+			"detail.field.message": "Сообщение",
+			"detail.field.messageId": "Идентификатор сообщения",
+			"detail.field.root": "Корень",
+			"detail.field.pid": "Идентификатор процесса",
+			"detail.field.type": "Тип",
+			"detail.field.time": "Время",
+			"detail.field.seq": "Последовательность событий",
+			"detail.field.turn": "Ход",
+			"detail.field.step": "Шаг",
+			"detail.field.callId": "Идентификатор вызова",
+			"detail.field.agents": "Агенты запущены",
+			"detail.field.result": "Результат",
+			"detail.field.parent": "Родитель",
+			"detail.field.depth": "Глубина",
+			"detail.field.exitCode": "Код выхода",
+			"detail.field.signal": "Сигнал",
+			"detail.field.previousStatus": "Предыдущий статус",
+			"detail.field.agent": "Идентификатор агента",
+			"detail.field.job": "Идентификатор вакансии",
+			"detail.field.task": "Задача",
+			"detail.field.processGroup": "Группа процессов",
+			"detail.field.availability": "Доступность",
+			"detail.field.bestMatch": "Лучший матч",
+			"detail.field.target": "Целевое событие",
+			"detail.field.surface": "Статус записи",
+			"detail.agents.count": "{count} агенты",
+			"detail.jobs.count": "{count} фоновые задания",
+			"detail.terminals.count": "Клеммы {count}",
+			"detail.tasks.count": "{count} командные задачи",
+			"detail.tasks.nextPage": "Доступно больше задач; следующий курсор — {cursor}",
+			"detail.locations.count": "{count} локации",
+			"detail.location": "Строка {line}, столбец {column}",
+			"detail.receipt.delivered": "Сообщение доставлено",
+			"detail.receipt.interrupt": "Запрошено прерывание",
+			"detail.receipt.started": "Началось",
+			"detail.receipt.cancel": "Запрос на отмену",
+			"detail.receipt.alreadyFinished": "Уже закончено",
+			"detail.receipt.signal": "Сигнал доставлен",
+			"detail.receipt.closed": "Закрыто",
+			"detail.receipt.closing": "Закрытие",
+			"detail.wait.noProgress": "Нет активных субагентов",
+			"detail.wait.title": "Субагентская деятельность",
+			"detail.wait.timeout": "Время ожидания истекло",
+			"detail.wait.changed": "Обнаружено изменение",
+			"detail.agent.reply": "Ответ агента",
+			"detail.models.title": "Доступные модели",
+			"detail.output.lines": "Линии {begin} – {end} из {total}",
+			"detail.output.truncated": "Вывод усечен",
+			"detail.providers.count": "{count} проверяет поставщиков",
+			"detail.plugins.count": "Динамические плагины {count}",
+			"detail.workflow.script": "Сценарий рабочего процесса",
+			"detail.ralph.reportedComplete": "Работник сообщил о завершении",
+			"detail.ralph.reportedBlocker": "Работник сообщил о блокировщике",
+			"detail.ralph.limit": "Достигнут лимит раундов",
+			"detail.report.nextSteps": "Оставшаяся работа",
+			"detail.trace.replacedBy": "Заменено на",
+			"detail.trace.replacementChain": "Замена цепи",
+			"detail.trace.replaces": "Замененные события",
+			"detail.trace.sources": "Исходные события",
+			"detail.trace.derived": "Производные события",
+			"detail.trace.ancestors": "Сеансы предков",
+			"detail.trace.descendants": "Потомки сеансов",
+			"detail.matches.count": "{count} совпадений",
+			"detail.matches.capped": "Достигнут предел результатов; сузить поиск для большего",
+			"detail.event.neighbors": "Сопутствующие события",
+			"todo.completed": "{done}/{total} завершено",
+			"command.attachmentsUnsupported": "/{command} не принимает вложения; сначала удали их",
+			"ask.rowTitle": "Задать вопрос",
+			"ask.waiting": "ожидание",
+			"ask.pending": "продолжение; ответ еще доступен",
+			"ask.pendingDetail": "На эти нерешенные вопросы остается ответ композитора.",
+			"ask.reopen": "Ответ",
+			"ask.review": "Посмотреть ответы",
+			"ask.closed": "закрыто",
+			"ask.closedDetail": "Этот вопрос закрыт; его результат в разговоре ниже.",
+			"ask.cancelled": "отменен",
+			"ask.cancelledDetail": "Этот набор вопросов был отменен до того, как были отправлены ответы.",
+			"ask.interrupted": "прерванный",
+			"ask.interruptedDetail": "Этот набор вопросов был прерван до того, как были представлены ответы.",
+			"ask.answered": "{answered}/{total} ответил",
+			"ask.skipped": "Не ответил",
+			"bash.running": "Бег",
+			"bash.failed": "Не удалось",
+			"bash.stopped": "Остановлено",
+			"row.running": "Бег",
+			"row.preparing": "Подготовка вызова инструмента",
+			"row.failed": "Не удалось",
+			"row.stopped": "Остановлено",
+			"row.commandArguments": "Аргументы команды",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "Осмотреть",
+			"row.imageSize": "{width}x{height}px, {bytes} байт",
+			"row.imageSizeDownscaled": "{width}x{height}px (уменьшено с {originalWidth}x{originalHeight}px), {bytes} байт",
+			"tool.title.search": "Поиск",
+			"tool.title.read": "Читать",
+			"tool.title.bash": "Баш",
+			"tool.title.write": "Написать",
+			"tool.title.edit": "Редактировать",
+			"tool.title.applyPatch": "Применить патч",
+			"tool.title.code": "Код",
+			"tool.title.generic": "Вызов инструмента",
+			"tool.title.inspect": "Запрос среды Cordis",
+			"tool.title.runCordis": "Запустите плагин Cordis",
+			"tool.title.stopCordis": "Остановить плагин Cordis",
+			"tool.title.removeCordis": "Удалить плагин Cordis",
+			"tool.title.pwsh": "Пшш",
+			"tool.title.readImage": "Читать изображение",
+			"tool.title.grep": "Греп",
+			"tool.title.glob": "Глоб",
+			"tool.title.webSearch": "Поиск",
+			"tool.title.webFetch": "Получить",
+			"tool.autoReviewRejected": "Отклонено Auto review",
+			"tool.autoReviewNotExecuted": "Инструмент не был выполнен. Причина: {reason}",
+			"tool.autoReviewReasonFallback": "Auto review не санкционировал это действие",
+			"diff.collapseAria": "Свернуть разницу",
+			"diff.expandAria": "Разверните {count} больше строк различий",
+			"diff.expandRest": "… {count} еще строки",
+			"read.window": "Показаны линии {shown} {total}.",
+			"read.collapseAria": "Свернуть содержимое",
+			"read.expandAria": "Разверните {count} еще строки",
+			"read.expandRest": "… {count} еще строки",
+			"search.paths": "{shown} пути",
+			"search.paths.truncated": "Отображение путей {shown} из {total}",
+			"search.matches": "{shown} соответствует · файлам {files}",
+			"search.matches.truncated": "Отображение {shown} совпадений {total} · Файлы {files}",
+			"search.noResults": "Нет результатов",
+			"search.collapseAria": "Свернуть результаты",
+			"search.expandAria": "Разверните {count} больше строк результатов",
+			"search.expandRest": "… {count} еще строки",
+			"web.noResults": "Результаты не найдены",
+			"web.sourcesTruncated": "Список источников сокращен",
+			"web.http": "HTTP",
+			"web.contentTruncated": "Содержание усечено",
+			"details.running": "Бег…",
+			"queue.count": "Сообщения в очереди {n}",
+			"queue.sending": "Отправка…",
+			"queue.image": "Изображение сообщения в очереди",
+			"queue.file": "Файл в очереди {name}",
+			"queue.edit": "Изменить сообщение в очереди",
+			"queue.edit.unsupported": "Содержит нетекстовый контент; редактирование пока не поддерживается",
+			"queue.save": "Сохранить сообщение в очереди",
+			"queue.cancelEdit": "Отменить редактирование",
+			"queue.remove": "Удалить сообщение из очереди",
+			"queue.steer": "Направить сообщение из очереди",
+			"queue.steer.unavailable": "Управление доступно только во время работы агента.",
+			"error.sessionInUse": "Этот сеанс уже используется, возможно, другим работающим экземпляром DSH (например, веб-сайтом dsh или настольным приложением). Закройте другие работающие экземпляры DSH и повторите попытку.",
+			"queue.editFailed": "Не удалось изменить: возможно, это сообщение уже начало отправляться.",
+			"queue.removeFailed": "Удаление не удалось: возможно, это сообщение уже начало отправляться.",
+			"queue.steerFailed": "Рулевое управление не удалось. Попробуйте еще раз.",
+			"terminal.signal": "сигнал {signal}",
+			"terminal.exitCode": "код выхода {code}",
+			"terminal.noExitCode": "нет кода выхода",
+			"terminal.commandLine": "Командная строка {n}",
+			"terminal.running": "Бег",
+			"terminal.failed": "Не удалось",
+			"terminal.done": "Готово",
+			"terminal.noOutput": "Нет вывода",
+			"terminal.collapseAria": "Свернуть вывод",
+			"terminal.expandAria": "Разверните оставшиеся выходные строки {n}.",
+			"terminal.expandRest": "… {n} еще строки",
+			"terminal.sendInput": "(отправить ввод)",
+			"terminal.session": "Терминал {sessionId}",
+			"tool.title.viewSchedule": "Посмотреть задачу автоматизации",
+			"tool.title.editSchedule": "Изменить задачу автоматизации",
+			"detail.schedule.active": "Включено",
+			"detail.schedule.paused": "Приостановлена",
+			"detail.schedule.ended": "Завершена",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
+		/** Portuguese dictionary, checked against the English keys. */
+		const pt = {
+			"quote.remove": "Remover cotação",
+			"shortcut.newline": "Nova linha",
+			"shortcut.complementary": "Usar a ação alternativa de enfileirar ou orientar",
+			"shortcut.slash": "Abrir menu de comando",
+			"shortcut.mention": "Abrir menu de referência",
+			"hint.plan": PLAN_NEXT_ACTION_EN,
+			"hint.goal": "descrever o objetivo de uma tarefa de longa duração",
+			"hint.goal.active": "meta ativa — editar/pausar/resumir/limpar",
+			"placeholder.plan": PLAN_NEXT_ACTION_EN,
+			"placeholder.default": "Envie mensagens ou execute uma tarefa, / comandos, @ arquivos ou sessões",
+			"placeholder.unavailable": "Sessão indisponível",
+			"placeholder.parentOffline": "Sessão pai offline; o envio não está disponível, mas você ainda pode interromper a execução",
+			"placeholder.hero": "Descreva o que você deseja construir, / comandos, @ arquivos ou sessões",
+			"placeholder.workspace": "Escolha um espaço de trabalho para começar",
+			"placeholder.steerQueue": "Cmd/Ctrl+Enter direciona todas as mensagens na fila",
+			"input.commands": "Adicione arquivos ou execute comandos",
+			"input.file": "Arquivo",
+			"input.stop": "Parar geração",
+			"input.send": "Enviar mensagem",
+			"input.sending": "Enviando mensagem",
+			"input.send.queue": "Mensagem de fila",
+			"input.send.steer": "Orientar com mensagem",
+			"attachment.pending": "Anexos pendentes",
+			"attachment.scrollLeft": "Rolar anexos para a esquerda",
+			"attachment.scrollRight": "Rolar os anexos para a direita",
+			"attachment.dropTitle": "Arraste arquivos ou imagens aqui para adicioná-los",
+			"attachment.dropDesc": "Limite de imagens: até {count} imagens, {size} cada",
+			"attachment.dropBlocked": "Arquivos e imagens não podem ser adicionados no momento",
+			"attachment.directoryDesktopOnly": "As pastas só podem ser adicionadas no aplicativo de desktop; adicione arquivos individuais no navegador",
+			"attachment.pathUnavailable": "Não foi possível obter o caminho da pasta; arraste-o novamente",
+			"attachment.pathUnsupported": "O caminho contém caracteres que uma referência não pode transportar; renomeie-o e tente novamente",
+			"image.pending": "Imagens pendentes",
+			"image.openOriginal": "Ver original",
+			"image.openOriginalLabel": "{label}, clique para ver o original",
+			"image.remove": "Remover imagem {name}",
+			"image.original": "Imagem original",
+			"image.label": "Imagem",
+			"image.loadFailed": "A imagem não foi carregada; clique para tentar novamente",
+			"image.loading": "Carregando imagem…",
+			"image.preview": "Visualização da imagem original",
+			"image.closePreview": "Fechar visualização da imagem original",
+			"image.unsupportedType": "Somente imagens PNG, JPG, WebP e GIF são suportadas",
+			"image.tooMany": "Uma mensagem pode incluir até {count} imagens",
+			"image.fileTooLarge": "Cada imagem deve ser menor que {size}",
+			"image.totalTooLarge": "As imagens excedem {size} no total; remova alguns e tente novamente",
+			"image.tooManyPixels": "A resolução da imagem é muito alta; comprima e tente novamente",
+			"image.dimensionTooLarge": "Os lados da imagem devem ter no máximo {size}px; diminua a escala e tente novamente",
+			"image.modelUnsupported": "O modelo atual não suporta imagens; mude para um modelo que faça",
+			"image.sendFailed": "Falha no envio de imagens ({reason}); adicione-os novamente e tente novamente",
+			"file.pending": "Arquivos pendentes",
+			"file.remove": "Remover arquivo {name}",
+			"file.uploading": "Fazendo upload…",
+			"file.uploadFailed": "Falha no upload; clique para tentar novamente",
+			"file.retry": "Tente fazer upload novamente {name}",
+			"file.stillUploading": "Os arquivos ainda estão sendo carregados; enviar depois que terminarem",
+			"file.sessionUnavailable": "Sessão indisponível; os arquivos não podem ser carregados",
+			"file.notStaged": "O upload do arquivo não foi concluído; adicione novamente e tente novamente",
+			"file.label": "Arquivo",
+			"context.aria": "{percent} de contexto usado",
+			"context.used": "do contexto usado",
+			"context.system": "Alerta do sistema",
+			"context.tools": "Definições de ferramentas",
+			"context.messages": "Mensagens",
+			"settings.enter.title": "Enviar comportamento enquanto estiver ocupado",
+			"settings.enter.description": "O que o botão Enter e o botão Enviar fazem enquanto o agente está em execução; Cmd/Ctrl+Enter usa o outro comportamento",
+			"settings.enter.queue": "Fila",
+			"settings.enter.steer": "Orientar",
+			"hero.headline": "Para o desconhecido",
+			"hero.preview": "Visualização",
+			"hero.chooseWorkspace": "Escolha o espaço de trabalho",
+			"session.hierarchy": "Hierarquia de sessão",
+			"session.moreViews": "Mais visualizações de conversas",
+			"todo.title": "Tarefas",
+			"todo.progress.done": "{done} concluído",
+			"todo.progress.active": "{active} em andamento",
+			"todo.progress.pending": "{pending} pendente",
+			"todo.status.completed": "Concluído",
+			"todo.status.inProgress": "Em andamento",
+			"todo.status.pending": "Pendente",
+			"todo.rowTitle": "Atualizar lista de tarefas",
+			"tool.title.createGoal": "Criar meta",
+			"tool.title.getGoal": "Ver meta",
+			"tool.title.updateGoal": "Atualizar meta",
+			"tool.preparing.content": "{kilobytes}KB",
+			"tool.title.createSchedule": "Criar tarefa de automação",
+			"tool.title.listSchedules": "Listar tarefas de automação",
+			"tool.title.deleteSchedule": "Excluir tarefa de automação",
+			"tool.title.updateSchedule": "Atualizar tarefa de automação",
+			"detail.state": "Estado",
+			"detail.todo.completed": "Concluído",
+			"detail.todo.in_progress": "Em andamento",
+			"detail.todo.pending": "Pendente",
+			"detail.todo.empty": "A lista de tarefas está vazia",
+			"todo.diff.initial": "Lista inicial",
+			"todo.diff.compare": "Mudanças desde a lista anterior",
+			"todo.diff.unavailable": "Lista anterior indisponível",
+			"todo.diff.noChanges": "Sem alterações na lista",
+			"todo.diff.added": "{count} adicionado",
+			"todo.diff.updated": "{count} atualizado",
+			"todo.diff.removed": "{count} removido",
+			"todo.diff.unchanged": "{count} inalterado",
+			"todo.diff.addedItem": "Adicionado",
+			"todo.diff.updatedItem": "Status alterado",
+			"todo.diff.movedItem": "Reordenado",
+			"todo.diff.removedItem": "Removido",
+			"detail.goal.empty": "Sem objetivo",
+			"detail.goal.active": "Ativo",
+			"detail.goal.disarmed": "Aguardando continuação",
+			"detail.goal.paused": "Pausado",
+			"detail.goal.blocked": "Bloqueado",
+			"detail.goal.complete": "Concluído",
+			"detail.goal.rounds": "Rodadas",
+			"detail.goal.reason": "Bloqueador",
+			"detail.days": "{count}d",
+			"detail.hours": "{count}h",
+			"detail.minutes": "{count} min",
+			"detail.seconds": "{count} segundos",
+			"detail.schedule.once": "Uma vez",
+			"detail.schedule.every": "A cada {interval}",
+			"detail.schedule.when": "Agendado para",
+			"detail.schedule.frequency": "Repetir",
+			"detail.schedule.scheduled": "Agendado",
+			"detail.schedule.overdue": "Atrasado, aguardando retomada da sessão",
+			"detail.schedule.empty": "Sem tarefas de automação",
+			"detail.schedule.deleted": "Excluído",
+			"detail.schedule.count": "{count} tarefas de automação",
+			"detail.schedule.daily": "Todos os dias às {time} ({zone})",
+			"detail.schedule.weekly": "Semanalmente em {days} às {time} ({zone})",
+			"detail.schedule.cron": "Cron {expression} ({zone})",
+			"detail.schedule.custom": "Personalizado",
+			"detail.weekday.1": "segunda-feira",
+			"detail.weekday.2": "Terça",
+			"detail.weekday.3": "Quarta",
+			"detail.weekday.4": "Qui",
+			"detail.weekday.5": "Sexta-feira",
+			"detail.weekday.6": "Sábado",
+			"detail.weekday.7": "Sol",
+			"detail.weekday.join": ", ",
+			"tool.title.inspectProviders": "Inspecionar fornecedores",
+			"tool.title.queryRuntime": "Tempo de execução da consulta",
+			"tool.title.inspectPlugins": "Inspecionar plug-ins",
+			"tool.title.workflow": "Executar fluxo de trabalho",
+			"tool.title.ralph": "Execute o circuito Ralph",
+			"tool.title.readEvent": "Ler evento",
+			"tool.title.searchEvents": "Pesquisar eventos",
+			"tool.title.traceEvent": "Evento de rastreamento",
+			"tool.title.searchSessions": "Buscar sessões",
+			"tool.title.traceSession": "Sessão de rastreamento",
+			"tool.title.listModels": "Listar modelos",
+			"tool.title.subagent": "Criar subagente",
+			"tool.title.listAgents": "Listar subagentes",
+			"tool.title.sendMessage": "Enviar mensagem",
+			"tool.title.interruptAgent": "Agente de interrupção",
+			"tool.title.listJobs": "Listar trabalhos em segundo plano",
+			"tool.title.readJob": "Ler saída do trabalho",
+			"tool.title.killJob": "Cancelar trabalho em segundo plano",
+			"tool.title.openTerminal": "Terminal aberto",
+			"tool.title.readTerminal": "Ler terminal",
+			"tool.title.listTerminals": "Listar terminais",
+			"tool.title.signalTerminal": "Terminal de sinal",
+			"tool.title.closeTerminal": "Fechar terminal",
+			"tool.title.lsp": "Símbolos de código de consulta",
+			"tool.title.findDefinition": "Encontre a definição",
+			"tool.title.findReferences": "Encontre referências",
+			"tool.title.findImplementation": "Encontre implementação",
+			"tool.title.hoverSymbol": "Símbolo de inspeção",
+			"tool.title.spawnTeammate": "Criar companheiro de equipe",
+			"tool.title.createTeamTask": "Criar tarefa de equipe",
+			"tool.title.getTeamTask": "Ler tarefa da equipe",
+			"tool.title.updateTeamTask": "Atualizar tarefa da equipe",
+			"tool.title.listTeamTasks": "Listar tarefas da equipe",
+			"tool.title.waitAgent": "Aguarde o subagente",
+			"detail.recordedResult": "Resultado registrado",
+			"detail.empty": "Nenhum resultado",
+			"detail.none": "Nenhum",
+			"detail.yes": "Sim",
+			"detail.no": "Não",
+			"detail.moreInInspect": "Mais {count} itens disponíveis no Inspecionar",
+			"detail.status.running": "Correndo",
+			"detail.status.idle": "Inativo",
+			"detail.status.ready": "Pronto",
+			"detail.status.inactive": "Inativo",
+			"detail.status.provisioning": "Provisionamento",
+			"detail.status.failed": "Falha",
+			"detail.status.completed": "Concluído",
+			"detail.status.deleted": "Excluído",
+			"detail.status.killed": "Cancelado",
+			"detail.status.accepted": "Aceito",
+			"detail.status.queued": "Na fila",
+			"detail.status.exited": "Saiu",
+			"detail.field.id": "ID",
+			"detail.field.revision": "Revisão",
+			"detail.field.platform": "Plataforma",
+			"detail.field.provider": "Provedor",
+			"detail.field.model": "Modelo",
+			"detail.field.role": "Função",
+			"detail.field.context": "Contexto",
+			"detail.field.owner": "Proprietário",
+			"detail.field.ready": "Pronto",
+			"detail.field.dependencies": "Dependências",
+			"detail.field.writeScopes": "Escrever escopos",
+			"detail.field.warnings": "Avisos",
+			"detail.field.diagnostics": "Diagnóstico",
+			"detail.field.methods": "Métodos",
+			"detail.field.inputSchema": "Esquema de entrada",
+			"detail.field.outputSchema": "Esquema de saída",
+			"detail.field.currentPackage": "Pacote atual",
+			"detail.field.nextPackage": "Próximo pacote",
+			"detail.field.latestRun": "Última execução",
+			"detail.field.packages": "Pacotes",
+			"detail.field.registrations": "Inscrições",
+			"detail.field.props": "Adereços",
+			"detail.field.data": "Dados",
+			"detail.field.source": "Fonte",
+			"detail.field.content": "Conteúdo",
+			"detail.field.message": "Mensagem",
+			"detail.field.messageId": "ID da mensagem",
+			"detail.field.root": "Raiz",
+			"detail.field.pid": "ID do processo",
+			"detail.field.type": "Tipo",
+			"detail.field.time": "Hora",
+			"detail.field.seq": "Sequência de eventos",
+			"detail.field.turn": "Turno",
+			"detail.field.step": "Passo",
+			"detail.field.callId": "ID de chamada",
+			"detail.field.agents": "Agentes iniciados",
+			"detail.field.result": "Resultado",
+			"detail.field.parent": "Pai",
+			"detail.field.depth": "Profundidade",
+			"detail.field.exitCode": "Código de saída",
+			"detail.field.signal": "Sinal",
+			"detail.field.previousStatus": "Estado anterior",
+			"detail.field.agent": "ID do agente",
+			"detail.field.job": "ID do trabalho",
+			"detail.field.task": "Tarefa",
+			"detail.field.processGroup": "Grupo de processos",
+			"detail.field.availability": "Disponibilidade",
+			"detail.field.bestMatch": "Melhor correspondência",
+			"detail.field.target": "Evento alvo",
+			"detail.field.surface": "Status do registro",
+			"detail.agents.count": "{count} agentes",
+			"detail.jobs.count": "{count} trabalhos em segundo plano",
+			"detail.terminals.count": "{count} terminais",
+			"detail.tasks.count": "{count} tarefas de equipe",
+			"detail.tasks.nextPage": "Mais tarefas disponíveis; o próximo cursor é {cursor}",
+			"detail.locations.count": "{count} locais",
+			"detail.location": "Linha {line}, coluna {column}",
+			"detail.receipt.delivered": "Mensagem entregue",
+			"detail.receipt.interrupt": "Interrupção solicitada",
+			"detail.receipt.started": "Iniciado",
+			"detail.receipt.cancel": "Cancelamento solicitado",
+			"detail.receipt.alreadyFinished": "Já terminei",
+			"detail.receipt.signal": "Sinal entregue",
+			"detail.receipt.closed": "Fechado",
+			"detail.receipt.closing": "Fechando",
+			"detail.wait.noProgress": "Nenhum subagente ativo",
+			"detail.wait.title": "Atividade do subagente",
+			"detail.wait.timeout": "A espera expirou",
+			"detail.wait.changed": "Alteração detectada",
+			"detail.agent.reply": "Resposta do agente",
+			"detail.models.title": "Modelos disponíveis",
+			"detail.output.lines": "Linhas {begin}–{end} de {total}",
+			"detail.output.truncated": "Saída truncada",
+			"detail.providers.count": "{count} inspecionar provedores",
+			"detail.plugins.count": "{count} plug-ins dinâmicos",
+			"detail.workflow.script": "Roteiro de fluxo de trabalho",
+			"detail.ralph.reportedComplete": "Conclusão relatada pelo trabalhador",
+			"detail.ralph.reportedBlocker": "Trabalhador relatou um bloqueador",
+			"detail.ralph.limit": "Limite de rodadas atingido",
+			"detail.report.nextSteps": "Trabalho restante",
+			"detail.trace.replacedBy": "Substituído por",
+			"detail.trace.replacementChain": "Cadeia de substituição",
+			"detail.trace.replaces": "Eventos substituídos",
+			"detail.trace.sources": "Eventos de origem",
+			"detail.trace.derived": "Eventos derivados",
+			"detail.trace.ancestors": "Sessões ancestrais",
+			"detail.trace.descendants": "Sessões de descendentes",
+			"detail.matches.count": "{count} correspondências",
+			"detail.matches.capped": "Limite de resultados atingido; restringir a busca por mais",
+			"detail.event.neighbors": "Eventos circundantes",
+			"todo.completed": "{done}/{total} concluído",
+			"command.attachmentsUnsupported": "/{command} não aceita anexos; remova-os primeiro",
+			"ask.rowTitle": "Faça uma pergunta",
+			"ask.waiting": "esperando",
+			"ask.pending": "continuou; resposta ainda disponível",
+			"ask.pendingDetail": "Essas questões pendentes permanecem respondidas pelo compositor.",
+			"ask.reopen": "Resposta",
+			"ask.review": "Ver respostas",
+			"ask.closed": "fechado",
+			"ask.closedDetail": "Esta questão está encerrada; seu resultado está na conversa abaixo.",
+			"ask.cancelled": "cancelado",
+			"ask.cancelledDetail": "Este conjunto de perguntas foi cancelado antes do envio das respostas.",
+			"ask.interrupted": "interrompido",
+			"ask.interruptedDetail": "Este conjunto de perguntas foi interrompido antes do envio das respostas.",
+			"ask.answered": "{answered}/{total} respondeu",
+			"ask.skipped": "Não respondido",
+			"bash.running": "Correndo",
+			"bash.failed": "Falha",
+			"bash.stopped": "Parado",
+			"row.running": "Correndo",
+			"row.preparing": "Preparando chamada de ferramenta",
+			"row.failed": "Falha",
+			"row.stopped": "Parado",
+			"row.commandArguments": "Argumentos de comando",
+			"row.input": "IN",
+			"row.output": "OUT",
+			"row.inspect": "Inspecionar",
+			"row.imageSize": "{width}x{height}px, {bytes} bytes",
+			"row.imageSizeDownscaled": "{width}x{height}px (reduzido de {originalWidth}x{originalHeight}px), {bytes} bytes",
+			"tool.title.search": "Pesquisar",
+			"tool.title.read": "Leia",
+			"tool.title.bash": "Bash",
+			"tool.title.write": "Escreva",
+			"tool.title.edit": "Editar",
+			"tool.title.applyPatch": "Aplicar patch",
+			"tool.title.code": "Código",
+			"tool.title.generic": "Chamada de ferramenta",
+			"tool.title.inspect": "Consultar ambiente Cordis",
+			"tool.title.runCordis": "Execute o plug-in Cordis",
+			"tool.title.stopCordis": "Parar o plug-in Cordis",
+			"tool.title.removeCordis": "Remover plug-in Cordis",
+			"tool.title.pwsh": "Pwsh",
+			"tool.title.readImage": "Ler imagem",
+			"tool.title.grep": "Grep",
+			"tool.title.glob": "globo",
+			"tool.title.webSearch": "Pesquisar",
+			"tool.title.webFetch": "Buscar",
+			"tool.autoReviewRejected": "Rejeitado por Auto review",
+			"tool.autoReviewNotExecuted": "A ferramenta não foi executada. Motivo: {reason}",
+			"tool.autoReviewReasonFallback": "Auto review não autorizou esta ação",
+			"diff.collapseAria": "Recolher diferença",
+			"diff.expandAria": "Expanda mais {count} linhas de diferenças",
+			"diff.expandRest": "… mais {count} linhas",
+			"read.window": "Mostrando {shown} de {total} linhas",
+			"read.collapseAria": "Recolher conteúdo",
+			"read.expandAria": "Expanda mais {count} linhas",
+			"read.expandRest": "… mais {count} linhas",
+			"search.paths": "{shown} caminhos",
+			"search.paths.truncated": "Mostrando {shown} de {total} caminhos",
+			"search.matches": "{shown} correspondências · {files} arquivos",
+			"search.matches.truncated": "Mostrando {shown} de {total} correspondências · {files} arquivos",
+			"search.noResults": "Nenhum resultado",
+			"search.collapseAria": "Recolher resultados",
+			"search.expandAria": "Expanda mais {count} linhas de resultados",
+			"search.expandRest": "… mais {count} linhas",
+			"web.noResults": "Nenhum resultado encontrado",
+			"web.sourcesTruncated": "Lista de fontes truncada",
+			"web.http": "HTTP",
+			"web.contentTruncated": "Conteúdo truncado",
+			"details.running": "Correndo…",
+			"queue.count": "{n} mensagens na fila",
+			"queue.sending": "Enviando…",
+			"queue.image": "Imagem de mensagem na fila",
+			"queue.file": "Arquivo na fila {name}",
+			"queue.edit": "Editar mensagem na fila",
+			"queue.edit.unsupported": "Contém conteúdo não textual; a edição ainda não é suportada",
+			"queue.save": "Salvar mensagem na fila",
+			"queue.cancelEdit": "Cancelar edição",
+			"queue.remove": "Remover mensagem na fila",
+			"queue.steer": "Orientar com mensagem da fila",
+			"queue.steer.unavailable": "A direção está disponível apenas enquanto o agente está em execução",
+			"error.sessionInUse": "Esta sessão já está em uso, possivelmente por outra instância DSH em execução (como dsh web ou aplicativo de desktop). Saia de outras instâncias DSH em execução e tente novamente.",
+			"queue.editFailed": "Falha na edição: esta mensagem pode já ter começado a ser enviada.",
+			"queue.removeFailed": "Falha na remoção: esta mensagem pode já ter começado a ser enviada.",
+			"queue.steerFailed": "A direção falhou. Tente novamente.",
+			"terminal.signal": "sinal {signal}",
+			"terminal.exitCode": "código de saída {code}",
+			"terminal.noExitCode": "sem código de saída",
+			"terminal.commandLine": "Linha de comando {n}",
+			"terminal.running": "Correndo",
+			"terminal.failed": "Falha",
+			"terminal.done": "Concluído",
+			"terminal.noOutput": "Sem saída",
+			"terminal.collapseAria": "Recolher saída",
+			"terminal.expandAria": "Expanda as {n} linhas de saída restantes",
+			"terminal.expandRest": "… mais {n} linhas",
+			"terminal.sendInput": "(enviar entrada)",
+			"terminal.session": "Terminal {sessionId}",
+			"tool.title.viewSchedule": "Ver tarefa de automação",
+			"tool.title.editSchedule": "Editar tarefa de automação",
+			"detail.schedule.active": "Habilitado",
+			"detail.schedule.paused": "Pausada",
+			"detail.schedule.ended": "Concluída",
+			"context.unknown": "Context —",
+			"context.availability.pending": "Awaiting data",
+			"context.availability.unavailable": "Data unavailable",
+			"context.availability.awaiting-data": "Waiting for confirmed context usage and capacity.",
+			"context.availability.not-reported": "The CLI has not reported both context usage and capacity.",
+			"context.availability.disconnected": "The data connection is disconnected; context data is temporarily unavailable.",
+			"context.source": "Source",
+			"context.ratioOnly": "The CLI reports a context ratio; token counts, window capacity, and composition are not disclosed.",
+			"context.compositionSource": "Composition source",
+			"context.compositionMissing": "This record does not report context composition.",
+			"context.compositionPartial": "This record reports only part of the context composition.",
+			"context.compositionInvalid": "This record cannot provide valid context composition proportions."
+		};
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/queue/QueueDock.module.css.mjs
-		const css$6 = ".rQwpYW_dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));margin:0 auto calc(0px - var(--dsh-composer-stack-gap) - 3px);padding:0 var(--dsh-composer-dock-inset);flex:none}.rQwpYW_panel{isolation:isolate;border-radius:var(--dsw-radius-lg) var(--dsw-radius-lg) 0 0;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);width:100%;padding:2px 0;position:relative;overflow:hidden}.rQwpYW_panel:before{z-index:-1;border-radius:inherit;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);content:\"\";pointer-events:none;position:absolute;inset:0}.rQwpYW_panel:after{border:.5px solid var(--dsw-alias-border-l1);border-radius:inherit;content:\"\";pointer-events:none;border-bottom:none;position:absolute;inset:0}.rQwpYW_header{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:100%;height:36px;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;padding:4px 12px;display:flex}.rQwpYW_header:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.rQwpYW_header:disabled{cursor:default}.rQwpYW_lead{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.rQwpYW_count{min-width:0;font-family:Inter, var(--dsw-font-family);flex:auto;font-size:13px;font-weight:500;line-height:24px}.rQwpYW_chevron{width:14px;height:14px;color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.rQwpYW_list{max-height:180px;margin:0;padding:0;list-style:none;overflow-y:auto}.rQwpYW_row{box-sizing:border-box;border-radius:var(--dsw-radius-md);align-items:center;gap:10px;width:100%;min-height:36px;padding:4px 5px 4px 12px;display:flex}.rQwpYW_row+.rQwpYW_row{box-shadow:inset 0 1px 0 var(--dsw-alias-border-l1)}.rQwpYW_attachments{flex:none;gap:4px;min-width:0;max-width:55%;display:flex;overflow:hidden}.rQwpYW_pendingRow .rQwpYW_attachments{flex-shrink:1}.rQwpYW_file{border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-base);box-sizing:border-box;flex:0 180px;align-items:center;gap:4px;min-width:74px;height:24px;padding:0 6px;display:inline-flex;overflow:hidden}.rQwpYW_fileIcon{flex:none;width:16px;height:16px;display:inline-flex}.rQwpYW_fileName{min-width:0;color:var(--dsw-alias-label-primary-dimmed);font:var(--dsw-font-xs-13);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.rQwpYW_fileSize{color:var(--dsw-alias-label-tertiary);white-space:nowrap;flex:none;font-size:10px}.rQwpYW_thumb{border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-base);object-fit:cover;width:24px;height:24px}.rQwpYW_preview{min-width:0;font:var(--dsw-font-xs-13);font-family:Inter, var(--dsw-font-family);color:var(--dsw-alias-label-primary-dimmed);flex:auto}.rQwpYW_actions{flex:none;align-items:center;gap:10px;display:flex}.rQwpYW_status{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xs-13);white-space:nowrap;flex:none}.rQwpYW_action{corner-shape:round;width:28px;height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:999px;flex:none;place-items:center;padding:0;display:grid}.rQwpYW_action:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.rQwpYW_action:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.rQwpYW_action:disabled{cursor:default;opacity:.45}";
+		const css$6 = ".gMR2tG_dock{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));margin:0 auto calc(0px - var(--dsh-composer-stack-gap) - 3px);padding:0 var(--dsh-composer-dock-inset);flex:none}.gMR2tG_panel{isolation:isolate;border-radius:var(--dsw-radius-lg) var(--dsw-radius-lg) 0 0;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);width:100%;padding:2px 0;position:relative;overflow:hidden}.gMR2tG_panel:before{z-index:-1;border-radius:inherit;background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);content:\"\";pointer-events:none;position:absolute;inset:0}.gMR2tG_panel:after{border:.5px solid var(--dsw-alias-border-l1);border-radius:inherit;content:\"\";pointer-events:none;border-bottom:none;position:absolute;inset:0}.gMR2tG_header{box-sizing:border-box;border-radius:var(--dsw-radius-md);width:100%;height:36px;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;padding:4px 12px;display:flex}.gMR2tG_header:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.gMR2tG_header:disabled{cursor:default}.gMR2tG_lead{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.gMR2tG_count{min-width:0;font-family:Inter, var(--dsw-font-family);flex:auto;font-size:13px;font-weight:500;line-height:24px}.gMR2tG_chevron{width:14px;height:14px;color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.gMR2tG_list{max-height:180px;margin:0;padding:0;list-style:none;overflow-y:auto}.gMR2tG_row{box-sizing:border-box;border-radius:var(--dsw-radius-md);align-items:center;gap:10px;width:100%;min-height:36px;padding:4px 5px 4px 12px;display:flex}.gMR2tG_row+.gMR2tG_row{box-shadow:inset 0 1px 0 var(--dsw-alias-border-l1)}.gMR2tG_attachments{flex:none;gap:4px;min-width:0;max-width:55%;display:flex;overflow:hidden}.gMR2tG_pendingRow .gMR2tG_attachments{flex-shrink:1}.gMR2tG_file{border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-base);box-sizing:border-box;flex:0 180px;align-items:center;gap:4px;min-width:74px;height:24px;padding:0 6px;display:inline-flex;overflow:hidden}.gMR2tG_fileIcon{flex:none;width:16px;height:16px;display:inline-flex}.gMR2tG_fileName{min-width:0;color:var(--dsw-alias-label-primary-dimmed);font:var(--dsw-font-xs-13);text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.gMR2tG_fileSize{color:var(--dsw-alias-label-tertiary);white-space:nowrap;flex:none;font-size:10px}.gMR2tG_thumb{border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-xs);background:var(--dsw-alias-bg-base);object-fit:cover;width:24px;height:24px}.gMR2tG_preview{min-width:0;font:var(--dsw-font-xs-13);font-family:Inter, var(--dsw-font-family);color:var(--dsw-alias-label-primary-dimmed);flex:auto}.gMR2tG_actions{flex:none;align-items:center;gap:10px;display:flex}.gMR2tG_status{color:var(--dsw-alias-label-tertiary);font:var(--dsw-font-xs-13);white-space:nowrap;flex:none}.gMR2tG_action{corner-shape:round;width:28px;height:28px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:999px;flex:none;place-items:center;padding:0;display:grid}@media (hover:hover){.gMR2tG_action:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}}.gMR2tG_action:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}.gMR2tG_action:disabled{cursor:default;opacity:.45}";
 		const tagId$6 = "@deepseek-ai/dsh-client-ui-conversation/QueueDock.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$6) + "]") === null) {
 			const tag = document.createElement("style");
@@ -16858,25 +19603,25 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var QueueDock_module_css_default = {
-			"action": "rQwpYW_action",
-			"actions": "rQwpYW_actions",
-			"attachments": "rQwpYW_attachments",
-			"chevron": "rQwpYW_chevron",
-			"count": "rQwpYW_count",
-			"dock": "rQwpYW_dock",
-			"file": "rQwpYW_file",
-			"fileIcon": "rQwpYW_fileIcon",
-			"fileName": "rQwpYW_fileName",
-			"fileSize": "rQwpYW_fileSize",
-			"header": "rQwpYW_header",
-			"lead": "rQwpYW_lead",
-			"list": "rQwpYW_list",
-			"panel": "rQwpYW_panel",
-			"pendingRow": "rQwpYW_pendingRow",
-			"preview": "rQwpYW_preview",
-			"row": "rQwpYW_row",
-			"status": "rQwpYW_status",
-			"thumb": "rQwpYW_thumb"
+			"action": "gMR2tG_action",
+			"actions": "gMR2tG_actions",
+			"attachments": "gMR2tG_attachments",
+			"chevron": "gMR2tG_chevron",
+			"count": "gMR2tG_count",
+			"dock": "gMR2tG_dock",
+			"file": "gMR2tG_file",
+			"fileIcon": "gMR2tG_fileIcon",
+			"fileName": "gMR2tG_fileName",
+			"fileSize": "gMR2tG_fileSize",
+			"header": "gMR2tG_header",
+			"lead": "gMR2tG_lead",
+			"list": "gMR2tG_list",
+			"panel": "gMR2tG_panel",
+			"pendingRow": "gMR2tG_pendingRow",
+			"preview": "gMR2tG_preview",
+			"row": "gMR2tG_row",
+			"status": "gMR2tG_status",
+			"thumb": "gMR2tG_thumb"
 		};
 		//#endregion
 		//#region src/client/queue/QueueDock.tsx
@@ -17303,7 +20048,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/settings/EnterBehaviorRow.module.css.mjs
-		const css$5 = "._611Ffa_row{border-bottom:.5px solid var(--dsw-alias-border-l2);align-items:center;gap:8px;padding:16px 0;display:flex}._611Ffa_rowText{flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:48px;display:flex}._611Ffa_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}._611Ffa_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}._611Ffa_selector{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform);height:36px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;align-items:center;gap:12px;padding:0 14px;font-size:14px;line-height:22px;display:inline-flex}._611Ffa_selector:hover{background:var(--dsw-alias-interactive-bg-hover)}._611Ffa_chevron{flex:none}";
+		const css$5 = ".Rfvn_W_row{border-bottom:.5px solid var(--dsw-alias-border-l2);align-items:center;gap:8px;padding:16px 0;display:flex}.Rfvn_W_rowText{flex-direction:column;flex:1;gap:4px;min-width:0;padding-right:48px;display:flex}@media (width<=767px){html:not([data-windows-titlebar]):not([data-platform=darwin]) .Rfvn_W_rowText{padding-right:16px}}.Rfvn_W_title{color:var(--dsw-alias-label-primary);font-size:14px;font-weight:400;line-height:22px}.Rfvn_W_desc{color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:400;line-height:18px}.Rfvn_W_selector{border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-module-platform);height:36px;font:inherit;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;align-items:center;gap:12px;padding:0 14px;font-size:14px;line-height:22px;display:inline-flex}@media (hover:hover){.Rfvn_W_selector:hover{background:var(--dsw-alias-interactive-bg-hover)}}.Rfvn_W_chevron{flex:none}";
 		const tagId$5 = "@deepseek-ai/dsh-client-ui-conversation/EnterBehaviorRow.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$5) + "]") === null) {
 			const tag = document.createElement("style");
@@ -17313,12 +20058,12 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var EnterBehaviorRow_module_css_default = {
-			"chevron": "_611Ffa_chevron",
-			"desc": "_611Ffa_desc",
-			"row": "_611Ffa_row",
-			"rowText": "_611Ffa_rowText",
-			"selector": "_611Ffa_selector",
-			"title": "_611Ffa_title"
+			"chevron": "Rfvn_W_chevron",
+			"desc": "Rfvn_W_desc",
+			"row": "Rfvn_W_row",
+			"rowText": "Rfvn_W_rowText",
+			"selector": "Rfvn_W_selector",
+			"title": "Rfvn_W_title"
 		};
 		//#endregion
 		//#region src/client/settings/EnterBehaviorRow.tsx
@@ -17400,7 +20145,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/skeleton/ConversationRoot.module.css.mjs
-		const css$4 = ".Y8sBJW_root{background:var(--dsw-alias-bg-base);flex-direction:column;min-width:0;height:100%;display:flex;position:relative}.Y8sBJW_header{box-sizing:border-box;border-bottom:.5px solid var(--dsw-alias-border-l3);flex:none;grid-template-columns:auto minmax(0,1fr);min-height:76px;padding:10px 28px 0 20px;display:grid}.Y8sBJW_header:where(:not(:has(.Y8sBJW_tabs))){min-height:0;padding-bottom:10px}.Y8sBJW_headerBlank{border-bottom:none;min-height:0;padding-bottom:0}.Y8sBJW_headerBlank .Y8sBJW_headerCorner{margin-left:auto}html:not([data-platform=darwin]) .Y8sBJW_headerSessionless{padding-top:0}html:not([data-platform=darwin]) .Y8sBJW_headerSessionless .Y8sBJW_titleRow{min-height:0}[data-platform=darwin] .Y8sBJW_headerLeading,[data-platform=darwin] .Y8sBJW_headerActions,[data-platform=darwin] .Y8sBJW_headerUtilities,[data-platform=darwin] .Y8sBJW_headerCorner{-webkit-app-region:no-drag}.Y8sBJW_titleRow{min-height:30px;grid-column:2;align-items:center;gap:0;padding-inline-start:max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px));display:flex;container-type:inline-size}.Y8sBJW_titleCluster{flex:1;align-items:center;gap:10px;min-width:0;display:flex}.Y8sBJW_headerLeading{flex:none;grid-area:1/1;align-items:center;gap:8px;display:flex}.Y8sBJW_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}.Y8sBJW_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}.Y8sBJW_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}.Y8sBJW_crumb{border-radius:var(--dsw-radius-md);max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;padding:4px 8px;font-size:14px;line-height:20px;display:inline-block;overflow:hidden}.Y8sBJW_crumbSubagent{font-size:12px;line-height:18px}button.Y8sBJW_crumb:hover{background:var(--dsw-alias-interactive-bg-hover)}.Y8sBJW_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}.Y8sBJW_headerActions{flex:none;align-items:center;gap:8px;display:flex}.Y8sBJW_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}.Y8sBJW_headerUtilities:empty{display:none}.Y8sBJW_headerCorner{flex:none;align-items:center;margin-left:8px;margin-right:-16px;display:flex}.Y8sBJW_headerCorner:empty{display:none}.Y8sBJW_tabs{z-index:1;box-sizing:border-box;flex-wrap:wrap;grid-column:1/-1;align-items:flex-start;gap:16px 20px;width:100%;min-width:0;margin-top:10px;padding-left:8px;display:flex;position:relative}.Y8sBJW_viewTabs{flex-wrap:wrap;gap:32px;min-width:0;min-height:25px;display:flex}.Y8sBJW_tab{min-height:25px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;padding:0 0 9px;font-size:13px;font-weight:500;line-height:16px;position:relative}.Y8sBJW_tab:after{content:\"\";background:0 0;border-radius:2px;height:2px;position:absolute;bottom:-1px;left:0;right:0}.Y8sBJW_tabActive{color:var(--dsw-alias-state-business-primary)}.Y8sBJW_tabActive:after{background:var(--dsw-alias-state-business-primary)}.Y8sBJW_viewsMoreAnchor{flex:none}.Y8sBJW_viewsMore{width:22px;height:22px;color:var(--dsw-alias-label-secondary);margin-top:-3px;padding:0}.Y8sBJW_viewsMoreActive{color:var(--dsw-alias-state-business-primary)}.Y8sBJW_tabLabel{text-overflow:ellipsis;white-space:nowrap;max-width:88px;display:block;overflow:hidden}.Y8sBJW_viewsMore[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}.Y8sBJW_viewsMoreMenu{width:288px;max-width:calc(100vw - 24px)}.Y8sBJW_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}.Y8sBJW_widthHandle{z-index:0;width:min(10px, calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px));cursor:col-resize;position:absolute;top:0;bottom:0}.Y8sBJW_widthHandle[data-side=left]{right:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}.Y8sBJW_widthHandle[data-side=right]{left:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}.Y8sBJW_widthHandle:after{content:\"\";background:linear-gradient(to bottom, transparent calc(var(--dsh-width-handle-pointer-y,50%) - 36px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) - 8px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) + 8px), transparent calc(var(--dsh-width-handle-pointer-y,50%) + 36px));opacity:0;pointer-events:none;border-radius:2px;width:2px;position:absolute;top:0;bottom:0}.Y8sBJW_widthHandle[data-side=left]:after{right:4px}.Y8sBJW_widthHandle[data-side=right]:after{left:4px}.Y8sBJW_widthHandle:hover:after,.Y8sBJW_widthHandle[data-dragging]:after{opacity:1}.Y8sBJW_widthHandle[data-dragging]{z-index:8}.Y8sBJW_root:has([data-conversation-composer-overlay]) .Y8sBJW_widthHandle{display:none}.Y8sBJW_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}.Y8sBJW_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}.Y8sBJW_root[data-phase=active]{overflow:hidden}.Y8sBJW_root[data-phase=active] .Y8sBJW_header{flex:none}.Y8sBJW_body{--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px, calc(var(--dsh-conversation-column-width,0px) * .64), 920px));--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;flex:1;min-height:0;display:flex;position:relative}.Y8sBJW_embeddedBody{--dsh-chat-content-width:min(calc(100% - 32px), 920px);--dsh-composer-card-max-width:min(calc(100% - 16px), 952px);--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:8px;overflow:hidden}.Y8sBJW_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;margin-right:2px;display:flex;overflow-y:auto}.Y8sBJW_scrollBody::-webkit-scrollbar-track{margin:2px}.Y8sBJW_root[data-phase=active] .Y8sBJW_viewArea,.Y8sBJW_embeddedBody[data-content-phase=active] .Y8sBJW_viewArea{flex:1 0 auto;min-height:auto}.Y8sBJW_root[data-phase=active] .Y8sBJW_composerSeat,.Y8sBJW_embeddedBody[data-content-phase=active] .Y8sBJW_composerSeat{z-index:7;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);position:sticky;bottom:0}.Y8sBJW_root[data-phase=active] .Y8sBJW_composerSeat:has([data-trigger-menu]){z-index:9}.Y8sBJW_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}.Y8sBJW_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>.Y8sBJW_viewArea{flex:1 1 0;min-height:0;overflow:hidden}.Y8sBJW_scrollBody:has([data-conversation-composer-overlay])>.Y8sBJW_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}.Y8sBJW_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px}.Y8sBJW_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding:0 16px 0 20px;display:flex}.Y8sBJW_heroOptions{flex:none;align-items:center;gap:2px;min-width:0;margin-left:auto;display:flex}.Y8sBJW_heroOptions:empty{display:none}.Y8sBJW_root[data-phase=hero] .Y8sBJW_scrollBody,.Y8sBJW_embeddedBody[data-content-phase=hero] .Y8sBJW_scrollBody{justify-content:center;overflow-y:auto}.Y8sBJW_root[data-phase=settling] .Y8sBJW_composerSeat,.Y8sBJW_embeddedBody[data-content-phase=settling] .Y8sBJW_composerSeat{visibility:hidden}";
+		const css$4 = "._3QrRua_root{background:var(--dsw-alias-bg-base);flex-direction:column;min-width:0;height:100%;display:flex;position:relative}._3QrRua_header{box-sizing:border-box;border-bottom:.5px solid var(--dsw-alias-border-l3);flex:none;grid-template-columns:auto minmax(0,1fr);min-height:76px;padding:10px 28px 0 20px;display:grid}._3QrRua_header:where(:not(:has(._3QrRua_tabs))){min-height:0;padding-bottom:10px}._3QrRua_headerBlank{border-bottom:none;min-height:0;padding-bottom:0}._3QrRua_headerBlank ._3QrRua_headerCorner{margin-left:auto}[data-platform=darwin] ._3QrRua_headerLeading,[data-platform=darwin] ._3QrRua_headerActions,[data-platform=darwin] ._3QrRua_headerUtilities,[data-platform=darwin] ._3QrRua_headerCorner{-webkit-app-region:no-drag}._3QrRua_titleRow{min-height:30px;grid-column:2;align-items:center;gap:0;padding-inline-start:max(0px, calc(var(--dsh-frame-leading-clearance,0px) - 20px));display:flex;container-type:inline-size}._3QrRua_titleCluster{--title-cluster-fade:20px;min-width:0;margin:-4px calc(-1 * var(--title-cluster-fade)) -4px -4px;padding:4px var(--title-cluster-fade) 4px 4px;mask-image:linear-gradient(to left, transparent calc(.3 * var(--title-cluster-fade)), #000 var(--title-cluster-fade));flex:1;align-items:center;gap:10px;display:flex;overflow:clip}._3QrRua_titleCluster:has(+._3QrRua_headerUtilities:empty){--title-cluster-fade:8px}._3QrRua_headerLeading{flex:none;grid-area:1/1;align-items:center;gap:8px;display:flex}._3QrRua_crumbs{white-space:nowrap;align-items:center;gap:4px;min-width:0;display:flex;overflow:hidden}._3QrRua_crumbSeg{align-items:center;gap:4px;min-width:0;display:inline-flex}._3QrRua_crumbSep{color:var(--dsw-alias-label-caption);font-size:14px;line-height:20px}._3QrRua_crumb{border-radius:var(--dsw-radius-md);max-width:220px;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;cursor:pointer;background:0 0;border:none;padding:4px 8px;font-size:14px;line-height:20px;display:inline-block;overflow:hidden}._3QrRua_crumbSubagent{font-size:12px;line-height:18px}@media (hover:hover){button._3QrRua_crumb:hover{background:var(--dsw-alias-interactive-bg-hover)}}._3QrRua_crumbCurrent{color:var(--dsw-alias-label-primary);cursor:default;font-weight:500}._3QrRua_headerActions{flex:none;align-items:center;gap:8px;display:flex}._3QrRua_headerUtilities{flex:none;align-items:center;gap:8px;margin-left:20px;display:flex}._3QrRua_headerUtilities:empty{display:none}._3QrRua_headerCorner{flex:none;align-items:center;margin-left:8px;margin-right:-16px;display:flex}._3QrRua_headerCorner:empty{display:none}._3QrRua_tabs{z-index:1;box-sizing:border-box;flex-wrap:wrap;grid-column:1/-1;align-items:flex-start;gap:16px 20px;width:100%;min-width:0;margin-top:10px;padding-left:8px;display:flex;position:relative}@media (width<=767px){html:not([data-platform]) ._3QrRua_tabs{padding-left:0}}._3QrRua_viewTabs{flex-wrap:wrap;gap:32px;min-width:0;min-height:25px;display:flex}._3QrRua_tab{--dsh-tab-hit-inline:10px;box-sizing:border-box;min-height:35px;margin:-10px calc(-1 * var(--dsh-tab-hit-inline)) 0;padding:10px var(--dsh-tab-hit-inline) 9px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;font-size:13px;font-weight:500;line-height:16px;position:relative}._3QrRua_tab:after{content:\"\";right:var(--dsh-tab-hit-inline);bottom:-1px;left:var(--dsh-tab-hit-inline);background:0 0;border-radius:2px;height:2px;position:absolute}._3QrRua_tabActive{color:var(--dsw-alias-state-business-primary)}._3QrRua_tabActive:after{background:var(--dsw-alias-state-business-primary)}._3QrRua_viewsMoreAnchor{flex:none}._3QrRua_viewsMore{width:22px;height:22px;color:var(--dsw-alias-label-secondary);margin-top:-3px;padding:0}._3QrRua_viewsMoreActive{color:var(--dsw-alias-state-business-primary)}._3QrRua_tabLabel{text-overflow:ellipsis;white-space:nowrap;max-width:88px;display:block;overflow:hidden}._3QrRua_viewsMore[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}._3QrRua_viewsMoreMenu{width:288px;max-width:calc(100vw - 24px)}._3QrRua_viewArea{flex-direction:column;flex:1;min-height:0;display:flex}._3QrRua_widthHandle{z-index:0;width:min(10px, calc((100% - var(--dsh-chat-content-width)) / 2 - 24px - 24px));cursor:col-resize;position:absolute;top:0;bottom:0}._3QrRua_widthHandle[data-side=left]{right:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}._3QrRua_widthHandle[data-side=right]{left:calc(50% + var(--dsh-chat-content-width) / 2 + 24px)}._3QrRua_widthHandle:after{content:\"\";background:linear-gradient(to bottom, transparent calc(var(--dsh-width-handle-pointer-y,50%) - 36px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) - 8px), var(--dsw-alias-scrollbar-bg-l1) calc(var(--dsh-width-handle-pointer-y,50%) + 8px), transparent calc(var(--dsh-width-handle-pointer-y,50%) + 36px));opacity:0;pointer-events:none;border-radius:2px;width:2px;position:absolute;top:0;bottom:0}._3QrRua_widthHandle[data-side=left]:after{right:4px}._3QrRua_widthHandle[data-side=right]:after{left:4px}._3QrRua_widthHandle[data-dragging]:after{opacity:1}@media (hover:hover){._3QrRua_widthHandle:hover:after{opacity:1}}._3QrRua_root:has([data-conversation-composer-overlay]) ._3QrRua_widthHandle{display:none}._3QrRua_composerStack{--dsh-composer-stack-gap:6px;gap:var(--dsh-composer-stack-gap);flex-direction:column;display:flex}._3QrRua_composerSeat{--dsh-composer-text-max-height:336px;flex-direction:column;flex:none;display:flex}._3QrRua_root[data-phase=active]{overflow:hidden}._3QrRua_root[data-phase=active] ._3QrRua_header{flex:none}._3QrRua_body{--dsh-chat-content-width:var(--dsh-chat-user-width,clamp(680px, calc(var(--dsh-conversation-column-width,0px) * .64), 920px));--dsh-composer-card-max-width:calc(var(--dsh-chat-content-width) + 32px);--dsh-composer-side-clearance:16px;--dsh-composer-dock-inset:8px;flex-direction:column;flex:1;min-height:0;display:flex;position:relative}._3QrRua_embeddedBody{--dsh-chat-content-width:min(calc(100% - 32px), 920px);--dsh-composer-card-max-width:min(calc(100% - 16px), 952px);--dsh-composer-side-clearance:8px;--dsh-composer-dock-inset:8px;overflow:hidden}._3QrRua_scrollBody{scrollbar-gutter:stable;flex-direction:column;flex:1;min-height:0;margin-right:2px;display:flex;overflow-y:auto}._3QrRua_scrollBody::-webkit-scrollbar-track{margin:2px}._3QrRua_root[data-phase=active] ._3QrRua_viewArea,._3QrRua_embeddedBody[data-content-phase=active] ._3QrRua_viewArea{flex:1 0 auto;min-height:auto}._3QrRua_root[data-phase=active] ._3QrRua_composerSeat,._3QrRua_embeddedBody[data-content-phase=active] ._3QrRua_composerSeat{z-index:9;will-change:transform;overflow-anchor:none;background:linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px, var(--dsw-alias-bg-base) 36px);margin-top:auto;position:sticky;bottom:0}._3QrRua_scrollBody:has([data-conversation-composer-overlay]){scrollbar-gutter:auto;position:relative;overflow:hidden auto}._3QrRua_scrollBody:has([data-conversation-composer-overlay])>[data-slot=conversation\\.session]>._3QrRua_viewArea{flex:1 1 0;min-height:0;overflow:hidden}._3QrRua_scrollBody:has([data-conversation-composer-overlay])>._3QrRua_composerSeat{right:var(--dsh-scrollbar-width);position:absolute;bottom:0;left:0}._3QrRua_composerHero{width:min(calc(var(--dsh-composer-card-max-width) + 2 * var(--dsh-composer-side-clearance)), 100%);z-index:1;align-self:center;gap:8px;padding-bottom:32px}._3QrRua_heroWorkspaceRow{align-items:center;gap:2px;min-width:0;margin-top:4px;padding:0 16px 0 20px;display:flex}._3QrRua_heroOptions{flex:none;align-items:center;gap:2px;min-width:0;margin-left:auto;display:flex}._3QrRua_heroOptions:empty{display:none}._3QrRua_root[data-phase=hero] ._3QrRua_scrollBody,._3QrRua_embeddedBody[data-content-phase=hero] ._3QrRua_scrollBody{justify-content:center;overflow-y:auto}._3QrRua_root[data-phase=settling] ._3QrRua_composerSeat,._3QrRua_embeddedBody[data-content-phase=settling] ._3QrRua_composerSeat{visibility:hidden}";
 		const tagId$4 = "@deepseek-ai/dsh-client-ui-conversation/ConversationRoot.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$4) + "]") === null) {
 			const tag = document.createElement("style");
@@ -17410,41 +20155,40 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var ConversationRoot_module_css_default = {
-			"body": "Y8sBJW_body",
-			"composerHero": "Y8sBJW_composerHero",
-			"composerSeat": "Y8sBJW_composerSeat",
-			"composerStack": "Y8sBJW_composerStack",
-			"crumb": "Y8sBJW_crumb",
-			"crumbCurrent": "Y8sBJW_crumbCurrent",
-			"crumbSeg": "Y8sBJW_crumbSeg",
-			"crumbSep": "Y8sBJW_crumbSep",
-			"crumbSubagent": "Y8sBJW_crumbSubagent",
-			"crumbs": "Y8sBJW_crumbs",
-			"embeddedBody": "Y8sBJW_embeddedBody",
-			"header": "Y8sBJW_header",
-			"headerActions": "Y8sBJW_headerActions",
-			"headerBlank": "Y8sBJW_headerBlank",
-			"headerCorner": "Y8sBJW_headerCorner",
-			"headerLeading": "Y8sBJW_headerLeading",
-			"headerSessionless": "Y8sBJW_headerSessionless",
-			"headerUtilities": "Y8sBJW_headerUtilities",
-			"heroOptions": "Y8sBJW_heroOptions",
-			"heroWorkspaceRow": "Y8sBJW_heroWorkspaceRow",
-			"root": "Y8sBJW_root",
-			"scrollBody": "Y8sBJW_scrollBody",
-			"tab": "Y8sBJW_tab",
-			"tabActive": "Y8sBJW_tabActive",
-			"tabLabel": "Y8sBJW_tabLabel",
-			"tabs": "Y8sBJW_tabs",
-			"titleCluster": "Y8sBJW_titleCluster",
-			"titleRow": "Y8sBJW_titleRow",
-			"viewArea": "Y8sBJW_viewArea",
-			"viewTabs": "Y8sBJW_viewTabs",
-			"viewsMore": "Y8sBJW_viewsMore",
-			"viewsMoreActive": "Y8sBJW_viewsMoreActive",
-			"viewsMoreAnchor": "Y8sBJW_viewsMoreAnchor",
-			"viewsMoreMenu": "Y8sBJW_viewsMoreMenu",
-			"widthHandle": "Y8sBJW_widthHandle"
+			"body": "_3QrRua_body",
+			"composerHero": "_3QrRua_composerHero",
+			"composerSeat": "_3QrRua_composerSeat",
+			"composerStack": "_3QrRua_composerStack",
+			"crumb": "_3QrRua_crumb",
+			"crumbCurrent": "_3QrRua_crumbCurrent",
+			"crumbSeg": "_3QrRua_crumbSeg",
+			"crumbSep": "_3QrRua_crumbSep",
+			"crumbSubagent": "_3QrRua_crumbSubagent",
+			"crumbs": "_3QrRua_crumbs",
+			"embeddedBody": "_3QrRua_embeddedBody",
+			"header": "_3QrRua_header",
+			"headerActions": "_3QrRua_headerActions",
+			"headerBlank": "_3QrRua_headerBlank",
+			"headerCorner": "_3QrRua_headerCorner",
+			"headerLeading": "_3QrRua_headerLeading",
+			"headerUtilities": "_3QrRua_headerUtilities",
+			"heroOptions": "_3QrRua_heroOptions",
+			"heroWorkspaceRow": "_3QrRua_heroWorkspaceRow",
+			"root": "_3QrRua_root",
+			"scrollBody": "_3QrRua_scrollBody",
+			"tab": "_3QrRua_tab",
+			"tabActive": "_3QrRua_tabActive",
+			"tabLabel": "_3QrRua_tabLabel",
+			"tabs": "_3QrRua_tabs",
+			"titleCluster": "_3QrRua_titleCluster",
+			"titleRow": "_3QrRua_titleRow",
+			"viewArea": "_3QrRua_viewArea",
+			"viewTabs": "_3QrRua_viewTabs",
+			"viewsMore": "_3QrRua_viewsMore",
+			"viewsMoreActive": "_3QrRua_viewsMoreActive",
+			"viewsMoreAnchor": "_3QrRua_viewsMoreAnchor",
+			"viewsMoreMenu": "_3QrRua_viewsMoreMenu",
+			"widthHandle": "_3QrRua_widthHandle"
 		};
 		//#endregion
 		//#region src/client/skeleton/ConversationWidthControls.tsx
@@ -17658,7 +20402,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/skeleton/HeroShell.module.css.mjs
-		const css$3 = ".eyH_0a_root{justify-content:center;align-items:center;min-width:0;height:100%;padding:0 24px;display:flex}.eyH_0a_stack{width:100%;max-width:var(--dsh-composer-card-max-width);flex-direction:column;align-items:stretch;gap:12px;display:flex;overflow:visible}.eyH_0a_headline{color:var(--dsw-alias-label-primary);flex-wrap:wrap;justify-content:center;align-items:center;gap:12px 10px;font-size:26px;font-weight:500;line-height:32px;display:flex}.eyH_0a_titleGroup{flex-wrap:wrap;justify-content:center;align-items:center;gap:4px 7px;min-width:0;display:flex}.eyH_0a_previewBadge{border:.5px solid var(--dsw-alias-interactive-bg-hover);corner-shape:round;background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-label-primary-bluish);font-family:var(--ds-font-family-code);white-space:nowrap;border-radius:999px;align-self:flex-start;margin-top:2px;padding:1px 7px 0;font-size:12px;font-weight:500;line-height:18px}.eyH_0a_fishHitbox{flex:none;justify-content:center;align-items:center;display:inline-flex}.eyH_0a_fish{transform-origin:50% 60%;color:var(--dsw-alias-label-primary);display:block;overflow:visible}@keyframes eyH_0a_hero-fish-swim{0%,to{transform:none}35%{transform:rotate(-4deg)translate(-.4px,-.9px)}70%{transform:rotate(1.6deg)translate(.3px,.2px)}}@media (hover:hover) and (prefers-reduced-motion:no-preference){.eyH_0a_fishHitbox:hover .eyH_0a_fish{animation:1.6s ease-in-out infinite eyH_0a_hero-fish-swim}}.eyH_0a_body{flex-direction:column;gap:12px;min-width:0;display:flex;position:relative;overflow:visible}.eyH_0a_body>*{z-index:1;position:relative}.eyH_0a_body>.eyH_0a_workspaceRow{z-index:10;align-items:center;min-width:0;padding-left:8px;display:flex}.eyH_0a_workspace{border-radius:var(--dsw-radius-sm);max-width:min(100%,360px);min-height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;align-items:center;gap:4px;padding:0 8px;font-size:13px;font-weight:500;line-height:20px;display:inline-flex}.eyH_0a_workspace:not(:disabled):hover,.eyH_0a_workspace[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}.eyH_0a_workspace:disabled{cursor:default}.eyH_0a_folder{color:var(--dsw-alias-label-primary);flex:none}.eyH_0a_workspaceLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.eyH_0a_chevron{color:var(--dsw-alias-label-caption);flex:none}.eyH_0a_modalInput{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);width:100%;height:44px;color:var(--dsw-alias-label-primary);background:0 0;outline:none;padding:7px 14px;font-size:14px;font-weight:400;line-height:22px}.eyH_0a_modalInput::placeholder{color:var(--dsw-alias-label-caption)}.eyH_0a_modalInput:disabled{color:var(--dsw-alias-label-dimmed)}.eyH_0a_modalAction{min-width:72px}.eyH_0a_modalError{color:var(--dsw-alias-state-error-primary);margin-top:8px;font-size:12px;line-height:18px}";
+		const css$3 = ".ub4uYG_root{justify-content:center;align-items:center;min-width:0;height:100%;padding:0 24px;display:flex}.ub4uYG_stack{width:100%;max-width:var(--dsh-composer-card-max-width);flex-direction:column;align-items:stretch;gap:12px;display:flex;overflow:visible}.ub4uYG_headline{color:var(--dsw-alias-label-primary);flex-wrap:wrap;justify-content:center;align-items:center;gap:12px 10px;font-size:26px;font-weight:500;line-height:32px;display:flex}.ub4uYG_titleGroup{flex-wrap:wrap;justify-content:center;align-items:center;gap:4px 7px;min-width:0;display:flex}.ub4uYG_previewBadge{border:.5px solid var(--dsw-alias-interactive-bg-hover);corner-shape:round;background:var(--dsw-alias-state-business-tertiary);color:var(--dsw-alias-label-primary-bluish);font-family:var(--ds-font-family-code);white-space:nowrap;border-radius:999px;align-self:flex-start;margin-top:2px;padding:1px 7px 0;font-size:12px;font-weight:500;line-height:18px}.ub4uYG_fishHitbox{flex:none;justify-content:center;align-items:center;display:inline-flex}.ub4uYG_fish{transform-origin:50% 60%;color:var(--dsw-alias-label-primary);display:block;overflow:visible}@keyframes ub4uYG_hero-fish-swim{0%,to{transform:none}35%{transform:rotate(-4deg)translate(-.4px,-.9px)}70%{transform:rotate(1.6deg)translate(.3px,.2px)}}@media (hover:hover) and (prefers-reduced-motion:no-preference){.ub4uYG_fishHitbox:hover .ub4uYG_fish{animation:1.6s ease-in-out infinite ub4uYG_hero-fish-swim}}.ub4uYG_body{flex-direction:column;gap:12px;min-width:0;display:flex;position:relative;overflow:visible}.ub4uYG_body>*{z-index:1;position:relative}.ub4uYG_body>.ub4uYG_workspaceRow{z-index:10;align-items:center;min-width:0;padding-left:8px;display:flex}.ub4uYG_workspace{border-radius:var(--dsw-radius-sm);max-width:min(100%,360px);min-height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;background:0 0;border:none;align-items:center;gap:4px;padding:0 8px;font-size:13px;font-weight:500;line-height:20px;display:inline-flex}.ub4uYG_workspace[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover)}@media (hover:hover){.ub4uYG_workspace:not(:disabled):hover{background:var(--dsw-alias-interactive-bg-hover)}}.ub4uYG_workspace:disabled{cursor:default}.ub4uYG_folder{color:var(--dsw-alias-label-primary);flex:none}.ub4uYG_workspaceLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.ub4uYG_chevron{color:var(--dsw-alias-label-caption);flex:none}.ub4uYG_modalInput{box-sizing:border-box;border:.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-lg);width:100%;height:44px;color:var(--dsw-alias-label-primary);background:0 0;outline:none;padding:7px 14px;font-size:14px;font-weight:400;line-height:22px}.ub4uYG_modalInput::placeholder{color:var(--dsw-alias-label-caption)}.ub4uYG_modalInput:disabled{color:var(--dsw-alias-label-dimmed)}.ub4uYG_modalAction{min-width:72px}.ub4uYG_modalError{color:var(--dsw-alias-state-error-primary);margin-top:8px;font-size:12px;line-height:18px}";
 		const tagId$3 = "@deepseek-ai/dsh-client-ui-conversation/HeroShell.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$3) + "]") === null) {
 			const tag = document.createElement("style");
@@ -17668,23 +20412,23 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var HeroShell_module_css_default = {
-			"body": "eyH_0a_body",
-			"chevron": "eyH_0a_chevron",
-			"fish": "eyH_0a_fish",
-			"fishHitbox": "eyH_0a_fishHitbox",
-			"folder": "eyH_0a_folder",
-			"headline": "eyH_0a_headline",
-			"hero-fish-swim": "eyH_0a_hero-fish-swim",
-			"modalAction": "eyH_0a_modalAction",
-			"modalError": "eyH_0a_modalError",
-			"modalInput": "eyH_0a_modalInput",
-			"previewBadge": "eyH_0a_previewBadge",
-			"root": "eyH_0a_root",
-			"stack": "eyH_0a_stack",
-			"titleGroup": "eyH_0a_titleGroup",
-			"workspace": "eyH_0a_workspace",
-			"workspaceLabel": "eyH_0a_workspaceLabel",
-			"workspaceRow": "eyH_0a_workspaceRow"
+			"body": "ub4uYG_body",
+			"chevron": "ub4uYG_chevron",
+			"fish": "ub4uYG_fish",
+			"fishHitbox": "ub4uYG_fishHitbox",
+			"folder": "ub4uYG_folder",
+			"headline": "ub4uYG_headline",
+			"hero-fish-swim": "ub4uYG_hero-fish-swim",
+			"modalAction": "ub4uYG_modalAction",
+			"modalError": "ub4uYG_modalError",
+			"modalInput": "ub4uYG_modalInput",
+			"previewBadge": "ub4uYG_previewBadge",
+			"root": "ub4uYG_root",
+			"stack": "ub4uYG_stack",
+			"titleGroup": "ub4uYG_titleGroup",
+			"workspace": "ub4uYG_workspace",
+			"workspaceLabel": "ub4uYG_workspaceLabel",
+			"workspaceRow": "ub4uYG_workspaceRow"
 		};
 		//#endregion
 		//#region src/client/skeleton/EmptyHero.tsx
@@ -17788,10 +20532,10 @@ window.__ModuleLoader__.load({
 						className: HeroShell_module_css_default.headline,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: HeroShell_module_css_default.fishHitbox,
-							onMouseEnter: () => {
-								if (window.matchMedia("(hover: hover) and (prefers-reduced-motion: no-preference)").matches) setHovering(true);
+							onPointerEnter: (event) => {
+								if (event.pointerType !== "touch" && window.matchMedia("(hover: hover) and (prefers-reduced-motion: no-preference)").matches) setHovering(true);
 							},
-							onMouseLeave: () => {
+							onPointerLeave: () => {
 								setHovering(false);
 							},
 							children: renderSlot("conversation.hero.brand.mark", {
@@ -17987,7 +20731,7 @@ window.__ModuleLoader__.load({
 			const conversation = useConversation((s) => s);
 			const blank = session === void 0 || conversation === void 0 || session.blank && conversationPhase(session, conversation) === "blank";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank, sessionId === void 0 && ConversationRoot_module_css_default.headerSessionless),
+				className: clsx(ConversationRoot_module_css_default.header, blank && ConversationRoot_module_css_default.headerBlank),
 				"data-window-drag": true,
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: ConversationRoot_module_css_default.headerLeading,
@@ -18156,7 +20900,8 @@ window.__ModuleLoader__.load({
 		* @param props - Strict Session store, view ledger, navigation, render, and locale shares.
 		* @returns Session navigation controls, with title and tabs after conversation starts.
 		*/
-		function ConversationSessionHeader({ sessionId, hideChrome, useSessions, useConversationViews, useStore, renderSlot, open, selectView, setPinned, t, useEntryPins, useEntryActions }) {
+		function ConversationSessionHeader({ sessionId, hideChrome, useSessions, useConversationViews, useStore, renderSlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions }) {
+			const { getTriggerProps } = useContextMenu();
 			const tabs = useConversationViews((value) => value);
 			const active = resolveActiveView(tabs, useStore((s) => s.view));
 			const ancestry = useSessions((s) => deriveAncestry(s, sessionId), equalBreadcrumbs);
@@ -18224,6 +20969,13 @@ window.__ModuleLoader__.load({
 							};
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: ConversationRoot_module_css_default.crumbSeg,
+								...getTriggerProps({
+									kind: "session",
+									value: {
+										sessionId: summary.id,
+										displayTitle: summary.displayTitle
+									}
+								}),
 								children: [index > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: ConversationRoot_module_css_default.crumbSep,
 									children: "/"
@@ -18364,7 +21116,7 @@ window.__ModuleLoader__.load({
 				ref: scrollRef,
 				className: css.scroll,
 				"data-input-scroll": true,
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(_deepseek_ai_dsh_client_ui_primitives.HoverCardGroup, {
 					className: css.grow,
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ComposerContentEditable, {
@@ -18397,6 +21149,106 @@ window.__ModuleLoader__.load({
 		/** Composition state a keydown can trust (see the module doc's Safari note). */
 		function isComposingEvent(event, recentlyComposing) {
 			return event.isComposing || event.keyCode === 229 || recentlyComposing();
+		}
+		function isApplePlatform() {
+			return typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+		}
+		/** Whether the browser caret touches one side of an atomic quote element. */
+		function domCaretTouches(element, backward) {
+			const selection = element.ownerDocument.defaultView?.getSelection();
+			if (selection === null || selection === void 0 || !selection.isCollapsed) return false;
+			const focus = selection.focusNode;
+			if (focus === null) return false;
+			const parent = element.parentNode;
+			if (parent === null) return false;
+			const offset = selection.focusOffset;
+			if (focus === parent) return focus.childNodes.item(backward ? offset - 1 : offset) === element;
+			if (focus.nodeType === Node.TEXT_NODE) {
+				const size = focus.textContent?.length ?? 0;
+				if (backward ? offset !== 0 : offset !== size) return false;
+			} else if (backward ? offset !== 0 : offset !== focus.childNodes.length) return false;
+			let boundary = focus;
+			while (boundary.parentNode !== null && boundary.parentNode !== parent) {
+				if ((backward ? boundary.previousSibling : boundary.nextSibling) !== null) return false;
+				boundary = boundary.parentNode;
+			}
+			return boundary.parentNode === parent && (backward ? boundary.previousSibling : boundary.nextSibling) === element;
+		}
+		/** Find an atomic quote immediately beside both editor and browser carets. */
+		function adjacentQuote(editor, backward) {
+			const selection = Kr();
+			if (!ur(selection) || !selection.isCollapsed()) return null;
+			const adjacent = kl(selection.focus, backward);
+			if (!$isQuoteNode(adjacent)) return null;
+			const element = editor.getElementByKey(adjacent.getKey());
+			return element !== null && domCaretTouches(element, backward) ? adjacent : null;
+		}
+		function lineLeadingQuoteBeforeSelection(editor) {
+			let quote = adjacentQuote(editor, true);
+			if (quote === null) return null;
+			let previous = quote.getPreviousSibling();
+			while (previous !== null) {
+				if (Yi(previous)) return quote;
+				if ($isQuoteNode(previous)) {
+					quote = previous;
+					previous = previous.getPreviousSibling();
+					continue;
+				}
+				if (!Xo(previous)) return null;
+				const text = previous.getTextContent();
+				const lastBreak = text.lastIndexOf("\n");
+				if (lastBreak >= 0) return text.slice(lastBreak + 1) === "" ? quote : null;
+				if (text.trim() !== "") return null;
+				const precedingQuote = previous.getPreviousSibling();
+				if (!$isQuoteNode(precedingQuote)) return null;
+				quote = precedingQuote;
+				previous = quote.getPreviousSibling();
+			}
+			return quote;
+		}
+		/** Put the browser caret before an adjacent line-leading quote. */
+		function moveBeforeQuote(editor, event) {
+			if (event.shiftKey) return false;
+			const quote = lineLeadingQuoteBeforeSelection(editor);
+			if (quote === null) return false;
+			const element = editor.getElementByKey(quote.getKey());
+			if (element === null) return false;
+			const view = element.ownerDocument.defaultView;
+			if (view === null) return false;
+			const domSelection = view.getSelection();
+			if (domSelection === null) return false;
+			const range = element.ownerDocument.createRange();
+			range.setStartBefore(element);
+			range.collapse(true);
+			domSelection.removeAllRanges();
+			domSelection.addRange(range);
+			event.preventDefault();
+			return true;
+		}
+		/** Move from immediately before a quote to the end of its hard line. */
+		function movePastQuote(editor, event) {
+			if (!isApplePlatform() || event.key !== "ArrowRight" || !event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return false;
+			const quote = adjacentQuote(editor, false);
+			if (quote === null) return false;
+			const block = quote.getParent();
+			if (!Pi(block)) return false;
+			let lineEnd = quote.getIndexWithinParent() + 1;
+			while (lineEnd < block.getChildrenSize()) {
+				const child = block.getChildAtIndex(lineEnd);
+				if (Yi(child)) break;
+				if (Xo(child)) {
+					const hardBreak = child.getTextContent().indexOf("\n");
+					if (hardBreak >= 0) {
+						event.preventDefault();
+						child.select(hardBreak, hardBreak);
+						return true;
+					}
+				}
+				lineEnd += 1;
+			}
+			event.preventDefault();
+			block.select(lineEnd, lineEnd);
+			return true;
 		}
 		/**
 		* Register the composer keymap on one editor.
@@ -18439,7 +21291,11 @@ window.__ModuleLoader__.load({
 				root?.addEventListener("compositionstart", onCompositionStart);
 				root?.addEventListener("compositionend", onCompositionEnd);
 				syncComposition();
-			}), editor.registerUpdateListener(syncComposition), editor.registerCommand(sn$1, arrow("up"), 4), editor.registerCommand(ln, arrow("down"), 4), editor.registerCommand(hn$1, (event) => arrow(event.shiftKey ? "tabBack" : "tab")(event), 4), editor.registerCommand(fn, (event) => {
+			}), editor.registerCommand(tn$2, (event) => {
+				if (!isApplePlatform() || !event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
+				if (event.key.toLowerCase() === "a") return moveBeforeQuote(editor, event);
+				return false;
+			}, 4), editor.registerCommand(nn$2, (event) => movePastQuote(editor, event), 4), editor.registerUpdateListener(syncComposition), editor.registerCommand(sn$1, arrow("up"), 4), editor.registerCommand(ln, arrow("down"), 4), editor.registerCommand(hn$1, (event) => arrow(event.shiftKey ? "tabBack" : "tab")(event), 4), editor.registerCommand(fn, (event) => {
 				handlers.dismissPopup();
 				if (handlers.arbitrate("escape", isComposingEvent(event, recentlyComposing)) === "consumed") {
 					event.preventDefault();
@@ -18492,6 +21348,21 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/client/input/editor/view-binding.ts
+		/**
+		* Transfer mobile editor focus after a submission empties the draft.
+		* A control the user already focused retains focus.
+		* @param editor - the Session-owned editor.
+		* @param destination - stable, focusable non-text element that retains the composer's keyboard position.
+		* @returns the update-listener cleanup.
+		*/
+		function installDraftKeyboardDismissal(editor, destination) {
+			return editor.registerUpdateListener(({ editorState, tags }) => {
+				if (!tags.has("dsh-draft-submitted") || !(0, _deepseek_ai_dsh_client_ui_primitives.isMobileDevice)()) return;
+				const input = editor.getRootElement();
+				if (input === null || input.ownerDocument.activeElement !== input) return;
+				if (editorState.read(() => nl().getTextContentSize() === 0) && destination.current !== null) (0, _deepseek_ai_dsh_client_ui_primitives.focusWithoutRing)(destination.current, { preventScroll: true });
+			});
+		}
 		/**
 		* Reveal the DOM selection within the draft's own scrollport.
 		* @param scrollRef - the InputBar-owned scrollport reference.
@@ -18585,7 +21456,7 @@ window.__ModuleLoader__.load({
 						return;
 					}
 					if (g.uploadsPending) {
-						g.showToast(g.t("file.stillUploading"));
+						g.showToast(g.uploadsHeldText);
 						return;
 					}
 					keyboard.submit(resolveSubmitMode(g.busyEnter, g.running, accelerated ? "accelerated" : "enter", g.steeringAvailable), "enter");
@@ -18687,7 +21558,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css.mjs
-		const css$2 = ".E0Zk5W_root{flex:none;display:inline-flex}.E0Zk5W_trigger{border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-tertiary);font-family:inherit;font-size:var(--dsh-content-font-size-secondary,13px);font-variant-numeric:tabular-nums;line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));white-space:nowrap;cursor:pointer;background:0 0;border:none;flex:none;align-items:center;gap:6px;padding:1px 8px;display:inline-flex}.E0Zk5W_trigger:hover,.E0Zk5W_trigger[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}.E0Zk5W_track{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2px}.E0Zk5W_fill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2px;stroke-linecap:round}.E0Zk5W_panel{z-index:1100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);width:min(264px,100vw - 24px);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-secondary);cursor:default;border:0;padding:12px;font-size:12px;line-height:20px;position:fixed}.E0Zk5W_header{align-items:center;gap:6px;display:flex}.E0Zk5W_figures{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);margin-left:auto;font-weight:500}.E0Zk5W_percent{color:var(--dsw-alias-label-primary);font-weight:500}.E0Zk5W_headline{color:var(--dsw-alias-label-tertiary)}.E0Zk5W_headline:empty{display:none}.E0Zk5W_bar{corner-shape:round;background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;gap:1px;height:4px;margin:10px 0 8px;display:flex;overflow:hidden}.E0Zk5W_segment{background:var(--meter-tint,var(--dsw-alias-label-tertiary));border-radius:1px;flex:none;min-width:2px;height:100%}.E0Zk5W_swatch{background:var(--meter-tint);vertical-align:baseline;border-radius:2px;width:8px;height:8px;margin-right:6px;display:inline-block}.E0Zk5W_colorSystem{--meter-tint:var(--dsw-static-neutral-bluish-400)}.E0Zk5W_colorTools{--meter-tint:#a78bfa}.E0Zk5W_colorMessages{--meter-tint:var(--dsw-static-blue-450)}.E0Zk5W_rows{margin:0}.E0Zk5W_row{justify-content:space-between;align-items:center;gap:12px;padding:2px 0;display:flex}.E0Zk5W_row dt{color:var(--dsw-alias-label-secondary)}.E0Zk5W_row dd{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);margin:0}";
+		const css$2 = ".Vz75Gq_root{flex:none;display:inline-flex}.Vz75Gq_trigger{border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-tertiary);font-family:inherit;font-size:var(--dsh-content-font-size-secondary,13px);font-variant-numeric:tabular-nums;line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));white-space:nowrap;cursor:pointer;background:0 0;border:none;flex:none;align-items:center;gap:6px;padding:1px 8px;display:inline-flex}.Vz75Gq_trigger[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}@media (hover:hover){.Vz75Gq_trigger:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}}.Vz75Gq_track{fill:none;stroke:var(--dsw-alias-border-l3);stroke-width:2px}.Vz75Gq_fill{fill:none;stroke:var(--dsw-alias-label-tertiary);stroke-width:2px;stroke-linecap:round}.Vz75Gq_panel{z-index:1100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);width:min(264px,100vw - 24px);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-secondary);cursor:default;max-width:var(--dsh-anchored-max-width,none);max-height:var(--dsh-anchored-max-height,none);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;padding:12px;font-size:12px;line-height:20px;position:fixed;overflow:hidden auto}.Vz75Gq_header{align-items:center;gap:6px;display:flex}.Vz75Gq_figures{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);margin-left:auto;font-weight:500}.Vz75Gq_percent{color:var(--dsw-alias-label-primary);font-weight:500}.Vz75Gq_headline{color:var(--dsw-alias-label-tertiary)}.Vz75Gq_headline:empty{display:none}.Vz75Gq_bar{corner-shape:round;background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;gap:1px;height:4px;margin:10px 0 8px;display:flex;overflow:hidden}.Vz75Gq_segment{background:var(--meter-tint,var(--dsw-alias-label-tertiary));border-radius:1px;flex:none;min-width:2px;height:100%}.Vz75Gq_swatch{background:var(--meter-tint);vertical-align:baseline;border-radius:2px;width:8px;height:8px;margin-right:6px;display:inline-block}.Vz75Gq_colorSystem{--meter-tint:var(--dsw-static-neutral-bluish-400)}.Vz75Gq_colorTools{--meter-tint:#a78bfa}.Vz75Gq_colorMessages{--meter-tint:var(--dsw-static-blue-450)}.Vz75Gq_rows{margin:0}.Vz75Gq_row{justify-content:space-between;align-items:center;gap:12px;padding:2px 0;display:flex}.Vz75Gq_row dt{color:var(--dsw-alias-label-secondary)}.Vz75Gq_row dd{font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);margin:0}";
 		const tagId$2 = "@deepseek-ai/dsh-client-ui-conversation/ContextMeter.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
 			const tag = document.createElement("style");
@@ -18697,23 +21568,23 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var ContextMeter_module_css_default = {
-			"bar": "E0Zk5W_bar",
-			"colorMessages": "E0Zk5W_colorMessages",
-			"colorSystem": "E0Zk5W_colorSystem",
-			"colorTools": "E0Zk5W_colorTools",
-			"figures": "E0Zk5W_figures",
-			"fill": "E0Zk5W_fill",
-			"header": "E0Zk5W_header",
-			"headline": "E0Zk5W_headline",
-			"panel": "E0Zk5W_panel",
-			"percent": "E0Zk5W_percent",
-			"root": "E0Zk5W_root",
-			"row": "E0Zk5W_row",
-			"rows": "E0Zk5W_rows",
-			"segment": "E0Zk5W_segment",
-			"swatch": "E0Zk5W_swatch",
-			"track": "E0Zk5W_track",
-			"trigger": "E0Zk5W_trigger"
+			"bar": "Vz75Gq_bar",
+			"colorMessages": "Vz75Gq_colorMessages",
+			"colorSystem": "Vz75Gq_colorSystem",
+			"colorTools": "Vz75Gq_colorTools",
+			"figures": "Vz75Gq_figures",
+			"fill": "Vz75Gq_fill",
+			"header": "Vz75Gq_header",
+			"headline": "Vz75Gq_headline",
+			"panel": "Vz75Gq_panel",
+			"percent": "Vz75Gq_percent",
+			"root": "Vz75Gq_root",
+			"row": "Vz75Gq_row",
+			"rows": "Vz75Gq_rows",
+			"segment": "Vz75Gq_segment",
+			"swatch": "Vz75Gq_swatch",
+			"track": "Vz75Gq_track",
+			"trigger": "Vz75Gq_trigger"
 		};
 		//#endregion
 		//#region src/client/skeleton/ContextMeter.tsx
@@ -18869,6 +21740,7 @@ window.__ModuleLoader__.load({
 					side: "top",
 					delayMs: 200,
 					disabled: open,
+					portal: true,
 					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 						type: "button",
 						className: ContextMeter_module_css_default.trigger,
@@ -18992,7 +21864,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/skeleton/InputBar.module.css.mjs
-		const css$1 = ".mXVGpa_root{padding:0 var(--dsh-composer-side-clearance) 4px;flex-direction:column;align-items:center;display:flex}.mXVGpa_dock{justify-content:center;align-items:center;gap:12px;max-width:100%;padding-top:4px;display:flex}.mXVGpa_hero .mXVGpa_dock:empty{display:none}.mXVGpa_hero{padding:0 var(--dsh-composer-side-clearance)}.mXVGpa_notice{width:100%;max-width:var(--dsh-composer-card-max-width);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);margin-bottom:6px;padding:4px 8px;font-size:12px;line-height:18px}.mXVGpa_card{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-panel);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-elevation-soft);font-size:var(--dsh-content-font-size,14px);line-height:calc(24px + var(--dsh-content-font-delta,0px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex-direction:column;gap:12px;padding-top:8px;display:flex;position:relative}.mXVGpa_cardWorkspaceTrigger{--dsw-elevation-stroke-color:transparent;cursor:pointer}.mXVGpa_cardWorkspaceTrigger:after{content:\"\";box-sizing:border-box;border-radius:var(--dsw-radius-panel);color:var(--dsw-alias-border-l4);pointer-events:none;border:1px dashed;transition:color .1s;position:absolute;inset:0}.mXVGpa_cardWorkspaceTrigger :disabled{pointer-events:none}.mXVGpa_cardWorkspaceTrigger:hover:after{color:var(--dsw-alias-state-business-primary)}.mXVGpa_accessory{align-items:center;gap:8px;padding:10px 12px 0;display:flex}.mXVGpa_overlayAnchor{height:0;position:absolute;inset:0 0 auto}.mXVGpa_scroll{max-height:var(--dsh-composer-text-max-height);margin-right:4px;overflow-y:auto}.mXVGpa_scroll::-webkit-scrollbar-track{margin-top:8px}.mXVGpa_grow{position:relative}.mXVGpa_pending{corner-shape:round;background:var(--dsw-alias-state-business-primary);border-radius:50%;width:8px;height:8px;animation:1s ease-in-out infinite alternate mXVGpa_input-pending}@keyframes mXVGpa_input-pending{0%{opacity:.35}to{opacity:1}}.mXVGpa_input{box-sizing:border-box;min-height:36px;font-family:var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);caret-color:var(--dsw-alias-state-business-primary);outline:none;padding:4px 8px 0 14px}.mXVGpa_input p{margin:0}.mXVGpa_input p:last-child:after{content:var(--dsh-composer-hint);color:var(--dsw-alias-label-caption)}.mXVGpa_input[data-composer-composing] p:last-child:after{content:none}.mXVGpa_input[data-composer-chip-selected]{caret-color:#0000}.mXVGpa_input[data-composer-composing]+.mXVGpa_placeholder{visibility:hidden}.mXVGpa_placeholder{color:var(--dsw-alias-label-caption);white-space:nowrap;text-overflow:ellipsis;pointer-events:none;user-select:none;position:absolute;inset:4px 8px auto 14px;overflow:hidden}.mXVGpa_inputDisabled{color:var(--dsw-alias-label-tertiary);cursor:not-allowed}.mXVGpa_input[aria-haspopup=menu]{cursor:pointer}.mXVGpa_hero .mXVGpa_input{min-height:52px}.mXVGpa_hero .mXVGpa_placeholder{white-space:normal;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;display:-webkit-box}.mXVGpa_row{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex;container-type:inline-size}.mXVGpa_row[data-model-compact]{--dsh-composer-model-text-display:none;--dsh-composer-model-icon-display:block}.mXVGpa_tools,.mXVGpa_modes,.mXVGpa_trailing{align-items:center;min-width:0;display:flex}.mXVGpa_tools,.mXVGpa_modes{gap:12px}.mXVGpa_trailing{flex:none;gap:12px;margin-left:auto}@container (width<=560px){.mXVGpa_tools,.mXVGpa_modes,.mXVGpa_trailing{gap:8px}}.mXVGpa_add{corner-shape:round;background:var(--dsw-specific-selector);width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid}.mXVGpa_add:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}.mXVGpa_add:disabled{opacity:.5;cursor:default}.mXVGpa_select{border-radius:var(--dsw-radius-sm);max-width:220px;height:28px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;appearance:none;background-color:#0000;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-position:right 4px center;background-repeat:no-repeat;background-size:12px 12px;border:none;outline:none;padding:0 20px 0 8px;font-size:13px;font-weight:500;line-height:20px}.mXVGpa_select:hover:not(:disabled){background-color:var(--dsw-alias-interactive-bg-hover)}.mXVGpa_select:disabled{opacity:.5;cursor:default}.mXVGpa_primary{corner-shape:round;background:var(--dsw-alias-button-info-fill);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}.mXVGpa_primary:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}.mXVGpa_primary:disabled{opacity:.4;cursor:default}.mXVGpa_retry{border-radius:var(--dsw-radius-sm);color:inherit;cursor:pointer;background:0 0;border:1px solid;margin-left:8px;padding:1px 8px;font-size:12px}.mXVGpa_standardControls{align-items:center;gap:12px;min-width:0;display:flex}.mXVGpa_tools[hidden],.mXVGpa_standardControls[hidden]{display:none}.mXVGpa_trailingActive{flex:1;margin-left:0}.mXVGpa_activity{flex:none;align-items:center;display:flex}.mXVGpa_activity:empty{display:none}.mXVGpa_activityExpanded{flex:1;min-width:0}";
+		const css$1 = ".RgIvMW_root{padding:0 var(--dsh-composer-side-clearance) 4px;flex-direction:column;align-items:center;display:flex}.RgIvMW_dock{justify-content:center;align-items:center;gap:12px;max-width:100%;padding-top:4px;display:flex}.RgIvMW_root:not(.RgIvMW_hero)>.RgIvMW_dock{min-height:calc(22px + var(--dsh-content-font-delta-secondary,0px))}.RgIvMW_hero .RgIvMW_dock:empty{display:none}.RgIvMW_hero{padding:0 var(--dsh-composer-side-clearance)}.RgIvMW_notice{width:100%;max-width:var(--dsh-composer-card-max-width);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary);margin-bottom:6px;padding:4px 8px;font-size:12px;line-height:18px}.RgIvMW_card{box-sizing:border-box;width:100%;max-width:var(--dsh-composer-card-max-width);--dsw-elevation-stroke-color:var(--dsw-alias-border-l2);border-radius:var(--dsw-radius-panel);background:var(--dsw-specific-input-major);box-shadow:var(--dsw-elevation-soft);font-size:var(--dsh-content-font-size,14px);line-height:calc(24px + var(--dsh-content-font-delta,0px));--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex-direction:column;gap:12px;padding-top:8px;display:flex;position:relative}@media (pointer:coarse){.RgIvMW_card{font-size:max(16px, var(--dsh-content-font-size,14px))}}.RgIvMW_cardWorkspaceTrigger{--dsw-elevation-stroke-color:transparent;cursor:pointer}.RgIvMW_cardWorkspaceTrigger:after{content:\"\";box-sizing:border-box;border-radius:var(--dsw-radius-panel);color:var(--dsw-alias-border-l4);pointer-events:none;border:1px dashed;transition:color .1s;position:absolute;inset:0}.RgIvMW_cardWorkspaceTrigger :disabled{pointer-events:none}@media (hover:hover){.RgIvMW_cardWorkspaceTrigger:hover:after{color:var(--dsw-alias-state-business-primary)}}.RgIvMW_accessory{align-items:center;gap:8px;padding:10px 12px 0;display:flex}.RgIvMW_overlayAnchor{height:0;position:absolute;inset:0 0 auto}.RgIvMW_scroll{max-height:var(--dsh-composer-text-max-height);margin-right:4px;overflow-y:auto}.RgIvMW_scroll::-webkit-scrollbar-track{margin-top:8px}.RgIvMW_grow{position:relative}.RgIvMW_pending{corner-shape:round;background:var(--dsw-alias-state-business-primary);border-radius:50%;width:8px;height:8px;animation:1s ease-in-out infinite alternate RgIvMW_input-pending}@keyframes RgIvMW_input-pending{0%{opacity:.35}to{opacity:1}}.RgIvMW_input{box-sizing:border-box;min-height:36px;font-family:var(--dsw-font-family);font-size:inherit;line-height:inherit;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;color:var(--dsw-alias-label-primary);caret-color:var(--dsw-alias-state-business-primary);outline:none;padding:4px 8px 0 14px}.RgIvMW_input p{margin:0}.RgIvMW_input p:last-child:after{content:var(--dsh-composer-hint);color:var(--dsw-alias-label-caption)}.RgIvMW_input[data-composer-composing] p:last-child:after{content:none}.RgIvMW_input[data-composer-chip-selected]{caret-color:#0000}.RgIvMW_input[data-composer-composing]+.RgIvMW_placeholder{visibility:hidden}.RgIvMW_placeholder{color:var(--dsw-alias-label-caption);white-space:nowrap;text-overflow:ellipsis;pointer-events:none;user-select:none;position:absolute;inset:4px 8px auto 14px;overflow:hidden}.RgIvMW_inputDisabled{color:var(--dsw-alias-label-tertiary);cursor:not-allowed}.RgIvMW_input[aria-haspopup=menu]{cursor:pointer}.RgIvMW_hero .RgIvMW_input{min-height:52px}.RgIvMW_hero .RgIvMW_placeholder{white-space:normal;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;display:-webkit-box}.RgIvMW_row{flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;min-width:0;padding:2px 8px 6px;display:flex;container-type:inline-size}.RgIvMW_row[data-model-compact]{--dsh-composer-model-text-display:none;--dsh-composer-model-icon-display:block}.RgIvMW_tools,.RgIvMW_modes,.RgIvMW_trailing{align-items:center;min-width:0;display:flex}.RgIvMW_tools,.RgIvMW_modes{gap:12px}.RgIvMW_trailing{flex:none;gap:12px;margin-left:auto}@container (width<=560px){.RgIvMW_tools,.RgIvMW_modes,.RgIvMW_trailing{gap:8px}}.RgIvMW_add{corner-shape:round;background:var(--dsw-specific-selector);width:28px;height:28px;color:var(--dsw-alias-label-primary);cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;display:grid}@media (hover:hover){.RgIvMW_add:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover-solid)}}.RgIvMW_add:disabled{opacity:.5;cursor:default}.RgIvMW_select{border-radius:var(--dsw-radius-sm);max-width:220px;height:28px;color:var(--dsw-alias-label-secondary);white-space:nowrap;cursor:pointer;appearance:none;background-color:#0000;background-image:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E\");background-position:right 4px center;background-repeat:no-repeat;background-size:12px 12px;border:none;outline:none;padding:0 20px 0 8px;font-size:13px;font-weight:500;line-height:20px}@media (hover:hover){.RgIvMW_select:hover:not(:disabled){background-color:var(--dsw-alias-interactive-bg-hover)}}.RgIvMW_select:disabled{opacity:.5;cursor:default}.RgIvMW_primary{corner-shape:round;background:var(--dsw-alias-button-info-fill);color:#fff;cursor:pointer;border:none;border-radius:999px;flex:none;place-items:center;width:34px;height:34px;transition:background-color .1s;display:grid;transform:translateY(-2px)}@media (hover:hover){.RgIvMW_primary:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}}.RgIvMW_primary:disabled{opacity:.4;cursor:default}.RgIvMW_primary[data-sending]:disabled{opacity:1;cursor:progress}.RgIvMW_sendingSpinner{animation:.8s linear infinite RgIvMW_input-sending}@media (prefers-reduced-motion:reduce){.RgIvMW_sendingSpinner{animation-duration:2.4s}}@keyframes RgIvMW_input-sending{to{transform:rotate(360deg)}}.RgIvMW_retry{border-radius:var(--dsw-radius-sm);color:inherit;cursor:pointer;background:0 0;border:1px solid;margin-left:8px;padding:1px 8px;font-size:12px}.RgIvMW_standardControls{align-items:center;gap:12px;min-width:0;display:flex}.RgIvMW_tools[hidden],.RgIvMW_standardControls[hidden]{display:none}.RgIvMW_trailingActive{flex:1;margin-left:0}.RgIvMW_activity{flex:none;align-items:center;display:flex}.RgIvMW_activity:empty{display:none}.RgIvMW_activityExpanded{flex:1;min-width:0}";
 		const tagId$1 = "@deepseek-ai/dsh-client-ui-conversation/InputBar.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
 			const tag = document.createElement("style");
@@ -19002,33 +21874,35 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var InputBar_module_css_default = {
-			"accessory": "mXVGpa_accessory",
-			"activity": "mXVGpa_activity",
-			"activityExpanded": "mXVGpa_activityExpanded",
-			"add": "mXVGpa_add",
-			"card": "mXVGpa_card",
-			"cardWorkspaceTrigger": "mXVGpa_cardWorkspaceTrigger",
-			"dock": "mXVGpa_dock",
-			"grow": "mXVGpa_grow",
-			"hero": "mXVGpa_hero",
-			"input": "mXVGpa_input",
-			"input-pending": "mXVGpa_input-pending",
-			"inputDisabled": "mXVGpa_inputDisabled",
-			"modes": "mXVGpa_modes",
-			"notice": "mXVGpa_notice",
-			"overlayAnchor": "mXVGpa_overlayAnchor",
-			"pending": "mXVGpa_pending",
-			"placeholder": "mXVGpa_placeholder",
-			"primary": "mXVGpa_primary",
-			"retry": "mXVGpa_retry",
-			"root": "mXVGpa_root",
-			"row": "mXVGpa_row",
-			"scroll": "mXVGpa_scroll",
-			"select": "mXVGpa_select",
-			"standardControls": "mXVGpa_standardControls",
-			"tools": "mXVGpa_tools",
-			"trailing": "mXVGpa_trailing",
-			"trailingActive": "mXVGpa_trailingActive"
+			"accessory": "RgIvMW_accessory",
+			"activity": "RgIvMW_activity",
+			"activityExpanded": "RgIvMW_activityExpanded",
+			"add": "RgIvMW_add",
+			"card": "RgIvMW_card",
+			"cardWorkspaceTrigger": "RgIvMW_cardWorkspaceTrigger",
+			"dock": "RgIvMW_dock",
+			"grow": "RgIvMW_grow",
+			"hero": "RgIvMW_hero",
+			"input": "RgIvMW_input",
+			"input-pending": "RgIvMW_input-pending",
+			"input-sending": "RgIvMW_input-sending",
+			"inputDisabled": "RgIvMW_inputDisabled",
+			"modes": "RgIvMW_modes",
+			"notice": "RgIvMW_notice",
+			"overlayAnchor": "RgIvMW_overlayAnchor",
+			"pending": "RgIvMW_pending",
+			"placeholder": "RgIvMW_placeholder",
+			"primary": "RgIvMW_primary",
+			"retry": "RgIvMW_retry",
+			"root": "RgIvMW_root",
+			"row": "RgIvMW_row",
+			"scroll": "RgIvMW_scroll",
+			"select": "RgIvMW_select",
+			"sendingSpinner": "RgIvMW_sendingSpinner",
+			"standardControls": "RgIvMW_standardControls",
+			"tools": "RgIvMW_tools",
+			"trailing": "RgIvMW_trailing",
+			"trailingActive": "RgIvMW_trailingActive"
 		};
 		//#endregion
 		//#region src/client/skeleton/InputBar.tsx
@@ -19046,11 +21920,15 @@ window.__ModuleLoader__.load({
 		* The no-session state renders the SAME div inert as the Workspace-picker
 		* trigger instead of a parallel tree.
 		*/
-		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useProjection, sessionId, variant, disabled: inert = false, blocked, composerPresentation = "default", commandSource, childImageUploads = false, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
+		const InputBar = (0, react.memo)(function InputBar({ useSession, useInput, inputActions, keyboard, addFiles, removeAttachment, resolveDraftAttachments, retryFileUpload, toggleCommandMenu, stop, t, renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut, useAccess, useProjection, sessionId, variant, disabled: inert = false, blocked, composerPresentation = "default", commandSource, childImageUploads = false, workspacePickerOpen = false, onRequestWorkspace, placeholder, accessory }) {
 			const input = useInput((s) => s);
 			const notice = useNotices((s) => s);
 			const busyEnter = useBusyEnter((s) => s);
 			const stopKeys = useStopShortcut((keys) => keys);
+			const promptDenied = useAccess("session/prompt") === false;
+			const cancelDenied = useAccess("session/cancel") === false;
+			const uploadDenied = useAccess("fileUploads/upload") === false;
+			const stopAction = cancelDenied ? void 0 : stop;
 			const commandMenuOpen = useMenuLauncher((source) => source === (commandSource ?? "command"));
 			const [activity, setActivity] = (0, react.useState)(false);
 			(0, react.useEffect)(() => {
@@ -19068,7 +21946,7 @@ window.__ModuleLoader__.load({
 			const attachments = (0, react.useMemo)(() => input === void 0 || resolveDraftAttachments === void 0 ? [] : resolveDraftAttachments(input.attachmentIds), [resolveDraftAttachments, input?.attachmentIds]);
 			const empty = draft.trim() === "" && attachments.length === 0;
 			const uploads = useFileUploads((snapshot) => snapshot);
-			const uploadsPending = attachments.some((attachment) => attachment.kind === "file" && uploads[attachment.id]?.status !== "ready");
+			const uploadsPending = attachments.some((attachment) => attachment.kind === "file" ? uploads[attachment.id]?.status !== "ready" : uploads[attachment.id] !== void 0 && uploads[attachment.id]?.status !== "ready");
 			const [toast, setToast] = (0, react.useState)(null);
 			const toastSeq = (0, react.useRef)(0);
 			const showToast = (0, react.useCallback)((text) => {
@@ -19082,6 +21960,8 @@ window.__ModuleLoader__.load({
 				setToast(null);
 			}, []);
 			const imageLimits = useProjection("imageLimits");
+			const failedUpload = attachments.map((attachment) => uploads[attachment.id]).find((upload) => upload?.status === "error");
+			const uploadsHeldText = failedUpload?.status !== "error" ? t("file.stillUploading") : failedUpload.reason === void 0 ? t("file.uploadFailed") : attachmentErrorText(t, failedUpload.reason, imageLimits);
 			(0, react.useEffect)(() => {
 				if (promptError === null) return;
 				const { error } = promptError;
@@ -19112,7 +21992,8 @@ window.__ModuleLoader__.load({
 			const disabled = removed || inert || !live || blocked !== void 0 || parentOffline;
 			const locked = disabled;
 			const modelSeatLocked = removed || inert || !live;
-			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting";
+			const machineBusy = input?.phase === "adjudicating" || input?.phase === "submitting" || input?.phase === "sending";
+			const sending = input?.phase === "sending";
 			const workspaceTrigger = inert && !removed && onRequestWorkspace !== void 0;
 			const editorDisabled = removed || locked && !workspaceTrigger;
 			const editable = live && !locked && !machineBusy;
@@ -19131,12 +22012,27 @@ window.__ModuleLoader__.load({
 			};
 			(0, react.useEffect)(() => {
 				if (locked || editor === null) return;
+				if ((0, _deepseek_ai_dsh_client_ui_primitives.isMobileDevice)()) return;
 				focusDraftEditor(editor, revealSelection);
 			}, [
 				locked,
 				sessionId,
 				editor
 			]);
+			const busyPhaseSeen = (0, react.useRef)(false);
+			(0, react.useEffect)(() => {
+				if (machineBusy) {
+					busyPhaseSeen.current = true;
+					return;
+				}
+				if (!busyPhaseSeen.current) return;
+				busyPhaseSeen.current = false;
+				if (locked || editor === null) return;
+				if (document.activeElement !== null && document.activeElement !== document.body) return;
+				if ((0, _deepseek_ai_dsh_client_ui_primitives.isMobileDevice)()) {
+					if (cardRef.current !== null) (0, _deepseek_ai_dsh_client_ui_primitives.focusWithoutRing)(cardRef.current, { preventScroll: true });
+				} else focusDraftEditor(editor, revealSelection);
+			}, [machineBusy]);
 			(0, react.useEffect)(() => {
 				if (locked || draft === "") return;
 				revealSelection();
@@ -19145,7 +22041,7 @@ window.__ModuleLoader__.load({
 				return installDraftWheel(scrollRef);
 			}, []);
 			const intakeFiles = (0, react.useCallback)((files, directories) => {
-				if (locked || machineBusy || subagent !== null && !continuable || addFiles === void 0 || files.length === 0) return;
+				if (uploadDenied || locked || machineBusy || subagent !== null && !continuable || addFiles === void 0 || files.length === 0) return;
 				const rejected = (() => {
 					if (continuable && files.some((file) => directories?.has(file) || !isImageMediaType(file.type))) return t("image.unsupportedType");
 					if (imageLimits !== void 0) {
@@ -19160,6 +22056,7 @@ window.__ModuleLoader__.load({
 				})();
 				if (rejected !== null) showToast(rejected);
 			}, [
+				uploadDenied,
 				locked,
 				machineBusy,
 				subagent,
@@ -19170,7 +22067,7 @@ window.__ModuleLoader__.load({
 				showToast,
 				t
 			]);
-			const canAcceptDrop = (subagent === null || continuable) && !locked && !machineBusy && addFiles !== void 0;
+			const canAcceptDrop = !uploadDenied && (subagent === null || continuable) && !locked && !machineBusy && addFiles !== void 0;
 			const fileInputRef = (0, react.useRef)(null);
 			const onPickFiles = (e) => {
 				const picked = e.target.files === null ? [] : [...e.target.files];
@@ -19186,8 +22083,8 @@ window.__ModuleLoader__.load({
 				busyEnter,
 				intakeFiles,
 				uploadsPending,
+				uploadsHeldText,
 				showToast,
-				t,
 				canAcceptDrop
 			});
 			gate.current = {
@@ -19199,8 +22096,8 @@ window.__ModuleLoader__.load({
 				busyEnter,
 				intakeFiles,
 				uploadsPending,
+				uploadsHeldText,
 				showToast,
-				t,
 				canAcceptDrop
 			};
 			(0, react.useEffect)(() => {
@@ -19211,6 +22108,10 @@ window.__ModuleLoader__.load({
 				if (editor === null || keyboard === void 0) return;
 				return installDraftKeymap(editor, keyboard, gate);
 			}, [editor, keyboard]);
+			(0, react.useEffect)(() => {
+				if (editor === null) return;
+				return installDraftKeyboardDismissal(editor, cardRef);
+			}, [editor]);
 			const keepFocus = (e) => {
 				keepDraftFocus(e, editor);
 			};
@@ -19221,7 +22122,7 @@ window.__ModuleLoader__.load({
 				if (target.closest("[data-composer-overlay]") !== null) return;
 				if (scrollRef.current?.contains(target)) return;
 				const control = target.closest("button, a, input, select, textarea, [role=\"button\"], [contenteditable], [tabindex]");
-				if (control !== null && e.currentTarget.contains(control)) return;
+				if (control !== null && control !== e.currentTarget && e.currentTarget.contains(control)) return;
 				e.preventDefault();
 				if (document.activeElement !== editor.getRootElement()) focusDraftEditor(editor, revealSelection);
 			};
@@ -19238,15 +22139,16 @@ window.__ModuleLoader__.load({
 					onRequestWorkspace();
 				}
 			};
-			const primaryStops = running && (subagent === null || composerPresentation === "main") && (empty || blocked !== void 0 || composerPresentation === "main" && parentOffline);
-			const primaryDisabled = primaryStops ? stop === void 0 : empty || disabled || machineBusy || uploadsPending;
-			const interruptible = running && continuable && composerPresentation !== "main";
+			const mainPlacement = subagent === null || composerPresentation === "main";
+			const primaryStops = running && mainPlacement && !sending && (empty || blocked !== void 0 || composerPresentation === "main" && parentOffline);
+			const primaryDisabled = primaryStops ? stopAction === void 0 : empty || disabled || machineBusy || uploadsPending;
+			const interruptible = running && (continuable && composerPresentation !== "main" || sending && mainPlacement);
 			const primarySubmitMode = resolveSubmitMode(busyEnter, running, "enter", steeringAvailable);
 			const plainMessageDraft = !empty && input?.phase === "plain" && !draft.trimStart().startsWith("/");
-			const primaryLabel = primaryStops ? t("input.stop") : running && steeringAvailable && !disabled && !uploadsPending && plainMessageDraft ? t(primarySubmitMode === "steer" ? "input.send.steer" : "input.send.queue") : t("input.send");
+			const primaryLabel = primaryStops ? t("input.stop") : sending ? t("input.sending") : running && steeringAvailable && !disabled && !uploadsPending && plainMessageDraft ? t(primarySubmitMode === "steer" ? "input.send.steer" : "input.send.queue") : t("input.send");
 			const onPrimary = () => {
 				if (primaryStops) {
-					stop?.();
+					stopAction?.();
 					return;
 				}
 				if (keyboard === void 0) return;
@@ -19279,6 +22181,7 @@ window.__ModuleLoader__.load({
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						ref: cardRef,
+						tabIndex: -1,
 						className: clsx(InputBar_module_css_default.card, workspaceTrigger && InputBar_module_css_default.cardWorkspaceTrigger),
 						"data-composer-card": true,
 						onClick: workspaceTrigger ? onRequestWorkspace : void 0,
@@ -19307,6 +22210,7 @@ window.__ModuleLoader__.load({
 								onRetryFile: (id) => {
 									retryFileUpload?.(id);
 								},
+								uploadFailureText: (reason) => attachmentErrorText(t, reason, imageLimits),
 								dropLimits: imageLimits === void 0 ? void 0 : {
 									count: imageLimits.maxImagesPerMessage,
 									size: imageSizeText(imageLimits.maxImageBytes)
@@ -19338,6 +22242,7 @@ window.__ModuleLoader__.load({
 											label: t("input.commands"),
 											side: "top",
 											delayMs: 500,
+											portal: true,
 											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: InputBar_module_css_default.add,
@@ -19354,7 +22259,7 @@ window.__ModuleLoader__.load({
 											ref: fileInputRef,
 											type: "file",
 											multiple: true,
-											disabled: subagent !== null && !(continuable && childImageUploads),
+											disabled: !canAcceptDrop || subagent !== null && !(continuable && childImageUploads),
 											hidden: true,
 											onChange: onPickFiles
 										}),
@@ -19379,19 +22284,20 @@ window.__ModuleLoader__.load({
 												onActiveChange: setActivity
 											})
 										}),
-										interruptible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+										interruptible && !cancelDenied && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
 											label: t("input.stop"),
 											shortcutKeys: stopKeys,
 											side: "top",
 											delayMs: 500,
-											disabled: stop === void 0,
+											disabled: stopAction === void 0,
+											portal: true,
 											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: InputBar_module_css_default.primary,
 												"aria-label": t("input.stop"),
-												disabled: stop === void 0,
+												disabled: stopAction === void 0,
 												onMouseDown: keepFocus,
-												onClick: stop,
+												onClick: stopAction,
 												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
 													viewBox: "0 0 16 16",
 													width: "16",
@@ -19408,16 +22314,19 @@ window.__ModuleLoader__.load({
 												})
 											})
 										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
+										(primaryStops ? cancelDenied : promptDenied) ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Tooltip, {
 											label: primaryStops ? t("input.stop") : primaryLabel,
 											shortcutKeys: primaryStops ? stopKeys : void 0,
 											side: "top",
 											delayMs: 500,
 											disabled: primaryDisabled,
+											portal: true,
 											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: InputBar_module_css_default.primary,
 												"aria-label": primaryLabel,
+												"aria-busy": sending,
+												"data-sending": sending ? "" : void 0,
 												disabled: primaryDisabled,
 												onMouseDown: keepFocus,
 												onClick: onPrimary,
@@ -19434,6 +22343,27 @@ window.__ModuleLoader__.load({
 														rx: "3",
 														fill: "currentColor"
 													})
+												}) : sending ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+													className: InputBar_module_css_default.sendingSpinner,
+													viewBox: "0 0 16 16",
+													width: "16",
+													height: "16",
+													"aria-hidden": true,
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+														cx: "8",
+														cy: "8",
+														r: "6",
+														fill: "none",
+														stroke: "currentColor",
+														strokeOpacity: "0.35",
+														strokeWidth: "2"
+													}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+														d: "M8 2a6 6 0 0 1 6 6",
+														fill: "none",
+														stroke: "currentColor",
+														strokeWidth: "2",
+														strokeLinecap: "round"
+													})]
 												}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
 													viewBox: "0 0 16 16",
 													width: "16",
@@ -19464,7 +22394,7 @@ window.__ModuleLoader__.load({
 		});
 		//#endregion
 		//#region \0dsh-css:packages/client/ui-conversation/src/client/skeleton/TodoPanel.module.css.mjs
-		const css = ".vG2tnW_root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-panel);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex:none;margin:0 auto;overflow:hidden}.vG2tnW_body{flex-direction:column;gap:8px;padding:6px 12px;display:flex}.vG2tnW_header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:0;display:flex}.vG2tnW_lead{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.vG2tnW_title{color:var(--dsw-alias-label-primary);flex:none;font-size:13px;font-weight:500;line-height:24px}.vG2tnW_progress{min-width:0;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:auto;font-size:13px;font-weight:400;line-height:20px;overflow:hidden}.vG2tnW_chevron{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}.vG2tnW_list{flex-direction:column;gap:8px;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}.vG2tnW_item{min-width:0;color:var(--dsw-alias-label-secondary);align-items:center;gap:10px;font-size:13px;line-height:20px;display:flex}.vG2tnW_glyph{flex:none;place-items:center;width:16px;height:16px;display:grid}.vG2tnW_content{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}";
+		const css = "._1NmSOG_root{box-sizing:border-box;width:calc(100% - var(--dsh-composer-side-clearance) - var(--dsh-composer-side-clearance) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));max-width:calc(var(--dsh-composer-card-max-width) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset) - var(--dsh-composer-dock-inset));--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);backdrop-filter:var(--dsw-menu-backdrop-filter);box-shadow:var(--dsw-elevation-panel);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2);border:0;flex:none;margin:0 auto;overflow:hidden}._1NmSOG_body{flex-direction:column;gap:8px;padding:6px 12px;display:flex}._1NmSOG_header{text-align:left;cursor:pointer;background:0 0;border:none;align-items:center;gap:10px;width:100%;padding:0;display:flex}._1NmSOG_lead{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}._1NmSOG_title{color:var(--dsw-alias-label-primary);flex:none;font-size:13px;font-weight:500;line-height:24px}._1NmSOG_progress{min-width:0;color:var(--dsw-alias-label-tertiary);text-overflow:ellipsis;white-space:nowrap;flex:auto;font-size:13px;font-weight:400;line-height:20px;overflow:hidden}._1NmSOG_chevron{color:var(--dsw-alias-label-tertiary);flex:none;place-items:center;display:grid}._1NmSOG_list{flex-direction:column;gap:8px;max-height:180px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}._1NmSOG_item{min-width:0;color:var(--dsw-alias-label-secondary);align-items:center;gap:10px;font-size:13px;line-height:20px;display:flex}._1NmSOG_glyph{flex:none;place-items:center;width:16px;height:16px;display:grid}._1NmSOG_content{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}";
 		const tagId = "@deepseek-ai/dsh-client-ui-conversation/TodoPanel.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -19474,17 +22404,17 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(tag);
 		}
 		var TodoPanel_module_css_default = {
-			"body": "vG2tnW_body",
-			"chevron": "vG2tnW_chevron",
-			"content": "vG2tnW_content",
-			"glyph": "vG2tnW_glyph",
-			"header": "vG2tnW_header",
-			"item": "vG2tnW_item",
-			"lead": "vG2tnW_lead",
-			"list": "vG2tnW_list",
-			"progress": "vG2tnW_progress",
-			"root": "vG2tnW_root",
-			"title": "vG2tnW_title"
+			"body": "_1NmSOG_body",
+			"chevron": "_1NmSOG_chevron",
+			"content": "_1NmSOG_content",
+			"glyph": "_1NmSOG_glyph",
+			"header": "_1NmSOG_header",
+			"item": "_1NmSOG_item",
+			"lead": "_1NmSOG_lead",
+			"list": "_1NmSOG_list",
+			"progress": "_1NmSOG_progress",
+			"root": "_1NmSOG_root",
+			"title": "_1NmSOG_title"
 		};
 		//#endregion
 		//#region src/client/skeleton/TodoPanel.tsx
@@ -19825,7 +22755,13 @@ window.__ModuleLoader__.load({
 			});
 			ctx.effect(() => ctx.locale.register(NS, {
 				zh,
-				en
+				en,
+				ja,
+				es,
+				fr,
+				de,
+				ru,
+				pt
 			}), "ui-conversation: dictionaries");
 			const t = ctx.locale.bind(NS);
 			const conversationStore = createConversationStore();
@@ -20075,12 +23011,15 @@ window.__ModuleLoader__.load({
 					selectWorkspace: (workspaceId) => workspaceNavigation.openWorkspace(workspaceId, (nextId) => {
 						if (sessionId !== void 0 && nextId !== sessionId) {
 							const from = inputHub.shell(sessionId);
+							if (from.snapshot.phase !== "plain" && from.snapshot.phase !== "claimed") return;
 							const draft = from.draftSnapshot;
 							const attachmentIds = from.snapshot.attachmentIds;
 							const next = inputHub.shell(nextId);
 							if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
-								if (sessions.binding(nextId) === void 0) throw new Error(`ui-conversation: session "${nextId}" resolved no binding`);
-								concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds);
+								const binding = sessions.binding(nextId);
+								if (binding === void 0) throw new Error(`ui-conversation: session "${nextId}" resolved no binding`);
+								const ordinary = binding.session.getSnapshot().subagent === null;
+								concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds, ordinary);
 								if (draft.text !== "") {
 									next.setDraft(draft);
 									from.setDraft("");
@@ -20251,7 +23190,8 @@ window.__ModuleLoader__.load({
 						keyboard: shell,
 						addFiles: (files, directories = /* @__PURE__ */ new Set()) => {
 							if (sessions.binding(sessionId) === void 0) return t("file.sessionUnavailable");
-							if (shell.snapshot.phase === "adjudicating" || shell.snapshot.phase === "submitting") return t("attachment.dropBlocked");
+							const { phase } = shell.snapshot;
+							if (phase === "adjudicating" || phase === "submitting" || phase === "sending") return t("attachment.dropBlocked");
 							const uploads = [];
 							const references = [];
 							const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd;
@@ -20280,7 +23220,8 @@ window.__ModuleLoader__.load({
 								});
 							}
 							try {
-								const drafts = conversation.createDrafts(sessionId, uploads);
+								const ordinary = sessions.binding(sessionId)?.session.getSnapshot().subagent === null;
+								const drafts = conversation.createDrafts(sessionId, uploads, ordinary);
 								if (!shell.addFiles(references, drafts.map((draft) => draft.id))) {
 									conversation.releaseDraftAttachments(drafts);
 									return t("attachment.dropBlocked");

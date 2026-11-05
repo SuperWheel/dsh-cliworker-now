@@ -11,6 +11,10 @@ const COLLAPSE_TIMING_FIELD = "collapseTiming";
 const COLLAPSE_TIMINGS = ["completion", "next-input"];
 /** Preserve completion-time folding when no timing preference is saved. */
 const DEFAULT_COLLAPSE_TIMING = "completion";
+/** Field carrying which Assistant replies stay visible in a folded Turn. */
+const FOLDED_REPLIES_FIELD = "foldedReplies";
+/** Assistant replies kept visible while a completed Turn folds its process: every reply, or only the final answer. */
+const FOLDED_REPLIES = ["all", "final"];
 /** Work-details presentation modes a user can choose. */
 const TRANSCRIPT_VIEW_MODES = [
 	"compact",
@@ -42,6 +46,7 @@ const DEFAULT_LINK_OPENING = "sidebar";
 /** Durable Chat schema; also the wire envelope the browser scope validates against. */
 const ChatSettingsFields = {
 	[COLLAPSE_TIMING_FIELD]: z.union([...COLLAPSE_TIMINGS]).default(DEFAULT_COLLAPSE_TIMING),
+	[FOLDED_REPLIES_FIELD]: z.union([...FOLDED_REPLIES]).default("all"),
 	linkOpening: z.union(["sidebar", "new-tab"]).default(DEFAULT_LINK_OPENING),
 	performanceUsage: z.union([...PERFORMANCE_USAGE_MODES]).default(DEFAULT_PERFORMANCE_USAGE),
 	[TRANSCRIPT_VIEW_FIELD]: z.union([...TRANSCRIPT_VIEW_SETTING_VALUES]).loose()
@@ -53,6 +58,7 @@ z.object(ChatSettingsFields);
 const Config = z.object({
 	[TRANSCRIPT_VIEW_FIELD]: ChatSettingsFields[TRANSCRIPT_VIEW_FIELD].volatile(),
 	collapseTiming: ChatSettingsFields.collapseTiming.volatile(),
+	foldedReplies: ChatSettingsFields.foldedReplies.volatile(),
 	performanceUsage: ChatSettingsFields["performanceUsage"].volatile(),
 	linkOpening: ChatSettingsFields.linkOpening.volatile()
 });

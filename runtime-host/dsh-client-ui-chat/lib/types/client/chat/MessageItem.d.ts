@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client';
-import type { PropsRenderFactories } from '@deepseek-ai/dsh-client-ui-slots';
+import type { PropsRenderFactories, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts';
 /**
  * Render one Host-authoritative pending steering item with the same visual
@@ -26,8 +26,17 @@ export declare function PendingSubmissionBubble({ submission, loadImage, renderF
     renderFactorySlot: PropsRenderFactories['renderFactorySlot'];
     t: ChatViewSlotProps['t'];
 } & Pick<ChatNodeOwnerProps, 'loadImage'>): ReactNode;
-/** User and admitted-steering keyed Chat renderer. */
-export declare const UserMessageNodeView: import("react").MemoExoticComponent<({ node, renderFactorySlot, loadImage, t, }: ChatNodeViewProps<"user" | "steering">) => import("react").JSX.Element>;
+/**
+ * Official user and admitted-steering keyed Chat renderer.
+ *
+ * Renders the durable-message chain seat directly above the bubble. The seat is
+ * declared by the `user` registration alone, so a steering row renders the same
+ * bubble without asking for it.
+ */
+export declare const UserMessageNodeView: import("react").MemoExoticComponent<({ node, renderFactorySlot, loadImage, renderSlotChain, t, }: ChatNodeViewProps<"user" | "steering"> & {
+    /** Bound by the `user` keyed registration, the only entry that declares the seat. */
+    renderSlotChain: PropsRenderSlots<"conversation.chat.user.before">["renderSlotChain"];
+}) => import("react").JSX.Element>;
 /** Injected-context keyed Chat renderer. */
 export declare const ContextMessageNodeView: import("react").MemoExoticComponent<({ node, t }: ChatNodeViewProps<"context">) => import("react").JSX.Element>;
 /** Automatic compaction keyed Chat renderer. */

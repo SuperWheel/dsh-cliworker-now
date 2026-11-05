@@ -1,18 +1,22 @@
 /** The Composer model's private Lexical editor, projections, and node operations. */
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import type { LexicalEditor } from 'lexical';
-import type { DraftReference, ReferenceInsert } from '../../contract/draft-editor.ts';
+import type { DraftQuote, DraftReference, ReferenceInsert } from '../../contract/draft-editor.ts';
 import type { CommandClaim } from '../../contract/input.ts';
+import type { QuoteNodeLabels } from './QuoteNode.tsx';
 import type { EditorProjection } from './projection.ts';
 import type { DetectSpan } from './span-map.ts';
 type Lexicon = ReadonlyMap<'/' | '@', readonly string[]>;
 /** Model callbacks read at the same editor registration and update points. */
 interface DraftEditorRuntimeDeps {
     readonly onUpdate: () => void;
+    readonly quoteLabels: () => QuoteNodeLabels;
     readonly openReference: (source: string | undefined, reference: Pick<ReferenceInsert, 'ref' | 'appearance'>) => boolean;
     readonly lexicon: () => Lexicon;
     readonly resolveLexicon: () => ObservableSnapshot<Lexicon> | undefined;
 }
+/** Editor update that removes submitted content while retaining any newer draft suffix. */
+export declare const DRAFT_SUBMITTED_TAG = "dsh-draft-submitted";
 /** One model-owned editor; registration and disposal remain with its model. */
 export declare class DraftEditorRuntime {
     private readonly deps;
@@ -128,6 +132,17 @@ export declare class DraftEditorRuntime {
      */
     insertFileReferences(references: readonly ReferenceInsert[]): boolean;
     /**
+     * Insert one quote after the retained draft selection as an independent undo edit.
+     * @param text - nonblank selected transcript text.
+     * @param labels - current localized editor controls.
+     * @returns whether the insertion position accepted the node.
+     */
+    insertQuote(text: string, labels: QuoteNodeLabels): boolean;
+    /** Remove one quote node and leave the editor caret at its former position. */
+    private removeQuote;
+    /** Delete the QuoteNode immediately beside one collapsed caret. */
+    private deleteAdjacentQuote;
+    /**
      * Clear committed content using the model's suffix decision inside the editor update.
      * @param prefixLength - returns the clipboard-prefix length to remove, or null to clear the root.
      */
@@ -136,8 +151,10 @@ export declare class DraftEditorRuntime {
      * Import semantic content or a model-selected failure snapshot with fresh reference nodes.
      * @param draft - clipboard text.
      * @param occurrences - reference occurrences in clipboard order.
+     * @param quotes - atomic quotes in clipboard order.
+     * @param labels - localized quote controls.
      */
-    restoreDraft(draft: string, occurrences: readonly DraftReference[]): void;
+    restoreDraft(draft: string, occurrences: readonly DraftReference[], quotes?: readonly DraftQuote[], labels?: QuoteNodeLabels): void;
     /** Cut the editor's undo history after a committed clear or restoration. */
     clearHistory(): void;
 }

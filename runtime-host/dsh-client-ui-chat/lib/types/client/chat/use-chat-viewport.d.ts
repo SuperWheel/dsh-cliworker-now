@@ -41,8 +41,16 @@ export declare class ChatViewport {
     private observation;
     private paging;
     private reader;
+    /** Rows measured before an instant close; see {@link ChatViewport.keepAboveClosing}. */
+    private closing;
+    /** Discards a closing measurement that no size observation consumed by the end of its frame. */
+    private closingFrame;
+    /** Content height without fold room at the latest size observation: the content that frame painted. */
+    private settledContent;
     /** The pending or running fold batch lands at the tail. */
     private tailRequested;
+    /** The tail request came from the reader's own input rather than from a content change. */
+    private tailInput;
     /** Switches the running batch to a tail landing; null while no batch runs. */
     private retarget;
     /** Transition state and row callbacks owned by this viewport's attachment. */
@@ -84,9 +92,11 @@ export declare class ChatViewport {
     /**
      * Land the pending or running fold batch at the tail instead of starting a separate scroll.
      * @param follow - follow controller whose native animation yields to the batch.
+     * @param input - whether the reader's own input requests the landing; a content change, such as a Turn
+     * ending, requests it in place of the immediate follow.
      * @returns whether a fold owns the tail movement.
      */
-    followInputFold(follow: ScrollFollow): boolean;
+    followInputFold(follow: ScrollFollow, input: boolean): boolean;
     /**
      * Drive one fold batch on its frame clock. A tail landing ends at the floor, never above the reader's
      * compensated position; a reader landing keeps the visible content still. Both install only the room
@@ -100,6 +110,29 @@ export declare class ChatViewport {
      * @returns the reference row, or null when every visible row folds.
      */
     private readingReference;
+    /**
+     * Measure, before the first row of a commit closes at once, the rows a following reader's shrink keeps
+     * still: the first row visible in the last painted layout, the rows after it that were on screen, and the
+     * rows above it within one scrollport.
+     * Rows above the closing rows keep their painted screen positions, which the commit did not move; the same
+     * commit can add rows between them and the closing rows, as a Turn's duration control does, so rows from
+     * the closing rows on are placed against the current end. Reads happen only when rows close, never on the
+     * following path's size observations. A measurement the same frame's size observation does not use is
+     * discarded after that frame.
+     * @param element - the first row of this commit to close.
+     */
+    private measureClosing;
+    private dropClosing;
+    /**
+     * Keep a following reader's content still after rows closed at once, for example work details at Turn
+     * completion: the first visible row keeps its screen position, or, when it closed, the first surviving row
+     * that followed it on screen, else the nearest surviving row above it. Room below fills the gap, at most half
+     * the scrollport; beyond that the content end stops at the scrollport's middle. Called from the size
+     * observation, after layout and before paint; only the observation of the frame that closed the rows uses
+     * the measurement, and only while the reader still follows the tail with no fold batch, native animation,
+     * unsampled movement, or paging writing positions.
+     */
+    private keepAboveClosing;
     /** Clear fold reservations after a display-mode change, allowing the scroll range to shrink. */
     resetBelow(): void;
     /**

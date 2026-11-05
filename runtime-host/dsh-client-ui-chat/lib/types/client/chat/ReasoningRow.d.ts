@@ -14,9 +14,10 @@ import type { ChatViewSlotProps, UseDisclosure, UsePresentation } from '../contr
  * @param props.t - conversation locale seat for the disclosure and running status.
  * @returns the reasoning disclosure.
  */
-export declare const ReasoningRow: import("react").MemoExoticComponent<({ text: rawText, running, usePresentation, useDisclosure, renderSlot, t }: {
+export declare const ReasoningRow: import("react").MemoExoticComponent<({ text: rawText, running, textInteractionSource, usePresentation, useDisclosure, renderSlot, t, }: {
     text: string;
     running: boolean;
+    textInteractionSource?: boolean;
     useDisclosure: UseDisclosure;
     usePresentation: UsePresentation;
     t: ChatViewSlotProps["t"];

@@ -42,8 +42,17 @@ export interface SessionInputDeps {
      * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
      */
     steerQueue?: (() => void) | undefined;
-    /** The plain-message sink (send choreography / materialize fork — the hub owns it). */
-    defaultSink(text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode, signal: AbortSignal): Promise<SubmitOutcome>;
+    /**
+     * The plain-message sink (send choreography / materialize fork — the hub owns it).
+     * `accept` settles the message as accepted at once; the sink calls it when
+     * the Host's acceptance is known before the returned outcome, so the editor
+     * shrinks before the message's echo renders.
+     */
+    defaultSink(text: string, attachmentIds: readonly DraftAttachmentId[], mode: InputSubmitMode, signal: AbortSignal, accept: () => void): Promise<SubmitOutcome>;
+    /** Live Session and composer-block policy for transcript insertion. */
+    quoteInsertionAllowed?: () => boolean;
+    /** Current localized quote removal copy. */
+    quoteRemoveLabel?: () => string;
     /** Command-plane attachment plumbing (the hub owns the conversation face and the copy). */
     commandAttachments: {
         /** Resolve ordered draft ids to wire payloads without sending them; rejects when an id no longer resolves. */
@@ -87,16 +96,6 @@ export declare class SessionInputShell implements SessionInput {
     private commandRestore;
     /** The mounted composer's file-picker opener (scoped pick-files event target). */
     private filePicker;
-    /** Default sends retained until admission settles or scope disposal releases their attachments. */
-    private readonly detachedDrafts;
-    /** Failed default sends waiting to be restored together in submission order. */
-    private readonly failedDetached;
-    /** Revision of the last automatic failure restoration. */
-    private failedRestoreRev;
-    private restoringFailures;
-    private attachmentFlightSeq;
-    /** Attachment-only sends retained until admission settles or scope disposal releases their attachments. */
-    private readonly attachmentFlights;
     private readonly unsubscribeInbox;
     constructor(deps: SessionInputDeps);
     /** Re-project, sync the claim with the leading command chip, publish, and feed trigger tracking after every editor commit. */
@@ -108,6 +107,8 @@ export declare class SessionInputShell implements SessionInput {
      * @param text - plain text or the complete semantic document.
      */
     setDraft(text: DraftInput): void;
+    /** @param text - selected transcript text. @returns whether the editable draft accepted the quote. */
+    insertQuote(text: string): boolean;
     /**
      * Reconnect optional catalog notifications and resume a pending command
      * chip restore without waiting for another edit.
@@ -145,8 +146,8 @@ export declare class SessionInputShell implements SessionInput {
     addFiles(references: readonly ReferenceInsert[], ids: readonly DraftAttachmentId[]): boolean;
     /**
      * Remove one attachment id from this draft. Busy admission phases refuse, like
-     * {@link addAttachments}: a removal landing while a command submit serializes
-     * would otherwise vanish from the rail yet still ride the in-flight send.
+     * {@link addAttachments}: a removal landing while a send serializes would
+     * otherwise vanish from the rail yet still ride the in-flight send.
      */
     removeAttachment(id: DraftAttachmentId): boolean;
     /**
@@ -154,13 +155,6 @@ export declare class SessionInputShell implements SessionInput {
      * @param available - live registry ids.
      */
     pruneAttachments(available: readonly DraftAttachmentId[]): void;
-    /**
-     * Clear the draft as a successful-send commit: the editor empties (no undo
-     * unit) and the undo history is cut, so Ctrl/Cmd-Z cannot resurrect sent
-     * content (the command path gets the same discipline from submit-settled).
-     * @param attachmentIds - admitted attachment ids to remove from this draft.
-     */
-    commitSend(attachmentIds: readonly DraftAttachmentId[]): void;
     /**
      * Insert pasted plain text over the current editor selection
      * (placeholder-sanitized). The paste event's own default is suppressed by
@@ -170,10 +164,11 @@ export declare class SessionInputShell implements SessionInput {
      */
     paste(text: string): void;
     /**
-     * Enter adjudication + submit transaction + default sink. Effects fan out
-     * from the machine; this method only feeds the event. Lock entry
-     * (adjudicating/submitting) force-closes the transient layers: the popup
-     * dismisses and the menu tracks frozen.
+     * Enter adjudication + submit transaction + default sink with the draft, its
+     * reference chips, and its attachments as the user sent them. Effects fan
+     * out from the machine; this method only feeds the event. Lock entry
+     * (adjudicating/submitting/sending) force-closes the transient layers: the
+     * popup dismisses and the menu tracks frozen.
      */
     submit(mode?: InputSubmitMode, source?: 'click' | 'enter'): void;
     /**
@@ -273,8 +268,9 @@ export declare class SessionInputShell implements SessionInput {
      */
     focus(): void;
     /**
-     * Teardown the shell and return every browser-owned attachment still retained by
-     * the draft or an unsettled default send.
+     * Teardown the shell, abort the in-flight attempt, and return every
+     * browser-owned attachment the draft still holds, including those of a
+     * message the Host has not accepted yet.
      * @returns attachment ids the scope disposer must release.
      */
     dispose(): readonly DraftAttachmentId[];
@@ -313,21 +309,27 @@ export declare class SessionInputShell implements SessionInput {
      */
     private commitDraft;
     /**
-     * Prompt serialization before the sink: expand each chip occurrence to its
-     * owner's model form via the session controller's codec routing. Owner
-     * missing or serialization failure rejects the detached send and restores
-     * its editor snapshot. Chip-free drafts skip the async detour.
+     * Prompt serialization before the sink: expand each chip occurrence of the
+     * sent draft to its owner's model form via the session controller's codec
+     * routing and format each quote as Markdown, then send it with the
+     * attachments captured at Enter. Owner missing or serialization failure
+     * settles the send as failed, which keeps the draft. Chip-free drafts skip
+     * the async detour.
      */
     private sinkSerialized;
     private notifySubmission;
-    /** Settle one detached default send independently of other sends. */
+    /**
+     * Settle the message being sent. Once the Host accepts it, its attachments
+     * leave the draft before the editor clears; ConversationController releases
+     * them when the message's echo retires. Any other outcome keeps the draft
+     * and its attachments for correction.
+     */
     private settleSink;
-    /** Restore one failed detached send without overwriting text entered after a restoration. */
-    private settleDetachedFailure;
-    /** Rebuild all currently failed snapshots in submission order. */
-    private restoreFailedDrafts;
-    /** Return failed-send attachments to the head of the rail; release happens only after success. */
-    private restoreAttachments;
+    /** Settle the message being sent as accepted when the sink learns the Host's acceptance before its outcome. */
+    private acceptSink;
+    private applySinkOutcome;
+    /** Settle a send that ended without a Host outcome; the draft stays for correction. */
+    private failSink;
     /** Enter adjudication: poll the session controller; failure = notice + draft retained (never a silent downgrade). */
     private adjudicate;
     /**

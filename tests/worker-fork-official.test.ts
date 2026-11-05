@@ -5,7 +5,7 @@ import { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { SessionStore, SessionId } from '@deepseek-ai/dsh-session'
 import { SubagentRuntime } from '@deepseek-ai/dsh-subagent'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
-import { ToolRuntime } from '@deepseek-ai/dsh-tools'
+import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -36,7 +36,7 @@ it.each([false, true])('模拟 CLI：seeds a real same-parent child and cleans u
   ])
   await ctx.plugin(SessionStore); await ctx.plugin(SessionProjection); await ctx.plugin(AgentRegistry)
   await ctx.plugin(LlmRuntime); await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
-  await ctx.plugin(ToolRuntime, { mode: 'native' }); await ctx.plugin(Commands)
+  await mountNativeTools(ctx); await ctx.plugin(Commands)
   ctx.commands.register({ name: 'fork', description: '模拟父会话分支命令', handler: () => ({ kind: 'error', text: '不应调用宿主原生分支' }) })
   await ctx.plugin(Persistence, { root: join(root, 'sessions'), compression: 'none' })
   await ctx.plugin(Query); await ctx.plugin(AgentLoop, { agents: [], maxParallelToolCalls: 2 })
@@ -98,6 +98,13 @@ it.each([false, true])('模拟 CLI：seeds a real same-parent child and cleans u
   expect(child.session.header.parentSession).toBe(parent.agent.id)
   expect(child.session.header.origin).toBe('subagent')
   expect(child.session.inheritedEventCount).toBeGreaterThan(0)
+  const childEvents = child.session.snapshotEvents()
+  expect(childEvents.slice(0, history.seed.length)).toEqual(history.seed)
+  const ownEvents = childEvents.slice(history.seed.length)
+  const selected = ownEvents.find((event) => event.type === 'model/selection')
+  expect(selected?.data).toEqual({ provider: 'cliworker-native', model: `worker/${forked.id}` })
+  expect(selected!.seq).toBeLessThan(ownEvents.find((event) => event.type === 'turn/start')!.seq)
+  expect(child.model.current()).toEqual({ provider: 'cliworker-native', model: `worker/${forked.id}` })
   const text = child.session.deriveMessages().flatMap((message) => message.content.filter((block) => block.type === 'text').map((block) => block.text))
   expect(text).toContain('模拟旧任务'); expect(text).toContain('模拟旧回复')
   expect(run).not.toHaveBeenCalled()
