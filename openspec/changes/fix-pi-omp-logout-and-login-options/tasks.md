@@ -19,7 +19,7 @@
 
 ## Workflow follow-up
 
-- Windows 安装预览包及真实 OMP 旧凭据 id=1 退出由主会话在确认无活动任务后执行；id=2/其他 CLI 不得改动。本阶段未执行。
+- Windows 安装预览包及真实 OMP 旧凭据 id=1 退出由主会话在确认无活动任务后执行；id=2/其他 CLI 不得改动。已于 2026-11-06 由主会话执行（经用户授权），记录见下方「Windows 实机退出验收」。
 - Desktop UI、Windows 真实登录与 Pi 真实退出未验证；因此本 change 不归档，不以格式检查隐藏缺口。
 
 ## Validation record
@@ -37,3 +37,25 @@
 - `corepack pnpm spec validate fix-pi-omp-logout-and-login-options --strict --no-interactive`：通过。`git diff --check`：通过。
 - 本地阶段提交：`8465f23` 提案/规格；`e24b0e7` 实现/测试；验证文档作为后续独立提交，hash 见最终报告。均附要求的 Co-Authored-By；不推送、不发布。
 - 未修改 `pi-native-catalog.mjs` 或认证错误展示逻辑；Windows 用户 agent.db 及真实凭据未改动。其他 CLI 列表差集、提示方案、主会话安装/退出步骤与回滚见 evidence.md。
+
+## Windows 实机退出验收（2026-11-06，用户授权「现在装并测退出」）
+
+- 门禁：DSH 主进程 33364 无 CLI 子进程，活动 Worker 0（多个 codex 进程不是 DSH 子进程，未动）。经应用菜单退出，确认无 DSH 进程。
+- 安装：预览包 scp 到 Windows 后 SHA256 `50338926…b87199` 与 Mac 一致。`dsh.cmd plugin --profile desktop add <tgz>` 退出码 0，profile 指向该 tgz，版本 0.8.7。按包内清单逐文件 SHA256 比对 970/970 一致（lib 751/751）。回滚包仍是 Windows 上的 v0.8.7 发布包 `b270308a…646ae`。
+- 启动：交互会话 26 带无障碍及防节流参数启动（PID 26200）。Codex gpt-6-astra high Windows Computer Use 观察：主界面正常加载，无崩溃弹窗。
+- 退出前快照：`auth_credentials` 中有两条 `zhipu-coding-plan`：id=1（created_at 0，`disabled_cause` null，有 auth 封锁记录）和 id=2（created_at 1793975825）。在远端算出每条记录的内容摘要，只存在 Windows 本地，不输出密钥或摘要。
+- UI 操作（Codex CU，原文）：
+  - 「CLI Worker 设置 → OMP → 账号」窗口「OMP · 账号」列出「智谱 BigModel Coding（中国）」两行，分别为「API Key · 凭据 #1」「API Key · 凭据 #2」，各带「退出」。
+  - 只点 #1 的「退出」，行内确认「退出后会删除这条凭据，其他账号保留。」，再点「确认退出」。
+  - 结果「退出 智谱 BigModel Coding（中国） API 登录 · 凭据 #1」「已退出 OMP」「需要时可在设置中重新登录。」。点「完成」后列表只剩「凭据 #2」。
+- 回读（只读 agent.db 元数据）：
+  - id=1 `disabled_cause` 变为 `deleted by user`，`updated_at` 1793979181，即 OMP 原生的软删除；对应的 auth 封锁记录已清除。
+  - id=2 `disabled_cause` 仍为 null，`updated_at` 未变，内容摘要与退出前一致。
+  - 退出后无新增凭据，无 DSH 子进程或活动 Worker 残留。
+- 模型目录：退出后设置目录缓存于 15:33:11Z 写入，提示「当前账号可用模型」，共 12 个 `zhipu-coding-plan/*` 模型（glm-4.5 … glm-5.3-flashx-legal）。设置页显示模型「GLM-5.3-Flash」、强度「Low」。退出过程中短暂出现「OMP 当前账号暂无可用模型，请登录或刷新」，刷新后恢复。
+- 未验证：
+  - Pi 真实退出，Windows 上 Pi 原始报错未复现。
+  - Windows OMP 18.8.7 完整登录选项列表，以及账号窗口里登录选项的显示。
+  - 其他 CLI 的账号，Codex 未打开逐一核对。
+  - 真实登录或替换。
+- 1.1 仍不勾选（Pi 侧缺口）；本 change 不归档。
