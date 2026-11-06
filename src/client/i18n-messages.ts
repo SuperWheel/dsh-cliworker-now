@@ -5,6 +5,8 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  '凭据 #{id}': 'Credential #{id}',
+  '替换凭据 #{id}': 'Replace credential #{id}',
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':
     'CLI Worker was just enabled or disabled. Quit DeepSeek Harness completely and open it again to restore the interface.',
   '由 {name} 发起': 'Initiated by {name}',
@@ -390,6 +392,9 @@ export const en = {
   '刷新状态': 'Refresh status',
   '关闭账号操作': 'Close account action',
   '选择 ZCode 授权来源': 'Choose the ZCode authorization source',
+  '智谱 BigModel Coding（中国）': 'Zhipu BigModel Coding (China)',
+  'Z.AI（国际）': 'Z.AI (International)',
+  '无法读取原生登录选项，请在原生终端中选择服务商。': 'Could not read native sign-in options. Choose a provider in the native terminal.',
   '中国智谱 BigModel': 'Zhipu BigModel (China)',
   '海外 Z.AI': 'Z.AI (international)',
   '选择退出账号来源': 'Choose the account source to sign out',

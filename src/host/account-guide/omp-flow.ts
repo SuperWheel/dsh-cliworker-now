@@ -120,8 +120,10 @@ export const OMP_FLOW: FlowDefinition = {
           if (!target) return undefined
           // Last highlighted row wins when a read includes several partial redraws.
           for (const line of [...lines].reverse()) {
-            const text = line.trimStart()
-            if (!/^[^\p{L}\p{N}\s()[\]{}]\s+/u.test(text)) continue
+            // 18.x OverlayPanel adds a vertical border on either side. Strip only
+            // a complete panel pair; a clipped detail must never become a row ID.
+            const text = line.trim().replace(/^[│┃]\s*(.*?)\s*[│┃]$/u, '$1')
+            if (!/^[❯›>→]\s+/u.test(text)) continue
             const row = text.match(/(?:stored API key|oauth) #([1-9]\d*)\s*$/)?.[1]
             if (row) return { row, target: row === target.row }
           }

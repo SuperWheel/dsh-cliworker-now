@@ -3,14 +3,14 @@ import { authenticatedAccountLogins, providerLogin, usableNativeApiKey } from '.
 
 describe('native login display metadata (explicit synthetic values)', () => {
   it('maps native provider IDs and official endpoints to short names', () => {
-    expect(providerLogin('zai-coding-cn', 'api')).toEqual({ providerLabel: 'zai.cn', authMethod: 'api' })
-    expect(providerLogin('zhipuai-coding-plan', 'api').providerLabel).toBe('zai.cn')
+    expect(providerLogin('zai-coding-cn', 'api')).toEqual({ providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' })
+    expect(providerLogin('zhipuai-coding-plan', 'api').providerLabel).toBe('智谱 BigModel Coding（中国）')
     expect(providerLogin('openai-codex', 'oauth').providerLabel).toBe('OpenAI')
     expect(providerLogin('nous', 'oauth').providerLabel).toBe('Nous')
     expect(
       providerLogin('openai', 'api', { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4' })
         .providerLabel,
-    ).toBe('zai.cn')
+    ).toBe('智谱 BigModel Coding（中国）')
     expect(
       providerLogin('openai-codex', 'oauth', { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4' })
         .providerLabel,
@@ -21,7 +21,7 @@ describe('native login display metadata (explicit synthetic values)', () => {
     expect(
       providerLogin('custom', 'api', { baseUrl: 'https://open.bigmodel.cn/api/coding/paas/v4' })
         .providerLabel,
-    ).toBe('zai.cn')
+    ).toBe('智谱 BigModel Coding（中国）')
     expect(
       providerLogin('zai-coding-cn', 'api', { baseUrl: 'https://custom.test/private' }).providerLabel,
     ).toBe('custom.test')
@@ -55,7 +55,7 @@ describe('native login display metadata (explicit synthetic values)', () => {
       state: 'authenticated',
       verification: 'local',
       logins: [
-        { providerLabel: 'zai.cn', authMethod: 'api' },
+        { providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' },
         { providerLabel: 'OpenAI', authMethod: 'oauth' },
         { providerLabel: 'OpenAI', authMethod: 'api' },
       ],

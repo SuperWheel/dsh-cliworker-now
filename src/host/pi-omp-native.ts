@@ -9,7 +9,7 @@ import { accountEmail, type AccountIdentity } from './account-identity.ts'
 import { authenticatedAccountLogins, providerLogin, usableNativeApiKey } from './account-login.ts'
 import type { AccountLogin, AccountSource } from '../shared/accounts.ts'
 import type { PiOmpCli } from './pi-omp-adapter.ts'
-import { accountLoginId } from '../shared/account-links.ts'
+import { accountLoginId, parseAccountLoginId } from '../shared/account-links.ts'
 import { acquireOwnAccountLease, releaseOwnAccountLease, OWN_ACCOUNT_BUSY } from './own-account-lease.mjs'
 import {
   refreshFingerprint,
@@ -417,6 +417,23 @@ const OMP_SIGNED_OUT = 'deleted by user'
  * the shared refresh store must all agree on this.
  */
 const ownsProvider = (row: { disabled_cause?: unknown }) => row.disabled_cause !== OMP_SIGNED_OUT
+
+/** Sign-out evidence must not confuse an invalid/blocked credential with a removed one. */
+export async function piOmpStoredLoginExists(
+  cli: PiOmpCli, login: string, stateDirectory: string | undefined, signal: AbortSignal,
+  options: { nativeHome?: string } = {},
+): Promise<boolean> {
+  const target = parseAccountLoginId(login)
+  const match = target?.entry?.match(cli === 'pi' ? /^(native|plugin)$/ : /^(native|plugin)\.([1-9]\d*)$/)
+  if (target?.cli !== cli || !match) throw new Error('不支持单独退出该账号')
+  return withSources(cli, { accountRoot: stateDirectory, signal, ...options }, async sources => {
+    const selected = sources[match[1] === 'native' ? 0 : 1]
+    if (!selected) throw new Error('账号来源已变化，请刷新后重试')
+    return cli === 'pi' ? Object.hasOwn(selected.auth, target.provider)
+      : selected.credentials.some(row => row.provider === target.provider &&
+          String(row.native_rowid) === match[2] && ownsProvider(row))
+  })
+}
 function mergeSources(sources: NativeSource[]) {
   const auth = Object.assign(Object.create(null), ...sources.map((s) => s.auth))
   const providers = Object.assign(Object.create(null), ...sources.map((s) => s.models.providers ?? {}))

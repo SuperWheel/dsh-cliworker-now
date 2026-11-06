@@ -2,7 +2,7 @@
 // model request, or subscription validation: open its own provider login menu.
 // `login <provider>` opens that provider's own login (Pi's /login <provider>);
 // `logout <auth> <provider>` removes that stored credential with Pi's own API, no UI.
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { inspectPiInstallation } from './pi-installation.mjs'
 
@@ -15,6 +15,24 @@ try {
   const provider = process.argv[action === 'logout' ? 5 : 4]
   if (provider !== undefined && !/^[a-z0-9][a-z0-9._-]{0,63}$/.test(provider)) throw new Error('Invalid provider')
   const { dist } = inspectPiInstallation(executable)
+  if (action === 'logout' && provider) {
+    const authPath = process.argv[4]
+    if (!authPath || !isAbsolute(authPath)) throw new Error('Missing selected auth storage')
+    // A targeted logout needs only Pi's credential API. Loading a session/UI here
+    // couples sign-out to unrelated model selection, resources and terminal setup.
+    const { ModelRuntime } = await import(pathToFileURL(join(dist, 'core/model-runtime.js')).href)
+    const runtime = await ModelRuntime.create({ authPath, modelsPath: null,
+      refreshOnCreate: false, allowModelNetwork: false })
+    const signal = AbortSignal.timeout(15_000)
+    const before = await runtime.listCredentials({ signal })
+    if (!before.some(item => item.providerId === provider)) throw new Error('Credential no longer stored')
+    await runtime.logout(provider, { signal })
+    // Native readback, not the SDK call's return or a terminal success string.
+    if ((await runtime.listCredentials({ signal })).some(item => item.providerId === provider))
+      throw new Error('Native logout was not confirmed')
+    process.stdout.write('已移除该服务商的凭据。\n')
+    process.exit(0)
+  }
   const {
     createAgentSessionServices,
     createAgentSessionFromServices,
@@ -73,12 +91,6 @@ try {
     { cwd, agentDir, sessionManager: SessionManager.inMemory(cwd) },
   )
   const ui = new InteractiveMode(runtime)
-  if (action === 'logout' && provider) {
-    // The same call as Pi's /logout selector, for the one provider chosen in the plugin window.
-    await runtime.session.modelRuntime.logout(provider, { signal: AbortSignal.timeout(15_000) })
-    process.stdout.write('已移除该服务商的凭据。\n')
-    process.exit(0)
-  }
   await ui.init()
   if (action === 'logout') await ui.showOAuthSelector('logout')
   else await ui.handleLoginCommand(provider)
