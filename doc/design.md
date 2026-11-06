@@ -1410,5 +1410,13 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 见 `openspec/changes/fix-pi-omp-logout-and-login-options/`。Pi 通过当前安装的 ModelRuntime provider auth 注册表、OMP 通过 `get_login_providers` 获取选项，空隔离 HOME 内查询并清除继承凭据。OMP 16 RPC 需要合成占位 API 环境才能启动，只查元数据，不发送模型请求。只缓存同一安装入口身份的成功结果；启动登录前再次验证 provider 来源，失败转原生选择。
 - Pi 指定凭据退出只加载原生 ModelRuntime，调用 logout 并 listCredentials 回读，不初始化会话/InteractiveMode。OMP 继续原生 `/logout <provider>`，识别 16.x 及 18.x 带边框的高亮 ID，不按列表顺序定位。账号行和替换选项显示 OMP 原生凭据编号。
 - Host 按 source/provider/credential id 检查记录是否存在；过期、认证失败或临时封锁不算退出。OMP 原生 `deleted by user` 软删除算已退出。成功消息在原生回读与进程清理均完成后发送。替换保留新凭据确认后退出旧凭据的顺序，不把新增等同于替换完成。
-- 文案区分智谱 BigModel Coding（中国）/Z.AI（国际），不再使用 zai.cn 称呼国内账号。多凭据模型范围交集规则及认证失败展示不在本变更修改范围。
+- 文案区分智谱 BigModel Coding（中国）/Z.AI（国际），不再使用 zai.cn 称呼国内账号。多凭据模型范围交集规则及认证失败展示由下一节 `fix-catalog-auth-denial-display` 处理。
 - Mac 合成账号实测与 Windows 只读证据见变更 evidence.md；Windows 真实指定旧凭据退出、完整 OMP 18.8.7 注册表、Desktop UI 尚待主会话验收，未发布。
+
+## 模型目录认证失败的说明与失效凭据排除（2026-11-07）
+
+- 现象：Windows 上 OMP、Pi、OpenCode 共用的智谱 key 返回 401，设置页只显示「当前账号暂无可用模型」。用户换了新 key 后，OMP 里新旧两条凭据并存，保守交集因旧凭据 401 得出 0 个模型。
+- 决定：Pi/OMP 同一服务商路由的多条凭据中，被服务商明确拒绝认证（401/403 或认证错误码）的凭据不参与交集；其余凭据全部确认支持时，按它们的交集显示模型。任何一条范围未知（网络、超时、无法解析）时仍保持保守规则。全部被拒绝时报「<CLI> 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新」；有凭据被跳过时，目录 notice 为「当前账号可用模型；已跳过 N 条认证失败的凭据，可在账号窗口退出」，设置页显示在模型下方。OpenCode 按服务商使用同样的提示。
+- 实现：`accountSupportedChoices` 通过 `options.report` 累计被拒绝的凭据数；桥接的 account-scope 阶段输出 `{phase, models, authenticationDenied}`，Host 同时兼容旧数组格式。notice 经 `catalog-notice.ts` 的 WeakMap 跟随模型数组，`catalogFor` 读出后放入 `Catalog.notice`；空目录在 query 目录清理后再报错。只传计数，不传凭据编号、账号或密钥。
+- 取舍：执行时 OMP 仍可能先选到失效凭据，失败一次后由原生封锁；插件不自动退出或封锁凭据，提示用户在账号窗口退出。
+- 记录：`openspec/changes/fix-catalog-auth-denial-display/tasks.md`。

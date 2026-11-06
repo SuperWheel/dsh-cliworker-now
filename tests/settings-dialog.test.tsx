@@ -3030,11 +3030,13 @@ it('names each OMP account of one provider by its email when replacing one', asy
   const t = await setup({ accountStatus: pickedStatus('omp', logins, providers) })
   await t.click('OMP 设置')
   await t.click('账号')
-  // Each card shows its own account under the provider.
-  expect(t.text()).toContain('账号登录 · first@example.invalid')
+  // Each card shows its own account and native credential number under the provider.
+  expect(t.text()).toContain('账号登录 · 凭据 #2 · first@example.invalid')
+  expect(t.text()).toContain('账号登录 · 凭据 #3 · second@example.invalid')
   await t.click('添加账号')
-  expect(t.text()).toContain('替换 first@example.invalid')
-  expect(t.text()).toContain('替换 second@example.invalid')
+  // Replacement targets the stable native credential number, not the email.
+  expect(t.text()).toContain('替换凭据 #2')
+  expect(t.text()).toContain('替换凭据 #3')
 })
 
 it('explains a Codex relay route catalog the way it does a Claude route', async () => {
@@ -3044,6 +3046,16 @@ it('explains a Codex relay route catalog the way it does a Claude route', async 
     cli === 'codex' ? remote({ cli, models: [{ id: 'codex-fixture', efforts: ['low'] }], notice }) : catalog(cli),
   )
   const t = await setup({ catalogForCli: relay, refreshCatalogForCli: relay }, undefined, 'codex')
+  await vi.waitFor(() => expect(t.text()).toContain(notice))
+})
+
+it('shows which credentials were skipped after a provider authentication rejection', async () => {
+  // Simulated Host notice; no real account, provider or network.
+  const notice = '当前账号可用模型；已跳过 1 条认证失败的凭据，可在账号窗口退出'
+  const scoped = vi.fn(async (_session, cli: CliId) =>
+    cli === 'omp' ? remote({ cli, models: [{ id: 'omp-fixture', efforts: ['low'] }], notice }) : catalog(cli),
+  )
+  const t = await setup({ catalogForCli: scoped, refreshCatalogForCli: scoped }, undefined, 'omp')
   await vi.waitFor(() => expect(t.text()).toContain(notice))
 })
 

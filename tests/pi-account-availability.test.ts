@@ -223,3 +223,64 @@ it('conservatively hides models with unverified native credential/scope header o
   expect(choices).toEqual([])
   expect(fetcher).not.toHaveBeenCalled()
 })
+// Synthetic: one credential rejected by the provider (401) must not veto the others.
+const rejecting = (scopes: Record<string, { ids: string[]; plan: string } | 401 | 500>) =>
+  vi.fn(async (url: unknown, options: any) => {
+    const token = options.headers.Authorization.replace('Bearer ', '')
+    const scope = scopes[token]
+    expect(scope).toBeDefined()
+    if (scope === 401 || scope === 500) return new Response('{}', { status: scope })
+    return String(url).includes('/usage')
+      ? response({ plan_type: scope.plan, rate_limit: { allowed: true, limit_reached: false } })
+      : response({ models: scope.ids.map((slug) => ({ slug, supported_in_api: true })) })
+  })
+it('OMP skips a credential the provider rejects and keeps the models of the remaining login', async () => {
+  const stale = 'SYNTHETIC_REJECTED_OLD',
+    fresh = 'SYNTHETIC_ACCEPTED_NEW'
+  const path = await fixture('omp', [credential(stale), credential(fresh)])
+  const report = { authenticationDenied: 0 }
+  const choices = await accountSupportedChoices(
+    'omp',
+    path,
+    rows,
+    {},
+    { fetch: rejecting({ [stale]: 401, [fresh]: { ids: ['common'], plan: 'plus' } }), report },
+  )
+  expect(choices.map((model: any) => model.id)).toEqual(['openai-codex/common'])
+  expect(report.authenticationDenied).toBe(1)
+  expect(JSON.stringify({ choices, report })).not.toMatch(/SYNTHETIC_/)
+})
+it('OMP shows nothing when every credential is rejected and reports the count', async () => {
+  const one = 'SYNTHETIC_REJECTED_ONE',
+    two = 'SYNTHETIC_REJECTED_TWO'
+  const path = await fixture('omp', [credential(one), credential(two)])
+  const report = { authenticationDenied: 0 }
+  const choices = await accountSupportedChoices(
+    'omp',
+    path,
+    rows,
+    {},
+    { fetch: rejecting({ [one]: 401, [two]: 401 }), report },
+  )
+  expect(choices).toEqual([])
+  expect(report.authenticationDenied).toBe(2)
+})
+it('OMP keeps the conservative rule when another credential scope is unknown', async () => {
+  const stale = 'SYNTHETIC_REJECTED',
+    broken = 'SYNTHETIC_SERVER_ERROR',
+    fresh = 'SYNTHETIC_ACCEPTED'
+  const path = await fixture('omp', [credential(stale), credential(broken), credential(fresh)])
+  const report = { authenticationDenied: 0 }
+  const choices = await accountSupportedChoices(
+    'omp',
+    path,
+    rows,
+    {},
+    {
+      fetch: rejecting({ [stale]: 401, [broken]: 500, [fresh]: { ids: ['common'], plan: 'plus' } }),
+      report,
+    },
+  )
+  expect(choices).toEqual([])
+  expect(report.authenticationDenied).toBe(1)
+})

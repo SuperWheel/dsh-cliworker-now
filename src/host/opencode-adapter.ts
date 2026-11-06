@@ -15,6 +15,7 @@ import {
   openCodeNativePaths,
 } from './opencode-native.ts'
 import { probeAccountModels, type AccountModelScope } from './account-models.mjs'
+import { explainAuthenticationScope } from './catalog-notice.ts'
 import { NativeBlockResponses, sessionHttpResponseUsage } from './http-rpc-response.mjs'
 import { nativeSkillPaths } from './cli-native-capabilities.mjs'
 
@@ -439,8 +440,13 @@ export async function discoverOpenCode(
       cost,
     })
   }
-  return models.sort(
-    (a, b) => Number(b.cost === 'free') - Number(a.cost === 'free') || a.id.localeCompare(b.id),
+  const rejected = [...scopes.values()].filter(
+    (scope) => scope.state === 'denied' && scope.denialReason === 'authentication',
+  ).length
+  return explainAuthenticationScope(
+    models.sort((a, b) => Number(b.cost === 'free') - Number(a.cost === 'free') || a.id.localeCompare(b.id)),
+    rejected,
+    'OpenCode',
   )
 }
 
