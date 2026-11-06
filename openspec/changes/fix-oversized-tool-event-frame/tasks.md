@@ -39,6 +39,7 @@
 - [ ] 3.1 真实 Desktop / CLI / 模型复验超大命令降级路径（部分完成，超大帧路径仍未真实触发）。
   - 修复前实测（2026-11-06，Mac，Codex 0.162.1，gpt-6-luna low，Worker `70f3e734…`）：两次 imageGeneration 成功后，模型发起 1,269,672 字节的 commandExecution，插件抛 `Native bridge frame exceeds limit`，整轮 failed。
   - 修复后实测（Desktop 加载正式构建，Worker `441c232a-0f11-48b8-a85c-4f9763db6d4a`）：两次 imageGeneration 后模型改用 `cp` 复制，命令 exitCode 0，终态 completed；`blue-square.png` 950490 字节、PNG 1254×1254，与 savedPath 原图逐字节一致。本轮命令不超长，降级路径未被真实触发，仍只有模拟回归覆盖。
-- [ ] 3.2 隔离构建、正式构建、Desktop 链接更新及其他平台复验（Mac 部分完成，其他平台未执行）。
+- [x] 3.2 隔离构建、正式构建、Desktop 链接更新及其他平台复验（Mac 部分完成，其他平台未执行）。
   - `corepack pnpm build:preview`、`corepack pnpm build`（先退出 Desktop）均完成，两份产物均含新降级代码；Desktop 以 link 加载后正常启动。Windows 未复验。
   - 不提交、不修改版本号；保留活动变更，未验证项不勾选、不以归档隐藏。
+  - 2026-11-07（v0.8.7 发布验收，主会话）：本修复随提交 13fe940 进入 0.8.7。Windows 远程隔离 run b85f6939（79756f7）preview、冻结依赖、typecheck、17 个 Windows CI 文件 308 通过 / 1 跳过与 Host 加载通过；GitHub CI 42228929297 通过。正式构建 747 个程序文件与隔离构建一致；发布包（SHA256 `b270308a…46ae`）经原生安装器装入 Mac 隔离 profile 与 Windows Desktop，文件逐字节一致，两端 Desktop 只读界面核对通过。3.1 仍未执行（真实 CLI 未触发超大帧路径）。

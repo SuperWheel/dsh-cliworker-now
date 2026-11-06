@@ -57,6 +57,7 @@
   - 过期设置页：Codex Computer Use 于 20:43:16（本地）打开 Grok Build，显示「已登录」与「正在读取 Grok Build 模型…」；20:43:34 加载完成，模型 Grok 4.6、强度 Xhigh、下拉框可用，无续期或登录警告。凭据在 20:43:22 由插件续期（见 1.1）。即原问题场景在 Mac 界面上已自动恢复。
   - 派遣：新会话（工作区 CLI Worker Demo）发送「只回复 OK」后出现「Grok Build 模型 / 选择模型 Grok 4.6 / Grok 4.5」问题卡，无「沿用」项（该项目尚无已确认的完整 Grok 选型，符合首次选择规则）。按不代选模型的规则先停在此卡；用户选定 Grok 4.5 · Low 后，依次选 Grok 4.5、Low、不使用角色预设。Worker `grok-1`：status=completed，preference grok-4.5/low，observedModel=grok-4.5，transport grok-acp-v1，lastResult「OK」；events 8 条 user → queued → 本轮权限：自动审批 → CLI 已连接 → Grok 原生模型已确认 → assistant OK → result OK → completed（12:55:20–12:55:30Z）；raw 中无 tool_call；结束后无 grok 进程。界面上「已编辑 tasks.md」是本变更 tasks.md 在 20:45:50 的手动更新（工作区位于仓库 `.test-data` 下，故显示仓库内改动），早于本次派遣，并非 Worker 改动。
 - [x] 4.5 明确记录未执行的验证（例如无法构造「需要手动登录」的真实场景）。
+  - v0.8.7 发布候选（Windows）：清理 Desktop cookie 后重启，设置 → Grok Build 显示「已登录」、Grok 4.5 / Low，无警告；记录见 `add-sibling-dispatch-unified-subagents/tasks.md` 第 6 节。
   - 未执行：真实「需要手动登录」场景；Windows 过期状态下的界面自动续期（4.2 后半，Mac 已覆盖同一路径）；macOS Worker 链接写回（1.4）；方案 B；续期私有日志 outcome 的真实留存（随查询临时目录删除）。
 
 ## 5. 文档

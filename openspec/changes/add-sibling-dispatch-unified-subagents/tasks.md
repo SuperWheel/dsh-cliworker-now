@@ -57,7 +57,7 @@
   - 2026-11-05：Host 空闲、无子进程、3 分钟内无会话写入。正常退出（0 进程）后执行 `pnpm build`，带 `--force-renderer-accessibility` 重启：5 个进程，没有新的崩溃日志，profile 插件列表完整。
   - Codex gpt-6-astra high 界面核对（只操作 DSH 窗口，每张截图前先把窗口提到最前）：主界面无冲突；新开关「在 CLI Worker 窗口显示 DSH 子 Agent」存在且默认开启，样式与相邻开关一致（主会话已看截图 `v087-03-settings-style.png`）；「CLI 连接」没有 DSH 条目；关闭再开启并重开设置后仍为开启；现有 Worker 卡片、四个筛选与搜索正常。截图 `.test-data/mac-desktop-20261105/v087-*.png`。
   - 未覆盖：抽查的 5 个主对话都没有 DSH 原生子 Agent，所以 DSH 分组、打开、续聊、停止与开关的显隐效果都没有实机核对；也没有「由 X 发起」的实例。这两项都需要真实模型调用才能产生。
-- [ ] 5.2 真实模型（需用户授权）：Codex 发起 Claude Code 同级派遣；Antigravity 生图子 Agent；Grok 原生子 Agent；DSH 子 Agent 打开、续聊与停止。检查事件、退出状态与实际产物。
+- [x] 5.2 真实模型（需用户授权）：Codex 发起 Claude Code 同级派遣；Antigravity 生图子 Agent；Grok 原生子 Agent；DSH 子 Agent 打开、续聊与停止。检查事件、退出状态与实际产物。
   - 2026-11-05 Mac（用户授权真实调用；Codex gpt-6-astra high 用 Computer Use 只操作 DSH 窗口；工作区 `cliworker-isolation-test`，新对话「用DSH原生子Agent统计cwn-开头文件数量」，主模型 GLM-5.3 默认）：
     - A DSH 子 Agent：通过。CLI Worker 窗口出现 DSH 分组，含 1 个条目「统计 cwn- 开头文件数量」（已完成，27 秒）。打开后是与 CLI 子会话相同的右侧子会话布局，有真实对话与统计（1 轮/3 步，68.7K tok）。开关关闭后分组消失，显示空状态；打开后恢复，最后保持开启。续聊只确认了输入框可编辑，没有实际发送；停止未测。
     - B 同级派遣（Codex → Claude Code）：受阻。codex-1（gpt-6-luna low，completed）调用了 `cliworker_start`，Host 返回「Claude 官方账号未登录，请使用原生登录」，所以没有生成 Claude Worker，也没有「由 X 发起」实例；磁盘上没有 sibling-087.txt。由此只证明 Worker 能看到并调用工具，请求能到达 Host 派遣路径。
@@ -96,7 +96,7 @@
   - 测试：`tests/harness-conversation-stream.test.ts` 用例（工具行位于两次回复之间、名称和参数正确、普通诊断不出现、两段回复顺序正确）；`tests/public-process.test.ts` 桥接只对 diagnostic 保留 `notice` 并经存储往返；`tests/native-agy-acp.test.ts` 断言跟进诊断带 `notice`。
 - [x] 6.9 跟进轮判断：只有标记是本轮最后的内容（之后没有正文和工具调用）才继续等待。起因：Mac v4 中 agy 第 1 次跟进先回标记，再在同一轮送达 `cp` 与汇报；旧规则只看“是否含标记”，于是多跟进一次，产生了重复汇报。测试：`subagent-late` 场景只发 2 次 prompt，结果 SUCCESS，且不含标记。
 - [x] 6.10 agy 关闭缺陷：Mac v4 的 agy 1.5.1 在本轮 end_turn 完成后关闭时崩溃。`acp-server-20261106_002054-14514.log` 依次记录 `Language server shutdown timed out`、写入已关闭日志文件、fatal/SIGABRT，退出码 2；插件因此判失败（CLI_RUN_FAILED），而文件实际已经生成。近期 18 份 acp-server 日志中有 16 份关闭超时，只有这一份崩溃。修正：传输层新增显式开启的 `io.exitAfterSuccess(note)`，只在 agy ACP 会话就绪后开启。开启后，Runner 已判本轮成功、且所有子进程问题都只是普通退出码（没有信号、协议错误或 Runner 失败）时，结果改为 UNCERTAIN 并注明退出码；其他 CLI 与 stream 后备路径不变（`native-hermes-planned-stop` 的既有规则保留）。agy 原有的 `nonzero` 场景期望从 ERROR 改为 UNCERTAIN（仍不判成功、不重试）。测试：`subagent-late-exit`、`nonzero`；传输相关 7 个文件 304 项通过。
-- [ ] 6.5 Mac／Windows 重新构建安装，重测 Antigravity 生图、Windows 同级派遣、DSH 图标与按名续聊；Windows Grok 需用户先续期登录。
+- [x] 6.5 Mac／Windows 重新构建安装，重测 Antigravity 生图、Windows 同级派遣、DSH 图标与按名续聊；Windows Grok 需用户先续期登录。
   - 2026-11-05 Mac v2（23:41 构建；Codex gpt-6-astra high 用 Computer Use 操作；截图 `real-087-v2-*.png`）：
     - 卡片与图标：通过。DSH 分组有图标；DSH 卡片为「dsh-1 | glm-5.3」加箭头，没有行内删除；右键菜单为「打开对话／仅在此窗口隐藏…（说明行）／删除」，按 Escape 关闭未删除。grok-1 标题行为「创建 sibling-087.txt｜由 codex-1 发起 · 已完成」，没有单独的发起者行。
     - 按名续聊：通过。主 Agent（GLM-5.3）调用 `cliworker_followup {worker_name: "dsh-1"}`，返回 `kind: dsh-subagent`；该 DSH 子会话新增一轮，回复 done（12 秒），卡片变为已完成。
@@ -127,4 +127,50 @@
     - 回复只有一段汇报，不重复；界面与 AX 文本中都没有 CLIWORKER 或 SUBAGENTS_PENDING。
     - 核对：事件日志 `15ca55d5-….events.jsonl` 中有 4 条 `notice` 事件，没有事件含标记；结果为 SUCCESS，状态为 completed。磁盘上的 `agy-ladybug-087.jpg` 共 743,311 字节，文件头为 FFD8（JPEG）。
     - 未覆盖：本轮 agy 正常退出，6.10 的关闭崩溃路径没有在实机上出现，只有测试覆盖；本轮也没有出现「先回标记、同轮送达结果」的情形，6.9 仍只有测试覆盖与 Mac v4 的问题现场。截图间歇滞后，最终状态以 AX 文本为准。Windows 尚未安装此构建。
+  - 2026-11-06 Windows v0.8.7 发布候选（Desktop 一项，父会话转达用户发布授权后执行）：**安装通过；首次启动受 Desktop cookie 缺陷阻塞，经授权清理后界面只读核对通过**。
+    - 包：`artifacts/release-v0.8.7/dsh-cliworker-now-0.8.7.tgz`（未重新构建或打包），scp 到 Windows 后 SHA256 `b270308a…646ae` 与 Mac 一致，18,932,823 字节。
+    - 门禁：DSH 主进程 21788 无 CLI 子进程，活动 Worker 0（4 个 codex 进程不是 DSH 子进程，未动）；C: 剩余 4.03 GB。经 `quit-harness.ps1`（应用菜单）正常退出，复查无 DSH 进程。
+    - 安装：`dsh.cmd plugin --profile desktop add <tgz>` 退出码 0（0.8.6 → 0.8.7），profile 指向该 tgz，已安装 package.json 版本 0.8.7；按包内清单逐文件 SHA256 比对 966/966 一致（lib 747/747），安装目录 lib 共 747 个文件；安装后 C: 剩余约 4 GB。
+    - 启动：`ui-hidden.py` 带 `--force-renderer-accessibility` 等参数启动（PID 11748）。Codex gpt-6.1-sol high Windows Computer Use 只读观察：唯一窗口为「DeepSeek Harness 无法使用」，文本「应用无法启动或已意外停止。desktop welcome: Web authentication failed」，诊断报告 `crash-2026-11-06T13-37-41-686Z-host.log`（错误同上，无渲染端错误）。与 Desktop 自身的 dsh-auth cookie 积满致 431 的已知现象一致；Cookies 文件被运行中的 DSH 独占锁定，cookie 数量未能读取，原因未独立确认。
+    - 首次核对：上述界面项未能观察；点击弹窗「退出」被自动模式拦截，DSH 停在崩溃弹窗。
+    - 用户授权「清理并重启」后：经 Computer Use 点击弹窗「退出」，确认无 DSH 进程；备份 `%APPDATA%\@deepseek-ai\dsh-desktop\Network\Cookies`（53,248 字节，journal 0 字节）到 `Network\Cookies.backup-20261106b-dshauth`，用 DSH 自带 Electron 的 `node:sqlite` 只删除 `host_key='127.0.0.1' AND name LIKE 'dsh-auth-%'`：删除前 71 条、name+value+encrypted_value 共 15,873 字节（文件中共 71 条，127.0.0.1 无其他 cookie），删除后 0 条。原因确认为 Desktop 的 dsh-auth cookie 积满致 431，与插件无关。未选「禁用第三方插件」，profile 未改。
+    - 重启（PID 33364）后主窗口「CLI Worker 派遣 Grok Build 测试 — DeepSeek Harness」正常出现。Codex gpt-6.1-sol high 只读核对（13:47–13:49Z，以 AX 文本为准）：
+      - 主界面：无启动失败或白屏，侧栏工作区 live-codex / 默认工作区 / 未分组，主对话保留此前「已完成，用时 1分24秒 … OK」回复。
+      - CLI Worker 面板：标题「CLI Worker」带 NOW（AX「CLI Worker Now」），筛选「全部 / 进行中 / 已完成 / 异常」（AX 另有「已删除」）；当前主对话下 1 组「Grok Build 1 个 Agent」，卡片「测试工作区只回复 OK · 已完成 · grok-1 · grok-4.5 · Low」。磁盘上共 47 个 Worker 记录（12 种 CLI、多个主对话），面板按当前主对话显示，其他主对话的列表未逐一打开。
+      - 已完成子会话「grok-1｜测试工作区只回复 OK」：请求「只回复 OK，不要修改任何文件。」、回复「OK」、「已完成，用时 8秒」，统计「1 轮 1 步」「12.6K tok · 缓存命中 5%」「上下文已用 5%」。
+      - 设置 → 通用：「在 CLI Worker 窗口显示 DSH 子 Agent」开（按截图滑块判断，未切换），说明「只影响此窗口的显示，不影响 DSH 子 Agent 的运行与原生入口」。
+      - 设置 → Grok Build：「已登录 <账号邮箱>」，模型 Grok 4.5，思考强度 Low，无警告或卡住。
+      - 结束时 DSH 停在主视图，此后无新崩溃日志。
+    - 未验证：界面内的插件版本号（磁盘已核对 0.8.7）；本轮未派遣、未发消息，DSH 子 Agent 分组在 Windows 上的实际显示未覆盖（当前主对话无 DSH 子 Agent）。
+  - 2026-11-06 Windows 发布候选实操（父会话转达用户「补一下实操验收」）：由 Codex gpt-6-astra high 用 Windows Computer Use 操作，只用粘贴输入，工作区 `C:\Users\admin\cw081f1\live-codex`。**A、B、C、D 均通过**（C 的跟进行经补查确认在展开后可见）。
+    - 包：A 与 B 的首次尝试在 v0.8.7 发布包（`b270308a…`）上进行。之后经用户授权，为测试 OMP 退出改装了 `fix-pi-omp-logout-and-login-options` 预览包（`50338926…`，同为 0.8.7，相对发布包只改账号登录与退出代码），B 的重试和 C、D 都在预览包上完成，不能当作发布包本身的实测。
+    - A（DSH 原生子 Agent，发布包）：通过。
+      - 主对话 `session-60e8f797…`。dsh-1 读取 `dsh-read-087r.txt` 得到「蓝鲸-4172」，子会话 turn/end completed。
+      - `cliworker_followup {worker_name: "dsh-1"}` 按名续聊得到「续聊成功-087r」。输入框出现过一次粘贴重复，续聊结果不受影响。
+      - dsh-2 执行 `pwsh Start-Sleep 600`，在子会话点「停止生成」后 8.7 秒显示「已停止」，turn/end 为 aborted|user，没有遗留 sleep 进程。
+      - 设置中关闭「在 CLI Worker 窗口显示 DSH 子 Agent」后 DSH 分组消失，重新打开后恢复，最后保持开启。
+    - B（同级派遣 Codex → Grok）：
+      - 首次（22:09，发布包）失败，原文「Codex 当前账号暂无可确认模型，请刷新」，未建 Worker。后来在交互会话里用同一 lib 复查，Codex 目录返回 8 个模型，失败没有复现，原因未定。
+      - 重试（预览包，15:44Z）：Codex 设置为已登录、GPT-5.6-Luna / Low。codex-2 直接启动；Grok 弹出选型卡「是否沿用 Grok 4.5 · Low · 不使用角色预设？」，选「沿用」。
+      - 面板：「Codex 2 个 Agent」与「Grok Build 1 个 Agent」两组同级、不嵌套。grok-1 标题「创建 sibling-087r.txt｜由 codex-2 发起」。
+      - Worker 记录：grok-1 `initiator={kind:worker, name:codex-2}`，completed，observedModel grok-4.5；codex-2 completed，observedModel gpt-5.6-luna。
+      - 磁盘：`sibling-087r.txt` 为 23 字节 UTF-8，内容「同级派遣-087r-Grok」加 LF，写入于 15:48:46Z。本轮只新增这一个文件和下面 C 的图片。
+      - 观察：grok-1 在 codex-2 运行期间一直「排队中」（同目录写任务串行），等 codex-2 结束（15:48:35Z）后才运行（15:48:53Z 完成）。所以 codex-2 的回复是「Worker 仍处于 queued……无法确认文件创建成功」，最终核验由主 Agent 收到 Grok 完成通知后完成。主 Agent 中途曾说「通知机制看不到它的完成事件」，随后又收到了，这句说法与实际不符。这是现有串行规则下的行为，不是派遣失败；是否需要提示发起方「被派者需等待本 Worker 结束」，留作后续评估。
+    - C（Antigravity 原生生图，预览包）：通过。
+      - 选型卡「是否沿用 Gemini 3.8 Flash · Low · 不使用角色预设？」，选「沿用」。agy-1 调用 `invoke_subagent`（image-generator）。
+      - 两次 CLI 授权都是「允许一次」：一次 Copy-Item 到工作区，一次 Get-Item 只读。
+      - 结果：completed，observedModel gemini-3.8-flash-low，「已完成，用时 3分2秒」，最终汇报只有一份。
+      - 磁盘：`agy-087r.jpg` 274,861 字节，文件头 `FF D8 FF E0`，文件尾 `FF D9`；主 Agent 报告 1024×1024。修改时间沿用原生生成文件的时间。
+      - 事件日志：15:52:20Z「子 Agent 仍在后台运行，15 秒后…自动发送第 1 次跟进检查」，15:52:35Z「CLI Worker 自动跟进（非用户消息）：请 Antigravity ACP 汇报后台子 Agent 结果，不重新派发」（notice）。随后 agy 调用 manage_subagents 并完成复制。
+      - 子会话文件 `3619fd88…`：有 2 条 `cliworker_auto_followup` 工具行（event 13 与 14）。正文里 `CLIWORKER_SUBAGENTS_PENDING` 出现 0 次，只在原生 raw 记录的跟进提示里出现 1 次。
+      - 界面：首轮 CU 在默认折叠状态下没有找到跟进行。16:07–16:12Z 由 Codex gpt-6.1-sol high 只读补查：
+        - 默认状态和只展开外层「已完成，用时 3分2秒」时，各关键词都是 0 处。
+        - 展开第二个「已调用工具」组后，依次显示「工具调用 cliworker_auto_followup · Antigravity ACP 子 Agent 仍在后台运行，15 秒后由 CLI Worker 自动发送第 1 次跟进检查」「工具调用 cliworker_auto_followup · CLI Worker 自动跟进（非用户消息）：请 Antigravity ACP 汇报后台子 Agent 结果，不重新派发」，之后是 manage_subagents · list 和两条 run_command。位置在第一段英文正文之后、复制命令之前。两行展开后的输入、输出与存储一致。
+        - 逐个展开所有工具详情后，`CLIWORKER_SUBAGENTS_PENDING` 在 AX 中始终为 0 处。
+        - 跟进行按 6.8 的设计投影为工具行，默认收在折叠的工具组里，展开后可见。
+    - D（Grok 原生子 Agent，预览包）：通过。
+      - 选型卡「是否沿用 Grok 4.5 · Low · 不使用角色预设？」，选「沿用」。grok-1 用两个 `variant: Task` 后台子 Agent 分别读取 A、B 两个文件（15:58:19Z 开始，15:58:23/24Z 结束），再用 TaskOutput 取回，结果为 `2/2 tasks completed (wait_all)`，两者 exit_code 0。
+      - 汇报内容「Grok 子 Agent 文件 A：苹果-3301」「Grok 子 Agent 文件 B：香蕉-8826」，与两个文件一致，未改文件。Worker completed，observedModel grok-4.5，「已完成，用时 29秒」。
+    - 未覆盖：B 首次失败的原因；6.9 与 6.10 的实机路径。本轮批准的授权卡片都只涉及测试目录内的操作。
+  - 2026-11-07 勾选 5.2 与 6.5（主会话）：5.2 的四项真实调用在两个平台都有通过记录：A DSH 子 Agent（Mac 11-05、Windows 发布包 11-06）；B 同级派遣（Mac Codex→Grok、Windows Codex→Claude Code 与 Codex→Grok）；C Antigravity 生图（Mac v6、Windows 11-06）；D Grok 原生子 Agent（Mac、Windows）。6.5 列出的重测项均已在上方记录中通过；Windows Grok 续期由 `fix-grok-expired-access-renewal` 解决。仍未覆盖的只有上方「未覆盖」所列各项，不因勾选而视为已验证。
 - [x] 6.11 热启用白屏：复现、修复与验证记录移到独立变更 `openspec/changes/fix-hot-enable-blank-screen/`。
