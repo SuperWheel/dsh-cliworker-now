@@ -143,3 +143,52 @@ describe('Pi/OMP Windows catalog and worker directory preparation', () => {
     },
   )
 })
+
+describe('Pi/OMP account-scope authentication counts (synthetic bridge replies)', () => {
+  const scoped = (models: unknown[], authenticationDenied: number) =>
+    vi.fn(async (argv: string[]) => {
+      const request = JSON.parse(await readFile(argv.at(-1)!, 'utf8'))
+      return JSON.stringify(
+        request.metadataPhase === 'native-candidates'
+          ? { phase: 'native-candidates', count: 1 }
+          : { phase: 'account-scope', models, authenticationDenied },
+      )
+    })
+  it('keeps the remaining models, names the skipped credentials and confirms only the models', async () => {
+    const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
+    const f = await fixture(),
+      capture = scoped(choices, 1)
+    const options = { nativeHome: f.root, accountRoot: f.state }
+    const models = await discoverPiOmp('omp', 'synthetic-cli', capture, f.state, options)
+    expect(models).toEqual(choices)
+    expect(catalogNoticeOf(models)).toBe('当前账号可用模型；已跳过 1 条认证失败的凭据，可在账号窗口退出')
+    const prepared = await preparePiOmp(
+      {
+        cli: 'omp', executable: 'synthetic-cli', project: f.project, stateDirectory: f.state,
+        preference: { model: 'synthetic/model', effort: 'low' }, mode: 'plan', prompt: 'Synthetic task', ...options,
+      },
+      capture,
+    )
+    expect(JSON.parse(await readFile(prepared.argv.at(-1)!, 'utf8')).confirmedCatalog).toEqual(choices)
+    await prepared.cleanup()
+  })
+  it.each(['pi', 'omp'] as const)('%s reports an authentication failure when every credential is rejected', async (cli) => {
+    const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
+    const f = await fixture()
+    const models = await discoverPiOmp(cli, 'synthetic-cli', scoped([], 2), f.state, {
+      nativeHome: f.root,
+      accountRoot: f.state,
+    })
+    expect(models).toEqual([])
+    expect(catalogNoticeOf(models)).toBe(
+      `${cli === 'pi' ? 'Pi' : 'OMP'} 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新`,
+    )
+  })
+  it('leaves a clean scope without a notice and rejects a malformed count', async () => {
+    const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
+    const f = await fixture()
+    const options = { nativeHome: f.root, accountRoot: f.state }
+    expect(catalogNoticeOf(await discoverPiOmp('pi', 'synthetic-cli', scoped(choices, 0), f.state, options))).toBeUndefined()
+    await expect(discoverPiOmp('pi', 'synthetic-cli', scoped(choices, -1), f.state, options)).rejects.toThrow()
+  })
+})

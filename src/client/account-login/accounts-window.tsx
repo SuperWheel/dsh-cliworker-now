@@ -22,10 +22,17 @@ type Request = {
 
 const order = (source?: AccountSource) => (source === 'native' ? 0 : source === 'plugin' ? 1 : 2)
 
-const loginText = (login: AccountLogin) =>
-  login.authMethod === 'api'
-    ? t('{provider} API 登录', { provider: login.providerLabel })
-    : t('{provider}账号登录', { provider: login.providerLabel })
+const credentialNumber = (login: AccountLogin) => {
+  const parsed = login.id ? parseAccountLoginId(login.id) : undefined
+  return parsed?.cli === 'omp' ? parsed.entry?.match(/^(?:native|plugin)\.([1-9]\d*)$/)?.[1] : undefined
+}
+const loginText = (login: AccountLogin) => {
+  const text = login.authMethod === 'api'
+    ? t('{provider} API 登录', { provider: hostText(login.providerLabel) })
+    : t('{provider}账号登录', { provider: hostText(login.providerLabel) })
+  const id = credentialNumber(login)
+  return id ? `${text} · ${t('凭据 #{id}', { id })}` : text
+}
 
 /**
  * The 「账号」 window of a CLI that keeps several logins (2026-10-26 decision):
@@ -143,9 +150,10 @@ export function AccountsWindow({
     !login.id && !login.source && !whole && (cli === 'pi' || cli === 'omp')
   const card = ({ login, index }: { login: AccountLogin; index: number }) => {
     const removable = !!login.id || GUIDED_ACCOUNT_CLIS.has(cli)
-    const title = whole ? t('当前账号') : login.providerLabel
+    const title = whole ? t('当前账号') : hostText(login.providerLabel)
     const meta = [
       login.authMethod === 'api' ? 'API Key' : t('账号登录'),
+      credentialNumber(login) ? t('凭据 #{id}', { id: credentialNumber(login)! }) : undefined,
       login.authMethod === 'oauth' ? login.accountLabel : undefined,
       configOnly(login) ? t('在原配置中管理') : undefined,
     ].filter(Boolean)
@@ -312,8 +320,8 @@ function AddAccount({
   const choices = [
     ...list.map((item) => ({
       id: item.id,
-      name: item.label,
-      label: item.signedIn ? t('{provider}（已登录）', { provider: item.label }) : item.label,
+      name: hostText(item.label),
+      label: item.signedIn ? t('{provider}（已登录）', { provider: hostText(item.label) }) : hostText(item.label),
       note: item.signedIn ? t('已登录') : undefined,
     })),
     // ZCode has only its two providers; other CLIs keep their own full picker.
@@ -334,7 +342,7 @@ function AddAccount({
       action: 'login',
       provider: provider.id,
       ...(replace ? { replaces: replace } : {}),
-      title: t('登录到 {provider}', { provider: provider.label }),
+      title: t('登录到 {provider}', { provider: hostText(provider.label) }),
     })
   }
   return (
@@ -372,7 +380,7 @@ function AddAccount({
       </div>
       {provider?.signedIn && !provider.multi && (
         <p className="cwn-login-callout" data-tone="warning">
-          <span>{t('{provider} 已登录，继续会替换它现有的凭据。', { provider: provider.label })}</span>
+          <span>{t('{provider} 已登录，继续会替换它现有的凭据。', { provider: hostText(provider.label) })}</span>
         </p>
       )}
       {held.length > 0 && (
@@ -398,7 +406,9 @@ function AddAccount({
                 checked={replace === login.id}
                 onChange={() => setReplace(login.id)}
               />
-              {held.length === 1
+              {credentialNumber(login)
+                ? t('替换凭据 #{id}', { id: credentialNumber(login)! })
+                : held.length === 1
                 ? t('替换现有凭据')
                 : login.accountLabel
                   ? t('替换 {account}', { account: login.accountLabel })

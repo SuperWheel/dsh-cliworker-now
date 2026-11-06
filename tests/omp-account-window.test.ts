@@ -250,3 +250,17 @@ describe('OMP 16.4.4 账号窗口（模拟画面，实测字节）', () => {
     expect(guide.proves('login', before, { ...before, logins: [...before.logins, row('omp:openai-codex:plugin.2')] })).toBe(true)
   })
 })
+
+describe('OMP 18.x bordered logout selector (simulated upstream OverlayPanel layout)', () => {
+  const screen = (highlight: number) => 'Select Zhipu account to log out:\r\n' + [1,2].map(id =>
+    `│ ${id === highlight ? '❯' : ' '} API key #${id}  stored API key #${id} │\r\n`).join('')
+  it('removes old id=1 without selecting new id=2, including when highlight starts on 2', () => {
+    const guide = logout('1','zhipu-coding-plan','plugin')
+    expect(writes(guide.output(screen(2)))).toEqual(['\x1b[B'])
+    expect(writes(guide.output('\x1b[2J\x1b[H'+screen(1)))).toEqual(['\r'])
+  })
+  it.each(['│ ❯ API key #1 stored API key #1', '│ ❯ API key #1 stored API key #… │', '│ API key #1 stored API key #1 │'])(
+    'never confirms a clipped/non-highlighted row: %s', row => {
+      expect(writes(logout('1').output('Select account to log out:\r\n'+row+'\r\n'))).toEqual([])
+    })
+})

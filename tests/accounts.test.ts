@@ -75,6 +75,8 @@ vi.mock('../src/host/pi-omp-native.ts', async (load) => {
       }),
     listPiOmpAccountSources: (cli: 'pi' | 'omp', stateDirectory: string, signal: AbortSignal) =>
       actual.listPiOmpAccountSources(cli, stateDirectory, signal, { nativeHome: dirname(stateDirectory) }),
+    piOmpStoredLoginExists: (cli: 'pi' | 'omp', login: string, stateDirectory: string, signal: AbortSignal) =>
+      actual.piOmpStoredLoginExists(cli, login, stateDirectory, signal, { nativeHome: dirname(stateDirectory) }),
     readPiOmpLogoutSources: (cli: 'pi' | 'omp', stateDirectory: string, signal: AbortSignal) =>
       actual.readPiOmpLogoutSources(cli, stateDirectory, signal, { nativeHome: dirname(stateDirectory) }),
     inspectPiOmpNativeAccount: async () => ({
@@ -1985,6 +1987,26 @@ describe('guided login windows of other CLIs (synthetic screens)', () => {
     await vi.waitFor(() => expect(watched.seen.at(-1)).toMatchObject({ status: 'closed' }))
     expect(watched.steps().at(-1)).toBe('loggedOut')
     expect(f.terminal.write).not.toHaveBeenCalled()
+  })
+
+  it('confirms a selected Pi logout only after stored removal and successful process cleanup (synthetic)', async () => {
+    fast()
+    const f = fixture()
+    const agent = join(f.config.stateDirectory!, 'accounts/pi/agent')
+    mkdirSync(agent, {recursive:true})
+    const auth = join(agent,'auth.json')
+    writeFileSync(auth,JSON.stringify({anthropic:{type:'api_key',key:'SYNTHETIC_OLD'},zai:{type:'api_key',key:'SYNTHETIC_KEEP'}}))
+    f.delayCleanup()
+    const {id} = await f.manager.start('p','pi','logout',f.cwd,f.signal,undefined,undefined,'pi:anthropic:plugin')
+    const watched = frames(f,id)
+    writeFileSync(auth,JSON.stringify({zai:{type:'api_key',key:'SYNTHETIC_KEEP'}}))
+    f.result.resolve({exitCode:0,signal:null})
+    await vi.waitFor(()=>expect(f.terminal.terminate).toHaveBeenCalled())
+    expect(watched.steps()).not.toContain('loggedOut')
+    f.finishCleanup()
+    await vi.waitFor(()=>expect(watched.seen.at(-1)).toMatchObject({status:'closed',cleanupConfirmed:true}))
+    expect(watched.steps().at(-1)).toBe('loggedOut')
+    expect(Object.keys(JSON.parse(readFileSync(auth,'utf8')))).toEqual(['zai'])
   })
 
   it('does not report a sign-out while the target login is still stored', async () => {

@@ -45,6 +45,7 @@ import {
 } from '../shared/types.ts'
 import { AgyProtocol, type EventInput } from './protocol.ts'
 import { CliProtocol } from './cli-protocol.ts'
+import { catalogNoticeOf } from './catalog-notice.ts'
 import type { NativeAccess } from './native-approval-policy.ts'
 import {
   agyArguments,
@@ -180,11 +181,12 @@ export async function catalogFor(
       signal,
       { backend, signal, graceMs: config.graceMs },
     )
-    if (!models.length) throw new Error(`${CLI_LABELS[cli]} 当前账号暂无可用模型，请登录或刷新`)
+    const scopeNotice = catalogNoticeOf(models)
+    if (!models.length) throw new Error(scopeNotice ?? `${CLI_LABELS[cli]} 当前账号暂无可用模型，请登录或刷新`)
     return {
       cli,
       models,
-      notice: '当前账号可用模型',
+      notice: scopeNotice ?? '当前账号可用模型',
     }
   }
   if (cli === 'antigravity') {

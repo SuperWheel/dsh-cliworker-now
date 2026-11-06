@@ -3,7 +3,8 @@ import { constants, existsSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { dirname, join, resolve, toNamespacedPath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EFFORTS, type ModelChoice, type TaskMode } from '../shared/types.ts'
+import { CLI_LABELS, EFFORTS, type ModelChoice, type TaskMode } from '../shared/types.ts'
+import { explainAuthenticationScope } from './catalog-notice.ts'
 import { ProcessCleanupUnconfirmedError } from './process.ts'
 
 import { snapshotPiOmpNative, safePiOmpAncestors, type PiOmpNativeOptions } from './pi-omp-native.ts'
@@ -209,7 +210,7 @@ async function confirmedCatalog(
     } finally {
       if (!cleanupUnconfirmed) await launch.cleanup()
     }
-    if (phase === 'account-scope') return parseCatalog(raw)
+    if (phase === 'account-scope') return parseAccountScope(raw)
     if (
       !raw ||
       typeof raw !== 'object' ||
@@ -246,7 +247,7 @@ export async function preparePiOmp(
   const context = await contextFor(input)
   // Preparing a request is reversible. Execution requires the Host's two
   // captures on this exact snapshot; an unconfirmed request cannot send prompts.
-  const catalog = capture ? await confirmedCatalog(context, capture) : undefined
+  const catalog = capture ? (await confirmedCatalog(context, capture)).models : undefined
   return context.request(catalog ? { confirmedCatalog: catalog } : {})
 }
 export async function discoverPiOmp(
@@ -258,8 +259,24 @@ export async function discoverPiOmp(
 ): Promise<ModelChoice[]> {
   if (cli !== 'pi' && cli !== 'omp') throw new Error('Unsupported Pi/OMP CLI')
   const context = await contextFor({ cli, executable, stateDirectory, discover: true, ...options })
-  return confirmedCatalog(context, capture)
+  const { models, authenticationDenied } = await confirmedCatalog(context, capture)
+  return explainAuthenticationScope(models, authenticationDenied, CLI_LABELS[cli])
 }
+/** Current bridges send counts with the models; older fixtures send the bare array. */
+function parseAccountScope(raw: unknown): { models: ModelChoice[]; authenticationDenied: number } {
+  if (Array.isArray(raw)) return { models: parseCatalog(raw), authenticationDenied: 0 }
+  const scope = raw as { phase?: unknown; models?: unknown; authenticationDenied?: unknown } | null
+  if (
+    !scope ||
+    typeof scope !== 'object' ||
+    scope.phase !== 'account-scope' ||
+    !Number.isSafeInteger(scope.authenticationDenied) ||
+    (scope.authenticationDenied as number) < 0
+  )
+    throw new Error('Invalid Pi/OMP account scope result')
+  return { models: parseCatalog(scope.models), authenticationDenied: scope.authenticationDenied as number }
+}
+
 function parseCatalog(raw: unknown): ModelChoice[] {
   if (!Array.isArray(raw)) throw new Error('Invalid Pi/OMP model catalog')
   const ids = new Set<string>()

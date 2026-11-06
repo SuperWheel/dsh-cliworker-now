@@ -166,6 +166,12 @@ it('maps known Host messages to English and leaves unknown Host or CLI text verb
     'Codex is turned off. Turn it on in CLI Worker settings first',
   )
   expect(hostText('目标须包含 1–4000 个字符')).toBe('The goal must contain 1–4000 characters')
+  expect(hostText('OMP 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新')).toBe(
+    'The provider rejected the OMP credentials. Sign in again or sign out of the invalid credential in the account window, then refresh',
+  )
+  expect(hostText('当前账号可用模型；已跳过 1 条认证失败的凭据，可在账号窗口退出')).toBe(
+    'Models available to the current account; skipped 1 credential(s) the provider rejected. You can sign them out in the account window',
+  )
   expect(hostText('模拟的未知 CLI 错误')).toBe('模拟的未知 CLI 错误')
   expect(hostText('Error: 模拟的未知 CLI 错误')).toBe('Error: 模拟的未知 CLI 错误')
   expect(hostText(undefined)).toBeUndefined()

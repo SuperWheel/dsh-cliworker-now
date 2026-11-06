@@ -366,6 +366,8 @@ try {
   }
   let resume
   let catalog
+  // Counts only: how many credentials the provider rejected. No IDs or secrets.
+  const scopeReport = { authenticationDenied: 0 }
   if (config.metadataPhase === 'native-candidates') {
     const candidates = await queryNativeCandidates(
       config.cli,
@@ -406,6 +408,7 @@ try {
     }
     catalog = await accountSupportedChoices(config.cli, nativeRoot, candidates, env, {
       signal: metadataController.signal,
+      report: scopeReport,
     })
   } else {
     catalog = config.confirmedCatalog
@@ -414,7 +417,10 @@ try {
   if (stopped || failure) throw new Error('任务已停止')
   if (finalized) {
     // Candidate phase has no account networking or model execution.
-  } else if (config.discover || config.metadataPhase === 'account-scope') {
+  } else if (config.metadataPhase === 'account-scope') {
+    output({ phase: 'account-scope', models: catalog, authenticationDenied: scopeReport.authenticationDenied })
+    finalized = true
+  } else if (config.discover) {
     output(catalog)
     finalized = true
   } else {

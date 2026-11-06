@@ -307,6 +307,27 @@ describe('OpenCode native adapter (explicitly synthetic fixtures)', () => {
       }),
     ).toEqual([])
   })
+  it('names a provider authentication rejection instead of a bare empty catalogue (synthetic)', async () => {
+    const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
+    const root = directory(),
+      account = native(root),
+      capture = async () => fixtureModel()
+    for (const status of [401, 403]) {
+      const models = await discoverOpenCode('/bin/opencode', capture, root, account.authDirectory, false, {
+        nativeHome: account.nativeHome,
+        probeOptions: { fetch: async () => new Response('{}', { status }) },
+      })
+      expect(models).toEqual([])
+      expect(catalogNoticeOf(models)).toBe('OpenCode 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新')
+    }
+    for (const status of [404, 500]) {
+      const models = await discoverOpenCode('/bin/opencode', capture, root, account.authDirectory, false, {
+        nativeHome: account.nativeHome,
+        probeOptions: { fetch: async () => new Response('{}', { status }) },
+      })
+      expect(catalogNoticeOf(models)).toBeUndefined()
+    }
+  })
   it('uses model API endpoint scopes independently and hides unknown custom authorization headers', async () => {
     const root = directory(),
       account = native(root, { fixture: { models: { one: {}, two: {}, injected: {} } } }),

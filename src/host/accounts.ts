@@ -9,6 +9,7 @@ import {
 } from './account-guide/engine.ts'
 import { createAccountGuide } from './account-guide/flows.ts'
 import { isLoginProvider, loginProviders, providerStores } from './account-guide/providers.ts'
+import { NativeLoginProviders, type NativeLoginProvider } from './native-login-providers.ts'
 import { parseAccountLoginId } from '../shared/account-links.ts'
 import {
   readClaudeOwnRoute,
@@ -38,6 +39,7 @@ import {
 import { CLI_IDS, type CliId } from '../shared/types.ts'
 import type {
   AccountAction,
+  AccountGuide,
   AccountFrame,
   AccountResponse,
   AccountSource,
@@ -66,7 +68,7 @@ import {
   listHermesAccountSources,
   selectHermesNousAfterLogin,
 } from './hermes-accounts.ts'
-import { listPiOmpAccountSources } from './pi-omp-native.ts'
+import { listPiOmpAccountSources, piOmpStoredLoginExists } from './pi-omp-native.ts'
 import { verifyHermesExecutable, HermesExecutableError } from './hermes-installation.ts'
 import { preparePiOmpAccountTerminal } from './pi-omp-accounts.ts'
 import { readKimiAccount, KIMI_CODE_LOGIN, KIMI_MANAGE_LOGIN, prepareKimiAccountDirectory } from './kimi-accounts.ts'
@@ -295,6 +297,9 @@ interface AccountSession {
   exitCode?: number
   /** A native step that must follow a proven login before the window reports it. */
   afterLogin?: (signal: AbortSignal) => Promise<unknown>
+  /** Exact Pi/OMP source and credential, including blocked/expired stored credentials. */
+  logoutLogin?: string
+  completionGuide?: AccountGuide
 }
 
 /** User-only auth processes. Only allowlisted identity metadata leaves the Host. */
@@ -310,13 +315,14 @@ export class AccountManager {
   private readonly parentClosings = new Map<string, Promise<void>>()
   private readonly controller = new AbortController()
   private closing?: Promise<void>
+  private readonly nativeLoginProviders: NativeLoginProviders
 
   constructor(
     private backend: ProcessBackend,
     private config: RuntimeConfig,
     private identity: AccountIdentitySource = nativeAgyAccountIdentity(backend, config),
     private onQueryCleanup?: (cli: CliId, error: ProcessCleanupUnconfirmedError) => void,
-  ) {}
+  ) { this.nativeLoginProviders = new NativeLoginProviders(backend, config) }
 
   isBusy(cli: CliId): boolean {
     validateCli(cli)
@@ -474,7 +480,15 @@ export class AccountManager {
             : cli === 'hermes'
               ? await listHermesAccountSources(this.config, control)
               : undefined
-        const providers = loginProviders(cli, identity.logins)
+        const native = cli === 'pi' || cli === 'omp'
+          ? await this.nativeLoginProviders.read(cli, executable, control).catch(error => {
+              if (error instanceof ProcessCleanupUnconfirmedError) throw error
+              signal.throwIfAborted()
+              this.controller.signal.throwIfAborted()
+              return []
+            })
+          : undefined
+        const providers = loginProviders(cli, identity.logins, native)
         return {
           cli,
           installed,
@@ -628,7 +642,7 @@ export class AccountManager {
       // Signing in again is the way out of both, so the window still offers every provider (Nous included).
       const hermesActions = () =>
         actionsFor(cli, this.config).map((item) =>
-          item.id === 'login' ? { ...item, providers: loginProviders(cli, undefined) } : item,
+          item.id === 'login' ? { ...item, providers: loginProviders(cli, undefined, cli === 'pi' || cli === 'omp' ? [] : undefined) } : item,
         )
       if (error instanceof HermesAccountSourceError)
         return {
@@ -691,6 +705,10 @@ export class AccountManager {
 
   /** The login still exists in the native store: a stale window never signs out something else. */
   private async assertLogin(cli: CliId, cwd: string, login: string, signal: AbortSignal) {
+    if (cli === 'pi' || cli === 'omp') {
+      if (!await piOmpStoredLoginExists(cli, login, this.config.stateDirectory, signal)) throw new AccountLoginGoneError()
+      return
+    }
     const current = await this.readStatus(cli, cwd, signal)
     signal.throwIfAborted()
     if (!current.logins?.some((item) => item.id === login)) throw new AccountLoginGoneError()
@@ -728,7 +746,9 @@ export class AccountManager {
       (action !== 'login' ||
         source !== undefined ||
         login !== undefined ||
-        !(cli === 'zcode' ? ['bigmodel', 'zai'].includes(provider) : isLoginProvider(cli, provider)))
+        !(cli === 'zcode' ? ['bigmodel', 'zai'].includes(provider)
+          : cli === 'pi' || cli === 'omp' ? /^[a-z0-9][a-z0-9._-]{0,63}$/.test(provider)
+          : isLoginProvider(cli, provider)))
     )
       throw new Error(cli === 'zcode' ? '不支持的 ZCode 授权来源' : '不支持的登录服务商')
     // One login of the account window: an OpenCode or Kimi provider, a Hermes pool entry,
@@ -800,9 +820,14 @@ export class AccountManager {
     let allocation: Promise<AccountSession> | undefined
     let release: (() => void | Promise<void>) | undefined
     let afterLogin: AccountSession['afterLogin']
+    let nativeProviders: NativeLoginProvider[] | undefined
     let instruction = instructionFor(cli, action)
     try {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, startup)
+      if (provider && (cli === 'pi' || cli === 'omp')) {
+        nativeProviders = await this.nativeLoginProviders.read(cli, executable, startup)
+        if (!isLoginProvider(cli, provider, nativeProviders)) throw new Error('不支持的登录服务商')
+      }
       if (cli === 'hermes') await verifyHermesExecutable(executable, startup)
       startup.throwIfAborted()
       let launch: { argv: string[]; cwd: string; env?: Record<string, string> } = {
@@ -938,7 +963,7 @@ export class AccountManager {
       const guide = createAccountGuide(cli, action, {
         provider,
         login,
-        stores: provider ? providerStores(cli, provider) : undefined,
+        stores: provider ? providerStores(cli, provider, nativeProviders) : undefined,
       })
       allocation = spawnAccountTerminal(this.backend, {
         ...launch,
@@ -966,6 +991,7 @@ export class AccountManager {
             project: cwd,
             release,
             ...(afterLogin ? { afterLogin } : {}),
+            ...(action === 'logout' && login && (cli === 'pi' || cli === 'omp') ? { logoutLogin: login } : {}),
           }
           const own = session
           void terminal.done.then(
@@ -1206,6 +1232,13 @@ export class AccountManager {
 
   /** The native account: agy's own credential store, or this CLI's account status. */
   private evidence(session: AccountSession, signal: AbortSignal): Promise<AccountEvidence | undefined> {
+    if (session.logoutLogin && (session.cli === 'pi' || session.cli === 'omp')) {
+      const login = session.logoutLogin
+      return piOmpStoredLoginExists(session.cli, login, this.config.stateDirectory, signal).then(exists => ({
+        state: exists ? 'configured' as const : 'unconfigured' as const,
+        logins: exists ? [{ id: login, providerLabel: '', authMethod: 'api' as const }] : [],
+      }))
+    }
     if (session.cli === 'antigravity')
       return this.identity(session.cli, signal).catch((error: unknown) => {
         // readStatus quarantines its own unconfirmed reads; the agy identity read is quarantined here.
@@ -1230,7 +1263,11 @@ export class AccountManager {
     // The login itself took effect; a failed follow-up leaves the model list to say what is missing.
     if (change === 'login') await session.afterLogin?.(signal).catch(() => undefined)
     signal.throwIfAborted()
-    this.guided(session, session.guide!.confirmed(change))
+    const events = session.guide!.confirmed(change)
+    if (change === 'logout' && session.logoutLogin) {
+      session.completionGuide = events.find((event): event is { guide: AccountGuide } => 'guide' in event)?.guide
+      await this.finish(session, 'closed', '账号终端已关闭')
+    } else this.guided(session, events)
   }
 
   /** The CLI ended its own login/logout: read the account before reporting the window closed. */
@@ -1433,6 +1470,7 @@ export class AccountManager {
         await session.terminal.terminate()
         await session.output
         await session.release?.()
+        if (session.completionGuide) this.emit(session, { guide: session.completionGuide })
         session.state = state
         this.emit(session, { status: state, message, cleanupConfirmed: true })
         this.reserved.delete(session.cli)

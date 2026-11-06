@@ -1538,10 +1538,10 @@ it('starts a single-login sign-out through accountStartWith with only the login 
   )
 })
 
-it('replaces a Hermes key only after the new one is confirmed, then signs out the old one', async () => {
+it.each([['hermes', 'deepseek', 'hermes:deepseek:a1b2c3'], ['omp', 'zhipu-coding-plan', 'omp:zhipu-coding-plan:plugin.1']] as const)('replaces a %s key only after the new one is confirmed, then signs out the selected old one', async (cli, provider, oldLogin) => {
   const f = await setup(false)
-  await f.update('hermes', 'login', undefined, 'deepseek', false, { replaces: 'hermes:deepseek:a1b2c3' })
-  expect(f.accountStartWith).toHaveBeenLastCalledWith('parent', 'hermes', 'login', JSON.stringify({ provider: 'deepseek' }), expect.any(AbortSignal))
+  await f.update(cli, 'login', undefined, provider, false, { replaces: oldLogin })
+  expect(f.accountStartWith).toHaveBeenLastCalledWith('parent', cli, 'login', JSON.stringify({ provider }), expect.any(AbortSignal))
   await f.start()
   await act(async () => {
     f.streams[0].push({ seq: 1, guide: { step: 'key', tone: 'action', template: 'secret', text: '模拟密钥步骤' } })
@@ -1554,9 +1554,9 @@ it('replaces a Hermes key only after the new one is confirmed, then signs out th
   await vi.waitFor(() =>
     expect(f.accountStartWith).toHaveBeenLastCalledWith(
       'parent',
-      'hermes',
+      cli,
       'logout',
-      JSON.stringify({ login: 'hermes:deepseek:a1b2c3' }),
+      JSON.stringify({ login: oldLogin }),
       expect.any(AbortSignal),
     ),
   )

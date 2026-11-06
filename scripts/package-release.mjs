@@ -33,6 +33,7 @@ const helperNames = [
   'native-launch',
   'native-spawn',
   'own-account-lease',
+  'native-login-providers',
   'pi-installation',
   'pi-login',
   'pi-native-catalog',

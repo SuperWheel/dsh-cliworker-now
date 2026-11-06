@@ -170,6 +170,7 @@ for (const name of [
   'pi-omp-bridge',
   'pi-omp-control',
   'pi-native-catalog',
+  'native-login-providers',
   'pi-installation',
   'account-models',
   'zcode-resume',

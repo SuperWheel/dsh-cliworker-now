@@ -5,6 +5,8 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  '凭据 #{id}': 'Credential #{id}',
+  '替换凭据 #{id}': 'Replace credential #{id}',
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':
     'CLI Worker was just enabled or disabled. Quit DeepSeek Harness completely and open it again to restore the interface.',
   '由 {name} 发起': 'Initiated by {name}',
@@ -390,6 +392,9 @@ export const en = {
   '刷新状态': 'Refresh status',
   '关闭账号操作': 'Close account action',
   '选择 ZCode 授权来源': 'Choose the ZCode authorization source',
+  '智谱 BigModel Coding（中国）': 'Zhipu BigModel Coding (China)',
+  'Z.AI（国际）': 'Z.AI (International)',
+  '无法读取原生登录选项，请在原生终端中选择服务商。': 'Could not read native sign-in options. Choose a provider in the native terminal.',
   '中国智谱 BigModel': 'Zhipu BigModel (China)',
   '海外 Z.AI': 'Z.AI (international)',
   '选择退出账号来源': 'Choose the account source to sign out',
@@ -855,6 +860,10 @@ export const en = {
   '正在退出 {cli}…': 'Signing out of {cli}…',
   '已退出 {cli}': 'Signed out of {cli}',
   '当前未登录 {cli}，无需退出。': 'Not signed in to {cli}; nothing to sign out.',
+  '{cli} 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新':
+    'The provider rejected the {cli} credentials. Sign in again or sign out of the invalid credential in the account window, then refresh',
+  '当前账号可用模型；已跳过 {count} 条认证失败的凭据，可在账号窗口退出':
+    'Models available to the current account; skipped {count} credential(s) the provider rejected. You can sign them out in the account window',
   '正在启动 {cli}…': 'Starting {cli}…',
   '现在可以派遣 {cli} 任务了。': 'You can now dispatch {cli} tasks.',
   '操作未能送达，请重新开始': 'The action did not reach the terminal. Please start over.',

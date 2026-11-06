@@ -406,10 +406,19 @@ export async function accountSupportedChoices(cli, directory, candidates, env = 
       )
       // Native pools may choose any active login. A union/any-free projection can
       // promise an unsupported or paid execution, so use the conservative intersection.
+      // A credential the provider explicitly rejects (401/403 or an auth error code)
+      // cannot serve a request and the native pool blocks it, so it does not veto the
+      // other logins. Unknown scopes (network, timeout, unparsable) still veto.
+      const rejected = scopes.filter(
+        (scope) => scope.state === 'denied' && scope.denialReason === 'authentication',
+      )
+      if (options.report && rejected.length)
+        options.report.authenticationDenied = (options.report.authenticationDenied ?? 0) + rejected.length
+      const usable = scopes.filter((scope) => !rejected.includes(scope))
       const supported = new Map()
-      if (scopes.length && scopes.every((scope) => scope.state === 'supported'))
-        for (const model of scopes[0].models) {
-          const variants = scopes.map((scope) => scope.models.find((entry) => entry.id === model.id))
+      if (usable.length && usable.every((scope) => scope.state === 'supported'))
+        for (const model of usable[0].models) {
+          const variants = usable.map((scope) => scope.models.find((entry) => entry.id === model.id))
           if (variants.some((entry) => !entry)) continue
           const cost = variants.every((entry) => entry.cost === 'free')
             ? 'free'

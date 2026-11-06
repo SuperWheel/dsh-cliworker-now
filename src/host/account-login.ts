@@ -20,9 +20,9 @@ const providerNames: Record<string, string> = {
   'zai-coding-plan': 'Z.AI',
   zhipu: '智谱',
   zhipuai: '智谱',
-  'zai-coding-cn': 'zai.cn',
-  'zhipu-coding-plan': 'zai.cn',
-  'zhipuai-coding-plan': 'zai.cn',
+  'zai-coding-cn': '智谱 BigModel Coding（中国）',
+  'zhipu-coding-plan': '智谱 BigModel Coding（中国）',
+  'zhipuai-coding-plan': '智谱 BigModel Coding（中国）',
   minimax: 'MiniMax',
   'minimax-cn': 'MiniMax',
   'minimax-coding-plan': 'MiniMax',
@@ -78,7 +78,7 @@ function endpointName(url: URL | undefined): string | undefined {
   }
   if (url.protocol === 'https:' && !url.port && !url.username && !url.password) {
     if (url.hostname === 'open.bigmodel.cn')
-      return url.pathname.startsWith('/api/coding/') ? 'zai.cn' : '智谱'
+      return url.pathname.startsWith('/api/coding/') ? '智谱 BigModel Coding（中国）' : '智谱'
     if (Object.hasOwn(names, url.hostname)) return names[url.hostname]
   }
   // Only the host is displayable: never userinfo, port, path, query or fragment.
