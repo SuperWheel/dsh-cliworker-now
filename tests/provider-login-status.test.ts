@@ -72,7 +72,7 @@ describe('Pi and OMP own provider login projection', () => {
       state: 'authenticated',
       verification: 'local',
       logins: [
-        { providerLabel: 'zai.cn', authMethod: 'api' },
+        { providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' },
         // Only a safe email tells two accounts of one provider apart; ids and tokens never leave.
         { providerLabel: 'OpenAI', authMethod: 'oauth', accountLabel: 'private@example.test' },
       ],
@@ -136,7 +136,7 @@ describe('Pi and OMP own provider login projection', () => {
       state: 'authenticated',
       logins: [
         { providerLabel: 'OpenAI', authMethod: 'oauth' },
-        { providerLabel: 'zai.cn', authMethod: 'api' },
+        { providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' },
       ],
     })
     expect(status.authMethod).toBeUndefined()
@@ -156,7 +156,7 @@ describe('Pi and OMP own provider login projection', () => {
     expect(await f.status()).toMatchObject({
       state: 'authenticated',
       authMethod: 'api',
-      logins: [{ providerLabel: 'zai.cn', authMethod: 'api' }],
+      logins: [{ providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' }],
     })
   })
 })
@@ -172,7 +172,7 @@ describe('OpenCode own provider login projection', () => {
     expect(await f.status()).toMatchObject({
       state: 'authenticated',
       authMethod: 'api',
-      logins: [{ providerLabel: 'zai.cn', authMethod: 'api' }],
+      logins: [{ providerLabel: '智谱 BigModel Coding（中国）', authMethod: 'api' }],
     })
     expect(await readFile(path)).toEqual(before)
   })
