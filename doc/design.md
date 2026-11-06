@@ -1367,3 +1367,10 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 通用 ACP 防止原生结束后的迟到 allow；停止/超时尝试 session/cancel，再关闭并确认进程范围退出。原有互斥、时限、审批期间空闲暂停与换号机制不变。工具状态/stopReason/用户决定及进程退出独立判定；stream 保留 denied_actions/finished_reason 修复，删除无效命令 relay。
 - ACP usage 独立映射本轮 input/output/total/cache/thought 指标，不冒充 stream 会话累计；无 promptCapabilities.image 时图片仅提供路径，不支持 fork。
 - 本次零模型记录与待执行真实脚本在 `.test-data/agy-acp-migration/`，实际命令和未验证事项见 change tasks。未进行真实 prompt、Windows 或 Desktop 更新；不以模拟或回读代替工具执行验收。
+
+## 2026-11-06 热切换白屏自动恢复（未发布）
+
+- 现象：DSH 0.2.2-rc.1 上，官方插件管理器与 dshmarket（1.66.45、1.73.12）热启用本插件时页面立即白屏，报 `SlotAssemblyError: scope 'session-maybe' rendered without an installed adapter`；热停用同样白屏。宿主客户端先移除旧界面模块再导入新模块，根渲染器整页包在 `session-maybe` 作用域里，错误边界按设计重新抛出该错误，React 清空 `#root`；新适配器就绪后页面也不恢复。
+- 决定：宿主没有批量替换或渲染暂停接口，2026-10-24 的「销毁时恢复原版界面」候选已证明无效，因此改为事后恢复。插件客户端发现 `#root` 已挂载（React 容器标记非 null）却为空时，等客户端模块同步（`modules.entries.state`）结束并确认 0.5 秒，再对 `web/src/mount.ts` 注册的唯一 `web boot: application mount` fiber 调用 Cordis `Fiber.restart()`。它先执行 DSH 自己的 `root.unmount()` 再重新挂载，新根仍由 DSH 生命周期拥有；不另建 React 根、不替换 `uiRenderer` 服务。通过应用根 context 访问，停用本插件后仍可执行。冷启动时宿主在全部客户端插件激活后才挂载 React，不会误判；销毁后继续观察 60 秒以覆盖停用方向。
+- 兜底：找不到唯一挂载 owner、模块同步失败或重挂后仍为空时，网页刷新一次（sessionStorage 记录，30 秒内不重复）。DSH Desktop 不能刷新：`apps/desktop/src/main.ts` 的 `DESKTOP_IPC.boot` 每次返回 Host 启动时的模块注入，热切换后刷新会请求已失效的模块版本并弹出启动失败对话框（2026-11-06 第一版实测），所以 Desktop 改为在空白页写入纯文本的重启提示。原地恢复由 gpt-6-astra high 设计实现。
+- 实现与验证：`src/client/root-recovery.ts`；记录见 `openspec/changes/fix-hot-enable-blank-screen/tasks.md`。

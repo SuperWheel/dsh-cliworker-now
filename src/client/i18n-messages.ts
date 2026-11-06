@@ -5,6 +5,8 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':
+    'CLI Worker was just enabled or disabled. Quit DeepSeek Harness completely and open it again to restore the interface.',
   // Codex relay catalog
   'Codex 自定义路由模型；来自 Codex 自带列表，中转是否支持以实际调用为准':
     'Codex custom route models; from Codex\'s built-in list, the relay\'s support is confirmed by actual calls',

@@ -43,6 +43,7 @@ import { installNativeJobOverlay } from './native-job-overlay.ts'
 import { workerManagementStyles } from './management-styles.ts'
 import { renameCopyStyles } from './rename-copy-styles.ts'
 import { installClientLocale, t, useT } from './i18n.ts'
+import { browserRootRecoveryEnv, installRootRecovery } from './root-recovery.ts'
 
 const ID = 'dsh-cliworker-now'
 
@@ -60,6 +61,11 @@ export const inject = [
 export function apply(ctx: Context): void {
   ctx.effect(() => ctx.remote.$mount(remoteContribution), 'cliworker:remote')
   installClientLocale(ctx)
+  // A live enable/disable swaps the native UI sources and can blank the page; see root-recovery.ts.
+  ctx.effect(
+    () => installRootRecovery(browserRootRecoveryEnv(() => t('CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。'), ctx)),
+    'cliworker:root-recovery',
+  )
   ctx.inject(['remote.cliworker'], (scope) => {
     const remote = scope.remote,
       worker = remote.cliworker
