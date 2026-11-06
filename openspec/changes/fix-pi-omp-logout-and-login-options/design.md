@@ -12,7 +12,7 @@
 
 ## Decisions
 
-- 由私有元数据子进程查询 Pi 原生 provider auth 能力和 OMP `get_login_providers` RPC；使用空的隔离账号、禁止工具/扩展、无 prompt。输出仅 ID/名称/原生能力，Host 校验有界结构。复用现有元数据进程清理；只缓存同一安装身份的成功结果，失败不伪装成固定表。
+- 由私有元数据子进程查询 Pi 原生 provider auth 能力和 OMP `get_login_providers` RPC；使用空的隔离账号、禁止工具/扩展、无 prompt。OMP 16 无账号无法启动 RPC，因此仅在隔离子进程设置明确标注 SYNTHETIC 的 OPENAI_API_KEY 占位值，查询元数据后 EOF 自行退出，不调用模型或登录；清除继承的账号环境。输出仅 ID/名称/原生能力，Host 校验有界结构。复用现有元数据进程清理；只缓存同一安装身份的成功结果，失败不伪装成固定表。
 - Pi 指定 provider 退出直接构造 ModelRuntime，调用其原生 logout 并 listCredentials 回读；不创建 InteractiveMode。保留无 provider 的原生菜单入口。
 - OMP 继续原生 `/logout <provider>`，适配带边框的行，仍按 stored API key/oauth 后的稳定 ID 定位，不按行号或邮箱。无法识别时交还原生终端。
 - 新凭据保存后退出旧凭据的现有替换顺序保留，验证旧凭据退出结果。所有成功还需 Host 原生来源回读，模型错误展示保持不动。

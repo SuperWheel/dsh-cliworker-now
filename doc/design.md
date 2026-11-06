@@ -1403,3 +1403,12 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 实现：`src/host/grok-renewal.ts`。私有 `GROK_HOME`、`GROK_AUTH_PATH` 指向用户真实 `~/.grok/auth.json`（不经 Worker 链接），经 `private-launch.mjs` 启动；按原生 home 合并在途续期，与 Grok 账号终端互斥（`reserveGrokAccount`）；固定 30 秒时限，调用方取消只结束自己的等待，避免在 IdP 轮换后、写回前被杀；无法确认进程范围退出时封锁 Grok。stdout/stderr 只计字节，结果只读私有日志的 `ctx.outcome`（最多 4 MiB）：`Failed(ManualLogin…)` 判为需重新登录并按凭据文件指纹记入 Host 内存，账号状态显示「登录已失效」直到文件变化；退出码 2 且无续期日志判为版本不支持；其他为暂时失败，不降级账号状态。access 剩余不足 5 分钟但仍有效时续期失败可继续用旧 access。`readGrokOwnAccount` 按 missing/format/unsafe/read/expired 分类提示。
 - 取舍：续期会改写用户凭据文件，效果等同用户自己运行 grok，README 已说明。macOS Worker 私有目录的 `auth.json` 链接在 Grok rename 写回时可能被替换为私有文件，本次只记录风险，未修复。
 - 记录：`openspec/changes/fix-grok-expired-access-renewal/tasks.md`。
+
+
+## Pi/OMP 精确退出与原生登录选项（2026-11-06，预览待 Windows 验收）
+
+- 见 `openspec/changes/fix-pi-omp-logout-and-login-options/`。Pi 通过当前安装的 ModelRuntime provider auth 注册表、OMP 通过 `get_login_providers` 获取选项，空隔离 HOME 内查询并清除继承凭据。OMP 16 RPC 需要合成占位 API 环境才能启动，只查元数据，不发送模型请求。只缓存同一安装入口身份的成功结果；启动登录前再次验证 provider 来源，失败转原生选择。
+- Pi 指定凭据退出只加载原生 ModelRuntime，调用 logout 并 listCredentials 回读，不初始化会话/InteractiveMode。OMP 继续原生 `/logout <provider>`，识别 16.x 及 18.x 带边框的高亮 ID，不按列表顺序定位。账号行和替换选项显示 OMP 原生凭据编号。
+- Host 按 source/provider/credential id 检查记录是否存在；过期、认证失败或临时封锁不算退出。OMP 原生 `deleted by user` 软删除算已退出。成功消息在原生回读与进程清理均完成后发送。替换保留新凭据确认后退出旧凭据的顺序，不把新增等同于替换完成。
+- 文案区分智谱 BigModel Coding（中国）/Z.AI（国际），不再使用 zai.cn 称呼国内账号。多凭据模型范围交集规则及认证失败展示不在本变更修改范围。
+- Mac 合成账号实测与 Windows 只读证据见变更 evidence.md；Windows 真实指定旧凭据退出、完整 OMP 18.8.7 注册表、Desktop UI 尚待主会话验收，未发布。

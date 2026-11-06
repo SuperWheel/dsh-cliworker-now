@@ -33,3 +33,7 @@ Pi/OMP 退出 SHALL 仅作用于明确选择的来源和原生凭据；OMP 同�
 #### Scenario: 替换未完成
 - **WHEN** 新凭据已保存但指定旧凭据的原生退出未确认
 - **THEN** 不宣称替换完成，明确保留失败状态，不自动删除其他凭据或放宽模型交集规则
+
+#### Scenario: Distinguish OMP credentials without exposing keys
+- **WHEN** 同来源同 provider 有多条 OMP 凭据
+- **THEN** 账号行和替换选项 SHALL 展示原生凭据编号，退出请求保留完整来源/provider/id，不能按列表顺序猜测目标或显示 API key。
