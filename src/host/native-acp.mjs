@@ -89,6 +89,12 @@ export async function runNativeAcp(config, io, settings) {
     response = '',
     thought = '',
     failure,
+    // Background work outlived the bounded checks: unverified, never success or a CLI error.
+    backgroundUnconfirmed,
+    started = 0,
+    // During a background check turn, removes the control marker from streamed text.
+    markerFilter,
+    lastToolAt = -1,
     denied = false,
     ended = false
   let step = 0, assistantStep = 0, assistantSegmentOpen = false, thoughtStep = 0
@@ -100,10 +106,34 @@ export async function runNativeAcp(config, io, settings) {
     // Tool calls whose permission was denied; their failure is the denial itself.
     deniedTools = new Set(),
     seen = new Set(),
+    // Native tools that return at dispatch while their work continues in the CLI (Antigravity invoke_subagent).
+    background = new Set(),
     early = [],
     toolOutcomes = createToolOutcomes()
   const fail = (message) => {
     failure ??= message
+  }
+  const emitAssistant = (text) => {
+    if (text.trim()) toolOutcomes.succeeded()
+    if (!text) return
+    if (!assistantSegmentOpen) { assistantStep++; assistantSegmentOpen = true }
+    emit({ kind: 'assistant', step: assistantStep, text })
+  }
+  /** Streams text unchanged except for whole marker occurrences; holds back only a possible marker prefix. */
+  const createMarkerFilter = (marker) => {
+    let held = ''
+    return {
+      push(text) {
+        held = (held + text).split(marker).join('')
+        let keep = 0
+        for (let size = Math.min(marker.length - 1, held.length); size > 0; size--)
+          if (marker.startsWith(held.slice(-size))) { keep = size; break }
+        const out = held.slice(0, held.length - keep)
+        held = held.slice(held.length - keep)
+        return out
+      },
+      flush() { const rest = held; held = ''; return rest },
+    }
   }
   const finishThought = () => {
     if (!thought) return
@@ -211,11 +241,7 @@ export async function runNativeAcp(config, io, settings) {
         return
       }
       response += update.content.text
-      if (update.content.text.trim()) toolOutcomes.succeeded()
-      if (update.content.text) {
-        if (!assistantSegmentOpen) { assistantStep++; assistantSegmentOpen = true }
-        emit({ kind: 'assistant', step: assistantStep, text: update.content.text })
-      }
+      emitAssistant(markerFilter ? markerFilter.push(update.content.text) : update.content.text)
     } else if (update.sessionUpdate === 'agent_thought_chunk' && update.content?.type === 'text') {
       if (typeof update.content.text === 'string') {
         if (update.content.text) assistantSegmentOpen = false
@@ -235,6 +261,8 @@ export async function runNativeAcp(config, io, settings) {
         fail('Invalid ACP tool identity')
         return
       }
+      if (settings.background?.isBackgroundTool(update)) background.add(update.toolCallId)
+      lastToolAt = response.length
       const previous = tools.get(update.toolCallId) ?? { step: step++, title: '工具', status: 'pending' }
       const value = {
         ...previous,
@@ -264,6 +292,54 @@ export async function runNativeAcp(config, io, settings) {
           ...(!increment && (output !== undefined || done) && value.output !== undefined ? { output: value.output } : {}) },
       })
     }
+  }
+  /** The CLI keeps background work private until it receives another prompt (verified on agy 1.5.1):
+   * waiting alone never yields it. Keep stdio, approvals and events live, then send bounded,
+   * visible same-session checks until the CLI reports instead of the pending marker. */
+  const awaitBackground = async (first) => {
+    const { pendingMarker, checkPrompt, delaysMs, budgetMs } = settings.background
+    const deadline = started + Math.min(budgetMs, config.timeoutMs ?? budgetMs)
+    let result = first
+    for (const [index, delay] of delaysMs.entries()) {
+      const wait = Math.min(delay, deadline - Date.now())
+      if (wait <= 0) break
+      // Diagnostics, not status: the Worker process view shows them, so automatic turns stay visible.
+      io.event({ kind: 'diagnostic', notice: true, text: `${settings.name} 子 Agent 仍在后台运行，${Math.round(wait / 1000)} 秒后由 CLI Worker 自动发送第 ${index + 1} 次跟进检查` })
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => { io.signal.removeEventListener('abort', stop); resolve() }, wait)
+        const stop = () => { clearTimeout(timer); reject(io.signal.reason ?? new Error('任务已停止')) }
+        io.signal.addEventListener('abort', stop, { once: true })
+        // The status event above may already have led to a stop.
+        if (io.signal.aborted) { io.signal.removeEventListener('abort', stop); stop() }
+      })
+      io.signal.throwIfAborted()
+      if (failure) return result
+      const before = response.length
+      assistantSegmentOpen = false
+      io.event({ kind: 'diagnostic', notice: true, text: `CLI Worker 自动跟进（非用户消息）：请 ${settings.name} 汇报后台子 Agent 结果，不重新派发` })
+      await settings.onResult?.(result, sessionId, io)
+      markerFilter = createMarkerFilter(pendingMarker)
+      try {
+        result = await peer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: checkPrompt }] },
+          { jsonrpc: true, timeoutMs: Math.max(1000, deadline - Date.now()) })
+      } finally {
+        const rest = markerFilter.flush()
+        markerFilter = undefined
+        emitAssistant(rest)
+      }
+      if (result?.stopReason !== 'end_turn' || failure) return result
+      const turn = response.slice(before)
+      if (!turn.includes(pendingMarker)) return result
+      // Still waiting only if the marker ended the turn: agy may reply the marker and
+      // then, in the same turn, receive the backlog and finish the remaining steps.
+      const end = before + turn.lastIndexOf(pendingMarker) + pendingMarker.length
+      const pending = !response.slice(end).trim() && lastToolAt < end
+      // The marker is a control reply, not task output.
+      response = response.slice(0, before) + turn.split(pendingMarker).join('').trim()
+      if (!pending) return result
+    }
+    backgroundUnconfirmed = `${settings.name} 后台子 Agent 未在限定时间内汇报结果，请核查实际产物`
+    return result
   }
   const cancel = () => {
     if (peer && sessionId && active && !ended)
@@ -363,7 +439,8 @@ export async function runNativeAcp(config, io, settings) {
     io.signal.throwIfAborted()
     io.event({ kind: 'status', text: `${settings.name} 原生模型已确认` })
     active = true
-    const result = await peer.request(
+    started = Date.now()
+    let result = await peer.request(
       'session/prompt',
       {
         sessionId,
@@ -371,6 +448,8 @@ export async function runNativeAcp(config, io, settings) {
       },
       { jsonrpc: true, timeoutMs: config.timeoutMs },
     )
+    if (settings.background && background.size && result?.stopReason === 'end_turn' && !failure)
+      result = await awaitBackground(result)
     ended = true
     // Kimi emits its context snapshot asynchronously AFTER settling prompt.
     // Give that optional native receipt a bounded drain before closing stdio.
@@ -390,6 +469,7 @@ export async function runNativeAcp(config, io, settings) {
       fail('CLI 工具缺少终态')
     if (io.signal.aborted) fail('任务已停止')
     if (failure) io.result('ERROR', response, failure, 'run')
+    else if (backgroundUnconfirmed) io.result('UNCERTAIN', response, backgroundUnconfirmed, 'run')
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
     else toolOutcomes.settle(io, response, 'run', denied)
   } finally {

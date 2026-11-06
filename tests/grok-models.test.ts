@@ -282,7 +282,7 @@ describe('Grok own Build models (synthetic metadata only)', () => {
           return Response.json({ data: [{ model: 'grok-a' }] })
         }),
       }),
-    ).rejects.toThrow('请先登录')
+    ).rejects.toThrow('尚未登录 Grok')
   })
   it('cancels the in-flight request and never publishes its late result', async () => {
     const f = fixture(),
@@ -307,17 +307,17 @@ describe('Grok own Build models (synthetic metadata only)', () => {
     writeFileSync(target, '{}')
     rmSync(f.path)
     symlinkSync(target, f.path)
-    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('请先登录')
+    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('未通过安全检查')
     rmSync(f.path)
     writeFileSync(f.path, 'x'.repeat(65537))
-    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('请先登录')
+    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('未通过安全检查')
   })
   it('rejects a foreign symlinked .grok directory and mismatched GROK_HOME', async () => {
     const f = fixture(),
       other = fixture()
     rmSync(join(f.home, '.grok'), { recursive: true })
     symlinkSync(join(other.home, '.grok'), join(f.home, '.grok'))
-    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('请先登录')
+    await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('未通过安全检查')
     vi.stubEnv('GROK_HOME', join(other.home, '.grok'))
     await expect(readGrokOwnAccount({ home: f.home })).rejects.toThrow('配置不受支持')
   })

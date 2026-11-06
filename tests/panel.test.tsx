@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { setLanguagePreference } from '../src/client/i18n.ts'
 import { Panel } from '../src/client/panel.tsx'
 import type { API, Snapshot } from '../src/client/workers.ts'
-import { CLI_IDS, type Worker, type HistoryPage } from '../src/shared/types.ts'
+import { CLI_IDS, type Worker, type HistoryPage, type DshSubagent } from '../src/shared/types.ts'
 
 const clipboard = vi.hoisted(() => vi.fn().mockResolvedValue(true))
 // Only the native control skins is replaced; actual Panel, hooks and stream consumer run.
@@ -142,6 +142,7 @@ async function setup(
   snapshotWorkers = workers,
   cliworkerOverrides = {},
   renderHarnessConversation?: (worker: Worker) => ReactNode,
+  renderDshConversation?: (child: DshSubagent) => ReactNode,
 ) {
   clipboard.mockReset().mockResolvedValue(true)
   const streams: Stream[] = []
@@ -250,6 +251,7 @@ async function setup(
         sessionId="parent"
         openNativeSettings={openNativeSettings}
         renderHarnessConversation={renderHarnessConversation}
+        renderDshConversation={renderDshConversation}
       />,
       {
         createNodeMock: (el) =>
@@ -3256,4 +3258,82 @@ it('adopts a streamed interface language in every open view without reloading', 
   // A snapshot without the field is `follow` again: Chinese with no DSH locale.
   await act(async () => t.streams.at(-1)!.push({ ...t.snapshot(), workers: [] }))
   expect(t.text()).toContain('把想做的事，交给合适的伙伴。')
+})
+
+// SIMULATION: public DSH rows with the real Panel/filter/search; no models.
+it('renders DSH beside CLI groups, includes it in search/filters, opens the same child seat and returns', async () => {
+  const rows: DshSubagent[] = [
+    { id: 'dsh-running', parentSessionId: 'parent', name: '模拟 DSH 运行', agentName: 'dsh-1', status: 'running', mode: 'continuable', createdAt: 1, model: 'sim-native-model' },
+    { id: 'dsh-completed', parentSessionId: 'parent', name: '模拟 DSH 完成', agentName: 'dsh-2', status: 'completed', mode: 'one-shot', createdAt: 2 },
+    { id: 'dsh-failed', parentSessionId: 'parent', name: '模拟 DSH 失败', agentName: 'dsh-3', status: 'failed', mode: 'continuable', createdAt: 3 },
+    { id: 'dsh-unknown', parentSessionId: 'parent', name: '<script>模拟未知</script>', agentName: 'dsh-4', status: 'unknown', mode: 'unknown', createdAt: 4 },
+  ]
+  const native = vi.fn((child: DshSubagent) => <section data-native-dsh={child.id}>模拟原生记录与统计</section>)
+  const listDshSubagents = vi.fn(async () => ({ ok: true, value: JSON.stringify(rows) }))
+  const initiated = [{ ...workers[0], initiator: { kind: 'worker' as const, id: 'deleted-initiator', name: 'Codex-1' } }]
+  const t = await setup(false, undefined, initiated, { listDshSubagents }, undefined, native)
+  expect(t.text()).toContain('由 Codex-1 发起')
+  // Initiator sits on the title line, after the title and a divider, before the status.
+  const line = t.r.root.findByProps({ 'data-worker-id': workers[0].id }).findByProps({ className: 'cwn-worker-line' })
+  expect(line.findAll((node) => typeof node.type === 'string' && node.parent === line).map((node) => node.props.className))
+    .toEqual(['cwn-worker-title', 'cwn-meta-divider cwn-name-divider cwn-initiator-divider', 'cwn-worker-initiator', `cwn-worker-status ${workers[0].status}`])
+  expect(t.r.root.findAllByProps({ className: 'cwn-cli-group' }).length).toBe(2)
+  // Every group heading carries a brand mark; DSH uses its own inline monochrome mark.
+  const headings = t.r.root.findAllByProps({ className: 'cwn-cli-heading' })
+  expect(headings.map((heading) => heading.findAllByProps({ className: 'cwn-brand' }).length)).toEqual([1, 1])
+  expect(headings[0].findByProps({ className: 'cwn-icon-mono' }).type).toBe('svg')
+  expect(t.text()).toContain('状态未知')
+  // Each DSH card shows its plugin name like CLI cards (name | model) and is searchable by it.
+  expect(t.r.root.findByProps({ 'data-dsh-child-id': 'dsh-running' }).findByProps({ className: 'cwn-worker-meta' })
+    .findAll((node) => typeof node.type === 'string').map((node) => node.props.className)).toEqual(expect.arrayContaining(['cwn-meta-divider cwn-name-divider', 'cwn-worker-model']))
+  expect(t.text()).toContain('dsh-1')
+  const shown = () => t.r.root.findAll((node) => typeof node.type === 'string' && node.props['data-dsh-child-id']).map((node) => node.props['data-dsh-child-id'])
+  expect(shown()).toHaveLength(4)
+  await t.click('进行中'); expect(shown()).toEqual(['dsh-running'])
+  await t.click('已完成'); expect(shown()).toEqual(['dsh-completed'])
+  await t.click('异常'); expect(shown()).toEqual(['dsh-failed'])
+  await t.click('全部')
+  await act(async () => { t.r.root.findByType('input').props.onChange({ target: { value: 'sim-native-model' } }) })
+  expect(shown()).toEqual(['dsh-running'])
+  await act(async () => { t.r.root.findByType('input').props.onChange({ target: { value: 'dsh-3' } }) })
+  expect(shown()).toEqual(['dsh-failed'])
+  await act(async () => { t.r.root.findByType('input').props.onChange({ target: { value: '' } }) })
+  await act(async () => { t.r.root.findByProps({ 'data-open-worker-id': 'dsh-completed' }).props.onClick() })
+  expect(native).toHaveBeenCalledWith(rows[1])
+  expect(t.text()).toContain('模拟原生记录与统计')
+  expect(t.r.root.findAllByProps({ className: 'cwn-actions' })).toHaveLength(0)
+  expect(t.r.root.findAllByType('textarea')).toHaveLength(0)
+  await t.goBack()
+  expect(shown()).toHaveLength(4)
+})
+it('hides and restores the DSH group immediately on the Worker settings stream, without changing native agents', async () => {
+  const child = { id: 'native', parentSessionId: 'parent', name: '模拟 DSH', agentName: 'dsh-1', status: 'running', mode: 'continuable', createdAt: 1 }
+  const listDshSubagents = vi.fn(async () => ({ ok: true, value: JSON.stringify([child]) }))
+  const t = await setup(false, undefined, workers, { listDshSubagents })
+  expect(t.text()).toContain('模拟 DSH')
+  await act(async () => { t.streams.at(-1)!.push({ ...t.snapshot(), showDshSubagents: false }) })
+  expect(t.text()).not.toContain('模拟 DSH')
+  await act(async () => { t.streams.at(-1)!.push({ ...t.snapshot(), showDshSubagents: true }) })
+  expect(t.text()).toContain('模拟 DSH')
+  expect(listDshSubagents).toHaveBeenCalledTimes(2)
+})
+it('plugin delete calls only hide and leaves CLI workers available if native reads fail', async () => {
+  let rows = [{ id: 'native', parentSessionId: 'parent', name: '模拟 DSH', agentName: 'dsh-1', status: 'completed', mode: 'one-shot', createdAt: 1 }]
+  const hideDshSubagent = vi.fn(async () => { rows = []; return { ok: true, value: undefined } })
+  const t = await setup(false, undefined, workers, {
+    listDshSubagents: vi.fn(async () => ({ ok: true, value: JSON.stringify(rows) })), hideDshSubagent,
+  })
+  // Same card grammar as CLI Workers: delete (hide) lives in the card's context menu.
+  await act(async () =>
+    t.r.root
+      .findByProps({ 'data-dsh-child-id': 'native' })
+      .props.onContextMenu({ preventDefault() {}, stopPropagation() {}, clientX: 1, clientY: 2 }),
+  )
+  await t.click('delete')
+  expect(hideDshSubagent).toHaveBeenCalledWith('parent', 'native', expect.any(AbortSignal))
+  expect(t.text()).not.toContain('模拟 DSH')
+  expect(t.api.cliworker.deleteWorker).not.toHaveBeenCalled()
+  const failed = await setup(false, undefined, workers, { listDshSubagents: vi.fn().mockRejectedValue(new Error('simulated DSH unavailable')) })
+  expect(failed.text()).toContain('DSH 子 Agent 列表暂时不可用')
+  expect(failed.r.root.findAllByProps({ 'data-open-worker-id': 'a' })).toHaveLength(1)
 })

@@ -18,6 +18,8 @@ function setup() {
       tools: { register: (definition: any) => tools.set(definition.name, definition) },
     },
     assertExecution: vi.fn(),
+    dispatchSubject: async (agent: unknown) => agent,
+    siblingDispatch: async (_caller: unknown, parent: unknown) => ({ questionAgent: parent }),
     chooseDispatch,
     disposed: new AbortController(),
     launch,
@@ -43,8 +45,7 @@ function setup() {
 it('publishes only after the complete setup and passes the frozen role without another question', async () => {
   const f = setup(),
     pending = f.start()
-  await Promise.resolve()
-  expect(f.chooseDispatch).toHaveBeenCalledTimes(1)
+  await vi.waitFor(() => expect(f.chooseDispatch).toHaveBeenCalledTimes(1))
   expect(f.launch).not.toHaveBeenCalled()
   f.answer(f.selected)
   expect(await pending).toBe('synthetic-receipt')

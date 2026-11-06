@@ -11,6 +11,7 @@ import { accountEmail, localTokenExpired, type AccountIdentity } from './account
 import type { ProcessBackend, RuntimeConfig } from './process.ts'
 import { readZCodePersonalIdentity, zcodeAuthDirectory, zcodeEnvironment } from './zcode-adapter.ts'
 import { assertGrokNativeEnvironment, selectGrokOwnAccount } from './grok-models.ts'
+import { grokRenewalRejected } from './grok-renewal.ts'
 
 export type ZCodeGrokCli = 'zcode' | 'grok'
 export interface ZCodeGrokAccountLaunch {
@@ -177,6 +178,14 @@ export function projectZCodeIdentity(raw: unknown, secret: string): AccountIdent
   }
 }
 
+/** Distinct, content-free reasons; none of them claims the user never logged in. */
+function grokReadFailure(error: unknown): AccountIdentity {
+  if (error instanceof SyntaxError) return { state: 'unknown', verification: 'local', summary: 'Grok 凭据格式不受支持' }
+  const message = error instanceof Error ? error.message : ''
+  if (/^(Invalid account (directory|file)|Account file (changed during read|too large))$/.test(message))
+    return { state: 'unavailable', verification: 'local', summary: 'Grok 凭据文件未通过安全检查' }
+  return { state: 'unavailable', verification: 'local', summary: 'Grok 凭据读取失败，请刷新' }
+}
 export function projectGrokIdentity(raw: unknown, now = Date.now()): AccountIdentity {
   if (!record(raw)) throw new Error('Invalid account metadata')
   const account = selectGrokOwnAccount(raw, now)
@@ -265,9 +274,22 @@ export async function zcodeGrokAccountStatus(
     } catch {
       /* native fallback */
     }
-    const identity =
+    const projected =
       cli === 'grok'
         ? projectGrokIdentity(raw)
+        : undefined
+    // Grok refused to renew exactly this file: show it as expired until a new login rewrites it.
+    const identity =
+      projected
+        ? projected.state === 'authenticated' &&
+          grokRenewalRejected(createHash('sha256').update(buffer.subarray(0, offset)).digest('hex'))
+          ? ({
+              state: 'unauthenticated',
+              authMethod: 'oauth',
+              verification: 'local',
+              summary: 'Grok 登录已失效，请在账号终端重新登录',
+            } satisfies AccountIdentity)
+          : projected
         : projectZCodeIdentity(
             raw,
             (options.credentialSecret ?? process.env.ZCODE_CREDENTIAL_SECRET?.trim()) ||
@@ -288,7 +310,9 @@ export async function zcodeGrokAccountStatus(
             options.home ? { nativeHome: home } : {},
           )
         : { state: 'unconfigured', verification: 'local', summary: '尚未登录' }
-      : { state: 'unavailable', verification: 'local', summary: '登录配置读取失败，请重试' }
+      : cli === 'grok'
+        ? grokReadFailure(error)
+        : { state: 'unavailable', verification: 'local', summary: '登录配置读取失败，请重试' }
   } finally {
     buffer.fill(0)
     await file?.close()

@@ -167,7 +167,7 @@ describe('native Qoder variant question before model selection', () => {
     const f = fixture([cli])
     expect(await f.start()).toBe('synthetic-receipt')
     expect(f.ask).not.toHaveBeenCalled()
-    expect(f.service.chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli)
+    expect(f.service.chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it.each(['Qoder', 'Qoder CN'])(
@@ -195,6 +195,7 @@ describe('native Qoder variant question before model selection', () => {
         f.agent,
         expect.any(AbortSignal),
         label === 'Qoder' ? 'qoder' : 'qodercn',
+        f.agent,
       )
       expect(f.service.pending.size).toBe(0)
     },
@@ -216,7 +217,7 @@ describe('native Qoder variant question before model selection', () => {
     expect(f.service.chooseDispatch).not.toHaveBeenCalled()
     expect(f.service.launch).not.toHaveBeenCalled()
     await f.start('qoder国际版')
-    expect(f.service.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), 'qoder')
+    expect(f.service.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), 'qoder', f.agent)
     expect(f.ask).not.toHaveBeenCalled()
   })
   it('retains configured missing paths, broken installations and cleanup errors as errors', async () => {

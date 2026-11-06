@@ -123,7 +123,15 @@ export interface RoleSnapshot {
   summary: string
   prompt: string
 }
+export interface WorkerInitiator {
+  kind: 'worker' | 'subagent'
+  id: string
+  name: string
+}
+
 export interface Worker {
+  /** Attribution only; never a lifecycle or permission parent. */
+  initiator?: WorkerInitiator
   id: string
   parentSessionId: string
   project: string
@@ -265,6 +273,8 @@ export interface WorkerEvent {
   truncated?: true
   /** Byte size of the largest cut content, when known. */
   outputBytes?: number
+  /** A diagnostic about an action CLI Worker itself took in this run (not CLI output); shown in the Worker conversation. */
+  notice?: true
   toolCall?: PublicToolCall
   response?: NativeResponseIdentity
   /** Whether the terminal body covers all response segments or only the final response. */
@@ -295,6 +305,7 @@ export interface TimelineItem {
   detail?: string
   truncated?: true
   outputBytes?: number
+  notice?: true
   toolCall?: PublicToolCall
   queuedFollowupId?: string
   deliveryState?: DeliveryState
@@ -315,7 +326,24 @@ export interface QueuedFollowup {
   state: 'pending' | 'sending' | 'paused'
   pauseReason?: string
 }
+/** Public DSH directory/projection data; never a plugin-owned Worker. */
+/** `dsh-<n>` names are reserved for DSH native subagents in the CLI Worker window. */
+export const DSH_AGENT_NAME = /^dsh-[1-9]\d*$/i
+export interface DshSubagent {
+  id: string
+  parentSessionId: string
+  name: string
+  /** Plugin-assigned `dsh-N`, stable per main conversation; used by cliworker_followup. */
+  agentName: string
+  createdAt: number
+  mode: 'continuable' | 'one-shot' | 'unknown' | 'external'
+  status: 'running' | 'completed' | 'failed' | 'unknown'
+  model?: string
+  /** Only an acknowledged interrupt followed by a settled native projection. */
+  stopped?: boolean
+}
 export interface WorkerSnapshot {
+  showDshSubagents?: boolean
   /** Saved interface language; absent means follow the DSH language. */
   language?: import('./cli-settings.ts').LanguagePreference
   externalRequestState?: import('./native-request-state.ts').ExternalRequestState
@@ -521,6 +549,7 @@ export function foldEvents(
         admittedRunId: event.admittedRunId,
         ...(event.truncated ? { truncated: true as const } : {}),
         ...(event.outputBytes ? { outputBytes: event.outputBytes } : {}),
+        ...(event.kind === 'diagnostic' && event.notice ? { notice: true as const } : {}),
       }
       if (event.delta) appendDelta(row, event.delta)
       steps.set(key, row)

@@ -415,7 +415,7 @@ describe('native prompt/tool integration', () => {
     expect((await f.request(request)).decision).toEqual({ kind: 'enter', messages: request })
   })
 
-  it('does not add invocation guidance for hidden tools or child agents', async () => {
+  it('does not add invocation guidance for hidden tools; visible children receive sibling guidance', async () => {
     const f = await fixture()
     const scope = createScope(f.ctx, f.agent)
     cleanup.push(() => scope.dispose())
@@ -429,7 +429,7 @@ describe('native prompt/tool integration', () => {
       id: 'synthetic-child',
       session: { header: { origin: 'subagent' } },
     } as unknown as Agent
-    expect((await f.request(messages, child)).decision).toEqual({ kind: 'enter', messages })
+    expect((await f.request(messages, child)).text).toContain('cliworker_start')
   })
 
   it('resolves names read-only and forwards aliases through existing model and role selection', async () => {
@@ -451,12 +451,12 @@ describe('native prompt/tool integration', () => {
       ['Antigravity（agy）CLI', 'antigravity'],
     ]) {
       expect(await f.start(alias)).toBe('synthetic-background-receipt')
-      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli)
+      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }
     for (const cli of CLI_IDS) {
       await f.start(cli)
-      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli)
+      expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }
   })

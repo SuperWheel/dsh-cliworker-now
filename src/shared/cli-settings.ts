@@ -31,6 +31,8 @@ export interface GeneralSettings {
   isolatedParallelWrites: boolean
   /** Dispatch questions before a new conversation's first start; on unless turned off. */
   askBeforeDispatch: boolean
+  /** Show native direct children alongside CLI Workers; on for upgrades too. */
+  showDshSubagents: boolean
   /** Effective total time limit of a task in ms, counted from its start. */
   taskTimeLimitMs: number
   /** Deployment value (the plugin config `timeoutMs`) used when the user has not chosen one. */

@@ -516,3 +516,39 @@ vi.mock('../src/host/claude-own-route.ts', async (original) => ({
   ...(await original<typeof import('../src/host/claude-own-route.ts')>()),
   readClaudeOwnRoute: async () => ({ kind: 'native', sourceIds: ['synthetic-claude'] }),
 }))
+
+describe('sibling attribution and independent runtime lifecycle (simulated processes)', () => {
+  it('persists optional initiator, exposes it in snapshots and accepts old records', () => {
+    const { root, project } = paths(), directory = join(root, 'state')
+    const first = new WorkerStorage(directory), old = makeWorker(project), sibling = makeWorker(project)
+    sibling.initiator = { kind: 'worker', id: old.id, name: 'Codex-1' }
+    first.save(old); first.save(sibling); first.close()
+    const restored = new WorkerStorage(directory)
+    const runtime = new WorkerRuntime(restored, new FakeBackend(), DEFAULT_CONFIG)
+    cleanups.push(() => runtime.close())
+    expect(restored.workers.get(old.id)?.initiator).toBeUndefined()
+    expect(runtime.snapshot('parent').workers.find(w => w.id === sibling.id)?.initiator).toEqual(sibling.initiator)
+  })
+  it('enforces six sibling admissions synchronously and stopping/deleting their initiator does not cascade', async () => {
+    const { runtime, backend, storage, project } = setup({ maxConcurrent: 1 })
+    const source = runtime.submit('p', project, 'source', 'synthetic', pref, 'accept-edits')
+    const identity = { initiator: { kind: 'worker' as const, id: source.worker.id, name: 'Source' } }
+    const siblings = Array.from({ length: 6 }, (_, i) => runtime.submit('p', project, `s${i}`, 'synthetic', pref, 'accept-edits', undefined, identity))
+    const count = storage.workers.size
+    expect(() => runtime.submit('p', project, 'over', 'synthetic', pref, 'accept-edits', undefined, identity)).toThrow('已达上限')
+    expect(storage.workers.size).toBe(count)
+    await tick()
+    expect(backend.calls).toHaveLength(1)
+    expect(siblings.every(s => s.worker.status === 'queued')).toBe(true)
+    await runtime.stop('p', source.worker.id)
+    await tick()
+    expect(siblings[0].worker.status).toBe('running')
+    expect(siblings.slice(1).every(s => s.worker.status === 'queued')).toBe(true)
+    runtime.deleteWorker('p', source.worker.id)
+    expect(siblings.every(s => ['running', 'queued'].includes(s.worker.status))).toBe(true)
+    expect(runtime.snapshot('p').workers.filter(w => w.initiator)).toHaveLength(6)
+    await runtime.stop('p', siblings[0].worker.id)
+    runtime.submit('p', project, 'replacement', 'synthetic', pref, 'accept-edits', undefined, identity)
+    expect(() => runtime.submit('p', project, 'resume', 'synthetic', pref, 'accept-edits', siblings[0].worker.id)).toThrow('已达上限')
+  })
+})

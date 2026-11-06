@@ -109,6 +109,7 @@ const generalSettingsSchema = z.object({
   language: z.enum(LANGUAGE_PREFERENCES).optional(),
   isolatedParallelWrites: z.boolean().optional(),
   askBeforeDispatch: z.boolean().optional(),
+  showDshSubagents: z.boolean().optional(),
   taskTimeLimitMs: taskTimeLimitSchema.optional(),
   idleTimeLimitMs: idleTimeLimitSchema.optional(),
 })
@@ -123,6 +124,7 @@ const runningMessageSchema = z
   })
   .strict()
 const workerSchema = z.object({
+  initiator: z.object({ kind: z.enum(['worker', 'subagent']), id: z.string().min(1), name: z.string().min(1) }).optional(),
   id: z.uuid(),
   parentSessionId: z.string().min(1),
   project: z.string().min(1),
@@ -223,6 +225,7 @@ const eventSchema = z.object({
   delta: z.string().optional(),
   truncated: z.literal(true).optional(),
   outputBytes: z.number().int().safe().positive().optional(),
+  notice: z.literal(true).optional(),
   response: z.unknown().transform((value, context) => {
     if (value === undefined) return undefined
     try { return parseNativeResponse(value) }
@@ -613,6 +616,7 @@ export class WorkerStorage {
         language: z.enum(LANGUAGE_PREFERENCES).nullable().optional(),
         isolatedParallelWrites: z.boolean().nullable().optional(),
         askBeforeDispatch: z.boolean().nullable().optional(),
+        showDshSubagents: z.boolean().nullable().optional(),
         taskTimeLimitMs: taskTimeLimitSchema.nullable().optional(),
         idleTimeLimitMs: idleTimeLimitSchema.nullable().optional(),
       })

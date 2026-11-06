@@ -118,6 +118,10 @@ export function WorkerCard({
             >
               <span className="cwn-worker-line">
                 <span className="cwn-worker-title">{worker.title}</span>
+                {worker.initiator && <>
+                  <span className="cwn-meta-divider cwn-name-divider cwn-initiator-divider" aria-hidden="true" />
+                  <span className="cwn-worker-initiator">{t('由 {name} 发起', { name: worker.initiator.name })}</span>
+                </>}
                 <span className={`cwn-worker-status ${worker.status}`}>
                   <span className={`cwn-dot ${worker.status}`} />
                   {isUserInterrupted(worker)

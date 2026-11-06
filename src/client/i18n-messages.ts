@@ -7,6 +7,24 @@
 export const en = {
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':
     'CLI Worker was just enabled or disabled. Quit DeepSeek Harness completely and open it again to restore the interface.',
+  '由 {name} 发起': 'Initiated by {name}',
+  '状态未知': 'Status unknown',
+  '此外部 DSH 子 Agent 没有可打开的本地会话': 'This external DSH subagent has no local conversation to open',
+  '在 CLI Worker 窗口显示 DSH 子 Agent': 'Show DSH subagents in the CLI Worker window',
+  '仅在此窗口隐藏，不影响 DSH 原生会话与记录': 'Hide only in this window; the native DSH conversation and records are kept',
+  '只影响此窗口的显示，不影响 DSH 子 Agent 的运行与原生入口': 'Only changes visibility in this window; DSH subagents and their native entry remain available',
+  '正在保存 DSH 子 Agent 显示设置…': 'Saving DSH subagent visibility…',
+  'DSH 子 Agent 显示设置未保存，请重试': 'DSH subagent visibility was not saved. Try again',
+  '此 DSH 子 Agent 只读': 'This DSH subagent is read-only',
+  'DSH 原生子会话': 'Native DSH child conversation',
+  'DSH 子 Agent 列表暂时不可用': 'The DSH subagent list is temporarily unavailable',
+  'DSH 中断请求未获确认': 'The DSH interrupt request was not acknowledged',
+  'DSH 子 Agent 不在当前主会话列表中': 'The DSH subagent is not in this main conversation',
+  'DSH 子会话所属主对话不匹配': 'The DSH child belongs to another main conversation',
+  'DSH 主会话无效': 'Invalid DSH main conversation',
+  'DSH 目录只接受主会话': 'The DSH directory requires a main conversation',
+  'DSH 停止尚未确认，请重试': 'DSH stop has not been confirmed. Try again',
+
   // Codex relay catalog
   'Codex 自定义路由模型；来自 Codex 自带列表，中转是否支持以实际调用为准':
     'Codex custom route models; from Codex\'s built-in list, the relay\'s support is confirmed by actual calls',
@@ -789,6 +807,18 @@ export const en = {
   'Hermes 当前使用外部 Codex 登录，请改用自身账号': 'Hermes is using an external Codex login. Switch to its own account',
   'Hermes 账号来源无法确认': 'The Hermes account source could not be confirmed',
   'Hermes 含外部账号来源，请使用自身登录': 'Hermes has an external account source. Use its own login',
+  '尚未登录 Grok，请在账号终端登录': 'You are not signed in to Grok. Sign in from the account terminal',
+  'Grok 凭据格式不受支持，请在账号终端重新登录': 'The Grok credential format is not supported. Sign in again from the account terminal',
+  'Grok 凭据格式不受支持': 'The Grok credential format is not supported',
+  'Grok 凭据文件未通过安全检查': 'The Grok credential file failed the safety check',
+  'Grok 凭据读取失败，请刷新': 'The Grok credentials could not be read. Refresh',
+  'Grok 登录已过期，请在账号终端重新登录': 'Your Grok sign-in has expired. Sign in again from the account terminal',
+  'Grok 登录需要续期，请在账号终端重新登录': 'Your Grok sign-in needs renewal. Sign in again from the account terminal',
+  'Grok 登录已失效，请在账号终端重新登录': 'Your Grok sign-in is no longer valid. Sign in again from the account terminal',
+  'Grok 登录续期暂时失败，请检查网络后刷新': 'Grok could not renew your sign-in right now. Check your network and refresh',
+  'Grok 账号已变化，请刷新': 'The Grok account changed. Refresh',
+  '当前 Grok 版本暂不支持自动续期，请更新 Grok 或在账号终端重新登录': 'This Grok version cannot renew automatically. Update Grok or sign in again from the account terminal',
+  'Grok 账号终端正在运行，请关闭后刷新': 'The Grok account terminal is running. Close it, then refresh',
   // continue-tasks-across-account-changes
   '原会话无法续接，已在新会话中继续': 'The original session could not be resumed, so it continues in a new session',
   '原会话记录不可用，已在新会话中继续': 'The original session record is unavailable, so it continues in a new session',

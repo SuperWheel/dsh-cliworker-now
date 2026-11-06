@@ -1,3 +1,4 @@
+import { DshSubagents, type DshSubagentServices } from './dsh-subagents.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { SettingsCatalogCache } from './settings-catalog-cache.ts'
@@ -31,7 +32,7 @@ import {
 import { nativeHarnessToolCapability, nativeHarnessExecutionReady } from './native-harness-injection.mjs'
 import { createNativeHarnessExecutor } from './native-harness-executor.ts'
 import { readNativeColdSessionState } from './native-cold-session-state.ts'
-import { installHarnessModelGuard, withinCliTool } from './harness-model-guard.ts'
+import { installHarnessModelGuard, withinCliTool, publishSiblingOutsideTool } from './harness-model-guard.ts'
 import { readHarnessImage, resolveHarnessAttachments } from './harness-attachments.ts'
 import { nativeCliCapabilities, nativeCliMcpServers } from './cli-native-capabilities.mjs'
 import type { NativeAttachment } from './native-attachments.mjs'
@@ -70,6 +71,7 @@ import {
   CLI_IDS,
   CLI_LABELS,
   cliOf,
+  DSH_AGENT_NAME,
   workerName,
   effortLabel,
   EFFORTS,
@@ -297,12 +299,15 @@ export class CliWorkerService extends TypertRemoteService {
   private selectionProjects = new WeakMap<Preference, string>()
   /** Turn origin by runId: the parent model's tool call, or the user in the Worker UI. */
   private runOrigins?: Map<string, RunOrigin>
+  /** Exact per-turn question surface; attribution never controls lifecycle. */
+  private runQuestionSessions?: Map<string, string>
   /** DSH tool calls the tool bridge is executing, by their DSH call id. */
   private bridgeCalls = new Map<string, { worker: Worker; runId: string; child: Agent; name: string; arguments: unknown }>
   private displayedBindings = new Map<string, string>()
   private settingsCatalogs?: SettingsCatalogCache
   private settingsInstance?: string
   private settingsSourceRevisions?: Map<CliId, number>
+  private dshSubagents!: DshSubagents
   private disposed = new AbortController()
   private harnessConversation?: HarnessConversationApi
   private harnessConversationStore?: HarnessConversationStore
@@ -337,6 +342,27 @@ export class CliWorkerService extends TypertRemoteService {
       this.backend,
       this.options,
     )
+    this.dshSubagents = new DshSubagents(stateDirectory, {
+      subagents: () => this.ctx.get('subagents'),
+      query: () => this.ctx.get('sessionQuery') as ReturnType<DshSubagentServices['query']>,
+      ownedSessions: () => new Set([
+        ...[...this.runtime.storage.workers.values()].flatMap((worker) =>
+          worker.harnessConversation ? [worker.harnessConversation.sessionId] : []),
+        ...(this.harnessConversationStore?.list().map((entry) => entry.sessionId) ?? []),
+      ]),
+      subscribe: (notify) => {
+        const offSession = this.ctx.on('session/event', (session, event) => {
+          if (['subagent/catalog', 'subagent/descriptor', 'turn/start', 'turn/end', 'model/selection', 'request/header'].includes(event.type))
+            notify(session.id)
+        }, { global: true })
+        // Worker registration/hiding can change exclusion without a native event.
+        const offWorkers = this.runtime.subscribe(() => {
+          for (const worker of this.runtime.storage.workers.values()) notify(worker.parentSessionId)
+        })
+        return () => { offSession(); offWorkers() }
+      },
+      log: (reason) => console.warn(`[CLI Worker / DSH] ${reason}`),
+    })
     this.ctx.inject(['sessionController', 'subagents', 'llm'], (scope) => {
       const records = new HarnessConversationStore(this.runtime.storage.directory)
       this.harnessConversationStore = records
@@ -692,6 +718,7 @@ export class CliWorkerService extends TypertRemoteService {
     ctx.effect(
       () => () => {
         this.disposed.abort()
+        this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
           this.runtime.close(),
@@ -741,6 +768,51 @@ export class CliWorkerService extends TypertRemoteService {
   private project(agent: Agent): string {
     if (!agent.session.header.cwd) throw new Error('此主对话没有工作目录，请先选择项目')
     return projectDirectory(agent.session.header.cwd)
+  }
+  /** Resolve ownership only; child status stays read-only even in plan mode. */
+  /** CLI Workers win; only an unmatched reference is tried against this conversation's DSH native subagents. */
+  private async dshFallback<T>(parent: string, args: { worker_id?: string; worker_name?: string }, signal: AbortSignal,
+    cli: () => T, prompt?: string): Promise<T | { kind: 'dsh-subagent' } & Record<string, unknown>> {
+    try { return cli() } catch (error) {
+      const name = args.worker_name?.trim()
+      if (name && !DSH_AGENT_NAME.test(name)) throw error
+      if (this.runtime.snapshot(parent).showDshSubagents === false) throw error
+      const ref = { id: args.worker_id, name }
+      const found = prompt === undefined
+        ? await this.dshSubagents.resolve(parent, ref, signal).then((child) => child && { kind: 'dsh-subagent' as const, workerId: child.id, agentName: child.agentName, title: child.title, mode: child.mode })
+        : await this.dshSubagents.followup(parent, ref, prompt, signal)
+      if (!found) throw error
+      return found
+    }
+  }
+  private async dispatchSubject(caller: Agent): Promise<Agent> {
+    if (caller.session.header.origin !== 'subagent') return caller
+    const parentId = caller.session.header.parentSession
+    // A background Worker can outlive its parent's resident Agent; load it the
+    // same way native Remote Agent parameters do before deciding it is gone.
+    if (parentId) try { await this.ctx.typert.lookups.get('agent')?.resolve(parentId) } catch { /* reported below */ }
+    const parent = parentId && this.ctx.agents.get(parentId)
+    if (!parent) throw new Error('无法解析子 Agent 所属主对话；任务尚未创建')
+    if (parent.id === caller.id || parent.session.header.origin === 'subagent' || parent.session.header.parentSession)
+      throw new Error('只允许主对话的直接子 Agent 同级派遣；第三层调用被拒绝')
+    return parent
+  }
+  private async siblingDispatch(caller: Agent, parent: Agent, signal: AbortSignal) {
+    if (caller === parent) return { questionAgent: parent }
+    this.runtime.assertSiblingCapacity(parent.id)
+    const worker = [...this.runtime.storage.workers.values()].find(
+      row => row.parentSessionId === parent.id && row.harnessConversation?.sessionId === caller.id,
+    )
+    const surface = worker && (this.runQuestionSessions?.get(worker.runId)
+      ?? (this.runOrigins?.get(worker.runId) === 'agent' ? parent.id : caller.id))
+    const questionAgent = surface ? this.ctx.agents.get(surface as Agent['id']) : parent
+    if (!questionAgent) throw new Error('发起者当前轮的询问会话不可用；任务尚未创建')
+    const label = worker ? workerName(worker)
+      : (await this.ctx.get('subagents')?.listChildren(parent.id, signal))?.find(row => row.id === caller.id)?.label
+    return {
+      questionAgent,
+      initiator: { kind: worker ? 'worker' as const : 'subagent' as const, id: worker?.id ?? caller.id, name: label || caller.id },
+    }
   }
   /**
    * @param dispatch - A CLI run (or its control), which 仅可查看 admits in the
@@ -806,7 +878,8 @@ export class CliWorkerService extends TypertRemoteService {
     const cli = cliOf(worker.preference)
     const context = { worker: workerName(worker), cli: CLI_LABELS[cli], project: worker.project }
     const control = AbortSignal.any([signal, this.disposed.signal])
-    if (this.runOrigins?.get(worker.runId ?? '') === 'agent') {
+    const surface = this.runQuestionSessions?.get(worker.runId)
+    if (surface === parent.id || (!surface && this.runOrigins?.get(worker.runId ?? '') === 'agent')) {
       const response = await waitForInput(
         parent.ctx.get('userQuestions')!.ask({ agent: parent, signal: control, questions: [approvalQuestion(request, context)] }),
         control,
@@ -814,7 +887,7 @@ export class CliWorkerService extends TypertRemoteService {
       return decisionFromAnswer(request, response.answers.find((item) => item.id === 'cliworker_approval'))
     }
     const binding = worker.harnessConversation
-    const child = binding && this.ctx.agents.get(binding.sessionId as Agent['id'])
+    const child = this.ctx.agents.get((surface ?? binding?.sessionId) as Agent['id'])
     const approval = child?.ctx.get('approval')
     if (!child || !approval) return { decision: 'deny', source: 'unavailable' }
     // The parent may have switched presets since preparation: ask with its policy now.
@@ -846,7 +919,7 @@ export class CliWorkerService extends TypertRemoteService {
       summary,
       request.signal ?? this.disposed.signal,
       async (signal, mode) => {
-        if (this.runOrigins?.get(runId) === 'agent') return this.decideNativeApproval(worker, summary, signal, mode)
+        if (this.runQuestionSessions?.has(runId) || this.runOrigins?.get(runId) === 'agent') return this.decideNativeApproval(worker, summary, signal, mode)
         // The child's own panel answers, after the same plan and preset rules.
         const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
         if (!parent) return { decision: 'deny', source: 'unavailable' }
@@ -968,7 +1041,7 @@ export class CliWorkerService extends TypertRemoteService {
       }
     })
   }
-  private async chooseQoderVariant(agent: Agent, callerSignal: AbortSignal, name: string) {
+  private async chooseQoderVariant(agent: Agent, callerSignal: AbortSignal, name: string, questionAgent = agent) {
     const signal = AbortSignal.any([callerSignal, this.disposed.signal])
     signal.throwIfAborted()
     const project = this.project(agent)
@@ -996,8 +1069,8 @@ export class CliWorkerService extends TypertRemoteService {
         cli = resolution.cli
       else if (resolution.status === 'ambiguous') {
         const response = await waitForInput(
-          agent.ctx.get('userQuestions')!.ask({
-            agent,
+          questionAgent.ctx.get('userQuestions')!.ask({
+            agent: questionAgent,
             signal,
             questions: [
               {
@@ -1038,7 +1111,7 @@ export class CliWorkerService extends TypertRemoteService {
    * the question. A settled setup asks nothing, so its catalog check leaves the
    * queue and parallel dispatches of one conversation start together.
    */
-  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId): Promise<DispatchSetup> {
+  private async chooseDispatch(agent: Agent, callerSignal: AbortSignal, cli: CliId, questionAgent = agent): Promise<DispatchSetup> {
     const signal = AbortSignal.any([callerSignal, this.disposed.signal])
     signal.throwIfAborted()
     this.runtime.assertCliEnabled(cli)
@@ -1098,7 +1171,7 @@ export class CliWorkerService extends TypertRemoteService {
             signal.throwIfAborted()
             asked = true
             const response = await waitForInput(
-              agent.ctx.get('userQuestions')!.ask({ agent, signal, questions }),
+              questionAgent.ctx.get('userQuestions')!.ask({ agent: questionAgent, signal, questions }),
               signal,
             )
             signal.throwIfAborted()
@@ -1222,7 +1295,7 @@ export class CliWorkerService extends TypertRemoteService {
     preference: Preference,
     mode: TaskMode,
     workerId?: string,
-    identity?: { agentName?: string; role?: RoleSnapshot },
+    identity?: { agentName?: string; role?: RoleSnapshot; initiator?: Worker['initiator'] },
     signal: AbortSignal = this.disposed.signal,
     restartSourceId?: string,
     queuedAdmission?: { id: string; expectedRunId: string; priority?: boolean },
@@ -1230,6 +1303,7 @@ export class CliWorkerService extends TypertRemoteService {
     submissionId?: string,
     attachments?: readonly NativeAttachment[],
     origin: RunOrigin = 'user',
+    questionSessionId?: string,
   ): Promise<string> {
     if (workerId && !preparationId)
       return this.runtime.prepareFollowup(
@@ -1252,6 +1326,7 @@ export class CliWorkerService extends TypertRemoteService {
             submissionId,
             attachments,
             origin,
+            questionSessionId,
           ),
         queuedAdmission?.priority ? queuedAdmission.id : undefined,
       )
@@ -1281,8 +1356,9 @@ export class CliWorkerService extends TypertRemoteService {
     if (this.accounts.isBusy(cliOf(preference))) throw new Error('请先关闭账号终端')
     if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
     if (restartSourceId) this.runtime.assertLegacyRestart(agent.id, restartSourceId)
+    if (identity?.initiator && !workerId) this.runtime.assertSiblingCapacity(agent.id)
     let submission: Submission | undefined
-    const id = agent.ctx.get('jobs')!.start({
+    const publish = () => agent.ctx.get('jobs')!.start({
       kind: 'cliworker',
       owner: agent.id,
       label: `${CLI_LABELS[cliOf(preference)]} · ${title} · ${workerId ? '续聊' : '新任务'}：${prompt.replace(/\s+/g, ' ').slice(0, 100)}`,
@@ -1309,7 +1385,11 @@ export class CliWorkerService extends TypertRemoteService {
         if (runId) {
           const origins = (this.runOrigins ??= new Map())
           origins.set(runId, origin)
-          void submitted.done.finally(() => origins.delete(runId))
+          if (questionSessionId) (this.runQuestionSessions ??= new Map()).set(runId, questionSessionId)
+          void submitted.done.finally(() => {
+            origins.delete(runId)
+            this.runQuestionSessions?.delete(runId)
+          })
         }
         return {
           cancel: submitted.cancel,
@@ -1344,6 +1424,7 @@ export class CliWorkerService extends TypertRemoteService {
         }
       },
     })
+    const id = identity?.initiator ? publishSiblingOutsideTool(publish) : publish()
     if (!submission) throw new Error('Harness did not publish the worker job')
     this.nativeRunDone.set(submission.worker.runId, submission.done)
     const runId = submission.worker.runId
@@ -1512,7 +1593,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.ctx.tools.register(
           defineTool({
             name: 'cliworker_start',
-            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID 和 agentName。已有智能体续聊用 cliworker_followup；除泛称 qoder 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
+            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID 和 agentName。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
             parameters: {
               cli: {
                 type: 'string',
@@ -1537,27 +1618,30 @@ export class CliWorkerService extends TypertRemoteService {
             isConcurrencySafe: () => true,
             execute: async (args, exec) => {
               if (!exec.agent) throw new Error('A parent Agent is required')
-              this.assertExecution(exec.agent, true)
+              const parent = await this.dispatchSubject(exec.agent)
+              this.assertExecution(parent, true)
+              const { questionAgent, initiator } = await this.siblingDispatch(exec.agent, parent, exec.signal)
               let cli = requireCliName(args.cli)
               if (isGenericQoderName(args.cli))
-                cli = await this.chooseQoderVariant(exec.agent, exec.signal, args.cli)
+                cli = await this.chooseQoderVariant(parent, exec.signal, args.cli, questionAgent)
               const agentName =
                 args.agent_name === undefined ? undefined : agentNameSchema.parse(args.agent_name)
               if (cli === 'kimi' && args.read_only) throw new Error('Kimi 非交互模式不支持只读派遣')
               const setup = await this.chooseDispatch(
-                exec.agent,
+                parent,
                 AbortSignal.any([exec.signal, this.disposed.signal]),
                 cli,
+                questionAgent,
               )
               exec.signal.throwIfAborted()
               return this.launch(
-                exec.agent,
+                parent,
                 args.title,
                 args.prompt,
                 setup.preference,
                 args.read_only ? 'plan' : 'accept-edits',
                 undefined,
-                { agentName, role: setup.role ?? undefined },
+                { agentName, role: setup.role ?? undefined, ...(initiator ? { initiator } : {}) },
                 AbortSignal.any([exec.signal, this.disposed.signal]),
                 undefined,
                 undefined,
@@ -1565,6 +1649,7 @@ export class CliWorkerService extends TypertRemoteService {
                 undefined,
                 undefined,
                 'agent',
+                initiator ? questionAgent.id : undefined,
               )
             },
           }),
@@ -1583,17 +1668,23 @@ export class CliWorkerService extends TypertRemoteService {
             isConcurrencySafe: () => true,
             execute: async (args, exec) => {
               if (!exec.agent) throw new Error('A parent Agent is required')
+              const parent = await this.dispatchSubject(exec.agent)
               if (args.worker_id || args.worker_name) {
-                const worker = this.runtime.resolveWorker(exec.agent.id, args.worker_id, args.worker_name)
-                return JSON.stringify({ ...worker, agentName: workerName(worker), guidance: isolationGuidance(worker) })
+                const dsh = await this.dshFallback(parent.id, args, exec.signal, () => this.runtime.resolveWorker(parent.id, args.worker_id, args.worker_name))
+                if ('kind' in dsh) return JSON.stringify(dsh)
+                return JSON.stringify({ ...dsh, agentName: workerName(dsh), guidance: isolationGuidance(dsh) })
               }
-              return JSON.stringify(
-                this.runtime.snapshot(exec.agent.id).workers.map((worker) => ({
+              const dshRows = this.runtime.snapshot(parent.id).showDshSubagents === false ? []
+                : (await this.dshSubagents.list(parent.id, exec.signal)).map((row) => ({ kind: 'dsh-subagent', workerId: row.id,
+                  agentName: row.agentName, title: row.name, status: row.stopped ? 'stopped' : row.status, model: row.model, mode: row.mode }))
+              return JSON.stringify([
+                ...this.runtime.snapshot(parent.id).workers.map((worker) => ({
                   ...worker,
                   agentName: workerName(worker),
                   guidance: isolationGuidance(worker),
                 })),
-              )
+                ...dshRows,
+              ])
             },
           }),
         ),
@@ -1605,7 +1696,7 @@ export class CliWorkerService extends TypertRemoteService {
           defineTool({
             name: 'cliworker_followup',
             description:
-              'Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker.',
+              'Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its `dsh-N` name; its reply returns as a DSH subagent message.',
             parameters: {
               worker_id: { type: 'string' },
               worker_name: { type: 'string' },
@@ -1615,8 +1706,10 @@ export class CliWorkerService extends TypertRemoteService {
             isConcurrencySafe: () => true,
             execute: async (args, exec) => {
               if (!exec.agent) throw new Error('A parent Agent is required')
-              const worker = this.runtime.resolveWorker(exec.agent.id, args.worker_id, args.worker_name)
-              return this.continueWorker(exec.agent.id, worker.id, args.prompt, exec.signal, 'agent')
+              const agent = exec.agent
+              const target = await this.dshFallback(agent.id, args, exec.signal, () => this.runtime.resolveWorker(agent.id, args.worker_id, args.worker_name), args.prompt)
+              if ('kind' in target) return JSON.stringify(target)
+              return this.continueWorker(agent.id, target.id, args.prompt, exec.signal, 'agent')
             },
           }),
         ),
@@ -1726,6 +1819,41 @@ export class CliWorkerService extends TypertRemoteService {
         ),
       'cliworker:discard',
     )
+  }
+  /** @param parentSessionId - Main conversation. @param signal - Read lifetime. @returns Native direct children JSON. */
+  @Remote('listDshSubagents')
+  async listDshSubagents(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    return JSON.stringify(await this.dshSubagents.list(parentSessionId, signal))
+  }
+  /** @param parentSessionId - Main conversation. @param signal - Visible panel lifetime. @returns Native child snapshots. */
+  @Remote({ mode: 'stream' })
+  async *watchDshSubagents(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
+    yield* this.dshSubagents.watch(parentSessionId, signal)
+  }
+  /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param prompt - Human message. @param requestId - Browser-minted prompt identity. @param signal - Admission lifetime. @returns Native inbox receipt JSON. */
+  @Remote('promptDshSubagent')
+  async promptDshSubagent(parentSessionId: string, childSessionId: string, prompt: string, requestId: string, signal: AbortSignal): Promise<string> {
+    try {
+      const text = validate.string().min(1).max(100000).parse(prompt)
+      validate.string().uuid().parse(requestId)
+      return JSON.stringify(await this.dshSubagents.prompt({
+        parentSessionId: SessionId(parentSessionId), childSessionId: SessionId(childSessionId),
+        requestId: requestId as import('@deepseek-ai/dsh-subagent').SubagentPromptRequestId,
+        mode: 'continuable', delivery: 'queue', content: [{ type: 'text', text }],
+      }, signal))
+    } catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Stop confirmation lifetime. @returns JSON only after native settlement. */
+  @Remote('stopDshSubagent')
+  async stopDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<string> {
+    try { return JSON.stringify(await this.dshSubagents.stop(parentSessionId, childSessionId, signal)) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Mutation lifetime. @returns Nothing; only plugin visibility changes. */
+  @Remote('hideDshSubagent')
+  async hideDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<void> {
+    try { await this.dshSubagents.hide(parentSessionId, childSessionId, signal) }
+    catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Owning Harness session. @param workerId - Selected worker or empty string. @param signal - Stream lifetime. @returns JSON snapshots, initially and after changes. */
   @Remote({ mode: 'stream' })

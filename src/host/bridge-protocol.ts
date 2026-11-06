@@ -78,6 +78,7 @@ export class BridgeProtocol {
         ...(e.truncated === true ? { truncated: true as const } : {}),
         ...(Number.isSafeInteger(e.outputBytes) && e.outputBytes > 0 ? { outputBytes: e.outputBytes } : {}),
         ...(typeof e.observedModel === 'string' ? { observedModel: e.observedModel } : {}),
+        ...(e.kind === 'diagnostic' && e.notice === true ? { notice: true as const } : {}),
         ...(e.response === undefined ? {} : { response: parseNativeResponse(e.response) }),
         ...(e.kind === 'tool' && pickPublicToolCall(e.toolCall)
           ? { toolCall: pickPublicToolCall(e.toolCall) } : {}),

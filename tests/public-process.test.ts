@@ -172,3 +172,40 @@ it('reopens persisted public reasoning without losing its event kind', () => {
     rmSync(directory, { recursive: true, force: true })
   }
 })
+
+it('keeps the CLI Worker notice flag only on bridge diagnostics, through storage (synthetic)', () => {
+  const f = fixture('bridge')
+  f.send(
+    { type: 'session', id: 'synthetic' },
+    { type: 'event', event: { kind: 'diagnostic', notice: true, text: '模拟自动跟进说明' } },
+    { type: 'event', event: { kind: 'diagnostic', notice: 'yes', text: '模拟普通诊断' } },
+    { type: 'event', event: { kind: 'assistant', notice: true, text: '模拟正文' } },
+  )
+  expect(f.events.filter((event) => event.notice).map((event) => event.text)).toEqual(['模拟自动跟进说明'])
+  expect(foldEvents(f.events).filter((row) => row.notice).map((row) => row.text)).toEqual(['模拟自动跟进说明'])
+  const directory = mkdtempSync(join(tmpdir(), 'cwn-notice-'))
+  const worker: Worker = {
+    id: randomUUID(),
+    runId: randomUUID(),
+    parentSessionId: 'synthetic-parent',
+    project: directory,
+    title: '模拟',
+    preference: { cli: 'antigravity', model: 'synthetic', effort: 'low' },
+    mode: 'accept-edits',
+    status: 'completed',
+    createdAt: '2026-10-15T00:00:00Z',
+    updatedAt: '2026-10-15T00:00:00Z',
+  }
+  let storage: WorkerStorage | undefined
+  try {
+    storage = new WorkerStorage(directory)
+    storage.save(worker)
+    storage.append(worker, { kind: 'diagnostic', notice: true, text: '模拟自动跟进说明' })
+    storage.close()
+    storage = new WorkerStorage(directory)
+    expect(storage.history(worker.id)[0]).toMatchObject({ kind: 'diagnostic', notice: true })
+  } finally {
+    storage?.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})

@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { CliId, Worker, WorkerSnapshot } from '../shared/types.ts'
+import type { CliId, Worker, WorkerSnapshot, DshSubagent } from '../shared/types.ts'
 import type { TaskMode, WorkerLevel } from '../shared/types.ts'
 import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountStartWith' | 'recoverCliCleanup'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent'> & {
+    listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
+    promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    stopDshSubagent?: (parentId: string, childId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    hideDshSubagent?: (parentId: string, childId: string, signal: AbortSignal) => Promise<RemoteResult<void>>
     /** Optional until an older Host has upgraded its native-conversation bridge. */
     ensureHarnessConversation?: (parentId: string, workerId: string) => Promise<RemoteResult<string>>
     /** Explicitly repair an unreadable owned display binding; never submits a CLI prompt. */
@@ -79,4 +84,63 @@ export function useWorkers(api: API, session: string, selected = '') {
           connecting: true,
         }
   return { ...current, reconnect: () => retry((n) => n + 1) }
+}
+
+/** Separate failure domain: a missing native service cannot break the Worker stream. */
+export function useDshSubagents(api: API, session: string, enabled: boolean) {
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  const [attempt, retry] = useState(0)
+  const [state, setState] = useState<{ session: string; rows: DshSubagent[]; error?: string }>({ session, rows: [] })
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const changed = () => setVisible(document.visibilityState !== 'hidden')
+    document.addEventListener('visibilitychange', changed)
+    return () => document.removeEventListener('visibilitychange', changed)
+  }, [])
+  useEffect(() => {
+    if (!enabled || !visible) return
+    const controller = new AbortController()
+    const accept = (raw: string) => {
+      const rows = JSON.parse(raw) as DshSubagent[]
+      if (!Array.isArray(rows) || rows.some((row) => row.parentSessionId !== session))
+        throw new Error(t('DSH 子 Agent 列表暂时不可用'))
+      if (!controller.signal.aborted) setState({ session, rows })
+    }
+    const failed = () => { if (!controller.signal.aborted) setState({ session, rows: [], error: t('DSH 子 Agent 列表暂时不可用') }) }
+    let dispose: (() => void) | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (api.cliworker.watchDshSubagents) {
+      const stream = api.$stream<string>({
+        name: `DSH subagents ${session}`,
+        open: (signal) => api.cliworker.watchDshSubagents!(session, signal),
+        ended: () => new Error(t('连接已结束')),
+      })
+      dispose = () => { void stream.dispose().catch(() => undefined) }
+      void (async () => {
+        try {
+          for await (const item of stream) { accept(item.value); item.accept() }
+          if (!controller.signal.aborted) failed()
+        }
+        catch { failed() }
+      })()
+    } else if (api.cliworker.listDshSubagents) {
+      const poll = async () => {
+        try { accept(value(await api.cliworker.listDshSubagents!(session, controller.signal))) }
+        catch { failed() }
+        if (!controller.signal.aborted) timer = setTimeout(() => { void poll() }, 2000)
+      }
+      void poll()
+    }
+    return () => { controller.abort(); dispose?.(); clearTimeout(timer) }
+  }, [api, session, enabled, visible, attempt])
+  return { rows: enabled && state.session === session ? state.rows : [],
+    error: enabled && state.session === session ? state.error : undefined,
+    refresh: () => retry((n) => n + 1) }
+}
+
+export function filterDshSubagents(rows: DshSubagent[], query: string, filter: string) {
+  const search = query.trim().toLowerCase()
+  return rows.filter((row) => `DSH ${row.agentName ?? ''} ${row.name} ${row.model ?? ''}`.toLowerCase().includes(search) &&
+    (filter === 'all' || (filter === 'active' ? row.status === 'running'
+      : filter === 'completed' ? row.status === 'completed' : row.status === 'failed' && !row.stopped)))
 }

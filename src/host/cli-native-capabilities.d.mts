@@ -32,3 +32,8 @@ export function codexDeveloperInstructionsConfigured(project: string, env?: Reco
 export const HARNESS_FALLBACK_PREFIX: string
 export function nativeFirstGuidance(tools?: readonly string[]): string | undefined
 export function nativeCliMcpServers(cli: string, project: string, env?: Record<string, string | undefined>): Promise<string[]>
+
+export function grokNativeSubagents(options?: { env?: Record<string, string | undefined>; home?: string }): Promise<boolean>
+export function parseZcodeDeniedTools(value: unknown): string[]
+export function zcodeWorkflowMode(setting: unknown, env?: Record<string, string | undefined>): 'disabled' | 'onDemand' | 'alwaysOn'
+export function consumeZcodeWorkflowMode(config: { env?: Record<string, string | undefined> }): 'disabled' | 'onDemand' | 'alwaysOn'

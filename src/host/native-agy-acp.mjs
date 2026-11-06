@@ -4,6 +4,18 @@ import { nativeAgyArgv, probeAgyHostSandbox, runNativeAgy } from './native-agy.m
 import { runNativeAcp } from './native-acp.mjs'
 import { nativeHarnessMcpServers } from './native-harness-injection.mjs'
 
+/** Control reply for still-running background subagents; never shown as task output. */
+export const AGY_SUBAGENTS_PENDING = 'CLIWORKER_SUBAGENTS_PENDING'
+/** agy 1.5.1: invoke_subagent completes at dispatch; the child reports into the parent's context and
+ * agy resumes internally, but ACP delivers that only once another prompt arrives. */
+export const AGY_BACKGROUND = Object.freeze({
+  isBackgroundTool: update => update?.name === 'invoke_subagent',
+  pendingMarker: AGY_SUBAGENTS_PENDING,
+  checkPrompt: `[CLI Worker 自动跟进，不是用户的新任务] 你在本任务中用 invoke_subagent 派出的子 Agent 在后台运行。先阅读已送达的子 Agent 消息，必要时用 manage_subagents 查看状态；不要重新派发子 Agent。若仍有子 Agent 未完成，只回复 ${AGY_SUBAGENTS_PENDING} 并结束本轮。若都已完成，按原任务要求完成剩余步骤（例如把生成的文件保存到要求的位置并确认存在），再汇报最终结果与实际文件路径。`,
+  // First check after a short grace; the whole wait stays within the task timeout.
+  delaysMs: Object.freeze([15_000, 20_000, 30_000, 45_000, 60_000, 60_000, 90_000, 90_000, 120_000]),
+  budgetMs: 10 * 60_000,
+})
 const option = (state, id) => state?.configOptions?.find(item => item.id === id)
 const values = items => (items ?? []).flatMap(item => Array.isArray(item.options) ? values(item.options) : [item.value])
 const modelIds = state => (state?.models?.availableModels ?? []).map(item => item.modelId)
@@ -82,7 +94,7 @@ export async function selectAgyAcpModel(config, peer, sessionId, initial) {
   return state
 }
 
-export async function runNativeAgyAcp(config, io, { sandbox } = {}) {
+export async function runNativeAgyAcp(config, io, { sandbox, background = AGY_BACKGROUND } = {}) {
   let selected
   const argv = value => agyAcpArgv(value, process.platform, sandbox)
   return runNativeAcp(config, io, {
@@ -91,6 +103,7 @@ export async function runNativeAgyAcp(config, io, { sandbox } = {}) {
     argv,
     encode: value => value,
     toolName: update => update.name,
+    background,
     // No ACP permission-mode catalog or plan agent was advertised by 1.4.11.
     sessionUnavailable: () => new AgySessionUnavailable('Antigravity ACP 未提供会话加载'),
     loadSession: async (peer, params) => {
@@ -107,6 +120,9 @@ export async function runNativeAgyAcp(config, io, { sandbox } = {}) {
     validateConfigUpdate: update => ['model', 'thought_level'].every(id =>
       option(update, id) === undefined || option(update, id)?.currentValue === option(selected, id)?.currentValue),
     onReady: (_state, _id, nativeIo) => {
+      // agy 1.5.1 can abort while shutting down after a finished turn (log write after its log
+      // file closed, exit 2). Report that turn as unverified, never as success or a CLI error.
+      nativeIo.exitAfterSuccess?.('Antigravity 已完成本轮，但关闭时异常退出，请核查实际产物')
       nativeIo.event({ kind: 'diagnostic', text: config.access === 'danger-full-access'
         ? 'Antigravity ACP 完全权限：关闭终端沙箱并使用原生跳过确认'
         : sandbox === 'available'

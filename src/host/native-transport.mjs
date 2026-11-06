@@ -135,6 +135,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
   let steerHandler
   let sessionId,
     result,
+    // Runner-declared note: a nonzero exit after a fully successful turn is unverified, not an error.
+    exitAfterSuccess,
     response = '',
     closed = false
   const write = (value) => {
@@ -148,8 +150,22 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
     if (!line && value.type === 'event' && value.event.kind !== 'assistant') {
       const { detail: _detail, delta: _delta, toolCall, ...event } = value.event
       const { input: _input, output: _output, ...call } = toolCall ?? {}
+      for (const [key, field] of Object.entries(call))
+        if (typeof field === 'string') call[key] = cutBytes(field, 4096)
       line = write({ type: 'event', event: { ...event, text: cutBytes(event.text, 4096), truncated: true,
         ...(toolCall ? { toolCall: call } : {}) } })
+      if (!line) {
+        // Drop all payloads, including future metadata. Check serialized bytes:
+        // JSON escaping and the envelope can exceed even a bounded text preview.
+        const summary = { kind: event.kind, step: event.step, state: event.state, text: '', truncated: true }
+        for (let bytes = Math.min(4096, config.maxLineBytes); ; bytes = Math.floor(bytes / 2)) {
+          summary.text = cutBytes(event.text, bytes)
+          line = write({ type: 'event', event: summary })
+          if (line || bytes === 0) break
+        }
+        // Even optional step/state metadata must not prevent a minimal summary.
+        if (!line) line = write({ type: 'event', event: { kind: event.kind, text: '', truncated: true } })
+      }
     } else if (!line && value.type === 'native')
       line = write({ type: 'native', record: summarizeNativeRecord(value.record, 1024) })
     if (!line) throw failure('Native bridge frame exceeds limit')
@@ -263,6 +279,10 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
       submission.promise = pending
       return io.trackControl(pending)
     },
+    /** Opt-in for CLIs with a verified shutdown defect after completing a turn. */
+    exitAfterSuccess(note) {
+      exitAfterSuccess = String(note).slice(0, 1000)
+    },
     result(status, text, error, resultScope, notice) {
       if (result || !['SUCCESS', 'ERROR', 'UNCERTAIN'].includes(status) || typeof text !== 'string')
         throw failure('Invalid native terminal result')
@@ -350,7 +370,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
             ((outcome.exitCode !== null && outcome.exitCode !== 0 && outcome.exitCode !== expectedStopExitCode) ||
               (outcome.signal && !stopRequested))
           )
-            throw failure(`Native process exited unsuccessfully (${outcome.exitCode ?? outcome.signal})`)
+            throw Object.assign(failure(`Native process exited unsuccessfully (${outcome.exitCode ?? outcome.signal})`),
+              { nativeExitCode: outcome.signal ? undefined : outcome.exitCode })
         },
         markUnhealthy: (error) => {
           issue ??= error
@@ -402,13 +423,22 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
       const outcomes = await Promise.allSettled([...children].map((child) => child.stop()))
       const cleanup = outcomes.find((value) => value.status === 'rejected')
       if (cleanup) throw cleanup.reason
+      const issues = []
       for (const child of children) {
         try {
           child.assertHealthy()
         } catch (issue) {
-          error ??= issue
+          issues.push(issue)
         }
       }
+      // Only an opted-in runner, only its own successful turn, and only plain exit codes
+      // (no runner failure, protocol issue or signal) become unverified instead of an error.
+      if (!error && exitAfterSuccess && result?.status === 'SUCCESS' && issues.length &&
+        issues.every((issue) => Number.isInteger(issue.nativeExitCode)))
+        result = { type: 'result', status: 'UNCERTAIN', response: result.response,
+          ...(result.resultScope ? { resultScope: result.resultScope } : {}),
+          error: `${exitAfterSuccess}（退出码 ${issues.map((issue) => issue.nativeExitCode).join('、')}）`.slice(0, 4096) }
+      else error ??= issues[0]
       // A runner's own failure names the cause; a non-zero exit only confirms it.
       if (error && result?.status !== 'ERROR')
         result = {

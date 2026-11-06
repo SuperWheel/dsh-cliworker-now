@@ -1,3 +1,4 @@
+import { parseZcodeDeniedTools, consumeZcodeWorkflowMode } from './cli-native-capabilities.mjs'
 // ZCode ignores configured defaults on --resume. Apply the selected native model
 // through metadata RPC, close the server completely, then run the original argv.
 // The Host owns the surrounding Seatbelt and process range; never detach or shell.
@@ -7,6 +8,7 @@ import { open, lstat, realpath, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
+const workflow = consumeZcodeWorkflowMode({ env: process.env })
 process.umask(0o077)
 const controller = new AbortController()
 let active,
@@ -139,6 +141,7 @@ async function readRequest(path) {
     !flags.get('--prompt')?.trim()
   )
     throw new Error('Native request identity or permission changed')
+  parseZcodeDeniedTools(flags.get('--disallowedTools'))
   if (
     value.selection.options !== undefined &&
     (!object(value.selection.options) || !string(value.selection.options.reasoningLevel))
@@ -227,6 +230,8 @@ async function selectSession(request) {
                     result: {
                       nativeSearchEnhancementsEnabled: false,
                       memoryEnabled: false,
+                      dynamicWorkflowEnabled: workflow !== 'disabled',
+                      dynamicWorkflowMode: workflow,
                       askUserQuestionAutoResolutionEnabled: false,
                     },
                   }

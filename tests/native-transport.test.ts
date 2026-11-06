@@ -5,13 +5,83 @@ import { createNativeIO } from '../src/host/native-transport.mjs'
 const fixture = (code: string) => [process.execPath, '-e', code]
 const context = (overrides = {}) => {
   const frames: any[] = []
+  const lines: string[] = []
   const io = createNativeIO(
     { project: process.cwd(), maxLineBytes: 4096, maxRunBytes: 65536, ...overrides },
-    (line: string) => frames.push(JSON.parse(line)),
+    (line: string) => { lines.push(line); frames.push(JSON.parse(line)) },
     new AbortController().signal,
   )
-  return { io, frames }
+  return { io, frames, lines }
 }
+it('summarizes an oversized tool command without failing the turn', async () => {
+  const maxLineBytes = 1_048_576
+  const { io, frames, lines } = context({ maxLineBytes })
+  const command = 'x'.repeat(1_269_672)
+  io.session('synthetic')
+  expect(() => io.event({ kind: 'tool', step: 1, state: 'RUNNING', text: command,
+    toolCall: { callId: 'command-1', name: 'commandExecution', command } })).not.toThrow()
+  expect(frames.at(-1)).toMatchObject({ type: 'event', event: { kind: 'tool', step: 1,
+    state: 'RUNNING', truncated: true, toolCall: { callId: 'command-1', name: 'commandExecution' } } })
+  const kept = frames.at(-1).event.toolCall.command
+  expect(kept.length).toBeGreaterThan(0)
+  expect(Buffer.byteLength(kept)).toBeLessThan(Buffer.byteLength(command))
+  expect(command.startsWith(kept)).toBe(true)
+  io.result('SUCCESS', 'synthetic completed turn')
+  await io.close()
+  expect(frames.at(-1)).toMatchObject({ type: 'result', status: 'SUCCESS' })
+  expect(lines.every((line) => Buffer.byteLength(line) <= maxLineBytes)).toBe(true)
+})
+it('bounds every string in oversized tool metadata without splitting UTF-8 characters', () => {
+  const maxLineBytes = 65_536
+  const { io, frames, lines } = context({ maxLineBytes })
+  const huge = '图片😀'.repeat(20_000)
+  const fields = ['command', 'name', 'callId', 'parentCallId', 'futureText']
+  expect(() => io.event({ kind: 'tool', text: 'synthetic',
+    toolCall: { ...Object.fromEntries(fields.map((key) => [key, huge])), exitCode: 1 } })).not.toThrow()
+  const event = frames.at(-1).event
+  expect(event.truncated).toBe(true)
+  expect(event.toolCall.exitCode).toBe(1)
+  for (const key of fields) {
+    expect(event.toolCall[key].length).toBeGreaterThan(0)
+    expect(Buffer.byteLength(event.toolCall[key])).toBeLessThan(Buffer.byteLength(huge))
+    expect(huge.startsWith(event.toolCall[key])).toBe(true)
+    expect(event.toolCall[key]).not.toContain('\uFFFD')
+  }
+  expect(lines.every((line) => Buffer.byteLength(line) <= maxLineBytes)).toBe(true)
+})
+it.each([256, 4096])('reduces escaped tool events to a summary within a %i-byte frame', (maxLineBytes) => {
+  const { io, frames, lines } = context({ maxLineBytes })
+  const text = '\u0000"\\图片😀'.repeat(5000)
+  expect(() => io.event({ kind: 'tool', step: 42, state: 'FAILED', text,
+    extra: { large: text }, toolCall: { command: text, extra: { large: text } } })).not.toThrow()
+  const event = frames.at(-1).event
+  expect(event).toEqual({ kind: 'tool', step: 42, state: 'FAILED', text: expect.any(String), truncated: true })
+  expect(event.text.length).toBeGreaterThan(0)
+  expect(text.startsWith(event.text)).toBe(true)
+  expect(event.text).not.toContain('\uFFFD')
+  expect(lines.every((line) => Buffer.byteLength(line) <= maxLineBytes)).toBe(true)
+})
+it('emits the smallest summary when it fits and rejects only a smaller frame budget', () => {
+  const minimal = { type: 'event', event: { kind: 'tool', text: '', truncated: true } }
+  const maxLineBytes = Buffer.byteLength(JSON.stringify(minimal) + '\n')
+  const event = { kind: 'tool', step: 1, state: 'RUNNING', text: 'x'.repeat(1000), toolCall: { command: 'x'.repeat(1000) } }
+  const fits = context({ maxLineBytes })
+  expect(() => fits.io.event(event)).not.toThrow()
+  expect(fits.frames).toEqual([minimal])
+  expect(Buffer.byteLength(fits.lines[0]!)).toBe(maxLineBytes)
+  const tooSmall = context({ maxLineBytes: maxLineBytes - 1 })
+  expect(() => tooSmall.io.event(event)).toThrow('Native bridge frame exceeds limit')
+  expect(tooSmall.lines).toEqual([])
+})
+it('keeps ordinary tool frames intact and retains the assistant frame guard', () => {
+  const { io, frames, lines } = context()
+  const event = { kind: 'tool', text: 'synthetic', step: 1, state: 'COMPLETED',
+    detail: 'metadata', toolCall: { command: 'echo synthetic', callId: 'one', name: 'commandExecution', output: 'synthetic' } }
+  io.event(event)
+  expect(frames).toEqual([{ type: 'event', event }])
+  expect(() => io.event({ kind: 'assistant', text: 'x'.repeat(5000) })).toThrow('Native bridge frame exceeds limit')
+  expect(lines).toHaveLength(1)
+})
 it('correlates concurrent RPC responses and handles reverse requests without a shell', async () => {
   const { io, frames } = context()
   const peer = io.openStdio(

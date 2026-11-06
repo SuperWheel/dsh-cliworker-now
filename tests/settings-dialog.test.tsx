@@ -3093,3 +3093,23 @@ it('keeps the pause and shows why when the Host refuses to release it', async ()
   await vi.waitFor(() => expect(t.text()).toContain('此 CLI 还有运行或排队中的任务'))
   expect(t.text()).toContain('确认解除')
 })
+
+// SIMULATION: upgrade settings and native Switch skin; no DSH/CLI mutation.
+it('defaults DSH children visibility on and saves both switch directions in general settings only', async () => {
+  let current = { maxConcurrent: 2, defaultMaxConcurrent: 2 }
+  const saveGeneralSettings = vi.fn(async (_session, raw: string) => {
+    current = { ...current, ...JSON.parse(raw) }
+    return remote(current)
+  })
+  const t = await setup({ generalSettings: vi.fn(async () => remote(current)), saveGeneralSettings })
+  await t.click('CLI Worker 设置')
+  const label = '在 CLI Worker 窗口显示 DSH 子 Agent'
+  expect(t.button(label).props['aria-checked']).toBe(true)
+  await t.click(label)
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"showDshSubagents":false}', expect.any(AbortSignal))
+  expect(t.button(label).props['aria-checked']).toBe(false)
+  await t.click(label)
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"showDshSubagents":true}', expect.any(AbortSignal))
+  expect(t.button(label).props['aria-checked']).toBe(true)
+  expect(t.r.root.findAllByType('nav')[0]!.findAllByType('button').map((button) => button.props['aria-label'])).not.toContain('DSH')
+})

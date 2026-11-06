@@ -1,3 +1,4 @@
+import { parseZcodeDeniedTools, consumeZcodeWorkflowMode } from './cli-native-capabilities.mjs'
 import { summarizeNativeRecord } from './native-transport.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -190,9 +191,10 @@ export async function runNativeZcode(config, io) {
   }
   const account = nativeAccount(config, model)
   const memory = nativeMemory(config)
+  const workflow = consumeZcodeWorkflowMode(config)
   let mode = config.mode === 'plan' ? 'plan' : config.access === 'read-only' ? 'build' : config.access === 'danger-full-access' ? 'yolo' : 'edit'
   const denyIndex = config.argv.indexOf('--disallowedTools')
-  const toolDenylist = denyIndex >= 0 ? config.argv[denyIndex + 1]?.split(',').filter(Boolean) : []
+  const toolDenylist = denyIndex >= 0 ? parseZcodeDeniedTools(config.argv[denyIndex + 1]) : []
   const inputId = randomUUID()
   let peer,
     sessionId,
@@ -269,6 +271,8 @@ export async function runNativeZcode(config, io) {
         result = {
           nativeSearchEnhancementsEnabled: false,
           memoryEnabled: memory,
+          dynamicWorkflowEnabled: workflow !== 'disabled',
+          dynamicWorkflowMode: workflow,
           askUserQuestionAutoResolutionEnabled: false,
         }
       else if (message.method === 'interaction/requestPermission') {
@@ -493,6 +497,8 @@ export async function runNativeZcode(config, io) {
                 result: {
                   nativeSearchEnhancementsEnabled: false,
                   memoryEnabled: memory,
+                  dynamicWorkflowEnabled: workflow !== 'disabled',
+                  dynamicWorkflowMode: workflow,
                   askUserQuestionAutoResolutionEnabled: false,
                 },
               }
@@ -640,6 +646,7 @@ export async function forkNativeZcode(config, io) {
   const account = nativeAccount(config, model)
   // A branch operation sends no model task; only strip the variable.
   nativeMemory(config)
+  consumeZcodeWorkflowMode(config)
   const peer = await io.openStdio(zcodeAppServerArgv(config), { env: config.env, cwd: config.project })
   const unsubscribe = peer.onMessage((message) => {
     if (message.id !== undefined && message.method)

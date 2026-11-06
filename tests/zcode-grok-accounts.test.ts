@@ -408,7 +408,12 @@ describe('ZCode/Grok user-operated account helpers', () => {
       const path = join(directory, cli === 'zcode' ? 'credentials.json' : 'auth.json')
       writeFileSync(path, 'SECRET-CREDENTIAL-CONTENTS', { mode: 0o600 })
       const status = await zcodeGrokAccountStatus(cli, f.config, f.signal, f)
-      expect(status).toMatchObject({ state: 'unavailable', verification: 'local' })
+      // Grok names a malformed file as an unsupported format, never as "not signed in".
+      expect(status).toMatchObject(
+        cli === 'grok'
+          ? { state: 'unknown', verification: 'local', summary: 'Grok 凭据格式不受支持' }
+          : { state: 'unavailable', verification: 'local' },
+      )
       expect(status.accountLabel).toBeUndefined()
       expect(status.authMethod).toBeUndefined()
       expect(JSON.stringify(status)).not.toContain('SECRET')

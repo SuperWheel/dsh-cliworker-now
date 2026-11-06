@@ -28,6 +28,11 @@ function turnBody(){
  else if(scenario==='single-800k')command('read',200,4096,'a');
  else if(scenario==='many-64k')for(let n=0;n<50;n++)command('read-'+n,16,4096,'b');
  else if(scenario==='thinking')for(let i=0;i<2000;i++)note('item/reasoning/summaryTextDelta',{threadId:id,turnId:turn,itemId:'reason',summaryIndex:0,delta:'思'.repeat(341)});
+ else if(scenario==='oversized-command'){
+  const item={id:'long-command',type:'commandExecution',command:'x'.repeat(1269672)};
+  note('item/started',{threadId:id,turnId:turn,item:{...item,status:'inProgress'}});
+  note('item/completed',{threadId:id,turnId:turn,item:{...item,status:'failed',exitCode:1,aggregatedOutput:'SIMULATED: Argument list too long'}});
+ }
  else if(scenario==='oversized-frame')process.stdout.write(JSON.stringify({method:'item/agentMessage/delta',params:{threadId:id,turnId:turn,itemId:'reply',delta:'x'.repeat(200000)}})+'\\n');
  note('item/completed',{threadId:id,turnId:turn,item:{id:'reply',type:'agentMessage',text:'模拟回复'}});
  note('turn/completed',{threadId:id,turn:{id:turn,status:'completed',items:[]}});
@@ -56,18 +61,34 @@ async function run(scenario: string, limits: Record<string, number> = {}) {
     argv: [executable, 'exec', 'resume', 'synthetic-session', '--json', '--model', 'synthetic-model', `任务：\n${prompt}`],
   }
   const frames: any[] = []
-  let bytes = 0
+  let bytes = 0, largestFrameBytes = 0
   const io = createNativeIO(config, (line: string) => {
     bytes += Buffer.byteLength(line)
+    largestFrameBytes = Math.max(largestFrameBytes, Buffer.byteLength(line))
     frames.push(JSON.parse(line))
   }, new AbortController().signal)
   let error
   try { await runNativeCodex(config, io) } catch (caught) { error = caught }
   await io.close(error)
-  return { frames, bytes, result: frames.at(-1) }
+  return { frames, bytes, largestFrameBytes, result: frames.at(-1) }
 }
 
 describe('native output budget (simulated Codex app-server)', () => {
+  it('keeps Codex running after an oversized command event and preserves its native tool failure', async () => {
+    const maxLineBytes = 1_048_576
+    const { frames, result, largestFrameBytes } = await run('oversized-command', { maxLineBytes, maxNativeLineBytes: 32 * 1024 * 1024 })
+    expect(result).toMatchObject({ type: 'result', status: 'SUCCESS', response: '模拟回复' })
+    const events = frames.filter((frame) => frame.type === 'event' && frame.event.kind === 'tool').map((frame) => frame.event)
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ state: 'RUNNING', truncated: true, toolCall: { callId: 'long-command' } })
+    expect(events[1]).toMatchObject({ state: 'FAILED', truncated: true, toolCall: { callId: 'long-command', exitCode: 1 } })
+    for (const event of events) {
+      expect(event.toolCall.command.length).toBeGreaterThan(0)
+      expect(Buffer.byteLength(event.toolCall.command)).toBeLessThan(1_269_672)
+      expect('x'.repeat(1_269_672).startsWith(event.toolCall.command)).toBe(true)
+    }
+    expect(largestFrameBytes).toBeLessThanOrEqual(maxLineBytes)
+  })
   it('keeps one 400KB command running with linear transfer and a bounded, marked preview', async () => {
     const small = await run('single-400k')
     expect(small.result).toMatchObject({ type: 'result', status: 'SUCCESS' })

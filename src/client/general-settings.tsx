@@ -23,6 +23,7 @@ function readSettings(raw: string): GeneralSettings {
   const language = next?.language ?? 'follow'
   const isolatedParallelWrites = next?.isolatedParallelWrites ?? false
   const askBeforeDispatch = next?.askBeforeDispatch ?? true
+  const showDshSubagents = next?.showDshSubagents ?? true
   const taskTimeLimitMs = next?.taskTimeLimitMs === undefined ? 1_800_000 : next.taskTimeLimitMs
   const defaultTaskTimeLimitMs = next?.defaultTaskTimeLimitMs === undefined ? 1_800_000 : next.defaultTaskTimeLimitMs
   const idleTimeLimitMs = next?.idleTimeLimitMs === undefined ? 0 : next.idleTimeLimitMs
@@ -34,20 +35,22 @@ function readSettings(raw: string): GeneralSettings {
     !LANGUAGE_PREFERENCES.includes(language) ||
     typeof isolatedParallelWrites !== 'boolean' ||
     typeof askBeforeDispatch !== 'boolean' ||
+    typeof showDshSubagents !== 'boolean' ||
     !duration(taskTimeLimitMs, 1000) ||
     !duration(defaultTaskTimeLimitMs, 1000) ||
     (idleTimeLimitMs !== 0 && !duration(idleTimeLimitMs, 60_000))
   )
     throw new Error(t('收到无效的通用设置，请重试'))
-  return { ...next, language, isolatedParallelWrites, askBeforeDispatch, taskTimeLimitMs, defaultTaskTimeLimitMs, idleTimeLimitMs }
+  return { ...next, language, isolatedParallelWrites, askBeforeDispatch, showDshSubagents, taskTimeLimitMs, defaultTaskTimeLimitMs, idleTimeLimitMs }
 }
 
-type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch' | 'taskTimeLimitMs' | 'idleTimeLimitMs'
+type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch' | 'showDshSubagents' | 'taskTimeLimitMs' | 'idleTimeLimitMs'
 const SAVING: Record<Field, MessageKey> = {
   language: '正在保存界面语言…',
   maxConcurrent: '正在保存同时对话数…',
   isolatedParallelWrites: '正在保存同目录写任务并行…',
   askBeforeDispatch: '正在保存调用前询问模型…',
+  showDshSubagents: '正在保存 DSH 子 Agent 显示设置…',
   taskTimeLimitMs: '正在保存总时限…',
   idleTimeLimitMs: '正在保存空闲时限…',
 }
@@ -56,6 +59,7 @@ const UNSAVED: Record<Field, MessageKey> = {
   maxConcurrent: '同时对话数未保存，请重新选择重试',
   isolatedParallelWrites: '同目录写任务并行未保存，请重试',
   askBeforeDispatch: '调用前询问模型未保存，请重试',
+  showDshSubagents: 'DSH 子 Agent 显示设置未保存，请重试',
   taskTimeLimitMs: '总时限未保存，请重新选择重试',
   idleTimeLimitMs: '空闲时限未保存，请重新选择重试',
 }
@@ -266,6 +270,21 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
             />
           </div>
           {feedback('askBeforeDispatch')}
+          <div className="cwn-setting-row">
+            <span className="cwn-setting-row-text">
+              <span>{t('在 CLI Worker 窗口显示 DSH 子 Agent')}</span>
+              <span className="cwn-setting-description">
+                {t('只影响此窗口的显示，不影响 DSH 子 Agent 的运行与原生入口')}
+              </span>
+            </span>
+            <Switch
+              checked={settings?.showDshSubagents ?? true}
+              onChange={(enabled) => void save('showDshSubagents', enabled)}
+              label={t('在 CLI Worker 窗口显示 DSH 子 Agent')}
+              disabled={disabled}
+            />
+          </div>
+          {feedback('showDshSubagents')}
           {error && !error.field && (
             <div className="cwn-settings-save">
               <span className="cwn-settings-feedback-slot" role="status">

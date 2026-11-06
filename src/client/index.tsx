@@ -1,3 +1,4 @@
+import { DshConversation } from './dsh-subagents.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import type { PropsRuntime, PropsRenderSlots, SlotCore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -59,13 +60,13 @@ export const inject = [
   'uiSession',
 ]
 export function apply(ctx: Context): void {
-  ctx.effect(() => ctx.remote.$mount(remoteContribution), 'cliworker:remote')
   installClientLocale(ctx)
   // A live enable/disable swaps the native UI sources and can blank the page; see root-recovery.ts.
   ctx.effect(
     () => installRootRecovery(browserRootRecoveryEnv(() => t('CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。'), ctx)),
     'cliworker:root-recovery',
   )
+  ctx.effect(() => ctx.remote.$mount(remoteContribution), 'cliworker:remote')
   ctx.inject(['remote.cliworker'], (scope) => {
     const remote = scope.remote,
       worker = remote.cliworker
@@ -128,6 +129,7 @@ export function apply(ctx: Context): void {
       },
     ) {
       useT()
+      const { tab: { visible: panelVisible } } = props.useTabInfo()
       const address = props.useSession((session) => session.subagent?.address)
       const parentSessionId = address?.parentSessionId ?? props.sessionId
       return (
@@ -135,9 +137,19 @@ export function apply(ctx: Context): void {
           <Panel
             {...props}
             sessionId={parentSessionId}
+            visible={panelVisible}
             activeHarnessSessionId={address?.childSessionId}
             renderSessionRetention={(workers) => (
               <ApprovalSessionRetention services={harnessServices} parentSessionId={parentSessionId} workers={workers} />
+            )}
+            renderDshConversation={(child) => (
+              <DshConversation key={child.id} services={scope} child={child} api={api}
+                renderConversation={(reference) => (
+                  <props.SessionProvider session={reference}>
+                    {props.renderSlot('cliworker.native.sidebar', { composerPresentation: 'main' })}
+                  </props.SessionProvider>
+                )}
+              />
             )}
             renderHarnessConversation={(worker) => (
               <HarnessConversation

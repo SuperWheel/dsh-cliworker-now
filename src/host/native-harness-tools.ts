@@ -67,7 +67,8 @@ const forbidden = /^(?:run_code|cliworker|cli_worker|agent|subagents?|spawn|dele
  * Auxiliary model calls are additionally rejected by withinCliTool's guard.
  */
 export function classifyHarnessTool(name: string, visibleSchemas: readonly { name: string }[] = []): NativeHarnessTool['execution'] {
-  if (forbidden.test(name)) return 'dispatch'
+  if ((name === 'cliworker_start' || name === 'cliworker_status') && visibleSchemas.some(schema => schema.name === name)) return 'host'
+  if (forbidden.test(name) || /cli_?worker/iu.test(name)) return 'dispatch'
   return visibleSchemas.some(schema => schema.name === name) ? 'host' : 'unknown'
 }
 function canonical(value: unknown): string {
@@ -129,7 +130,7 @@ export async function createNativeHarnessTools(options: NativeHarnessToolsOption
     signal.throwIfAborted()
     const tools = new Map<string, NativeHarnessTool>()
     for (const grant of grants) {
-      if (grant.execution !== 'host' || forbidden.test(grant.name)) continue
+      if (grant.execution !== 'host' || classifyHarnessTool(grant.name, grants) !== 'host') continue
       if (!/^[A-Za-z0-9_.-]{1,128}$/u.test(grant.name) || reserved.has(grant.name) || tools.has(grant.name) || !record(grant.inputSchema))
         throw failure('工具桥授权目录无效或重名')
       tools.set(grant.name, structuredClone(grant))

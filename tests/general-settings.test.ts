@@ -160,6 +160,7 @@ it('uses the saved limit over the config and admits queued work as soon as it is
     language: 'follow',
     isolatedParallelWrites: false,
     askBeforeDispatch: true,
+    showDshSubagents: true,
     taskTimeLimitMs: 1_800_000,
     defaultTaskTimeLimitMs: 1_800_000,
     idleTimeLimitMs: 0,
@@ -172,6 +173,7 @@ it('uses the saved limit over the config and admits queued work as soon as it is
     language: 'follow',
     isolatedParallelWrites: false,
     askBeforeDispatch: true,
+    showDshSubagents: true,
     taskTimeLimitMs: 1_800_000,
     defaultTaskTimeLimitMs: 1_800_000,
     idleTimeLimitMs: 0,
@@ -188,4 +190,24 @@ it('streams a saved interface language to every snapshot and omits follow', () =
   expect(runtime.snapshot('synthetic-parent').language).toBe('en')
   expect(runtime.setGeneralSettings({ language: null })).toMatchObject({ language: 'follow' })
   expect(runtime.snapshot('synthetic-parent').language).toBeUndefined()
+})
+
+// SIMULATION: upgrade/default and snapshot propagation; no native service starts.
+it('defaults DSH visibility on, persists toggles, and publishes the value in Worker snapshots', async () => {
+  const state = join(directory(), 'state')
+  const backend = { resolveExecutable: vi.fn(), spawn: vi.fn() } as unknown as ProcessBackend
+  let runtime = new WorkerRuntime(new WorkerStorage(state), backend, DEFAULT_CONFIG)
+  expect(runtime.generalSettings().showDshSubagents).toBe(true)
+  expect(runtime.snapshot('simulation-parent').showDshSubagents).toBe(true)
+  const changed = vi.fn(), off = runtime.subscribe(changed)
+  expect(runtime.setGeneralSettings({ showDshSubagents: false }).showDshSubagents).toBe(false)
+  expect(changed).toHaveBeenCalled()
+  expect(runtime.snapshot('simulation-parent').showDshSubagents).toBe(false)
+  off()
+  await runtime.close()
+  runtime = new WorkerRuntime(new WorkerStorage(state), backend, DEFAULT_CONFIG)
+  cleanup.push(() => runtime.close())
+  expect(runtime.generalSettings().showDshSubagents).toBe(false)
+  expect(runtime.setGeneralSettings({ showDshSubagents: null }).showDshSubagents).toBe(true)
+  expect(() => runtime.setGeneralSettings({ showDshSubagents: 'true' })).toThrow()
 })

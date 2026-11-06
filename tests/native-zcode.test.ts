@@ -187,6 +187,7 @@ async function fixture(scenario = 'success', continuation = false,
     ],
     env: {
       SCENARIO: scenario,
+      ...(scenario.startsWith('workflow-') ? { CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE: scenario.slice('workflow-'.length) } : {}),
       PROJECT: root,
       AUDIT: audit,
       CREDENTIAL_FILE: credentialFile,
@@ -233,6 +234,18 @@ async function fixture(scenario = 'success', continuation = false,
 }
 
 describe('Native ZCode app-server (simulated native processes)', () => {
+  it.each(['disabled', 'onDemand', 'alwaysOn'])('sends native workflow mode %s and identical deny lists on create/resume', async mode => {
+    for (const continuation of [false, true]) {
+      const { records, result } = await fixture(`workflow-${mode}`, continuation)
+      expect(result.status).toBe('SUCCESS')
+      expect(records.find(record => record.id === 'preferences')?.result).toMatchObject({
+        dynamicWorkflowEnabled: mode !== 'disabled', dynamicWorkflowMode: mode,
+      })
+      const create = records.find(record => record.method === (continuation ? 'session/resume' : 'session/create'))
+      expect(create.params.toolDenylist).toEqual(['Task', 'AskUserQuestion'])
+    }
+  })
+
   it.each(['memory-on', 'memory-off'])('answers the desktop memory switch the adapter read (%s) without handing the variable to the CLI', async scenario => {
     const { records, result } = await fixture(scenario)
     expect(result.status).toBe('SUCCESS')

@@ -182,12 +182,14 @@ flowchart LR
   - 主 Agent 派出的任务（`cliworker_start` / `cliworker_followup`）在主对话页弹出授权问题；你在子会话中续聊、排队或重新运行的轮次在该子会话中审批，任务卡显示「等待审批」。CLI 原生提供会话级授权（Codex、Claude Code、Kimi、Qoder、Hermes）时，主对话页另有「本会话始终允许」，由 CLI 自己记住；子会话审批面板只有允许一次 / 拒绝。Worker 经 DSH 备选工具（例如备选命令工具申请更宽的沙箱）请求审批时按同样规则询问，只有允许一次 / 拒绝。无人应答或任务停止时按拒绝处理。
   - Harness 处于规划模式时仍拒绝派遣写任务。OMP 三档都开放原生命令，每次需要确认的命令和写入同样按上述规则交给 DSH。Antigravity ACP 的原生授权请求逐条转交 DSH；Pi 只在「完全权限」下开放原生命令，其余档位经 DSH 备选命令工具执行。
 - **关闭的原生功能**：插件默认保留 CLI 原生功能（Grok 网页搜索与抓取、OpenCode/MiMo 用户自己的 skill 已启用），只因以下理由关闭：
-  - 两层任务树：Grok 子 Agent、ZCode Agent/Task/SendMessage/工作流及与之一起关闭的 Skill（2026-10-29 决定不启用；Claude Code 的 Task 与 Codex 的多 Agent 维持原样）。
   - 账号隔离：OpenCode/MiMo 外部插件与 Claude Code 命令、MCP 导入；OpenCode 项目配置、主目录 `~/.opencode` 配置（其中 skill 照常提供）、CLAUDE.md 与 `.claude`/`.agents` 兼容 skill 目录；MiMo 启动时导入 Claude Code 会话记录；Pi/OMP 扩展、用户 skill 与规则；Hermes 插件与 MCP（包括外部记忆服务）。MiMo 的项目配置与 `~/.mimocode` 是它自己的账号与模型来源，不关闭。
   - 无法遵循 DSH 权限：Pi 原生命令（「完全权限」除外）。
   - 其他：OpenCode/MiMo/OMP 的 LSP（避免自动下载）；ZCode 浏览器 REPL（可执行任意代码，待核实后再议）；OMP 记忆（OMP 按 Worker 私有的会话库整理并整份重写记忆文件，库里有账号凭据，与原生或其他 Worker 共用会互相覆盖）。
 - **CLI 记忆跟随你自己的设置**：Grok、Hermes、ZCode 的记忆是否开启，与你在原生 CLI 里的设置一致。Grok 读 `~/.grok/config.toml`（以及 `requirements.toml`、`GROK_MEMORY`），默认关闭；Hermes 读当前账号目录 `config.yaml` 的记忆段，默认开启；ZCode 读桌面端设置里的记忆开关，默认关闭。开启时 Worker 与你直接使用该 CLI 共用同一份记忆（Grok `~/.grok/memory-v2`、Hermes 账号目录下的 `memories`、ZCode `~/.zcode/cli/memories`），Worker 的任务内容也会被记进去；CLI 会按自己的方式在后台整理记忆，可能额外调用模型。远端托管设置插件看不到，按未设置处理。
-- **两层结构**：主对话 → 直接子智能体，默认两个并发（可在「CLI Worker 设置」调整，所有 CLI 共用，最多 8 个），不支持递归派遣。
+- **同级派遣**：主对话的直接子 Agent（CLI Worker 或 DSH 子 Agent）可调用 `cliworker_start`，新 Worker 仍挂在主对话下；`cliworker_status` 只读查询同一主对话的 Worker，不等待任务结束。发起者停止或删除不影响新 Worker。每个主对话最多 6 个由子 Agent 发起且未结束的 Worker，仍计入全局并发队列（默认 2 个、最多 8 个）。第三层或无法解析主对话的调用被拒绝。
+- **同级派遣的选型与权限**：使用主对话的项目设定、权限及规划状态，新 Worker 不继承发起者的模型、强度、角色、会话 ID 或档位。选型与审批沿用发起者当前轮的位置：主 Agent 发起的轮次及 DSH 子 Agent 在主页面询问，Worker 窗口发起的轮次在该 Worker 子会话询问。工具桥只放行可见的 `cliworker_start`、`cliworker_status`，其他派遣工具继续拒绝。
+- **CLI 原生子 Agent 跟随原生设置**：Grok 读取 `requirements.toml`、`GROK_SUBAGENTS` 和 `config.toml`（按此优先级，原生默认开启）；ZCode 遵循用户及项目的 `features.subagent`、`features.skill` 和 `permission.disallowedTools`（前两项原生默认开启）。ZCode 工作流遵循原生 `dynamicWorkflowMode`，用户设置优先于 `ZCODE_DYNAMIC_WORKFLOW_MODE`，未设置默认关闭；不可见的远端托管设置按未设置处理。用户关闭的功能不被重新打开，续聊使用同样的禁用列表规则。CLI 内部子 Agent 只按公开粒度显示在当前 Worker 对话内，不新增面板条目。Antigravity 的 `invoke_subagent`（如生图）在后台运行，agy 要等下一条消息才交出结果，因此 Worker 在本轮结束后保持会话，按递增间隔自动发送标注为「CLI Worker 自动跟进（非用户消息）」的检查，直到 agy 汇报子 Agent 结果（最多约 10 分钟且不超过任务超时，超时显示「结果待核实」）。每次等待和跟进都以说明行显示在 Worker 过程与子会话窗口中，内部的待完成标记不出现在回复里。
+- **DSH 子 Agent**：当前主对话的原生直接子 Agent 显示在同级「DSH」分组，参与搜索和状态筛选；分组带 DSH 图标，卡片与 CLI Worker 卡片同样显示名称与模型。每个 DSH 子 Agent 按出现顺序命名为 dsh-1、dsh-2 等（同一主对话内不变、不复用），可让主 Agent 按名称续聊，例如「继续 dsh-1」；CLI Worker 不能使用 dsh-数字 名称。点开复用原生子会话窗口与统计。可续聊模式支持发送和停止，一次性或未知模式只读；右键菜单中的删除只在此窗口隐藏。可在「CLI Worker 设置 → CLI Worker 设置」关闭「在 CLI Worker 窗口显示 DSH 子 Agent」（默认开启），不影响 DSH 原生会话。
 - **任务时限**：「CLI Worker 设置 → 任务时限」可设总时限（默认 30 分钟，可选 1–8 小时或不限制，最长 24 小时）与空闲时限（默认不启用，可选 5/10/30 分钟：CLI 连续这么久没有任何回复、工具或思考事件才停止；等待你回答授权期间不计，包括 DSH 备选工具的授权）。每个任务开始时确定截止时间，运行中修改只影响之后的任务；超时后等 CLI 进程全部退出才标记为中断，并说明是总时限还是空闲时限。此前在插件配置文件里设置的 `timeoutMs` 作为总时限的默认值。
 - **界面语言**：「CLI Worker 设置 → 语言」可选跟随 DSH（默认）、中文或 English，保存后所有已打开的 CLI Worker 面板立即切换，不需要重载。CLI 输出、模型名、用户内容和未收录的 Host 错误保持原文；给主 Agent 的工具说明不随界面语言变化。
 - **数据在本机**：记录保存在 `~/.dsh/cliworker-now`（目录 `0700`、文件 `0600`）。CLI 仍会按自己的配置向服务商发送模型请求。
@@ -223,6 +225,8 @@ Hermes Nous 的模型与思考强度按当前账号目录读取，不依赖 Herm
 
 订阅、计费和模型权限由各 CLI 的服务商决定。能登录或列出模型不代表一定能调用，遇到 403 等错误请核对该 CLI 的账号权限。
 
+Grok 的登录凭据约 6 小时过期。过期后，插件在查询模型或派遣前会在后台运行一次 `grok models`，由 Grok 自己续期并写回 `~/.grok/auth.json`，和你在终端里直接运行 grok 的效果相同；插件不读取或复制 refresh 凭据、不自己发续期请求，也不发起模型调用。续期失败时会按原因提示：「Grok 登录已失效」需要在「账号终端」重新登录；「续期暂时失败」请检查网络或代理后刷新；「账号终端正在运行」请先关闭账号终端。
+
 </details>
 
 <details>
@@ -238,6 +242,7 @@ Hermes Nous 的模型与思考强度按当前账号目录读取，不依赖 Herm
 这是两层不同的预算：
 
 - **插件展示预算**（插件配置项）：单个工具输出或思考块最多显示 `maxToolPreviewBytes`（默认 256 KiB），整轮工具输出与思考最多显示 `maxRunBytes`（默认 16 MiB）。超出时只截断界面显示并标注“输出已截断，完整内容见 CLI 原生会话或实际产物”，CLI 继续运行，本轮结果不变；转给主 Agent 的工具回执也带同样的说明。运行中的输出只传新增部分，不再随输出变长重复发送。
+  工具事件因超长命令或调用元数据超过单帧上限时，也会逐级缩为带截断标记的摘要；CLI 自身的工具失败仍按原有逻辑处理。完整命令与输出查看 CLI 原生会话或实际产物。
 - **入站单帧保护**：CLI 发来的单个协议帧超过 `maxNativeLineBytes`（默认 32 MiB）时停止运行，错误中写明上限。
 - **CLI 自己的模型可见预算**：模型实际能读到多少工具输出由 CLI 决定，插件不覆盖、也不提供调整入口，调大上面的插件预算不会让模型看到更多。Codex 由模型每次调用自填的 `max_output_tokens` 和 Codex 配置 `tool_output_token_limit` 决定；插件启动的 Codex 读取 `$CODEX_HOME/config.toml`（未设置时为 `~/.codex/config.toml`），项目 `.codex/config.toml` 与命令行配置的优先级更高。gpt-6.x 在原生 Codex 中同样使用代码模式的 exec/wait 工具，表现与插件内一致。
 

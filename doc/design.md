@@ -1204,7 +1204,8 @@ OpenSpec 变更 `bound-native-tool-output`（起因：Windows 用户反馈 Codex
 
 - 根因：各原生 runner 在每个输出增量里重发累计全文（`detail`、`toolCall.output` 与原始帧各一份），传输量随输出长度平方增长；超出 `maxRunBytes` 即终止进程。无模型复现：单条命令 400KB 输出在传输约 16.7MB 后被终止。
 - 事件形状：运行中的工具输出与公开思考只带 `delta`（本次新增）；工具完成时完整（或截断后）输出只在 `toolCall.output` 出现一次，`detail` 只留元数据；思考完成时发一次 `detail` 快照。事件新增可选 `truncated`、`outputBytes`。`io.native` 记录中超过 64 KiB 的字符串只保留 `{ cliworkerOmitted: true, bytes }`；Codex `outputDelta` 原始帧只记录字节数。
-- 预算分层（`native-transport.mjs` `createEventBudget`，Pi/OMP 桥共用）：单步展示 `maxToolPreviewBytes`（默认 256 KiB，且不超过出站单帧的 1/4）；整轮展示 `maxRunBytes`（原生通路下即整轮展示预算，默认 16 MiB）。超出只截断展示、标注 `truncated`，整轮超限时发一次诊断「本轮展示内容已达上限……」，不抛错、不改终态。出站单帧仍受 `maxLineBytes` 保护，超限的事件先降为摘要。只对工具和思考事件降级；回复、状态与诊断不截断。
+- 2026-11-06 出站帧补充（`fix-oversized-tool-event-frame`）：非 assistant 事件超出 `maxLineBytes` 时，移除 detail/delta/input/output 并把 text 及 toolCall 全部字符串字段（含 command/name/callId/parentCallId）截至 4096 UTF-8 字节；仍超限则只保留 kind/step/state/text/truncated，按实际 JSON 行（含转义、包装和换行）继续缩短文本，必要时去掉可选 step/state。只有最小摘要也放不下才失败。共用传输层的 runner 均适用；assistant 保持严格帧检查，避免流式回复与终态正文不一致，不改变 CLI 工具失败或终态规则。
+- 预算分层（`native-transport.mjs` `createEventBudget`，Pi/OMP 桥共用）：单步展示 `maxToolPreviewBytes`（默认 256 KiB，且不超过出站单帧的 1/4）；整轮展示 `maxRunBytes`（原生通路下即整轮展示预算，默认 16 MiB）。超出只截断展示、标注 `truncated`，整轮超限时发一次诊断「本轮展示内容已达上限……」，不抛错、不改终态。展示预算只对工具和思考事件降级，回复、状态与诊断不受该预算截断；独立的出站单帧仍受 `maxLineBytes` 保护，超限的非 assistant 事件按上文逐级降为摘要。
 - 入站：CLI 单个协议帧上限独立为 `maxNativeLineBytes`（默认 32 MiB，暂定值：Codex 0.162.1 协议未给出 `aggregatedOutput`/`outputDelta` 上限，无模型 `command/exec` 实测合法单帧达 18,000,057 字节），超出时停止并报告「原生 CLI 单个入站协议帧超过上限（N 字节）」。入站累计字节不再终止运行；Host `runtime.ts` 对原生桥输出的累计字节同样只统计不终止，非原生通路保持原检查。
 - Host 与界面：`bridge-protocol.ts` 透传 `delta`/`truncated`/`outputBytes`，`storage.ts` 事件 schema 新增三字段；`foldEvents` 把 `delta` 追加到工具行 `toolCall.output`（字符串）或思考行 `detail`，之后的快照或完成输出覆盖它。旧记录（累计 `detail`/`output`）无迁移、照常渲染。Client `worker-process.tsx` 在工具与思考展开区显示「输出已截断（共 N KB），完整内容见 CLI 原生会话或实际产物」；`harness-conversation-stream.ts` 与 `harness-observed-tools.ts` 转给主 Agent 的工具回执附同样说明。
 - 各 runner：Codex、Claude、ACP 系（Kimi、Qoder、Grok）、ZCode、OpenCode/MiMo、Hermes、Antigravity 均改为运行中发增量、完成时一份输出、`detail` 只留元数据；CLI 只给累计快照时，新快照以前一份为前缀则发差量，否则作为替换输出（仍受展示预算约束）。OpenCode/MiMo 公开思考仍保留「快照冲突即报错、取较长快照」的原规则。各 response tracker 完成回执不再重放最后一个 `delta` 或工具输出。
@@ -1368,9 +1369,37 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - ACP usage 独立映射本轮 input/output/total/cache/thought 指标，不冒充 stream 会话累计；无 promptCapabilities.image 时图片仅提供路径，不支持 fork。
 - 本次零模型记录与待执行真实脚本在 `.test-data/agy-acp-migration/`，实际命令和未验证事项见 change tasks。未进行真实 prompt、Windows 或 Desktop 更新；不以模拟或回读代替工具执行验收。
 
+
+## 同级派遣与原生子 Agent（2026-11-05，未发布）
+
+- 变更 `add-sibling-dispatch-unified-subagents` 的第 1、2 节：直接子会话通过 `parentSession` 解析主 Agent；主对话负责项目、选型、规划与权限，新 Worker 与发起者同级。`initiator` 是可选持久化归属字段，不是生命周期父节点，旧记录继续有效。每主对话最多 6 个未结束的子 Agent 派遣，运行时同步受理时核验，仍走全局并发队列。
+- 当前轮询问位置按 runId 单独保存：主 Agent 发起的轮次和 DSH 原生子 Agent 用主页面，Worker 窗口发起的轮次用发起者子会话；结束时清理。模型、强度、角色、会话 ID、档位不从发起者复制。工具桥只精确放行当前 schema 可见的 `cliworker_start`、`cliworker_status`；DSH 0.2.2-rc.1 全局工具默认对子 scope 可见，显式工具限制仍生效。已授权同级 job 发布时退出发起工具的异步模型守卫标记，避免新原生会话被误当作额外模型调用；发起工具及新 Worker 后续工具调用仍受守卫约束。
+- Grok 读取原生 requirements/env/config 子 Agent 开关；本机 Grok 1.0.62 内嵌配置参考明确 `subagents.enabled` 默认 true。ZCode 本机 `glm/zcode.cjs` 的默认配置明确 `features.subagent/skill = true`、`permission.disallowedTools = []`；按原生用户/项目配置读取开关及拒绝列表。原生 `resolveDynamicWorkflowClientConfig` 的模式为 disabled/onDemand/alwaysOn，用户设置优先于环境提供值，默认 disabled；与记忆开关一样由 bridge 回答运行时偏好。不可读取的远端托管配置不推测。
+- ZCode 首轮与恢复共享禁用工具列表解析；保留 DSH 权限边界要求的浏览器 REPL 关闭项，删除「两层任务树」作为关闭原生能力的理由。原生子 Agent 只显示 CLI 公开的工具或文本，不新增插件层级。
+- DSH 子 Agent 面板合并（第 3 节）不在本次实施范围；自动检查与未做的真实模型、Desktop、Windows 验收见该 change 的 tasks.md。
+
+## DSH 子 Agent 汇入（2026-11-05，第 3 节，未发布）
+
+- `DshSubagents` 经公开 `listChildren` 读取主会话直接子目录，以全部已登记 Worker（含已删除）及原生绑定存储排除 CLI 子会话。只读 `sessionQuery.observeSession` 的投影，释放每个 observation；目录服务或父投影不可用时记录去重日志并返回空 DSH 分组，不阻断 Worker 流。
+- 状态来自 `subagentTiming`：`active` 为运行中，`lastTurnCompleted=true/false` 为正常完成/异常，其余未知。该投影的 false 不区分错误与中断；只在本插件发出的中断得到确认、再读到已结束的投影后显示「已停止」，并绑定该投影游标，新事件后不沿用标记。模型只读取 `modelSelection.next/lastUsed`，不存在时不显示。external 目录项没有本地 Session，保持未知、不能打开。
+- 独立 Gateway watch 订阅 `session/event` 的目录、描述符、turn start/end 与模型选择/request header 事件；Worker 登记变化也触发排除刷新。客户端依据原生 tab.visible、document.visibilityState 和开关持有流；没有事件订阅能力的适配器只在该流存续时每 2 秒读取。停止确认最多等 30 秒；超时、读取失败或中断失败均报错，不报告停止成功。原生订阅、观察引用、轮询及等待定时器随流/插件/窗口释放。
+- 子会话使用同一 `cliworker.native.sidebar` 与原生 SessionProvider；不登记 CLI 绑定、不覆盖 DSH 用量投影、不复制记录。保留 InputBar、原生队列与统计；原生 Session.prompt 已调用 DSH `subagents.prompt`，停止按钮的公开 action 改走等待确认的插件 Gateway。一次性/未知模式禁用输入与停止，隐藏模型/权限/规划的 Worker 控件及任务选项。原生续聊仍可能因父 Agent 离线或容量限制拒绝，错误由原生输入区显示。
+- 私有 `dsh-hidden.json` 按主会话 ID 保存隐藏 ID，目录 0700、文件 0600；不调用原生删除/归档接口。`showDshSubagents` 与通用设置共同保存、随 Worker 快照同步，缺省为 true；关闭立即撤下 DSH 分组/已打开的 DSH 子窗口。卡片 `initiator` 只显示「由 X 发起」，不增加层级。
+- Antigravity 后台子 Agent（实测后追加）：agy 1.5.1 的 `invoke_subagent` 派发即 completed，结果只在下一次 `session/prompt` 时送出。`runNativeAcp` 的 `background` 设置记录此类调用，end_turn 后保持 stdio、审批与事件，按 15–120 秒递增间隔自动发送同会话跟进；回复 `CLIWORKER_SUBAGENTS_PENDING` 继续等，回复正文结束；总等待不超过 10 分钟与任务超时，用尽报 UNCERTAIN。等待与跟进是带 `notice` 标记的 diagnostic，原生会话流把它投影为已完成的被动工具行 `cliworker_auto_followup`（DSH 聊天按 `chat-visibility` 隐藏 notice 形态上下文，故不用 notice；工具行不派发、不执行），其他诊断仍不进子会话；待完成标记在流式正文中按跨分片前缀过滤。stream 后备路径未处理。
+- 名称（实测后追加）：私有 `dsh-names.json` 按主会话保存 `dsh-<n>`，首次出现时按创建时间递增，隐藏后不复用；CLI Worker 名称拒绝该格式。`cliworker_followup`／`cliworker_status` 先解析 CLI Worker，未匹配且名称形如 `dsh-<n>` 时才查 DSH 目录；续聊走原生 `prompt`（queue），回复由 DSH 子→父消息带回；开关关闭时不解析。卡片与 CLI Worker 卡片同版式，删除在右键菜单并带「仅在此窗口隐藏」说明行；分组图标为 DSH 官方 favicon 的单色路径。
+- 本轮验证与未做的 Desktop、Windows、真实账号及模型验收见 `add-sibling-dispatch-unified-subagents/tasks.md`；未正式构建或更新 Desktop。
+
 ## 2026-11-06 热切换白屏自动恢复（未发布）
 
 - 现象：DSH 0.2.2-rc.1 上，官方插件管理器与 dshmarket（1.66.45、1.73.12）热启用本插件时页面立即白屏，报 `SlotAssemblyError: scope 'session-maybe' rendered without an installed adapter`；热停用同样白屏。宿主客户端先移除旧界面模块再导入新模块，根渲染器整页包在 `session-maybe` 作用域里，错误边界按设计重新抛出该错误，React 清空 `#root`；新适配器就绪后页面也不恢复。
 - 决定：宿主没有批量替换或渲染暂停接口，2026-10-24 的「销毁时恢复原版界面」候选已证明无效，因此改为事后恢复。插件客户端发现 `#root` 已挂载（React 容器标记非 null）却为空时，等客户端模块同步（`modules.entries.state`）结束并确认 0.5 秒，再对 `web/src/mount.ts` 注册的唯一 `web boot: application mount` fiber 调用 Cordis `Fiber.restart()`。它先执行 DSH 自己的 `root.unmount()` 再重新挂载，新根仍由 DSH 生命周期拥有；不另建 React 根、不替换 `uiRenderer` 服务。通过应用根 context 访问，停用本插件后仍可执行。冷启动时宿主在全部客户端插件激活后才挂载 React，不会误判；销毁后继续观察 60 秒以覆盖停用方向。
 - 兜底：找不到唯一挂载 owner、模块同步失败或重挂后仍为空时，网页刷新一次（sessionStorage 记录，30 秒内不重复）。DSH Desktop 不能刷新：`apps/desktop/src/main.ts` 的 `DESKTOP_IPC.boot` 每次返回 Host 启动时的模块注入，热切换后刷新会请求已失效的模块版本并弹出启动失败对话框（2026-11-06 第一版实测），所以 Desktop 改为在空白页写入纯文本的重启提示。原地恢复由 gpt-6-astra high 设计实现。
 - 实现与验证：`src/client/root-recovery.ts`；记录见 `openspec/changes/fix-hot-enable-blank-screen/tasks.md`。
+
+## 2026-11-06 Grok 过期凭据原生续期（未发布）
+
+- 现象：Windows 上 Grok 已登录，派遣却报「登录需要续期」。账号状态把带 refresh 的记录算作已登录；账号模型发现要求 access 有效且不续期；派遣前先查目录，Grok 本体从不启动，也就从不续期，access 过期后无法自动解除（死锁）。
+- 决定：用 Grok 本体续期，不自拼 OAuth。Windows Grok 1.0.50 实测 `grok models` 在 access 已过期 854 分钟时 3.3 秒退出码 0，身份不变、文件原子替换、日志 `auth: silent refresh` outcome=`Renewed`，未启动 leader、无残留进程。ACP initialize 方案未采用。
+- 实现：`src/host/grok-renewal.ts`。私有 `GROK_HOME`、`GROK_AUTH_PATH` 指向用户真实 `~/.grok/auth.json`（不经 Worker 链接），经 `private-launch.mjs` 启动；按原生 home 合并在途续期，与 Grok 账号终端互斥（`reserveGrokAccount`）；固定 30 秒时限，调用方取消只结束自己的等待，避免在 IdP 轮换后、写回前被杀；无法确认进程范围退出时封锁 Grok。stdout/stderr 只计字节，结果只读私有日志的 `ctx.outcome`（最多 4 MiB）：`Failed(ManualLogin…)` 判为需重新登录并按凭据文件指纹记入 Host 内存，账号状态显示「登录已失效」直到文件变化；退出码 2 且无续期日志判为版本不支持；其他为暂时失败，不降级账号状态。access 剩余不足 5 分钟但仍有效时续期失败可继续用旧 access。`readGrokOwnAccount` 按 missing/format/unsafe/read/expired 分类提示。
+- 取舍：续期会改写用户凭据文件，效果等同用户自己运行 grok，README 已说明。macOS Worker 私有目录的 `auth.json` 链接在 Grok rename 写回时可能被替换为私有文件，本次只记录风险，未修复。
+- 记录：`openspec/changes/fix-grok-expired-access-renewal/tasks.md`。

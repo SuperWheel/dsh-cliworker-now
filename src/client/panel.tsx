@@ -1,3 +1,4 @@
+import { DshSubagentCard } from './dsh-subagents.tsx'
 import { ComposerTelemetry } from './telemetry.tsx'
 import { HarnessLegacyHistory } from './harness-legacy-history.tsx'
 import { ConversationTimeline } from './conversation-timeline.tsx'
@@ -26,10 +27,11 @@ import {
   type WorkerStatus,
   type HistoryPage,
   type Worker,
+  type DshSubagent,
 } from '../shared/types.ts'
-import { useWorkers, value, type API } from './workers.ts'
+import { useWorkers, useDshSubagents, filterDshSubagents, value, type API } from './workers.ts'
 import { CopyText } from './copy-text.tsx'
-import { BrandIcon, Glyph } from './icons.tsx'
+import { BrandIcon, DshIcon, Glyph } from './icons.tsx'
 import { WorkerModelMenu } from './worker-model-menu.tsx'
 import { SettingsDialog } from './settings-dialog.tsx'
 import { RenameWorker } from './rename-worker.tsx'
@@ -51,9 +53,11 @@ const status: Record<WorkerStatus, MessageKey> = {
   interrupted: '已中断',
 }
 interface PanelProps {
+  visible?: boolean
   sessionId: string
   api: API
   openNativeSettings?: () => void
+  renderDshConversation?: (child: DshSubagent) => ReactNode
   renderHarnessConversation?: (worker: Worker) => ReactNode
   /** Background holder for running Workers' native sessions (approval panels). */
   renderSessionRetention?: (workers: readonly Worker[]) => ReactNode
@@ -77,10 +81,12 @@ export function Panel(props: PanelProps) {
   )
 }
 function SessionPanel({
+  visible = true,
   sessionId,
   api,
   openNativeSettings,
   renderHarnessConversation,
+  renderDshConversation,
   renderSessionRetention,
   activeHarnessSessionId,
   drafts,
@@ -95,7 +101,8 @@ function SessionPanel({
 }) {
   useT()
   const [selected, select] = useState('')
-  const [collapsed, setCollapsed] = useState<Partial<Record<CliId, boolean>>>({})
+  const [selectedDsh, selectDsh] = useState<DshSubagent>()
+  const [collapsed, setCollapsed] = useState<Partial<Record<CliId | 'dsh', boolean>>>({})
   const [collapsedFollowups, setCollapsedFollowups] = useState<Record<string, boolean>>({})
   const cliGroupId = useId()
   const followupQueueId = useId()
@@ -104,17 +111,18 @@ function SessionPanel({
   const back = useRef<HTMLButtonElement>(null),
     lastWorker = useRef('')
   useLayoutEffect(() => {
-    if (selected) back.current?.focus()
+    if (selected || selectedDsh) back.current?.focus()
     else if (overview.current) {
       overview.current.scrollTop = overviewScroll.current
       overview.current
         .querySelector<HTMLButtonElement>(`[data-open-worker-id='${lastWorker.current}']`)
         ?.focus({ preventScroll: true })
     }
-  }, [selected])
+  }, [selected, selectedDsh?.id])
   const openWorker = (id: string) => {
     lastWorker.current = id
     setSettings(false)
+    selectDsh(undefined)
     select(id)
   }
   const [query, setQuery] = useState(''),
@@ -123,12 +131,17 @@ function SessionPanel({
   const [historyPage, setHistoryPage] = useState<HistoryPage>()
   const history = historyPage?.workerId === selected ? historyPage : undefined
   const { snapshot, error: streamError, connecting, reconnect } = useWorkers(api, sessionId, selected)
+  const showDsh = snapshot.showDshSubagents ?? true
+  const dsh = useDshSubagents(api, sessionId, showDsh && visible && !connecting)
+  const dshChild = showDsh && selectedDsh ? dsh.rows.find((row) => row.id === selectedDsh.id) ?? selectedDsh : undefined
+  const visibleDsh = filterDshSubagents(dsh.rows, query, filter)
+  useEffect(() => { if (!showDsh) selectDsh(undefined) }, [showDsh])
   const seenActiveSession = useRef<string>()
   useEffect(() => {
     if (!activeHarnessSessionId) { seenActiveSession.current = undefined; return }
     if (!renderHarnessConversation || seenActiveSession.current === activeHarnessSessionId) return
     const active = snapshot.workers.find((worker) => worker.harnessConversation?.sessionId === activeHarnessSessionId)
-    if (active) { seenActiveSession.current = activeHarnessSessionId; select(active.id) }
+    if (active) { seenActiveSession.current = activeHarnessSessionId; selectDsh(undefined); select(active.id) }
   }, [activeHarnessSessionId, snapshot.workers, renderHarnessConversation])
   const [errors, setErrors] = useState<Record<string, string>>({}),
     [busy, setBusy] = useState(false)
@@ -434,7 +447,7 @@ function SessionPanel({
     <section className="cwn" aria-label="CLI Worker Now">
       {renderSessionRetention?.(snapshot.workers)}
       <header className="cwn-head">
-        {selected ? (
+        {selected || dshChild ? (
           <>
             <Tooltip label={t('返回子 Agent 列表')} side="bottom" portal>
               <Button
@@ -447,6 +460,7 @@ function SessionPanel({
                 onClick={() => {
                   setSettings(false)
                   select('')
+                  selectDsh(undefined)
                 }}
               >
                 <Glyph name="back" />
@@ -454,11 +468,12 @@ function SessionPanel({
             </Tooltip>
             <h2 title={worker ? `${workerName(worker)}｜${worker.title}` : undefined}>
               {(() => {
+                if (dshChild) return dshChild.name
                 const current = worker ?? snapshot.workers.find((w) => w.id === selected)
                 return current ? `${workerName(current)}｜${current.title}` : t('正在加载…')
               })()}
             </h2>
-            <details className="cwn-actions">
+            {!dshChild && <details className="cwn-actions">
               <summary aria-label={t('任务选项')} title={t('任务选项')}>
                 <Glyph name="more" />
               </summary>
@@ -540,7 +555,7 @@ function SessionPanel({
                   {t('默认设置')}
                 </Button>
               </div>
-            </details>
+            </details>}
           </>
         ) : (
           <>
@@ -615,7 +630,7 @@ function SessionPanel({
         sessionId={sessionId}
         initialCli={settingsCli}
       />
-      {!selected && (
+      {!selected && !dshChild && (
         <div className="cwn-overview">
           <div className="cwn-overview-controls">
             <Input
@@ -710,6 +725,28 @@ function SessionPanel({
               </div>
             ) : (
               <nav aria-label={t('子 Agent')}>
+                {visibleDsh.length > 0 && <section className="cwn-cli-group" aria-label={t('{cli} 子 Agent', { cli: 'DSH' })}>
+                  <button className="cwn-cli-heading" type="button" aria-expanded={!collapsed.dsh}
+                    aria-controls={`${cliGroupId}-dsh`} onClick={() => setCollapsed((old) => ({ ...old, dsh: !old.dsh }))}>
+                    <DshIcon /><strong>DSH</strong><span>{t('{count} 个 Agent', { count: visibleDsh.length })}</span><Glyph name="chevron" />
+                  </button>
+                  <div id={`${cliGroupId}-dsh`} className="cwn-cli-rows" data-expanded={!collapsed.dsh}
+                    aria-hidden={!!collapsed.dsh} {...(collapsed.dsh ? { inert: '' } : {})}>
+                    <div className="cwn-cli-rows-inner">{visibleDsh.map((child) => <DshSubagentCard key={child.id}
+                      child={child} collapsed={!!collapsed.dsh} busy={busy}
+                      onOpen={() => { lastWorker.current = child.id; setSettings(false); select(''); selectDsh(child) }}
+                      onHide={() => void perform(async () => {
+                        const controller = new AbortController()
+                        managementAbort.current = controller
+                        try {
+                          if (!api.cliworker.hideDshSubagent) throw new Error(t('DSH 子 Agent 列表暂时不可用'))
+                          value(await api.cliworker.hideDshSubagent(sessionId, child.id, controller.signal))
+                          dsh.refresh()
+                        } finally { if (managementAbort.current === controller) managementAbort.current = undefined }
+                      })} />)}</div>
+                  </div>
+                </section>}
+
                 {([...CLI_IDS, 'harness'] as const).map((cli) => {
                   const rows = visibleWorkers.filter((w) => cliOf(w.preference) === cli)
                   if (!rows.length) return null
@@ -759,6 +796,7 @@ function SessionPanel({
             {!connecting &&
               !streamError &&
               !snapshot.workers.length &&
+              !dsh.rows.length &&
               !snapshot.configuring &&
               !showArchived &&
               !query &&
@@ -771,6 +809,8 @@ function SessionPanel({
           </div>
         </div>
       )}
+      {dshChild && (renderDshConversation?.(dshChild) ?? <p className="cwn-notice">{t('无法打开原生会话')}</p>)}
+      {dsh.error && <p role="status" className="cwn-notice">{dsh.error}</p>}
       {streamError && (
         <div role="alert" className="cwn-error">
           <div>{t('实时连接已断开，已收到的记录保留在这里。重新连接不会重新执行任务。')}</div>

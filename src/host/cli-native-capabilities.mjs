@@ -91,8 +91,8 @@ async function holdsFiles(path) {
   return false
 }
 const switchValue = value => (/^(?:1|true|yes|on)$/i.test(value ?? '') ? true : /^(?:0|false|no|off)$/i.test(value ?? '') ? false : undefined)
-/** `[memory_v2] enabled`, then `[memory] enabled`; anything this cannot read counts as unset. */
-export function grokTomlMemory(text) {
+/** Read native boolean TOML switches without importing unrelated settings. */
+function grokTomlSwitch(text, keys) {
   const values = new Map()
   let table = ''
   for (const raw of text.split(/\r?\n/)) {
@@ -105,7 +105,36 @@ export function grokTomlMemory(text) {
       if (key && !values.has(key)) values.set(key, pair[2] === 'true')
     }
   }
-  return values.get('memory_v2.enabled') ?? values.get('memory.enabled')
+  return keys.map(key => values.get(key)).find(value => value !== undefined)
+}
+export const grokTomlMemory = text => grokTomlSwitch(text, ['memory_v2.enabled', 'memory.enabled'])
+/** Installed Grok 1.0.62 configuration reference: subagents.enabled defaults true. */
+export async function grokNativeSubagents({ env = process.env, home = homedir() } = {}) {
+  const read = async name => {
+    try { return grokTomlSwitch(await readFile(join(home, '.grok', name), 'utf8'), ['subagents.enabled']) }
+    catch (error) { return error.code === 'ENOENT' ? undefined : false }
+  }
+  return (await read('requirements.toml')) ?? switchValue(env.GROK_SUBAGENTS?.trim()) ?? (await read('config.toml')) ?? true
+}
+/** Exact native names, shared by first-turn and resume validation. */
+export function parseZcodeDeniedTools(value) {
+  if (typeof value !== 'string' || !value || value.length > 32768) throw new Error('Invalid ZCode disabled tool list')
+  const names = value.split(',')
+  if (names.some(name => !/^[A-Za-z][A-Za-z0-9_.:-]*$/.test(name)) || new Set(names).size !== names.length)
+    throw new Error('Invalid ZCode disabled tool list')
+  return names
+}
+/** Desktop user choice takes precedence over the offered env mode; CLI default is disabled. */
+export function zcodeWorkflowMode(setting, env = process.env) {
+  const valid = value => ['disabled', 'onDemand', 'alwaysOn'].includes(value) ? value : undefined
+  return valid(setting?.dynamicWorkflowMode) ?? valid(env.ZCODE_DYNAMIC_WORKFLOW_MODE?.trim()) ?? 'disabled'
+}
+export function consumeZcodeWorkflowMode(config) {
+  const env = config.env ?? process.env
+  const value = env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE
+  delete env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE
+  delete process.env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE
+  return zcodeWorkflowMode({ dynamicWorkflowMode: value })
 }
 /**
  * Whether the user's own Grok starts with memory (grok 1.0.62 priority order):

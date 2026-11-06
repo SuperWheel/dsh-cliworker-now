@@ -300,7 +300,7 @@ export async function extendedCatalog(
                 { signal, renewal },
               )
             : cli === 'grok'
-              ? await discoverGrok(executable, run, state, { signal })
+              ? await discoverGrok(executable, run, state, { signal, ...(renewal ? { renewal } : {}) })
               : undefined
   if (!models) throw new Error('未知 CLI')
   signal?.throwIfAborted()

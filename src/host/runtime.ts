@@ -23,6 +23,7 @@ import {
   cliOf,
   workerName,
   foldEvents,
+  DSH_AGENT_NAME,
   type Preference,
   type WorkerEvent,
   type TaskMode,
@@ -1183,6 +1184,7 @@ export class WorkerRuntime {
       language: this.storage.generalSettings().language ?? 'follow',
       isolatedParallelWrites: this.storage.generalSettings().isolatedParallelWrites ?? false,
       askBeforeDispatch: this.storage.generalSettings().askBeforeDispatch ?? true,
+      showDshSubagents: this.storage.generalSettings().showDshSubagents ?? true,
       // The plugin config value stays the initial limit until the user chooses one.
       taskTimeLimitMs: this.storage.generalSettings().taskTimeLimitMs ?? this.config.timeoutMs,
       defaultTaskTimeLimitMs: this.config.timeoutMs,
@@ -1243,6 +1245,7 @@ export class WorkerRuntime {
   }
   private checkAgentName(parent: string, name: string, excludingId?: string): string {
     const clean = agentNameSchema.parse(name)
+    if (DSH_AGENT_NAME.test(clean)) throw new Error('“dsh-数字”保留给 DSH 子 Agent，请换一个名称')
     if (
       [...this.storage.workers.values()].some(
         (worker) =>
@@ -1592,6 +1595,7 @@ export class WorkerRuntime {
       revision: this.revision,
       truncated: timeline.length > this.config.maxTimelineItems,
       // Absent means `follow`; every open view adopts a saved language live.
+      showDshSubagents: this.storage.generalSettings().showDshSubagents ?? true,
       ...(this.storage.generalSettings().language ? { language: this.storage.generalSettings().language } : {}),
     }
   }
@@ -1738,6 +1742,13 @@ export class WorkerRuntime {
     const task = this.tasks.get(id)
     return task?.steer && !task.controller.signal.aborted && worker.status === 'running' ? 'ready' : 'pending'
   }
+  /** Synchronous admission: concurrent selections cannot overbook the sibling cap. */
+  assertSiblingCapacity(parent: string): void {
+    const unfinished = [...this.storage.workers.values()].filter(
+      worker => worker.parentSessionId === parent && worker.initiator && active(worker.status),
+    )
+    if (unfinished.length >= 6) throw new Error('子 Agent 发起的任务已达上限（同一主对话最多 6 个未结束任务）')
+  }
   submit(
     parent: string,
     project: string,
@@ -1746,7 +1757,7 @@ export class WorkerRuntime {
     preference: Preference,
     mode: TaskMode,
     previousId?: string,
-    identity?: { agentName?: string; role?: RoleSnapshot },
+    identity?: { agentName?: string; role?: RoleSnapshot; initiator?: Worker['initiator'] },
     authorizedBinding?: string,
     queuedAdmission?: QueuedAdmission,
     preparationId?: string,
@@ -1758,6 +1769,7 @@ export class WorkerRuntime {
     if (!prompt.trim() || prompt.length > 100_000) throw new Error('Task must contain 1–100000 characters')
     const canonical = projectDirectory(project)
     const previous = previousId ? this.get(parent, previousId) : undefined
+    if (previous?.initiator || (!previous && identity?.initiator)) this.assertSiblingCapacity(parent)
     if (attachments?.length && previous?.transport === 'legacy')
       throw new Error('旧协议会话尚未接通附件，请使用原生 CLI 会话')
     if (previous && submissionId) {
@@ -1834,6 +1846,7 @@ export class WorkerRuntime {
     const worker: Worker = previous ?? {
       id: randomUUID(),
       parentSessionId: parent,
+      ...(identity?.initiator ? { initiator: structuredClone(identity.initiator) } : {}),
       project: canonical,
       title: title.slice(0, 160),
       agentName: identity?.agentName

@@ -630,3 +630,23 @@ describe('DSH tool approvals from the tool bridge follow the turn origin', () =>
     expect(f.events).toEqual([])
   })
 })
+
+it('sibling native approvals use the captured initiator surface, without inheriting its full level', async () => {
+  const ask = vi.fn(async () => ({ answers: [{ id: 'cliworker_approval', selected: ['允许一次'] }] }))
+  const request = vi.fn(async () => 'allowed-once')
+  const parent: any = { id: 'main', session: { header: {} }, ctx: { get: (name: string) => ({
+    planMode: { get: () => ({ active: false }) }, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+    approval: { overrideOf: () => 'ask', config: { policy: 'ask' } }, userQuestions: { ask },
+  })[name] } }
+  const source: any = { id: 'source-child', session: {}, ctx: { get: () => ({ overrideOf: () => 'ask', request }) } }
+  const agents = new Map([['main', parent], ['source-child', source]])
+  const service: any = Object.assign(Object.create(CliWorkerService.prototype), { ctx: { agents }, disposed: new AbortController(),
+    runOrigins: new Map([['sibling-run', 'agent']]), runQuestionSessions: new Map([['sibling-run', 'source-child']]) })
+  const worker: any = { id: 'sibling', runId: 'sibling-run', parentSessionId: 'main', project: '/fixture', preference: { cli: 'codex' },
+    initiator: { kind: 'worker', id: 'source', name: 'Source' }, harnessConversation: { sessionId: 'sibling-child' } }
+  expect(await service.decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')).toEqual({ decision: 'allow-once', source: 'user' })
+  expect(request).toHaveBeenCalledWith(expect.objectContaining({ agent: source })); expect(ask).not.toHaveBeenCalled()
+  service.runQuestionSessions.set('sibling-run', 'main')
+  await service.decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')
+  expect(ask).toHaveBeenCalledWith(expect.objectContaining({ agent: parent }))
+})

@@ -76,6 +76,7 @@ import { spawnAccountTerminal, WindowsAccountTerminalError } from './windows-acc
 import { WindowsCliInstallationError, WindowsCliNotFoundError } from './windows-cli-installation.ts'
 import { effectiveHermesHome } from './hermes-account-context.ts'
 import { ensureHermesNousFresh, HermesRenewalError, reserveHermesAccount } from './hermes-renewal.ts'
+import { reserveGrokAccount } from './grok-renewal.ts'
 import { HermesAccountSourceError } from './hermes-models.ts'
 import { readQoderAccount, qoderEnvironment, QODER_METADATA_ARGUMENTS } from './qoder-accounts.ts'
 
@@ -866,6 +867,8 @@ export class AccountManager {
         launch = prepared
         release = prepared.cleanup
       } else if (cli === 'zcode' || cli === 'grok') {
+        // A Grok login/logout must not race Grok's own renewal of the same auth file.
+        if (cli === 'grok') release = await reserveGrokAccount(startup)
         const prepared = await zcodeGrokAccountLaunch(
           cli,
           action,

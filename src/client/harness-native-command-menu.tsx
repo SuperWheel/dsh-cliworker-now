@@ -1,3 +1,4 @@
+import { DshNativeComposer, useDshConversation } from './dsh-subagents.tsx'
 import { createElement, useSyncExternalStore, type ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -15,9 +16,11 @@ export function installHarnessNativeCommandMenu(
   return shadowHarnessSlot(ctx.slots, 'conversation.composer.bar', undefined, (original) => {
     const Native = original.component as ComponentType<Record<string, unknown>>
     function CommandMenu(props: Record<string, unknown> & { sessionId?: string }) {
+      const dsh = useDshConversation(props.sessionId)
       const binding = useSyncExternalStore(bindings.subscribe, () =>
         props.sessionId ? bindings.get(props.sessionId) : undefined,
       )
+      if (dsh) return createElement(DshNativeComposer, { Native, nativeProps: props, context: dsh })
       return createElement(Native, binding?.workerId
         ? { ...props, commandSource: HARNESS_COMMAND_SOURCE }
         : props)

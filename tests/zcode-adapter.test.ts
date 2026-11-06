@@ -249,20 +249,8 @@ describe('ZCode adapter (explicitly synthetic fixtures)', () => {
       `任务：\n${input.prompt}`,
     ])
     const denied = request.argv[request.argv.indexOf('--disallowedTools') + 1].split(',')
-    expect(denied).toEqual(
-      expect.arrayContaining([
-        'Agent',
-        'Task',
-        'Skill',
-        'CreateWorkflow',
-        'AmendWorkflow',
-        'ResumeWorkflowRun',
-        'EvalWorkflowSnippet',
-        'SendMessage',
-        'ReadSessionContext',
-        'mcp__node_repl__js',
-      ]),
-    )
+    expect(denied).toEqual(expect.arrayContaining(['CreateWorkflow', 'mcp__node_repl__js']))
+    for (const tool of ['Agent', 'Task', 'Skill', 'SendMessage', 'ReadSessionContext']) expect(denied).not.toContain(tool)
     for (const tool of ['Read', 'Write', 'Edit', 'Bash', 'mcp__*']) expect(denied).not.toContain(tool)
     expect(new Set(denied).size).toBe(denied.length)
     expect(launch.env.ZCODE_DATA_BASE_DIR).toBe(auth)
@@ -720,4 +708,33 @@ describe('ZCode stream protocol (explicitly synthetic fixtures)', () => {
     ended.parser.end()
     expect(() => ended.parser.feed('x')).toThrow('already ended')
   })
+})
+
+it('follows native subagent/skill switches and exact denied tools without importing account configuration', async () => {
+  const f = setup(), configDir = join(f.input.nativeHome, '.zcode/cli')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ features: { subagent: false, skill: false }, permission: { disallowedTools: ['Task', 'Write'] } }))
+  const first = await prepareZCode({ ...f.input, nativeTransport: true })
+  const list = (argv: string[]) => argv[argv.indexOf('--disallowedTools') + 1]!.split(',')
+  expect(list(first.argv)).toEqual(expect.arrayContaining(['Agent', 'Task', 'Skill', 'SendMessage', 'Write']))
+  const resumed = await prepareZCode({ ...f.input, nativeTransport: true, conversationId: 'synthetic-native-session' })
+  expect(list(resumed.argv)).toEqual(list(first.argv))
+  writeFileSync(join(configDir, 'config.json'), JSON.stringify({ permission: { disallowedTools: ['Task'] } }))
+  const selective = list((await prepareZCode({ ...f.input, nativeTransport: true })).argv)
+  expect(selective).toContain('Task')
+  expect(selective).not.toContain('Agent'); expect(selective).not.toContain('Skill')
+})
+
+it('uses native workflow modes, keeping the user-disabled switch over the offered environment mode', async () => {
+  const f = setup(), settingDir = join(f.input.nativeHome, '.zcode/v2')
+  mkdirSync(settingDir, { recursive: true })
+  vi.stubEnv('ZCODE_DYNAMIC_WORKFLOW_MODE', 'alwaysOn')
+  writeFileSync(join(settingDir, 'setting.json'), JSON.stringify({ dynamicWorkflowMode: 'disabled' }))
+  const disabled = await prepareZCode({ ...f.input, nativeTransport: true })
+  expect(disabled.argv[disabled.argv.indexOf('--disallowedTools') + 1]).toContain('CreateWorkflow')
+  expect(disabled.env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE).toBe('disabled')
+  writeFileSync(join(settingDir, 'setting.json'), JSON.stringify({ dynamicWorkflowMode: 'onDemand' }))
+  const enabled = await prepareZCode({ ...f.input, nativeTransport: true })
+  expect(enabled.argv[enabled.argv.indexOf('--disallowedTools') + 1]).toBe('mcp__node_repl__js')
+  expect(enabled.env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE).toBe('onDemand')
 })

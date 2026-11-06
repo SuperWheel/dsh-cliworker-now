@@ -320,3 +320,23 @@ describe('ZCode resume selection wrapper (simulated native processes)', () => {
     expect(f.records()).toEqual([])
   })
 })
+
+
+it.each(['mcp__node_repl__js', 'mcp__node_repl__js,Task', 'Agent,Task,Skill,SendMessage'])('resume preserves the exact first-turn deny list %s', async list => {
+  const f = fixture()
+  f.request.argv[f.request.argv.indexOf('--disallowedTools') + 1] = list
+  writeFileSync(f.requestPath, JSON.stringify(f.request), { mode: 0o600 })
+  expect((await f.launch().done).code).toBe(0)
+  for (const type of ['server-start', 'headless-start']) {
+    const args = f.records().find(row => row.type === type).args
+    expect(args[args.indexOf('--disallowedTools') + 1]).toBe(list)
+  }
+})
+
+it('rejects malformed resume deny-list options before starting the simulated process', async () => {
+  const f = fixture()
+  f.request.argv[f.request.argv.indexOf('--disallowedTools') + 1] = 'Task,--mode'
+  writeFileSync(f.requestPath, JSON.stringify(f.request), { mode: 0o600 })
+  expect((await f.launch().done).code).not.toBe(0)
+  expect(f.records()).toEqual([])
+})

@@ -683,3 +683,13 @@ it('asking off reaches launch through cliworker_start with the saved setup and n
     await ctx.fiber.dispose()
   }
 })
+
+it('asks on an explicit sibling initiator surface but saves the complete setup under the main conversation', async () => {
+  const f = fixture(), parent = f.agent(), child = f.agent('synthetic-initiator', '/different/child')
+  const waiting = f.service.chooseDispatch(parent, new AbortController().signal, 'antigravity', child)
+  await f.complete()
+  await waiting
+  expect(f.requests.every(row => row.request.agent === child)).toBe(true)
+  expect(f.storage.conversationSetup(parent.id, f.project, 'antigravity')).toBeDefined()
+  expect(f.storage.conversationSetup(child.id, f.project, 'antigravity')).toBeUndefined()
+})

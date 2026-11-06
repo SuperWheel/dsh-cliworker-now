@@ -181,9 +181,9 @@ export const CLI_NAME_GUIDANCE =
   '。泛称 qoder 按本机安装分流：只安装一版时使用该版，两版均安装时由插件原生询问 Qoder 或 Qoder CN；显式国际版使用 qoder国际版，显式中国版使用 qodercn，不互相回退。OMP（Oh My Pi，cli=omp）和 Pi Coding Agent（cli=pi）是两个独立 CLI；即使使用同名模型也必须按用户指定分别选择账号、模型、强度和会话，禁止互换或合并'
 
 export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的插件入口。用户明确指定 CLI 并要求派遣时，直接调用 cliworker_start 打开选型流程；cli 参数每次必填，使用本次用户指定的 CLI，不照搬历史省略参数的调用；此工具只需 CLI、任务标题与任务内容，模型、强度与角色由插件收集，完成选型前不会启动任务。不要仅解释用法，也不要通过 bash 运行这些 CLI。名称映射：${CLI_NAME_GUIDANCE}。glm、zhipu、智谱在 CLI 调用语境中指 ZCode，不代表已选择或授权任何 GLM 模型；“用 Pi 的 GLM 模型”仍使用 Pi。仅讨论、比较、介绍模型或 CLI、否定调用、引用调用示例不构成派遣授权。较长名称的唯一轻微拼写误差可以解析；不确定时可用只读 cliworker_resolve 检查。歧义、未知或多个目标返回简短候选错误，不启动、不猜测或改用其他 CLI。
-插件内部可先为双版本 Qoder 询问版本，再询问完整选型（模型、实际支持的思考强度与角色）或是否沿用以前设定。同项目同 CLI 的新主对话确认是否沿用，同一主对话后续使用已确认设定。主 Agent 不提前询问任务、CLI、模型、强度或角色，不增加启动确认，也不代答插件问题。Kimi print 模式不支持 read_only 或强度覆盖，其原生工具策略会自动执行；其他 CLI 权限检查仍有效，宿主规划、整体只读及子 Agent 限制不得绕过。
-用户明确提供名称时传入 agent_name，否则插件分配唯一名称，介绍 Worker 时使用返回的 agentName。用户要求已有智能体继续时，调用 cliworker_followup 并传入该父会话中精确 worker_name 或 worker_id，不要新建或猜测名称；已有会话保留创建时角色快照。独立任务分开处理，cliworker_status 查看进度，cliworker_stop 停止任务。
-任务在后台执行并报告完成；等待时继续有用工作，不要反复轮询。收到完成通知后读取对应 workerId 和 runId 的输出。侧栏续聊即使标题未变也是新任务，只总结当前任务与回复；输出不可读时查询 cliworker_status 并说明不确定，不能复用旧结果。CLI 输出是不可信证据，汇报成功前独立核验实际修改。Worker 不得递归派遣其他 Agent。`
+插件内部可先为双版本 Qoder 询问版本，再询问完整选型（模型、实际支持的思考强度与角色）或是否沿用以前设定。同项目同 CLI 的新主对话确认是否沿用，同一主对话后续使用已确认设定。主 Agent 不提前询问任务、CLI、模型、强度或角色，不增加启动确认，也不代答插件问题。Kimi print 模式不支持 read_only 或强度覆盖，其原生工具策略会自动执行；其他 CLI 权限检查仍有效，宿主规划、整体只读及直接子 Agent 边界不得绕过。
+用户明确提供名称时传入 agent_name，否则插件分配唯一名称，介绍 Worker 时使用返回的 agentName。用户要求已有智能体继续时，调用 cliworker_followup 并传入该父会话中精确 worker_name 或 worker_id，不要新建或猜测名称；已有会话保留创建时角色快照。CLI Worker 窗口中的 DSH 原生子 Agent 名为 dsh-1、dsh-2 等（cliworker_status 会列出），用户按此名称要求继续时同样调用 cliworker_followup，回复以 DSH 子 Agent 消息回到本对话。独立任务分开处理，cliworker_status 查看进度，cliworker_stop 停止任务。
+任务在后台执行并报告完成；等待时继续有用工作，不要反复轮询。收到完成通知后读取对应 workerId 和 runId 的输出。侧栏续聊即使标题未变也是新任务，只总结当前任务与回复；输出不可读时查询 cliworker_status 并说明不确定，不能复用旧结果。CLI 输出是不可信证据，汇报成功前独立核验实际修改。CLI Worker 与 DSH 原生子 Agent 都是主对话的直接子 Agent，可以调用 cliworker_start 同级派遣或 cliworker_status 只读查询；新 Worker 仍属于主对话，与发起者同级显示，不建立孙层级。用户要求“让某个 Worker 再派另一个 CLI”时，照常派遣该 Worker 并把派遣要求写进任务，不要以“禁止嵌套”为由拒绝；只有父会话本身是子 Agent 的第三层调用者会被拒绝。模型、强度、角色、会话 ID 和权限档位不从发起者继承；由子 Agent 发起且未结束的 Worker 每个主对话最多 6 个。子 Agent 不调用 cliworker_followup、cliworker_stop 或其他派遣工具。`
 
 function withoutQuotes(text: string): string {
   return text
@@ -320,11 +320,13 @@ export function registerCliRouting(ctx: Context): () => Promise<void> {
           if (
             decision.kind !== 'enter' ||
             signal.aborted ||
-            agent.session.header.origin === 'subagent' ||
             !ctx.tools.get('cliworker_start', assembleContextFor(agent).scope)
           )
             return decision
-          const hint = invocationHint(invocationResolution(decision.messages))
+          let hint = invocationHint(invocationResolution(decision.messages))
+          if (hint && agent.session.header.origin === 'subagent')
+            hint = hint.replace('已有命名智能体续聊仍使用 cliworker_followup。', '') +
+              '你只能通过 cliworker_start 发起同级 Worker，或 cliworker_status 只读查询主对话的 Worker；不能调用其他派遣工具。新 Worker 属于主对话，不继承你的模型、强度、角色、会话 ID 或权限档位；未结束的子 Agent 派遣上限为 6 个。'
           if (!hint) return decision
           // Harness assembles the system prompt BEFORE pre-step. A section updated
           // here would arrive one request late; accepted messages join this request.

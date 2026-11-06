@@ -24,31 +24,13 @@ import type { AccountIdentity } from './account-identity.ts'
 import { probeAccountModels } from './account-models.mjs'
 import { readZCodeAccountApiKeys, readZCodeAccountBindings } from './zcode-account-models.ts'
 import { ZcodeResponseTracker } from './zcode-response.mjs'
-import { shareNativeMemory, unshareNativeMemory } from './cli-native-capabilities.mjs'
+import { shareNativeMemory, unshareNativeMemory, parseZcodeDeniedTools, zcodeWorkflowMode } from './cli-native-capabilities.mjs'
 
-// Native ZCode uses exact tool-name sets, not globs. Deny its own delegation
-// surface (Skill stays with it) and bundled browser REPL. This is not a general
-// MCP isolation policy; arbitrary MCP tool names cannot be safely represented by "mcp__*" here.
-export const ZCODE_DENIED_TOOLS = [
-  'Agent',
-  'Task',
-  'Skill',
-  'TaskOutput',
-  'TaskStop',
-  'SendMessage',
-  'ReadSessionContext',
-  'CreateWorkflow',
-  'AmendWorkflow',
-  'SaveWorkflow',
-  'EvalWorkflowSnippet',
-  'ListWorkflowRuns',
-  'GetWorkflowRun',
-  'ResumeWorkflowRun',
-  'ResolveWorkflowQuestion',
-  'ListSavedWorkflows',
-  'ListModels',
-  'mcp__node_repl__js',
-] as const
+// Keep only the bundled browser REPL closure (DSH permissions); native delegation
+// and skills follow native configuration, independently of the plugin task tree.
+export const ZCODE_DENIED_TOOLS = ['mcp__node_repl__js'] as const
+const ZCODE_SUBAGENT_TOOLS = ['Agent', 'Task', 'TaskOutput', 'TaskStop', 'SendMessage', 'ReadSessionContext']
+const ZCODE_WORKFLOW_TOOLS = ['CreateWorkflow', 'AmendWorkflow', 'SaveWorkflow', 'EvalWorkflowSnippet', 'ListWorkflowRuns', 'GetWorkflowRun', 'ResumeWorkflowRun', 'ResolveWorkflowQuestion', 'ListSavedWorkflows', 'ListModels']
 
 export interface ZCodeInput {
   executable: string
@@ -149,6 +131,36 @@ function zcodeNativeMemory(options: Pick<ZCodeInput, 'nativeHome'>): boolean {
     return false
   }
 }
+/** Native user config then project configs from the nearest Git root, as ZCode's Hm/gra resolve them.
+ * Read only feature switches and exact deny names; never import provider/auth configuration. */
+function zcodeNativeTools(input: ZCodeInput) {
+  const directories = [resolve(input.project)]
+  while (!existsSync(join(directories[0]!, '.git'))) {
+    const parent = dirname(directories[0]!)
+    if (parent === directories[0]) { directories.splice(0, directories.length, resolve(input.project)); break }
+    directories.unshift(parent)
+  }
+  let permission: Record<string, unknown> = {}, features: Record<string, unknown> = {}
+  for (const path of [join(input.nativeHome ?? homedir(), '.zcode/cli/config.json'),
+    ...directories.flatMap(dir => [join(dir, 'zcode.json'), join(dir, '.zcode/config.json')])]) {
+    const config = readZCodeConfig(path, true, true)
+    if (!record(config)) continue
+    if (record(config.permission)) permission = config.permission
+    if (record(config.features)) features = config.features
+  }
+  const setting = readZCodeConfig(join(zcodeNativeBase(input), '.zcode/v2/setting.json'), true, true)
+  const workflow = zcodeWorkflowMode(setting)
+  const denied: string[] = [...ZCODE_DENIED_TOOLS]
+  if (permission.disallowedTools !== undefined) {
+    if (!Array.isArray(permission.disallowedTools) || permission.disallowedTools.some(name => typeof name !== 'string'))
+      throw new Error('ZCode 原生禁用工具设置无效')
+    denied.push(...permission.disallowedTools)
+  }
+  if (features.subagent === false) denied.push(...ZCODE_SUBAGENT_TOOLS)
+  if (features.skill === false) denied.push('Skill')
+  if (workflow === 'disabled') denied.push(...ZCODE_WORKFLOW_TOOLS)
+  return { denied: parseZcodeDeniedTools([...new Set(denied)].join(',')), workflow }
+}
 function writePersonalConfig(path: string, value: unknown): void {
   const temporary = join(dirname(path), `.personal-${randomUUID()}.tmp`)
   try {
@@ -236,6 +248,11 @@ export async function prepareZCode(input: ZCodeInput) {
   // The desktop client's own memory switch (off by default) decides; its memory
   // directory is shared, never copied. The bridge answers the CLI's preference request.
   const memory = zcodeNativeMemory(input)
+  const nativeTools = zcodeNativeTools(input)
+  Object.assign(env, {
+    ZCODE_DYNAMIC_WORKFLOW_MODE: nativeTools.workflow,
+    ...((input.nativeTransport || input.conversationId) ? { CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE: nativeTools.workflow } : {}),
+  })
   const memoryPath = join(env.ZCODE_STORAGE_DIR, 'cli', 'memories')
   if (memory) await shareNativeMemory(memoryPath, join(zcodeNativeStorage(input), 'cli', 'memories'))
   else await unshareNativeMemory(memoryPath)
@@ -257,7 +274,7 @@ export async function prepareZCode(input: ZCodeInput) {
     '--output-format',
     'stream-json',
     '--disallowedTools',
-    ZCODE_DENIED_TOOLS.join(','),
+    nativeTools.denied.join(','),
     ...(input.conversationId ? ['--resume', input.conversationId] : []),
     '--prompt',
     `任务：\n${input.prompt}`,

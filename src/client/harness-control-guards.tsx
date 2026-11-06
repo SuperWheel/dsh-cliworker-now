@@ -1,3 +1,4 @@
+import { useDshConversation } from './dsh-subagents.tsx'
 import { createElement, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-plan-mode/client'
@@ -307,7 +308,9 @@ function registerHarnessControlGuards(
         const { feature, label } = seats[name]
         function BoundControl(props: ControlProps) {
           useT()
+          const dsh = useDshConversation(props.sessionId)
           const binding = useHarnessSessionBinding(bindings, props.sessionId)
+          if (dsh) return null
           if (!binding) return createElement(Native, props)
           const unavailable =
             feature === 'plan' ? harnessFeatureReason(binding, 'plan') : undefined

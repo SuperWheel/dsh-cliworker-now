@@ -355,3 +355,22 @@ describe('temporary native injection (synthetic)', () => {
     await launch.cleanup()
   })
 })
+
+it('only exposes exact visible sibling dispatch tools and keeps all aliases rejected', async () => {
+  const allowed = ['cliworker_start', 'cliworker_status']
+  const rejected = ['cliworker_followup', 'cliworker_start_x', 'cli_worker.start', 'mcp__x__cliworker_start', 'x-cliworker-status', 'xcliworker_start', 'cliworker_startx', 'CLIWORKER_START',
+    'run_code', 'agent', 'subagent', 'spawn_agent', 'delegate_task', 'task', 'send_message']
+  const tools = [...allowed, ...rejected].map(name => ({ ...grant, name }))
+  for (const name of allowed) {
+    expect(classifyHarnessTool(name)).not.toBe('host')
+    expect(classifyHarnessTool(name, tools)).toBe('host')
+  }
+  for (const name of rejected) expect(classifyHarnessTool(name, tools)).toBe('dispatch')
+  const target = await lease({ tools })
+  expect((await rpc(target, 'tools/list')).result.tools.map((row: any) => row.name)).toEqual(allowed)
+  for (const [index, name] of allowed.entries()) {
+    expect((await rpc(target, 'tools/call', { name, arguments: {} }, { id: index + 2 })).error).toBeUndefined()
+  }
+  for (const [index, name] of rejected.entries()) expect((await rpc(target, 'tools/call', { name, arguments: {} }, { id: index + 10 })).error).toContain('授权目录')
+  expect(target.execute).toHaveBeenCalledTimes(2)
+})

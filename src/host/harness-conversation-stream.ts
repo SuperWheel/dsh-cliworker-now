@@ -38,6 +38,17 @@ const failedTool = (state?: string) => /^(?:FAILED|ERROR|CANCELLED|CANCELED)$/u.
 const json = (value: unknown) => JSON.stringify(value) ?? 'null'
 const textOf = (row: TimelineItem) => (row.kind === 'reasoning' ? (row.detail ?? row.text) : row.text)
 
+/** DSH Chat hides notice-form context, so a CLI Worker action in this run (an
+ * automatic follow-up) shows as a completed passive tool row; it is never dispatched. */
+const noticeRow = (item: TimelineItem): TimelineItem => ({
+  id: item.id,
+  kind: 'tool',
+  text: 'cliworker_auto_followup',
+  time: item.time,
+  state: 'COMPLETED',
+  toolCall: { callId: `notice:${item.id}`, name: 'cliworker_auto_followup', input: { 说明: item.text }, output: item.text },
+})
+
 /** One CLI run consumed once across native steps. It never calls an LLM or executes a tool. */
 /** The CLI finished its turn; an unverified result still needs the user's check, not a retry. */
 const endsNormally = (outcome: { status: string }) => outcome.status === 'completed' || outcome.status === 'uncertain'
@@ -139,15 +150,18 @@ export class HarnessConversationStream {
       this.history,
       undefined,
       cliOf(this.deps.getWorker(this.record.parentSessionId, this.record.workerId).preference),
-    ).filter(
-      (item) =>
-        item.kind === 'assistant' ||
-        item.kind === 'reasoning' ||
-        item.kind === 'tool' ||
-        (item.kind === 'user' &&
-          item.id.startsWith(`${this.run.runId}:event:`) &&
-          item.id !== `${this.run.runId}:event:${initialUser?.seq}`),
     )
+      .filter(
+        (item) =>
+          item.kind === 'assistant' ||
+          item.kind === 'reasoning' ||
+          item.kind === 'tool' ||
+          (item.kind === 'diagnostic' && item.notice === true) ||
+          (item.kind === 'user' &&
+            item.id.startsWith(`${this.run.runId}:event:`) &&
+            item.id !== `${this.run.runId}:event:${initialUser?.seq}`),
+      )
+      .map((item) => (item.kind === 'diagnostic' ? noticeRow(item) : item))
   }
 
   private notify() {

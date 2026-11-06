@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { agyArguments } from '../src/host/process.ts'
 import { createNativeIO } from '../src/host/native-transport.mjs'
-import { agyAcpArgv, runNativeAgyAuto, runNativeAgyAcp, probeAgyAcp } from '../src/host/native-agy-acp.mjs'
+import { AGY_BACKGROUND, agyAcpArgv, runNativeAgyAuto, runNativeAgyAcp, probeAgyAcp } from '../src/host/native-agy-acp.mjs'
 import { nativeHarnessMcpServers } from '../src/host/native-harness-injection.mjs'
 import { createNativeHarnessTools } from '../src/host/native-harness-tools.ts'
 import { extractTelemetry } from '../src/host/telemetry.ts'
@@ -25,7 +25,7 @@ if(process.argv.includes('--help')){
 const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');
 log({start:process.pid,argv:process.argv.slice(2),cwd:process.cwd()});
 const carriers=[];
-let id='simulated-session',model='simulated-high',thought='high',pending;
+let id='simulated-session',model='simulated-high',thought='high',pending,prompts=0;
 const state=()=>({sessionId:s==='wrong-session'?'wrong':id,models:{currentModelId:model,availableModels:[{modelId:'simulated-low'},{modelId:'simulated-high'}]},configOptions:[{id:'model',currentValue:'simulated',options:[{value:'simulated'}]},{id:'thought_level',currentValue:thought,options:[{value:'low'},{value:'high'}]}]});
 const reply=(v,result)=>send({jsonrpc:'2.0',id:v.id,result});
 const update=v=>send({jsonrpc:'2.0',method:'session/update',params:{sessionId:id,update:v}});
@@ -61,7 +61,22 @@ createInterface({input:process.stdin}).on('line',async line=>{
  } else if(v.method==='session/set_config_option'){
   if(s!=='effort-mismatch') thought=v.params.value;reply(v,state());
  } else if(v.method==='session/prompt'){
-  pending=v;
+  pending=v;prompts++;
+  if(s.startsWith('subagent')){
+   const say=t=>update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:t}});
+   if(prompts===1){update({sessionUpdate:'tool_call',toolCallId:'sub',name:'invoke_subagent',title:'Run invoke_subagent',status:'in_progress',rawInput:{TypeName:'image-generator'}});
+    update({sessionUpdate:'tool_call_update',toolCallId:'sub',name:'invoke_subagent',status:'completed'});say('已派发生图子 Agent，完成后通知。');finish();return;}
+   const text=v.params.prompt[0].text;log({check:prompts,mentionsMarker:text.includes('CLIWORKER_SUBAGENTS_PENDING')});
+   if(s==='subagent-never'){say('CLIWORKER_SUBAGENTS_PENDING');finish();return;}
+   // Real agy 1.5.1: the marker first, then the backlog and the final report in the same turn.
+   if(s.startsWith('subagent-late')){say('CLIWORKER_SUB');say('AGENTS_PENDING');
+    update({sessionUpdate:'tool_call',toolCallId:'cp',name:'run_command',title:'cp 模拟',status:'completed'});
+    say('图片已保存到 cat.png。');finish();return;}
+   // Real agy splits the marker across chunks; the user must never see any part of it.
+   if(prompts===2){say('CLIWORKER_SUB');say('AGENTS_PENDING');finish();return;}
+   // Backlog of the internal auto-turn arrives first, then the reply to this check.
+   say('模拟后台：子 Agent 已完成。');say('图片已保存到 cat.png。');finish();return;
+  }
   if(s==='nonzero'){text();finish();process.exit(7);return;}
   if(s==='cancel'||s==='timeout'){text();return;}
   if(s.startsWith('permission')){
@@ -79,7 +94,7 @@ createInterface({input:process.stdin}).on('line',async line=>{
   if(s==='permission-late')return;
   update({sessionUpdate:'tool_call_update',toolCallId:'cmd',status:v.result.outcome.optionId==='allow'?'completed':'failed'});text();finish();
  }
-}).on('close',()=>{for(const child of carriers)child.stdin.end();setTimeout(()=>process.exit(0),50);});
+}).on('close',()=>{for(const child of carriers)child.stdin.end();setTimeout(()=>process.exit(s==='subagent-late-exit'?2:0),50);});
 `
 function setup(scenario = 'normal', overrides: any = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agy-acp-SIMULATED-'))); roots.push(root)
@@ -91,7 +106,7 @@ function setup(scenario = 'normal', overrides: any = {}) {
   config.argv = [process.execPath, script, ...agyArguments('agy', root, config.preference, config.mode, config.prompt, config.timeoutMs, config.conversationId, config.access).slice(1)]
   return { config, rows: () => readFileSync(audit, 'utf8').trim().split('\n').map(line => JSON.parse(line)) }
 }
-async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?: string, auto = true) {
+async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?: string, auto = true, background?: any) {
   const controller = new AbortController(), frames: any[] = []; let error: any, stderr = ''
   const io = createNativeIO(f.config, (line: string) => {
     const frame = JSON.parse(line); frames.push(frame)
@@ -100,8 +115,9 @@ async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?:
       else if (decide !== 'pending') setTimeout(() => void io.answerApproval(JSON.stringify({ decision: decide, source: 'user' }), frame.id).catch(() => {}), f.config.env.SCENARIO === 'permission-late' ? 50 : 0)
     }
     if (abortAt === 'text' && frame.event?.kind === 'assistant') controller.abort(new Error('模拟停止'))
+    if (abortAt === 'background' && /自动发送第 1 次跟进/.test(frame.event?.text ?? '')) controller.abort(new Error('模拟停止'))
   }, controller.signal, (chunk: Buffer) => { stderr += chunk.toString('utf8') })
-  try { await (auto ? runNativeAgyAuto : runNativeAgyAcp)(f.config, io) } catch (e) { error = e }
+  try { await (auto ? runNativeAgyAuto(f.config, io) : runNativeAgyAcp(f.config, io, background ? { background } : {})) } catch (e) { error = e }
   await io.close(error)
   return { frames, error, result: frames.at(-1), rows: f.rows(), stderr }
 }
@@ -158,7 +174,13 @@ it('模拟：mcpServers 使用每轮载体而非工作区配置', () => {
   expect(servers[0]).toMatchObject({ name: 'dsh_worker_tools', command: process.execPath })
   expect(servers[0].args[0]).toContain('native-harness-mcp.mjs')
 })
-it.each(['model-mismatch', 'wrong-session', 'config-drift', 'partial', 'unfinished', 'nonzero'])('模拟：%s 不判成功或重试', async scenario => {
+it('模拟：完成本轮后进程非零退出，判待核实（不判成功、不重试），注明退出码', async () => {
+  const r = await run(setup('nonzero'))
+  expect(r.result).toMatchObject({ status: 'UNCERTAIN' })
+  expect(r.result.error).toContain('退出码 7')
+  expect(r.rows.filter(x => x.method === 'session/prompt').length).toBe(1)
+})
+it.each(['model-mismatch', 'wrong-session', 'config-drift', 'partial', 'unfinished'])('模拟：%s 不判成功或重试', async scenario => {
   const r = await run(setup(scenario))
   expect(r.result.status).toBe('ERROR')
   expect(r.rows.filter(x => x.method === 'session/prompt').length).toBeLessThanOrEqual(1)
@@ -273,4 +295,54 @@ it('模拟：完全权限不做沙箱探测', async () => {
   const r = await run(setup('normal', { access: 'danger-full-access' }))
   expect(r.result.status).toBe('SUCCESS')
   expect(r.rows.filter(x => x.start).map(x => x.argv.includes('acp'))).toEqual([true])
+})
+
+// 模拟 agy 1.5.1 的实测行为：invoke_subagent 派发即 completed，结果要到下一次 prompt 才送达。
+const fast = { ...AGY_BACKGROUND, delaysMs: [5, 5, 5], budgetMs: 5000 }
+const prompts = (r: any) => r.rows.filter((x: any) => x.method === 'session/prompt').length
+it('模拟：后台子 Agent 在同一会话自动跟进，直到不再回复待完成标记', async () => {
+  const r = await run(setup('subagent'), 'allow-once', undefined, false, fast)
+  expect(r.error).toBeUndefined()
+  expect(prompts(r)).toBe(3)
+  expect(r.rows.filter((x: any) => x.check).map((x: any) => x.mentionsMarker)).toEqual([true, true])
+  expect(r.result).toMatchObject({ status: 'SUCCESS' })
+  expect(r.result.response).toContain('图片已保存到 cat.png')
+  expect(r.result.response).not.toContain('CLIWORKER_SUBAGENTS_PENDING')
+  // Visible in the Worker process view (diagnostics), and the marker never streams as reply text.
+  const notes = r.frames.filter((f: any) => f.event?.kind === 'diagnostic' && f.event.notice === true).map((f: any) => f.event.text)
+  expect(notes.filter((t: string) => t.includes('非用户消息'))).toHaveLength(2)
+  expect(notes.filter((t: string) => /自动发送第 \d 次跟进检查/.test(t))).toHaveLength(2)
+  const streamed = r.frames.filter((f: any) => f.event?.kind === 'assistant').map((f: any) => f.event.text).join('')
+  expect(streamed).not.toMatch(/CLIWORKER|AGENTS_PENDING/)
+  expect(streamed).toContain('图片已保存到 cat.png')
+  expect(r.rows.find((x: any) => x.method === 'session/prompt' && x.params.prompt[0].text.includes('不要重新派发'))).toBeTruthy()
+})
+it('模拟：无后台工具时只发一次 prompt', async () => {
+  const r = await run(setup('normal'), 'allow-once', undefined, false, fast)
+  expect(r.result.status).toBe('SUCCESS'); expect(prompts(r)).toBe(1)
+})
+it('模拟：检查次数用尽仍未完成时报告待核实，而不是成功或 CLI 错误', async () => {
+  const r = await run(setup('subagent-never'), 'allow-once', undefined, false, fast)
+  expect(prompts(r)).toBe(4)
+  expect(r.result).toMatchObject({ status: 'UNCERTAIN' })
+  expect(JSON.stringify(r.result)).toContain('后台子 Agent 未在限定时间内汇报结果')
+})
+it('模拟：等待后台子 Agent 时停止任务，不再发送跟进并关闭进程', async () => {
+  const r = await run(setup('subagent'), 'allow-once', 'background', false, { ...fast, delaysMs: [2000] })
+  expect(prompts(r)).toBe(1)
+  expect(r.result.status).not.toBe('SUCCESS')
+})
+it('模拟：跟进轮先回标记、同轮又送达结果时直接结束，不再多跟进', async () => {
+  const r = await run(setup('subagent-late'), 'allow-once', undefined, false, fast)
+  expect(prompts(r)).toBe(2)
+  expect(r.result).toMatchObject({ status: 'SUCCESS' })
+  expect(r.result.response).toContain('图片已保存到 cat.png')
+  expect(r.result.response).not.toMatch(/CLIWORKER|AGENTS_PENDING/)
+})
+it('模拟：成功完成本轮后 agy 关闭时非零退出，报告待核实而不是失败', async () => {
+  const r = await run(setup('subagent-late-exit'), 'allow-once', undefined, false, fast)
+  expect(r.result).toMatchObject({ status: 'UNCERTAIN' })
+  expect(r.result.error).toContain('关闭时异常退出')
+  expect(r.result.error).toContain('退出码 2')
+  expect(r.result.response).toContain('图片已保存到 cat.png')
 })

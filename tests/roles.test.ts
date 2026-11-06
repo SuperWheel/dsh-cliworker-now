@@ -232,6 +232,9 @@ describe('named conversations and frozen roles', () => {
     expect(() => runtime.resolveWorker('other-parent', undefined, 'agy-1')).toThrow('没有此名称')
     expect(() => runtime.resolveWorker('parent', first.worker.id, 'agy-2')).toThrow('不匹配')
     expect(() => runtime.renameWorker('parent', second.worker.id, 'agy-1')).toThrow('同名')
+    // dsh-<n> belongs to DSH native subagents in the same window; a CLI Worker cannot take it.
+    expect(() => runtime.renameWorker('parent', second.worker.id, 'DSH-2')).toThrow('保留给 DSH 子 Agent')
+    expect(() => runtime.renameWorker('parent', second.worker.id, 'dsh-助手')).not.toThrow()
     runtime.renameWorker('parent', first.worker.id, '小林')
     expect(runtime.resolveWorker('parent', undefined, '小林').id).toBe(first.worker.id)
     expect(() => runtime.resolveWorker('parent', undefined, 'agy-1')).toThrow('没有此名称')

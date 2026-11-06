@@ -317,6 +317,37 @@ it('accounts for two proven responses once each without adding an empty cleanup 
   expect(f.projections().tokenUsage).toMatchObject({ uncachedInputTokens: 10, outputTokens: 4 })
 })
 
+it('shows CLI Worker actions between responses as passive tool rows and hides other diagnostics (synthetic)', async () => {
+  const f = await fixture({
+    sourceEvents: [
+      { kind: 'user', text: 'synthetic input' },
+      { kind: 'assistant', text: 'synthetic dispatch', step: 0,
+        response: { id: 'first', blockId: 'text', index: 0, complete: true } },
+      { kind: 'diagnostic', text: 'synthetic internal diagnostic' },
+      { kind: 'diagnostic', notice: true, text: 'SIMULATED 自动跟进说明' },
+      { kind: 'assistant', text: 'synthetic final answer', step: 1,
+        response: { id: 'second', blockId: 'text', index: 0, complete: true } },
+    ],
+  })
+  await f.begin()
+  await f.finish('completed')
+  const log = f.agent.session.log
+  const calls = log.filter((event) => event.type === 'tool/call')
+  expect(calls).toHaveLength(1)
+  expect(calls[0]?.data).toMatchObject({ name: 'cliworker_auto_followup', arguments: JSON.stringify({ 说明: 'SIMULATED 自动跟进说明' }) })
+  const results = log.filter((event) => event.type === 'tool/result')
+  expect(results[0]?.data.message).toMatchObject({ isError: false, content: [{ type: 'text', text: 'SIMULATED 自动跟进说明' }] })
+  expect(JSON.stringify(log)).not.toContain('synthetic internal diagnostic')
+  const replies = log.filter((event) => event.type === 'assistant/message'
+    && event.data.message.content.some((block) => block.type === 'text'))
+  expect(replies.map((event) => event.data.message.content)).toEqual([
+    [{ type: 'text', text: 'synthetic dispatch' }], [{ type: 'text', text: 'synthetic final answer' }]])
+  expect(replies[0]!.seq).toBeLessThan(calls[0]!.seq)
+  expect(replies[1]!.seq).toBeGreaterThan(results[0]!.seq)
+  expect(f.realTool).not.toHaveBeenCalled()
+  expect(f.requestErrors).not.toHaveBeenCalled()
+})
+
 it('lets the official loop settle an observed tool response once without executing the real tool', async () => {
   const usage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }
   const f = await fixture({

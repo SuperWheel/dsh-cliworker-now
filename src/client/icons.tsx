@@ -14,6 +14,18 @@ import opencode from './assets/opencode.png'
 import grok from './assets/grok.png'
 import qoder from './assets/qoder.png'
 import projectLogo from './assets/cliworker-now-logo.png'
+import { DSH_MARK_PATH, DSH_MARK_VIEWBOX } from './dsh-mark.ts'
+
+/** DSH's own monochrome mark for the native-subagent group; inverted in dark theme like other mono brands. */
+export function DshIcon({ size = 22 }: { size?: number }) {
+  return (
+    <span className="cwn-brand" aria-hidden="true" style={{ width: size, height: size }}>
+      <svg className="cwn-icon-mono" viewBox={DSH_MARK_VIEWBOX} width="100%" height="100%" focusable="false">
+        <path d={DSH_MARK_PATH} fill="#000" fillRule="nonzero" />
+      </svg>
+    </span>
+  )
+}
 
 const icons: Partial<Record<CliId, string>> = {
   antigravity,
