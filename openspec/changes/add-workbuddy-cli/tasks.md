@@ -98,6 +98,7 @@
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
 - [ ] 7.4 Windows 发现、命名管道引导与真实验收
 - [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
+  - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。连接页显示「已登录（www.workbuddy.cn）」、无登录/退出按钮与试验性标注；WorkBuddy AI 显示未安装；图标明/暗可见。派遣 hy4free/默认强度，自动审批档，SUCCESS，`v088-workbuddy-check.txt` 实际内容为 `WorkBuddy OK\n`，事件含「WorkBuddy 原生模型已确认」；结束后无 helper/网关残留进程、无 `dshwb-*` 临时目录；该任务 5 份运行记录均为 0600，未检出密钥字样。Worker 卡片显示正常；国际版未验证，本项保持未勾选。
 
 ## 8. 文档
 

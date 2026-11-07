@@ -116,6 +116,7 @@
   - 首次（run-193537）规划步骤脚本只给 `submit` 传了 `plan`，续聊沿用 Worker 已保存的模式，原生仍为 `default`（脚本错误，非插件问题），不算证据。
   - 验收脚本的权限快照是固定值，所以状态行显示「本轮权限：仅工作区编辑」；真实 Host 在 plan 时显示「规划模式」（`index.ts` 现有逻辑），未在 Desktop 中目视核对。
 - [ ] 7.4 Desktop 加载 preview 包、连接页与图标明暗 —— 未执行，保留为未验证（本会话未打开 Desktop；登录窗口、设置页目录与 Worker 菜单只有模拟测试）
+  - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`（正式构建，非 preview 包）。设置页条目与图标明/暗、账号区「已登录」、模型列表显示正常；派遣 glm-5.3-flash（无强度选项），「仅工作区编辑」档，SUCCESS，`v088-trae-check.txt` 实际内容为 `TRAE OK\n`，事件含「TRAE CLI CN 原生模型已确认」，结束后无 traecli 残留。登录窗口未在 Desktop 中验证，本项保持未勾选。
 - [ ] 7.5 Windows 发现与初始化 —— 本期未执行，保留为未验证
 
 未验证与不在本期范围：企业 SSO / 企业 PAT 登录与「套餐不支持 CLI」真实回执（只有夹具）、退出登录的真实执行（未运行，避免影响用户账号）、完全权限（`bypass_permissions`）真实运行、分支 `session/fork` 经插件的真实运行（0.2 只做了原生探测）、附件、运行中引导与 DSH 工具桥（按设计不声明）、强度来源（TRAE 未公开）。
