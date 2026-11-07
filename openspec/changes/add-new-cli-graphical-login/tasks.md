@@ -33,8 +33,8 @@
 
 ## 3. Host flows 与协议（实施时同步关联测试/文档）
 
-- [ ] 3.1 实现 CodeBuddy flow 与注册：完整就绪屏一次 `/login`、当前菜单 choice、已核实授权模板、自动 `/logout` 和未知屏回退；同时补模拟分帧/重绘/不重复写键测试，按 C1–C7 核对 marker 注释与协议记录。
-  - 2026-11-07：已注册独立原生回退 flow；C1 仅提示用户自行处理信任，不代确认。C2–C6 缺失，所以未实现自动 /login、自动 /logout 或站点菜单，任务保持未完成。
+- [x] 3.1 实现 CodeBuddy flow 与注册：完整就绪屏一次 `/login`、当前菜单 choice、已核实授权模板、自动 `/logout` 和未知屏回退；同时补模拟分帧/重绘/不重复写键测试，按 C1–C7 核对 marker 注释与协议记录。
+  - 2026-11-07 后续：C1–C6 授权前实采后接入 trust（仅用户确认当前文件夹）、空编辑器一次 /login、完整当前高亮四站点 choice、中国/国际 browser、企业/iOA 原生。/logout 只提交一次，初始菜单只触发严格状态回读，未知屏不根据 authenticated 猜测可输入。实采 CR/VT 高亮重放、分帧、返回菜单、关闭前延迟 Enter 取消、状态不明拒绝退出均有测试；C7 Windows 另列未验收。
 - [x] 3.2 收紧 CodeBuddy 引导状态证据，区分不存在/退出标记与读取拒绝/非法文件，建立动作前基线；用模拟状态证明 success 文本、mtime、零退出码、读取失败均不能假报退出或换号，认证内容仍只投影 `auth.domain`。
   - 2026-11-07：`readCodebuddyLoginState` 区分 ENOENT、普通退出标记、读取拒绝、ENOTDIR、目录及符号链接；`readCodebuddyAccount` 只复用 auth.domain 投影确认 JSON 可读。PTY 分配前保存基线；同为 authenticated、未知基线、零退出码和状态读取错误均不能证明新登录。
 - [x] 3.3 实现 TRAE flow，沿用三种原生 argv，个人模板按 T1–T2 接入、SSO/PAT 固定原生回退；同时测试 provider 拒绝、特性开关仅用于本次个人登录、没有插件 PAT 收集，更新 TRAE 协议指引。
@@ -46,14 +46,14 @@
 - [ ] 3.7 在新能力中落实权限、同 CLI 互斥、父会话结束、卸载、迟到分配/查询和清理保护；以 Host/Gateway 模拟测试验证拒绝与取消后无写键/无观察，清理不明不放行。
   - 2026-11-07：CodeBuddy/TRAE 复用现有父会话/权限/互斥/取消路径；新增基线查询清理屏障与退出清理回归已覆盖。WorkBuddy 新观察生命周期不在此工作树，整项暂不勾。
 - [x] 3.8 按采集证据更新精确登录主机与 Host 固定文案，补相似域/子域/userinfo/非 HTTPS 的模拟拒绝测试；同步 guide 与协议文档，不能把站点分类通配当作授权白名单。
-  - 2026-11-07：CodeBuddy 没有已采授权主机，表置空；TRAE 仅 www.trae.cn。测试拒绝近似域、额外子域、userinfo、HTTP、裸 trae.cn 与企业主机；固定文案经既有 hostText 字典映射，marker 不翻译。
+  - 2026-11-07 后续：CodeBuddy 只允许实采 copilot.tencent.com、www.codebuddy.ai；TRAE 仅 www.trae.cn。测试拒绝近似域、额外子域、userinfo、HTTP、未打印裸域与企业主机；iOA URL 保持原生。新增 trust/choice/browser 固定文案经 hostText 映射，中文/英文渲染验证，marker 不翻译。
 
 ## 4. Client（实施时同步 UI 测试与文档）
 
 - [x] 4.1 提取两列卡片共用呈现，接入 TRAE 单账号方式选择；补模拟 UI 测试验证取消不启动、无无效“其他服务商”、已有多账号添加/替换/逐项退出不回归。
   - 2026-11-07：提取 `ProviderCards`，多账号 AddAccount 与 `LoginMethodPicker` 共用两列 radio 卡片及方向键/Home/End。TRAE 未选不启动、无“其他服务商”、取消不启动、过期/旧 Host 不默认登录；原添加/替换/逐项退出回归覆盖。
 - [x] 4.2 接入 CodeBuddy/TRAE 当前账号卡与切换顺序；模拟测试验证查看不启 PTY、确认退出且清理完成才进下一向导，失败保留可重试状态。
-  - 2026-11-07：两者已登录只显示灰色账号卡，无 PTY；CodeBuddy 文案明确原生 /logout。TRAE 自动退出成功后仍等待 accountStop 清理，再展示全新未选方式；清理失败显示可重试警示，禁止下一次登录。
+  - 2026-11-07：两者已登录只显示灰色账号卡，无 PTY；CodeBuddy 后续已改为先自动退出再登录的准确说明。TRAE 自动退出成功后仍等待 accountStop 清理，再展示全新未选方式；清理失败显示可重试警示，禁止下一次登录。
 - [ ] 4.3 接入 WorkBuddy 桌面管理页，复用 choice/waiting/result 与账号卡；补模拟 UI 测试证明没有假终端/自动退出承诺、状态与刷新按钮同排、打开失败可手动继续、旧 Host 只留指引。
 - [ ] 4.4 补 `i18n-messages.ts` 与 `hostText` 的标题/plan/选项/状态/错误映射；验证中文/英文、长文案、480px、淡色提示、灰卡、右对齐操作及原生回退焦点，更新设置规范中相关行为与确实变动的样式参数。
   - 2026-11-07：中文/英文组件渲染及回退焦点有模拟覆盖；两 CLI 作用域内操作右对齐、TRAE 长标题换行，保持 480px、主题 token 与原同排底栏。已同步设置规范；Desktop 明暗/实际窄窗口目视未执行，整项暂不勾。
@@ -79,7 +79,18 @@
 - 首次完整 `pnpm test`（沙箱内）：18 文件失败、256 通过、4 跳过；348 用例失败、5704 通过、14 跳过（6066 总数），192.12s。明确出现 `listen EPERM: operation not permitted 127.0.0.1` 等限制，不能判成代码全量验收。旧受限进程最终自行结束；请求结束它曾被拒绝，没有强制终止。
 - 沙箱外完整 `pnpm test`：3 文件失败、271 通过、4 跳过；4 用例失败、6049 通过、14 跳过（6067 总数），219.89s（`full-test-unsandboxed.log`）。包含运行期间修复的 TRAE 基线清理错误类型，以及未改动文件中的 Antigravity 探测/原生桥时限断言；不宣称全量通过。
 - 沙箱外串行 `pnpm test tests/native-agy-acp.test.ts tests/native-bridge-time-limit.test.ts tests/traecn-accounts.test.ts --maxWorkers=1`：3 文件中 1 通过、2 失败；72 用例通过、3 失败，53.55s。TRAE 29/29 通过；仍失败的是 `native-agy-acp.test.ts` 的 account-auto/normal 两个 `--dangerously-skip-permissions` 断言，以及 `native-bridge-time-limit.test.ts` 的审批暂停空闲计时用例（原生引导通路已关闭或尚未准备）。这些文件及相关原生实现均未修改；原因仍待独立核查，不能声称已证明只是机器负载。
-- 中英文 React 渲染是组件模拟验收，不是 Desktop 实机视觉证据。没有 Windows、有效账号退出/重登、CodeBuddy C2–C6 或完整企业 SSO/PAT 授权证据；WorkBuddy 跨工作树合并尚未验证。
+- 首轮中英文 React 渲染是组件模拟验收，不是 Desktop 实机视觉证据。当时没有 CodeBuddy C2–C6（同日后续已补）；Windows、有效账号退出/重登、完整企业 SSO/PAT 授权与 WorkBuddy 跨工作树合并仍未验证。
+
+### 2026-11-07 同日后续检查与基线对照
+
+- 所有命令仍从本工作树执行；pnpm 使用 `PATH="$PWD/.cache/bin:$PATH"`，测试使用 `TMPDIR=/tmp`。临时基线 `pnpm --dir /tmp/cwn-login-base-3ce15f5 test ... --maxWorkers=1` 的测试根为 detached `3ce15f5`；只软链当前 node_modules。pnpm 11 在不同根校验依赖时尝试重建索引，首次 typecheck 在脚本执行前被无 TTY 提示中断；后续增加 `--config.verify-deps-before-run=false` 使用已安装依赖，未更改 package/lockfile。
+- 比较前通过沙箱外 pgrep 确认无其他 Vitest，当前与基线两个测试运行严格串行，未终止任何其他工作树进程。`tests/native-agy-acp.test.ts tests/native-bridge-time-limit.test.ts --maxWorkers=1`：当前分支 **2 文件 46/46 通过，22.07s**（`followup-current-native.log`）；基线 **2 文件 46/46 通过，23.05s**（`followup-base-native.log`）。此前三个失败用例在两边均通过，没有稳定复现；与负载/时序偶发失败相符，但未证明唯一根因。相关原生实现未修改。
+- 基线测试后移除 node_modules 软链并 `git worktree remove /tmp/cwn-login-base-3ce15f5`，成功清理 detached 工作树；没有切换当前分支或改动其他分支。
+- 后续最终关联回归（同上 9 文件命令，沙箱外）：**9 文件 473/473 通过，18.02s**（`followup-related-final.log`）。新增实采 VT、空编辑器/一次命令、当前高亮、菜单守卫、精确主机、企业/iOA 原生、严格状态、关闭取消与 zh/en 渲染覆盖；原多账号回归继续通过。
+- 调试中的一次新测试语法错误（1 suite 无法加载、其余 421 通过）已修正；一次实采 fixture 由文本读取自动转换 CR 导致的高亮回放失败（188 通过/1 失败）已修正为保留原始 CR/VT，不修改生产终端解析器。最终回归覆盖该案例，不能将旧错误隐藏为通过。
+- 最终完整 `TMPDIR=/tmp pnpm test`（沙箱外、启动前 pgrep 无其他 Vitest）：**274 文件通过、4 跳过（278 总数）；6076 用例通过、14 跳过（6090 总数），零失败，78.05s**（`followup-full-test.log`）。此前三个原生失败用例本轮全量也通过；此前失败历史仍保留，不归因于已证明的代码缺陷。
+- 最终 `pnpm typecheck` 通过，Host/Client 对 DSH 0.2.2-rc.1 类型检查退出 0（`followup-typecheck-final.log`）。`pnpm build:preview` 退出 0，产物 `.cache/preview-package`（`followup-build-preview.log`）；未执行正式 build 或更新 Desktop 链接。
+- `pnpm spec validate add-new-cli-graphical-login --strict` 退出 0，`Change 'add-new-cli-graphical-login' is valid`（`followup-spec.log`）；`git diff --check` 通过。WorkBuddy 跨工作树集成、第 6 组真实账号/Desktop/Windows 验收仍未完成，不归档本 change。
 
 ## 6. Desktop 验收（不以采屏或模拟代替）
 

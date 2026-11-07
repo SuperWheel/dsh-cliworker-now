@@ -11,7 +11,7 @@ v0.8.8 新接入的 CodeBuddy Code、TRAE CLI CN 与 WorkBuddy 两版尚未接�
 - 为 `workbuddycn` / `workbuddy` 增加桌面端账号引导页：显式打开正确的桌面应用、有限自动刷新状态，登录、退出与换号均在桌面端完成。没有 CLI 登录命令，不创建伪终端，不自动退出桌面账号。
 - 复用 `LoginWindow` 的步骤、结果、淡色提示、480px 窗口及两列账号选择卡片；补齐 Host 固定文案的中英文映射、生命周期与对应模拟测试。
 - 编写 [图形化登录开发指南](../../../doc/knowledge/cli-integration/graphical-login.md)，补齐接入流程的登录阶段与交付核对项。
-- 初始轮交付文档和方案；2026-11-07 后续授权已实施 CodeBuddy 原生回退、TRAE 图形个人登录与方式卡片，并补测试及授权前采集。CodeBuddy 首次信任后路径、Desktop 与 Windows 保持未完成；WorkBuddy 在另一工作树实施。
+- 初始轮交付文档和方案；2026-11-07 后续授权已实施 CodeBuddy 信任/站点/浏览器引导与自动斜杠命令、TRAE 图形个人登录与方式卡片，并补测试及授权前采集。CodeBuddy 有效账号退出/重新授权、Desktop 与 Windows 保持未完成；WorkBuddy 在另一工作树实施。
 
 ## Capabilities
 

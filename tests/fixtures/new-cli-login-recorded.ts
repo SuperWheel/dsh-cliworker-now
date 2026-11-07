@@ -23,3 +23,29 @@ export const traeEnterpriseRecorded = [
 ].join('\r\n')
 export const traePatRecorded = '--with-trae-pat expects TRAECLI_PERSONAL_ACCESS_TOKEN or PAT on stdin. Try `export TRAECLI_PERSONAL_ACCESS_TOKEN=...` then `/SIMULATED/traecli login --with-trae-pat`.'
 export const traeSignedOutRecorded = 'Not logged in\r\n'
+
+// Follow-up capture: empty project inside throwaway HOME; user-authorized folder
+// trust only. ESC from the initial menu reached this blank editor. Banner model,
+// paths and tips omitted: they are variable and are not readiness markers.
+export const codebuddyEditorRecorded = 'CodeBuddy Code v2.181.0\r\n────────────────\r\n>  \r\n────────────────\r\nclaude-sonnet-5 high · ← for agents · ? for shortcuts'
+export const codebuddySitesRecorded = [
+  'Select login method:', '', '❯ Log in via Chinese Site', '',
+  '  Log in via International Site', '', '  Log in via Enterprise Domain', '',
+  '  Log in via iOA (Tencent only)', '', '(Use ↑↓ to select, Enter to login)',
+].join('\r\n')
+// Arrow-down redraw was recorded; reconstructing it as a full VT clear below is
+// SIMULATED. Tests also replay the recorded cursor-based redraw fixture.
+export const codebuddyInternationalRecorded = codebuddySitesRecorded
+  .replace('❯ Log in via Chinese Site', '  Log in via Chinese Site')
+  .replace('  Log in via International Site', '❯ Log in via International Site')
+export const codebuddyChinaBrowserRecorded = [
+  "Browser didn't open? Use the url below to sign in: (Copied link to clipboard)", '',
+  'https://copilot.tencent.com/login?platform=SIMULATED&state=SIMULATED&version=SIMULATED', '',
+  '✸ Waiting for auth... (Press ESC to cancel)',
+].join('\r\n')
+export const codebuddyIntlBrowserRecorded = codebuddyChinaBrowserRecorded.replace('copilot.tencent.com', 'www.codebuddy.ai')
+export const codebuddyEnterpriseRecorded = 'Custom Endpoint\r\nEnter your custom endpoint address\r\n\r\nEnter to save · Esc to cancel'
+export const codebuddyIoaRecorded = codebuddyChinaBrowserRecorded.replace('&version=SIMULATED', '&version=SIMULATED&ioa=SIMULATED')
+export const codebuddyCancelledRecorded = 'Failed to login. Press esc to return to login'
+// C6: one Enter submitted /logout and displayed exactly the same site menu.
+export const codebuddyLogoutRecorded = codebuddySitesRecorded

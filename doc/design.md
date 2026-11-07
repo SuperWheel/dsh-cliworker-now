@@ -1451,4 +1451,4 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 ### CodeBuddy / TRAE 图形账号引导（2026-11-07，未发布）
 
-独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 采集仅到首次信任，所有未核实按键留在原生；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。
+独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。

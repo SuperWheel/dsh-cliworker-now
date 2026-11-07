@@ -10,8 +10,8 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   claude: ['claude.com', 'claude.ai'],
   qoder: ['qoder.com'],
   qodercn: ['qoder.cn'],
-  // CodeBuddy capture stopped at folder trust; no authorization host was reached.
-  codebuddy: [],
+  // CodeBuddy 2.181.0 China/International pre-authorization screens, 2026-11-07.
+  codebuddy: ['copilot.tencent.com', 'www.codebuddy.ai'],
   // TRAE 0.213.1 personal authorization screen, isolated capture 2026-11-07.
   // Enterprise SSO remains native even though its host was recorded.
   traecn: ['www.trae.cn'],

@@ -1,6 +1,6 @@
 # CLI 图形化登录开发指南
 
-本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。2026-11-07 后续实施已为 CodeBuddy/TRAE 添加独立 flow、严格状态证明与共享方式卡片；CodeBuddy 仅到首次信任，后续按键保持原生，TRAE 个人采用回调网址模板。证据见[本次采集](../../../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)及[任务清单](../../../openspec/changes/add-new-cli-graphical-login/tasks.md)；WorkBuddy 由另一工作树实施，本页不代表其验收。
+本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。2026-11-07 后续实施已为 CodeBuddy/TRAE 添加独立 flow、严格状态证明与共享方式卡片；CodeBuddy 已采授权前 C1–C6 并接入信任确认、自动斜杠命令、站点选择和浏览器引导；TRAE 个人采用回调网址模板。证据见[本次采集](../../../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)及[任务清单](../../../openspec/changes/add-new-cli-graphical-login/tasks.md)；WorkBuddy 由另一工作树实施，本页不代表其验收。
 
 ## 1、先判定账号由谁管理
 
@@ -11,7 +11,7 @@
 | 单账号、多登录方式/站点 | 仍为单账号；选择器只是决定本次原生登录路径，不意味着可同时持有多个账号 | `src/host/account-guide/providers.ts` 的 TRAE 表与 `src/host/traecn-accounts.ts` 的 `traecnAccountArguments`；CodeBuddy 参见 `src/host/codebuddy-account.ts` 与 `doc/codebuddy-protocol.md` |
 | 桌面端托管账号 | 用户在对应桌面应用登录/退出，插件显示指引和原生状态；图形页需单独的无 PTY 观察分支 | `src/host/accounts.ts` 对 WorkBuddy 返回空 actions 并拒绝 `start`；`src/host/workbuddy-metadata.ts`、`workbuddy-installation.ts`。拟扩展方式见第 8 节 |
 
-分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 包括 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo、CodeBuddy 与 TRAE CN；后两者保持单账号，其中 CodeBuddy 只有原生回退 flow，不代表自动按键已核实。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
+分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 包括 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo、CodeBuddy 与 TRAE CN；后两者保持单账号，其中 CodeBuddy 按 C1–C6 实采标记引导，未知画面与企业/iOA 保持原生；有效账号退出/重登仍待验收。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
 
 ## 2、架构与数据流
 

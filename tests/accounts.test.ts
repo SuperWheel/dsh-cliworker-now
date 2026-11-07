@@ -20,6 +20,7 @@ import type {
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
+import { codebuddyTrustRecorded, codebuddyEditorRecorded, codebuddySitesRecorded } from './fixtures/new-cli-login-recorded.ts'
 import { AccountManager, AGY_GUIDE_TIMING } from '../src/host/accounts.ts'
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from '../src/host/process.ts'
@@ -1926,6 +1927,62 @@ describe('guided login windows of other CLIs (synthetic screens)', () => {
     f.output.write('\x1b[2Jsynthetic Qoder main screen')
     await vi.waitFor(() => expect(watched.steps().at(-1)).toBe('loggedOut'))
     expect(vi.mocked(f.terminal.write).mock.calls.map(([data]) => data)).toEqual(['\r', '/logout', '\r'])
+  })
+
+  it('CodeBuddy recorded editor automatically submits /login once after explicit trust (simulated PTY)', async () => {
+    fast()
+    const f = fixture()
+    vi.spyOn(f.manager as any, 'readStatus').mockResolvedValue({ state: 'unauthenticated', summary: '' })
+    const { id } = await f.manager.start('p', 'codebuddy', 'login', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write(codebuddyTrustRecorded)
+    await vi.waitFor(() => expect(watched.steps()).toContain('trust'))
+    expect(f.terminal.write).not.toHaveBeenCalled()
+    await f.manager.respond('p', id, { confirm: 'trust' })
+    f.output.write('\x1b[2J\x1b[H' + codebuddyEditorRecorded)
+    await vi.waitFor(() => expect(vi.mocked(f.terminal.write).mock.calls.map(([data]) => data)).toEqual(['\r', '/login', '\r']))
+    f.output.write('\x1b[2J\x1b[H' + codebuddySitesRecorded)
+    await vi.waitFor(() => expect(watched.steps().at(-1)).toBe('site'))
+    expect(vi.mocked(f.terminal.write).mock.calls).toHaveLength(3)
+    await f.manager.stop('p', id)
+  })
+
+  it('CodeBuddy recorded logout path writes only one Enter and verifies native state (simulated PTY)', async () => {
+    fast()
+    const f = fixture()
+    vi.spyOn(f.manager as any, 'readStatus').mockImplementation(async () => ({
+      state: vi.mocked(f.terminal.write).mock.calls.some(([data]) => data === '\r') ? 'unauthenticated' : 'authenticated', summary: '',
+    }))
+    const { id } = await f.manager.start('p', 'codebuddy', 'logout', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write(codebuddyEditorRecorded)
+    await vi.waitFor(() => expect(watched.steps()).toContain('loggedOut'))
+    expect(vi.mocked(f.terminal.write).mock.calls.map(([data]) => data)).toEqual(['/logout', '\r'])
+  })
+
+  it('CodeBuddy signed-out menu with unreadable status never reports logout success (simulated PTY)', async () => {
+    fast()
+    const f = fixture()
+    vi.spyOn(f.manager as any, 'readStatus').mockResolvedValue({ state: 'unknown', summary: '' })
+    const { id } = await f.manager.start('p', 'codebuddy', 'logout', f.cwd, f.signal)
+    const watched = frames(f, id)
+    f.output.write(codebuddySitesRecorded)
+    await vi.waitFor(() => expect(watched.steps()).toContain('logoutUnconfirmed'))
+    expect(watched.steps()).not.toContain('loggedOut')
+    expect(f.terminal.write).not.toHaveBeenCalled()
+    await f.manager.stop('p', id)
+  })
+
+  it('cancels delayed CodeBuddy /login Enter when its window closes (simulated PTY)', async () => {
+    fast()
+    const f = fixture()
+    vi.spyOn(f.manager as any, 'readStatus').mockResolvedValue({ state: 'unauthenticated', summary: '' })
+    const { id } = await f.manager.start('p', 'codebuddy', 'login', f.cwd, f.signal)
+    f.output.write(codebuddyEditorRecorded)
+    await vi.waitFor(() => expect(f.terminal.write).toHaveBeenCalledWith('/login'))
+    await f.manager.stop('p', id)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    expect(vi.mocked(f.terminal.write).mock.calls.map(([data]) => data)).toEqual(['/login'])
   })
 
   it('closes a Grok sign-out at once when there is no session, typing nothing', async () => {

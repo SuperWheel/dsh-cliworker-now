@@ -7,7 +7,7 @@ import { LoginWindow } from '../src/client/account-login/login-window.tsx'
 import { setLanguagePreference, t } from '../src/client/i18n.ts'
 import { hostText } from '../src/client/operation-error.ts'
 import { createAccountGuide } from '../src/host/account-guide/flows.ts'
-import { codebuddyTrustRecorded, traePersonalRecorded, traePatRecorded } from './fixtures/new-cli-login-recorded.ts'
+import { codebuddyTrustRecorded, codebuddySitesRecorded, codebuddyChinaBrowserRecorded, traePersonalRecorded, traePatRecorded } from './fixtures/new-cli-login-recorded.ts'
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children, ...props }: any) => createElement('button', props, children),
   Input: (props: any) => createElement('input', props), StateDot: () => null,
@@ -34,7 +34,7 @@ it.each(['zh', 'en'] as const)('模拟：method choices and fixed flow copy rend
   await act(async () => renderer.root.findAllByType('button').find(button => button.children.includes(t('继续')))!.props.onClick())
   expect(onStart).toHaveBeenCalledExactlyOnceWith('enterprise')
   await act(async () => renderer.unmount())
-  for (const [cli, provider, screen] of [['codebuddy', undefined, codebuddyTrustRecorded], ['traecn', 'personal', traePersonalRecorded], ['traecn', 'enterprise-pat', traePatRecorded]] as const) {
+  for (const [cli, provider, screen] of [['codebuddy', undefined, codebuddyTrustRecorded], ['codebuddy', undefined, codebuddySitesRecorded], ['codebuddy', undefined, codebuddyChinaBrowserRecorded], ['traecn', 'personal', traePersonalRecorded], ['traecn', 'enterprise-pat', traePatRecorded]] as const) {
     const guide = createAccountGuide(cli, 'login', { provider })!.output(screen).find(event => 'guide' in event)
     if (!guide || !('guide' in guide)) throw new Error('missing fixture guide')
     await act(async () => { renderer = create(createElement(LoginWindow, { cli, action: 'login', phase: 'running', guide: guide.guide,

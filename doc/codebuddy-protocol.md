@@ -76,6 +76,6 @@
 
 ## 7. 图形账号引导与采集边界（2026-11-07）
 
-2.181.0 的隔离 200 × 60 首屏为 `Do you trust the files in this folder?`，未接受信任，Ctrl-C 退出 0。后续编辑器、站点菜单、授权前屏及 `/logout` 未到达；当前 flow 只提供原生提示，不发送自动按键，CodeBuddy 授权链接白名单暂为空。已登录先显示账号卡；切换经原生 `/logout` 后回读明确退出并清理，才开始新登录。
+2.181.0 的隔离 200 × 60 首屏为 `Do you trust the files in this folder?`。后续获准接受空临时项目的信任后，采到空编辑器、`/login` 四站点菜单/高亮重绘、中国/国际浏览器等待及未登录 `/logout` 返回菜单。生产 trust 要求用户在窗口确认，只信任当前文件夹；空编辑器自动 `/login`，当前高亮决定导航键。中国/国际为 browser，精确授权主机仅 `copilot.tencent.com` 与 `www.codebuddy.ai`。企业 endpoint 与 iOA（链接含 ioa 参数）保留原生，不收集凭据。切换自动 `/logout` 只提交一次；登录菜单不补按 Enter，回读明确退出并清理后才开始新登录。未知画面保留原生；没有条款接受或真实授权。
 
 本地状态不再把 EACCES/EPERM/ENOTDIR、目录、符号链接或非法退出标记当成退出成功。账号展示复用获准的 `auth.domain` 内存投影确认 JSON 可读；读取失败、字段缺失或格式无效保持未知。只有明确不存在或普通 `.logged-out` 文件证明未登录；登录需要动作前明确未登录到新 authenticated 的转换，不以 mtime 或同站点标签证明新账号。未新增凭据字段读取。详见 [真实采集记录](../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)；有效账号退出和 Desktop/Windows 仍待验收。

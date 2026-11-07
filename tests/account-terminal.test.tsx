@@ -1644,12 +1644,12 @@ it('模拟：TRAE missing Host methods never chooses a default login', async () 
   expect(f.accountStart).not.toHaveBeenCalled(); expect(f.accountStartWith).not.toHaveBeenCalled()
 })
 
-it('模拟：CodeBuddy current account stays idle and explains native logout before switching', async () => {
+it('模拟：CodeBuddy current account stays idle and starts automatic logout only on switch', async () => {
   const f = await setup(false)
   await f.update('codebuddy', 'login', undefined, undefined, true, { account: {
     cli: 'codebuddy', installed: true, state: 'authenticated', summary: '已登录 · 中国站', actions: [],
   } })
-  expect(JSON.stringify(f.renderer.toJSON())).toContain('/logout')
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('切换账号会先退出当前账号')
   expect(JSON.stringify(f.renderer.toJSON())).toContain('已登录 · 中国站')
   expect(f.accountStart).not.toHaveBeenCalled()
   await f.click('切换账号')

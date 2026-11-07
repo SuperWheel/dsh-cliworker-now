@@ -58,7 +58,7 @@ it('offers three native permission levels, planning, images and an explicit no-f
 })
 
 it('keeps a single account with a native fallback guide and no uncaptured authorization hosts', () => {
-  expect(ACCOUNT_LOGIN_HOSTS.codebuddy).toEqual([])
+  expect(ACCOUNT_LOGIN_HOSTS.codebuddy).toEqual(['copilot.tencent.com', 'www.codebuddy.ai'])
   expect(SINGLE_ACCOUNT_CLIS.has('codebuddy')).toBe(true)
   expect(GUIDED_ACCOUNT_CLIS.has('codebuddy')).toBe(true)
 })

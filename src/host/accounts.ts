@@ -1258,7 +1258,7 @@ export class AccountManager {
         if (event.guide.step === 'notSignedIn')
           void this.finish(session, 'closed', '账号终端已关闭').catch(() => undefined)
       } else if ('finish' in event) void this.finish(session, 'closed', '账号终端已关闭').catch(() => undefined)
-      else if ('write' in event) void this.autoWrite(session, event.write)
+      else if ('write' in event) void this.autoWrite(session, event.write, event.enter)
       else if ('command' in event) void this.logOut(session, event.command)
       else if ('identify' in event) void this.identifyScreen(session)
       else if ('watch' in event) void this.watchAccount(session)
@@ -1267,11 +1267,16 @@ export class AccountManager {
   }
 
   /** A choice the user already made in the window, typed into the menu it belongs to. */
-  private async autoWrite(session: AccountSession, keys: string) {
+  private async autoWrite(session: AccountSession, keys: string, enter = false) {
     const signal = session.guideControl!.signal
     try {
       await sleep(AGY_GUIDE_TIMING.commandDelayMs, undefined, { signal })
-      if (session.state === 'running' && !session.stopping) await session.terminal.write(keys)
+      if (session.state !== 'running' || session.stopping) return
+      await session.terminal.write(keys)
+      if (enter) {
+        await sleep(ANSWER_ENTER_MS, undefined, { signal })
+        if (session.state === 'running' && !session.stopping) await session.terminal.write('\r')
+      }
     } catch {
       // Closing the window aborts it; nothing else to undo.
     }

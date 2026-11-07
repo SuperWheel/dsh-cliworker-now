@@ -279,9 +279,9 @@ export interface FlowStep {
   id: string
   when: readonly string[] | ((screen: ScreenView, ctx: FlowContext) => boolean)
   guide: (screen: ScreenView, ctx: FlowContext) => AccountGuide
-  respond?: (response: AccountResponse, ctx: FlowContext) => FlowAnswer | undefined
+  respond?: (response: AccountResponse, ctx: FlowContext, screen: ScreenView) => FlowAnswer | undefined
   /** Keys written once when the step shows, for a choice the user already made in the window. */
-  auto?: (screen: ScreenView, ctx: FlowContext) => string | undefined
+  auto?: (screen: ScreenView, ctx: FlowContext) => string | Pick<FlowAnswer, 'keys' | 'enter'> | undefined
   /** Reaching this step is itself a sign that the change may have taken effect. */
   confirms?: AccountChange
   /**
@@ -308,6 +308,8 @@ export interface FlowDefinition {
   /** CLI name used in plugin texts. */
   name: string
   size?: { cols: number; rows: number }
+  /** A cancellable TUI may return to an earlier screen; re-evaluate its current view. */
+  revisit?: boolean
   links?: readonly string[]
   /** Device code on the plain screen; group 1 is the code. */
   deviceCode?: RegExp
@@ -319,7 +321,18 @@ export interface FlowDefinition {
      * A TUI command typed once its ready screen shows, or once the screen settles on a
      * signed-in account; `signedOut` proves nothing to do, `menu` that Enter is unsafe again.
      */
-    command?: { ready?: readonly string[]; text: string; signedOut?: readonly string[]; menu?: readonly string[] }
+    command?: {
+      ready?: readonly string[] | ((screen: ScreenView) => boolean)
+      text: string
+      signedOut?: readonly string[]
+      menu?: readonly string[]
+      /** Never infer command readiness from account state alone. */
+      requireReady?: boolean
+      /** A signed-out screen still requires native state evidence. */
+      verifySignedOut?: boolean
+      /** Some CLIs submit once; a second Enter can initiate login. */
+      retry?: boolean
+    }
   }
   proves?: FlowGuide['proves']
   /** Logins carry `cli:provider[:entry]` ids: a provider login is proven by that provider's own entry. */
@@ -417,10 +430,12 @@ export class FlowGuide implements AccountGuideDriver {
       return []
     }
     const command = this.ctx.action === 'logout' ? this.flow.logout?.command : undefined
-    if (command && this.index < 0) {
+    if (command && (this.index < 0 || this.flow.revisit)) {
       const screen = this.view()
-      if (command.signedOut?.length && screen.has(...command.signedOut)) return this.end(this.texts.notSignedIn)
-      if (command.ready?.length && screen.has(...command.ready)) return this.sendCommand(command.text)
+      if (command.signedOut?.length && screen.has(...command.signedOut))
+        return command.verifySignedOut ? this.startConfirm('logout') : this.end(this.texts.notSignedIn)
+      const ready = typeof command.ready === 'function' ? command.ready(screen) : command.ready?.length && screen.has(...command.ready)
+      if (ready) return this.sendCommand(command.text)
     }
     return this.advance()
   }
@@ -433,7 +448,7 @@ export class FlowGuide implements AccountGuideDriver {
     if (this.confirming) return []
     const screen = this.view()
     const context = this.context
-    for (let i = this.steps.length - 1; i >= Math.max(0, this.index); i--) {
+    for (let i = this.steps.length - 1; i >= (this.flow.revisit ? 0 : Math.max(0, this.index)); i--) {
       const step = this.steps[i]
       const matched = typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
       if (!matched) continue
@@ -447,7 +462,7 @@ export class FlowGuide implements AccountGuideDriver {
         const keys = step.auto(screen, context)
         if (keys) {
           this.autoDone.add(step.id)
-          events.push({ write: keys })
+          events.push(typeof keys === 'string' ? { write: keys } : { write: keys.keys, enter: keys.enter })
         }
       }
       if (step.confirms) events.push(...this.startConfirm(step.confirms))
@@ -500,7 +515,7 @@ export class FlowGuide implements AccountGuideDriver {
       const value = ('code' in response ? response.code : response.secret).trim()
       if (!value || value.length > MAX_ANSWER || !ANSWER.test(value)) throw new GuideResponseError()
     }
-    const answer = step.respond(response, this.context)
+    const answer = step.respond(response, this.context, this.view())
     if (!answer) throw new GuideResponseError()
     const events: GuideEvent[] = [{ write: answer.keys, enter: answer.enter }]
     if (answer.resets) {
@@ -542,6 +557,7 @@ export class FlowGuide implements AccountGuideDriver {
     if (this.done || this.commandSent || this.index >= 0) return []
     const command = this.flow.logout?.command
     if (this.ctx.action !== 'logout' || !command) return []
+    if (command.requireReady) return this.show(this.texts.native)
     if (state?.state === 'authenticated') return this.sendCommand(command.text)
     if (state?.state === 'unconfigured' || state?.state === 'unauthenticated') return this.end(this.texts.notSignedIn)
     return this.show(this.texts.native)
@@ -574,6 +590,7 @@ export class FlowGuide implements AccountGuideDriver {
   }
 
   retryEnter(): boolean {
+    if (this.flow.logout?.command?.retry === false) return false
     const menu = this.flow.logout?.command?.menu
     return !menu?.length || !menu.every((marker) => this.afterCommand.includes(compact(marker)))
   }

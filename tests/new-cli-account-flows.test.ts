@@ -1,24 +1,106 @@
+import recordedMenuVt from './fixtures/codebuddy-menu-redraw-recorded.json'
 import { describe, expect, it } from 'vitest'
 import { FlowGuide, type AccountEvidence, type GuideEvent } from '../src/host/account-guide/engine.ts'
 import { createAccountGuide } from '../src/host/account-guide/flows.ts'
 import { CODEBUDDY_FLOW } from '../src/host/account-guide/codebuddy-flow.ts'
 import { TRAECN_FLOW } from '../src/host/account-guide/traecn-flow.ts'
 import { parseTraecnAccount } from '../src/host/traecn-accounts.ts'
-import { codebuddyTrustRecorded, traePersonalRecorded, traeEnterpriseRecorded, traePatRecorded, traeSignedOutRecorded } from './fixtures/new-cli-login-recorded.ts'
+import { codebuddyTrustRecorded, codebuddyEditorRecorded, codebuddySitesRecorded, codebuddyInternationalRecorded, codebuddyChinaBrowserRecorded, codebuddyIntlBrowserRecorded, codebuddyEnterpriseRecorded, codebuddyIoaRecorded, codebuddyCancelledRecorded, codebuddyLogoutRecorded, traePersonalRecorded, traeEnterpriseRecorded, traePatRecorded, traeSignedOutRecorded } from './fixtures/new-cli-login-recorded.ts'
 const guides = (events: GuideEvent[]) => events.flatMap(event => 'guide' in event ? [event.guide] : [])
 const writes = (events: GuideEvent[]) => events.filter(event => 'write' in event || 'command' in event)
 const state = (state: AccountEvidence['state']): AccountEvidence => ({ state })
 
 describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', () => {
-  it.each(['login', 'logout'] as const)('CodeBuddy %s never accepts trust or guesses uncaptured slash commands', action => {
+  it.each(['login', 'logout'] as const)('CodeBuddy %s requires the user to confirm current-folder trust', action => {
     const flow = createAccountGuide('codebuddy', action)!
     const events = [...flow.output(codebuddyTrustRecorded), ...flow.settled()]
-    expect(guides(events)).toContainEqual(expect.objectContaining({ template: 'native' }))
+    expect(guides(events)).toContainEqual(expect.objectContaining({ template: 'trust' }))
     expect(writes(events)).toEqual([])
     expect(flow.output(codebuddyTrustRecorded)).toEqual([])
-    expect(flow.identified(state('authenticated'))).toEqual([])
-    expect(() => flow.respond({ confirm: 'trust' })).toThrow()
     expect(() => flow.respond({ option: 'internal' })).toThrow()
+    expect(writes(flow.respond({ confirm: 'trust' }))).toEqual([{ write: '\r', enter: undefined }])
+    expect(() => flow.respond({ confirm: 'trust' })).toThrow()
+    if (action === 'login') expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([{ write: '/login', enter: true }])
+    else expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([{ command: '/logout' }])
+  })
+  it('never accepts a different trust scope or terms', () => {
+    for (const screen of [codebuddyTrustRecorded.replace('> 1.', '  1.').replace('2. Trust', '> 2. Trust'), 'SIMULATED Terms of Service: Enter to accept']) {
+      const flow = createAccountGuide('codebuddy', 'login')!
+      expect(guides(flow.output(screen))[0]?.template).toBe('native')
+      expect(() => flow.respond({ confirm: 'trust' })).toThrow()
+    }
+  })
+  it('opens login once from the recorded blank editor, never from partial text or the site menu', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    const events = [...codebuddyEditorRecorded].flatMap(char => flow.output(char))
+    expect(writes(events)).toEqual([{ write: '/login', enter: true }])
+    expect(writes(flow.output('\x1b[2J\x1b[H' + codebuddyEditorRecorded))).toEqual([])
+    const initialMenu = createAccountGuide('codebuddy', 'login')!
+    expect(writes(initialMenu.output(codebuddySitesRecorded))).toEqual([])
+    expect(guides(initialMenu.output('\x1b[2J\x1b[H' + codebuddySitesRecorded + '\r\n' + codebuddyEditorRecorded)).map(g => g.step)).not.toContain('editor')
+    const busy = createAccountGuide('codebuddy', 'login')!
+    expect(writes(busy.output(codebuddyEditorRecorded.replace('>  ', '> SIMULATED input')))).toEqual([])
+  })
+  it.each(['china', 'international', 'enterprise', 'ioa'] as const)('answers %s from the current highlight and only once', option => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(guides(flow.output(codebuddySitesRecorded))[0]).toMatchObject({ template: 'choice', options: [
+      { id: 'china', label: '中国站' }, { id: 'international', label: '国际站' },
+      { id: 'enterprise', label: '企业域', detail: expect.any(String) }, { id: 'ioa', label: 'iOA（仅腾讯员工）', detail: expect.any(String) },
+    ] })
+    flow.output('\x1b[2J\x1b[H' + codebuddyInternationalRecorded)
+    const keys = { china: '\x1b[A', international: '', enterprise: '\x1b[B', ioa: '\x1b[B\x1b[B' }[option]
+    expect(writes(flow.respond({ option }))).toEqual([{ write: keys, enter: true }])
+    expect(() => flow.respond({ option })).toThrow()
+  })
+  it('replays the recorded VT menu and cursor redraw, preserving the actual highlight', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(guides(flow.output(recordedMenuVt.menu)).at(-1)?.template).toBe('choice')
+    expect(writes(flow.output(recordedMenuVt.arrowDown))).toEqual([])
+    expect(writes(flow.respond({ option: 'china' }))).toEqual([{ write: '\x1b[A', enter: true }])
+  })
+  it('rejects an incomplete, reordered or ambiguously highlighted menu', () => {
+    for (const screen of [codebuddySitesRecorded.replace('Select login method:', ''), codebuddySitesRecorded.replace('  Log in via International Site', '❯ Log in via International Site'), codebuddySitesRecorded.replace('Chinese Site', 'SIMULATED Site')]) {
+      const flow = createAccountGuide('codebuddy', 'login')!
+      expect(writes(flow.output(screen))).toEqual([])
+      expect(() => flow.respond({ option: 'china' })).toThrow()
+    }
+  })
+  it.each([codebuddyChinaBrowserRecorded, codebuddyIntlBrowserRecorded])('watches the recorded browser wait without collecting a code', screen => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    const events = [...screen].flatMap(char => flow.output(char))
+    expect(guides(events)).toContainEqual(expect.objectContaining({ template: 'browser', link: expect.stringContaining('/login?') }))
+    expect(events.filter(event => 'watch' in event)).toHaveLength(1)
+    expect(writes(events)).toEqual([])
+    expect(() => flow.respond({ code: 'SIMULATED' })).toThrow()
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))[0]?.template).toBe('native')
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
+  })
+  it.each([codebuddyEnterpriseRecorded, codebuddyIoaRecorded])('keeps enterprise/iOA native without collecting secrets', screen => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(guides(flow.output(screen))[0]?.template).toBe('native')
+    expect(writes(flow.settled())).toEqual([])
+    expect(() => flow.respond({ secret: 'SIMULATED' })).toThrow()
+  })
+  it.each(['http://copilot.tencent.com/login', 'https://copilot.tencent.com.evil.invalid/login', 'https://sub.copilot.tencent.com/login', 'https://evil@www.codebuddy.ai/login', 'https://codebuddy.ai/login'])('rejects unverified CodeBuddy URL %s', url => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(guides(flow.output(codebuddyChinaBrowserRecorded.replace(/https:[^\r\n]+/, url)))[0]?.template).toBe('native')
+  })
+  it('CodeBuddy logout sends one command from the editor and never retries Enter on the login menu', () => {
+    const flow = createAccountGuide('codebuddy', 'logout')!
+    expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([{ command: '/logout' }])
+    expect(writes(flow.output('\x1b[2J\x1b[H' + codebuddyLogoutRecorded))).toEqual([])
+    expect(flow.retryEnter()).toBe(false)
+    expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([])
+    expect(flow.proves('logout', state('authenticated'), state('unknown'))).toBe(false)
+  })
+  it('CodeBuddy initial signed-out menu requires native state evidence and cannot start authorization', () => {
+    const flow = createAccountGuide('codebuddy', 'logout')!
+    const events = flow.output(codebuddySitesRecorded)
+    expect(events).toContainEqual({ confirm: 'logout' })
+    expect(events).not.toContainEqual({ finish: true })
+    expect(writes(events)).toEqual([])
+    expect(() => flow.respond({ option: 'china' })).toThrow()
+    expect(flow.proves('logout', undefined, state('unauthenticated'))).toBe(true)
   })
   it('CodeBuddy unknown editor text falls back without automatic writes, even if already signed in', () => {
     const flow = createAccountGuide('codebuddy', 'logout')!

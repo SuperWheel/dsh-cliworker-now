@@ -7,7 +7,7 @@
 | 对象 | 已存在 | 缺口 |
 | --- | --- | --- |
 | 通用窗口 | `FlowGuide` / `AgyAccountGuide`、`LoginWindow`、`AccountTerminal`、`AccountsWindow`；200 × 60 隐藏 PTY、480px 窗口；`ProviderCards` 已提取并复用 | CodeBuddy 完整自动按键与 Desktop/Windows 验收未完成 |
-| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 已注册原生回退与严格状态证明；未自动打开 `/login`、识别站点或自动 `/logout`。`doc/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
+| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 已按 C1–C6 实采接入信任确认、自动 `/login`、四站点 choice、中国/国际 browser 与自动 `/logout`；未知屏和企业/iOA 保留原生，退出仍需严格状态证明。`doc/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
 | TRAE CN | `providers.ts` 已列 personal / enterprise / enterprise-pat；`traecnAccountArguments` 已实现三条登录 argv 与 logout；`readTraecnAccount` 查询 `login status` | 已注册个人回调网址 flow、单账号 holding 与共享方式卡片；企业完整流程与 Desktop/Windows 尚未核实 |
 | WorkBuddy 两版 | `workbuddy-installation.ts` 返回 appRoot/runtime/entry 并核对 product 站点；`workbuddy-metadata.ts` 查询账号相关元数据 | `accounts.ts` 的 actions 为空且 `start` 拒绝账号操作；无 CLI 登录/退出、无打开应用/状态观察会话 |
 
@@ -39,9 +39,9 @@ UI 复用 `.cwn-login-*` / `.cwn-accounts-*`；按用户要求新流程的操作
 
 ### 2、CodeBuddy：单账号 TUI 引导
 
-**2026-11-07 实施边界。** C1 在文件夹信任阻断，未接受，因此下面 C2–C6 自动按键仍是待完成设计，不是当前实现。当前只注册无自动按键的原生回退 flow 与严格状态证明、当前账号卡；用户自己在原生终端完成 `/logout` 并关闭后，确认退出和清理才开始登录。生产代码没有猜测编辑器/站点 marker，授权主机白名单为空。
+**2026-11-07 后续实施边界。** 用户追加允许接受新建隔离空项目的文件夹信任后，C1–C6 授权前路径已采集并实现。trust 仅由用户确认；空编辑器自动 `/login`，按完整菜单当前高亮导航；中国/国际使用 browser，企业/iOA 原生。自动 `/logout` 仅在已核实空编辑器提交一次；登录菜单只触发严格原生状态核验。白名单仅 `copilot.tencent.com`、`www.codebuddy.ai`。有效账号退出/重登、Desktop 与 Windows 仍待验收。
 
-**入口与命令。** 当前 `accounts.ts` 的三个落点（`instructionFor`、`argumentsFor`、`startSession`，原约 128/193/892 行）只打开无参数 TUI，随后靠用户手输。新建独立 flow（建议 `account-guide/codebuddy-flow.ts`），在确认编辑器就绪后一次性输入 `/login`；若启动已直接显示登录/站点菜单，则不再发 `/login`。参数仍为 `[exe]` 与已核实的禁更新环境；不利用 ACP `authMethods` 臆造非交互登录命令。
+**入口与命令。** 初始设计时 `accounts.ts` 的三个落点（`instructionFor`、`argumentsFor`、`startSession`，原约 128/193/892 行）只打开无参数 TUI，随后靠用户手输。新建独立 flow（建议 `account-guide/codebuddy-flow.ts`），在确认编辑器就绪后一次性输入 `/login`；若启动已直接显示登录/站点菜单，则不再发 `/login`。参数仍为 `[exe]` 与已核实的禁更新环境；不利用 ACP `authMethods` 臆造非交互登录命令。
 
 **模板与分支。** 计划是 `starting → trust（确有该屏才显示）→ waiting（打开登录）→ choice（原生站点菜单）→ browser → waiting（状态确认）→ result`。只有真实画面要求回填时才加入 `browserCode`，只有真实设备码屏才用 `deviceCode`。首次条款/主题等未知屏先转 `native`；现有 `terms` 含 Google 固定内容，不能直接套用。
 
@@ -49,15 +49,15 @@ UI 复用 `.cwn-login-*` / `.cwn-accounts-*`；按用户要求新流程的操作
 
 **退出。** 用户点击切换后，启动 `[exe]`，使用已采集的就绪 marker 与 `/logout` 路径自动退出。若有确认菜单，仅对真实已核实的退出选项自动回应；`signedOut/menu` 防止重复 Enter 进入登录。不能删除 `Tencent-Cloud.coding-copilot.info` 或手写 `.logged-out`。未知屏停止自动操作并保留终端回退。
 
-**状态确认。** `readCodebuddyAccount` 当前以普通认证文件存在且无 `.logged-out` 为 authenticated，`verification: local`；只读 `auth.domain` 得出安全站点分类，不提供邮箱/稳定主体。其 `readCodebuddyLoginState` 把 EACCES/EPERM 与无账号合为 unauthenticated，实施需为引导提供可区分“明确不存在/退出标记”和“读取失败/非法文件”的证据，后者不成功。基线在原生动作之前保存，切换新登录必须先观察明确退出；TUI 后续新出现的 authenticated 才确认当前已登录。不能用 CLI 持续运行、mtime 变化、退出码零或相同站点摘要证明新身份。
+**状态确认。** 初始实现以普通认证文件存在且无 `.logged-out` 为 authenticated，`verification: local`；只读 `auth.domain` 得出安全站点分类，不提供邮箱/稳定主体。现已收紧 `readCodebuddyLoginState`，为引导区分“明确不存在/退出标记”和“读取失败/非法文件”的证据，后者不成功。基线在原生动作之前保存，切换新登录必须先观察明确退出；TUI 后续新出现的 authenticated 才确认当前已登录。不能用 CLI 持续运行、mtime 变化、退出码零或相同站点摘要证明新身份。
 
-现有 `ACCOUNT_LOGIN_HOSTS.codebuddy` 为 `codebuddy.cn`、`codebuddy.ai`、`copilot.tencent.com`，并非真实屏幕完整核验结果；尤其不自动包含 `www`。采集后只加入实际打印的精确授权主机，站点分类用的企业通配表不能搬进白名单。`_codebuddy.ai/getUserInfo` 带 `accessToken`，继续禁止调用。
+最初 `ACCOUNT_LOGIN_HOSTS.codebuddy` 的主机未经屏幕完整核验。后续采集后仅保留实际打印的 `copilot.tencent.com`、`www.codebuddy.ai` 精确授权主机，站点分类用的企业通配表不能搬进白名单。`_codebuddy.ai/getUserInfo` 带 `accessToken`，继续禁止调用。
 
-**原计划的真实画面记录（本次只完成 C1，C2–C6 阻断；见采集记录）。**
+**真实画面清单（后续已完成 C1–C6 授权前采集；C7 与有效账号链路待验，见采集记录）。**
 
 | 编号 | 具体画面/结构 | 用途与未提交边界 |
 | --- | --- | --- |
-| C1 | 隔离 HOME 启动 `[exe]` 的首屏、首次 trust/条款/主题（若有）、是否自动出现登录菜单 | 决定 starting/trust/native；若需同意或信任才可继续，停并记缺口 |
+| C1 | 隔离 HOME 启动 `[exe]` 的首屏、首次 trust/条款/主题（若有）、是否自动出现登录菜单 | 决定 starting/trust/native；服务条款/隐私协议停并记缺口；本轮仅获准接受隔离 HOME 内空项目的文件夹信任 |
 | C2 | 允许范围内的输入编辑器就绪提示、输入 `/login` 后补全及菜单的完整绘制、默认高亮 | 决定一次写键时机；不能把欢迎动画当就绪。需先越过 C1 授权屏则延后 |
 | C3 | 原生站点菜单的标题、四类入口的实际文案/顺序/高亮、方向键后重绘与取消 | 决定 choice 的匹配与定位；ACP 声明不代替屏幕 |
 | C4 | 中国/国际授权前的链接提示、实际主机、OSC/折行、等待回调或要求粘贴的文本、设备码行（若存在） | 不提交浏览器授权、code 或任何凭据；不能无提交到达则保持未采集 |
