@@ -3131,7 +3131,8 @@ it.each(['workbuddycn', 'workbuddy'] as const)('%s shows experimental desktop-on
   const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) =>
     status(id, { state: 'authenticated', summary: '已登录（www.workbuddy.cn）', actions: [] })) }, undefined, cli)
   expect(t.text()).toContain('试验性：依赖 WorkBuddy 桌面端非公开接口')
-  expect(t.text()).toContain('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')
+  expect(t.text()).toContain('在 WorkBuddy 桌面端管理')
+  expect(visibleText(accountSummary(t.r))).toContain('已登录（www.workbuddy.cn）')
   expect(t.text()).not.toContain('请打开 WorkBuddy 桌面端登录后重试')
   const pane = t.r.root.findByProps({ className: 'cwn-settings-pane' })
   const labels = pane.findAllByType('button').map(button => button.props['aria-label'])
@@ -3144,10 +3145,21 @@ it.each(['workbuddycn', 'workbuddy'] as const)('%s shows experimental desktop-on
   expect(terminal.started).not.toHaveBeenCalled()
 })
 
-it.each(['workbuddycn', 'workbuddy'] as const)('%s keeps the installation failure reason visible (simulated)', async cli => {
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shows only not-installed in the account row and a short model notice (simulated)', async cli => {
   const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) => status(id, {
     installed: false, state: 'unconfigured', summary: 'WorkBuddy 暂不可用：not-installed', actions: [],
-  })) }, undefined, cli)
-  expect(visibleText(accountSummary(t.r))).toContain('未安装')
-  expect(visibleText(accountSummary(t.r))).toContain('WorkBuddy 暂不可用：not-installed')
+  })), catalogForCli: vi.fn(async () => { throw new Error('WorkBuddy 暂不可用：not-installed') }) }, undefined, cli)
+  expect(visibleText(accountSummary(t.r)).trim()).toBe('未安装')
+  const accountRow = t.r.root.findByProps({ className: 'cwn-account-row' })
+  expect(visibleText(accountRow).trim()).toBe('未安装')
+  expect(t.text()).toContain('未检测到 WorkBuddy 桌面端')
+  expect(t.text()).not.toContain('not-installed')
+  expect(t.text()).not.toContain('在 WorkBuddy 桌面端管理')
+})
+
+// SIMULATION: unrecognized native availability reasons stay out of model settings.
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shortens other unavailability reasons (simulated)', async cli => {
+  const t = await setup({ catalogForCli: vi.fn(async () => { throw new Error('WorkBuddy 暂不可用：binding-unavailable') }) }, undefined, cli)
+  expect(t.text()).toContain('WorkBuddy 暂不可用')
+  expect(t.text()).not.toContain('binding-unavailable')
 })

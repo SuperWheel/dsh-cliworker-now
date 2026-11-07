@@ -853,7 +853,7 @@ export class CliWorkerService extends TypertRemoteService {
     if (cli === 'hermes')
       throw new Error('Harness 当前为仅可查看；Hermes 没有可询问的档位，请切换权限预设或改用其他 CLI')
     if (cli === 'traecn')
-      throw new Error('Harness 当前为仅可查看；TRAE CLI CN 不能逐项询问，没有「询问」档，请在 Worker 菜单选择仅工作区编辑或完全权限，或切换权限预设')
+      throw new Error('Harness 当前为仅可查看；TRAE CN 不能逐项询问，没有「询问」档，请在 Worker 菜单选择仅工作区编辑或完全权限，或切换权限预设')
     if (!runsUnderViewOnly(cli))
       throw new Error('Harness 当前为仅可查看；Kimi 的第一项会自动批准 Git 仓库内的编辑，请切换权限预设或改用其他 CLI')
   }
@@ -1157,8 +1157,8 @@ export class CliWorkerService extends TypertRemoteService {
               {
                 id: 'cliworker_workbuddy_variant',
                 header: 'WorkBuddy 版本',
-                question: '检测到 WorkBuddy 和 WorkBuddy AI，请选择本次使用的版本',
-                options: [{ label: 'WorkBuddy' }, { label: 'WorkBuddy AI' }],
+                question: '检测到 WorkBuddy CN 和 WorkBuddy（国际版），请选择本次使用的版本',
+                options: [{ label: 'WorkBuddy CN' }, { label: 'WorkBuddy（国际版）' }],
               },
             ],
           }),
@@ -1169,11 +1169,11 @@ export class CliWorkerService extends TypertRemoteService {
         if (
           answer?.custom !== undefined ||
           answer?.selected.length !== 1 ||
-          !['WorkBuddy', 'WorkBuddy AI'].includes(answer.selected[0]!)
+          !['WorkBuddy CN', 'WorkBuddy（国际版）'].includes(answer.selected[0]!)
         )
-          throw new Error('请选择 WorkBuddy 或 WorkBuddy AI；任务尚未启动')
-        cli = answer.selected[0] === 'WorkBuddy' ? 'workbuddycn' : 'workbuddy'
-      } else throw new Error('未找到 WorkBuddy 或 WorkBuddy AI 安装，请先安装或配置 CLI 路径；任务尚未启动')
+          throw new Error('请选择 WorkBuddy CN 或 WorkBuddy（国际版）；任务尚未启动')
+        cli = answer.selected[0] === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy'
+      } else throw new Error('未找到 WorkBuddy CN 或 WorkBuddy（国际版）安装，请先安装或配置 CLI 路径；任务尚未启动')
       signal.throwIfAborted()
       this.assertExecution(agent, true)
       if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')

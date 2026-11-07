@@ -30,7 +30,7 @@ export class WindowsCliInstallationError extends Error {
 /** A completed desktop/PATH search found no CLI; absence is not a broken installation. */
 export class WindowsCliNotFoundError extends WindowsCliInstallationError {
   constructor(cli: 'zcode' | 'opencode' | 'codebuddy' | QoderCliId) {
-    super(`${cli === 'codebuddy' ? 'CodeBuddy' : cli === 'zcode' ? 'ZCode' : cli === 'qoder' ? 'Qoder' : cli === 'qodercn' ? 'Qoder CN' : 'OpenCode'} CLI 未找到，请配置 ${cli}Executable`)
+    super(`${cli === 'codebuddy' ? 'CodeBuddy' : cli === 'zcode' ? 'ZCode' : cli === 'qoder' ? 'Qoder' : cli === 'qodercn' ? 'Qoder CN' : 'OpenCode'}${cli === 'qoder' || cli === 'qodercn' ? '' : ' CLI'} 未找到，请配置 ${cli}Executable`)
     this.name = 'WindowsCliNotFoundError'
   }
 }

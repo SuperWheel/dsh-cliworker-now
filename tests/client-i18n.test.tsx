@@ -238,5 +238,18 @@ it('translates WorkBuddy experimental, desktop login and native site messages', 
   expect(hostText('试验性：依赖 WorkBuddy 桌面端非公开接口')).toBe('Experimental: relies on private WorkBuddy desktop interfaces')
   expect(hostText('请打开 WorkBuddy 桌面端登录后重试')).toBe('Open the WorkBuddy desktop app, sign in, and try again')
   expect(hostText('已登录（www.workbuddy.cn）')).toBe('Signed in (www.workbuddy.cn)')
-  expect(hostText('WorkBuddy 暂不可用：variant-mismatch')).toBe('WorkBuddy is unavailable: variant-mismatch')
+  expect(hostText('WorkBuddy 暂不可用：variant-mismatch')).toBe('WorkBuddy is unavailable')
+})
+
+it('translates short WorkBuddy account messages and both edition catalog labels', () => {
+  setLanguagePreference('en')
+  expect(hostText('在 WorkBuddy 桌面端管理')).toBe('Managed in the WorkBuddy desktop app')
+  expect(hostText('请在 WorkBuddy 桌面端登录或退出')).toBe('Sign in or out in the WorkBuddy desktop app')
+  expect(hostText('WorkBuddy 暂不可用：not-installed')).toBe('WorkBuddy desktop app not found')
+  for (const cli of ['WorkBuddy CN', 'WorkBuddy']) {
+    expect(hostText(`${cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口`)).toBe(`${cli} native account model catalog; experimental: relies on private WorkBuddy desktop interfaces`)
+  }
+  setLanguagePreference('zh')
+  expect(hostText('WorkBuddy 暂不可用：not-installed')).toBe('未检测到 WorkBuddy 桌面端')
+  expect(hostText('WorkBuddy 暂不可用：variant-mismatch')).toBe('WorkBuddy 暂不可用')
 })

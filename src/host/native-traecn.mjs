@@ -1,9 +1,9 @@
 import { runNativeAcp, forkNativeAcp } from './native-acp.mjs'
 
 export function traecnAcpArgv(config) {
-  if (config.preference.effort !== 'default') throw new Error('TRAE CLI CN 不支持强度选择')
+  if (config.preference.effort !== 'default') throw new Error('TRAE CN 不支持强度选择')
   if (config.access === 'read-only' && config.mode !== 'plan')
-    throw new Error('TRAE CLI CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
+    throw new Error('TRAE CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
   const launchMode = config.mode === 'plan' || config.access !== 'danger-full-access' ? 'default' : 'bypass_permissions'
   return [...config.argv, '--permission-mode', launchMode, 'acp', 'serve']
 }
@@ -21,7 +21,7 @@ export function traecnPromptUsage(value) {
 }
 
 export const runNativeTraecn = (config, io) => runNativeAcp(config, io, {
-  name: 'TRAE CLI CN', agentName: 'traecli-acp', argv: traecnAcpArgv,
+  name: 'TRAE CN', agentName: 'traecli-acp', argv: traecnAcpArgv,
   editMode: config.access === 'danger-full-access' ? 'bypass_permissions' : 'default',
   fallbackModes: config.access === 'danger-full-access' ? ['default'] : [],
   modeConfigId: 'mode', encode: value => value,

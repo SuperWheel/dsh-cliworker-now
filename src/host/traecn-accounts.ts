@@ -32,7 +32,7 @@ export async function captureTraecnMetadata(backend: ProcessBackend, config: Run
     const decoder = new StringDecoder('utf8')
     if (stream) for await (const chunk of stream) {
       bytes += Buffer.byteLength(chunk)
-      if (bytes > Math.min(config.maxRunBytes, 1024 * 1024)) throw new Error('TRAE CLI CN 元数据输出过大')
+      if (bytes > Math.min(config.maxRunBytes, 1024 * 1024)) throw new Error('TRAE CN 元数据输出过大')
       text += decoder.write(chunk)
     }
     return text + decoder.end()
@@ -62,8 +62,8 @@ export function parseTraecnAccount(output: string): Identity {
   if (/^Logged in using Trae\s*$/m.test(text))
     return { state: 'authenticated', verification: 'cli', summary: '已登录 TRAE（CLI 不区分个人与企业账号）' }
   if (/^Not logged in\s*$/m.test(text))
-    return { state: 'unconfigured', verification: 'cli', summary: 'TRAE CLI CN 未登录' }
-  return { state: 'unknown', verification: 'cli', summary: '无法确认 TRAE CLI CN 登录状态' }
+    return { state: 'unconfigured', verification: 'cli', summary: 'TRAE CN 未登录' }
+  return { state: 'unknown', verification: 'cli', summary: '无法确认 TRAE CN 登录状态' }
 }
 
 export async function readTraecnAccount(backend: ProcessBackend, config: RuntimeConfig, executable: string, project: string, signal: AbortSignal): Promise<Identity> {
@@ -72,7 +72,7 @@ export async function readTraecnAccount(backend: ProcessBackend, config: Runtime
 
 export function traecnAccountArguments(action: string, provider?: string): string[] {
   if (action === 'logout') return ['logout']
-  if (action !== 'login') throw new Error('TRAE CLI CN 仅支持登录和退出')
+  if (action !== 'login') throw new Error('TRAE CN 仅支持登录和退出')
   if (provider === 'personal') return ['--enable', 'personal_user_login', 'login', '--personal']
   if (provider === 'enterprise') return ['login', '--enterprise']
   if (provider === 'enterprise-pat') return ['login', '--with-trae-pat']
@@ -85,12 +85,12 @@ export async function discoverTraecnModels(backend: ProcessBackend, config: Runt
   const { output, exitCode } = await captureTraecnMetadata(backend, config, [executable, 'models', '--json'], project, signal, 20_000)
   const unsupported = parseTraecnAccount(output)
   if (unsupported.state === 'unavailable') throw new Error(unsupported.summary)
-  if (exitCode !== 0) throw new Error('TRAE CLI CN 模型查询失败，请检查原生 CLI')
+  if (exitCode !== 0) throw new Error('TRAE CN 模型查询失败，请检查原生 CLI')
   let rows: unknown
-  try { rows = JSON.parse(output) } catch { throw new Error('TRAE CLI CN 模型目录格式无效') }
+  try { rows = JSON.parse(output) } catch { throw new Error('TRAE CN 模型目录格式无效') }
   if (!Array.isArray(rows) || rows.some(row => !row || typeof row.config_name !== 'string' || !row.config_name.trim()))
-    throw new Error('TRAE CLI CN 模型目录格式无效')
-  if (!rows.length) throw new Error('TRAE CLI CN 当前账号暂无可确认模型，请刷新或检查套餐')
+    throw new Error('TRAE CN 模型目录格式无效')
+  if (!rows.length) throw new Error('TRAE CN 当前账号暂无可确认模型，请刷新或检查套餐')
   // TRAE publishes no effort source: the only choice is the native default (same as Kimi OAuth / Claude own route).
   return rows.map(row => ({ id: row.config_name, label: typeof row.name === 'string' ? row.name : row.config_name, efforts: ['default'] }))
 }

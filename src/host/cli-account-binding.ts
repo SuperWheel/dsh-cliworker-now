@@ -387,7 +387,7 @@ async function material(
         .filter(name => process.env[name] !== undefined).map(name => [name, hash(process.env[name]!)]))
       return { sourceIds: [path], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliAccountBindingError(cli, 'TRAE CLI CN 未登录')
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
       throw error
     } finally { bytes?.fill(0); await handle?.close() }
   }

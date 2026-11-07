@@ -122,7 +122,7 @@ describe('Windows default executable fallback without changing other platforms',
       expect(lookup.resolveExecutable).toHaveBeenCalledTimes(1)
     }
     const missing = backend(async () => { throw new SubprocessExecutableNotFoundError('Synthetic missing') })
-    await expect(resolveCliExecutable('qoder', missing, DEFAULT_CONFIG)).rejects.toThrow('Qoder CLI 未找到')
+    await expect(resolveCliExecutable('qoder', missing, DEFAULT_CONFIG)).rejects.toThrow('Qoder 未找到')
     const explicit = backend(async () => { throw new SubprocessExecutableNotFoundError('Synthetic explicit missing') })
     await expect(resolveCliExecutable('qoder', explicit, { ...DEFAULT_CONFIG, qoderExecutable: 'D:\\missing\\qoder.exe' })).rejects.toThrow('explicit missing')
     expect(explicit.resolveExecutable).toHaveBeenCalledTimes(1)

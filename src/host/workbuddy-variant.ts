@@ -9,10 +9,10 @@ export function isWorkBuddyCli(cli: unknown): cli is WorkBuddyCliId {
 export function workbuddyVariant(cli: WorkBuddyCliId) {
   if (!isWorkBuddyCli(cli)) throw new Error('Unknown WorkBuddy variant')
   return cli === 'workbuddycn'
-    ? { cli, label: 'WorkBuddy', endpointHosts: ['www.workbuddy.cn', 'workbuddy.cn'],
+    ? { cli, label: 'WorkBuddy CN', endpointHosts: ['www.workbuddy.cn', 'workbuddy.cn'],
         dataFolderName: '.workbuddy', macAppNames: ['WorkBuddy.app', 'WorkBuddy AI.app'],
         windowsDirectoryNames: ['WorkBuddy', 'WorkBuddy AI'], transport: 'workbuddycn-acp-v1' }
-    : { cli, label: 'WorkBuddy AI', endpointHosts: ['www.workbuddy.ai', 'workbuddy.ai'],
+    : { cli, label: 'WorkBuddy', endpointHosts: ['www.workbuddy.ai', 'workbuddy.ai'],
         dataFolderName: '.workbuddy', macAppNames: ['WorkBuddy AI.app', 'WorkBuddy.app'],
         windowsDirectoryNames: ['WorkBuddy AI', 'WorkBuddy'], transport: 'workbuddy-acp-v1' }
 }

@@ -56,7 +56,7 @@ describe('模拟 WorkBuddy 注册、权限与原生能力', () => {
   it.each(clis)('%s appends independent identity, transport, native planning and desktop-only accounts', cli => {
     expect(CLI_IDS.slice(CLI_IDS.indexOf('qodercn') + 1)).toEqual(['codebuddy', 'traecn', ...clis])
     expect(CLI_SHORT_NAMES[cli]).toBe(cli)
-    expect(CLI_LABELS[cli]).toBe(cli === 'workbuddycn' ? 'WorkBuddy' : 'WorkBuddy AI')
+    expect(CLI_LABELS[cli]).toBe(cli === 'workbuddycn' ? 'WorkBuddy CN' : 'WorkBuddy')
     const worker = { preference: { cli, model: 'SIMULATED/model', effort: 'default' as const }, transport: `${cli}-acp-v1` }
     expect(transportFor(cli)).toBe(worker.transport); expect(usesNativeBridge(worker)).toBe(true)
     expect(cliLevelOptions(cli).map(item => item.value)).toEqual(['ask', 'auto', 'full'])
@@ -127,7 +127,7 @@ describe('模拟 WorkBuddy 发现、目录与账号接线（不启动程序）',
     probe.mockRejectedValueOnce(Object.assign(new Error('WorkBuddy 暂不可用：binding-unavailable'), { code: 'WORKBUDDY_UNAVAILABLE', reason: 'binding-unavailable' }))
     expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'unavailable', summary: 'WorkBuddy 暂不可用：binding-unavailable', actions: [] })
     for (const action of ['login', 'logout', 'manage'] as const)
-      expect(() => manager.start('SIMULATED/parent', cli, action, f.root, signal())).toThrow('桌面端管理账号')
+      expect(() => manager.start('SIMULATED/parent', cli, action, f.root, signal())).toThrow('请在 WorkBuddy 桌面端登录或退出')
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
     await manager.close()
   })
@@ -153,8 +153,8 @@ describe('模拟 WorkBuddy 发现、目录与账号接线（不启动程序）',
 const user = (text: string) => createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text }] })
 describe('模拟 WorkBuddy 别名与泛称路由', () => {
   it.each([
-    ['workbuddycn', 'workbuddycn'], ['workbuddy-cn', 'workbuddycn'], ['WorkBuddy 国内版', 'workbuddycn'],
-    ['workbuddy 中国版', 'workbuddycn'], ['国内版 WorkBuddy', 'workbuddycn'], ['WorkBuddy AI', 'workbuddy'],
+    ['workbuddycn', 'workbuddycn'], ['workbuddy-cn', 'workbuddycn'], ['WorkBuddy CN', 'workbuddycn'], ['WorkBuddy 国内版', 'workbuddycn'],
+    ['workbuddy 中国版', 'workbuddycn'], ['国内版 WorkBuddy', 'workbuddycn'], ['WorkBuddy AI', 'workbuddy'], ['WorkBuddy（国际版）', 'workbuddy'],
     ['workbuddy-ai', 'workbuddy'], ['WorkBuddy 国际版', 'workbuddy'], ['workbuddy international', 'workbuddy'],
   ])('keeps explicit %s as %s without probing either version', async (name, cli) => {
     const installed = vi.fn()
@@ -175,15 +175,17 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
     const error = new Error('SIMULATED discovery error')
     await expect(resolveAvailableWorkBuddyName('workbuddy', async cli => { if (cli === 'workbuddycn') throw error; return true })).rejects.toBe(error)
   })
-  it.each(['WorkBuddy', 'WorkBuddy AI'])('asks the native version question and returns selected %s before model selection', async label => {
+  it.each(['WorkBuddy CN', 'WorkBuddy（国际版）'])('asks the native version question and returns selected %s before model selection', async label => {
     const f = fixture(), ask = vi.fn(async () => ({ answers: [{ id: 'cliworker_workbuddy_variant', selected: [label] }] }))
     const agent = { id: 'SIMULATED/parent', session: { header: { cwd: f.root, origin: 'user' } },
       ctx: { get: (key: string) => key === 'userQuestions' ? { ask } : key === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined } }
     const service: any = Object.create(CliWorkerService.prototype)
     Object.assign(service, { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
-    expect(await service.chooseWorkBuddyVariant(agent, signal(), 'WorkBuddy')).toBe(label === 'WorkBuddy' ? 'workbuddycn' : 'workbuddy')
-    expect(ask).toHaveBeenCalledTimes(1); expect(probe).not.toHaveBeenCalled()
+    expect(await service.chooseWorkBuddyVariant(agent, signal(), 'WorkBuddy')).toBe(label === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy')
+    expect(ask).toHaveBeenCalledTimes(1)
+    expect(ask.mock.calls[0]).toEqual(expect.arrayContaining([expect.objectContaining({ questions: [expect.objectContaining({ options: [{ label: 'WorkBuddy CN' }, { label: 'WorkBuddy（国际版）' }] })] })]))
+    expect(probe).not.toHaveBeenCalled()
   })
   it('cancels an unanswered version question without probing an account', async () => {
     const f = fixture(), ask = vi.fn(async () => ({ answers: [] }))

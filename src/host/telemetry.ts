@@ -798,7 +798,7 @@ export function extractTelemetry(
       result.contextCapacity = v.size
       result.contextRatio = v.used / v.size
       result.contextEstimated = false
-      result.contextSource = result.contextCapacitySource = 'TRAE CLI CN 原生回执上下文'
+      result.contextSource = result.contextCapacitySource = 'TRAE CN 原生回执上下文'
     } else if ((cli === 'qoder' || cli === 'qodercn') && v.type === `cliworker.${cli}_prompt_usage` && textId(v.sessionId) && ownSession(v.sessionId) &&
       (!model || v.model === model)) {
       const u = obj(v.usage)

@@ -67,14 +67,14 @@ An integrated adapter does not mean every model, subscription or platform has be
 | Pi | 1.0.2 / 1.0.4 / 1.1.0 | Executable identity and SDK/RPC checked by version; 1.0.2 with Zhipu Coding CN GLM-5.3-Flash was tested historically; 1.0.4 checks were read-only or offline; 1.1.0 passed credential-free SDK/RPC, native login menu display and termination cleanup on Windows, with live login and model execution still unverified |
 | Hermes Agent | Installed checkout 6c80c32734 | Own account directory, native account menus and Nous model access checked; a read-only check returned 10 free models; generation and continuation remain unverified |
 | OpenCode | 1.18.21 | Native model directory and JSONL adapter integrated; Zhipu models were tested historically; a free MiMo request previously returned HTTP 403 |
-| Qoder CLI | 1.1.73 | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified |
-| Qoder CN CLI | 1.1.74 | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested |
+| Qoder | 1.1.73 | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified |
+| Qoder CN | 1.1.74 | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested |
 | CodeBuddy Code | 2.181.0 | Native ACP added in v0.8.8; macOS live checks (free model `hy4free`) are recorded in the [change tasks](../openspec/changes/add-codebuddy-cli/tasks.md); International site, enterprise domain, iOA and Windows remain unverified |
-| TRAE CLI CN | 0.213.1 | Preliminary macOS protocol probes on 2026-11-07: 18-model catalog and glm-5.3-flash file tools, commands, load, cancel and fork; plugin/Desktop and Windows acceptance remain unverified; see integration tasks |
+| TRAE CN | 0.213.1 | Preliminary macOS protocol probes on 2026-11-07: 18-model catalog and glm-5.3-flash file tools, commands, load, cancel and fork; plugin/Desktop and Windows acceptance remain unverified; see integration tasks |
 
 MiMo refers to [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code). Hermes Agent replaced the old external Harness CLI adapter; DeepSeek Harness remains the plugin's host.
 
-v0.8.1 adds **Qoder CLI** through the official `qoder --acp` interface in the same native sidebar. Models and reasoning efforts come from its structured catalog and are confirmed before sending. Only the edit mode is available: the current ACP implementation advertises no read-only planning mode, so planning tasks fail before prompt admission. Hidden token counts remain unknown, with inspectable usage entries both below the composer and on exactly bound completed messages. A context ratio reported by the exact native session is shown independently; missing token counts, capacity, cache and categories remain unknown. Turns and steps describe the host child conversation, not Qoder's internal request count. See the [Qoder protocol checks](qoder-protocol.md).
+v0.8.1 adds **Qoder** through the official `qoder --acp` interface in the same native sidebar. Models and reasoning efforts come from its structured catalog and are confirmed before sending. Only the edit mode is available: the current ACP implementation advertises no read-only planning mode, so planning tasks fail before prompt admission. Hidden token counts remain unknown, with inspectable usage entries both below the composer and on exactly bound completed messages. A context ratio reported by the exact native session is shown independently; missing token counts, capacity, cache and categories remain unknown. Turns and steps describe the host child conversation, not Qoder's internal request count. See the [Qoder protocol checks](qoder-protocol.md).
 
 When an external CLI omits cache usage, the usage control shows “Cache hit —” without an explanatory paragraph. Unknown cache values are not converted to zero. Grok and OMP turns without public process content add no extra notice; published reasoning and tools remain expandable.
 
@@ -94,9 +94,9 @@ Successful extended-CLI catalog queries remove their private temporary directory
 
 Probe records: [ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
 
-### TRAE CLI CN installation and login
+### TRAE CN installation and login
 
-TRAE CLI CN (`cli=traecn`) uses ByteDance's official TRAE CLI 2.0, with `traecli` as the default executable. Only the China edition was found as of 2026-11-07; no official international CLI entry is offered. The open-source Python bytedance/trae-agent project is a different program.
+TRAE CN (`cli=traecn`) uses ByteDance's official TRAE CLI 2.0, with `traecli` as the default executable. Only the China edition was found as of 2026-11-07; no official international CLI entry is offered. The open-source Python bytedance/trae-agent project is a different program.
 
 Official macOS / Linux installer:
 
@@ -128,7 +128,7 @@ Planning launches with `default`, then sets ACP `mode=plan` and confirms the cur
 
 Preliminary macOS / 0.213.1 probes on 2026-11-07 recorded `glm-5.3-flash` file reads/writes, commands, history loading, cancellation and branching. These are not plugin or Desktop acceptance. Windows, complete enterprise SSO/PAT flows, other models, the tool bridge, steering and Desktop icon themes remain unverified. Usage requires valid nonzero `usage` from this turn's `end_turn`; all-zero cancellation receipts stay unknown. Context uses the same receipt's `contextWindow.used/size`, not cumulative tokens. See the [TRAE protocol notes](traecn-protocol.md) and [integration tasks](../openspec/changes/add-traecn-cli/tasks.md).
 
-### Qoder CLI installation and login
+### Qoder installation and login
 
 Follow [Qoder's official installation guide](https://docs.qoder.com/cli/installation). The recommended macOS / Linux entry is:
 
@@ -144,7 +144,7 @@ irm https://qoder.com/install.ps1 | iex
 
 With Node.js installed, the official npm compatibility entry remains `npm install -g @qoder-ai/qodercli`. Run `qoder --version`, then `qoder login` and complete its native browser flow. The CLI also supports its own `QODER_PERSONAL_ACCESS_TOKEN`; keep tokens out of chat and the repository. This integration did not install Qoder or sign in automatically.
 
-**Qoder CN CLI** is a separate `cli=qodercn` entry, with `~/.qoder-cn`, `QODERCN_PERSONAL_ACCESS_TOKEN`, its own account, preferences and `qodercn-acp-v1` sessions. Its npm compatibility package is `@qodercn-ai/qoderclicn`. Windows discovers the native `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe` and validates same-brand npm entries. A generic “use Qoder” request selects the only installed edition; when both are installed, a native question asks for Qoder or Qoder CN before model selection. Explicit edition requests never fall back to the other edition. Models and reasoning options remain native and dynamic. See the [CN protocol and isolation notes](qodercn-protocol.md) and [official installation guide](https://docs.qoder.cn/cli/installation).
+**Qoder CN** is a separate `cli=qodercn` entry, with `~/.qoder-cn`, `QODERCN_PERSONAL_ACCESS_TOKEN`, its own account, preferences and `qodercn-acp-v1` sessions. Its npm compatibility package is `@qodercn-ai/qoderclicn`. Windows discovers the native `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe` and validates same-brand npm entries. A generic “use Qoder” request selects the only installed edition; when both are installed, a native question asks for Qoder or Qoder CN before model selection. Explicit edition requests never fall back to the other edition. Models and reasoning options remain native and dynamic. See the [CN protocol and isolation notes](qodercn-protocol.md) and [official installation guide](https://docs.qoder.cn/cli/installation).
 
 All supported CLIs share bounded Windows discovery through common user bin/npm/Bun/Scoop/pnpm locations and, after inherited PATH misses, the latest user and machine PATH. Edition-specific directories, package identities and native entry checks remain explicit. Unregistered portable locations outside PATH still need a manual path; no arbitrary-drive scans, newest-version guesses or GUI launches are used.
 
@@ -398,7 +398,7 @@ CLI child conversations support Harness goal, plan, feedback and branch. An unsu
 | Goal | Set, edit, pause, resume or clear the goal from the goal bar, the "+" menu or `/goal`. An active goal is prepended as a delimited block to each turn sent to the CLI, while the conversation keeps showing your original message. A goal never starts a turn by itself and does not use any CLI's own goal auto-continuation. | All CLIs |
 | Plan | Uses the existing mapping to each CLI's native plan or read-only mode, from the "+" menu, the permission control, the plan chip or `/plan`. Those CLIs hide the plan chip, while the "+" menu keeps the Plan row with the reason. They have only the accept-edits permission mode, so the permission control is also disabled with that reason. | Disabled for Hermes, Qoder, Qoder CN and the legacy Kimi transport |
 | Feedback | Thumbs and the feedback dialog use Harness feedback services and stay recorded in Harness only. Nothing is sent to the CLI or its vendor, and nothing enters model context. | All CLIs |
-| Branch | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued. | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN, TRAE CLI CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
+| Branch | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued. | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN, TRAE CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
 
 ZCode forks inclusively from the latest native assistant message; a conversation without workspace edits needs no checkpoint. Pi, OpenCode and ZCode branches retain the source session's native state directory across Host restarts and nested forks.
 

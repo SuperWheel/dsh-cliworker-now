@@ -49,12 +49,12 @@ export const CLI_LABELS: Record<CliId, string> = {
   hermes: 'Hermes Agent',
   harness: 'Harness（已移除）',
   opencode: 'OpenCode',
-  qoder: 'Qoder CLI',
-  qodercn: 'Qoder CN CLI',
+  qoder: 'Qoder',
+  qodercn: 'Qoder CN',
   codebuddy: 'CodeBuddy Code',
-  traecn: 'TRAE CLI CN',
-  workbuddycn: 'WorkBuddy',
-  workbuddy: 'WorkBuddy AI',
+  traecn: 'TRAE CN',
+  workbuddycn: 'WorkBuddy CN',
+  workbuddy: 'WorkBuddy',
 }
 /** Short CLI stems used for automatic Worker names; protocol IDs remain unchanged. */
 export const CLI_SHORT_NAMES: Record<CliId, string> = {

@@ -131,7 +131,7 @@ export async function runNativeWorkBuddy(config, io) {
   wrapped.openStdio = async (_argv, options) => (await openWorkBuddy(config, io, options)).peer
   // Option names are shared with the other CodeBuddy-derived ACP runners.
   await runNativeAcp({ ...config, harnessTools: undefined, env: { ...config.env, CLIWORKER_HARNESS_TOOLS: undefined } }, wrapped, {
-    name: config.cli === 'workbuddycn' ? 'WorkBuddy' : 'WorkBuddy AI', argv: workbuddyAcpArgv,
+    name: config.cli === 'workbuddycn' ? 'WorkBuddy CN' : 'WorkBuddy', argv: workbuddyAcpArgv,
     effortId: 'thought_level', modeConfigId: 'mode', encode: value => value,
     editMode: config.access === 'danger-full-access' ? 'bypassPermissions' : config.access === 'read-only' ? 'default' : 'auto',
     fallbackModes: config.access === 'danger-full-access' ? ['auto', 'default'] : config.access === 'read-only' ? [] : ['default'],

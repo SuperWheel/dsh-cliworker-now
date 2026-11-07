@@ -178,7 +178,7 @@ export async function catalogFor(
   if (cli === 'codebuddy') return { cli, models: await discoverCodebuddyModels(backend, config, executable, signal),
     notice: 'CodeBuddy 原生账号模型目录；调用权限以实际请求为准' }
   if (cli === 'traecn') return { cli, models: await discoverTraecnModels(backend, config, executable, cwd, signal),
-    notice: 'TRAE CLI CN 原生账号模型目录；不提供强度选择' }
+    notice: 'TRAE CN 原生账号模型目录；不提供强度选择' }
   if (isWorkBuddyCli(cli)) {
     const { models } = await readWorkBuddyMetadata(cli, executable, cwd, signal)
     return { cli, models, notice: `${workbuddyVariant(cli).label} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口` }
@@ -325,9 +325,9 @@ export function workerArguments(
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
   if (cli === 'traecn') {
-    if (!nativeTransport) throw new Error('TRAE CLI CN 必须通过原生 ACP 桥运行')
-    if (preference.effort !== 'default') throw new Error('TRAE CLI CN 不支持强度选择')
-    if (access === 'read-only' && mode !== 'plan') throw new Error('TRAE CLI CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
+    if (!nativeTransport) throw new Error('TRAE CN 必须通过原生 ACP 桥运行')
+    if (preference.effort !== 'default') throw new Error('TRAE CN 不支持强度选择')
+    if (access === 'read-only' && mode !== 'plan') throw new Error('TRAE CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
     // The TRAE runner owns its mode argv; no prompt, model or foreign flags at launch.
     return [executable]
   }
@@ -420,7 +420,7 @@ export function protocolFor(
   expectedModel?: string,
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
-  if (cli === 'traecn') throw new Error('TRAE CLI CN 必须通过原生 ACP 桥运行')
+  if (cli === 'traecn') throw new Error('TRAE CN 必须通过原生 ACP 桥运行')
   if (isWorkBuddyCli(cli)) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
@@ -578,7 +578,7 @@ async function resolveUncachedCliExecutable(
         const entry = validateWindowsCliCandidate(cli as Exclude<CliId, 'harness'>, refreshed)
         resolved = /\.[cm]?js$/i.test(entry) ? entry : await pathLookup(() => backend.resolveExecutable(entry))
       } else if (refreshPath && cli === 'traecn')
-        throw new WindowsCliInstallationError('TRAE CLI CN 未找到，请配置 traecnExecutable')
+        throw new WindowsCliInstallationError('TRAE CN 未找到，请配置 traecnExecutable')
       else if (refreshPath && cli === 'hermes' && hasWindowsHermesInstallDirectory())
         throw new WindowsCliInstallationError('检测到 Hermes 安装目录，但未找到可用 CLI 入口，请完成安装或配置已有入口')
       else if (process.platform === 'win32' && (cli === 'qoder' || cli === 'qodercn') && executable === qoderVariant(cli).executable && !explicit && absent) {

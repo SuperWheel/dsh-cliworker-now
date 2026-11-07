@@ -24,7 +24,7 @@ async function root() { const path = await mkdtemp(join(tmpdir(), 'traecn-SIMULA
 const preference = { cli: 'traecn' as const, model: 'SIMULATED-model', effort: 'default' as const }
 describe('模拟：TRAE 注册、路由与官方身份', () => {
   it('registers one CLI, a unique transport, native-only tasks and Windows command', () => {
-    expect(CLI_IDS).toContain('traecn'); expect(CLI_LABELS.traecn).toBe('TRAE CLI CN'); expect(CLI_SHORT_NAMES.traecn).toBe('traecn')
+    expect(CLI_IDS).toContain('traecn'); expect(CLI_LABELS.traecn).toBe('TRAE CN'); expect(CLI_SHORT_NAMES.traecn).toBe('traecn')
     expect(transportFor('traecn')).toBe('traecn-acp-v1')
     expect(usesNativeBridge({ preference, transport: transportFor('traecn') })).toBe(true)
     expect(executableFor('traecn', DEFAULT_CONFIG)).toBe('traecli')
@@ -37,7 +37,7 @@ describe('模拟：TRAE 注册、路由与官方身份', () => {
     expect(bridgedFeatureSupport({ preference, transport: 'traecn-acp-v1' })).toMatchObject({ fork: { supported: true }, forkEarlier: { supported: false } })
     expect(bridgedFeatureSupport({ preference, transport: 'qoder-acp-v1' }).fork.supported).toBe(false)
   })
-  it.each(['traecn', 'trae', 'traecli', 'trae cli', 'trae-cli', 'TRAE CLI CN', 'trae 国内版', 'trae 中国版', '字节 trae'])('routes alias %s, including generic trae', alias => {
+  it.each(['traecn', 'trae', 'traecli', 'trae cli', 'trae-cli', 'TRAE CLI CN', 'TRAE CN', 'trae 国内版', 'trae 中国版', '字节 trae'])('routes alias %s, including generic trae', alias => {
     expect(requireCliName(alias)).toBe('traecn')
     expect(invocationResolution([createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: `请用 ${alias} 检查文件` }] })]))
       .toMatchObject({ status: 'resolved', cli: 'traecn' })

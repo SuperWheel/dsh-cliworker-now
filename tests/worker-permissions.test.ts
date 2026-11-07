@@ -601,7 +601,7 @@ it('模拟：TRAE 菜单没有询问档，中档仅工作区编辑，支持原�
 it('模拟：TRAE 仅可查看拒绝未选档派遣，已选档和原生规划仍可用', async () => {
   const f = await fixture('traecn')
   setSandboxMode(f.parent.session, 'read-only')
-  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).toThrow('TRAE CLI CN 不能逐项询问')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).toThrow('TRAE CN 不能逐项询问')
   expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
   await expect(f.save('ask')).rejects.toThrow('不支持')
   expect(await f.read()).toMatchObject({ options: [{ value: 'auto' }, { value: 'full' }], plan: { supported: true } })

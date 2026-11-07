@@ -510,9 +510,7 @@ function AccountSummary({
                       ? data.cli === 'claude'
                         ? hostText(data.summary)
                         : t('未登录')
-                      : isWorkBuddy(data.cli)
-                        ? `${t('未安装')} · ${hostText(data.summary)}`
-                        : t('未安装')
+                      : t('未安装')
                     : data?.state === 'configured'
                       ? connection.label
                       : hostText(data?.summary) || t('状态待确认')
@@ -913,7 +911,7 @@ function CliSettings({
                 {t('解除暂停')}
               </Button>
             ) : isWorkBuddy(cli) ? (
-              <span className="cwn-cli-subtitle">{t('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')}</span>
+              account?.data?.installed && <span className="cwn-cli-subtitle">{t('在 WorkBuddy 桌面端管理')}</span>
             ) : multiAccount ? (
               <Button
                 type="button"

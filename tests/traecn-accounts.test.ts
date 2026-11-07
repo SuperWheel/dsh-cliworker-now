@@ -30,8 +30,8 @@ async function fixture() {
 describe('模拟：TRAE 原生账号与模型目录', () => {
   it.each([
     ['Logged in using Trae\n', 'authenticated', '已登录 TRAE（CLI 不区分个人与企业账号）'],
-    ['Not logged in\n', 'unconfigured', 'TRAE CLI CN 未登录'],
-    ['模拟 unknown output', 'unknown', '无法确认 TRAE CLI CN 登录状态'],
+    ['Not logged in\n', 'unconfigured', 'TRAE CN 未登录'],
+    ['模拟 unknown output', 'unknown', '无法确认 TRAE CN 登录状态'],
     ['Current Trae enterprise plan does not support CLI usage.', 'unavailable', 'Current Trae enterprise plan does not support CLI usage.'],
   ])('parses %s without inferring account type', (output, state, summary) => {
     expect(parseTraecnAccount(output)).toEqual({ state, summary, verification: 'cli' })
@@ -125,7 +125,7 @@ describe('模拟：TRAE 只绑定指定的稳定主体字段', () => {
     expect(after).not.toBe(before); expect(after).not.toContain('SIMULATED-route-secret')
   })
   it('rejects missing, oversized and symlink auth files', async () => {
-    const f = await fixture(); await expect(f.binding()).rejects.toThrow('TRAE CLI CN 未登录')
+    const f = await fixture(); await expect(f.binding()).rejects.toThrow('TRAE CN 未登录')
     await writeFile(f.path, ' '.repeat(65537)); await expect(f.binding()).rejects.toThrow()
     await rm(f.path); const target = join(f.root, 'target.json'); await writeFile(target, JSON.stringify(f.value)); await symlink(target, f.path)
     await expect(f.binding()).rejects.toThrow()

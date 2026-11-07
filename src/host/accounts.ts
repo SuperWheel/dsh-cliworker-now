@@ -153,7 +153,7 @@ const instructionFor = (cli: CliId, action: AccountAction): string => {
 }
 const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions'] => {
   if (cli === 'traecn') return [
-    { id: 'login', label: '登录 / 切换账号', description: '选择 TRAE CLI CN 原生登录方式。', providers: loginProviders(cli, undefined) },
+    { id: 'login', label: '登录 / 切换账号', description: '选择 TRAE CN 原生登录方式。', providers: loginProviders(cli, undefined) },
     { id: 'logout', label: '退出登录', description: '按 CLI 原生流程退出登录。' },
   ]
   if (isWorkBuddyCli(cli)) return []
@@ -767,7 +767,7 @@ export class AccountManager {
     login?: string,
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     validateCli(cli)
-    if (isWorkBuddyCli(cli)) throw new Error('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')
+    if (isWorkBuddyCli(cli)) throw new Error('请在 WorkBuddy 桌面端登录或退出')
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')
     if (cli === 'traecn') traecnAccountArguments(action, provider)
     if (
