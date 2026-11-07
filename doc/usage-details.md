@@ -82,13 +82,15 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **路径与身份。** 默认可执行文件配置为 `traecnExecutable: traecli`；在「CLI 连接 → 高级设置」可指定绝对路径。自动发现只找 `traecli`，macOS / Linux 在 PATH 外补查 `~/.local/bin/traecli`，macOS 子进程 PATH 也补 `~/.local/bin`。自动发现和手动路径都核对 `--version` 首行 `traecli <版本>` 及 `installation:` 行，ACP 再核对 `agentInfo.name = traecli-acp`；身份不符即拒绝。安装脚本的 `trae-cli`、`trae-agent`、`coco`、`ta` 链接不用于自动发现；手动指定的同品牌链接仍须通过身份核对。Windows 找不到时配置 `traecnExecutable`，不据未验证的路径猜测安装位置。
 
-**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 表示已登录（不区分个人与企业），`Not logged in` 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。
+**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 且退出 0 表示已登录（不区分个人与企业），`Not logged in` 且退出 1 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。
 
 | 登录方式 | 原生命令与说明 |
 | --- | --- |
 | 个人账号 | `traecli --enable personal_user_login login --personal`；依赖 TRAE CLI 开发中的 `personal_user_login` 特性（under development），开关只对该次登录命令生效，任务不附加此开关 |
 | 企业 SSO | `traecli login --enterprise`；沿用原生浏览器流程 |
-| 企业 PAT | `traecli login --with-trae-pat`；读取 `TRAECLI_PERSONAL_ACCESS_TOKEN`，未设置时由用户在原生终端输入，插件不代填、不保存令牌 |
+| 企业 PAT | `traecli login --with-trae-pat`；读取 `TRAECLI_PERSONAL_ACCESS_TOKEN`，或从 stdin 读取；0.213.1 在没有 PAT 的 PTY 中直接报缺少输入并退出，不显示输入提示。插件不代填、不收集、不保存令牌 |
+
+账号窗口使用两列方式卡片，点击继续前不启动 CLI。个人授权提供浏览器链接及完整回调网址输入；企业 SSO/PAT 保持原生回退。已登录先显示当前账号卡，点击切换后自动退出，确认状态和进程清理后再选方式。
 
 退出使用 `traecli logout`，原生流程结束后刷新状态与模型目录。插件继承 `TRAE_HOME`（默认 `~/.trae`），账号和运行数据位于 `$TRAE_HOME/cli/`，配置为 `$TRAE_HOME/traecli.toml`；不修改此配置或调用 `traecli update`。来源绑定只取稳定主体字段及环境来源摘要，不记录令牌；换号使模型目录与保存选型的校验失效。
 
@@ -130,7 +132,7 @@ Qoder 设置中的单次目录加载会合并账号与模型查询，减少重�
 
 ### CodeBuddy Code 安装与登录
 
-按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令：在插件账号区点登录会打开原生终端，在其中输入 `/login` 选择站点并完成授权，退出用 `/logout`。
+按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令。已登录时先显示当前账号卡，点击切换才打开退出流程；首次信任、登录和退出仍在原生终端处理，使用 `/login` 选择站点、`/logout` 退出并关闭终端，插件回读明确未登录且确认清理后才进入登录。2026-11-07 隔离采集止于文件夹信任，未接受信任，因此没有编辑器、站点菜单与退出按键证据，不自动输入这些命令；不根据文件 mtime、读取错误或零退出码判断已换号。
 
 - 通信：`codebuddy --acp`，transport `codebuddy-acp-v1`。插件启动的进程都带 `DISABLE_AUTOUPDATER=1`，不会触发自动更新；你自己打开的终端仍按原方式更新。
 - 站点：优先采用 `~/.codebuddy/settings.json` 或环境中显式设置的 `CODEBUDDY_INTERNET_ENVIRONMENT`；否则在内存中只读取认证文件里的 `auth.domain`，按 CLI 自带的域名表显示中国站、国际站、企业域或 iOA。令牌等字段不读出，域名也不写入日志或持久化。无法判断时显示“站点未公开”。

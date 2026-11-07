@@ -76,6 +76,8 @@ Installation, login and path notes for Qoder, Claude Code (including CC Switch),
 
 **TRAE CN** (`traecn`) uses the official `traecli` only. Its official installer at `https://trae.cn/trae-cli/install_v2.sh` needs direct access to trae.cn; the 2026-11-07 probe from outside mainland China returned HTTP 403 (`denied by region block`). Use the official installer; no unofficial installer is provided. Official documentation restricts CLI access to the enterprise flagship plan. Personal login uses `traecli --enable personal_user_login login --personal` and depends on the under-development `personal_user_login` feature; enterprise SSO uses `traecli login --enterprise`, and enterprise PAT uses `traecli login --with-trae-pat`. There is no Ask permission level or effort selector. No official international CLI was found as of 2026-11-07. Windows remains unverified. See [TRAE installation, account and permission notes](doc/usage-details.en.md#trae-cn-installation-and-login).
 
+TRAE CN's account window offers personal, enterprise SSO and enterprise PAT cards. Personal sign-in shows a browser link and callback URL field; enterprise methods use the native flow. Switching first runs `logout`, confirms the signed-out state and process cleanup, then asks for a method again. CodeBuddy shows the current account card, while folder trust, `/login` and `/logout` remain native actions without automatic keystrokes. See the [pre-authorization capture and remaining acceptance work](openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md).
+
 ## Install and update
 
 End active tasks and quit Harness completely, then run:

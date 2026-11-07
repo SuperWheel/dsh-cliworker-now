@@ -15,7 +15,7 @@ import { resolveCliExecutable } from '../src/host/adapters.ts'
 // Observe only file paths, never store parsed auth documents or file bytes in mocks.
 vi.mock('node:fs/promises', async load => {
   const actual = await load<typeof import('node:fs/promises')>()
-  return { ...actual, open: vi.fn(actual.open) }
+  return { ...actual, open: vi.fn(actual.open), lstat: vi.fn(actual.lstat) }
 })
 
 const roots: string[] = []
@@ -54,20 +54,22 @@ describe('CodeBuddy 账号与目录（模拟）', () => {
     expect(codebuddyAuthDirectory('win32', { LOCALAPPDATA: 'C:\\Local' }, 'C:\\Home')).toBe('C:\\Local\\CodeBuddyExtension\\Data\\Public\\auth')
     expect(codebuddyAuthDirectory('win32', {}, 'C:\\Home')).toContain('C:\\Home\\AppData\\Local')
   })
-  it('uses only lstat even when the synthetic auth file is unreadable; marker, directory and symlink mean logged out', async () => {
+  it('keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout', async () => {
     const f = await fixture()
     expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated')
     await writeFile(f.file, '模拟文件；不得读取', { mode: 0o600 }); await chmod(f.file, 0)
     expect((await lstat(f.file)).mode & 0o777).toBe(0)
     expect(await readCodebuddyLoginState(f.options)).toBe('authenticated')
-    expect(await readCodebuddyAccount(f.options)).toEqual({ state: 'authenticated', verification: 'local', summary: '已登录 · 站点未公开' })
+    expect(await readCodebuddyAccount(f.options)).toMatchObject({ state: 'unknown', verification: 'local' })
     await symlink(join(f.home, 'absent-marker-target'), `${f.file}.logged-out`)
+    expect(await readCodebuddyLoginState(f.options)).toBe('unknown')
+    await rm(`${f.file}.logged-out`); await writeFile(`${f.file}.logged-out`, '')
     expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated')
     expect((await readCodebuddyAccount(f.options)).summary).toContain('/login')
     await rm(`${f.file}.logged-out`); await rm(f.file)
-    await mkdir(f.file); expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated'); await rm(f.file, { recursive: true })
+    await mkdir(f.file); expect(await readCodebuddyLoginState(f.options)).toBe('unknown'); await rm(f.file, { recursive: true })
     const target = join(f.home, 'synthetic-target'); await writeFile(target, '模拟')
-    await symlink(target, f.file); expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated')
+    await symlink(target, f.file); expect(await readCodebuddyLoginState(f.options)).toBe('unknown')
   })
   it.each([['internal', 'internal', '中国站'], ['external', 'external', '国际站'], ['IoA', 'ioa', 'iOA'], ['selfhosted', 'selfhosted', '企业域'], ['Custom', 'declared:Custom', 'Custom']])('maps declared site %s', (value, id, label) => {
     expect(codebuddyDeclaredSite({ CODEBUDDY_INTERNET_ENVIRONMENT: value })).toEqual({ id, label })
@@ -230,7 +232,7 @@ describe('CodeBuddy 只读站点（模拟）', () => {
     const f = await fixture(); await writeFile(f.file, raw)
     expect(await readCodebuddySite(f.options)).toEqual({ id: 'undeclared', label: '站点未公开' })
     const result = await readCodebuddyAccount(f.options)
-    expect(result.summary).toBe('已登录 · 站点未公开'); expect(JSON.stringify(result)).not.toContain(token)
+    expect(result.state).toBe('unknown'); expect(JSON.stringify(result)).not.toContain(token)
   })
   it('keeps missing or unreadable auth undeclared without exposing filesystem errors', async () => {
     const f = await fixture()
@@ -238,22 +240,22 @@ describe('CodeBuddy 只读站点（模拟）', () => {
     await saveAuth(f.file, 'www.codebuddy.cn'); await chmod(f.file, 0)
     expect(await readCodebuddySite(f.options)).toEqual({ id: 'undeclared', label: '站点未公开' })
   })
-  it.each(['CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT'])('settings %s wins without opening auth', async key => {
+  it.each(['CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT'])('settings %s wins after checking readable auth.domain', async key => {
     const f = await fixture(); await saveAuth(f.file, 'www.codebuddy.ai')
     await saveSettings(f.home, { [key]: 'internal' })
     const options = { ...f.options, env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'external' } }
     const account = await readCodebuddyAccount(options), b = backendFixture()
     const binding = await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', new AbortController().signal, options)
     expect(account.summary).toBe('已登录 · 中国站'); expect(binding.entries[0]?.principal.site).toBe('internal')
-    expect(opened()).not.toContain(f.file)
+    expect(opened()).toContain(f.file)
     expectPrivate([account, binding], 'www.codebuddy.ai')
   })
-  it.each(['CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT'])('process %s wins without opening auth', async key => {
+  it.each(['CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT'])('process %s wins after checking readable auth.domain', async key => {
     const f = await fixture(); await saveAuth(f.file, 'www.codebuddy.cn')
     await saveSettings(f.home, { CODEBUDDY_INTERNET_ENVIRONMENT: 17 })
     vi.stubEnv(key, 'external')
     const account = await readCodebuddyAccount({ ...f.options, env: undefined })
-    expect(account.summary).toBe('已登录 · 国际站'); expect(opened()).not.toContain(f.file)
+    expect(account.summary).toBe('已登录 · 国际站'); expect(opened()).toContain(f.file)
     expectPrivate(account, 'www.codebuddy.cn')
   })
   it('prefers the primary settings key and keeps explicit selfhosted/custom IDs separate', async () => {
@@ -381,4 +383,11 @@ describe('CodeBuddy 目录脚本（模拟原生子进程）', () => {
   it('bounds the overall query and terminates an unresponsive peer', async () => {
     const result = await run('timeout'); expect(result.code).toBe(1); expect(result.stdout).toBe('')
   }, 20000)
+})
+
+
+it.each(['EACCES', 'EPERM', 'ENOTDIR'])('模拟：CodeBuddy %s cannot prove sign-out', async code => {
+  const f = await fixture()
+  vi.mocked(lstat).mockRejectedValueOnce(Object.assign(new Error('SIMULATED denied'), { code }))
+  expect(await readCodebuddyLoginState(f.options)).toBe('unavailable')
 })

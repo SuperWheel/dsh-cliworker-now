@@ -55,19 +55,22 @@ export async function captureTraecnMetadata(backend: ProcessBackend, config: Run
   }
 }
 
-export function parseTraecnAccount(output: string): Identity {
+export function parseTraecnAccount(output: string, exitCode?: number | null): Identity {
   const text = stripVTControlCharacters(output)
   const unsupported = text.split(/\r?\n/).find(line => line.includes('does not support CLI usage'))
   if (unsupported) return { state: 'unavailable', verification: 'cli', summary: unsupported.trim().slice(0, 200) }
-  if (/^Logged in using Trae\s*$/m.test(text))
+  const lines = text.split(/\r?\n/).map(line => line.trim())
+  const signedIn = lines.includes('Logged in using Trae'), signedOut = lines.includes('Not logged in')
+  if (exitCode === 0 && signedIn && !signedOut)
     return { state: 'authenticated', verification: 'cli', summary: '已登录 TRAE（CLI 不区分个人与企业账号）' }
-  if (/^Not logged in\s*$/m.test(text))
+  if (exitCode === 1 && signedOut && !signedIn)
     return { state: 'unconfigured', verification: 'cli', summary: 'TRAE CN 未登录' }
   return { state: 'unknown', verification: 'cli', summary: '无法确认 TRAE CN 登录状态' }
 }
 
 export async function readTraecnAccount(backend: ProcessBackend, config: RuntimeConfig, executable: string, project: string, signal: AbortSignal): Promise<Identity> {
-  return parseTraecnAccount((await captureTraecnMetadata(backend, config, [executable, 'login', 'status'], project, signal, 10_000)).output)
+  const result = await captureTraecnMetadata(backend, config, [executable, 'login', 'status'], project, signal, 10_000)
+  return parseTraecnAccount(result.output, result.exitCode)
 }
 
 export function traecnAccountArguments(action: string, provider?: string): string[] {

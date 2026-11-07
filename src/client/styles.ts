@@ -321,3 +321,9 @@ export const rolePresetStyles = `
 .cwn-rename-dialog{width:min(420px,90vw);max-width:90vw}.cwn-rename-form>p{font-size:var(--dsw-font-xxs-12-font-size);color:var(--dsw-alias-label-tertiary);line-height:20px}
 @media(max-width:700px){.cwn-role-grid{grid-template-columns:1fr}.cwn-roles-toolbar{flex-wrap:wrap}.cwn-roles-toolbar>span{flex-basis:100%}}
 `
+
+export const newCliAccountStyles = `
+.cwn-account-terminal:is([data-cli="codebuddy"],[data-cli="traecn"]) .cwn-login-actions{justify-content:flex-end}
+.cwn-account-terminal:is([data-cli="codebuddy"],[data-cli="traecn"]) .cwn-login-result .cwn-login-actions{align-self:stretch}
+.cwn-account-terminal[data-cli="traecn"] .cwn-accounts-provider-text strong{white-space:normal;overflow-wrap:anywhere}
+`

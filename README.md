@@ -79,6 +79,8 @@ Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登�
 
 **TRAE CN**（`traecn`）只使用官方 `traecli`。官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 需要直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`）。请使用官方安装脚本，不提供非官方安装包。官方文档仅对企业版旗舰版套餐开放 CLI；个人登录使用 `traecli --enable personal_user_login login --personal`，依赖开发中的 `personal_user_login` 特性；企业 SSO 使用 `traecli login --enterprise`，企业 PAT 使用 `traecli login --with-trae-pat`。不提供「询问」档或强度选择。截至 2026-11-07 未发现官方国际版 CLI，Windows 尚未验证。详见 [TRAE 安装、账号与权限说明](doc/usage-details.md#trae-cn-安装与登录)。
 
+账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；首次信任及 `/login`、`/logout` 仍由原生终端处理，暂不自动按键。详见 [授权前采集与未完成验收](openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)。
+
 ## 安装与更新
 
 先结束活动任务并完全退出 Harness，再执行：

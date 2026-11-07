@@ -14,11 +14,13 @@ import type {
 import { GUIDED_ACCOUNT_CLIS, SINGLE_ACCOUNT_CLIS } from '../shared/account-links.ts'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { value, type API } from './workers.ts'
+import { newCliAccountStyles } from './styles.ts'
 import { accountTerminalCSS } from './account-terminal-css.ts'
 import { createZcodeLoginLinkParser } from './zcode-login-link.ts'
 import { createZcodeLoginLinkProvider } from './zcode-login-link-provider.ts'
 import { t, type MessageKey, useT } from './i18n.ts'
 import { hostText } from './operation-error.ts'
+import { LoginMethodPicker } from './account-login/login-method-picker.tsx'
 import { LoginWindow } from './account-login/login-window.tsx'
 
 const STARTUP_TIMEOUT_MS = 20_000
@@ -148,7 +150,9 @@ export function AccountTerminal({
   const [followUp, setFollowUp] = useState<{ base: string; action: AccountAction; login?: string }>()
   const current = followUp?.base === base ? followUp : undefined
   const action = current?.action ?? requested
-  const provider = current ? undefined : requestedProvider
+  const [selectedMethod, setSelectedMethod] = useState<{ base: string; provider: string }>()
+  const provider = action === 'login' && selectedMethod?.base === base ? selectedMethod.provider
+    : current ? undefined : requestedProvider
   const login = current ? current.login : requestedLogin
   const setAction = (next: AccountAction, nextLogin?: string) => setFollowUp({ base, action: next, login: nextLogin })
   const replacing = useRef(false)
@@ -156,6 +160,7 @@ export function AccountTerminal({
   const [holding, setHolding] = useState(
     () => requested === 'login' && signedIn && SINGLE_ACCOUNT_CLIS.has(cli) && GUIDED_ACCOUNT_CLIS.has(cli),
   )
+  const choosingMethod = cli === 'traecn' && action === 'login' && !holding && !provider
   const respond = useRef<(response: AccountResponse) => void>(() => {})
   const element = useRef<HTMLDivElement>(null)
   const callbacks = useRef({ onClose, onFinished })
@@ -180,7 +185,7 @@ export function AccountTerminal({
   const [notice, setNotice] = useState('')
   const [guide, setGuide] = useState<AccountGuide>()
   useEffect(() => {
-    if (holding) return
+    if (holding || choosingMethod) return
     const ownGeneration = ++generation.current
     setPhase('loading')
     setInstruction('')
@@ -580,7 +585,7 @@ export function AccountTerminal({
       void stopSession().catch(() => undefined)
       void disposeStream().catch(() => undefined)
     }
-  }, [api, sessionId, cli, action, source, provider, login, attempt, holding])
+  }, [api, sessionId, cli, action, source, provider, login, attempt, holding, choosingMethod])
 
   const close = (retry = false, next?: AccountAction, nextLogin?: string): Promise<boolean> => {
     if (closing.current) return closing.current
@@ -593,6 +598,7 @@ export function AccountTerminal({
         // A new action starts its own terminal; bumping the attempt too would start it twice.
         if (next && (next !== action || nextLogin !== login)) {
           setGuide(undefined)
+          if (cli === 'traecn' && next === 'login') setSelectedMethod(undefined)
           setAction(next, nextLogin)
         } else if (retry) setAttempt((value) => value + 1)
         else callbacks.current.onClose()
@@ -601,6 +607,11 @@ export function AccountTerminal({
         if (generation.current !== ownGeneration) return false
         setPhase('failed')
         setNotice(t('终端关闭失败，请重试'))
+        if (cli === 'codebuddy' || cli === 'traecn') {
+          // A proven account result does not prove process cleanup; keep retry visible.
+          setGuide({ step: 'cleanupFailed', tone: 'warning', template: 'result', text: t('终端关闭失败，请重试') })
+          if (next === 'login' && action === 'logout') switching.current = true
+        }
         return false
       }
     })()
@@ -651,7 +662,7 @@ export function AccountTerminal({
   })
   return (
     <section className="cwn-account-terminal" data-cli={cli}>
-      <style>{accountTerminalCSS}</style>
+      <style>{accountTerminalCSS + newCliAccountStyles}</style>
       <style>{`.cwn-account-terminal-view:focus-within { outline: none; }`}</style>
       {!guided && (
         <div className="cwn-account-terminal-head">
@@ -661,7 +672,13 @@ export function AccountTerminal({
           </Button>
         </div>
       )}
-      {guided && phase !== 'stopping' && (
+      {choosingMethod && <LoginMethodPicker
+        providers={account?.actions.find(item => item.id === 'login')?.providers}
+        supported={typeof api.cliworker.accountStartWith === 'function'}
+        onCancel={() => callbacks.current.onClose()}
+        onStart={provider => setSelectedMethod({ base, provider })}
+      />}
+      {guided && !choosingMethod && phase !== 'stopping' && (
         <LoginWindow
           cli={cli}
           action={action}
@@ -699,7 +716,7 @@ export function AccountTerminal({
       )}
       <div
         className="cwn-account-terminal-view"
-        hidden={!rawShown.current}
+        hidden={choosingMethod || !rawShown.current}
         ref={element}
         aria-label={t('{cli} 原生账号终端', { cli: CLI_LABELS[cli] })}
         onClick={() => focus.current()}

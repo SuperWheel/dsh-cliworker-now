@@ -57,10 +57,10 @@ it('offers three native permission levels, planning, images and an explicit no-f
   expect(nativeAttachmentCapability('codebuddy')).toBe(true)
 })
 
-it('keeps a single account in its native terminal with the observed login hosts', () => {
-  expect(ACCOUNT_LOGIN_HOSTS.codebuddy).toEqual(['codebuddy.cn', 'codebuddy.ai', 'copilot.tencent.com'])
+it('keeps a single account with a native fallback guide and no uncaptured authorization hosts', () => {
+  expect(ACCOUNT_LOGIN_HOSTS.codebuddy).toEqual([])
   expect(SINGLE_ACCOUNT_CLIS.has('codebuddy')).toBe(true)
-  expect(GUIDED_ACCOUNT_CLIS.has('codebuddy')).toBe(false)
+  expect(GUIDED_ACCOUNT_CLIS.has('codebuddy')).toBe(true)
 })
 
 it('injects ACP MCP transport while execution remains unverified', () => {

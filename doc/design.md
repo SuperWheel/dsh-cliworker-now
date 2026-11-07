@@ -1447,3 +1447,8 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 恢复用 `session/load` 并排除历史重放，分支用原生 `session/fork`（仅最新轮），停止核对进程范围退出。拒绝审批导致原生 `cancelled` 且用户未停止时显示「因拒绝审批而结束」，可续聊；不提供会话级授权。
 - 本轮有效 `end_turn` usage 与同回执上下文分别采集，输入口径为原生 reported，缓存含义未公开；全零取消回执保持未知。原生子 Agent、记忆、skills 与联网跟随用户设置。HTTP MCP 的服务名替换语义未核实，不注入 DSH 工具桥；steering 仅声明未实测，不提供运行中引导。
 - 图标沿用官方不透明 favicon，保留近黑底板，`mono: false`，深色不反色。Windows、Desktop 图标明暗及插件集成验收仍以任务清单的实际记录为准；前置 CLI 探测不能代替插件验收。
+
+
+### CodeBuddy / TRAE 图形账号引导（2026-11-07，未发布）
+
+独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 采集仅到首次信任，所有未核实按键留在原生；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。

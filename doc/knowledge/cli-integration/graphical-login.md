@@ -1,6 +1,6 @@
 # CLI 图形化登录开发指南
 
-本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。CodeBuddy、TRAE CN、WorkBuddy 的新引导仍是[待实施方案](../../../openspec/changes/add-new-cli-graphical-login/design.md)，本文没有重新运行 CLI、登录或采集真实画面。
+本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。2026-11-07 后续实施已为 CodeBuddy/TRAE 添加独立 flow、严格状态证明与共享方式卡片；CodeBuddy 仅到首次信任，后续按键保持原生，TRAE 个人采用回调网址模板。证据见[本次采集](../../../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)及[任务清单](../../../openspec/changes/add-new-cli-graphical-login/tasks.md)；WorkBuddy 由另一工作树实施，本页不代表其验收。
 
 ## 1、先判定账号由谁管理
 
@@ -11,7 +11,7 @@
 | 单账号、多登录方式/站点 | 仍为单账号；选择器只是决定本次原生登录路径，不意味着可同时持有多个账号 | `src/host/account-guide/providers.ts` 的 TRAE 表与 `src/host/traecn-accounts.ts` 的 `traecnAccountArguments`；CodeBuddy 参见 `src/host/codebuddy-account.ts` 与 `doc/codebuddy-protocol.md` |
 | 桌面端托管账号 | 用户在对应桌面应用登录/退出，插件显示指引和原生状态；图形页需单独的无 PTY 观察分支 | `src/host/accounts.ts` 对 WorkBuddy 返回空 actions 并拒绝 `start`；`src/host/workbuddy-metadata.ts`、`workbuddy-installation.ts`。拟扩展方式见第 8 节 |
 
-分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 只有 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo；CodeBuddy、TRAE CN 虽已列入单账号集合，仍没有 flow。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
+分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 包括 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo、CodeBuddy 与 TRAE CN；后两者保持单账号，其中 CodeBuddy 只有原生回退 flow，不代表自动按键已核实。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
 
 ## 2、架构与数据流
 
@@ -46,7 +46,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 | 设置与窗口 | `src/client/settings-dialog.tsx`、`account-terminal.tsx`、`account-login/{login-window,accounts-window}.tsx` |
 | 兼容与文案 | `src/client/workers.ts` 的可选 RPC、`i18n.ts`、`i18n-messages.ts`、`operation-error.ts` |
 
-`accounts-window.tsx` 的 `AddAccount` 当前是文件内部组件。新单账号 CLI 要复用两列卡片时，应提取公共选择部分，不能仅因有 providers 就加入 `MULTI_ACCOUNT_CLIS`；也不能宣称现在已存在可直接导入的 ProviderPicker。
+`accounts-window.tsx` 的内部 `AddAccount` 与 TRAE 的 `login-method-picker.tsx` 共用 `provider-cards.tsx`。Host 仍提供选项；单账号方式选择不应加入 `MULTI_ACCOUNT_CLIS`。
 
 ### 3.2 模板选择
 
@@ -97,7 +97,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 - 未知屏静止时 `settled` 才回退；初始只有终端协商/标题且无可见文本时不能抢先转失败。当前普通 flow 静止阈值为 8 秒，动画有额外上限；等待授权独立于静止检测（`AGY_GUIDE_TIMING`）。
 - `respond` 拒绝错误步骤、空值、控制字符、超长值；`FlowGuide.paste` 依据 CLI 是否开启 bracketed paste 决定封装。新 flow 不应绕过校验，把任意 option 文本当命令。
 
-链接由 `ACCOUNT_LOGIN_HOSTS` 管理，Host `allowedLink` 与 Client `loginLink` 双重验证 HTTPS、主机及无 userinfo。带前导点的条目才包含子域；`example.com` 不自动允许 `www.example.com`。每个新域必须有原生登录画面依据，企业任意域不能开通配。CodeBuddy 当前表的注释仍是文档/安装页来源、待真实窗口核验；TRAE 企业 SSO 明确留在原生。认证站点分类用的 `product.json` 通配表不是浏览器链接白名单。证据：`src/shared/account-links.ts`、`src/host/codebuddy-account.ts`。
+链接由 `ACCOUNT_LOGIN_HOSTS` 管理，Host `allowedLink` 与 Client `loginLink` 双重验证 HTTPS、主机及无 userinfo。带前导点的条目才包含子域；`example.com` 不自动允许 `www.example.com`。每个新域必须有原生登录画面依据，企业任意域不能开通配。CodeBuddy 采集止于 trust，当前授权表为空；TRAE 仅有实采 `www.trae.cn`，企业 SSO 留在原生。认证站点分类用的 `product.json` 通配表不是浏览器链接白名单。证据：`src/shared/account-links.ts`、`src/host/codebuddy-account.ts`。
 
 ## 6、以账号状态确认结果
 
@@ -112,7 +112,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 
 通用 `proves` 的登录要求 `after.state === 'authenticated'`，并结合起始状态、身份签名或原生退出码；指定 provider/login 时核对目标行。**不要把默认规则当作所有新 CLI 的安全证明**：当前通用单账号 logout 判断仅为非 authenticated，可能包含 unknown/unavailable；新 flow 应覆盖 `proves`，未知、读取失败、清理阻塞均不得证明退出。部分旧 flow 的 `notSignedIn` 屏幕步骤直接结束，也不应复制为新 CLI 的状态确认策略。
 
-需要补充的接入核对：原生启动可能先改变状态，当前 `session.before` 在 PTY 分配后读取；新流程若依赖“先退出再登录”转换，必须保存可靠基线并验证时序。没有身份字段时不捏造邮箱或“已切换到另一账号”。当前 `readCodebuddyAccount` 是文件存在/`.logged-out` 的本地状态（读取拒绝也可能归为 unauthenticated）；TRAE `readTraecnAccount` 当前只解析状态文本，协议文档还记录了退出码，二者差异需在本次实现明确收紧；WorkBuddy 元数据只有站点与安装绑定。不能以终端成功文字、文件 mtime、站点变化或退出码单独证明完整登录。
+需要补充的接入核对：原生启动可能先改变状态，旧 flow 的 `session.before` 在 PTY 分配后读取；CodeBuddy/TRAE 已改为 PTY 分配前保存基线。新流程若依赖“先退出再登录”转换，必须保存可靠基线并验证时序。没有身份字段时不捏造邮箱或“已切换到另一账号”。`readCodebuddyAccount` 区分明确不存在/普通 `.logged-out` 与读取失败/非法文件，并只用已获准的 `auth.domain` 投影确认 JSON 可读；TRAE `readTraecnAccount` 联合完整行与退出码，矛盾保持未知；WorkBuddy 元数据只有站点与安装绑定。不能以终端成功文字、文件 mtime、站点变化或退出码单独证明完整登录。
 
 确认后继续走既有账号/模型刷新、来源失效；不保存凭据副本。`index.ts` 的 `invalidateSettingsDisplay`、`settings-dialog.tsx` 的账号完成刷新、`src/host/cli-account-binding.ts` 是接线依据。
 
@@ -120,7 +120,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 
 - 先读 [设置页统一设计规范](../../settings-ui-design.md)。`src/client/styles.ts` 的 `.cwn-account-dialog` 为 `min(480px,90vw)`，只有展开原生终端才放宽到 720px；复用模板、宿主 Button/Input/StateDot 与主题 token。
 - 新登录引导用 `.cwn-login-callout` 淡绿/淡警示色块，不带左色条、键帽或嵌套面板；不要复用仍带左色条的旧 `.cwn-account-guide`。底部状态与按钮同一行（`.cwn-login-foot`），账号卡用 `--dsw-alias-interactive-bg-hover`，服务商卡用现有两列布局。
-- 当前账号页、添加账号页的操作行通过 `.cwn-accounts-actions` 右对齐；现有 `.cwn-login-actions` 不统一右对齐，结果页另为居中。按本次用户要求，新窗口操作采用右对齐；实施若调整共享样式参数，须同步设置规范并回归旧窗口，不能声称现状所有按钮已经右对齐。
+- 当前账号页、添加账号页的操作行通过 `.cwn-accounts-actions` 右对齐；现有 `.cwn-login-actions` 不统一右对齐，结果页另为居中。按本次用户要求，新窗口操作采用右对齐；CodeBuddy/TRAE 已添加局部右对齐覆盖，其他窗口保持既有规则；修改共享参数仍须同步设置规范并回归旧窗口。
 - UI 文案用 `t/useT`；Host 的固定中文由 `operation-error.ts` 的 `hostText` 映射，再由 `i18n-messages.ts` 提供英文。模板标题、plan、选项、失败和桌面指引都要覆盖。不要翻译原生屏幕 marker 或据界面语言修改 argv；CLI 显示名取 `CLI_LABELS`。
 - Windows 复用 `src/host/windows-account-terminal.ts` 的 ConPTY 启动、首次 DA 应答、Job 范围与清理，以及 `account-terminal.tsx` 的 Ctrl+V/原生粘贴、输入法和焦点逻辑。不要绕开现有终端封装或附加操作系统沙箱。中文宽字符、分片 UTF-8、CR+CUP 软折行、OSC 链接需覆盖；macOS 采集不能代替 Windows 证据。
 - 关闭窗口、父会话结束或插件卸载都需取消轮询/订阅、清理分配迟到的终端；关闭失败不释放冲突锁。依据：`accounts.ts` 的 `watch/closeParent/close/finish`、`index.ts` 的父会话 effect、`account-terminal.tsx` 的 generation/close 生命周期。

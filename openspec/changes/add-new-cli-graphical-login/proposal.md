@@ -11,7 +11,7 @@ v0.8.8 新接入的 CodeBuddy Code、TRAE CLI CN 与 WorkBuddy 两版尚未接�
 - 为 `workbuddycn` / `workbuddy` 增加桌面端账号引导页：显式打开正确的桌面应用、有限自动刷新状态，登录、退出与换号均在桌面端完成。没有 CLI 登录命令，不创建伪终端，不自动退出桌面账号。
 - 复用 `LoginWindow` 的步骤、结果、淡色提示、480px 窗口及两列账号选择卡片；补齐 Host 固定文案的中英文映射、生命周期与对应模拟测试。
 - 编写 [图形化登录开发指南](../../../doc/knowledge/cli-integration/graphical-login.md)，补齐接入流程的登录阶段与交付核对项。
-- 本轮只交付文档和方案；Host、Client、测试代码、真实画面采集和 Desktop 验收留作未完成任务。
+- 初始轮交付文档和方案；2026-11-07 后续授权已实施 CodeBuddy 原生回退、TRAE 图形个人登录与方式卡片，并补测试及授权前采集。CodeBuddy 首次信任后路径、Desktop 与 Windows 保持未完成；WorkBuddy 在另一工作树实施。
 
 ## Capabilities
 
@@ -25,7 +25,7 @@ v0.8.8 新接入的 CodeBuddy Code、TRAE CLI CN 与 WorkBuddy 两版尚未接�
 
 ## Impact
 
-- 现状证据：`src/host/accounts.ts` 的 `instructionFor`、`argumentsFor`、`startSession`；`src/host/account-guide/{engine,flows,providers}.ts`；`src/shared/account-links.ts`。`codebuddy`、`traecn` 已在 `SINGLE_ACCOUNT_CLIS`，但没有对应 flow，也不在 `GUIDED_ACCOUNT_CLIS`；WorkBuddy 的 `actionsFor` 返回空且 `start` 拒绝账号操作。
+- 现状证据：`src/host/accounts.ts` 的 `instructionFor`、`argumentsFor`、`startSession`；`src/host/account-guide/{engine,flows,providers}.ts`；`src/shared/account-links.ts`。初始规划时 `codebuddy`、`traecn` 已在 `SINGLE_ACCOUNT_CLIS`，没有对应 flow；本次已注册两条 flow，CodeBuddy 按采集缺口仅保留原生操作；WorkBuddy 的 `actionsFor` 返回空且 `start` 拒绝账号操作。
 - 后续 Host 落点：账号管理器、CodeBuddy/TRAE flow、`codebuddy-account.ts`、`traecn-accounts.ts`、WorkBuddy 安装解析与元数据查询；Gateway 在 `src/host/index.ts`，共享协议在 `src/shared/accounts.ts`，客户端兼容 API 声明在 `src/client/workers.ts`。桌面打开/观察需要显式能力与受约束请求。
 - 后续 Client 落点：`settings-dialog.tsx`、`account-terminal.tsx`、`account-login/{login-window,accounts-window}.tsx`、`i18n-messages.ts`、`operation-error.ts`；沿用 `styles.ts` 和 [设置规范](../../../doc/settings-ui-design.md)。产品显示名沿用 `CLI_LABELS`，不干涉并行的名称调整。
 - 关联活动变更：`add-cli-login-templates`、`add-codebuddy-cli`、`add-traecn-cli`、`add-workbuddy-cli`。WorkBuddy 原文“无登录/退出入口”及旧模板“来源下拉框”的表述需在后续实施同步为桌面管理引导和卡片选择，详见设计；本轮不修改这些目录。

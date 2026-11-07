@@ -894,7 +894,7 @@ export class AccountManager {
       } else if (cli === 'traecn') {
         launch.argv = [executable, ...traecnAccountArguments(action, provider)]
         launch.env = traecnEnvironment()
-        if (provider === 'enterprise-pat') instruction = 'TRAE 会读取 TRAECLI_PERSONAL_ACCESS_TOKEN；未设置时在下方原生终端粘贴令牌，插件不保存。'
+        if (provider === 'enterprise-pat') instruction = 'TRAE PAT 由原生环境变量或 stdin 提供；无输入时 CLI 会退出，插件不收集或保存令牌。'
       } else if ((cli === 'qoder' || cli === 'qodercn')) {
         launch.argv = [executable, ...QODER_METADATA_ARGUMENTS.filter((value) => value !== '--acp'), ...argumentsFor(cli, action)]
         launch.env = qoderEnvironment(cli)
@@ -1007,6 +1007,11 @@ export class AccountManager {
         login,
         stores: provider ? providerStores(cli, provider, nativeProviders) : undefined,
       })
+      // These flows require a signed-out baseline captured before native startup can mutate it.
+      const before = guide && (cli === 'codebuddy' || cli === 'traecn')
+        ? await this.readStatus(cli, cwd, startup) : undefined
+      if (before?.cleanupBlocked) throw new ProcessCleanupUnconfirmedError()
+      startup.throwIfAborted()
       allocation = spawnAccountTerminal(this.backend, {
         ...launch,
         ...(guide ? guide.size : { rows: 24, cols: 80 }),
@@ -1042,7 +1047,7 @@ export class AccountManager {
           )
           this.sessions.set(session.id, session)
           if (guide && cli !== 'antigravity')
-            session.before = this.evidence(session, session.guideControl!.signal).catch(() => undefined)
+            session.before = before ? Promise.resolve(before) : this.evidence(session, session.guideControl!.signal).catch(() => undefined)
           this.emit(session, { status: 'running' })
           session.output = this.readTerminal(session)
           void session.output.catch(() => undefined)

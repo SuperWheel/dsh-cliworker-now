@@ -2,13 +2,13 @@
 
 ## Context
 
-动机见 [proposal.md](proposal.md)。本次是文档与规划交付，没有实施源码、真实屏幕或 Desktop 验收。当前源码、协议笔记与尚未归档的规格分别看待；显示名称跟随 `src/shared/types.ts` 的 `CLI_LABELS`，本变更不承担并行名称调整。
+动机见 [proposal.md](proposal.md)。初始轮次是文档与规划交付；2026-11-07 本工作树按新授权实施 §1–§3，真实授权前采集见 [capture-2026-11-07.md](capture-2026-11-07.md)，Desktop 验收尚未执行，§4 由另一工作树负责。当前源码、协议笔记与尚未归档的规格分别看待；显示名称跟随 `src/shared/types.ts` 的 `CLI_LABELS`，本变更不承担并行名称调整。
 
 | 对象 | 已存在 | 缺口 |
 | --- | --- | --- |
-| 通用窗口 | `FlowGuide` / `AgyAccountGuide`、`LoginWindow`、`AccountTerminal`、`AccountsWindow`；200 × 60 隐藏 PTY、480px 窗口、状态核对与原生回退 | 新 CLI flow 未注册；服务商两列卡片仍在 `accounts-window.tsx` 的内部 `AddAccount` 中 |
-| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 没有引导自动打开 `/login`、识别站点或自动 `/logout`。`doc/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
-| TRAE CN | `providers.ts` 已列 personal / enterprise / enterprise-pat；`traecnAccountArguments` 已实现三条登录 argv 与 logout；`readTraecnAccount` 查询 `login status` | 无 flow；单账号 holding 还受 `GUIDED_ACCOUNT_CLIS` 限制，不能仅有 providers 就认为已实现切换向导；企业完整流程尚未核实 |
+| 通用窗口 | `FlowGuide` / `AgyAccountGuide`、`LoginWindow`、`AccountTerminal`、`AccountsWindow`；200 × 60 隐藏 PTY、480px 窗口；`ProviderCards` 已提取并复用 | CodeBuddy 完整自动按键与 Desktop/Windows 验收未完成 |
+| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 已注册原生回退与严格状态证明；未自动打开 `/login`、识别站点或自动 `/logout`。`doc/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
+| TRAE CN | `providers.ts` 已列 personal / enterprise / enterprise-pat；`traecnAccountArguments` 已实现三条登录 argv 与 logout；`readTraecnAccount` 查询 `login status` | 已注册个人回调网址 flow、单账号 holding 与共享方式卡片；企业完整流程与 Desktop/Windows 尚未核实 |
 | WorkBuddy 两版 | `workbuddy-installation.ts` 返回 appRoot/runtime/entry 并核对 product 站点；`workbuddy-metadata.ts` 查询账号相关元数据 | `accounts.ts` 的 actions 为空且 `start` 拒绝账号操作；无 CLI 登录/退出、无打开应用/状态观察会话 |
 
 ## Goals / Non-Goals
@@ -23,7 +23,7 @@
 
 - 不创建新 CLI ID、不将站点/方式伪装成多账号；不改模型、任务 ACP、权限档位、安装协议或发布版本。
 - 不读取新凭据字段、不实现企业 SSO 浏览器自动化、不在插件收集 TRAE PAT、不自动退出 WorkBuddy；不把隔离采集当作真实登录完成。
-- 不在本轮修改 README、设置规范、源码或测试；后续实施所需同步另列任务，遵守本轮指定文件边界。
+- 初始规划轮未修改源码；本次实施授权包含 §1–§3 的源码、测试、README 与设置规范同步，WorkBuddy 不在本工作树范围。
 
 ## Decisions
 
@@ -39,6 +39,8 @@ UI 复用 `.cwn-login-*` / `.cwn-accounts-*`；按用户要求新流程的操作
 
 ### 2、CodeBuddy：单账号 TUI 引导
 
+**2026-11-07 实施边界。** C1 在文件夹信任阻断，未接受，因此下面 C2–C6 自动按键仍是待完成设计，不是当前实现。当前只注册无自动按键的原生回退 flow 与严格状态证明、当前账号卡；用户自己在原生终端完成 `/logout` 并关闭后，确认退出和清理才开始登录。生产代码没有猜测编辑器/站点 marker，授权主机白名单为空。
+
 **入口与命令。** 当前 `accounts.ts` 的三个落点（`instructionFor`、`argumentsFor`、`startSession`，原约 128/193/892 行）只打开无参数 TUI，随后靠用户手输。新建独立 flow（建议 `account-guide/codebuddy-flow.ts`），在确认编辑器就绪后一次性输入 `/login`；若启动已直接显示登录/站点菜单，则不再发 `/login`。参数仍为 `[exe]` 与已核实的禁更新环境；不利用 ACP `authMethods` 臆造非交互登录命令。
 
 **模板与分支。** 计划是 `starting → trust（确有该屏才显示）→ waiting（打开登录）→ choice（原生站点菜单）→ browser → waiting（状态确认）→ result`。只有真实画面要求回填时才加入 `browserCode`，只有真实设备码屏才用 `deviceCode`。首次条款/主题等未知屏先转 `native`；现有 `terms` 含 Google 固定内容，不能直接套用。
@@ -51,7 +53,7 @@ UI 复用 `.cwn-login-*` / `.cwn-accounts-*`；按用户要求新流程的操作
 
 现有 `ACCOUNT_LOGIN_HOSTS.codebuddy` 为 `codebuddy.cn`、`codebuddy.ai`、`copilot.tencent.com`，并非真实屏幕完整核验结果；尤其不自动包含 `www`。采集后只加入实际打印的精确授权主机，站点分类用的企业通配表不能搬进白名单。`_codebuddy.ai/getUserInfo` 带 `accessToken`，继续禁止调用。
 
-**需要的真实画面记录（本轮均未采集）。**
+**原计划的真实画面记录（本次只完成 C1，C2–C6 阻断；见采集记录）。**
 
 | 编号 | 具体画面/结构 | 用途与未提交边界 |
 | --- | --- | --- |
@@ -78,7 +80,9 @@ PAT 默认留在原生是有意选择：`doc/traecn-protocol.md` 明确令牌由
 
 个人授权若 CLI 自行退出，走 `guidedExit → confirmAccount`；若采集证明继续运行，增加 `watches: 'login'`。SSO/PAT 在原生回退中完成后也需状态核对，不能只展示终端已关闭。`traecnEnvironment` 继续保留原生 TRAE 配置，登录特性开关不写入配置。
 
-**待采集清单：** T1：隔离 HOME/TRAE_HOME 的个人登录首屏、开发中特性/套餐限制提示；T2：授权前 URL 主机、完整等待/设备码/回调输入提示及取消，三种模板按实际选择；T3：企业 SSO 首屏及进入企业自定义流程的边界；T4：没有 PAT 环境变量时的 stdin 提示/是否回显（不输入 PAT），有环境变量直读的路径仅做模拟覆盖，本轮不查看真实值；T5：未登录 `logout` 与 `login status` 输出/退出码，授权成功/有效账号退出链留到独立验收；T6：Windows 安装身份及 ConPTY 的上述屏幕。以上均须真实 CLI 会话、无授权提交；遇到阻断则记录缺屏，不继续登录。
+**2026-11-07 实施：** T1/T2 实际为 browserCode（`www.trae.cn/authorization` + 完整回调网址提示），同时等待原生状态或 CLI 退出。T3 保留原生 SSO。T4 无 PAT 的 PTY 直接缺少输入退出，不画输入框。T5 status 未登录/1、logout 未登录/0；状态与退出码联合验证。T6 未执行。
+
+**原采集清单：** T1：隔离 HOME/TRAE_HOME 的个人登录首屏、开发中特性/套餐限制提示；T2：授权前 URL 主机、完整等待/设备码/回调输入提示及取消，三种模板按实际选择；T3：企业 SSO 首屏及进入企业自定义流程的边界；T4：没有 PAT 环境变量时的 stdin 提示/是否回显（不输入 PAT），有环境变量直读的路径仅做模拟覆盖，本轮不查看真实值；T5：未登录 `logout` 与 `login status` 输出/退出码，授权成功/有效账号退出链留到独立验收；T6：Windows 安装身份及 ConPTY 的上述屏幕。以上均须真实 CLI 会话、无授权提交；遇到阻断则记录缺屏，不继续登录。
 
 ### 4、WorkBuddy 两版：桌面管理与状态观察
 

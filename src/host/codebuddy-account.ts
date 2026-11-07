@@ -27,19 +27,23 @@ function authPath(options: AccountOptions) {
   const path = (options.platform ?? process.platform) === 'win32' ? win32 : { join }
   return path.join(codebuddyAuthDirectory(options.platform, options.env, options.home), 'Tencent-Cloud.coding-copilot.info')
 }
-export async function readCodebuddyLoginState(options: AccountOptions = {}): Promise<'authenticated' | 'unauthenticated'> {
+export async function readCodebuddyLoginState(options: AccountOptions = {}): Promise<'authenticated' | 'unauthenticated' | 'unknown' | 'unavailable'> {
   options.signal?.throwIfAborted()
   try {
     const file = authPath(options)
     const info = await lstat(file)
-    if (!info.isFile() || info.isSymbolicLink()) return 'unauthenticated'
-    try { await lstat(`${file}.logged-out`); return 'unauthenticated' }
-    catch (error) { if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error }
+    if (!info.isFile() || info.isSymbolicLink()) return 'unknown'
+    try {
+      const marker = await lstat(`${file}.logged-out`)
+      return marker.isFile() && !marker.isSymbolicLink() ? 'unauthenticated' : 'unknown'
+    }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     options.signal?.throwIfAborted()
     return 'authenticated'
   } catch (error) {
     options.signal?.throwIfAborted()
-    if (['ENOENT', 'ENOTDIR', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException).code ?? '')) return 'unauthenticated'
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'unauthenticated'
+    if (['EACCES', 'EPERM', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) return 'unavailable'
     throw error
   }
 }
@@ -234,8 +238,12 @@ export async function readCodebuddyAccountBindingMaterial(backend: ProcessBacken
   return { sourceIds: [authPath(options)], entries: [{ provider: 'codebuddy', principal: { site: declared.id, catalog } }] }
 }
 export async function readCodebuddyAccount(options: AccountOptions = {}): Promise<AccountIdentity> {
-  const state = await readCodebuddyLoginState(options)
+  let state = await readCodebuddyLoginState(options)
+  // Reuse the authorized auth.domain projection. Unreadable/malformed JSON is not a login.
+  if (state === 'authenticated' && !await projectPrivateJson(authPath(options), value =>
+    typeof value?.auth?.domain === 'string' && value.auth.domain.length > 0)) state = 'unknown'
+  options.signal?.throwIfAborted()
   const site = state === 'authenticated' ? await readCodebuddySite(options) : undefined
   return { state, verification: 'local', summary: state === 'authenticated'
-    ? `已登录 · ${site!.label}` : '尚未登录 CodeBuddy，请在原生终端使用 /login' }
+    ? `已登录 · ${site!.label}` : state === 'unauthenticated' ? '尚未登录 CodeBuddy，请在原生终端使用 /login' : '无法确认 CodeBuddy 登录状态，请检查原生账号文件是否可读' }
 }

@@ -74,7 +74,8 @@ function CurrentAccount({
         <strong>{t('当前已登录 {cli}', { cli: name })}</strong>
         <span>
           {onSwitch
-            ? t('切换账号会先退出当前账号，确认退出后再登录新账号。')
+            ? cli === 'codebuddy' ? t('切换账号需先在原生终端使用 /logout 退出；确认退出并关闭终端后再登录。')
+              : t('切换账号会先退出当前账号，确认退出后再登录新账号。')
             : t('如需切换账号，请先退出登录。')}
         </span>
       </div>
@@ -86,7 +87,7 @@ function CurrentAccount({
             </span>
             <div className="cwn-accounts-row-text">
               <strong>{only?.providerLabel ?? name}</strong>
-              <span>{meta}</span>
+              <span>{meta || ((cli === 'codebuddy' || cli === 'traecn') ? hostText(account?.summary) : '')}</span>
             </div>
             <span className="cwn-accounts-state">{t('已登录')}</span>
           </div>

@@ -108,13 +108,15 @@ The installer needs direct access to trae.cn. The 2026-11-07 probe from outside 
 
 **Path and identity.** `traecnExecutable` defaults to `traecli`; set an absolute path under CLI Connections → Advanced settings if needed. Automatic discovery searches only for `traecli`, adding `~/.local/bin/traecli` outside PATH on macOS / Linux; macOS child PATH also includes `~/.local/bin`. Both automatic and explicit paths must pass the `--version` identity check: first line `traecli <version>` and an `installation:` line. ACP must then report `agentInfo.name = traecli-acp`. The installer's `trae-cli`, `trae-agent`, `coco` and `ta` links are not automatic discovery candidates; a manually configured same-brand link still needs identity validation. On Windows, configure `traecnExecutable` if discovery fails; no unverified installation location is assumed.
 
-**Account.** Official documentation restricts CLI access to the enterprise flagship plan. Preliminary checks also completed live tasks with a personal account using an under-development feature; that does not establish access for all personal accounts. `traecli login status` is the account source: `Logged in using Trae` means logged in without distinguishing personal from enterprise, `Not logged in` means signed out, and other output stays unknown. Unsupported plans retain the native reason.
+**Account.** Official documentation restricts CLI access to the enterprise flagship plan. Preliminary checks also completed live tasks with a personal account using an under-development feature; that does not establish access for all personal accounts. `traecli login status` is the account source: `Logged in using Trae` with exit 0 means logged in without distinguishing personal from enterprise, `Not logged in` with exit 1 means signed out, and other output stays unknown. Unsupported plans retain the native reason.
 
 | Login method | Native command and behavior |
 | --- | --- |
 | Personal account | `traecli --enable personal_user_login login --personal`; depends on the under-development `personal_user_login` feature. The flag applies only to that login command, not task launches |
 | Enterprise SSO | `traecli login --enterprise`; uses the native browser flow |
-| Enterprise PAT | `traecli login --with-trae-pat`; reads `TRAECLI_PERSONAL_ACCESS_TOKEN`, or prompts in the native terminal when unset. The plugin neither supplies nor stores the token |
+| Enterprise PAT | `traecli login --with-trae-pat`; reads `TRAECLI_PERSONAL_ACCESS_TOKEN`, or reads stdin. Version 0.213.1 exits with an error when a PTY has no PAT input; it does not display an input prompt. The plugin does not supply, collect or store the token |
+
+The two-column method cards start no CLI until Continue. Personal sign-in offers a browser link and full callback URL field; enterprise SSO/PAT stay native. A signed-in account opens its current-account card first. Switching signs out, confirms state and process cleanup, then asks for a new method.
 
 Logout uses `traecli logout`, then refreshes account status and the model catalog. The plugin inherits `TRAE_HOME` (default `~/.trae`); account/runtime data live under `$TRAE_HOME/cli/` and configuration is `$TRAE_HOME/traecli.toml`. It does not edit that file or call `traecli update`. Account binding uses stable principal and environment-source digests without logging tokens; changing accounts invalidates catalog and saved-selection checks.
 
@@ -156,7 +158,7 @@ Qoder settings combine account and model discovery within each catalog operation
 
 ### CodeBuddy Code installation and login
 
-Install with npm as described by Tencent: `npm install -g @tencent-ai/codebuddy-code`; the command is `codebuddy`. The China site, International site, enterprise domain and iOA are login sites of one CLI, so the plugin has a single “CodeBuddy Code” entry. CodeBuddy has no login subcommand: the account area opens the native terminal, where `/login` selects a site and `/logout` signs out.
+Install with npm as described by Tencent: `npm install -g @tencent-ai/codebuddy-code`; the command is `codebuddy`. The China site, International site, enterprise domain and iOA are login sites of one CLI, so the plugin has a single “CodeBuddy Code” entry. CodeBuddy has no login subcommand. Signed-in accounts open a current-account card first. Switching opens the native sign-out flow: use `/logout`, then close the terminal so the plugin can confirm sign-out and cleanup before opening login. Folder trust and `/login` site selection remain native. The isolated 2026-11-07 capture stopped at folder trust without accepting it, so editor readiness, site menus and automatic slash commands remain unverified. File timestamps, read errors and exit 0 alone never prove switching.
 
 - Transport: `codebuddy --acp` (`codebuddy-acp-v1`). Every process the plugin starts sets `DISABLE_AUTOUPDATER=1`; terminals you open yourself keep their normal update behaviour.
 - Site: an explicit `CODEBUDDY_INTERNET_ENVIRONMENT` in `~/.codebuddy/settings.json` or the environment wins; otherwise the plugin reads only `auth.domain` from the auth file, in memory, and maps it with the CLI's own domain table. Tokens are never read, and the domain is never logged or stored. Unknown sites show “site not disclosed”.

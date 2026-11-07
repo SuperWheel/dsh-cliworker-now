@@ -1575,3 +1575,87 @@ it('asks for a Host update instead of a provider login on an older Host', async 
   await vi.waitFor(() => expect(JSON.stringify(f.renderer.toJSON())).toContain('当前插件 Host 不支持此账号操作'))
   expect(f.accountStart).not.toHaveBeenCalled()
 })
+
+// SIMULATED client frames/providers; no native login is executed by these tests.
+const traeMethods = ['personal', 'enterprise', 'enterprise-pat'].map((id, index) => ({
+  id, label: ['个人账号（依赖 TRAE CLI 开发中特性）', '企业 SSO', '企业 PAT'][index]!,
+}))
+const traeAccount = { cli: 'traecn', installed: true, state: 'unconfigured', summary: 'TRAE CN 未登录',
+  actions: [{ id: 'login', label: '登录 / 切换账号', description: '', providers: traeMethods }] } as AccountStatus
+
+it('模拟：TRAE method cards do not start until Continue, omit native-provider choice and allow cancellation', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, false, { account: traeAccount })
+  expect(f.accountStart).not.toHaveBeenCalled(); expect(f.accountStartWith).not.toHaveBeenCalled()
+  const radios = f.renderer.root.findAllByProps({ role: 'radio' })
+  expect(radios).toHaveLength(3)
+  expect(radios.every(radio => !radio.props['aria-checked'])).toBe(true)
+  expect(JSON.stringify(f.renderer.toJSON())).not.toContain('其他服务商')
+  expect(f.renderer.root.findAllByType('button').find(b => b.children.includes('继续'))!.props.disabled).toBe(true)
+  await act(async () => radios[1]!.props.onClick())
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+  await f.click('返回')
+  expect(f.onClose).toHaveBeenCalledOnce()
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it.each(['personal', 'enterprise', 'enterprise-pat'])('模拟：TRAE selected %s starts only that provider', async provider => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, false, { account: traeAccount })
+  await act(async () => f.renderer.root.findAllByProps({ role: 'radio' })[traeMethods.findIndex(p => p.id === provider)]!.props.onClick())
+  await f.click('继续')
+  expect(f.accountStartWith).toHaveBeenCalledExactlyOnceWith('parent', 'traecn', 'login', JSON.stringify({ provider }), expect.any(AbortSignal))
+  expect(f.accountStart).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE switches only after successful logout cleanup, then requires a fresh method', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, true, { account: { ...traeAccount, state: 'authenticated' } })
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStart).not.toHaveBeenCalled()
+  await f.click('切换账号'); await f.start()
+  expect(f.accountStart).toHaveBeenCalledExactlyOnceWith('parent', 'traecn', 'logout', expect.any(AbortSignal))
+  const cleanup = deferred()
+  f.accountStop.mockImplementationOnce(() => cleanup.promise)
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'loggedOut', tone: 'success', template: 'result', text: '已退出 TRAE CN' } }))
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+  await act(async () => cleanup.resolve(ok()))
+  await vi.waitFor(() => expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(3))
+  expect(f.accountStart).toHaveBeenCalledTimes(1)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE logout cleanup failure keeps method selection blocked', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, true, { account: { ...traeAccount, state: 'authenticated' } })
+  await f.click('切换账号'); await f.start()
+  f.accountStop.mockRejectedValueOnce(new Error('SIMULATED cleanup failure'))
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'loggedOut', tone: 'success', template: 'result', text: '已退出 TRAE CN' } }))
+  await vi.waitFor(() => expect(JSON.stringify(f.renderer.toJSON())).toContain('终端关闭失败'))
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE missing Host methods never chooses a default login', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login')
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('当前插件 Host 未提供登录方式选择')
+  expect(f.accountStart).not.toHaveBeenCalled(); expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：CodeBuddy current account stays idle and explains native logout before switching', async () => {
+  const f = await setup(false)
+  await f.update('codebuddy', 'login', undefined, undefined, true, { account: {
+    cli: 'codebuddy', installed: true, state: 'authenticated', summary: '已登录 · 中国站', actions: [],
+  } })
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('/logout')
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('已登录 · 中国站')
+  expect(f.accountStart).not.toHaveBeenCalled()
+  await f.click('切换账号')
+  expect(f.accountStart).toHaveBeenCalledExactlyOnceWith('parent', 'codebuddy', 'logout', expect.any(AbortSignal))
+  await f.start()
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'nativeTrust', tone: 'warning', template: 'native', text: '模拟：原生接手' } }))
+  expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(true)
+  expect(f.accountWrite).not.toHaveBeenCalled()
+})

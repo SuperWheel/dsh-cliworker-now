@@ -34,7 +34,7 @@ describe('模拟：TRAE 原生账号与模型目录', () => {
     ['模拟 unknown output', 'unknown', '无法确认 TRAE CN 登录状态'],
     ['Current Trae enterprise plan does not support CLI usage.', 'unavailable', 'Current Trae enterprise plan does not support CLI usage.'],
   ])('parses %s without inferring account type', (output, state, summary) => {
-    expect(parseTraecnAccount(output)).toEqual({ state, summary, verification: 'cli' })
+    expect(parseTraecnAccount(output, state === 'unconfigured' ? 1 : 0)).toEqual({ state, summary, verification: 'cli' })
   })
   it('exposes only login/logout and three provider choices, with native domains', async () => {
     const f = await fixture()
@@ -45,8 +45,8 @@ describe('模拟：TRAE 原生账号与模型目录', () => {
     expect(status.actions.map(a => a.id)).toEqual(['login', 'logout'])
     expect(status.actions[0]?.providers?.map(p => p.id)).toEqual(['personal', 'enterprise', 'enterprise-pat'])
     expect(loginProviders('traecn', undefined)?.[0]?.label).toContain('开发中特性')
-    expect(ACCOUNT_LOGIN_HOSTS.traecn).toEqual(['trae.cn', 'www.trae.cn', 'api.trae.com.cn'])
-    expect(SINGLE_ACCOUNT_CLIS.has('traecn')).toBe(true); expect(GUIDED_ACCOUNT_CLIS.has('traecn')).toBe(false)
+    expect(ACCOUNT_LOGIN_HOSTS.traecn).toEqual(['www.trae.cn'])
+    expect(SINGLE_ACCOUNT_CLIS.has('traecn')).toBe(true); expect(GUIDED_ACCOUNT_CLIS.has('traecn')).toBe(true)
     expect(() => manager.start('SIMULATED-parent', 'traecn', 'login', f.root, signal())).toThrow('不支持的登录方式')
     expect(() => manager.start('SIMULATED-parent', 'traecn', 'manage', f.root, signal())).toThrow('仅支持登录和退出')
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
@@ -66,7 +66,7 @@ describe('模拟：TRAE 原生账号与模型目录', () => {
     const manager = new AccountManager(f.backend, DEFAULT_CONFIG); managers.push(manager)
     const opened = await manager.start('SIMULATED-parent', 'traecn', 'login', f.root, signal(), undefined, provider)
     expect(vi.mocked(f.backend.spawnTerminal!).mock.calls[0]?.[0].argv).toEqual(['traecli', ...argv])
-    if (provider === 'enterprise-pat') expect(opened.instruction).toContain('插件不保存')
+    if (provider === 'enterprise-pat') expect(opened.instruction).toContain('插件不收集或保存令牌')
     await manager.close()
   })
   it('uses logout only and rejects missing or unsupported provider', () => {
@@ -154,4 +154,48 @@ it('模拟：取消元数据查询先确认进程范围退出，清理失败不�
     await expect(pending).rejects.toMatchObject(exits ? { message: '模拟取消' } : { name: 'ProcessCleanupUnconfirmedError' })
     expect(terminate).toHaveBeenCalledOnce(); expect(waitForExit).toHaveBeenCalledOnce()
   }
+})
+
+it.each([
+  [0, 'Not logged in', 1, 'loggedOut'],
+  [1, 'Not logged in', 1, 'logoutUnconfirmed'],
+  [0, 'Not logged in', 0, 'logoutUnconfirmed'],
+  [0, 'Logged in using Trae', 0, 'logoutUnconfirmed'],
+] as const)('模拟：automatic logout exit=%s status=%s/%s yields %s only after state readback', async (exitCode, status, statusCode, expected) => {
+  let launched = false
+  const f = traecnMetadata(argv => ({ output: argv.includes('--version') ? 'traecli 0.213.1\ninstallation: public' :
+    launched ? status : 'Logged in using Trae', exitCode: argv.includes('status') && launched ? statusCode : 0 }))
+  const output = new PassThrough(), write = vi.fn()
+  let finish!: (value: any) => void
+  const done = new Promise<any>(resolve => { finish = resolve })
+  f.backend.spawnTerminal = vi.fn(async () => {
+    // The baseline was queried before the process could change native state.
+    expect(f.calls.some(call => call.argv.includes('status'))).toBe(true)
+    launched = true
+    return { output, done, write, resize: vi.fn(), terminate: () => { output.end(); finish({ exitCode, signal: null }) }, waitForExit: async () => true }
+  }) as any
+  const manager = new AccountManager(f.backend, DEFAULT_CONFIG); managers.push(manager)
+  const opened = await manager.start('SIMULATED-parent', 'traecn', 'logout', '/tmp', signal())
+  expect(vi.mocked(f.backend.spawnTerminal!).mock.calls[0]![0].argv).toEqual(['traecli', 'logout'])
+  output.end('Not logged in\r\n'); finish({ exitCode, signal: null })
+  const frames = []
+  for await (const frame of manager.watch('SIMULATED-parent', opened.id, signal())) frames.push(frame)
+  expect(frames.some(frame => frame.guide?.step === expected)).toBe(true)
+  expect(frames.at(-1)?.cleanupConfirmed).toBe(true)
+  expect(write).not.toHaveBeenCalled()
+})
+
+it('模拟：failed baseline metadata cleanup blocks PTY allocation', async () => {
+  const f = traecnMetadata()
+  const spawn = f.backend.spawn.bind(f.backend)
+  f.backend.spawn = vi.fn(spec => {
+    const child = spawn(spec)
+    if (spec.argv.includes('status')) child.waitForExit = vi.fn(async () => false)
+    return child
+  })
+  f.backend.spawnTerminal = vi.fn() as any
+  const manager = new AccountManager(f.backend, DEFAULT_CONFIG); managers.push(manager)
+  await expect(manager.start('SIMULATED-parent', 'traecn', 'login', '/tmp', signal(), undefined, 'personal')).rejects.toThrow('已暂停')
+  expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
+  expect((await manager.status('traecn', '/tmp', signal())).cleanupBlocked).toBe(true)
 })

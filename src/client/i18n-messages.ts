@@ -5,8 +5,17 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  '粘贴回调网址（如未自动完成）': 'Paste the callback URL (if sign-in did not finish)',
+  'TRAE PAT 由原生环境变量或 stdin 提供；无输入时 CLI 会退出，插件不收集或保存令牌。': 'TRAE receives a PAT from its native environment variable or stdin. Without input the CLI exits; the plugin does not collect or save tokens.',
   'Qoder 未找到，请配置 qoderExecutable': 'Qoder was not found. Configure qoderExecutable',
   'Qoder CN 未找到，请配置 qodercnExecutable': 'Qoder CN was not found. Configure qodercnExecutable',
+  '无法确认 CodeBuddy 登录状态，请检查原生账号文件是否可读': 'Unable to confirm CodeBuddy sign-in status. Check that its native account file is readable.',
+  'CodeBuddy 需要确认文件夹信任，请在原生终端中自行处理。之后使用 /login 登录或 /logout 退出。': 'CodeBuddy requires folder trust. Review it in the native terminal, then use /login to sign in or /logout to sign out.',
+  '切换账号需先在原生终端使用 /logout 退出；确认退出并关闭终端后再登录。': 'To switch accounts, first use /logout in the native terminal. Sign in again after sign-out and terminal cleanup are confirmed.',
+  '在浏览器中完成 TRAE 个人登录；若未自动完成，粘贴浏览器最后跳转的完整 127.0.0.1 回调网址。': 'Complete TRAE personal sign-in in your browser. If it does not finish automatically, paste the full final 127.0.0.1 callback URL.',
+  '请在 TRAE 原生流程中完成企业登录；插件不收集企业 PAT。': 'Complete enterprise sign-in in the native TRAE flow. The plugin does not collect enterprise PATs.',
+  '个人登录依赖 TRAE CLI 开发中特性；企业 SSO 和 PAT 在原生流程中完成。': 'Personal sign-in requires a TRAE CLI development feature. Enterprise SSO and PAT use the native flow.',
+  '当前插件 Host 未提供登录方式选择，请更新插件或刷新账号状态。': 'This Host has not provided sign-in methods. Update the plugin or refresh account status.',
   // CodeBuddy registration and native status
   '使用 CodeBuddy 原生 Auto：由其 AI 审查逐项放行或拦截；被拦截的操作不会再问你。': 'Use CodeBuddy native Auto: its AI reviews and allows or blocks each operation; blocked operations will not ask you again.',
   '当前 CLI 不支持会话分支：CodeBuddy ACP 未公开 session/fork': 'This CLI does not support conversation branches: CodeBuddy ACP does not expose session/fork',
