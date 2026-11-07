@@ -1425,7 +1425,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 - 背景：PRD 5.2/5.3 要求接入腾讯 CodeBuddy Code 的中国站与国际站。查证与本机实测（2.181.0）表明两站是同一 CLI 的登录站点（接入流程形态 C），用户确认只做一个入口 `codebuddy`。
 - 决定：经 `codebuddy --acp` 复用 `runNativeAcp`，transport `codebuddy-acp-v1`；所有插件进程设置 `DISABLE_AUTOUPDATER=1`。三档映射为 `default`/`auto`/`bypassPermissions`，规划为 `plan`，不使用 `fullAccess`。强度取每个模型的 `_meta.effortOptions`，“默认”对应 `thought_level=enabled`。
-- 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（拒绝即结束本轮显示“因拒绝审批而结束”，不当作“已取消”）。其他 ACP CLI 行为不变。
+- 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（与 TRAE 共用：本轮有 DSH 拒绝、原生 cancelled、未主动停止且无其他失败时，SUCCESS 与“因拒绝审批而结束：被拒操作未执行，可续聊继续”；空正文不降为 UNCERTAIN）。其他 ACP CLI 行为不变。
 - 账号与站点：登录状态只看认证文件与 `.logged-out` 标记。2026-11-07 用户批准“允许只读站点”：显式 `CODEBUDDY_INTERNET_ENVIRONMENT`（`settings.json` 的 `env` 键或进程环境）优先，否则在内存中只取认证文件 `auth.domain`，按 CLI `product.json` 的域名表映射；域名与文件内容不落日志、事件、持久化。绑定为站点 ID 与模型目录摘要，任一变化都让旧目录与偏好失效。
 - 记录：`openspec/changes/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
 

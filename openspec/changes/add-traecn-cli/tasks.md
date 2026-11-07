@@ -167,3 +167,15 @@
 复核调整（负责会话，2026-11-07）：实施 Agent 最初为“空强度目录”在 `src/shared/models.ts`、`src/client/settings-dialog.tsx`、`src/client/native-cli-model-directory.ts`、`src/client/worker-model-menu.tsx` 及 `src/host/index.ts` 加了 TRAE 特判；为减少共享改动，已全部撤回，改为沿用现有“只有原生默认”的写法（`discoverTraecnModels` 每个模型 `efforts: ['default']`，同 Kimi OAuth/第一方路线），界面与选型无需改动。撤回后 `pnpm typecheck`、33 个关联测试文件 1,357 项与 `pnpm build:preview` 重新通过。
 
 图标、assets、README 与 doc/ 由文档 Agent 完成并经负责会话复核（提交 786658d）。全程未推送、未运行 `traecli update`、未修改 `traecli.toml`、未读取凭据内容。7.4、7.5 未验证，变更保持未归档。
+
+## v0.8.8 集成验证（2026-11-07）
+
+- [x] 12.1 本变更已按 CodeBuddy → TRAE → 豆包顺序合入 `feat/v0.8.8-integration`，各变更目录保留，未归档。
+- [x] 12.2 集成类型检查通过；关联回归 20 文件、804 测试通过；全量 268 文件通过、4 跳过，5,838 测试通过、14 跳过、0 失败。
+  - 全量命令：`PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm test`。工作树内临时目录用空 package.json 隔断仓库包类型；本机监听测试在获准环境完成。
+  - 首次生成声明缺失、沙箱 localhost 限制、临时目录包类型问题及精确命令/全部冲突处理，见 [CodeBuddy 集成验证](../add-codebuddy-cli/tasks.md#v088-集成验证2026-11-07)；没有修改既有产品行为来规避环境错误。
+  - 未运行真实 CLI、账号/模型调用、Windows 实机或 Desktop 验收；原有未完成/未验证项保留，不因合并而勾选。
+  - 共享 ACP 统一为 `deniedCancelEndsTurn`；保留 TRAE `modeLabel` 与原生默认强度模式。
+
+- [x] 12.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
+- [x] 12.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。

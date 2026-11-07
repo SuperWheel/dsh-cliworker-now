@@ -35,6 +35,10 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(q.id==='sensitive'){text('DONE');reply(pending,{stopReason:'end_turn'});return;}
   if(q.id==='permission'){
    const rejected=q.result?.outcome?.optionId==='reject';
+   if(scenario==='permission-other-failure')tool({toolCallId:'other-failure',status:'failed'});
+   if(scenario==='permission-pending')tool({toolCallId:'other-pending',status:'pending'});
+   if(scenario==='permission-invalid')out({jsonrpc:'invalid',method:'session/update'});
+   if(scenario==='permission-no-meta')return reply(pending,{stopReason:'cancelled'});
    if(!rejected)update({sessionUpdate:'tool_call_update',toolCallId:'cmd',status:'completed',rawOutput:'ok'});
    if(scenario==='deny-recover'){update({sessionUpdate:'tool_call_update',toolCallId:'cmd',status:'failed'});text('RECOVERED');reply(pending,{stopReason:'end_turn'});}
    else reply(pending,{stopReason:rejected?'cancelled':'end_turn',_meta:{'codebuddy.ai/outcome':rejected?'PERMISSION_DENIED':'SUCCESS'}});
@@ -55,7 +59,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  }
  if(q.method==='session/prompt'){
   pending=q;
-  text('HELLO');
+  if(!['permission-empty','permission-no-meta'].includes(scenario))text('HELLO');
   if(scenario==='cancel')return;
   if(scenario==='cancelled')return reply(q,{stopReason:'cancelled',_meta:{'codebuddy.ai/outcome':'PERMISSION_DENIED'}});
   if(scenario==='changed-mode')return update({sessionUpdate:'current_mode_update',currentModeId:'fullAccess'});
@@ -98,6 +102,7 @@ async function fixture(scenario = 'success', options: { access?: string; mode?: 
   const io: any = createNativeIO(config, (line: string) => {
     const frame = JSON.parse(line); frames.push(frame)
     if (frame.type === 'approval') setTimeout(() => void io.answerApproval(JSON.stringify({ decision: options.decision ?? 'deny', source: options.source ?? 'user' }), frame.id), 1)
+    if (scenario === 'permission-stop' && frame.event?.text === 'CLI 额外权限请求已拒绝') controller.abort(new Error('模拟拒绝后用户停止'))
     if (scenario === 'cancel' && frame.event?.kind === 'assistant') controller.abort(new Error('模拟用户停止'))
   }, controller.signal)
   let error
@@ -193,6 +198,16 @@ describe('CodeBuddy ACP（模拟）', () => {
     expect(result.status).toBe('ERROR'); expect(JSON.stringify(result)).not.toContain('因拒绝审批而结束')
     if (scenario === 'cancel') expect(methods(records, 'session/cancel')).toHaveLength(1)
     else expect(JSON.stringify(result)).toContain('CLI 未成功完成')
+  })
+  it.each(['permission-empty', 'permission-no-meta'])('accepts denied cancellation with empty text and no required private metadata (%s)', async scenario => {
+    const { result } = await fixture(scenario)
+    expect(result).toMatchObject({ status: 'SUCCESS', response: '', notice: '因拒绝审批而结束：被拒操作未执行，可续聊继续' })
+  })
+  it.each(['permission-other-failure', 'permission-pending', 'permission-invalid', 'permission-stop'])('does not hide other failures or user stop after denial (%s)', async scenario => {
+    const { result } = await fixture(scenario)
+    expect(result.status).toBe('ERROR')
+    expect(result.notice).toBeUndefined()
+    if (scenario === 'permission-invalid') expect(result.error).toContain('Invalid ACP JSON-RPC envelope')
   })
   it('loads the same session, ignores replay, and resets default effort', async () => {
     const { records, result } = await fixture('success', { continuation: true })

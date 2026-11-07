@@ -108,3 +108,15 @@
 ## 共享改动
 
 无。本期未修改任何共享注册清单或源码文件。
+
+## v0.8.8 集成验证（2026-11-07）
+
+- [x] 12.1 本变更已按 CodeBuddy → TRAE → 豆包顺序合入 `feat/v0.8.8-integration`，各变更目录保留，未归档。
+- [x] 12.2 集成类型检查通过；关联回归 20 文件、804 测试通过；全量 268 文件通过、4 跳过，5,838 测试通过、14 跳过、0 失败。
+  - 全量命令：`PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm test`。工作树内临时目录用空 package.json 隔断仓库包类型；本机监听测试在获准环境完成。
+  - 首次生成声明缺失、沙箱 localhost 限制、临时目录包类型问题及精确命令/全部冲突处理，见 [CodeBuddy 集成验证](../add-codebuddy-cli/tasks.md#v088-集成验证2026-11-07)；没有修改既有产品行为来规避环境错误。
+  - 未运行真实 CLI、账号/模型调用、Windows 实机或 Desktop 验收；原有未完成/未验证项保留，不因合并而勾选。
+  - 豆包仍为文档调研，未新增 CliId、runner 或注册项；PRD 等原有待办不在本次合并范围。
+
+- [x] 12.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
+- [x] 12.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。
