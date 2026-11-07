@@ -1420,3 +1420,14 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 实现：`accountSupportedChoices` 通过 `options.report` 累计被拒绝的凭据数；桥接的 account-scope 阶段输出 `{phase, models, authenticationDenied}`，Host 同时兼容旧数组格式。notice 经 `catalog-notice.ts` 的 WeakMap 跟随模型数组，`catalogFor` 读出后放入 `Catalog.notice`；空目录在 query 目录清理后再报错。只传计数，不传凭据编号、账号或密钥。
 - 取舍：执行时 OMP 仍可能先选到失效凭据，失败一次后由原生封锁；插件不自动退出或封锁凭据，提示用户在账号窗口退出。
 - 记录：`openspec/changes/fix-catalog-auth-denial-display/tasks.md`。
+
+## 2026-11-07 v0.8.8 TRAE CLI CN 接入决策
+
+定稿见 [add-traecn-cli](../openspec/changes/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/changes/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
+
+- 只接国内版官方 `traecli`：CliId `traecn`、配置 `traecnExecutable`、transport `traecn-acp-v1`；以版本输出及 ACP `traecli-acp` 双重确认身份，不自动发现同名开源程序。2026-11-07 未发现官方国际版 CLI；官方安装脚本需直连 trae.cn。
+- 个人登录只在该次命令开启开发中特性 `personal_user_login`，另提供企业 SSO/PAT；不修改 `TRAE_HOME`、`traecli.toml` 或调用更新。目录先核对登录再读 `models --json`，模型用 `config_name`，不提供强度。
+- 无「询问」档；「仅工作区编辑」用 `default`，工作区外请求转 DSH；完全权限用 `bypass_permissions`，仅可降至 `default` 并提示。不用由 TRAE 审查子 Agent 代批的 `auto`。规划以 `default` 启动后切 ACP `mode=plan` 并回读确认；仅可查看且无 Worker 自选档位时拒绝派遣。
+- 恢复用 `session/load` 并排除历史重放，分支用原生 `session/fork`（仅最新轮），停止核对进程范围退出。拒绝审批导致原生 `cancelled` 且用户未停止时显示「因拒绝审批而结束」，可续聊；不提供会话级授权。
+- 本轮有效 `end_turn` usage 与同回执上下文分别采集，输入口径为原生 reported，缓存含义未公开；全零取消回执保持未知。原生子 Agent、记忆、skills 与联网跟随用户设置。HTTP MCP 的服务名替换语义未核实，不注入 DSH 工具桥；steering 仅声明未实测，不提供运行中引导。
+- 图标沿用官方不透明 favicon，保留近黑底板，`mono: false`，深色不反色。Windows、Desktop 图标明暗及插件集成验收仍以任务清单的实际记录为准；前置 CLI 探测不能代替插件验收。
