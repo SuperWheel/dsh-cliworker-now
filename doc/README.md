@@ -8,6 +8,8 @@
 | --- | --- |
 | [原子笔记知识库](knowledge/README.md) | 新 CLI 接入、性能优化、架构原理、验证交付的总索引 |
 | [CLI 接入](knowledge/cli-integration/README.md) | 图标、协议、原生数据、账号、模型、地址发现与平台适配 |
+| [新 CLI 接入流程](knowledge/cli-integration/new-cli-onboarding.md) | 接入一个新 CLI 的完整步骤、改动文件、国内版与国际版形态判定及验收清单 |
+| [产品需求文档](prd/) | 各版本 PRD，如 [v0.8.8 新 CLI 接入](prd/2026-11-07-v0.8.8-PRD.md) |
 | [性能优化](knowledge/performance/README.md) | 目录缓存、预热、失效、延后保存与回执排序 |
 | [架构原理](knowledge/architecture/README.md) | 原生会话、工具桥、公开过程、遥测及生命周期 |
 | [验证与交付](knowledge/verification/README.md) | 最小验收、平台证据、隔离构建与规格维护 |

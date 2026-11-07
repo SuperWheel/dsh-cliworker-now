@@ -267,6 +267,7 @@ Changes are managed with [OpenSpec](doc/openspec.md) (`pnpm spec:list`, `pnpm sp
 - [Usage details and CLI notes](doc/usage-details.en.md): per-CLI accounts, paths, model rules and full installation notes
 - [Design](doc/design.md) · [Native protocols](doc/native-protocols.md) · [Native UI contract](doc/native-conversation-ui.md)
 - [Implementation log](doc/tasks.md) · [Version notes](doc/version-notes.md) · [Documentation index](doc/README.md)
+- [New CLI onboarding (Chinese)](doc/knowledge/cli-integration/new-cli-onboarding.md): steps, files to change and acceptance checklist for adding a CLI
 - [Report an issue](https://github.com/SuperWheel/dsh-cliworker-now/issues): include Harness / plugin / CLI versions, reproduction steps and redacted logs. Keep tokens and private project content out.
 
 ## License and acknowledgments

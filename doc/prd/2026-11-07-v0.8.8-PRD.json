@@ -1,0 +1,278 @@
+{
+  "requirement": {
+    "title": "v0.8.8：接入 CodeBuddy、WorkBuddy、TRAE CLI 与豆包 CLI（区分国内版与国际版）",
+    "source": "用户需求",
+    "problem": "用户希望在 CLI Worker 中派遣腾讯 CodeBuddy、WorkBuddy 与字节 TRAE、豆包的命令行智能体，并分别支持国内版与国际版。经 2026-11-07 查证与本机实测，四个产品的形态并不相同：CodeBuddy 的国内版与国际版是同一个 CLI，登录时选择站点，用户确认只做一个入口；WorkBuddy 没有公开的独立 CLI，桌面应用内置的 CLI 需要桌面端提供凭据密钥才能认证，用户决定按 Codingns4DSH 的密钥引导方式试验；TRAE CLI 2.0 只找到国内版，官方文档写明仅对企业版旗舰版套餐开放，但程序内有处于开发中的个人账号登录，用户已用个人账号登录并通过 ACP 建立会话；豆包 CLI 确实存在，但安装版只有纯文本输出，没有可程序化消费的通道。v0.8.8 按每个产品的实际形态接入或如实标注，并先建立统一的新 CLI 接入流程。",
+    "type": "新功能",
+    "expectDate": "2026-11-12"
+  },
+  "prd": {
+    "background": "一、用户需求。现有 13 个 CLI 入口中，国内厂商的有 Kimi、MiMo、ZCode、Qoder（含中国版）。用户希望继续接入腾讯的 CodeBuddy、WorkBuddy 与字节的 TRAE、豆包，并覆盖国内版和国际版。\n\n二、国内版与国际版的形态各不相同，不能按产品名称一刀切。用户特别指出：有的产品国内版和国际版是两个不同的 CLI，有的只是账号或站点不同、CLI 相同。查证结果（详见附录 A）：\n\n| 产品 | 官方 CLI | 国内版与国际版的关系 | 使用门槛 |\n| --- | --- | --- | --- |\n| CodeBuddy Code | 有：npm `@tencent-ai/codebuddy-code`，命令 `codebuddy`/`cbc` | **同一个 CLI**，登录时选择中国站、国际站、企业域或 iOA；配置根同为 `~/.codebuddy`；ACP 初始化回执分别列出 `internal`（微信）与 `external`（Google/GitHub）登录方式 | 用户已有账号 |\n| WorkBuddy | **未发现公开的独立 CLI**；桌面应用内置一份 CodeBuddy 派生 CLI（本机 WorkBuddy 5.9.3 为 `@genie/agent-cli` 2.165.0），按“桌面端托管的 sidecar”设计，凭据密钥由桌面端下发 | 国内版 WorkBuddy（workbuddy.cn）与国际版 WorkBuddy AI（workbuddy.ai）是两个下载入口；第三方称账号体系与数据目录相互独立（待核实） | 需要安装并登录桌面应用 |\n| TRAE CLI | 有：TRAE CLI 2.0，命令 `traecli`，官方安装脚本在 trae.cn；本机已安装 0.213.1 | **只找到国内版**；国际站文档没有 TRAE CLI 页面，国际版是否存在待核实 | 官方文档写仅 TRAE 企业版旗舰版套餐客户可用；实测个人账号可经开发中特性登录并建立 ACP 会话（能否执行任务待实测）；安装脚本限中国大陆 IP 访问 |\n| 豆包 CLI | 有：npm `@bytedance/doubao-cli`，命令 `doubao` | **只找到国内版**；未发现国际版 CLI | 仅“豆包团队订阅”与“豆包企业订阅”账号开放；安装版只有纯文本输出 |\n\n三、缺少统一接入流程。以往每接入一个 CLI，都要重新梳理注册、协议、账号、权限、图标与验收各个环节，容易漏掉分派点（很多分派写成按 CLI 判断的分支，漏掉不会报类型错误）。v0.8.8 先把流程整理成规范文档：[新 CLI 接入流程](../knowledge/cli-integration/new-cli-onboarding.md)，四个产品均按该流程实施。",
+    "users": "一、腾讯 CodeBuddy 或 WorkBuddy 用户（国内站或国际站）：希望在 DSH 主对话中把编码任务派给 CodeBuddy，沿用自己已有的账号、模型与积分。\n\n二、字节 TRAE 企业版或豆包团队、企业订阅用户：希望在 DSH 中派遣 TRAE CLI 或豆包 CLI，与其他 CLI 并列管理。\n\n三、同时持有国内和国际账号的用户：希望明确知道当前 Worker 用的是哪一版、哪个站点，两版的账号、模型和会话互不串用。\n\n四、插件维护者：接入新 CLI 时按统一流程逐项完成，减少遗漏。",
+    "goal": "1. 四个产品都按查证到的真实形态处理：有可用官方 CLI 且具备结构化通道的完成接入；不具备条件的在界面和文档中如实标注，不伪造入口。\n2. 国内版与国际版不串用：同一 CLI 按站点区分账号的，站点切换后旧目录与选型立即失效；两个独立安装的，路径、账号、目录、会话与用量完全分开。\n3. 每个完成接入的 CLI 通过关联回归、类型检查与隔离构建，并至少完成一次已授权的真实任务；受订阅或套餐限制无法执行的，记为阻塞，不记为通过。\n4. 新 CLI 接入流程文档成为以后接入的执行依据，v0.8.8 的每个变更都按其附录 B 核对。\n本期为功能性目标，没有可量化的线上基线，成功指标记为「其他」，基线值与目标值留空。",
+    "successMetric": "其他",
+    "baseline": null,
+    "target": null,
+    "solution": "一、接入流程。按 [新 CLI 接入流程](../knowledge/cli-integration/new-cli-onboarding.md) 实施：先判定形态（独立 CLI、同 CLI 多区域登录、同 CLI 单站点登录、宿主应用内置），再依次完成注册、发现、账号、目录、参数与权限、协议、会话、工具桥、审批、原生功能、遥测、图标、设置页、平台适配、测试与真实验收。\n\n二、CodeBuddy Code（同一 CLI，单站点登录；用户已确认只做一个入口）。新增一个 CliId `codebuddy`（名称「CodeBuddy Code」），国内站与国际站作为账号属性显示；切换站点即重新登录，旧站点的模型目录和偏好校验失效。不拆成两个入口，也不为另一站点另设认证目录。通信采用 ACP（`codebuddy --acp`，标记 `codebuddy-acp-v1`）：官方 headless 文档写明 `-p` 模式不支持 `--permission-prompt-tool`，一次性 stream-json 无法把审批转给 DSH。2026-11-07 实测 2.181.0 的 ACP 初始化回执含 `loadSession: true`、MCP（http、sse）与四种登录方式；用户登录后，`session/new` 返回真实会话 ID、模型目录（17 个，含每个模型的强度选项与积分倍率）、7 种原生模式与 `mode`、`model`、`thought_level`、`sandbox`、`multitask` 五个配置项（详见附录 A.1）。三档初拟为原生 `default`（Always Ask）/ `auto`（AI 审查代批，审查失败只拦该动作，不回退为询问）/ `bypassPermissions`；`fullAccess` 连危险命令检查也跳过，不作为任何档位的映射。规划模式映射原生 `plan`。强度以所选模型 `_meta.effortOptions` 为准（各模型不同，例如 Hy4 只有 high），不使用 CLI 帮助中的通用 `--effort` 列表。2026-11-07 用免费模型 `hy4free` 跑真实任务实测（附录 A.1）：`default` 模式下读文件不询问，写文件与执行命令都发出 `session/request_permission`（选项 `allow_always`、`allow`、`reject`），允许后文件正确写入，拒绝后命令未执行。因此「询问」档映射 `default` 可行。要注意两点：拒绝任一请求后，本轮立即结束，`stopReason` 为 `cancelled`，`_meta` 中 `codebuddy.ai/outcome` 为 `PERMISSION_DENIED`，不会跳过该步继续执行，runner 要把它显示为“因拒绝审批而结束”，不能当作用户取消；审批请求的 `toolCall` 只带 `rawInput`，没有 `title` 与 `kind`，审批卡片的标题要从之前的 `tool_call` 事件取。\n\n三、WorkBuddy（宿主应用内置 CLI，非公开接口）。用户同意尝试调用桌面应用内置的非公开 CLI，但不采用 Codingns4DSH 的 Magpie 方案。2026-11-07 的调研与实测结论：\n- Codingns4DSH 的非 Magpie 方案同样调用内置 CLI，有两条路径。直接路径：以 WorkBuddy 自带的 Electron（`ELECTRON_RUN_AS_NODE=1`）运行内置 `codebuddy --acp`，并先执行一段预加载代码，通过 Electron 私有绑定 `electron_browser_workbuddy_storage` 取出本地凭据加密密钥，再按逆向的 sidecar 引导协议交给 CLI。sidecar 路径：连接正在运行的 WorkBuddy 桌面端控制 socket，复用桌面端已认证的运行时，要求桌面端已打开并发过一条消息。\n- 本机实测：不做密钥引导、直接启动内置 CLI 时，`initialize` 无响应（30 秒超时）。内置 CLI 代码中确有 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET`、`WORKBUDDY_AT_REST_ENCRYPTION` 等引导项，说明 5.9.3 的内置 CLI 依赖桌面端下发凭据密钥，不能像独立 CLI 那样直接调用。\n- 评价：两条路径都依赖逆向得到的私有接口，随应用更新可能失效。直接路径还要让插件启动的进程经手凭据加密密钥；sidecar 路径不接触密钥，但依赖桌面端运行状态。Codingns4DSH 为 GPL-3.0、相关引导代码源自 LGPL-3.0 的 codex-host，本项目为 MIT，只能参考公开的事实，不能复制代码。用户最终选择直接路径（下称密钥引导路径），理由是不要求桌面端保持运行。\n- 方案（用户 2026-11-07 确认）：v0.8.8 将 WorkBuddy 定为试验性接入，采用与 Codingns4DSH 相同的**密钥引导路径**，不依赖桌面端正在运行。流程为：\n  1. 插件以 WorkBuddy 自带的 Electron 运行时（macOS `Contents/MacOS/Electron`，Windows `WorkBuddy.exe`，`ELECTRON_RUN_AS_NODE=1`）启动内置 CLI，并设置 `CODEBUDDY_FORCE_LITE_WB_BUNDLE=1`。\n  2. 启动前由同一 Electron 运行时执行一段插件自写的预加载代码，通过私有绑定 `electron_browser_workbuddy_storage` 读出本地凭据的 at-rest 密钥。\n  3. 插件在私有目录（0700）创建一次性 unix socket（Windows 为命名管道），把密钥按内置 CLI 的 sidecar 引导协议交给 CLI，引导完成即关闭 socket。\n  4. CLI 以 `--acp` 运行，复用其 ACP 通道（`workbuddycn-acp-v1`），设置来源限定为 `--setting-sources user --strict-mcp-config`。\n- 密钥处理约束：密钥只存在于插件启动的子进程与一次性 socket 之间，不写入日志、事件、Worker 消息、持久化数据或测试快照；进程结束即释放。引导代码由本项目自行实现，只依据公开可观察的协议事实，不复制 Codingns4DSH（GPL-3.0）或 codex-host（LGPL-3.0）的代码。\n- 隔离：按“两个独立安装”区分国内版 `workbuddycn` 与国际版 `workbuddy`，国际版待安装 WorkBuddy AI 后实测。界面标注“试验性：依赖 WorkBuddy 桌面端非公开接口”。sidecar 路径不在本期实现。\n\n四、TRAE CLI（先接国内版）。建议新增 CliId `traecn`（名称「TRAE CLI CN」），对应官方 TRAE CLI 2.0（`traecli`）。通信采用 ACP（`traecli acp serve`，标记 `traecn-acp-v1`）：2026-11-07 实测 `initialize` 返回 `loadSession`、会话 list/fork/resume/close 与 `auth.logout` 能力，登录方式只有企业 SSO（`trae-tob-browser`）与个人访问令牌（`trae-tob-pat`）；未登录时 `session/new` 返回 `Authentication required`。`traecli exec --json` 只作为一次性备选。模式：只有以 `--permission-mode <mode>` 启动 `acp serve` 时，`session/new` 才返回 `modes` 与 `mode` 配置项，共四种：`default`（Workspace Edit）、`plan`（只检查并提出计划，不改动）、`auto`（同 Workspace Edit，可批准的请求交自动审查子 Agent）、`bypass_permissions`（Full Access）；不带该参数时只返回 `model` 配置项。因此 runner 必须带 `--permission-mode` 启动。规划模式映射原生 `plan`。三档：自动审批 → `auto`，完全权限 → `bypass_permissions`；「询问」档：2026-11-07 用 `glm-5.3-flash` 跑真实任务实测（附录 A.3），`default` 模式下工作区内写文件与执行命令都自动批准（`rawInput.auto_approved: true`），写 `/tmp` 下的文件也不询问；只有写工作区外（如用户目录）时才发 `session/request_permission`（选项 `approved`、`abort`），拒绝后工具失败、本轮以 `cancelled` 结束。安装版 `-a` 只接受 `on-failure`、`on-request`、`never`，配置 `approval_policy = \"untrusted\"` 报“已不再支持”，`-s read-only -a on-request` 会被 `--permission-mode` 覆盖。因此 **TRAE 不提供「询问」档**；自动审批初拟映射 `default`（工作区内自动，工作区外的请求转交 DSH 审批），`auto`（由 TRAE 自动审查子 Agent 代批）作为备选，实施时对照 worker-permission-levels 规格定稿。强度：ACP 不返回强度配置项，模型 `_meta.trae` 只有 `supportsMaxMode`；`-c model_reasoning_effort` 是否生效待核实，核实前不提供强度选择。发现时须核对身份：安装脚本在 `~/.local/bin` 建了 `traecli`、`trae-cli`、`trae-agent`、`coco`、`ta` 五个指向同一程序的链接，其中 `trae-cli` 与开源 trae-agent 同名，只认 `traecli` 并以 `--version` 输出确认。TRAE CLI 的参数形式与 Codex 相似，但不得套用 Codex 的协议解析，必须逐字段核对。国际版：未找到官方 CLI，界面不提供入口，PRD 和文档标注“未发现国际版”；后续官方发布时再按流程判定形态。\n\nTRAE CLI 的登录（2026-11-07 用户反馈“个人用户不允许登录”后核查）：\n- 原因：公开安装版 0.213.1 默认只开放企业登录（企业 SSO、企业 PAT）。程序内有个人账号登录，但由特性开关 `personal_user_login` 控制，`traecli features list` 显示其阶段为 under development、默认 false；未开启时提示 `Personal user login is disabled. Enable [features].personal_user_login in traecli.toml.`。\n- 原生入口：`traecli --enable personal_user_login login --personal`，走浏览器登录（端点 `www.trae.cn` / `api.trae.com.cn`）。`--enable` 只对本次命令生效，不改用户的 `traecli.toml`。\n- 实测（用户个人账号登录后，2026-11-07）：开关只影响登录命令。登录后不加任何开关，`traecli login status` 显示 `Logged in using Trae`（不区分个人与企业），`traecli models --json` 返回 18 个模型，ACP `session/new` 直接成功，返回会话 ID 与 18 个模型（当前 `Doubao-Seed-Code`）。所以个人凭据可以用于 ACP，`legacy` 后端也接受；个人账号能否真正执行任务（扣费或资格校验）要等一次真实调用。企业账号若套餐不含 CLI，原生提示为 `Current Trae enterprise plan does not support CLI usage.`。\n- 方案：走这条原生路径。连接页的个人登录按钮调用 `traecli --enable personal_user_login login --personal`，并保留企业 SSO 与企业 PAT；运行任务时不需要附加开关，也不写用户配置。界面标注“个人登录依赖 TRAE CLI 开发中特性”。若后续版本移除或改动该特性，个人登录入口隐藏，已有登录按原生状态显示。\n- 不采用借用 TRAE IDE 登录的做法：TRAE CN 3.4.15 与 TRAE SOLO CN 0.1.47 的智能体是 `modules/ai-agent/libai_agent.dylib`，经 IDE 私有 socket 模块协议（`meta.json` 声明端口 40005）与编辑器通信；`bin/` 下只有 `ctx-cli`（上下文文件工具）与 `agent-tool-host`（工具宿主服务，运行即监听 8999 端口）。这里没有像 WorkBuddy 那样带 ACP 的内置 CLI，借用需要逆向 IDE 内部协议和令牌，风险与工作量都远高于 WorkBuddy，本期不做。\n\n五、豆包 CLI（前置验证未通过，本期不接入）。2026-11-07 安装 2.31.3 实测：`doubao --help` 只有 `-p`、`--list`、`--resume`、`--model`、`--effort`、`--permission-mode`、`-C`、`--service-start` 等选项，并写明“不支持的参数会导致命令失败”；npm 包只是启动器，实际程序是 `~/Library/Application Support/doubao_cli/app/current/doubao` 原生二进制，其中检索不到 `output-format`、`stream-json`、`--json`、`--acp`、`jsonrpc` 等字符串。结果只以纯文本写到标准输出，无法区分正文、工具、审批和终态，不满足接入流程 1.5 节的立项条件。本期只在文档登记限制，不进入 CLI 连接列表；豆包后续提供结构化输出或 ACP 时再按流程接入（建议 ID `doubao`）。\n\n六、OpenSpec 变更拆分：`add-codebuddy-cli`、`add-traecn-cli`、`add-workbuddy-cli`（试验性，含密钥引导与国内、国际版隔离）。豆包的前置验证结论写入 `add-codebuddy-cli` 同批的调研记录，不单独建接入变更。每个变更的任务与验证记录写在各自的 `tasks.md`。",
+    "items": [
+      {
+        "name": "按真实形态区分国内版与国际版",
+        "statement": "系统应当按查证到的证据（包名、可执行文件名、配置根、环境变量、登录站点、端点、初始化回执中的身份）判定每个产品国内版与国际版的关系，并按判定结果接入：两个独立安装的作为两个 CLI 入口，同一 CLI 仅站点或账号不同的作为一个入口加站点属性。判定结论与来源写入对应的 OpenSpec 提案。",
+        "scenarios": [
+          {
+            "when": "维护者为新产品提出接入方案",
+            "then": "提案中列出形态判定结论及每项证据的来源，查不到的标为待核实"
+          },
+          {
+            "when": "两个版本实际是同一个 CLI",
+            "then": "CLI 连接列表中只出现一个入口，账号区显示当前站点，不为另一站点伪造独立 CLI"
+          }
+        ]
+      },
+      {
+        "name": "CodeBuddy 单入口、按站点区分账号",
+        "statement": "系统应当以一个「CodeBuddy Code」入口支持中国站与国际站。账号区显示当前登录站点；站点切换或重新登录后，旧站点的模型目录、项目默认设定与 Worker 偏好校验全部失效，新任务按新站点重新选型。",
+        "scenarios": [
+          {
+            "when": "用户在终端从中国站改为国际站登录",
+            "then": "设置页刷新后显示国际站，原中国站的模型选项不再可选；已有 Worker 续聊前提示重新确认模型"
+          },
+          {
+            "when": "无法确认当前登录站点",
+            "then": "账号显示为未知，拒绝发送任务，不按上次缓存的站点继续执行"
+          }
+        ]
+      },
+      {
+        "name": "CodeBuddy 原生会话与权限",
+        "statement": "系统应当通过 CodeBuddy 原生结构化通道运行任务，取得真实会话 ID 并支持续聊、停止与审批转交。三档权限只映射到 CodeBuddy 实际存在的原生模式；所选通道不能转交审批时，不提供「询问」档。",
+        "scenarios": [
+          {
+            "when": "Worker 以「询问」档运行并请求执行有副作用的命令",
+            "then": "主页面出现审批卡片，用户拒绝时 CodeBuddy 不执行该命令"
+          },
+          {
+            "when": "用户拒绝 CodeBuddy 的某个审批，CodeBuddy 随即以 `cancelled` 结束本轮",
+            "then": "Worker 显示“因拒绝审批而结束”而不是“已取消”，被拒操作未执行，用户可续聊继续"
+          },
+          {
+            "when": "用户停止运行中的 CodeBuddy Worker",
+            "then": "只有 CodeBuddy 进程范围退出后才显示停止成功"
+          },
+          {
+            "when": "用户切换到另一个模型",
+            "then": "强度选项改为该模型 `_meta.effortOptions` 中的取值，原强度不在新列表中时要求重新选择"
+          },
+          {
+            "when": "用户在同一 Worker 中续聊",
+            "then": "使用原会话 ID 恢复；恢复失败时报错，不新建会话"
+          }
+        ]
+      },
+      {
+        "name": "WorkBuddy 试验性接入",
+        "statement": "系统应当以试验性方式调用 WorkBuddy 桌面应用内置的 CLI，使用用户确认的密钥引导路径，在连接页和 Worker 卡片标注“试验性：依赖 WorkBuddy 桌面端非公开接口”。插件不把凭据或密钥写入日志、消息与持久化数据；内置 CLI 不可用时明确报错，不改用独立 CodeBuddy 或另一版本代替。不采用 Magpie 方案。",
+        "scenarios": [
+          {
+            "when": "WorkBuddy 桌面端从未登录或本地凭据无法用读出的密钥解开",
+            "then": "账号区提示“请打开 WorkBuddy 桌面端登录后重试”，不启动任务，也不把密钥或错误中的凭据片段写入日志"
+          },
+          {
+            "when": "密钥引导的私有绑定读取失败或返回格式不符",
+            "then": "显示 WorkBuddy 暂不可用及原因，结束本次启动的进程并删除一次性 socket"
+          },
+          {
+            "when": "WorkBuddy 更新后内置 CLI 的路径、初始化身份或引导协议发生变化",
+            "then": "显示 WorkBuddy 暂不可用及原因，保留已有 Worker 记录，不回退到 PATH 上的 CodeBuddy"
+          },
+          {
+            "when": "用户停止运行中的 WorkBuddy Worker",
+            "then": "只结束插件启动的进程或本次会话，不关闭用户的 WorkBuddy 桌面端"
+          }
+        ]
+      },
+      {
+        "name": "WorkBuddy 国内版与国际版隔离",
+        "statement": "系统应当把国内版 WorkBuddy 与国际版 WorkBuddy AI 作为两个独立安装处理，路径、账号、模型目录、会话、用量与清理保护分开，不跨版借用登录或恢复会话。",
+        "scenarios": [
+          {
+            "when": "两个版本同时安装，用户泛称“WorkBuddy”派遣",
+            "then": "在宿主原生询问框中让用户选择版本，取消时不启动"
+          },
+          {
+            "when": "自动发现的程序或初始化身份属于另一版本",
+            "then": "拒绝任务并保留原记录"
+          }
+        ]
+      },
+      {
+        "name": "TRAE CLI 国内版接入",
+        "statement": "系统应当以「TRAE CLI CN」入口接入官方 TRAE CLI 2.0（`traecli`），使用其原生结构化通道运行任务，模型与强度来自当前账号的原生目录，权限映射到 `--permission-mode` 的实际取值。",
+        "scenarios": [
+          {
+            "when": "本机尚未安装 traecli（例如代理导致官方安装脚本被区域限制拦截）",
+            "then": "连接页显示未安装，使用说明写明需能直连 trae.cn，不引导用户使用非官方安装包"
+          },
+          {
+            "when": "PATH 上只有 `trae-cli` 或 `trae-agent`，而它不是官方 TRAE CLI",
+            "then": "不识别为 TRAE CLI CN，连接页显示未安装"
+          },
+          {
+            "when": "用户未登录，`traecli models --json` 返回空列表",
+            "then": "账号区显示未登录并提供个人账号、企业 SSO 与企业 PAT 三种登录，不把空列表当作“没有可用模型”"
+          },
+          {
+            "when": "主对话要求以规划模式派遣 TRAE",
+            "then": "以 `--permission-mode plan` 启动并确认会话的当前模式为 `plan`，不以只读沙箱冒充规划"
+          },
+          {
+            "when": "TRAE 无法提供逐项询问，而 Worker 档位为「询问」",
+            "then": "不以 `default` 冒充询问，提示该 CLI 不支持询问档并让用户改选档位"
+          }
+        ]
+      },
+      {
+        "name": "TRAE CLI 国际版如实标注",
+        "statement": "系统应当在未找到官方国际版 TRAE CLI 前，不提供国际版入口。文档与 PRD 标注“未发现国际版”，并写明查证日期与来源。",
+        "scenarios": [
+          {
+            "when": "用户询问国际版 TRAE",
+            "then": "使用说明给出查证结论与日期，不把国内版改称国际版"
+          }
+        ]
+      },
+      {
+        "name": "豆包 CLI 前置验证与暂不接入",
+        "statement": "系统应当在接入豆包 CLI 前，以安装版核实是否提供结构化输出或 ACP。没有结构化通道时，不进入 CLI 连接列表，只在文档登记限制；有时按接入流程完整接入。2026-11-07 实测 2.31.3 属于前一种情况，本期不接入。",
+        "scenarios": [
+          {
+            "when": "安装版只提供纯文本 `-p` 输出",
+            "then": "豆包 CLI 不出现在 CLI 连接中，使用说明写明原因"
+          },
+          {
+            "when": "安装版提供可解析的事件流",
+            "then": "按流程实现会话 ID、续聊（`--resume`）、模型（`--model`）、强度（`--effort`）与权限（`--permission-mode`）映射"
+          }
+        ]
+      },
+      {
+        "name": "订阅门槛与不可用状态",
+        "statement": "系统应当把订阅、套餐或企业权限造成的不可用如实显示为该账号不可用，并给出 CLI 原生返回的原因，不显示为未安装或未登录。",
+        "scenarios": [
+          {
+            "when": "TRAE 账号不是企业版旗舰版套餐",
+            "then": "账号区显示 TRAE CLI 原生返回的不可用原因，不启动任务"
+          },
+          {
+            "when": "用户用个人账号登录 TRAE CLI，而个人账号没有 CLI 使用资格或个人凭据不能用于插件所用通道",
+            "then": "账号区显示原生原因并说明当前只支持企业账号，不启动任务"
+          }
+        ]
+      },
+      {
+        "name": "泛称与别名路由",
+        "statement": "系统应当为新入口登记中英文别名（如“codebuddy”“腾讯 CodeBuddy”“trae”“豆包”“doubao”），泛称时按安装和版本情况路由：只有一个可用入口时直接使用，多个时询问，未知时不改版。",
+        "scenarios": [
+          {
+            "when": "用户说“让 trae 处理”，且只接入了国内版",
+            "then": "路由到 TRAE CLI CN，并在选型卡片中显示版本名"
+          }
+        ]
+      },
+      {
+        "name": "品牌图标",
+        "statement": "系统应当为每个新入口提供可追溯来源的本地图标，素材目录按 `doc/assets/cli-icons/v<N>-<name>/` 记录来源、校验和与明暗预览，在设置列表、Worker 卡片与选择器的明暗主题下核对。",
+        "scenarios": [
+          {
+            "when": "Desktop 切换到暗色主题",
+            "then": "新图标清晰可辨，无白底、裁切或错误反色"
+          }
+        ]
+      },
+      {
+        "name": "设置页",
+        "statement": "系统应当让新入口的连接页复用现有组件与 [设置页统一设计规范](../settings-ui-design.md)，账号区显示版本或站点，路径管理支持手动选择。",
+        "scenarios": [
+          {
+            "when": "用户打开 CodeBuddy Code 连接页",
+            "then": "账号区显示当前站点；文字层级、留白和控件与其他 CLI 页一致"
+          }
+        ]
+      },
+      {
+        "name": "新 CLI 接入流程规范",
+        "statement": "系统应当提供一份可执行的新 CLI 接入流程文档，列明每一步要改的文件、接口、判定规则和交付证据，并作为 v0.8.8 及以后接入的执行依据。",
+        "scenarios": [
+          {
+            "when": "维护者接入新 CLI",
+            "then": "按文档附录 B 逐项核对，未完成或不适用的项目写明理由"
+          }
+        ]
+      }
+    ],
+    "outOfScope": "1. 开源项目 `bytedance/trae-agent`（Python，命令 `trae-cli`）：与官方 TRAE CLI 是不同产品，不接入。\n2. 第三方 `lmxxf/workbuddy-cli`（逆向分析 WorkBuddy 的个人项目）及任何非官方 WorkBuddy CLI；Codingns4DSH 的 Magpie 方案。\n3. 火山引擎 veCLI，以及在 Claude Code 等 CLI 中配置豆包模型（Doubao-Seed-Code）：属于“换模型”，不是新的 CLI 入口。\n4. TRAE IDE、TRAE SOLO、WorkBuddy、豆包桌面应用本身的界面自动化。\n5. 插件代为购买或开通订阅、套餐，或代填账号密码。\n6. 豆包 CLI 的 `--service-start` 远程服务模式与定时任务（会越出单个 Worker 的生命周期）。\n7. TRAE CLI 1.0（官方已标注为弱维护，建议升级 2.0）。",
+    "risks": "1. 网络区域限制：TRAE CLI 2.0 官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 对境外出口返回 403（`x-tengine-error: denied by region block`）。本机已由用户自行安装 0.213.1，安装环节不再阻塞；其他用户仍可能遇到，使用说明需写明。用户已有 TRAE 企业版旗舰版、豆包订阅与 CodeBuddy 账号，订阅本身不再阻塞验收。\n2. WorkBuddy 内置 CLI 不是公开接口：路径、参数、私有绑定名称与引导协议都可能随应用更新变化。用户已选择密钥引导路径，插件启动的进程会经手 WorkBuddy 的凭据 at-rest 密钥，须严格限制密钥的生命周期并在日志、事件与测试中排除；本机自动模式的安全策略可能拦截读取密钥的调试操作，实施与验收时需要用户在场确认。\n3. 许可：Codingns4DSH 为 GPL-3.0，其 WorkBuddy 凭据引导参考了 LGPL-3.0 的 codex-host；本项目为 MIT，只能参考公开事实，不能复制代码。\n4. CodeBuddy 的审批通道：官方文档写明 `-p` 模式不支持 permission prompt 工具；若 ACP 也不公开授权请求，CodeBuddy 将无法提供「询问」档。\n5. 凭据存储：据 Codingns4DSH 的实现说明，CodeBuddy 的认证文件按 HOME 存放在 `~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/`（Windows 为 `%LOCALAPPDATA%\\CodeBuddyExtension\\…`），不随 `CODEBUDDY_CONFIG_DIR` 变化（待实测）。WorkBuddy 桌面端的认证文件也在同一目录。单入口方案沿用用户自己的 HOME，不另设认证目录，避免覆盖用户登录。\n6. 协议相似带来的误用：TRAE CLI 参数与 Codex 相似，CodeBuddy 与 Claude Code 相似。必须逐字段核对安装版事件，不能直接复用其他 CLI 的解析器。\n7. 探测副作用：CodeBuddy 默认自动更新（可用 `DISABLE_AUTOUPDATER=1` 关闭），TRAE CLI 有 `traecli update`；豆包启动器只在终端交互时询问是否更新（`DOUBAO_CLI_NO_UPDATE_CHECK=1` 可关闭）。探测与目录查询须避免升级用户的真实安装。\n8. 官方文档不一致：CodeBuddy 安装页与快速开始页给出的原生安装器域名不同（`www.codebuddy.cn` 与 `copilot.tencent.com`），MCP 配置文件名也有两种写法；以安装版实测为准。\n9. 国际版信息不足：WorkBuddy AI 的数据目录与账号体系、TRAE 国际版 CLI 是否存在，目前只有第三方说法或查无结果。\n10. TRAE CLI 与 Codex 同源迹象：帮助中 `-c` 示例为 `model=\"o3\"`，参数结构与 Codex CLI 高度相似，但 ACP 握手的 `agentInfo` 为 `traecli-acp`、`_meta.trae.acpBackend` 为 `legacy`；后端切换可能改变事件形态，须以安装版逐字段核对。",
+    "rollout": "1. 已完成（2026-11-07）：新 CLI 接入流程文档；四个产品的官方文档、npm 元数据与本机应用包查证（附录 A）；用户确认 CodeBuddy 单入口、WorkBuddy 试验性接入（不用 Magpie）、已有各产品账号、同意本机测试、上线时间 2026-11-12。\n2. 前置实测（2026-11-07，macOS，未调用任何模型、未发送 prompt）：\n   - 已用 npm 全局安装 CodeBuddy Code 2.181.0 与豆包 CLI 2.31.3（`/opt/homebrew/bin`）。\n   - CodeBuddy：`--help` 与 ACP `initialize` 通过；未登录时 `session/new` 返回 `Authentication required`。用户登录后复测，`session/new` 返回会话、模型目录、模式与配置项（附录 A.1）；进程正常退出（code 0）。\n   - 豆包：`--help` 与二进制检索确认没有结构化输出，前置验证未通过。\n   - WorkBuddy 内置 CLI：不做密钥引导时 `initialize` 超时，探测进程已强制结束且确认无残留。关闭字段加密策略的诊断被本机安全策略拦下，未执行。\n   - 真实任务（用户 2026-11-07 批准，免费或用户指定模型）：CodeBuddy `hy4free` 一次；TRAE 个人账号 `glm-5.3-flash` 四次（`default` 工作区内、加 `-s read-only -a on-request`、写 `/tmp`、写用户目录）。每次都核对了事件、退出状态与实际文件，测试文件已删除。\n   - TRAE CLI：安装脚本经代理被区域限制拦截；用户随后自行安装 0.213.1。`--help`、`login status`（未登录）、`models --json`（未登录返回 `[]`，退出码 0）与 ACP `initialize` 通过；`session/new` 返回 `Authentication required`；探测进程已结束且确认无残留。\n3. 待办：核实 TRAE 的强度参数；CodeBuddy 的续聊、停止与强度切换随实现一起验收；实现 WorkBuddy 密钥引导后，在用户在场时实测国内版；Windows 测试机上做同样的探测。\n4. 各 CLI 的验收标准：\n\n| CLI | 必须通过 | 允许记为阻塞或未验证 |\n| --- | --- | --- |\n| CodeBuddy Code | 离线回归（协议、站点切换失效、权限三档、审批、取消、恢复）；隔离构建；Mac 与 Windows 发现与初始化；中国站与国际站各一次真实任务（读文件、改文件、命令审批允许与拒绝、续聊、停止） | 企业域与 iOA |\n| TRAE CLI CN | 离线回归；隔离构建；安装与初始化；企业版旗舰版账号的真实任务；未开通套餐时的不可用提示（以测试夹具模拟） | 其他网络环境下的安装（本机已安装） |\n| WorkBuddy（试验性） | 密钥引导的离线回归（含密钥不入日志、socket 清理、引导失败）；国内版真实任务（读文件、改文件、审批、续聊、停止且不关闭桌面端）；应用更新导致不可用时的明确报错 | 国际版 WorkBuddy AI（安装前）；Windows（视路径可行性） |\n| 豆包 CLI | 前置验证结论（已完成：不接入） | — |\n\n5. 每项真实验收检查事件、退出状态与实际产物，CLI 的完成说明不作为证据；Mac 与 Windows 结果分别记录。\n6. 发布：v0.8.8 计划于 2026-11-12 上线，GitHub 提交与发布须用户明确批准；发布前按 [development-workflow](https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/development-workflow/spec.md) 执行发布验收，真实 CLI 只测本期新增与改动的部分。",
+    "ai": null,
+    "references": [
+      {
+        "title": "新 CLI 接入流程",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/doc/knowledge/cli-integration/new-cli-onboarding.md"
+      },
+      {
+        "title": "qodercn-cli 规格",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/qodercn-cli/spec.md"
+      },
+      {
+        "title": "cli-account-isolation",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/cli-account-isolation/spec.md"
+      },
+      {
+        "title": "cli-model-discovery",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/cli-model-discovery/spec.md"
+      },
+      {
+        "title": "worker-permission-levels",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/worker-permission-levels/spec.md"
+      },
+      {
+        "title": "native-permission-relay",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/native-permission-relay/spec.md"
+      },
+      {
+        "title": "CodeBuddy Code CLI 文档（中国站）",
+        "url": "https://www.codebuddy.cn/docs/cli/overview"
+      },
+      {
+        "title": "CodeBuddy Code CLI 文档（国际站）",
+        "url": "https://www.codebuddy.ai/docs/cli/overview"
+      },
+      {
+        "title": "TRAE CLI 2.0 概述",
+        "url": "https://docs.trae.cn/cli_about-trae-code-cli-2"
+      },
+      {
+        "title": "TRAE CLI 命令行参数",
+        "url": "https://docs.trae.cn/cli_command-line-parameters"
+      },
+      {
+        "title": "豆包 CLI 概览",
+        "url": "https://www.doubao.com/work/docs/zh-cn/doubao-cli"
+      },
+      {
+        "title": "豆包 CLI 命令参考",
+        "url": "https://www.doubao.com/work/docs/zh-cn/articles/376493082444-cli-commands"
+      },
+      {
+        "title": "WorkBuddy 产品简介（腾讯云）",
+        "url": "https://cloud.tencent.com/document/product/1831/134384"
+      },
+      {
+        "title": "Codingns4DSH（GPL-3.0，仅参考事实）",
+        "url": "https://github.com/jingyi0605/Codingns4DSH"
+      }
+    ],
+    "prototypeUrl": "",
+    "prototypes": []
+  }
+}

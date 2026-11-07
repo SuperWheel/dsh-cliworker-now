@@ -280,6 +280,7 @@ pnpm build
 - [使用细节与 CLI 说明](doc/usage-details.md)：各 CLI 的账号、路径、模型规则及完整安装说明
 - [设计与协议](doc/design.md) · [原生通信说明](doc/native-protocols.md) · [原生界面说明](doc/native-conversation-ui.md)
 - [任务与实际验证](doc/tasks.md) · [历史版本与配置](doc/version-notes.md) · [文档索引](doc/README.md)
+- [新 CLI 接入流程](doc/knowledge/cli-integration/new-cli-onboarding.md)：接入新 CLI 的步骤、改动文件与验收清单
 - [提交 Issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)：请附 Harness / 插件 / CLI 版本、复现步骤和脱敏日志，不要上传令牌或私人项目内容。
 
 ## 许可与致谢
