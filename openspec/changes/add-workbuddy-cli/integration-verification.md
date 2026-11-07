@@ -72,3 +72,10 @@ PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/tmp-neutral" pnpm spec:check
 严格使用用户指定的工作树内绝对 `TMPDIR`，其路径为 107 字节，`dshwb-XXXXXX/r.sock` 示例为 127 字节。沙箱外的 bootstrap fixture 在 `server.listen` 成功后对完整路径执行 `chmod` 得到 `ENOENT`；runner 也在创建 ready socket 阶段失败。这与 macOS Unix socket 路径长度限制一致，未通过改权限、弱化脱敏或跳过断言掩盖。
 
 受阻文件：`tests/workbuddy-bootstrap.test.ts`（21/34 失败）、`tests/native-workbuddy.test.ts`（19/38 失败）。没有改 WorkBuddy 产品行为。要在此机器完整跑通这 40 项，需要允许使用足够短的绝对临时目录；本次“留在该工作树并使用指定 TMPDIR”的约束下未擅自改用工作树外路径。
+
+## 短 TMPDIR 复验（2026-11-07，四分支合并完成后，HEAD `33d8d59`）
+
+- `TMPDIR=/tmp pnpm test`（沙箱外）：272 文件通过、4 跳过；5995 项通过、14 跳过（6009 项），0 失败，退出 0。上节 40 项长 socket 路径失败全部消失。
+- `pnpm typecheck` 通过（DSH 0.2.2-rc.1）；`pnpm build:preview` 通过；`pnpm spec:check` 60 通过、0 失败。
+- 已知风险（未修复，记为后续项）：`workbuddy-bootstrap.mjs` 在 `os.tmpdir()` 下建 `dshwb-XXXXXX/{b,r}.sock`。macOS 默认 TMPDIR（`/var/folders/…/T/`，约 49 字节）下完整路径约 70 字节，低于 104 字节上限；用户自设超长 TMPDIR（约 80 字节以上）时 WorkBuddy 启动会以 `ready-listen-failed` 报“暂不可用”，不会泄露密钥。可选改进：超长时回退到短目录或给出明确提示。
+- 仍未执行：Desktop 实机界面、Windows（命名管道路径）、WorkBuddy AI 国际版、正式 `pnpm build` 与 Desktop 链接更新。
