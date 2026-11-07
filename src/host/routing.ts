@@ -26,6 +26,7 @@ export const CLI_ALIASES: Record<ActiveCliId, readonly string[]> = {
     '国际版qoder',
     '国际版 qoder',
   ],
+  traecn: ['traecn', 'trae', 'traecli', 'trae cli', 'trae-cli', 'TRAE CLI CN', 'trae 国内版', 'trae 中国版', '字节 trae'],
   qodercn: [
     'qodercn',
     'qoderclicn',

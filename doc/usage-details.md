@@ -37,6 +37,7 @@
 | Qoder CLI | 1.1.73 | v0.8.1 新增原生 ACP；真实账号元数据及 17 项动态模型目录已核验；真实模型任务、工具产物、恢复、运行中取消及 Windows 尚未验收 |
 | Qoder CN CLI | 1.1.74 | Windows 自身账号及 15 项动态模型目录已核验；Qwen3.8-Flash / low 的生成、文件工具、同会话续聊与运行中取消通过；另在正常新对话中实际派遣并完成原生子会话界面检查，其他模型和 Mac 运行时未实测 |
 | CodeBuddy Code | 2.181.0 | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/changes/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收 |
+| TRAE CLI CN | 0.213.1 | 2026-11-07 macOS 前置协议探测：18 项模型目录及 glm-5.3-flash 读写、命令、恢复、取消和分支；插件/Desktop 与 Windows 未验收，见本次接入任务 |
 
 v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
 
@@ -57,6 +58,40 @@ Windows 的 Antigravity 后台模型查询及任务使用官方环境开关关�
 成功且进程退出已确认的扩展 CLI 模型查询会自动删除本次临时目录和原生解压缓存；失败或清理未确认时保留现场，不删除原始账号文件。
 
 专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
+
+### TRAE CLI CN 安装与登录
+
+TRAE CLI CN（`cli=traecn`）接入字节官方 TRAE CLI 2.0，默认命令为 `traecli`。截至 2026-11-07 只找到国内版，未发现官方国际版 CLI，不提供国际版入口；开源 Python 项目 bytedance/trae-agent 是另一程序。
+
+官方 macOS / Linux 安装入口：
+
+```sh
+sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
+```
+
+安装脚本需要能直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`），不提供非官方安装包或镜像。官方另有 Windows `install_v2.ps1`；其安装落点、发现、初始化及真实任务均未在 Windows 验证。
+
+**路径与身份。** 默认可执行文件配置为 `traecnExecutable: traecli`；在「CLI 连接 → 高级设置」可指定绝对路径。自动发现只找 `traecli`，macOS / Linux 在 PATH 外补查 `~/.local/bin/traecli`，macOS 子进程 PATH 也补 `~/.local/bin`。自动发现和手动路径都核对 `--version` 首行 `traecli <版本>` 及 `installation:` 行，ACP 再核对 `agentInfo.name = traecli-acp`；身份不符即拒绝。安装脚本的 `trae-cli`、`trae-agent`、`coco`、`ta` 链接不用于自动发现；手动指定的同品牌链接仍须通过身份核对。Windows 找不到时配置 `traecnExecutable`，不据未验证的路径猜测安装位置。
+
+**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 表示已登录（不区分个人与企业），`Not logged in` 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。
+
+| 登录方式 | 原生命令与说明 |
+| --- | --- |
+| 个人账号 | `traecli --enable personal_user_login login --personal`；依赖 TRAE CLI 开发中的 `personal_user_login` 特性（under development），开关只对该次登录命令生效，任务不附加此开关 |
+| 企业 SSO | `traecli login --enterprise`；沿用原生浏览器流程 |
+| 企业 PAT | `traecli login --with-trae-pat`；读取 `TRAECLI_PERSONAL_ACCESS_TOKEN`，未设置时由用户在原生终端输入，插件不代填、不保存令牌 |
+
+退出使用 `traecli logout`，原生流程结束后刷新状态与模型目录。插件继承 `TRAE_HOME`（默认 `~/.trae`），账号和运行数据位于 `$TRAE_HOME/cli/`，配置为 `$TRAE_HOME/traecli.toml`；不修改此配置或调用 `traecli update`。来源绑定只取稳定主体字段及环境来源摘要，不记录令牌；换号使模型目录与保存选型的校验失效。
+
+**模型。** 先确认登录，再读取 `traecli models --json`；执行 ID 为 `config_name`，显示名为 `name`。0.213.1 前置实测为 18 项，数量随原生目录变化，不固定模型列表。未登录时的 `[]` 报未登录，已登录空列表报「当前账号暂无可确认模型」。执行前通过 ACP `model` 配置项选择并核对回执；模型不在本次会话目录即要求重新选型，不改用默认模型。ACP 没有公开可核实的强度选项，不提供强度选择。
+
+**权限与规划。** 菜单只有「仅工作区编辑」和「完全权限」，没有「询问」档。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时拒绝派遣，需在 Worker 菜单选择档位或切换权限预设。
+
+规划模式以 `default` 启动，通过 ACP `mode=plan` 切换，确认 `plan` 后才发送任务，授权请求直接拒绝；不能把 `--permission-mode plan` 当启动参数。运行时模式回读不符会停止本轮。DSH 审批仅有「允许一次／拒绝」，不提供会话级授权。拒绝后 TRAE 若以 `cancelled` 结束且用户未主动停止，显示「因拒绝审批而结束：被拒操作未执行，可续聊继续」；主动停止仍按停止处理，确认进程范围退出才报告成功。
+
+**会话与能力边界。** `traecn-acp-v1` 续聊用原生 `session/load`，历史重放不进入新一轮正文；恢复失败报错，不新建会话。支持从最新完成轮原生分支，不支持较早轮次分支。原生子 Agent、记忆、skills 与联网沿用用户设置，附件按 ACP 能力传递。DSH 工具桥本期不提供：ACP 只声明 HTTP MCP，`_meta.trae.options.mcpServers` 的值为已配置服务名且有替换语义，未经核实的注入可能覆盖用户 MCP。运行中引导（steering）虽有能力声明，尚未实测，不提供此入口；运行中发送的消息按原生 Inbox 排队。
+
+2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/changes/add-traecn-cli/tasks.md)。
 
 ### Qoder CLI 安装与登录
 
@@ -352,7 +387,7 @@ CLI 子会话可使用 Harness 的目标、规划、反馈与分支。不支持�
 | 目标 | 输入框上方目标栏、“+”菜单或 `/goal` 可设置、编辑、暂停、恢复或清除。目标处于活动状态时，插件会把它以界定块形式放在每一轮发给 CLI 的输入前；子会话里仍显示原消息。目标不会自动发起新一轮，也不使用 CLI 自带的目标续轮功能。 | 全部 CLI |
 | 规划 | 沿用原生规划或只读模式映射，可从“+”菜单、权限控件、规划标记或 `/plan` 进入。这些 CLI 不显示规划标记；“+”菜单中的“计划”保留并提示原因。它们只有“允许编辑”一种权限模式，权限控件同样禁用并提示原因。 | Hermes、Qoder、Qoder CN 及旧版 Kimi 通路禁用 |
 | 反馈 | 赞、踩和反馈对话框使用 Harness 的反馈服务，仅记录在 Harness；不会发送给 CLI 或厂商，也不会进入模型上下文。 | 全部 CLI |
-| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP 暂不支持 |
+| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN、TRAE CLI CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP 暂不支持 |
 
 Claude Code 的分支会在新分支的第一轮使用 `--resume … --fork-session` 生成新会话 ID。各 CLI 的核实依据见 [设计说明](design.md)。
 

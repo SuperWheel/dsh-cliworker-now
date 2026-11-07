@@ -26,6 +26,7 @@ export const CLI_IDS = [
   'qoder',
   'qodercn',
   'codebuddy',
+  'traecn',
 ] as const
 export type ActiveCliId = (typeof CLI_IDS)[number]
 /** Retired IDs remain readable in existing worker history, never selectable for execution. */
@@ -49,6 +50,7 @@ export const CLI_LABELS: Record<CliId, string> = {
   qoder: 'Qoder CLI',
   qodercn: 'Qoder CN CLI',
   codebuddy: 'CodeBuddy Code',
+  traecn: 'TRAE CLI CN',
 }
 /** Short CLI stems used for automatic Worker names; protocol IDs remain unchanged. */
 export const CLI_SHORT_NAMES: Record<CliId, string> = {
@@ -67,6 +69,7 @@ export const CLI_SHORT_NAMES: Record<CliId, string> = {
   qoder: 'qoder',
   qodercn: 'qodercn',
   codebuddy: 'codebuddy',
+  traecn: 'traecn',
 }
 export const cliOf = (preference: Preference): CliId => preference.cli ?? 'antigravity'
 export const effortLabel = (effort: string) =>

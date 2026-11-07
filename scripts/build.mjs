@@ -150,6 +150,7 @@ for (const name of [
   'native-kimi',
   'native-qoder',
   'native-codebuddy',
+  'native-traecn',
   'qoder-durable-context',
   'kimi-durable-usage',
   'omp-context-inspection',

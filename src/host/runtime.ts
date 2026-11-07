@@ -83,6 +83,7 @@ import { carryoverContext } from './carryover-context.ts'
 import { assertFirstPartyConfiguration, firstPartyEnvironment } from './first-party-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { qoderEnvironment } from './qoder-accounts.ts'
+import { traecnEnvironment } from './traecn-accounts.ts'
 import { AgyProtocol } from './protocol.ts'
 import { FollowupQueue } from './followup-queue.ts'
 import { supportsWorkerNativeSteering, type RunningMessageMode } from '../shared/running-message.ts'
@@ -1419,7 +1420,7 @@ export class WorkerRuntime {
         : await prepareNativeWorker({ argv: workerArguments(executable, worker.project, worker.preference, worker.mode,
             prompt, this.config.timeoutMs, conversationId, true),
             env: { ...firstPartyEnvironment(cli), ...relayEnv, ...(['qoder', 'qodercn'].includes(cli) ? qoderEnvironment(cli as 'qoder' | 'qodercn') : {}),
-              ...(cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {}) } },
+              ...(cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {}), ...(cli === 'traecn' ? traecnEnvironment() : {}) } },
             { cli, project: worker.project, preference: worker.preference, mode: worker.mode,
               prompt, conversationId, stateDirectory: nativeState }, this.config)
       let output = '', problem: unknown
@@ -1806,6 +1807,7 @@ export class WorkerRuntime {
         })
     if (cliOf(effective) === 'kimi' && (previous?.mode ?? mode) === 'plan' && !nativeAdmission)
       throw new Error('Kimi 非交互模式不支持只读派遣')
+    // traecn supports confirmed ACP plan; Qoder's refusal does not apply.
     if (['qoder', 'qodercn'].includes(cliOf(effective)) && (previous?.mode ?? mode) === 'plan')
       throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
     if (
@@ -2605,6 +2607,7 @@ export class WorkerRuntime {
           : {
               env: {
                 ...firstPartyEnvironment(cliOf(worker.preference)),
+                ...(cliOf(worker.preference) === 'traecn' ? traecnEnvironment() : {}),
                 ...relayEnv,
                 ...agyBackgroundEnvironment(cliOf(worker.preference)),
                 ...(['qoder', 'qodercn'].includes(cliOf(worker.preference)) ? qoderEnvironment(cliOf(worker.preference) as 'qoder' | 'qodercn') : {}),

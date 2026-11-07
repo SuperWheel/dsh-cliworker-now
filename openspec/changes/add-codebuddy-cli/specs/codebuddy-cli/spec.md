@@ -105,7 +105,7 @@ runner SHALL 通过 ACP 新建会话并以 `session/new` 返回的 ID 作为原�
 - **THEN** runner 发送 `session/cancel`，CodeBuddy 以 `cancelled`（`codebuddy.ai/outcome: CANCELLED`）结束本轮，Host 确认进程退出后显示已停止
 
 ### Requirement: CodeBuddy 审批转交与拒绝结束
-CodeBuddy 的 `session/request_permission` SHALL 按 native-permission-relay 转交 DSH。审批卡片的标题、类型与路径 SHALL 取自同一 `toolCallId` 此前的 `tool_call` 事件。只有 `allow_always`（实测不写入设置文件，为会话级）可映射为「本会话始终允许」。用户、预设或规划模式拒绝后，CodeBuddy 以 `stopReason: cancelled` 且 `_meta['codebuddy.ai/outcome']` 为 `PERMISSION_DENIED` 结束本轮时，Worker SHALL 显示“因拒绝审批而结束”，被拒工具标为已拒绝，MUST NOT 显示为用户停止或已取消；用户可以在同一 Worker 续聊。未知的 CodeBuddy 私有请求（如 `_codebuddy.ai/requestSensitiveApproval`、`_codebuddy.ai/question`）MUST 以“客户端不支持”拒绝。
+CodeBuddy 的 `session/request_permission` SHALL 按 native-permission-relay 转交 DSH。审批卡片的标题、类型与路径 SHALL 取自同一 `toolCallId` 此前的 `tool_call` 事件。只有 `allow_always`（实测不写入设置文件，为会话级）可映射为「本会话始终允许」。用户、预设或规划模式拒绝后，CodeBuddy 以 `stopReason: cancelled` 结束本轮、用户未停止且没有其他失败时，Worker SHALL 以 SUCCESS 结束并显示“因拒绝审批而结束”，被拒工具标为已拒绝，MUST NOT 显示为用户停止或已取消；用户可以在同一 Worker 续聊。未知的 CodeBuddy 私有请求（如 `_codebuddy.ai/requestSensitiveApproval`、`_codebuddy.ai/question`）MUST 以“客户端不支持”拒绝。
 
 #### Scenario: 允许写文件
 - **WHEN** CodeBuddy 请求写 `notes.txt`，用户允许一次
@@ -113,7 +113,7 @@ CodeBuddy 的 `session/request_permission` SHALL 按 native-permission-relay 转
 
 #### Scenario: 拒绝命令后整轮结束
 - **WHEN** CodeBuddy 请求执行命令，用户拒绝
-- **THEN** 命令不执行；Worker 状态为失败，结果说明为“因拒绝审批而结束”，被拒工具显示已拒绝；之后续聊正常加载原会话
+- **THEN** 命令不执行；Worker 状态为 SUCCESS，结果说明为“因拒绝审批而结束”，被拒工具显示已拒绝；之后续聊正常加载原会话
 
 #### Scenario: 拒绝与停止区分
 - **WHEN** 用户主动停止，CodeBuddy 以 `cancelled`（outcome `CANCELLED`）结束

@@ -37,6 +37,7 @@ async function authorizedCatalogOnce(
   signal: AbortSignal,
   expected?: string,
 ): Promise<{ catalog: Catalog; binding: string }> {
+  // traecn uses the normal before/after auth.json binding checks; no Qoder SDK snapshot.
   const discover = async () => {
     const binding = await readCliAccountBinding(cli, backend, config, project, signal)
     if (expected && binding !== expected) throw new Error(ACCOUNT_CHANGED)

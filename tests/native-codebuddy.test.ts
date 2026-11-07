@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeAcp } from '../src/host/native-acp.mjs'
 import { codebuddyAcpArgv, codebuddyModeFor, codebuddyFallbackModes, codebuddyVerifyInitialize,
-  codebuddyDeniedTurnEnd, codebuddySessionOption, codebuddyRunnerSettings, runNativeCodebuddy } from '../src/host/native-codebuddy.mjs'
+  codebuddySessionOption, codebuddyRunnerSettings, runNativeCodebuddy } from '../src/host/native-codebuddy.mjs'
 import { workerArguments } from '../src/host/adapters.ts'
 
 const roots: string[] = []
@@ -104,7 +104,7 @@ async function fixture(scenario = 'success', options: { access?: string; mode?: 
   try {
     if (options.legacy) {
       const settings = codebuddyRunnerSettings(config)
-      delete settings.deniedTurnEnd; delete settings.defaultEffort; delete settings.approvalFromToolCall; delete settings.verifyInitialize
+      delete settings.deniedCancelEndsTurn; delete settings.defaultEffort; delete settings.approvalFromToolCall; delete settings.verifyInitialize
       await runNativeAcp(config, io, settings)
     } else await runNativeCodebuddy(config, io)
   } catch (value) { error = value }
@@ -119,7 +119,6 @@ describe('CodeBuddy ACP（模拟）', () => {
   it('checks the native initialize identity without requiring agentInfo', () => {
     expect(codebuddyVerifyInitialize({ protocolVersion: 1, authMethods: [{ id: 'internal' }, { id: 'external' }] })).toBeUndefined()
     expect(codebuddyVerifyInitialize({ protocolVersion: 1 })).toContain('身份不匹配')
-    expect(codebuddyDeniedTurnEnd({ stopReason: 'cancelled', _meta: { 'codebuddy.ai/outcome': 'CANCELLED' } })).toBe(false)
     expect(codebuddySessionOption([{ kind: 'allow_always', optionId: 'persistent' }])).toBeUndefined()
   })
   it.each(['bad-version', 'bad-identity'])('refuses %s before session creation', async scenario => {
@@ -173,7 +172,7 @@ describe('CodeBuddy ACP（模拟）', () => {
     expect(approval.request ?? approval).not.toHaveProperty('detail')
     expect(records.find(q => q.id === 'permission')?.result.outcome.optionId).toBe(optionId)
     if (decision === 'deny') {
-      expect(result.status).toBe('ERROR'); expect(JSON.stringify(result)).toContain('因拒绝审批而结束')
+      expect(result).toMatchObject({ status: 'SUCCESS', notice: '因拒绝审批而结束：被拒操作未执行，可续聊继续' })
       expect(JSON.stringify(result)).not.toContain('缺少终态')
       expect(frames.some(f => f.event?.state === 'FAILED' && f.event.toolCall?.output === '已拒绝')).toBe(true)
     } else expect(result.status).toBe('SUCCESS')
@@ -187,7 +186,7 @@ describe('CodeBuddy ACP（模拟）', () => {
   })
   it('keeps preset and plan denials distinct from user cancellation', async () => {
     const { result } = await fixture('permission', { mode: 'plan', source: 'plan', decision: 'deny' })
-    expect(result.status).toBe('ERROR'); expect(JSON.stringify(result)).toContain('因拒绝审批而结束')
+    expect(result).toMatchObject({ status: 'SUCCESS', notice: '因拒绝审批而结束：被拒操作未执行，可续聊继续' })
   })
   it.each(['cancel', 'cancelled'])('does not classify %s as a denied turn', async scenario => {
     const { records, result } = await fixture(scenario)

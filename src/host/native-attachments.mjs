@@ -5,7 +5,7 @@ import { extname } from 'node:path'
 
 const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
 const supported = new Set(['antigravity', 'codex', 'claude', 'kimi', 'mimo', 'zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'qoder', 'qodercn',
-  'codebuddy',
+  'codebuddy', 'traecn',
 ])
 export const nativeAttachmentCapability = cli => supported.has(cli)
 const check = signal => signal?.throwIfAborted()

@@ -160,6 +160,7 @@ export interface Config {
   qoderExecutable?: string
   qodercnExecutable?: string
   codebuddyExecutable?: string
+  traecnExecutable?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   /** @deprecated Accepted for old deployments only; never read or forwarded. */
@@ -276,6 +277,7 @@ export class CliWorkerService extends TypertRemoteService {
     qoderExecutable: z.string().min(1).default('qoder'),
     qodercnExecutable: z.string().min(1).default('qodercn'),
     codebuddyExecutable: z.string().min(1).default('codebuddy'),
+    traecnExecutable: z.string().min(1).default('traecli'),
     zcodeAuthDirectory: z.string(),
     zcodeBuiltinConfig: z.string(),
     zaiCredentialRef: z.string(),
@@ -842,6 +844,8 @@ export class CliWorkerService extends TypertRemoteService {
       throw new Error('Harness 当前为仅可查看；Antigravity 无法把授权请求转给你，请切换权限预设或改用其他 CLI')
     if (cli === 'hermes')
       throw new Error('Harness 当前为仅可查看；Hermes 没有可询问的档位，请切换权限预设或改用其他 CLI')
+    if (cli === 'traecn')
+      throw new Error('Harness 当前为仅可查看；TRAE CLI CN 不能逐项询问，没有「询问」档，请在 Worker 菜单选择仅工作区编辑或完全权限，或切换权限预设')
     if (!runsUnderViewOnly(cli))
       throw new Error('Harness 当前为仅可查看；Kimi 的第一项会自动批准 Git 仓库内的编辑，请切换权限预设或改用其他 CLI')
   }

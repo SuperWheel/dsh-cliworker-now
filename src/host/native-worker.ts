@@ -27,6 +27,7 @@ export const NATIVE_TRANSPORTS = {
   qoder: 'qoder-acp-v1',
   qodercn: 'qodercn-acp-v1',
   codebuddy: 'codebuddy-acp-v1',
+  traecn: 'traecn-acp-v1',
 } as const
 export function transportFor(cli: CliId): string {
   if (cli === 'harness') throw new Error('Harness CLI 已移除')

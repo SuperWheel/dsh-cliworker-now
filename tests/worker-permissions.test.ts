@@ -589,3 +589,22 @@ describe('Host Worker permission changes', () => {
     expect(effectiveLevel('auto', 'read-only')).toBe('auto')
   })
 })
+
+it('模拟：TRAE 菜单没有询问档，中档仅工作区编辑，支持原生规划', () => {
+  expect(cliLevelOptions('traecn').map(option => option.name)).toEqual(['仅工作区编辑', '完全权限'])
+  expect(cliLevelOptions('traecn').map(option => option.value)).toEqual(['auto', 'full'])
+  expect(cliLevelOptions('traecn')[0]?.description).toContain('工作区外')
+  expect(runsUnderViewOnly('traecn')).toBe(false)
+  expect(workerPlanSupported({ preference: { cli: 'traecn', model: '模拟模型', effort: 'default' }, transport: 'traecn-acp-v1' })).toBe(true)
+})
+
+it('模拟：TRAE 仅可查看拒绝未选档派遣，已选档和原生规划仍可用', async () => {
+  const f = await fixture('traecn')
+  setSandboxMode(f.parent.session, 'read-only')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).toThrow('TRAE CLI CN 不能逐项询问')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
+  await expect(f.save('ask')).rejects.toThrow('不支持')
+  expect(await f.read()).toMatchObject({ options: [{ value: 'auto' }, { value: 'full' }], plan: { supported: true } })
+  expect(await f.save('plan')).toMatchObject({ mode: 'plan' })
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+})

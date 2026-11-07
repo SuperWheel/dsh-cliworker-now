@@ -136,6 +136,7 @@ export function projectExternalTurnUsage(
       nativeModelDisplay(cliOf(worker.preference), event.observedModel)).filter((value): value is string => value !== undefined))]
     const identity = { basis: 'external-run' as const, runIds: [...runIds], label: 'CLI 运行合计',
       ...(displayRoutes.length ? { displayRoutes } : {}) }
+    // traecn uses reported token accounting below; it has no Qoder Credits path.
     if (['qoder', 'qodercn'].includes(cliOf(worker.preference)) && readRunCredits) {
       let credits: number | undefined = 0
       for (const runId of runIds) {

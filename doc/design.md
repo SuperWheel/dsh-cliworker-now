@@ -1425,6 +1425,17 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 - 背景：PRD 5.2/5.3 要求接入腾讯 CodeBuddy Code 的中国站与国际站。查证与本机实测（2.181.0）表明两站是同一 CLI 的登录站点（接入流程形态 C），用户确认只做一个入口 `codebuddy`。
 - 决定：经 `codebuddy --acp` 复用 `runNativeAcp`，transport `codebuddy-acp-v1`；所有插件进程设置 `DISABLE_AUTOUPDATER=1`。三档映射为 `default`/`auto`/`bypassPermissions`，规划为 `plan`，不使用 `fullAccess`。强度取每个模型的 `_meta.effortOptions`，“默认”对应 `thought_level=enabled`。
-- 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedTurnEnd`（拒绝即结束本轮显示“因拒绝审批而结束”，不当作“已取消”）。其他 ACP CLI 行为不变。
+- 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（拒绝即结束本轮显示“因拒绝审批而结束”，不当作“已取消”）。其他 ACP CLI 行为不变。
 - 账号与站点：登录状态只看认证文件与 `.logged-out` 标记。2026-11-07 用户批准“允许只读站点”：显式 `CODEBUDDY_INTERNET_ENVIRONMENT`（`settings.json` 的 `env` 键或进程环境）优先，否则在内存中只取认证文件 `auth.domain`，按 CLI `product.json` 的域名表映射；域名与文件内容不落日志、事件、持久化。绑定为站点 ID 与模型目录摘要，任一变化都让旧目录与偏好失效。
 - 记录：`openspec/changes/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
+
+## 2026-11-07 v0.8.8 TRAE CLI CN 接入决策
+
+定稿见 [add-traecn-cli](../openspec/changes/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/changes/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
+
+- 只接国内版官方 `traecli`：CliId `traecn`、配置 `traecnExecutable`、transport `traecn-acp-v1`；以版本输出及 ACP `traecli-acp` 双重确认身份，不自动发现同名开源程序。2026-11-07 未发现官方国际版 CLI；官方安装脚本需直连 trae.cn。
+- 个人登录只在该次命令开启开发中特性 `personal_user_login`，另提供企业 SSO/PAT；不修改 `TRAE_HOME`、`traecli.toml` 或调用更新。目录先核对登录再读 `models --json`，模型用 `config_name`，不提供强度。
+- 无「询问」档；「仅工作区编辑」用 `default`，工作区外请求转 DSH；完全权限用 `bypass_permissions`，仅可降至 `default` 并提示。不用由 TRAE 审查子 Agent 代批的 `auto`。规划以 `default` 启动后切 ACP `mode=plan` 并回读确认；仅可查看且无 Worker 自选档位时拒绝派遣。
+- 恢复用 `session/load` 并排除历史重放，分支用原生 `session/fork`（仅最新轮），停止核对进程范围退出。拒绝审批导致原生 `cancelled` 且用户未停止时显示「因拒绝审批而结束」，可续聊；不提供会话级授权。
+- 本轮有效 `end_turn` usage 与同回执上下文分别采集，输入口径为原生 reported，缓存含义未公开；全零取消回执保持未知。原生子 Agent、记忆、skills 与联网跟随用户设置。HTTP MCP 的服务名替换语义未核实，不注入 DSH 工具桥；steering 仅声明未实测，不提供运行中引导。
+- 图标沿用官方不透明 favicon，保留近黑底板，`mono: false`，深色不反色。Windows、Desktop 图标明暗及插件集成验收仍以任务清单的实际记录为准；前置 CLI 探测不能代替插件验收。

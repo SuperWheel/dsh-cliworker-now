@@ -37,6 +37,8 @@ export const GROK_PLAN_TOOLS = ['read_file', 'grep', 'list_dir', ...(GROK_NATIVE
  */
 export function nativeSkillPaths(cli, { env = process.env, project, home = homedir() } = {}) {
   if (cli === 'codebuddy') return [join(home, '.codebuddy', 'skills'), ...(project ? [join(project, '.codebuddy', 'skills')] : [])]
+  if (cli === 'traecn') return [join(home, '.trae/skills'), join(home, '.agents/skills'),
+    ...(project ? [join(project, '.trae/skills'), join(project, '.agents/skills')] : [])]
     .filter(path => { try { return statSync(path).isDirectory() } catch { return false } })
   const name = cli === 'mimo' ? 'mimocode' : 'opencode'
   const config = cli === 'mimo' && env.MIMOCODE_HOME
@@ -191,6 +193,7 @@ const tables = {
   qoder: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   qodercn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   codebuddy: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  traecn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   // agy retired its grep/glob tools and its web exposure is unverified: DSH keeps both as fallbacks.
   antigravity: mode => ['file-read', ...write(mode), 'shell'],
 }

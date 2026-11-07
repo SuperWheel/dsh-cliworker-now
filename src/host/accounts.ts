@@ -82,6 +82,7 @@ import { ensureHermesNousFresh, HermesRenewalError, reserveHermesAccount } from 
 import { reserveGrokAccount } from './grok-renewal.ts'
 import { HermesAccountSourceError } from './hermes-models.ts'
 import { readQoderAccount, qoderEnvironment, QODER_METADATA_ARGUMENTS } from './qoder-accounts.ts'
+import { readTraecnAccount, traecnAccountArguments, traecnEnvironment } from './traecn-accounts.ts'
 
 const STATUS_TIMEOUT = 10_000
 const STARTUP_TIMEOUT = 30_000
@@ -148,6 +149,10 @@ const instructionFor = (cli: CliId, action: AccountAction): string => {
     : '按 CLI 原生流程退出登录。'
 }
 const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions'] => {
+  if (cli === 'traecn') return [
+    { id: 'login', label: '登录 / 切换账号', description: '选择 TRAE CLI CN 原生登录方式。', providers: loginProviders(cli, undefined) },
+    { id: 'logout', label: '退出登录', description: '按 CLI 原生流程退出登录。' },
+  ]
   if (cli === 'claude')
     return [
       {
@@ -182,6 +187,7 @@ const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions']
 /** Only commands verified against the installed CLIs. Never send a prompt/slash command. */
 const argumentsFor = (cli: CliId, action: AccountAction): string[] => {
   if (cli === 'codebuddy') return []
+  if (cli === 'traecn') return action === 'logout' ? traecnAccountArguments(action) : [] // Provider-specific login is built below.
   if ((cli === 'qoder' || cli === 'qodercn')) return action === 'login' ? ['login'] : []
   if (cli === 'antigravity' || action === 'manage' || (cli === 'kimi' && action === 'logout')) return []
   if (cli === 'codex' || cli === 'kimi') return [action]
@@ -443,6 +449,9 @@ export class AccountManager {
       control.throwIfAborted()
       if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable })),
         actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
+      if (cli === 'traecn') return { cli, installed,
+        ...(await readTraecnAccount(this.backend, this.config, executable, cwd, control)),
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
           cli, installed, ...(await readQoderAccount(executable, control, { cli, backend: this.backend, config: this.config, project: cwd })),
@@ -678,6 +687,8 @@ export class AccountManager {
           summary: 'CLI 启动入口无法确认，请配置原生程序或固定 Node/Bun 入口',
           actions: [],
         }
+      if (cli === 'traecn' && code === 'CLI_IDENTITY_MISMATCH')
+        return { cli, installed: true, state: 'unavailable', summary: '不是官方 TRAE CLI，请检查 traecnExecutable', actions: [] }
       if (code === 'CLI_IDENTITY_MISMATCH')
         return {
           cli,
@@ -727,7 +738,7 @@ export class AccountManager {
     if (cli === 'antigravity') return this.config.executable !== 'agy'
     if (cli === 'harness') return false
     const configured = this.config[`${cli}Executable`]
-    return !!configured && configured !== cli
+    return !!configured && configured !== (cli === 'traecn' ? 'traecli' : cli)
   }
 
   start(
@@ -742,6 +753,7 @@ export class AccountManager {
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     validateCli(cli)
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')
+    if (cli === 'traecn') traecnAccountArguments(action, provider)
     if (
       source !== undefined &&
       (!['native', 'plugin'].includes(source) ||
@@ -863,6 +875,10 @@ export class AccountManager {
             : '在原生终端登录 Claude 官方账号；本地代理设置保留。'
       } else if (cli === 'codebuddy') {
         launch.env = { DISABLE_AUTOUPDATER: '1' }
+      } else if (cli === 'traecn') {
+        launch.argv = [executable, ...traecnAccountArguments(action, provider)]
+        launch.env = traecnEnvironment()
+        if (provider === 'enterprise-pat') instruction = 'TRAE 会读取 TRAECLI_PERSONAL_ACCESS_TOKEN；未设置时在下方原生终端粘贴令牌，插件不保存。'
       } else if ((cli === 'qoder' || cli === 'qodercn')) {
         launch.argv = [executable, ...QODER_METADATA_ARGUMENTS.filter((value) => value !== '--acp'), ...argumentsFor(cli, action)]
         launch.env = qoderEnvironment(cli)

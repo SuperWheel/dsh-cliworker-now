@@ -70,6 +70,7 @@ An integrated adapter does not mean every model, subscription or platform has be
 | Qoder CLI | 1.1.73 | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified |
 | Qoder CN CLI | 1.1.74 | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested |
 | CodeBuddy Code | 2.181.0 | Native ACP added in v0.8.8; macOS live checks (free model `hy4free`) are recorded in the [change tasks](../openspec/changes/add-codebuddy-cli/tasks.md); International site, enterprise domain, iOA and Windows remain unverified |
+| TRAE CLI CN | 0.213.1 | Preliminary macOS protocol probes on 2026-11-07: 18-model catalog and glm-5.3-flash file tools, commands, load, cancel and fork; plugin/Desktop and Windows acceptance remain unverified; see integration tasks |
 
 MiMo refers to [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code). Hermes Agent replaced the old external Harness CLI adapter; DeepSeek Harness remains the plugin's host.
 
@@ -92,6 +93,40 @@ On Windows, background Antigravity model queries and tasks use the official envi
 Successful extended-CLI catalog queries remove their private temporary directory and extracted native cache after process exit is confirmed. Failed or unconfirmed cleanup preserves the query files and never deletes native account files.
 
 Probe records: [ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
+
+### TRAE CLI CN installation and login
+
+TRAE CLI CN (`cli=traecn`) uses ByteDance's official TRAE CLI 2.0, with `traecli` as the default executable. Only the China edition was found as of 2026-11-07; no official international CLI entry is offered. The open-source Python bytedance/trae-agent project is a different program.
+
+Official macOS / Linux installer:
+
+```sh
+sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
+```
+
+The installer needs direct access to trae.cn. The 2026-11-07 probe from outside mainland China returned HTTP 403 (`denied by region block`); no unofficial installer or mirror is provided. An official Windows `install_v2.ps1` also exists, but its installation location, discovery, initialization and live tasks remain unverified on Windows.
+
+**Path and identity.** `traecnExecutable` defaults to `traecli`; set an absolute path under CLI Connections → Advanced settings if needed. Automatic discovery searches only for `traecli`, adding `~/.local/bin/traecli` outside PATH on macOS / Linux; macOS child PATH also includes `~/.local/bin`. Both automatic and explicit paths must pass the `--version` identity check: first line `traecli <version>` and an `installation:` line. ACP must then report `agentInfo.name = traecli-acp`. The installer's `trae-cli`, `trae-agent`, `coco` and `ta` links are not automatic discovery candidates; a manually configured same-brand link still needs identity validation. On Windows, configure `traecnExecutable` if discovery fails; no unverified installation location is assumed.
+
+**Account.** Official documentation restricts CLI access to the enterprise flagship plan. Preliminary checks also completed live tasks with a personal account using an under-development feature; that does not establish access for all personal accounts. `traecli login status` is the account source: `Logged in using Trae` means logged in without distinguishing personal from enterprise, `Not logged in` means signed out, and other output stays unknown. Unsupported plans retain the native reason.
+
+| Login method | Native command and behavior |
+| --- | --- |
+| Personal account | `traecli --enable personal_user_login login --personal`; depends on the under-development `personal_user_login` feature. The flag applies only to that login command, not task launches |
+| Enterprise SSO | `traecli login --enterprise`; uses the native browser flow |
+| Enterprise PAT | `traecli login --with-trae-pat`; reads `TRAECLI_PERSONAL_ACCESS_TOKEN`, or prompts in the native terminal when unset. The plugin neither supplies nor stores the token |
+
+Logout uses `traecli logout`, then refreshes account status and the model catalog. The plugin inherits `TRAE_HOME` (default `~/.trae`); account/runtime data live under `$TRAE_HOME/cli/` and configuration is `$TRAE_HOME/traecli.toml`. It does not edit that file or call `traecli update`. Account binding uses stable principal and environment-source digests without logging tokens; changing accounts invalidates catalog and saved-selection checks.
+
+**Models.** After confirming login, read `traecli models --json`: `config_name` is the execution ID and `name` the display label. The preliminary 0.213.1 check returned 18 models; this is a dynamic catalog, not a fixed list. Signed-out `[]` reports not logged in; signed-in `[]` reports no confirmable models. Before prompting, select the ACP `model` option and verify its receipt. A missing model requires reselection, with no default-model fallback. ACP exposes no verified reasoning-effort option, so there is no effort selector.
+
+**Permissions and planning.** Only Workspace edit and Full access are offered; there is no Ask level. Workspace edit maps to native `default`: TRAE automatically approves workspace reads, writes and commands, with `/tmp` also allowed in the probe; other outside-workspace requests go to DSH. This is not an OS sandbox. Full access maps to `bypass_permissions`; if unavailable it may only fall back to `default`, with a Workspace edit notice. Native `auto` delegates approval to TRAE's review subagent and is not used. A Worker without a saved level cannot inherit a view-only main conversation; choose a Worker level or change the permission preset.
+
+Planning launches with `default`, then sets ACP `mode=plan` and confirms the current mode before prompting; all permission requests are rejected. `--permission-mode plan` is not a valid launch argument. A runtime mode mismatch stops the turn. Approval offers Allow once / Reject, with no session-wide option. If rejection makes TRAE finish with `cancelled` and the user did not stop it, the turn shows “Ended after approval was rejected: the denied operation was not executed; continue in a follow-up.” A user stop remains a stop and is only confirmed after process-scope exit.
+
+**Sessions and verification limits.** `traecn-acp-v1` continues through native `session/load`; historical replay is excluded from the new answer. Load failure is reported without creating a new session. Native branching supports the latest completed turn only. Native subagents, memory, skills and web access retain user settings; attachments follow ACP capabilities. The DSH tool bridge is not offered: ACP advertises only HTTP MCP, and `_meta.trae.options.mcpServers` takes configured server names with replacement semantics; unverified injection could overwrite user MCP settings. Steering is advertised but untested, so no in-run steering entry is offered; messages follow the native Inbox queue.
+
+Preliminary macOS / 0.213.1 probes on 2026-11-07 recorded `glm-5.3-flash` file reads/writes, commands, history loading, cancellation and branching. These are not plugin or Desktop acceptance. Windows, complete enterprise SSO/PAT flows, other models, the tool bridge, steering and Desktop icon themes remain unverified. Usage requires valid nonzero `usage` from this turn's `end_turn`; all-zero cancellation receipts stay unknown. Context uses the same receipt's `contextWindow.used/size`, not cumulative tokens. See the [TRAE protocol notes](traecn-protocol.md) and [integration tasks](../openspec/changes/add-traecn-cli/tasks.md).
 
 ### Qoder CLI installation and login
 
@@ -363,7 +398,7 @@ CLI child conversations support Harness goal, plan, feedback and branch. An unsu
 | Goal | Set, edit, pause, resume or clear the goal from the goal bar, the "+" menu or `/goal`. An active goal is prepended as a delimited block to each turn sent to the CLI, while the conversation keeps showing your original message. A goal never starts a turn by itself and does not use any CLI's own goal auto-continuation. | All CLIs |
 | Plan | Uses the existing mapping to each CLI's native plan or read-only mode, from the "+" menu, the permission control, the plan chip or `/plan`. Those CLIs hide the plan chip, while the "+" menu keeps the Plan row with the reason. They have only the accept-edits permission mode, so the permission control is also disabled with that reason. | Disabled for Hermes, Qoder, Qoder CN and the legacy Kimi transport |
 | Feedback | Thumbs and the feedback dialog use Harness feedback services and stay recorded in Harness only. Nothing is sent to the CLI or its vendor, and nothing enters model context. | All CLIs |
-| Branch | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued. | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
+| Branch | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued. | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN, TRAE CLI CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
 
 ZCode forks inclusively from the latest native assistant message; a conversation without workspace edits needs no checkpoint. Pi, OpenCode and ZCode branches retain the source session's native state directory across Host restarts and nested forks.
 

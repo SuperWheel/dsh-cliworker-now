@@ -46,7 +46,7 @@
 ## 6–8. runner、审批与拒绝结束
 
 - [x] 6.1 `src/host/native-codebuddy.mjs`：argv、身份校验、模式映射、强度、会话级选项、工具名、拒绝结束判定
-- [x] 6.2 共享 `native-acp.mjs` 可选行为：`verifyInitialize`、`defaultEffort`、`approvalFromToolCall`、`deniedTurnEnd`（默认关闭）
+- [x] 6.2 共享 `native-acp.mjs` 可选行为：`verifyInitialize`、`defaultEffort`、`approvalFromToolCall`、`deniedCancelEndsTurn`（默认关闭）
 
 ## 9. 遥测、图标、设置页
 
@@ -100,7 +100,7 @@
 
 ## 共享改动（供合并处理冲突）
 
-- 共享 runner `src/host/native-acp.mjs`：新增 4 个 runner 设置 `verifyInitialize`、`defaultEffort`、`approvalFromToolCall`、`deniedTurnEnd`，均默认关闭；Qoder/Kimi/Grok 等 ACP 测试保持通过
+- 共享 runner `src/host/native-acp.mjs`：新增 4 个 runner 设置 `verifyInitialize`、`defaultEffort`、`approvalFromToolCall`、`deniedCancelEndsTurn`，均默认关闭；Qoder/Kimi/Grok 等 ACP 测试保持通过
 - `src/host/adapters.ts`：`executableFor`、`catalogFor`、`workerArguments` 的 codebuddy 分支；macOS 默认路径回退；`captureCatalogMetadata` 失败时在原错误上附加 `exitCode`（文案不变）
 - `src/host/accounts.ts`、`cli-account-binding.ts`、`authorized-catalog.ts`：codebuddy 分支与单次授权快照
 - `src/client/icons.tsx`：追加 `codebuddy` 图标与光学参数

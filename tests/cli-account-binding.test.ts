@@ -230,6 +230,7 @@ beforeEach(() => {
   vi.stubEnv('ZCODE_DATA_BASE_DIR', fixture.home)
   vi.stubEnv('LOCALAPPDATA', join(fixture.home, 'Local'))
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
+  vi.stubEnv('TRAE_HOME', join(fixture.home, '.trae'))
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -334,6 +335,7 @@ function own(cli: CliId) {
     write(join(codebuddyAuthDirectory(), 'Tencent-Cloud.coding-copilot.info'), 'SIMULATED-presence-only', true)
     fixture.status = { models: [{ modelId: 'SIMULATED-codebuddy', name: 'Simulated CodeBuddy', _meta: { credits: 'x0.00 credits' } }] }
   }
+  else if (cli === 'traecn') write(join(fixture.home, '.trae/cli/auth.json'), { auth_mode: 'trae', trae: { user_id: '模拟-trae-user' } })
   else if (cli === 'zcode') zcode()
   else if (cli === 'grok')
     write(join(fixture.home, '.grok/auth.json'), {

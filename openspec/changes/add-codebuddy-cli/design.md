@@ -19,7 +19,7 @@ CodeBuddy Code 2.181.0 是同一 CLI、按站点登录（形态 C）。实测事
 
 | 模块 | 职责 |
 | --- | --- |
-| `src/host/native-codebuddy.mjs` | runner：`codebuddyAcpArgv`、`codebuddyRunnerSettings(config)`、`runNativeCodebuddy`；导出纯函数 `codebuddyModeFor(access, mode)`、`codebuddyDeniedTurnEnd(result)`、`codebuddyToolName(update)`，供测试与 WorkBuddy 分支复用 |
+| `src/host/native-codebuddy.mjs` | runner：`codebuddyAcpArgv`、`codebuddyRunnerSettings(config)`、`runNativeCodebuddy`；导出纯函数 `codebuddyModeFor(access, mode)`、`codebuddyToolName(update)`，供测试与 WorkBuddy 分支复用 |
 | `src/host/codebuddy-catalog.mjs` | 独立 Node 脚本：启动 `codebuddy --acp --no-session-persistence`，发 `initialize` 与 `session/new`，输出解析后的模型目录 JSON，随后 SIGTERM 并确认退出（照 `grok-catalog.mjs` 的写法） |
 | `src/host/codebuddy-account.ts` | 认证文件路径、登录状态（只 `lstat`）、站点声明、`parseCodebuddyModels`、目录查询（经 `captureCatalogMetadata` 运行上面的脚本）、账号绑定材料、单次授权内的目录快照 |
 | 共享清单 | `CLI_IDS` 等注册项（见 tasks 2.x） |
@@ -43,11 +43,11 @@ runNativeAcp(config, io, {
   encode: (v) => v,
   toolName: (u) => u._meta?.['codebuddy.ai/toolName'] ?? u.title,
   approvalFromToolCall: true,                 // 新增可选项
-  deniedTurnEnd: codebuddyDeniedTurnEnd,      // 新增可选项
+  deniedCancelEndsTurn: true,      // 新增可选项
 })
 ```
 
-`codebuddyDeniedTurnEnd(result)` 只在 `result.stopReason === 'cancelled'` 且 `result._meta['codebuddy.ai/outcome'] === 'PERMISSION_DENIED'` 时返回 true。规划模式由 `runNativeAcp` 的 `config.mode === 'plan'` 选择 `plan`（不降级）。
+`deniedCancelEndsTurn` 与 TRAE 共用：仅本轮确有 DSH 拒绝、`stopReason === 'cancelled'`、用户未停止且没有其他失败时，以 SUCCESS 和“因拒绝审批而结束：被拒操作未执行，可续聊继续”收尾，空正文不降为 UNCERTAIN；不要求 CodeBuddy 私有 outcome 字段。规划模式由 `runNativeAcp` 的 `config.mode === 'plan'` 选择 `plan`（不降级）。
 
 ### 3. 共享 runner 的可选行为（`native-acp.mjs`，默认关闭）
 
@@ -56,7 +56,7 @@ runNativeAcp(config, io, {
 | `verifyInitialize(initialized)` | 无 | 返回字符串时以该原因拒绝启动。CodeBuddy 回执没有 `agentInfo`，用 `authMethods` 含 `internal` 与 `external` 判定身份 |
 | `defaultEffort` | 无 | 偏好强度为 `default` 时显式选择该值（CodeBuddy 为 `enabled`），防止续聊沿用上一轮强度 |
 | `approvalFromToolCall` | false | runner 记录每个 `toolCallId` 最近的 `title`/`kind`/`locations`；授权请求缺少这些字段时用记录补全后再生成提问卡（请求字段优先） |
-| `deniedTurnEnd(result)` | 无 | 本轮有拒绝、未被停止且该函数返回 true 时：失败原因为“因拒绝审批而结束……”（优先于其他原因）；被拒且无终态的工具补发 `FAILED`、输出“已拒绝”的工具事件，并从“工具缺少终态”检查中排除 |
+| `deniedCancelEndsTurn` | false | 本轮有 DSH 拒绝、原生 cancelled、未被停止且无其他失败时，以 SUCCESS 和“因拒绝审批而结束：被拒操作未执行，可续聊继续”收尾；空正文不降为 UNCERTAIN。被拒且无终态的工具补发 `FAILED`、输出“已拒绝”的工具事件，并从“工具缺少终态”检查中排除 |
 
 另在 `native-harness-injection.mjs` 的桥工具名候选中追加 `call?._meta?.['codebuddy.ai/toolName']`，并把 `codebuddy` 加入工具桥传输列表（不加入 `nativeHarnessExecutionReady`）。
 

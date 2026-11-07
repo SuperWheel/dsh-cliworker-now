@@ -76,6 +76,7 @@ export interface RuntimeConfig {
   qoderExecutable?: string
   qodercnExecutable?: string
   codebuddyExecutable?: string
+  traecnExecutable?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   stateDirectory?: string
@@ -97,6 +98,7 @@ export interface RuntimeConfig {
 }
 export const DEFAULT_CONFIG: RuntimeConfig = {
   executable: 'agy',
+  traecnExecutable: 'traecli',
   maxConcurrent: 2,
   timeoutMs: 1_800_000,
   graceMs: 5000,
@@ -131,6 +133,7 @@ export function projectDirectory(input: string): string {
     '.zcode',
     '.qoder',
     '.qoder-cn',
+    '.trae',
     '.local/share/opencode',
     '.gemini',
     '.config',

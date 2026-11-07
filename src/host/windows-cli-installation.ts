@@ -39,6 +39,7 @@ type WindowsEnvironment = WindowsPathOptions
 export type WindowsDiscoverableCli = Exclude<CliId, 'harness'>
 
 export function windowsCliCommands(cli: WindowsDiscoverableCli): string[] {
+  if (cli === 'traecn') return ['traecli']
   return cli === 'qoder' || cli === 'qodercn' ? [qoderVariant(cli).executable, cli] : [cli === 'antigravity' ? 'agy' : cli]
 }
 const unavailableCodex = () =>

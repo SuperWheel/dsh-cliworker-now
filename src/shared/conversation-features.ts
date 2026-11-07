@@ -34,6 +34,7 @@ export const forkSupport: Partial<Record<CliId, { latest: boolean; earlier: bool
   mimo: { latest: true, earlier: false },
   qoder: { latest: true, earlier: false },
   qodercn: { latest: true, earlier: false },
+  traecn: { latest: true, earlier: false },
 }
 
 export const noForkReason: Partial<Record<CliId, string>> = {
@@ -50,7 +51,7 @@ export function bridgedFeatureSupport(
   const cli = cliOf(worker.preference)
   const plan = workerPlanSupported(worker)
   const expectedTransport: Partial<Record<CliId, string>> = { codex: 'codex-app-v1', claude: 'claude-stream-v1', kimi: 'kimi-acp-v1', mimo: 'mimo-http-v1', zcode: 'zcode-app-v1', pi: 'pi-rpc-v1', opencode: 'opencode-http-v1', qoder: 'qoder-acp-v1', qodercn: 'qodercn-acp-v1',
-    codebuddy: 'codebuddy-acp-v1',
+    codebuddy: 'codebuddy-acp-v1', traecn: 'traecn-acp-v1',
   }
   const fork = worker.transport === expectedTransport[cli] ? forkSupport[cli] : undefined
   return {

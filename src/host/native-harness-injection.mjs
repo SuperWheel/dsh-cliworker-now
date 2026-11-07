@@ -1,3 +1,4 @@
+// traecn intentionally has no injection: its HTTP-only MCP names replace configured servers; definitions are unverified.
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection, createNativeHarnessClient } from './native-harness-mcp.mjs'

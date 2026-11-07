@@ -12,6 +12,8 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   qodercn: ['qoder.cn'],
   // observed in CodeBuddy 2.181.0 docs/install pages, 2026-11-07; refine after a real login window test
   codebuddy: ['codebuddy.cn', 'codebuddy.ai', 'copilot.tencent.com'],
+  // TRAE CLI 0.213.1 personal endpoints, observed 2026-11-07; enterprise SSO stays native.
+  traecn: ['trae.cn', 'www.trae.cn', 'api.trae.com.cn'],
   grok: ['accounts.x.ai', 'auth.x.ai'],
   zcode: ['.bigmodel.cn', '.z.ai'],
   mimo: ['platform.xiaomimimo.com'],
@@ -50,6 +52,7 @@ export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'qoder',
   'qodercn',
   'codebuddy',
+  'traecn',
   'mimo',
   'grok',
 ])
