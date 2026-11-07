@@ -17,6 +17,10 @@
 - [x] 2.1 proposal、design、`workbuddy-cli` 规格增量与任务清单
 - [ ] 2.2 `pnpm spec validate add-workbuddy-cli --strict` 与 `pnpm spec:check`
 
+## 阻塞记录
+
+- 2026-11-07：把密钥读取与投递的实现派给 Codex 子 Agent 时，本机自动模式的安全分类器拦截了这一步。按约定没有绕过，也没有换个说法重试。工作区确认无改动，子 Agent 没有启动。第 3 节及之后的实现，需要用户在场确认后再继续。
+
 ## 3. 核心模块（新文件）
 
 - [ ] 3.1 `workbuddy-variant.ts`、`workbuddy-installation.ts`：两版差异、候选路径、身份核对
