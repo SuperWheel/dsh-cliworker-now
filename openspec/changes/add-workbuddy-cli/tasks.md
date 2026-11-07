@@ -70,8 +70,20 @@
 
 ## 7. 待授权或未验证
 
-- [ ] 7.1 真实任务（读、改、审批允许与拒绝、续聊、停止且桌面端不受影响）——待用户批准模型，且需用户在场
+- [x] 7.1 真实任务（读、改、审批允许与拒绝、续聊、停止且桌面端不受影响）
+  - 授权：用户 2026-11-07 批准只用免费模型 hy4free（原话“批准，用 hy4free”，经协调会话转告，用户在场）。环境：macOS、WorkBuddy 5.9.3、国内版已登录；用隔离构建 `.cache/preview-package` 的 `WorkerRuntime` + 原生桥（与 Host 同一路径），偏好 `hy4free`／强度 `default`，工作区与 Worker 状态都在会话临时目录，未写入用户 DSH 状态。脚本放在被忽略的 `.test-data/workbuddy-real/accept.ts`，未入库。
+  - 读写（自动档 → `auto`）：`completed`，transport `workbuddycn-acp-v1`，会话 `01a1b5e8-…7222`；原生 Read、Write 工具事件均 COMPLETED；`output.json` 内容为 `{"echo":"<input.txt 标记>","n":7}`，与输入一致；raw 有 1 条 session、1 条 result（sha256 `6ae080ea…`）。
+  - 询问档允许（`read-only` → `default`）：CLI 发出 1 次 `command` 审批（`sh -c 'echo ALLOWED > approved.txt'`，`allowSession: false`），DSH 回“允许一次”后执行；`approved.txt` 内容 `ALLOWED`，本轮 `completed`（raw sha256 `376675e7…`）。
+  - 询问档拒绝：同样 1 次 `command` 审批，DSH 回“拒绝”；原生 `stopReason: cancelled`，插件把本轮记为 `failed` 并显示“因拒绝审批而结束”（时间线为 `Error: CLI ERROR: 因拒绝审批而结束`），不是“已取消”；`denied.txt` 不存在，命令未执行（raw sha256 `0ddf1347…`）。
+  - 续聊：拒绝后的同一 Worker 经 `session/load` 续聊两次，均 `completed`、会话 ID 不变、未调用工具；第一次准确复述首轮读到的标记，第二次回复 PONG。
+  - 停止：长输出进行中、确认已有正文后调用停止，约 1.5 秒返回 `interrupted`，`done` 同为 `interrupted`、会话 ID 不变；停止后本次 CLI 进程已退出。WorkBuddy 桌面端 3 个进程（1356、2155、73408）前后一致，未受影响。
+  - 进程与目录：每轮结束后无 `codebuddy-lite-wb.mjs --acp` 或助手进程残留，无 `dshwb-*` 临时目录；Worker 状态目录 0700、文件 0600。（中途一次“残留”是 pgrep 匹配到验收工具自身的 shell 包装进程，已复查排除。）
+  - 密钥：用 WorkBuddy 运行时读取 at-rest 密钥，在本进程内比对 24 个证据文件（report、raw、stderr、事件、工作区、thought_level 表），只输出计数：原文、派生 key 的 base64／base64url／hex 均 0 处命中；证据中也没有 `keyBase64`、`atRestSecretKey`、`symmetricKey` 字段或网关密码横幅。
+  - 观察：每轮 stderr 有一行 `[CredentialBootstrap] CBC early {…}` 遥测（含 pid、引导 sessionId、状态，不含 token 或密钥），会以“CLI 诊断”出现在时间线。
 - [ ] 7.2 询问档实际审批行为、`allow_always` 作用域、`thought_level` 是否随模型变化
+  - 询问档：命令审批的允许与拒绝已在 7.1 实测。`allow_always` 未验证：本次命令审批 `allowSession` 为 false，CLI 没有提供会话级授权。
+  - `thought_level` 会随模型变化（2026-11-07，对 17 个模型逐个 `session/set_config_option model`，不发 prompt）：auto 和 mimo-v2.6-pro 是 minimal…max 全档；hy4free、hy4std 只有 high；hy3、hy3-x 有 low/high；glm-5.2 有 high/xhigh；deepseek-v4-pro 有 disabled/high/xhigh；其余各不相同；每个模型都有 `enabled`（模型默认）。
+  - **缺陷（未修复）**：`probeWorkBuddyMetadata` 只读 `session/new`（当前模型 auto）的 `thought_level`，并把同一组强度给所有模型。因此 hy4free 等模型会显示不支持的强度，违反规格中“只提供 `thought_level` 实际公开的取值”；deepseek-v4-pro 的 `disabled` 也不在插件支持列表里。本次验收只用 `default`，没有触发这一缺陷。修复方向：目录探测按模型读取 `thought_level`（每个模型多一次 `session/set_config_option`），或在启动时按所选模型重新校验。
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
 - [ ] 7.4 Windows 发现、命名管道引导与真实验收
 - [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
@@ -113,4 +125,4 @@
 
 2026-11-07 协调会话复核：审阅接线改动后，把已登录状态下账号区文案改为“请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作”（原先已登录也显示登录重试提示），并更新 settings-dialog 用例。复核命令：20 个关联测试文件 1082 项通过；`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.1）；`corepack pnpm build:preview` 通过。
 
-未执行：推送、发布、正式构建、Desktop 链接更新、真实模型调用、凭据文件读取（只按方案读取 at-rest 密钥并投递给本次 CLI）。第 7 节保持未完成。
+未执行：推送、发布、正式构建、Desktop 链接更新、凭据文件读取（只按方案读取 at-rest 密钥，用于投递给本次 CLI 和证据扫描）。真实模型调用只在 7.1 获批范围内用 hy4free；第 7 节其余项保持未完成。
