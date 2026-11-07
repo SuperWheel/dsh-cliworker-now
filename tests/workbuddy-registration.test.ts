@@ -54,7 +54,7 @@ afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) rmSy
 
 describe('模拟 WorkBuddy 注册、权限与原生能力', () => {
   it.each(clis)('%s appends independent identity, transport, native planning and desktop-only accounts', cli => {
-    expect(CLI_IDS.slice(CLI_IDS.indexOf('qodercn') + 1, CLI_IDS.indexOf('qodercn') + 3)).toEqual(clis)
+    expect(CLI_IDS.slice(CLI_IDS.indexOf('qodercn') + 1)).toEqual(['codebuddy', 'traecn', ...clis])
     expect(CLI_SHORT_NAMES[cli]).toBe(cli)
     expect(CLI_LABELS[cli]).toBe(cli === 'workbuddycn' ? 'WorkBuddy' : 'WorkBuddy AI')
     const worker = { preference: { cli, model: 'SIMULATED/model', effort: 'default' as const }, transport: `${cli}-acp-v1` }

@@ -138,3 +138,19 @@
 2026-11-07 协调会话复核：审阅接线改动后，把已登录状态下账号区文案改为“请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作”（原先已登录也显示登录重试提示），并更新 settings-dialog 用例。复核命令：20 个关联测试文件 1082 项通过；`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.1）；`corepack pnpm build:preview` 通过。
 
 未执行：推送、发布、正式构建、Desktop 链接更新、凭据文件读取（只按方案读取 at-rest 密钥，用于投递给本次 CLI 和证据扫描）。真实模型调用只在 7.1 获批范围内用 hy4free；第 7 节其余项保持未完成。
+
+
+## 9. v0.8.8 集成分支合并（2026-11-07）
+
+- [x] 9.1 按指定 `--no-ff` 合并 WorkBuddy 分支，逐项保留 CodeBuddy、TRAE、WorkBuddy 两版注册与文档
+  - 合并提交 `2e6ff23`；22 个冲突文件逐项处理见 [integration-verification.md](integration-verification.md)。OpenSpec 各变更保留原目录，没有归档。
+  - `native-acp.mjs` 与合并前集成分支逐字节一致，单一默认关闭的 `deniedCancelEndsTurn` 由 WorkBuddy runner 显式启用；CodeBuddy/TRAE runner 未改。WorkBuddy helper/bootstrap/runner/metadata 与来源分支逐字节一致，没有削弱密钥隔离或脱敏。
+- [x] 9.2 修复合并后的注册顺序测试
+  - 两项旧断言误认为 WorkBuddy 紧跟 Qoder CN；改为核对 `codebuddy、traecn、workbuddycn、workbuddy` 完整后缀，沙箱外关联与全量重跑均通过该断言；未改产品行为。
+- [x] 9.3 执行隔离构建、Host/Client 类型检查、关联与全量测试、OpenSpec 与空白检查，记录实际结果
+  - `pnpm build:preview`、`pnpm typecheck` 均通过；隔离包 8 份 WorkBuddy 资源与源码相同。`pnpm spec:check` 60/60，`git diff --check` 通过。
+  - 关联 31 文件：首次沙箱内 1161 通过/42 失败；顺序修复后沙箱外 1163 通过/40 失败（1203 项）。
+  - 全量沙箱内：255 文件通过/17 失败/4 跳过，5648 项通过/347 失败/14 跳过，另有 20 未处理错误。沙箱外原命令重跑：270 文件通过/2 失败/4 跳过，5955 项通过/40 失败/14 跳过（6009 项），无额外未处理错误。
+  - 完整命令、日志位置、各冲突决策与失败归因见 integration-verification.md。此次没有正式构建、Desktop 链接更新、真实 CLI/模型/账号调用、推送、发布或版本修改。
+- [ ] 9.4 在允许的短绝对临时目录下补验 40 项 WorkBuddy socket 用例
+  - 指定 TMPDIR 本身 107 字节、socket 约 127 字节。沙箱内 `listen EPERM`；沙箱外监听后 `chmod ENOENT`／ready 初始化失败，与 macOS Unix socket 长路径限制一致。两文件为 workbuddy-bootstrap（21 项失败）与 native-workbuddy（19 项失败）。遵守固定 TMPDIR 和工作树范围，没有改用工作树外目录或修改产品行为。本轮不能宣称完整动态密钥不泄露验收已通过。
