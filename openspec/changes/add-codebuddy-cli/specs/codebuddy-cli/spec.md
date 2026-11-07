@@ -23,11 +23,7 @@
 - **THEN** 设置页显示未找到并提示配置 `codebuddyExecutable`，不启动任务
 
 ### Requirement: CodeBuddy 账号与站点
-插件 SHALL 只依据认证文件 `CodeBuddyExtension/Data/Public/auth/*.info` 与同名 `.logged-out` 标记是否存在判断登录状态，MUST NOT 读取认证文件内容，MUST NOT 调用会返回访问令牌的 `_codebuddy.ai/getUserInfo`。站点 SHALL 只在用户进程环境显式声明 `CODEBUDDY_INTERNET_ENVIRONMENT` 时显示（`internal` 为中国站，`ioa` 为 iOA，其他值原样显示），否则显示“站点未公开”。插件 MUST NOT 自行设置该变量或替用户选择站点。CodeBuddy 没有登录或退出子命令，账号窗口 SHALL 打开原生交互终端并提示使用 `/login`、`/logout`。
-
-#### Scenario: 已登录且未声明站点
-- **WHEN** 认证文件存在、没有退出标记，环境中没有 `CODEBUDDY_INTERNET_ENVIRONMENT`
-- **THEN** 账号区显示已登录、站点未公开，任务可正常运行
+插件 SHALL 只依据认证文件 `CodeBuddyExtension/Data/Public/auth/*.info` 与同名 `.logged-out` 标记是否存在判断登录状态，MUST NOT 调用会返回访问令牌的 `_codebuddy.ai/getUserInfo`。插件 MUST NOT 自行设置 `CODEBUDDY_INTERNET_ENVIRONMENT` 或替用户选择站点。CodeBuddy 没有登录或退出子命令，账号窗口 SHALL 打开原生交互终端并提示使用 `/login`、`/logout`。
 
 #### Scenario: 未登录或已退出
 - **WHEN** 认证文件不存在，或存在 `.logged-out` 标记
@@ -37,8 +33,23 @@
 - **WHEN** 目录查询或运行中 `session/new` 返回 `Authentication required`
 - **THEN** 账号显示为认证失效，不发布目录，任务不启动
 
+### Requirement: CodeBuddy 站点只读识别
+站点 SHALL 按以下优先级取第一项可用来源：`~/.codebuddy/settings.json` 的 `env.CODEBUDDY_INTERNET_ENVIRONMENT`（只在内存中取该键）、进程环境中的同名变量、认证文件中的 `auth.domain`（2026-11-07 用户批准“允许只读站点”）。读取认证文件时 MUST 只在内存中解析并只取出 `auth.domain`，令牌等字段 MUST NOT 读出或传递；域名按已安装 CLI 的 `product.json` 域名表映射为中国站、国际站、企业域或 iOA，匹配不到时不猜。域名与文件内容 MUST NOT 写入日志、事件、持久化或测试快照；无法判断时显示“站点未公开”，错误信息 MUST NOT 带文件内容。
+
+#### Scenario: 已登录且未声明站点
+- **WHEN** 认证文件存在、没有退出标记、`auth.domain` 为 `www.codebuddy.cn`，环境与 `settings.json` 都没有声明站点
+- **THEN** 账号区显示已登录、中国站，任务可正常运行
+
+#### Scenario: 显式声明优先
+- **WHEN** `settings.json` 或环境中声明 `CODEBUDDY_INTERNET_ENVIRONMENT=ioa`，认证文件域名属于国际站
+- **THEN** 账号区显示 iOA，不读取认证文件
+
+#### Scenario: 认证文件无法解析
+- **WHEN** 认证文件不是合法 JSON，或没有 `auth.domain`，或域名不在域名表中
+- **THEN** 账号区显示“站点未公开”，错误与日志不含文件内容
+
 ### Requirement: 站点或账号切换后目录失效
-CodeBuddy 的账号绑定 SHALL 由站点声明与当前原生模型目录摘要（排序后的模型 ID 与积分倍率）组成。绑定变化时，SHALL 使已缓存目录、项目默认设定与 Worker 偏好校验失效，新任务与续聊 MUST 按当前目录重新确认模型。
+CodeBuddy 的账号绑定 SHALL 由站点 ID（不含域名原值）与当前原生模型目录摘要（排序后的模型 ID 与积分倍率）组成。绑定变化时，SHALL 使已缓存目录、项目默认设定与 Worker 偏好校验失效，新任务与续聊 MUST 按当前目录重新确认模型。
 
 #### Scenario: 用户在原生终端切换站点
 - **WHEN** 用户从中国站改为国际站重新登录，新站点的模型目录与原目录不同

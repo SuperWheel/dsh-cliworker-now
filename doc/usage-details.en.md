@@ -69,6 +69,7 @@ An integrated adapter does not mean every model, subscription or platform has be
 | OpenCode | 1.18.21 | Native model directory and JSONL adapter integrated; Zhipu models were tested historically; a free MiMo request previously returned HTTP 403 |
 | Qoder CLI | 1.1.73 | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified |
 | Qoder CN CLI | 1.1.74 | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested |
+| CodeBuddy Code | 2.181.0 | Native ACP added in v0.8.8; macOS live checks (free model `hy4free`) are recorded in the [change tasks](../openspec/changes/add-codebuddy-cli/tasks.md); International site, enterprise domain, iOA and Windows remain unverified |
 
 MiMo refers to [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code). Hermes Agent replaced the old external Harness CLI adapter; DeepSeek Harness remains the plugin's host.
 
@@ -90,7 +91,7 @@ On Windows, background Antigravity model queries and tasks use the official envi
 
 Successful extended-CLI catalog queries remove their private temporary directory and extracted native cache after process exit is confirmed. Failed or unconfirmed cleanup preserves the query files and never deletes native account files.
 
-Probe records: [ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md)
+Probe records: [ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
 
 ### Qoder CLI installation and login
 
@@ -117,6 +118,17 @@ Select Qoder in CLI connections, refresh its models and explicitly choose a mode
 On Windows, discovery checks the official native `~/.qoder/bin/qodercli/qodercli.exe` and current-user npm entries even when Desktop has not inherited the updated PATH. PATH lookup prefers the standalone `qodercli` command and supports the legacy `qoder` CLI alias when that command is absent. npm entries are checked against the official package's declared bins. Manual paths retain priority; broken or inaccessible entries report an error and can be checked in advanced settings.
 
 Qoder settings combine account and model discovery within each catalog operation to avoid repeated CLI startups. Actual catalog reads still check the current account, and explicit refreshes query again. Reopening completed settings reuses display receipts without another native query. Account and catalog queries use the same installed CLI's official metadata interface, with writable caches and necessary configuration copies in a private temporary directory. Native login and PAT sources are handled separately; the plugin does not decrypt browser account files. Queries clean up after exit and show only enabled models. Legacy project settings requiring native migration, and unbound authentication or runtime declarations in `.env`, are rejected before querying. Real account metadata and catalog checks passed on macOS; PAT, live tasks and other platforms still require separate acceptance.
+
+### CodeBuddy Code installation and login
+
+Install with npm as described by Tencent: `npm install -g @tencent-ai/codebuddy-code`; the command is `codebuddy`. The China site, International site, enterprise domain and iOA are login sites of one CLI, so the plugin has a single “CodeBuddy Code” entry. CodeBuddy has no login subcommand: the account area opens the native terminal, where `/login` selects a site and `/logout` signs out.
+
+- Transport: `codebuddy --acp` (`codebuddy-acp-v1`). Every process the plugin starts sets `DISABLE_AUTOUPDATER=1`; terminals you open yourself keep their normal update behaviour.
+- Site: an explicit `CODEBUDDY_INTERNET_ENVIRONMENT` in `~/.codebuddy/settings.json` or the environment wins; otherwise the plugin reads only `auth.domain` from the auth file, in memory, and maps it with the CLI's own domain table. Tokens are never read, and the domain is never logged or stored. Unknown sites show “site not disclosed”.
+- Models and efforts come from native `session/new`; each model offers only its own `effortOptions`, and `x0.00` credit models are marked free. A catalog change after switching site or account invalidates earlier choices.
+- Permissions: Ask → `default`, Auto-approve → `auto` (CodeBuddy's AI review; blocked actions are not asked again), Full access → `bypassPermissions`; planning → `plan`. `fullAccess` is never used.
+- Approvals are relayed to DSH. A denial ends CodeBuddy's turn immediately; the plugin shows “ended by an approval denial” rather than “cancelled”, and you can keep chatting.
+- Not supported: native fork (ACP does not expose `session/fork`), in-run steering, per-turn credit receipts.
 
 ### Claude Code with CC Switch
 

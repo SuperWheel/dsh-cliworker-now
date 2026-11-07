@@ -36,6 +36,7 @@
 | OpenCode | 1.18.21 | 原生目录与 JSONL 接入；智谱模型已实测，免费 MiMo 请求曾返回 403 |
 | Qoder CLI | 1.1.73 | v0.8.1 新增原生 ACP；真实账号元数据及 17 项动态模型目录已核验；真实模型任务、工具产物、恢复、运行中取消及 Windows 尚未验收 |
 | Qoder CN CLI | 1.1.74 | Windows 自身账号及 15 项动态模型目录已核验；Qwen3.8-Flash / low 的生成、文件工具、同会话续聊与运行中取消通过；另在正常新对话中实际派遣并完成原生子会话界面检查，其他模型和 Mac 运行时未实测 |
+| CodeBuddy Code | 2.181.0 | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/changes/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收 |
 
 v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
 
@@ -55,7 +56,7 @@ Windows 的 Antigravity 后台模型查询及任务使用官方环境开关关�
 
 成功且进程退出已确认的扩展 CLI 模型查询会自动删除本次临时目录和原生解压缓存；失败或清理未确认时保留现场，不删除原始账号文件。
 
-专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md)
+专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
 
 ### Qoder CLI 安装与登录
 
@@ -82,6 +83,17 @@ Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用�
 Windows 会自动检查官方原生 `~/.qoder/bin/qodercli/qodercli.exe` 和当前用户 npm 安装入口，即使 Desktop 尚未继承安装后的 PATH。PATH 发现优先采用独立 `qodercli`，缺失时兼容旧 `qoder` CLI 别名；npm 入口按官方包声明静态核验。已有手动路径继续优先，损坏或权限不足时保留错误，可在高级设置检查路径。
 
 Qoder 设置中的单次目录加载会合并账号与模型查询，减少重复启动；实际重新读取目录时仍核对当前账号，显式刷新强制重新查询；仅重开已完成预热的设置页面复用展示结果，不重复执行原生查询。账号和模型目录通过同一已安装 CLI 的官方元数据接口读取；缓存和必要配置副本放入临时私有目录，查询结束后清理，不由插件解密浏览器账号文件。原生登录和 PAT 分别处理，目录仅列出当前启用的模型。需要原生迁移的旧项目设置，以及尚未绑定的 `.env` 认证或运行控制声明，会在查询前明确拒绝。macOS 已核验真实账号与模型目录；PAT、真实模型任务和其他平台的完整调用仍待验收。
+
+### CodeBuddy Code 安装与登录
+
+按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令：在插件账号区点登录会打开原生终端，在其中输入 `/login` 选择站点并完成授权，退出用 `/logout`。
+
+- 通信：`codebuddy --acp`，transport `codebuddy-acp-v1`。插件启动的进程都带 `DISABLE_AUTOUPDATER=1`，不会触发自动更新；你自己打开的终端仍按原方式更新。
+- 站点：优先采用 `~/.codebuddy/settings.json` 或环境中显式设置的 `CODEBUDDY_INTERNET_ENVIRONMENT`；否则在内存中只读取认证文件里的 `auth.domain`，按 CLI 自带的域名表显示中国站、国际站、企业域或 iOA。令牌等字段不读出，域名也不写入日志或持久化。无法判断时显示“站点未公开”。
+- 模型与强度：来自原生 `session/new`，强度只列出该模型 `effortOptions` 中的取值；积分倍率为 `x0.00` 的模型标为免费。切换站点或账号后，模型目录变化会让旧选择失效，需要重新确认。
+- 权限：询问 → `default`，自动审批 → `auto`（CodeBuddy 的 AI 审查代批，被拦截的操作不再问你），完全权限 → `bypassPermissions`；规划模式 → `plan`。`fullAccess` 不使用。
+- 审批与拒绝：写文件与命令的审批转交到 DSH。CodeBuddy 拒绝任一审批后会立即结束本轮，插件显示“因拒绝审批而结束”（不是“已取消”），之后可以继续对话。
+- 不支持：原生分支（ACP 未公开 `session/fork`）、运行中引导、每轮积分回执。
 
 ### Claude Code 与 CC Switch
 

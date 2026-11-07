@@ -3,7 +3,7 @@
 - 版本：`@tencent-ai/codebuddy-code` 2.181.0（macOS，`/opt/homebrew/bin/codebuddy`）。
 - 日期：2026-11-07。所有启动都设置了 `DISABLE_AUTOUPDATER=1`。
 - 真实模型调用只用免费模型 `hy4free`（用户批准），工作目录是会话 scratchpad 下的临时目录。
-- 未读取认证文件内容；以下凭据相关结论来自文件名、文件时间与程序字符串。
+- 探测时未读取认证文件内容；凭据相关结论来自文件名、文件时间与程序字符串。站点读取规则见第 6 节。
 
 ## 1. 启动与握手
 
@@ -70,5 +70,6 @@
 
 - 认证文件：`~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info`（0600）。Windows 为 `%LOCALAPPDATA%\CodeBuddyExtension\…`，Linux 为 `~/.local/share/CodeBuddyExtension/…`。退出时写 `<file>.logged-out`。文件每次启动都会重写，修改时间不能作为账号绑定。
 - 站点：CLI 依据认证文件中的 `auth.domain` 或 `CODEBUDDY_INTERNET_ENVIRONMENT` 判断；ACP 不公开。`_codebuddy.ai/getUserInfo` 的响应带 `accessToken`，插件不调用。
-- `~/.codebuddy/settings.json` 可能含网关密码（本机 19:07 新增 `gateway.auth`、`gateway.password`），插件不读取。
+- `~/.codebuddy/settings.json` 可能含网关密码（本机 19:07 新增 `gateway.auth`、`gateway.password`），插件只在内存中取 `env.CODEBUDDY_INTERNET_ENVIRONMENT`。
+- 2026-11-07 用户批准“允许只读站点”：插件在内存中解析认证文件，只取 `auth.domain`，按包内 `product.json` 的 `authentication.attributes` 映射：`internalDomain`（`www.codebuddy.cn`、`copilot.tencent.com` 等）→ 中国站，`iOADomain` → iOA，`cloudHostedDomain`（通配，如 `*.sso.codebuddy.cn`）→ 企业域，`externalDomain`（`www.codebuddy.ai` 等）→ 国际站。CLI 自身的判定顺序相同，`selfhosted` 来自设置中的企业端点。
 - 没有 login/logout 子命令，登录与退出在交互界面用 `/login`、`/logout`。

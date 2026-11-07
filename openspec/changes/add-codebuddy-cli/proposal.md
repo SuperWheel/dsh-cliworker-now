@@ -29,7 +29,7 @@
 - 新增 ACP runner `native-codebuddy.mjs`，复用 `runNativeAcp`；新增目录查询脚本 `codebuddy-catalog.mjs`（`--acp --no-session-persistence`，只发 `initialize` 与 `session/new`）。
 - 三档映射：询问 → `default`，自动审批 → `auto`，完全权限 → `bypassPermissions`；规划模式 → `plan`；`fullAccess` 不映射到任何档位。
 - 审批卡片标题取自同一 `toolCallId` 的 `tool_call` 事件；拒绝后整轮结束时显示“因拒绝审批而结束”，与用户停止区分。
-- 账号：只看认证文件与退出标记是否存在，不读取内容；站点只在用户显式声明 `CODEBUDDY_INTERNET_ENVIRONMENT` 时显示，否则显示“站点未公开”。账号绑定由站点声明与原生模型目录摘要组成，站点或账号切换导致目录变化时旧目录与偏好失效。
+- 账号：登录状态只看认证文件与退出标记是否存在。站点按 CLI 自身优先级取 `settings.json`/环境变量中显式声明的 `CODEBUDDY_INTERNET_ENVIRONMENT`，否则只读认证文件中的 `auth.domain`（2026-11-07 用户批准“允许只读站点”）；都没有时显示“站点未公开”。账号绑定由站点 ID 与原生模型目录摘要组成，任一变化都让旧目录与偏好失效。
 - 共享 runner `native-acp.mjs` 增加三个由 runner 设置控制的可选行为（默认关闭）：审批请求补全工具标题、拒绝即结束本轮、`default` 强度显式选择原生默认值。
 - 中英文别名、品牌图标、设置页条目、遥测上下文、README 与设计文档同步。
 
@@ -37,7 +37,6 @@
 
 - 企业域与 iOA 的真实验收（PRD 允许记为未验证）。
 - 国际站真实任务：本机账号只登录了一个站点，切换站点需用户在原生终端重新登录，记为待用户操作。
-- 读取认证文件中的 `auth.domain` 显示站点：需用户另行批准（已向协调会话提问）。
 - Windows 真实验收：本期只做离线回归与发现逻辑。
 - 积分计费回执：CodeBuddy ACP 不提供每轮积分，保持未公开。
 - WorkBuddy、TRAE、豆包：分别在其他变更中处理。
