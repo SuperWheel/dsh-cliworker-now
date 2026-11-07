@@ -346,6 +346,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
     this.accounts = new AccountManager(this.backend, this.options, undefined, (cli, error) =>
       this.runtime.blockCatalogOnCleanup(cli, error),
+      cli => this.invalidateSettingsDisplay(cli),
     )
     this.runtime = new WorkerRuntime(
       new WorkerStorage(
@@ -2455,6 +2456,54 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  /** @param parentSessionId - Owning parent. @param cli - WorkBuddy edition. @param signal - Startup lifetime. @returns No-PTY guide identity JSON. */
+  @Remote('accountDesktopStart')
+  async accountDesktopStart(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    try {
+      const id = validate.enum(['workbuddycn', 'workbuddy']).parse(cli)
+      const parent = await this.parent(parentSessionId)
+      const authorize = () => {
+        this.disposed.signal.throwIfAborted()
+        this.assertExecution(parent)
+        this.runtime.assertCliEnabled(id)
+        this.runtime.assertAccountIdle(id)
+      }
+      authorize()
+      if (!this.accountParents.has(parent.id)) {
+        const dispose = parent.ctx.effect(() => () => {
+          this.accountParents.delete(parent.id)
+          return this.accounts.closeParent(parent.id)
+        }, 'cliworker:account-parent')
+        this.accountParents.set(parent.id, dispose)
+      }
+      return JSON.stringify(await this.accounts.desktop.start(parent.id, id, this.project(parent),
+        AbortSignal.any([signal, this.disposed.signal]), authorize))
+    } catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @param action - Fixed open/refresh/continue action. @returns Action accepted. */
+  @Remote('accountDesktopRespond')
+  async accountDesktopRespond(parentSessionId: string, accountId: string, action: string): Promise<boolean> {
+    try {
+      await this.parent(parentSessionId)
+      await this.accounts.desktop.respond(parentSessionId, accountId, action)
+      return true
+    } catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @param signal - Watch lifetime. @returns Safe guide frames. */
+  @Remote({ mode: 'stream' })
+  async *accountDesktopWatch(parentSessionId: string, accountId: string, signal: AbortSignal): AsyncIterable<string> {
+    try {
+      await this.parent(parentSessionId)
+      for await (const frame of this.accounts.desktop.watch(parentSessionId, accountId, signal)) yield JSON.stringify(frame)
+    } catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @returns Query cleanup confirmed; never closes the desktop app. */
+  @Remote('accountDesktopStop')
+  async accountDesktopStop(parentSessionId: string, accountId: string): Promise<boolean> {
+    try { await this.accounts.desktop.stop(parentSessionId, accountId); return true }
+    catch (error) { throw failure(error) }
+  }
+
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param action - Explicit human action. @param signal - Startup lifetime. @returns Managed account terminal identity and instruction JSON. */
   @Remote('accountStart')
   async accountStart(

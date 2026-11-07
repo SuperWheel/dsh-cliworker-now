@@ -77,8 +77,8 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 
 ### 7. 账号
 
-- 状态：元数据查询成功 → 已登录（站点取 product endpoint）；`session/new` 返回认证错误 → 未登录，提示“请打开 WorkBuddy 桌面端登录后重试”；引导失败 → 不可用并给出类别。
-- 登录与退出：不提供插件入口，账号区只给桌面端指引；不读取凭据文件内容。单账号（`SINGLE_ACCOUNT_CLIS`），无引导登录窗口，`ACCOUNT_LOGIN_HOSTS` 不登记。
+- 状态：元数据查询成功 → 当前已登录（站点取 product endpoint）；泛化认证错误 → unknown，提示“请在桌面端检查登录状态”；引导失败 → 不可用。没有已核实的精确认证缺失回执时，不确认退出。
+- 登录与退出：有桌面管理指引，无 CLI 登录/退出；账号行打开独立无 PTY 的桌面观察窗口，用户在桌面端登录/退出/换号；不新增凭据访问。单账号（`SINGLE_ACCOUNT_CLIS`），不加入 PTY `GUIDED_ACCOUNT_CLIS`，`ACCOUNT_LOGIN_HOSTS` 不登记。具体打开、有限观察、清理和兼容合同由关联活动变更 `add-new-cli-graphical-login` §4 管理。
 
 ### 8. 其他能力
 

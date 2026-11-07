@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from '../src/host/workbuddy-installation.ts'
+import { workbuddyDesktopCommand } from '../src/host/workbuddy-desktop-open.ts'
 import { WORKBUDDY_CLIS, isWorkBuddyCli, workbuddyVariant } from '../src/host/workbuddy-variant.ts'
 
 const roots: string[] = []
@@ -64,5 +65,31 @@ describe('模拟 WorkBuddy 安装与版本隔离', () => {
   it('模拟 unsupported 平台与空候选明确失败', async () => {
     await expect(resolveWorkBuddyInstallation('workbuddy', { platform: 'linux' })).rejects.toMatchObject({ reason: 'platform-unsupported' })
     await expect(resolveWorkBuddyInstallation('workbuddy', { platform: 'darwin', candidates: [] })).rejects.toMatchObject({ reason: 'not-installed' })
+  })
+})
+
+
+describe('模拟 WorkBuddy GUI argv and per-action installation verification', () => {
+  it('opens the verified macOS app root with argv, no -n or CLI arguments', async () => {
+    const f = await fixture({ appName: 'WorkBuddy space;$(no-shell).app' })
+    for (const path of [f.appRoot, f.runtime, f.entry])
+      expect(await workbuddyDesktopCommand('workbuddycn', { ...f.options, manualPath: path })).toEqual({
+        file: '/usr/bin/open', args: [f.appRoot], platform: 'darwin',
+      })
+    await writeFile(join(f.appRoot, 'Contents/Resources/app.asar.unpacked/cli/product.json'), JSON.stringify({
+      productName: 'SIMULATED switched edition', endpoint: 'https://www.workbuddy.ai', dataFolderName: '.SIMULATED-global',
+    }))
+    await expect(workbuddyDesktopCommand('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'variant-mismatch' })
+  })
+  it.each(['WorkBuddy.exe', 'WorkBuddy AI.exe'])('opens only the verified Windows GUI %s without CLI flags (unverified on Windows hardware)', async exe => {
+    const f = await fixture({ platform: 'win32', exe })
+    expect(await workbuddyDesktopCommand('workbuddycn', f.options)).toEqual({ file: f.runtime, args: [], platform: 'win32' })
+    const arbitrary = join(f.appRoot, 'arbitrary.exe')
+    await writeFile(arbitrary, 'SIMULATED never execute')
+    expect(await workbuddyDesktopCommand('workbuddycn', { ...f.options, manualPath: arbitrary })).toEqual({ file: f.runtime, args: [], platform: 'win32' })
+  })
+  it('refuses an unrecognized Windows GUI entry instead of executing a lone arbitrary binary', async () => {
+    const f = await fixture({ platform: 'win32', exe: 'Other.exe' })
+    await expect(workbuddyDesktopCommand('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'desktop-entry-unverified' })
   })
 })

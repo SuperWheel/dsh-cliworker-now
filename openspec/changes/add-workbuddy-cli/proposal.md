@@ -11,7 +11,7 @@
 | 发布方与包 | 腾讯 WorkBuddy 桌面端内置 `Contents/Resources/app.asar.unpacked/cli`，包名 `@genie/agent-cli` 2.165.0，入口 `dist/codebuddy-lite-wb.mjs`；以应用自带 Electron（macOS `Contents/MacOS/Electron`，Windows `WorkBuddy.exe`）加 `ELECTRON_RUN_AS_NODE=1` 运行，须设 `CODEBUDDY_FORCE_LITE_WB_BUNDLE=1` | 本机 |
 | 国内版与国际版 | 国内版 WorkBuddy（`product.json`：productName `WorkBuddy`、endpoint `https://www.workbuddy.cn`、dataFolderName `.workbuddy`、bundle `com.tencent.workbuddy.mac`）；国际版 WorkBuddy AI（`workbuddy.ai`）本机未安装，发现路径与配置根待核实 | 本机；第三方（国际版） |
 | 判定 | 两个下载入口、两套 product 身份与数据目录，按两个独立安装处理：`workbuddycn`「WorkBuddy」与 `workbuddy`「WorkBuddy AI」 | 本机 product.json；用户决定 |
-| 使用门槛 | 需安装并登录 WorkBuddy 桌面端；插件不提供登录 | 本机 |
+| 使用门槛 | 需安装并登录 WorkBuddy 桌面端；插件不代登录；有桌面管理指引 | 本机 |
 | 认证 | 凭据字段加密（桌面端 buildPolicy `fields`）；密钥由私有绑定 `electron_browser_workbuddy_storage.loggerGet()` 返回 `{version:1, atRestSecretKey}`，对称密钥为该 base64 文本的 sha256 | 本机（读安装版代码并实测引导成功） |
 | 引导 | CLI 监听 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET`（5 秒超时），插件作客户端发一行载荷，键固定为 `bootstrap,pid,sessionId,token,version`，`pid` 须为 CLI 自身 pid；四个 `CODEBUDDY_SIDECAR_*` 变量与 `WORKBUDDY_AT_REST_ENCRYPTION` 必须同时提供 | 本机 |
 | 非交互与流 | 只用 stdio `--acp` 时 `initialize` 一直挂起；须加 `--serve --host 127.0.0.1 --port 0 --auth password`，CLI 经 `CODEBUDDY_SIDECAR_READY_SOCKET` 上报 `session.ready`，插件确认后 stdio ACP 才响应；`--serve` 在 stdout 打印含网关密码的非 JSON 横幅 | 本机实测 |
@@ -30,7 +30,7 @@
 - 通信：复用 `runNativeAcp`，transport `workbuddycn-acp-v1` / `workbuddy-acp-v1`；runner 负责 ready 确认、丢弃网关横幅、清除代理变量与配置根注入。
 - 模型目录：用同一引导流程做 `initialize` + `session/new` 元数据查询，不发 prompt。
 - 权限三档：询问 `default`、自动审批 `auto`、完全权限 `bypassPermissions`；规划 `plan`。拒绝审批以 `cancelled` + `PERMISSION_DENIED` 结束整轮时显示“因拒绝审批而结束”（使用共享 ACP runner 的同名选项 `deniedCancelEndsTurn`、`approvalFromToolCall`）。
-- 账号：只显示状态（以 `session/new` 是否认证为准），登录与退出指引用户在 WorkBuddy 桌面端操作。
+- 账号：显示元数据确认的当前状态，泛化认证错误不证明退出；有桌面管理指引，无 CLI 登录/退出。关联 `add-new-cli-graphical-login` 提供独立无 PTY 桌面窗口，登录、退出与换号由用户在 WorkBuddy 桌面端操作。
 - 泛称“WorkBuddy”按安装分流，两版都装时询问。
 - 图标、设置页、i18n、README 等文档同步。
 

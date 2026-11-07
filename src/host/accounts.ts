@@ -1,6 +1,8 @@
 import { readCodebuddyAccount } from './codebuddy-account.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
-import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
+import { WorkBuddyDesktopAccounts, desktopActions, workbuddyDesktopFailure } from './workbuddy-desktop.ts'
+import { openWorkBuddyDesktop } from './workbuddy-desktop-open.ts'
+import { resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from './workbuddy-installation.ts'
 import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { AGY_GUIDES, AgyAccountGuide } from './agy-account-guide.ts'
@@ -333,12 +335,53 @@ export class AccountManager {
   private closing?: Promise<void>
   private readonly nativeLoginProviders: NativeLoginProviders
 
+  readonly desktop: WorkBuddyDesktopAccounts
+
   constructor(
     private backend: ProcessBackend,
     private config: RuntimeConfig,
     private identity: AccountIdentitySource = nativeAgyAccountIdentity(backend, config),
     private onQueryCleanup?: (cli: CliId, error: ProcessCleanupUnconfirmedError) => void,
-  ) { this.nativeLoginProviders = new NativeLoginProviders(backend, config) }
+    onDesktopChange?: (cli: CliId) => void,
+  ) {
+    this.nativeLoginProviders = new NativeLoginProviders(backend, config)
+    this.desktop = new WorkBuddyDesktopAccounts({
+      reserve: cli => {
+        this.controller.signal.throwIfAborted()
+        if (this.isBusy(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
+        if ([...this.statusQueries.values()].some(q => q.cli === cli && !q.settled))
+          throw new Error('此 CLI 的账号状态仍在读取，请稍后再试')
+        this.reserved.add(cli)
+      },
+      release: cli => this.reserved.delete(cli),
+      verify: async (cli, signal) => {
+        const path = await resolveCliExecutable(cli, this.backend, this.config, signal)
+        const install = await resolveWorkBuddyInstallation(cli, { manualPath: path })
+        signal.throwIfAborted()
+        return install.runtime
+      },
+      read: async (cli, path, project, signal) => {
+        const timer = new AbortController()
+        const timeout = setTimeout(() => timer.abort(), 25_000)
+        timeout.unref?.()
+        const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
+        try {
+          const metadata = await readWorkBuddyMetadata(cli, path, project, control)
+          control.throwIfAborted()
+          return { account: { cli, installed: true, state: 'authenticated',
+            summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: desktopActions() },
+            models: metadata.models }
+        } catch (error) {
+          if (error instanceof ProcessCleanupUnconfirmedError) throw error
+          signal.throwIfAborted()
+          return { account: workbuddyDesktopFailure(cli, error) }
+        } finally { clearTimeout(timeout) }
+      },
+      open: openWorkBuddyDesktop,
+      quarantine: (cli, error) => this.quarantineQuery(cli, error),
+      invalidate: onDesktopChange,
+    })
+  }
 
   isBusy(cli: CliId): boolean {
     validateCli(cli)
@@ -378,6 +421,7 @@ export class AccountManager {
 
   recoverCleanup(cli: CliId): void {
     this.assertCleanupRecoverable(cli)
+    if (isWorkBuddyCli(cli)) this.desktop.recover(cli)
     this.unsafeQueries.delete(cli)
     this.unsafeTerminals.delete(cli)
   }
@@ -385,6 +429,10 @@ export class AccountManager {
   async status(cli: CliId, cwd: string, signal: AbortSignal): Promise<AccountStatus> {
     validateCli(cli)
     if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
+    if (isWorkBuddyCli(cli) && this.reserved.has(cli))
+      return this.cleanupHold(cli) ?? this.desktop.current(cli) ?? {
+        cli, installed: true, state: 'unknown', summary: '正在确认当前登录状态…', actions: desktopActions(),
+      }
     const directory = projectDirectory(cwd)
     const key = JSON.stringify([cli, directory])
     let query = this.statusQueries.get(key)
@@ -458,7 +506,7 @@ export class AccountManager {
         actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
       if (isWorkBuddyCli(cli)) {
         const metadata = await readWorkBuddyMetadata(cli, executable, cwd, control)
-        return { cli, installed, state: 'authenticated', summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: [] }
+        return { cli, installed, state: 'authenticated', summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: desktopActions() }
       }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
@@ -650,10 +698,8 @@ export class AccountManager {
       const code = (error as NodeJS.ErrnoException)?.code
       if (isWorkBuddyCli(cli)) {
         const missing = error instanceof WorkBuddyUnavailableError && error.reason === 'not-installed'
-        return { cli, installed: installed || !missing,
-          state: code === 'CLI_OWN_ACCOUNT_REQUIRED' ? 'unauthenticated' : missing ? 'unconfigured' : 'unavailable',
-          summary: code === 'CLI_OWN_ACCOUNT_REQUIRED' ? '请打开 WorkBuddy 桌面端登录后重试'
-            : error instanceof Error ? error.message : 'WorkBuddy 暂不可用', actions: [] }
+        return missing ? { cli, installed: false, state: 'unconfigured', summary: '未检测到 WorkBuddy 桌面端', actions: [] }
+          : workbuddyDesktopFailure(cli, error)
       }
       if (error instanceof WindowsCliNotFoundError)
         return { cli, installed: false, state: 'unconfigured', summary: error.message, actions: [] }
@@ -1469,9 +1515,11 @@ export class AccountManager {
 
   /** Close one Agent lifetime, including startup; a later Agent with the same ID gets a fresh scope. */
   closeParent(parent: string): Promise<void> {
+    const desktopClosing = this.desktop.closeParent(parent)
+    void desktopClosing.catch(() => undefined)
     const scope = this.parents.get(parent)
     const previous = this.parentClosings.get(parent)
-    if (!scope && previous) return previous
+    if (!scope && previous) return Promise.all([previous, desktopClosing]).then(() => undefined)
     if (scope) {
       this.parents.delete(parent)
       scope.controller.abort()
@@ -1492,6 +1540,7 @@ export class AccountManager {
         session.frames.length = 0
         this.sessions.delete(session.id)
       })
+      cleanup.push(desktopClosing)
       if (previous) cleanup.push(previous)
       const results = await Promise.allSettled(cleanup)
       if (
@@ -1580,11 +1629,13 @@ export class AccountManager {
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.controller.abort()
+    const desktopClosing = this.desktop.close()
+    void desktopClosing.catch(() => undefined)
     this.closing = (async () => {
       await Promise.allSettled([...this.pending])
       await Promise.allSettled([...this.parentClosings.values()])
       const results = await Promise.allSettled(
-        [...this.sessions.values()].map((session) => this.finish(session, 'closed', '插件已关闭')),
+        [desktopClosing, ...[...this.sessions.values()].map((session) => this.finish(session, 'closed', '插件已关闭'))],
       )
       for (const session of this.sessions.values()) {
         clearTimeout(session.deadline)
