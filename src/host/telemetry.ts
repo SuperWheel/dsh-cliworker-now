@@ -903,7 +903,7 @@ export function extractTelemetry(
         )
       }
     } else if (
-      (cli === 'kimi' || cli === 'grok') &&
+      (cli === 'kimi' || cli === 'grok' || cli === 'codebuddy') &&
       v.method === 'session/update' &&
       textId(obj(v.params).sessionId) &&
       ownSession(obj(v.params).sessionId)
@@ -914,7 +914,7 @@ export function extractTelemetry(
           result,
           update.used,
           update.size,
-          `${cli === 'kimi' ? 'Kimi' : 'Grok'} 原生会话上下文统计`,
+          `${cli === 'codebuddy' ? 'CodeBuddy' : cli === 'kimi' ? 'Kimi' : 'Grok'} 原生会话上下文统计`,
           true,
         )
       else if (cli === 'grok' && Object.hasOwn(obj(obj(v.params)._meta), 'totalTokens'))

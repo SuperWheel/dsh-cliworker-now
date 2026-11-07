@@ -1,3 +1,4 @@
+import { readCodebuddyAccountBindingMaterial, CodebuddyAccountError } from './codebuddy-account.ts'
 import {
   readClaudeOwnRoute,
   claudeRouteStatusArguments,
@@ -346,6 +347,10 @@ async function material(
   selectedClaudeRoute?: ClaudeOwnRoute,
 ): Promise<BindingMaterial> {
   const home = homedir()
+  if (cli === 'codebuddy') {
+    const executable = await resolveCliExecutable(cli, backend, config, signal)
+    return readCodebuddyAccountBindingMaterial(backend, config, executable, signal)
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const executable = await resolveCliExecutable(cli, backend, config, signal)
     return readQoderAccountBindingMaterial(executable, signal, { cli, backend, config, project })
@@ -669,6 +674,7 @@ export async function readCliAccountBinding(
       error instanceof ClaudeOwnRouteError ||
       error instanceof HermesRenewalError
       || error instanceof QoderAccountError
+      || error instanceof CodebuddyAccountError
     )
       throw error
     // Keep the binding contract (CLI_OWN_ACCOUNT_REQUIRED) with the actionable reason.

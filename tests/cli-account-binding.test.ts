@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { CLI_IDS, type CliId } from '../src/shared/types.ts'
+import { codebuddyAuthDirectory } from '../src/host/codebuddy-account.ts'
 import {
   DEFAULT_CONFIG,
   ProcessCleanupUnconfirmedError,
@@ -227,6 +228,7 @@ beforeEach(() => {
   ])
     vi.stubEnv(name, '')
   vi.stubEnv('ZCODE_DATA_BASE_DIR', fixture.home)
+  vi.stubEnv('LOCALAPPDATA', join(fixture.home, 'Local'))
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
 })
 afterEach(() => {
@@ -327,6 +329,11 @@ function own(cli: CliId) {
     })
   else if (cli === 'qoder') vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qoder-pat')
   else if (cli === 'qodercn') vi.stubEnv('QODERCN_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qodercn-pat')
+  else if (cli === 'codebuddy') {
+    // Presence-only synthetic auth file and ACP catalog; no credential contents are consumed.
+    write(join(codebuddyAuthDirectory(), 'Tencent-Cloud.coding-copilot.info'), 'SIMULATED-presence-only', true)
+    fixture.status = { models: [{ modelId: 'SIMULATED-codebuddy', name: 'Simulated CodeBuddy', _meta: { credits: 'x0.00 credits' } }] }
+  }
   else if (cli === 'zcode') zcode()
   else if (cli === 'grok')
     write(join(fixture.home, '.grok/auth.json'), {

@@ -12,6 +12,7 @@ import { claudeManagedSettingsPath, readFirstPartyModelSources } from '../src/ho
 import { nativeAccountAncestors, inspectPiOmpNativeAccount } from '../src/host/pi-omp-native.ts'
 import { readHermesAccount } from '../src/host/hermes-accounts.ts'
 import { readQoderAccount } from '../src/host/qoder-accounts.ts'
+import { codebuddyAuthDirectory, readCodebuddyLoginState } from '../src/host/codebuddy-account.ts'
 import { inspectOpenCodeProfile } from '../src/host/opencode-native.ts'
 import { zcodeGrokAccountStatus } from '../src/host/zcode-grok-accounts.ts'
 import { DEFAULT_CONFIG, type RuntimeConfig } from '../src/host/process.ts'
@@ -37,6 +38,7 @@ beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'cwn-windows-accounts-synthetic-')))
   vi.stubEnv('HOME', root)
   vi.stubEnv('USERPROFILE', root)
+  vi.stubEnv('LOCALAPPDATA', join(root, 'Local'))
   vi.stubEnv('DSH_HOME', join(root, '.dsh'))
   // Match the actual native XDG/default-home APIs; fail before a read if the
   // operating system did not accept the isolated home environment.
@@ -130,6 +132,7 @@ async function configured(cli: CliId): Promise<boolean> {
       'authenticated'
     )
   if (cli === 'mimo') return (await readMimoAccount(signal())).state === 'authenticated'
+  if (cli === 'codebuddy') return await readCodebuddyLoginState({ home: root, signal: signal() }) === 'authenticated'
   if (cli === 'pi' || cli === 'omp')
     return (
       (await inspectPiOmpNativeAccount(cli, config.stateDirectory!, signal(), { nativeHome: root })).state ===
@@ -171,7 +174,10 @@ async function configured(cli: CliId): Promise<boolean> {
 async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
   const key = `synthetic-${cli}-${identity}`
   let path: string
-  if (cli === 'antigravity') {
+  if (cli === 'codebuddy') {
+    path = join(codebuddyAuthDirectory(process.platform, process.env, root), 'Tencent-Cloud.coding-copilot.info')
+    await write(path, 'SIMULATED-presence-only', true)
+  } else if (cli === 'antigravity') {
     path = join(root, '.gemini/jetski-standalone-oauth-token')
     await write(path, {
       auth_method: 'consumer',

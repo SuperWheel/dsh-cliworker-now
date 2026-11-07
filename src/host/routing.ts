@@ -16,6 +16,7 @@ export const CLI_ALIASES: Record<ActiveCliId, readonly string[]> = {
   pi: ['pi', 'pi coding agent'],
   hermes: ['hermes', 'hermes agent', 'harmes'],
   opencode: ['opencode', 'open code'],
+  codebuddy: ['codebuddy', 'code buddy', 'codebuddy code', 'codebuddy-code', 'cbc', '腾讯 codebuddy', '腾讯codebuddy', '腾讯云代码助手', 'codebuddy cli'],
   qoder: [
     'qoder',
     'qodercli',

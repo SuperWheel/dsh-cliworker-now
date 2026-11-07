@@ -62,6 +62,7 @@ const LEVELS: Partial<Record<CliId, { ask?: typeof ASK; auto: typeof AUTO }>> = 
   },
   qoder: { ask: ASK, auto: AUTO },
   qodercn: { ask: ASK, auto: AUTO },
+  codebuddy: { ask: ASK, auto: { name: '自动审批', description: '使用 CodeBuddy 原生 Auto：由其 AI 审查逐项放行或拦截；被拦截的操作不会再问你。' } },
   grok: { ask: ASK, auto: AUTO },
   mimo: { ask: HTTP_ASK, auto: AUTO },
   antigravity: {

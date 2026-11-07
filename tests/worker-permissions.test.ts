@@ -577,7 +577,9 @@ describe('Host Worker permission changes', () => {
     expect(workerLevelOptions(codex).map((option) => option.value)).toEqual(['ask', 'auto', 'full'])
     // Without its own level, a first item that would not ask before every change is refused under 仅可查看.
     for (const cli of ['kimi', 'antigravity', 'hermes'] as const) expect(runsUnderViewOnly(cli)).toBe(false)
-    for (const cli of ['codex', 'claude', 'qoder', 'qodercn', 'grok', 'mimo', 'zcode', 'opencode', 'pi', 'omp'] as const)
+    for (const cli of ['codex', 'claude', 'qoder', 'qodercn', 'grok', 'mimo', 'zcode', 'opencode', 'pi', 'omp',
+      'codebuddy',
+    ] as const)
       expect(runsUnderViewOnly(cli)).toBe(true)
     expect(workerLevelOptions(codex).every((option) => !option.description.includes('主对话为'))).toBe(true)
     expect(effectiveLevel(undefined, 'workspace-write')).toBe('auto')

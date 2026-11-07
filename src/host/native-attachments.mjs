@@ -4,7 +4,9 @@ import { pathToFileURL } from 'node:url'
 import { extname } from 'node:path'
 
 const imageTypes = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
-const supported = new Set(['antigravity', 'codex', 'claude', 'kimi', 'mimo', 'zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'qoder', 'qodercn'])
+const supported = new Set(['antigravity', 'codex', 'claude', 'kimi', 'mimo', 'zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'qoder', 'qodercn',
+  'codebuddy',
+])
 export const nativeAttachmentCapability = cli => supported.has(cli)
 const check = signal => signal?.throwIfAborted()
 export function attachmentPrompt(prompt, attachments = [], filesOnly = false) {
