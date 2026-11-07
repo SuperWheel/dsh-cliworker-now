@@ -1,5 +1,7 @@
 # Design
 
+> **状态：阻塞：需要豆包企业或团队订阅账号，用户无此身份（2026-11-07）。** 下文是拿到账号后的实施方案，本期未实施。方案中标注“待核实”的行为，须在有效账号下先复核（见 tasks.md 第 0 节），复核结果与方案冲突时先改本文件再编码。
+
 ## 背景与推翻理由
 
 PRD 需求 5.8 与接入流程 1.5 节把“没有可程序化消费的输出”列为立项阻断条件，豆包因此原定不接入。2026-11-07 用户明确要求本期接入。本设计以重新调研的证据（见 proposal 调研表）说明：1.5 节的四个阻断条件中，
@@ -19,6 +21,7 @@ PRD 需求 5.8 与接入流程 1.5 节把“没有可程序化消费的输出”
 
 - **`json`/`stream-json`**：业务 JS 已实现，但原生前端固定 `output_format: "text"`，未知参数 `--output-format` 被拒（退出码 2），也没有环境变量入口。不能通过修改安装目录或注入 JS 打开：违反“不修改用户安装、只用原生能力”。
 - **`--service-start`**：远程派发服务，经字节 WebSocket 推送通道收任务，本地无监听端口；且常驻、越出 Worker 生命周期。PRD 范围外第 6 条已列为不做。
+- **内部 Mojo IPC（`ipc/service_server` 等）**：共享服务只在 `control/js-service.sock`（0600）上提供 Chromium Mojo 接口，连接前做服务发现与对端校验（`untrusted_peer`）；工具宿主之间还有加密帧加 HMAC 挑战的 `agent_tool_ipc`。这是未公开、无版本承诺的内部协议，外部调用要重新实现 Mojo 并通过对端校验，违反“只用原生公开能力”，试验性也不采用。
 - **标准错误接终端获取进度**：`progress` 只在 stderr 是 TTY 时开启，可得到 `· <工具标题>` 与“Automatically rejected: …”提示。需要为 stderr 分配伪终端，项目在 macOS 上没有 PTY 设施，且输出是给人看的文本。本期不做，记为后续可选项。
 
 结论：transport `doubao-text-v1`，每轮一个一次性进程。
@@ -144,7 +147,7 @@ PRD 需求 5.8 与接入流程 1.5 节把“没有可程序化消费的输出”
 
 ## 图标
 
-本机豆包桌面版 `/Applications/Doubao.app`（`com.bot.pc.doubao` 2.32.6）`Contents/Resources/app.icns`，用 `sips` 转 PNG，素材目录 `doc/assets/cli-icons/v5-doubao/`（目录编号可能与并行分支冲突，合并时由协调会话调整）。彩色图标，不做暗色反色。
+本机豆包桌面版 `/Applications/Doubao.app`（`com.bot.pc.doubao` 2.32.6）`Contents/Resources/app.icns`（SHA-256 `1565e53a…f34a`），`iconutil` 拆出 1024×1024 PNG 后用 LANCZOS 等比缩小到 256×256（未裁切、未改色，保留官方白色圆角底板；四角 alpha 为 0，主体约占 80.5%，光学缩放 1、不平移，`mono: false`）。素材目录拟用 `doc/assets/cli-icons/v5-doubao/`，实施时重新生成（目录编号可能与并行分支冲突，以合并时为准）。2026-11-07 曾在本分支生成过一次，因阻塞改为只调研后已撤出仓库。
 
 ## 兼容性、风险与回退
 
@@ -152,3 +155,4 @@ PRD 需求 5.8 与接入流程 1.5 节把“没有可程序化消费的输出”
 - 风险：JS 层参数校验、`always_allow` 的实际放行范围、SIGINT 取消路径、cwd 作为工作区、成功时的 `auth status` 输出、续聊回执，均因账号门槛未实测。真实验收前这些都标为未验证。
 - 风险：豆包后续版本可能改变 stderr 会话行或错误前缀；解析失败时按“未报告会话 ID”失败，不猜测。
 - 回退：从 `CLI_IDS` 移除即可隐藏入口；已有 `doubao-text-v1` Worker 会因 CLI 未注册而只读显示。
+- 账号门槛是服务端判定（`/alice/dispatch/setting/user`、`passport_enterprise_user_type`），插件无法也不应绕过；没有团队或企业账号的用户即使接入后也只能看到“订阅不足”提示。是否值得为少数持有订阅的用户维护受限通道，以及是否等待豆包开放 `stream-json`，由用户在拿到账号后重新决定。
