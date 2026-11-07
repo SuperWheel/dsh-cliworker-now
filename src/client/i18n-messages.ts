@@ -5,6 +5,23 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  // CodeBuddy registration and native status
+  '使用 CodeBuddy 原生 Auto：由其 AI 审查逐项放行或拦截；被拦截的操作不会再问你。': 'Use CodeBuddy native Auto: its AI reviews and allows or blocks each operation; blocked operations will not ask you again.',
+  '当前 CLI 不支持会话分支：CodeBuddy ACP 未公开 session/fork': 'This CLI does not support conversation branches: CodeBuddy ACP does not expose session/fork',
+  'CodeBuddy CLI 未找到，请配置 codebuddyExecutable': 'CodeBuddy CLI was not found. Configure codebuddyExecutable',
+  'CodeBuddy npm 安装入口无法确认，请检查安装': 'The CodeBuddy npm entry could not be verified. Check the installation',
+  'CodeBuddy 原生会话上下文统计': 'CodeBuddy native session context usage',
+  '站点未公开': 'Site not disclosed',
+  '已登录 · 中国站': 'Signed in · Chinese site',
+  '已登录 · 国际站': 'Signed in · International site',
+  '因拒绝审批而结束：你拒绝了 CodeBuddy 的授权请求，被拒操作未执行；可在此 Worker 续聊继续，不要自动重试': 'Ended after approval was denied: you denied CodeBuddy permission, so the operation was not executed. Continue in this Worker; do not retry automatically',
+  '已登录 · 站点未公开': 'Signed in · Site not disclosed',
+  '已登录 · 企业域': 'Signed in · Enterprise domain',
+  '已登录 · iOA': 'Signed in · iOA',
+  '尚未登录 CodeBuddy，请在原生终端使用 /login': 'You are not signed in to CodeBuddy. Use /login in its native terminal',
+  '在 CodeBuddy 原生终端输入 /login，选择中国站或国际站等站点完成登录。': 'Enter /login in the CodeBuddy native terminal and choose a site, such as the Chinese or International site, to sign in.',
+  '在 CodeBuddy 原生终端输入 /logout 退出。': 'Enter /logout in the CodeBuddy native terminal to sign out.',
+  '在 CodeBuddy 原生终端使用 /login、/logout 管理账号。': 'Use /login and /logout in the CodeBuddy native terminal to manage your account.',
   '凭据 #{id}': 'Credential #{id}',
   '替换凭据 #{id}': 'Replace credential #{id}',
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':

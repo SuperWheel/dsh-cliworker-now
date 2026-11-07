@@ -102,6 +102,7 @@ export async function runNativeAcp(config, io, settings) {
   const emit = (event) => responses
     ? responses.emit(event, event.kind === 'tool' ? `tool:${event.toolCall.callId}` : `${event.kind}:${event.step}`)
     : io.event(event)
+  const approvalTools = new Map()
   const tools = new Map(),
     // Tool calls whose permission was denied; their failure is the denial itself.
     deniedTools = new Set(),
@@ -177,7 +178,13 @@ export async function runNativeAcp(config, io, settings) {
           result: { outcome: { outcome: 'selected', optionId: approved } } })
         // Other requests go to the Host (DSH preset and user) without blocking this reader.
         const sessionOption = settings.sessionOption?.(options)
-        void io.approval(acpApprovalRequest(message.params, sessionOption)).then((answer) => {
+        let approvalParams = message.params
+        if (settings.approvalFromToolCall && isRecord(message.params?.toolCall)) {
+          const call = message.params.toolCall
+          const prior = approvalTools.get(call.toolCallId)
+          if (prior) approvalParams = { ...message.params, toolCall: { ...prior, ...call } }
+        }
+        void io.approval(acpApprovalRequest(approvalParams, sessionOption)).then((answer) => {
           if (!active || ended || io.signal.aborted) return deny()
           // The Host may still hold the requested full-access tier. A native
           // downgrade must not inherit its automatic residual approvals.
@@ -260,6 +267,12 @@ export async function runNativeAcp(config, io, settings) {
       if (!nonempty(update.toolCallId)) {
         fail('Invalid ACP tool identity')
         return
+      }
+      if (settings.approvalFromToolCall) {
+        const prior = approvalTools.get(update.toolCallId) ?? {}
+        for (const key of ['title', 'kind', 'locations'])
+          if (update[key] !== undefined) prior[key] = update[key]
+        approvalTools.set(update.toolCallId, prior)
       }
       if (settings.background?.isBackgroundTool(update)) background.add(update.toolCallId)
       lastToolAt = response.length
@@ -371,6 +384,8 @@ export async function runNativeAcp(config, io, settings) {
       },
       { jsonrpc: true },
     )
+    const identityError = settings.verifyInitialize?.(initialized)
+    if (nonempty(identityError)) throw new Error(identityError)
     if (initialized?.protocolVersion !== 1) throw new Error('Unsupported ACP protocol version')
     if (settings.agentName && initialized.agentInfo?.name !== settings.agentName)
       throw new Error(`${settings.name} 原生程序身份不匹配，请检查 CLI 路径`)
@@ -394,13 +409,14 @@ export async function runNativeAcp(config, io, settings) {
     }
     if (settings.selectModel) state = await settings.selectModel(peer, sessionId, state)
     else state = await selectOption(peer, sessionId, state, 'model', config.preference.model, settings.encode)
-    if (!settings.selectModel && config.preference.effort !== 'default')
+    if (!settings.selectModel && (config.preference.effort !== 'default' || settings.defaultEffort !== undefined))
       state = await selectOption(
         peer,
         sessionId,
         state,
         settings.effortId,
-        config.preference.effort === 'none' ? settings.off : config.preference.effort,
+        config.preference.effort === 'default' ? settings.defaultEffort
+          : config.preference.effort === 'none' ? settings.off : config.preference.effort,
         settings.encode,
       )
     if (wantedMode) {
@@ -463,6 +479,17 @@ export async function runNativeAcp(config, io, settings) {
     if (result?.sessionId !== undefined && result.sessionId !== sessionId)
       throw new Error('ACP prompt session changed')
     await settings.onResult?.(result, sessionId, io)
+    if (denied && !io.signal.aborted && settings.deniedTurnEnd?.(result)) {
+      failure = `因拒绝审批而结束：你拒绝了 ${settings.name} 的授权请求，被拒操作未执行；可在此 Worker 续聊继续，不要自动重试`
+      for (const callId of deniedTools) {
+        const tool = tools.get(callId)
+        if (tool && ['completed', 'failed'].includes(tool.status)) continue
+        const value = tool ?? { step: step++, title: approvalTools.get(callId)?.title ?? '工具' }
+        tools.set(callId, { ...value, status: 'failed', output: '已拒绝' })
+        emit({ kind: 'tool', step: value.step, text: value.title, state: 'FAILED',
+          toolCall: { callId, output: '已拒绝' } })
+      }
+    }
     if (result?.stopReason !== 'end_turn')
       fail(`CLI 未成功完成（${String(result?.stopReason ?? 'missing terminal')}）`)
     if ([...tools.values()].some((tool) => !['completed', 'failed'].includes(tool.status)))

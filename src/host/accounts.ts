@@ -1,3 +1,4 @@
+import { readCodebuddyAccount } from './codebuddy-account.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { AGY_GUIDES, AgyAccountGuide } from './agy-account-guide.ts'
 import {
@@ -120,6 +121,10 @@ const validateCli = (cli: CliId) => {
   if (!(CLI_IDS as readonly string[]).includes(cli)) throw new Error('不支持的 CLI')
 }
 const instructionFor = (cli: CliId, action: AccountAction): string => {
+  if (cli === 'codebuddy') return action === 'login'
+    ? '在 CodeBuddy 原生终端输入 /login，选择中国站或国际站等站点完成登录。'
+    : action === 'logout' ? '在 CodeBuddy 原生终端输入 /logout 退出。'
+      : '在 CodeBuddy 原生终端使用 /login、/logout 管理账号。'
   if ((cli === 'qoder' || cli === 'qodercn'))
     return action === 'login'
       ? `按 ${cli === 'qodercn' ? 'Qoder CN' : 'Qoder'} 原生提示完成登录；仅使用本版 PAT。`
@@ -176,6 +181,7 @@ const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions']
 
 /** Only commands verified against the installed CLIs. Never send a prompt/slash command. */
 const argumentsFor = (cli: CliId, action: AccountAction): string[] => {
+  if (cli === 'codebuddy') return []
   if ((cli === 'qoder' || cli === 'qodercn')) return action === 'login' ? ['login'] : []
   if (cli === 'antigravity' || action === 'manage' || (cli === 'kimi' && action === 'logout')) return []
   if (cli === 'codex' || cli === 'kimi') return [action]
@@ -427,7 +433,7 @@ export class AccountManager {
     if (held) return held
     const timer = new AbortController()
     // Qoder's native account budget includes its acknowledged session teardown.
-    const timeout = setTimeout(() => timer.abort(), (cli === 'qoder' || cli === 'qodercn') ? 15_000 : STATUS_TIMEOUT)
+    const timeout = setTimeout(() => timer.abort(), (cli === 'qoder' || cli === 'qodercn' || cli === 'codebuddy') ? 15_000 : STATUS_TIMEOUT)
     timeout.unref?.()
     const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
     let installed = false
@@ -435,6 +441,8 @@ export class AccountManager {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, control)
       installed = true
       control.throwIfAborted()
+      if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable })),
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
           cli, installed, ...(await readQoderAccount(executable, control, { cli, backend: this.backend, config: this.config, project: cwd })),
@@ -853,6 +861,8 @@ export class AccountManager {
           action === 'logout'
             ? '退出 Claude 官方账号；本地代理设置保留。'
             : '在原生终端登录 Claude 官方账号；本地代理设置保留。'
+      } else if (cli === 'codebuddy') {
+        launch.env = { DISABLE_AUTOUPDATER: '1' }
       } else if ((cli === 'qoder' || cli === 'qodercn')) {
         launch.argv = [executable, ...QODER_METADATA_ARGUMENTS.filter((value) => value !== '--acp'), ...argumentsFor(cli, action)]
         launch.env = qoderEnvironment(cli)

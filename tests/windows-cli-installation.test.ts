@@ -14,6 +14,7 @@ import {
   validateWindowsQoderNpmEntry,
   windowsCliCandidates,
   windowsQoderCliEntry,
+  WindowsCliNotFoundError,
 } from '../src/host/windows-cli-installation.ts'
 
 // Explicit synthetic installer/package fixtures. No account, network or installed CLI is used.
@@ -254,7 +255,9 @@ describe('registered Codex MSIX CLI identity (synthetic metadata)', () => {
 
 
 describe('synthetic shared Windows path discovery', () => {
-  it.each(['antigravity', 'codex', 'claude', 'kimi', 'mimo', 'zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'qoder', 'qodercn'] as const)(
+  it.each(['antigravity', 'codex', 'claude', 'kimi', 'mimo', 'zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'qoder', 'qodercn',
+    'codebuddy',
+  ] as const)(
     'discovers %s through a common user bin without a product-specific installer branch', cli => {
       const f = fixture(), command = cli === 'antigravity' ? 'agy' : cli === 'qoder' || cli === 'qodercn' ? qoderVariant(cli).executable : cli
       const entry = join(f.home, '.local/bin', command + '.exe')
@@ -355,4 +358,19 @@ describe('synthetic Qoder CN and international Windows installation isolation', 
     expect(() => presentWindowsCliCandidate('qodercn', f)).toThrow('Qoder CN Windows 安装入口无法确认')
     expect(presentWindowsCliCandidate('qoder', f)).toBe(international)
   })
+})
+
+// Synthetic CodeBuddy npm shim/package only; never executed.
+it('discovers CodeBuddy npm and verifies its package identity', () => {
+  const f = fixture(), shim = join(f.env.APPDATA, 'npm/codebuddy.cmd')
+  const root = join(f.env.APPDATA, 'npm/node_modules/@tencent-ai/codebuddy-code')
+  expect(windowsCliCandidates('codebuddy', f)[0]).toBe(shim)
+  mkdirSync(join(root, 'bin'), { recursive: true })
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@tencent-ai/codebuddy-code', bin: { codebuddy: 'bin/codebuddy.js' } }))
+  writeFileSync(join(root, 'bin/codebuddy.js'), '// SIMULATED; never executed')
+  writeFileSync(shim, '@echo off\r\nnode "%~dp0node_modules\\@tencent-ai\\codebuddy-code\\bin\\codebuddy.js" %*\r\n')
+  expect(presentWindowsCliCandidate('codebuddy', f)).toBe(shim)
+  writeFileSync(join(root, 'package.json'), JSON.stringify({ name: '@foreign/package', bin: { codebuddy: 'bin/codebuddy.js' } }))
+  expect(() => presentWindowsCliCandidate('codebuddy', f)).toThrow('CodeBuddy npm 安装入口无法确认')
+  expect(new WindowsCliNotFoundError('codebuddy').message).toBe('CodeBuddy CLI 未找到，请配置 codebuddyExecutable')
 })

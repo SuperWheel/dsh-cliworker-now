@@ -1418,7 +1418,8 @@ export class WorkerRuntime {
             { backend: this.backend, signal: ownSignal, graceMs: this.config.graceMs }, true)
         : await prepareNativeWorker({ argv: workerArguments(executable, worker.project, worker.preference, worker.mode,
             prompt, this.config.timeoutMs, conversationId, true),
-            env: { ...firstPartyEnvironment(cli), ...relayEnv, ...(['qoder', 'qodercn'].includes(cli) ? qoderEnvironment(cli as 'qoder' | 'qodercn') : {}) } },
+            env: { ...firstPartyEnvironment(cli), ...relayEnv, ...(['qoder', 'qodercn'].includes(cli) ? qoderEnvironment(cli as 'qoder' | 'qodercn') : {}),
+              ...(cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {}) } },
             { cli, project: worker.project, preference: worker.preference, mode: worker.mode,
               prompt, conversationId, stateDirectory: nativeState }, this.config)
       let output = '', problem: unknown
@@ -2607,6 +2608,7 @@ export class WorkerRuntime {
                 ...relayEnv,
                 ...agyBackgroundEnvironment(cliOf(worker.preference)),
                 ...(['qoder', 'qodercn'].includes(cliOf(worker.preference)) ? qoderEnvironment(cliOf(worker.preference) as 'qoder' | 'qodercn') : {}),
+                ...(cliOf(worker.preference) === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {}),
               },
               argv: workerArguments(
                 executable,

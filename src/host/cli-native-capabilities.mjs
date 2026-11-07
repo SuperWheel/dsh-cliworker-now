@@ -36,6 +36,8 @@ export const GROK_PLAN_TOOLS = ['read_file', 'grep', 'list_dir', ...(GROK_NATIVE
  * (.claude/.agents) skill scans and provider config stay isolated.
  */
 export function nativeSkillPaths(cli, { env = process.env, project, home = homedir() } = {}) {
+  if (cli === 'codebuddy') return [join(home, '.codebuddy', 'skills'), ...(project ? [join(project, '.codebuddy', 'skills')] : [])]
+    .filter(path => { try { return statSync(path).isDirectory() } catch { return false } })
   const name = cli === 'mimo' ? 'mimocode' : 'opencode'
   const config = cli === 'mimo' && env.MIMOCODE_HOME
     ? join(env.MIMOCODE_HOME, 'config')
@@ -188,6 +190,7 @@ const tables = {
   kimi: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   qoder: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   qodercn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  codebuddy: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   // agy retired its grep/glob tools and its web exposure is unverified: DSH keeps both as fallbacks.
   antigravity: mode => ['file-read', ...write(mode), 'shell'],
 }

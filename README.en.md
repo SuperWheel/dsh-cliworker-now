@@ -62,7 +62,7 @@ Captured from a real demo session in Harness Desktop (taken with v0.6.5; details
 | Kimi Code | ACP | OpenCode | HTTP + SSE |
 | Official MiMo Code | HTTP + SSE | Qoder CLI | ACP |
 | ZCode | app-server | Qoder CN CLI | ACP |
-| Grok Build | ACP | | |
+| Grok Build | ACP | CodeBuddy Code | ACP |
 
 - **Platforms**: macOS / Windows. Install the native build of each CLI you use and complete that CLI's own login or API setup.
 - **Host**: DeepSeek Harness (the current target host and all four bundled native UI packages are 0.2.2-rc.1; the earlier rc.3 resources passed isolated enable/disable, page boot and native settings checks on 0.2.1-rc.2 and rc.3); Node.js ≥ 22.19.0.
@@ -160,7 +160,7 @@ Pi and OMP load sign-in choices from the installed native registry, including su
 | Feature | Behavior | Support |
 | --- | --- | --- |
 | Goal | Set from the goal bar, the "+" menu or `/goal`; an active goal is sent with each turn and never starts a turn by itself | All CLIs |
-| Plan | Maps to the CLI's native plan or read-only mode; CLIs without it show no plan button, and the "+" menu explains why | Not on Hermes, Qoder, Qoder CN or the legacy Kimi transport |
+| Plan | Maps to the CLI's native plan or read-only mode; CLIs without it show no plan button, and the "+" menu explains why | Not on Hermes, Qoder, Qoder CN or the legacy Kimi transport; CodeBuddy Code maps to native `plan` |
 | Feedback | Likes, dislikes and feedback stay in Harness and are never sent to the CLI or its vendor | All CLIs |
 | Fork | Creates a native CLI fork from a completed turn as a new child session under the same main conversation | Latest turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN; earlier turns: Codex only |
 

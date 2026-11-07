@@ -10,6 +10,8 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   claude: ['claude.com', 'claude.ai'],
   qoder: ['qoder.com'],
   qodercn: ['qoder.cn'],
+  // observed in CodeBuddy 2.181.0 docs/install pages, 2026-11-07; refine after a real login window test
+  codebuddy: ['codebuddy.cn', 'codebuddy.ai', 'copilot.tencent.com'],
   grok: ['accounts.x.ai', 'auth.x.ai'],
   zcode: ['.bigmodel.cn', '.z.ai'],
   mimo: ['platform.xiaomimimo.com'],
@@ -47,6 +49,7 @@ export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'claude',
   'qoder',
   'qodercn',
+  'codebuddy',
   'mimo',
   'grok',
 ])

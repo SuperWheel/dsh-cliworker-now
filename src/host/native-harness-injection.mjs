@@ -23,7 +23,9 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   const connection = nativeHarnessReadyConnection(config)
   if (!connection) return undefined
   const call = params?.toolCall
-  const candidates = [call?.name, call?._meta?.qoder?.toolName, call?._meta?.kimi?.toolName, call?._meta?.['x.ai']?.toolName]
+  const candidates = [call?.name, call?._meta?.qoder?.toolName, call?._meta?.kimi?.toolName, call?._meta?.['x.ai']?.toolName,
+    call?._meta?.['codebuddy.ai/toolName'],
+  ]
     .filter(value => typeof value === 'string' && value.length)
   if (new Set(candidates).size !== 1) return undefined
   const selected = params?.options?.find(option => option.kind === 'allow_once' && typeof option.optionId === 'string')
@@ -44,7 +46,9 @@ const reasons = {
 }
 export function nativeHarnessToolCapability(cli, connection) {
   if (reasons[cli]) return { transport: false, ready: false, reason: reasons[cli] }
-  if (!['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'zcode', 'pi', 'qoder', 'qodercn', 'antigravity'].includes(cli)) return { transport: false, ready: false, reason: '此 CLI 没有已确认的临时工具接入口' }
+  if (!['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'zcode', 'pi', 'qoder', 'qodercn', 'antigravity',
+    'codebuddy',
+  ].includes(cli)) return { transport: false, ready: false, reason: '此 CLI 没有已确认的临时工具接入口' }
   if (!connection) return { transport: true, ready: false, reason: '当前运行尚未建立获准的 DSH 工具桥' }
   return { transport: true, ready: connection.executionReady === true, ...(connection.executionReady === true ? {} : { reason: '临时工具传输可配置，当前原生授权尚未核验' }) }
 }

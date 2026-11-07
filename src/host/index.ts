@@ -159,6 +159,7 @@ export interface Config {
   opencodeExecutable?: string
   qoderExecutable?: string
   qodercnExecutable?: string
+  codebuddyExecutable?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   /** @deprecated Accepted for old deployments only; never read or forwarded. */
@@ -274,6 +275,7 @@ export class CliWorkerService extends TypertRemoteService {
     opencodeExecutable: z.string(),
     qoderExecutable: z.string().min(1).default('qoder'),
     qodercnExecutable: z.string().min(1).default('qodercn'),
+    codebuddyExecutable: z.string().min(1).default('codebuddy'),
     zcodeAuthDirectory: z.string(),
     zcodeBuiltinConfig: z.string(),
     zaiCredentialRef: z.string(),

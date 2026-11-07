@@ -1,3 +1,4 @@
+import { withCodebuddyCatalogSnapshot } from './codebuddy-account.ts'
 import { catalogFor, resolveCliExecutable, validatePreference, type Catalog } from './adapters.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { withWindowsAgyAccountSnapshot } from './agy-windows-account.ts'
@@ -40,10 +41,15 @@ async function authorizedCatalogOnce(
     const binding = await readCliAccountBinding(cli, backend, config, project, signal)
     if (expected && binding !== expected) throw new Error(ACCOUNT_CHANGED)
     const catalog = await catalogFor(cli, backend, config, project, signal)
+    // Keep the second CodeBuddy binding read inside the one-query scope; local login/site are still re-read.
+    if (cli === 'codebuddy' && binding !== await readCliAccountBinding(cli, backend, config, project, signal))
+      throw new Error(ACCOUNT_CHANGED)
     return { binding, catalog }
   }
   const { binding, catalog } =
-    (cli === 'qoder' || cli === 'qodercn')
+    cli === 'codebuddy'
+      ? await withCodebuddyCatalogSnapshot(backend, config, await resolveCliExecutable(cli, backend, config, signal), signal, discover)
+      : (cli === 'qoder' || cli === 'qodercn')
       ? await withQoderCatalogSnapshot(backend, config, await resolveCliExecutable(cli, backend, config, signal), project, signal, discover, cli)
       : cli === 'antigravity' && process.platform === 'win32'
       ? await withWindowsAgyAccountSnapshot(backend, config, signal, discover)
@@ -51,7 +57,7 @@ async function authorizedCatalogOnce(
   signal.throwIfAborted()
   // Qoder verifies fresh complete local sources after its combined native
   // account/catalog operation. Other protocols re-read their native binding.
-  if (cli !== 'qoder' && cli !== 'qodercn' && binding !== (await readCliAccountBinding(cli, backend, config, project, signal)))
+  if (cli !== 'qoder' && cli !== 'qodercn' && cli !== 'codebuddy' && binding !== (await readCliAccountBinding(cli, backend, config, project, signal)))
     throw new Error(ACCOUNT_CHANGED)
   if (catalog.cli !== cli) throw new Error('CLI 模型目录身份不匹配')
   if (!catalog.models.length) throw new Error('暂无可确认的可用模型，请登录或刷新')
