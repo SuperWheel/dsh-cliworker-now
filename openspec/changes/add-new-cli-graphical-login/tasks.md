@@ -139,3 +139,9 @@
 - `pnpm typecheck`：Host/Client 均通过，DSH 0.2.2-rc.1（`/tmp/workbuddy-desktop-typecheck-final.log`）。
 - `pnpm build:preview`：已通过，隔离包 `.cache/preview-package`；最终代码重建同样退出 0（`/tmp/workbuddy-desktop-preview-final.log`）。未执行 `pnpm build` 或更新 Desktop 链接。隔离 Host/Client typert 产物均包含四个 `accountDesktop*` 方法；helper/bootstrap/native-workbuddy 各两份 lib 运行资源与源码逐字节相同（静态读取，未执行）。
 - `pnpm spec validate add-new-cli-graphical-login --strict` 与 `pnpm spec validate add-workbuddy-cli --strict`：均退出 0、valid。任务记录更新后复验仍通过（`/tmp/workbuddy-desktop-spec-final.log`）；保留活动变更，不归档。
+
+## Desktop 静态复看（2026-11-07，合并入 feat/general-settings 后正式 build）
+
+- 设置页左栏显示 Qoder、Qoder CN、CodeBuddy Code、TRAE CN、WorkBuddy CN、WorkBuddy；左栏由 188px 加宽到 212px 后两项不再省略（实测 `scrollWidth` 114/99 > 93）。
+- WorkBuddy CN 账号行为「已登录（www.workbuddy.cn）」+「在桌面端管理」按钮；WorkBuddy（国际版，本机未装）只显示「未安装」，项目默认区显示「未检测到 WorkBuddy 桌面端」，无重叠。CodeBuddy/TRAE 账号行保留「切换账号」。
+- 未打开任何登录/切换窗口：点击「切换账号」会走自动退出真实账号的流程，自动模式安全检查拦截了该点击，需用户在场操作或明确授权后再做第 6 组实机验收。
