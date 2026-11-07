@@ -16,9 +16,9 @@
 
 ## 运行与查询
 
-Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` 再核对安装身份并生成 ACP／网关参数。引导、ready 监听、横幅丢弃、子进程环境、审批标题及拒绝终态均由已有核心模块负责。助手、socket 与子进程清理由这些模块管理；只停止插件启动的范围，不停止桌面端。运行资源连同 `.cjs` 助手一起复制到隔离包及声明运行目录。
+Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` 再核对安装身份并生成 ACP／网关参数。引导、ready 监听、横幅丢弃、子进程环境、审批标题补全及拒绝终态由共享 ACP runner 的同名选项 `approvalFromToolCall`、`deniedCancelEndsTurn` 负责。助手、socket 与子进程清理由这些模块管理；只停止插件启动的范围，不停止桌面端。运行资源连同 `.cjs` 助手一起复制到隔离包及声明运行目录。
 
-`workbuddy-metadata.ts` 复用 `probeWorkBuddyMetadata`，只做 initialize 与 session/new，不发 prompt。一次授权内共用一次握手；查询范围结束后清除作用域，不长期缓存账号或原生 session 回执。模型 ID、label 与 efforts 均取原生结果，不额外推断模型或强度。每次查询会留下空的原生会话（原生没有删除接口）。
+`workbuddy-metadata.ts` 复用 `probeWorkBuddyMetadata`，只做 initialize、session/new 与逐模型的 session/set_config_option，不发 prompt；`thought_level` 取值随模型变化，每个模型的强度取切换后的实际列表。一次授权内共用一次握手；查询范围结束后清除作用域，不长期缓存账号或原生 session 回执。模型 ID、label 与 efforts 均取原生结果，不额外推断模型或强度。每次查询会留下空的原生会话（原生没有删除接口）。
 
 账号状态只根据原生元数据成功或认证错误判断。成功显示 product 站点；未登录提示“请打开 WorkBuddy 桌面端登录后重试”；引导失败显示固定不可用类别。没有插件登录、退出或账号终端入口，不读取凭据文件内容。
 

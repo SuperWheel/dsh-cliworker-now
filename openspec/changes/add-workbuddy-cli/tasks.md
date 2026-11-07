@@ -32,6 +32,7 @@
 - [x] 3.2 `workbuddy-key-helper.cjs`：读取密钥、派生、投递、固定失败类别
 - [x] 3.3 `workbuddy-bootstrap.mjs`：子进程环境、私有目录、ready 监听与清理
 - [x] 3.4 `codebuddy-acp-outcome.mjs`：审批标题补全与拒绝审批结束识别
+  - 2026-11-07 按协调会话要求改用共享 ACP runner 的同名选项 `approvalFromToolCall`、`deniedCancelEndsTurn`（`native-acp.mjs` 原样取自 v0.8.8 集成分支），该独立模块及其构建条目已删除。
 - [x] 3.5 `native-workbuddy.mjs`：runner、横幅过滤、启动前身份重核、元数据探测
   - 2026-11-07：用户在场确认后，协调会话逐文件审阅子 Agent 产物，修正 ready 变量名为 `CODEBUDDY_SIDECAR_READY_TOKEN`／`CODEBUDDY_SIDECAR_READY_SESSION_ID` 后提交 4619a03。
 
@@ -74,7 +75,7 @@
   - 授权：用户 2026-11-07 批准只用免费模型 hy4free（原话“批准，用 hy4free”，经协调会话转告，用户在场）。环境：macOS、WorkBuddy 5.9.3、国内版已登录；用隔离构建 `.cache/preview-package` 的 `WorkerRuntime` + 原生桥（与 Host 同一路径），偏好 `hy4free`／强度 `default`，工作区与 Worker 状态都在会话临时目录，未写入用户 DSH 状态。脚本放在被忽略的 `.test-data/workbuddy-real/accept.ts`，未入库。
   - 读写（自动档 → `auto`）：`completed`，transport `workbuddycn-acp-v1`，会话 `01a1b5e8-…7222`；原生 Read、Write 工具事件均 COMPLETED；`output.json` 内容为 `{"echo":"<input.txt 标记>","n":7}`，与输入一致；raw 有 1 条 session、1 条 result（sha256 `6ae080ea…`）。
   - 询问档允许（`read-only` → `default`）：CLI 发出 1 次 `command` 审批（`sh -c 'echo ALLOWED > approved.txt'`，`allowSession: false`），DSH 回“允许一次”后执行；`approved.txt` 内容 `ALLOWED`，本轮 `completed`（raw sha256 `376675e7…`）。
-  - 询问档拒绝：同样 1 次 `command` 审批，DSH 回“拒绝”；原生 `stopReason: cancelled`，插件把本轮记为 `failed` 并显示“因拒绝审批而结束”（时间线为 `Error: CLI ERROR: 因拒绝审批而结束`），不是“已取消”；`denied.txt` 不存在，命令未执行（raw sha256 `0ddf1347…`）。
+  - 询问档拒绝：同样 1 次 `command` 审批，DSH 回“拒绝”；原生 `stopReason: cancelled`，插件当时把本轮记为 `failed` 并显示“因拒绝审批而结束”（时间线为 `Error: CLI ERROR: 因拒绝审批而结束`），不是“已取消”；`denied.txt` 不存在，命令未执行（raw sha256 `0ddf1347…`）。改用 `deniedCancelEndsTurn` 后的复验见 7.2。
   - 续聊：拒绝后的同一 Worker 经 `session/load` 续聊两次，均 `completed`、会话 ID 不变、未调用工具；第一次准确复述首轮读到的标记，第二次回复 PONG。
   - 停止：长输出进行中、确认已有正文后调用停止，约 1.5 秒返回 `interrupted`，`done` 同为 `interrupted`、会话 ID 不变；停止后本次 CLI 进程已退出。WorkBuddy 桌面端 3 个进程（1356、2155、73408）前后一致，未受影响。
   - 进程与目录：每轮结束后无 `codebuddy-lite-wb.mjs --acp` 或助手进程残留，无 `dshwb-*` 临时目录；Worker 状态目录 0700、文件 0600。（中途一次“残留”是 pgrep 匹配到验收工具自身的 shell 包装进程，已复查排除。）
@@ -83,7 +84,17 @@
 - [ ] 7.2 询问档实际审批行为、`allow_always` 作用域、`thought_level` 是否随模型变化
   - 询问档：命令审批的允许与拒绝已在 7.1 实测。`allow_always` 未验证：本次命令审批 `allowSession` 为 false，CLI 没有提供会话级授权。
   - `thought_level` 会随模型变化（2026-11-07，对 17 个模型逐个 `session/set_config_option model`，不发 prompt）：auto 和 mimo-v2.6-pro 是 minimal…max 全档；hy4free、hy4std 只有 high；hy3、hy3-x 有 low/high；glm-5.2 有 high/xhigh；deepseek-v4-pro 有 disabled/high/xhigh；其余各不相同；每个模型都有 `enabled`（模型默认）。
-  - **缺陷（未修复）**：`probeWorkBuddyMetadata` 只读 `session/new`（当前模型 auto）的 `thought_level`，并把同一组强度给所有模型。因此 hy4free 等模型会显示不支持的强度，违反规格中“只提供 `thought_level` 实际公开的取值”；deepseek-v4-pro 的 `disabled` 也不在插件支持列表里。本次验收只用 `default`，没有触发这一缺陷。修复方向：目录探测按模型读取 `thought_level`（每个模型多一次 `session/set_config_option`），或在启动时按所选模型重新校验。
+  - 缺陷（已修复）：`probeWorkBuddyMetadata` 原先只读 `session/new`（当前模型 auto）的 `thought_level`，并把同一组强度给所有模型，违反规格。现在目录查询在 `session/new` 后对每个模型各发一次 `session/set_config_option model`，取切换后的 `thought_level` 与插件强度的交集；模型若声明 `_meta.effortOptions`，再与之取交集。`default` 始终保留；`disabled` 等插件未支持的值不提供；某个模型切换失败时只给 `default`。已保存的强度不在新模型列表里时，`resolveModel` 判为失效、要求重新选择；runner 设置模型后也再次核对，不发 prompt。
+  - 修复后模拟回归（`tests/native-workbuddy.test.ts`）：
+    - 三个模型强度各不相同，请求序列只有 initialize、session/new 和 3 次切换模型；
+    - 某模型切换被拒时只保留 `default`；
+    - 所选模型不支持的强度不沿用，也不发 prompt；
+    - 交集函数排除 `disabled` 和未知值。
+  - 修复后安装版核对（插件代码，隔离构建产物，不发 prompt）：17 个模型各自的强度与逐模型原始读取一致，例如 hy4free 为 default/high，hy3 为 default/low/high，glm-5.2 为 default/high/xhigh，deepseek-v4-pro 为 default/high/xhigh；全程约 1.1 秒，无残留进程或 `dshwb-*` 目录。
+  - 修复后 hy4free 实跑（已获批）：
+    - 强度 `high`：原生 `thought_level` 当前值确认为 high，读写完成，`output.json` 正确。
+    - 拒绝审批：原生 `stopReason: cancelled`；本轮按 `deniedCancelEndsTurn` 结束，结果为 SUCCESS，附说明“因拒绝审批而结束：被拒操作未执行，可续聊继续”；被拒工具标为 FAILED，`denied.txt` 不存在。
+    - 14 个证据文件的密钥扫描 0 处命中。
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
 - [ ] 7.4 Windows 发现、命名管道引导与真实验收
 - [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
@@ -109,6 +120,7 @@
 - `src/host/cli-account-binding.ts`
 - `src/host/cli-native-capabilities.mjs`
 - `src/host/index.ts`
+- `src/host/native-acp.mjs`（原样取自 v0.8.8 集成分支，与集成分支内容一致）
 - `src/host/native-attachments.mjs`
 - `src/host/native-bridge.mjs`
 - `src/host/native-harness-injection.mjs`

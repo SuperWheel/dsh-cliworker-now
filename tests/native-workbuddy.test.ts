@@ -3,9 +3,8 @@ import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
-import { runNativeWorkBuddy, probeWorkBuddyMetadata, workbuddyAcpArgv } from '../src/host/native-workbuddy.mjs'
+import { runNativeWorkBuddy, probeWorkBuddyMetadata, workbuddyAcpArgv, workbuddyEffortOptions } from '../src/host/native-workbuddy.mjs'
 import { createNativeIO } from '../src/host/native-transport.mjs'
-import { createCodeBuddyAcpOutcome } from '../src/host/codebuddy-acp-outcome.mjs'
 
 const roots: string[] = []
 const fakeKey = Buffer.alloc(32, 0x5a).toString('base64')
@@ -25,13 +24,18 @@ const sessionId='simulated-workbuddy-session';
 const update=update=>out({jsonrpc:'2.0',method:'session/update',params:{sessionId,update}});
 const model={id:'model',currentValue:'before',options:[{value:'before'},{value:'auto'},{value:'native-model'}]};
 const mode={id:'mode',currentValue:'default',options:['default','auto','plan','bypassPermissions','fullAccess'].map(value=>({value}))};
-const thought={id:'thought_level',currentValue:'enabled',options:['enabled','minimal','low','medium','high','xhigh','max','not-supported'].map(value=>({value}))};
+// Per-model thought_level lists, shaped like WorkBuddy 5.9.3 (auto: full; others narrower).
+const thoughtFor={before:['enabled','minimal','low','medium','high','xhigh','max','not-supported'],auto:['enabled','minimal','low','medium','high','xhigh','max','not-supported'],
+ 'native-model':['enabled','low','high','disabled'],'meta-model':['enabled','low','high','max']};
+const thought={id:'thought_level',currentValue:'enabled',options:thoughtFor.before.map(value=>({value}))};
 if(scenario==='missing-bypass')mode.options=mode.options.filter(x=>x.value!=='bypassPermissions');
 if(scenario==='missing-auto')mode.options=mode.options.filter(x=>!['auto','bypassPermissions'].includes(x.value));
 if(scenario==='missing-plan')mode.options=mode.options.filter(x=>x.value!=='plan');
 if(scenario==='missing-model')model.options=[];
 if(scenario==='missing-effort')thought.options=[{value:'enabled'}];
-const state={sessionId,models:{availableModels:[{modelId:'auto',name:'Auto'},{modelId:'native-model',name:'Native model'}]},configOptions:[model,mode,thought]};
+const available=[{modelId:'auto',name:'Auto'},{modelId:'native-model',name:'Native model'}];
+if(scenario==='per-model'||scenario==='model-option-error'){model.options.push({value:'meta-model'});available.push({modelId:'meta-model',name:'Meta model',_meta:{effortOptions:['low','max']}});}
+const state={sessionId,models:{availableModels:available},configOptions:[model,mode,thought]};
 let ready=false,pending;
 audit({fixture:'模拟',pid:process.pid,argv:process.argv.slice(2),bootstrap:env.CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET,readyPath:env.CODEBUDDY_SIDECAR_READY_SOCKET,
  configDir:env.CODEBUDDY_CONFIG_DIR,sameRoot:env.CODEBUDDY_CONFIG_DIR===env.WORKBUDDY_CONFIG_DIR,
@@ -83,6 +87,10 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(request.method==='session/set_config_option'){
   const option=state.configOptions.find(value=>value.id===request.params.configId);
   if(!option)return reject(request,'simulated unknown option');
+  if(scenario==='model-option-error'&&option.id==='model'&&request.params.value==='native-model')return reject(request,'simulated model switch rejected',-32602);
+  if(option.id==='thought_level'&&!option.options.some(value=>value.value===request.params.value))return reject(request,'simulated effort not offered',-32602);
+  if(option.id==='model'&&thoughtFor[request.params.value]){thought.options=thoughtFor[request.params.value].map(value=>({value}));if(scenario==='missing-effort')thought.options=[{value:'enabled'}];
+   if(!thought.options.some(value=>value.value===thought.currentValue))thought.currentValue='enabled';}
   option.currentValue=scenario==='unconfirmed-model'&&option.id==='model'?'wrong':request.params.value;
   return reply(request,{configOptions:state.configOptions});
  }
@@ -208,7 +216,10 @@ describe('模拟 WorkBuddy ACP runner', () => {
   })
   it('模拟权限标题由 tool_call 补全，拒绝终态保留可续聊会话', async () => {
     const f = await fixture('permission')
-    expect(f.result).toMatchObject({ status: 'ERROR', error: '因拒绝审批而结束' })
+    // deniedCancelEndsTurn: a denied operation ends the turn, neither a user stop nor a success.
+    expect(f.result).toMatchObject({ status: 'SUCCESS' })
+    expect(JSON.stringify(f.result)).toContain('因拒绝审批而结束')
+    expect(f.frames.some(frame => frame.event?.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
     expect(f.frames.find(frame => frame.type === 'approval').request).toMatchObject({ summary: 'Run simulated command', kind: 'command', detail: 'simulated echo', allowSession: false })
     expect(f.frames.find(frame => frame.type === 'session').id).toBe('simulated-workbuddy-session')
     expect(f.records.find(record => record.id === 'permission' && record.result).result.outcome.optionId).toBe('reject')
@@ -228,7 +239,7 @@ describe('模拟 WorkBuddy ACP runner', () => {
   })
   it('模拟用户取消发送 session/cancel 并等待所有子进程退出', async () => {
     const f = await fixture('cancel')
-    expect(f.result.status).toBe('ERROR'); expect(f.result.error).not.toBe('因拒绝审批而结束')
+    expect(f.result.status).toBe('ERROR'); expect(JSON.stringify(f.result)).not.toContain('因拒绝审批而结束')
     expect(methods(f.records, 'session/cancel')).toHaveLength(1)
   })
   it.each(['helper-error', 'wrong-pid', 'ready-timeout', 'banner-lines', 'banner-bytes', 'exit-early', 'abort-bootstrap'])('模拟启动失败清理 %s', async scenario => {
@@ -250,13 +261,41 @@ describe('模拟 WorkBuddy ACP runner', () => {
   })
 })
 
-describe('模拟 WorkBuddy 目录与 CodeBuddy 审批共性', () => {
-  it('模拟目录只 initialize/new，强度取交集且保留 auto', async () => {
-    const f = await fixture('success', { probe: true })
+describe('模拟 WorkBuddy 目录与按模型强度', () => {
+  it('模拟目录只 initialize/new/切换模型，按模型给出强度且不发 prompt', async () => {
+    const f = await fixture('per-model', { probe: true })
     expect(f.error).toBeUndefined()
-    expect(f.records.filter(record => record.method).map(record => record.method)).toEqual(['initialize', 'session/new'])
-    expect(f.metadata).toMatchObject({ authenticated: true, endpoint: 'https://www.workbuddy.cn', models: [{ id: 'auto' }, { id: 'native-model' }] })
-    expect(f.metadata.effortOptions).toEqual(['default', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+    expect(f.records.filter(record => record.method).map(record => record.method)).toEqual(['initialize', 'session/new',
+      'session/set_config_option', 'session/set_config_option', 'session/set_config_option'])
+    expect(selection(f.records, 'model')).toEqual(['auto', 'native-model', 'meta-model'])
+    expect(f.metadata).toMatchObject({ authenticated: true, endpoint: 'https://www.workbuddy.cn' })
+    expect(Object.fromEntries(f.metadata.models.map((model: any) => [model.id, model.efforts]))).toEqual({
+      auto: ['default', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+      // 'disabled' and unknown values are never offered; `default` leaves thought_level untouched.
+      'native-model': ['default', 'low', 'high'],
+      // A declared _meta.effortOptions narrows the switched model's thought_level.
+      'meta-model': ['default', 'low', 'max'],
+    })
+  })
+  it('模拟某模型切换被拒时只保留原生默认，不借用其他模型的强度', async () => {
+    const f = await fixture('model-option-error', { probe: true })
+    expect(f.error).toBeUndefined(); expect(methods(f.records, 'session/prompt')).toEqual([])
+    expect(f.metadata.models.find((model: any) => model.id === 'native-model').efforts).toEqual(['default'])
+    expect(f.metadata.models.find((model: any) => model.id === 'meta-model').efforts).toEqual(['default', 'low', 'max'])
+  })
+  it('模拟强度不在所选模型的列表中时不沿用、不发 prompt', async () => {
+    const f = await fixture('success', { model: 'native-model', effort: 'medium' })
+    expect(f.result.status).toBe('ERROR'); expect(methods(f.records, 'session/prompt')).toEqual([])
+    expect(selection(f.records, 'model')).toEqual(['native-model'])
+    expect(selection(f.records, 'thought_level')).toEqual([])
+  })
+  it('强度选项只取插件支持且原生公开的值', () => {
+    const options = (values: string[]) => [{ id: 'thought_level', options: values.map(value => ({ value })) }]
+    expect(workbuddyEffortOptions(options(['enabled', 'high']))).toEqual(['default', 'high'])
+    expect(workbuddyEffortOptions(options(['disabled', 'high', 'xhigh', 'enabled']))).toEqual(['default', 'high', 'xhigh'])
+    expect(workbuddyEffortOptions(options(['low', 'high', 'max']), ['high'])).toEqual(['default', 'high'])
+    expect(workbuddyEffortOptions(undefined)).toEqual(['default'])
+    expect(workbuddyEffortOptions([{ id: 'model', options: [{ value: 'high' }] }])).toEqual(['default'])
   })
   it('模拟未登录返回桌面端登录指引', async () => {
     const f = await fixture('auth', { probe: true })
@@ -269,14 +308,5 @@ describe('模拟 WorkBuddy 目录与 CodeBuddy 审批共性', () => {
     expect(f.metadata).toBeUndefined()
     expect(methods(f.records, 'session/prompt')).toEqual([])
     expect(methods(f.records, 'session/new')).toHaveLength(1)
-  })
-  it('模拟审批缓存隔离会话且不覆盖 rawInput', () => {
-    const outcome = createCodeBuddyAcpOutcome()
-    outcome.receive({ method: 'session/update', params: { sessionId: 'a', update: { sessionUpdate: 'tool_call', toolCallId: 'c', title: 'Simulated', kind: 'edit', locations: [{ path: '/simulated' }], rawInput: { ignored: true } } } })
-    const request = (sessionId: string) => ({ method: 'session/request_permission', params: { sessionId, toolCall: { toolCallId: 'c', rawInput: { keep: true } } } })
-    expect(outcome.receive(request('a')).params.toolCall).toMatchObject({ title: 'Simulated', kind: 'edit', rawInput: { keep: true } })
-    expect(outcome.receive(request('b'))).toEqual(request('b'))
-    outcome.clear(); expect(outcome.receive(request('a'))).toEqual(request('a'))
-    expect(outcome.permissionDenied({ stopReason: 'cancelled' })).toBe(false)
   })
 })

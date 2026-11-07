@@ -79,3 +79,5 @@ corepack pnpm test tests/workbuddy-registration.test.ts tests/workbuddy-installa
 - `tests/settings-dialog.test.tsx`
 - `tests/windows-accounts.test.ts`
 - `tests/workbuddy-registration.test.ts`
+
+- 2026-11-07 后续：`codebuddy-acp-outcome.mjs` 已删除，改用共享 `native-acp.mjs` 的 `approvalFromToolCall`／`deniedCancelEndsTurn`；隔离包中不再有该文件。

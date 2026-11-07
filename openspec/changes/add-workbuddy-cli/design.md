@@ -23,7 +23,7 @@ WorkBuddy 内置 CLI 是 CodeBuddy 派生的 lite 构建，设计上由桌面端
 | `src/host/workbuddy-installation.ts` | `resolveWorkBuddyInstallation(cli, options)`：按候选列表或手动路径找到应用，核对 `cli/package.json` 的 `name === '@genie/agent-cli'`、入口 `cli/dist/codebuddy-lite-wb.mjs` 存在、`cli/product.json` 的 endpoint 主机属于本版、`dataFolderName` 为单段 `.名称`；返回 `{ cli, appRoot, runtime, entry, cliVersion, productName, endpoint, configDir }`，失败抛 `WorkBuddyUnavailableError(reason)`。只读文件元数据，不运行程序 |
 | `src/host/workbuddy-key-helper.cjs` | 由 WorkBuddy 自带运行时以 `ELECTRON_RUN_AS_NODE=1` 执行。stdin 读一行 `{socketPath, token, sessionId, pid}`；调用 `process._linkedBinding('electron_browser_workbuddy_storage').loggerGet()`，校验 `{version:1, atRestSecretKey}`（44 字符规范 base64、非全零）；key = sha256(utf8 文本)，keyId = sha256(key) hex 前 16；连接 socket（ENOENT/ECONNREFUSED 每 100ms 重试，总时限 4.5s），发 `{version:1, sessionId, token, pid, bootstrap:{version:1, policy:'fields', symmetricKey:{keyId, keyBase64}, asymmetricUnavailable:'missing-key'}}\n`，等 `{ok:true, policy:'fields'}`；随后清零所有 Buffer。stdout 只写一行 `{ok:true}` 或 `{ok:false, reason}`，reason 取固定类别：`request-invalid`、`binding-unavailable`、`payload-invalid`、`connect-failed`、`ack-invalid`、`channel-closed`、`timeout`。绝不输出密钥、绑定返回值或异常原文 |
 | `src/host/workbuddy-bootstrap.mjs` | `workbuddyChildEnv(base, install)` 生成子进程环境；`createWorkBuddyLaunch({ install, platform })` 建私有目录与 ready 监听，返回 `{ env, deliver(io, pid), ready(timeoutMs), close() }` |
-| `src/host/codebuddy-acp-outcome.mjs` | CodeBuddy 系 ACP 的共性处理：缓存 `tool_call` 的 title/kind/locations，补到只带 `rawInput` 的 `session/request_permission`；识别 `stopReason: 'cancelled'` 且 `_meta['codebuddy.ai/outcome'] === 'PERMISSION_DENIED'` 的“因拒绝审批而结束”。合并时与 cb-dev 的同类实现去重 |
+| `src/host/native-acp.mjs`（共享，取自 v0.8.8 集成分支） | CodeBuddy 系 ACP 的共性处理以同名选项开启：`approvalFromToolCall` 用此前 `tool_call` 的 title/kind/locations 补全只带 `rawInput` 的审批请求；`deniedCancelEndsTurn` 在用户拒绝审批后本轮以 `cancelled` 结束时，以“因拒绝审批而结束：被拒操作未执行，可续聊继续”结束本轮。原先本分支的独立模块 `codebuddy-acp-outcome.mjs` 已删除 |
 | `src/host/native-workbuddy.mjs` | `runNativeWorkBuddy(config, io)` 与 `probeWorkBuddyMetadata(...)`；`workbuddyAcpArgv(config)` |
 
 ### 2. 子进程环境
@@ -70,8 +70,9 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 ### 6. 模型与强度
 
 - 目录来自 `session/new` 的 `models.availableModels`（`modelId`、`name`）；`auto` 按原生 ID 保存与显示。
-- 强度：`effortId: 'thought_level'`；提供 `thought_level` 选项中与共享 `EFFORTS` 重合的值（minimal/low/medium/high/xhigh/max）；`default` 不设置（保持 `enabled`，即模型默认）；没有关闭值，不提供 `none`。
-- 目录查询走同一引导流程（`probeWorkBuddyMetadata`），只发 `initialize` 与 `session/new`，读取后关闭；会话随即丢弃（原生不提供删除，记为已知副作用）。
+- 强度按模型给出：`effortId: 'thought_level'`。`thought_level` 的取值随模型变化（WorkBuddy 5.9.3 实测：auto 全档，hy4free 只有 high，hy3 有 low/high，deepseek-v4-pro 有 disabled/high/xhigh），目录查询在 `session/new` 后对每个模型发一次 `session/set_config_option model`，取返回的 `thought_level` 与共享 `EFFORTS`（minimal/low/medium/high/xhigh/max）的交集；模型若声明 `_meta.effortOptions`，再与之取交集。`default` 不设置（保持 `enabled`，即模型默认），始终可选；`disabled` 等插件未支持的值不提供，没有 `none`。某个模型切换失败时只给 `default`，不借用其他模型的列表。
+- 切换模型后原强度不在新列表里：目录校验（`resolveModel`）判定已保存选择失效，要求重新选择；runner 在设置模型后再核对 `thought_level`，不在列表中则不发 prompt。
+- 目录查询走同一引导流程（`probeWorkBuddyMetadata`），只发 `initialize`、`session/new` 与逐模型的 `session/set_config_option`，读取后关闭；会话随即丢弃（原生不提供删除，记为已知副作用）。
 - 发现自验证：同 Qoder 的 `selfVerifiedDiscovery`，每次查询都经真实引导确认，不读取凭据文件做来源绑定。
 
 ### 7. 账号
@@ -107,5 +108,5 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 ## Open Questions
 
 - 询问档在 WorkBuddy 2.165 的真实审批行为、`allow_always` 的作用域。
-- `thought_level` 选项是否随模型变化（需在真实会话里切换模型观察 `config_option_update`）。
+- ~~`thought_level` 选项是否随模型变化~~：会变化，已按模型给出（见第 6 节）。
 - Windows 安装路径与可执行名、国际版 product 身份。

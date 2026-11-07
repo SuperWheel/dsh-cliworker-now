@@ -18,6 +18,7 @@ export interface WorkBuddyNativeConfig {
   [key: string]: unknown
 }
 export function workbuddyAcpArgv(config: WorkBuddyNativeConfig): string[]
+export function workbuddyEffortOptions(configOptions: unknown, metaEfforts?: unknown): string[]
 export function runNativeWorkBuddy(config: WorkBuddyNativeConfig, io: any): Promise<void>
 export function probeWorkBuddyMetadata(config: WorkBuddyNativeConfig, io?: any): Promise<{
   cli: WorkBuddyCliId

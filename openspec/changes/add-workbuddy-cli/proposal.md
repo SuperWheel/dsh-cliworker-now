@@ -16,7 +16,7 @@
 | 引导 | CLI 监听 `CODEBUDDY_SIDECAR_CREDENTIAL_BOOTSTRAP_SOCKET`（5 秒超时），插件作客户端发一行载荷，键固定为 `bootstrap,pid,sessionId,token,version`，`pid` 须为 CLI 自身 pid；四个 `CODEBUDDY_SIDECAR_*` 变量与 `WORKBUDDY_AT_REST_ENCRYPTION` 必须同时提供 | 本机 |
 | 非交互与流 | 只用 stdio `--acp` 时 `initialize` 一直挂起；须加 `--serve --host 127.0.0.1 --port 0 --auth password`，CLI 经 `CODEBUDDY_SIDECAR_READY_SOCKET` 上报 `session.ready`，插件确认后 stdio ACP 才响应；`--serve` 在 stdout 打印含网关密码的非 JSON 横幅 | 本机实测 |
 | 会话 | ACP `loadSession: true`；`session/new` 返回会话 ID；会话存于配置根 | 本机 |
-| 模型与强度 | 模型来自 `session/new` 的 `models`（账号实际目录）；强度为会话配置项 `thought_level`（minimal/low/medium/high/xhigh/max/enabled），模型 `_meta` 没有 `effortOptions`；无 agentInfo | 本机 |
+| 模型与强度 | 模型来自 `session/new` 的 `models`（账号实际目录）；强度为会话配置项 `thought_level`（minimal/low/medium/high/xhigh/max/enabled），取值随模型变化（hy4free 只有 high，auto 全档），模型 `_meta` 没有 `effortOptions`，须切换模型后读取；无 agentInfo | 本机 |
 | 权限 | 原生模式 default（Always Ask）/acceptEdits/plan/auto/dontAsk/bypassPermissions/fullAccess/delegate | 本机 |
 | 配置根 | 桌面端给 CLI 设 `CODEBUDDY_CONFIG_DIR` 与 `WORKBUDDY_CONFIG_DIR` 都等于 `~/<dataFolderName>`；不设时 CLI 回落到 `~/.codebuddy`（与独立 CodeBuddy 冲突） | 本机 |
 | 代理 | 子进程带 `HTTP(S)_PROXY` 时远端配置拉取报 setProxy 错（模型目录与无代理时一致，未见退回旧列表）；去掉后由 CLI 自身按配置或系统代理解析 | 本机实测 |
@@ -29,7 +29,7 @@
 - 密钥引导：插件自写的引导助手由 WorkBuddy 自带 Electron 执行，读取密钥并直接投递给 CLI 的一次性 socket；runner 只拿到成功或失败类别，不接触密钥。私有目录 0700，完成或失败都删除。
 - 通信：复用 `runNativeAcp`，transport `workbuddycn-acp-v1` / `workbuddy-acp-v1`；runner 负责 ready 确认、丢弃网关横幅、清除代理变量与配置根注入。
 - 模型目录：用同一引导流程做 `initialize` + `session/new` 元数据查询，不发 prompt。
-- 权限三档：询问 `default`、自动审批 `auto`、完全权限 `bypassPermissions`；规划 `plan`。拒绝审批以 `cancelled` + `PERMISSION_DENIED` 结束整轮时显示“因拒绝审批而结束”（共性处理先写成本分支独立模块）。
+- 权限三档：询问 `default`、自动审批 `auto`、完全权限 `bypassPermissions`；规划 `plan`。拒绝审批以 `cancelled` + `PERMISSION_DENIED` 结束整轮时显示“因拒绝审批而结束”（使用共享 ACP runner 的同名选项 `deniedCancelEndsTurn`、`approvalFromToolCall`）。
 - 账号：只显示状态（以 `session/new` 是否认证为准），登录与退出指引用户在 WorkBuddy 桌面端操作。
 - 泛称“WorkBuddy”按安装分流，两版都装时询问。
 - 图标、设置页、i18n、README 等文档同步。
@@ -44,7 +44,7 @@
 
 ## Impact
 
-- Host：`types.ts`、`worker-permissions.ts`、`routing.ts`、`native-worker.ts`、`native-bridge.mjs`、`adapters.ts`、`accounts.ts`、`index.ts`、`process.ts`、`runtime.ts`、`cli-native-capabilities.mjs`、`native-attachments.mjs`、`account-links.ts`、`conversation-features.ts`；新增 `workbuddy-variant.ts`、`workbuddy-installation.ts`、`workbuddy-bootstrap.mjs`、`workbuddy-key-helper.cjs`、`native-workbuddy.mjs`、`codebuddy-acp-outcome.mjs`。
+- Host：`types.ts`、`worker-permissions.ts`、`routing.ts`、`native-worker.ts`、`native-bridge.mjs`、`adapters.ts`、`accounts.ts`、`index.ts`、`process.ts`、`runtime.ts`、`cli-native-capabilities.mjs`、`native-attachments.mjs`、`account-links.ts`、`conversation-features.ts`；新增 `workbuddy-variant.ts`、`workbuddy-installation.ts`、`workbuddy-bootstrap.mjs`、`workbuddy-key-helper.cjs`、`native-workbuddy.mjs`；共享 `native-acp.mjs` 取自 v0.8.8 集成分支。
 - Client：`icons.tsx`、i18n 文案、连接页试验性标注。
 - 构建：`scripts/build.mjs` 运行资源清单。
 - 范围外：sidecar 路径、Magpie、国际版真实验收（未安装）、Windows 真实验收、真实模型任务（待用户批准模型）、插件代登录。

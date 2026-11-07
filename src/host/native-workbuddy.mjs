@@ -5,7 +5,6 @@ import { StringDecoder } from 'node:string_decoder'
 import { runNativeAcp } from './native-acp.mjs'
 import { createLinePeer, createNativeIO } from './native-transport.mjs'
 import { createWorkBuddyLaunch } from './workbuddy-bootstrap.mjs'
-import { createCodeBuddyAcpOutcome, CODEBUDDY_PERMISSION_DENIED } from './codebuddy-acp-outcome.mjs'
 
 const unavailable = reason => Object.assign(new Error(`WorkBuddy 暂不可用：${reason}`), { code: 'WORKBUDDY_UNAVAILABLE', reason })
 const efforts = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -128,24 +127,26 @@ export async function runNativeWorkBuddy(config, io) {
       (config.access !== undefined && !['read-only', 'workspace-write', 'danger-full-access'].includes(config.access)))
     throw unavailable('permission-invalid')
   if (config.preference?.effort !== 'default' && !efforts.includes(config.preference?.effort)) throw unavailable('effort-invalid')
-  const outcome = createCodeBuddyAcpOutcome(), wrapped = Object.create(io)
-  let denied = false
-  wrapped.openStdio = async (_argv, options) => {
-    const { peer } = await openWorkBuddy(config, io, { ...options,
-      onMessage: message => options.onMessage?.(outcome.receive(message)) })
-    return peer
-  }
-  wrapped.result = (status, response, error, scope, notice) => io.result(status, response,
-    denied && !io.signal.aborted ? CODEBUDDY_PERMISSION_DENIED : error, scope, notice)
-  try {
-    await runNativeAcp({ ...config, harnessTools: undefined, env: { ...config.env, CLIWORKER_HARNESS_TOOLS: undefined } }, wrapped, {
-      name: config.cli === 'workbuddycn' ? 'WorkBuddy' : 'WorkBuddy AI', argv: workbuddyAcpArgv,
-      effortId: 'thought_level', modeConfigId: 'mode', encode: value => value,
-      editMode: config.access === 'danger-full-access' ? 'bypassPermissions' : config.access === 'read-only' ? 'default' : 'auto',
-      fallbackModes: config.access === 'danger-full-access' ? ['auto', 'default'] : config.access === 'read-only' ? [] : ['default'],
-      onResult: result => { denied = outcome.permissionDenied(result) },
-    })
-  } finally { outcome.clear() }
+  const wrapped = Object.create(io)
+  wrapped.openStdio = async (_argv, options) => (await openWorkBuddy(config, io, options)).peer
+  // Option names are shared with the other CodeBuddy-derived ACP runners.
+  await runNativeAcp({ ...config, harnessTools: undefined, env: { ...config.env, CLIWORKER_HARNESS_TOOLS: undefined } }, wrapped, {
+    name: config.cli === 'workbuddycn' ? 'WorkBuddy' : 'WorkBuddy AI', argv: workbuddyAcpArgv,
+    effortId: 'thought_level', modeConfigId: 'mode', encode: value => value,
+    editMode: config.access === 'danger-full-access' ? 'bypassPermissions' : config.access === 'read-only' ? 'default' : 'auto',
+    fallbackModes: config.access === 'danger-full-access' ? ['auto', 'default'] : config.access === 'read-only' ? [] : ['default'],
+    approvalFromToolCall: true,
+    deniedCancelEndsTurn: true,
+  })
+}
+
+/** Plugin efforts this model actually exposes; `default` (no change) is always available.
+ * An unreadable list leaves only the native default instead of borrowing another model's. */
+export function workbuddyEffortOptions(configOptions, metaEfforts) {
+  const native = Array.isArray(configOptions)
+    ? values(configOptions.find(option => option?.id === 'thought_level')?.options) : []
+  const declared = Array.isArray(metaEfforts) ? metaEfforts : undefined
+  return ['default', ...efforts.filter(value => native.includes(value) && (!declared || declared.includes(value)))]
 }
 
 const values = options => Array.isArray(options) ? options.flatMap(option => Array.isArray(option?.options)
@@ -183,10 +184,23 @@ export async function probeWorkBuddyMetadata(input, suppliedIo) {
     }
     if (typeof state?.sessionId !== 'string' || !state.sessionId.trim() || !Array.isArray(state?.models?.availableModels))
       throw unavailable('metadata-invalid')
-    const effortOptions = ['default', ...efforts.filter(value => values(state.configOptions?.find(option => option.id === 'thought_level')?.options).includes(value))]
-    const models = state.models.availableModels.filter(model => typeof model?.modelId === 'string' && model.modelId.trim() && typeof model.name === 'string')
-      .map(model => ({ id: model.modelId, label: model.name, efforts: [...effortOptions] }))
-    if (!models.length) throw unavailable('models-unavailable')
+    const effortOptions = workbuddyEffortOptions(state.configOptions)
+    const available = state.models.availableModels.filter(model => typeof model?.modelId === 'string' && model.modelId.trim() && typeof model.name === 'string')
+    if (!available.length) throw unavailable('models-unavailable')
+    // thought_level differs per model (WorkBuddy 5.9.3): read it after switching to each model.
+    const models = []
+    for (const model of available) {
+      signal.throwIfAborted()
+      let options
+      try {
+        options = (await peer.request('session/set_config_option', { sessionId: state.sessionId, configId: 'model', value: model.modelId },
+          { jsonrpc: true, timeoutMs: config.timeoutMs }))?.configOptions
+      } catch (error) {
+        signal.throwIfAborted()
+        if (error?.code === undefined) throw error
+      }
+      models.push({ id: model.modelId, label: model.name, efforts: workbuddyEffortOptions(options, model._meta?.effortOptions) })
+    }
     signal.throwIfAborted()
     return { cli: config.cli, endpoint: opened.install.endpoint, authenticated: true, models,
       effortOptions, initialized, session: state }

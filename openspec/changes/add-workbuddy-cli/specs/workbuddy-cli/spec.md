@@ -60,7 +60,7 @@
 WorkBuddy SHALL 通过内置 CLI 的 ACP 运行任务：会话 ID 来自 `session/new`，续聊只用已确认的 ID 经 `session/load` 恢复；三档映射为 `default`、`auto`、`bypassPermissions`，规划映射 `plan`，未知模式与未知请求一律拒绝。停止 MUST 只结束插件启动的进程，在进程范围退出后才报告成功，不关闭用户的 WorkBuddy 桌面端。
 
 #### Scenario: 拒绝审批结束整轮
-- **WHEN** 用户拒绝审批，CLI 以 `cancelled` 结束本轮且 `_meta` 标明 `PERMISSION_DENIED`
+- **WHEN** 用户拒绝审批，CLI 随后以 `cancelled` 结束本轮
 - **THEN** Worker 显示“因拒绝审批而结束”而不是“已取消”，被拒操作未执行，用户可续聊
 
 #### Scenario: 审批请求只带 rawInput
@@ -76,7 +76,7 @@ WorkBuddy SHALL 通过内置 CLI 的 ACP 运行任务：会话 ID 来自 `sessio
 - **THEN** 插件发送原生取消并结束 CLI 与助手进程，确认退出后报告停止成功，WorkBuddy 桌面端不受影响
 
 ### Requirement: 模型目录与账号状态
-模型 SHALL 来自经引导后 `session/new` 返回的账号目录，强度 SHALL 来自 `thought_level` 配置项；目录与状态查询 MUST 只发 `initialize` 与 `session/new`，不发 prompt，并确认进程范围退出。未登录时 MUST 提示在 WorkBuddy 桌面端登录，插件不提供登录或退出操作，不读取凭据文件内容。
+模型 SHALL 来自经引导后 `session/new` 返回的账号目录，强度 SHALL 来自 `thought_level` 配置项；目录与状态查询 MUST 只发 `initialize`、`session/new` 与切换模型的 `session/set_config_option`，不发 prompt，并确认进程范围退出。未登录时 MUST 提示在 WorkBuddy 桌面端登录，插件不提供登录或退出操作，不读取凭据文件内容。
 
 #### Scenario: 未登录
 - **WHEN** `session/new` 返回认证错误
@@ -84,7 +84,11 @@ WorkBuddy SHALL 通过内置 CLI 的 ACP 运行任务：会话 ID 来自 `sessio
 
 #### Scenario: 选择强度
 - **WHEN** 用户为 WorkBuddy 选择强度
-- **THEN** 只提供 `thought_level` 实际公开且插件支持的取值；选择默认时不改动该配置项
+- **THEN** 只提供所选模型切换后 `thought_level` 实际公开且插件支持的取值；选择默认时不改动该配置项
+
+#### Scenario: 强度随模型不同
+- **WHEN** 两个模型的 `thought_level` 取值不同，或用户切换到不支持原强度的模型
+- **THEN** 每个模型只列出自己的强度，不共用一组；原强度不在新模型列表中时要求重新选择或使用默认，不沿用
 
 ### Requirement: 验证边界
 文档与 tasks.md SHALL 区分模拟测试、本机元数据探测、Desktop 验收与真实模型任务；国际版、Windows、真实任务与审批行为未执行时 MUST 记为未验证，不得虚勾。
