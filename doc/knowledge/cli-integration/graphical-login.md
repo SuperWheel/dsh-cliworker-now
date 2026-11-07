@@ -1,6 +1,6 @@
 # CLI 图形化登录开发指南
 
-本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。CodeBuddy、TRAE CN、WorkBuddy 的新引导仍是[待实施方案](../../../openspec/changes/add-new-cli-graphical-login/design.md)，本文没有重新运行 CLI、登录或采集真实画面。
+本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。CodeBuddy、TRAE CN 的新引导仍是[待实施方案](../../../openspec/changes/add-new-cli-graphical-login/design.md)，WorkBuddy 桌面管理分支已按该方案实施，见第 8 节；本文没有重新运行 CLI、登录或采集真实画面。
 
 ## 1、先判定账号由谁管理
 
@@ -9,7 +9,7 @@
 | 单账号原生 CLI | 已登录先显示当前账号卡片；明确点击「切换账号」后退出，再进入向导 | `src/shared/account-links.ts` 的 `SINGLE_ACCOUNT_CLIS`；`src/client/account-terminal.tsx` 的 `holding`、`switchAccount`；`src/client/account-login/login-window.tsx` 的 `CurrentAccount` |
 | 多服务商/多凭据 CLI | 「账号」窗口列出真实 `logins`，逐项退出，添加账号时选择服务商；有多个来源时按来源分组 | `MULTI_ACCOUNT_CLIS`；`src/client/account-login/accounts-window.tsx`；`src/shared/accounts.ts` 的 `AccountLogin`、`AccountProvider` |
 | 单账号、多登录方式/站点 | 仍为单账号；选择器只是决定本次原生登录路径，不意味着可同时持有多个账号 | `src/host/account-guide/providers.ts` 的 TRAE 表与 `src/host/traecn-accounts.ts` 的 `traecnAccountArguments`；CodeBuddy 参见 `src/host/codebuddy-account.ts` 与 `doc/codebuddy-protocol.md` |
-| 桌面端托管账号 | 用户在对应桌面应用登录/退出，插件显示指引和原生状态；图形页需单独的无 PTY 观察分支 | `src/host/accounts.ts` 对 WorkBuddy 返回空 actions 并拒绝 `start`；`src/host/workbuddy-metadata.ts`、`workbuddy-installation.ts`。拟扩展方式见第 8 节 |
+| 桌面端托管账号 | 用户在对应桌面应用登录/退出，插件显示指引和原生状态；图形页需单独的无 PTY 观察分支 | `src/host/accounts.ts` 声明 `target: desktop`，仍拒绝旧 `start`；`workbuddy-desktop.ts` 独立观察，`workbuddy-desktop-open.ts` 核实后打开。实现与边界见第 8 节 |
 
 分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 只有 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo；CodeBuddy、TRAE CN 虽已列入单账号集合，仍没有 flow。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
 
@@ -129,17 +129,17 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 
 ### 已有能力
 
-`src/host/workbuddy-installation.ts` 返回已核实的 `appRoot/runtime/entry`，通过包名、入口及 `product.json` endpoint 分国内/国际版，不靠应用名判断；`workbuddy-variant.ts` 保存两个 CliId 的站点与路径线索。`workbuddy-metadata.ts` 调用 `probeWorkBuddyMetadata`，成功返回模型/站点和安装来源绑定；`accounts.ts` 把认证错误映射为“请打开桌面端登录后重试”。
+`src/host/workbuddy-installation.ts` 返回已核实的 `appRoot/runtime/entry`，通过包名、入口及 `product.json` endpoint 分国内/国际版，不靠应用名判断；`workbuddy-variant.ts` 保存两个 CliId 的站点与路径线索。`workbuddy-metadata.ts` 调用 `probeWorkBuddyMetadata`，成功返回模型/站点和安装来源绑定；`accounts.ts` 对泛化认证错误返回 unknown，提示“请在桌面端检查登录状态”，不证明已退出。
 
 `doc/workbuddy-protocol.md` 与 `src/host/native-workbuddy.mjs` 记录元数据探测只做初始化、空会话和模型配置查询，不发 prompt；每次探测仍会留下空的原生会话。它不是廉价的文件状态读取。元数据 Host 不读凭据文件；现有私有引导助手路径属于既有实现，图形引导不得新增读取或暴露密钥。
 
-### 新图形页的接入建议（尚未实现）
+### 已实现的桌面管理分支（真实 Desktop 仍未验收）
 
-1. 使用明确的桌面管理能力，而不是把 WorkBuddy 加入普通 PTY flow。共享 `AccountGuide` 的 `choice/waiting/result` 外观；复用当前账号卡片，但按钮与说明应为“打开桌面端管理账号”，不承诺插件自动退出。
+1. `target: desktop` 与 `accountDesktopStart/Respond/Watch/Stop` 使用明确的桌面管理能力，而不是把 WorkBuddy 加入普通 PTY flow。共享 `AccountGuide` 的 `choice/waiting/result` 外观；复用当前账号卡片，但按钮与说明应为“打开桌面端管理账号”，不承诺插件自动退出。
 2. Client 仅发送所选 CliId 和固定动作 ID；Host 重新核对安装身份后打开准确的桌面应用，不能接受来自输出的命令/路径、URL scheme 或任意程序。浏览器 `ACCOUNT_LOGIN_HOSTS` 不用于打开本地应用。
-3. 在显式打开管理页后做单个在途、有间隔、有总时限的状态观察；同一查询周期共用元数据，避免账号和模型重复建立空会话。用户在桌面端操作，窗口自动刷新并保留手动刷新。默认参数与退出条件见本变更设计，不能直接套每 3 秒的 PTY watch。
+3. 在显式打开管理页后做单个在途、有间隔、有总时限的状态观察；同一查询周期共用元数据，避免账号和模型重复建立空会话。用户在桌面端操作，窗口自动刷新并保留手动刷新。打开页读取一次；打开/继续后完成间隔至少 15 秒，最多 5 分钟或 20 次自动查询，整轮 25 秒，停止等待查询清理；不会套用每 3 秒的 PTY watch。
 4. 缺安装、身份不符、引导失败、普通网络失败与确定未登录分别显示；只有原生状态转换才能报告已登录/已退出。当前 `native-workbuddy.mjs` 将 `session/new` 的 -32000/-32001/401/403 或认证相关文本统一归为 `CLI_OWN_ACCOUNT_REQUIRED`，范围较宽；新观察不能把所有这类错误都当作“用户已退出”，须先核实可区分的认证缺失证据，否则保留“需在桌面端检查登录”。没有稳定主体 ID 时，只报告“当前已登录”，不能报告“换号成功”。
-5. 无原生终端就不显示「显示原生终端」；需给 `LoginWindow` 可选的终端回退能力及通用结果说明，不能伪造 terminal id。关闭只停止插件的观察查询/助手，不关闭桌面应用，也不写桌面账号数据。
+5. 无原生终端就不显示「显示原生终端」；`LoginWindow` 已增加可选终端回退能力、桌面操作槽及安全结果说明，不能伪造 terminal id。关闭只停止插件的观察查询/助手，不关闭桌面应用，也不写桌面账号数据。
 
 ## 9、测试与逐步核对
 

@@ -76,11 +76,15 @@ WorkBuddy SHALL 通过内置 CLI 的 ACP 运行任务：会话 ID 来自 `sessio
 - **THEN** 插件发送原生取消并结束 CLI 与助手进程，确认退出后报告停止成功，WorkBuddy 桌面端不受影响
 
 ### Requirement: 模型目录与账号状态
-模型 SHALL 来自经引导后 `session/new` 返回的账号目录，强度 SHALL 来自 `thought_level` 配置项；目录与状态查询 MUST 只发 `initialize`、`session/new` 与切换模型的 `session/set_config_option`，不发 prompt，并确认进程范围退出。未登录时 MUST 提示在 WorkBuddy 桌面端登录，插件不提供登录或退出操作，不读取凭据文件内容。
+模型 SHALL 来自经引导后 `session/new` 返回的账号目录，强度 SHALL 来自 `thought_level` 配置项；目录与状态查询 MUST 只发 `initialize`、`session/new` 与切换模型的 `session/set_config_option`，不发 prompt，并确认进程范围退出。插件 SHALL 提供桌面管理指引，但 MUST 不提供 CLI 登录/退出或伪终端；登录、退出、换号在对应桌面端完成，不新增凭据文件读取。元数据成功只确认当前已登录，只有可区分的认证缺失可确认未登录；通用认证错误 MUST 保持 unknown，不推断退出或同站点换号。
 
-#### Scenario: 未登录
-- **WHEN** `session/new` 返回认证错误
-- **THEN** 账号区提示“请打开 WorkBuddy 桌面端登录后重试”，不启动任务
+#### Scenario: 认证拒绝未能区分缺失
+- **WHEN** `session/new` 返回通用认证错误，无法核实认证缺失
+- **THEN** 账号区提示“请在桌面端检查登录状态”，保留桌面管理指引，不报告已退出或启动任务
+
+#### Scenario: 桌面管理入口
+- **WHEN** 用户打开对应 WorkBuddy 的桌面管理指引
+- **THEN** 使用独立无 PTY 会话，仅打开重新核实的本版应用；有限串行观察与手动刷新共享每周期元数据，关闭取消查询并确认清理，不关闭桌面应用；旧 Host 未声明能力时只显示手动指引
 
 #### Scenario: 选择强度
 - **WHEN** 用户为 WorkBuddy 选择强度

@@ -1,5 +1,12 @@
 # dsh-cliworker-now — 设计与版本演进
 
+## WorkBuddy 桌面账号管理指引（未发布，2026-11-07）
+
+- 有桌面管理指引，无 CLI 登录/退出。设置行通过 `target: desktop` 打开 480px 无 PTY 窗口，复用步骤、灰卡、等待和安全结果说明；旧 Host 保留手动指引。
+- `workbuddy-desktop.ts` 独立管理观察生命周期，与账号/Worker 互斥；Gateway 校验父会话、执行权限及启用状态。打开应用由 `workbuddy-desktop-open.ts` 每次重新核实版本后使用 argv；关闭不终止桌面端。
+- 初次一次查询，显式打开/继续后串行观察：完成后至少 15 秒，最多 5 分钟/20 次，手动刷新合并，整轮 25 秒并确认清理。账号和模型共享一次元数据读取；无凭据访问扩展，无原生 runner/helper/bootstrap 修改。
+- 认证缺失尚无精确回执，泛化认证错误只显示检查登录；不证明退出或同站点换号。实施证据及未验证项目见 `openspec/changes/add-new-cli-graphical-login/tasks.md`。
+
 ## WorkBuddy 注册接线（未发布，2026-11-07）
 
 - 新增 `workbuddycn`（WorkBuddy）与 `workbuddy`（WorkBuddy AI），位于 Qoder CN 之后；独立路径、默认选型、目录、会话与 ACP transport。复用已存在的 WorkBuddy 安装解析、引导与 runner，未修改这些核心模块。

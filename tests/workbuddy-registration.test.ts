@@ -119,13 +119,13 @@ describe('模拟 WorkBuddy 发现、目录与账号接线（不启动程序）',
     const other = cli === 'workbuddycn' ? 'workbuddy' : 'workbuddycn'
     expect((await authorizedCatalog(other, f.backend, f.config, f.root, signal())).binding).not.toBe(a.binding)
   })
-  it.each(clis)('%s reports login, authentication failure and bootstrap failure without offering account actions', async cli => {
+  it.each(clis)('%s reports login, authentication failure and bootstrap failure with only desktop management actions', async cli => {
     const f = fixture(), manager = new AccountManager(f.backend, f.config)
-    expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'authenticated', installed: true, verification: 'cli', actions: [] })
+    expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'authenticated', installed: true, verification: 'cli', actions: [{ id: 'manage', target: 'desktop' }] })
     probe.mockRejectedValueOnce(Object.assign(new Error('请打开 WorkBuddy 桌面端登录后重试'), { code: 'CLI_OWN_ACCOUNT_REQUIRED' }))
-    expect(await manager.status(cli, f.root, signal())).toMatchObject({ summary: '请打开 WorkBuddy 桌面端登录后重试', actions: [] })
+    expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'unknown', summary: '请在桌面端检查登录状态。', actions: [{ id: 'manage', target: 'desktop' }] })
     probe.mockRejectedValueOnce(Object.assign(new Error('WorkBuddy 暂不可用：binding-unavailable'), { code: 'WORKBUDDY_UNAVAILABLE', reason: 'binding-unavailable' }))
-    expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'unavailable', summary: 'WorkBuddy 暂不可用：binding-unavailable', actions: [] })
+    expect(await manager.status(cli, f.root, signal())).toMatchObject({ state: 'unavailable', summary: 'WorkBuddy 暂不可用', actions: [{ id: 'manage', target: 'desktop' }] })
     for (const action of ['login', 'logout', 'manage'] as const)
       expect(() => manager.start('SIMULATED/parent', cli, action, f.root, signal())).toThrow('请在 WorkBuddy 桌面端登录或退出')
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
@@ -196,5 +196,46 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
     await expect(service.chooseWorkBuddyVariant(agent, signal(), 'workbuddy')).rejects.toThrow('任务尚未启动')
     expect(probe).not.toHaveBeenCalled(); expect(service.pending.size).toBe(0)
+  })
+})
+
+
+describe('模拟 WorkBuddy desktop Gateway and AccountManager integration', () => {
+  it('shares one metadata cycle for account + models and refuses overlap with workers/account queries', async () => {
+    const f = fixture(), changed = vi.fn(), manager = new AccountManager(f.backend, f.config, undefined, undefined, changed)
+    const started = await manager.desktop.start('SIMULATED/parent', 'workbuddycn', f.root, signal(), () => {})
+    expect(probe).toHaveBeenCalledTimes(1)
+    expect(manager.isBusy('workbuddycn')).toBe(true)
+    expect(await manager.status('workbuddycn', f.root, signal())).toMatchObject({ state: 'authenticated' })
+    expect(probe).toHaveBeenCalledTimes(1)
+    await manager.desktop.respond('SIMULATED/parent', started.id, 'refresh')
+    expect(probe).toHaveBeenCalledTimes(2)
+    expect(changed).toHaveBeenCalledOnce()
+    await manager.closeParent('SIMULATED/parent')
+    expect(manager.isBusy('workbuddycn')).toBe(false)
+    await manager.close()
+  })
+  it('Gateway applies ownership, enabled/permission/worker checks and parent disposal; stop works after permission loss', async () => {
+    const f = fixture(), manager = new AccountManager(f.backend, f.config)
+    const dispose: (() => Promise<void>)[] = []
+    const parent = { id: 'SIMULATED/parent', ctx: { effect: (factory: () => () => Promise<void>) => {
+      const close = factory(); dispose.push(close); return close
+    } } }
+    const service: any = Object.create(CliWorkerService.prototype)
+    Object.assign(service, { accounts: manager, accountParents: new Map(), disposed: new AbortController(),
+      parent: vi.fn(async () => parent), project: () => f.root, assertExecution: vi.fn(),
+      runtime: { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn() } })
+    await expect(service.accountDesktopStart(parent.id, 'codebuddy', signal())).rejects.toThrow()
+    service.runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('SIMULATED active worker') })
+    await expect(service.accountDesktopStart(parent.id, 'workbuddycn', signal())).rejects.toThrow()
+    const started = JSON.parse(await service.accountDesktopStart(parent.id, 'workbuddycn', signal()))
+    expect(service.assertExecution).toHaveBeenCalled(); expect(service.runtime.assertCliEnabled).toHaveBeenCalledWith('workbuddycn')
+    await expect(service.accountDesktopRespond('OTHER', started.id, 'refresh')).rejects.toThrow()
+    await expect(service.accountDesktopRespond(parent.id, started.id, 'arbitrary command')).rejects.toThrow()
+    service.assertExecution.mockImplementation(() => { throw new Error('SIMULATED permission revoked') })
+    expect(await service.accountDesktopStop(parent.id, started.id)).toBe(true)
+    await dispose[0]!()
+    expect(manager.isBusy('workbuddycn')).toBe(false)
+    await manager.close()
   })
 })

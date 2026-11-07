@@ -155,3 +155,9 @@
   - 完整命令、日志位置、各冲突决策与失败归因见 integration-verification.md。此次没有正式构建、Desktop 链接更新、真实 CLI/模型/账号调用、推送、发布或版本修改。
 - [ ] 9.4 在允许的短绝对临时目录下补验 40 项 WorkBuddy socket 用例
   - 指定 TMPDIR 本身 107 字节、socket 约 127 字节。沙箱内 `listen EPERM`；沙箱外监听后 `chmod ENOENT`／ready 初始化失败，与 macOS Unix socket 长路径限制一致。两文件为 workbuddy-bootstrap（21 项失败）与 native-workbuddy（19 项失败）。遵守固定 TMPDIR 和工作树范围，没有改用工作树外目录或修改产品行为。本轮不能宣称完整动态密钥不泄露验收已通过。
+
+
+## 10. 关联桌面管理语义协调（2026-11-07）
+
+- [x] 10.1 按 `add-new-cli-graphical-login` Migration 3 同步 proposal/design/模型目录与账号状态规格：有桌面管理指引，无 CLI 登录/退出；泛化认证错误不证明退出，独立无 PTY 观察会话与精确应用打开由关联变更实施。
+  - 本节不重写既有历史验收。实现、命令和当前未验项目记录在 `../add-new-cli-graphical-login/tasks.md`；未触碰密钥助手/bootstrap，未做真实账号或模型调用。

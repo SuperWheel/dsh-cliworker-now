@@ -22,6 +22,7 @@ import {
 import type { AccountAction, AccountSource, AccountStatus } from '../shared/accounts.ts'
 import { modelName } from '../shared/models.ts'
 import { visibleModelChoices } from '../shared/model-presentation.ts'
+import { WorkBuddyDesktopWindow } from './account-login/workbuddy-desktop-window.tsx'
 import { AccountTerminal, type AccountCloseControl } from './account-terminal.tsx'
 import { AccountsWindow } from './account-login/accounts-window.tsx'
 import { MULTI_ACCOUNT_CLIS } from '../shared/account-links.ts'
@@ -763,7 +764,7 @@ function CliSettings({
   const accountAction = (id: AccountAction) => {
     const item = account?.data?.actions.find((candidate) => candidate.id === id)
     const label =
-      item?.target === 'models'
+      item?.target === 'desktop' ? t(account?.data?.state === 'unconfigured' ? '登录' : '在桌面端管理') : item?.target === 'models'
         ? id === 'login'
           ? t('登录设置')
           : t('打开原生设置')
@@ -822,7 +823,7 @@ function CliSettings({
             <Glyph name="logout" />
             {t('退出')}
           </>
-        ) : item?.target === 'models' ? (
+        ) : item?.target === 'models' || item?.target === 'desktop' ? (
           label
         ) : id === 'manage' ? (
           <>
@@ -911,7 +912,9 @@ function CliSettings({
                 {t('解除暂停')}
               </Button>
             ) : isWorkBuddy(cli) ? (
-              account?.data?.installed && <span className="cwn-cli-subtitle">{t('在 WorkBuddy 桌面端管理')}</span>
+              account?.data?.installed && (account.data.actions.some(item => item.target === 'desktop') &&
+                api.cliworker.accountDesktopStart && api.cliworker.accountDesktopWatch && api.cliworker.accountDesktopRespond && api.cliworker.accountDesktopStop
+                ? accountAction('manage') : <span className="cwn-cli-subtitle">{t('在 WorkBuddy 桌面端管理')}</span>)
             ) : multiAccount ? (
               <Button
                 type="button"
@@ -1007,7 +1010,10 @@ function CliSettings({
             className="cwn-account-dialog"
             contentClassName="cwn-account-dialog-content"
           >
-            {choosingSource ? (
+            {chosenAction?.target === 'desktop' ? (
+              <WorkBuddyDesktopWindow api={api} sessionId={sessionId} cli={cli} account={account?.data}
+                closeControl={accountClose} onClose={closeAccount} />
+            ) : choosingSource ? (
               <section aria-label={t('选择退出账号来源')}>
                 <p>{sources?.length ? t('选择要退出的账号来源') : t('账号来源不可用，请关闭后刷新状态')}</p>
                 <div className="cwn-account-actions">

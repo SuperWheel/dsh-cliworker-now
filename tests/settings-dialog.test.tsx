@@ -3163,3 +3163,26 @@ it.each(['workbuddycn', 'workbuddy'] as const)('%s shortens other unavailability
   expect(t.text()).toContain('WorkBuddy 暂不可用')
   expect(t.text()).not.toContain('binding-unavailable')
 })
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s offers the declared desktop action and never an account terminal (simulated)', async cli => {
+  const accountDesktopStart = vi.fn(async () => ({ ok: false, error: { message: 'SIMULATED unavailable' } }))
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) => status(id, {
+    state: 'authenticated', summary: `已登录（www.workbuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}）`,
+    actions: [{ id: 'manage', target: 'desktop', label: '在桌面端管理', description: '登录、退出或切换请在桌面端完成。' }],
+  })), accountDesktopStart, accountDesktopRespond: vi.fn(), accountDesktopWatch: vi.fn(), accountDesktopStop: vi.fn() }, undefined, cli)
+  expect(t.button('在桌面端管理').props.disabled).toBe(false)
+  await t.click('在桌面端管理')
+  expect(accountDesktopStart).toHaveBeenCalledWith('simulation-parent', cli, expect.any(AbortSignal))
+  expect(terminal.started).not.toHaveBeenCalled()
+  expect(t.text()).not.toContain('显示原生终端')
+})
+
+it('missing desktop capability on an older Host keeps manual guidance and sends no RPC (simulated)', async () => {
+  const accountDesktopStart = vi.fn()
+  const t = await setup({ accountDesktopStart, accountStatus: vi.fn(async (_parent, cli: CliId) => status(cli, {
+    state: 'authenticated', summary: '已登录（www.workbuddy.cn）', actions: [],
+  })) }, undefined, 'workbuddycn')
+  expect(t.button('在桌面端管理')).toBeUndefined()
+  expect(t.text()).toContain('在 WorkBuddy 桌面端管理')
+  expect(accountDesktopStart).not.toHaveBeenCalled()
+})

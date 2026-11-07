@@ -5,6 +5,23 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  "登录": "Sign in",
+  "在桌面端管理": "Manage in desktop app",
+  "登录、退出或切换请在桌面端完成。": "Sign in, sign out, or switch accounts in the desktop app.",
+  "请在桌面端检查登录状态。": "Please check sign-in in the desktop app.",
+  "正在确认当前登录状态…": "Checking current sign-in status\u2026",
+  "在桌面端管理账号": "Manage your account in the desktop app",
+  "确认当前登录状态": "Check current sign-in status",
+  "无法打开桌面端，请手动打开对应版本后刷新，或重试。": "Could not open the desktop app. Open the selected edition manually and refresh, or retry.",
+  "观察已暂停，可刷新状态或继续观察。": "Observation paused. Refresh the status or continue observing.",
+  "正在观察桌面端登录状态": "Observing desktop sign-in status",
+  "自动观察已暂停": "Automatic observation paused",
+  "继续观察": "Continue observing",
+  "打开桌面端": "Open desktop app",
+  "桌面管理暂不可用，请关闭后重试。": "Desktop account management is unavailable. Close this window and retry.",
+  "账号操作不属于此主会话": "This account operation belongs to a different parent session",
+  "账号窗口已关闭": "The account window is closed",
+
   'Qoder 未找到，请配置 qoderExecutable': 'Qoder was not found. Configure qoderExecutable',
   'Qoder CN 未找到，请配置 qodercnExecutable': 'Qoder CN was not found. Configure qodercnExecutable',
   // CodeBuddy registration and native status

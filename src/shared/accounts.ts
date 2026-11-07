@@ -8,7 +8,7 @@ export interface AccountActionDescriptor {
   id: AccountAction
   label: string
   description: string
-  target?: 'models'
+  target?: 'models' | 'desktop'
   /** Logout applies only to the selected source, never all visible accounts. */
   sources?: { id: AccountSource; label: string }[]
   /** Login targets for the window's provider picker, checked against the installed CLI. */
@@ -115,4 +115,6 @@ export interface AccountFrame {
   guide?: AccountGuide
   /** Host has confirmed process-range exit and released account resources. */
   cleanupConfirmed?: boolean
+  /** No-PTY desktop observation capability; never native payloads or credentials. */
+  desktop?: { account?: AccountStatus; observing: boolean }
 }

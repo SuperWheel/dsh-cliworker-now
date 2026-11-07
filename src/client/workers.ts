@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
@@ -23,6 +23,10 @@ export type API = Pick<ClientRemote, '$stream'> & {
     setWorkerGoalStatus?: (parentId: string, workerId: string, status: 'active' | 'paused', expectedRevision: number, signal: AbortSignal) => Promise<RemoteResult<string>>
     clearWorkerGoal?: (parentId: string, workerId: string, expectedRevision: number, signal: AbortSignal) => Promise<RemoteResult<void>>
     forkWorker?: (parentId: string, workerId: string, atMessageId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    accountDesktopStart?: (parentId: string, cli: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    accountDesktopRespond?: (parentId: string, accountId: string, action: string) => Promise<RemoteResult<boolean>>
+    accountDesktopWatch?: (parentId: string, accountId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
+    accountDesktopStop?: (parentId: string, accountId: string) => Promise<RemoteResult<boolean>>
     /** The user's answer to a plugin-drawn login window step (JSON); absent on older Hosts. */
     accountRespond?: (parentId: string, accountId: string, response: string) => Promise<RemoteResult<boolean>>
     /** A provider picked in the account window, or one login to sign out; absent on older Hosts. */
