@@ -18,12 +18,12 @@
 
 2026-11-07 已按本轮授权执行 CodeBuddy/TRAE macOS 授权前采集，详见 [采集记录](capture-2026-11-07.md)。按指南隔离 HOME/CLI 配置根与 Windows 用户目录，空工作目录、私有输出、无真实凭据继承；不提交授权码、PAT、浏览器授权或模型 prompt。C/T/W 定义见 `design.md`。受首次 trust/条款或登录门槛阻断的画面保持缺失，不能为补齐任务偷偷登录；授权后成功/退出链另列第 6 组。
 
-- [ ] 2.1 采集 CodeBuddy C1–C3：首屏、允许到达的输入就绪/`/login` 补全、四站点菜单完整行与高亮重绘；记录版本、平台、argv、200 × 60 尺寸、脱敏画面及阻断点。
-  - C1 已取得 `Do you trust the files in this folder?`，未同意信任并取消；C2/C3 受此阻断，保持未完成。
-- [ ] 2.2 采集 CodeBuddy C4–C5：中国/国际授权前 URL 主机及等待/回填/设备码形态、企业/iOA 原生回退边界；逐条核对白名单，不提交任何凭据或授权。
-  - C4/C5 受首次信任阻断；未取得站点登录链接或企业/iOA 首屏，不添加 CodeBuddy 授权主机。
+- [x] 2.1 采集 CodeBuddy C1–C3：首屏、允许到达的输入就绪/`/login` 补全、四站点菜单完整行与高亮重绘；记录版本、平台、argv、200 × 60 尺寸、脱敏画面及阻断点。
+  - 首轮止于 C1；同日追加授权后仅接受隔离 HOME 内空项目的文件夹信任，C2 空编辑器、一次 `/login`、C3 完整四站点菜单及箭头局部重绘均已采集。没有条款屏或授权提交。
+- [x] 2.2 采集 CodeBuddy C4–C5：中国/国际授权前 URL 主机及等待/回填/设备码形态、企业/iOA 原生回退边界；逐条核对白名单，不提交任何凭据或授权。
+  - 后续 C4 取得 `copilot.tencent.com/login`、`www.codebuddy.ai/login` 与 `Waiting for auth...`，无回填框，使用 browser；C5 企业 endpoint 首提示、iOA 带 ioa 参数的浏览器等待均采集并取消。
 - [ ] 2.3 采集 CodeBuddy C6–C7：允许取得的未登录 `/logout`、补全/确认菜单、取消/未知屏/关闭；有效账号退出前后无法无提交取得时明确列入 6.2，不能勾成已覆盖。
-  - C6 未到达；C1 Ctrl-C 取消已核对退出 0；未执行 C7 Windows 或有效账号退出。
+  - 后续 C6 已到达：空 HOME 中 `/logout` 一次 Enter 返回登录菜单，无二次确认。两个采集进程均退出 0、HOME 删除、pgrep 无残留；C7 Windows 与有效账号退出仍未执行，本组合任务保持未勾。
 - [x] 2.4 采集 TRAE T1–T2：个人登录的特性/套餐提示、授权前画面、URL、完整码/回调输入边界和取消；据真实画面选模板，不预填 marker。
   - T1/T2：0.213.1 个人授权链接 `https://www.trae.cn/authorization` 与完整回调 URL 提示已记录；Ctrl-C 退出 1，无授权提交，全部隔离 HOME 已删除。
 - [x] 2.5 采集 TRAE T3–T5：SSO 首屏、无 PAT 环境变量的 stdin 提示、未登录 logout/status 输出与退出码；不查看 PAT 值、不输入 PAT，企业授权后画面保留待验收。
