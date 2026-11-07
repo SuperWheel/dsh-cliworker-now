@@ -15,6 +15,7 @@
 | 5 | [CLI 可执行地址发现](executable-discovery.md) | 自动发现、手动选择和缓存如何协调 |
 | 6 | [跨平台启动入口归一化](cross-platform-launch.md) | exe、脚本、npm shim 与 Desktop 内置入口怎样启动 |
 | 7 | [账号来源与执行身份绑定](account-binding.md) | 怎样保证展示账号、目录账号和执行账号一致 |
+| 7.1 | [图形化登录窗口](graphical-login.md) | 怎样复用登录模板、采集原生画面、确认退出与接入桌面托管账号 |
 | 8 | [模型与思考强度接入](model-effort-selection.md) | 怎样保留真实 ID、支持范围和执行前核验 |
 | 9 | [接入 Harness 原生会话](native-conversation-integration.md) | 模型选择、正文、工具和输入怎样进入原生界面 |
 | 10 | [权限映射与进程清理](permissions-and-cleanup.md) | 怎样映射只读/编辑、拒绝未知权限并确认停止 |
