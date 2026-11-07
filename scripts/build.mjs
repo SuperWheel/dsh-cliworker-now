@@ -149,6 +149,7 @@ for (const name of [
   'native-acp',
   'native-kimi',
   'native-qoder',
+  'native-traecn',
   'qoder-durable-context',
   'kimi-durable-usage',
   'omp-context-inspection',

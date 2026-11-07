@@ -279,6 +279,14 @@ function metricRecords(v: Record<string, any>): unknown[] {
     usage: metricCounts(v.usage, ['total', 'input', 'output', 'cacheRead', 'cacheWrite', 'reasoning']),
   })
   else if (v.type === 'thread.started') entries.push({ type: v.type, thread_id: textId(v.thread_id) ?? null })
+  else if (v.type === 'cliworker.traecn_prompt_usage') entries.push({
+    type: v.type, source: textId(v.source), sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
+    usage: metricCounts(v.usage, ['inputTokens', 'outputTokens', 'totalTokens', 'thoughtTokens', 'cachedReadTokens', 'cachedWriteTokens']),
+  })
+  else if (v.type === 'cliworker.traecn_context') entries.push({
+    type: v.type, source: textId(v.source), sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
+    used: count(v.used) ?? null, size: count(v.size) ?? null,
+  })
   else if (['cliworker.qoder_prompt_usage', 'cliworker.qodercn_prompt_usage'].includes(v.type)) entries.push({
     type: v.type, sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
     usage: metricCounts(v.usage, ['inputTokens', 'outputTokens', 'totalTokens']),
@@ -771,6 +779,26 @@ export function extractTelemetry(
       result.runUsage = receipt && receipt.total > 0 ? receipt : undefined
       if (receipt?.total === 0) result.unsettledRunUsage = true
       else if (receipt) delete result.unsettledRunUsage
+    } else if (cli === 'traecn' && v.type === 'cliworker.traecn_prompt_usage' && v.source === 'traecn.session/prompt' &&
+      textId(v.sessionId) && ownSession(v.sessionId) && textId(v.model) && (!model || v.model === model)) {
+      const u = obj(v.usage)
+      delete result.runUsage
+      delete result.usage
+      if (['inputTokens', 'outputTokens', 'totalTokens'].every(key => count(u[key]) !== undefined) && u.totalTokens > 0 &&
+        u.totalTokens === u.inputTokens + u.outputTokens &&
+        ['thoughtTokens', 'cachedReadTokens', 'cachedWriteTokens'].every(key => u[key] === undefined || count(u[key]) !== undefined))
+        result.runUsage = result.usage = { input: u.inputTokens, output: u.outputTokens, total: u.totalTokens, scope: 'run',
+          ...(u.thoughtTokens !== undefined ? { reasoning: u.thoughtTokens } : {}),
+          ...(u.cachedReadTokens !== undefined ? { cacheRead: u.cachedReadTokens } : {}),
+          ...(u.cachedWriteTokens !== undefined ? { cacheWrite: u.cachedWriteTokens } : {}) }
+    } else if (cli === 'traecn' && v.type === 'cliworker.traecn_context' && v.source === 'traecn.session/prompt' &&
+      textId(v.sessionId) && ownSession(v.sessionId) && textId(v.model) && (!model || v.model === model) &&
+      count(v.used) !== undefined && count(v.size) !== undefined && v.size > 0 && v.used <= v.size) {
+      result.contextUsed = v.used
+      result.contextCapacity = v.size
+      result.contextRatio = v.used / v.size
+      result.contextEstimated = false
+      result.contextSource = result.contextCapacitySource = 'TRAE CLI CN 原生回执上下文'
     } else if ((cli === 'qoder' || cli === 'qodercn') && v.type === `cliworker.${cli}_prompt_usage` && textId(v.sessionId) && ownSession(v.sessionId) &&
       (!model || v.model === model)) {
       const u = obj(v.usage)

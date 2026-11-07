@@ -96,6 +96,7 @@ export class NativeSupplementalContextReader {
   }
   read(input: NativeSupplementalContextInput): Partial<RunTelemetry> {
     const { worker, runId } = input
+    // traecn context comes from its session/prompt receipt; do not inspect Qoder-style durable logs.
     if (!['zcode', 'grok', 'qoder', 'qodercn'].includes(worker.preference.cli ?? '') || !id(worker.id) || !id(runId)) return {}
     try {
       const root = realpathSync(input.storageDirectory)

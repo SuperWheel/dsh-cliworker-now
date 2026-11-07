@@ -143,7 +143,7 @@ it.each(CLI_IDS)(
   async (cli) => {
     const { backend, submit } = setup()
     account = undefined
-    const task = submit({ ...preference, cli })
+    const task = submit({ ...preference, cli, ...(cli === 'traecn' ? { effort: 'default' as const } : {}) })
     expect(await task.done).toMatchObject({ status: 'failed', error: expect.stringContaining('未登录') })
     expect(backend.spawn).not.toHaveBeenCalled()
     expect(catalogFor).not.toHaveBeenCalled()

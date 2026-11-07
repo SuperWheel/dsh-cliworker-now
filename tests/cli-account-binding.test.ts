@@ -228,6 +228,7 @@ beforeEach(() => {
     vi.stubEnv(name, '')
   vi.stubEnv('ZCODE_DATA_BASE_DIR', fixture.home)
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
+  vi.stubEnv('TRAE_HOME', join(fixture.home, '.trae'))
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -327,6 +328,7 @@ function own(cli: CliId) {
     })
   else if (cli === 'qoder') vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qoder-pat')
   else if (cli === 'qodercn') vi.stubEnv('QODERCN_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qodercn-pat')
+  else if (cli === 'traecn') write(join(fixture.home, '.trae/cli/auth.json'), { auth_mode: 'trae', trae: { user_id: '模拟-trae-user' } })
   else if (cli === 'zcode') zcode()
   else if (cli === 'grok')
     write(join(fixture.home, '.grok/auth.json'), {

@@ -10,6 +10,8 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   claude: ['claude.com', 'claude.ai'],
   qoder: ['qoder.com'],
   qodercn: ['qoder.cn'],
+  // TRAE CLI 0.213.1 personal endpoints, observed 2026-11-07; enterprise SSO stays native.
+  traecn: ['trae.cn', 'www.trae.cn', 'api.trae.com.cn'],
   grok: ['accounts.x.ai', 'auth.x.ai'],
   zcode: ['.bigmodel.cn', '.z.ai'],
   mimo: ['platform.xiaomimimo.com'],
@@ -47,6 +49,7 @@ export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'claude',
   'qoder',
   'qodercn',
+  'traecn',
   'mimo',
   'grok',
 ])

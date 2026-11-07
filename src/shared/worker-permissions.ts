@@ -62,6 +62,7 @@ const LEVELS: Partial<Record<CliId, { ask?: typeof ASK; auto: typeof AUTO }>> = 
   },
   qoder: { ask: ASK, auto: AUTO },
   qodercn: { ask: ASK, auto: AUTO },
+  traecn: { auto: { name: '仅工作区编辑', description: 'TRAE 原生 Workspace Edit 模式：工作区内的读写和命令自动批准；改工作区外的文件先问你。TRAE 不能逐项询问，因此没有「询问」档。' } },
   grok: { ask: ASK, auto: AUTO },
   mimo: { ask: HTTP_ASK, auto: AUTO },
   antigravity: {

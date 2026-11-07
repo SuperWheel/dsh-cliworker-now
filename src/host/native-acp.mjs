@@ -423,7 +423,7 @@ export async function runNativeAcp(config, io, settings) {
           }
           wantedMode = candidate
           permissionDowngraded = index > 0
-          if (permissionDowngraded) io.event({ kind: 'diagnostic', text: `${settings.name} 原生权限模式不可用，本轮按${candidate === 'default' ? '询问' : '自动审批'}运行（${candidate}）` })
+          if (permissionDowngraded) io.event({ kind: 'diagnostic', text: `${settings.name} 原生权限模式不可用，本轮按${settings.modeLabel?.(candidate) ?? (candidate === 'default' ? '询问' : '自动审批')}运行（${candidate}）` })
           break
         } catch (error) {
           io.signal.throwIfAborted()
@@ -463,12 +463,14 @@ export async function runNativeAcp(config, io, settings) {
     if (result?.sessionId !== undefined && result.sessionId !== sessionId)
       throw new Error('ACP prompt session changed')
     await settings.onResult?.(result, sessionId, io)
-    if (result?.stopReason !== 'end_turn')
+    const deniedCancel = settings.deniedCancelEndsTurn && denied && result?.stopReason === 'cancelled' && !io.signal.aborted && !toolOutcomes.count
+    if (result?.stopReason !== 'end_turn' && !deniedCancel)
       fail(`CLI 未成功完成（${String(result?.stopReason ?? 'missing terminal')}）`)
     if ([...tools.values()].some((tool) => !['completed', 'failed'].includes(tool.status)))
       fail('CLI 工具缺少终态')
     if (io.signal.aborted) fail('任务已停止')
     if (failure) io.result('ERROR', response, failure, 'run')
+    else if (deniedCancel) io.result('SUCCESS', response, undefined, 'run', '因拒绝审批而结束：被拒操作未执行，可续聊继续')
     else if (backgroundUnconfirmed) io.result('UNCERTAIN', response, backgroundUnconfirmed, 'run')
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
     else toolOutcomes.settle(io, response, 'run', denied)

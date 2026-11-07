@@ -172,6 +172,7 @@ export function ComposerTelemetry({
         <span className={`cwn-dot ${worker.status}`} />
         <span>{statusLabel}</span>
       </span>
+      {/* traecn reports tokens, not Qoder Credits. */}
       <UsageIndicator usage={telemetry?.usage} providerCredits={telemetry?.providerCredits} creditsBased={worker.preference.cli === 'qoder' || worker.preference.cli === 'qodercn'} />
       <StatPopover
         key={worker.id}

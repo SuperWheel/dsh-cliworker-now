@@ -7,6 +7,8 @@ import { readCodexCustomRouteVersion } from './cli-account-binding.ts'
 import { discoverAgyAccountModels } from './agy-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { discoverQoderModels } from './qoder-accounts.ts'
+import { discoverTraecnModels } from './traecn-accounts.ts'
+import { verifyTraecnExecutable } from './traecn-executable.ts'
 import { discoverFirstPartySources, discoverMimoModels, readFirstPartyModelSources } from './first-party-models.ts'
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
 import { extendedCatalog, isExtendedCli } from './extended-adapters.ts'
@@ -80,6 +82,7 @@ export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (configured) return configured
   // A deployed standalone runtime is shared across platforms.
   if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
+  if (cli === 'traecn') return 'traecli'
   if (process.platform === 'win32')
     return presentWindowsCliCandidate(cli) ?? windowsCliCommands(cli)[0]!
   if (cli === 'antigravity') return config.executable
@@ -166,6 +169,8 @@ export async function catalogFor(
 ): Promise<Catalog> {
   const executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
+  if (cli === 'traecn') return { cli, models: await discoverTraecnModels(backend, config, executable, cwd, signal),
+    notice: 'TRAE CLI CN 原生账号模型目录；不提供强度选择' }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const models = await discoverQoderModels(backend, config, executable, cwd, signal, cli)
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
@@ -307,6 +312,13 @@ export function workerArguments(
 ): string[] {
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
+  if (cli === 'traecn') {
+    if (!nativeTransport) throw new Error('TRAE CLI CN 必须通过原生 ACP 桥运行')
+    if (preference.effort !== 'default') throw new Error('TRAE CLI CN 不支持强度选择')
+    if (access === 'read-only' && mode !== 'plan') throw new Error('TRAE CLI CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
+    // The TRAE runner owns its mode argv; no prompt, model or foreign flags at launch.
+    return [executable]
+  }
   if (cli === 'antigravity')
     return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId, access)
   if ((cli === 'qoder' || cli === 'qodercn')) {
@@ -387,6 +399,7 @@ export function protocolFor(
   expectedModel?: string,
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
+  if (cli === 'traecn') throw new Error('TRAE CLI CN 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
   if (cli === 'hermes') return new HermesProtocol(emit, identify, maxLineBytes)
@@ -401,7 +414,7 @@ export function protocolFor(
 export function configuredCliExecutable(cli: CliId, config: RuntimeConfig): string | undefined {
   if (cli === 'harness') return undefined
   const value = cli === 'antigravity' ? config.executable : config[`${cli}Executable`]
-  return value && value !== (cli === 'antigravity' ? 'agy' : cli) ? value : undefined
+  return value && value !== (cli === 'antigravity' ? 'agy' : cli === 'traecn' ? 'traecli' : cli) ? value : undefined
 }
 
 function configWithExecutable(cli: CliId, config: RuntimeConfig, path: string): RuntimeConfig {
@@ -480,6 +493,9 @@ async function resolveUncachedCliExecutable(
         return await backend.resolveExecutable(executable)
       } catch (error: any) {
         // Only an absent default PATH entry can use the legacy private install.
+        if (cli === 'traecn' && process.platform !== 'win32' && !explicit &&
+          (error instanceof SubprocessExecutableNotFoundError || ['ENOENT', 'ENOTDIR'].includes(error.code)))
+          return backend.resolveExecutable(join(homedir(), '.local/bin/traecli'))
         // A broken or incompatible native/configured entry must remain an error.
         if (cli === 'pi' && executable === 'pi' && ['ENOENT', 'ENOTDIR'].includes(error.code)) {
           const managed = managedPiEntry()
@@ -524,7 +540,9 @@ async function resolveUncachedCliExecutable(
       if (refreshed) {
         const entry = validateWindowsCliCandidate(cli as Exclude<CliId, 'harness'>, refreshed)
         resolved = /\.[cm]?js$/i.test(entry) ? entry : await pathLookup(() => backend.resolveExecutable(entry))
-      } else if (refreshPath && cli === 'hermes' && hasWindowsHermesInstallDirectory())
+      } else if (refreshPath && cli === 'traecn')
+        throw new WindowsCliInstallationError('TRAE CLI CN 未找到，请配置 traecnExecutable')
+      else if (refreshPath && cli === 'hermes' && hasWindowsHermesInstallDirectory())
         throw new WindowsCliInstallationError('检测到 Hermes 安装目录，但未找到可用 CLI 入口，请完成安装或配置已有入口')
       else if (process.platform === 'win32' && (cli === 'qoder' || cli === 'qodercn') && executable === qoderVariant(cli).executable && !explicit && absent) {
         try { resolved = await pathLookup(() => backend.resolveExecutable(cli)) } catch (legacy: any) {
@@ -576,6 +594,7 @@ async function resolveUncachedCliExecutable(
     const bundled = windowsOpenCodeDesktopCli(resolved, explicit)
     if (bundled) resolved = bundled
   }
+  if (cli === 'traecn') return verifyTraecnExecutable(resolved, backend, config, signal)
   if (cli === 'pi' || cli === 'omp')
     return verifyPiOmpExecutable(cli, resolved, (argv, cwd, env) =>
       captureCatalogMetadata(backend, config, argv, cwd, signal, env),

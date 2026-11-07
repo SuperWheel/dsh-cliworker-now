@@ -40,7 +40,7 @@
 
 ## 4. 模型目录（阶段 5）
 
-- `catalogFor('traecn')`：先跑状态；非 `authenticated` 时抛出对应原因。再跑 `[exe, 'models', '--json']`（有界 20 s）。解析数组，每项要求 `config_name` 为非空字符串；`id = config_name`，`label = name ?? config_name`，`efforts` 为空（不提供强度）。已登录但为空 → `TRAE CLI CN 当前账号暂无可确认模型，请刷新或检查套餐`。目录 notice：“TRAE CLI CN 原生账号模型目录；不提供强度选择”。
+- `catalogFor('traecn')`：先跑状态；非 `authenticated` 时抛出对应原因。再跑 `[exe, 'models', '--json']`（有界 20 s）。解析数组，每项要求 `config_name` 为非空字符串；`id = config_name`，`label = name ?? config_name`，`efforts: ['default']`（只有原生默认，与 Kimi OAuth、Claude 自有路由的无强度模型同一表示，不改共享选型逻辑）。已登录但为空 → `TRAE CLI CN 当前账号暂无可确认模型，请刷新或检查套餐`。目录 notice：“TRAE CLI CN 原生账号模型目录；不提供强度选择”。
 - 不用 ACP `session/new` 做目录：它会在 TRAE 会话库里留下空会话。
 - 执行时 runner 通过 `selectOption('model')` 选择并核对 `config_option_update`/回执。`preference.effort` 只能是 `default`；其他值在 runner 中拒绝（`TRAE CLI CN 不支持强度选择`）。
 

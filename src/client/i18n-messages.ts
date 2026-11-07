@@ -5,6 +5,31 @@
  * interpolation and must match between the two languages.
  */
 export const en = {
+  "个人账号（依赖 TRAE CLI 开发中特性）": "Personal account (requires a TRAE CLI development feature)",
+  "企业 SSO": "Enterprise SSO",
+  "企业 PAT": "Enterprise PAT",
+  "选择 TRAE CLI CN 原生登录方式。": "Choose a native TRAE CLI CN sign-in method.",
+  "TRAE 会读取 TRAECLI_PERSONAL_ACCESS_TOKEN；未设置时在下方原生终端粘贴令牌，插件不保存。": "TRAE reads TRAECLI_PERSONAL_ACCESS_TOKEN. If unset, paste the token in the native terminal below; the plugin does not save it.",
+  "已登录 TRAE（CLI 不区分个人与企业账号）": "Signed in to TRAE (the CLI does not distinguish personal and enterprise accounts)",
+  "TRAE CLI CN 未登录": "TRAE CLI CN is not signed in",
+  "无法确认 TRAE CLI CN 登录状态": "Unable to confirm TRAE CLI CN sign-in status",
+  "TRAE CLI CN 当前账号暂无可确认模型，请刷新或检查套餐": "No confirmed models for the current TRAE CLI CN account. Refresh or check your plan.",
+  "TRAE CLI CN 原生账号模型目录；不提供强度选择": "TRAE CLI CN native account model catalog; reasoning effort selection is unavailable",
+  "TRAE CLI CN 不支持强度选择": "TRAE CLI CN does not support reasoning effort selection",
+  "TRAE CLI CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限": "TRAE CLI CN has no Ask level. Select Workspace Edit Only or Full Access in the Worker menu.",
+  "TRAE 原生 Workspace Edit 模式：工作区内的读写和命令自动批准；改工作区外的文件先问你。TRAE 不能逐项询问，因此没有「询问」档。": "TRAE native Workspace Edit mode automatically approves reads, writes and commands inside the workspace; file changes outside it ask you first. TRAE cannot ask for each action, so it has no Ask level.",
+  "Harness 当前为仅可查看；TRAE CLI CN 不能逐项询问，没有「询问」档，请在 Worker 菜单选择仅工作区编辑或完全权限，或切换权限预设": "Harness is currently view-only. TRAE CLI CN cannot ask for each action and has no Ask level. Select Workspace Edit Only or Full Access in the Worker menu, or change the permission preset.",
+  "因拒绝审批而结束：被拒操作未执行，可续聊继续": "Turn ended after approval was denied: the denied operation was not executed; you can continue the conversation.",
+  "不是官方 TRAE CLI，请检查 traecnExecutable": "Not the official TRAE CLI. Check traecnExecutable.",
+  "TRAE CLI CN 未找到，请配置 traecnExecutable": "TRAE CLI CN was not found. Configure traecnExecutable.",
+  "TRAE CLI CN 仅支持登录和退出": "TRAE CLI CN only supports sign-in and sign-out",
+  "不支持的登录方式": "Unsupported sign-in method",
+  "TRAE CLI CN 元数据输出过大": "TRAE CLI CN metadata output is too large",
+  "TRAE CLI CN 模型查询失败，请检查原生 CLI": "TRAE CLI CN model query failed. Check the native CLI.",
+  "TRAE CLI CN 模型目录格式无效": "Invalid TRAE CLI CN model catalog format",
+  "TRAE CLI CN 必须通过原生 ACP 桥运行": "TRAE CLI CN must run through the native ACP bridge",
+  "TRAE CLI CN 原生回执上下文": "TRAE CLI CN native response context",
+
   '凭据 #{id}': 'Credential #{id}',
   '替换凭据 #{id}': 'Replace credential #{id}',
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':

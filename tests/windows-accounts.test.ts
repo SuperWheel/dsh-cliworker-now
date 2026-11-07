@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join, win32 } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { localAccountIdentity } from '../src/host/account-identity.ts'
-import { readCodexOwnAccountSource } from '../src/host/cli-account-binding.ts'
+import { readCliAccountBinding, readCodexOwnAccountSource } from '../src/host/cli-account-binding.ts'
 import { readKimiAccount } from '../src/host/kimi-accounts.ts'
 import { mimoConfigurationPaths, readMimoAccount } from '../src/host/mimo-configuration.ts'
 import { prepareMimoAccountTerminal } from '../src/host/first-party-account-context.ts'
@@ -38,6 +38,7 @@ beforeEach(async () => {
   vi.stubEnv('HOME', root)
   vi.stubEnv('USERPROFILE', root)
   vi.stubEnv('DSH_HOME', join(root, '.dsh'))
+  vi.stubEnv('TRAE_HOME', join(root, '.trae'))
   // Match the actual native XDG/default-home APIs; fail before a read if the
   // operating system did not accept the isolated home environment.
   expect(await realpath(homedir())).toBe(root)
@@ -100,6 +101,10 @@ afterEach(async () => {
 })
 
 async function configured(cli: CliId): Promise<boolean> {
+  if (cli === 'traecn') {
+    // 模拟主体文件：这里只核对来源绑定；原生 login status 另有模拟进程测试。
+    try { await readCliAccountBinding(cli, { resolveExecutable: vi.fn(), spawn: vi.fn() }, config, project, signal()); return true } catch { return false }
+  }
   if (cli === 'antigravity')
     return (await localAccountIdentity({ home: root })(cli, signal()))?.state === 'authenticated'
   if (cli === 'codex') {
@@ -191,6 +196,9 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
       refresh_token: 'synthetic-refresh',
       expires_at: 4e9,
     })
+  } else if (cli === 'traecn') {
+    path = join(root, '.trae/cli/auth.json')
+    await write(path, { auth_mode: 'trae', trae: { user_id: `模拟-${identity}` } })
   } else if (cli === 'qoder' || cli === 'qodercn') {
     const directory = join(root, cli === 'qodercn' ? '.qoder-cn' : '.qoder')
     path = join(directory, '.auth/user')

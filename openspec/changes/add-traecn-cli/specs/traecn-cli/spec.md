@@ -42,11 +42,11 @@
 - **THEN** 账号或任务显示该原生原因并拒绝启动，不显示为未安装或未登录
 
 ### Requirement: TRAE 模型目录
-模型目录 SHALL 在确认已登录后来自 `traecli models --json`，执行 ID 取 `config_name`、显示名取 `name`。未登录时 `[]` MUST 报未登录，已登录时 `[]` MUST 报“当前账号暂无可确认模型”，二者都 MUST NOT 发布为成功的空目录。插件 MUST NOT 提供强度选择，直到 TRAE 公开可核实的强度来源。执行时 SHALL 通过 ACP `session/set_config_option` 选择模型并核对回执。
+模型目录 SHALL 在确认已登录后来自 `traecli models --json`，执行 ID 取 `config_name`、显示名取 `name`。未登录时 `[]` MUST 报未登录，已登录时 `[]` MUST 报“当前账号暂无可确认模型”，二者都 MUST NOT 发布为成功的空目录。每个模型的强度 SHALL 只有原生默认（`default`），插件 MUST NOT 提供其他强度，直到 TRAE 公开可核实的强度来源。执行时 SHALL 通过 ACP `session/set_config_option` 选择模型并核对回执。
 
 #### Scenario: 已登录的目录
 - **WHEN** 已登录，`models --json` 返回 18 项
-- **THEN** 目录列出 18 个模型，执行 ID 为各自的 `config_name`，没有强度选项
+- **THEN** 目录列出 18 个模型，执行 ID 为各自的 `config_name`，强度只有原生默认
 
 #### Scenario: 所选模型不在 ACP 目录
 - **WHEN** Worker 保存的模型不在本次 `session/new` 返回的 `model` 选项中
