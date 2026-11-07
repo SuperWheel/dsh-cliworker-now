@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>CodeBuddy 图标预览</title>
+<style>
+  body { margin: 0; font: 13px system-ui; }
+  .row { display: flex; gap: 14px; align-items: center; padding: 24px 16px; }
+  .light { background: #fff; } .dark { background: #1e1e20; color: #ddd; }
+  .slot { display: inline-flex; align-items: center; justify-content: center; overflow: hidden; }
+  .slot img { width: 78%; height: 78%; object-fit: contain; }
+  .dark .mono img { filter: invert(1); }
+</style>
+<div class="row light" id="l"></div>
+<div class="row dark" id="d"></div>
+<script>
+  const items = [['codebuddy.png', 'CodeBuddy', ''], ['../../../../src/client/assets/qoder.png', 'Qoder', 'mono']]
+  for (const id of ['l', 'd']) for (const [src, name, cls] of items) for (const size of [22, 24, 32]) {
+    const span = document.createElement('span'); span.className = 'slot ' + cls
+    span.style.width = span.style.height = size + 'px'; span.title = name + ' ' + size + 'px'
+    const img = document.createElement('img'); img.src = src; img.alt = ''; span.append(img)
+    document.getElementById(id).append(span)
+  }
+</script>
