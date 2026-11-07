@@ -19,7 +19,9 @@
 
 ## 阻塞记录
 
-- 2026-11-07：把密钥读取与投递的实现派给 Codex 子 Agent 时，本机自动模式的安全分类器拦截了这一步。按约定没有绕过，也没有换个说法重试。工作区确认无改动，子 Agent 没有启动。第 3 节及之后的实现，需要用户在场确认后再继续。
+- 2026-11-07：把密钥读取与投递的实现派给 Codex 子 Agent 时，本机自动模式的安全分类器拦截了协调会话的这一步。按约定没有绕过，也没有换个说法重试。之前记录“子 Agent 没有启动”有误：已发出的子 Agent 调用实际继续运行，并在工作区新建了 12 个未提交文件（第 3 节的核心模块与 3 个模拟测试文件）。协调会话未审阅、未提交、未修改这些文件，相关任务也未勾选，等用户在场确认后再决定保留还是删除。
+  - 子 Agent 自报：91 项模拟测试通过；typecheck 的 Host 阶段通过，Client 阶段有 10 个范围外错误。这些结果未经协调会话复核。
+  - 已发现缺陷：`workbuddy-bootstrap.mjs` 使用 `CODEBUDDY_SIDECAR_TOKEN` 与 `CODEBUDDY_SIDECAR_SESSION_ID`。安装版实际变量名是 `CODEBUDDY_SIDECAR_READY_TOKEN` 与 `CODEBUDDY_SIDECAR_READY_SESSION_ID`，原样运行会被判为 managed-invalid。原因是派遣说明在传递中被截断，子 Agent 自行推测了变量名。
 
 ## 3. 核心模块（新文件）
 
