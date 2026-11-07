@@ -325,6 +325,6 @@ export const rolePresetStyles = `
 
 export const newCliAccountStyles = `
 .cwn-account-terminal:is([data-cli="codebuddy"],[data-cli="traecn"]) .cwn-login-actions{justify-content:flex-end}
-.cwn-account-terminal:is([data-cli="codebuddy"],[data-cli="traecn"]) .cwn-login-result .cwn-login-actions{align-self:stretch}
+.cwn-account-terminal:is([data-cli="codebuddy"],[data-cli="traecn"]) .cwn-login-result .cwn-login-actions{justify-content:center}
 .cwn-account-terminal[data-cli="traecn"] .cwn-accounts-provider-text strong{white-space:normal;overflow-wrap:anywhere}
 `

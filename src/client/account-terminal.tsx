@@ -628,8 +628,23 @@ export function AccountTerminal({
     focus.current()
   }, [rawVisible])
   // Sign-in keeps its native fallback; sign-out opens it only at the user's request.
+  // A terminal opened for that fallback closes again once a recognized step comes back;
+  // one the user opened or closed stays as they left it.
+  const autoRaw = useRef(false)
   useEffect(() => {
-    if (action !== 'logout' && guide?.template === 'native') setRawVisible(true)
+    if (action === 'logout') {
+      autoRaw.current = false
+      return
+    }
+    if (guide?.template === 'native') {
+      if (!rawShown.current) {
+        autoRaw.current = true
+        setRawVisible(true)
+      }
+    } else if (guide && autoRaw.current) {
+      autoRaw.current = false
+      setRawVisible(false)
+    }
   }, [action, guide])
   useEffect(() => {
     if (!switching.current || action !== 'logout' || (guide?.step !== 'loggedOut' && guide?.step !== 'notSignedIn')) return
@@ -694,7 +709,10 @@ export function AccountTerminal({
           }
           rawVisible={rawVisible}
           notice={notice}
-          onToggleRaw={() => setRawVisible((shown) => !shown)}
+          onToggleRaw={() => {
+            autoRaw.current = false
+            setRawVisible((shown) => !shown)
+          }}
           onRespond={(response) => respond.current(response)}
           onRestart={() => void close(true)}
           onDone={() => (holding ? callbacks.current.onClose() : void close())}

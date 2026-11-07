@@ -28,7 +28,7 @@ export const en = {
   '无法确认 CodeBuddy 登录状态，请检查原生账号文件是否可读': 'Unable to confirm CodeBuddy sign-in status. Check that its native account file is readable.',
   'CodeBuddy 首次在此项目文件夹运行，需要你确认是否信任该文件夹。确认后仅信任当前文件夹。': 'CodeBuddy is running in this project folder for the first time. Confirm whether you trust this folder. Only the current folder will be trusted.',
   '选择 CodeBuddy 登录站点。': 'Choose a CodeBuddy sign-in site.',
-  '后续步骤请在原生终端中完成。': 'Complete the remaining steps in the native terminal.',
+  '在原生终端中继续': 'Continue in the native terminal',
   '打开 CodeBuddy 登录页面完成授权，插件会自动确认登录状态。': 'Open the CodeBuddy sign-in page and authorize. The plugin will check your sign-in status automatically.',
   '正在打开 CodeBuddy 登录站点选择…': 'Opening CodeBuddy sign-in site choices…',
   '中国站': 'Chinese site',

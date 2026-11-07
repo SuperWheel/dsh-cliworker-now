@@ -88,6 +88,8 @@ export interface AccountGuide {
   /** A one-time device code to enter on the sign-in page; never a secret the user typed. */
   code?: string
   options?: AccountGuideOption[]
+  /** Show `options` as the shared two-column selection cards, answered with 「继续」. */
+  cards?: boolean
 }
 /** The user's answer to the current step; Host turns it into the CLI's own keys. */
 export type AccountResponse =

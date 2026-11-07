@@ -1464,6 +1464,53 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     expect(terminals[0].focus).toHaveBeenCalled()
   })
 
+  it('closes a terminal opened for the native fallback once a recognized step comes back', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
+    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    expect(view()).toBe(false)
+    await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
+    expect(view()).toBe(true)
+    await push(f, { guide: { step: 'signedIn', tone: 'success', template: 'result', text: '模拟已登录' } }, 3)
+    expect(view()).toBe(true)
+  })
+
+  it('keeps a terminal the user opened after the fallback, even when a recognized step comes back', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
+    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    await f.click('隐藏原生终端')
+    await f.click('显示原生终端')
+    await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
+    expect(view()).toBe(false)
+  })
+
+  it('centres the result button under the centred title for CodeBuddy and TRAE', async () => {
+    const { newCliAccountStyles } = await import('../src/client/styles.ts')
+    expect(newCliAccountStyles).toContain('.cwn-login-result .cwn-login-actions{justify-content:center}')
+    expect(newCliAccountStyles).not.toContain('align-self:stretch')
+  })
+
+  it('answers a card choice only after 「继续」', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    await push(f, { guide: { step: 'site', tone: 'action', template: 'choice', cards: true, text: '模拟：选择站点',
+      options: [{ id: 'china', label: '中国站' }, { id: 'enterprise', label: '企业域', detail: '在原生终端中继续' }] } }, 1)
+    const radios = f.renderer.root.findAll(node => node.type === 'button' && node.props.role === 'radio')
+    expect(radios.map(node => node.props['aria-label'])).toEqual(['中国站', '企业域'])
+    expect(JSON.stringify(f.renderer.toJSON()).match(/在原生终端中继续/g)).toHaveLength(1)
+    expect(f.accountRespond).not.toHaveBeenCalled()
+    await act(async () => radios[0]!.props.onClick())
+    expect(f.accountRespond).not.toHaveBeenCalled()
+    await f.click('继续')
+    expect(f.accountRespond).toHaveBeenLastCalledWith('parent', 'terminal-a', JSON.stringify({ option: 'china' }))
+  })
+
   it('keeps the plain terminal for Antigravity account management', async () => {
     const f = await setup(false)
     await f.update('antigravity', 'manage')

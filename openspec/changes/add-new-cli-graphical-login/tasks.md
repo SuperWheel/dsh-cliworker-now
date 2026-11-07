@@ -145,3 +145,20 @@
 - 设置页左栏显示 Qoder、Qoder CN、CodeBuddy Code、TRAE CN、WorkBuddy CN、WorkBuddy；左栏由 188px 加宽到 212px 后两项不再省略（实测 `scrollWidth` 114/99 > 93）。
 - WorkBuddy CN 账号行为「已登录（www.workbuddy.cn）」+「在桌面端管理」按钮；WorkBuddy（国际版，本机未装）只显示「未安装」，项目默认区显示「未检测到 WorkBuddy 桌面端」，无重叠。CodeBuddy/TRAE 账号行保留「切换账号」。
 - 未打开任何登录/切换窗口：点击「切换账号」会走自动退出真实账号的流程，自动模式安全检查拦截了该点击，需用户在场操作或明确授权后再做第 6 组实机验收。
+
+## Desktop 实机验收（2026-11-07，macOS，用户在场授权退出/重登真实账号）
+
+正式 build 经 Desktop `link:` 加载，从命令行启动取得 Web 地址后用内置浏览器操作；浏览器授权由用户完成。未调用模型。
+
+- TRAE CN：账号卡片 →「切换账号」→ 自动 `traecli logout` → 登录方式卡片 → 个人登录 → 浏览器授权 →「已登录 TRAE CN」；CLI `login status` 输出 Logged in using Trae、退出码 0。PASS。
+- CodeBuddy Code 第一轮：卡片「已登录 · 中国站」→「切换账号」→ 信任提示（`.test-data/CLI Worker Demo`，用户确认）→ 自动 `/logout` → 站点选择 → 中国站 → 浏览器（copilot.tencent.com）→「已登录 CodeBuddy Code」；「完成」后无残留进程。流程 PASS，但发现 3 个界面问题：
+  1. 原生终端被自动展开并一直不收，弹窗加宽到 720px。根因：`codebuddy-flow.ts` 的兜底 `native` 步骤匹配任意非空画面，CLI 启动画面先命中 → Client 自动展开 → 之后识别到编辑器/站点/浏览器也不收回。
+  2. 企业域与 iOA 的说明“后续步骤请在原生终端中完成。”在选项下重复两行。
+  3. 站点选择是一排按钮而非共享两列卡片；结果页「完成」按钮被新 CLI 专属样式拉成右对齐。
+- 修复：引擎新增 `FlowStep.afterRecognized`（兜底仅在本次引导识别过其他步骤后生效，`resets` 不清），CodeBuddy 兜底改用；Client 对 `native` 自动展开的终端在回到已识别步骤时自动收起，用户手动切换过的不动；协议 `AccountGuide.cards` 让 CodeBuddy 站点用 `ProviderCards`，备注缩为卡片内「在原生终端中继续」，按钮为右对齐「取消 / 继续」；结果页按钮对 CodeBuddy/TRAE 居中。其他 CLI 的 `choice` 外观不变。
+- CodeBuddy 第二轮（修复后 build）：「切换账号」→ 自动退出 → 站点两列卡片（企业域/iOA 各一行短备注，「继续」未选时禁用）→ 中国站 → 浏览器授权 →「已登录 CodeBuddy Code」，全程未展开原生终端、弹窗保持 480px；「完成」后账号行「已登录」，`pgrep -f codebuddy` 为 0。PASS。「取消/继续」顺序与结果页按钮居中在此轮之后修改，仅由单测覆盖，未再做实机登录复看。
+- 其他新增登录检查：TRAE 个人流程无无条件兜底步骤，只在画面静止 8 秒仍未识别时回退，现也会在识别后自动收起；TRAE 企业 SSO/PAT 为有意的原生接手，会展开终端；WorkBuddy 两版为桌面端管理，无终端。
+- WorkBuddy CN：「在桌面端管理」窗口显示灰色账号卡片「已登录（www.workbuddy.cn）」及两步；「打开桌面端」后进入观察（桌面端已在运行，未新开实例）；「刷新状态」后仍为已登录；「关闭」后窗口与观察结束、桌面端不受影响。PASS（未做桌面端退出/换号）。
+- 自动检查：`pnpm typecheck` 通过；账号相关 56 个测试文件 1489 通过、2 跳过；样式与卡片回归后 `account-terminal` / `new-cli-account-flows` / `accounts-window` 177 通过。
+- 未验证：Windows、国际版 WorkBuddy、CodeBuddy 国际站/企业域/iOA、TRAE 企业 SSO/PAT、WorkBuddy 桌面端退出与换号、暗色与英文界面。
+

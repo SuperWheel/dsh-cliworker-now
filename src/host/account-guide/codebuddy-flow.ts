@@ -29,14 +29,16 @@ const trust: FlowStep = {
   respond: (response, _ctx, screen) => 'confirm' in response && response.confirm === 'trust' && trustSelected(screen)
     ? { keys: '\r', resets: true } : undefined,
 }
+// Hands over unknown screens once a recorded CodeBuddy screen has been seen; the startup
+// splash before the editor is not one, and falls back only if it settles unrecognized.
 const native: FlowStep = {
-  id: 'native', when: screen => !!screen.plain.trim(),
+  id: 'native', afterRecognized: true, when: screen => !!screen.plain.trim(),
   guide: () => ({ step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' }),
 }
 const site: FlowStep = {
   id: 'site', when: screen => selectedSite(screen) >= 0,
-  guide: () => ({ step: 'site', tone: 'action', template: 'choice', text: '选择 CodeBuddy 登录站点。',
-    options: sites.map(({ id, label }) => ({ id, label, ...(id === 'enterprise' || id === 'ioa' ? { detail: '后续步骤请在原生终端中完成。' } : {}) })) }),
+  guide: () => ({ step: 'site', tone: 'action', template: 'choice', cards: true, text: '选择 CodeBuddy 登录站点。',
+    options: sites.map(({ id, label }) => ({ id, label, ...(id === 'enterprise' || id === 'ioa' ? { detail: '在原生终端中继续' } : {}) })) }),
   respond: (response, _ctx, screen) => {
     const current = selectedSite(screen), target = 'option' in response ? sites.findIndex(site => site.id === response.option) : -1
     if (current < 0 || target < 0) return undefined

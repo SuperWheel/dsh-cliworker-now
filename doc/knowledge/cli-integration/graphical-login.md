@@ -56,14 +56,14 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 | --- | --- | --- |
 | `starting` / `waiting` | 启动、加载或核对中 | 不虚构百分比或已完成步骤 |
 | `trust` | 真实文件夹信任提示 | 用户点击才发送 `{ confirm: 'trust' }`；不能自动信任 |
-| `choice` | 当前原生画面显示可核对菜单 | 固定标签与 option ID；只响应当前步骤，不能按猜测位置发方向键 |
+| `choice` | 当前原生画面显示可核对菜单 | 固定标签与 option ID；只响应当前步骤，不能按猜测位置发方向键。选项为可并列的站点/方式时 guide 加 `cards: true`，Client 改用共享两列卡片（`ProviderCards`），`detail` 作卡片内短备注，选中后点「继续」才回应（CodeBuddy 站点） |
 | `browser` | 原生提供浏览器授权路径 | 白名单链接的打开/复制与等待；进程不自行结束时用 `watches: 'login'` |
 | `browserCode` | 原生确实接受授权码或回调地址 | `{ code }` → `FlowGuide.paste`，需要时延迟 Enter；原生终端手输可用 `typedConfirms` |
 | `deviceCode` | 原生明确显示设备码与验证页 | 提取完整码后显示；不能从 URL 或模型名猜码 |
 | `secret` | 已核实 CLI 的密码型输入 | `{ secret }` 只送原生 stdin/PTY，Client 提交后清空；不是把密钥拼进 argv 的接口 |
 | `terms` | 原生条款需用户同意 | 现有 `TermsAnswer` 的链接和数据分享文案专用于 Antigravity；其他 CLI 不能直接套 Google 条款，须另行核实并扩展合同 |
 | `result` | 已确认或明确未确认 | 区分成功与警告，不根据屏幕里的成功字符串变绿 |
-| `native` | 未识别或主动交给原生 | 登录自动展开并聚焦终端；退出默认仍隐藏，用户点击「显示原生终端」接手 |
+| `native` | 未识别或主动交给原生 | 登录自动展开并聚焦终端；Host 回到已识别步骤后，这类自动展开的终端自动收起（用户手动显示/隐藏过则保持原状）；退出默认仍隐藏，用户点击「显示原生终端」接手 |
 
 单账号换号在 `AccountTerminal` 收到 `loggedOut` / `notSignedIn` 后调用 `close(true, 'login')`，等待 stop 清理再开始下一次；清理失败保持失败，不直接重新登录。多凭据“替换”是另一条顺序：新凭据确认后才删除指定旧凭据，不能与单账号先退出混用。证据：`src/client/account-terminal.tsx` 的 `close` 与两个后续 effect。
 
@@ -94,6 +94,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 - 步骤从后向前检查，且通常不回退索引；更具体的步骤放在通用等待之后。响应切换菜单并需要重新识别时用 `resets: true` 清掉旧屏；否则旧选项与新结果可能同时匹配。
 - `auto` 每个 step ID 只执行一次，只用于用户已经选择的动作；菜单的高亮行必须完整。OMP 的增量重绘以凭据编号而非邮箱/位置匹配，Kimi 用完整样式结束和下一行说明确认目标。不要直接复用另一个 CLI 的指针或结束符。
 - 设备码必须等完整行/结束边界后提取，分帧前缀不能显示为完整码（参照 `kimi-flow.ts`）。长 URL 使用屏幕软折行与 OSC 的完整目标，不从截断的可见标签拼猜。
+- 需要“已识别后遇到未知屏立即交给原生”（如授权取消、企业域后续页）时，用 `afterRecognized: true` 的兜底步骤：它只在本次引导已匹配过其他步骤后才生效，`resets` 后仍保留该状态。不要写无条件匹配任意非空画面的兜底步骤：CLI 启动画面（logo、提示）会先命中，Client 随即展开原生终端（2026-11-07 CodeBuddy 实测问题）。
 - 未知屏静止时 `settled` 才回退；初始只有终端协商/标题且无可见文本时不能抢先转失败。当前普通 flow 静止阈值为 8 秒，动画有额外上限；等待授权独立于静止检测（`AGY_GUIDE_TIMING`）。
 - `respond` 拒绝错误步骤、空值、控制字符、超长值；`FlowGuide.paste` 依据 CLI 是否开启 bracketed paste 决定封装。新 flow 不应绕过校验，把任意 option 文本当命令。
 

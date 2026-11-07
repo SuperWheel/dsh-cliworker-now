@@ -294,6 +294,12 @@ export interface FlowStep {
   /** The step is a final answer of the CLI (e.g. nothing to sign out); the window closes. */
   ends?: boolean
   /**
+   * A catch-all handover that applies only once another step of this guide has been recognized,
+   * so a CLI still drawing its startup screen is not handed to the native terminal. Before that,
+   * an unrecognized screen falls back only after it settles.
+   */
+  afterRecognized?: boolean
+  /**
    * A native list in which the plugin finds the entry the user chose in the window.
    * Reads lines drawn since the last key; returns the highlighted row's own key and
    * whether it is that entry. Enter is pressed only on a match, the down arrow otherwise;
@@ -380,6 +386,8 @@ export class FlowGuide implements AccountGuideDriver {
   private link?: string
   private code?: string
   private index = -1
+  /** A non-catch-all step of this guide has matched; survives answers that reset the screen. */
+  private recognized = false
   private shown?: AccountGuide
   private autoDone = new Set<string>()
   private typed = false
@@ -450,8 +458,10 @@ export class FlowGuide implements AccountGuideDriver {
     const context = this.context
     for (let i = this.steps.length - 1; i >= (this.flow.revisit ? 0 : Math.max(0, this.index)); i--) {
       const step = this.steps[i]
+      if (step.afterRecognized && !this.recognized) continue
       const matched = typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
       if (!matched) continue
+      if (!step.afterRecognized) this.recognized = true
       const guide = step.guide(screen, context)
       if (i === this.index && sameGuide(guide, this.shown)) return step.pick ? this.pick(step) : []
       if (i !== this.index) this.typed = false

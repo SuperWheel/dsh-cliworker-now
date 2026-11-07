@@ -26,7 +26,7 @@ describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', 
   it('never accepts a different trust scope or terms', () => {
     for (const screen of [codebuddyTrustRecorded.replace('> 1.', '  1.').replace('2. Trust', '> 2. Trust'), 'SIMULATED Terms of Service: Enter to accept']) {
       const flow = createAccountGuide('codebuddy', 'login')!
-      expect(guides(flow.output(screen))[0]?.template).toBe('native')
+      expect(guides([...flow.output(screen), ...flow.settled()])[0]?.template).toBe('native')
       expect(() => flow.respond({ confirm: 'trust' })).toThrow()
     }
   })
@@ -75,15 +75,20 @@ describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', 
     expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))[0]?.template).toBe('native')
     expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
   })
-  it.each([codebuddyEnterpriseRecorded, codebuddyIoaRecorded])('keeps enterprise/iOA native without collecting secrets', screen => {
+  it.each([['enterprise', codebuddyEnterpriseRecorded], ['ioa', codebuddyIoaRecorded]] as const)('keeps %s native without collecting secrets', (option, screen) => {
     const flow = createAccountGuide('codebuddy', 'login')!
-    expect(guides(flow.output(screen))[0]?.template).toBe('native')
+    flow.output(codebuddySitesRecorded)
+    flow.respond({ option })
+    // After a recognized screen, an unrecorded one is handed over at once.
+    expect(guides(flow.output('\x1b[2J\x1b[H' + screen))[0]?.template).toBe('native')
     expect(writes(flow.settled())).toEqual([])
     expect(() => flow.respond({ secret: 'SIMULATED' })).toThrow()
   })
   it.each(['http://copilot.tencent.com/login', 'https://copilot.tencent.com.evil.invalid/login', 'https://sub.copilot.tencent.com/login', 'https://evil@www.codebuddy.ai/login', 'https://codebuddy.ai/login'])('rejects unverified CodeBuddy URL %s', url => {
     const flow = createAccountGuide('codebuddy', 'login')!
-    expect(guides(flow.output(codebuddyChinaBrowserRecorded.replace(/https:[^\r\n]+/, url)))[0]?.template).toBe('native')
+    const events = [...flow.output(codebuddyChinaBrowserRecorded.replace(/https:[^\r\n]+/, url)), ...flow.settled()]
+    expect(guides(events)[0]?.template).toBe('native')
+    expect(guides(events).map(g => g.template)).not.toContain('browser')
   })
   it('CodeBuddy logout sends one command from the editor and never retries Enter on the login menu', () => {
     const flow = createAccountGuide('codebuddy', 'logout')!
@@ -104,9 +109,25 @@ describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', 
   })
   it('CodeBuddy unknown editor text falls back without automatic writes, even if already signed in', () => {
     const flow = createAccountGuide('codebuddy', 'logout')!
-    expect(guides(flow.output('SIMULATED unknown screen'))[0]?.template).toBe('native')
-    expect(writes(flow.settled())).toEqual([])
-    expect(flow.identified(state('authenticated'))).toEqual([])
+    expect(guides(flow.output('SIMULATED unknown screen'))).toEqual([])
+    expect(flow.settled()).toEqual([{ identify: true }])
+    const events = flow.identified(state('authenticated'))
+    expect(guides(events)[0]?.template).toBe('native')
+    expect(writes(events)).toEqual([])
+  })
+  it('does not hand the startup splash to the native terminal before the editor is drawn', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    // SIMULATED partial startup frame: logo and tips, no prompt line yet.
+    expect(guides(flow.output('SIMULATED CodeBuddy splash\r\nRun /terminal-setup to configure newline key binding'))).toEqual([])
+    const events = flow.output('\x1b[2J\x1b[H' + codebuddyEditorRecorded)
+    expect(guides(events).map(g => g.template)).toEqual(['waiting'])
+    expect(writes(events)).toEqual([{ write: '/login', enter: true }])
+  })
+  it('draws the site choice as cards with short per-card notes', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    const site = guides(flow.output(codebuddySitesRecorded))[0]!
+    expect(site).toMatchObject({ template: 'choice', cards: true })
+    expect(site.options?.filter(o => o.detail).map(o => o.detail)).toEqual(['在原生终端中继续', '在原生终端中继续'])
   })
   it('personal recorded callback prompt survives single-character chunks and redraw without duplicate watches', () => {
     const flow = createAccountGuide('traecn', 'login', { provider: 'personal' })!

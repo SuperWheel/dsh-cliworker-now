@@ -13,6 +13,7 @@ import { CLI_LABELS, type CliId } from '../../shared/types.ts'
 import { t, useT } from '../i18n.ts'
 import type { MessageKey } from '../i18n-messages.ts'
 import { BrandIcon } from '../icons.tsx'
+import { ProviderCards } from './provider-cards.tsx'
 import { hostText } from '../operation-error.ts'
 
 const MAX_ANSWER_LENGTH = 4096
@@ -442,6 +443,8 @@ export function LoginWindow({
           />
         )
       case 'choice':
+        if (guide.cards)
+          return <ChoiceCards guide={guide} running={running} onChoose={(option) => respond({ option })} onCancel={onDone} />
         return (
           <>
             <p>{hostText(guide.text)}</p>
@@ -563,5 +566,42 @@ export function LoginWindow({
         </p>
       )}
     </>,
+  )
+}
+
+/** A Host choice drawn as the shared two-column cards; nothing reaches the CLI until 「继续」. */
+function ChoiceCards({ guide, running, onChoose, onCancel }: {
+  guide: AccountGuide
+  running: boolean
+  onChoose: (option: string) => void
+  onCancel: () => void
+}) {
+  const t = useT()
+  const [chosen, setChosen] = useState<string>()
+  const options = guide.options ?? []
+  const selected = options.find((option) => option.id === chosen)
+  return (
+    <>
+      <p>{hostText(guide.text)}</p>
+      <ProviderCards
+        label={hostText(guide.text)}
+        chosen={chosen}
+        onChoose={setChosen}
+        choices={options.map((option) => ({
+          id: option.id,
+          name: hostText(option.label),
+          label: hostText(option.label),
+          note: option.detail ? hostText(option.detail) : undefined,
+        }))}
+      />
+      <div className="cwn-accounts-actions">
+        <Button variant="ghost" size="md" onClick={onCancel}>
+          {t('取消')}
+        </Button>
+        <Button variant="primary" size="md" disabled={!running || !selected} onClick={() => selected && onChoose(selected.id)}>
+          {t('继续')}
+        </Button>
+      </div>
+    </>
   )
 }
