@@ -1,3 +1,4 @@
+import { isWorkBuddy, WORKBUDDY_EXPERIMENTAL_NOTICE } from '../shared/workbuddy.ts'
 import { useEffect, useRef, useState } from 'react'
 import { Menu, type MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
@@ -143,6 +144,7 @@ export function WorkerCard({
               </span>
               <span>{effortLabel(worker.preference.effort)}</span>
             </div>
+            {isWorkBuddy(worker.preference.cli) && <span className="cwn-worker-experimental">{t(WORKBUDDY_EXPERIMENTAL_NOTICE)}</span>}
             <span className="cwn-worker-chevron" aria-hidden="true">
               <Glyph name="chevron" />
             </span>

@@ -15,6 +15,7 @@ import grok from './assets/grok.png'
 import qoder from './assets/qoder.png'
 import codebuddy from './assets/codebuddy.png'
 import traecn from './assets/traecn.png'
+import workbuddy from './assets/workbuddy.png'
 import projectLogo from './assets/cliworker-now-logo.png'
 import { DSH_MARK_PATH, DSH_MARK_VIEWBOX } from './dsh-mark.ts'
 
@@ -44,6 +45,8 @@ const icons: Partial<Record<CliId, string>> = {
   qodercn: qoder,
   codebuddy,
   traecn,
+  workbuddycn: workbuddy,
+  workbuddy,
 }
 
 const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono: boolean }>> = {
@@ -57,6 +60,8 @@ const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono
   qodercn: { scale: 0.8272, x: 0.5442, y: 0, mono: true },
   codebuddy: { scale: 0.78, x: 0, y: 0, mono: false },
   traecn: { scale: 0.8, x: 0, y: 0, mono: false },
+  workbuddycn: { scale: 1, x: 0, y: 0, mono: false },
+  workbuddy: { scale: 1, x: 0, y: 0, mono: false },
 }
 
 /** Transparent PNGs, bundled locally without remote asset requests. */

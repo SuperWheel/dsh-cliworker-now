@@ -232,3 +232,11 @@ it('re-renders a mounted component when the Harness language changes', async () 
   await act(async () => setLanguagePreference('zh'))
   expect(label()).toBe('复制名称 pi-1')
 })
+
+it('translates WorkBuddy experimental, desktop login and native site messages', () => {
+  setLanguagePreference('en')
+  expect(hostText('试验性：依赖 WorkBuddy 桌面端非公开接口')).toBe('Experimental: relies on private WorkBuddy desktop interfaces')
+  expect(hostText('请打开 WorkBuddy 桌面端登录后重试')).toBe('Open the WorkBuddy desktop app, sign in, and try again')
+  expect(hostText('已登录（www.workbuddy.cn）')).toBe('Signed in (www.workbuddy.cn)')
+  expect(hostText('WorkBuddy 暂不可用：variant-mismatch')).toBe('WorkBuddy is unavailable: variant-mismatch')
+})

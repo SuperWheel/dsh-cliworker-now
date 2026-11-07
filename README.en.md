@@ -64,6 +64,9 @@ Captured from a real demo session in Harness Desktop (taken with v0.6.5; details
 | ZCode | app-server | Qoder CN CLI | ACP |
 | Grok Build | ACP | CodeBuddy Code | ACP |
 | TRAE CLI CN | ACP | | |
+| WorkBuddy (`workbuddycn`) | ACP · experimental | WorkBuddy AI (`workbuddy`) | ACP · experimental |
+
+WorkBuddy and WorkBuddy AI use the CLI bundled with their respective desktop apps. **Experimental: relies on private WorkBuddy desktop interfaces.** Install and sign in in the matching desktop app; the plugin provides no sign-in or sign-out actions. In advanced path settings, enter an app directory, bundled runtime, or built-in CLI entry. Discovery validates the product site and never falls back to CodeBuddy on PATH or the other edition. Generic “WorkBuddy” uses the sole installed edition or asks which edition to use when both are installed; “WorkBuddy AI” explicitly selects the international edition. Models and effort options come from a fresh native metadata handshake. Each metadata query leaves an empty native session. Native plan mode and ask/auto/full tiers are wired; DSH tools, native forks, usage and context telemetry are unavailable. Registration is covered by simulated tests; real model tasks, approvals, Windows, international and Desktop UI acceptance remain unverified. See [WorkBuddy protocol](doc/workbuddy-protocol.md).
 
 - **Platforms**: macOS / Windows. Install the native build of each CLI you use and complete that CLI's own login or API setup.
 - **Host**: DeepSeek Harness (the current target host and all four bundled native UI packages are 0.2.2-rc.1; the earlier rc.3 resources passed isolated enable/disable, page boot and native settings checks on 0.2.1-rc.2 and rc.3); Node.js ≥ 22.19.0.

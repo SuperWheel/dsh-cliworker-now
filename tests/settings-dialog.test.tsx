@@ -1915,7 +1915,8 @@ it.each(CLI_IDS)(
     expect(t.text()).not.toMatch(
       /未进行远程验证|本地凭据不代表|模拟登录能力说明|模拟退出能力说明|模拟管理能力说明/,
     )
-    if (MULTI_ACCOUNT_CLIS.has(cli)) expect(t.button('账号')).toBeDefined()
+    if (cli === 'workbuddycn' || cli === 'workbuddy') expect(t.button('登录 / 切换账号')).toBeUndefined()
+    else if (MULTI_ACCOUNT_CLIS.has(cli)) expect(t.button('账号')).toBeDefined()
     else expect(t.button('登录 / 切换账号').children).toContain('切换账号')
     expect(terminal.started).not.toHaveBeenCalled()
     expect(t.configure).not.toHaveBeenCalled()
@@ -3124,4 +3125,29 @@ it('defaults DSH children visibility on and saves both switch directions in gene
   expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"showDshSubagents":true}', expect.any(AbortSignal))
   expect(t.button(label).props['aria-checked']).toBe(true)
   expect(t.r.root.findAllByType('nav')[0]!.findAllByType('button').map((button) => button.props['aria-label'])).not.toContain('DSH')
+})
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shows experimental desktop-only account guidance without login/logout controls (simulated)', async cli => {
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) =>
+    status(id, { state: 'authenticated', summary: '已登录（www.workbuddy.cn）', actions: [] })) }, undefined, cli)
+  expect(t.text()).toContain('试验性：依赖 WorkBuddy 桌面端非公开接口')
+  expect(t.text()).toContain('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')
+  expect(t.text()).not.toContain('请打开 WorkBuddy 桌面端登录后重试')
+  const pane = t.r.root.findByProps({ className: 'cwn-settings-pane' })
+  const labels = pane.findAllByType('button').map(button => button.props['aria-label'])
+  expect(labels).not.toContain('登录 / 切换账号')
+  expect(labels).not.toContain('登录账号')
+  expect(labels).not.toContain('退出登录')
+  expect(labels).not.toContain('账号终端')
+  await t.click('高级设置')
+  expect(t.text()).toContain('输入 WorkBuddy 应用目录、自带运行时或内置 CLI 入口的完整路径。')
+  expect(terminal.started).not.toHaveBeenCalled()
+})
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s keeps the installation failure reason visible (simulated)', async cli => {
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) => status(id, {
+    installed: false, state: 'unconfigured', summary: 'WorkBuddy 暂不可用：not-installed', actions: [],
+  })) }, undefined, cli)
+  expect(visibleText(accountSummary(t.r))).toContain('未安装')
+  expect(visibleText(accountSummary(t.r))).toContain('WorkBuddy 暂不可用：not-installed')
 })

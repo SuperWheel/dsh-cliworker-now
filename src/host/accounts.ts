@@ -1,4 +1,7 @@
 import { readCodebuddyAccount } from './codebuddy-account.ts'
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { AGY_GUIDES, AgyAccountGuide } from './agy-account-guide.ts'
 import {
@@ -153,6 +156,7 @@ const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions']
     { id: 'login', label: '登录 / 切换账号', description: '选择 TRAE CLI CN 原生登录方式。', providers: loginProviders(cli, undefined) },
     { id: 'logout', label: '退出登录', description: '按 CLI 原生流程退出登录。' },
   ]
+  if (isWorkBuddyCli(cli)) return []
   if (cli === 'claude')
     return [
       {
@@ -439,7 +443,7 @@ export class AccountManager {
     if (held) return held
     const timer = new AbortController()
     // Qoder's native account budget includes its acknowledged session teardown.
-    const timeout = setTimeout(() => timer.abort(), (cli === 'qoder' || cli === 'qodercn' || cli === 'codebuddy') ? 15_000 : STATUS_TIMEOUT)
+    const timeout = setTimeout(() => timer.abort(), isWorkBuddyCli(cli) ? 25_000 : (cli === 'qoder' || cli === 'qodercn' || cli === 'codebuddy') ? 15_000 : STATUS_TIMEOUT)
     timeout.unref?.()
     const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
     let installed = false
@@ -452,6 +456,10 @@ export class AccountManager {
       if (cli === 'traecn') return { cli, installed,
         ...(await readTraecnAccount(this.backend, this.config, executable, cwd, control)),
         actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
+      if (isWorkBuddyCli(cli)) {
+        const metadata = await readWorkBuddyMetadata(cli, executable, cwd, control)
+        return { cli, installed, state: 'authenticated', summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: [] }
+      }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
           cli, installed, ...(await readQoderAccount(executable, control, { cli, backend: this.backend, config: this.config, project: cwd })),
@@ -640,6 +648,13 @@ export class AccountManager {
       }
       if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
       const code = (error as NodeJS.ErrnoException)?.code
+      if (isWorkBuddyCli(cli)) {
+        const missing = error instanceof WorkBuddyUnavailableError && error.reason === 'not-installed'
+        return { cli, installed: installed || !missing,
+          state: code === 'CLI_OWN_ACCOUNT_REQUIRED' ? 'unauthenticated' : missing ? 'unconfigured' : 'unavailable',
+          summary: code === 'CLI_OWN_ACCOUNT_REQUIRED' ? '请打开 WorkBuddy 桌面端登录后重试'
+            : error instanceof Error ? error.message : 'WorkBuddy 暂不可用', actions: [] }
+      }
       if (error instanceof WindowsCliNotFoundError)
         return { cli, installed: false, state: 'unconfigured', summary: error.message, actions: [] }
       if (error instanceof WindowsCliInstallationError)
@@ -752,6 +767,7 @@ export class AccountManager {
     login?: string,
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     validateCli(cli)
+    if (isWorkBuddyCli(cli)) throw new Error('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')
     if (cli === 'traecn') traecnAccountArguments(action, provider)
     if (

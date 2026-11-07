@@ -67,6 +67,9 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 | ZCode | app-server | Qoder CN CLI | ACP |
 | Grok Build | ACP | CodeBuddy Code | ACP |
 | TRAE CLI CN | ACP | | |
+| WorkBuddy (`workbuddycn`) | ACP · 试验性 | WorkBuddy AI (`workbuddy`) | ACP · 试验性 |
+
+WorkBuddy（`workbuddycn`）与 WorkBuddy AI（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装并在对应桌面端登录；插件不提供登录或退出入口。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy AI 固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；DSH 工具桥、原生分支、用量与上下文遥测未开放。注册接线经模拟测试，真实模型任务、审批、Windows、国际版和 Desktop 界面尚未验收。详见 [WorkBuddy 协议](doc/workbuddy-protocol.md)。
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.1；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。

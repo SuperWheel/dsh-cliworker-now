@@ -1,4 +1,6 @@
 import { withCodebuddyCatalogSnapshot } from './codebuddy-account.ts'
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { withWorkBuddyMetadataSnapshot } from './workbuddy-metadata.ts'
 import { catalogFor, resolveCliExecutable, validatePreference, type Catalog } from './adapters.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { withWindowsAgyAccountSnapshot } from './agy-windows-account.ts'
@@ -50,6 +52,8 @@ async function authorizedCatalogOnce(
   const { binding, catalog } =
     cli === 'codebuddy'
       ? await withCodebuddyCatalogSnapshot(backend, config, await resolveCliExecutable(cli, backend, config, signal), signal, discover)
+    : isWorkBuddyCli(cli)
+      ? await withWorkBuddyMetadataSnapshot(cli, await resolveCliExecutable(cli, backend, config, signal), project, signal, discover)
       : (cli === 'qoder' || cli === 'qodercn')
       ? await withQoderCatalogSnapshot(backend, config, await resolveCliExecutable(cli, backend, config, signal), project, signal, discover, cli)
       : cli === 'antigravity' && process.platform === 'win32'
@@ -58,7 +62,7 @@ async function authorizedCatalogOnce(
   signal.throwIfAborted()
   // Qoder verifies fresh complete local sources after its combined native
   // account/catalog operation. Other protocols re-read their native binding.
-  if (cli !== 'qoder' && cli !== 'qodercn' && cli !== 'codebuddy' && binding !== (await readCliAccountBinding(cli, backend, config, project, signal)))
+  if (!isWorkBuddyCli(cli) && cli !== 'qoder' && cli !== 'qodercn' && cli !== 'codebuddy' && binding !== (await readCliAccountBinding(cli, backend, config, project, signal)))
     throw new Error(ACCOUNT_CHANGED)
   if (catalog.cli !== cli) throw new Error('CLI 模型目录身份不匹配')
   if (!catalog.models.length) throw new Error('暂无可确认的可用模型，请登录或刷新')

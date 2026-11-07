@@ -1,3 +1,5 @@
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
 import { DshSubagents, type DshSubagentServices } from './dsh-subagents.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
@@ -122,6 +124,8 @@ import {
   requireCliName,
   resolveCliName,
   isGenericQoderName,
+  isGenericWorkBuddyName,
+  resolveAvailableWorkBuddyName,
   resolveAvailableCliName,
 } from './routing.ts'
 
@@ -161,6 +165,8 @@ export interface Config {
   qodercnExecutable?: string
   codebuddyExecutable?: string
   traecnExecutable?: string
+  workbuddycnExecutable?: string
+  workbuddyExecutable?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   /** @deprecated Accepted for old deployments only; never read or forwarded. */
@@ -278,6 +284,8 @@ export class CliWorkerService extends TypertRemoteService {
     qodercnExecutable: z.string().min(1).default('qodercn'),
     codebuddyExecutable: z.string().min(1).default('codebuddy'),
     traecnExecutable: z.string().min(1).default('traecli'),
+    workbuddycnExecutable: z.string().min(1).default('workbuddycn'),
+    workbuddyExecutable: z.string().min(1).default('workbuddy'),
     zcodeAuthDirectory: z.string(),
     zcodeBuiltinConfig: z.string(),
     zaiCredentialRef: z.string(),
@@ -1015,7 +1023,7 @@ export class CliWorkerService extends TypertRemoteService {
   }
   /** Read installation paths without saving discovery or opening a native account/model process. */
   private async resolveDispatchName(name: string, signal: AbortSignal) {
-    return resolveAvailableCliName(name, async (cli) => {
+    const installed = async (cli: 'qoder' | 'qodercn' | 'workbuddycn' | 'workbuddy') => {
       signal.throwIfAborted()
       const saved = this.options.cliExecutablePaths?.read(cli)
       const config = {
@@ -1037,7 +1045,8 @@ export class CliWorkerService extends TypertRemoteService {
         if (!saved || saved.mode !== 'manual') {
           if (
             !configuredCliExecutable(cli, config) &&
-            (error instanceof WindowsCliNotFoundError ||
+            (error instanceof WorkBuddyUnavailableError && error.reason === 'not-installed' ||
+              error instanceof WindowsCliNotFoundError ||
               error instanceof SubprocessExecutableNotFoundError ||
               ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? ''))
           )
@@ -1045,7 +1054,8 @@ export class CliWorkerService extends TypertRemoteService {
         }
         throw error
       }
-    })
+    }
+    return isGenericWorkBuddyName(name) ? resolveAvailableWorkBuddyName(name, installed) : resolveAvailableCliName(name, installed)
   }
   private async chooseQoderVariant(agent: Agent, callerSignal: AbortSignal, name: string, questionAgent = agent) {
     const signal = AbortSignal.any([callerSignal, this.disposed.signal])
@@ -1099,6 +1109,71 @@ export class CliWorkerService extends TypertRemoteService {
           throw new Error('请选择 Qoder 或 Qoder CN；任务尚未启动')
         cli = answer.selected[0] === 'Qoder' ? 'qoder' : 'qodercn'
       } else throw new Error('未找到 Qoder 或 Qoder CN 安装，请先安装或配置 CLI 路径；任务尚未启动')
+      signal.throwIfAborted()
+      this.assertExecution(agent, true)
+      if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
+      this.runtime.assertCliEnabled(cli)
+      return cli
+    } finally {
+      release()
+      const pending = (this.pending.get(agent.id) ?? 1) - 1
+      if (pending) this.pending.set(agent.id, pending)
+      else this.pending.delete(agent.id)
+      this.runtime.changed()
+    }
+  }
+  private async chooseWorkBuddyVariant(agent: Agent, callerSignal: AbortSignal, name: string, questionAgent = agent) {
+    const signal = AbortSignal.any([callerSignal, this.disposed.signal])
+    signal.throwIfAborted()
+    const project = this.project(agent)
+    const key = JSON.stringify([agent.id, project, 'workbuddy-variant'])
+    const waits = (this.dispatchWaits ??= new Map())
+    const previous = waits.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const owned = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const tail = previous.then(() => owned)
+    waits.set(key, tail)
+    void tail.then(() => {
+      if (waits.get(key) === tail) waits.delete(key)
+    })
+    this.pending.set(agent.id, (this.pending.get(agent.id) ?? 0) + 1)
+    this.runtime.changed()
+    try {
+      await waitForInput(previous, signal)
+      this.assertExecution(agent, true)
+      const resolution = await this.resolveDispatchName(name, signal)
+      signal.throwIfAborted()
+      let cli: 'workbuddycn' | 'workbuddy'
+      if (resolution.status === 'resolved' && (isWorkBuddyCli(resolution.cli)))
+        cli = resolution.cli
+      else if (resolution.status === 'ambiguous') {
+        const response = await waitForInput(
+          questionAgent.ctx.get('userQuestions')!.ask({
+            agent: questionAgent,
+            signal,
+            questions: [
+              {
+                id: 'cliworker_workbuddy_variant',
+                header: 'WorkBuddy 版本',
+                question: '检测到 WorkBuddy 和 WorkBuddy AI，请选择本次使用的版本',
+                options: [{ label: 'WorkBuddy' }, { label: 'WorkBuddy AI' }],
+              },
+            ],
+          }),
+          signal,
+        )
+        signal.throwIfAborted()
+        const answer = response.answers.find((item) => item.id === 'cliworker_workbuddy_variant')
+        if (
+          answer?.custom !== undefined ||
+          answer?.selected.length !== 1 ||
+          !['WorkBuddy', 'WorkBuddy AI'].includes(answer.selected[0]!)
+        )
+          throw new Error('请选择 WorkBuddy 或 WorkBuddy AI；任务尚未启动')
+        cli = answer.selected[0] === 'WorkBuddy' ? 'workbuddycn' : 'workbuddy'
+      } else throw new Error('未找到 WorkBuddy 或 WorkBuddy AI 安装，请先安装或配置 CLI 路径；任务尚未启动')
       signal.throwIfAborted()
       this.assertExecution(agent, true)
       if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
@@ -1583,7 +1658,7 @@ export class CliWorkerService extends TypertRemoteService {
             isConcurrencySafe: () => true,
             execute: async (args, exec) =>
               JSON.stringify(
-                isGenericQoderName(args.name)
+                (isGenericQoderName(args.name) || isGenericWorkBuddyName(args.name))
                   ? await this.resolveDispatchName(
                       args.name,
                       AbortSignal.any([exec.signal, this.disposed.signal]),
@@ -1599,7 +1674,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.ctx.tools.register(
           defineTool({
             name: 'cliworker_start',
-            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID 和 agentName。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
+            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder / WorkBuddy 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID 和 agentName。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder / WorkBuddy 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
             parameters: {
               cli: {
                 type: 'string',
@@ -1628,6 +1703,8 @@ export class CliWorkerService extends TypertRemoteService {
               this.assertExecution(parent, true)
               const { questionAgent, initiator } = await this.siblingDispatch(exec.agent, parent, exec.signal)
               let cli = requireCliName(args.cli)
+              if (isGenericWorkBuddyName(args.cli))
+                cli = await this.chooseWorkBuddyVariant(parent, exec.signal, args.cli, questionAgent)
               if (isGenericQoderName(args.cli))
                 cli = await this.chooseQoderVariant(parent, exec.signal, args.cli, questionAgent)
               const agentName =
@@ -2600,7 +2677,7 @@ export class CliWorkerService extends TypertRemoteService {
             cli,
             project: directory,
             signal: control,
-            selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn',
+            selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
             binding: async () => {
               const current = await readCliAccountBinding(
                 cli,
@@ -2657,7 +2734,7 @@ export class CliWorkerService extends TypertRemoteService {
         project,
         signal: control,
         refresh,
-        selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn',
+        selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn' || isWorkBuddyCli(id),
         binding: () => readCliAccountBinding(id, this.backend, this.options, project, control),
         discover: () => this.queryCatalog(id, this.backend, this.options, project, control),
       })

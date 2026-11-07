@@ -356,7 +356,8 @@ function own(cli: CliId) {
   }
 }
 
-it.each(CLI_IDS)('binds only synthetic %s own sources and returns a bounded opaque epoch', async (cli) => {
+// WorkBuddy authenticates through a simulated native metadata probe in workbuddy-registration.test.ts, not credential-file fixtures.
+it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))('binds only synthetic %s own sources and returns a bounded opaque epoch', async (cli) => {
   own(cli)
   const epoch = await run(cli)
   expect(epoch).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
@@ -364,7 +365,8 @@ it.each(CLI_IDS)('binds only synthetic %s own sources and returns a bounded opaq
   expect(await run(cli)).toBe(epoch)
 })
 
-it.each(CLI_IDS)(
+// WorkBuddy authenticates through a simulated native metadata probe in workbuddy-registration.test.ts, not credential-file fixtures.
+it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))(
   'rejects %s with no own account even when ambient and Host credentials exist',
   async (cli) => {
     for (const name of [

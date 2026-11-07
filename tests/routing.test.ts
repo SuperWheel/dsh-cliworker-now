@@ -455,7 +455,8 @@ describe('native prompt/tool integration', () => {
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }
     for (const cli of CLI_IDS) {
-      await f.start(cli)
+      // The international ID is also the human family selector; an explicit alias fixes the site.
+      await f.start(cli === 'workbuddy' ? 'WorkBuddy AI' : cli)
       expect(f.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
       expect(f.launch.mock.calls.at(-1)![3]).toMatchObject({ cli })
     }

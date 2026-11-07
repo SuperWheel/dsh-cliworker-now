@@ -46,6 +46,17 @@ export const en = {
   "TRAE CLI CN 必须通过原生 ACP 桥运行": "TRAE CLI CN must run through the native ACP bridge",
   "TRAE CLI CN 原生回执上下文": "TRAE CLI CN native response context",
 
+  '已登录（{site}）': 'Signed in ({site})',
+  'WorkBuddy 暂不可用：{reason}': 'WorkBuddy is unavailable: {reason}',
+  '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口': '{cli} native account model catalog; experimental: relies on private WorkBuddy desktop interfaces',
+  '试验性：依赖 WorkBuddy 桌面端非公开接口': 'Experimental: relies on private WorkBuddy desktop interfaces',
+  '请打开 WorkBuddy 桌面端登录后重试': 'Open the WorkBuddy desktop app, sign in, and try again',
+  '请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作': 'Manage your account in the WorkBuddy desktop app; this plugin does not provide sign-in or sign-out',
+  '输入 WorkBuddy 应用目录、自带运行时或内置 CLI 入口的完整路径。': 'Enter the full path to the WorkBuddy app directory, bundled runtime, or built-in CLI entry',
+  '请选择 WorkBuddy 或 WorkBuddy AI；任务尚未启动': 'Select WorkBuddy or WorkBuddy AI; the task has not started',
+  '未找到 WorkBuddy 或 WorkBuddy AI 安装，请先安装或配置 CLI 路径；任务尚未启动': 'No WorkBuddy or WorkBuddy AI installation found. Install it or configure its path first; the task has not started',
+  'WorkBuddy 内置 CLI 未公开原生分支能力': 'The WorkBuddy built-in CLI does not expose native session forking',
+  'WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道': 'The WorkBuddy built-in CLI only exposes HTTP/SSE MCP; the plugin tool channel is unverified',
   '凭据 #{id}': 'Credential #{id}',
   '替换凭据 #{id}': 'Replace credential #{id}',
   'CLI Worker 刚刚启用或停用，DeepSeek Harness 需要完全退出后重新打开才能恢复界面。':

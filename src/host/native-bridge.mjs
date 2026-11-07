@@ -15,6 +15,8 @@ const modules = {
   qodercn: ['native-qoder', 'runNativeQoder'],
   codebuddy: ['native-codebuddy', 'runNativeCodebuddy'],
   traecn: ['native-traecn', 'runNativeTraecn'],
+  workbuddycn: ['native-workbuddy', 'runNativeWorkBuddy'],
+  workbuddy: ['native-workbuddy', 'runNativeWorkBuddy'],
   grok: ['native-grok', 'runNativeGrok'],
   zcode: ['native-zcode', 'runNativeZcode'],
   opencode: ['native-opencode', 'runNativeOpenCode'],

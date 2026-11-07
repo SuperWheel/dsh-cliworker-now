@@ -64,6 +64,8 @@ const LEVELS: Partial<Record<CliId, { ask?: typeof ASK; auto: typeof AUTO }>> = 
   qodercn: { ask: ASK, auto: AUTO },
   codebuddy: { ask: ASK, auto: { name: '自动审批', description: '使用 CodeBuddy 原生 Auto：由其 AI 审查逐项放行或拦截；被拦截的操作不会再问你。' } },
   traecn: { auto: { name: '仅工作区编辑', description: 'TRAE 原生 Workspace Edit 模式：工作区内的读写和命令自动批准；改工作区外的文件先问你。TRAE 不能逐项询问，因此没有「询问」档。' } },
+  workbuddycn: { ask: ASK, auto: AUTO },
+  workbuddy: { ask: ASK, auto: AUTO },
   grok: { ask: ASK, auto: AUTO },
   mimo: { ask: HTTP_ASK, auto: AUTO },
   antigravity: {

@@ -1,0 +1,16 @@
+{
+  "name": "WorkBuddy / WorkBuddy AI",
+  "source": "/Applications/WorkBuddy.app/Contents/Resources/icon.icns",
+  "source_version": "5.9.3",
+  "extracted_on": "2026-11-07",
+  "conversion": "sips -s format png",
+  "file": "workbuddy.png",
+  "runtime_file": "src/client/assets/workbuddy.png",
+  "size": [
+    1024,
+    1024
+  ],
+  "sha256": "1ed2dbd10b96120191a8a18b4be0e44b518eef398940cec0e7fe8ad56844c06a",
+  "generated": false,
+  "visual_verification": "源图已目视；未做 Desktop 明暗主题验收。国际版暂复用国内版应用标识，未核实国际版独立素材。"
+}

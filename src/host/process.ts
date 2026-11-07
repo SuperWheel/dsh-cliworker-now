@@ -77,6 +77,8 @@ export interface RuntimeConfig {
   qodercnExecutable?: string
   codebuddyExecutable?: string
   traecnExecutable?: string
+  workbuddycnExecutable?: string
+  workbuddyExecutable?: string
   zcodeAuthDirectory?: string
   zcodeBuiltinConfig?: string
   stateDirectory?: string

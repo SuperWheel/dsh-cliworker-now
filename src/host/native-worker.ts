@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 import type { CliId, Preference, TaskMode, Worker } from '../shared/types.ts'
 import type { RuntimeConfig } from './process.ts'
 import { windowsCodexBackgroundLaunch } from './windows-codex-launch.ts'
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { resolveWorkBuddyInstallation } from './workbuddy-installation.ts'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { createNativeStopControl, createNativeGuidanceControl, createNativeApprovalControl } from './pi-omp-control.mjs'
 import { buildNativeHarnessInjection } from './native-harness-injection.mjs'
@@ -28,6 +30,8 @@ export const NATIVE_TRANSPORTS = {
   qodercn: 'qodercn-acp-v1',
   codebuddy: 'codebuddy-acp-v1',
   traecn: 'traecn-acp-v1',
+  workbuddycn: 'workbuddycn-acp-v1',
+  workbuddy: 'workbuddy-acp-v1',
 } as const
 export function transportFor(cli: CliId): string {
   if (cli === 'harness') throw new Error('Harness CLI 已移除')
@@ -92,7 +96,9 @@ export async function prepareNativeWorker<
     const injected = buildNativeHarnessInjection({ cli: input.cli, argv: launch.argv,
       env: baseEnv ? Object.fromEntries(Object.entries(baseEnv).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : undefined,
       connection: harnessTools, toolTimeoutMs: config.timeLimit?.totalMs ?? config.timeoutMs })
-    let nativeArgv = injected.argv
+    const workbuddy = isWorkBuddyCli(input.cli)
+      ? await resolveWorkBuddyInstallation(input.cli, { manualPath: launch.argv[0] }) : undefined
+    let nativeArgv = workbuddy ? [workbuddy.runtime, workbuddy.entry] : injected.argv
     if (input.cli === 'codex' && harnessTools) {
       // The verified exec parser requires the prompt to remain last.
       const promptIndex = nativeArgv.indexOf(`任务：\n${input.prompt}`)

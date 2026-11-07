@@ -7,6 +7,9 @@ import { t, uiLanguage } from './i18n.ts'
  * other details stay verbatim.
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
+  [/^已登录（([^（）]+)）$/u, '已登录（{site}）', 'site'],
+  [/^WorkBuddy 暂不可用：(.+)$/u, 'WorkBuddy 暂不可用：{reason}', 'reason'],
+  [/^(WorkBuddy(?: AI)?) 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口$/u, '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口', 'cli'],
   [/^任务超时：已达到总时限 (\d+ (?:小时|分钟|秒))$/u, '任务超时：已达到总时限 {duration}', 'duration'],
   [/^任务超时：连续 (\d+ (?:小时|分钟|秒))没有收到 CLI 事件（空闲时限）$/u, '任务超时：连续 {duration}没有收到 CLI 事件（空闲时限）', 'duration'],
   [/^(.+) 已关闭，请先在 CLI Worker 设置中开启$/u, '{cli} 已关闭，请先在 CLI Worker 设置中开启', 'cli'],

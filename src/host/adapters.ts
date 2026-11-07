@@ -1,5 +1,8 @@
 import { discoverCodebuddyModels } from './codebuddy-account.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { isWorkBuddyCli, workbuddyVariant } from './workbuddy-variant.ts'
+import { resolveWorkBuddyInstallation } from './workbuddy-installation.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { qoderVariant } from './qoder-variant.ts'
 import { readClaudeOwnRoute, claudeNativeSettingsArguments } from './claude-own-route.ts'
 import { discoverClaudeNativeOAuth } from './claude-native-oauth.ts'
@@ -81,6 +84,7 @@ export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，请新建 Hermes 任务')
   const configured = configuredCliExecutable(cli, config)
   if (configured) return configured
+  if (isWorkBuddyCli(cli)) return cli
   // A deployed standalone runtime is shared across platforms.
   if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
   if (cli === 'traecn') return 'traecli'
@@ -175,6 +179,10 @@ export async function catalogFor(
     notice: 'CodeBuddy 原生账号模型目录；调用权限以实际请求为准' }
   if (cli === 'traecn') return { cli, models: await discoverTraecnModels(backend, config, executable, cwd, signal),
     notice: 'TRAE CLI CN 原生账号模型目录；不提供强度选择' }
+  if (isWorkBuddyCli(cli)) {
+    const { models } = await readWorkBuddyMetadata(cli, executable, cwd, signal)
+    return { cli, models, notice: `${workbuddyVariant(cli).label} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口` }
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const models = await discoverQoderModels(backend, config, executable, cwd, signal, cli)
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
@@ -323,6 +331,11 @@ export function workerArguments(
     // The TRAE runner owns its mode argv; no prompt, model or foreign flags at launch.
     return [executable]
   }
+  if (isWorkBuddyCli(cli)) {
+    if (!nativeTransport) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行，请新建任务')
+    // prepareNativeWorker resolves and verifies the app runtime and built-in entry.
+    return [executable]
+  }
   if (cli === 'antigravity')
     return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId, access)
   if (cli === 'codebuddy') {
@@ -408,6 +421,7 @@ export function protocolFor(
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
   if (cli === 'traecn') throw new Error('TRAE CLI CN 必须通过原生 ACP 桥运行')
+  if (isWorkBuddyCli(cli)) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
   if (cli === 'hermes') return new HermesProtocol(emit, identify, maxLineBytes)
@@ -485,6 +499,11 @@ async function resolveUncachedCliExecutable(
   automaticSelection = false,
 ): Promise<string> {
   signal.throwIfAborted()
+  if (isWorkBuddyCli(cli)) {
+    const install = await resolveWorkBuddyInstallation(cli, { manualPath: configuredCliExecutable(cli, config) })
+    signal.throwIfAborted()
+    return install.entry
+  }
   const executable = executableFor(cli, config)
   const explicit = !!configuredCliExecutable(cli, config)
   const desktopCli = process.platform === 'win32' && (cli === 'zcode' || cli === 'opencode')
