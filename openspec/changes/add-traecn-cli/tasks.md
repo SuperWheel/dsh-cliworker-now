@@ -42,7 +42,8 @@
 
 ## 5. 界面与其他入口
 
-- [ ] 5.1 图标素材目录与运行图、`icons.tsx`
+- [x] 5.1 图标素材目录与运行图、`icons.tsx`
+  - `doc/assets/cli-icons/v5-trae/`：官方 favicon（trae.com.cn CDN，48×48）、manifest、README、preview.html/png；运行图 `src/client/assets/traecn.png`，`icons.tsx` 彩色、缩放 0.8。Desktop 中实际显示未验证（见 7.4）。
 - [x] 5.2 设置页文案与 i18n、附件、原生能力与 skill 路径、遥测白名单
 
 ## 6. 自动化检查
@@ -96,15 +97,32 @@
 
 ## 7. 真实验收（macOS，`glm-5.3-flash`）
 
-- [ ] 7.1 临时目录：读文件、写文件、续聊、停止（核对事件、退出状态、产物、进程退出）
-- [ ] 7.2 用户目录下自建、测完即删的目录：工作区外审批允许与拒绝各一次
-- [ ] 7.3 规划模式一次（确认 `plan` 且未改文件）
-- [ ] 7.4 Desktop 加载 preview 包、连接页与图标明暗（未执行则保留为未验证）
-- [ ] 7.5 Windows 发现与初始化（本期未执行，保留为未验证）
+验收方式：`.test-data/traecn-accept/run.ts`（不入 Git）直接加载 `pnpm build:preview` 产出的隔离包 `.cache/preview-package`，用真实 `WorkerRuntime` + 本机原生子进程后端跑 traecli 0.213.1；`TRAE_HOME` 不改（用户已登录的个人账号），独立状态目录，权限快照固定为「仅工作区编辑」（`workspace-write`），审批处理器按预设队列回答并记录请求。模型只用 `glm-5.3-flash`。证据目录 `.test-data/traecn-accept/run-193537/`（全量）与 `run-193930/`（修正脚本后重跑规划与停止），各含 `report.json`、`state/*.events.jsonl` 与原生 ACP 流 `*.raw.jsonl`。
+
+- [x] 7.1 临时目录：读文件、写文件、续聊、停止（核对事件、退出状态、产物、进程退出）
+  - 目录：18 个模型、含 `glm-5.3-flash`，每个模型强度只有原生默认，notice「TRAE CLI CN 原生账号模型目录；不提供强度选择」。
+  - 读写：`Read seed.txt` 与 `Edit …/notes.txt` 两个工具均 RUNNING→COMPLETED，回复含随机 nonce，`notes.txt` 实际内容 `ok`，Worker `completed`，transport `traecn-acp-v1`，会话 ID 已记录；结束后 `pgrep traex` 为空。
+  - 续聊：同一会话 ID（新进程 `session/load`），回复仍含 nonce；本轮事件中没有上一轮工具或正文的重放，`completed`。
+  - 停止（run-193930）：`sleep 60 && echo late > late.txt` 工具 RUNNING 后调用 `runtime.stop`，原生回执 `stopReason: cancelled`（usage 全零，未报告为用量），工具 FAILED，Worker `interrupted`/「已停止」，没有显示为成功；3 s 后 `late.txt` 不存在，`pgrep traex`、`pgrep 'sleep 60'` 均为空。
+  - 首次（run-193537）停止步骤脚本按整个 Worker 历史判断“工具已运行”，在新一轮排队时就停了（仍正确显示已停止、无残留），不算有效证据；改为只看本轮新事件后重跑通过。
+- [x] 7.2 用户目录下自建、测完即删的目录：工作区外审批允许与拒绝各一次
+  - 目录 `~/cliworker-traecn-accept-e667c2`（0700，脚本 `finally` 删除，`outsideRemoved: true`，事后 `ls` 确认不存在）；没有用 `/tmp`。
+  - 允许：TRAE 发出 `session/request_permission`，DSH 侧收到 `{kind: file, summary: "Edit …/allow.txt", allowSession: false}`，回答允许一次 → 事件「CLI 请求授权」「授权决定：允许一次（DSH 用户）」「CLI 额外权限请求已批准」，工具 COMPLETED，`allow.txt` 实际内容 `yes`，Worker `completed`。
+  - 拒绝：同样转交一次，回答拒绝 → 「授权决定：拒绝（DSH 用户）」「CLI 额外权限请求已拒绝」，工具 FAILED；TRAE 以 `cancelled` 结束本轮，`deniedCancelEndsTurn` 生效：结果 SUCCESS + 诊断「本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续」，Worker `completed`（不是已取消或 CLI 错误）；`deny.txt` 不存在。随后同一 Worker 继续规划与停止两轮，确认可续聊。
+  - 两次授权请求都只出现一次，没有重复弹出。
+- [x] 7.3 规划模式一次（确认 `plan` 且未改文件）
+  - run-193930：先 `configureWorkerPermission(…, 'plan')`，再续聊。原生流有 `current_mode_update: plan`，之后才发送 prompt；本轮 `end_turn`，有 usage 回执；`plan.txt` 不存在。
+  - TRAE 在规划结束时发出「Implement this plan?」授权请求；runtime 以本轮 `launchMode: plan` 交给审批处理器（真实 Host 的 `decideApproval` 对 plan 一律拒绝，来源 `plan`）。验收脚本的处理器同样回答拒绝，TRAE 随后仍以 `end_turn` 正常结束，没有改文件。
+  - 首次（run-193537）规划步骤脚本只给 `submit` 传了 `plan`，续聊沿用 Worker 已保存的模式，原生仍为 `default`（脚本错误，非插件问题），不算证据。
+  - 验收脚本的权限快照是固定值，所以状态行显示「本轮权限：仅工作区编辑」；真实 Host 在 plan 时显示「规划模式」（`index.ts` 现有逻辑），未在 Desktop 中目视核对。
+- [ ] 7.4 Desktop 加载 preview 包、连接页与图标明暗 —— 未执行，保留为未验证（本会话未打开 Desktop；登录窗口、设置页目录与 Worker 菜单只有模拟测试）
+- [ ] 7.5 Windows 发现与初始化 —— 本期未执行，保留为未验证
+
+未验证与不在本期范围：企业 SSO / 企业 PAT 登录与「套餐不支持 CLI」真实回执（只有夹具）、退出登录的真实执行（未运行，避免影响用户账号）、完全权限（`bypass_permissions`）真实运行、分支 `session/fork` 经插件的真实运行（0.2 只做了原生探测）、附件、运行中引导与 DSH 工具桥（按设计不声明）、强度来源（TRAE 未公开）。
 
 ## 8. 文档
 
-- [ ] 8.1 README、README.en、AGENTS.md、usage-details（中英）、design.md、`doc/traecn-protocol.md`
+- [x] 8.1 README、README.en、AGENTS.md、usage-details（中英）、design.md、`doc/traecn-protocol.md`
 
 ## 共享改动
 
@@ -114,10 +132,9 @@
 | `src/shared/worker-permissions.ts` | 追加无询问档、仅工作区编辑的权限菜单；保留已有规划默认路径。 |
 | `src/shared/account-links.ts` | 追加三个登录域名和单账号入口；不加入 guided。 |
 | `src/shared/conversation-features.ts` | 追加最新轮 fork 和 transport；更早轮分支不支持。 |
-| `src/shared/models.ts` | 仅 traecn 空强度目录接受 default 内部哨兵，不虚构强度。 |
 | `src/shared/native-usage-report.ts` | 追加 reported 输入口径，保留回执缓存/思考字段、不累计成积分。 |
 | `src/shared/running-message.ts` | 仅注释说明 traecn 不加入未实测 steering。 |
-| `src/host/index.ts` | 追加配置默认、仅可查看专用拒绝提示、无强度目录选型哨兵。 |
+| `src/host/index.ts` | 追加配置默认、仅可查看专用拒绝提示。 |
 | `src/host/process.ts` | 追加配置字段/default traecli、原生 .trae 目录保护。 |
 | `src/host/adapters.ts` | 追加只找 traecli 的发现/身份确认、元数据目录、native-only 参数与协议分派。 |
 | `src/host/windows-cli-installation.ts` | 追加 Windows 共享 PATH 命令名 traecli。 |
@@ -138,9 +155,6 @@
 | `src/host/harness-turn-usage.ts` | 仅注释：TRAE 使用 token 回执，不使用 Qoder Credits。 |
 | `src/host/routing.ts` | 追加所有指定 TRAE 别名；泛称直接命中 traecn。 |
 | `src/client/i18n-messages.ts` | 追加 25 条中文源文案的英文映射。 |
-| `src/client/settings-dialog.tsx` | 仅 TRAE 空强度目录允许保存 default，并隐藏强度控件、显示目录说明。 |
-| `src/client/native-cli-model-directory.ts` | 仅 TRAE 允许无强度模型选择，保存 default 哨兵。 |
-| `src/client/worker-model-menu.tsx` | 仅 TRAE 无强度模型可保存，移除强度菜单项。 |
 | `src/client/telemetry.tsx` | 仅注释：TRAE 不走积分显示。 |
 | `scripts/build.mjs` | 追加 native-traecn 运行资源。 |
 
@@ -148,6 +162,8 @@
 
 新增模拟测试：`tests/traecn-integration.test.ts`、`tests/native-traecn.test.ts`、`tests/traecn-accounts.test.ts`、`tests/native-acp-traecn-options.test.ts`、`tests/traecn-telemetry.test.ts`，以及 `tests/fixtures/traecn-acp.ts` / `traecn-metadata.ts`。
 
-既有测试追加：`worker-permissions.test.ts`、`cli-account-binding.test.ts`、`native-cli-model-directory.test.ts`、`runtime-account-isolation.test.ts`、`windows-accounts.test.ts` 与 `fixtures/legacy-runtime.ts`，只补 TRAE 无强度/原生传输/来源夹具。
+既有测试追加：`worker-permissions.test.ts`、`cli-account-binding.test.ts`、`runtime-account-isolation.test.ts`、`windows-accounts.test.ts` 与 `fixtures/legacy-runtime.ts`，只补 TRAE 原生传输/来源夹具。
 
-图标、assets、README 与 doc/ 由其他 Agent 负责；本次代码实施未修改这些路径。未提交、未推送、未运行 traecli update。第 7 节真实验收尚未执行，变更保持未归档。
+复核调整（负责会话，2026-11-07）：实施 Agent 最初为“空强度目录”在 `src/shared/models.ts`、`src/client/settings-dialog.tsx`、`src/client/native-cli-model-directory.ts`、`src/client/worker-model-menu.tsx` 及 `src/host/index.ts` 加了 TRAE 特判；为减少共享改动，已全部撤回，改为沿用现有“只有原生默认”的写法（`discoverTraecnModels` 每个模型 `efforts: ['default']`，同 Kimi OAuth/第一方路线），界面与选型无需改动。撤回后 `pnpm typecheck`、33 个关联测试文件 1,357 项与 `pnpm build:preview` 重新通过。
+
+图标、assets、README 与 doc/ 由文档 Agent 完成并经负责会话复核（提交 786658d）。全程未推送、未运行 `traecli update`、未修改 `traecli.toml`、未读取凭据内容。7.4、7.5 未验证，变更保持未归档。
