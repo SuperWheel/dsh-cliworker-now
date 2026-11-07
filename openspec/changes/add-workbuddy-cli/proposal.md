@@ -19,7 +19,7 @@
 | 模型与强度 | 模型来自 `session/new` 的 `models`（账号实际目录）；强度为会话配置项 `thought_level`（minimal/low/medium/high/xhigh/max/enabled），模型 `_meta` 没有 `effortOptions`；无 agentInfo | 本机 |
 | 权限 | 原生模式 default（Always Ask）/acceptEdits/plan/auto/dontAsk/bypassPermissions/fullAccess/delegate | 本机 |
 | 配置根 | 桌面端给 CLI 设 `CODEBUDDY_CONFIG_DIR` 与 `WORKBUDDY_CONFIG_DIR` 都等于 `~/<dataFolderName>`；不设时 CLI 回落到 `~/.codebuddy`（与独立 CodeBuddy 冲突） | 本机 |
-| 代理 | 子进程带 `HTTP(S)_PROXY` 时远端配置拉取报 setProxy 错并退回内置旧模型列表；去掉后由 CLI 自身按配置或系统代理解析 | 本机实测 |
+| 代理 | 子进程带 `HTTP(S)_PROXY` 时远端配置拉取报 setProxy 错（模型目录与无代理时一致，未见退回旧列表）；去掉后由 CLI 自身按配置或系统代理解析 | 本机实测 |
 | 副作用 | 桌面端为 CLI 设 `DISABLE_AUTOUPDATER=1`、`CODEBUDDY_DISABLE_CRON=1`；插件同样设置 | 本机 |
 
 ## What Changes

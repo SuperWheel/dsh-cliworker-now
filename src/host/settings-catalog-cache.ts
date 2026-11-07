@@ -1,3 +1,4 @@
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import {
   closeSync,
   constants,
@@ -214,7 +215,7 @@ export class SettingsCatalogCache {
       if (input.refresh) this.ready.delete(key)
       const revision = this.revision(cli)
       const current = this.ready.get(key)
-      const binding = (cli === 'qoder' || cli === 'qodercn') && input.selfVerifiedDiscovery && !current ? undefined : await input.binding()
+      const binding = (cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli)) && input.selfVerifiedDiscovery && !current ? undefined : await input.binding()
       signal.throwIfAborted()
       if (current && current.binding === binding) return structuredClone({ catalog: current.catalog, binding })
       this.ready.delete(key)

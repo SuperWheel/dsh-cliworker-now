@@ -13,6 +13,7 @@ import hermes from './assets/hermes.png'
 import opencode from './assets/opencode.png'
 import grok from './assets/grok.png'
 import qoder from './assets/qoder.png'
+import workbuddy from './assets/workbuddy.png'
 import projectLogo from './assets/cliworker-now-logo.png'
 import { DSH_MARK_PATH, DSH_MARK_VIEWBOX } from './dsh-mark.ts'
 
@@ -40,6 +41,8 @@ const icons: Partial<Record<CliId, string>> = {
   opencode,
   qoder,
   qodercn: qoder,
+  workbuddycn: workbuddy,
+  workbuddy,
 }
 
 const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono: boolean }>> = {
@@ -51,6 +54,8 @@ const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono
   grok: { scale: 0.8523, x: -1.1214473684210524, y: 0.7136483253588516, mono: true },
   qoder: { scale: 0.8272, x: 0.5442, y: 0, mono: true },
   qodercn: { scale: 0.8272, x: 0.5442, y: 0, mono: true },
+  workbuddycn: { scale: 1, x: 0, y: 0, mono: false },
+  workbuddy: { scale: 1, x: 0, y: 0, mono: false },
 }
 
 /** Transparent PNGs, bundled locally without remote asset requests. */

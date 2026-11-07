@@ -1,3 +1,4 @@
+import { isWorkBuddy, WORKBUDDY_EXPERIMENTAL_NOTICE } from '../shared/workbuddy.ts'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
@@ -90,6 +91,7 @@ function providerLoginSummary(account: AccountStatus): { label: string; detail: 
   }
 }
 function authenticatedLabel(account: AccountStatus): string {
+  if (isWorkBuddy(account.cli) && /^已登录（(?:www\.)?workbuddy\.(?:cn|ai)）$/u.test(account.summary)) return hostText(account.summary)
   return providerLoginSummary(account)?.label ?? (account.authMethod === 'api' ? t('API 登录') : t('已登录'))
 }
 function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, settingsError = '') {
@@ -508,7 +510,9 @@ function AccountSummary({
                       ? data.cli === 'claude'
                         ? hostText(data.summary)
                         : t('未登录')
-                      : t('未安装')
+                      : isWorkBuddy(data.cli)
+                        ? `${t('未安装')} · ${hostText(data.summary)}`
+                        : t('未安装')
                     : data?.state === 'configured'
                       ? connection.label
                       : hostText(data?.summary) || t('状态待确认')
@@ -844,7 +848,7 @@ function CliSettings({
           <BrandIcon cli={cli} size={40} />
           <div>
             <h2>{CLI_LABELS[cli]}</h2>
-            <p className="cwn-cli-subtitle">{t('管理账号与模型偏好')}</p>
+            <p className="cwn-cli-subtitle">{isWorkBuddy(cli) ? t(WORKBUDDY_EXPERIMENTAL_NOTICE) : t('管理账号与模型偏好')}</p>
           </div>
         </div>
         <div className="cwn-cli-toggle">
@@ -891,7 +895,7 @@ function CliSettings({
             enabled={enabled}
             loading={accountLoading}
             settingsError={settingsError}
-            logout={multiAccount ? undefined : accountAction('logout')}
+            logout={multiAccount || isWorkBuddy(cli) ? undefined : accountAction('logout')}
           />
           <div className="cwn-account-actions">
             {cleanupBlocked ? (
@@ -908,6 +912,8 @@ function CliSettings({
               >
                 {t('解除暂停')}
               </Button>
+            ) : isWorkBuddy(cli) ? (
+              <span className="cwn-cli-subtitle">{t('请在 WorkBuddy 桌面端管理账号；插件不提供登录或退出操作')}</span>
             ) : multiAccount ? (
               <Button
                 type="button"
@@ -934,7 +940,7 @@ function CliSettings({
             ) : (
               accountAction('login')
             )}
-            {!cleanupBlocked && accountAction('manage')}
+            {!cleanupBlocked && !isWorkBuddy(cli) && accountAction('manage')}
           </div>
         </div>
         {cleanupBlocked && release && (

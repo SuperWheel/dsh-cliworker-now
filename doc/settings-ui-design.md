@@ -139,3 +139,7 @@ Qoder CLI 与 Qoder CN CLI 使用各自的设置页、路径、账号状态、�
 ## 通用页「DSH 子 Agent」显示开关（add-sibling-dispatch-unified-subagents，未发布）
 
 「任务调度」分区的「调用前询问模型」之后增加「在 CLI Worker 窗口显示 DSH 子 Agent」，说明为「只影响此窗口的显示，不影响 DSH 子 Agent 的运行与原生入口」。沿用 `cwn-setting-row`、原生 Switch、文字层级、16px 行留白及单条分隔线，没有新设计参数。缺省开启，保存后通过 Worker 快照同步所有窗口；反馈只在保存中或失败时显示。「CLI 连接」不新增 DSH。
+
+## WorkBuddy 试验性接入（add-workbuddy-cli，未发布）
+
+WorkBuddy 与 WorkBuddy AI 各有独立连接页，沿用现有标题、副标题、账号区和高级路径表单。副标题显示“试验性：依赖 WorkBuddy 桌面端非公开接口”；账号区只显示桌面端登录指引和原生查询状态，不显示登录、退出或账号终端按钮。路径说明接受应用目录、自带运行时或内置 CLI 入口。Worker 卡片在现有信息下方以 12px 三级文字显示同一试验性说明；不修改既有字号、间距或控件参数。新增文案提供英文。Desktop 明暗主题与窄栏目视核对仍待验收。

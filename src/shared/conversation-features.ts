@@ -37,6 +37,8 @@ export const forkSupport: Partial<Record<CliId, { latest: boolean; earlier: bool
 }
 
 export const noForkReason: Partial<Record<CliId, string>> = {
+  workbuddycn: 'WorkBuddy 内置 CLI 未公开原生分支能力',
+  workbuddy: 'WorkBuddy 内置 CLI 未公开原生分支能力',
   antigravity: '当前 CLI 不支持会话分支：Antigravity 未公开原生分支接口',
   hermes: '当前 CLI 不支持会话分支：Hermes 原生分支会结束原会话',
   grok: '当前 CLI 不支持会话分支：已确认 --fork-session，但当前 ACP 的 x.ai/session/fork 参数和回执尚未核实',
@@ -48,7 +50,7 @@ export function bridgedFeatureSupport(
 ): Record<BridgedConversationFeature, BridgedFeatureSupport> {
   const cli = cliOf(worker.preference)
   const plan = workerPlanSupported(worker)
-  const expectedTransport: Partial<Record<CliId, string>> = { codex: 'codex-app-v1', claude: 'claude-stream-v1', kimi: 'kimi-acp-v1', mimo: 'mimo-http-v1', zcode: 'zcode-app-v1', pi: 'pi-rpc-v1', opencode: 'opencode-http-v1', qoder: 'qoder-acp-v1', qodercn: 'qodercn-acp-v1' }
+  const expectedTransport: Partial<Record<CliId, string>> = { codex: 'codex-app-v1', claude: 'claude-stream-v1', kimi: 'kimi-acp-v1', mimo: 'mimo-http-v1', zcode: 'zcode-app-v1', pi: 'pi-rpc-v1', opencode: 'opencode-http-v1', qoder: 'qoder-acp-v1', qodercn: 'qodercn-acp-v1', workbuddycn: 'workbuddycn-acp-v1', workbuddy: 'workbuddy-acp-v1' }
   const fork = worker.transport === expectedTransport[cli] ? forkSupport[cli] : undefined
   return {
     goal: { supported: true },

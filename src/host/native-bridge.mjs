@@ -13,6 +13,8 @@ const modules = {
   kimi: ['native-kimi', 'runNativeKimi'],
   qoder: ['native-qoder', 'runNativeQoder'],
   qodercn: ['native-qoder', 'runNativeQoder'],
+  workbuddycn: ['native-workbuddy', 'runNativeWorkBuddy'],
+  workbuddy: ['native-workbuddy', 'runNativeWorkBuddy'],
   grok: ['native-grok', 'runNativeGrok'],
   zcode: ['native-zcode', 'runNativeZcode'],
   opencode: ['native-opencode', 'runNativeOpenCode'],

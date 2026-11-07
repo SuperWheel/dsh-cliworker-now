@@ -38,6 +38,8 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   return authorized ? selected.optionId : undefined
 }
 const reasons = {
+  workbuddycn: 'WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道',
+  workbuddy: 'WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道',
   zcode: 'ZCode 工具桥执行尚未核验，未注入 DSH 工具目录',
   hermes: 'Hermes 当前安全隔离运行尚无已验证的临时 DSH 工具注入入口',
   omp: 'OMP 当前安装版在 --no-extensions 隔离模式下忽略显式扩展，尚无安全工具注入入口',

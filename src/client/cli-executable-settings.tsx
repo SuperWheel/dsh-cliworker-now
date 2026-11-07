@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Button, Input, StateDot, IconChevronDownOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { isWorkBuddy } from '../shared/workbuddy.ts'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import type { CliExecutablePathStatus } from '../shared/cli-settings.ts'
 import { operationMessage } from './operation-error.ts'
@@ -185,7 +186,7 @@ export function CliExecutableSettings({
                 <label className="cwn-setting-row-text" htmlFor={inputId}>
                   <span>{t('CLI 路径管理')}</span>
                   <span className="cwn-setting-description" id={hintId}>
-                    {t('自动识别安装位置，也可输入 CLI 可执行文件的完整路径。')}
+                    {isWorkBuddy(cli) ? t('输入 WorkBuddy 应用目录、自带运行时或内置 CLI 入口的完整路径。') : t('自动识别安装位置，也可输入 CLI 可执行文件的完整路径。')}
                   </span>
                 </label>
                 <form

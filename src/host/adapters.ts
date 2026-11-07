@@ -1,4 +1,7 @@
 import { StringDecoder } from 'node:string_decoder'
+import { isWorkBuddyCli, workbuddyVariant } from './workbuddy-variant.ts'
+import { resolveWorkBuddyInstallation } from './workbuddy-installation.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { qoderVariant } from './qoder-variant.ts'
 import { readClaudeOwnRoute, claudeNativeSettingsArguments } from './claude-own-route.ts'
 import { discoverClaudeNativeOAuth } from './claude-native-oauth.ts'
@@ -78,6 +81,7 @@ export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，请新建 Hermes 任务')
   const configured = configuredCliExecutable(cli, config)
   if (configured) return configured
+  if (isWorkBuddyCli(cli)) return cli
   // A deployed standalone runtime is shared across platforms.
   if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
   if (process.platform === 'win32')
@@ -166,6 +170,10 @@ export async function catalogFor(
 ): Promise<Catalog> {
   const executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
+  if (isWorkBuddyCli(cli)) {
+    const { models } = await readWorkBuddyMetadata(cli, executable, cwd, signal)
+    return { cli, models, notice: `${workbuddyVariant(cli).label} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口` }
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const models = await discoverQoderModels(backend, config, executable, cwd, signal, cli)
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
@@ -307,6 +315,11 @@ export function workerArguments(
 ): string[] {
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
+  if (isWorkBuddyCli(cli)) {
+    if (!nativeTransport) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行，请新建任务')
+    // prepareNativeWorker resolves and verifies the app runtime and built-in entry.
+    return [executable]
+  }
   if (cli === 'antigravity')
     return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId, access)
   if ((cli === 'qoder' || cli === 'qodercn')) {
@@ -387,6 +400,7 @@ export function protocolFor(
   expectedModel?: string,
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
+  if (isWorkBuddyCli(cli)) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
   if (cli === 'hermes') return new HermesProtocol(emit, identify, maxLineBytes)
@@ -464,6 +478,11 @@ async function resolveUncachedCliExecutable(
   automaticSelection = false,
 ): Promise<string> {
   signal.throwIfAborted()
+  if (isWorkBuddyCli(cli)) {
+    const install = await resolveWorkBuddyInstallation(cli, { manualPath: configuredCliExecutable(cli, config) })
+    signal.throwIfAborted()
+    return install.entry
+  }
   const executable = executableFor(cli, config)
   const explicit = !!configuredCliExecutable(cli, config)
   const desktopCli = process.platform === 'win32' && (cli === 'zcode' || cli === 'opencode')

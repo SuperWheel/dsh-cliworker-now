@@ -149,6 +149,9 @@ for (const name of [
   'native-acp',
   'native-kimi',
   'native-qoder',
+  'native-workbuddy',
+  'workbuddy-bootstrap',
+  'codebuddy-acp-outcome',
   'qoder-durable-context',
   'kimi-durable-usage',
   'omp-context-inspection',
@@ -183,6 +186,8 @@ for (const name of [
   const source = `src/host/${name}.mjs`
   if (existsSync(source)) cpSync(source, `lib/${name}.mjs`)
 }
+// WorkBuddy's bootstrap helper must remain beside its plain ESM runner.
+cpSync('src/host/workbuddy-key-helper.cjs', 'lib/workbuddy-key-helper.cjs')
 // Native metadata helpers are also imported by the emitted adapter declarations/runtime.
 if (existsSync('src/host/account-models.mjs')) {
   cpSync('src/host/account-models.mjs', 'lib/types/host/account-models.mjs')
@@ -193,7 +198,7 @@ cpSync('src/host/pi-installation.d.mts', 'lib/types/host/pi-installation.d.mts')
 cpSync('src/host/native-launch.mjs', 'lib/types/host/native-launch.mjs')
 cpSync('src/host/native-launch.d.mts', 'lib/types/host/native-launch.d.mts')
 cpSync('src/host/native-spawn.mjs', 'lib/types/host/native-spawn.mjs')
-for (const name of ['kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'cli-native-capabilities', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'native-tool-outcomes', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
+for (const name of ['native-workbuddy', 'workbuddy-bootstrap', 'codebuddy-acp-outcome', 'native-acp', 'native-transport', 'native-spawn', 'kimi-durable-usage', 'qoder-durable-context', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'cli-native-capabilities', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'native-tool-outcomes', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }
@@ -204,6 +209,7 @@ for (const extension of ['mjs', 'ps1', 'd.mts']) {
     cpSync(source, `lib/types/host/native-file-privacy.${extension}`)
   }
 }
+cpSync('src/host/workbuddy-key-helper.cjs', 'lib/types/host/workbuddy-key-helper.cjs')
 cpSync('src/host/private-launch.mjs', 'lib/types/host/private-launch.mjs')
 cpSync('src/host/pi-omp-environment.mjs', 'lib/types/host/pi-omp-environment.mjs')
 cpSync('src/host/pi-omp-environment.d.mts', 'lib/types/host/pi-omp-environment.d.mts')

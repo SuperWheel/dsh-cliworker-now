@@ -62,6 +62,8 @@ const LEVELS: Partial<Record<CliId, { ask?: typeof ASK; auto: typeof AUTO }>> = 
   },
   qoder: { ask: ASK, auto: AUTO },
   qodercn: { ask: ASK, auto: AUTO },
+  workbuddycn: { ask: ASK, auto: AUTO },
+  workbuddy: { ask: ASK, auto: AUTO },
   grok: { ask: ASK, auto: AUTO },
   mimo: { ask: HTTP_ASK, auto: AUTO },
   antigravity: {

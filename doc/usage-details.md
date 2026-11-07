@@ -1,5 +1,14 @@
 # 使用细节与 CLI 说明
 
+## WorkBuddy / WorkBuddy AI（试验性）
+
+先安装相应桌面应用并在桌面端登录。`workbuddycn` 是国内版 WorkBuddy，`workbuddy` 是国际版 WorkBuddy AI；两版配置与模型偏好独立。泛称 WorkBuddy 按安装分流，两版都装时插件原生询问；明确 WorkBuddy AI 或国内版不会互相回退。
+
+高级设置中的路径接受应用目录、自带运行时或 `cli/dist/codebuddy-lite-wb.mjs` 入口；插件核对包名与 product endpoint，不借用 PATH 上的 CodeBuddy。未登录提示“请打开 WorkBuddy 桌面端登录后重试”，账号区没有插件登录／退出操作。查询账号和模型会创建一条空的原生会话，原生未提供删除接口。
+
+试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；分支、DSH 工具桥、用量与上下文信息未开放。真实模型任务、审批行为、国际版、Windows 与 Desktop 界面仍待验收。
+
+
 [简体中文](usage-details.md) | [English](usage-details.en.md) · [返回 README](../README.md)
 
 本文保存 README 精简前（v0.8.2）的完整说明：各 CLI 的账号、路径与模型规则，安装细节，运行中消息与兼容路径，以及开发验证命令。章节编号沿用原 README。逐版本变更见 [历史版本与详细配置](version-notes.md)，实际验收见 [任务与实际验证](tasks.md)。

@@ -47,6 +47,8 @@ export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'claude',
   'qoder',
   'qodercn',
+  'workbuddycn',
+  'workbuddy',
   'mimo',
   'grok',
 ])

@@ -37,6 +37,8 @@ export const CLI_ALIASES: Record<ActiveCliId, readonly string[]> = {
     '中国版qoder',
     '中国版 qoder',
   ],
+  workbuddycn: ['workbuddycn', 'workbuddy-cn', 'workbuddy cn', 'workbuddy国内版', 'workbuddy 国内版', 'workbuddy中国版', 'workbuddy 中国版', '国内版workbuddy', '国内版 workbuddy', '中国版 workbuddy'],
+  workbuddy: ['workbuddy', 'workbuddy ai', 'workbuddy-ai', 'workbuddy international', 'workbuddy国际版', 'workbuddy 国际版', '国际版workbuddy', '国际版 workbuddy'],
 }
 
 export type CliResolution =
@@ -148,6 +150,28 @@ export function isGenericQoderName(name: string): boolean {
   )
 }
 
+/** The international canonical ID doubles as the family selector in human requests. */
+export function isGenericWorkBuddyName(name: string): boolean {
+  const result = resolveCliName(name)
+  return result.status === 'resolved' && result.cli === 'workbuddy' && result.matchedName === 'workbuddy'
+}
+
+export async function resolveAvailableWorkBuddyName(
+  name: string, installed: (cli: 'workbuddycn' | 'workbuddy') => Promise<boolean>,
+): Promise<CliResolution | { status: 'unavailable'; candidates: []; reason: 'workbuddy-not-installed' }> {
+  const resolution = resolveCliName(name)
+  if (!isGenericWorkBuddyName(name)) return resolution
+  const candidates = ['workbuddycn', 'workbuddy'] as const
+  const results = await Promise.allSettled(candidates.map(installed))
+  for (const result of results) if (result.status === 'rejected') throw result.reason
+  const available = candidates.filter((_, index) => results[index]!.status === 'fulfilled' &&
+    (results[index] as PromiseFulfilledResult<boolean>).value)
+  if (available.length === 1)
+    return { ...(resolution as Extract<CliResolution, { status: 'resolved' }>), cli: available[0]! }
+  if (available.length === 2) return { status: 'ambiguous', candidates: [...available] }
+  return { status: 'unavailable', candidates: [], reason: 'workbuddy-not-installed' }
+}
+
 export type AvailableCliResolution =
   | CliResolution
   | { status: 'unavailable'; candidates: []; reason: 'qoder-not-installed' }
@@ -178,7 +202,7 @@ export const CLI_NAME_GUIDANCE =
       ? 'qoder / qodercli → qoder（按安装分流）；显式 Qoder 国际版 → qoder国际版（固定国际版）'
       : `${CLI_ALIASES[cli].join(' / ')} → ${cli}`,
   ).join('；') +
-  '。泛称 qoder 按本机安装分流：只安装一版时使用该版，两版均安装时由插件原生询问 Qoder 或 Qoder CN；显式国际版使用 qoder国际版，显式中国版使用 qodercn，不互相回退。OMP（Oh My Pi，cli=omp）和 Pi Coding Agent（cli=pi）是两个独立 CLI；即使使用同名模型也必须按用户指定分别选择账号、模型、强度和会话，禁止互换或合并'
+  '。泛称 WorkBuddy 按本机安装分流，只装一版用该版，两版都装时由插件原生询问；显式国内版使用 workbuddycn，显式国际版使用 WorkBuddy AI，不互相回退。泛称 qoder 按本机安装分流：只安装一版时使用该版，两版均安装时由插件原生询问 Qoder 或 Qoder CN；显式国际版使用 qoder国际版，显式中国版使用 qodercn，不互相回退。OMP（Oh My Pi，cli=omp）和 Pi Coding Agent（cli=pi）是两个独立 CLI；即使使用同名模型也必须按用户指定分别选择账号、模型、强度和会话，禁止互换或合并'
 
 export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的插件入口。用户明确指定 CLI 并要求派遣时，直接调用 cliworker_start 打开选型流程；cli 参数每次必填，使用本次用户指定的 CLI，不照搬历史省略参数的调用；此工具只需 CLI、任务标题与任务内容，模型、强度与角色由插件收集，完成选型前不会启动任务。不要仅解释用法，也不要通过 bash 运行这些 CLI。名称映射：${CLI_NAME_GUIDANCE}。glm、zhipu、智谱在 CLI 调用语境中指 ZCode，不代表已选择或授权任何 GLM 模型；“用 Pi 的 GLM 模型”仍使用 Pi。仅讨论、比较、介绍模型或 CLI、否定调用、引用调用示例不构成派遣授权。较长名称的唯一轻微拼写误差可以解析；不确定时可用只读 cliworker_resolve 检查。歧义、未知或多个目标返回简短候选错误，不启动、不猜测或改用其他 CLI。
 插件内部可先为双版本 Qoder 询问版本，再询问完整选型（模型、实际支持的思考强度与角色）或是否沿用以前设定。同项目同 CLI 的新主对话确认是否沿用，同一主对话后续使用已确认设定。主 Agent 不提前询问任务、CLI、模型、强度或角色，不增加启动确认，也不代答插件问题。Kimi print 模式不支持 read_only 或强度覆盖，其原生工具策略会自动执行；其他 CLI 权限检查仍有效，宿主规划、整体只读及直接子 Agent 边界不得绕过。
@@ -292,10 +316,12 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
 
 function invocationHint(resolution: CliResolution | undefined): string {
   if (!resolution) return ''
+  if (resolution.status === 'resolved' && isGenericWorkBuddyName(resolution.matchedName))
+    return '本步用户要求调用 WorkBuddy，尚未指定国内版或国际版。直接调用 cliworker_start，显式传入 cli="workbuddy"、任务标题与任务内容；插件只探测安装，单版本进入对应选型，双版本先用宿主原生询问选择 WorkBuddy 或 WorkBuddy AI。不要猜测版本或提前提问；完成模型、强度及角色选型前不启动任务。保留宿主权限检查，不通过 bash 执行。'
   if (resolution.status === 'resolved' && isGenericQoderName(resolution.matchedName))
     return '本步用户要求调用 Qoder，尚未指定国际版或中国版。直接调用 cliworker_start，必须显式传入 cli="qoder"、任务标题与任务内容；插件只探测安装，单版本进入对应选型，双版本先用宿主原生询问选择 Qoder 或 Qoder CN。不要提前猜测版本，不代答插件问题；完成模型、强度及角色选型前不启动任务。保留宿主权限检查，不通过 bash 执行。'
   if (resolution.status === 'resolved')
-    return `本步用户提出了明确的外部 CLI 调用，${resolution.match === 'fuzzy' ? '唯一轻微拼写匹配' : '名称映射'}结果为 ${CLI_LABELS[resolution.cli]}（cli=${resolution.cli}）。直接调用 cliworker_start，必须显式传入 cli="${resolution.cli === 'qoder' ? 'qoder国际版' : resolution.cli}"、任务标题与任务内容；不能省略 cli 或照搬历史调用参数。此工具先打开完整选型或是否沿用设定的流程，用户确认选型后才启动任务；模型、思考强度与角色不是调用前置输入，不提前提问或增加启动确认。已有命名智能体续聊仍使用 cliworker_followup。保留宿主权限检查，不代答，不通过 bash 执行。`
+    return `本步用户提出了明确的外部 CLI 调用，${resolution.match === 'fuzzy' ? '唯一轻微拼写匹配' : '名称映射'}结果为 ${CLI_LABELS[resolution.cli]}（cli=${resolution.cli}）。直接调用 cliworker_start，必须显式传入 cli="${resolution.cli === 'qoder' ? 'qoder国际版' : resolution.cli === 'workbuddy' ? 'WorkBuddy AI' : resolution.cli}"、任务标题与任务内容；不能省略 cli 或照搬历史调用参数。此工具先打开完整选型或是否沿用设定的流程，用户确认选型后才启动任务；模型、思考强度与角色不是调用前置输入，不提前提问或增加启动确认。已有命名智能体续聊仍使用 cliworker_followup。保留宿主权限检查，不代答，不通过 bash 执行。`
   if (resolution.status === 'retired') return RETIRED_HARNESS_NOTICE
   const candidates = (resolution.candidates.length ? resolution.candidates : CLI_IDS)
     .map((cli) => CLI_LABELS[cli])

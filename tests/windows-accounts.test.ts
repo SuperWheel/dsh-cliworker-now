@@ -254,7 +254,8 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
 }
 
 describe('Windows account source contract on the real platform filesystem (synthetic only)', () => {
-  it.each(CLI_IDS)(
+  // WorkBuddy has no credential-file/logout contract; simulated metadata and Windows install fixtures cover it separately.
+  it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))(
     '%s does not infer login from Harness, another CLI, or ambient provider keys',
     async (cli) => {
       await write(join(root, '.dsh/credentials.json'), { key: 'synthetic-host-key' })
@@ -266,7 +267,8 @@ describe('Windows account source contract on the real platform filesystem (synth
     },
   )
 
-  it.each(CLI_IDS)('%s reads its own live source and clears login after native logout', async (cli) => {
+  // WorkBuddy has no credential-file/logout contract; simulated metadata and Windows install fixtures cover it separately.
+  it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))('%s reads its own live source and clears login after native logout', async (cli) => {
     expect(await configured(cli)).toBe(false)
     const path = await ownAccount(cli)
     const before = await readFile(path)

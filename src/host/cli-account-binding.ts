@@ -1,3 +1,5 @@
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import {
   readClaudeOwnRoute,
   claudeRouteStatusArguments,
@@ -652,6 +654,10 @@ export async function readCliAccountBinding(
 ): Promise<string> {
   signal.throwIfAborted()
   try {
+    if (isWorkBuddyCli(cli)) {
+      const executable = await resolveCliExecutable(cli, backend, config, signal)
+      return (await readWorkBuddyMetadata(cli, executable, project, signal)).binding
+    }
     const value = await material(cli, backend, config, project, signal, selectedClaudeRoute)
     signal.throwIfAborted()
     if (!value.entries.length || !value.sourceIds.length) throw new CliAccountBindingError(cli)
@@ -671,6 +677,7 @@ export async function readCliAccountBinding(
       || error instanceof QoderAccountError
     )
       throw error
+    if (isWorkBuddyCli(cli)) throw error
     // Keep the binding contract (CLI_OWN_ACCOUNT_REQUIRED) with the actionable reason.
     if (error instanceof HermesAccountSourceError) throw new CliAccountBindingError(cli, error.message)
     throw new CliAccountBindingError(cli)

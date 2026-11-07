@@ -188,6 +188,8 @@ const tables = {
   kimi: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   qoder: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   qodercn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  workbuddycn: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
+  workbuddy: mode => ['file-read', ...write(mode), 'search', 'shell', 'web', 'skills'],
   // agy retired its grep/glob tools and its web exposure is unverified: DSH keeps both as fallbacks.
   antigravity: mode => ['file-read', ...write(mode), 'shell'],
 }
