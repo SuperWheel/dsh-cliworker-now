@@ -207,7 +207,7 @@ export const settingsStyles = `
 .cwn-settings-cli-group-inner{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:hidden;padding-left:14px}
 .cwn-settings-cli-group-inner>button{flex-shrink:0;padding:0 10px!important}
 .cwn-settings-nav-label{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cwn-settings-nav-text{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left}.cwn-settings-nav-text>.cwn-settings-nav-label{flex:none;max-width:100%}.cwn-settings-nav-note{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.cwn-settings-cli-group-inner>button[data-experimental]{height:auto!important;min-height:var(--cwn-settings-control-height);padding-block:4px!important}.cwn-settings-nav-status{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none}
+.cwn-settings-nav-status{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none}
 .cwn-connection-dot{display:block;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-caption)}
 .cwn-connection-dot[data-state=connected]{background:var(--dsw-alias-state-success-primary)}
 .cwn-connection-dot[data-state=failed]{background:var(--dsw-alias-state-error-primary)}

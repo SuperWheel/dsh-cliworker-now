@@ -994,15 +994,15 @@ it('persists each CLI switch without moving the current navigation row until reo
   expect(navigation().at(-1)!.props['aria-label']).toBe('Antigravity 设置')
   expect(t.button('启用 Antigravity').props['aria-checked']).toBe(false)
 })
-it('marks only the WorkBuddy entries as experimental in the CLI list, without truncating the name (simulated)', async () => {
+it('lists WorkBuddy entries by name only, keeping the experimental notice as the tooltip (simulated)', async () => {
   const t = await setup()
   const items = t.r.root.findByProps({ 'aria-label': 'CLI 设置导航' }).findAllByType('button')
     .filter((button) => button.props.className === 'cwn-settings-cli-item')
-  const marked = items.filter((button) => button.findAll((node) => node.props.className === 'cwn-settings-nav-note').length)
-  expect(marked.map((button) => button.props['aria-label'])).toEqual(['WorkBuddy CN 设置', 'WorkBuddy 设置'])
-  for (const button of marked) {
-    expect(button.props['data-experimental']).toBe(true)
-    expect(button.findByProps({ className: 'cwn-settings-nav-note' }).children).toEqual(['试验性'])
+  expect(items.filter((button) => button.findAll((node) => node.props.className === 'cwn-settings-nav-note').length)).toEqual([])
+  const workbuddy = items.filter((button) => button.props['data-experimental'])
+  expect(workbuddy.map((button) => button.props['aria-label'])).toEqual(['WorkBuddy CN 设置', 'WorkBuddy 设置'])
+  for (const button of workbuddy) {
+    expect(button.props.title).toBe('试验性：依赖 WorkBuddy 桌面端非公开接口')
     expect(button.findByProps({ className: 'cwn-settings-nav-label' }).children[0]).toMatch(/^WorkBuddy/)
   }
 })

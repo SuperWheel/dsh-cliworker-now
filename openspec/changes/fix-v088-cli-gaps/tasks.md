@@ -28,6 +28,7 @@
 - [x] 3b.7 CodeBuddy 授权后仍露出终端（用户 11-08 晚再次报告）：Windows 日志显示浏览器授权 5 分钟后 TimeoutError，CLI 回到未录制的失败画面，静止后转交原生并自动展开终端。macOS 隔离采集（无浏览器打开器）得到同一失败行 `Failed to login. Press esc to return to login`，Esc 回到站点菜单、再 Esc 回到输入界面。新增 CodeBuddy `failed` 步骤（警告 + 「重新登录」→ Esc）与输入界面回访引导（引擎 `again`：自动输入过 `/login` 后从其他画面回到同一步骤，显示「重新登录」，同一画面重绘不算）；企业域、iOA 改为已录制的原生步骤。
 - [x] 3b.8 所有 CLI：客户端只为需要在终端作答的原生步骤（非警告色）自动展开终端；“无法识别当前步骤”等警告兜底只提示并提供「显示原生终端」。审查结果：保留自动展开的只有 Antigravity 首次设置、TRAE 企业流程、OpenCode 未建模服务商的登录方式、CodeBuddy 企业域/iOA。同步 `cli-connection-health` 规格“原生终端回退”。
 - [x] 3b.9 TRAE 登录方式卡片标题改为“个人账号”（用户要求），开发中特性提示只保留在上方说明行；同步 `doc/settings-ui-design.md`。
+- [x] 3b.10 设置页「CLI 连接」列表去掉 WorkBuddy CN / WorkBuddy 名称下的“试验性”小字（用户要求），试验性说明保留为悬停提示与连接页副标题；删除对应两行样式；同步 `doc/settings-ui-design.md`。`settings-dialog`、`client-i18n`、`panel` 测试 413 项通过，`pnpm typecheck` 通过。
 - 验证（macOS）：`new-cli-account-flows`、`account-terminal`、`client-i18n`、`login-method-picker`、`traecn-accounts` 及全部登录引导测试通过；`pnpm typecheck` 通过。`tests/followup-queue.test.ts` 30 项失败（`planMode` 夹具 `agent.ctx.get(...)?.get is not a function` 等），与本次改动无关、改动前已存在，未处理。
 
 ## 4. 自动检查（2026-11-08，macOS）
