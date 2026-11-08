@@ -109,6 +109,21 @@ describe('模拟 WorkBuddy desktop guide rendering', () => {
     expect(f.text()).toContain('登录、退出或切换请在桌面端完成。')
     expect(f.remote.accountStart).not.toHaveBeenCalled()
   })
+  it.each(['zh', 'en'] as const)('shows a known Host reason for a failed reopen instead of the generic failure (%s)', async lang => {
+    const start = vi.fn().mockRejectedValueOnce(new Error('Error: 此 CLI 的账号状态仍在读取，请稍后再试'))
+    const f = await setup({ accountDesktopStart: start }, lang)
+    expect(f.text()).toContain(lang === 'zh' ? '此 CLI 的账号状态仍在读取，请稍后再试' : 'The account status of this CLI is still being read. Try again shortly')
+    expect(f.text()).not.toContain(lang === 'zh' ? '桌面管理暂不可用' : 'Desktop account management is unavailable')
+  })
+  it('lays the notice and the four desktop buttons out without squeezing the notice into a narrow column', async () => {
+    const { settingsStyles } = await import('../src/client/styles.ts')
+    const css = String(settingsStyles)
+    expect(css).not.toContain('.cwn-login-foot[data-desktop]>.cwn-login-actions{justify-content:flex-end;margin-left:auto;flex:0 1 75%}')
+    expect(css).toContain('.cwn-login-foot[data-desktop]{flex-wrap:wrap')
+    expect(css).toContain('.cwn-login-foot[data-desktop]>.cwn-login-notice{flex:1 1 auto')
+    const f = await setup({}, 'en')
+    expect(f.text()).toContain('Automatic observation paused')
+  })
   it('does not close or report successful cleanup on stop rejection', async () => {
     const f = await setup({ accountDesktopStop: vi.fn(async () => { throw new Error('SIMULATED raw secret') }) })
     await act(async () => { expect(await f.closeControl.current!()).toBe(false) })

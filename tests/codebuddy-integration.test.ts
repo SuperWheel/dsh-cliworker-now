@@ -53,7 +53,7 @@ it('offers three native permission levels, planning, images and an explicit no-f
   expect(cliLevelOptions('codebuddy')[1]!.description).toContain('不会再问你')
   expect(workerPlanSupported(worker)).toBe(true)
   expect(runsUnderViewOnly('codebuddy')).toBe(true)
-  expect(bridgedFeatureSupport(worker).fork).toEqual({ supported: false, reason: '当前 CLI 不支持会话分支：CodeBuddy ACP 未公开 session/fork' })
+  expect(bridgedFeatureSupport(worker).fork).toEqual({ supported: false, reason: '当前 CLI 不支持会话分支：CodeBuddy ACP 没有 session/fork（实测返回 Method not found），--fork-session 只能在终端续接时使用' })
   expect(nativeAttachmentCapability('codebuddy')).toBe(true)
 })
 

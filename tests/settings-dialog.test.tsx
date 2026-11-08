@@ -994,6 +994,19 @@ it('persists each CLI switch without moving the current navigation row until reo
   expect(navigation().at(-1)!.props['aria-label']).toBe('Antigravity 设置')
   expect(t.button('启用 Antigravity').props['aria-checked']).toBe(false)
 })
+it('marks only the WorkBuddy entries as experimental in the CLI list, without truncating the name (simulated)', async () => {
+  const t = await setup()
+  const items = t.r.root.findByProps({ 'aria-label': 'CLI 设置导航' }).findAllByType('button')
+    .filter((button) => button.props.className === 'cwn-settings-cli-item')
+  const marked = items.filter((button) => button.findAll((node) => node.props.className === 'cwn-settings-nav-note').length)
+  expect(marked.map((button) => button.props['aria-label'])).toEqual(['WorkBuddy CN 设置', 'WorkBuddy 设置'])
+  for (const button of marked) {
+    expect(button.props['data-experimental']).toBe(true)
+    expect(button.findByProps({ className: 'cwn-settings-nav-note' }).children).toEqual(['试验性'])
+    expect(button.findByProps({ className: 'cwn-settings-nav-label' }).children[0]).toMatch(/^WorkBuddy/)
+  }
+})
+
 it('opens the role library separately from CLI settings and returns to the same CLI', async () => {
   const rolePresets = vi.fn(async () =>
     remote([{ id: 'logic', name: '逻辑审稿人', summary: '模拟因果审查', prompt: '模拟角色' }]),

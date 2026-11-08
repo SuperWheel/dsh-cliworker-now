@@ -14,7 +14,7 @@ import {
   TextShimmer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { active, isUserInterrupted, outputSizeLabel, TRUNCATED_PLAIN, TRUNCATED_SIZED, type TimelineItem, type Worker } from '../shared/types.ts'
-import { messageClock } from '../shared/telemetry.ts'
+import { creditBilledCli, messageClock } from '../shared/telemetry.ts'
 import { UsageIndicator } from './telemetry.tsx'
 import { useNativePresentation } from './native-presentation.tsx'
 import { nativeFileDiffs } from './tool-viewers.ts'
@@ -368,7 +368,7 @@ function ProcessItem({ item, rows, worker }: { item: TimelineItem; rows: Timelin
   if (item.kind === 'assistant')
     return (
       <div className="cwn-process-event" data-empty-reply-id={item.id}>
-        {t('无正文回复')} · <UsageIndicator usage={item.usage} providerCredits={item.providerCredits} creditsBased={worker?.preference.cli === 'qoder' || worker?.preference.cli === 'qodercn'} reply />
+        {t('无正文回复')} · <UsageIndicator usage={item.usage} providerCredits={item.providerCredits} creditsBased={creditBilledCli(worker?.preference.cli)} reply />
         {item.durationSeconds !== undefined && t(' · CLI 报告耗时：{seconds}秒', { seconds: item.durationSeconds })} ·{' '}
         <time dateTime={item.time}>{messageClock(item.time)}</time>
         {item.sessionDurationSeconds !== undefined && t(' · CLI 会话累计耗时：{seconds}秒', { seconds: item.sessionDurationSeconds })}

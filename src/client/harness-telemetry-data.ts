@@ -2,7 +2,7 @@ import type { CliId, HarnessConversationBinding, WorkerSnapshot } from '../share
 import { cliOf } from '../shared/types.ts'
 import { nativeTokenUsage } from '../shared/native-token-usage.ts'
 export { nativeTokenUsage } from '../shared/native-token-usage.ts'
-import type { Telemetry } from '../shared/telemetry.ts'
+import { creditBilledCli, type Telemetry } from '../shared/telemetry.ts'
 import { nativeUsageReport, type NativeUsageReport } from '../shared/native-usage-report.ts'
 import type { ExternalTurnUsage } from '../shared/native-turn-usage.ts'
 import type { ExternalTurnAnswer } from '../shared/native-turn-answer.ts'
@@ -49,11 +49,11 @@ export function nativeTelemetryProjections(cli: CliId, telemetry?: Telemetry, ex
   const buckets = nativeTokenUsage(cli, telemetry?.usage)
   const scope = telemetry?.usage?.scope
   const report = buckets ? undefined : nativeUsageReport(cli, telemetry?.usage)
-  const credits = (cli === 'qoder' || cli === 'qodercn') && typeof telemetry?.providerCredits === 'number' &&
+  const credits = creditBilledCli(cli) && typeof telemetry?.providerCredits === 'number' &&
     Number.isFinite(telemetry.providerCredits) && telemetry.providerCredits >= 0 ? telemetry.providerCredits : undefined
   return {
-    telemetryAvailability: lifecycle || (cli === 'qoder' || cli === 'qodercn') ? { ...telemetryAvailability(lifecycle?.busy ?? false),
-      ...((cli === 'qoder' || cli === 'qodercn') ? { statisticsBasis: 'harness-cli-adapter' as const, usageUnit: 'credits' as const } : {}) } : undefined,
+    telemetryAvailability: lifecycle || creditBilledCli(cli) ? { ...telemetryAvailability(lifecycle?.busy ?? false),
+      ...(creditBilledCli(cli) ? { statisticsBasis: 'harness-cli-adapter' as const, usageUnit: 'credits' as const } : {}) } : undefined,
     externalRequestState: lifecycle?.busy && lifecycle.externalRequestState?.runId === activeRunId
       ? lifecycle.externalRequestState : undefined,
     externalTurnUsage,

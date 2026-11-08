@@ -107,6 +107,8 @@ import {
   levelName,
   workerLevelOptions,
   workerPlanSupported,
+  workerPermissionReceipt,
+  type WorkerPermissionReceipt,
   type WorkerPermissionState,
 } from '../shared/worker-permissions.ts'
 import { WindowsCliInstallationError, WindowsCliNotFoundError } from './windows-cli-installation.ts'
@@ -864,6 +866,11 @@ export class CliWorkerService extends TypertRemoteService {
     const sandbox = runAccess(worker.mode, worker.level, state)
     return { sandbox, approval: workerApproval(sandbox, state) }
   }
+  /** The tier this turn actually runs with, for the main Agent's dispatch/follow-up receipt. */
+  private permissionReceipt(parent: Agent, worker: Pick<Worker, 'preference' | 'mode' | 'level'>) {
+    const receipt = workerPermissionReceipt(cliOf(worker.preference), worker.mode, worker.level, this.permissionState(parent))
+    return { permission: { level: receipt.level, name: receipt.name, source: receipt.source }, permissionSummary: receipt.summary }
+  }
   /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
   private permissionState(agent: Agent): PermissionState {
     const approval = agent.ctx.get('approval')
@@ -1440,6 +1447,8 @@ export class CliWorkerService extends TypertRemoteService {
     if (restartSourceId) this.runtime.assertLegacyRestart(agent.id, restartSourceId)
     if (identity?.initiator && !workerId) this.runtime.assertSiblingCapacity(agent.id)
     let submission: Submission | undefined
+    // Fixed when the turn is admitted: a later parent change applies from the next turn.
+    let permission: { permission: Pick<WorkerPermissionReceipt, 'level' | 'name' | 'source'>; permissionSummary: string } | undefined
     const publish = () => agent.ctx.get('jobs')!.start({
       kind: 'cliworker',
       owner: agent.id,
@@ -1462,6 +1471,7 @@ export class CliWorkerService extends TypertRemoteService {
           attachments,
         )
         submission = submitted
+        const admittedPermission = permission = this.permissionReceipt(agent, submitted.worker)
         // Approvals of this exact turn surface where it was started.
         const runId = submitted.worker.runId
         if (runId) {
@@ -1493,6 +1503,7 @@ export class CliWorkerService extends TypertRemoteService {
               response: worker.lastResult,
               error: worker.error,
               ...(worker.status === 'completed' && worker.resultNotice ? { notice: worker.resultNotice } : {}),
+              ...admittedPermission,
               guidance:
                 [
                   worker.status === 'uncertain' ? '结果待核实；请先核查本轮输出和实际产物，不要自动重试。' : undefined,
@@ -1542,6 +1553,8 @@ export class CliWorkerService extends TypertRemoteService {
       status: submission.worker.status,
       model: submission.worker.preference.model,
       effort: submission.worker.preference.effort,
+      // Report this tier as is; a Worker without its own level follows the parent preset.
+      ...(permission ?? this.permissionReceipt(agent, submission.worker)),
     })
   }
   private waitHarnessRun(record: HarnessConversationRecord, runId: string): Promise<Worker> {
@@ -1675,7 +1688,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.ctx.tools.register(
           defineTool({
             name: 'cliworker_start',
-            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder / WorkBuddy 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID 和 agentName。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder / WorkBuddy 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
+            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder / WorkBuddy 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID、agentName 与 permission（本轮实际权限档位；未选过档位的 Worker 跟随主对话权限预设），向用户说明权限时以 permission 为准，不要自行推断。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder / WorkBuddy 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
             parameters: {
               cli: {
                 type: 'string',
@@ -1780,7 +1793,7 @@ export class CliWorkerService extends TypertRemoteService {
           defineTool({
             name: 'cliworker_followup',
             description:
-              'Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its `dsh-N` name; its reply returns as a DSH subagent message.',
+              'Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its `dsh-N` name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn\'s actual tier (a Worker without its own level follows the parent preset); report it as is.',
             parameters: {
               worker_id: { type: 'string' },
               worker_name: { type: 'string' },

@@ -24,6 +24,7 @@ import {
   workerName,
   foldEvents,
   DSH_AGENT_NAME,
+  RESULT_NOTICE_TITLE,
   type Preference,
   type WorkerEvent,
   type TaskMode,
@@ -88,7 +89,7 @@ import { AgyProtocol } from './protocol.ts'
 import { FollowupQueue } from './followup-queue.ts'
 import { supportsWorkerNativeSteering, type RunningMessageMode } from '../shared/running-message.ts'
 import type { GeneralSettings } from '../shared/cli-settings.ts'
-import type { TokenUsage } from '../shared/telemetry.ts'
+import { creditBilledCli, type TokenUsage } from '../shared/telemetry.ts'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 import {
@@ -1670,7 +1671,7 @@ export class WorkerRuntime {
   /** Independent exact-run credits, using the same bounded native identity checks. */
   runCredits(parent: string, id: string, runId: string) {
     const worker = this.get(parent, id)
-    if (!['qoder', 'qodercn'].includes(cliOf(worker.preference)) || !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(runId) ||
+    if (!creditBilledCli(cliOf(worker.preference)) || !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(runId) ||
       (worker.runId === runId && this.busyReason(worker))) return
     if (!this.storage.history(id).some(event => event.runId === runId && event.kind === 'status' &&
       ['completed', 'failed', 'interrupted'].includes(event.state ?? ''))) return
@@ -2798,7 +2799,8 @@ export class WorkerRuntime {
         )
       else if (!harnessDenied && protocol instanceof BridgeProtocol && protocol.result.notice) {
         worker.resultNotice = protocol.result.notice
-        this.storage.append(worker, { kind: 'diagnostic', text: '本轮结果说明', detail: protocol.result.notice })
+        // notice: the native Worker window projects only notice diagnostics (e.g. a denied approval ended the turn).
+        this.storage.append(worker, { kind: 'diagnostic', notice: true, text: RESULT_NOTICE_TITLE, detail: protocol.result.notice })
       }
     } catch (error) {
       failure = error

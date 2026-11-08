@@ -61,7 +61,7 @@ describe('模拟 WorkBuddy 注册、权限与原生能力', () => {
     expect(transportFor(cli)).toBe(worker.transport); expect(usesNativeBridge(worker)).toBe(true)
     expect(cliLevelOptions(cli).map(item => item.value)).toEqual(['ask', 'auto', 'full'])
     expect(runsUnderViewOnly(cli)).toBe(true); expect(workerPlanSupported(worker)).toBe(true)
-    expect(bridgedFeatureSupport(worker).fork).toEqual({ supported: false, reason: 'WorkBuddy 内置 CLI 未公开原生分支能力' })
+    expect(bridgedFeatureSupport(worker).fork).toEqual({ supported: false, reason: '当前 CLI 不支持会话分支：WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork' })
     expect(bridgedFeatureSupport(worker).plan.supported).toBe(true)
     expect(SINGLE_ACCOUNT_CLIS.has(cli)).toBe(true); expect(GUIDED_ACCOUNT_CLIS.has(cli)).toBe(false)
     expect(ACCOUNT_LOGIN_HOSTS).not.toHaveProperty(cli)

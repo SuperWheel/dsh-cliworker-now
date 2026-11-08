@@ -1,3 +1,12 @@
+/**
+ * CLIs whose provider bills in credits. Their usage is shown in credits (an
+ * unreadable figure stays unknown); every other CLI keeps the token display.
+ * CodeBuddy and WorkBuddy's built-in CLI price models as credit multipliers.
+ */
+export const CREDIT_BILLED_CLIS = ['qoder', 'qodercn', 'codebuddy', 'workbuddycn', 'workbuddy'] as const
+export const creditBilledCli = (cli: string | undefined): boolean =>
+  (CREDIT_BILLED_CLIS as readonly string[]).includes(cli ?? '')
+
 /** Counts reported by the CLI. Scope is explicit; snapshots must not be added twice. */
 export interface TokenUsage {
   total: number
@@ -55,7 +64,7 @@ export interface ContextBreakdown {
   source?: string
 }
 export interface Telemetry {
-  /** Exact Qoder request credits for this invocation; independent from hidden token counters. */
+  /** Exact provider credits for this invocation (Qoder, CodeBuddy family); independent from token counters. */
   providerCredits?: number
   /** Source invocation for the shown receipt, including a prior confirmed run snapshot. */
   usageRunId?: string

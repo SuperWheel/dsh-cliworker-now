@@ -26,6 +26,8 @@ interface Session {
 }
 interface Dependencies {
   reserve: (cli: WorkBuddyCliId) => void
+  /** Wait (never abort) until this CLI's in-flight account status read settles. */
+  settle?: (cli: WorkBuddyCliId, signal: AbortSignal) => Promise<void>
   release: (cli: WorkBuddyCliId) => void
   verify: (cli: WorkBuddyCliId, signal: AbortSignal) => Promise<string>
   read: (cli: WorkBuddyCliId, path: string, project: string, signal: AbortSignal) => Promise<DesktopSnapshot>
@@ -34,6 +36,15 @@ interface Dependencies {
   invalidate?: (cli: WorkBuddyCliId) => void
 }
 const INTERVAL = 15_000, BUDGET = 300_000, QUERIES = 20
+
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const cancel = () => reject(signal.reason)
+    signal.addEventListener('abort', cancel, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', cancel))
+  })
+}
 
 /** A separate no-PTY lifetime. Frames contain fixed guides and safe account projection only. */
 export class WorkBuddyDesktopAccounts {
@@ -59,6 +70,15 @@ export class WorkBuddyDesktopAccounts {
     return s
   }
   async start(parent: string, cli: WorkBuddyCliId, project: string, signal: AbortSignal, authorize: () => void) {
+    if (this.closed) throw new Error('插件正在关闭')
+    signal.throwIfAborted(); authorize()
+    // Reopening right after closing: the previous window may still be stopping its
+    // query, and closing it triggers a settings account re-read of this CLI. Both
+    // used to make reserve() reject the second open. Wait for them, bounded by the
+    // caller's start lifetime, instead of failing.
+    const closing = [...this.sessions.values()].filter(x => x.cli === cli && x.stopping && !x.closed && !x.unsafe)
+    if (closing.length) await abortable(Promise.allSettled(closing.map(x => x.stopping)), signal)
+    if (this.deps.settle) await abortable(this.deps.settle(cli, signal), signal)
     if (this.closed) throw new Error('插件正在关闭')
     signal.throwIfAborted(); authorize(); this.deps.reserve(cli)
     const s: Session = { id: randomUUID(), parent, cli, project, controller: new AbortController(), authorize,

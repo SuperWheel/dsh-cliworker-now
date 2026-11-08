@@ -1,7 +1,7 @@
 import { Fragment, useState, type ReactNode } from 'react'
 import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import { CLI_LABELS, cliOf, active, type TimelineItem, type Worker } from '../shared/types.ts'
-import { messageClock } from '../shared/telemetry.ts'
+import { creditBilledCli, messageClock } from '../shared/telemetry.ts'
 import { UsageIndicator } from './telemetry.tsx'
 import { CopyText } from './copy-text.tsx'
 import {
@@ -124,7 +124,7 @@ export function ConversationTimeline({
                     {item.kind === 'assistant' && item.text && (
                       <CopyText text={item.text} label={t('复制回复')} iconOnly />
                     )}
-                    {item.kind === 'assistant' && <UsageIndicator usage={item.usage} providerCredits={item.providerCredits} creditsBased={worker?.preference.cli === 'qoder' || worker?.preference.cli === 'qodercn'} reply />}
+                    {item.kind === 'assistant' && <UsageIndicator usage={item.usage} providerCredits={item.providerCredits} creditsBased={creditBilledCli(worker?.preference.cli)} reply />}
                     <time dateTime={item.time} title={new Date(item.time).toLocaleString(formatLocale())}>
                       {messageClock(item.time)}
                     </time>

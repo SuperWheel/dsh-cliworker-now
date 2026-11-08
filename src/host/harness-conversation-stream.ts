@@ -12,6 +12,7 @@ import {
   cliOf,
   foldEvents,
   isUserInterrupted,
+  RESULT_NOTICE_TITLE,
   type TimelineItem,
   type NativeResponseUsage,
   type Worker,
@@ -39,15 +40,21 @@ const json = (value: unknown) => JSON.stringify(value) ?? 'null'
 const textOf = (row: TimelineItem) => (row.kind === 'reasoning' ? (row.detail ?? row.text) : row.text)
 
 /** DSH Chat hides notice-form context, so a CLI Worker action in this run (an
- * automatic follow-up) shows as a completed passive tool row; it is never dispatched. */
-const noticeRow = (item: TimelineItem): TimelineItem => ({
-  id: item.id,
-  kind: 'tool',
-  text: 'cliworker_auto_followup',
-  time: item.time,
-  state: 'COMPLETED',
-  toolCall: { callId: `notice:${item.id}`, name: 'cliworker_auto_followup', input: { 说明: item.text }, output: item.text },
-})
+ * automatic follow-up) or its end-of-turn outcome note shows as a completed
+ * passive tool row; it is never dispatched. */
+const noticeRow = (item: TimelineItem): TimelineItem => {
+  const outcome = item.text === RESULT_NOTICE_TITLE && !!item.detail && item.detail !== item.text
+  const name = outcome ? 'cliworker_result_notice' : 'cliworker_auto_followup'
+  const text = outcome ? `${item.text}：${item.detail}` : item.text
+  return {
+    id: item.id,
+    kind: 'tool',
+    text: name,
+    time: item.time,
+    state: 'COMPLETED',
+    toolCall: { callId: `notice:${item.id}`, name, input: { 说明: text }, output: text },
+  }
+}
 
 /** One CLI run consumed once across native steps. It never calls an LLM or executes a tool. */
 /** The CLI finished its turn; an unverified result still needs the user's check, not a retry. */
