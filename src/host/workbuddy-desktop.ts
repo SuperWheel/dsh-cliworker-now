@@ -123,7 +123,8 @@ export class WorkBuddyDesktopAccounts {
           s.budgetTimer.unref?.()
         }
         if (!s.controller.signal.aborted) {
-          this.guide(s, '登录、退出或切换请在桌面端完成。', 'waiting')
+          // An instruction, not a running read: no spinner (the footer says it is watching).
+          this.guide(s, '登录、退出或切换请在桌面端完成。')
           this.schedule(s)
         }
       } catch (error) {

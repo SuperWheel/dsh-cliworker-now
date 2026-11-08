@@ -50,6 +50,8 @@ describe('模拟 WorkBuddy desktop observation lifetime', () => {
     const f = fixture(), s = await f.start(), pending = deferred<DesktopSnapshot>()
     await f.manager.respond('SIMULATED/parent', s.id, 'open')
     expect(f.deps.open).toHaveBeenCalledOnce()
+    // Watching starts with the instruction as text; only a running read shows a spinner.
+    expect((await s.watch.next()).value!.guide).toMatchObject({ template: 'choice', text: '登录、退出或切换请在桌面端完成。' })
     f.deps.read.mockReturnValueOnce(pending.promise)
     await vi.advanceTimersByTimeAsync(15_000)
     expect(f.deps.read).toHaveBeenCalledTimes(2)
