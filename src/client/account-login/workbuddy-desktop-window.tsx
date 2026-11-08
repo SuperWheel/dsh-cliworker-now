@@ -118,11 +118,12 @@ export function WorkBuddyDesktopWindow({ api, sessionId, cli, account, closeCont
       header={current?.state === 'authenticated' ? <CurrentAccount cli={cli} account={current}
         description={t('登录、退出或切换请在桌面端完成。')} actions={<></>} onClose={() => void stop.current()} /> : undefined}
       desktopActions={<div className="cwn-login-actions">
-        <Button variant="ghost" size="sm" onClick={() => void stop.current()}>{t('关闭')}</Button>
+        {/* Window-level actions use md like every login window (关闭/切换账号/完成); sm is only for link-type helpers. */}
+        <Button variant="ghost" size="md" onClick={() => void stop.current()}>{t('关闭')}</Button>
         {supported && <>
-          <Button variant="ghost" size="sm" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('refresh')}>{t('刷新状态')}</Button>
-          {!frame?.desktop?.observing && <Button variant="ghost" size="sm" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('continue')}>{t('继续观察')}</Button>}
-          <Button variant="outline" size="sm" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('open')}>{t('打开桌面端')}</Button>
+          <Button variant="outline" size="md" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('refresh')}>{t('刷新状态')}</Button>
+          {!frame?.desktop?.observing && <Button variant="outline" size="md" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('continue')}>{t('继续观察')}</Button>}
+          <Button variant="primary" size="md" disabled={pending || frame?.status === 'failed'} onClick={() => respond.current('open')}>{t('打开桌面端')}</Button>
         </>}
       </div>}
       resultDetail={t('登录、退出或切换请在桌面端完成。')}

@@ -65,7 +65,9 @@ describe('模拟 WorkBuddy desktop observation lifetime', () => {
     expect(f.deps.read).toHaveBeenCalledTimes(3)
     const frame = (await s.watch.next()).value!
     expect(frame.guide?.text).toBe('已登录（www.workbuddy.cn）')
-    expect(frame.guide?.template).toBe('waiting') // Same site is never a switch success.
+    // Same site is never a switch success; the finished read is shown without a spinner.
+    expect(frame.guide?.template).toBe('choice')
+    expect(frame.desktop?.observing).toBe(true)
     expect(frame.data).toBeUndefined()
     await f.manager.close()
   })

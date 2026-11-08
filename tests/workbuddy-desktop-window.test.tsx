@@ -9,7 +9,7 @@ import type { AccountFrame } from '../src/shared/accounts.ts'
 
 // SIMULATED UI / Gateway only; no PTY, desktop, metadata or real account access.
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
-  Button: ({ children, variant: _v, size: _s, ...props }: any) => createElement('button', props, children),
+  Button: ({ children, variant, size, ...props }: any) => createElement('button', { ...props, 'data-variant': variant, 'data-size': size }, children),
   StateDot: () => createElement('span'), Input: (p: any) => createElement('input', p),
   IconCheckOutlineRegular: () => createElement('svg'), IconCheckCircleFillRegular: () => createElement('svg'),
   writeClipboard: vi.fn(),
@@ -56,6 +56,9 @@ describe('模拟 WorkBuddy desktop guide rendering', () => {
     expect(f.r.root.findAllByProps({ className: 'cwn-accounts-card' })).toHaveLength(1)
     const footer = f.r.root.findByProps({ className: 'cwn-login-foot' })
     expect(footer.findAllByType('button').length).toBe(4)
+    // Window-level actions match the other login windows: md, with one primary action.
+    expect(footer.findAllByType('button').map(b => b.props['data-size'])).toEqual(['md', 'md', 'md', 'md'])
+    expect(footer.findAllByType('button').map(b => b.props['data-variant'])).toEqual(['ghost', 'outline', 'outline', 'primary'])
     expect(footer.findAllByProps({ className: 'cwn-login-notice' })).toHaveLength(1)
     expect(f.text()).toContain(lang === 'zh' ? '登录、退出或切换请在桌面端完成。' : 'Sign in, sign out, or switch accounts in the desktop app.')
     expect(f.text()).not.toMatch(/显示原生终端|Show native terminal|现在可以派遣|You can now dispatch|先退出当前/)

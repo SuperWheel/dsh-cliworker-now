@@ -182,7 +182,9 @@ export class WorkBuddyDesktopAccounts {
           (s.baseline === 'authenticated' && state === 'unconfigured'))
         if (state === 'authenticated' || state === 'unconfigured') s.baseline = state
         if (confirmed) { s.observing = false; clearTimeout(s.budgetTimer) }
-        this.guide(s, snapshot.account.summary, confirmed ? 'result' : s.observing ? 'waiting' : 'choice',
+        // A finished read is shown as its result, never as a spinner: watching for a desktop
+        // change is told by the window's footer, not by the account line (2026-11-08).
+        this.guide(s, snapshot.account.summary, confirmed ? 'result' : 'choice',
           state === 'authenticated' ? 'success' : state === 'unavailable' ? 'warning' : 'info')
       } catch (error) {
         if (error instanceof ProcessCleanupUnconfirmedError) {
