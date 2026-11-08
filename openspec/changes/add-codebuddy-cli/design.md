@@ -11,7 +11,7 @@ CodeBuddy Code 2.181.0 是同一 CLI、按站点登录（形态 C）。实测事
 
 **Non-Goals:**
 - 不使用 `-p` stream-json，不使用 `_codebuddy.ai/getUserInfo`、`resolveInterruption` 等私有请求。
-- 不接入积分计费回执、私有阶段进度与 checkpoint 回滚。
+- 不接入私有阶段进度与 checkpoint 回滚。（积分最初不接入；2026-11-08 起由 `fix-v088-cli-gaps` 从原生会话文件读取。）
 
 ## Decisions
 
@@ -84,13 +84,13 @@ runNativeAcp(config, io, {
 
 ### 7. 会话能力
 
-- 分支：CodeBuddy 有 `--fork-session` 与私有 `_codebuddy.ai/modSessions/fork`，但 ACP `sessionCapabilities` 未公开 `fork`，本期 `forkSupport` 为不支持，理由“CodeBuddy ACP 未公开 session/fork”。
+- 分支：CodeBuddy 有 `--fork-session` 与私有 `_codebuddy.ai/modSessions/fork`，但 ACP `sessionCapabilities` 未公开 `fork`，本期 `forkSupport` 为不支持。2026-11-08 实测 ACP 调 `session/fork` 返回 Method not found，理由改为“CodeBuddy ACP 没有 session/fork（实测返回 Method not found），--fork-session 只能在终端续接时使用”（见 `fix-v088-cli-gaps`）。
 - 运行中引导：未核实原生 steer，不加入 `NATIVE_STEERING_TRANSPORTS`，走原生 Inbox。
 - 附件：`promptCapabilities.image` 为 true，加入 `native-attachments.mjs` 的 `supported`。
 
 ### 8. 遥测
 
-`telemetry.ts` 中 Kimi/Grok 处理 `usage_update` 的分支加入 `codebuddy`，标注“CodeBuddy 原生会话上下文统计”。单次响应 token 与积分本期不接入，保持未知。
+`telemetry.ts` 中 Kimi/Grok 处理 `usage_update` 的分支加入 `codebuddy`，标注“CodeBuddy 原生会话上下文统计”。单次响应 token 与积分本期不接入，保持未知；2026-11-08 起由 `fix-v088-cli-gaps` 读取原生会话文件中本轮各请求的 token 与积分，按积分显示。
 
 ### 9. 图标
 

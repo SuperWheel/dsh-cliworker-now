@@ -162,3 +162,7 @@
 - 自动检查：`pnpm typecheck` 通过；账号相关 56 个测试文件 1489 通过、2 跳过；样式与卡片回归后 `account-terminal` / `new-cli-account-flows` / `accounts-window` 177 通过。
 - 未验证：Windows、国际版 WorkBuddy、CodeBuddy 国际站/企业域/iOA、TRAE 企业 SSO/PAT、WorkBuddy 桌面端退出与换号、暗色与英文界面。
 
+
+## WorkBuddy 桌面管理复开修复（2026-11-08）
+
+- 关闭桌面管理窗口后立即再打开会显示“桌面管理暂不可用”：设置页重读账号或上一会话仍在停止时 `reserve()` 拒绝。现 `start()` 先等待两者完成；Client 显示已知 Host 原因；英文页脚按钮不折行。模拟测试覆盖，Desktop 未复看。详见 [fix-v088-cli-gaps](../fix-v088-cli-gaps/tasks.md)。
