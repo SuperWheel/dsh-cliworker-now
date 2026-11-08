@@ -11,7 +11,7 @@
 
 - 新增 `workbuddycn`（WorkBuddy）与 `workbuddy`（WorkBuddy AI），位于 Qoder CN 之后；独立路径、默认选型、目录、会话与 ACP transport。复用已存在的 WorkBuddy 安装解析、引导与 runner，未修改这些核心模块。
 - Host 发现只读核对应用包；原生桥请求携带 `[runtime, entry]`，不通过 PATH 或 CodeBuddy 回退。元数据目录与账号验证在一次授权范围内共用一次握手，范围外不缓存；来源绑定只表示经重新登录验证的应用／站点，不声称能识别未公开的账号主体或检测同站点账号切换。
-- 原生规划与三档权限、附件、原生工具类别已注册；不启用 DSH 工具桥、分支、steer、积分或 token 推导。账号页只给桌面端指引；连接页与 Worker 卡片显示试验性说明。
+- 原生规划与三档权限、附件、原生工具类别已注册；不启用 DSH 工具桥、分支、steer、积分或 token 推导。账号页只给桌面端指引；连接页显示试验性说明；Worker 卡片不显示（2026-11-08 用户要求删除）。
 - 接口、生命周期及未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)、`openspec/changes/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
 
 

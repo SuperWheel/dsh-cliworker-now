@@ -96,6 +96,19 @@ function nativePackageBin(shim, suffix) {
   if (manifest.name !== name || typeof declared !== 'string' || isAbsolute(declared) ||
     declared.replace(/\\/g, '/').split('/').includes('..') || file(resolve(root, declared)) !== entry)
     throw invalid()
+  peFile(entry)
+  return entry
+}
+/**
+ * A standalone installer's shim (TRAE CLI: `"%~dp0traex.exe" %*`) names a
+ * program beside itself. Launch that PE file directly; never run the batch.
+ */
+function nativeSiblingBin(shim, name) {
+  const entry = file(join(dirname(shim), name))
+  peFile(entry)
+  return entry
+}
+function peFile(entry) {
   const descriptor = openSync(entry, 'r')
   try {
     const header = Buffer.alloc(64), signature = Buffer.alloc(4)
@@ -108,7 +121,6 @@ function nativePackageBin(shim, suffix) {
   } finally {
     closeSync(descriptor)
   }
-  return entry
 }
 function fileDirectory(path) {
   const canonical = realpathSync(path)
@@ -145,7 +157,9 @@ function inspectBatch(executable, platform) {
     line = line.replace(/^endLocal & goto #_undefined_# 2>NUL \|\| title [^&\n]+ & /i, '')
     const native = /^@?"%(?:~dp0[\\/]?|dp0%[\\/])([^"\n%]+\.exe)"\s+%\*$/i.exec(line)
     if (native) {
-      entries.add(nativePackageBin(executable, native[1]))
+      entries.add(/^[A-Za-z0-9._-]+\.exe$/.test(native[1])
+        ? nativeSiblingBin(executable, native[1])
+        : nativePackageBin(executable, native[1]))
       runtimes.add('native')
       continue
     }

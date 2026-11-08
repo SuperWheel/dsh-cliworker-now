@@ -374,3 +374,15 @@ it('discovers CodeBuddy npm and verifies its package identity', () => {
   expect(() => presentWindowsCliCandidate('codebuddy', f)).toThrow('CodeBuddy npm 安装入口无法确认')
   expect(new WindowsCliNotFoundError('codebuddy').message).toBe('CodeBuddy CLI 未找到，请配置 codebuddyExecutable')
 })
+
+// Synthetic TRAE CLI install_v2.ps1 layout only; never executed.
+it('finds the official TRAE CLI user install despite a stale Desktop PATH and launches its PE', () => {
+  const f = fixture(), bin = join(f.env.LOCALAPPDATA, 'Programs/TraeCLI/bin'), shim = join(bin, 'traecli.cmd')
+  expect(windowsCliCandidates('traecn', f)[0]).toBe(shim)
+  expect(presentWindowsCliCandidate('traecn', f)).toBeUndefined()
+  pe(join(bin, 'traex.exe'))
+  writeFileSync(shim, '@echo off\r\n"%~dp0traex.exe" %*\r\n')
+  expect(presentWindowsCliCandidate('traecn', f)).toBe(shim)
+  writeFileSync(shim, '@echo off\r\npowershell -c "SIMULATED unsafe"\r\n')
+  expect(() => presentWindowsCliCandidate('traecn', f)).toThrow('启动入口无法确认')
+})

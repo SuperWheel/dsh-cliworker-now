@@ -1,7 +1,7 @@
 import { discoverCodebuddyModels } from './codebuddy-account.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { isWorkBuddyCli, workbuddyVariant } from './workbuddy-variant.ts'
-import { resolveWorkBuddyInstallation } from './workbuddy-installation.ts'
+import { findWorkBuddyWindowsCandidates, resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from './workbuddy-installation.ts'
 import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { qoderVariant } from './qoder-variant.ts'
 import { readClaudeOwnRoute, claudeNativeSettingsArguments } from './claude-own-route.ts'
@@ -500,7 +500,23 @@ async function resolveUncachedCliExecutable(
 ): Promise<string> {
   signal.throwIfAborted()
   if (isWorkBuddyCli(cli)) {
-    const install = await resolveWorkBuddyInstallation(cli, { manualPath: configuredCliExecutable(cli, config) })
+    const manualPath = configuredCliExecutable(cli, config)
+    let install
+    try {
+      install = await resolveWorkBuddyInstallation(cli, { manualPath })
+    } catch (error) {
+      // A user-chosen install folder (e.g. D:\Software\workbuddy) is only in the
+      // uninstall registration. Explicit paths never fall back.
+      if (manualPath || process.platform !== 'win32' || !(error instanceof WorkBuddyUnavailableError)) throw error
+      signal.throwIfAborted()
+      const candidates = await findWorkBuddyWindowsCandidates(
+        (argv, cwd) => captureCatalogMetadata(backend, { ...config, maxRunBytes: Math.min(config.maxRunBytes, 65_536) }, argv, cwd, signal),
+        signal,
+      ).catch(() => [] as string[])
+      signal.throwIfAborted()
+      if (!candidates.length) throw error
+      install = await resolveWorkBuddyInstallation(cli, { candidates })
+    }
     signal.throwIfAborted()
     return install.entry
   }

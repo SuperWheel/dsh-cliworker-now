@@ -72,17 +72,38 @@ describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', 
     expect(events.filter(event => 'watch' in event)).toHaveLength(1)
     expect(writes(events)).toEqual([])
     expect(() => flow.respond({ code: 'SIMULATED' })).toThrow()
-    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))[0]?.template).toBe('native')
+    // The cancelled screen is unrecorded: handed over once it settles, never mid-redraw.
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))).toEqual([])
+    expect(guides(flow.settled())[0]?.template).toBe('native')
     expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
   })
   it.each([['enterprise', codebuddyEnterpriseRecorded], ['ioa', codebuddyIoaRecorded]] as const)('keeps %s native without collecting secrets', (option, screen) => {
     const flow = createAccountGuide('codebuddy', 'login')!
     flow.output(codebuddySitesRecorded)
     flow.respond({ option })
-    // After a recognized screen, an unrecorded one is handed over at once.
-    expect(guides(flow.output('\x1b[2J\x1b[H' + screen))[0]?.template).toBe('native')
-    expect(writes(flow.settled())).toEqual([])
+    // After a recognized screen, an unrecorded one is handed over once it settles.
+    expect(guides(flow.output('\x1b[2J\x1b[H' + screen))).toEqual([])
+    const settled = flow.settled()
+    expect(guides(settled)[0]?.template).toBe('native')
+    expect(writes(settled)).toEqual([])
+    expect(flow.settled()).toEqual([])
     expect(() => flow.respond({ secret: 'SIMULATED' })).toThrow()
+  })
+  it('keeps the guide through the unrecorded frames between the site choice and the browser wait (simulated Windows redraw)', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    flow.output(codebuddySitesRecorded)
+    flow.respond({ option: 'china' })
+    // SIMULATED transitional frame: the menu cleared, the browser line not drawn yet.
+    expect(guides(flow.output('\x1b[2J\x1b[HSIMULATED opening browser...'))).toEqual([])
+    const events = flow.output('\x1b[2J\x1b[H' + codebuddyChinaBrowserRecorded)
+    expect(guides(events).map(g => g.template)).toEqual(['browser'])
+    expect(flow.settled()).toEqual([])
+  })
+  it('does not hand over the typed /login frame before the site menu draws (simulated Windows redraw)', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([{ write: '/login', enter: true }])
+    expect(guides(flow.output(codebuddyEditorRecorded.replace('>  ', '> /login')))).toEqual([])
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
   })
   it.each(['http://copilot.tencent.com/login', 'https://copilot.tencent.com.evil.invalid/login', 'https://sub.copilot.tencent.com/login', 'https://evil@www.codebuddy.ai/login', 'https://codebuddy.ai/login'])('rejects unverified CodeBuddy URL %s', url => {
     const flow = createAccountGuide('codebuddy', 'login')!

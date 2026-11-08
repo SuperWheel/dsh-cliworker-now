@@ -1,6 +1,6 @@
 import { readFile, stat, readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve, win32 } from 'node:path'
 import { workbuddyVariant, type WorkBuddyCliId } from './workbuddy-variant.ts'
 
 export class WorkBuddyUnavailableError extends Error {
@@ -86,3 +86,90 @@ export async function resolveWorkBuddyInstallation(cli: WorkBuddyCliId, options:
   }
   throw new WorkBuddyUnavailableError(reason)
 }
+
+/**
+ * Fixed read-only registry query for installs outside the vendor's default
+ * folders (the installer lets users pick e.g. D:\Software\workbuddy).
+ * Reads only InstallLocation/DisplayIcon of Tencent-published WorkBuddy entries;
+ * product.json still decides which site (CN or international) it is.
+ */
+export const WORKBUDDY_WINDOWS_INSTALL_QUERY = String.raw`
+$ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$rows=[Collections.Generic.List[object]]::new()
+$complete=$true
+try {
+  foreach($hive in @([Microsoft.Win32.RegistryHive]::CurrentUser,[Microsoft.Win32.RegistryHive]::LocalMachine)) {
+    foreach($view in @([Microsoft.Win32.RegistryView]::Registry64,[Microsoft.Win32.RegistryView]::Registry32)) {
+      $base=[Microsoft.Win32.RegistryKey]::OpenBaseKey($hive,$view)
+      try {
+        $uninstall=$base.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\Uninstall')
+        if(!$uninstall){continue}
+        try {
+          foreach($name in $uninstall.GetSubKeyNames()) {
+            if($rows.Count -ge 16){break}
+            $key=$uninstall.OpenSubKey($name)
+            if(!$key){continue}
+            try {
+              if([string]$key.GetValue('DisplayName') -notmatch '^WorkBuddy(?: AI)?(?:\s.*)?$'){continue}
+              if([string]$key.GetValue('Publisher') -notmatch '^Tencent\b'){continue}
+              $rows.Add([ordered]@{root=[string]$key.GetValue('InstallLocation');icon=[string]$key.GetValue('DisplayIcon')})
+            } finally {$key.Dispose()}
+          }
+        } finally {$uninstall.Dispose()}
+      } finally {$base.Dispose()}
+    }
+  }
+} catch {$complete=$false}
+[Console]::WriteLine(([ordered]@{schema=1;complete=$complete;records=@($rows.ToArray())}|ConvertTo-Json -Depth 4 -Compress))
+`
+
+const plainWindowsPath = (value: unknown) => {
+  if (typeof value !== 'string') return undefined
+  let path = value.trim()
+  if (path.startsWith('"') && path.endsWith('"')) path = path.slice(1, -1)
+  if (!path || path.length > 1024 || /[\x00-\x1f\x7f"]/.test(path) || !/^[A-Za-z]:[\\/]/.test(path)) return undefined
+  return win32.normalize(path)
+}
+
+/** Registry hints become ordinary candidates; nothing from them is executed here. */
+export function workbuddyWindowsRegistryCandidates(raw: string): string[] {
+  let value: unknown
+  try { value = JSON.parse(raw.trim()) } catch { return [] }
+  const records = (value as { schema?: unknown; records?: unknown })?.schema === 1
+    ? (value as { records: unknown }).records : undefined
+  if (!Array.isArray(records)) return []
+  const candidates: string[] = []
+  for (const record of records.slice(0, 16)) {
+    if (!record || typeof record !== 'object') continue
+    const root = plainWindowsPath((record as { root?: unknown }).root)
+    if (root) candidates.push(root)
+    const icon = plainWindowsPath(typeof (record as { icon?: unknown }).icon === 'string'
+      ? ((record as { icon: string }).icon).replace(/,\s*-?\d+\s*$/, '') : undefined)
+    if (icon && /^WorkBuddy(?: AI)?\.exe$/i.test(win32.basename(icon))) candidates.push(icon)
+  }
+  return [...new Map(candidates.map(path => [path.toLowerCase(), path])).values()]
+}
+
+let registryCache: { at: number; candidates: string[] } | undefined
+/** Short cache: status polls must not start PowerShell every time. */
+export async function findWorkBuddyWindowsCandidates(
+  capture: (argv: string[], cwd: string) => Promise<string>,
+  signal: AbortSignal,
+  env: NodeJS.ProcessEnv = process.env,
+  now = Date.now(),
+): Promise<string[]> {
+  signal.throwIfAborted()
+  if (registryCache && now - registryCache.at < 60_000) return registryCache.candidates
+  const root = env.SystemRoot || env.WINDIR || 'C:\\Windows'
+  if (!plainWindowsPath(root)) return []
+  const command = win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+  const raw = await capture([command, '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(WORKBUDDY_WINDOWS_INSTALL_QUERY, 'utf16le').toString('base64')], homedir())
+  signal.throwIfAborted()
+  const candidates = workbuddyWindowsRegistryCandidates(raw)
+  registryCache = { at: now, candidates }
+  return candidates
+}
+/** Test hook only. */
+export function resetWorkBuddyWindowsCandidateCache(): void { registryCache = undefined }

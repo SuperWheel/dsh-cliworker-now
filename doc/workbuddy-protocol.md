@@ -45,7 +45,7 @@ Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` �
 | 运行中消息 | 原生 Inbox，整轮清理后接收；不声明 steer |
 | 遥测 | 用量：本轮 `end_turn` 后读取内置 CLI 原生会话文件（`<configDir>/projects/<项目键>/<sessionId>.jsonl`），按请求去重汇总 token 与 `rawUsage.credit`，按积分显示；缺积分或有子 Agent 时积分未知。上下文：采用 ACP `usage_update` 的 `used`/`size`。两版回执互不归属 |
 
-skills、子 Agent 与记忆继续由原生设置决定，未新增扫描目录或共享逻辑。连接页及 Worker 卡片显示试验性说明；现有字号、主题 token、表单组件和布局继续复用。
+skills、子 Agent 与记忆继续由原生设置决定，未新增扫描目录或共享逻辑。连接页显示试验性说明，Worker 卡片不显示；现有字号、主题 token、表单组件和布局继续复用。
 
 ## 证据边界
 

@@ -296,7 +296,9 @@ export interface FlowStep {
   /**
    * A catch-all handover that applies only once another step of this guide has been recognized,
    * so a CLI still drawing its startup screen is not handed to the native terminal. Before that,
-   * an unrecognized screen falls back only after it settles.
+   * an unrecognized screen falls back only after it settles. It is also judged only on a settled
+   * screen: the frames between two recorded screens (a typed `/login` with its suggestion list,
+   * the menu clearing after a site is chosen; seen on Windows ConPTY 2026-11-08) never hand over.
    */
   afterRecognized?: boolean
   /**
@@ -458,7 +460,7 @@ export class FlowGuide implements AccountGuideDriver {
     const context = this.context
     for (let i = this.steps.length - 1; i >= (this.flow.revisit ? 0 : Math.max(0, this.index)); i--) {
       const step = this.steps[i]
-      if (step.afterRecognized && !this.recognized) continue
+      if (step.afterRecognized) continue
       const matched = typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
       if (!matched) continue
       if (!step.afterRecognized) this.recognized = true
@@ -488,6 +490,23 @@ export class FlowGuide implements AccountGuideDriver {
     const current = this.steps[this.index]
     if (current?.pick) return this.pick(current)
     return []
+  }
+
+  /** A still screen that no recorded step describes goes to the guide's catch-all handover. */
+  private settledHandover(): GuideEvent[] | undefined {
+    const screen = this.view(), context = this.context
+    const known = (step: FlowStep) => typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
+    const first = this.flow.revisit ? 0 : Math.max(0, this.index)
+    if (this.steps.slice(first).some(step => !step.afterRecognized && known(step))) return undefined
+    for (let i = this.steps.length - 1; i >= first; i--) {
+      const step = this.steps[i]
+      if (!step.afterRecognized || !known(step)) continue
+      const guide = step.guide(screen, context)
+      if (i === this.index && sameGuide(guide, this.shown)) return []
+      this.index = i
+      return this.show(guide)
+    }
+    return undefined
   }
 
   /** One key per drawn screen: Enter on the chosen row, the down arrow on any other. */
@@ -553,6 +572,10 @@ export class FlowGuide implements AccountGuideDriver {
     if (this.steps[this.index]?.pick && !this.pickDone) {
       this.pickDone = true
       return this.show(this.texts.native)
+    }
+    if (this.recognized) {
+      const handover = this.settledHandover()
+      if (handover) return handover
     }
     if (this.index >= 0) return []
     if (this.ctx.action === 'logout' && this.flow.logout?.command) {

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from '../src/host/workbuddy-installation.ts'
+import { findWorkBuddyWindowsCandidates, resetWorkBuddyWindowsCandidateCache, resolveWorkBuddyInstallation, workbuddyWindowsRegistryCandidates, WorkBuddyUnavailableError, WORKBUDDY_WINDOWS_INSTALL_QUERY } from '../src/host/workbuddy-installation.ts'
 import { workbuddyDesktopCommand } from '../src/host/workbuddy-desktop-open.ts'
 import { WORKBUDDY_CLIS, isWorkBuddyCli, workbuddyVariant } from '../src/host/workbuddy-variant.ts'
 
@@ -91,5 +91,44 @@ describe('模拟 WorkBuddy GUI argv and per-action installation verification', (
   it('refuses an unrecognized Windows GUI entry instead of executing a lone arbitrary binary', async () => {
     const f = await fixture({ platform: 'win32', exe: 'Other.exe' })
     await expect(workbuddyDesktopCommand('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'desktop-entry-unverified' })
+  })
+})
+
+// Simulated uninstall-registry output only; no registry, PowerShell or WorkBuddy is touched.
+describe('模拟 WorkBuddy Windows 自定义安装位置', () => {
+  afterEach(() => resetWorkBuddyWindowsCandidateCache())
+  it('turns Tencent uninstall InstallLocation/DisplayIcon into candidates and drops unsafe values', () => {
+    const raw = JSON.stringify({ schema: 1, complete: true, records: [
+      { root: 'D:\\Software\\workbuddy\\', icon: '"D:\\Software\\workbuddy\\WorkBuddy.exe",0' },
+      { root: '\\\\server\\share\\WorkBuddy', icon: 'relative\\WorkBuddy.exe' },
+      { root: '', icon: 'E:\\Apps\\WorkBuddy\\Uninstall WorkBuddy.exe' },
+      { root: 'C:\\bad\u0007path', icon: 'C:\\Apps\\WorkBuddy AI\\WorkBuddy AI.exe' },
+    ] })
+    expect(workbuddyWindowsRegistryCandidates(raw)).toEqual([
+      'D:\\Software\\workbuddy\\', 'D:\\Software\\workbuddy\\WorkBuddy.exe', 'C:\\Apps\\WorkBuddy AI\\WorkBuddy AI.exe',
+    ])
+    expect(workbuddyWindowsRegistryCandidates('not json')).toEqual([])
+    expect(workbuddyWindowsRegistryCandidates(JSON.stringify({ schema: 2, records: [{ root: 'D:\\x' }] }))).toEqual([])
+  })
+  it('runs only the fixed system PowerShell query and caches it briefly', async () => {
+    const calls: string[][] = []
+    const capture = async (argv: string[]) => { calls.push(argv); return JSON.stringify({ schema: 1, records: [{ root: 'D:\\Software\\workbuddy' }] }) }
+    const env = { SystemRoot: 'C:\\Windows' }
+    expect(await findWorkBuddyWindowsCandidates(capture, new AbortController().signal, env, 1000)).toEqual(['D:\\Software\\workbuddy'])
+    expect(await findWorkBuddyWindowsCandidates(capture, new AbortController().signal, env, 30_000)).toEqual(['D:\\Software\\workbuddy'])
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.slice(0, 5)).toEqual(['C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', '-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand'])
+    expect(Buffer.from(calls[0]![5]!, 'base64').toString('utf16le')).toBe(WORKBUDDY_WINDOWS_INSTALL_QUERY)
+    expect(WORKBUDDY_WINDOWS_INSTALL_QUERY).toContain("-notmatch '^Tencent\\b'")
+    await findWorkBuddyWindowsCandidates(capture, new AbortController().signal, env, 70_000)
+    expect(calls).toHaveLength(2)
+    const aborted = new AbortController(); aborted.abort()
+    await expect(findWorkBuddyWindowsCandidates(capture, aborted.signal, env, 200_000)).rejects.toThrow()
+  })
+  it('validates a registry-found folder with the same product.json site rules', async () => {
+    const f = await fixture({ platform: 'win32', appName: 'workbuddy' })
+    expect((await resolveWorkBuddyInstallation('workbuddycn', { platform: 'win32', home: f.home, candidates: [f.appRoot] })).runtime).toBe(f.runtime)
+    await expect(resolveWorkBuddyInstallation('workbuddy', { platform: 'win32', home: f.home, candidates: [f.appRoot] }))
+      .rejects.toMatchObject({ reason: 'variant-mismatch' })
   })
 })

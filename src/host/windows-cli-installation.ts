@@ -67,6 +67,9 @@ export function windowsCliCandidates(cli: WindowsDiscoverableCli, options: Windo
       join(root, 'hermes-agent', 'venv', 'Scripts', 'hermes.exe'))
   } else if (cli === 'codex') specialized.push(join(npm, 'codex.cmd'))
   else if (cli === 'codebuddy') specialized.push(join(npm, 'codebuddy.cmd'))
+  // TRAE's official install_v2.ps1 writes this bin and adds it to the user PATH;
+  // a Desktop started before the install still has the old PATH.
+  else if (cli === 'traecn') specialized.push(join(local, 'Programs', 'TraeCLI', 'bin', 'traecli.cmd'))
   else if (cli === 'zcode') {
     for (const root of [join(local, 'Programs'), env.ProgramFiles].filter((value): value is string => !!value))
       specialized.push(join(root, 'ZCode', 'resources', 'glm', 'zcode.cjs'))

@@ -3338,9 +3338,9 @@ it('plugin delete calls only hide and leaves CLI workers available if native rea
   expect(failed.r.root.findAllByProps({ 'data-open-worker-id': 'a' })).toHaveLength(1)
 })
 
-it.each(['workbuddycn', 'workbuddy'] as const)('shows the %s experimental notice on its Worker card (simulated)', async cli => {
+it.each(['workbuddycn', 'workbuddy'] as const)('keeps the %s Worker card free of the experimental notice (simulated)', async cli => {
   const worker = { ...workers[0]!, id: 'SIMULATED-workbuddy-card', preference: { ...workers[0]!.preference, cli }, transport: `${cli}-acp-v1` }
   const t = await setup(false, undefined, [worker])
-  const notice = t.r.root.findByProps({ className: 'cwn-worker-experimental' })
-  expect(notice.children).toContain('试验性：依赖 WorkBuddy 桌面端非公开接口')
+  expect(t.r.root.findAllByProps({ className: 'cwn-worker-experimental' })).toHaveLength(0)
+  expect(t.text()).not.toContain('试验性：依赖 WorkBuddy 桌面端非公开接口')
 })
