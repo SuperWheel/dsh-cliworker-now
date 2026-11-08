@@ -107,16 +107,16 @@
 - `src/client/icons.tsx`：追加 `codebuddy` 图标与光学参数
 - 注册分工修改：共享 types / worker-permissions / conversation-features / account-links；Host routing / index / process / native-worker / native-bridge / native-attachments / native-harness-injection / cli-native-capabilities / runtime / windows-cli-installation / telemetry；构建 scripts/build.mjs；Client i18n-messages；测试 codebuddy-integration / native-runtime / worker-permissions / windows-cli-installation / cli-account-binding / windows-accounts。其余并行分工文件未由注册分工编辑。
 
-## v0.8.8 集成验证（2026-11-07）
+## 13. v0.8.8 集成验证（2026-11-07）
 
-- [x] 12.1 按 CodeBuddy → TRAE → 豆包的顺序，以 `git merge --no-ff` 合入 `feat/v0.8.8-integration`，未归档。
+- [x] 13.1 按 CodeBuddy → TRAE → 豆包的顺序，以 `git merge --no-ff` 合入 `feat/v0.8.8-integration`，未归档。
   - CodeBuddy：`fa5d1aa381bd9883a4912a0714469192ae2306f4`；TRAE：`bf6baea848678e8d07629b9a600ba6965c171e7b`；豆包文档：`f23ca8afb7a4b836098df1cb662223b5b4c9f540`。
-- [x] 12.2 统一共享 ACP 的拒绝结束选项为默认关闭的 `deniedCancelEndsTurn`，两 CLI 显式开启。
+- [x] 13.2 统一共享 ACP 的拒绝结束选项为默认关闭的 `deniedCancelEndsTurn`，两 CLI 显式开启。
   - 本轮有 DSH 拒绝、原生 `cancelled`、用户未停止且无其他失败时，以 SUCCESS 和 notice「因拒绝审批而结束：被拒操作未执行，可续聊继续」收尾，空正文不降为 UNCERTAIN；被拒工具保留「已拒绝」，其他失败或未结束工具不被覆盖。
   - 保留 `verifyInitialize`、`defaultEffort`、`approvalFromToolCall` 与 `modeLabel`；移除 CodeBuddy 私有 outcome 的必要条件。其他 CLI 没有开启该选项。
   - TRAE 沿用 `efforts: ['default']`，未恢复已撤回的空强度特判。
   - CodeBuddy 任务 11.2–11.6 的真实 CLI 记录是源分支阶段证据；其中 a3 的 ERROR 结果保留历史事实。集成后的 SUCCESS 语义仅在本次模拟回归中验证，未重跑真实 CLI。
-- [x] 12.3 类型检查与关联模拟回归。
+- [x] 13.3 类型检查与关联模拟回归。
   - 首次裸 `pnpm typecheck` 因 PATH 无 pnpm 未启动。工作树内 `.cache/bin/pnpm` 调用本机已有的 pnpm 11.25.0；未安装或改变系统工具。
   - 实际首次 `pnpm typecheck`：Host 通过，Client 10 个错误源自缺少构建生成的 `dsh-cliworker-now/remote`。`pnpm build:preview` 通过；使用 preview 生成的 lib 声明后，`pnpm typecheck` Host/Client 均通过（DSH 0.2.2-rc.1）。工作树 lib 为忽略的生成物副本，无 Desktop 链接。
   - 关联命令如下，20 文件、804 测试通过；包括 CodeBuddy 新增 6 个拒绝结束边界回归。
@@ -125,7 +125,7 @@
 PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/tmp" pnpm vitest run tests/codebuddy-account.test.ts tests/codebuddy-integration.test.ts tests/native-codebuddy.test.ts tests/traecn-accounts.test.ts tests/traecn-integration.test.ts tests/traecn-telemetry.test.ts tests/native-traecn.test.ts tests/native-acp.test.ts tests/native-acp-traecn-options.test.ts tests/worker-permissions.test.ts tests/routing.test.ts tests/accounts.test.ts tests/cli-account-binding.test.ts tests/runtime.test.ts tests/native-runtime.test.ts tests/runtime-account-isolation.test.ts tests/windows-accounts.test.ts tests/windows-cli-installation.test.ts tests/native-qoder.test.ts tests/kimi-durable-usage.test.ts
 ```
 
-- [x] 12.4 全量 `pnpm test`：268 文件通过、4 文件跳过；5,838 测试通过、14 跳过、0 失败（总计 5,852）。
+- [x] 13.4 全量 `pnpm test`：268 文件通过、4 文件跳过；5,838 测试通过、14 跳过、0 失败（总计 5,852）。
   - 首轮沙箱全量遇到本机监听限制后中断，无完整总数；`pnpm vitest run tests/native-harness-lease.test.ts` 定向确认 `listen EPERM 127.0.0.1`，1 通过、2 失败。随后在获准环境中重跑全量。
   - 为遵守不在工作树外写测试文件，TMPDIR 放在工作树内。首次完整重跑 5,837 通过、1 失败、14 跳过：旧 Grok 无扩展名 CommonJS 模拟脚本继承仓库 ESM。CommonJS 临时边界下 Grok 单文件 49/49 通过，但全量 5,836 通过、2 失败、14 跳过（Pi/OMP 的 ESM 模拟脚本不兼容）。最终以 `.cache/neutral-tmp/package.json` 内容 `{}` 隔断上级包类型，恢复普通系统临时目录的 Node 自动判定；两文件 70/70 通过，最终全量全部通过。未修改产品或既有测试来绕过这些环境问题。
   - 最终命令：`PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm test`。
@@ -163,5 +163,5 @@ CodeBuddy 和豆包合并均无冲突。所有双新增注册项按 CodeBuddy、
 | `src/shared/worker-permissions.ts` | 保留 CodeBuddy ask/auto 与 TRAE 仅工作区编辑规则。 |
 | `tests/cli-account-binding.test.ts` | 同时保留两套模拟账号和模型目录夹具。 |
 
-- [x] 12.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
-- [x] 12.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。
+- [x] 13.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
+- [x] 13.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。
