@@ -29,6 +29,7 @@
 - [x] 3b.8 所有 CLI：客户端只为需要在终端作答的原生步骤（非警告色）自动展开终端；“无法识别当前步骤”等警告兜底只提示并提供「显示原生终端」。审查结果：保留自动展开的只有 Antigravity 首次设置、TRAE 企业流程、OpenCode 未建模服务商的登录方式、CodeBuddy 企业域/iOA。同步 `cli-connection-health` 规格“原生终端回退”。
 - [x] 3b.9 TRAE 登录方式卡片标题改为“个人账号”（用户要求），开发中特性提示只保留在上方说明行；同步 `doc/settings-ui-design.md`。
 - [x] 3b.10 设置页「CLI 连接」列表去掉 WorkBuddy CN / WorkBuddy 名称下的“试验性”小字（用户要求），试验性说明保留为悬停提示与连接页副标题；删除对应两行样式；同步 `doc/settings-ui-design.md`。`settings-dialog`、`client-i18n`、`panel` 测试 413 项通过，`pnpm typecheck` 通过。
+- [x] 3b.11 Windows 实机复测（2026-11-08 22:37–22:50，c24d373 与 c833531 两次隔离包安装，空闲预检 activeWorkers=0，逐文件哈希 1036/1036 一致，DSH 重启）：TRAE CN 登录方式卡片显示“个人账号”，选择后进入浏览器授权/回调步骤，未露出终端；CodeBuddy 中国站→浏览器等待→用户在浏览器授权后窗口直接显示“已登录 CodeBuddy Code”，全程未露出终端，凭据文件 22:43 写入、无退出标记，设置页变为已登录；「CLI 连接」列表 WorkBuddy 两项只显示名称。未在实机触发 5 分钟授权超时（用户在超时前完成授权），超时画面只经 macOS 隔离采集与回放测试验证。
 - 验证（macOS）：`new-cli-account-flows`、`account-terminal`、`client-i18n`、`login-method-picker`、`traecn-accounts` 及全部登录引导测试通过；`pnpm typecheck` 通过。`tests/followup-queue.test.ts` 30 项失败（`planMode` 夹具 `agent.ctx.get(...)?.get is not a function` 等），与本次改动无关、改动前已存在，未处理。
 
 ## 4. 自动检查（2026-11-08，macOS）
@@ -52,4 +53,4 @@
 - [ ] 5.5 桌面管理复开失败的根因为代码推断（状态读取或上一会话停止未完成导致 `reserve()` 拒绝），未在 Desktop 上复现确认。
 - [ ] 5.6 Windows、WorkBuddy 国际版、CodeBuddy 国际站均未验证。
 - [x] 5.7 Windows 新包复测（2026-11-08 22:00，包 `preview-088-20261108-215815.tgz`，sha256 `43aa474b…c2ec`；空闲预检 activeWorkers=0；原生安装器退出 0；逐文件校验 1036 个、0 不一致；Desktop 正常关闭后带无障碍参数重启）：TRAE CN 由“CLI 启动入口无法确认”变为“未登录”且可点“登录账号”；WorkBuddy CN 自动识别为 `D:\Software\workbuddy`（配置中无手动路径），状态“请在桌面端检查登录状态”；WorkBuddy 国际版显示暂不可用（未安装，符合预期）；CodeBuddy 登录：启动→站点菜单→选中国站→浏览器等待，逐次读取无障碍树未出现“无法识别当前步骤”，原生终端未展开。连接页左栏显示“试验性”。
-- [ ] 5.8 Windows 上 CodeBuddy 浏览器授权完成后的登录确认、TRAE CN 登录、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
+- [ ] 5.8 Windows 上 CodeBuddy 授权超时画面的实机触发、TRAE CN 登录完成（停在浏览器授权，需用户手机验证）、其他已登录 CLI 的重新登录（需先退出、用户重新授权）、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
