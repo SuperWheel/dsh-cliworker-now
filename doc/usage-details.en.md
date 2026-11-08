@@ -165,7 +165,8 @@ Install with npm as described by Tencent: `npm install -g @tencent-ai/codebuddy-
 - Models and efforts come from native `session/new`; each model offers only its own `effortOptions`, and `x0.00` credit models are marked free. A catalog change after switching site or account invalidates earlier choices.
 - Permissions: Ask → `default`, Auto-approve → `auto` (CodeBuddy's AI review; blocked actions are not asked again), Full access → `bypassPermissions`; planning → `plan`. `fullAccess` is never used.
 - Approvals are relayed to DSH. A denial ends CodeBuddy's turn immediately; the plugin shows “ended by an approval denial” rather than “cancelled”, and you can keep chatting.
-- Not supported: native fork (ACP does not expose `session/fork`), in-run steering, per-turn credit receipts.
+- Usage: CodeBuddy bills in credits and its ACP receipt carries no usage. After a turn ends normally the plugin reads the CLI's own native session file, sums the turn's credits and tokens per request, and shows credits like Qoder. If any request lacks a credit figure or sub-agents ran, credits stay unknown; tokens are never shown as credits. Free models show 0 credits.
+- Not supported: native fork (ACP `session/fork` returns Method not found in testing; `--fork-session` only works when resuming in a terminal), in-run steering.
 
 ### Claude Code with CC Switch
 

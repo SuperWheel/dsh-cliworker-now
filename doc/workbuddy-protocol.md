@@ -41,9 +41,9 @@ Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` �
 | 附件 | 原生 ACP 按协商能力处理 |
 | 工具类别 | 文件读、按模式写、搜索、shell、web、skills |
 | DSH 工具桥 | 关闭；WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道 |
-| 分支 | 关闭；WorkBuddy 内置 CLI 未公开原生分支能力 |
+| 分支 | 关闭；当前 CLI 不支持会话分支：WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork |
 | 运行中消息 | 原生 Inbox，整轮清理后接收；不声明 steer |
-| 遥测 | 不新增用量或上下文事件，不套用 Qoder 积分或其他 CLI 的 token 口径 |
+| 遥测 | 用量：本轮 `end_turn` 后读取内置 CLI 原生会话文件（`<configDir>/projects/<项目键>/<sessionId>.jsonl`），按请求去重汇总 token 与 `rawUsage.credit`，按积分显示；缺积分或有子 Agent 时积分未知。上下文：采用 ACP `usage_update` 的 `used`/`size`。两版回执互不归属 |
 
 skills、子 Agent 与记忆继续由原生设置决定，未新增扫描目录或共享逻辑。连接页及 Worker 卡片显示试验性说明；现有字号、主题 token、表单组件和布局继续复用。
 

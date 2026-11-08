@@ -1,5 +1,5 @@
 import { IconDatabaseOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { compactTokens, type Telemetry, type TokenUsage } from '../shared/telemetry.ts'
+import { compactTokens, creditBilledCli, type Telemetry, type TokenUsage } from '../shared/telemetry.ts'
 import type { Worker } from '../shared/types.ts'
 import { StatPopover } from './stat-popover.tsx'
 import { formatLocale, t, useT, type MessageKey } from './i18n.ts'
@@ -172,8 +172,8 @@ export function ComposerTelemetry({
         <span className={`cwn-dot ${worker.status}`} />
         <span>{statusLabel}</span>
       </span>
-      {/* traecn reports tokens, not Qoder Credits. */}
-      <UsageIndicator usage={telemetry?.usage} providerCredits={telemetry?.providerCredits} creditsBased={worker.preference.cli === 'qoder' || worker.preference.cli === 'qodercn'} />
+      {/* traecn reports tokens; Qoder and the CodeBuddy family bill credits. */}
+      <UsageIndicator usage={telemetry?.usage} providerCredits={telemetry?.providerCredits} creditsBased={creditBilledCli(worker.preference.cli)} />
       <StatPopover
         key={worker.id}
         label={label}

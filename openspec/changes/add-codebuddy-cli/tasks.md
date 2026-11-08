@@ -165,3 +165,7 @@ CodeBuddy 和豆包合并均无冲突。所有双新增注册项按 CodeBuddy、
 
 - [x] 13.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
 - [x] 13.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。
+
+## 14. v0.8.8 验收缺口修复（2026-11-08）
+
+- [x] 14.1 用量改为从 CLI 原生会话文件读取本轮 token 与积分，按积分显示；分支理由改为实测结论（ACP `session/fork` 返回 Method not found）。实现、测试与未验证项见 [fix-v088-cli-gaps](../fix-v088-cli-gaps/tasks.md)。

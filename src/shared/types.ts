@@ -413,6 +413,9 @@ function appendDelta(row: TimelineItem, delta: string) {
   const output = row.toolCall?.output
   row.toolCall = { ...row.toolCall, output: (typeof output === 'string' ? output : '') + delta }
 }
+/** Title of the plugin's end-of-turn outcome note (for example, a denied approval ended the turn). */
+export const RESULT_NOTICE_TITLE = '本轮结果说明'
+
 export function foldEvents(
   events: readonly WorkerEvent[],
   endedRun?: { runId: string; status: WorkerStatus },

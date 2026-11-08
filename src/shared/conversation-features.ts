@@ -38,9 +38,9 @@ export const forkSupport: Partial<Record<CliId, { latest: boolean; earlier: bool
 }
 
 export const noForkReason: Partial<Record<CliId, string>> = {
-  codebuddy: '当前 CLI 不支持会话分支：CodeBuddy ACP 未公开 session/fork',
-  workbuddycn: 'WorkBuddy 内置 CLI 未公开原生分支能力',
-  workbuddy: 'WorkBuddy 内置 CLI 未公开原生分支能力',
+  codebuddy: '当前 CLI 不支持会话分支：CodeBuddy ACP 没有 session/fork（实测返回 Method not found），--fork-session 只能在终端续接时使用',
+  workbuddycn: '当前 CLI 不支持会话分支：WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork',
+  workbuddy: '当前 CLI 不支持会话分支：WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork',
   antigravity: '当前 CLI 不支持会话分支：Antigravity 未公开原生分支接口',
   hermes: '当前 CLI 不支持会话分支：Hermes 原生分支会结束原会话',
   grok: '当前 CLI 不支持会话分支：已确认 --fork-session，但当前 ACP 的 x.ai/session/fork 参数和回执尚未核实',

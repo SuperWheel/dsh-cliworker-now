@@ -1,4 +1,4 @@
-import { isWorkBuddy, WORKBUDDY_EXPERIMENTAL_NOTICE } from '../shared/workbuddy.ts'
+import { EXPERIMENTAL_MARK, isWorkBuddy, WORKBUDDY_EXPERIMENTAL_NOTICE } from '../shared/workbuddy.ts'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
@@ -392,9 +392,11 @@ function OpenSettingsDialog({
                     size="md"
                     className="cwn-settings-cli-item"
                     aria-label={t('{cli} 设置', { cli: CLI_LABELS[id] })}
+                    title={isWorkBuddy(id) ? t(WORKBUDDY_EXPERIMENTAL_NOTICE) : undefined}
                     aria-pressed={page === 'cli' && cli === id}
                     tabIndex={cliExpanded ? undefined : -1}
                     data-enabled={enabled?.[id] !== false}
+                    data-experimental={isWorkBuddy(id) || undefined}
                     onClick={() =>
                       void leave(() => {
                         setCli(id)
@@ -403,7 +405,15 @@ function OpenSettingsDialog({
                     }
                   >
                     <BrandIcon cli={id} size={22} />
-                    <span className="cwn-settings-nav-label">{CLI_LABELS[id]}</span>
+                    {isWorkBuddy(id) ? (
+                      // Two text levels (label + 12px tertiary note) so the full name never truncates.
+                      <span className="cwn-settings-nav-text">
+                        <span className="cwn-settings-nav-label">{CLI_LABELS[id]}</span>
+                        <span className="cwn-settings-nav-note">{t(EXPERIMENTAL_MARK)}</span>
+                      </span>
+                    ) : (
+                      <span className="cwn-settings-nav-label">{CLI_LABELS[id]}</span>
+                    )}
                     <Tooltip label={connection.label} side="right" portal>
                       <span className="cwn-settings-nav-status" role="img" aria-label={connection.label}>
                         {connection.state === 'pending' ? (

@@ -99,6 +99,26 @@ export function cliLevelOptions(cli: CliId): WorkerLevelOption[] {
 export function levelName(cli: CliId, level: WorkerLevel): string {
   return cliLevelOptions(cli).find((option) => option.value === level)?.name ?? FULL.name
 }
+/**
+ * The tier a dispatched turn actually runs with, stated in the dispatch receipt
+ * so the main Agent reports it as is (it must not infer 询问 for a Worker that
+ * follows a parent preset of 自动审批). It does not change the tier rules.
+ */
+export interface WorkerPermissionReceipt {
+  level: WorkerLevel | 'plan'
+  name: string
+  source: 'worker' | 'parent' | 'plan'
+  summary: string
+}
+export function workerPermissionReceipt(cli: CliId, mode: 'plan' | 'accept-edits', level: WorkerLevel | undefined,
+  parent: { sandbox: ParentAccess; planMode: boolean }): WorkerPermissionReceipt {
+  if (mode === 'plan' || parent.planMode)
+    return { level: 'plan', name: '规划模式', source: 'plan', summary: '本轮权限：规划模式（只读，不改文件）' }
+  const effective = effectiveLevel(level, parent.sandbox), name = levelName(cli, effective)
+  return level === undefined
+    ? { level: effective, name, source: 'parent', summary: `本轮权限：${name}（此 Worker 未选过档位，跟随主对话权限预设）` }
+    : { level: effective, name, source: 'worker', summary: `本轮权限：${name}（用户为此 Worker 选定的档位）` }
+}
 /** Antigravity's 仅规划 runs its first item as a native plan launch. */
 export const askRunsAsPlan = (cli: CliId): boolean => cli === 'antigravity'
 /**

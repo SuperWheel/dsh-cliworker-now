@@ -354,6 +354,10 @@ export class AccountManager {
         this.reserved.add(cli)
       },
       release: cli => this.reserved.delete(cli),
+      settle: async (cli, signal) => {
+        const running = [...this.statusQueries.values()].filter(q => q.cli === cli && !q.settled).map(q => q.operation)
+        if (running.length) await abortable(Promise.allSettled(running), AbortSignal.any([signal, this.controller.signal]))
+      },
       verify: async (cli, signal) => {
         const path = await resolveCliExecutable(cli, this.backend, this.config, signal)
         const install = await resolveWorkBuddyInstallation(cli, { manualPath: path })

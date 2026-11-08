@@ -5,6 +5,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { runNativeAcp } from './native-acp.mjs'
 import { createLinePeer, createNativeIO } from './native-transport.mjs'
 import { createWorkBuddyLaunch } from './workbuddy-bootstrap.mjs'
+import { codebuddyUsageOnResult } from './native-codebuddy.mjs'
 
 const unavailable = reason => Object.assign(new Error(`WorkBuddy 暂不可用：${reason}`), { code: 'WORKBUDDY_UNAVAILABLE', reason })
 const efforts = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -128,7 +129,13 @@ export async function runNativeWorkBuddy(config, io) {
     throw unavailable('permission-invalid')
   if (config.preference?.effort !== 'default' && !efforts.includes(config.preference?.effort)) throw unavailable('effort-invalid')
   const wrapped = Object.create(io)
-  wrapped.openStdio = async (_argv, options) => (await openWorkBuddy(config, io, options)).peer
+  let configDir
+  wrapped.openStdio = async (_argv, options) => {
+    const opened = await openWorkBuddy(config, io, options)
+    configDir = opened.install.configDir
+    return opened.peer
+  }
+  const turnStartedAt = Date.now()
   // Option names are shared with the other CodeBuddy-derived ACP runners.
   await runNativeAcp({ ...config, harnessTools: undefined, env: { ...config.env, CLIWORKER_HARNESS_TOOLS: undefined } }, wrapped, {
     name: config.cli === 'workbuddycn' ? 'WorkBuddy CN' : 'WorkBuddy', argv: workbuddyAcpArgv,
@@ -137,6 +144,9 @@ export async function runNativeWorkBuddy(config, io) {
     fallbackModes: config.access === 'danger-full-access' ? ['auto', 'default'] : config.access === 'read-only' ? [] : ['default'],
     approvalFromToolCall: true,
     deniedCancelEndsTurn: true,
+    // Same durable transcript format as CodeBuddy, under WorkBuddy's own data folder.
+    onResult: (result, sessionId, nativeIo) => configDir
+      ? codebuddyUsageOnResult(config, configDir, turnStartedAt)(result, sessionId, nativeIo) : undefined,
   })
 }
 

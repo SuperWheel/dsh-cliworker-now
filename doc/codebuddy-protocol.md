@@ -79,3 +79,10 @@
 2.181.0 的隔离 200 × 60 首屏为 `Do you trust the files in this folder?`。后续获准接受空临时项目的信任后，采到空编辑器、`/login` 四站点菜单/高亮重绘、中国/国际浏览器等待及未登录 `/logout` 返回菜单。生产 trust 要求用户在窗口确认，只信任当前文件夹；空编辑器自动 `/login`，当前高亮决定导航键。中国/国际为 browser，精确授权主机仅 `copilot.tencent.com` 与 `www.codebuddy.ai`。企业 endpoint 与 iOA（链接含 ioa 参数）保留原生，不收集凭据。切换自动 `/logout` 只提交一次；登录菜单不补按 Enter，回读明确退出并清理后才开始新登录。未知画面保留原生；没有条款接受或真实授权。
 
 本地状态不再把 EACCES/EPERM/ENOTDIR、目录、符号链接或非法退出标记当成退出成功。账号展示复用获准的 `auth.domain` 内存投影确认 JSON 可读；读取失败、字段缺失或格式无效保持未知。只有明确不存在或普通 `.logged-out` 文件证明未登录；登录需要动作前明确未登录到新 authenticated 的转换，不以 mtime 或同站点标签证明新账号。未新增凭据字段读取。详见 [真实采集记录](../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)；有效账号退出和 Desktop/Windows 仍待验收。
+
+## 8. 用量、积分与分支（2026-11-08）
+
+- `session/prompt` 结果只有 `stopReason`、`userMessageId` 与 `_meta['codebuddy.ai/conversationRequestId']`，不含本轮 token 或积分。`usage_update` 只用于上下文占用。
+- CLI 把每次模型请求写入 `<CODEBUDDY_CONFIG_DIR 或 ~/.codebuddy>/projects/<项目键>/<sessionId>.jsonl`。项目键：cwd 真实路径中的 `/ \ :` 换成 `-`，去掉首尾 `-` 并合并重复；超过 255 字节时截到 180 字节后接 `-` 与 djb2 的 36 进制值。每行 `providerData` 带 `conversationRequestId`、`messageId`、`requestModelId`、`usage`（input/output/total、cached、reasoning）与 `rawUsage.credit`；同一请求的并行工具调用重复写同一 `messageId`。子 Agent 记录在 `<sessionId>/subagents/`。
+- 插件在 `end_turn` 后按会话、用户消息、请求 ID、cwd 与模型精确定位本轮，校验后按 `messageId` 去重汇总，按积分显示。缺积分或有子 Agent 时积分为未知，token 不当积分。`hy4free` 实测 `credit` 为 0；非零积分未实测。WorkBuddy 内置 CLI 格式相同，配置根取安装探测结果。
+- 分支：ACP 调 `session/fork` 实测返回 Method not found，`initialize` 不公开 `sessionCapabilities.fork`；插件不提供分支。`--fork-session` 仅用于终端续接。

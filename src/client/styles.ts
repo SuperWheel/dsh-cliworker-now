@@ -207,7 +207,7 @@ export const settingsStyles = `
 .cwn-settings-cli-group-inner{display:flex;flex-direction:column;gap:4px;min-height:0;overflow:hidden;padding-left:14px}
 .cwn-settings-cli-group-inner>button{flex-shrink:0;padding:0 10px!important}
 .cwn-settings-nav-label{flex:1;min-width:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cwn-settings-nav-status{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none}
+.cwn-settings-nav-text{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;text-align:left}.cwn-settings-nav-text>.cwn-settings-nav-label{flex:none;max-width:100%}.cwn-settings-nav-note{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.cwn-settings-cli-group-inner>button[data-experimental]{height:auto!important;min-height:var(--cwn-settings-control-height);padding-block:4px!important}.cwn-settings-nav-status{width:14px;height:14px;display:flex;align-items:center;justify-content:center;flex:none}
 .cwn-connection-dot{display:block;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-label-caption)}
 .cwn-connection-dot[data-state=connected]{background:var(--dsw-alias-state-success-primary)}
 .cwn-connection-dot[data-state=failed]{background:var(--dsw-alias-state-error-primary)}
@@ -265,7 +265,7 @@ export const settingsStyles = `
 .cwn-login-waiting{display:flex;align-items:center;gap:8px;color:var(--dsw-alias-label-secondary)}
 .cwn-login-result{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:28px 16px 12px}.cwn-login-result strong{font-size:18px;line-height:26px;font-weight:600}.cwn-login-result p{color:var(--dsw-alias-label-secondary)}.cwn-login-result .cwn-login-actions{justify-content:center;margin-top:12px}
 .cwn-login-result-icon{color:var(--dsw-alias-state-success-primary)}
-.cwn-login-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;border-top:0.5px solid var(--dsw-alias-border-l2)}.cwn-login-foot[data-desktop]>.cwn-login-actions{justify-content:flex-end;margin-left:auto;flex:0 1 75%}.cwn-login-foot[data-desktop]>.cwn-login-notice{flex:1}
+.cwn-login-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;border-top:0.5px solid var(--dsw-alias-border-l2)}.cwn-login-foot[data-desktop]{flex-wrap:wrap;row-gap:8px}.cwn-login-foot[data-desktop]>.cwn-login-actions{justify-content:flex-end;margin-left:auto;flex:0 1 auto;max-width:100%}.cwn-login-foot[data-desktop]>.cwn-login-actions>*{white-space:nowrap}.cwn-login-foot[data-desktop]>.cwn-login-notice{flex:1 1 auto;overflow-wrap:break-word}
 .cwn-login-notice{min-width:0;color:var(--dsw-alias-label-tertiary);font-size:var(--dsw-font-xxs-12-font-size);line-height:18px;overflow-wrap:anywhere}
 .cwn-login-device{display:flex;align-items:center;gap:12px;padding:12px 16px;border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1)}.cwn-login-device code{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:22px;line-height:30px;font-weight:600;letter-spacing:2px;color:var(--dsw-alias-label-primary)}
 .cwn-accounts-window{display:flex;flex-direction:column;gap:20px;color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-s-14-font-size);line-height:22px}.cwn-accounts-window p{margin:0}

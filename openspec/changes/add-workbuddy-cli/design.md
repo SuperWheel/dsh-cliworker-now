@@ -85,7 +85,7 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 - transport：`workbuddycn-acp-v1`、`workbuddy-acp-v1`，一经发布不改。
 - 附件：`promptCapabilities.image: true`，加入 `native-attachments` 支持列表，由 `nativeAcpAttachmentPrompt` 按能力处理。
 - DSH 工具桥：不启用。CLI 只公开 http/sse MCP，插件的工具服务是 stdio，未验证；`--strict-mcp-config` 下也不加载用户 MCP 以外的配置。原生工具（文件、命令、搜索、网页、skills）照常可用。
-- 分支：不支持，理由“WorkBuddy 内置 CLI 未公开原生分支能力”。
+- 分支：不支持，理由“WorkBuddy 内置 CLI 未公开原生分支能力”；2026-11-08 改为“WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork”，用量与上下文由 `fix-v088-cli-gaps` 接入。
 - 运行中输入：无原生 steer，沿用 Inbox。
 - 子 Agent 与记忆：跟随原生设置；定时任务关闭（理由见第 2 节）。
 - 遥测：不新增原生用量事件，用量与上下文保持未知。

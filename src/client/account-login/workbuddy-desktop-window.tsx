@@ -5,6 +5,15 @@ import type { CliId } from '../../shared/types.ts'
 import { value, type API } from '../workers.ts'
 import type { AccountCloseControl } from '../account-terminal.tsx'
 import { t, useT } from '../i18n.ts'
+import { hostText } from '../operation-error.ts'
+import { en } from '../i18n-messages.ts'
+
+/** Only fixed, translated Host reasons are shown; any other error text stays generic. */
+function knownHostReason(reason: unknown): string | undefined {
+  const raw = String((reason as { message?: unknown })?.message ?? reason)
+    .replace(/^.*cliworker\/unavailable[^:]*:\s*/, '').replace(/^(?:(?:[A-Za-z_$][\w$]*Error|Error):\s*)+/, '').trim()
+  return Object.hasOwn(en, raw) ? raw : undefined
+}
 import { CurrentAccount, LoginWindow } from './login-window.tsx'
 
 /** Desktop-owned accounts never construct a terminal or enter the automatic logout flow. */
@@ -55,11 +64,13 @@ export function WorkBuddyDesktopWindow({ api, sessionId, cli, account, closeCont
           if (alive && !controller.signal.aborted) setError(t('桌面管理暂不可用，请关闭后重试。'))
         }
       })()
-    })().catch(() => {
+    })().catch((reason: unknown) => {
       if (alive) {
-        setError(t('桌面管理暂不可用，请关闭后重试。'))
+        // Show the Host's reason (for example a status read still running) instead of a generic failure.
+        const message = controller.signal.aborted ? '' : knownHostReason(reason) ?? ''
+        setError(message ? hostText(message) : t('桌面管理暂不可用，请关闭后重试。'))
         setFrame({ seq: 0, status: 'failed', guide: { step: 'desktop', template: 'result', tone: 'warning',
-          text: '桌面管理暂不可用，请关闭后重试。' } })
+          text: message || '桌面管理暂不可用，请关闭后重试。' } })
       }
     })
       .finally(() => { clearTimeout(timer); if (alive) setPending(false) })

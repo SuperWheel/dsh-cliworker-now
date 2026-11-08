@@ -171,6 +171,42 @@ describe('模拟 WorkBuddy desktop observation lifetime', () => {
     expect(f.deps.open).not.toHaveBeenCalled() // There is no GUI terminate dependency.
     await f.manager.close()
   })
+  it('a reopen right after closing waits for the previous window to finish stopping instead of failing', async () => {
+    const f = fixture(), s = await f.start(), pending = deferred<DesktopSnapshot>()
+    f.deps.read.mockImplementationOnce(async () => pending.promise)
+    const reading = f.manager.respond('SIMULATED/parent', s.id, 'refresh')
+    await vi.advanceTimersByTimeAsync(0)
+    const stopped = f.manager.stop('SIMULATED/parent', s.id)
+    let reopened: Awaited<ReturnType<typeof f.start>> | undefined
+    const reopening = f.start().then(value => { reopened = value })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(reopened).toBeUndefined(); expect(f.deps.reserve).toHaveBeenCalledTimes(1) // Not rejected as busy.
+    pending.resolve(snapshot()); await stopped; await reading; await reopening
+    expect(reopened?.id).not.toBe(s.id)
+    expect(f.held.has('workbuddycn')).toBe(true)
+    await f.manager.close()
+    expect(f.held.size).toBe(0)
+  })
+  it('waits for an in-flight account status read of the same CLI before reserving it', async () => {
+    const f = fixture(), status = deferred<void>()
+    const settle = vi.fn(async (_cli: WorkBuddyCliId, _signal: AbortSignal) => status.promise)
+    const manager = new WorkBuddyDesktopAccounts({ ...f.deps, settle })
+    let started = false
+    const starting = manager.start('SIMULATED/parent', 'workbuddycn', '/SIMULATED/project', new AbortController().signal, f.authorize)
+      .then(value => { started = true; return value })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(settle).toHaveBeenCalledWith('workbuddycn', expect.any(AbortSignal))
+    expect(f.deps.reserve).not.toHaveBeenCalled(); expect(started).toBe(false)
+    status.resolve(); await starting
+    expect(f.deps.reserve).toHaveBeenCalledOnce()
+    const aborted = new AbortController(), never = vi.fn(async () => new Promise<void>(() => {}))
+    const blocked = new WorkBuddyDesktopAccounts({ ...f.deps, settle: never })
+    const late = blocked.start('SIMULATED/parent', 'workbuddy', '/SIMULATED/project', aborted.signal, f.authorize)
+    aborted.abort(new Error('SIMULATED start lifetime ended'))
+    await expect(late).rejects.toThrow('SIMULATED start lifetime ended')
+    expect(f.held.has('workbuddy')).toBe(false)
+    await manager.close(); await blocked.close()
+  })
   it('aborts the whole cycle at 25 seconds and does not release before the read settles', async () => {
     const f = fixture(), pending = deferred<DesktopSnapshot>(); let signal!: AbortSignal
     f.deps.read.mockImplementationOnce(async (_c, _p, _d, control) => { signal = control; return pending.promise })

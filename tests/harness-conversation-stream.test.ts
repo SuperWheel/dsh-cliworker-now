@@ -348,6 +348,24 @@ it('shows CLI Worker actions between responses as passive tool rows and hides ot
   expect(f.requestErrors).not.toHaveBeenCalled()
 })
 
+it('shows the end-of-turn outcome note after a denied approval in the Worker window (synthetic)', async () => {
+  const f = await fixture({
+    sourceEvents: [
+      { kind: 'user', text: 'synthetic input' },
+      { kind: 'tool', step: 0, text: 'Write', state: 'FAILED', toolCall: { callId: 'denied', output: '已拒绝' } },
+      { kind: 'assistant', text: 'synthetic partial answer', step: 1,
+        response: { id: 'first', blockId: 'text', index: 0, complete: true } },
+      { kind: 'diagnostic', notice: true, text: '本轮结果说明', detail: 'SIMULATED 因拒绝审批而结束：被拒操作未执行，可续聊继续' },
+    ],
+  })
+  await f.begin()
+  await f.finish('completed')
+  const calls = f.agent.session.log.filter((event) => event.type === 'tool/call')
+  const note = calls.find((event) => event.data.name === 'cliworker_result_notice')
+  expect(note?.data).toMatchObject({ arguments: JSON.stringify({ 说明: '本轮结果说明：SIMULATED 因拒绝审批而结束：被拒操作未执行，可续聊继续' }) })
+  expect(f.realTool).not.toHaveBeenCalled()
+})
+
 it('lets the official loop settle an observed tool response once without executing the real tool', async () => {
   const usage = { inputTokens: 5, outputTokens: 2, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 7 }
   const f = await fixture({

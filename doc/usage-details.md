@@ -8,7 +8,7 @@
 
 打开指引只查一次；点击「打开桌面端」或「继续观察」后，每轮完成至少间隔 15 秒，最多观察 5 分钟或自动查询 20 次。手动刷新与正在执行的查询合并，预算到期后刷新只查一次。元数据成功表示当前已登录；当前认证错误无法可靠区分缺失与其他拒绝，只提示“请在桌面端检查登录状态”，不证明已退出或同站点换号。打开失败可手动打开对应版本后刷新或重试。关闭指引等待插件查询清理，不关闭桌面端。查询账号和模型会创建一条空的原生会话，原生未提供删除接口。
 
-试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；分支、DSH 工具桥、用量与上下文信息未开放。真实模型任务、审批行为、国际版、Windows 与 Desktop 界面仍待验收。
+试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。真实模型任务、审批行为、国际版、Windows 与 Desktop 界面仍待验收。
 
 
 [简体中文](usage-details.md) | [English](usage-details.en.md) · [返回 README](../README.md)
@@ -141,7 +141,8 @@ Qoder 设置中的单次目录加载会合并账号与模型查询，减少重�
 - 模型与强度：来自原生 `session/new`，强度只列出该模型 `effortOptions` 中的取值；积分倍率为 `x0.00` 的模型标为免费。切换站点或账号后，模型目录变化会让旧选择失效，需要重新确认。
 - 权限：询问 → `default`，自动审批 → `auto`（CodeBuddy 的 AI 审查代批，被拦截的操作不再问你），完全权限 → `bypassPermissions`；规划模式 → `plan`。`fullAccess` 不使用。
 - 审批与拒绝：写文件与命令的审批转交到 DSH。CodeBuddy 拒绝任一审批后会立即结束本轮，插件显示“因拒绝审批而结束”（不是“已取消”），之后可以继续对话。
-- 不支持：原生分支（ACP 未公开 `session/fork`）、运行中引导、每轮积分回执。
+- 用量：CodeBuddy 按积分计费，ACP 回执不含用量。插件在本轮正常结束后读取 CLI 自己写的原生会话文件，按请求去重汇总本轮积分与 token，像 Qoder 一样显示积分；任一请求缺积分数据或本轮有子 Agent 时积分显示为未知，不把 token 当积分。免费模型显示 0 积分。
+- 不支持：原生分支（实测 ACP `session/fork` 返回 Method not found；`--fork-session` 只能在终端续接时使用）、运行中引导。
 
 ### Claude Code 与 CC Switch
 

@@ -180,3 +180,7 @@
 
 - [x] 12.5 最终 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm build:preview` 通过；产物为本工作树 `.cache/preview-package`，日志 `.cache/integration-validation/preview-final.log`。
 - [x] 12.6 `PATH="$PWD/.cache/bin:$PATH" TMPDIR="$PWD/.cache/neutral-tmp" pnpm spec:check`（validate --all --strict --no-interactive）：59 项通过、0 失败；日志 `.cache/integration-validation/spec-final.log`。既有其他变更有归档冲突 INFO，本次不归档，也未处理无关规格。
+
+## 13. v0.8.8 验收缺口复查（2026-11-08）
+
+- [x] 13.1 复查与 CodeBuddy 相同的缺口：TRAE CN 回执带 token、有 `usage_update` 上下文、已支持原生分支，均不需修改；按用户要求保持默认 token 显示，不列入积分计费 CLI（`creditBilledCli('traecn')` 为 false，见 `tests/codebuddy-usage.test.ts`）。见 [fix-v088-cli-gaps](../fix-v088-cli-gaps/tasks.md)。

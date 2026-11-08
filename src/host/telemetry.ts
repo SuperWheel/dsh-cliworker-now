@@ -287,6 +287,14 @@ function metricRecords(v: Record<string, any>): unknown[] {
     type: v.type, source: textId(v.source), sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
     used: count(v.used) ?? null, size: count(v.size) ?? null,
   })
+  else if (v.type === 'cliworker.codebuddy_usage') entries.push({
+    type: v.type, cli: ['codebuddy', 'workbuddycn', 'workbuddy'].includes(v.cli) ? v.cli : undefined,
+    source: textId(v.source), sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
+    userMessageId: textId(v.userMessageId), conversationRequestId: textId(v.conversationRequestId), requests: count(v.requests) ?? null,
+    usage: metricCounts(v.usage, ['inputTokens', 'outputTokens', 'totalTokens', 'cachedReadTokens', 'reasoningTokens']),
+    providerCredits: duration(v.providerCredits) ?? null,
+    creditsIncomplete: v.creditsIncomplete === 'subagents' ? v.creditsIncomplete : undefined,
+  })
   else if (['cliworker.qoder_prompt_usage', 'cliworker.qodercn_prompt_usage'].includes(v.type)) entries.push({
     type: v.type, sessionId: textId(v.sessionId) ?? null, model: textId(v.model),
     usage: metricCounts(v.usage, ['inputTokens', 'outputTokens', 'totalTokens']),
@@ -799,6 +807,13 @@ export function extractTelemetry(
       result.contextRatio = v.used / v.size
       result.contextEstimated = false
       result.contextSource = result.contextCapacitySource = 'TRAE CN 原生回执上下文'
+    } else if (['codebuddy', 'workbuddycn', 'workbuddy'].includes(cli) && v.type === 'cliworker.codebuddy_usage' && v.cli === cli &&
+      v.source === `${cli}.native-transcript` && textId(v.sessionId) && ownSession(v.sessionId) && textId(v.userMessageId) &&
+      textId(v.model) && (!model || v.model === model)) {
+      // Credit-billed: only the native per-request credit figure is shown. Missing or
+      // sub-agent-incomplete credits stay unknown; token counts are never relabelled as credits.
+      delete result.providerCredits
+      if (v.creditsIncomplete === undefined && duration(v.providerCredits) !== undefined) result.providerCredits = v.providerCredits
     } else if ((cli === 'qoder' || cli === 'qodercn') && v.type === `cliworker.${cli}_prompt_usage` && textId(v.sessionId) && ownSession(v.sessionId) &&
       (!model || v.model === model)) {
       const u = obj(v.usage)
@@ -931,7 +946,7 @@ export function extractTelemetry(
         )
       }
     } else if (
-      (cli === 'kimi' || cli === 'grok' || cli === 'codebuddy') &&
+      (cli === 'kimi' || cli === 'grok' || cli === 'codebuddy' || cli === 'workbuddycn' || cli === 'workbuddy') &&
       v.method === 'session/update' &&
       textId(obj(v.params).sessionId) &&
       ownSession(obj(v.params).sessionId)
@@ -942,7 +957,7 @@ export function extractTelemetry(
           result,
           update.used,
           update.size,
-          `${cli === 'codebuddy' ? 'CodeBuddy' : cli === 'kimi' ? 'Kimi' : 'Grok'} 原生会话上下文统计`,
+          `${({ codebuddy: 'CodeBuddy', workbuddycn: 'WorkBuddy CN', workbuddy: 'WorkBuddy', kimi: 'Kimi' } as Record<string, string>)[cli] ?? 'Grok'} 原生会话上下文统计`,
           true,
         )
       else if (cli === 'grok' && Object.hasOwn(obj(obj(v.params)._meta), 'totalTokens'))

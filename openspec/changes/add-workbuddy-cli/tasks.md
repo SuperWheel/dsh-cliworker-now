@@ -161,3 +161,7 @@
 
 - [x] 10.1 按 `add-new-cli-graphical-login` Migration 3 同步 proposal/design/模型目录与账号状态规格：有桌面管理指引，无 CLI 登录/退出；泛化认证错误不证明退出，独立无 PTY 观察会话与精确应用打开由关联变更实施。
   - 本节不重写既有历史验收。实现、命令和当前未验项目记录在 `../add-new-cli-graphical-login/tasks.md`；未触碰密钥助手/bootstrap，未做真实账号或模型调用。
+
+## 11. v0.8.8 验收缺口修复（2026-11-08）
+
+- [x] 11.1 两版按积分显示用量（读原生会话文件）、补上下文统计、分支理由写明“内置 CLI 未实现 session/fork”；拒绝审批结束说明在 Worker 窗口可见；设置页左栏加“试验性”；桌面管理窗口复开不再报“暂不可用”，英文页脚不折行。详见 [fix-v088-cli-gaps](../fix-v088-cli-gaps/tasks.md)。
