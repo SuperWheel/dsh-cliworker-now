@@ -447,7 +447,13 @@ export function LoginWindow({
           return <ChoiceCards guide={guide} running={running} onChoose={(option) => respond({ option })} onCancel={onDone} />
         return (
           <>
-            <p>{hostText(guide.text)}</p>
+            {guide.tone === 'warning' ? (
+              <p className="cwn-login-callout" data-tone="warning" role="status">
+                {hostText(guide.text)}
+              </p>
+            ) : (
+              <p>{hostText(guide.text)}</p>
+            )}
             <div className="cwn-login-actions">
               {guide.options?.map((option, index) => (
                 <Button
@@ -514,6 +520,9 @@ export function LoginWindow({
             </p>
             {action === 'logout' && !rawVisible && (
               <p className="cwn-login-hint">{t('请点击「显示原生终端」，在 CLI 原生菜单中继续退出。')}</p>
+            )}
+            {action !== 'logout' && guide.tone === 'warning' && !rawVisible && (
+              <p className="cwn-login-hint">{t('可以关闭窗口后重新登录，或点击「显示原生终端」查看 CLI 当前画面。')}</p>
             )}
           </>
         )

@@ -63,7 +63,7 @@ const KIMI: Entry[] = [
 ]
 
 const TABLES: Partial<Record<CliId, Entry[]>> = { traecn: [
-  { id: 'personal', label: '个人账号（依赖 TRAE CLI 开发中特性）' },
+  { id: 'personal', label: '个人账号' },
   { id: 'enterprise', label: '企业 SSO' },
   { id: 'enterprise-pat', label: '企业 PAT' },
 ], opencode: OPENCODE, hermes: HERMES, zcode: ZCODE, pi: [], omp: [], kimi: KIMI }

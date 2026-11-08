@@ -5,7 +5,7 @@ import { createAccountGuide } from '../src/host/account-guide/flows.ts'
 import { CODEBUDDY_FLOW } from '../src/host/account-guide/codebuddy-flow.ts'
 import { TRAECN_FLOW } from '../src/host/account-guide/traecn-flow.ts'
 import { parseTraecnAccount } from '../src/host/traecn-accounts.ts'
-import { codebuddyTrustRecorded, codebuddyEditorRecorded, codebuddySitesRecorded, codebuddyInternationalRecorded, codebuddyChinaBrowserRecorded, codebuddyIntlBrowserRecorded, codebuddyEnterpriseRecorded, codebuddyIoaRecorded, codebuddyCancelledRecorded, codebuddyLogoutRecorded, traePersonalRecorded, traeEnterpriseRecorded, traePatRecorded, traeSignedOutRecorded } from './fixtures/new-cli-login-recorded.ts'
+import { codebuddyTrustRecorded, codebuddyEditorRecorded, codebuddySitesRecorded, codebuddyInternationalRecorded, codebuddyChinaBrowserRecorded, codebuddyIntlBrowserRecorded, codebuddyEnterpriseRecorded, codebuddyIoaRecorded, codebuddyCancelledRecorded, codebuddyFailedRecorded, codebuddyLogoutRecorded, traePersonalRecorded, traeEnterpriseRecorded, traePatRecorded, traeSignedOutRecorded } from './fixtures/new-cli-login-recorded.ts'
 const guides = (events: GuideEvent[]) => events.flatMap(event => 'guide' in event ? [event.guide] : [])
 const writes = (events: GuideEvent[]) => events.filter(event => 'write' in event || 'command' in event)
 const state = (state: AccountEvidence['state']): AccountEvidence => ({ state })
@@ -72,20 +72,46 @@ describe('CodeBuddy/TRAE recorded text replay and explicitly simulated states', 
     expect(events.filter(event => 'watch' in event)).toHaveLength(1)
     expect(writes(events)).toEqual([])
     expect(() => flow.respond({ code: 'SIMULATED' })).toThrow()
-    // The cancelled screen is unrecorded: handed over once it settles, never mid-redraw.
-    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))).toEqual([])
-    expect(guides(flow.settled())[0]?.template).toBe('native')
+    // A cancelled or failed authorization offers a retry instead of the native terminal.
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddyCancelledRecorded))[0]).toMatchObject({ step: 'failed', tone: 'warning', template: 'choice' })
+    expect(flow.settled()).toEqual([])
+    expect(flow.respond({ option: 'retry' })).toEqual([{ write: '\x1b', enter: undefined }])
+    expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
+  })
+  it('names a timed-out authorization and accepts only the retry answer (recorded failure line, simulated TimeoutError reason)', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    flow.output(codebuddyChinaBrowserRecorded)
+    const failed = guides(flow.output('\x1b[2J\x1b[H' + codebuddyFailedRecorded))[0]
+    expect(failed).toMatchObject({ step: 'failed', text: 'CodeBuddy 登录未完成。', options: [{ id: 'retry', label: '重新登录' }] })
+    expect(failed?.text).not.toContain('OpenExternalLinkError')
+    const timeout = createAccountGuide('codebuddy', 'login')!
+    timeout.output(codebuddyChinaBrowserRecorded)
+    expect(guides(timeout.output('\x1b[2J\x1b[H' + codebuddyFailedRecorded.replace('OpenExternalLinkError', 'TimeoutError')))[0]?.text)
+      .toBe('CodeBuddy 浏览器授权已超时，登录未完成。')
+    expect(() => timeout.respond({ option: 'china' })).toThrow()
+    expect(() => timeout.respond({ code: 'SIMULATED' })).toThrow()
+  })
+  it('offers to sign in again when the editor returns after /login was typed (simulated Esc back from the menu)', () => {
+    const flow = createAccountGuide('codebuddy', 'login')!
+    expect(writes(flow.output(codebuddyEditorRecorded))).toEqual([{ write: '/login', enter: true }])
+    // Redraws of the same editor before the typed command lands keep the waiting guide.
+    expect(guides(flow.output(codebuddyEditorRecorded))).toEqual([])
+    flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded)
+    const back = flow.output('\x1b[2J\x1b[H' + codebuddyEditorRecorded)
+    expect(writes(back)).toEqual([])
+    expect(guides(back)[0]).toMatchObject({ step: 'editor', tone: 'warning', template: 'choice', options: [{ id: 'login' }] })
+    expect(flow.settled()).toEqual([])
+    expect(flow.respond({ option: 'login' })).toEqual([{ write: '/login', enter: true }])
     expect(guides(flow.output('\x1b[2J\x1b[H' + codebuddySitesRecorded))[0]?.template).toBe('choice')
   })
   it.each([['enterprise', codebuddyEnterpriseRecorded], ['ioa', codebuddyIoaRecorded]] as const)('keeps %s native without collecting secrets', (option, screen) => {
     const flow = createAccountGuide('codebuddy', 'login')!
     flow.output(codebuddySitesRecorded)
     flow.respond({ option })
-    // After a recognized screen, an unrecorded one is handed over once it settles.
-    expect(guides(flow.output('\x1b[2J\x1b[H' + screen))).toEqual([])
-    const settled = flow.settled()
-    expect(guides(settled)[0]?.template).toBe('native')
-    expect(writes(settled)).toEqual([])
+    // A recorded native step: answered in the terminal on purpose, not the unrecognized fallback.
+    const events = flow.output('\x1b[2J\x1b[H' + screen)
+    expect(guides(events)[0]).toMatchObject({ step: option, tone: 'action', template: 'native' })
+    expect(writes(events)).toEqual([])
     expect(flow.settled()).toEqual([])
     expect(() => flow.respond({ secret: 'SIMULATED' })).toThrow()
   })

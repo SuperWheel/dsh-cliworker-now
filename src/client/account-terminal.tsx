@@ -627,16 +627,20 @@ export function AccountTerminal({
     // Keys typed right after the terminal opens belong to it, e.g. a CLI's own setup screen.
     focus.current()
   }, [rawVisible])
-  // Sign-in keeps its native fallback; sign-out opens it only at the user's request.
-  // A terminal opened for that fallback closes again once a recognized step comes back;
-  // one the user opened or closed stays as they left it.
+  // Sign-in opens the terminal only for a step the user must answer there (an
+  // enterprise domain, a first-run setup). A screen the plugin cannot recognize
+  // (warning tone) only offers 「显示原生终端」: it may be a passing frame or a
+  // timed-out authorization, and the window keeps its own retry (2026-11-08).
+  // Sign-out opens it only at the user's request. A terminal opened for that
+  // step closes again once a recognized step comes back; one the user opened or
+  // closed stays as they left it.
   const autoRaw = useRef(false)
   useEffect(() => {
     if (action === 'logout') {
       autoRaw.current = false
       return
     }
-    if (guide?.template === 'native') {
+    if (guide?.template === 'native' && guide.tone !== 'warning') {
       if (!rawShown.current) {
         autoRaw.current = true
         setRawVisible(true)

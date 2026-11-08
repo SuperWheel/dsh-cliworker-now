@@ -94,7 +94,11 @@ WorkBuddy 图形管理页 SHALL 在显式打开后以单个在途查询、有限
 
 #### Scenario: 原生终端回退
 - **WHEN** CodeBuddy 或 TRAE 出现未知步骤
-- **THEN** 登录时可展开并聚焦原生终端，退出时保持隐藏并提供「显示原生终端」；结果页不被迟到关闭消息覆盖
+- **THEN** 登录与退出 MUST NOT 自动展开原生终端：窗口只显示“无法识别当前步骤”、「显示原生终端」及关闭后重新登录的提示；只有需要用户在终端里作答的已录制步骤（企业域地址、iOA、TRAE 企业流程等）才自动展开并聚焦；结果页不被迟到关闭消息覆盖
+
+#### Scenario: CodeBuddy 授权未完成
+- **WHEN** 浏览器授权超时（5 分钟，TimeoutError）、无法打开或被取消，CodeBuddy 显示 `Failed to login. Press esc to return to login`，或在已输入过 `/login` 后回到输入界面
+- **THEN** 窗口 SHALL 显示警告与「重新登录」，不显示原生错误原因；点击后分别按 Esc 回到站点菜单或重新输入 `/login`，不自动重复发起登录
 
 #### Scenario: 桌面管理与旧 Host
 - **WHEN** WorkBuddy 没有 PTY，或旧 Host 未声明桌面管理能力

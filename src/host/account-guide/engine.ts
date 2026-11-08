@@ -282,6 +282,11 @@ export interface FlowStep {
   respond?: (response: AccountResponse, ctx: FlowContext, screen: ScreenView) => FlowAnswer | undefined
   /** Keys written once when the step shows, for a choice the user already made in the window. */
   auto?: (screen: ScreenView, ctx: FlowContext) => string | Pick<FlowAnswer, 'keys' | 'enter'> | undefined
+  /**
+   * The guide once `auto` has already been written: the CLI came back to this screen (a failed
+   * or cancelled sign-in), so the window must not claim it is still moving on by itself.
+   */
+  again?: (screen: ScreenView, ctx: FlowContext) => AccountGuide
   /** Reaching this step is itself a sign that the change may have taken effect. */
   confirms?: AccountChange
   /**
@@ -392,6 +397,7 @@ export class FlowGuide implements AccountGuideDriver {
   private recognized = false
   private shown?: AccountGuide
   private autoDone = new Set<string>()
+  private againStep?: string
   private typed = false
   private commandSent = false
   private afterCommand = ''
@@ -464,10 +470,13 @@ export class FlowGuide implements AccountGuideDriver {
       const matched = typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
       if (!matched) continue
       if (!step.afterRecognized) this.recognized = true
-      const guide = step.guide(screen, context)
+      // Only a return from another screen counts: redraws right after the auto keys do not.
+      const again = !!step.again && this.autoDone.has(step.id) && (i !== this.index || this.againStep === step.id)
+      const guide = again ? step.again!(screen, context) : step.guide(screen, context)
       if (i === this.index && sameGuide(guide, this.shown)) return step.pick ? this.pick(step) : []
       if (i !== this.index) this.typed = false
       this.index = i
+      this.againStep = again ? step.id : undefined
       if (step.ends) return this.end(guide)
       const events = this.show(guide)
       if (step.auto && !this.autoDone.has(step.id)) {

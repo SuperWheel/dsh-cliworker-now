@@ -1453,12 +1453,24 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     expect(f.renderer.root.findAllByProps({ className: 'cwn-account-instruction' })).toEqual([])
   })
 
-  it('shows the native terminal with keyboard focus when the Host cannot follow the screen', async () => {
+  it('keeps the terminal hidden for an unrecognized login screen and offers it instead (simulated)', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(true)
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('可以关闭窗口后重新登录')
+    expect(terminals[0].focus).not.toHaveBeenCalled()
+    await f.click('显示原生终端')
+    expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(false)
+  })
+
+  it('shows the native terminal with keyboard focus for a step answered there', async () => {
     const f = await setup(false)
     await f.update('antigravity', 'login')
     await f.start()
     expect(terminals[0].focus).not.toHaveBeenCalled()
-    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    await push(f, { guide: { step: 'setup', tone: 'action', template: 'native', text: '模拟：在原生终端完成首次设置' } }, 1)
     expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(false)
     // The user's keys go to the CLI's own screen without clicking it first.
     expect(terminals[0].focus).toHaveBeenCalled()
@@ -1469,7 +1481,7 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     await f.update('codebuddy', 'login')
     await f.start()
     const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
-    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    await push(f, { guide: { step: 'enterpriseNative', tone: 'info', template: 'native', text: '模拟：在原生终端输入企业域名' } }, 1)
     expect(view()).toBe(false)
     await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
     expect(view()).toBe(true)
@@ -1482,7 +1494,7 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     await f.update('codebuddy', 'login')
     await f.start()
     const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
-    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    await push(f, { guide: { step: 'enterpriseNative', tone: 'info', template: 'native', text: '模拟：在原生终端输入企业域名' } }, 1)
     await f.click('隐藏原生终端')
     await f.click('显示原生终端')
     await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
@@ -1625,7 +1637,7 @@ it('asks for a Host update instead of a provider login on an older Host', async 
 
 // SIMULATED client frames/providers; no native login is executed by these tests.
 const traeMethods = ['personal', 'enterprise', 'enterprise-pat'].map((id, index) => ({
-  id, label: ['个人账号（依赖 TRAE CLI 开发中特性）', '企业 SSO', '企业 PAT'][index]!,
+  id, label: ['个人账号', '企业 SSO', '企业 PAT'][index]!,
 }))
 const traeAccount = { cli: 'traecn', installed: true, state: 'unconfigured', summary: 'TRAE CN 未登录',
   actions: [{ id: 'login', label: '登录 / 切换账号', description: '', providers: traeMethods }] } as AccountStatus

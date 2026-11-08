@@ -47,5 +47,8 @@ export const codebuddyIntlBrowserRecorded = codebuddyChinaBrowserRecorded.replac
 export const codebuddyEnterpriseRecorded = 'Custom Endpoint\r\nEnter your custom endpoint address\r\n\r\nEnter to save · Esc to cancel'
 export const codebuddyIoaRecorded = codebuddyChinaBrowserRecorded.replace('&version=SIMULATED', '&version=SIMULATED&ioa=SIMULATED')
 export const codebuddyCancelledRecorded = 'Failed to login. Press esc to return to login'
+// CodeBuddy 2.181.0, isolated macOS capture 2026-11-08 (no browser opener on PATH): the failure
+// line above the recorded prompt. The Windows log of the same day records TimeoutError after 5 minutes.
+export const codebuddyFailedRecorded = 'Login failed: OpenExternalLinkError\r\n\r\n Failed to login. Press esc to return to login'
 // C6: one Enter submitted /logout and displayed exactly the same site menu.
 export const codebuddyLogoutRecorded = codebuddySitesRecorded

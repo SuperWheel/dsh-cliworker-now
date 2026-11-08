@@ -20,10 +20,10 @@ it.each(['zh', 'en'] as const)('模拟：method choices and fixed flow copy rend
   const onStart = vi.fn(), onCancel = vi.fn()
   let renderer!: ReturnType<typeof create>
   await act(async () => { renderer = create(createElement(LoginMethodPicker, { supported: true, onStart, onCancel,
-    providers: [{ id: 'personal', label: '个人账号（依赖 TRAE CLI 开发中特性）' }, { id: 'enterprise', label: '企业 SSO' }, { id: 'enterprise-pat', label: '企业 PAT' }],
+    providers: [{ id: 'personal', label: '个人账号' }, { id: 'enterprise', label: '企业 SSO' }, { id: 'enterprise-pat', label: '企业 PAT' }],
   })) })
   expect(JSON.stringify(renderer.toJSON())).toContain(t('选择登录方式'))
-  expect(JSON.stringify(renderer.toJSON())).toContain(hostText('个人账号（依赖 TRAE CLI 开发中特性）'))
+  expect(JSON.stringify(renderer.toJSON())).toContain(hostText('个人账号'))
   if (language === 'en') expect(JSON.stringify(renderer.toJSON())).not.toMatch(/[\u4e00-\u9fff]/)
   const radios = renderer.root.findAllByProps({ role: 'radio' })
   const preventDefault = vi.fn()
@@ -48,7 +48,7 @@ it.each(['zh', 'en'] as const)('模拟：method choices and fixed flow copy rend
 it('模拟：stale or unsupported Host methods cannot start', async () => {
   const start = vi.fn()
   let renderer!: ReturnType<typeof create>
-  const props = { onStart: start, onCancel: vi.fn(), supported: true, providers: [{ id: 'personal', label: '个人账号（依赖 TRAE CLI 开发中特性）' }] }
+  const props = { onStart: start, onCancel: vi.fn(), supported: true, providers: [{ id: 'personal', label: '个人账号' }] }
   await act(async () => { renderer = create(createElement(LoginMethodPicker, props)) })
   await act(async () => renderer.root.findByProps({ role: 'radio' }).props.onClick())
   await act(async () => renderer.update(createElement(LoginMethodPicker, { ...props, providers: [] })))

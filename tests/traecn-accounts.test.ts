@@ -44,7 +44,7 @@ describe('模拟：TRAE 原生账号与模型目录', () => {
     expect(status).toMatchObject({ installed: true, state: 'authenticated', verification: 'cli' })
     expect(status.actions.map(a => a.id)).toEqual(['login', 'logout'])
     expect(status.actions[0]?.providers?.map(p => p.id)).toEqual(['personal', 'enterprise', 'enterprise-pat'])
-    expect(loginProviders('traecn', undefined)?.[0]?.label).toContain('开发中特性')
+    expect(loginProviders('traecn', undefined)?.[0]?.label).toBe('个人账号')
     expect(ACCOUNT_LOGIN_HOSTS.traecn).toEqual(['www.trae.cn'])
     expect(SINGLE_ACCOUNT_CLIS.has('traecn')).toBe(true); expect(GUIDED_ACCOUNT_CLIS.has('traecn')).toBe(true)
     expect(() => manager.start('SIMULATED-parent', 'traecn', 'login', f.root, signal())).toThrow('不支持的登录方式')

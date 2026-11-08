@@ -31,6 +31,14 @@ export const en = {
   '在原生终端中继续': 'Continue in the native terminal',
   '打开 CodeBuddy 登录页面完成授权，插件会自动确认登录状态。': 'Open the CodeBuddy sign-in page and authorize. The plugin will check your sign-in status automatically.',
   '正在打开 CodeBuddy 登录站点选择…': 'Opening CodeBuddy sign-in site choices…',
+  'CodeBuddy 浏览器授权已超时，登录未完成。': 'CodeBuddy browser authorization timed out. Sign-in did not finish.',
+  'CodeBuddy 登录未完成。': 'CodeBuddy sign-in did not finish.',
+  'CodeBuddy 已回到输入界面。浏览器授权完成后插件会自动确认登录；尚未授权可以重新登录。':
+    'CodeBuddy is back at its input screen. Once browser authorization finishes, the plugin confirms the sign-in automatically; if you have not authorized yet, sign in again.',
+  '重新登录': 'Sign in again',
+  '请在下方原生终端中输入企业域地址并按回车；插件不收集企业凭据。':
+    'Enter the enterprise domain in the native terminal below and press Enter. The plugin does not collect enterprise credentials.',
+  '请在下方原生终端中按 CodeBuddy 的提示完成 iOA 登录。': 'Follow CodeBuddy’s prompts in the native terminal below to finish iOA sign-in.',
   '中国站': 'Chinese site',
   '国际站': 'International site',
   '企业域': 'Enterprise domain',
@@ -60,7 +68,7 @@ export const en = {
   '在 CodeBuddy 原生终端输入 /login，选择中国站或国际站等站点完成登录。': 'Enter /login in the CodeBuddy native terminal and choose a site, such as the Chinese or International site, to sign in.',
   '在 CodeBuddy 原生终端输入 /logout 退出。': 'Enter /logout in the CodeBuddy native terminal to sign out.',
   '在 CodeBuddy 原生终端使用 /login、/logout 管理账号。': 'Use /login and /logout in the CodeBuddy native terminal to manage your account.',
-  "个人账号（依赖 TRAE CLI 开发中特性）": "Personal account (requires a TRAE CLI development feature)",
+  "个人账号": "Personal account",
   "企业 SSO": "Enterprise SSO",
   "企业 PAT": "Enterprise PAT",
   "选择 TRAE CN 原生登录方式。": "Choose a native TRAE CN sign-in method.",
@@ -982,6 +990,7 @@ export const en = {
   '无需退出。': 'There is nothing to sign out of.',
   '显示原生终端': 'Show native terminal',
   '请点击「显示原生终端」，在 CLI 原生菜单中继续退出。': 'Click “Show native terminal” to continue signing out in the CLI’s native menu.',
+  '可以关闭窗口后重新登录，或点击「显示原生终端」查看 CLI 当前画面。': 'Close this window and sign in again, or click “Show native terminal” to see the CLI’s current screen.',
   '未能确认已退出': 'Could not confirm the sign-out',
   '未能确认已退出，请查看原生终端中的提示。': 'Could not confirm the sign-out. Check the native terminal for details.',
   'Antigravity 显示了登录菜单，但未能确认当前未登录，插件没有自动退出，也不会在菜单中输入。请点击「显示原生终端」查看当前画面。':
