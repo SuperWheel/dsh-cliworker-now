@@ -1,5 +1,5 @@
 import { constants, closeSync, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, resolve, win32 } from 'node:path'
 import { withNativeFilePrivacy } from './native-file-privacy.mjs'
 
 /**
@@ -37,6 +37,15 @@ export function codebuddyProjectKey(project) {
   return `${kept}-${djb2Base36(base)}`
 }
 
+/**
+ * CodeBuddy on Windows records cwd with a lowercase drive letter (`c:\\Users\\…`, 2026-11-09)
+ * while Node's realpath returns `C:\\Users\\…`; Windows paths compare case-insensitively.
+ */
+export function sameCodebuddyCwd(recorded, expected, platform = process.platform) {
+  if (typeof recorded !== 'string' || typeof expected !== 'string') return false
+  return platform === 'win32' ? win32.normalize(recorded).toLowerCase() === win32.normalize(expected).toLowerCase() : recorded === expected
+}
+
 export function codebuddyUsagePaths(config) {
   if (!families.has(config.cli) || !isAbsolute(config.home ?? '') || !isAbsolute(config.project ?? '') || !id(config.sessionId)) return []
   let project
@@ -59,7 +68,7 @@ export function inspectCodebuddyDurableUsage(records, config) {
   if (users.length !== 1) return
   const user = users[0]
   if (user.providerData?.conversationRequestId !== config.conversationRequestId || user.providerData?.startsNewUserRequest !== true ||
-    (user.cwd !== undefined && user.cwd !== config.cwd)) return
+    (user.cwd !== undefined && !sameCodebuddyCwd(user.cwd, config.cwd, config.platform))) return
   const requests = new Map()
   let last
   for (const row of records.slice(records.indexOf(user) + 1)) {
@@ -149,7 +158,9 @@ function readOnce(config, options) {
       return inspectCodebuddyDurableUsage(records, { ...config, cwd: realpathSync(config.project),
         subagentsActive: subagentsActive(paths[2], config.sessionId, config.turnStartedAt ?? 0) })
     } catch { return } finally { if (fd !== undefined) closeSync(fd) }
-  }, { ...options, reader: 'codebuddy', budgetMs: Math.min(options.budgetMs ?? 2000, 2000) })
+    // Windows: CodeBuddy started from an elevated process leaves ~/.codebuddy owned by the
+    // Administrators group (observed 2026-11-09); accept it only with the current user's direct full-control ACE.
+  }, { ...options, reader: 'codebuddy', allowAdministratorsOwner: true, budgetMs: Math.min(options.budgetMs ?? 2000, 2000) })
 }
 
 /** The native writer may still be flushing the final assistant row when ACP settles. */

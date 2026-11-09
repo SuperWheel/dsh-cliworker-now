@@ -2,10 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { codebuddyProjectKey, codebuddyUsagePaths, inspectCodebuddyDurableUsage, readCodebuddyDurableUsage } from '../src/host/codebuddy-durable-usage.mjs'
+import { codebuddyProjectKey, codebuddyUsagePaths, inspectCodebuddyDurableUsage, readCodebuddyDurableUsage, sameCodebuddyCwd } from '../src/host/codebuddy-durable-usage.mjs'
 import { codebuddyUsageOnResult } from '../src/host/native-codebuddy.mjs'
 import { extractTelemetry, TelemetryReader } from '../src/host/telemetry.ts'
 import { creditBilledCli } from '../src/shared/telemetry.ts'
+import { privateWindowsAcl } from '../src/host/native-file-privacy.mjs'
 import { bridgedFeatureSupport } from '../src/shared/conversation-features.ts'
 
 // All transcripts, sessions and credit figures below are SIMULATED; the row shape
@@ -58,6 +59,24 @@ describe('模拟：CodeBuddy 系原生会话文件的积分与用量', () => {
     ['wrong cwd', [user(USER, REQ, '/elsewhere'), final('m1', 10, 1)]],
   ])('rejects %s', (_name, records) => {
     expect(inspectCodebuddyDurableUsage(records as unknown[], binding)).toBeUndefined()
+  })
+  it('matches a Windows cwd recorded with a lowercase drive letter (CodeBuddy on Windows, 2026-11-09 shape)', () => {
+    const win = { ...binding, cwd: 'C:\\Users\\sim\\live', platform: 'win32' }
+    expect(inspectCodebuddyDurableUsage([user(USER, REQ, 'c:\\Users\\sim\\live'), final('m1', 10, 2)], win)?.providerCredits).toBe(0)
+    expect(inspectCodebuddyDurableUsage([user(USER, REQ, 'c:\\Users\\sim\\other'), final('m1', 10, 2)], win)).toBeUndefined()
+    expect(sameCodebuddyCwd('/Users/Sim/p', '/Users/sim/p', 'darwin')).toBe(false)
+    expect(sameCodebuddyCwd('/Users/sim/p', '/Users/sim/p', 'darwin')).toBe(true)
+  })
+  it('accepts the Windows ACL shape of an Administrators-owned ~/.codebuddy only with a direct current-user full-control entry', () => {
+    // SIMULATED SIDs; ACE layout mirrors the 2026-11-09 Windows projection (read-only extra group, inherited entries).
+    const me = 'S-1-5-21-1-2-3-1001'
+    const acl = (aces: { sid: string; mask: number; flags?: number }[]) => ({ owner: 'S-1-5-32-544', nullDacl: false, control: 33796,
+      descriptor: 'SIMULATED', aces: aces.map(ace => ({ type: 0, flags: ace.flags ?? 16, sid: ace.sid, mask: ace.mask })) })
+    const observed = acl([{ sid: 'S-1-5-21-9-9-9-2001', mask: 0x1200a9 }, { sid: 'S-1-5-18', mask: 0x1f01ff }, { sid: 'S-1-5-32-544', mask: 0x1f01ff }, { sid: me, mask: 0x1f01ff }])
+    expect(privateWindowsAcl(observed, me, 0o022, true)).toBe(true)
+    expect(privateWindowsAcl(observed, me, 0o022, false)).toBe(false)
+    expect(privateWindowsAcl(acl([{ sid: 'S-1-5-18', mask: 0x1f01ff }, { sid: 'S-1-5-32-544', mask: 0x1f01ff }]), me, 0o022, true)).toBe(false)
+    expect(privateWindowsAcl(acl([{ sid: 'S-1-5-21-9-9-9-2001', mask: 0x1f01ff }, { sid: me, mask: 0x1f01ff }]), me, 0o022, true)).toBe(false)
   })
   it('derives the native project folder name exactly like CodeBuddy', () => {
     expect(codebuddyProjectKey('/Users/sim/cw-acc-088')).toBe('Users-sim-cw-acc-088')
