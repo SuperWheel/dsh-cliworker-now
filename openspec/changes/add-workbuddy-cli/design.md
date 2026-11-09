@@ -65,7 +65,7 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 | 完全权限 | `bypassPermissions` | `auto`、`default` |
 | 规划 | `plan` | 无 |
 
-`fullAccess`（连危险命令检查也跳过）与 `dontAsk`、`acceptEdits`、`delegate` 不映射。`modeConfigId: 'mode'`。`sessionOption` 不提供：`allow_always` 的作用域未核实，不能确认是会话级。询问档的实际审批行为沿用 CodeBuddy 2.181 的实测作初步依据，WorkBuddy 2.165 待真实任务核实。
+`fullAccess`（连危险命令检查也跳过）与 `dontAsk`、`acceptEdits`、`delegate` 不映射。`modeConfigId: 'mode'`。`sessionOption` 与 CodeBuddy 相同，只映射 optionId 为 `allow_always` 的原生选项（2026-11-09 实测后由“不提供”改为提供）：WorkBuddy CN 2.165 选它后同一轮第二条 `touch` 不再询问；`~/.workbuddy` 设置文件与项目目录没有新增规则；同会话下一轮（插件每轮重启 CLI、经 `session/load` 续接）与新会话都再次询问。所以授权只保存在 CLI 进程内，实际覆盖当前这一轮。CodeBuddy 2.181 同样实测为这一行为。询问档的实际审批行为沿用 CodeBuddy 2.181 的实测作初步依据，WorkBuddy 2.165 待真实任务核实。
 
 ### 6. 模型与强度
 
@@ -107,6 +107,6 @@ initialize 回执没有 `agentInfo`，`settings.agentName` 不设。改为两道
 
 ## Open Questions
 
-- 询问档在 WorkBuddy 2.165 的真实审批行为、`allow_always` 的作用域。
+- ~~询问档在 WorkBuddy 2.165 的真实审批行为、`allow_always` 的作用域~~：已实测（7.1、7.2），`allow_always` 只在当前 CLI 进程内有效。
 - ~~`thought_level` 选项是否随模型变化~~：会变化，已按模型给出（见第 6 节）。
 - Windows 安装路径与可执行名、国际版 product 身份。

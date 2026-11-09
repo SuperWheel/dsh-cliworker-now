@@ -37,6 +37,7 @@ Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` �
 | 能力 | 接线 |
 | --- | --- |
 | 询问／自动审批／完全权限 | `default`／`auto`／`bypassPermissions`，保持 runner 已定义的回退 |
+| 本会话始终允许 | 映射原生 `allow_always`（与 CodeBuddy 相同）；授权只保存在 CLI 进程内，不写入设置，下一轮或新会话再次询问（2026-11-09 实测） |
 | 规划 | 原生 `plan` |
 | 附件 | 原生 ACP 按协商能力处理 |
 | 工具类别 | 文件读、按模式写、搜索、shell、web、skills |

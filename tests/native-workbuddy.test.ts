@@ -68,7 +68,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  const request=JSON.parse(line);audit(request);
  if(!request.method){
   if(pending){
-   const allowed=request.result?.outcome?.optionId==='allow';
+   const allowed=['allow','allow_always'].includes(request.result?.outcome?.optionId);
    update({sessionUpdate:'tool_call_update',toolCallId:'call',status:allowed?'completed':'failed'});
    reply(pending,{stopReason:allowed?'end_turn':'cancelled',_meta:{'codebuddy.ai/outcome':allowed?'OK':'PERMISSION_DENIED'}});pending=undefined;
   }return;
@@ -97,7 +97,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(request.method==='session/prompt'){
   update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SIMULATED ANSWER'}});
   if(scenario==='cancel'){pending=request;return;}
-  if(scenario==='permission'||scenario==='allow'){
+  if(scenario==='permission'||scenario==='allow'||scenario==='allow-session'){
    update({sessionUpdate:'tool_call',toolCallId:'call',title:'Run simulated command',kind:'execute',locations:[{path:'/simulated/file'}],status:'pending'});
    pending=request;
    return out({jsonrpc:'2.0',id:'permission',method:'session/request_permission',params:{sessionId,toolCall:{toolCallId:'call',rawInput:{command:'simulated echo'}},options:[{kind:'allow_once',optionId:'allow'},{kind:'allow_always',optionId:'allow_always'},{kind:'reject_once',optionId:'reject'}]}});
@@ -131,7 +131,7 @@ async function fixture(scenario = 'success', options: any = {}) {
     ...(options.resume ? { conversationId: 'simulated-workbuddy-session' } : {}), approvalNonce: 'simulated-approval' }
   const io: any = createNativeIO(config, (line: string) => {
     const frame = JSON.parse(line); frames.push(frame)
-    if (frame.type === 'approval') void io.answerApproval(JSON.stringify({ decision: scenario === 'allow' ? 'allow-once' : 'deny', source: 'user' }), frame.id)
+    if (frame.type === 'approval') void io.answerApproval(JSON.stringify({ decision: scenario === 'allow' ? 'allow-once' : scenario === 'allow-session' ? 'allow-session' : 'deny', source: 'user' }), frame.id)
     if (scenario === 'cancel' && frame.event?.kind === 'assistant') controller.abort(new Error('模拟停止'))
   }, controller.signal, (chunk: Buffer) => { stderr += chunk.toString() })
   const spawn = io.spawn
@@ -220,7 +220,7 @@ describe('模拟 WorkBuddy ACP runner', () => {
     expect(f.result).toMatchObject({ status: 'SUCCESS' })
     expect(JSON.stringify(f.result)).toContain('因拒绝审批而结束')
     expect(f.frames.some(frame => frame.event?.kind === 'tool' && frame.event.state === 'FAILED')).toBe(true)
-    expect(f.frames.find(frame => frame.type === 'approval').request).toMatchObject({ summary: 'Run simulated command', kind: 'command', detail: 'simulated echo', allowSession: false })
+    expect(f.frames.find(frame => frame.type === 'approval').request).toMatchObject({ summary: 'Run simulated command', kind: 'command', detail: 'simulated echo', allowSession: true })
     expect(f.frames.find(frame => frame.type === 'session').id).toBe('simulated-workbuddy-session')
     expect(f.records.find(record => record.id === 'permission' && record.result).result.outcome.optionId).toBe('reject')
   })
@@ -228,6 +228,11 @@ describe('模拟 WorkBuddy ACP runner', () => {
     const f = await fixture('allow')
     expect(f.result.status).toBe('SUCCESS')
     expect(f.records.find(record => record.id === 'permission' && record.result).result.outcome.optionId).toBe('allow')
+  })
+  it('模拟本会话始终允许映射原生 allow_always', async () => {
+    const f = await fixture('allow-session')
+    expect(f.result.status).toBe('SUCCESS')
+    expect(f.records.find(record => record.id === 'permission' && record.result).result.outcome.optionId).toBe('allow_always')
   })
   it('模拟续聊只 load，恢复失败不 new', async () => {
     const success = await fixture('success', { resume: true })

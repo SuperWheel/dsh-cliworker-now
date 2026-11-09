@@ -81,7 +81,14 @@
   - 进程与目录：每轮结束后无 `codebuddy-lite-wb.mjs --acp` 或助手进程残留，无 `dshwb-*` 临时目录；Worker 状态目录 0700、文件 0600。（中途一次“残留”是 pgrep 匹配到验收工具自身的 shell 包装进程，已复查排除。）
   - 密钥：用 WorkBuddy 运行时读取 at-rest 密钥，在本进程内比对 24 个证据文件（report、raw、stderr、事件、工作区、thought_level 表），只输出计数：原文、派生 key 的 base64／base64url／hex 均 0 处命中；证据中也没有 `keyBase64`、`atRestSecretKey`、`symmetricKey` 字段或网关密码横幅。
   - 观察：每轮 stderr 有一行 `[CredentialBootstrap] CBC early {…}` 遥测（含 pid、引导 sessionId、状态，不含 token 或密钥），会以“CLI 诊断”出现在时间线。
-- [ ] 7.2 询问档实际审批行为、`allow_always` 作用域、`thought_level` 是否随模型变化
+- [x] 7.2 询问档实际审批行为、`allow_always` 作用域、`thought_level` 是否随模型变化
+  - 2026-11-09 `allow_always` 作用域实测（用户授权继续测；WorkBuddy CN 2.165，hy4free，询问档；scratchpad `accept/wb.mjs` 调用插件 WorkBuddy runner 并临时加入 CodeBuddy 的 `sessionOption`）：原始记录显示 WorkBuddy 原生一直提供 `{kind: allow_always, optionId: allow_always, name: "Always Allow"}`，此前审批卡 `allowSession: false` 是因为插件未接 `sessionOption`，并非 CLI 不提供（上面 7.1 的说法有误）。
+    - 第一轮要求分两次执行 `touch a1.txt`、`touch a2.txt`：只弹 1 次审批（`allowSession: true`），答「本会话始终允许」后第二条不再询问，两个文件都创建，SUCCESS。
+    - 同会话下一轮（新进程 `session/load` 同一会话 01a1c09f-…）执行 `touch a3.txt`：再次询问，拒绝后未创建。
+    - 新会话执行 `touch c1.txt`：同样再次询问，拒绝后未创建。
+    - `~/.workbuddy` 下没有设置/权限文件被改（变更的只有桌面端自身的缓存与状态文件），项目目录没有新增隐藏目录。结论：授权只保存在 CLI 进程内；插件每轮重启 CLI，所以实际只覆盖当前这一轮。
+    - CodeBuddy 2.181 用 hy4free 做同样测试（`accept/run.mjs`）：同一轮第二条不再询问，下一轮再次询问，行为一致。
+    - 据此为 WorkBuddy 接上与 CodeBuddy 相同的 `sessionOption`（`src/host/native-workbuddy.mjs`），模拟用例新增「本会话始终允许映射原生 allow_always」；design、spec、`doc/workbuddy-protocol.md`、`doc/codebuddy-protocol.md`、`doc/usage-details.md` 与 CodeBuddy 规格同步改为“只在 CLI 进程内、下一轮再次询问”。`tests/native-workbuddy.test.ts`、`tests/native-codebuddy.test.ts` 71/71 通过。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：询问档的允许与拒绝、thought_level 随模型变化均已实测（Mac Desktop 11-09 再次核对询问档出现审批卡）。`allow_always` 作用域仍未验证：插件审批卡只提供「拒绝」「允许一次」，无法从界面测试，本项保持未勾选。
   - 询问档：命令审批的允许与拒绝已在 7.1 实测。`allow_always` 未验证：本次命令审批 `allowSession` 为 false，CLI 没有提供会话级授权。
   - `thought_level` 会随模型变化（2026-11-07，对 17 个模型逐个 `session/set_config_option model`，不发 prompt）：auto 和 mimo-v2.6-pro 是 minimal…max 全档；hy4free、hy4std 只有 high；hy3、hy3-x 有 low/high；glm-5.2 有 high/xhigh；deepseek-v4-pro 有 disabled/high/xhigh；其余各不相同；每个模型都有 `enabled`（模型默认）。

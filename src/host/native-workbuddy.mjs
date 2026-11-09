@@ -5,7 +5,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { runNativeAcp } from './native-acp.mjs'
 import { createLinePeer, createNativeIO } from './native-transport.mjs'
 import { createWorkBuddyLaunch } from './workbuddy-bootstrap.mjs'
-import { codebuddyUsageOnResult } from './native-codebuddy.mjs'
+import { codebuddySessionOption, codebuddyUsageOnResult } from './native-codebuddy.mjs'
 
 const unavailable = reason => Object.assign(new Error(`WorkBuddy 暂不可用：${reason}`), { code: 'WORKBUDDY_UNAVAILABLE', reason })
 const efforts = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
@@ -144,6 +144,9 @@ export async function runNativeWorkBuddy(config, io) {
     fallbackModes: config.access === 'danger-full-access' ? ['auto', 'default'] : config.access === 'read-only' ? [] : ['default'],
     approvalFromToolCall: true,
     deniedCancelEndsTurn: true,
+    // Same native `allow_always` as CodeBuddy: held in the CLI process only, not written to settings
+    // (WorkBuddy CN 2.165, 2026-11-09); the next turn or a new session asks again.
+    sessionOption: codebuddySessionOption,
     // Same durable transcript format as CodeBuddy, under WorkBuddy's own data folder.
     onResult: (result, sessionId, nativeIo, turn) => configDir
       ? codebuddyUsageOnResult(config, configDir, turnStartedAt)(result, sessionId, nativeIo, turn) : undefined,

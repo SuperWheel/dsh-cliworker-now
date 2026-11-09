@@ -63,6 +63,10 @@ WorkBuddy SHALL 通过内置 CLI 的 ACP 运行任务：会话 ID 来自 `sessio
 - **WHEN** 用户拒绝审批，CLI 随后以 `cancelled` 结束本轮
 - **THEN** Worker 显示“因拒绝审批而结束”而不是“已取消”，被拒操作未执行，用户可续聊
 
+#### Scenario: 本会话始终允许
+- **WHEN** 原生审批选项含 `allow_always`（optionId `allow_always`），用户选择「本会话始终允许」
+- **THEN** 插件回复该原生选项；同一轮内同类命令不再询问，原生不写入设置文件或项目目录，下一轮或新会话会再次询问
+
 #### Scenario: 审批请求只带 rawInput
 - **WHEN** 审批请求的 `toolCall` 没有标题，但此前同一 `toolCallId` 的 `tool_call` 事件有标题
 - **THEN** 审批卡片使用此前事件的标题与类别

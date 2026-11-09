@@ -60,7 +60,7 @@
 请求没有 `title`、`kind`、`locations`，要从同一 `toolCallId` 之前的 `tool_call` 取。
 
 - 允许：工具执行，`notes.txt` 写入 `ok`。
-- `allow_always`：本会话后续同类命令不再询问；`~/.codebuddy/settings.json` 与项目目录都没有新增规则，判定为会话级。
+- `allow_always`：后续同类命令不再询问；`~/.codebuddy/settings.json` 与项目目录都没有新增规则。2026-11-09 复测：授权只保存在 CLI 进程内，同一轮第二条 `touch` 不再询问，同会话下一轮（插件每轮重启 CLI 并 `session/load`）再次询问。WorkBuddy 内置 CLI 行为相同，也映射为「本会话始终允许」。
 - 拒绝：命令不执行，被拒工具**没有终态事件**，本轮立即结束：`stopReason: cancelled`，`_meta['codebuddy.ai/outcome']: PERMISSION_DENIED`，`codebuddy.ai/errorMessage: "Permission denied for tool(s): unknown"`。
 - 用户停止：`session/cancel` 后约 0.6 秒返回 `stopReason: cancelled`，outcome 为 `CANCELLED`。
 
