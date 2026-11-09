@@ -117,7 +117,13 @@
   - 验收脚本的权限快照是固定值，所以状态行显示「本轮权限：仅工作区编辑」；真实 Host 在 plan 时显示「规划模式」（`index.ts` 现有逻辑），未在 Desktop 中目视核对。
 - [ ] 7.4 Desktop 加载 preview 包、连接页与图标明暗 —— 未执行，保留为未验证（本会话未打开 Desktop；登录窗口、设置页目录与 Worker 菜单只有模拟测试）
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`（正式构建，非 preview 包）。设置页条目与图标明/暗、账号区「已登录」、模型列表显示正常；派遣 glm-5.3-flash（无强度选项），「仅工作区编辑」档，SUCCESS，`v088-trae-check.txt` 实际内容为 `TRAE OK\n`，事件含「TRAE CLI CN 原生模型已确认」，结束后无 traecli 残留。登录窗口未在 Desktop 中验证，本项保持未勾选。
-- [ ] 7.5 Windows 发现与初始化 —— 本期未执行，保留为未验证
+- [ ] 7.5 Windows 发现与初始化 —— 部分完成
+  - 2026-11-08：新包识别为「未登录」，可点「登录账号」；登录由用户在浏览器完成。
+  - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：派遣 glm-5.3-flash，权限「仅工作区编辑」，事件含「TRAE CN 原生模型已确认」，结果 completed，`v088-traecn-win.txt` 实际内容 `hello-traecn-win`。
+  - 与 Mac 不同的原生行为（未改）：default 模式在工作区内新建文件也请求审批，经 DSH 审批卡「允许一次」后执行；TRAE 内置 Read 工具对刚建的文件报「不存在」，模型改用 PowerShell 读回。
+  - 回复行用量：Host 回执正确（total 43394 / input 42831 / output 563 / reasoning 276），但回复行不显示。原因是插件给出的 `reported` 账单带了缓存字段，DSH 回复行校验拒收整行；78694c1 去掉缓存字段后复测见下。
+  - 复测（2026-11-09 20:15 包 `preview-088-20261109-201532.tgz`，activeWorkers=0，安装退出 0，逐文件 1036 个 0 不一致，Desktop 重启）：在同一 Worker 续聊「1+1 等于几」，回复 `1+1 等于 2。`，回复行「用量 10.9K tok」，详情为本轮 10,897 / CLI 报告输入 10,886 / 输出 11（推理 0），缓存命中「—」；较早一轮回复行同时显示「用量 43.4K tok」（43,394 / 42,831 / 563，推理 276）。Worker 底部统计「10.9K tok · 缓存命中 —」。Host `lastRunUsageSnapshot` 为 total 10897 / input 10886 / output 11，与画面一致。画面由 Codex Computer Use（gpt-6.1-sol）截图核对。新增模拟用例覆盖该形状（`tests/traecn-telemetry.test.ts`）。
+  - Mac 上同一问题未在 Desktop 复看（7.4）。
 
 未验证与不在本期范围：企业 SSO / 企业 PAT 登录与「套餐不支持 CLI」真实回执（只有夹具）、退出登录的真实执行（未运行，避免影响用户账号）、完全权限（`bypass_permissions`）真实运行、分支 `session/fork` 经插件的真实运行（0.2 只做了原生探测）、附件、运行中引导与 DSH 工具桥（按设计不声明）、强度来源（TRAE 未公开）。
 

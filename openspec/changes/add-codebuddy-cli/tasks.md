@@ -89,7 +89,8 @@
 - [x] 11.4 运行中停止（进程退出核对）
   - a5：6 秒后中止，约 1.1 秒内原生返回 `stopReason=cancelled`、outcome `CANCELLED`；`io.close` 正常，验收前后 `pgrep -f "codebuddy --acp"` 均为 0。runner 结果为 ERROR“CLI 未成功完成（cancelled）”，与其他 ACP CLI 停止时的共享行为一致（停止状态由 Host 判定）；拒绝结束判定未误触发
 - [x] 11.6 真实模型目录：`codebuddy-catalog.mjs` 对本机账号退出码 0，17 个模型；`hy4free` 为 `x0.00 credits`、强度 `[high]`，`hy3` 强度 `[low, medium, high, xhigh]`；临时目录为空、无残留进程
-- [ ] 11.5 国际站、企业域、iOA、Windows：未执行，保持未验证
+- [ ] 11.5 国际站、企业域、iOA：未执行，保持未验证。Windows 部分已完成：
+  - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：中国站账号，hy4free，首轮加两次续聊均 SUCCESS，`v088-codebuddy-win.txt` 实际三行；04e9580 修复后回复行「积分用量 0 积分」（根因见 fix-v088-cli-gaps 5.1）。
 - [ ] 11.7 Desktop 实机（设置页条目、账号窗口、Worker 子会话中的审批卡与“因拒绝审批而结束”显示）：未执行，保持未验证
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。设置页条目与图标（明/暗）、账号区「已登录」、模型列表（hy4free 等）显示正常；派遣 hy4free/默认强度，自动审批档，约 20 秒 SUCCESS，`v088-codebuddy-check.txt` 实际内容为 `CodeBuddy OK\n`，事件含「CodeBuddy 原生模型已确认」，结束后无残留进程。审批卡与「因拒绝审批而结束」显示、账号窗口未在 Desktop 中验证，本项保持未勾选。
 - 附注：验收与早期探测在 `~/.codebuddy/projects/` 下留下了以 scratchpad 路径命名的原生会话目录（CodeBuddy 自身持久化，未删除用户数据）

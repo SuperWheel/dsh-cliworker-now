@@ -48,11 +48,17 @@
 
 ## 5. 未验证
 
-- [ ] 5.1 改动后的真实端到端运行：未用 `hy4free` 跑 CodeBuddy/WorkBuddy 新版插件确认积分行显示（只在改动前做过一次 CLI 直接探测）。
+- [x] 5.1 改动后的真实端到端运行：2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`），用 `hy4free` 派遣 CodeBuddy 与 WorkBuddy CN，回复行显示「积分用量 0 积分」。
+  - 初次在 Windows 上显示「积分用量 — 积分」，查明两个根因并在 04e9580 修复：原生记录里的 cwd 盘符为小写（`c:\...`），与项目路径逐字比较不相等；Windows 用户目录属主为 Administrators 组，文件隐私核验拒绝读取。修复后：Windows 下 cwd 按 `win32.normalize` 后不分大小写比较（macOS 仍逐字比较）；CodeBuddy 系读取允许 Administrators 属主，但仍要求当前用户 ACE、且不允许其他 SID 完全控制。新增模拟用例 `tests/codebuddy-usage.test.ts`（26/26）。修复包安装后新一轮回复显示「积分用量 0 积分」。
 - [ ] 5.2 付费模型的积分数值：实测仅有 `hy4free`（credit 为 0），非零积分的汇总只由模拟用例覆盖。
 - [ ] 5.3 拒绝审批结束的轮次不读取用量（只在 `end_turn` 读取），这类轮次的积分显示为未知。
 - [ ] 5.4 Desktop 复看：试验性标记、桌面管理复开与英文页脚、结果说明行、派遣结果档位均未在运行中的 Desktop 复看（按要求不动运行中的 DSH Desktop）。
 - [ ] 5.5 桌面管理复开失败的根因为代码推断（状态读取或上一会话停止未完成导致 `reserve()` 拒绝），未在 Desktop 上复现确认。
-- [ ] 5.6 Windows、WorkBuddy 国际版、CodeBuddy 国际站均未验证。
+- [ ] 5.6 WorkBuddy 国际版、CodeBuddy 国际站未验证。Windows 部分已完成（见 5.8 下的派遣记录）。
 - [x] 5.7 Windows 新包复测（2026-11-08 22:00，包 `preview-088-20261108-215815.tgz`，sha256 `43aa474b…c2ec`；空闲预检 activeWorkers=0；原生安装器退出 0；逐文件校验 1036 个、0 不一致；Desktop 正常关闭后带无障碍参数重启）：TRAE CN 由“CLI 启动入口无法确认”变为“未登录”且可点“登录账号”；WorkBuddy CN 自动识别为 `D:\Software\workbuddy`（配置中无手动路径），状态“请在桌面端检查登录状态”；WorkBuddy 国际版显示暂不可用（未安装，符合预期）；CodeBuddy 登录：启动→站点菜单→选中国站→浏览器等待，逐次读取无障碍树未出现“无法识别当前步骤”，原生终端未展开。连接页左栏显示“试验性”。
 - [ ] 5.8 Windows 上 CodeBuddy 授权超时画面的实机触发、TRAE CN 登录完成（停在浏览器授权，需用户手机验证）、其他已登录 CLI 的重新登录（需先退出、用户重新授权）、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
+  - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`），各一次真实派遣，均 SUCCESS，产物经 PowerShell 读回核对：
+    - CodeBuddy（`v088-codebuddy-win`，hy4free，自动审批档）：首轮建文件，两次续聊各追加一行，`v088-codebuddy-win.txt` 实际三行 `hello-codebuddy-win` / `second-line-win` / `third-line-win`；事件含「CodeBuddy 原生模型已确认」。
+    - WorkBuddy CN（`workbuddycn-1`，hy4free）：`v088-workbuddycn-win.txt` 实际内容 `hello-workbuddycn-win`；事件含「WorkBuddy CN 原生模型已确认」。
+    - TRAE CN（`v088-traecn-win`，glm-5.3-flash，仅工作区编辑）：在工作区内建文件也弹出审批，经 DSH 审批卡「允许一次」后继续，`v088-traecn-win.txt` 实际内容 `hello-traecn-win`。
+    - 仍未执行：CodeBuddy 授权超时画面的实机触发；其他已登录 CLI 退出后重新登录（用户 11-09 决定先不测）；Mac Desktop 目视复看。

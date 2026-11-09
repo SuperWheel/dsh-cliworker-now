@@ -96,7 +96,10 @@
     - 拒绝审批：原生 `stopReason: cancelled`；本轮按 `deniedCancelEndsTurn` 结束，结果为 SUCCESS，附说明“因拒绝审批而结束：被拒操作未执行，可续聊继续”；被拒工具标为 FAILED，`denied.txt` 不存在。
     - 14 个证据文件的密钥扫描 0 处命中。
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
-- [ ] 7.4 Windows 发现、命名管道引导与真实验收
+- [ ] 7.4 Windows 发现、命名管道引导与真实验收 —— WorkBuddy CN 部分完成
+  - 2026-11-08：自动识别自定义安装目录 `D:\Software\workbuddy`（注册表），状态读取不再转圈。
+  - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：WorkBuddy CN 派遣 hy4free，SUCCESS，`v088-workbuddycn-win.txt` 实际内容 `hello-workbuddycn-win`；回复行「积分用量 0 积分」（04e9580 修复后）。
+  - 未验证：国际版 WorkBuddy AI（未安装，连接页显示暂不可用）。
 - [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。连接页显示「已登录（www.workbuddy.cn）」、无登录/退出按钮与试验性标注；WorkBuddy AI 显示未安装；图标明/暗可见。派遣 hy4free/默认强度，自动审批档，SUCCESS，`v088-workbuddy-check.txt` 实际内容为 `WorkBuddy OK\n`，事件含「WorkBuddy 原生模型已确认」；结束后无 helper/网关残留进程、无 `dshwb-*` 临时目录；该任务 5 份运行记录均为 0600，未检出密钥字样。Worker 卡片显示正常；国际版未验证，本项保持未勾选。
 
