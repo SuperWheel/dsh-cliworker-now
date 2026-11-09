@@ -16,7 +16,12 @@ describe('模拟：TRAE 用量来源隔离', () => {
     expect(data.usage).toEqual({ input: 60, output: 7, total: 67, cacheRead: 20, cacheWrite: 3, reasoning: 2, scope: 'run' })
     expect(data).toMatchObject({ contextUsed: 67, contextCapacity: 128000, contextEstimated: false })
     expect(data.providerCredits).toBeUndefined()
-    expect(nativeUsageReport('traecn', data.usage)).toMatchObject({ totalTokens: 67, inputBasis: 'reported', cacheReadTokens: 20 })
+    expect(nativeUsageReport('traecn', data.usage)).toEqual({ totalTokens: 67, inputTokens: 60, outputTokens: 7, inputBasis: 'reported', reasoningTokens: 2 })
+  })
+  it('keeps the reply-row bill acceptable to DSH: reported basis has no cache fields (Windows 2026-11-09 shape)', () => {
+    const report = nativeUsageReport('traecn', { input: 42831, output: 563, total: 43394, cacheRead: 0, cacheWrite: 0, reasoning: 276, scope: 'run' })
+    expect(report).toEqual({ totalTokens: 43394, inputTokens: 42831, outputTokens: 563, inputBasis: 'reported', reasoningTokens: 276 })
+    expect(report).not.toHaveProperty('cacheReadTokens'); expect(report).not.toHaveProperty('cacheWriteTokens')
   })
   it.each([{ sessionId: 'other' }, { source: 'qodercn.native-transcript' }, { model: 'other-model' }])('rejects crossed source %j', override => {
     const data = extractTelemetry('traecn', [{ ...prompt, ...override }, { ...context, ...override }], identity)

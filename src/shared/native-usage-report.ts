@@ -25,10 +25,11 @@ export function nativeUsageReport(cli: CliId, usage?: TokenUsage): NativeUsageRe
     if (usage[field] !== undefined && !count(usage[field])) return
   if (cli === 'traecn') {
     if (!usage.total || !count(usage.input) || !count(usage.output) || usage.total !== usage.input + usage.output) return
+    // total = input + output says nothing about whether input already holds the
+    // cache counts, so a 'reported' bill carries no cache fields (the DSH reply
+    // row rejects a reported bill that does, and drops the whole row).
     return { totalTokens: usage.total, inputTokens: usage.input, outputTokens: usage.output, inputBasis: 'reported',
-      ...(usage.cacheRead !== undefined ? { cacheReadTokens: usage.cacheRead } : {}),
-      ...(usage.cacheWrite !== undefined ? { cacheWriteTokens: usage.cacheWrite } : {}),
-      ...(usage.reasoning !== undefined ? { reasoningTokens: usage.reasoning } : {}) }
+      ...(usage.reasoning !== undefined && usage.reasoning <= usage.output ? { reasoningTokens: usage.reasoning } : {}) }
   }
   const inclusive = ['codex', 'hermes', 'grok', 'zcode', 'qoder', 'qodercn'].includes(cli)
   const reasoningSeparate = cli === 'mimo' || cli === 'opencode'
