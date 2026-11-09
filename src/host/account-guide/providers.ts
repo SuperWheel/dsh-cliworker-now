@@ -62,7 +62,11 @@ const KIMI: Entry[] = [
   { id: 'kimi-code-global', label: 'Kimi Code（kimi.ai）', stores: 'kimi-code' },
 ]
 
-const TABLES: Partial<Record<CliId, Entry[]>> = { opencode: OPENCODE, hermes: HERMES, zcode: ZCODE, pi: [], omp: [], kimi: KIMI }
+const TABLES: Partial<Record<CliId, Entry[]>> = { traecn: [
+  { id: 'personal', label: '个人账号' },
+  { id: 'enterprise', label: '企业 SSO' },
+  { id: 'enterprise-pat', label: '企业 PAT' },
+], opencode: OPENCODE, hermes: HERMES, zcode: ZCODE, pi: [], omp: [], kimi: KIMI }
 
 /** The providers a login window may sign in to directly, marked when a removable login already holds one. */
 export function loginProviders(cli: CliId, logins: AccountLogin[] | undefined, native?: Entry[]): AccountProvider[] | undefined {

@@ -1,5 +1,16 @@
 # 使用细节与 CLI 说明
 
+## WorkBuddy CN / WorkBuddy（试验性）
+
+先安装相应桌面应用并在桌面端登录。`workbuddycn` 是国内版 WorkBuddy CN，`workbuddy` 是国际版 WorkBuddy；两版配置与模型偏好独立。泛称 WorkBuddy 按安装分流，两版都装时插件原生询问；明确 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）或 WorkBuddy CN不会互相回退。
+
+高级设置中的路径接受应用目录、自带运行时或 `cli/dist/codebuddy-lite-wb.mjs` 入口；插件核对包名与 product endpoint，不借用 PATH 上的 CodeBuddy。账号区提供「在桌面端管理」按钮（明确未登录时为「登录」），在 480px 插件指引中打开正确版本桌面端。登录、退出、换号在桌面端完成；有桌面管理指引，无 CLI 登录/退出，也无账号终端。旧 Host 未声明能力时仍显示手动指引。
+
+打开指引只查一次；点击「打开桌面端」或「继续观察」后，每轮完成至少间隔 15 秒，最多观察 5 分钟或自动查询 20 次。手动刷新与正在执行的查询合并，预算到期后刷新只查一次。元数据成功表示当前已登录；当前认证错误无法可靠区分缺失与其他拒绝，只提示“请在桌面端检查登录状态”，不证明已退出或同站点换号。打开失败可手动打开对应版本后刷新或重试。关闭指引等待插件查询清理，不关闭桌面端。查询账号和模型会创建一条空的原生会话，原生未提供删除接口。
+
+试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用及系统提示词、工具定义、对话消息分类（每轮结束后另起不落盘的内置 CLI 读取原生 `/context`，规则同 CodeBuddy）；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。审批卡提供「本会话始终允许」（原生 `allow_always`，只在当前这一轮有效，下一轮再次询问）。国内版已完成 Mac 与 Windows 真实任务、审批及 Desktop 界面验收；国际版未安装，仍未验证。
+
+
 [简体中文](usage-details.md) | [English](usage-details.en.md) · [返回 README](../README.md)
 
 本文保存 README 精简前（v0.8.2）的完整说明：各 CLI 的账号、路径与模型规则，安装细节，运行中消息与兼容路径，以及开发验证命令。章节编号沿用原 README。逐版本变更见 [历史版本与详细配置](version-notes.md)，实际验收见 [任务与实际验证](tasks.md)。
@@ -34,12 +45,14 @@
 | Pi | 1.0.2 / 1.0.4 / 1.1.0 | 原生安装身份及 SDK/RPC 按版本核验；1.0.2 的智谱 Coding CN GLM-5.3-Flash 曾实测，1.0.4 仅只读/离线核验；1.1.0 在 Windows 通过无凭据 SDK/RPC、原生登录菜单显示及终止清理验证，尚未完成真实登录与模型调用 |
 | Hermes Agent | 当前安装 checkout 6c80c32734 | 独立自身账号目录、原生登录菜单及 Nous 自身账号目录已验收；只读确认 10 个免费模型，真实生成与续聊未验收 |
 | OpenCode | 1.18.21 | 原生目录与 JSONL 接入；智谱模型已实测，免费 MiMo 请求曾返回 403 |
-| Qoder CLI | 1.1.73 | v0.8.1 新增原生 ACP；真实账号元数据及 17 项动态模型目录已核验；真实模型任务、工具产物、恢复、运行中取消及 Windows 尚未验收 |
-| Qoder CN CLI | 1.1.74 | Windows 自身账号及 15 项动态模型目录已核验；Qwen3.8-Flash / low 的生成、文件工具、同会话续聊与运行中取消通过；另在正常新对话中实际派遣并完成原生子会话界面检查，其他模型和 Mac 运行时未实测 |
+| Qoder | 1.1.73 | v0.8.1 新增原生 ACP；真实账号元数据及 17 项动态模型目录已核验；真实模型任务、工具产物、恢复、运行中取消及 Windows 尚未验收 |
+| Qoder CN | 1.1.74 | Windows 自身账号及 15 项动态模型目录已核验；Qwen3.8-Flash / low 的生成、文件工具、同会话续聊与运行中取消通过；另在正常新对话中实际派遣并完成原生子会话界面检查，其他模型和 Mac 运行时未实测 |
+| CodeBuddy Code | 2.181.0 | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/changes/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收 |
+| TRAE CN | 0.213.1 | 2026-11-07 macOS 前置协议探测：18 项模型目录及 glm-5.3-flash 读写、命令、恢复、取消和分支；插件/Desktop 与 Windows 未验收，见本次接入任务 |
 
 v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
 
-v0.8.1 新增 **Qoder CLI**，通过官方 `qoder --acp` 接入同一原生侧栏，模型和思考强度读取其结构化目录并在发送前确认。当前协议仅开放“允许编辑”，未宣告只读规划模式；规划任务会在发送前拒绝。Qoder 按积分计费，输入框底部与回复功能条均显示对应本轮积分，详情标题为「积分用量」；积分缺失时保持未知，不在该模块混入 Token 单位。回复用量的提供方／模型按该轮已确认来源显示为 `CLI/提供方/模型`，例如 `omp/zhipu-coding-plan/glm-5.3-flash`；提供方未公开时明确标为未公开，不展示内部 Worker 路由。所属原生会话若提供上下文比例，则独立展示该比例。同轮原生运行配置或日志能核实实际窗口时，补充容量及带估算标记的占用数量，否则数量和容量仍为未知。积分按本轮原生请求去重，不从积分反推 token；缓存和分类没有来源时仍保持未知。Windows 兼容原生 Administrators 所有权和继承只读 ACL，仍拒绝不可信写权限，不修改用户文件权限。轮次和步骤表示宿主子会话记录，不等于 Qoder 内部请求次数。协议及探针范围见 [Qoder 原生协议核验](qoder-protocol.md)。
+v0.8.1 新增 **Qoder**，通过官方 `qoder --acp` 接入同一原生侧栏，模型和思考强度读取其结构化目录并在发送前确认。当前协议仅开放“允许编辑”，未宣告只读规划模式；规划任务会在发送前拒绝。Qoder 按积分计费，输入框底部与回复功能条均显示对应本轮积分，详情标题为「积分用量」；积分缺失时保持未知，不在该模块混入 Token 单位。回复用量的提供方／模型按该轮已确认来源显示为 `CLI/提供方/模型`，例如 `omp/zhipu-coding-plan/glm-5.3-flash`；提供方未公开时明确标为未公开，不展示内部 Worker 路由。所属原生会话若提供上下文比例，则独立展示该比例。同轮原生运行配置或日志能核实实际窗口时，补充容量及带估算标记的占用数量，否则数量和容量仍为未知。积分按本轮原生请求去重，不从积分反推 token；缓存和分类没有来源时仍保持未知。Windows 兼容原生 Administrators 所有权和继承只读 ACL，仍拒绝不可信写权限，不修改用户文件权限。轮次和步骤表示宿主子会话记录，不等于 Qoder 内部请求次数。协议及探针范围见 [Qoder 原生协议核验](qoder-protocol.md)。
 
 MiMo 指 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)。Hermes Agent 替代的是旧的外部 Harness CLI 入口，**DeepSeek Harness 宿主仍是插件的运行基础**。
 
@@ -55,9 +68,45 @@ Windows 的 Antigravity 后台模型查询及任务使用官方环境开关关�
 
 成功且进程退出已确认的扩展 CLI 模型查询会自动删除本次临时目录和原生解压缓存；失败或清理未确认时保留现场，不删除原始账号文件。
 
-专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md)
+专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
 
-### Qoder CLI 安装与登录
+### TRAE CN 安装与登录
+
+TRAE CN（`cli=traecn`）接入字节官方 TRAE CLI 2.0，默认命令为 `traecli`。截至 2026-11-07 只找到国内版，未发现官方国际版 CLI，不提供国际版入口；开源 Python 项目 bytedance/trae-agent 是另一程序。
+
+官方 macOS / Linux 安装入口：
+
+```sh
+sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
+```
+
+安装脚本需要能直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`），不提供非官方安装包或镜像。官方另有 Windows `install_v2.ps1`；其安装落点、发现、初始化及真实任务均未在 Windows 验证。
+
+**路径与身份。** 默认可执行文件配置为 `traecnExecutable: traecli`；在「CLI 连接 → 高级设置」可指定绝对路径。自动发现只找 `traecli`，macOS / Linux 在 PATH 外补查 `~/.local/bin/traecli`，macOS 子进程 PATH 也补 `~/.local/bin`。自动发现和手动路径都核对 `--version` 首行 `traecli <版本>` 及 `installation:` 行，ACP 再核对 `agentInfo.name = traecli-acp`；身份不符即拒绝。安装脚本的 `trae-cli`、`trae-agent`、`coco`、`ta` 链接不用于自动发现；手动指定的同品牌链接仍须通过身份核对。Windows 找不到时配置 `traecnExecutable`，不据未验证的路径猜测安装位置。
+
+**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 且退出 0 表示已登录（不区分个人与企业），`Not logged in` 且退出 1 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。
+
+| 登录方式 | 原生命令与说明 |
+| --- | --- |
+| 个人账号 | `traecli --enable personal_user_login login --personal`；依赖 TRAE CLI 开发中的 `personal_user_login` 特性（under development），开关只对该次登录命令生效，任务不附加此开关 |
+| 企业 SSO | `traecli login --enterprise`；沿用原生浏览器流程 |
+| 企业 PAT | `traecli login --with-trae-pat`；读取 `TRAECLI_PERSONAL_ACCESS_TOKEN`，或从 stdin 读取；0.213.1 在没有 PAT 的 PTY 中直接报缺少输入并退出，不显示输入提示。插件不代填、不收集、不保存令牌 |
+
+账号窗口使用两列方式卡片，点击继续前不启动 CLI。个人授权提供浏览器链接及完整回调网址输入；企业 SSO/PAT 保持原生回退。已登录先显示当前账号卡，点击切换后自动退出，确认状态和进程清理后再选方式。
+
+退出使用 `traecli logout`，原生流程结束后刷新状态与模型目录。插件继承 `TRAE_HOME`（默认 `~/.trae`），账号和运行数据位于 `$TRAE_HOME/cli/`，配置为 `$TRAE_HOME/traecli.toml`；不修改此配置或调用 `traecli update`。来源绑定只取稳定主体字段及环境来源摘要，不记录令牌；换号使模型目录与保存选型的校验失效。
+
+**模型。** 先确认登录，再读取 `traecli models --json`；执行 ID 为 `config_name`，显示名为 `name`。0.213.1 前置实测为 18 项，数量随原生目录变化，不固定模型列表。未登录时的 `[]` 报未登录，已登录空列表报「当前账号暂无可确认模型」。执行前通过 ACP `model` 配置项选择并核对回执；模型不在本次会话目录即要求重新选型，不改用默认模型。ACP 没有公开可核实的强度选项，不提供强度选择。
+
+**权限与规划。** 菜单只有「仅工作区编辑」和「完全权限」，没有「询问」档。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时拒绝派遣，需在 Worker 菜单选择档位或切换权限预设。
+
+规划模式以 `default` 启动，通过 ACP `mode=plan` 切换，确认 `plan` 后才发送任务，授权请求直接拒绝；不能把 `--permission-mode plan` 当启动参数。运行时模式回读不符会停止本轮。DSH 审批仅有「允许一次／拒绝」，不提供会话级授权。拒绝后 TRAE 若以 `cancelled` 结束且用户未主动停止，显示「因拒绝审批而结束：被拒操作未执行，可续聊继续」；主动停止仍按停止处理，确认进程范围退出才报告成功。
+
+**会话与能力边界。** `traecn-acp-v1` 续聊用原生 `session/load`，历史重放不进入新一轮正文；恢复失败报错，不新建会话。支持从最新完成轮原生分支，不支持较早轮次分支。原生子 Agent、记忆、skills 与联网沿用用户设置，附件按 ACP 能力传递。DSH 工具桥本期不提供：ACP 只声明 HTTP MCP，`_meta.trae.options.mcpServers` 的值为已配置服务名且有替换语义，未经核实的注入可能覆盖用户 MCP。运行中引导（steering）虽有能力声明，尚未实测，不提供此入口；运行中发送的消息按原生 Inbox 排队。
+
+2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/changes/add-traecn-cli/tasks.md)。
+
+### Qoder 安装与登录
 
 按 [Qoder 官方安装说明](https://docs.qoder.com/cli/installation) 安装 CLI。macOS / Linux 的推荐入口为：
 
@@ -73,7 +122,7 @@ irm https://qoder.com/install.ps1 | iex
 
 已有 Node.js 环境也可使用官方保留的 npm 兼容入口 `npm install -g @qoder-ai/qodercli`。完成后运行 `qoder --version` 和 `qoder login`，按原生浏览器流程登录；CLI 也支持自身的 `QODER_PERSONAL_ACCESS_TOKEN`。不要把令牌写入聊天或仓库。安装和登录由用户按需完成，本次接入没有自动安装或登录 Qoder。
 
-Qoder 中国版使用独立入口 **Qoder CN CLI**（`cli=qodercn`），默认用户目录 `~/.qoder-cn`、登录变量 `QODERCN_PERSONAL_ACCESS_TOKEN`，不读取国际版账号或偏好。安装与原生登录命令见 [中国版官方说明](https://docs.qoder.cn/cli/installation)，npm 兼容包为 `@qodercn-ai/qoderclicn`。Windows 自动识别 `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe`，并核验同品牌 npm 入口；无需借用国际版路径。两版模型和强度均动态读取，不能照搬对方档位。用户泛称“调用 Qoder”时，仅安装一版则使用该版；两版均安装时，插件先弹原生询问框选择 Qoder 或 Qoder CN，再进入模型选型。明确说“Qoder 国际版”或“Qoder 中国版 / qodercn”时固定对应版本。旧会话保持原品牌，不自动迁移。
+Qoder 中国版使用独立入口 **Qoder CN**（`cli=qodercn`），默认用户目录 `~/.qoder-cn`、登录变量 `QODERCN_PERSONAL_ACCESS_TOKEN`，不读取国际版账号或偏好。安装与原生登录命令见 [中国版官方说明](https://docs.qoder.cn/cli/installation)，npm 兼容包为 `@qodercn-ai/qoderclicn`。Windows 自动识别 `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe`，并核验同品牌 npm 入口；无需借用国际版路径。两版模型和强度均动态读取，不能照搬对方档位。用户泛称“调用 Qoder”时，仅安装一版则使用该版；两版均安装时，插件先弹原生询问框选择 Qoder 或 Qoder CN，再进入模型选型。明确说“Qoder 国际版”或“Qoder 中国版 / qodercn”时固定对应版本。旧会话保持原品牌，不自动迁移。
 
 Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用户 bin/npm/Bun/Scoop/pnpm 目录，并在进程 PATH 缺失后读取最新用户和机器 PATH。专属目录、npm 包名和原生程序身份仍按 CLI 声明核验；自定义便携位置既未加入 PATH 又无安装登记时仍需设置路径。不扫描任意磁盘、不猜最新版本、不执行桌面 GUI。详见 [中国版协议与隔离](qodercn-protocol.md)。
 
@@ -82,6 +131,19 @@ Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用�
 Windows 会自动检查官方原生 `~/.qoder/bin/qodercli/qodercli.exe` 和当前用户 npm 安装入口，即使 Desktop 尚未继承安装后的 PATH。PATH 发现优先采用独立 `qodercli`，缺失时兼容旧 `qoder` CLI 别名；npm 入口按官方包声明静态核验。已有手动路径继续优先，损坏或权限不足时保留错误，可在高级设置检查路径。
 
 Qoder 设置中的单次目录加载会合并账号与模型查询，减少重复启动；实际重新读取目录时仍核对当前账号，显式刷新强制重新查询；仅重开已完成预热的设置页面复用展示结果，不重复执行原生查询。账号和模型目录通过同一已安装 CLI 的官方元数据接口读取；缓存和必要配置副本放入临时私有目录，查询结束后清理，不由插件解密浏览器账号文件。原生登录和 PAT 分别处理，目录仅列出当前启用的模型。需要原生迁移的旧项目设置，以及尚未绑定的 `.env` 认证或运行控制声明，会在查询前明确拒绝。macOS 已核验真实账号与模型目录；PAT、真实模型任务和其他平台的完整调用仍待验收。
+
+### CodeBuddy Code 安装与登录
+
+按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令。已登录时先显示当前账号卡，点击切换才打开退出流程。首次文件夹信任在窗口中由用户确认，只信任当前文件夹；识别空编辑器后自动输入一次 `/login`。站点菜单提供中国站、国际站、企业域、iOA；前两项使用浏览器引导，后两项在原生终端继续。切换自动输入一次 `/logout`，不在登录菜单补按 Enter；回读明确未登录且确认清理后才进入登录。2026-11-07 隔离空项目已采集 C1–C6 授权前路径；有效账号退出与 Windows/Desktop 尚未验收。未知屏保持原生，不根据文件 mtime、读取错误或零退出码判断已换号。
+
+- 通信：`codebuddy --acp`，transport `codebuddy-acp-v1`。插件启动的进程都带 `DISABLE_AUTOUPDATER=1`，不会触发自动更新；你自己打开的终端仍按原方式更新。
+- 站点：优先采用 `~/.codebuddy/settings.json` 或环境中显式设置的 `CODEBUDDY_INTERNET_ENVIRONMENT`；否则在内存中只读取认证文件里的 `auth.domain`，按 CLI 自带的域名表显示中国站、国际站、企业域或 iOA。令牌等字段不读出，域名也不写入日志或持久化。无法判断时显示“站点未公开”。
+- 模型与强度：来自原生 `session/new`，强度只列出该模型 `effortOptions` 中的取值；积分倍率为 `x0.00` 的模型标为免费。切换站点或账号后，模型目录变化会让旧选择失效，需要重新确认。
+- 权限：询问 → `default`，自动审批 → `auto`（CodeBuddy 的 AI 审查代批，被拦截的操作不再问你），完全权限 → `bypassPermissions`；规划模式 → `plan`。`fullAccess` 不使用。
+- 审批与拒绝：写文件与命令的审批转交到 DSH。CodeBuddy 拒绝任一审批后会立即结束本轮，插件显示“因拒绝审批而结束”（不是“已取消”），之后可以继续对话。
+- 用量：CodeBuddy 按积分计费，ACP 回执不含用量。插件在本轮正常结束后读取 CLI 自己写的原生会话文件，按请求去重汇总本轮积分与 token，像 Qoder 一样显示积分；任一请求缺积分数据或本轮有子 Agent 时积分显示为未知，不把 token 当积分。免费模型显示 0 积分。
+- 上下文分类：ACP 只给总量。每轮结束、Worker 进程退出后，插件另起一个不保存会话的 CodeBuddy 进程，载入同一会话执行原生 `/context`（不调用模型），读出系统提示词、工具定义（系统工具与 MCP 工具）、对话消息，数值是 CodeBuddy 自己的估算、按 0.1K 取整。这一步约 1 秒，不写回会话，失败时三行保持 `—`，不影响本轮结果。
+- 不支持：原生分支（实测 ACP `session/fork` 返回 Method not found；`--fork-session` 只能在终端续接时使用）、运行中引导。
 
 ### Claude Code 与 CC Switch
 
@@ -340,7 +402,7 @@ CLI 子会话可使用 Harness 的目标、规划、反馈与分支。不支持�
 | 目标 | 输入框上方目标栏、“+”菜单或 `/goal` 可设置、编辑、暂停、恢复或清除。目标处于活动状态时，插件会把它以界定块形式放在每一轮发给 CLI 的输入前；子会话里仍显示原消息。目标不会自动发起新一轮，也不使用 CLI 自带的目标续轮功能。 | 全部 CLI |
 | 规划 | 沿用原生规划或只读模式映射，可从“+”菜单、权限控件、规划标记或 `/plan` 进入。这些 CLI 不显示规划标记；“+”菜单中的“计划”保留并提示原因。它们只有“允许编辑”一种权限模式，权限控件同样禁用并提示原因。 | Hermes、Qoder、Qoder CN 及旧版 Kimi 通路禁用 |
 | 反馈 | 赞、踩和反馈对话框使用 Harness 的反馈服务，仅记录在 Harness；不会发送给 CLI 或厂商，也不会进入模型上下文。 | 全部 CLI |
-| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP 暂不支持 |
+| 分支 | 消息分支按钮、会话菜单、快捷键或 `/fork` 会调用 CLI 的原生分支，生成新的原生会话，并在同一主会话下新建 Worker 子会话、复制截点之前的历史；原会话可以继续使用。运行中或有排队消息时不能分支。 | 最新完成轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN、TRAE CN；较早完成轮：仅 Codex。Antigravity、Hermes、Grok、OMP 暂不支持 |
 
 Claude Code 的分支会在新分支的第一轮使用 `--resume … --fork-session` 生成新会话 ID。各 CLI 的核实依据见 [设计说明](design.md)。
 

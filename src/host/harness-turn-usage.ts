@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { HarnessConversationRecord } from './harness-conversation-types.ts'
 import type { ExternalRunTurnUsage, ExternalTurnUsage, NativeRunBuckets } from '../shared/native-turn-usage.ts'
-import type { TokenUsage } from '../shared/telemetry.ts'
+import { creditBilledCli, type TokenUsage } from '../shared/telemetry.ts'
 import type { Worker, WorkerEvent } from '../shared/types.ts'
 import { cliOf } from '../shared/types.ts'
 import { nativeUsageReport, type NativeUsageReport } from '../shared/native-usage-report.ts'
@@ -136,7 +136,8 @@ export function projectExternalTurnUsage(
       nativeModelDisplay(cliOf(worker.preference), event.observedModel)).filter((value): value is string => value !== undefined))]
     const identity = { basis: 'external-run' as const, runIds: [...runIds], label: 'CLI 运行合计',
       ...(displayRoutes.length ? { displayRoutes } : {}) }
-    if (['qoder', 'qodercn'].includes(cliOf(worker.preference)) && readRunCredits) {
+    // traecn uses reported token accounting below; credit-billed CLIs (Qoder, CodeBuddy family) use credits.
+    if (creditBilledCli(cliOf(worker.preference)) && readRunCredits) {
       let credits: number | undefined = 0
       for (const runId of runIds) {
         if ((worker.runId === runId && busy) || !(ended.has(runId) || (worker.runId === runId && terminal(worker.status)))) {

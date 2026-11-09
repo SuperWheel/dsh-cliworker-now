@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-为 DeepSeek Harness 0.2.0-rc.2 提供独立的多 CLI 可视化插件，支持 Antigravity、Codex、Claude Code、Kimi、官方 MiMo Code、ZCode、Grok Build、OMP、Pi、Hermes Agent、OpenCode 和 Qoder CLI。支持明确派遣、项目级模型偏好、实时过程、两层任务树、停止及结束后续聊。遵循 `doc/design.md`；任务清单、实施进度与实际验证写入对应 `openspec/changes/<change-name>/tasks.md`，每个变更各自维护，不再集中写入 `doc/tasks.md`。
+为 DeepSeek Harness 0.2.0-rc.2 提供独立的多 CLI 可视化插件，支持 Antigravity、Codex、Claude Code、Kimi、官方 MiMo Code、ZCode、Grok Build、OMP、Pi、Hermes Agent、OpenCode、Qoder、Qoder CN、CodeBuddy Code、TRAE CN、WorkBuddy CN 和 WorkBuddy（两项均为试验性）。支持明确派遣、项目级模型偏好、实时过程、两层任务树、停止及结束后续聊。遵循 `doc/design.md`；任务清单、实施进度与实际验证写入对应 `openspec/changes/<change-name>/tasks.md`，每个变更各自维护，不再集中写入 `doc/tasks.md`。
 
 ## 开发约定
 
@@ -12,12 +12,13 @@
 - 使用各 CLI 的原生保护和权限模式，不附加插件操作系统沙箱；遵循宿主规划模式。Worker 权限档位：用户没选过的 Worker 跟随主对话的权限预设；用户选过的档位按所选运行（含主 Agent 派遣与续聊，可高于主对话，主 Agent 不另行询问），见 `openspec/specs/worker-permission-levels/`。凭据、用户日志和运行数据不入 Git。持久化目录 0700、文件 0600。
 - 所有注册、订阅、进程都必须有生命周期清理。停止操作只有在进程范围退出后才报告成功。
 - 使用 Harness 的主题 token 和共享组件；CLI 内容视为不可信文本，不渲染未经处理的 HTML。
+- 接入新 CLI 按 `doc/knowledge/cli-integration/new-cli-onboarding.md` 逐阶段实施：先按包名、可执行文件、配置根、登录站点等证据判定国内版与国际版是两个 CLI 还是同一 CLI 的不同账号或站点，再按其附录 B 核对交付物。
 - 设置页新增或调整内容须先读 `doc/settings-ui-design.md`，复用统一文字层级、间距、分隔线及控件规则；修改设计参数时同步该文档。
 - UI 不伪造进度、对话或内部推理。测试夹具须明确标注模拟；真实验收保留可核查的结果。
 
 ## 验证与交付
 
-- 最新发布版本为 `v0.8.6`（修复超长工具命令导致 Harness 无法启动；v0.8.5：Harness 0.2.1-rc.5 适配、Antigravity 改走 ACP、原生审批转交 DSH、Worker 权限三档与 Windows 代理/登录修复；v0.8.1 起的原生会话与工具桥迁移已发布；v0.7.10 已备份）。之后的修复与调整在下一次正式提交时使用用户确认的版本号，不自行增加版本号。GitHub 提交及发布须用户明确批准；允许按阶段本地 Git 提交，不自动推送或发布。
+- 最新发布版本为 `v0.8.8`（接入 CodeBuddy Code、TRAE CN 与 WorkBuddy CN／WorkBuddy（试验性），CodeBuddy 与 TRAE 图形账号窗口，积分用量与 CodeBuddy 系上下文分类；v0.8.7：同级派遣、CLI 原生与 DSH 子 Agent 汇入 Worker 窗口、Grok 登录续期、Pi/OMP 逐条退出凭据、超大工具事件摘要、热启用白屏修复、DSH 0.2.2-rc.1 适配；v0.8.6：修复超长工具命令导致 Harness 无法启动；v0.8.5：Harness 0.2.1-rc.5 适配、Antigravity 改走 ACP、原生审批转交 DSH、Worker 权限三档与 Windows 代理/登录修复；v0.8.1 起的原生会话与工具桥迁移已发布；v0.7.10 已备份）。之后的修复与调整在下一次正式提交时使用用户确认的版本号，不自行增加版本号。GitHub 提交及发布须用户明确批准；允许按阶段本地 Git 提交，不自动推送或发布。
 - 日常修改只执行与影响范围对应的最小验收（关联回归、必要类型检查、隔离构建及必要平台检查）；发布验收在用户批准的正式 GitHub 提交之前执行，范围见 `openspec/specs/development-workflow/`（不跑 Windows 隔离环境全量 vitest；真实 CLI 只测自上次真实验收以来有改动的）。明确记录未执行的真实账号、模型与平台验证。
 - 常用命令：`pnpm typecheck`、`pnpm test`、`pnpm build:preview`、`pnpm build`、`pnpm smoke:extended --help`；真实模型调用需已有选型授权。
 - 测试应覆盖流解析、互斥、取消、恢复、权限边界、配置继承和安装协议。不要只验证实现细节。

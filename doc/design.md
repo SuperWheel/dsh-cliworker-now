@@ -1,5 +1,20 @@
 # dsh-cliworker-now — 设计与版本演进
 
+## WorkBuddy 桌面账号管理指引（未发布，2026-11-07）
+
+- 有桌面管理指引，无 CLI 登录/退出。设置行通过 `target: desktop` 打开 480px 无 PTY 窗口，复用步骤、灰卡、等待和安全结果说明；旧 Host 保留手动指引。
+- `workbuddy-desktop.ts` 独立管理观察生命周期，与账号/Worker 互斥；Gateway 校验父会话、执行权限及启用状态。打开应用由 `workbuddy-desktop-open.ts` 每次重新核实版本后使用 argv；关闭不终止桌面端。
+- 初次一次查询，显式打开/继续后串行观察：完成后至少 15 秒，最多 5 分钟/20 次，手动刷新合并，整轮 25 秒并确认清理。账号和模型共享一次元数据读取；无凭据访问扩展，无原生 runner/helper/bootstrap 修改。
+- 认证缺失尚无精确回执，泛化认证错误只显示检查登录；不证明退出或同站点换号。实施证据及未验证项目见 `openspec/changes/add-new-cli-graphical-login/tasks.md`。
+
+## WorkBuddy 注册接线（未发布，2026-11-07）
+
+- 新增 `workbuddycn`（WorkBuddy）与 `workbuddy`（WorkBuddy AI），位于 Qoder CN 之后；独立路径、默认选型、目录、会话与 ACP transport。复用已存在的 WorkBuddy 安装解析、引导与 runner，未修改这些核心模块。
+- Host 发现只读核对应用包；原生桥请求携带 `[runtime, entry]`，不通过 PATH 或 CodeBuddy 回退。元数据目录与账号验证在一次授权范围内共用一次握手，范围外不缓存；来源绑定只表示经重新登录验证的应用／站点，不声称能识别未公开的账号主体或检测同站点账号切换。
+- 原生规划与三档权限、附件、原生工具类别已注册；不启用 DSH 工具桥、分支、steer、积分或 token 推导。账号页只给桌面端指引；连接页显示试验性说明；Worker 卡片不显示（2026-11-08 用户要求删除）。
+- 接口、生命周期及未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)、`openspec/changes/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
+
+
 ## v0.8.3（未发布）：市场安装的宿主 peer 范围（2026-10-24）
 
 - Desktop 0.12.1 的市场安装器要求必选宿主单例 peer 位于 Harness 安装闭包；`@deepseek-ai/dsh-client-store` 在官方包中仅为开发依赖，不能作为本插件的宿主 peer。
@@ -1420,3 +1435,27 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 实现：`accountSupportedChoices` 通过 `options.report` 累计被拒绝的凭据数；桥接的 account-scope 阶段输出 `{phase, models, authenticationDenied}`，Host 同时兼容旧数组格式。notice 经 `catalog-notice.ts` 的 WeakMap 跟随模型数组，`catalogFor` 读出后放入 `Catalog.notice`；空目录在 query 目录清理后再报错。只传计数，不传凭据编号、账号或密钥。
 - 取舍：执行时 OMP 仍可能先选到失效凭据，失败一次后由原生封锁；插件不自动退出或封锁凭据，提示用户在账号窗口退出。
 - 记录：`openspec/changes/fix-catalog-auth-denial-display/tasks.md`。
+
+## CodeBuddy Code 原生 ACP 接入（2026-11-07，v0.8.8，未发布）
+
+- 背景：PRD 5.2/5.3 要求接入腾讯 CodeBuddy Code 的中国站与国际站。查证与本机实测（2.181.0）表明两站是同一 CLI 的登录站点（接入流程形态 C），用户确认只做一个入口 `codebuddy`。
+- 决定：经 `codebuddy --acp` 复用 `runNativeAcp`，transport `codebuddy-acp-v1`；所有插件进程设置 `DISABLE_AUTOUPDATER=1`。三档映射为 `default`/`auto`/`bypassPermissions`，规划为 `plan`，不使用 `fullAccess`。强度取每个模型的 `_meta.effortOptions`，“默认”对应 `thought_level=enabled`。
+- 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（与 TRAE 共用：本轮有 DSH 拒绝、原生 cancelled、未主动停止且无其他失败时，SUCCESS 与“因拒绝审批而结束：被拒操作未执行，可续聊继续”；空正文不降为 UNCERTAIN）。其他 ACP CLI 行为不变。
+- 账号与站点：登录状态只看认证文件与 `.logged-out` 标记。2026-11-07 用户批准“允许只读站点”：显式 `CODEBUDDY_INTERNET_ENVIRONMENT`（`settings.json` 的 `env` 键或进程环境）优先，否则在内存中只取认证文件 `auth.domain`，按 CLI `product.json` 的域名表映射；域名与文件内容不落日志、事件、持久化。绑定为站点 ID 与模型目录摘要，任一变化都让旧目录与偏好失效。
+- 记录：`openspec/changes/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
+
+## 2026-11-07 v0.8.8 TRAE CLI CN 接入决策
+
+定稿见 [add-traecn-cli](../openspec/changes/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/changes/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
+
+- 只接国内版官方 `traecli`：CliId `traecn`、配置 `traecnExecutable`、transport `traecn-acp-v1`；以版本输出及 ACP `traecli-acp` 双重确认身份，不自动发现同名开源程序。2026-11-07 未发现官方国际版 CLI；官方安装脚本需直连 trae.cn。
+- 个人登录只在该次命令开启开发中特性 `personal_user_login`，另提供企业 SSO/PAT；不修改 `TRAE_HOME`、`traecli.toml` 或调用更新。目录先核对登录再读 `models --json`，模型用 `config_name`，不提供强度。
+- 无「询问」档；「仅工作区编辑」用 `default`，工作区外请求转 DSH；完全权限用 `bypass_permissions`，仅可降至 `default` 并提示。不用由 TRAE 审查子 Agent 代批的 `auto`。规划以 `default` 启动后切 ACP `mode=plan` 并回读确认；仅可查看且无 Worker 自选档位时拒绝派遣。
+- 恢复用 `session/load` 并排除历史重放，分支用原生 `session/fork`（仅最新轮），停止核对进程范围退出。拒绝审批导致原生 `cancelled` 且用户未停止时显示「因拒绝审批而结束」，可续聊；不提供会话级授权。
+- 本轮有效 `end_turn` usage 与同回执上下文分别采集，输入口径为原生 reported，缓存含义未公开；全零取消回执保持未知。原生子 Agent、记忆、skills 与联网跟随用户设置。HTTP MCP 的服务名替换语义未核实，不注入 DSH 工具桥；steering 仅声明未实测，不提供运行中引导。
+- 图标沿用官方不透明 favicon，保留近黑底板，`mono: false`，深色不反色。Windows、Desktop 图标明暗及插件集成验收仍以任务清单的实际记录为准；前置 CLI 探测不能代替插件验收。
+
+
+### CodeBuddy / TRAE 图形账号引导（2026-11-07，未发布）
+
+独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。

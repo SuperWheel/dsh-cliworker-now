@@ -18,6 +18,7 @@ for (const file of [
   'runtime-host',
   'package.json',
   'cordis.patch.yml',
+  'icon.png',
   'README.md',
   'README.en.md',
   'LICENSE',

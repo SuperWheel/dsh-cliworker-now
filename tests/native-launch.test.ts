@@ -118,6 +118,23 @@ describe('Windows fixed native launchers', () => {
     writeFileSync(executable, pe)
     expect(() => resolveNativeEntry(shim, 'win32')).toThrow('启动入口无法确认')
   })
+  it('launches a standalone installer shim\'s sibling PE directly, like TRAE CLI traecli.cmd (simulated)', () => {
+    const root = directory(), executable = join(root, 'traex.exe'), shim = join(root, 'traecli.cmd')
+    const pe = Buffer.alloc(96)
+    pe.write('MZ'); pe.writeUInt32LE(64, 0x3c); pe.write('PE\0\0', 64)
+    writeFileSync(executable, pe)
+    writeFileSync(shim, '@echo off\r\n"%~dp0traex.exe" %*\r\n')
+    expect(resolveNativeEntry(shim, 'win32')).toBe(executable)
+    expect(nativeLaunchArgv([shim, 'acp', 'serve', '空格 & %PATH%'], 'win32')).toEqual([executable, 'acp', 'serve', '空格 & %PATH%'])
+    writeFileSync(executable, 'SIMULATED text, not a PE program')
+    expect(() => resolveNativeEntry(shim, 'win32')).toThrow('启动入口无法确认')
+    writeFileSync(executable, pe)
+    for (const source of ['@echo off\r\n"%~dp0..\\traex.exe" %*\r\n', '@echo off\r\n"%~dp0missing.exe" %*\r\n',
+      '@echo off\r\n"%~dp0traex.exe" %*\r\ndel /q *\r\n']) {
+      writeFileSync(shim, source)
+      expect(() => resolveNativeEntry(shim, 'win32')).toThrow('启动入口无法确认')
+    }
+  })
   it('reports present invalid or broken shims as unsupported launchers instead of missing programs', () => {
     const f = fixture()
     for (const source of ['@echo off\ncall unknown.cmd %*', '@echo off\nnode "%~dp0missing.js" %*']) {

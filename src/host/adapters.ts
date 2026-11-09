@@ -1,4 +1,8 @@
+import { discoverCodebuddyModels } from './codebuddy-account.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { isWorkBuddyCli, workbuddyVariant } from './workbuddy-variant.ts'
+import { findWorkBuddyWindowsCandidates, resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from './workbuddy-installation.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { qoderVariant } from './qoder-variant.ts'
 import { readClaudeOwnRoute, claudeNativeSettingsArguments } from './claude-own-route.ts'
 import { discoverClaudeNativeOAuth } from './claude-native-oauth.ts'
@@ -7,6 +11,8 @@ import { readCodexCustomRouteVersion } from './cli-account-binding.ts'
 import { discoverAgyAccountModels } from './agy-models.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
 import { discoverQoderModels } from './qoder-accounts.ts'
+import { discoverTraecnModels } from './traecn-accounts.ts'
+import { verifyTraecnExecutable } from './traecn-executable.ts'
 import { discoverFirstPartySources, discoverMimoModels, readFirstPartyModelSources } from './first-party-models.ts'
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
 import { extendedCatalog, isExtendedCli } from './extended-adapters.ts'
@@ -78,10 +84,13 @@ export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，请新建 Hermes 任务')
   const configured = configuredCliExecutable(cli, config)
   if (configured) return configured
+  if (isWorkBuddyCli(cli)) return cli
   // A deployed standalone runtime is shared across platforms.
   if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
+  if (cli === 'traecn') return 'traecli'
   if (process.platform === 'win32')
     return presentWindowsCliCandidate(cli) ?? windowsCliCommands(cli)[0]!
+  if (cli === 'codebuddy') return 'codebuddy'
   if (cli === 'antigravity') return config.executable
   if (cli === 'zcode') return '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
   if (cli === 'grok') return join(homedir(), '.grok/bin/grok')
@@ -138,7 +147,7 @@ export async function captureCatalogMetadata(
     finished = true
     control.throwIfAborted()
     if (outcome.exitCode === null || !allowedExitCodes.includes(outcome.exitCode))
-      throw new Error('CLI 模型查询失败，请在终端检查该 CLI 配置')
+      throw Object.assign(new Error('CLI 模型查询失败，请在终端检查该 CLI 配置'), { exitCode: outcome.exitCode })
     return output
   } finally {
     let exited = false
@@ -166,6 +175,14 @@ export async function catalogFor(
 ): Promise<Catalog> {
   const executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
+  if (cli === 'codebuddy') return { cli, models: await discoverCodebuddyModels(backend, config, executable, signal),
+    notice: 'CodeBuddy 原生账号模型目录；调用权限以实际请求为准' }
+  if (cli === 'traecn') return { cli, models: await discoverTraecnModels(backend, config, executable, cwd, signal),
+    notice: 'TRAE CN 原生账号模型目录；不提供强度选择' }
+  if (isWorkBuddyCli(cli)) {
+    const { models } = await readWorkBuddyMetadata(cli, executable, cwd, signal)
+    return { cli, models, notice: `${workbuddyVariant(cli).label} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口` }
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const models = await discoverQoderModels(backend, config, executable, cwd, signal, cli)
     if (!models.length) throw new Error(`${qoderVariant(cli).label} 当前账号暂无可确认模型，请登录或刷新`)
@@ -307,8 +324,24 @@ export function workerArguments(
 ): string[] {
   const cli = cliOf(preference)
   const task = `任务：\n${prompt}`
+  if (cli === 'traecn') {
+    if (!nativeTransport) throw new Error('TRAE CN 必须通过原生 ACP 桥运行')
+    if (preference.effort !== 'default') throw new Error('TRAE CN 不支持强度选择')
+    if (access === 'read-only' && mode !== 'plan') throw new Error('TRAE CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
+    // The TRAE runner owns its mode argv; no prompt, model or foreign flags at launch.
+    return [executable]
+  }
+  if (isWorkBuddyCli(cli)) {
+    if (!nativeTransport) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行，请新建任务')
+    // prepareNativeWorker resolves and verifies the app runtime and built-in entry.
+    return [executable]
+  }
   if (cli === 'antigravity')
     return agyArguments(executable, project, preference, mode, prompt, timeoutMs, conversationId, access)
+  if (cli === 'codebuddy') {
+    if (!nativeTransport) throw new Error('CodeBuddy 必须通过原生 ACP 桥运行')
+    return [executable, '--acp']
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     if (!nativeTransport) throw new Error('Qoder 仅支持已确认的原生 ACP 通信，请新建任务')
     if (mode === 'plan') throw new Error('Qoder 当前 ACP 未公开只读规划模式，无法安全执行规划任务')
@@ -387,6 +420,8 @@ export function protocolFor(
   expectedModel?: string,
 ) {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，历史记录仅供查看')
+  if (cli === 'traecn') throw new Error('TRAE CN 必须通过原生 ACP 桥运行')
+  if (isWorkBuddyCli(cli)) throw new Error('WorkBuddy 必须通过原生 ACP 桥运行')
   if ((cli === 'qoder' || cli === 'qodercn')) throw new Error('Qoder 必须通过原生 ACP 桥运行')
   if (cli === 'zcode') return new ZCodeProtocol(emit, identify, maxLineBytes, expectedModel)
   if (cli === 'hermes') return new HermesProtocol(emit, identify, maxLineBytes)
@@ -401,7 +436,7 @@ export function protocolFor(
 export function configuredCliExecutable(cli: CliId, config: RuntimeConfig): string | undefined {
   if (cli === 'harness') return undefined
   const value = cli === 'antigravity' ? config.executable : config[`${cli}Executable`]
-  return value && value !== (cli === 'antigravity' ? 'agy' : cli) ? value : undefined
+  return value && value !== (cli === 'antigravity' ? 'agy' : cli === 'traecn' ? 'traecli' : cli) ? value : undefined
 }
 
 function configWithExecutable(cli: CliId, config: RuntimeConfig, path: string): RuntimeConfig {
@@ -464,11 +499,32 @@ async function resolveUncachedCliExecutable(
   automaticSelection = false,
 ): Promise<string> {
   signal.throwIfAborted()
+  if (isWorkBuddyCli(cli)) {
+    const manualPath = configuredCliExecutable(cli, config)
+    let install
+    try {
+      install = await resolveWorkBuddyInstallation(cli, { manualPath })
+    } catch (error) {
+      // A user-chosen install folder (e.g. D:\Software\workbuddy) is only in the
+      // uninstall registration. Explicit paths never fall back.
+      if (manualPath || process.platform !== 'win32' || !(error instanceof WorkBuddyUnavailableError)) throw error
+      signal.throwIfAborted()
+      const candidates = await findWorkBuddyWindowsCandidates(
+        (argv, cwd) => captureCatalogMetadata(backend, { ...config, maxRunBytes: Math.min(config.maxRunBytes, 65_536) }, argv, cwd, signal),
+        signal,
+      ).catch(() => [] as string[])
+      signal.throwIfAborted()
+      if (!candidates.length) throw error
+      install = await resolveWorkBuddyInstallation(cli, { candidates })
+    }
+    signal.throwIfAborted()
+    return install.entry
+  }
   const executable = executableFor(cli, config)
   const explicit = !!configuredCliExecutable(cli, config)
   const desktopCli = process.platform === 'win32' && (cli === 'zcode' || cli === 'opencode')
   let resolved: string
-  if ((isExtendedCli(cli) || (cli === 'qoder' || cli === 'qodercn')) && /\.[cm]?js$/.test(executable) && existsSync(executable)) {
+  if ((isExtendedCli(cli) || cli === 'codebuddy' || (cli === 'qoder' || cli === 'qodercn')) && /\.[cm]?js$/.test(executable) && existsSync(executable)) {
     // JavaScript launchers run through Node and need readability, not an executable bit.
     // A directory ending in .js is a broken configuration, not an installed CLI.
     if (!statSync(executable).isFile()) throw new Error('CLI 脚本路径不是普通文件')
@@ -479,7 +535,20 @@ async function resolveUncachedCliExecutable(
       try {
         return await backend.resolveExecutable(executable)
       } catch (error: any) {
+        if (process.platform === 'darwin' && cli === 'codebuddy' && executable === 'codebuddy' && !explicit &&
+            (error instanceof SubprocessExecutableNotFoundError || ['ENOENT', 'ENOTDIR'].includes(error.code))) {
+          for (const path of ['/opt/homebrew/bin/codebuddy', '/usr/local/bin/codebuddy', join(homedir(), '.local/bin/codebuddy')]) {
+            signal.throwIfAborted()
+            try { return await backend.resolveExecutable(path) }
+            catch (candidate: any) {
+              if (!(candidate instanceof SubprocessExecutableNotFoundError) && !['ENOENT', 'ENOTDIR'].includes(candidate.code)) throw candidate
+            }
+          }
+        }
         // Only an absent default PATH entry can use the legacy private install.
+        if (cli === 'traecn' && process.platform !== 'win32' && !explicit &&
+          (error instanceof SubprocessExecutableNotFoundError || ['ENOENT', 'ENOTDIR'].includes(error.code)))
+          return backend.resolveExecutable(join(homedir(), '.local/bin/traecli'))
         // A broken or incompatible native/configured entry must remain an error.
         if (cli === 'pi' && executable === 'pi' && ['ENOENT', 'ENOTDIR'].includes(error.code)) {
           const managed = managedPiEntry()
@@ -524,7 +593,9 @@ async function resolveUncachedCliExecutable(
       if (refreshed) {
         const entry = validateWindowsCliCandidate(cli as Exclude<CliId, 'harness'>, refreshed)
         resolved = /\.[cm]?js$/i.test(entry) ? entry : await pathLookup(() => backend.resolveExecutable(entry))
-      } else if (refreshPath && cli === 'hermes' && hasWindowsHermesInstallDirectory())
+      } else if (refreshPath && cli === 'traecn')
+        throw new WindowsCliInstallationError('TRAE CN 未找到，请配置 traecnExecutable')
+      else if (refreshPath && cli === 'hermes' && hasWindowsHermesInstallDirectory())
         throw new WindowsCliInstallationError('检测到 Hermes 安装目录，但未找到可用 CLI 入口，请完成安装或配置已有入口')
       else if (process.platform === 'win32' && (cli === 'qoder' || cli === 'qodercn') && executable === qoderVariant(cli).executable && !explicit && absent) {
         try { resolved = await pathLookup(() => backend.resolveExecutable(cli)) } catch (legacy: any) {
@@ -576,6 +647,7 @@ async function resolveUncachedCliExecutable(
     const bundled = windowsOpenCodeDesktopCli(resolved, explicit)
     if (bundled) resolved = bundled
   }
+  if (cli === 'traecn') return verifyTraecnExecutable(resolved, backend, config, signal)
   if (cli === 'pi' || cli === 'omp')
     return verifyPiOmpExecutable(cli, resolved, (argv, cwd, env) =>
       captureCatalogMetadata(backend, config, argv, cwd, signal, env),

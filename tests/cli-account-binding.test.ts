@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import { CLI_IDS, type CliId } from '../src/shared/types.ts'
+import { codebuddyAuthDirectory } from '../src/host/codebuddy-account.ts'
 import {
   DEFAULT_CONFIG,
   ProcessCleanupUnconfirmedError,
@@ -227,7 +228,9 @@ beforeEach(() => {
   ])
     vi.stubEnv(name, '')
   vi.stubEnv('ZCODE_DATA_BASE_DIR', fixture.home)
+  vi.stubEnv('LOCALAPPDATA', join(fixture.home, 'Local'))
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
+  vi.stubEnv('TRAE_HOME', join(fixture.home, '.trae'))
 })
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -327,6 +330,12 @@ function own(cli: CliId) {
     })
   else if (cli === 'qoder') vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qoder-pat')
   else if (cli === 'qodercn') vi.stubEnv('QODERCN_PERSONAL_ACCESS_TOKEN', 'synthetic-own-qodercn-pat')
+  else if (cli === 'codebuddy') {
+    // Presence-only synthetic auth file and ACP catalog; no credential contents are consumed.
+    write(join(codebuddyAuthDirectory(), 'Tencent-Cloud.coding-copilot.info'), 'SIMULATED-presence-only', true)
+    fixture.status = { models: [{ modelId: 'SIMULATED-codebuddy', name: 'Simulated CodeBuddy', _meta: { credits: 'x0.00 credits' } }] }
+  }
+  else if (cli === 'traecn') write(join(fixture.home, '.trae/cli/auth.json'), { auth_mode: 'trae', trae: { user_id: '模拟-trae-user' } })
   else if (cli === 'zcode') zcode()
   else if (cli === 'grok')
     write(join(fixture.home, '.grok/auth.json'), {
@@ -347,7 +356,8 @@ function own(cli: CliId) {
   }
 }
 
-it.each(CLI_IDS)('binds only synthetic %s own sources and returns a bounded opaque epoch', async (cli) => {
+// WorkBuddy authenticates through a simulated native metadata probe in workbuddy-registration.test.ts, not credential-file fixtures.
+it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))('binds only synthetic %s own sources and returns a bounded opaque epoch', async (cli) => {
   own(cli)
   const epoch = await run(cli)
   expect(epoch).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
@@ -355,7 +365,8 @@ it.each(CLI_IDS)('binds only synthetic %s own sources and returns a bounded opaq
   expect(await run(cli)).toBe(epoch)
 })
 
-it.each(CLI_IDS)(
+// WorkBuddy authenticates through a simulated native metadata probe in workbuddy-registration.test.ts, not credential-file fixtures.
+it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))(
   'rejects %s with no own account even when ambient and Host credentials exist',
   async (cli) => {
     for (const name of [

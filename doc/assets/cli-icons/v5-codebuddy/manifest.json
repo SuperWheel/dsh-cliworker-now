@@ -1,0 +1,61 @@
+{
+  "name": "CodeBuddy Code",
+  "file": "codebuddy.png",
+  "runtime_file": "src/client/assets/codebuddy.png",
+  "downloaded_on": "2026-11-07",
+  "source_page": "https://www.npmjs.com/package/@tencent-ai/codebuddy-code",
+  "source_context": "官方 npm 包 @tencent-ai/codebuddy-code 2.181.0 内的 vendor/assets/icon.png（CLI 自带应用图标）",
+  "source_url": "npm:@tencent-ai/codebuddy-code@2.181.0/vendor/assets/icon.png",
+  "source_bytes_unchanged": true,
+  "generated": false,
+  "size": [
+    150,
+    150
+  ],
+  "mode": "RGBA",
+  "decoded_mode": "RGBA",
+  "corner_alpha": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "transparent_pixels": 832,
+  "opaque_pixels": 21524,
+  "subject_bbox_alpha128": [
+    0,
+    0,
+    150,
+    150
+  ],
+  "optical_scale": 0.78,
+  "optical_translate_percent": [
+    0,
+    0
+  ],
+  "dark_filter": "none（彩色图标，明暗主题共用原图）",
+  "sha256": "3628c1891ff84443439bb1905b81a816367b3e994e9de4ee4a3baeb0bc9ab314",
+  "visual_verification": {
+    "tool": "Pillow 合成预览（非浏览器渲染）",
+    "scope": "独立图标预览，不代表已安装 Desktop 验收",
+    "theme": [
+      "light",
+      "dark"
+    ],
+    "sizes_px": [
+      22,
+      24,
+      32
+    ],
+    "comparison_clis": [
+      "Codex",
+      "Qoder"
+    ],
+    "preview_file": "preview.png",
+    "preview_sha256": "c0b0534f8bb9568488523deb7c8aa1310559a62728535c702424211556ba1515"
+  }
+}

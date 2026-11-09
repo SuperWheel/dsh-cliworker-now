@@ -25,6 +25,10 @@ export const CLI_IDS = [
   'opencode',
   'qoder',
   'qodercn',
+  'codebuddy',
+  'traecn',
+  'workbuddycn',
+  'workbuddy',
 ] as const
 export type ActiveCliId = (typeof CLI_IDS)[number]
 /** Retired IDs remain readable in existing worker history, never selectable for execution. */
@@ -45,8 +49,12 @@ export const CLI_LABELS: Record<CliId, string> = {
   hermes: 'Hermes Agent',
   harness: 'Harness（已移除）',
   opencode: 'OpenCode',
-  qoder: 'Qoder CLI',
-  qodercn: 'Qoder CN CLI',
+  qoder: 'Qoder',
+  qodercn: 'Qoder CN',
+  codebuddy: 'CodeBuddy Code',
+  traecn: 'TRAE CN',
+  workbuddycn: 'WorkBuddy CN',
+  workbuddy: 'WorkBuddy',
 }
 /** Short CLI stems used for automatic Worker names; protocol IDs remain unchanged. */
 export const CLI_SHORT_NAMES: Record<CliId, string> = {
@@ -64,6 +72,10 @@ export const CLI_SHORT_NAMES: Record<CliId, string> = {
   opencode: 'opencode',
   qoder: 'qoder',
   qodercn: 'qodercn',
+  codebuddy: 'codebuddy',
+  traecn: 'traecn',
+  workbuddycn: 'workbuddycn',
+  workbuddy: 'workbuddy',
 }
 export const cliOf = (preference: Preference): CliId => preference.cli ?? 'antigravity'
 export const effortLabel = (effort: string) =>
@@ -401,6 +413,9 @@ function appendDelta(row: TimelineItem, delta: string) {
   const output = row.toolCall?.output
   row.toolCall = { ...row.toolCall, output: (typeof output === 'string' ? output : '') + delta }
 }
+/** Title of the plugin's end-of-turn outcome note (for example, a denied approval ended the turn). */
+export const RESULT_NOTICE_TITLE = '本轮结果说明'
+
 export function foldEvents(
   events: readonly WorkerEvent[],
   endedRun?: { runId: string; status: WorkerStatus },

@@ -3,6 +3,7 @@ import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primi
 import type { AccountLogin, AccountProvider, AccountSource, AccountStatus } from '../../shared/accounts.ts'
 import { GUIDED_ACCOUNT_CLIS, parseAccountLoginId } from '../../shared/account-links.ts'
 import { CLI_LABELS, type CliId } from '../../shared/types.ts'
+import { ProviderCards } from './provider-cards.tsx'
 import { AccountTerminal, type AccountCloseControl } from '../account-terminal.tsx'
 import { t, useT } from '../i18n.ts'
 import { hostText } from '../operation-error.ts'
@@ -323,6 +324,7 @@ function AddAccount({
       name: hostText(item.label),
       label: item.signedIn ? t('{provider}（已登录）', { provider: hostText(item.label) }) : hostText(item.label),
       note: item.signedIn ? t('已登录') : undefined,
+      signedIn: item.signedIn,
     })),
     // ZCode has only its two providers; other CLIs keep their own full picker.
     ...(cli === 'zcode'
@@ -330,6 +332,7 @@ function AddAccount({
       : [
           {
             id: NATIVE,
+            mark: '…',
             name: t('其他服务商'),
             label: t('其他服务商（在原生终端中选择）'),
             note: t('在原生终端中选择'),
@@ -355,29 +358,7 @@ function AddAccount({
             : t('在原生终端中选择服务商并登录。')}
         </span>
       </div>
-      <div className="cwn-accounts-providers" role="radiogroup" aria-label={t('登录到')}>
-        {choices.map((choice) => (
-          <button
-            key={choice.id}
-            type="button"
-            role="radio"
-            aria-checked={chosen === choice.id}
-            aria-label={choice.label}
-            title={choice.name}
-            className="cwn-accounts-provider"
-            data-selected={chosen === choice.id || undefined}
-            onClick={() => setChosen(choice.id)}
-          >
-            <span className="cwn-accounts-mark" aria-hidden="true">
-              {choice.id === NATIVE ? '…' : choice.name.trim().charAt(0).toUpperCase()}
-            </span>
-            <span className="cwn-accounts-provider-text">
-              <strong>{choice.name}</strong>
-              {choice.note && <span data-signed-in={choice.id !== NATIVE || undefined}>{choice.note}</span>}
-            </span>
-          </button>
-        ))}
-      </div>
+      <ProviderCards choices={choices} chosen={chosen} label={t('登录到')} onChoose={setChosen} />
       {provider?.signedIn && !provider.multi && (
         <p className="cwn-login-callout" data-tone="warning">
           <span>{t('{provider} 已登录，继续会替换它现有的凭据。', { provider: hostText(provider.label) })}</span>

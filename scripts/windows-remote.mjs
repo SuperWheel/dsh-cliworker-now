@@ -109,7 +109,14 @@ export function verifyRemoteReport(report, testBytes, state) {
   const paths = tests.testResults?.map((result) => result.name.replaceAll('\\', '/')) ?? []
   if (paths.length !== WINDOWS_TESTS.length || WINDOWS_TESTS.some((file) => !paths.some((path) => path.endsWith(`/${file}`)))) throw new Error('Windows evidence does not cover every Windows CI test file')
   const skipped = tests.testResults.flatMap((result) => result.assertionResults.filter((assertion) => assertion.status === 'pending' || assertion.status === 'skipped').map((assertion) => ({ file: result.name.replaceAll('\\', '/'), title: assertion.title })))
-  if (skipped.length !== tests.numPendingTests || skipped.some((skip) => !skip.file.endsWith('/tests/pi-omp-identity.test.ts') || skip.title !== 'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry')) throw new Error('Unexpected skipped Windows test; inspect its evidence')
+  // Only these POSIX/macOS-only cases may skip on Windows; any other skip fails the run.
+  const allowedSkips = [
+    ['/tests/pi-omp-identity.test.ts', 'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry'],
+    ['/tests/codebuddy-account.test.ts', 'keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout'],
+    ['/tests/codebuddy-account.test.ts', 'checks macOS fallbacks only after missing PATH, preserves explicit failures'],
+    ['/tests/traecn-integration.test.ts', 'uses only the local/bin/traecli fallback, never alternate aliases'],
+  ]
+  if (skipped.length !== tests.numPendingTests || skipped.some((skip) => !allowedSkips.some(([file, title]) => skip.file.endsWith(file) && skip.title === title))) throw new Error('Unexpected skipped Windows test; inspect its evidence')
   return true
 }
 

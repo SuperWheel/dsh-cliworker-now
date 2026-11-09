@@ -17,7 +17,8 @@
 
 ## 3. 未执行（需另行授权或平台）
 
-- [ ] 3.1 Windows 实机验证 Codex 后台启动环境与 `host.lock` 候选锁行为。
+- [x] 3.1 Windows 实机验证 Codex 后台启动环境与 `host.lock` 候选锁行为。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 2026-10-29 Windows 全量测试中 `native-worker-windows-env`（1/1）、`storage-lock`（4/4）、`storage-torn-tail`（2/2）均通过（`full-vitest.json`）。
   - 2026-10-29 Windows（安装包 Electron SDK）：已安装的启动 helper 真实执行 `codex --version` 退出 0，合成的无关变量未进入 launch.env（只记录变量名）；同一进程中第二个 Storage 实例被 host.lock 拒绝，关闭后候选锁与 host.lock 均已清除。未验证：Desktop 实际 Worker 子进程环境、跨进程 host.lock 竞争。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 - [x] 3.2 真实 CLI / Desktop 更新验收。

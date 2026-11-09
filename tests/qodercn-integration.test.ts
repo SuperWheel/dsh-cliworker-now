@@ -13,6 +13,7 @@ const preference = { cli: 'qodercn' as const, model: 'synthetic-cn-model', effor
 it('selects Qoder CN explicitly and keeps its native transport distinct from global Qoder', () => {
   expect(CLI_IDS).toContain('qodercn')
   expect(requireCliName('Qoder CN CLI')).toBe('qodercn')
+  expect(requireCliName('Qoder CN')).toBe('qodercn')
   expect(requireCliName('Qoder CLI')).toBe('qoder')
   expect(invocationResolution([createUserMessage({ source: { kind: 'user' },
     content: [{ type: 'text', text: '请用 Qoder CN CLI 检查文件' }] })]))

@@ -4,7 +4,7 @@ import { homedir, tmpdir } from 'node:os'
 import { dirname, join, win32 } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { localAccountIdentity } from '../src/host/account-identity.ts'
-import { readCodexOwnAccountSource } from '../src/host/cli-account-binding.ts'
+import { readCliAccountBinding, readCodexOwnAccountSource } from '../src/host/cli-account-binding.ts'
 import { readKimiAccount } from '../src/host/kimi-accounts.ts'
 import { mimoConfigurationPaths, readMimoAccount } from '../src/host/mimo-configuration.ts'
 import { prepareMimoAccountTerminal } from '../src/host/first-party-account-context.ts'
@@ -12,6 +12,7 @@ import { claudeManagedSettingsPath, readFirstPartyModelSources } from '../src/ho
 import { nativeAccountAncestors, inspectPiOmpNativeAccount } from '../src/host/pi-omp-native.ts'
 import { readHermesAccount } from '../src/host/hermes-accounts.ts'
 import { readQoderAccount } from '../src/host/qoder-accounts.ts'
+import { codebuddyAuthDirectory, readCodebuddyLoginState } from '../src/host/codebuddy-account.ts'
 import { inspectOpenCodeProfile } from '../src/host/opencode-native.ts'
 import { zcodeGrokAccountStatus } from '../src/host/zcode-grok-accounts.ts'
 import { DEFAULT_CONFIG, type RuntimeConfig } from '../src/host/process.ts'
@@ -37,7 +38,9 @@ beforeEach(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'cwn-windows-accounts-synthetic-')))
   vi.stubEnv('HOME', root)
   vi.stubEnv('USERPROFILE', root)
+  vi.stubEnv('LOCALAPPDATA', join(root, 'Local'))
   vi.stubEnv('DSH_HOME', join(root, '.dsh'))
+  vi.stubEnv('TRAE_HOME', join(root, '.trae'))
   // Match the actual native XDG/default-home APIs; fail before a read if the
   // operating system did not accept the isolated home environment.
   expect(await realpath(homedir())).toBe(root)
@@ -100,6 +103,10 @@ afterEach(async () => {
 })
 
 async function configured(cli: CliId): Promise<boolean> {
+  if (cli === 'traecn') {
+    // 模拟主体文件：这里只核对来源绑定；原生 login status 另有模拟进程测试。
+    try { await readCliAccountBinding(cli, { resolveExecutable: vi.fn(), spawn: vi.fn() }, config, project, signal()); return true } catch { return false }
+  }
   if (cli === 'antigravity')
     return (await localAccountIdentity({ home: root })(cli, signal()))?.state === 'authenticated'
   if (cli === 'codex') {
@@ -130,6 +137,7 @@ async function configured(cli: CliId): Promise<boolean> {
       'authenticated'
     )
   if (cli === 'mimo') return (await readMimoAccount(signal())).state === 'authenticated'
+  if (cli === 'codebuddy') return await readCodebuddyLoginState({ home: root, signal: signal() }) === 'authenticated'
   if (cli === 'pi' || cli === 'omp')
     return (
       (await inspectPiOmpNativeAccount(cli, config.stateDirectory!, signal(), { nativeHome: root })).state ===
@@ -171,7 +179,10 @@ async function configured(cli: CliId): Promise<boolean> {
 async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
   const key = `synthetic-${cli}-${identity}`
   let path: string
-  if (cli === 'antigravity') {
+  if (cli === 'codebuddy') {
+    path = join(codebuddyAuthDirectory(process.platform, process.env, root), 'Tencent-Cloud.coding-copilot.info')
+    await write(path, 'SIMULATED-presence-only', true)
+  } else if (cli === 'antigravity') {
     path = join(root, '.gemini/jetski-standalone-oauth-token')
     await write(path, {
       auth_method: 'consumer',
@@ -191,6 +202,9 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
       refresh_token: 'synthetic-refresh',
       expires_at: 4e9,
     })
+  } else if (cli === 'traecn') {
+    path = join(root, '.trae/cli/auth.json')
+    await write(path, { auth_mode: 'trae', trae: { user_id: `模拟-${identity}` } })
   } else if (cli === 'qoder' || cli === 'qodercn') {
     const directory = join(root, cli === 'qodercn' ? '.qoder-cn' : '.qoder')
     path = join(directory, '.auth/user')
@@ -254,7 +268,8 @@ async function ownAccount(cli: CliId, identity = 'own'): Promise<string> {
 }
 
 describe('Windows account source contract on the real platform filesystem (synthetic only)', () => {
-  it.each(CLI_IDS)(
+  // WorkBuddy has no credential-file/logout contract; simulated metadata and Windows install fixtures cover it separately.
+  it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))(
     '%s does not infer login from Harness, another CLI, or ambient provider keys',
     async (cli) => {
       await write(join(root, '.dsh/credentials.json'), { key: 'synthetic-host-key' })
@@ -266,7 +281,8 @@ describe('Windows account source contract on the real platform filesystem (synth
     },
   )
 
-  it.each(CLI_IDS)('%s reads its own live source and clears login after native logout', async (cli) => {
+  // WorkBuddy has no credential-file/logout contract; simulated metadata and Windows install fixtures cover it separately.
+  it.each(CLI_IDS.filter(cli => cli !== 'workbuddycn' && cli !== 'workbuddy'))('%s reads its own live source and clears login after native logout', async (cli) => {
     expect(await configured(cli)).toBe(false)
     const path = await ownAccount(cli)
     const before = await readFile(path)

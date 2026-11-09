@@ -17,7 +17,7 @@ import { CliWorkerService } from '../src/host/index.ts'
 import { WorkerRuntime } from '../src/host/runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
-import { cliLevelOptions, effectiveLevel, runsUnderViewOnly, workerLevelOptions, workerPlanSupported } from '../src/shared/worker-permissions.ts'
+import { cliLevelOptions, effectiveLevel, runsUnderViewOnly, workerLevelOptions, workerPermissionReceipt, workerPlanSupported } from '../src/shared/worker-permissions.ts'
 import type { Worker } from '../src/shared/types.ts'
 
 // Actual rc.2 Agents, Session/Inbox and sandbox policies; actual Host permission
@@ -577,7 +577,9 @@ describe('Host Worker permission changes', () => {
     expect(workerLevelOptions(codex).map((option) => option.value)).toEqual(['ask', 'auto', 'full'])
     // Without its own level, a first item that would not ask before every change is refused under 仅可查看.
     for (const cli of ['kimi', 'antigravity', 'hermes'] as const) expect(runsUnderViewOnly(cli)).toBe(false)
-    for (const cli of ['codex', 'claude', 'qoder', 'qodercn', 'grok', 'mimo', 'zcode', 'opencode', 'pi', 'omp'] as const)
+    for (const cli of ['codex', 'claude', 'qoder', 'qodercn', 'grok', 'mimo', 'zcode', 'opencode', 'pi', 'omp',
+      'codebuddy',
+    ] as const)
       expect(runsUnderViewOnly(cli)).toBe(true)
     expect(workerLevelOptions(codex).every((option) => !option.description.includes('主对话为'))).toBe(true)
     expect(effectiveLevel(undefined, 'workspace-write')).toBe('auto')
@@ -587,3 +589,46 @@ describe('Host Worker permission changes', () => {
     expect(effectiveLevel('auto', 'read-only')).toBe('auto')
   })
 })
+
+it('模拟：TRAE 菜单没有询问档，中档仅工作区编辑，支持原生规划', () => {
+  expect(cliLevelOptions('traecn').map(option => option.name)).toEqual(['仅工作区编辑', '完全权限'])
+  expect(cliLevelOptions('traecn').map(option => option.value)).toEqual(['auto', 'full'])
+  expect(cliLevelOptions('traecn')[0]?.description).toContain('工作区外')
+  expect(runsUnderViewOnly('traecn')).toBe(false)
+  expect(workerPlanSupported({ preference: { cli: 'traecn', model: '模拟模型', effort: 'default' }, transport: 'traecn-acp-v1' })).toBe(true)
+})
+
+it('模拟：TRAE 仅可查看拒绝未选档派遣，已选档和原生规划仍可用', async () => {
+  const f = await fixture('traecn')
+  setSandboxMode(f.parent.session, 'read-only')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).toThrow('TRAE CN 不能逐项询问')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
+  await expect(f.save('ask')).rejects.toThrow('不支持')
+  expect(await f.read()).toMatchObject({ options: [{ value: 'auto' }, { value: 'full' }], plan: { supported: true } })
+  expect(await f.save('plan')).toMatchObject({ mode: 'plan' })
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+describe('模拟：派遣回执写明本轮实际档位（不改变档位规则）', () => {
+  it('a Worker without its own level reports the parent preset, never an inferred 询问', () => {
+    const receipt = workerPermissionReceipt('codebuddy', 'accept-edits', undefined, { sandbox: 'workspace-write', planMode: false })
+    expect(receipt).toEqual({ level: 'auto', name: '自动审批', source: 'parent',
+      summary: '本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）' })
+    expect(receipt.summary).not.toContain('询问')
+  })
+  it('a saved level is reported as the user choice and is not lowered or raised by the parent', () => {
+    expect(workerPermissionReceipt('codex', 'accept-edits', 'ask', { sandbox: 'danger-full-access', planMode: false }))
+      .toMatchObject({ level: 'ask', name: '询问', source: 'worker' })
+    expect(workerPermissionReceipt('codex', 'accept-edits', 'full', { sandbox: 'read-only', planMode: false }))
+      .toMatchObject({ level: 'full', name: '完全权限', source: 'worker' })
+  })
+  it('uses each CLI\'s own tier names and reports plan mode separately', () => {
+    expect(workerPermissionReceipt('traecn', 'accept-edits', undefined, { sandbox: 'workspace-write', planMode: false }).name)
+      .toBe(levelNameOf('traecn', 'auto'))
+    expect(workerPermissionReceipt('kimi', 'plan', 'full', { sandbox: 'danger-full-access', planMode: false }))
+      .toMatchObject({ level: 'plan', source: 'plan' })
+    expect(workerPermissionReceipt('codex', 'accept-edits', 'full', { sandbox: 'danger-full-access', planMode: true }).level).toBe('plan')
+  })
+})
+const levelNameOf = (cli: Parameters<typeof cliLevelOptions>[0], level: 'ask' | 'auto' | 'full') =>
+  cliLevelOptions(cli).find(option => option.value === level)?.name

@@ -12,10 +12,14 @@ import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } f
 import { CLI_IDS, type Preference } from '../src/shared/types.ts'
 
 // Synthetic account metadata and process streams, with the real authorization/runtime guards.
-vi.mock('../src/host/adapters.ts', async (original) => ({
-  ...(await original<object>()),
-  catalogFor: vi.fn(),
-}))
+vi.mock('../src/host/adapters.ts', async (original) => {
+  const actual = await original<typeof import('../src/host/adapters.ts')>()
+  return { ...actual, catalogFor: vi.fn(),
+    // This suite replaces account/catalog reads: never discover a real desktop application.
+    resolveCliExecutable: (...args: Parameters<typeof actual.resolveCliExecutable>) =>
+      args[0] === 'workbuddycn' || args[0] === 'workbuddy' ? Promise.resolve('/SIMULATED/workbuddy-entry') : actual.resolveCliExecutable(...args),
+  }
+})
 vi.mock('../src/host/cli-account-binding.ts', () => ({ readCliAccountBinding: vi.fn() }))
 const claudeRouteFixture = vi.hoisted(() => ({ selected: undefined as any }))
 vi.mock('../src/host/claude-own-route.ts', async (original) => ({
@@ -143,7 +147,7 @@ it.each(CLI_IDS)(
   async (cli) => {
     const { backend, submit } = setup()
     account = undefined
-    const task = submit({ ...preference, cli })
+    const task = submit({ ...preference, cli, ...(cli === 'traecn' ? { effort: 'default' as const } : {}) })
     expect(await task.done).toMatchObject({ status: 'failed', error: expect.stringContaining('未登录') })
     expect(backend.spawn).not.toHaveBeenCalled()
     expect(catalogFor).not.toHaveBeenCalled()

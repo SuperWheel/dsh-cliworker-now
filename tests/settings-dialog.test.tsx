@@ -994,6 +994,19 @@ it('persists each CLI switch without moving the current navigation row until reo
   expect(navigation().at(-1)!.props['aria-label']).toBe('Antigravity 设置')
   expect(t.button('启用 Antigravity').props['aria-checked']).toBe(false)
 })
+it('lists WorkBuddy entries by name only, keeping the experimental notice as the tooltip (simulated)', async () => {
+  const t = await setup()
+  const items = t.r.root.findByProps({ 'aria-label': 'CLI 设置导航' }).findAllByType('button')
+    .filter((button) => button.props.className === 'cwn-settings-cli-item')
+  expect(items.filter((button) => button.findAll((node) => node.props.className === 'cwn-settings-nav-note').length)).toEqual([])
+  const workbuddy = items.filter((button) => button.props['data-experimental'])
+  expect(workbuddy.map((button) => button.props['aria-label'])).toEqual(['WorkBuddy CN 设置', 'WorkBuddy 设置'])
+  for (const button of workbuddy) {
+    expect(button.props.title).toBe('试验性：依赖 WorkBuddy 桌面端非公开接口')
+    expect(button.findByProps({ className: 'cwn-settings-nav-label' }).children[0]).toMatch(/^WorkBuddy/)
+  }
+})
+
 it('opens the role library separately from CLI settings and returns to the same CLI', async () => {
   const rolePresets = vi.fn(async () =>
     remote([{ id: 'logic', name: '逻辑审稿人', summary: '模拟因果审查', prompt: '模拟角色' }]),
@@ -1915,7 +1928,8 @@ it.each(CLI_IDS)(
     expect(t.text()).not.toMatch(
       /未进行远程验证|本地凭据不代表|模拟登录能力说明|模拟退出能力说明|模拟管理能力说明/,
     )
-    if (MULTI_ACCOUNT_CLIS.has(cli)) expect(t.button('账号')).toBeDefined()
+    if (cli === 'workbuddycn' || cli === 'workbuddy') expect(t.button('登录 / 切换账号')).toBeUndefined()
+    else if (MULTI_ACCOUNT_CLIS.has(cli)) expect(t.button('账号')).toBeDefined()
     else expect(t.button('登录 / 切换账号').children).toContain('切换账号')
     expect(terminal.started).not.toHaveBeenCalled()
     expect(t.configure).not.toHaveBeenCalled()
@@ -3124,4 +3138,64 @@ it('defaults DSH children visibility on and saves both switch directions in gene
   expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"showDshSubagents":true}', expect.any(AbortSignal))
   expect(t.button(label).props['aria-checked']).toBe(true)
   expect(t.r.root.findAllByType('nav')[0]!.findAllByType('button').map((button) => button.props['aria-label'])).not.toContain('DSH')
+})
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shows experimental desktop-only account guidance without login/logout controls (simulated)', async cli => {
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) =>
+    status(id, { state: 'authenticated', summary: '已登录（www.workbuddy.cn）', actions: [] })) }, undefined, cli)
+  expect(t.text()).toContain('试验性：依赖 WorkBuddy 桌面端非公开接口')
+  expect(t.text()).toContain('在 WorkBuddy 桌面端管理')
+  expect(visibleText(accountSummary(t.r))).toContain('已登录（www.workbuddy.cn）')
+  expect(t.text()).not.toContain('请打开 WorkBuddy 桌面端登录后重试')
+  const pane = t.r.root.findByProps({ className: 'cwn-settings-pane' })
+  const labels = pane.findAllByType('button').map(button => button.props['aria-label'])
+  expect(labels).not.toContain('登录 / 切换账号')
+  expect(labels).not.toContain('登录账号')
+  expect(labels).not.toContain('退出登录')
+  expect(labels).not.toContain('账号终端')
+  await t.click('高级设置')
+  expect(t.text()).toContain('输入 WorkBuddy 应用目录、自带运行时或内置 CLI 入口的完整路径。')
+  expect(terminal.started).not.toHaveBeenCalled()
+})
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shows only not-installed in the account row and a short model notice (simulated)', async cli => {
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) => status(id, {
+    installed: false, state: 'unconfigured', summary: 'WorkBuddy 暂不可用：not-installed', actions: [],
+  })), catalogForCli: vi.fn(async () => { throw new Error('WorkBuddy 暂不可用：not-installed') }) }, undefined, cli)
+  expect(visibleText(accountSummary(t.r)).trim()).toBe('未安装')
+  const accountRow = t.r.root.findByProps({ className: 'cwn-account-row' })
+  expect(visibleText(accountRow).trim()).toBe('未安装')
+  expect(t.text()).toContain('未检测到 WorkBuddy 桌面端')
+  expect(t.text()).not.toContain('not-installed')
+  expect(t.text()).not.toContain('在 WorkBuddy 桌面端管理')
+})
+
+// SIMULATION: unrecognized native availability reasons stay out of model settings.
+it.each(['workbuddycn', 'workbuddy'] as const)('%s shortens other unavailability reasons (simulated)', async cli => {
+  const t = await setup({ catalogForCli: vi.fn(async () => { throw new Error('WorkBuddy 暂不可用：binding-unavailable') }) }, undefined, cli)
+  expect(t.text()).toContain('WorkBuddy 暂不可用')
+  expect(t.text()).not.toContain('binding-unavailable')
+})
+
+it.each(['workbuddycn', 'workbuddy'] as const)('%s offers the declared desktop action and never an account terminal (simulated)', async cli => {
+  const accountDesktopStart = vi.fn(async () => ({ ok: false, error: { message: 'SIMULATED unavailable' } }))
+  const t = await setup({ accountStatus: vi.fn(async (_parent, id: CliId) => status(id, {
+    state: 'authenticated', summary: `已登录（www.workbuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}）`,
+    actions: [{ id: 'manage', target: 'desktop', label: '在桌面端管理', description: '登录、退出或切换请在桌面端完成。' }],
+  })), accountDesktopStart, accountDesktopRespond: vi.fn(), accountDesktopWatch: vi.fn(), accountDesktopStop: vi.fn() }, undefined, cli)
+  expect(t.button('在桌面端管理').props.disabled).toBe(false)
+  await t.click('在桌面端管理')
+  expect(accountDesktopStart).toHaveBeenCalledWith('simulation-parent', cli, expect.any(AbortSignal))
+  expect(terminal.started).not.toHaveBeenCalled()
+  expect(t.text()).not.toContain('显示原生终端')
+})
+
+it('missing desktop capability on an older Host keeps manual guidance and sends no RPC (simulated)', async () => {
+  const accountDesktopStart = vi.fn()
+  const t = await setup({ accountDesktopStart, accountStatus: vi.fn(async (_parent, cli: CliId) => status(cli, {
+    state: 'authenticated', summary: '已登录（www.workbuddy.cn）', actions: [],
+  })) }, undefined, 'workbuddycn')
+  expect(t.button('在桌面端管理')).toBeUndefined()
+  expect(t.text()).toContain('在 WorkBuddy 桌面端管理')
+  expect(accountDesktopStart).not.toHaveBeenCalled()
 })

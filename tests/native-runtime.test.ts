@@ -309,3 +309,13 @@ it('does not report normal completion when the native Harness lease cannot drain
   expect(result.error).toContain('synthetic bridge drain failure')
   expect(f.calls).toHaveLength(1)
 })
+
+it.each(['codebuddy', 'antigravity', 'qoder'] as const)('sets the updater environment only for CodeBuddy (%s; simulated)', async cli => {
+  const f = setup()
+  const preference = { cli, model: 'synthetic-model', effort: 'default' as const }
+  const worker = await f.runtime.submit('parent', f.project, 'synthetic updater env', 'first', preference,
+    cli === 'codebuddy' ? 'plan' : 'accept-edits').done
+  expect(worker.status, worker.error).toBe('completed')
+  expect(f.calls[0]!.env?.DISABLE_AUTOUPDATER).toBe(cli === 'codebuddy' ? '1' : undefined)
+  expect(f.calls[0]!.env ?? {}).not.toHaveProperty('CODEBUDDY_INTERNET_ENVIRONMENT')
+})

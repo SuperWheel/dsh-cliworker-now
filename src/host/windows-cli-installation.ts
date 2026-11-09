@@ -29,8 +29,8 @@ export class WindowsCliInstallationError extends Error {
 
 /** A completed desktop/PATH search found no CLI; absence is not a broken installation. */
 export class WindowsCliNotFoundError extends WindowsCliInstallationError {
-  constructor(cli: 'zcode' | 'opencode' | QoderCliId) {
-    super(`${cli === 'zcode' ? 'ZCode' : cli === 'qoder' ? 'Qoder' : cli === 'qodercn' ? 'Qoder CN' : 'OpenCode'} CLI 未找到，请配置 ${cli}Executable`)
+  constructor(cli: 'zcode' | 'opencode' | 'codebuddy' | QoderCliId) {
+    super(`${cli === 'codebuddy' ? 'CodeBuddy' : cli === 'zcode' ? 'ZCode' : cli === 'qoder' ? 'Qoder' : cli === 'qodercn' ? 'Qoder CN' : 'OpenCode'}${cli === 'qoder' || cli === 'qodercn' ? '' : ' CLI'} 未找到，请配置 ${cli}Executable`)
     this.name = 'WindowsCliNotFoundError'
   }
 }
@@ -39,6 +39,7 @@ type WindowsEnvironment = WindowsPathOptions
 export type WindowsDiscoverableCli = Exclude<CliId, 'harness'>
 
 export function windowsCliCommands(cli: WindowsDiscoverableCli): string[] {
+  if (cli === 'traecn') return ['traecli']
   return cli === 'qoder' || cli === 'qodercn' ? [qoderVariant(cli).executable, cli] : [cli === 'antigravity' ? 'agy' : cli]
 }
 const unavailableCodex = () =>
@@ -65,6 +66,10 @@ export function windowsCliCandidates(cli: WindowsDiscoverableCli, options: Windo
     specialized.push(join(root, 'bin', 'hermes.exe'), join(root, 'bin', 'hermes.cmd'),
       join(root, 'hermes-agent', 'venv', 'Scripts', 'hermes.exe'))
   } else if (cli === 'codex') specialized.push(join(npm, 'codex.cmd'))
+  else if (cli === 'codebuddy') specialized.push(join(npm, 'codebuddy.cmd'))
+  // TRAE's official install_v2.ps1 writes this bin and adds it to the user PATH;
+  // a Desktop started before the install still has the old PATH.
+  else if (cli === 'traecn') specialized.push(join(local, 'Programs', 'TraeCLI', 'bin', 'traecli.cmd'))
   else if (cli === 'zcode') {
     for (const root of [join(local, 'Programs'), env.ProgramFiles].filter((value): value is string => !!value))
       specialized.push(join(root, 'ZCode', 'resources', 'glm', 'zcode.cjs'))
@@ -234,6 +239,7 @@ export function presentWindowsCliCandidate(
 /** Validate the same entry rules for fixed bins and freshly read PATH. */
 export function validateWindowsCliCandidate(cli: WindowsDiscoverableCli, path: string): string {
   if (cli === 'codex' && /\.cmd$/i.test(path)) return validateWindowsCodexNpmEntry(path)
+  if (cli === 'codebuddy' && /\.cmd$/i.test(path)) return validateWindowsNpmEntry(path, '@tencent-ai/codebuddy-code', 'codebuddy', 'CodeBuddy')
   if (cli === 'qoder' || cli === 'qodercn') {
     if (/\.cmd$/i.test(path)) return validateWindowsQoderNpmEntry(path, cli)
     try { windowsQoderCliEntry(path, cli); return path } catch {

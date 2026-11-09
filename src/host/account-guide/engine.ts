@@ -279,9 +279,14 @@ export interface FlowStep {
   id: string
   when: readonly string[] | ((screen: ScreenView, ctx: FlowContext) => boolean)
   guide: (screen: ScreenView, ctx: FlowContext) => AccountGuide
-  respond?: (response: AccountResponse, ctx: FlowContext) => FlowAnswer | undefined
+  respond?: (response: AccountResponse, ctx: FlowContext, screen: ScreenView) => FlowAnswer | undefined
   /** Keys written once when the step shows, for a choice the user already made in the window. */
-  auto?: (screen: ScreenView, ctx: FlowContext) => string | undefined
+  auto?: (screen: ScreenView, ctx: FlowContext) => string | Pick<FlowAnswer, 'keys' | 'enter'> | undefined
+  /**
+   * The guide once `auto` has already been written: the CLI came back to this screen (a failed
+   * or cancelled sign-in), so the window must not claim it is still moving on by itself.
+   */
+  again?: (screen: ScreenView, ctx: FlowContext) => AccountGuide
   /** Reaching this step is itself a sign that the change may have taken effect. */
   confirms?: AccountChange
   /**
@@ -293,6 +298,14 @@ export interface FlowStep {
   typedConfirms?: AccountChange
   /** The step is a final answer of the CLI (e.g. nothing to sign out); the window closes. */
   ends?: boolean
+  /**
+   * A catch-all handover that applies only once another step of this guide has been recognized,
+   * so a CLI still drawing its startup screen is not handed to the native terminal. Before that,
+   * an unrecognized screen falls back only after it settles. It is also judged only on a settled
+   * screen: the frames between two recorded screens (a typed `/login` with its suggestion list,
+   * the menu clearing after a site is chosen; seen on Windows ConPTY 2026-11-08) never hand over.
+   */
+  afterRecognized?: boolean
   /**
    * A native list in which the plugin finds the entry the user chose in the window.
    * Reads lines drawn since the last key; returns the highlighted row's own key and
@@ -308,6 +321,8 @@ export interface FlowDefinition {
   /** CLI name used in plugin texts. */
   name: string
   size?: { cols: number; rows: number }
+  /** A cancellable TUI may return to an earlier screen; re-evaluate its current view. */
+  revisit?: boolean
   links?: readonly string[]
   /** Device code on the plain screen; group 1 is the code. */
   deviceCode?: RegExp
@@ -319,7 +334,18 @@ export interface FlowDefinition {
      * A TUI command typed once its ready screen shows, or once the screen settles on a
      * signed-in account; `signedOut` proves nothing to do, `menu` that Enter is unsafe again.
      */
-    command?: { ready?: readonly string[]; text: string; signedOut?: readonly string[]; menu?: readonly string[] }
+    command?: {
+      ready?: readonly string[] | ((screen: ScreenView) => boolean)
+      text: string
+      signedOut?: readonly string[]
+      menu?: readonly string[]
+      /** Never infer command readiness from account state alone. */
+      requireReady?: boolean
+      /** A signed-out screen still requires native state evidence. */
+      verifySignedOut?: boolean
+      /** Some CLIs submit once; a second Enter can initiate login. */
+      retry?: boolean
+    }
   }
   proves?: FlowGuide['proves']
   /** Logins carry `cli:provider[:entry]` ids: a provider login is proven by that provider's own entry. */
@@ -367,8 +393,11 @@ export class FlowGuide implements AccountGuideDriver {
   private link?: string
   private code?: string
   private index = -1
+  /** A non-catch-all step of this guide has matched; survives answers that reset the screen. */
+  private recognized = false
   private shown?: AccountGuide
   private autoDone = new Set<string>()
+  private againStep?: string
   private typed = false
   private commandSent = false
   private afterCommand = ''
@@ -417,10 +446,12 @@ export class FlowGuide implements AccountGuideDriver {
       return []
     }
     const command = this.ctx.action === 'logout' ? this.flow.logout?.command : undefined
-    if (command && this.index < 0) {
+    if (command && (this.index < 0 || this.flow.revisit)) {
       const screen = this.view()
-      if (command.signedOut?.length && screen.has(...command.signedOut)) return this.end(this.texts.notSignedIn)
-      if (command.ready?.length && screen.has(...command.ready)) return this.sendCommand(command.text)
+      if (command.signedOut?.length && screen.has(...command.signedOut))
+        return command.verifySignedOut ? this.startConfirm('logout') : this.end(this.texts.notSignedIn)
+      const ready = typeof command.ready === 'function' ? command.ready(screen) : command.ready?.length && screen.has(...command.ready)
+      if (ready) return this.sendCommand(command.text)
     }
     return this.advance()
   }
@@ -433,21 +464,26 @@ export class FlowGuide implements AccountGuideDriver {
     if (this.confirming) return []
     const screen = this.view()
     const context = this.context
-    for (let i = this.steps.length - 1; i >= Math.max(0, this.index); i--) {
+    for (let i = this.steps.length - 1; i >= (this.flow.revisit ? 0 : Math.max(0, this.index)); i--) {
       const step = this.steps[i]
+      if (step.afterRecognized) continue
       const matched = typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
       if (!matched) continue
-      const guide = step.guide(screen, context)
+      if (!step.afterRecognized) this.recognized = true
+      // Only a return from another screen counts: redraws right after the auto keys do not.
+      const again = !!step.again && this.autoDone.has(step.id) && (i !== this.index || this.againStep === step.id)
+      const guide = again ? step.again!(screen, context) : step.guide(screen, context)
       if (i === this.index && sameGuide(guide, this.shown)) return step.pick ? this.pick(step) : []
       if (i !== this.index) this.typed = false
       this.index = i
+      this.againStep = again ? step.id : undefined
       if (step.ends) return this.end(guide)
       const events = this.show(guide)
       if (step.auto && !this.autoDone.has(step.id)) {
         const keys = step.auto(screen, context)
         if (keys) {
           this.autoDone.add(step.id)
-          events.push({ write: keys })
+          events.push(typeof keys === 'string' ? { write: keys } : { write: keys.keys, enter: keys.enter })
         }
       }
       if (step.confirms) events.push(...this.startConfirm(step.confirms))
@@ -463,6 +499,23 @@ export class FlowGuide implements AccountGuideDriver {
     const current = this.steps[this.index]
     if (current?.pick) return this.pick(current)
     return []
+  }
+
+  /** A still screen that no recorded step describes goes to the guide's catch-all handover. */
+  private settledHandover(): GuideEvent[] | undefined {
+    const screen = this.view(), context = this.context
+    const known = (step: FlowStep) => typeof step.when === 'function' ? step.when(screen, context) : screen.has(...step.when)
+    const first = this.flow.revisit ? 0 : Math.max(0, this.index)
+    if (this.steps.slice(first).some(step => !step.afterRecognized && known(step))) return undefined
+    for (let i = this.steps.length - 1; i >= first; i--) {
+      const step = this.steps[i]
+      if (!step.afterRecognized || !known(step)) continue
+      const guide = step.guide(screen, context)
+      if (i === this.index && sameGuide(guide, this.shown)) return []
+      this.index = i
+      return this.show(guide)
+    }
+    return undefined
   }
 
   /** One key per drawn screen: Enter on the chosen row, the down arrow on any other. */
@@ -500,7 +553,7 @@ export class FlowGuide implements AccountGuideDriver {
       const value = ('code' in response ? response.code : response.secret).trim()
       if (!value || value.length > MAX_ANSWER || !ANSWER.test(value)) throw new GuideResponseError()
     }
-    const answer = step.respond(response, this.context)
+    const answer = step.respond(response, this.context, this.view())
     if (!answer) throw new GuideResponseError()
     const events: GuideEvent[] = [{ write: answer.keys, enter: answer.enter }]
     if (answer.resets) {
@@ -529,6 +582,10 @@ export class FlowGuide implements AccountGuideDriver {
       this.pickDone = true
       return this.show(this.texts.native)
     }
+    if (this.recognized) {
+      const handover = this.settledHandover()
+      if (handover) return handover
+    }
     if (this.index >= 0) return []
     if (this.ctx.action === 'logout' && this.flow.logout?.command) {
       this.identifying = true
@@ -542,6 +599,7 @@ export class FlowGuide implements AccountGuideDriver {
     if (this.done || this.commandSent || this.index >= 0) return []
     const command = this.flow.logout?.command
     if (this.ctx.action !== 'logout' || !command) return []
+    if (command.requireReady) return this.show(this.texts.native)
     if (state?.state === 'authenticated') return this.sendCommand(command.text)
     if (state?.state === 'unconfigured' || state?.state === 'unauthenticated') return this.end(this.texts.notSignedIn)
     return this.show(this.texts.native)
@@ -574,6 +632,7 @@ export class FlowGuide implements AccountGuideDriver {
   }
 
   retryEnter(): boolean {
+    if (this.flow.logout?.command?.retry === false) return false
     const menu = this.flow.logout?.command?.menu
     return !menu?.length || !menu.every((marker) => this.afterCommand.includes(compact(marker)))
   }

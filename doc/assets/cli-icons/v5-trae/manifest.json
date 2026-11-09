@@ -1,0 +1,101 @@
+{
+  "name": "TRAE CLI CN",
+  "runtime_files": {
+    "light": "src/client/assets/traecn-light.png",
+    "dark": "src/client/assets/traecn-dark.png"
+  },
+  "files": {
+    "light": "traecn-light.png",
+    "dark": "traecn-dark.png"
+  },
+  "derived_on": "2026-11-09",
+  "source": {
+    "file": "/Applications/Trae CN.app/Contents/Resources/app/out/media/trae-logo.svg",
+    "app_version": "Trae CN 3.4.15",
+    "sha256": "9e61457b3b9d82afd409a5016cb13fc78b064799295d30648eada3eec6e0b2e7",
+    "light_color_reference": "/Applications/Trae CN.app/Contents/Resources/Trae CN.icns（白底纯黑标识）"
+  },
+  "processing": "取 SVG 标识路径，去掉 #1A1B1D 圆角底板；Pillow 128 倍超采样绘制，LANCZOS 缩至 256×256 RGBA；浅色 #000000，深色 #32F08C",
+  "generated": false,
+  "size": [
+    256,
+    256
+  ],
+  "mode": "RGBA",
+  "sha256": {
+    "light": "10126532c4c1531f46e4d87bd8e2b75eed0a519d24a31aedfe681461cbeefd83",
+    "dark": "29c811d467411c7e078bfb43ee24237cbf773a71e7c9cb8ec469920b586f7fc2"
+  },
+  "optical_scale": 0.82,
+  "optical_translate_percent": [
+    0.0,
+    0.0
+  ],
+  "dark_filter": "none（明暗各用一张图）",
+  "preview_file": "preview-themed.png",
+  "previous": {
+    "name": "TRAE CLI CN",
+    "file": "trae.png",
+    "runtime_file": "src/client/assets/traecn.png",
+    "downloaded_on": "2026-11-07",
+    "source_page": "https://www.trae.cn/",
+    "source_context": "官网 <link> favicon；绿色 TRAE 标识及原生不透明近黑色方块底板",
+    "source_url": "https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae_website_prod_cn/favicon.png",
+    "source_bytes_unchanged": true,
+    "generated": false,
+    "size": [
+      48,
+      48
+    ],
+    "mode": "RGBA",
+    "decoded_mode": "RGBA",
+    "corner_alpha": [
+      255,
+      255,
+      255,
+      255
+    ],
+    "alpha_extrema": [
+      255,
+      255
+    ],
+    "transparent_pixels": 0,
+    "opaque_pixels": 2304,
+    "subject_bbox_alpha128": [
+      0,
+      0,
+      48,
+      48
+    ],
+    "optical_scale": 0.8,
+    "optical_translate_percent": [
+      0.0,
+      0.0
+    ],
+    "dark_filter": "none",
+    "sha256": "49d523938a22af5a70dd79923725df38674823026e2f917e76337319969f4af4",
+    "visual_verification": {
+      "tool": "PIL 合成 preview.png + 协调会话目视核对",
+      "scope": "PIL 合成的浅色/深色背景预览，不代表 Desktop 验收",
+      "theme": [
+        "light",
+        "dark"
+      ],
+      "sizes_px": [
+        16,
+        22,
+        24,
+        32,
+        48
+      ],
+      "comparison_clis": [
+        "ZCode",
+        "Antigravity"
+      ],
+      "result": "两种背景下标识清晰，无白底、无裁切；不透明近黑底板，不反色",
+      "preview_file": "preview.png",
+      "preview_sha256": "88fa98f87ca2eea94bf91dfb2f09eecc176a1e5036948ca8717075325c88c038",
+      "loaded_image_count": null
+    }
+  }
+}

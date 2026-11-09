@@ -4,12 +4,16 @@ import { AgyAccountGuide } from '../agy-account-guide.ts'
 import { FlowGuide, type AccountGuideDriver, type FlowDefinition } from './engine.ts'
 import { HERMES_FLOW, HERMES_NOUS_FLOW, OPENCODE_FLOW } from './multi-account.ts'
 import { KIMI_FLOW } from './kimi-flow.ts'
+import { CODEBUDDY_FLOW } from './codebuddy-flow.ts'
+import { TRAECN_FLOW } from './traecn-flow.ts'
 import { OMP_FLOW } from './omp-flow.ts'
 import { PI_FLOW } from './pi-flow.ts'
 import { CLAUDE_FLOW, CODEX_FLOW, GROK_FLOW, MIMO_FLOW, QODERCN_FLOW, QODER_FLOW, ZCODE_FLOW } from './single-account.ts'
 
 /** CLIs whose login/logout window the plugin draws; every other CLI keeps its native terminal. */
 const FLOWS: Partial<Record<CliId, FlowDefinition>> = {
+  codebuddy: CODEBUDDY_FLOW,
+  traecn: TRAECN_FLOW,
   codex: CODEX_FLOW,
   claude: CLAUDE_FLOW,
   qoder: QODER_FLOW,

@@ -17,7 +17,8 @@
 
 | 问题 | 入口 |
 | --- | --- |
-| 接入新 CLI 从哪里开始、哪些环节容易漏 | [接入索引与核对矩阵](cli-integration/README.md) |
+| 接入新 CLI 从哪里开始、哪些环节容易漏 | [新 CLI 接入流程](cli-integration/new-cli-onboarding.md)与[接入索引与核对矩阵](cli-integration/README.md) |
+| 国内版与国际版是两个 CLI 还是同一个 CLI | [形态判定](cli-integration/new-cli-onboarding.md#12-国内版与国际版的四种形态) |
 | CLI 图标、颜色和品牌资源放在哪里 | [品牌图标接入](cli-integration/brand-icons.md) |
 | 应选 ACP、RPC、app-server 还是 HTTP／SSE | [按原生能力适配通信](cli-integration/native-transports.md) |
 | 从哪里接登录、模型、用量和上下文 | [原生数据接口](cli-integration/native-data-interfaces.md) |

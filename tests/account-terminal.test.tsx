@@ -1453,15 +1453,74 @@ describe('Antigravity sign-in window (simulated Host frames)', () => {
     expect(f.renderer.root.findAllByProps({ className: 'cwn-account-instruction' })).toEqual([])
   })
 
-  it('shows the native terminal with keyboard focus when the Host cannot follow the screen', async () => {
+  it('keeps the terminal hidden for an unrecognized login screen and offers it instead (simulated)', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(true)
+    expect(JSON.stringify(f.renderer.toJSON())).toContain('可以关闭窗口后重新登录')
+    expect(terminals[0].focus).not.toHaveBeenCalled()
+    await f.click('显示原生终端')
+    expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(false)
+  })
+
+  it('shows the native terminal with keyboard focus for a step answered there', async () => {
     const f = await setup(false)
     await f.update('antigravity', 'login')
     await f.start()
     expect(terminals[0].focus).not.toHaveBeenCalled()
-    await push(f, { guide: { step: 'native', tone: 'warning', template: 'native', text: '无法识别当前步骤，请在原生终端中继续。' } }, 1)
+    await push(f, { guide: { step: 'setup', tone: 'action', template: 'native', text: '模拟：在原生终端完成首次设置' } }, 1)
     expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(false)
     // The user's keys go to the CLI's own screen without clicking it first.
     expect(terminals[0].focus).toHaveBeenCalled()
+  })
+
+  it('closes a terminal opened for the native fallback once a recognized step comes back', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
+    await push(f, { guide: { step: 'enterpriseNative', tone: 'info', template: 'native', text: '模拟：在原生终端输入企业域名' } }, 1)
+    expect(view()).toBe(false)
+    await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
+    expect(view()).toBe(true)
+    await push(f, { guide: { step: 'signedIn', tone: 'success', template: 'result', text: '模拟已登录' } }, 3)
+    expect(view()).toBe(true)
+  })
+
+  it('keeps a terminal the user opened after the fallback, even when a recognized step comes back', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    const view = () => f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden
+    await push(f, { guide: { step: 'enterpriseNative', tone: 'info', template: 'native', text: '模拟：在原生终端输入企业域名' } }, 1)
+    await f.click('隐藏原生终端')
+    await f.click('显示原生终端')
+    await push(f, { guide: { step: 'editor', tone: 'info', template: 'waiting', text: '模拟：正在打开站点选择' } }, 2)
+    expect(view()).toBe(false)
+  })
+
+  it('centres the result button under the centred title for CodeBuddy and TRAE', async () => {
+    const { newCliAccountStyles } = await import('../src/client/styles.ts')
+    expect(newCliAccountStyles).toContain('.cwn-login-result .cwn-login-actions{justify-content:center}')
+    expect(newCliAccountStyles).not.toContain('align-self:stretch')
+  })
+
+  it('answers a card choice only after 「继续」', async () => {
+    const f = await setup(false)
+    await f.update('codebuddy', 'login')
+    await f.start()
+    await push(f, { guide: { step: 'site', tone: 'action', template: 'choice', cards: true, text: '模拟：选择站点',
+      options: [{ id: 'china', label: '中国站' }, { id: 'enterprise', label: '企业域', detail: '在原生终端中继续' }] } }, 1)
+    const radios = f.renderer.root.findAll(node => node.type === 'button' && node.props.role === 'radio')
+    expect(radios.map(node => node.props['aria-label'])).toEqual(['中国站', '企业域'])
+    expect(JSON.stringify(f.renderer.toJSON()).match(/在原生终端中继续/g)).toHaveLength(1)
+    expect(f.accountRespond).not.toHaveBeenCalled()
+    await act(async () => radios[0]!.props.onClick())
+    expect(f.accountRespond).not.toHaveBeenCalled()
+    await f.click('继续')
+    expect(f.accountRespond).toHaveBeenLastCalledWith('parent', 'terminal-a', JSON.stringify({ option: 'china' }))
   })
 
   it('keeps the plain terminal for Antigravity account management', async () => {
@@ -1574,4 +1633,88 @@ it('asks for a Host update instead of a provider login on an older Host', async 
   await f.update('opencode', 'login', undefined, 'deepseek')
   await vi.waitFor(() => expect(JSON.stringify(f.renderer.toJSON())).toContain('当前插件 Host 不支持此账号操作'))
   expect(f.accountStart).not.toHaveBeenCalled()
+})
+
+// SIMULATED client frames/providers; no native login is executed by these tests.
+const traeMethods = ['personal', 'enterprise', 'enterprise-pat'].map((id, index) => ({
+  id, label: ['个人账号', '企业 SSO', '企业 PAT'][index]!,
+}))
+const traeAccount = { cli: 'traecn', installed: true, state: 'unconfigured', summary: 'TRAE CN 未登录',
+  actions: [{ id: 'login', label: '登录 / 切换账号', description: '', providers: traeMethods }] } as AccountStatus
+
+it('模拟：TRAE method cards do not start until Continue, omit native-provider choice and allow cancellation', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, false, { account: traeAccount })
+  expect(f.accountStart).not.toHaveBeenCalled(); expect(f.accountStartWith).not.toHaveBeenCalled()
+  const radios = f.renderer.root.findAllByProps({ role: 'radio' })
+  expect(radios).toHaveLength(3)
+  expect(radios.every(radio => !radio.props['aria-checked'])).toBe(true)
+  expect(JSON.stringify(f.renderer.toJSON())).not.toContain('其他服务商')
+  expect(f.renderer.root.findAllByType('button').find(b => b.children.includes('继续'))!.props.disabled).toBe(true)
+  await act(async () => radios[1]!.props.onClick())
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+  await f.click('返回')
+  expect(f.onClose).toHaveBeenCalledOnce()
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it.each(['personal', 'enterprise', 'enterprise-pat'])('模拟：TRAE selected %s starts only that provider', async provider => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, false, { account: traeAccount })
+  await act(async () => f.renderer.root.findAllByProps({ role: 'radio' })[traeMethods.findIndex(p => p.id === provider)]!.props.onClick())
+  await f.click('继续')
+  expect(f.accountStartWith).toHaveBeenCalledExactlyOnceWith('parent', 'traecn', 'login', JSON.stringify({ provider }), expect.any(AbortSignal))
+  expect(f.accountStart).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE switches only after successful logout cleanup, then requires a fresh method', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, true, { account: { ...traeAccount, state: 'authenticated' } })
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStart).not.toHaveBeenCalled()
+  await f.click('切换账号'); await f.start()
+  expect(f.accountStart).toHaveBeenCalledExactlyOnceWith('parent', 'traecn', 'logout', expect.any(AbortSignal))
+  const cleanup = deferred()
+  f.accountStop.mockImplementationOnce(() => cleanup.promise)
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'loggedOut', tone: 'success', template: 'result', text: '已退出 TRAE CN' } }))
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+  await act(async () => cleanup.resolve(ok()))
+  await vi.waitFor(() => expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(3))
+  expect(f.accountStart).toHaveBeenCalledTimes(1)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE logout cleanup failure keeps method selection blocked', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login', undefined, undefined, true, { account: { ...traeAccount, state: 'authenticated' } })
+  await f.click('切换账号'); await f.start()
+  f.accountStop.mockRejectedValueOnce(new Error('SIMULATED cleanup failure'))
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'loggedOut', tone: 'success', template: 'result', text: '已退出 TRAE CN' } }))
+  await vi.waitFor(() => expect(JSON.stringify(f.renderer.toJSON())).toContain('终端关闭失败'))
+  expect(f.renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
+  expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：TRAE missing Host methods never chooses a default login', async () => {
+  const f = await setup(false)
+  await f.update('traecn', 'login')
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('当前插件 Host 未提供登录方式选择')
+  expect(f.accountStart).not.toHaveBeenCalled(); expect(f.accountStartWith).not.toHaveBeenCalled()
+})
+
+it('模拟：CodeBuddy current account stays idle and starts automatic logout only on switch', async () => {
+  const f = await setup(false)
+  await f.update('codebuddy', 'login', undefined, undefined, true, { account: {
+    cli: 'codebuddy', installed: true, state: 'authenticated', summary: '已登录 · 中国站', actions: [],
+  } })
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('切换账号会先退出当前账号')
+  expect(JSON.stringify(f.renderer.toJSON())).toContain('已登录 · 中国站')
+  expect(f.accountStart).not.toHaveBeenCalled()
+  await f.click('切换账号')
+  expect(f.accountStart).toHaveBeenCalledExactlyOnceWith('parent', 'codebuddy', 'logout', expect.any(AbortSignal))
+  await f.start()
+  await act(async () => f.streams[0].push({ seq: 1, guide: { step: 'nativeTrust', tone: 'warning', template: 'native', text: '模拟：原生接手' } }))
+  expect(f.renderer.root.findByProps({ className: 'cwn-account-terminal-view' }).props.hidden).toBe(true)
+  expect(f.accountWrite).not.toHaveBeenCalled()
 })

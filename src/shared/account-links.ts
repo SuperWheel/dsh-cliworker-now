@@ -10,6 +10,11 @@ export const ACCOUNT_LOGIN_HOSTS: Partial<Record<CliId, readonly string[]>> = {
   claude: ['claude.com', 'claude.ai'],
   qoder: ['qoder.com'],
   qodercn: ['qoder.cn'],
+  // CodeBuddy 2.181.0 China/International pre-authorization screens, 2026-11-07.
+  codebuddy: ['copilot.tencent.com', 'www.codebuddy.ai'],
+  // TRAE 0.213.1 personal authorization screen, isolated capture 2026-11-07.
+  // Enterprise SSO remains native even though its host was recorded.
+  traecn: ['www.trae.cn'],
   grok: ['accounts.x.ai', 'auth.x.ai'],
   zcode: ['.bigmodel.cn', '.z.ai'],
   mimo: ['platform.xiaomimimo.com'],
@@ -39,7 +44,7 @@ export function allowedLink(value: string | undefined, hosts: readonly string[] 
 }
 
 /** CLIs whose login and logout the plugin draws (Host flows); others keep their native terminal. */
-export const GUIDED_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>(['antigravity', 'codex', 'claude', 'qoder', 'qodercn', 'grok', 'zcode', 'mimo'])
+export const GUIDED_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>(['codebuddy', 'traecn', 'antigravity', 'codex', 'claude', 'qoder', 'qodercn', 'grok', 'zcode', 'mimo'])
 /** CLIs that hold one account at a time; signing in again means switching accounts. */
 export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'antigravity',
@@ -47,6 +52,10 @@ export const SINGLE_ACCOUNT_CLIS: ReadonlySet<CliId> = new Set<CliId>([
   'claude',
   'qoder',
   'qodercn',
+  'codebuddy',
+  'traecn',
+  'workbuddycn',
+  'workbuddy',
   'mimo',
   'grok',
 ])

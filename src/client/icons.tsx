@@ -13,6 +13,10 @@ import hermes from './assets/hermes.png'
 import opencode from './assets/opencode.png'
 import grok from './assets/grok.png'
 import qoder from './assets/qoder.png'
+import codebuddy from './assets/codebuddy.png'
+import traecnLight from './assets/traecn-light.png'
+import traecnDark from './assets/traecn-dark.png'
+import workbuddy from './assets/workbuddy.png'
 import projectLogo from './assets/cliworker-now-logo.png'
 import { DSH_MARK_PATH, DSH_MARK_VIEWBOX } from './dsh-mark.ts'
 
@@ -40,6 +44,16 @@ const icons: Partial<Record<CliId, string>> = {
   opencode,
   qoder,
   qodercn: qoder,
+  codebuddy,
+  workbuddycn: workbuddy,
+  workbuddy,
+}
+
+/** Brands with separate official light/dark artwork (no CSS inversion). */
+const themed: Partial<Record<CliId, { light: string; dark: string }>> = {
+  kimi: { light: kimiLight, dark: kimiDark },
+  // TRAE: the desktop app's black line mark on light, the green mark on dark; both without the square plate.
+  traecn: { light: traecnLight, dark: traecnDark },
 }
 
 const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono: boolean }>> = {
@@ -51,6 +65,10 @@ const optical: Partial<Record<CliId, { scale: number; x: number; y: number; mono
   grok: { scale: 0.8523, x: -1.1214473684210524, y: 0.7136483253588516, mono: true },
   qoder: { scale: 0.8272, x: 0.5442, y: 0, mono: true },
   qodercn: { scale: 0.8272, x: 0.5442, y: 0, mono: true },
+  codebuddy: { scale: 0.78, x: 0, y: 0, mono: false },
+  traecn: { scale: 0.82, x: 0, y: 0, mono: false },
+  workbuddycn: { scale: 1, x: 0, y: 0, mono: false },
+  workbuddy: { scale: 1, x: 0, y: 0, mono: false },
 }
 
 /** Transparent PNGs, bundled locally without remote asset requests. */
@@ -73,10 +91,12 @@ export function BrandIcon({
           className="cwn-project-logo monochrome"
           style={{ maskImage: `url("${projectLogo}")`, WebkitMaskImage: `url("${projectLogo}")` }}
         />
-      ) : cli === 'kimi' ? (
+      ) : cli && themed[cli] ? (
         <>
-          <img className="cwn-icon-light" src={kimiLight} alt="" />
-          <img className="cwn-icon-dark" src={kimiDark} alt="" />
+          {(['light', 'dark'] as const).map(theme => (
+            <img key={theme} className={`cwn-icon-${theme}`} src={themed[cli]![theme]} alt=""
+              style={asset ? { transform: `translate(${asset.x}%, ${asset.y}%) scale(${asset.scale})` } : undefined} />
+          ))}
         </>
       ) : cli && !icons[cli] ? (
         <span style={{ fontSize: size * 0.48, fontWeight: 600 }}>

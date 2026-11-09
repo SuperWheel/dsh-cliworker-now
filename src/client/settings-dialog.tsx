@@ -1,3 +1,4 @@
+import { isWorkBuddy, WORKBUDDY_EXPERIMENTAL_NOTICE } from '../shared/workbuddy.ts'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Button,
@@ -21,6 +22,7 @@ import {
 import type { AccountAction, AccountSource, AccountStatus } from '../shared/accounts.ts'
 import { modelName } from '../shared/models.ts'
 import { visibleModelChoices } from '../shared/model-presentation.ts'
+import { WorkBuddyDesktopWindow } from './account-login/workbuddy-desktop-window.tsx'
 import { AccountTerminal, type AccountCloseControl } from './account-terminal.tsx'
 import { AccountsWindow } from './account-login/accounts-window.tsx'
 import { MULTI_ACCOUNT_CLIS } from '../shared/account-links.ts'
@@ -90,6 +92,7 @@ function providerLoginSummary(account: AccountStatus): { label: string; detail: 
   }
 }
 function authenticatedLabel(account: AccountStatus): string {
+  if (isWorkBuddy(account.cli) && /^已登录（(?:www\.)?workbuddy\.(?:cn|ai)）$/u.test(account.summary)) return hostText(account.summary)
   return providerLoginSummary(account)?.label ?? (account.authMethod === 'api' ? t('API 登录') : t('已登录'))
 }
 function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, settingsError = '') {
@@ -389,9 +392,11 @@ function OpenSettingsDialog({
                     size="md"
                     className="cwn-settings-cli-item"
                     aria-label={t('{cli} 设置', { cli: CLI_LABELS[id] })}
+                    title={isWorkBuddy(id) ? t(WORKBUDDY_EXPERIMENTAL_NOTICE) : undefined}
                     aria-pressed={page === 'cli' && cli === id}
                     tabIndex={cliExpanded ? undefined : -1}
                     data-enabled={enabled?.[id] !== false}
+                    data-experimental={isWorkBuddy(id) || undefined}
                     onClick={() =>
                       void leave(() => {
                         setCli(id)
@@ -761,7 +766,7 @@ function CliSettings({
   const accountAction = (id: AccountAction) => {
     const item = account?.data?.actions.find((candidate) => candidate.id === id)
     const label =
-      item?.target === 'models'
+      item?.target === 'desktop' ? t(account?.data?.state === 'unconfigured' ? '登录' : '在桌面端管理') : item?.target === 'models'
         ? id === 'login'
           ? t('登录设置')
           : t('打开原生设置')
@@ -820,7 +825,7 @@ function CliSettings({
             <Glyph name="logout" />
             {t('退出')}
           </>
-        ) : item?.target === 'models' ? (
+        ) : item?.target === 'models' || item?.target === 'desktop' ? (
           label
         ) : id === 'manage' ? (
           <>
@@ -844,7 +849,7 @@ function CliSettings({
           <BrandIcon cli={cli} size={40} />
           <div>
             <h2>{CLI_LABELS[cli]}</h2>
-            <p className="cwn-cli-subtitle">{t('管理账号与模型偏好')}</p>
+            <p className="cwn-cli-subtitle">{isWorkBuddy(cli) ? t(WORKBUDDY_EXPERIMENTAL_NOTICE) : t('管理账号与模型偏好')}</p>
           </div>
         </div>
         <div className="cwn-cli-toggle">
@@ -891,7 +896,7 @@ function CliSettings({
             enabled={enabled}
             loading={accountLoading}
             settingsError={settingsError}
-            logout={multiAccount ? undefined : accountAction('logout')}
+            logout={multiAccount || isWorkBuddy(cli) ? undefined : accountAction('logout')}
           />
           <div className="cwn-account-actions">
             {cleanupBlocked ? (
@@ -908,6 +913,10 @@ function CliSettings({
               >
                 {t('解除暂停')}
               </Button>
+            ) : isWorkBuddy(cli) ? (
+              account?.data?.installed && (account.data.actions.some(item => item.target === 'desktop') &&
+                api.cliworker.accountDesktopStart && api.cliworker.accountDesktopWatch && api.cliworker.accountDesktopRespond && api.cliworker.accountDesktopStop
+                ? accountAction('manage') : <span className="cwn-cli-subtitle">{t('在 WorkBuddy 桌面端管理')}</span>)
             ) : multiAccount ? (
               <Button
                 type="button"
@@ -934,7 +943,7 @@ function CliSettings({
             ) : (
               accountAction('login')
             )}
-            {!cleanupBlocked && accountAction('manage')}
+            {!cleanupBlocked && !isWorkBuddy(cli) && accountAction('manage')}
           </div>
         </div>
         {cleanupBlocked && release && (
@@ -1003,7 +1012,10 @@ function CliSettings({
             className="cwn-account-dialog"
             contentClassName="cwn-account-dialog-content"
           >
-            {choosingSource ? (
+            {chosenAction?.target === 'desktop' ? (
+              <WorkBuddyDesktopWindow api={api} sessionId={sessionId} cli={cli} account={account?.data}
+                closeControl={accountClose} onClose={closeAccount} />
+            ) : choosingSource ? (
               <section aria-label={t('选择退出账号来源')}>
                 <p>{sources?.length ? t('选择要退出的账号来源') : t('账号来源不可用，请关闭后刷新状态')}</p>
                 <div className="cwn-account-actions">

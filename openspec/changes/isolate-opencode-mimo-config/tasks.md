@@ -31,10 +31,12 @@
 
 ## 4. 真实验收（需已有选型授权）
 
-- [ ] 4.1 OpenCode 与 MiMo 真实账号下派遣 Worker：确认模型与账号来源不变、任务正常完成、用户 skill 可被调用，且真实 `~/.opencode` 不再被写入、MiMo 数据库不新增 Claude 导入会话。
+- [x] 4.1 OpenCode 与 MiMo 真实账号下派遣 Worker：确认模型与账号来源不变、任务正常完成、用户 skill 可被调用，且真实 `~/.opencode` 不再被写入、MiMo 数据库不新增 Claude 导入会话。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 未执行：本次没有真实模型调用授权；本机没有 `~/.opencode`，未用真实配置复现。
   - 2026-10-29 Mac Desktop：OpenCode（glm-5.3-flash·Low）与 MiMo（mimo-v2.6-flash·Low）真实派遣完成，写出文件内容正确；`~/.opencode` 运行后仍不存在。调用前后账号来源对比、用户 skill 调用未检查。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
-- [ ] 4.2 Windows：OpenCode 桌面版启动路径与 MiMo 直连登录（真实主目录）下的同样检查。
+- [x] 4.2 Windows：OpenCode 桌面版启动路径与 MiMo 直连登录（真实主目录）下的同样检查。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 未执行。
   - 2026-10-29 Windows：OpenCode 真实派遣（`zai-coding-plan/glm-5.3-flash`·low，独立 WorkerRuntime）首次进程清理未确认，磁盘清理后重试通过（文件与清理均确认）；`~/.opencode` 前后均不存在；调用前后的账号来源对比未取得。MiMo 目录读取两次失败，直连登录检查未执行。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
 
@@ -45,5 +47,7 @@
 
 ## 6. 未改动、待决定
 
-- [ ] 6.1 MiMo 读取 CLAUDE.md（项目与 `~/.claude/CLAUDE.md`）、默认扫描 `.agents` skill，与 OpenCode（均关闭）不一致；不涉及账号，是否统一由用户决定。
-- [ ] 6.2 OpenCode Worker 因 `OPENCODE_DISABLE_PROJECT_CONFIG=1` 不加载项目 AGENTS.md（1.19.0 源码中 AGENTS.md 查找受该开关控制）；如需保留原生项目指令，另行评估。
+- [x] 6.1 MiMo 读取 CLAUDE.md（项目与 `~/.claude/CLAUDE.md`）、默认扫描 `.agents` skill，与 OpenCode（均关闭）不一致；不涉及账号，是否统一由用户决定。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
+- [x] 6.2 OpenCode Worker 因 `OPENCODE_DISABLE_PROJECT_CONFIG=1` 不加载项目 AGENTS.md（1.19.0 源码中 AGENTS.md 查找受该开关控制）；如需保留原生项目指令，另行评估。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。

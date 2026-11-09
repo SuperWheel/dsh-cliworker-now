@@ -54,6 +54,18 @@ async function fixture() {
 }
 
 describe('direct children dispatch siblings under the main conversation', () => {
+  it('states the actual tier in the dispatch receipt: parent preset when unset, saved level otherwise', async () => {
+    const f = await fixture()
+    const unset = f.service.permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined })
+    expect(unset).toEqual({ permission: { level: 'auto', name: '自动审批', source: 'parent' },
+      permissionSummary: '本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）' })
+    expect(f.service.permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: 'ask' }).permission)
+      .toEqual({ level: 'ask', name: '询问', source: 'worker' })
+    f.viewOnly()
+    expect(f.service.permissionReceipt(f.parent, { preference: { cli: 'codex', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined }).permission)
+      .toMatchObject({ level: 'ask', source: 'parent' })
+    expect(f.ctx.tools.get('cliworker_start')!.description).toContain('permission')
+  })
   it('uses main project and selected settings, ignores initiator model/role/session/level fields', async () => {
     const f = await fixture(), source = f.source()
     f.service.runOrigins.set(source.runId, 'agent')

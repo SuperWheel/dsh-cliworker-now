@@ -7,6 +7,8 @@ import { t, uiLanguage } from './i18n.ts'
  * other details stay verbatim.
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
+  [/^已登录（([^（）]+)）$/u, '已登录（{site}）', 'site'],
+  [/^(WorkBuddy(?: CN)?) 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口$/u, '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口', 'cli'],
   [/^任务超时：已达到总时限 (\d+ (?:小时|分钟|秒))$/u, '任务超时：已达到总时限 {duration}', 'duration'],
   [/^任务超时：连续 (\d+ (?:小时|分钟|秒))没有收到 CLI 事件（空闲时限）$/u, '任务超时：连续 {duration}没有收到 CLI 事件（空闲时限）', 'duration'],
   [/^(.+) 已关闭，请先在 CLI Worker 设置中开启$/u, '{cli} 已关闭，请先在 CLI Worker 设置中开启', 'cli'],
@@ -47,6 +49,8 @@ export function hostText(text: string): string
 export function hostText(text: string | undefined): string | undefined
 export function hostText(text: string | undefined): string | undefined {
   if (!text) return text
+  const unavailable = /^(?:Error: )?WorkBuddy 暂不可用：(.+)$/u.exec(text)
+  if (unavailable) return t(unavailable[1] === 'not-installed' ? '未检测到 WorkBuddy 桌面端' : 'WorkBuddy 暂不可用')
   if (Object.hasOwn(en, text)) return t(text as MessageKey)
   if (uiLanguage() !== 'en') return text
   // Stored run errors may keep an `Error: ` prefix; only a known message drops it.

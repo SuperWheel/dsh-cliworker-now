@@ -1,3 +1,4 @@
+// traecn intentionally has no injection: its HTTP-only MCP names replace configured servers; definitions are unverified.
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HARNESS_CONNECTION_ENV, readNativeHarnessConnection, createNativeHarnessClient } from './native-harness-mcp.mjs'
@@ -23,7 +24,9 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   const connection = nativeHarnessReadyConnection(config)
   if (!connection) return undefined
   const call = params?.toolCall
-  const candidates = [call?.name, call?._meta?.qoder?.toolName, call?._meta?.kimi?.toolName, call?._meta?.['x.ai']?.toolName]
+  const candidates = [call?.name, call?._meta?.qoder?.toolName, call?._meta?.kimi?.toolName, call?._meta?.['x.ai']?.toolName,
+    call?._meta?.['codebuddy.ai/toolName'],
+  ]
     .filter(value => typeof value === 'string' && value.length)
   if (new Set(candidates).size !== 1) return undefined
   const selected = params?.options?.find(option => option.kind === 'allow_once' && typeof option.optionId === 'string')
@@ -38,13 +41,17 @@ export async function nativeHarnessAcpApproval(config, params, signal) {
   return authorized ? selected.optionId : undefined
 }
 const reasons = {
+  workbuddycn: 'WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道',
+  workbuddy: 'WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道',
   zcode: 'ZCode 工具桥执行尚未核验，未注入 DSH 工具目录',
   hermes: 'Hermes 当前安全隔离运行尚无已验证的临时 DSH 工具注入入口',
   omp: 'OMP 当前安装版在 --no-extensions 隔离模式下忽略显式扩展，尚无安全工具注入入口',
 }
 export function nativeHarnessToolCapability(cli, connection) {
   if (reasons[cli]) return { transport: false, ready: false, reason: reasons[cli] }
-  if (!['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'zcode', 'pi', 'qoder', 'qodercn', 'antigravity'].includes(cli)) return { transport: false, ready: false, reason: '此 CLI 没有已确认的临时工具接入口' }
+  if (!['codex', 'claude', 'opencode', 'mimo', 'kimi', 'grok', 'zcode', 'pi', 'qoder', 'qodercn', 'antigravity',
+    'codebuddy',
+  ].includes(cli)) return { transport: false, ready: false, reason: '此 CLI 没有已确认的临时工具接入口' }
   if (!connection) return { transport: true, ready: false, reason: '当前运行尚未建立获准的 DSH 工具桥' }
   return { transport: true, ready: connection.executionReady === true, ...(connection.executionReady === true ? {} : { reason: '临时工具传输可配置，当前原生授权尚未核验' }) }
 }

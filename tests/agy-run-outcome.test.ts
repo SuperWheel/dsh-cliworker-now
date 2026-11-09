@@ -324,12 +324,16 @@ describe('AGY runtime outcomes', () => {
     const agent = {
       id: 'parent',
       ctx: {
-        get: () => ({
-          start: (spec: any) => {
-            jobDone = spec.run().done
-            return 'synthetic-job'
+        // Simulated DSH services: jobs, plus the permission state read for the dispatch receipt.
+        get: (name: string) => ({
+          jobs: {
+            start: (spec: any) => {
+              jobDone = spec.run().done
+              return 'synthetic-job'
+            },
           },
-        }),
+          sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+        } as Record<string, unknown>)[name],
       },
     }
     const service = Object.assign(Object.create(CliWorkerService.prototype), {

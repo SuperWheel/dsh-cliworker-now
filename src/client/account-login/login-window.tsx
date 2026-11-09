@@ -13,6 +13,7 @@ import { CLI_LABELS, type CliId } from '../../shared/types.ts'
 import { t, useT } from '../i18n.ts'
 import type { MessageKey } from '../i18n-messages.ts'
 import { BrandIcon } from '../icons.tsx'
+import { ProviderCards } from './provider-cards.tsx'
 import { hostText } from '../operation-error.ts'
 
 const MAX_ANSWER_LENGTH = 4096
@@ -50,16 +51,20 @@ function Result({ tone, title, detail, children }: { tone: AccountGuide['tone'];
   )
 }
 
-function CurrentAccount({
+export function CurrentAccount({
   cli,
   account,
   onSwitch,
   onClose,
+  description,
+  actions,
 }: {
   cli: CliId
   account?: AccountStatus
   onSwitch?: () => void
   onClose: () => void
+  description?: string
+  actions?: ReactNode
 }) {
   const name = CLI_LABELS[cli]
   const only = account?.logins?.length === 1 ? account.logins[0] : undefined
@@ -73,9 +78,9 @@ function CurrentAccount({
       <div className="cwn-accounts-lead">
         <strong>{t('当前已登录 {cli}', { cli: name })}</strong>
         <span>
-          {onSwitch
+          {description ?? (onSwitch
             ? t('切换账号会先退出当前账号，确认退出后再登录新账号。')
-            : t('如需切换账号，请先退出登录。')}
+            : t('如需切换账号，请先退出登录。'))}
         </span>
       </div>
       <ul className="cwn-accounts-list" aria-label={t('当前账号')}>
@@ -86,14 +91,14 @@ function CurrentAccount({
             </span>
             <div className="cwn-accounts-row-text">
               <strong>{only?.providerLabel ?? name}</strong>
-              <span>{meta}</span>
+              <span>{meta || ((cli === 'codebuddy' || cli === 'traecn' || cli === 'workbuddycn' || cli === 'workbuddy') ? hostText(account?.summary) : '')}</span>
             </div>
             <span className="cwn-accounts-state">{t('已登录')}</span>
           </div>
         </li>
       </ul>
       <div className="cwn-accounts-actions">
-        {onSwitch ? (
+        {actions ?? (onSwitch ? (
           <>
             <Button variant="ghost" size="md" onClick={onClose}>
               {t('关闭')}
@@ -106,7 +111,7 @@ function CurrentAccount({
           <Button variant="primary" size="md" onClick={onClose}>
             {t('关闭')}
           </Button>
-        )}
+        ))}
       </div>
     </div>
   )
@@ -314,17 +319,21 @@ export function LoginWindow({
   onDone,
   onSwitchAccount,
   account,
+  desktopActions,
+  resultDetail,
 }: {
   cli: CliId
   action: AccountAction
   phase: LoginPhase
   guide?: AccountGuide
-  rawVisible: boolean
+  rawVisible?: boolean
   /** A short terminal status from the Host or the terminal shell, shown beside the toggle. */
   notice?: string
   /** Shown above the steps, e.g. the provider picker. */
   header?: ReactNode
-  onToggleRaw: () => void
+  onToggleRaw?: () => void
+  desktopActions?: ReactNode
+  resultDetail?: string
   onRespond: (response: AccountResponse) => void
   onRestart: () => void
   onDone: () => void
@@ -357,14 +366,15 @@ export function LoginWindow({
     onRespond(response)
   }
   const foot = (
-    <div className="cwn-login-foot">
+    <div className="cwn-login-foot" data-desktop={desktopActions ? true : undefined}>
       {/* A finished window shows its result only; a late terminal status would contradict it. */}
       <span className="cwn-login-notice" role="status">
-        {guide?.template === 'result' ? undefined : notice}
+        {guide?.template === 'result' && !desktopActions ? undefined : notice}
       </span>
-      <Button variant="ghost" size="sm" onClick={onToggleRaw}>
+      {desktopActions}
+      {onToggleRaw && <Button variant="ghost" size="sm" onClick={onToggleRaw}>
         {rawVisible ? t('隐藏原生终端') : t('显示原生终端')}
-      </Button>
+      </Button>}
     </div>
   )
   const frame = (body: ReactNode) => (
@@ -380,12 +390,12 @@ export function LoginWindow({
     return <CurrentAccount cli={cli} account={account} onSwitch={onSwitchAccount} onClose={onDone} />
 
   if (guide?.template === 'result') {
-    const detail =
+    const detail = resultDetail ?? (
       step === 'signedIn'
         ? t('现在可以派遣 {cli} 任务了。', { cli: name })
         : step === 'loggedOut'
           ? t('需要时可在设置中重新登录。')
-          : undefined
+          : undefined)
     const buttons =
       guide.tone === 'warning' ? (
         <Button variant="outline" size="md" onClick={onRestart}>
@@ -433,9 +443,17 @@ export function LoginWindow({
           />
         )
       case 'choice':
+        if (guide.cards)
+          return <ChoiceCards guide={guide} running={running} onChoose={(option) => respond({ option })} onCancel={onDone} />
         return (
           <>
-            <p>{hostText(guide.text)}</p>
+            {guide.tone === 'warning' ? (
+              <p className="cwn-login-callout" data-tone="warning" role="status">
+                {hostText(guide.text)}
+              </p>
+            ) : (
+              <p>{hostText(guide.text)}</p>
+            )}
             <div className="cwn-login-actions">
               {guide.options?.map((option, index) => (
                 <Button
@@ -503,6 +521,9 @@ export function LoginWindow({
             {action === 'logout' && !rawVisible && (
               <p className="cwn-login-hint">{t('请点击「显示原生终端」，在 CLI 原生菜单中继续退出。')}</p>
             )}
+            {action !== 'logout' && guide.tone === 'warning' && !rawVisible && (
+              <p className="cwn-login-hint">{t('可以关闭窗口后重新登录，或点击「显示原生终端」查看 CLI 当前画面。')}</p>
+            )}
           </>
         )
       default:
@@ -510,7 +531,7 @@ export function LoginWindow({
     }
   }
 
-  const plan = action === 'login' ? guide?.plan : undefined
+  const plan = action === 'login' || desktopActions ? guide?.plan : undefined
   const stage = guide?.stage ?? 0
   let content: ReactNode
   if (plan?.length) {
@@ -554,5 +575,42 @@ export function LoginWindow({
         </p>
       )}
     </>,
+  )
+}
+
+/** A Host choice drawn as the shared two-column cards; nothing reaches the CLI until 「继续」. */
+function ChoiceCards({ guide, running, onChoose, onCancel }: {
+  guide: AccountGuide
+  running: boolean
+  onChoose: (option: string) => void
+  onCancel: () => void
+}) {
+  const t = useT()
+  const [chosen, setChosen] = useState<string>()
+  const options = guide.options ?? []
+  const selected = options.find((option) => option.id === chosen)
+  return (
+    <>
+      <p>{hostText(guide.text)}</p>
+      <ProviderCards
+        label={hostText(guide.text)}
+        chosen={chosen}
+        onChoose={setChosen}
+        choices={options.map((option) => ({
+          id: option.id,
+          name: hostText(option.label),
+          label: hostText(option.label),
+          note: option.detail ? hostText(option.detail) : undefined,
+        }))}
+      />
+      <div className="cwn-accounts-actions">
+        <Button variant="ghost" size="md" onClick={onCancel}>
+          {t('取消')}
+        </Button>
+        <Button variant="primary" size="md" disabled={!running || !selected} onClick={() => selected && onChoose(selected.id)}>
+          {t('继续')}
+        </Button>
+      </div>
+    </>
   )
 }

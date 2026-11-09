@@ -1,3 +1,6 @@
+import { readCodebuddyAccountBindingMaterial, CodebuddyAccountError } from './codebuddy-account.ts'
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import {
   readClaudeOwnRoute,
   claudeRouteStatusArguments,
@@ -346,6 +349,48 @@ async function material(
   selectedClaudeRoute?: ClaudeOwnRoute,
 ): Promise<BindingMaterial> {
   const home = homedir()
+  if (cli === 'codebuddy') {
+    const executable = await resolveCliExecutable(cli, backend, config, signal)
+    return readCodebuddyAccountBindingMaterial(backend, config, executable, signal)
+  }
+  if (cli === 'traecn') {
+    const path = join(process.env.TRAE_HOME ?? join(home, '.trae'), 'cli/auth.json')
+    await safePiOmpAncestors(dirname(path))
+    let handle: Awaited<ReturnType<typeof open>> | undefined, bytes: Buffer | undefined
+    try {
+      const entry = await lstat(path)
+      if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1 || entry.size > 65536) throw new CliAccountBindingError(cli)
+      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+      const before = await handle.stat()
+      if (!before.isFile() || before.nlink !== 1 || before.size > 65536 || before.ino !== entry.ino || before.dev !== entry.dev)
+        throw new CliAccountBindingError(cli)
+      bytes = Buffer.alloc(before.size + 1)
+      let offset = 0
+      while (offset < bytes.length) {
+        signal.throwIfAborted()
+        const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, offset)
+        if (!bytesRead) break
+        offset += bytesRead
+      }
+      const after = await handle.stat(), current = await lstat(path)
+      if (offset !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
+        current.isSymbolicLink() || current.ino !== before.ino || current.dev !== before.dev || current.size !== before.size || current.mtimeMs !== before.mtimeMs)
+        throw new CliAccountBindingError(cli)
+      const auth = JSON.parse(bytes.subarray(0, offset).toString('utf8'))
+      // Only stable identity fields are accessed. Never inspect credentials or device material.
+      if (!object(auth) || !object(auth.trae) || !text(auth.trae.user_id)) throw new CliAccountBindingError(cli)
+      const subject = { auth_mode: auth.auth_mode, user_id: auth.trae.user_id, region: auth.trae.region,
+        login_method: auth.trae.login_method, credential_kind: auth.trae.credential_kind,
+        api_base_url: auth.trae.endpoints?.api_base_url }
+      if (Object.values(subject).some(value => value !== undefined && typeof value !== 'string')) throw new CliAccountBindingError(cli)
+      const route = Object.fromEntries(['TRAECLI_PERSONAL_ACCESS_TOKEN', 'TRAECLI_HOST']
+        .filter(name => process.env[name] !== undefined).map(name => [name, hash(process.env[name]!)]))
+      return { sourceIds: [path], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
+      throw error
+    } finally { bytes?.fill(0); await handle?.close() }
+  }
   if ((cli === 'qoder' || cli === 'qodercn')) {
     const executable = await resolveCliExecutable(cli, backend, config, signal)
     return readQoderAccountBindingMaterial(executable, signal, { cli, backend, config, project })
@@ -652,6 +697,10 @@ export async function readCliAccountBinding(
 ): Promise<string> {
   signal.throwIfAborted()
   try {
+    if (isWorkBuddyCli(cli)) {
+      const executable = await resolveCliExecutable(cli, backend, config, signal)
+      return (await readWorkBuddyMetadata(cli, executable, project, signal)).binding
+    }
     const value = await material(cli, backend, config, project, signal, selectedClaudeRoute)
     signal.throwIfAborted()
     if (!value.entries.length || !value.sourceIds.length) throw new CliAccountBindingError(cli)
@@ -669,8 +718,10 @@ export async function readCliAccountBinding(
       error instanceof ClaudeOwnRouteError ||
       error instanceof HermesRenewalError
       || error instanceof QoderAccountError
+      || error instanceof CodebuddyAccountError
     )
       throw error
+    if (isWorkBuddyCli(cli)) throw error
     // Keep the binding contract (CLI_OWN_ACCOUNT_REQUIRED) with the actionable reason.
     if (error instanceof HermesAccountSourceError) throw new CliAccountBindingError(cli, error.message)
     throw new CliAccountBindingError(cli)

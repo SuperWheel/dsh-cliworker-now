@@ -63,15 +63,23 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 | Codex | app-server | Pi | RPC |
 | Claude Code | stream-json | Hermes Agent | Runs API |
 | Kimi Code | ACP | OpenCode | HTTP + SSE |
-| 官方 MiMo Code | HTTP + SSE | Qoder CLI | ACP |
-| ZCode | app-server | Qoder CN CLI | ACP |
-| Grok Build | ACP | | |
+| 官方 MiMo Code | HTTP + SSE | Qoder | ACP |
+| ZCode | app-server | Qoder CN | ACP |
+| Grok Build | ACP | CodeBuddy Code | ACP |
+| TRAE CN | ACP | | |
+| WorkBuddy CN (`workbuddycn`) | ACP · 试验性 | WorkBuddy (`workbuddy`) | ACP · 试验性 |
+
+WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装对应桌面端；设置账号行的「在桌面端管理」打开插件指引，可打开已核实的对应应用并观察当前状态。有桌面管理指引，无 CLI 登录/退出；登录、退出与换号由用户在桌面端完成。打开指引只读一次；点击打开或继续观察后，查询完成至少间隔 15 秒，最多 5 分钟或 20 次自动查询，手动刷新与在途查询合并。关闭指引取消查询，不关闭桌面端。通用认证错误不证明已退出，同站点换号也不能确认。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；按积分显示本轮用量（读取内置 CLI 的原生会话文件），并显示原生上下文占用及系统提示词、工具定义、对话消息等分类（每轮结束后由不保存会话的副进程运行原生 `/context` 读取，数值为原生估算；CodeBuddy Code 同）；DSH 工具桥与原生分支（内置 CLI 未实现 `session/fork`）未开放。WorkBuddy CN 已在 macOS 与 Windows Desktop 完成真实任务、询问档审批与界面验收；国际版尚未验收。详见 [WorkBuddy 协议](doc/workbuddy-protocol.md)。
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.1；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
 - **验证范围**：每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。
 
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
+
+**TRAE CN**（`traecn`）只使用官方 `traecli`。官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 需要直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`）。请使用官方安装脚本，不提供非官方安装包。官方文档仅对企业版旗舰版套餐开放 CLI；个人登录使用 `traecli --enable personal_user_login login --personal`，依赖开发中的 `personal_user_login` 特性；企业 SSO 使用 `traecli login --enterprise`，企业 PAT 使用 `traecli login --with-trae-pat`。不提供「询问」档或强度选择。截至 2026-11-07 未发现官方国际版 CLI。Windows 已于 2026-11-09 真实登录并派遣。TRAE 没有原生上下文分类来源，系统提示词、工具定义、对话消息显示 `—`。详见 [TRAE 安装、账号与权限说明](doc/usage-details.md#trae-cn-安装与登录)。
+
+账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；文件夹信任由用户在窗口确认，空编辑器自动打开 `/login`，中国站/国际站提供浏览器引导，企业/iOA 保留原生。切换沿已核实路径自动 `/logout`，明确退出并完成清理后再登录；未知画面回退原生。详见 [授权前采集与未完成验收](openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)。
 
 ## 安装与更新
 
@@ -84,7 +92,7 @@ dsh plugin --profile desktop add dsh-cliworker-now@latest
 完成后重新打开 Harness。`dsh` 命令可在 Desktop 菜单“管理 dsh 命令…”中启用。Web profile 把 `desktop` 换成 `web`；也可以在插件页“添加插件”中输入 `dsh-cliworker-now@latest`。
 
 - 启动 Harness 不会自动更新插件。pnpm 11 默认等待新版本发布满 24 小时，期间可能仍装到旧版，可用 `dsh plugin --profile desktop ls dsh-cliworker-now --depth=0` 核对。
-- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.8.7/dsh-cliworker-now-0.8.7.tgz`，每个 Release 附 `SHA256SUMS.txt`。
+- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.8.8/dsh-cliworker-now-0.8.8.tgz`，每个 Release 附 `SHA256SUMS.txt`。
 - 安装包自带原生子对话所需的界面扩展，无需手工构建宿主；卸载插件即恢复官方界面。与已有界面覆盖冲突时启动预检会明确拒绝，不改动你的配置，详见 [runtime-host](runtime-host/README.md)。
 - 页面打开时启用或停用此插件，DSH 会热替换原生会话界面，页面可能空白约 1 秒，插件随后让 DSH 重新挂载界面原地恢复（输入框中未发送的内容可能丢失）。无法原地恢复时，网页会刷新一次；DSH Desktop 会提示完全退出后重新打开。旧版 dshmarket（如 1.70.1）热切换失败可能留下不一致的配置，这种情况仍需完全重启，详见 [白屏调查及验证边界](doc/blank-toggle-investigation.md) 与 [dsh-market/dsh-market#1010](https://github.com/dsh-market/dsh-market/issues/1010)。聊天展示和忙时 Enter 等原生偏好仍保存在原设置项中。
 - 卸载：`dsh plugin --profile desktop remove dsh-cliworker-now`，保留本机账号、历史会话和偏好。
@@ -165,18 +173,20 @@ Pi 和 OMP 的「登录到」选项从当前安装的原生注册表读取，包
 | 功能 | 行为 | 支持范围 |
 | --- | --- | --- |
 | 目标 | 目标栏、“+”菜单或 `/goal` 设置；活动目标随每轮输入发给 CLI，不会自动发起新一轮 | 全部 CLI |
-| 规划 | 映射到 CLI 原生的规划或只读模式；不支持的 CLI 不显示规划按钮，“+”菜单说明原因 | Hermes、Qoder、Qoder CN 及旧版 Kimi 通路不支持 |
+| 规划 | 映射到 CLI 原生的规划或只读模式；不支持的 CLI 不显示规划按钮，“+”菜单说明原因 | Hermes、Qoder、Qoder CN 及旧版 Kimi 通路不支持；CodeBuddy Code 映射原生 `plan` |
 | 反馈 | 赞、踩和反馈只记录在 Harness，不发给 CLI 或厂商 | 全部 CLI |
-| 分支 | 从完成的轮次创建 CLI 原生分支，在同一主会话下生成新的子会话 | 最新轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN；较早轮次仅 Codex |
+| 分支 | 从完成的轮次创建 CLI 原生分支，在同一主会话下生成新的子会话 | 最新轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN、TRAE CN；较早轮次仅 Codex |
+
+TRAE CN 本期不接 DSH 工具桥（MCP 配置替换语义未核实），运行中引导仅有声明、未实测，消息按原生 Inbox 排队。TRAE 拒绝审批后以 `cancelled` 结束且用户未停止时，显示「因拒绝审批而结束」并可续聊；原生会话恢复失败直接报错，不新建会话。
 
 ## 权限与数据
 
 - **按明确选择执行**：CLI 缺失或失败不会换用其他 CLI；不接管插件外启动的 CLI。
 - **Worker 权限三档**：子会话的权限菜单（`/permission`）列出该 CLI 的三档，每轮以 CLI 自己的原生模式运行，不附加系统沙箱：
-  - **第一项（多数 CLI 叫「询问」）**：读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改；OpenCode/MiMo 无法区分只读命令，所有命令都先问。做不到「改动先问」的 CLI 按实际行为命名：Kimi 叫「仅工作区编辑」（工作目录是 Git 仓库时，仓库内的编辑由 Kimi 自动批准，其余先问）；Antigravity 叫「仅规划」（ACP 未确认规划模式，保留 stream 原生规划）；Hermes 没有这一档。Pi 没有原生审批，插件每轮给 Pi 加载一个私有扩展，用 Pi 官方的工具拦截和确认接口先问你，读文件不问。
-  - **中档「自动审批」**：使用 CLI 原生的自动审批（Codex `auto_review`、Claude Code `auto`、Kimi `yolo`、Qoder `auto`、Grok 自动审核、Hermes `smart`、Antigravity ACP 在终端沙箱内跳过确认，主机没有终端沙箱时逐条确认（旧版 `--mode auto`）、MiMo `skip-all`），由 CLI 自行判断放行，可能放行工作区外的操作；它仍要确认的请求会问你。没有原生自动审批的 CLI 用原生编辑模式：ZCode（`edit`）和 OpenCode 叫「仅工作区编辑」，OMP（`write`）和 Pi 叫「自动批准编辑」，编辑自动批准、命令仍先问你，二者都不限制编辑目录。
-  - **完全权限**：使用 CLI 原生的免确认/完全访问模式（Codex `danger-full-access`、Claude Code `bypassPermissions`、Kimi ACP `auto`、Qoder `bypass_permissions`/`yolo`、ZCode `yolo`、Grok `--always-approve`、Hermes 关闭审批、Antigravity 跳过确认并关闭终端沙箱、OMP `yolo`、OpenCode/MiMo 全部工具允许、Pi 开放原生命令），不再询问。**此档下 CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用。**
-  - **你选的档位优先**：菜单一直列出该 CLI 的全部档位。没选过的 Worker 跟随主对话（仅可查看 → 第一项；工作区内修改 → 中档；完全权限 → 完全权限）；你选过档位后，该 Worker 的每一轮——包括主 Agent 派遣和续聊——都按你选的档位运行，可以高于主对话，主 Agent 不再另外询问。选择完全权限仍会弹出 DSH 的确认。主对话为「仅可查看」时，没选过档位的 Antigravity、Hermes 和 Kimi 拒绝派遣。运行中改动主对话权限，对跟随主对话的 Worker 从下一轮生效，本轮的授权请求按当时的主对话权限判定。
+  - **第一项（多数 CLI 叫「询问」）**：读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改；OpenCode/MiMo 无法区分只读命令，所有命令都先问。做不到「改动先问」的 CLI 按实际行为命名：Kimi 叫「仅工作区编辑」（工作目录是 Git 仓库时，仓库内的编辑由 Kimi 自动批准，其余先问）；Antigravity 叫「仅规划」（ACP 未确认规划模式，保留 stream 原生规划）；Hermes 和 TRAE CN 没有这一档。Pi 没有原生审批，插件每轮给 Pi 加载一个私有扩展，用 Pi 官方的工具拦截和确认接口先问你，读文件不问。
+  - **中档「自动审批」**：使用 CLI 原生的自动审批（Codex `auto_review`、Claude Code `auto`、Kimi `yolo`、Qoder `auto`、Grok 自动审核、Hermes `smart`、Antigravity ACP 在终端沙箱内跳过确认，主机没有终端沙箱时逐条确认（旧版 `--mode auto`）、MiMo `skip-all`），由 CLI 自行判断放行，可能放行工作区外的操作；它仍要确认的请求会问你。没有原生自动审批的 CLI 用原生编辑模式：ZCode（`edit`）和 OpenCode 叫「仅工作区编辑」，OMP（`write`）和 Pi 叫「自动批准编辑」，编辑自动批准、命令仍先问你，二者都不限制编辑目录。TRAE CN 的中档「仅工作区编辑」使用 `default`，工作区内改动和命令自动批准，工作区外请求转 DSH，不使用原生 `auto`。
+  - **完全权限**：使用 CLI 原生的免确认/完全访问模式（Codex `danger-full-access`、Claude Code `bypassPermissions`、Kimi ACP `auto`、Qoder `bypass_permissions`/`yolo`、ZCode `yolo`、Grok `--always-approve`、Hermes 关闭审批、Antigravity 跳过确认并关闭终端沙箱、OMP `yolo`、OpenCode/MiMo 全部工具允许、Pi 开放原生命令、TRAE CN `bypass_permissions`），不再询问。**此档下 CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用。**
+  - **你选的档位优先**：菜单一直列出该 CLI 的全部档位。没选过的 Worker 跟随主对话（仅可查看 → 第一项；工作区内修改 → 中档；完全权限 → 完全权限）；你选过档位后，该 Worker 的每一轮——包括主 Agent 派遣和续聊——都按你选的档位运行，可以高于主对话，主 Agent 不再另外询问。选择完全权限仍会弹出 DSH 的确认。主对话为「仅可查看」时，没选过档位的 Antigravity、Hermes、Kimi 和 TRAE CN 拒绝派遣。运行中改动主对话权限，对跟随主对话的 Worker 从下一轮生效，本轮的授权请求按当时的主对话权限判定。
   - **规划模式与档位分开**：`/plan` 或规划标记只开关原生规划模式，退出规划后档位不变；Hermes、Qoder、Qoder CN 没有规划模式。
   - **原生模式不可用时降级**：安装的 CLI 版本没有目标模式，或设置后回读不一致时，按更严一档运行并在时间线说明（如「本轮按询问运行」）；第一项也无法确认时拒绝启动，绝不改用更宽的模式。Antigravity 需要 **agy 1.4.11 及以上且实际帮助确认 `acp --stdio`** 才使用 ACP；探测失败、旧版或仅规划使用 stream。ACP 进程和会话目录均为项目，工具桥经 `mcpServers` 注入，不添加私有工作区；用户项目额外工作区仍可能影响原生命令默认目录。ACP 不报告沙箱状态，自动档每轮先以 stream 入口零输入启动一次，读取 agy 自己在输入前报告的原因（与 stream 降级同一依据）：确认主机有终端沙箱时以 `--sandbox --dangerously-skip-permissions` 运行，与原先 Mac 自动审批一致；报告没有终端沙箱（如 Windows 11 23H2）或无法确认时不跳过确认，实际权限请求逐条经 DSH「允许一次／拒绝」，无会话授权。工作区编辑是否请求确认由 agy 决定：Windows 实测中，项目内写文件没有请求确认，只有命令请求了确认。完全权限关闭终端沙箱并跳过确认。模型及强度以原生目录设置并回读；旧会话先尝试 ACP load，不兼容时保留同一 ID 走 stream，绝不静默新建。stream 无沙箱后备没有可用的命令审批通道，提示命令可能被拒；`denied_actions` 为待核实，`finished_reason` 为部分结束失败。ACP 取消、超时仍须确认进程范围退出；usage 记为本轮。真实 MCP 加载与调用、续聊及停止验收见 `openspec/changes/migrate-agy-acp/tasks.md`。
   - **授权请求交给 DSH**：Harness 处于规划模式时一律拒绝；Worker 为完全权限时自动放行（主对话也是完全权限时按它的审批策略）；中档且主对话「从不询问」时拒绝；其余情况询问你。
@@ -280,6 +290,7 @@ pnpm build
 - [使用细节与 CLI 说明](doc/usage-details.md)：各 CLI 的账号、路径、模型规则及完整安装说明
 - [设计与协议](doc/design.md) · [原生通信说明](doc/native-protocols.md) · [原生界面说明](doc/native-conversation-ui.md)
 - [任务与实际验证](doc/tasks.md) · [历史版本与配置](doc/version-notes.md) · [文档索引](doc/README.md)
+- [新 CLI 接入流程](doc/knowledge/cli-integration/new-cli-onboarding.md)：接入新 CLI 的步骤、改动文件与验收清单
 - [提交 Issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)：请附 Harness / 插件 / CLI 版本、复现步骤和脱敏日志，不要上传令牌或私人项目内容。
 
 ## 许可与致谢

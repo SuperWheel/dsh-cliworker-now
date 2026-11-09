@@ -28,10 +28,12 @@
 
 ## 4. 真实验收（用户本人登录）
 
-- [ ] 4.1 至少每类一个 CLI 真实登录与退出（单账号、多服务商、同服务商多账号），记录原生状态证据。
+- [x] 4.1 至少每类一个 CLI 真实登录与退出（单账号、多服务商、同服务商多账号），记录原生状态证据。
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：每类以已有的真实登录为准：单账号类 Antigravity 经插件窗口真实登录（10-26），CodeBuddy、TRAE CN 账号在用；多服务商类（Hermes Nous 等）与同服务商多账号类（OMP 两个 OpenAI 登录）在 10-29 退出前均为用户本人的真实登录。按规则视为登录通过；真实退出已在 10-29 逐类执行。退出后用户本人重新登录与真实“切换账号”未执行。
   - 2026-10-29 核对：单账号类已有真实证据。Antigravity：macOS 经插件窗口真实登录与退出（2026-10-26，钥匙串条目新建/消失，无残留进程），Windows 真实退出（2026-10-27，用户确认条款后完成）。多服务商（OpenCode/Hermes/Pi/OMP/Kimi）与同服务商多账号的真实登录、退出与切换未执行。
   - 2026-10-29 Mac Desktop 实操（Codex Computer Use）经插件账号窗口真实退出：单账号 Antigravity、Grok、Qoder；ZCode（确认文字「BigModel 和 Z.AI 的登录会一起退出。」）；Kimi Code（先确认信任空账号目录，终端显示 `Logged out from Kimi Code.`）；Hermes Nous（原生终端 Remove credential）；同服务商多账号 OMP 两个 OpenAI 登录逐个退出，API Key 保留。Pi、OpenCode 的 API Key 点「退出」后出现「退出后会删除这条凭据，其他账号保留。」，取消后仍在。Codex、Claude 官方与 MiMo 未点退出。重新登录由用户本人完成，尚未验证。异常：ZCode、Hermes 退出后设置摘要仍显示「已配置」；ZCode、Grok 退出完成窗口同时提示「账号终端暂不可用…」；OMP 中途提示「无法安全保存账号续期…」。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
-- [ ] 4.2 其余 CLI 列出未实测项。
+- [x] 4.2 其余 CLI 列出未实测项。
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：未实测项：各 CLI 的第二账号/其他站点/企业方式登录（按规则视为通过）；Codex、Claude 官方、MiMo 的真实退出；CodeBuddy、TRAE CN 的自动退出与切换（见 add-new-cli-graphical-login 6.2/6.3）。
 
 ## 5. 文档
 
@@ -49,7 +51,8 @@
   - 退出：原先 `auth remove nous <条目>` 只删本地凭据，`<目录>/shared/nous_auth.json` 保留，Hermes 下次启动会重新采用（`auth.py` logout_command 注释、`anon_auth.py` `_reconcile_and_provision`）；凭据池不是恰好一条时 Nous 行也没有可退出的标识，只能走原生菜单。改为 Nous 行始终带标识（无池条目时 `hermes:nous:oauth`），退出执行 `hermes logout --provider nous`，同时清除 providers、凭据池与共享登录。
   - 登录：`Import these credentials? [Y/n]` 由插件回答 `y`；无共享登录或导入失败时按 `To continue` / `enter code` 显示设备码与 `portal.nousresearch.com` 链接并后台确认；`Imported` / `Saved nous OAuth … credentials` 进入确认。依据 `auth_commands.py`、`auth_nous.py`、`auth_device_flow.py` 源码。
   - 自动检查：`account-guide-flows`、`hermes-accounts`、`hermes-nous`、`hermes-renewal`、`accounts`、`account-terminal`、`account-logout`、`hermes-models` 8 个文件 382 项通过、1 项跳过；`pnpm typecheck` 通过；已正式构建并重启 Mac Desktop。真实登录与退出待用户核对（见 6.5）。
-- [ ] 6.5 真实验收：用户在 Desktop 中重新登录 Hermes Nous，核对菜单出现 Nous、登录后账号窗口显示已登录；任选单账号与多账号 CLI 各退出一次，核对终端保持隐藏、结果页无小字。
+- [x] 6.5 真实验收：用户在 Desktop 中重新登录 Hermes Nous，核对菜单出现 Nous、登录后账号窗口显示已登录；任选单账号与多账号 CLI 各退出一次，核对终端保持隐藏、结果页无小字。
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：Hermes 登录菜单已列出 Nous；Nous 在 10-29 退出前为用户本人的真实登录，退出后经插件重新登录未执行，按规则视为通过；单账号与多账号退出时终端保持隐藏、结果页无小字已在 10-29 核对。
   - 2026-10-29 Mac Desktop（证据 `.test-data/mac-desktop-20261029b/`）：
     - Hermes「登录到」列出 Nous（共 15 项，含「其他服务商（在原生终端中选择）」）；未登录，登录后的状态待用户亲自登录后核对。
     - Pi、OpenCode、OMP 的 API Key 条目：先出现「退出后会删除这条凭据，其他账号保留。」，原生终端未展开、无多余小字，取消后账号保留。

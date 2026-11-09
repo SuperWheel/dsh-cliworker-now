@@ -48,6 +48,8 @@ jobs:
           tests/windows-system-proxy.test.ts tests/opencode-windows-login.test.ts
           tests/zcode-grok-windows-regression.test.ts tests/authorized-catalog-windows-agy.test.ts
           tests/native-agy-acp.test.ts tests/agy-account-guide.test.ts
+          tests/codebuddy-account.test.ts tests/traecn-integration.test.ts
+          tests/workbuddy-installation.test.ts tests/workbuddy-desktop-open.test.ts
           --reporter=default --reporter=json
           --outputFile=.test-data/windows-ci-tests.json
       - name: Install official CLI fixtures

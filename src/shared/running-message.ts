@@ -1,3 +1,4 @@
+// traecn is intentionally absent from native steering: the advertised feature has not been verified.
 import type { CliId, Worker } from './types.ts'
 
 export const RUNNING_MESSAGE_MODES = ['steer', 'interrupt', 'queue'] as const

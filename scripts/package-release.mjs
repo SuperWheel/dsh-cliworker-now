@@ -25,7 +25,7 @@ if (rootManifest.name !== 'dsh-cliworker-now' || rootManifest.private !== true)
 if (!/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?(?:\+[A-Za-z0-9.-]+)?$/.test(rootManifest.version))
   throw new Error('A concrete release version is required')
 
-const allowlist = ['README.md', 'README.en.md', 'LICENSE', 'cordis.patch.yml']
+const allowlist = ['README.md', 'README.en.md', 'LICENSE', 'cordis.patch.yml', 'icon.png']
 const helperNames = [
   'account-models',
   'grok-catalog',

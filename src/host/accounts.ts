@@ -1,3 +1,9 @@
+import { readCodebuddyAccount } from './codebuddy-account.ts'
+import { isWorkBuddyCli } from './workbuddy-variant.ts'
+import { WorkBuddyDesktopAccounts, desktopActions, workbuddyDesktopFailure } from './workbuddy-desktop.ts'
+import { openWorkBuddyDesktop } from './workbuddy-desktop-open.ts'
+import { resolveWorkBuddyInstallation, WorkBuddyUnavailableError } from './workbuddy-installation.ts'
+import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { AGY_GUIDES, AgyAccountGuide } from './agy-account-guide.ts'
 import {
@@ -81,6 +87,7 @@ import { ensureHermesNousFresh, HermesRenewalError, reserveHermesAccount } from 
 import { reserveGrokAccount } from './grok-renewal.ts'
 import { HermesAccountSourceError } from './hermes-models.ts'
 import { readQoderAccount, qoderEnvironment, QODER_METADATA_ARGUMENTS } from './qoder-accounts.ts'
+import { readTraecnAccount, traecnAccountArguments, traecnEnvironment } from './traecn-accounts.ts'
 
 const STATUS_TIMEOUT = 10_000
 const STARTUP_TIMEOUT = 30_000
@@ -120,6 +127,10 @@ const validateCli = (cli: CliId) => {
   if (!(CLI_IDS as readonly string[]).includes(cli)) throw new Error('不支持的 CLI')
 }
 const instructionFor = (cli: CliId, action: AccountAction): string => {
+  if (cli === 'codebuddy') return action === 'login'
+    ? '在 CodeBuddy 原生终端输入 /login，选择中国站或国际站等站点完成登录。'
+    : action === 'logout' ? '在 CodeBuddy 原生终端输入 /logout 退出。'
+      : '在 CodeBuddy 原生终端使用 /login、/logout 管理账号。'
   if ((cli === 'qoder' || cli === 'qodercn'))
     return action === 'login'
       ? `按 ${cli === 'qodercn' ? 'Qoder CN' : 'Qoder'} 原生提示完成登录；仅使用本版 PAT。`
@@ -143,6 +154,11 @@ const instructionFor = (cli: CliId, action: AccountAction): string => {
     : '按 CLI 原生流程退出登录。'
 }
 const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions'] => {
+  if (cli === 'traecn') return [
+    { id: 'login', label: '登录 / 切换账号', description: '选择 TRAE CN 原生登录方式。', providers: loginProviders(cli, undefined) },
+    { id: 'logout', label: '退出登录', description: '按 CLI 原生流程退出登录。' },
+  ]
+  if (isWorkBuddyCli(cli)) return []
   if (cli === 'claude')
     return [
       {
@@ -176,6 +192,8 @@ const actionsFor = (cli: CliId, config: RuntimeConfig): AccountStatus['actions']
 
 /** Only commands verified against the installed CLIs. Never send a prompt/slash command. */
 const argumentsFor = (cli: CliId, action: AccountAction): string[] => {
+  if (cli === 'codebuddy') return []
+  if (cli === 'traecn') return action === 'logout' ? traecnAccountArguments(action) : [] // Provider-specific login is built below.
   if ((cli === 'qoder' || cli === 'qodercn')) return action === 'login' ? ['login'] : []
   if (cli === 'antigravity' || action === 'manage' || (cli === 'kimi' && action === 'logout')) return []
   if (cli === 'codex' || cli === 'kimi') return [action]
@@ -317,12 +335,57 @@ export class AccountManager {
   private closing?: Promise<void>
   private readonly nativeLoginProviders: NativeLoginProviders
 
+  readonly desktop: WorkBuddyDesktopAccounts
+
   constructor(
     private backend: ProcessBackend,
     private config: RuntimeConfig,
     private identity: AccountIdentitySource = nativeAgyAccountIdentity(backend, config),
     private onQueryCleanup?: (cli: CliId, error: ProcessCleanupUnconfirmedError) => void,
-  ) { this.nativeLoginProviders = new NativeLoginProviders(backend, config) }
+    onDesktopChange?: (cli: CliId) => void,
+  ) {
+    this.nativeLoginProviders = new NativeLoginProviders(backend, config)
+    this.desktop = new WorkBuddyDesktopAccounts({
+      reserve: cli => {
+        this.controller.signal.throwIfAborted()
+        if (this.isBusy(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
+        if ([...this.statusQueries.values()].some(q => q.cli === cli && !q.settled))
+          throw new Error('此 CLI 的账号状态仍在读取，请稍后再试')
+        this.reserved.add(cli)
+      },
+      release: cli => this.reserved.delete(cli),
+      settle: async (cli, signal) => {
+        const running = [...this.statusQueries.values()].filter(q => q.cli === cli && !q.settled).map(q => q.operation)
+        if (running.length) await abortable(Promise.allSettled(running), AbortSignal.any([signal, this.controller.signal]))
+      },
+      verify: async (cli, signal) => {
+        const path = await resolveCliExecutable(cli, this.backend, this.config, signal)
+        const install = await resolveWorkBuddyInstallation(cli, { manualPath: path })
+        signal.throwIfAborted()
+        return install.runtime
+      },
+      read: async (cli, path, project, signal) => {
+        const timer = new AbortController()
+        const timeout = setTimeout(() => timer.abort(), 25_000)
+        timeout.unref?.()
+        const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
+        try {
+          const metadata = await readWorkBuddyMetadata(cli, path, project, control)
+          control.throwIfAborted()
+          return { account: { cli, installed: true, state: 'authenticated',
+            summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: desktopActions() },
+            models: metadata.models }
+        } catch (error) {
+          if (error instanceof ProcessCleanupUnconfirmedError) throw error
+          signal.throwIfAborted()
+          return { account: workbuddyDesktopFailure(cli, error) }
+        } finally { clearTimeout(timeout) }
+      },
+      open: openWorkBuddyDesktop,
+      quarantine: (cli, error) => this.quarantineQuery(cli, error),
+      invalidate: onDesktopChange,
+    })
+  }
 
   isBusy(cli: CliId): boolean {
     validateCli(cli)
@@ -362,6 +425,7 @@ export class AccountManager {
 
   recoverCleanup(cli: CliId): void {
     this.assertCleanupRecoverable(cli)
+    if (isWorkBuddyCli(cli)) this.desktop.recover(cli)
     this.unsafeQueries.delete(cli)
     this.unsafeTerminals.delete(cli)
   }
@@ -369,6 +433,10 @@ export class AccountManager {
   async status(cli: CliId, cwd: string, signal: AbortSignal): Promise<AccountStatus> {
     validateCli(cli)
     if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
+    if (isWorkBuddyCli(cli) && this.reserved.has(cli))
+      return this.cleanupHold(cli) ?? this.desktop.current(cli) ?? {
+        cli, installed: true, state: 'unknown', summary: '正在确认当前登录状态…', actions: desktopActions(),
+      }
     const directory = projectDirectory(cwd)
     const key = JSON.stringify([cli, directory])
     let query = this.statusQueries.get(key)
@@ -427,7 +495,7 @@ export class AccountManager {
     if (held) return held
     const timer = new AbortController()
     // Qoder's native account budget includes its acknowledged session teardown.
-    const timeout = setTimeout(() => timer.abort(), (cli === 'qoder' || cli === 'qodercn') ? 15_000 : STATUS_TIMEOUT)
+    const timeout = setTimeout(() => timer.abort(), isWorkBuddyCli(cli) ? 25_000 : (cli === 'qoder' || cli === 'qodercn' || cli === 'codebuddy') ? 15_000 : STATUS_TIMEOUT)
     timeout.unref?.()
     const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
     let installed = false
@@ -435,6 +503,15 @@ export class AccountManager {
       const executable = await resolveCliExecutable(cli, this.backend, this.config, control)
       installed = true
       control.throwIfAborted()
+      if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable })),
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
+      if (cli === 'traecn') return { cli, installed,
+        ...(await readTraecnAccount(this.backend, this.config, executable, cwd, control)),
+        actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
+      if (isWorkBuddyCli(cli)) {
+        const metadata = await readWorkBuddyMetadata(cli, executable, cwd, control)
+        return { cli, installed, state: 'authenticated', summary: `已登录（${new URL(metadata.endpoint).hostname}）`, verification: 'cli', actions: desktopActions() }
+      }
       if ((cli === 'qoder' || cli === 'qodercn'))
         return {
           cli, installed, ...(await readQoderAccount(executable, control, { cli, backend: this.backend, config: this.config, project: cwd })),
@@ -623,6 +700,11 @@ export class AccountManager {
       }
       if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
       const code = (error as NodeJS.ErrnoException)?.code
+      if (isWorkBuddyCli(cli)) {
+        const missing = error instanceof WorkBuddyUnavailableError && error.reason === 'not-installed'
+        return missing ? { cli, installed: false, state: 'unconfigured', summary: '未检测到 WorkBuddy 桌面端', actions: [] }
+          : workbuddyDesktopFailure(cli, error)
+      }
       if (error instanceof WindowsCliNotFoundError)
         return { cli, installed: false, state: 'unconfigured', summary: error.message, actions: [] }
       if (error instanceof WindowsCliInstallationError)
@@ -670,6 +752,8 @@ export class AccountManager {
           summary: 'CLI 启动入口无法确认，请配置原生程序或固定 Node/Bun 入口',
           actions: [],
         }
+      if (cli === 'traecn' && code === 'CLI_IDENTITY_MISMATCH')
+        return { cli, installed: true, state: 'unavailable', summary: '不是官方 TRAE CLI，请检查 traecnExecutable', actions: [] }
       if (code === 'CLI_IDENTITY_MISMATCH')
         return {
           cli,
@@ -719,7 +803,7 @@ export class AccountManager {
     if (cli === 'antigravity') return this.config.executable !== 'agy'
     if (cli === 'harness') return false
     const configured = this.config[`${cli}Executable`]
-    return !!configured && configured !== cli
+    return !!configured && configured !== (cli === 'traecn' ? 'traecli' : cli)
   }
 
   start(
@@ -733,7 +817,9 @@ export class AccountManager {
     login?: string,
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     validateCli(cli)
+    if (isWorkBuddyCli(cli)) throw new Error('请在 WorkBuddy 桌面端登录或退出')
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')
+    if (cli === 'traecn') traecnAccountArguments(action, provider)
     if (
       source !== undefined &&
       (!['native', 'plugin'].includes(source) ||
@@ -853,6 +939,12 @@ export class AccountManager {
           action === 'logout'
             ? '退出 Claude 官方账号；本地代理设置保留。'
             : '在原生终端登录 Claude 官方账号；本地代理设置保留。'
+      } else if (cli === 'codebuddy') {
+        launch.env = { DISABLE_AUTOUPDATER: '1' }
+      } else if (cli === 'traecn') {
+        launch.argv = [executable, ...traecnAccountArguments(action, provider)]
+        launch.env = traecnEnvironment()
+        if (provider === 'enterprise-pat') instruction = 'TRAE PAT 由原生环境变量或 stdin 提供；无输入时 CLI 会退出，插件不收集或保存令牌。'
       } else if ((cli === 'qoder' || cli === 'qodercn')) {
         launch.argv = [executable, ...QODER_METADATA_ARGUMENTS.filter((value) => value !== '--acp'), ...argumentsFor(cli, action)]
         launch.env = qoderEnvironment(cli)
@@ -965,6 +1057,11 @@ export class AccountManager {
         login,
         stores: provider ? providerStores(cli, provider, nativeProviders) : undefined,
       })
+      // These flows require a signed-out baseline captured before native startup can mutate it.
+      const before = guide && (cli === 'codebuddy' || cli === 'traecn')
+        ? await this.readStatus(cli, cwd, startup) : undefined
+      if (before?.cleanupBlocked) throw new ProcessCleanupUnconfirmedError()
+      startup.throwIfAborted()
       allocation = spawnAccountTerminal(this.backend, {
         ...launch,
         ...(guide ? guide.size : { rows: 24, cols: 80 }),
@@ -1000,7 +1097,7 @@ export class AccountManager {
           )
           this.sessions.set(session.id, session)
           if (guide && cli !== 'antigravity')
-            session.before = this.evidence(session, session.guideControl!.signal).catch(() => undefined)
+            session.before = before ? Promise.resolve(before) : this.evidence(session, session.guideControl!.signal).catch(() => undefined)
           this.emit(session, { status: 'running' })
           session.output = this.readTerminal(session)
           void session.output.catch(() => undefined)
@@ -1211,7 +1308,7 @@ export class AccountManager {
         if (event.guide.step === 'notSignedIn')
           void this.finish(session, 'closed', '账号终端已关闭').catch(() => undefined)
       } else if ('finish' in event) void this.finish(session, 'closed', '账号终端已关闭').catch(() => undefined)
-      else if ('write' in event) void this.autoWrite(session, event.write)
+      else if ('write' in event) void this.autoWrite(session, event.write, event.enter)
       else if ('command' in event) void this.logOut(session, event.command)
       else if ('identify' in event) void this.identifyScreen(session)
       else if ('watch' in event) void this.watchAccount(session)
@@ -1220,11 +1317,16 @@ export class AccountManager {
   }
 
   /** A choice the user already made in the window, typed into the menu it belongs to. */
-  private async autoWrite(session: AccountSession, keys: string) {
+  private async autoWrite(session: AccountSession, keys: string, enter = false) {
     const signal = session.guideControl!.signal
     try {
       await sleep(AGY_GUIDE_TIMING.commandDelayMs, undefined, { signal })
-      if (session.state === 'running' && !session.stopping) await session.terminal.write(keys)
+      if (session.state !== 'running' || session.stopping) return
+      await session.terminal.write(keys)
+      if (enter) {
+        await sleep(ANSWER_ENTER_MS, undefined, { signal })
+        if (session.state === 'running' && !session.stopping) await session.terminal.write('\r')
+      }
     } catch {
       // Closing the window aborts it; nothing else to undo.
     }
@@ -1417,9 +1519,11 @@ export class AccountManager {
 
   /** Close one Agent lifetime, including startup; a later Agent with the same ID gets a fresh scope. */
   closeParent(parent: string): Promise<void> {
+    const desktopClosing = this.desktop.closeParent(parent)
+    void desktopClosing.catch(() => undefined)
     const scope = this.parents.get(parent)
     const previous = this.parentClosings.get(parent)
-    if (!scope && previous) return previous
+    if (!scope && previous) return Promise.all([previous, desktopClosing]).then(() => undefined)
     if (scope) {
       this.parents.delete(parent)
       scope.controller.abort()
@@ -1440,6 +1544,7 @@ export class AccountManager {
         session.frames.length = 0
         this.sessions.delete(session.id)
       })
+      cleanup.push(desktopClosing)
       if (previous) cleanup.push(previous)
       const results = await Promise.allSettled(cleanup)
       if (
@@ -1528,11 +1633,13 @@ export class AccountManager {
   close(): Promise<void> {
     if (this.closing) return this.closing
     this.controller.abort()
+    const desktopClosing = this.desktop.close()
+    void desktopClosing.catch(() => undefined)
     this.closing = (async () => {
       await Promise.allSettled([...this.pending])
       await Promise.allSettled([...this.parentClosings.values()])
       const results = await Promise.allSettled(
-        [...this.sessions.values()].map((session) => this.finish(session, 'closed', '插件已关闭')),
+        [desktopClosing, ...[...this.sessions.values()].map((session) => this.finish(session, 'closed', '插件已关闭'))],
       )
       for (const session of this.sessions.values()) {
         clearTimeout(session.deadline)

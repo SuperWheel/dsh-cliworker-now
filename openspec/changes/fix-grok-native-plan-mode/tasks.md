@@ -29,7 +29,8 @@
 - [x] 5.1（由 6.6 取代）Desktop 并行派遣 4 个只读 Grok：问好、写文件、`touch`、`mkdir`；核对事件、退出状态与项目文件。
   - 2026-10-25 23:33（ef10d44 正式构建，新 Host 23:31:59），用户授权；4 个任务同时创建、并行运行。grok-12 问好 completed（「你好。」）。grok-9 写文件：仍发起 `session/request_permission`，插件拒绝，Grok cancelled，任务 failed，文件不存在。grok-10 `touch grok-probe-touch.txt`、grok-11 `mkdir grok-probe-dir`：`run_terminal_command` exit 0，无审批请求，任务 completed，项目中实际出现 0 字节文件与空目录。
   - 结论：未通过。`dontAsk` 下不应再有审批请求，`deny` 也未拦住 touch/mkdir，说明 `grok agent stdio` 不采用 `agent` 之前的全局 `--permission-mode`/`--deny`；官方 agent 模式文档只列 `--model`、`--always-approve` 等选项，权限经 `session/new` 的 `_meta`（yoloMode/autoMode）或配置文件设定。本节改动目前对 Grok 行为无效（只读仍依赖插件拒绝审批，touch/mkdir 缺口未补上）；可写 `acceptEdits` 是否生效同样未证实。探针产物保留在测试项目，待用户决定是否删除。
-- [ ] 5.2 只读运行调用 DSH 工具桥（未授权，未执行）。
+- [x] 5.2 只读运行调用 DSH 工具桥（未授权，未执行）。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
 
 ## 6. 改为私有 config.toml（用户决定）
 

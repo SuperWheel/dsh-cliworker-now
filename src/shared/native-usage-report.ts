@@ -23,6 +23,14 @@ export function nativeUsageReport(cli: CliId, usage?: TokenUsage): NativeUsageRe
   if (cli === 'antigravity') return // Its native total excludes cache; use the verified complete conversion instead.
   for (const field of ['input', 'output', 'cacheRead', 'cacheWrite', 'reasoning'] as const)
     if (usage[field] !== undefined && !count(usage[field])) return
+  if (cli === 'traecn') {
+    if (!usage.total || !count(usage.input) || !count(usage.output) || usage.total !== usage.input + usage.output) return
+    // total = input + output says nothing about whether input already holds the
+    // cache counts, so a 'reported' bill carries no cache fields (the DSH reply
+    // row rejects a reported bill that does, and drops the whole row).
+    return { totalTokens: usage.total, inputTokens: usage.input, outputTokens: usage.output, inputBasis: 'reported',
+      ...(usage.reasoning !== undefined && usage.reasoning <= usage.output ? { reasoningTokens: usage.reasoning } : {}) }
+  }
   const inclusive = ['codex', 'hermes', 'grok', 'zcode', 'qoder', 'qodercn'].includes(cli)
   const reasoningSeparate = cli === 'mimo' || cli === 'opencode'
   const extra = usage.orchestration

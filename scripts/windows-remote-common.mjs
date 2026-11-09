@@ -16,6 +16,8 @@ export const WINDOWS_TESTS = [
   'tests/windows-system-proxy.test.ts', 'tests/opencode-windows-login.test.ts',
   'tests/zcode-grok-windows-regression.test.ts', 'tests/authorized-catalog-windows-agy.test.ts',
   'tests/native-agy-acp.test.ts', 'tests/agy-account-guide.test.ts',
+  'tests/codebuddy-account.test.ts', 'tests/traecn-integration.test.ts',
+  'tests/workbuddy-installation.test.ts', 'tests/workbuddy-desktop-open.test.ts',
 ]
 export const SOURCE_ROOT_FILES = [
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
@@ -70,7 +72,7 @@ export function validateSourcePath(value) {
   if (value.split('/').some((part) => part === '..' || part === '.' || part.startsWith('.') || /^(?:node_modules|credentials?|secrets?|auth|tokens?|private[-_]keys?|id_ed25519|id_rsa)(?:\.|$)/i.test(part) || /\.(?:pem|key|pfx|p12|log)$/i.test(part)))
     throw new Error(`Sensitive or excluded source path: ${value}`)
   if (SOURCE_ROOT_FILES.includes(value) || SOURCE_SCRIPTS.has(value)) return value
-  if (/^(?:src|tests)\/.+\.(?:ts|tsx|mts|mjs|js|json|py|cmd|ps1|txt)$/.test(value) || /^src\/client\/assets\/.+\.(?:png|svg)$/.test(value)) return value
+  if (/^(?:src|tests)\/.+\.(?:ts|tsx|mts|mjs|cjs|js|json|py|cmd|ps1|txt)$/.test(value) || /^src\/client\/assets\/.+\.(?:png|svg)$/.test(value)) return value
   if (/^runtime-host\/(?:manifest\.json|README\.md|source\.patch|dsh-client-ui-(?:session|conversation|subagent|chat)\/(?:LICENSE|package\.json|lib\/.+\.(?:js|d\.ts))|dsh-client-ui-chat\/lib\/assets\/[^/]+\.png)$/.test(value)) return value
   throw new Error(`Source path is outside the allowlist: ${value}`)
 }
@@ -147,7 +149,7 @@ export function validateArchiveEntries(listing, verboseListing, runtimeManifest)
   for (const name of names) {
     const value = name.replace(/\/$/, '')
     validateWindowsComponents(value)
-    if (value.includes('\\') || posix.normalize(value) !== value || value.split('/').some((part) => part === '..' || part === '.') || !/^package(?:\/lib(?:\/.*)?|\/runtime-host(?:\/.*)?|\/package\.json|\/cordis\.patch\.yml|\/README(?:\.en)?\.md|\/LICENSE)?$/.test(value))
+    if (value.includes('\\') || posix.normalize(value) !== value || value.split('/').some((part) => part === '..' || part === '.') || !/^package(?:\/lib(?:\/.*)?|\/runtime-host(?:\/.*)?|\/package\.json|\/cordis\.patch\.yml|\/icon\.png|\/README(?:\.en)?\.md|\/LICENSE)?$/.test(value))
       throw new Error(`Unsafe package entry: ${name}`)
     if (!value.startsWith(`package/${RUNTIME_HOST}`)) continue
     if (runtimeFiles.has(value)) {
