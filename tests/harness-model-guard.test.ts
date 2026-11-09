@@ -42,7 +42,9 @@ it('authorized sibling job publication detaches only the old tool guard and reta
   const worker: any = { id: 'sibling', runId: 'sibling-run', parentSessionId: 'main', status: 'running', preference }
   let done!: Promise<any>
   const jobs = { start: vi.fn((spec: any) => { expect(spec.owner).toBe('main'); spec.run(); return 'synthetic-job' }) }
-  const parent: any = { id: 'main', ctx: { get: () => jobs } }
+  // Simulated DSH services: jobs, plus the permission state read for the dispatch receipt.
+  const services: Record<string, unknown> = { jobs, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) } }
+  const parent: any = { id: 'main', ctx: { get: (name: string) => services[name] } }
   const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
     disposed: new AbortController(), nativeRunDone: new Map(),
     assertExecution: vi.fn(), assertAccessSupported: vi.fn(), project: () => '/synthetic/project',
