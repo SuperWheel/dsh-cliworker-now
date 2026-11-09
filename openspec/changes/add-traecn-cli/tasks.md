@@ -116,6 +116,7 @@
   - 首次（run-193537）规划步骤脚本只给 `submit` 传了 `plan`，续聊沿用 Worker 已保存的模式，原生仍为 `default`（脚本错误，非插件问题），不算证据。
   - 验收脚本的权限快照是固定值，所以状态行显示「本轮权限：仅工作区编辑」；真实 Host 在 plan 时显示「规划模式」（`index.ts` 现有逻辑），未在 Desktop 中目视核对。
 - [x] 7.4 Desktop 加载 preview 包、连接页与图标明暗 —— 未执行，保留为未验证（本会话未打开 Desktop；登录窗口、设置页目录与 Worker 菜单只有模拟测试）
+  - 2026-11-09 图标改版（用户要求浅色用白底黑线标识、暗色用现有绿色标识，都去掉底板）：运行图改为 `traecn-light.png` / `traecn-dark.png`（来源与处理见 `doc/assets/cli-icons/v5-trae/README.md`），`BrandIcon` 按主题切换、不反色；`tests/brand-icons.test.tsx` 2/2 通过，`pnpm typecheck` 通过。正式 `pnpm build` 后在 Mac Desktop 实机（Codex Computer Use 截图）：浅色主题左栏与页头为黑色线框加两个黑色菱形，无深色方块；切到深色为绿色线框与菱形，无底板；看完主题已改回「跟随系统」。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：TRAE CN 连接页显示「已登录」、退出、切换账号、账号终端（置灰），项目默认模型 GLM-5.3-Flash；图标在明暗两种主题下都清楚。Worker 列表卡片正常。Worker 对话中两条历史回复显示「用量 52.8K tok」「用量 13.1K tok」，详情为本轮 13,051 / CLI 报告输入 13,048 / 输出 3（推理 0），缓存命中「—」（78694c1 修复后）。
   - 未看：登录窗口（打开即启动登录流程，本次不做）。
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`（正式构建，非 preview 包）。设置页条目与图标明/暗、账号区「已登录」、模型列表显示正常；派遣 glm-5.3-flash（无强度选项），「仅工作区编辑」档，SUCCESS，`v088-trae-check.txt` 实际内容为 `TRAE OK\n`，事件含「TRAE CLI CN 原生模型已确认」，结束后无 traecli 残留。登录窗口未在 Desktop 中验证，本项保持未勾选。

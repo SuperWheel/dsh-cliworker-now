@@ -86,7 +86,7 @@
 - `running-message.ts`：不加入 `NATIVE_STEERING_TRANSPORTS`（`_meta.steering.supported` 已声明但未实测），续聊消息走原生 Inbox。
 - 子 Agent、记忆：跟随原生（不改 `TRAE_HOME`，不传关闭开关）。子 Agent 作为该 Worker 的工具步骤显示。
 - 遥测：`telemetry.ts` 白名单加 `cliworker.traecn_prompt_usage`、`cliworker.traecn_context`，核对 CLI、会话与来源；`native-usage-report.ts` 中 `traecn` 的输入口径为 `reported`（是否含缓存未公开）。不是积分口径。
-- 图标：`doc/assets/cli-icons/v5-trae/`，运行图 `src/client/assets/traecn.png`，按 v4-qoder 的 manifest 记录来源。
+- 图标：`doc/assets/cli-icons/v5-trae/`。2026-11-09 起按用户要求改为明暗两张透明图：浅色 `src/client/assets/traecn-light.png`（Trae CN 应用的黑色标识），暗色 `traecn-dark.png`（绿色标识），都去掉原来的近黑色方块底板；与 Kimi 一样按主题切换，不反色。来源与处理见该目录 README 与 manifest。
 - 设置页：由 `CLI_IDS` 驱动自动出现；账号区复用现有组件；新文案进 `i18n-messages.ts`。
 - `scripts/build.mjs`：加入 `native-traecn.mjs`。
 

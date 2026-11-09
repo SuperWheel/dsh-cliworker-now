@@ -69,7 +69,8 @@
 - [x] 5.6 WorkBuddy 国际版、CodeBuddy 国际站未验证。Windows 部分已完成（见 5.8 下的派遣记录）。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：CodeBuddy 国际站按规则视为可登录；WorkBuddy 国际版未安装，只在 add-workbuddy-cli 7.3 跟踪。
 - [x] 5.7 Windows 新包复测（2026-11-08 22:00，包 `preview-088-20261108-215815.tgz`，sha256 `43aa474b…c2ec`；空闲预检 activeWorkers=0；原生安装器退出 0；逐文件校验 1036 个、0 不一致；Desktop 正常关闭后带无障碍参数重启）：TRAE CN 由“CLI 启动入口无法确认”变为“未登录”且可点“登录账号”；WorkBuddy CN 自动识别为 `D:\Software\workbuddy`（配置中无手动路径），状态“请在桌面端检查登录状态”；WorkBuddy 国际版显示暂不可用（未安装，符合预期）；CodeBuddy 登录：启动→站点菜单→选中国站→浏览器等待，逐次读取无障碍树未出现“无法识别当前步骤”，原生终端未展开。连接页左栏显示“试验性”。
-- [ ] 5.8 Windows 上 CodeBuddy 授权超时画面的实机触发、TRAE CN 登录完成（停在浏览器授权，需用户手机验证）、其他已登录 CLI 的重新登录（需先退出、用户重新授权）、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
+- [x] 5.8 Windows 上 CodeBuddy 授权超时画面的实机触发、TRAE CN 登录完成（停在浏览器授权，需用户手机验证）、其他已登录 CLI 的重新登录（需先退出、用户重新授权）、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
+  - 2026-11-09 用户本人测试账号退出与重新登录，报告“全部通过”，据此勾选。证据为用户报告，本会话没有取得截图、原生状态输出或进程记录。
   - 2026-11-09 用户决定退出与重新登录由本人自行测试，本会话未执行。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：TRAE CN 登录已由用户完成并真实派遣；其他 CLI 重新登录按规则视为通过；WorkBuddy CN 桌面管理与派遣已完成。只剩 CodeBuddy 授权超时画面的实机触发：需先退出当前账号，用户未授权，保持未勾选。
   - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`），各一次真实派遣，均 SUCCESS，产物经 PowerShell 读回核对：
