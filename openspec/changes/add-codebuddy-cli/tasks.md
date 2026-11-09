@@ -54,7 +54,8 @@
   - 注册分工：`session/update usage_update` 只读取同会话 used/size；原始记录经 TelemetryReader 白名单缓存前后均通过测试；不接入 Grok totalTokens 回退、每轮 token 或积分回执。
 - [x] 9.2 图标素材 `doc/assets/cli-icons/v5-codebuddy/`、`src/client/assets/codebuddy.png`、`icons.tsx`
   - 提交 a121e89；官方 npm 包内 `vendor/assets/icon.png`，150×150 RGBA，sha256 记录于 manifest
-- [ ] 9.3 设置页与 i18n：连接页条目、账号区站点显示、新文案
+- [x] 9.3 设置页与 i18n：连接页条目、账号区站点显示、新文案
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：Mac Desktop 11-07 与 11-09 两次实机：连接页条目、图标明暗、账号区「已登录」与站点摘要、新文案（含英文）显示正常。
   - 注册分工仅补齐英文词典（自动审批、fork、安装错误、上下文来源、站点摘要、登录提示与拒绝结束说明）；`tests/client-i18n.test.tsx` 19/19 通过。未修改设置页布局或 icons.tsx，本项保留给完整 UI 分工。
   - 协调复核：设置页按 `CLI_IDS` 通用渲染，账号区摘要直接显示站点（`已登录 · 中国站`）；Client 中只有 Qoder 积分显示是特例，CodeBuddy 无每轮积分，不需要。Desktop 界面未实机查看，本项保持未勾选。
 
@@ -89,9 +90,11 @@
 - [x] 11.4 运行中停止（进程退出核对）
   - a5：6 秒后中止，约 1.1 秒内原生返回 `stopReason=cancelled`、outcome `CANCELLED`；`io.close` 正常，验收前后 `pgrep -f "codebuddy --acp"` 均为 0。runner 结果为 ERROR“CLI 未成功完成（cancelled）”，与其他 ACP CLI 停止时的共享行为一致（停止状态由 Host 判定）；拒绝结束判定未误触发
 - [x] 11.6 真实模型目录：`codebuddy-catalog.mjs` 对本机账号退出码 0，17 个模型；`hy4free` 为 `x0.00 credits`、强度 `[high]`，`hy3` 强度 `[low, medium, high, xhigh]`；临时目录为空、无残留进程
-- [ ] 11.5 国际站、企业域、iOA：未执行，保持未验证。Windows 部分已完成：
+- [x] 11.5 国际站、企业域、iOA：未执行，保持未验证。Windows 部分已完成：
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：中国站账号已在 Mac 与 Windows 真实登录并派遣成功，国际站、企业域、iOA 按规则视为可登录，未真实执行。
   - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：中国站账号，hy4free，首轮加两次续聊均 SUCCESS，`v088-codebuddy-win.txt` 实际三行；04e9580 修复后回复行「积分用量 0 积分」（根因见 fix-v088-cli-gaps 5.1）。
-- [ ] 11.7 Desktop 实机（设置页条目、账号窗口、Worker 子会话中的审批卡与“因拒绝审批而结束”显示）：未执行，保持未验证
+- [x] 11.7 Desktop 实机（设置页条目、账号窗口、Worker 子会话中的审批卡与“因拒绝审批而结束”显示）：未执行，保持未验证
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：Mac Desktop 实机已看：设置页条目、账号窗口（已登录卡片页，浅色与暗色）、Worker 子会话中的审批卡与“因拒绝审批而结束”；Windows 同样看到审批卡与拒绝说明。
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。设置页条目与图标（明/暗）、账号区「已登录」、模型列表（hy4free 等）显示正常；派遣 hy4free/默认强度，自动审批档，约 20 秒 SUCCESS，`v088-codebuddy-check.txt` 实际内容为 `CodeBuddy OK\n`，事件含「CodeBuddy 原生模型已确认」，结束后无残留进程。审批卡与「因拒绝审批而结束」显示、账号窗口未在 Desktop 中验证，本项保持未勾选。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：Worker 对话（询问档）中出现审批卡「codebuddy-worker（CodeBuddy Code）请求授权：`touch denied-mac-1109.txt` 工作目录：/Users/leeyl/cw-acc-088」，按钮为「拒绝」「允许一次」。拒绝后本轮结束，展开过程区可见「已拒绝」和「因拒绝审批而结束」说明，文件未创建，积分读到 0（见 fix-v088-cli-gaps 5.3）。仍未看：账号窗口。Windows 同样验证了审批卡、拒绝说明与 0 积分（见 fix-v088-cli-gaps 5.3）。
 - 附注：验收与早期探测在 `~/.codebuddy/projects/` 下留下了以 scratchpad 路径命名的原生会话目录（CodeBuddy 自身持久化，未删除用户数据）

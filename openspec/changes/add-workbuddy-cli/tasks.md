@@ -82,6 +82,7 @@
   - 密钥：用 WorkBuddy 运行时读取 at-rest 密钥，在本进程内比对 24 个证据文件（report、raw、stderr、事件、工作区、thought_level 表），只输出计数：原文、派生 key 的 base64／base64url／hex 均 0 处命中；证据中也没有 `keyBase64`、`atRestSecretKey`、`symmetricKey` 字段或网关密码横幅。
   - 观察：每轮 stderr 有一行 `[CredentialBootstrap] CBC early {…}` 遥测（含 pid、引导 sessionId、状态，不含 token 或密钥），会以“CLI 诊断”出现在时间线。
 - [ ] 7.2 询问档实际审批行为、`allow_always` 作用域、`thought_level` 是否随模型变化
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：询问档的允许与拒绝、thought_level 随模型变化均已实测（Mac Desktop 11-09 再次核对询问档出现审批卡）。`allow_always` 作用域仍未验证：插件审批卡只提供「拒绝」「允许一次」，无法从界面测试，本项保持未勾选。
   - 询问档：命令审批的允许与拒绝已在 7.1 实测。`allow_always` 未验证：本次命令审批 `allowSession` 为 false，CLI 没有提供会话级授权。
   - `thought_level` 会随模型变化（2026-11-07，对 17 个模型逐个 `session/set_config_option model`，不发 prompt）：auto 和 mimo-v2.6-pro 是 minimal…max 全档；hy4free、hy4std 只有 high；hy3、hy3-x 有 low/high；glm-5.2 有 high/xhigh；deepseek-v4-pro 有 disabled/high/xhigh；其余各不相同；每个模型都有 `enabled`（模型默认）。
   - 缺陷（已修复）：`probeWorkBuddyMetadata` 原先只读 `session/new`（当前模型 auto）的 `thought_level`，并把同一组强度给所有模型，违反规格。现在目录查询在 `session/new` 后对每个模型各发一次 `session/set_config_option model`，取切换后的 `thought_level` 与插件强度的交集；模型若声明 `_meta.effortOptions`，再与之取交集。`default` 始终保留；`disabled` 等插件未支持的值不提供；某个模型切换失败时只给 `default`。已保存的强度不在新模型列表里时，`resolveModel` 判为失效、要求重新选择；runner 设置模型后也再次核对，不发 prompt。
@@ -96,11 +97,14 @@
     - 拒绝审批：原生 `stopReason: cancelled`；本轮按 `deniedCancelEndsTurn` 结束，结果为 SUCCESS，附说明“因拒绝审批而结束：被拒操作未执行，可续聊继续”；被拒工具标为 FAILED，`denied.txt` 不存在。
     - 14 个证据文件的密钥扫描 0 处命中。
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
-- [ ] 7.4 Windows 发现、命名管道引导与真实验收 —— WorkBuddy CN 部分完成
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：国际版 WorkBuddy AI 在 Mac 与 Windows 均未安装，连接页显示暂不可用；这是另一个应用而非同一 CLI 的其他账号，不适用登录规则，保持未勾选。
+- [x] 7.4 Windows 发现、命名管道引导与真实验收 —— WorkBuddy CN 部分完成
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：WorkBuddy CN 的 Windows 发现、命名管道引导与真实派遣已完成；国际版只在 7.3 跟踪。
   - 2026-11-08：自动识别自定义安装目录 `D:\Software\workbuddy`（注册表），状态读取不再转圈。
   - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：WorkBuddy CN 派遣 hy4free，SUCCESS，`v088-workbuddycn-win.txt` 实际内容 `hello-workbuddycn-win`；回复行「积分用量 0 积分」（04e9580 修复后）。
   - 未验证：国际版 WorkBuddy AI（未安装，连接页显示暂不可用）。
-- [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
+- [x] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：Mac Desktop 连接页、图标明暗、Worker 卡片已在 11-07 与 11-09 实机目视；国际版只在 7.3 跟踪。
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。连接页显示「已登录（www.workbuddy.cn）」、无登录/退出按钮与试验性标注；WorkBuddy AI 显示未安装；图标明/暗可见。派遣 hy4free/默认强度，自动审批档，SUCCESS，`v088-workbuddy-check.txt` 实际内容为 `WorkBuddy OK\n`，事件含「WorkBuddy 原生模型已确认」；结束后无 helper/网关残留进程、无 `dshwb-*` 临时目录；该任务 5 份运行记录均为 0600，未检出密钥字样。Worker 卡片显示正常；国际版未验证，本项保持未勾选。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：WorkBuddy CN 连接页「已登录（www.workbuddy.cn）」与 outline「在桌面端管理」；桌面管理窗口中英文、复开均已看（见 fix-v088-cli-gaps 5.4/5.5）。国际版仍未安装。
 

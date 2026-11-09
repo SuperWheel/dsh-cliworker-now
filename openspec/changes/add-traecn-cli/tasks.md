@@ -119,7 +119,8 @@
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：TRAE CN 连接页显示「已登录」、退出、切换账号、账号终端（置灰），项目默认模型 GLM-5.3-Flash；图标在明暗两种主题下都清楚。Worker 列表卡片正常。Worker 对话中两条历史回复显示「用量 52.8K tok」「用量 13.1K tok」，详情为本轮 13,051 / CLI 报告输入 13,048 / 输出 3（推理 0），缓存命中「—」（78694c1 修复后）。
   - 未看：登录窗口（打开即启动登录流程，本次不做）。
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`（正式构建，非 preview 包）。设置页条目与图标明/暗、账号区「已登录」、模型列表显示正常；派遣 glm-5.3-flash（无强度选项），「仅工作区编辑」档，SUCCESS，`v088-trae-check.txt` 实际内容为 `TRAE OK\n`，事件含「TRAE CLI CN 原生模型已确认」，结束后无 traecli 残留。登录窗口未在 Desktop 中验证，本项保持未勾选。
-- [ ] 7.5 Windows 发现与初始化 —— 部分完成
+- [x] 7.5 Windows 发现与初始化 —— 部分完成
+  - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：Windows 已发现、登录（用户本人完成）并真实派遣成功，用量显示修复后复测通过；企业 SSO / PAT 按规则视为可登录，未真实执行。
   - 2026-11-08：新包识别为「未登录」，可点「登录账号」；登录由用户在浏览器完成。
   - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`）：派遣 glm-5.3-flash，权限「仅工作区编辑」，事件含「TRAE CN 原生模型已确认」，结果 completed，`v088-traecn-win.txt` 实际内容 `hello-traecn-win`。
   - 与 Mac 不同的原生行为（未改）：default 模式在工作区内新建文件也请求审批，经 DSH 审批卡「允许一次」后执行；TRAE 内置 Read 工具对刚建的文件报「不存在」，模型改用 PowerShell 读回。
