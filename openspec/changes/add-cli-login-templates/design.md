@@ -36,7 +36,7 @@
 
 `src/client/account-login/`：
 
-- **外壳** `AccountWindow`：标题、「登录到」下拉框、正文、底栏（状态文字 + 显示原生终端）。
+- **外壳** `AccountWindow`：标题、「登录到」服务商选择（实施后为两列卡片）、正文、底栏（状态文字 + 显示原生终端）。
 - **步骤列表**：沿用 Antigravity 的 `cwn-agy-*` 样式，改名为 `cwn-login-*`。
 - **模板**：
 
@@ -70,7 +70,9 @@ Host 校验它属于当前步骤，再由流程定义翻译成按键写入。这
 
 原有 `accountWrite` 保留给可见的原生终端。
 
-### D4 「登录到」下拉框与服务商定位
+### D4 「登录到」服务商选择与定位
+
+> 实施后调整：服务商选择由窗口顶部下拉框改为「添加账号」页的两列卡片单选（样式见 `doc/settings-ui-design.md` 账号窗口一节）；下文“下拉框”均指这组卡片，定位规则不变。
 
 `AccountActionDescriptor.providers?: { id, label, signedIn, multi }[]` 由 Host 按已安装版本给出。各 CLI 的列表来源：
 
