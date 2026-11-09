@@ -17,7 +17,12 @@
 - [x] 1b.5 真实 Host 运行（2026-11-09，scratchpad 脚本直接调用插件 runner，hy4free，“只回复 OK”）：
   - CodeBuddy 2.181 续聊会话 `01a1c0a1…8a41`：SUCCESS；发出分类 System prompt 4.5K、System tools 17.5K、Skills 24、Messages 940，头部 24.6K / 960K；遥测得到三行 4,500 / 17,500 / 940。会话文件 36→43 行，新增 7 行均为本轮（用户消息、推理、回复与元数据），`local-command-stdout` 计数不变（2，为此前探测遗留），目录文件数不变。
   - WorkBuddy CN 2.165 续聊会话 `01a1c0bb…1c40`：首次运行因输出缺 `commandKind` 未采纳，修正后 SUCCESS；三行 3.9K / 15.3K / 187，头部 24.7K / 300K。会话文件 6→12 行，无 `Context Usage` 内容。单独调试：副进程在设置模型后头部为 `hy4free · 25.9k/300k`（未设置时显示会话默认 `auto · …/256k`），会话文件 sha 不变；副进程从打开到结果约 1.2 秒。
-- [ ] 1b.6 Desktop 目视：见下方补记。WorkBuddy 国际版未安装，未验证。
+- [x] 1b.6 Desktop 目视（2026-11-09，正式 `pnpm build` 后 Desktop 退出重启；Codex Computer Use 操作，工作区 `cw-acc-088`、对话「CLI Worker 派遣 CodeBuddy 复制文件」，hy4free，续聊“只回复 OK 两个字母，不要调用工具。”，无审批卡、无白屏）：
+  - CodeBuddy Code：33 秒完成，回复 `OK`；弹层「上下文已用 3%，~25.7K / 960K」，系统提示词 ~4.4K、工具定义 ~17.5K、对话消息 ~971。
+  - WorkBuddy CN：25 秒完成，回复 `OK`；弹层「上下文已用 10%，~28.7K / 300K」，系统提示词 ~3.8K、工具定义 ~15.3K、对话消息 ~1.1K。
+  - TRAE CN：未发送；弹层「7%，13.1K / 190K」，三行仍为 `—`（符合预期）。
+  - 三行之和小于总量（CodeBuddy 约 22.9K 对 25.7K，WorkBuddy 约 20.2K 对 28.7K）：总量是原生头部的当前占用，三行是原生分类估算，Skills、Memory files 等不计入三行；与 Claude Code 的呈现方式相同，不做补齐。
+  - 未核对：各行悬停提示（Computer Use 无悬停动作）；WorkBuddy 国际版未安装；Windows 未实机复看。
 
 ## 2. 分支
 
