@@ -102,3 +102,13 @@
     - WorkBuddy CN（`workbuddycn-1`，hy4free）：`v088-workbuddycn-win.txt` 实际内容 `hello-workbuddycn-win`；事件含「WorkBuddy CN 原生模型已确认」。
     - TRAE CN（`v088-traecn-win`，glm-5.3-flash，仅工作区编辑）：在工作区内建文件也弹出审批，经 DSH 审批卡「允许一次」后继续，`v088-traecn-win.txt` 实际内容 `hello-traecn-win`。
     - 仍未执行：CodeBuddy 授权超时画面的实机触发；其他已登录 CLI 退出后重新登录（用户 11-09 决定先不测）。Mac Desktop 目视复看已于 2026-11-09 完成（见 5.4）。
+
+## 6. v0.8.8 发布验收（2026-11-09～11-10，主会话）
+
+- [x] 6.1 macOS：全量 vitest 6195 通过、14 跳过、0 失败；类型检查、`spec:check`（61 项）与相对 `origin/main` 的 `git diff --check` 通过。正式构建与隔离构建 819 个程序文件一致（仅 `lib/client.js(.map)` 打包器 `#region` 路径注释不同）。
+- [x] 6.2 Windows 远程隔离 run 37cacf24（remoteRoot 在 D 盘，C 盘当时 0 字节）：preview、冻结依赖、类型检查、21 个 Windows CI 文件 441 项（437 通过、0 失败、4 项 macOS/POSIX 专属跳过）与 Host 加载通过；x64、Node v24.15.0、pnpm 11.25.0。此前 run 8e902791 暴露 v0.8.8 新加的 3 个 Windows CI 测试文件不可移植（17 项），已修（78c3aad、da28b90），远程脚本允许跳过清单同步（41c8a2d）。
+- [x] 6.3 发布包 `dsh-cliworker-now-0.8.8.tgz`：1039 个文件、20743104 字节，SHA256 `764abeb4337b4ebfdbfab8e7cebf051e64d0a8a000e2f56eff41123a7bc104e3`；扫描无私人路径、IP、`doc/local/`、`.test-data/` 与账号标识，无 scripts/devDependencies，repository/homepage/bugs 指向 `SuperWheel/dsh-cliworker-now`。官方 dsh 0.2.2-rc.1 于全新 `DSH_HOME` 的 `plugin --profile web add --save-exact`：exit 0，版本 0.8.8，819 个 lib 文件与包逐字节相同。
+- [x] 6.4 macOS Desktop 重启于正式构建（链接）：连接页三个新 CLI 已登录；依次派遣 CodeBuddy Code（hy4free）、WorkBuddy CN（hy4free）、TRAE CN（glm-5.3-flash），事件含写文件工具 COMPLETED 与 status completed，`rc088-<cli>.txt` 内容经磁盘核对；CodeBuddy 与 WorkBuddy CN 各一条 `codebuddy.native-context` 检查事件，窗口分类 ~4.4K/~17.5K/~261 与 ~3.9K/~15.3K/~264；TRAE CN 显示「—」。
+- [x] 6.5 Windows Desktop：经用户批准清理 C 盘两份旧远程 run 与 19 个旧预览包（余 2.31 GB）；托盘菜单正常退出 Desktop 后，原生安装器装入发布包：exit 0，版本 0.8.8，819 个 lib 文件与清单一致、Host 哈希一致。重启后只读核对（Codex Computer Use）：界面无白屏或错误，三个新 CLI 已登录、其余 CLI 均列出，WorkBuddy CN 子会话分类 ~3.9K/~16.9K/~413。界面不显示插件版本。
+- [ ] 6.6 推送、GitHub CI、GitHub Release 与 npm 发布及发布后回读：待用户批准。
+
