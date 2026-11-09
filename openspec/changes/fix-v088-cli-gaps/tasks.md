@@ -60,6 +60,7 @@
     - 结果说明行：拒绝审批后展开该轮过程区，可见「已拒绝」的失败工具行和「本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续」。默认折叠在「已完成，用时 33秒」之下。
     - 派遣结果档位：主 Agent 的汇报写明“CodeBuddy Worker（codebuddy-worker，权限‘询问’）”。
     - 英文页脚：临时把界面语言切到 English（看完已改回「跟随 DSH」）。桌面管理窗口 4 个按钮的文字都不折行，但 480px 宽放不下一行，「Open desktop app」换到第二行右对齐；中文时 4 个按钮在一行。
+    - 按用户要求调成一行：英文词条改为 Refresh / Resume observing / Open app（暂停提示同步为 “Observation paused. Refresh or resume observing.”），`doc/settings-ui-design.md` 已同步。重新正式构建后在 Desktop 英文界面复看，Close / Refresh / Resume observing / Open app 同排右对齐；看完语言已改回「跟随 DSH」。`tests/workbuddy-desktop-window.test.tsx` 等 3 个文件 294/294 通过。
 - [x] 5.5 桌面管理复开失败的根因为代码推断（状态读取或上一会话停止未完成导致 `reserve()` 拒绝），未在 Desktop 上复现确认。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：WorkBuddy CN「在桌面端管理」用真实鼠标点击连续开关多次，关闭后再点都能在约 0.1 秒内打开，没有再出现“暂不可用”。只有在关闭动作尚未结束（Host 仍在停止上一会话、遮罩还在）时立刻点，这一下被遮罩吸收、没有任何提示；再点一次即可打开。修复前的“暂不可用”无法在修复后复现，原根因仍为代码推断。
 - [ ] 5.6 WorkBuddy 国际版、CodeBuddy 国际站未验证。Windows 部分已完成（见 5.8 下的派遣记录）。
