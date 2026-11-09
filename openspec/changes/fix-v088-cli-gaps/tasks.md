@@ -10,6 +10,7 @@
 
 - [x] 1b.1 现状核对（Desktop，Codex Computer Use 读取无障碍树）：CodeBuddy「~53.8K / 960K」、TRAE CN「13.1K / 190K」、WorkBuddy CN「~27.3K / 300K」三行均为 `—`；Claude Code 参照有值。原因：三者 ACP 只给总量；插件此前只解析 Claude、OMP、Pi 等的分类。
 - [x] 1b.2 来源核查：CodeBuddy 2.181 与 WorkBuddy CLI 2.165 的本地命令 `/context` 不调用模型，输出含 System prompt / System tools / MCP tools / Memory files / Skills / Messages 与头部「模型 · 已用/容量」，数值按 0.1K 取整。在 Worker 自身会话里执行会把命令与输出作为用户消息写进会话（实测 Messages 302→584），所以不能在主进程执行。`--no-session-persistence` 副进程载入同一会话执行 `/context`，会话文件 sha 与文件数不变。TRAE CN（traecli 0.213.1）可用命令为 review/init/compact/logout 与技能，没有 `/context`，ACP 只给 used/size，没有分类来源。
+  - 2026-11-09 对照：Codingns4DSH（`487241d`）对外部 CLI 默认隐藏三行，只有经 Magpie 本地网关的会话才读网关拆分的六类；codex-host（`b0fa4c9`）只上报已用与容量，没有分项。两者都没有 TRAE 适配器。TRAE CN 请求直连字节服务，截获需改服务地址或解密流量，不采用。用户决定 TRAE CN 三行保持 `—`。
 - [x] 1b.3 实现：新增 `src/host/codebuddy-context-inspection.mjs`（解析与副进程读取）；`native-acp.mjs` 增加 `afterClose`，仅在本轮已结算、未停止且 Worker 进程退出后调用；`native-transport.mjs` 的 `auxiliary` 子进程随运行一起停止，但其退出状态不影响本轮结果，stderr 不进 Worker 诊断；`native-codebuddy.mjs` 与 `native-workbuddy.mjs`（WorkBuddy 副进程走同样的引导与凭据投递，argv 追加 `--no-session-persistence`）接入；`telemetry.ts` 采信 `codebuddy.native-context`，总量与分类取同一份报告，下一次 `usage_update` 会清掉旧分类；`scripts/build.mjs` 打包新模块。
   - CodeBuddy 输出带 `_meta['codebuddy.ai/commandKind']='local'`；WorkBuddy 2.165 不带该标记。两者都接受没有模型请求 ID 的输出；本次提示期间出现思考、工具或模型请求 ID 时不采纳。
   - 一轮真实 CodeBuddy 运行没有发 `usage_update`，所以总量改为同取 `/context` 头部，而不是依赖 `usage_update`。
