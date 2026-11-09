@@ -60,16 +60,18 @@
 - [ ] 4.4 补 `i18n-messages.ts` 与 `hostText` 的标题/plan/选项/状态/错误映射；验证中文/英文、长文案、480px、淡色提示、灰卡、右对齐操作及原生回退焦点，更新设置规范中相关行为与确实变动的样式参数。
   - 2026-11-07：中文/英文组件渲染及回退焦点有模拟覆盖；两 CLI 作用域内操作右对齐、TRAE 长标题换行，保持 480px、主题 token 与原同排底栏。已同步设置规范；Desktop 明暗/实际窄窗口目视未执行，整项暂不勾。
   - WorkBuddy 文案全部加入中英文词典，hostText 沿用精确词条映射；仅桌面底栏增加右对齐/75% 操作组规则，设置规范已同步。跨 CLI 与真实目视范围未完成。
-- [ ] 4.5 同步 README、usage、架构/协议文档及关联活动变更的 WorkBuddy“无入口”与模板“下拉框”旧表述；逐条核对为“桌面管理引导但无 CLI 登录/退出”和实际卡片选择，本轮不提前修改这些文件。
+- [x] 4.5 同步 README、usage、架构/协议文档及关联活动变更的 WorkBuddy“无入口”与模板“下拉框”旧表述；逐条核对为“桌面管理引导但无 CLI 登录/退出”和实际卡片选择，本轮不提前修改这些文件。
   - 2026-11-07：本工作树同步中英文 README/usage、CodeBuddy/TRAE 协议、架构和图形登录指南；WorkBuddy 及其他活动 change 的对应文案由集成方协调，整项暂不勾。
   - WorkBuddy 部分已同步中英文 README、usage、架构、协议、设置规范及活动 add-workbuddy-cli 的 proposal/design/spec/tasks；CodeBuddy/TRAE 与共享模板卡片迁移仍由另一工作树完成。
+  - 2026-11-09（0bb2158）：`add-cli-login-templates` 的 proposal、design D4 与 cli-connection-health 增量规格把“登录来源下拉框”改为与源码一致的「添加账号」页两列卡片单选，保留“没有原生参数时不在启动阶段代选”的规则；该变更严格校验通过。README/usage 与 WorkBuddy 相关文案此前已同步，复查无“无入口”“下拉框”旧表述。
 
 ## 5. 测试与集成自动检查
 
 本组承接第 3/4 组随实施新增的测试，执行跨模块验证；新增 fixture 清楚区分“实采稳定文本摘录”与模拟路径、参数和状态，无真实 nonce、code、token 或账号输出。
 
-- [ ] 5.1 运行受影响的 flow/账号/Client 回归（`tests/account-guide-flows.test.ts`、`accounts.test.ts`、`traecn-accounts.test.ts`、`account-terminal.test.tsx`、`accounts-window.test.tsx` 及新增 WorkBuddy 观察测试）；核对实际用例数与失败，不把模拟状态称作真实登录。
-- [ ] 5.2 运行受影响的 WorkBuddy 安装/原生元数据与 Windows 终端关联测试；覆盖 W3/W4 的模拟打开/取消、ConPTY DA/分片、同站点身份缺失，明确平台测试边界。
+- [x] 5.1 运行受影响的 flow/账号/Client 回归（`tests/account-guide-flows.test.ts`、`accounts.test.ts`、`traecn-accounts.test.ts`、`account-terminal.test.tsx`、`accounts-window.test.tsx` 及新增 WorkBuddy 观察测试）；核对实际用例数与失败，不把模拟状态称作真实登录。
+- [x] 5.2 运行受影响的 WorkBuddy 安装/原生元数据与 Windows 终端关联测试；覆盖 W3/W4 的模拟打开/取消、ConPTY DA/分片、同站点身份缺失，明确平台测试边界。
+  - 2026-11-09（5.1 与 5.2 合并一次运行，macOS，均为模拟用例，不代表真实登录）：`TMPDIR=/tmp/wbs npx vitest run` account-guide-flows、accounts、traecn-accounts、account-terminal、accounts-window、new-cli-account-flows、codebuddy-account、workbuddy-*（bootstrap/desktop/desktop-open/desktop-window/installation/registration）、native-workbuddy、windows-account-terminal、windows-account-stdio、client-i18n，共 17 个文件 669/669 通过。Windows 平台的 ConPTY 用例在 macOS 上只跑模拟路径。
 - [x] 5.3 执行 `pnpm typecheck`、`pnpm build:preview` 与本 change 严格校验；记录命令/结果/隔离产物路径，不执行正式 build 或更新 Desktop 链接。
 
 ### 2026-11-07 本工作树自动检查

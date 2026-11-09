@@ -102,6 +102,7 @@
   - 未验证：国际版 WorkBuddy AI（未安装，连接页显示暂不可用）。
 - [ ] 7.5 Desktop 加载后连接页、图标明暗、Worker 卡片目视核对
   - 2026-11-07 部分实机：Desktop 0.2.2-rc.1（macOS）正式 `pnpm build`（`feat/general-settings` 07534bb）后重启，内置浏览器直连 Host Web UI；主 Agent（GLM-5.3-Flash）经 CLI Worker 派遣，工作区 `.test-data/CLI Worker Demo`。连接页显示「已登录（www.workbuddy.cn）」、无登录/退出按钮与试验性标注；WorkBuddy AI 显示未安装；图标明/暗可见。派遣 hy4free/默认强度，自动审批档，SUCCESS，`v088-workbuddy-check.txt` 实际内容为 `WorkBuddy OK\n`，事件含「WorkBuddy 原生模型已确认」；结束后无 helper/网关残留进程、无 `dshwb-*` 临时目录；该任务 5 份运行记录均为 0600，未检出密钥字样。Worker 卡片显示正常；国际版未验证，本项保持未勾选。
+  - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：WorkBuddy CN 连接页「已登录（www.workbuddy.cn）」与 outline「在桌面端管理」；桌面管理窗口中英文、复开均已看（见 fix-v088-cli-gaps 5.4/5.5）。国际版仍未安装。
 
 ## 8. 文档
 
@@ -156,7 +157,8 @@
   - 关联 31 文件：首次沙箱内 1161 通过/42 失败；顺序修复后沙箱外 1163 通过/40 失败（1203 项）。
   - 全量沙箱内：255 文件通过/17 失败/4 跳过，5648 项通过/347 失败/14 跳过，另有 20 未处理错误。沙箱外原命令重跑：270 文件通过/2 失败/4 跳过，5955 项通过/40 失败/14 跳过（6009 项），无额外未处理错误。
   - 完整命令、日志位置、各冲突决策与失败归因见 integration-verification.md。此次没有正式构建、Desktop 链接更新、真实 CLI/模型/账号调用、推送、发布或版本修改。
-- [ ] 9.4 在允许的短绝对临时目录下补验 40 项 WorkBuddy socket 用例
+- [x] 9.4 在允许的短绝对临时目录下补验 40 项 WorkBuddy socket 用例
+  - 2026-11-09：`TMPDIR=/tmp/wbs npx vitest run tests/workbuddy-bootstrap.test.ts tests/native-workbuddy.test.ts`，2 个文件 72/72 通过（含此前因 socket 路径过长失败的 40 项）。
   - 指定 TMPDIR 本身 107 字节、socket 约 127 字节。沙箱内 `listen EPERM`；沙箱外监听后 `chmod ENOENT`／ready 初始化失败，与 macOS Unix socket 长路径限制一致。两文件为 workbuddy-bootstrap（21 项失败）与 native-workbuddy（19 项失败）。遵守固定 TMPDIR 和工作树范围，没有改用工作树外目录或修改产品行为。本轮不能宣称完整动态密钥不泄露验收已通过。
 
 
