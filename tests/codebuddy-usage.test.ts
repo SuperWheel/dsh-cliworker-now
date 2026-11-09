@@ -49,6 +49,17 @@ describe('模拟：CodeBuddy 系原生会话文件的积分与用量', () => {
     const sub = inspectCodebuddyDurableUsage([user(), final('m1', 10, 1, { credit: 2 })], { ...binding, subagentsActive: true })
     expect(sub).toMatchObject({ creditsIncomplete: 'subagents' }); expect(sub?.providerCredits).toBeUndefined()
   })
+  it('reads a turn the user ended by denying an approval: the denied call was billed (shape observed 2026-11-08)', () => {
+    const call = (callId: string, messageId: string, opts: Parameters<typeof request>[4] = {}) => ({ ...request('function_call', messageId, 40, 4, opts), callId })
+    const answered = (callId: string) => ({ id: `res-${callId}`, type: 'function_call_result', status: 'completed', callId, sessionId: SESSION, providerData: { conversationRequestId: REQ } })
+    const denied = [user(), call('c1', 'm1', { credit: 0.5 }), answered('c1'), call('c2', 'm2', { credit: 0.25 })]
+    expect(inspectCodebuddyDurableUsage(denied, binding)).toBeUndefined() // without the denial it is an unsettled turn
+    expect(inspectCodebuddyDurableUsage(denied, { ...binding, deniedCallIds: ['c2'] })).toMatchObject({ requests: 2, providerCredits: 0.75, usage: { totalTokens: 88 } })
+    expect(inspectCodebuddyDurableUsage(denied, { ...binding, deniedCallIds: ['c1'] })).toBeUndefined() // a different call was denied
+    const pending = [user(), call('c1', 'm1'), { ...call('c3', 'm1'), id: 'row-m1-c3' }]
+    expect(inspectCodebuddyDurableUsage(pending, { ...binding, deniedCallIds: ['c1'] })).toBeUndefined() // c3 still awaits its result
+    expect(inspectCodebuddyDurableUsage(pending, { ...binding, deniedCallIds: ['c1', 'c3'] })?.providerCredits).toBe(0)
+  })
   it.each([
     ['unsettled turn (last request is a tool call)', [user(), request('function_call', 'm1', 10, 1)]],
     ['different model', [user(), final('m1', 10, 1, { model: 'other-model' })]],
@@ -115,6 +126,23 @@ describe('模拟：CodeBuddy 系原生会话文件的积分与用量', () => {
     expect(native).not.toHaveBeenCalled()
     await hook({ stopReason: 'end_turn', userMessageId: USER, _meta: { 'codebuddy.ai/conversationRequestId': REQ } }, SESSION, { native, signal })
     expect(native).toHaveBeenCalledWith(expect.objectContaining({ type: 'cliworker.codebuddy_usage', cli: 'workbuddycn', source: 'workbuddycn.native-transcript', providerCredits: 0 }))
+  })
+  it('the runner hook reads a denied-approval end, but not a user stop or an undenied cancel', async () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'cb-SIMULATED-home-'))); roots.push(home)
+    const project = realpathSync(mkdtempSync(join(tmpdir(), 'cb-SIMULATED-project-'))); roots.push(project)
+    const bucket = join(home, 'projects', codebuddyProjectKey(project)); mkdirSync(bucket, { recursive: true })
+    writeFileSync(join(bucket, `${SESSION}.jsonl`), [user(USER, REQ, project), { ...request('function_call', 'm1', 30, 3, { credit: 0 }), callId: 'sim-call-1' }]
+      .map(row => JSON.stringify(row)).join('\n') + '\n')
+    const hook = codebuddyUsageOnResult({ cli: 'codebuddy', project, preference: { model: 'hy4free' } }, home, Date.now())
+    const result = (outcome?: string) => ({ stopReason: 'cancelled', userMessageId: USER,
+      _meta: { 'codebuddy.ai/conversationRequestId': REQ, ...(outcome ? { 'codebuddy.ai/outcome': outcome } : {}) } })
+    const native = vi.fn(), live = new AbortController(), stopped = new AbortController(); stopped.abort()
+    await hook(result('PERMISSION_DENIED'), SESSION, { native, signal: stopped.signal }, { deniedToolCallIds: ['sim-call-1'] })
+    await hook(result('CANCELLED'), SESSION, { native, signal: live.signal }, { deniedToolCallIds: ['sim-call-1'] })
+    await hook(result('PERMISSION_DENIED'), SESSION, { native, signal: live.signal }, { deniedToolCallIds: [] })
+    expect(native).not.toHaveBeenCalled()
+    await hook(result('PERMISSION_DENIED'), SESSION, { native, signal: live.signal }, { deniedToolCallIds: ['sim-call-1'] })
+    expect(native).toHaveBeenCalledWith(expect.objectContaining({ type: 'cliworker.codebuddy_usage', providerCredits: 0, usage: expect.objectContaining({ totalTokens: 33 }) }))
   })
 })
 

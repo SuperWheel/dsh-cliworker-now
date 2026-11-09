@@ -69,10 +69,12 @@ export function inspectCodebuddyDurableUsage(records, config) {
   const user = users[0]
   if (user.providerData?.conversationRequestId !== config.conversationRequestId || user.providerData?.startsNewUserRequest !== true ||
     (user.cwd !== undefined && !sameCodebuddyCwd(user.cwd, config.cwd, config.platform))) return
-  const requests = new Map()
+  const requests = new Map(), calls = new Set(), answered = new Set()
   let last
   for (const row of records.slice(records.indexOf(user) + 1)) {
     if (row.type === 'message' && row.role === 'user' && row.providerData?.startsNewUserRequest === true) break
+    if (row.providerData?.conversationRequestId === config.conversationRequestId && typeof row.callId === 'string')
+      (row.type === 'function_call' ? calls : row.type === 'function_call_result' ? answered : new Set()).add(row.callId)
     const data = row.providerData
     if (!object(data) || data.conversationRequestId !== config.conversationRequestId || !object(data.usage)) continue
     if (!id(data.messageId) || data.requestModelId !== config.model) return
@@ -89,8 +91,15 @@ export function inspectCodebuddyDurableUsage(records, config) {
     requests.set(data.messageId, entry)
     last = row
   }
-  // A trailing function_call means another request follows; the transcript is not settled yet.
-  if (!last || last.type !== 'message' || last.role !== 'assistant' || last.status !== 'completed') return
+  // A trailing function_call normally means another request follows; the transcript is not settled yet.
+  // Exception: the turn ended because the user denied that call (ACP stopReason cancelled with
+  // PERMISSION_DENIED). Then every call left without a result must be one of the denied calls;
+  // the request that proposed them was still billed. Observed on CodeBuddy 2.181 (2026-11-08).
+  const unanswered = [...calls].filter(callId => !answered.has(callId))
+  const denied = Array.isArray(config.deniedCallIds) ? new Set(config.deniedCallIds) : undefined
+  const settledByDenial = denied?.size > 0 && last?.type === 'function_call' && unanswered.length > 0 &&
+    unanswered.every(callId => denied.has(callId))
+  if (!last || (!settledByDenial && (last.type !== 'message' || last.role !== 'assistant' || last.status !== 'completed'))) return
   const values = [...requests.values()]
   const sum = key => values.reduce((total, value) => total + value[key], 0)
   const usage = { inputTokens: sum('input'), outputTokens: sum('output'), totalTokens: sum('total'),

@@ -39,14 +39,20 @@ export const codebuddyRunnerSettings = (config) => ({
  * CodeBuddy-family ACP results carry no token or credit receipt. After a
  * completed turn, read the exact request's records from the native durable
  * transcript (same conversationRequestId / userMessageId as the ACP result).
+ * A turn the user ended by denying an approval is read too: its last billed
+ * request is the denied tool call, matched by the ACP toolCallId.
  */
 export function codebuddyUsageOnResult(config, home, turnStartedAt) {
-  return async (result, sessionId, nativeIo) => {
-    if (result?.stopReason !== 'end_turn') return
+  return async (result, sessionId, nativeIo, turn = {}) => {
+    const deniedCallIds = [...(turn.deniedToolCallIds ?? [])]
+    const deniedEnd = result?.stopReason === 'cancelled' && result?._meta?.['codebuddy.ai/outcome'] === 'PERMISSION_DENIED' &&
+      deniedCallIds.length > 0 && !nativeIo.signal?.aborted
+    if (result?.stopReason !== 'end_turn' && !deniedEnd) return
     const meta = result._meta ?? {}
     const observed = await readCodebuddyDurableUsage({ cli: config.cli, home, project: config.project, sessionId,
       model: config.preference.model, userMessageId: result.userMessageId,
-      conversationRequestId: meta['codebuddy.ai/conversationRequestId'], turnStartedAt }, { signal: nativeIo.signal })
+      conversationRequestId: meta['codebuddy.ai/conversationRequestId'], turnStartedAt,
+      ...(deniedEnd ? { deniedCallIds } : {}) }, { signal: nativeIo.signal })
     if (observed) nativeIo.native(observed)
   }
 }

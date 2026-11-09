@@ -478,7 +478,7 @@ export async function runNativeAcp(config, io, settings) {
     responses?.finish(undefined, false)
     if (result?.sessionId !== undefined && result.sessionId !== sessionId)
       throw new Error('ACP prompt session changed')
-    await settings.onResult?.(result, sessionId, io)
+    await settings.onResult?.(result, sessionId, io, { deniedToolCallIds: [...deniedTools] })
     // Opt-in only: a denied operation is not a user stop or a successful execution.
     const deniedCancel = settings.deniedCancelEndsTurn && denied && result?.stopReason === 'cancelled' &&
       !io.signal.aborted && !failure && !backgroundUnconfirmed && !toolOutcomes.count

@@ -145,8 +145,8 @@ export async function runNativeWorkBuddy(config, io) {
     approvalFromToolCall: true,
     deniedCancelEndsTurn: true,
     // Same durable transcript format as CodeBuddy, under WorkBuddy's own data folder.
-    onResult: (result, sessionId, nativeIo) => configDir
-      ? codebuddyUsageOnResult(config, configDir, turnStartedAt)(result, sessionId, nativeIo) : undefined,
+    onResult: (result, sessionId, nativeIo, turn) => configDir
+      ? codebuddyUsageOnResult(config, configDir, turnStartedAt)(result, sessionId, nativeIo, turn) : undefined,
   })
 }
 
