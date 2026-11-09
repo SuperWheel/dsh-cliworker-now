@@ -23,7 +23,11 @@
   - WorkBuddy CN：25 秒完成，回复 `OK`；弹层「上下文已用 10%，~28.7K / 300K」，系统提示词 ~3.8K、工具定义 ~15.3K、对话消息 ~1.1K。
   - TRAE CN：未发送；弹层「7%，13.1K / 190K」，三行仍为 `—`（符合预期）。
   - 三行之和小于总量（CodeBuddy 约 22.9K 对 25.7K，WorkBuddy 约 20.2K 对 28.7K）：总量是原生头部的当前占用，三行是原生分类估算，Skills、Memory files 等不计入三行；与 Claude Code 的呈现方式相同，不做补齐。
-  - 未核对：各行悬停提示（Computer Use 无悬停动作）；WorkBuddy 国际版未安装；Windows 未实机复看。
+  - Windows 实机（2026-11-09 22:53 包 `preview-088-20261109-225314.tgz`，sha256 前缀 `5caa8326339feb26`；空闲预检 activeWorkers=0，安装退出 0，逐文件 1039 个 0 不一致 0 缺失，DSH 带无障碍参数重启；Codex Computer Use（gpt-6.1-sol）操作，工作区 `C:\Users\admin\cw081f1\live-codex`，hy4free，同样的续聊，无审批卡、无白屏、无卡在运行中）：
+    - `v088-codebuddy-win`：19 秒完成，回复 `OK`；「3%，~27K / 960K」，系统提示词 ~4.5K、工具定义 ~19K、对话消息 ~906。
+    - `workbuddycn-1`：18 秒完成，回复 `OK`；「9%，~25.6K / 300K」，系统提示词 ~3.9K、工具定义 ~16.9K、对话消息 ~413。
+    - `v088-traecn-win`：未发送；「6%，10.9K / 190K」，三行 `—`。
+  - 未核对：各行悬停提示（Computer Use 无悬停动作）；WorkBuddy 国际版未安装。
 
 ## 2. 分支
 
