@@ -10,7 +10,8 @@
 
 - [x] 2.1 新增测试：新旧两条凭据一条 401 时显示其余凭据的模型与提示；全部 401 时报认证失败；一条 unknown 时仍为空；OpenCode 认证失败提示；account-scope 新旧格式解析；i18n 映射。
 - [x] 2.2 运行 typecheck 与关联测试文件，记录准确数量。
-- [ ] 2.3 严格校验本 change，本地提交，不推送。
+- [x] 2.3 严格校验本 change，本地提交，不推送。
+  - 2026-11-09：严格校验通过（`pnpm spec validate fix-catalog-auth-denial-display --strict`），按用户决定关闭。
 
 ## Validation record
 

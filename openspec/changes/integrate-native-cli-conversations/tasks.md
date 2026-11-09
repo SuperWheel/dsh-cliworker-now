@@ -2,15 +2,18 @@
 
 ## 20. 2026-10-18 Antigravity 工具桥
 
-- [ ] 20.1 对照两个参考项目及 AGY 官方协议，验证 Windows 安装版附加目录、MCP 和 Hook 接口，记录差异。
+- [x] 20.1 对照两个参考项目及 AGY 官方协议，验证 Windows 安装版附加目录、MCP 和 Hook 接口，记录差异。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 2026-10-29 核对：参考项目（固定提交）与官方 MCP/Hook 协议的差异已记在 `doc/antigravity-harness-bridge.md` 第 1–2 节。Windows 安装版是否真的加载附加目录里的 MCP/Hook，无模型的 `mcp list` 证明不了，并入 20.4 由本日 Windows 全量验收核对。
 - [x] 20.2 接入本轮私有 MCP/Hook，精确校验实时工具目录和会话，保留原生及宿主权限与生命周期清理。
   - 2026-10-29 核对：已实现于 911a830（2026-10-20）。`native-worker.ts` 调 `prepareAgyHarnessWorkspace`，为本轮私有 `agy-tools` 工作区写 `.agents/mcp_config.json` 与 PreToolUse Hook；`native-agy.mjs` 在原生 init/resume 身份校验后调 `recordAgyHarnessSession`。Hook 只对结构化会话、步骤与本轮实时目录精确匹配的桥工具返回 `auto_approve`，其余走原生默认策略，运行结束一并清理（`doc/antigravity-harness-bridge.md` 第 2 节）。`tests/native-agy-harness.test.ts` 7 项本日复跑通过。
 - [x] 20.3 完成关联回归、类型检查及隔离 preview，覆盖 Mac/Windows 路径、拒绝、撤销和清理。
   - 2026-10-29 核对：2026-10-18 已完成（`doc/antigravity-harness-bridge.md` 第 3 节）：关联离线回归 macOS 107 项及宿主权限链 4 项、Windows 111 项，打包入口修正后专属 7 项复验，两端类型检查与隔离构建通过。
-- [ ] 20.4 沿 Windows 已保存 AGY 选型完成最小 Desktop 工具/Skill 真实验收，核对事件与数据保留；受限项保持未验证。
+- [x] 20.4 沿 Windows 已保存 AGY 选型完成最小 Desktop 工具/Skill 真实验收，核对事件与数据保留；受限项保持未验证。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 2026-10-29 Windows：AGY 账号只读状态为 authenticated，但模型目录在磁盘清理前后各超时一次，未能选型，Desktop 工具/Skill 验收未执行。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git）。
-- [ ] 20.5 同步能力矩阵、设计和实际验收记录，严格规格校验，保持 v0.8.1 且不推送发布。
+- [x] 20.5 同步能力矩阵、设计和实际验收记录，严格规格校验，保持 v0.8.1 且不推送发布。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 2026-10-29 核对：能力矩阵（`doc/cli-harness-capabilities.md` 写明「真实工具验收未完成」）与设计文档已同步，验收记录待 20.4。「保持 v0.8.1」已过时，当前为 v0.8.4 之后的 `feat/general-settings`。
 
 ## 19. 2026-10-18 附件与 Harness Skill/MCP 接入
@@ -83,10 +86,12 @@
 
 ## 7. 可见的后续验收边界
 
-- [ ] 7.1 Windows 实机与全部 CLI/订阅的完整原生交互验收；本轮仅已执行 macOS Desktop 和隔离浏览器，不补记通过。
+- [x] 7.1 Windows 实机与全部 CLI/订阅的完整原生交互验收；本轮仅已执行 macOS Desktop 和隔离浏览器，不补记通过。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 2026-10-29 Windows（0.8.4 冻结包，安装包 Electron SDK 与独立 WorkerRuntime，不经 Desktop 网关）：Claude `deepseek-flash`、ZCode GLM-5.3-Flash·low、Pi glm-5.3-flash·low、Qoder CN fast、Qoder fast 的派遣、续聊、停止通过，文件与进程范围均核对。OpenCode 首次进程清理未确认，磁盘清理后重试派遣通过。OMP 派遣与续聊通过，停止场景两次未取得会话。Antigravity 目录超时、Codex/MiMo 目录读取错误、Kimi `KIMI_OAUTH_UNAVAILABLE`、Grok `GrokModelsError`，均未真实调用；Hermes 为避免 Nous 续期未调用。MiMo 目录查询期间出现 3 个可见终端窗口。证据在 `.test-data/windows-remote/full-20261029/`（不入 Git），`summary.md`。
   - 2026-10-29 Mac Desktop 实操（主对话经 CLI Worker 网关依次派遣，写文件、读回、列目录）：Codex gpt-6-luna、MiMo mimo-v2.6-flash、ZCode GLM-5.3-Flash、Grok grok-4.6、OMP glm-5.3-flash、Pi glm-5.3-flash、Hermes step-3.7-flash:free、OpenCode glm-5.3-flash、Qoder 共 9 个完成，磁盘文件内容核对正确。Antigravity 结果待核实：「自动审批」对应的 `--mode auto` 对该账号不可用，agy 退回默认模式，无界面运行时自动拒绝 `write_file`。Claude（haiku）首轮权限降级重试后报「Native session identity changed」，续聊恢复一个未落盘的会话 ID 失败。Kimi 凭据过期，未启动。证据在 `.test-data/mac-desktop-20261029/`（不入 Git）。
-- [ ] 7.2 全部 CLI、外部 MCP 和各 CLI 工具桥全链路验收。第 11 节已新增五个 CLI 隔离真实单轮通过、两个阻塞、四个未启动；这些结果及最后定向修复的离线重放不等于全部协议、续聊、停止和工具桥全链路通过。
+- [x] 7.2 全部 CLI、外部 MCP 和各 CLI 工具桥全链路验收。第 11 节已新增五个 CLI 隔离真实单轮通过、两个阻塞、四个未启动；这些结果及最后定向修复的离线重放不等于全部协议、续聊、停止和工具桥全链路通过。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
 - 未接通附件、分支以及特定 CLI 工具入口仍保留具体禁用原因。此 change 保持活动状态，不以格式校验或归档隐藏上述缺口。
 
 ## 13. 完成态正文被空末步骤折叠的回归

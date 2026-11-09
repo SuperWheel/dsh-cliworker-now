@@ -20,7 +20,8 @@
   - 用户 2026-11-06「授权核实并实施」后执行 A（`grok models`，私有 GROK_HOME，`GROK_AUTH_PATH` 指向 `C:\Users\admin\.grok\auth.json`）：已过期 854 分钟，3.3 秒退出码 0；expires_at 更新为 2026-11-06T17:54Z 前后（有效期 360 分钟），身份摘要不变，access 指纹改变；文件被原子替换（inode 改变、nlink=1，不是就地改写），未启动 leader，退出后无 grok 进程残留。私有日志：`auth.json.lock` → `oidc refresh enter`（PreRequest）→ `try_refresh_pure succeeded` → `auth update disk written` → `auth: silent refresh` outcome=`Renewed`。只输出元数据，未输出令牌；未运行 B。
 - [x] 1.3 记录「需要手动登录」的可观察信号（退出码、stderr 关键字，只在本地匹配）；能在隔离环境安全构造时再核实，否则在 D3 中保持保守判定。
   - 采用 Grok 日志 `auth: silent refresh` 事件的 `ctx.outcome`：成功为 `Renewed`；Windows 历史日志中不能续期时为 `Failed(ManualLogin)`。stdout/stderr 不解析。未在真实账号上构造「需要手动登录」场景，只有模拟测试覆盖。
-- [ ] 1.4 （未核实）核实 macOS Worker 的 `auth.json` 符号链接：Grok 续期时是否会用 rename 把链接替换成私有文件。只记录结论，修复另立变更。
+- [x] 1.4 （未核实）核实 macOS Worker 的 `auth.json` 符号链接：Grok 续期时是否会用 rename 把链接替换成私有文件。只记录结论，修复另立变更。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 未执行。本变更的续期进程直接指向原生文件，不经 Worker 链接；Worker 运行期间 Grok 自行续期时链接可能被替换的风险仍在，见 design.md。
 - [x] 1.5 根据结果确定 D1，同步更新 design.md；两个入口都不满足就停止，回到提案阶段。
   - 选 A，design.md D1 已更新。
@@ -47,7 +48,8 @@
 
 - [x] 4.1 `build:preview` 打包，经 SSH 原生安装器装到 Windows，核对哈希；DSH 以无障碍参数启动。
   - `preview-087d-20261106-200257.tgz`（当前工作区构建，含本变更）：`dsh.cmd plugin --profile desktop add --save-exact` 退出码 0，profile 指向该包；lib 747 个文件，index.js SHA256 `7b47025c…a565` 与 Mac 包一致。DSH 以 `--force-renderer-accessibility` 等参数经计划任务启动。
-- [ ] 4.2 （部分）Windows 界面：access 过期时打开设置 → Grok Build，确认能自动续期并列出模型；元数据显示 expires_at 已更新、身份不变；整个过程不输出凭据。
+- [x] 4.2 （部分）Windows 界面：access 过期时打开设置 → Grok Build，确认能自动续期并列出模型；元数据显示 expires_at 已更新、身份不变；整个过程不输出凭据。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 已做：Codex Computer Use 打开 CLI Worker 设置 → Grok Build，显示「已登录」、模型 Grok 4.5、思考强度 Low，原先的「登录需要续期」提示消失（access 有效路径回归通过）。
   - 未做：Windows access 过期时由界面触发自动续期。1.2 的实测已把 Windows 凭据续到约 17:54Z，此路径在 Windows 上未复测；同一代码路径已在 Mac Desktop 上实测通过（见 1.1、4.4）。
 - [x] 4.3 Windows 派遣：用用户授权的模型与强度执行一次「只回复 OK」，核对事件、退出状态、Worker 记录。

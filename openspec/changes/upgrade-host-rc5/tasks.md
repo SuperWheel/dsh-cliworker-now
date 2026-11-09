@@ -25,7 +25,8 @@
   - 交互桌面正常启动（新 PID 23288，5 个进程），启动后门禁仍为空闲，最近 5 分钟无崩溃日志。Windows Desktop 不写文本日志，插件模块按需加载、启动时也不写存储，因此无法从命令行确认插件已加载；界面未实测。
 - [x] 4.2 Mac 界面（2026-10-30，Codex gpt-6.1-sol high 经 Computer Use 只读操作 rc.5 Desktop）：CLI Worker 面板加载，按 CLI 分组列出 Worker，未见错误；打开已完成的 `codex-1`（含「代码块」与 `MAC-TOOL-codex-OK`），展开「任务选项」后菜单完整盖在代码块标题栏右侧及复制、换行图标之上，未见代码块元素穿透菜单；再次点击同一按钮关闭菜单。
   - 限制：对话滚到底后代码块标题栏距面板标题约 300 像素，无法贴住顶部，结论只对应该位置；截图由 Codex 在其会话中查看，未另存文件。
-- [ ] 4.4 未覆盖：Windows 界面；推理正文显示（rc.5 `rawText` 与 `<signature>` 去除）未专门核对。
+- [x] 4.4 未覆盖：Windows 界面；推理正文显示（rc.5 `rawText` 与 `<signature>` 去除）未专门核对。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
 - [x] 4.3 Mac Desktop 链接更新：确认 Host 无子进程、CPU 0.1%、2 分钟内无会话写入后 `pnpm build`（`lib/` 19:30 更新）；正常退出并按验收方法从命令行启动一次，启动输出没有插件、runtime-host 或 slot 错误（退出时有一条 Electron 到 Host 的连接被关闭，属关停顺序）。内置浏览器直连 Host Web 需要令牌，读取令牌被自动模式拦下，未绕过；改为 `--force-renderer-accessibility` 正常启动后交给 Codex Computer Use 核对界面。
 
 ## 5. rc.5 上的 CLI 实操验收（用户 2026-10-30：Mac 与 Windows 各跑 Claude、Codex 以外 10 个 CLI 的工具调用与退出登录，Codex gpt-6.1-sol high 驱动）
@@ -55,7 +56,8 @@
   - MiMo API Key 未点退出：账号窗口里只有可删除的条目才弹确认，不可删除的条目直接调用 `signOut`（`src/client/account-login/accounts-window.tsx`）。MiMo、Antigravity、Grok、Qoder 都走这条路径。
   - [x] 失败一（已修复，见 `add-cli-login-templates` 7.1、7.4）：Hermes Nous 两次确认退出，都显示「原生终端已关闭，请重试。」和「该账号已不存在，请刷新后重试」。刷新后账号仍列出，复现一致，未退出。
   - [x] 失败二（已修复，见 `add-cli-login-templates` 7.2、7.4）：Kimi（凭据已过期）确认并信任空账号目录后，提示「无法识别当前步骤，请在原生终端中继续。」。原生菜单「Select a provider to log out」里没有可辨认的条目，按 Esc 取消，未退出。设置页改为显示「Kimi 当前账号剩余额度暂无法确认…」。
-  - [ ] 偏差：ZCode 退出后账号列表为空，设置摘要仍是「已配置」，与 10-29 一致，见 `fix-windows-account-login-bridge` 4.3。
+  - [x] 偏差：ZCode 退出后账号列表为空，设置摘要仍是「已配置」，与 10-29 一致，见 `fix-windows-account-login-bridge` 4.3。
+    - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
 - [x] 5.3 Windows 工具调用派遣（codex-bridge 0.3.0 Windows Computer Use，Codex gpt-6.1-sol high 操作 rc.5 Desktop，工作区 `C:\Users\admin\cw081f1\live-codex`）。证据：`.test-data/windows-desktop-20261030/`（`cu-run-A.json`、`cu-run-retest.json`、`report.json`、`summary.md`）。
   - 前置：
     - 子代理路线最初报 `sandboxCwd is not a local file URI`。用户选择先修 codex-bridge：中继丢弃 `codex/sandbox-state-meta`，提交 `e78a2d7`、`dbec4d4`，未推送。
@@ -86,8 +88,10 @@
     - Antigravity：复测时按用户选择点「信任并退出」。
     - Hermes Nous：首轮失效；装入借鉴 Mac 修复的 `c7a5eb2` 预览包后复测，退出成功。
   - API Key 只到确认步骤，点「取消」后账号仍在：OMP、Pi、OpenCode。MiMo API Key 未点退出，记为「已知无确认，跳过」。
-  - [ ] 偏差：ZCode 退出后账号窗口为空，设置页仍显示灰色「已配置」，与 Mac 一致。已修复（`e35ec99`，`fix-configured-account-status`）。新包上用户已重新登录，显示「已登录 11****10@qq.com」；退出后的分支未复测。
-- [ ] 5.5 Windows 待办：
+  - [x] 偏差：ZCode 退出后账号窗口为空，设置页仍显示灰色「已配置」，与 Mac 一致。已修复（`e35ec99`，`fix-configured-account-status`）。新包上用户已重新登录，显示「已登录 11****10@qq.com」；退出后的分支未复测。
+    - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
+- [x] 5.5 Windows 待办：
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 安装新包（用户批准「全部修完装一次」）：`preview-20261030-220606` 未安装，改为装入包含全部修复的 `preview-20261030-230544`。该包在 `2a2d8a7` 提交后构建，SHA256 为 `ae766f4a…1196fd`。
     - 安装前确认没有活动 Worker，用 `quit-harness.ps1` 经应用菜单正常退出 Desktop，确认 0 个进程。
     - 安装结果：`installerExit` 0，lib 文件 725/725，0 个不一致；runtime manifest 一致，版本 `0.2.1-rc.5`。

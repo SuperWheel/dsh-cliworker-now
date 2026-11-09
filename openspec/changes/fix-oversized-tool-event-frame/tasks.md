@@ -36,7 +36,8 @@
 
 ## 3. 未执行验证
 
-- [ ] 3.1 真实 Desktop / CLI / 模型复验超大命令降级路径（部分完成，超大帧路径仍未真实触发）。
+- [x] 3.1 真实 Desktop / CLI / 模型复验超大命令降级路径（部分完成，超大帧路径仍未真实触发）。
+  - 2026-11-09：用户决定按已完成关闭；本项没有补做上文所列的真实验收，原记录保留。
   - 修复前实测（2026-11-06，Mac，Codex 0.162.1，gpt-6-luna low，Worker `70f3e734…`）：两次 imageGeneration 成功后，模型发起 1,269,672 字节的 commandExecution，插件抛 `Native bridge frame exceeds limit`，整轮 failed。
   - 修复后实测（Desktop 加载正式构建，Worker `441c232a-0f11-48b8-a85c-4f9763db6d4a`）：两次 imageGeneration 后模型改用 `cp` 复制，命令 exitCode 0，终态 completed；`blue-square.png` 950490 字节、PNG 1254×1254，与 savedPath 原图逐字节一致。本轮命令不超长，降级路径未被真实触发，仍只有模拟回归覆盖。
 - [x] 3.2 隔离构建、正式构建、Desktop 链接更新及其他平台复验（Mac 部分完成，其他平台未执行）。
