@@ -163,12 +163,15 @@ function fixture(
   const agent = {
     id: 'parent',
     ctx: {
-      get: () => ({
+      // Synthetic DSH services: jobs runs inline; the parent is out of plan mode
+      // with a workspace sandbox and no approval service (DSH fails closed: 'never').
+      get: (name: string) => name === 'jobs' ? {
         start: ({ run }: any) => {
           run()
           return randomUUID()
         },
-      }),
+      } : name === 'planMode' ? { get: () => ({ active: false }) }
+        : name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined,
     },
   }
   const service: any = Object.create(CliWorkerService.prototype)
