@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chmod, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, win32 } from 'node:path'
 import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -26,6 +26,8 @@ afterEach(async () => {
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'codebuddy-account-simulated-')); roots.push(home)
   vi.stubEnv('HOME', home)
+  // Windows reads LOCALAPPDATA by default; never let a test fall through to the real profile.
+  vi.stubEnv('LOCALAPPDATA', win32.join(home, 'AppData', 'Local'))
   vi.stubEnv('CODEBUDDY_INTERNET_ENVIRONMENT', '')
   vi.stubEnv('CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT', '')
   const options = { home, env: {}, platform: process.platform }
@@ -49,12 +51,13 @@ function backendFixture() {
 }
 describe('CodeBuddy 账号与目录（模拟）', () => {
   it('uses platform-specific auth paths', () => {
-    expect(codebuddyAuthDirectory('darwin', {}, '/synthetic')).toBe('/synthetic/Library/Application Support/CodeBuddyExtension/Data/Public/auth')
-    expect(codebuddyAuthDirectory('linux', {}, '/synthetic')).toBe('/synthetic/.local/share/CodeBuddyExtension/Data/Public/auth')
+    expect(codebuddyAuthDirectory('darwin', {}, '/synthetic')).toBe(join('/synthetic', 'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth'))
+    expect(codebuddyAuthDirectory('linux', {}, '/synthetic')).toBe(join('/synthetic', '.local', 'share', 'CodeBuddyExtension', 'Data', 'Public', 'auth'))
     expect(codebuddyAuthDirectory('win32', { LOCALAPPDATA: 'C:\\Local' }, 'C:\\Home')).toBe('C:\\Local\\CodeBuddyExtension\\Data\\Public\\auth')
     expect(codebuddyAuthDirectory('win32', {}, 'C:\\Home')).toContain('C:\\Home\\AppData\\Local')
   })
-  it('keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout', async () => {
+  // POSIX modes and symlinks: Windows cannot make a file unreadable with chmod or create symlinks unprivileged.
+  it.skipIf(process.platform === 'win32')('keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout', async () => {
     const f = await fixture()
     expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated')
     await writeFile(f.file, '模拟文件；不得读取', { mode: 0o600 }); await chmod(f.file, 0)
@@ -106,7 +109,8 @@ describe('CodeBuddy 账号与目录（模拟）', () => {
     expect(b.calls[0].argv[1]).toMatch(/codebuddy-catalog\.mjs$/)
     expect(b.calls[0].argv.slice(2)).toEqual(['/simulated/codebuddy.mjs', b.calls[0].cwd])
     expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1' })
-    expect(await Promise.all(b.directories)).toEqual([0o700])
+    // Windows has no POSIX directory modes; the private directory is still removed after exit.
+    if (!(process.platform === 'win32')) expect(await Promise.all(b.directories)).toEqual([0o700])
     await expect(lstat(b.calls[0].cwd)).rejects.toMatchObject({ code: 'ENOENT' })
   })
   it('maps catalog exit 3 to actionable account error and always removes temporary cwd', async () => {
@@ -237,6 +241,7 @@ describe('CodeBuddy 只读站点（模拟）', () => {
   it('keeps missing or unreadable auth undeclared without exposing filesystem errors', async () => {
     const f = await fixture()
     expect(await readCodebuddySite(f.options)).toEqual({ id: 'undeclared', label: '站点未公开' })
+    if (process.platform === 'win32') return // chmod cannot make a file unreadable on Windows.
     await saveAuth(f.file, 'www.codebuddy.cn'); await chmod(f.file, 0)
     expect(await readCodebuddySite(f.options)).toEqual({ id: 'undeclared', label: '站点未公开' })
   })
@@ -372,12 +377,14 @@ describe('CodeBuddy 目录脚本（模拟原生子进程）', () => {
     expect(result.records[0]).toMatchObject({ updater: '1', argv: ['--acp', '--no-session-persistence'] })
     expect(result.records.filter(q => q.method).map(q => q.method)).toEqual(['initialize', 'session/new'])
     expect(result.records.find(q => q.id === 'unknown')?.error.code).toBe(-32601)
-    expect(result.records.at(-1)).toEqual({ terminated: true })
+    // Windows SIGTERM is TerminateProcess: the peer's handler never runs.
+    if (!(process.platform === 'win32')) expect(result.records.at(-1)).toEqual({ terminated: true })
   })
   it.each(['auth', 'auth-category'])('uses exit 3 for %s without raw error output', async scenario => {
     const result = await run(scenario); expect(result.code).toBe(3); expect(result.stderr).toBe('CodeBuddy 未登录\n'); expect(result.stdout).toBe('')
   })
-  it.each(['invalid', 'overflow', 'early-exit', 'ignore-term'])('fails safely and confirms cleanup for %s', async scenario => {
+  // A peer cannot ignore termination on Windows, so ignore-term is POSIX only.
+  it.each(['invalid', 'overflow', 'early-exit', ...(process.platform === 'win32' ? [] : ['ignore-term'])])('fails safely and confirms cleanup for %s', async scenario => {
     const result = await run(scenario); expect(result.code).toBe(1); expect(result.stderr).toContain('目录查询失败'); expect(result.stdout).toBe('')
   })
   it('bounds the overall query and terminates an unresponsive peer', async () => {

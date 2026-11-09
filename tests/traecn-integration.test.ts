@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm, writeFile, utimes, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { CLI_IDS, CLI_LABELS, CLI_SHORT_NAMES } from '../src/shared/types.ts'
 import { requireCliName, invocationResolution } from '../src/host/routing.ts'
@@ -67,7 +67,8 @@ describe('模拟：TRAE 注册、路由与官方身份', () => {
     await root(); const f = traecnMetadata(() => ({ output }))
     await expect(resolveCliExecutable('traecn', f.backend, DEFAULT_CONFIG)).rejects.toThrow('不是官方 TRAE CLI')
   })
-  it('uses only the local/bin/traecli fallback, never alternate aliases', async () => {
+  // macOS/Linux fallback; Windows only uses the shared PATH (tested below).
+  it.skipIf(process.platform === 'win32')('uses only the local/bin/traecli fallback, never alternate aliases', async () => {
     const home = await root(), path = join(home, '.local/bin/traecli')
     await mkdir(join(home, '.local/bin'), { recursive: true }); await writeFile(path, '模拟 executable')
     const f = traecnMetadata()
@@ -85,8 +86,8 @@ describe('模拟：TRAE 注册、路由与官方身份', () => {
     for (const path of paths) await mkdir(path, { recursive: true })
     expect(nativeSkillPaths('traecn', { home, project })).toEqual(paths)
     expect(nativeCliCapabilities({ cli: 'traecn', mode: 'accept-edits' }).classes).toEqual(['file-read', 'file-write', 'search', 'shell', 'web', 'skills'])
-    expect(traecnEnvironment({ PATH: '/usr/bin', TRAE_HOME: '/模拟native' }, 'darwin', home)).toEqual({ TRAE_HOME: '/模拟native', PATH: `/usr/bin:${join(home, '.local/bin')}` })
-    expect(traecnEnvironment({ PATH: `/usr/bin:${join(home, '.local/bin')}` }, 'darwin', home)).toEqual({})
+    expect(traecnEnvironment({ PATH: '/usr/bin', TRAE_HOME: '/模拟native' }, 'darwin', home)).toEqual({ TRAE_HOME: '/模拟native', PATH: `/usr/bin${delimiter}${join(home, '.local/bin')}` })
+    expect(traecnEnvironment({ PATH: `/usr/bin${delimiter}${join(home, '.local/bin')}` }, 'darwin', home)).toEqual({})
   })
 })
 

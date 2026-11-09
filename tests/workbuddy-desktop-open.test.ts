@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
+import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openWorkBuddyDesktop } from '../src/host/workbuddy-desktop-open.ts'
 const { spawn } = vi.hoisted(() => ({ spawn: vi.fn() }))
@@ -8,7 +9,7 @@ vi.mock('node:child_process', () => ({ spawn }))
 const roots: string[] = []
 afterEach(async () => { vi.useRealTimers(); spawn.mockReset(); await Promise.all(roots.splice(0).map(p => rm(p, { recursive: true, force: true }))) })
 async function fixture(platform: 'darwin' | 'win32') {
-  const root = await mkdtemp('/tmp/wb-desktop-SIMULATED-'); roots.push(root)
+  const root = await mkdtemp(join(tmpdir(), 'wb-desktop-SIMULATED-')); roots.push(root)
   const app = join(root, platform === 'darwin' ? 'WorkBuddy Space.app' : 'WorkBuddy Space')
   const runtime = join(app, ...(platform === 'darwin' ? ['Contents', 'MacOS', 'Electron'] : ['WorkBuddy.exe']))
   const cli = join(app, ...(platform === 'darwin' ? ['Contents', 'Resources'] : ['resources']), 'app.asar.unpacked', 'cli')
