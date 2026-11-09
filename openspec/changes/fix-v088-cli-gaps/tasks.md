@@ -50,7 +50,8 @@
 
 - [x] 5.1 改动后的真实端到端运行：2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`），用 `hy4free` 派遣 CodeBuddy 与 WorkBuddy CN，回复行显示「积分用量 0 积分」。
   - 初次在 Windows 上显示「积分用量 — 积分」，查明两个根因并在 04e9580 修复：原生记录里的 cwd 盘符为小写（`c:\...`），与项目路径逐字比较不相等；Windows 用户目录属主为 Administrators 组，文件隐私核验拒绝读取。修复后：Windows 下 cwd 按 `win32.normalize` 后不分大小写比较（macOS 仍逐字比较）；CodeBuddy 系读取允许 Administrators 属主，但仍要求当前用户 ACE、且不允许其他 SID 完全控制。新增模拟用例 `tests/codebuddy-usage.test.ts`（26/26）。修复包安装后新一轮回复显示「积分用量 0 积分」。
-- [ ] 5.2 付费模型的积分数值：实测仅有 `hy4free`（credit 为 0），非零积分的汇总只由模拟用例覆盖。
+- [x] 5.2 付费模型的积分数值：实测仅有 `hy4free`（credit 为 0），非零积分的汇总只由模拟用例覆盖。
+  - 2026-11-09 付费实测（用户授权“只跑一轮”）：scratchpad `accept/run.mjs` 调用插件 `runNativeCodebuddy`，CodeBuddy 2.181，模型 GLM-5.3-Flash（目录标 paid），强度 low，询问档，提示“只回复两个字母：OK”，回复 `OK`，SUCCESS。插件读到 `cliworker.codebuddy_usage`：1 次请求，输入 22,744 / 输出 15 / 合计 22,759 tok（推理 12），`providerCredits: 0.34`。原生会话文件同一 messageId 的 `rawUsage.credit` 为 0.34、模型 glm-5.3-flash，两者一致。只跑了 Host 读取，没有在 Desktop 回复行目视非零积分；回复行格式化由模拟用例覆盖。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：仍只有 hy4free（0 积分）真实数据；付费模型需要用户授权真实付费调用，本项保持未勾选。
 - [x] 5.3 拒绝审批结束的轮次不读取用量（只在 `end_turn` 读取），这类轮次的积分显示为未知。
   - 022bbb9 修复：被拒工具调用是该轮最后一次计费请求，原生记录里它没有结果行，原规则判为“未结束”。ACP 运行器把被拒的 toolCallId 交给 `onResult`；只有 `stopReason=cancelled`、`codebuddy.ai/outcome=PERMISSION_DENIED`、未被用户停止，且该轮所有没拿到结果的调用都是被拒调用时才读取。依据为本机 CodeBuddy 2.181 的真实被拒轮次（ACP toolCallId 与原生 `callId` 相同）。模拟用例见 `tests/codebuddy-usage.test.ts`。
@@ -69,6 +70,7 @@
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：CodeBuddy 国际站按规则视为可登录；WorkBuddy 国际版未安装，只在 add-workbuddy-cli 7.3 跟踪。
 - [x] 5.7 Windows 新包复测（2026-11-08 22:00，包 `preview-088-20261108-215815.tgz`，sha256 `43aa474b…c2ec`；空闲预检 activeWorkers=0；原生安装器退出 0；逐文件校验 1036 个、0 不一致；Desktop 正常关闭后带无障碍参数重启）：TRAE CN 由“CLI 启动入口无法确认”变为“未登录”且可点“登录账号”；WorkBuddy CN 自动识别为 `D:\Software\workbuddy`（配置中无手动路径），状态“请在桌面端检查登录状态”；WorkBuddy 国际版显示暂不可用（未安装，符合预期）；CodeBuddy 登录：启动→站点菜单→选中国站→浏览器等待，逐次读取无障碍树未出现“无法识别当前步骤”，原生终端未展开。连接页左栏显示“试验性”。
 - [ ] 5.8 Windows 上 CodeBuddy 授权超时画面的实机触发、TRAE CN 登录完成（停在浏览器授权，需用户手机验证）、其他已登录 CLI 的重新登录（需先退出、用户重新授权）、WorkBuddy CN 桌面端管理与真实派遣（hy4free / glm-5.3-flash）尚未执行；Mac Desktop 已正式构建但未目视复看本轮改动。
+  - 2026-11-09 用户决定退出与重新登录由本人自行测试，本会话未执行。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：TRAE CN 登录已由用户完成并真实派遣；其他 CLI 重新登录按规则视为通过；WorkBuddy CN 桌面管理与派遣已完成。只剩 CodeBuddy 授权超时画面的实机触发：需先退出当前账号，用户未授权，保持未勾选。
   - 2026-11-09 Windows 实机（DSH Desktop，Codex Computer Use 操作，工作区 `C:\Users\admin\cw081f1\live-codex`），各一次真实派遣，均 SUCCESS，产物经 PowerShell 读回核对：
     - CodeBuddy（`v088-codebuddy-win`，hy4free，自动审批档）：首轮建文件，两次续聊各追加一行，`v088-codebuddy-win.txt` 实际三行 `hello-codebuddy-win` / `second-line-win` / `third-line-win`；事件含「CodeBuddy 原生模型已确认」。
