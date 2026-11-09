@@ -360,6 +360,9 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
       const owned = {
         process: child,
         done,
+        // A read-only helper (e.g. a context inspection) is stopped with the run
+        // but its exit or protocol state never decides the turn's result.
+        auxiliary: options.auxiliary === true,
         end: () => child.stdin.end(),
         stderr: () => stderr,
         ownsPlannedStop: (exit) => stopRequested && exit === outcome && !issue,
@@ -425,6 +428,7 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
       if (cleanup) throw cleanup.reason
       const issues = []
       for (const child of children) {
+        if (child.auxiliary) continue
         try {
           child.assertHealthy()
         } catch (issue) {

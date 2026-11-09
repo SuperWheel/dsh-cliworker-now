@@ -6,17 +6,18 @@ import { runNativeAcp } from './native-acp.mjs'
 import { createLinePeer, createNativeIO } from './native-transport.mjs'
 import { createWorkBuddyLaunch } from './workbuddy-bootstrap.mjs'
 import { codebuddySessionOption, codebuddyUsageOnResult } from './native-codebuddy.mjs'
+import { inspectCodebuddyContext } from './codebuddy-context-inspection.mjs'
 
 const unavailable = reason => Object.assign(new Error(`WorkBuddy 暂不可用：${reason}`), { code: 'WORKBUDDY_UNAVAILABLE', reason })
 const efforts = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 const cliValid = cli => cli === 'workbuddycn' || cli === 'workbuddy'
 
-export function workbuddyAcpArgv(config) {
+export function workbuddyAcpArgv(config, { persist = true } = {}) {
   if (!cliValid(config.cli) || !Array.isArray(config.argv) || config.argv.length < 2 ||
       config.argv.some(value => typeof value !== 'string' || !value || value.includes('\0')) ||
       basename(config.argv[1]) !== 'codebuddy-lite-wb.mjs') throw unavailable('entry-invalid')
   return [...config.argv.slice(0, 2), '--acp', '--setting-sources', 'user', '--strict-mcp-config',
-    '--serve', '--host', '127.0.0.1', '--port', '0', '--auth', 'password']
+    '--serve', '--host', '127.0.0.1', '--port', '0', '--auth', 'password', ...(persist ? [] : ['--no-session-persistence'])]
 }
 
 /** Independent startup identity check. This runtime is copied as plain ESM and
@@ -55,7 +56,7 @@ async function revalidate(config) {
 }
 
 /** Gate stdio before initialize; only the gate sees pre-ready banner bytes. */
-async function openWorkBuddy(config, io, options = {}) {
+async function openWorkBuddy(config, io, { persist = true, auxiliary = false, ...options } = {}) {
   let launch, owned, peer, isReady = false, issue
   let rejectFailure
   const failed = new Promise((_, reject) => { rejectFailure = reject })
@@ -89,7 +90,8 @@ async function openWorkBuddy(config, io, options = {}) {
     io.signal?.addEventListener('abort', abort, { once: true })
     io.signal?.throwIfAborted()
     const early = []
-    owned = io.spawn(workbuddyAcpArgv(config), { env: launch.env, cwd: config.project,
+    owned = io.spawn(workbuddyAcpArgv(config, { persist }), { env: launch.env, cwd: config.project,
+      ...(auxiliary ? { auxiliary: true, reportStderr: false } : {}),
       onStdout: chunk => peer ? beforeReady(chunk) : early.push(chunk) })
     peer = createLinePeer(owned, { ...options, signal: io.signal, maxLineBytes: config.maxLineBytes,
       maxInboundLineBytes: config.maxNativeLineBytes ?? config.maxLineBytes })
@@ -150,6 +152,10 @@ export async function runNativeWorkBuddy(config, io) {
     // Same durable transcript format as CodeBuddy, under WorkBuddy's own data folder.
     onResult: (result, sessionId, nativeIo, turn) => configDir
       ? codebuddyUsageOnResult(config, configDir, turnStartedAt)(result, sessionId, nativeIo, turn) : undefined,
+    // Native `/context` categories from a separate non-persistent WorkBuddy process (same CodeBuddy command).
+    afterClose: (sessionId, nativeIo) => inspectCodebuddyContext({ config, io: nativeIo, sessionId, mcpServers: [],
+      timeoutMs: 20000,
+      open: async onMessage => (await openWorkBuddy(config, io, { onMessage, persist: false, auxiliary: true })).peer }),
   })
 }
 

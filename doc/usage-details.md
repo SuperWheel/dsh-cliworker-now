@@ -8,7 +8,7 @@
 
 打开指引只查一次；点击「打开桌面端」或「继续观察」后，每轮完成至少间隔 15 秒，最多观察 5 分钟或自动查询 20 次。手动刷新与正在执行的查询合并，预算到期后刷新只查一次。元数据成功表示当前已登录；当前认证错误无法可靠区分缺失与其他拒绝，只提示“请在桌面端检查登录状态”，不证明已退出或同站点换号。打开失败可手动打开对应版本后刷新或重试。关闭指引等待插件查询清理，不关闭桌面端。查询账号和模型会创建一条空的原生会话，原生未提供删除接口。
 
-试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。审批卡提供「本会话始终允许」（原生 `allow_always`，只在当前这一轮有效，下一轮再次询问）。国内版已完成 Mac 与 Windows 真实任务、审批及 Desktop 界面验收；国际版未安装，仍未验证。
+试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用及系统提示词、工具定义、对话消息分类（每轮结束后另起不落盘的内置 CLI 读取原生 `/context`，规则同 CodeBuddy）；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。审批卡提供「本会话始终允许」（原生 `allow_always`，只在当前这一轮有效，下一轮再次询问）。国内版已完成 Mac 与 Windows 真实任务、审批及 Desktop 界面验收；国际版未安装，仍未验证。
 
 
 [简体中文](usage-details.md) | [English](usage-details.en.md) · [返回 README](../README.md)
@@ -104,7 +104,7 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **会话与能力边界。** `traecn-acp-v1` 续聊用原生 `session/load`，历史重放不进入新一轮正文；恢复失败报错，不新建会话。支持从最新完成轮原生分支，不支持较早轮次分支。原生子 Agent、记忆、skills 与联网沿用用户设置，附件按 ACP 能力传递。DSH 工具桥本期不提供：ACP 只声明 HTTP MCP，`_meta.trae.options.mcpServers` 的值为已配置服务名且有替换语义，未经核实的注入可能覆盖用户 MCP。运行中引导（steering）虽有能力声明，尚未实测，不提供此入口；运行中发送的消息按原生 Inbox 排队。
 
-2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/changes/add-traecn-cli/tasks.md)。
+2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/changes/add-traecn-cli/tasks.md)。
 
 ### Qoder 安装与登录
 
@@ -142,6 +142,7 @@ Qoder 设置中的单次目录加载会合并账号与模型查询，减少重�
 - 权限：询问 → `default`，自动审批 → `auto`（CodeBuddy 的 AI 审查代批，被拦截的操作不再问你），完全权限 → `bypassPermissions`；规划模式 → `plan`。`fullAccess` 不使用。
 - 审批与拒绝：写文件与命令的审批转交到 DSH。CodeBuddy 拒绝任一审批后会立即结束本轮，插件显示“因拒绝审批而结束”（不是“已取消”），之后可以继续对话。
 - 用量：CodeBuddy 按积分计费，ACP 回执不含用量。插件在本轮正常结束后读取 CLI 自己写的原生会话文件，按请求去重汇总本轮积分与 token，像 Qoder 一样显示积分；任一请求缺积分数据或本轮有子 Agent 时积分显示为未知，不把 token 当积分。免费模型显示 0 积分。
+- 上下文分类：ACP 只给总量。每轮结束、Worker 进程退出后，插件另起一个不保存会话的 CodeBuddy 进程，载入同一会话执行原生 `/context`（不调用模型），读出系统提示词、工具定义（系统工具与 MCP 工具）、对话消息，数值是 CodeBuddy 自己的估算、按 0.1K 取整。这一步约 1 秒，不写回会话，失败时三行保持 `—`，不影响本轮结果。
 - 不支持：原生分支（实测 ACP `session/fork` 返回 Method not found；`--fork-session` 只能在终端续接时使用）、运行中引导。
 
 ### Claude Code 与 CC Switch

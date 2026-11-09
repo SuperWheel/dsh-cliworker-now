@@ -86,3 +86,10 @@
 - CLI 把每次模型请求写入 `<CODEBUDDY_CONFIG_DIR 或 ~/.codebuddy>/projects/<项目键>/<sessionId>.jsonl`。项目键：cwd 真实路径中的 `/ \ :` 换成 `-`，去掉首尾 `-` 并合并重复；超过 255 字节时截到 180 字节后接 `-` 与 djb2 的 36 进制值。每行 `providerData` 带 `conversationRequestId`、`messageId`、`requestModelId`、`usage`（input/output/total、cached、reasoning）与 `rawUsage.credit`；同一请求的并行工具调用重复写同一 `messageId`。子 Agent 记录在 `<sessionId>/subagents/`。
 - 插件在 `end_turn` 后按会话、用户消息、请求 ID、cwd 与模型精确定位本轮，校验后按 `messageId` 去重汇总，按积分显示。缺积分或有子 Agent 时积分为未知，token 不当积分。`hy4free` 实测 `credit` 为 0；非零积分未实测。WorkBuddy 内置 CLI 格式相同，配置根取安装探测结果。
 - 分支：ACP 调 `session/fork` 实测返回 Method not found，`initialize` 不公开 `sessionCapabilities.fork`；插件不提供分支。`--fork-session` 仅用于终端续接。
+
+## 9. 上下文分类（2026-11-09）
+
+- ACP 只发 `usage_update` 的 `used`/`size`，并且实测一轮里可能一次都不发；分类只在本地命令 `/context` 里提供。`/context` 不调用模型，输出为一段 `agent_message_chunk`（`_meta['codebuddy.ai/commandKind']='local'`），结果 `stopReason: end_turn`、`_meta['codebuddy.ai/outcome']='SUCCESS'`，正文为三重反引号包住的文本：头部「模型 · 已用/容量 tokens (百分比)」，随后 System prompt、System tools、可选的 MCP tools / Memory files / Skills、Messages、Free space、Autocompact buffer，数值按 0.1K 取整（`4.5k`、`1.2m`，小于 1000 为整数）。头部模型取会话当前模型。
+- 在 Worker 自身会话里执行 `/context`，命令与输出会作为用户消息（`skipRun`）写进会话，并进入下一次模型请求（实测 Messages 302→584）。
+- 插件做法：本轮已结算（`end_turn` 或因拒绝审批结束）、未被停止、Worker 进程退出后，另起 `codebuddy --acp --no-session-persistence`，`initialize` → `session/load`（同一会话、同一 MCP 列表）→ 必要时 `session/set_config_option` 设为本 Worker 模型 → 发送 `/context`。只接受本次提示期间没有思考、工具或模型请求 ID 的输出，头部模型须与本 Worker 一致；8 秒内未完成即放弃。实测副进程约 1.2 秒，会话文件 sha 与文件数不变。副进程随运行一起停止，它的退出状态不影响本轮结果。
+- 遥测：三行取 System prompt、System tools + MCP tools、Messages；总量与容量取同一份报告，标注为原生估算（按 0.1K 取整）。下一次 `usage_update` 会清掉旧分类。

@@ -11,6 +11,7 @@ v0.8.8 新接入的 CodeBuddy Code、TRAE CN、WorkBuddy CN 与 WorkBuddy 在 20
 - 设置页左栏的 WorkBuddy CN 与 WorkBuddy 在名称下加一行“试验性”。
 - WorkBuddy 桌面管理窗口：重新打开前等待上一次的账号读取或会话停止完成，不再被拒；有已知原因时显示原因；英文页脚按钮不折行，说明文字可换行。
 - `cliworker_start`、`cliworker_followup` 的返回与完成结果附带本轮实际权限档位及其来源。档位规则不变。
+- 上下文分类（2026-11-09 用户反馈新 CLI 的系统提示词、工具定义、对话消息无法显示）：CodeBuddy 与 WorkBuddy 两版在每轮结束、Worker 进程退出后，另起不落盘的同版本 CLI 进程读取原生 `/context` 分类；TRAE CN 原生没有分类来源，维持只显示总量。
 
 ## Capabilities
 
@@ -18,10 +19,11 @@ v0.8.8 新接入的 CodeBuddy Code、TRAE CN、WorkBuddy CN 与 WorkBuddy 在 20
 
 - `worker-permission-levels`：新增“派遣结果写明实际档位”。
 - `worker-run-outcomes`：新增“结果说明在 Worker 窗口可见”。
+- `worker-context-inspection`：新增“CodeBuddy 系上下文分类经只读副进程读取”。
 
 ## Impact
 
-- Host：`src/host/codebuddy-durable-usage.mjs`（新增）、`native-codebuddy.mjs`、`native-workbuddy.mjs`、`telemetry.ts`、`harness-turn-usage.ts`、`runtime.ts`、`harness-conversation-stream.ts`、`workbuddy-desktop.ts`、`accounts.ts`、`index.ts`。
+- Host：`src/host/codebuddy-durable-usage.mjs`、`codebuddy-context-inspection.mjs`（均为新增）、`native-acp.mjs`（结束后钩子 `afterClose`）、`native-transport.mjs`（辅助子进程不影响本轮结果）、`native-codebuddy.mjs`、`native-workbuddy.mjs`、`telemetry.ts`、`harness-turn-usage.ts`、`runtime.ts`、`harness-conversation-stream.ts`、`workbuddy-desktop.ts`、`accounts.ts`、`index.ts`。
 - Shared：`telemetry.ts`（`CREDIT_BILLED_CLIS`）、`conversation-features.ts`、`types.ts`、`workbuddy.ts`、`worker-permissions.ts`。
 - Client：`settings-dialog.tsx`、`styles.ts`、`account-login/workbuddy-desktop-window.tsx`、用量显示组件、`i18n-messages.ts`。
 - 构建：`scripts/build.mjs` 打包新增的 Host 资源。

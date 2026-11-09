@@ -118,6 +118,8 @@ ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整�
 
 取消时实测全零，不报告为“本轮用量零”，保持未知。缺失、非法或加和不符的数据保持未公开；不以累计量替代本轮或当前上下文，不从模型名称猜容量。
 
+上下文分类（2026-11-09 核查）：0.213.1 的 ACP 只给 `usage_update` 与回执 `contextWindow` 的 used/size，可用命令为 review、init、compact、logout 与技能，没有 `/context` 或其他分类来源。上下文弹层的系统提示词、工具定义、对话消息三行保持 `—`，不按总量倒推，也不借用 CodeBuddy 的命令。
+
 ## 7. 原生能力与验证边界
 
 - 原生读写、命令、联网、子 Agent、记忆和 skills 跟随用户原生设置；不关闭 `multi_agent`（安装版默认开启），不更换 `TRAE_HOME`。记忆库为 `$TRAE_HOME/cli/memories_1.sqlite`，用户 skills 路径为 `~/.trae/skills` 与 `~/.agents/skills`。项目 `.trae/skills` / `.agents/skills` 来自程序字符串，实际加载待核实；各原生扩展能力不能据此视为插件端到端验收通过。

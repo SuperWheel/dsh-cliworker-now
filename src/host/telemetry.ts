@@ -375,12 +375,13 @@ function metricRecords(v: Record<string, any>): unknown[] {
   else if (v.type === 'cliworker.context_inspection')
     entries.push({
       type: v.type,
-      cli: v.cli === 'claude' || v.cli === 'omp' || v.cli === 'pi' ? v.cli : undefined,
+      cli: ['claude', 'omp', 'pi', 'codebuddy', 'workbuddycn', 'workbuddy'].includes(v.cli) ? v.cli : undefined,
       source: textId(v.source),
       sessionId: textId(v.sessionId),
       model: textId(v.model),
       ...(v.cli === 'pi' ? { provider: textId(v.provider), requestId: textId(v.requestId),
         basis: v.basis === 'native-estimate' ? v.basis : undefined } : {}),
+      ...(['codebuddy', 'workbuddycn', 'workbuddy'].includes(v.cli) ? { basis: v.basis === 'native-estimate' ? v.basis : undefined } : {}),
       ...metricCounts(v, ['contextUsed', 'contextCapacity']),
       categories: Array.isArray(v.categories)
         ? v.categories.slice(0, 64).map((category) => {
@@ -577,6 +578,8 @@ export function extractTelemetry(
   identity: TelemetryIdentity = {},
 ): RunTelemetry {
   const result: RunTelemetry = { replies: {} }
+  const codebuddyFamily = cli === 'codebuddy' || cli === 'workbuddycn' || cli === 'workbuddy'
+  const codebuddyName: Record<string, string> = { codebuddy: 'CodeBuddy', workbuddycn: 'WorkBuddy CN', workbuddy: 'WorkBuddy' }
   const mimoSteps = new Map<string, TokenUsage>()
   const messages = new Map<string, TokenUsage>()
   const hermesRuns = new Map<string, TokenUsage>()
@@ -874,15 +877,19 @@ export function extractTelemetry(
       if (receipt) rpcResponses.set(v.responseId, receipt)
       else rpcResponses.delete(v.responseId)
     } else if (
-      (cli === 'claude' || cli === 'omp') &&
+      (cli === 'claude' || cli === 'omp' || codebuddyFamily) &&
       v.type === 'cliworker.context_inspection' &&
       v.cli === cli &&
-      v.source === (cli === 'claude' ? 'claude.get_context_usage.summary' : 'omp.native-context') &&
+      v.source === (cli === 'claude' ? 'claude.get_context_usage.summary' : cli === 'omp' ? 'omp.native-context' : 'codebuddy.native-context') &&
+      (!codebuddyFamily || (v.basis === 'native-estimate' && count(v.contextUsed) !== undefined)) &&
       textId(v.sessionId) &&
       ownSession(v.sessionId) &&
       (!model || !textId(v.model) || model === v.model)
     ) {
-      contextSnapshot(result, v.contextUsed, v.contextCapacity, `${cli === 'claude' ? 'Claude' : 'OMP'} 原生上下文分类估算`, true)
+      // CodeBuddy-family `/context` runs after the turn in a separate process and is the
+      // latest native snapshot (usage_update is not sent every turn); totals are rounded to 0.1K.
+      contextSnapshot(result, v.contextUsed, v.contextCapacity, codebuddyFamily
+        ? `${codebuddyName[cli]} 原生 /context 估算（按 0.1K 取整）` : `${cli === 'claude' ? 'Claude' : 'OMP'} 原生上下文分类估算`, true)
       // Claude 2.1.287's native summary emits these exact category names. Other
       // categories (memory, skills, free/buffer/deferred) are never reclassified.
       const categories = new Map<string, number>()
@@ -911,7 +918,8 @@ export function extractTelemetry(
           ...(toolNames.length && Number.isSafeInteger(tools) ? { toolTokens: tools } : {}),
           ...(categories.has('Messages') ? { messageTokens: categories.get('Messages') } : {}),
           estimated: true,
-          source: `${cli === 'claude' ? 'Claude 原生 summary' : 'OMP 原生 /context'} 分类估算`,
+          source: codebuddyFamily ? `${codebuddyName[cli]} 原生 /context 分类估算（按 0.1K 取整）`
+            : `${cli === 'claude' ? 'Claude 原生 summary' : 'OMP 原生 /context'} 分类估算`,
         }
       }
     } else if (

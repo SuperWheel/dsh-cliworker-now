@@ -155,6 +155,7 @@ for (const name of [
   'workbuddy-bootstrap',
   'qoder-durable-context',
   'codebuddy-durable-usage',
+  'codebuddy-context-inspection',
   'kimi-durable-usage',
   'omp-context-inspection',
   'pi-context-observer',
@@ -201,7 +202,7 @@ cpSync('src/host/pi-installation.d.mts', 'lib/types/host/pi-installation.d.mts')
 cpSync('src/host/native-launch.mjs', 'lib/types/host/native-launch.mjs')
 cpSync('src/host/native-launch.d.mts', 'lib/types/host/native-launch.d.mts')
 cpSync('src/host/native-spawn.mjs', 'lib/types/host/native-spawn.mjs')
-for (const name of ['native-workbuddy', 'native-codebuddy', 'workbuddy-bootstrap', 'native-acp', 'native-transport', 'native-spawn', 'kimi-durable-usage', 'qoder-durable-context', 'codebuddy-durable-usage', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'cli-native-capabilities', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'native-tool-outcomes', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
+for (const name of ['native-workbuddy', 'native-codebuddy', 'workbuddy-bootstrap', 'native-acp', 'native-transport', 'native-spawn', 'kimi-durable-usage', 'qoder-durable-context', 'codebuddy-durable-usage', 'codebuddy-context-inspection', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'cli-native-capabilities', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'native-tool-outcomes', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }

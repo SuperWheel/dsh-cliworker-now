@@ -2,6 +2,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { runNativeAcp } from './native-acp.mjs'
 import { readCodebuddyDurableUsage } from './codebuddy-durable-usage.mjs'
+import { inspectCodebuddyContext } from './codebuddy-context-inspection.mjs'
+import { nativeHarnessMcpServers } from './native-harness-injection.mjs'
 
 export const codebuddyAcpArgv = (config) => [...config.argv]
 export const codebuddyModeFor = (access) => access === 'read-only' ? 'default'
@@ -59,9 +61,15 @@ export function codebuddyUsageOnResult(config, home, turnStartedAt) {
 
 export const codebuddyHome = (env) => env?.CODEBUDDY_CONFIG_DIR?.trim() || join(homedir(), '.codebuddy')
 
-export const runNativeCodebuddy = (config, io) => runNativeAcp(
-  { ...config, env: { ...config.env, DISABLE_AUTOUPDATER: '1' } }, io, {
+export function runNativeCodebuddy(config, io) {
+  const run = { ...config, env: { ...config.env, DISABLE_AUTOUPDATER: '1' } }
+  return runNativeAcp(run, io, {
     ...codebuddyRunnerSettings(config),
     onResult: codebuddyUsageOnResult({ ...config, cli: 'codebuddy' }, codebuddyHome({ ...process.env, ...config.env }), Date.now()),
-  },
-)
+    // Native `/context` categories, read by a separate non-persistent process after the turn.
+    afterClose: (sessionId, nativeIo) => inspectCodebuddyContext({ config: { ...run, cli: 'codebuddy' }, io: nativeIo, sessionId,
+      mcpServers: nativeHarnessMcpServers(run),
+      open: onMessage => nativeIo.openStdio([...codebuddyAcpArgv(run), '--no-session-persistence'],
+        { env: run.env, cwd: run.project, onMessage, auxiliary: true, reportStderr: false }) }),
+  })
+}

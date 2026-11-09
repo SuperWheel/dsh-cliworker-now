@@ -16,7 +16,9 @@ import {createServer,createConnection} from 'node:net';
 import {createInterface} from 'node:readline';
 import {appendFileSync} from 'node:fs';
 const env=process.env, scenario=env.SCENARIO;
-const audit=value=>appendFileSync(env.AUDIT,JSON.stringify(value)+'\n',{mode:0o600});
+// The post-turn /context helper (--no-session-persistence) audits to its own file.
+const helper=process.argv.includes('--no-session-persistence');
+const audit=value=>appendFileSync(env.AUDIT+(helper?'.context':''),JSON.stringify(value)+'\n',{mode:0o600});
 const out=value=>process.stdout.write(JSON.stringify(value)+'\n');
 const reply=(request,result)=>out({jsonrpc:'2.0',id:request.id,result});
 const reject=(request,message,code=-32603)=>out({jsonrpc:'2.0',id:request.id,error:{code,message}});
@@ -94,6 +96,14 @@ createInterface({input:process.stdin}).on('line',line=>{
   option.currentValue=scenario==='unconfirmed-model'&&option.id==='model'?'wrong':request.params.value;
   return reply(request,{configOptions:state.configOptions});
  }
+ if(request.method==='session/prompt'&&request.params.prompt?.[0]?.text==='/context'){
+  if(!helper)return reply(request,{stopReason:'refusal'});
+  // WorkBuddy CLI 2.165 sends the local command output without commandKind or model ids.
+  update({sessionUpdate:'agent_message_chunk',_meta:{'codebuddy.ai/messageId':'m'},content:{type:'text',text:
+   '\x60\x60\x60\n Context Usage\n ⛁ ⛶    '+model.currentValue+' · 27.3k/300k tokens (9%)\n ⛶ ⛶    ⛁ System prompt: 6.1k tokens (2.0%)\n'+
+   ' ⛶ ⛶    ⛁ System tools: 19.8k tokens (6.6%)\n ⛶ ⛶    ⛁ Messages: 1.4k tokens (0.5%)\n ⛶ ⛶    ⛶ Free space: 248.7k (82.9%)\n\x60\x60\x60'}});
+  return reply(request,{stopReason:'end_turn',_meta:{'codebuddy.ai/outcome':'SUCCESS'}});
+ }
  if(request.method==='session/prompt'){
   update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SIMULATED ANSWER'}});
   if(scenario==='cancel'){pending=request;return;}
@@ -161,12 +171,15 @@ async function fixture(scenario = 'success', options: any = {}) {
   }
   const log = await readFile(audit, 'utf8').catch(() => '')
   const records = log.trim() ? log.trim().split('\n').map(line => JSON.parse(line)) : []
+  const contextLog = await readFile(audit + '.context', 'utf8').catch(() => '')
+  const context = contextLog.trim() ? contextLog.trim().split('\n').map(line => JSON.parse(line)) : []
   const publicText = JSON.stringify({ frames, log, stderr, error: error?.message, metadata })
   for (const secret of [fakeKey, fakeDerived, 'SIMULATED_GATEWAY_PASSWORD', 'SIMULATED SECRET ERROR']) expect(publicText.includes(secret)).toBe(false)
   expect(children.every(child => child.process.exitCode !== null || child.process.signalCode !== null)).toBe(true)
   const start = records.find(record => record.fixture)
   if (start) await expect(readFile(start.readyPath)).rejects.toMatchObject({ code: 'ENOENT' })
-  return { config, root, frames, records, error, metadata, result: frames.at(-1), children }
+  for (const start of context.filter(record => record.fixture)) await expect(readFile(start.readyPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  return { config, root, frames, records, context, error, metadata, result: frames.at(-1), children }
 }
 const methods = (records: any[], method: string) => records.filter(record => record.method === method)
 const selection = (records: any[], id: string) => methods(records, 'session/set_config_option').filter(record => record.params.configId === id).map(record => record.params.value)
@@ -181,7 +194,16 @@ describe('模拟 WorkBuddy ACP runner', () => {
     expect(selection(f.records, 'model')).toEqual(['native-model'])
     expect(selection(f.records, 'thought_level')).toEqual(['high'])
     expect(methods(f.records, 'session/new')[0].params.mcpServers).toEqual([])
-    expect(f.children).toHaveLength(2)
+    // Worker CLI and key helper, then a second bootstrapped non-persistent CLI (and its helper) for /context.
+    expect(f.children).toHaveLength(4)
+    expect(f.context.find(record => record.fixture)).toMatchObject({ argv: expect.arrayContaining(['--no-session-persistence']), sameRoot: true, authRemoved: true })
+    expect(methods(f.records, 'session/prompt').some(q => q.params.prompt?.[0]?.text === '/context')).toBe(false)
+    expect(methods(f.context, 'session/load')).toMatchObject([{ params: { sessionId: 'simulated-workbuddy-session', mcpServers: [] } }])
+    expect(methods(f.context, 'session/new')).toEqual([])
+    const inspection = f.frames.find(frame => frame.record?.type === 'cliworker.context_inspection')?.record
+    expect(inspection).toMatchObject({ cli, source: 'codebuddy.native-context', model: 'native-model', contextUsed: 27300, contextCapacity: 300000,
+      categories: [{ name: 'System prompt', tokens: 6100, kind: 'used' }, { name: 'System tools', tokens: 19800, kind: 'used' },
+        { name: 'Messages', tokens: 1400, kind: 'used' }, { name: 'Free space', tokens: 248700, kind: 'free' }] })
   })
   it('模拟固定 argv 不包含用户注入的权限、提示词或其他服务参数', () => {
     const argv = workbuddyAcpArgv({ cli: 'workbuddycn', project: '/simulated', argv: ['/simulated/Electron', '/simulated/dist/codebuddy-lite-wb.mjs', '--full-access', '--host', '0.0.0.0'] })

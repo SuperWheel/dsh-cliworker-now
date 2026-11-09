@@ -96,7 +96,9 @@ export async function runNativeAcp(config, io, settings) {
     markerFilter,
     lastToolAt = -1,
     denied = false,
-    ended = false
+    ended = false,
+    // Set only for a settled, unstopped turn; read by the optional post-close inspection.
+    inspect = false
   let step = 0, assistantStep = 0, assistantSegmentOpen = false, thoughtStep = 0
   const responses = settings.responseTracker?.(io)
   const emit = (event) => responses
@@ -502,6 +504,7 @@ export async function runNativeAcp(config, io, settings) {
     else if (backgroundUnconfirmed) io.result('UNCERTAIN', response, backgroundUnconfirmed, 'run')
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
     else toolOutcomes.settle(io, response, 'run', denied)
+    inspect = !failure && !io.signal.aborted
   } finally {
     if (active && !ended) cancel()
     ended = true
@@ -512,6 +515,10 @@ export async function runNativeAcp(config, io, settings) {
       await peer.close()
     }
   }
+  // After the Worker's own process exited, so its transcript is complete and no
+  // two processes write the session. Optional and never changes the turn result.
+  if (inspect && settings.afterClose && !io.signal.aborted)
+    await Promise.resolve().then(() => settings.afterClose(sessionId, io)).catch(() => {})
 }
 
 /** Standard ACP session/fork, confirmed against Kimi and Qoder implementations. */
