@@ -26,7 +26,8 @@ afterEach(async () => {
 async function fixture() {
   const home = await mkdtemp(join(tmpdir(), 'codebuddy-account-simulated-')); roots.push(home)
   vi.stubEnv('HOME', home)
-  // Windows reads LOCALAPPDATA by default; never let a test fall through to the real profile.
+  // Windows homedir() reads USERPROFILE and auth defaults to LOCALAPPDATA; never fall through to the real profile.
+  vi.stubEnv('USERPROFILE', home)
   vi.stubEnv('LOCALAPPDATA', win32.join(home, 'AppData', 'Local'))
   vi.stubEnv('CODEBUDDY_INTERNET_ENVIRONMENT', '')
   vi.stubEnv('CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT', '')
