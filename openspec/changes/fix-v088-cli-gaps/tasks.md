@@ -54,13 +54,14 @@
 - [x] 5.3 拒绝审批结束的轮次不读取用量（只在 `end_turn` 读取），这类轮次的积分显示为未知。
   - 022bbb9 修复：被拒工具调用是该轮最后一次计费请求，原生记录里它没有结果行，原规则判为“未结束”。ACP 运行器把被拒的 toolCallId 交给 `onResult`；只有 `stopReason=cancelled`、`codebuddy.ai/outcome=PERMISSION_DENIED`、未被用户停止，且该轮所有没拿到结果的调用都是被拒调用时才读取。依据为本机 CodeBuddy 2.181 的真实被拒轮次（ACP toolCallId 与原生 `callId` 相同）。模拟用例见 `tests/codebuddy-usage.test.ts`。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：CodeBuddy Worker（询问档，hy4free）续聊要求 `touch denied-mac-1109.txt`，在审批卡点「拒绝」。原生记录读到 1 次请求、25,633 tok、`providerCredits: 0`；文件不存在。该轮 CLI 没有正文，所以没有回复行可挂用量；Worker 底部合计显示「0 积分」。
+  - 2026-11-09 21:08 Windows 复测（包 `preview-088-20261109-210826.tgz`，含 022bbb9 与 8ba2551；activeWorkers=0，安装退出 0，逐文件 1036 个 0 不一致，DSH 带无障碍参数重启；界面由 Codex Computer Use（gpt-6.1-sol）操作）：`v088-codebuddy-win` 临时改为询问档（测完改回自动审批，Host 记录 level=auto），续聊要求 `touch denied-win-1109.txt`，审批卡「v088-codebuddy-win（CodeBuddy Code）请求授权：`touch denied-win-1109.txt` 工作目录：C:\Users\admin\cw081f1\live-codex」点「拒绝」。原生记录读到 1 次请求、26,790 tok、`providerCredits: 0`；展开过程区可见「已拒绝」与「本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续」；底部「0 积分」；文件不存在。
 - [x] 5.4 Desktop 复看：试验性标记、桌面管理复开与英文页脚、结果说明行、派遣结果档位均未在运行中的 Desktop 复看（按要求不动运行中的 DSH Desktop）。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：
     - 「CLI 连接」左栏 WorkBuddy 两项只有名称，没有“试验性”小字；WorkBuddy CN 连接页副标题保留“试验性：依赖 WorkBuddy 桌面端非公开接口”。Worker 列表卡片无试验性说明。
     - 结果说明行：拒绝审批后展开该轮过程区，可见「已拒绝」的失败工具行和「本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续」。默认折叠在「已完成，用时 33秒」之下。
     - 派遣结果档位：主 Agent 的汇报写明“CodeBuddy Worker（codebuddy-worker，权限‘询问’）”。
     - 英文页脚：临时把界面语言切到 English（看完已改回「跟随 DSH」）。桌面管理窗口 4 个按钮的文字都不折行，但 480px 宽放不下一行，「Open desktop app」换到第二行右对齐；中文时 4 个按钮在一行。
-    - 按用户要求调成一行：英文词条改为 Refresh / Resume observing / Open app（暂停提示同步为 “Observation paused. Refresh or resume observing.”），`doc/settings-ui-design.md` 已同步。重新正式构建后在 Desktop 英文界面复看，Close / Refresh / Resume observing / Open app 同排右对齐；看完语言已改回「跟随 DSH」。`tests/workbuddy-desktop-window.test.tsx` 等 3 个文件 294/294 通过。
+    - 按用户要求调成一行：英文词条改为 Refresh / Resume observing / Open app（暂停提示同步为 “Observation paused. Refresh or resume observing.”），`doc/settings-ui-design.md` 已同步。重新正式构建后在 Desktop 英文界面复看，Close / Refresh / Resume observing / Open app 同排右对齐；看完语言已改回「跟随 DSH」。Windows 同样复看通过（见 5.3 下的 Windows 复测）：Close / Refresh / Resume observing / Open app 同排，语言已改回。`tests/workbuddy-desktop-window.test.tsx` 等 3 个文件 294/294 通过。
 - [x] 5.5 桌面管理复开失败的根因为代码推断（状态读取或上一会话停止未完成导致 `reserve()` 拒绝），未在 Desktop 上复现确认。
   - 2026-11-09 Mac Desktop 实机（正式 `pnpm build`，`feat/general-settings` 0bb2158；Desktop 退出后重启，内置浏览器直连 Host Web UI，视口 1280×860）：WorkBuddy CN「在桌面端管理」用真实鼠标点击连续开关多次，关闭后再点都能在约 0.1 秒内打开，没有再出现“暂不可用”。只有在关闭动作尚未结束（Host 仍在停止上一会话、遮罩还在）时立刻点，这一下被遮罩吸收、没有任何提示；再点一次即可打开。修复前的“暂不可用”无法在修复后复现，原根因仍为代码推断。
 - [ ] 5.6 WorkBuddy 国际版、CodeBuddy 国际站未验证。Windows 部分已完成（见 5.8 下的派遣记录）。
