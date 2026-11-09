@@ -69,7 +69,7 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 | TRAE CN | ACP | | |
 | WorkBuddy CN (`workbuddycn`) | ACP · 试验性 | WorkBuddy (`workbuddy`) | ACP · 试验性 |
 
-WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装对应桌面端；设置账号行的「在桌面端管理」打开插件指引，可打开已核实的对应应用并观察当前状态。有桌面管理指引，无 CLI 登录/退出；登录、退出与换号由用户在桌面端完成。打开指引只读一次；点击打开或继续观察后，查询完成至少间隔 15 秒，最多 5 分钟或 20 次自动查询，手动刷新与在途查询合并。关闭指引取消查询，不关闭桌面端。通用认证错误不证明已退出，同站点换号也不能确认。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；按积分显示本轮用量（读取内置 CLI 的原生会话文件），并显示原生上下文占用；DSH 工具桥与原生分支（内置 CLI 未实现 `session/fork`）未开放。注册接线经模拟测试，真实模型任务、审批、Windows、国际版和 Desktop 界面尚未验收。详见 [WorkBuddy 协议](doc/workbuddy-protocol.md)。
+WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装对应桌面端；设置账号行的「在桌面端管理」打开插件指引，可打开已核实的对应应用并观察当前状态。有桌面管理指引，无 CLI 登录/退出；登录、退出与换号由用户在桌面端完成。打开指引只读一次；点击打开或继续观察后，查询完成至少间隔 15 秒，最多 5 分钟或 20 次自动查询，手动刷新与在途查询合并。关闭指引取消查询，不关闭桌面端。通用认证错误不证明已退出，同站点换号也不能确认。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；按积分显示本轮用量（读取内置 CLI 的原生会话文件），并显示原生上下文占用及系统提示词、工具定义、对话消息等分类（每轮结束后由不保存会话的副进程运行原生 `/context` 读取，数值为原生估算；CodeBuddy Code 同）；DSH 工具桥与原生分支（内置 CLI 未实现 `session/fork`）未开放。WorkBuddy CN 已在 macOS 与 Windows Desktop 完成真实任务、询问档审批与界面验收；国际版尚未验收。详见 [WorkBuddy 协议](doc/workbuddy-protocol.md)。
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.1；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
@@ -77,7 +77,7 @@ WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面�
 
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
 
-**TRAE CN**（`traecn`）只使用官方 `traecli`。官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 需要直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`）。请使用官方安装脚本，不提供非官方安装包。官方文档仅对企业版旗舰版套餐开放 CLI；个人登录使用 `traecli --enable personal_user_login login --personal`，依赖开发中的 `personal_user_login` 特性；企业 SSO 使用 `traecli login --enterprise`，企业 PAT 使用 `traecli login --with-trae-pat`。不提供「询问」档或强度选择。截至 2026-11-07 未发现官方国际版 CLI，Windows 尚未验证。详见 [TRAE 安装、账号与权限说明](doc/usage-details.md#trae-cn-安装与登录)。
+**TRAE CN**（`traecn`）只使用官方 `traecli`。官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 需要直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`）。请使用官方安装脚本，不提供非官方安装包。官方文档仅对企业版旗舰版套餐开放 CLI；个人登录使用 `traecli --enable personal_user_login login --personal`，依赖开发中的 `personal_user_login` 特性；企业 SSO 使用 `traecli login --enterprise`，企业 PAT 使用 `traecli login --with-trae-pat`。不提供「询问」档或强度选择。截至 2026-11-07 未发现官方国际版 CLI。Windows 已于 2026-11-09 真实登录并派遣。TRAE 没有原生上下文分类来源，系统提示词、工具定义、对话消息显示 `—`。详见 [TRAE 安装、账号与权限说明](doc/usage-details.md#trae-cn-安装与登录)。
 
 账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；文件夹信任由用户在窗口确认，空编辑器自动打开 `/login`，中国站/国际站提供浏览器引导，企业/iOA 保留原生。切换沿已核实路径自动 `/logout`，明确退出并完成清理后再登录；未知画面回退原生。详见 [授权前采集与未完成验收](openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)。
 
