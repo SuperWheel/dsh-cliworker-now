@@ -18,7 +18,7 @@
 
 ## 验证与交付
 
-- 最新发布版本为 `v0.8.6`（修复超长工具命令导致 Harness 无法启动；v0.8.5：Harness 0.2.1-rc.5 适配、Antigravity 改走 ACP、原生审批转交 DSH、Worker 权限三档与 Windows 代理/登录修复；v0.8.1 起的原生会话与工具桥迁移已发布；v0.7.10 已备份）。之后的修复与调整在下一次正式提交时使用用户确认的版本号，不自行增加版本号。GitHub 提交及发布须用户明确批准；允许按阶段本地 Git 提交，不自动推送或发布。
+- 最新发布版本为 `v0.8.8`（接入 CodeBuddy Code、TRAE CN 与 WorkBuddy CN／WorkBuddy（试验性），CodeBuddy 与 TRAE 图形账号窗口，积分用量与 CodeBuddy 系上下文分类；v0.8.7：同级派遣、CLI 原生与 DSH 子 Agent 汇入 Worker 窗口、Grok 登录续期、Pi/OMP 逐条退出凭据、超大工具事件摘要、热启用白屏修复、DSH 0.2.2-rc.1 适配；v0.8.6：修复超长工具命令导致 Harness 无法启动；v0.8.5：Harness 0.2.1-rc.5 适配、Antigravity 改走 ACP、原生审批转交 DSH、Worker 权限三档与 Windows 代理/登录修复；v0.8.1 起的原生会话与工具桥迁移已发布；v0.7.10 已备份）。之后的修复与调整在下一次正式提交时使用用户确认的版本号，不自行增加版本号。GitHub 提交及发布须用户明确批准；允许按阶段本地 Git 提交，不自动推送或发布。
 - 日常修改只执行与影响范围对应的最小验收（关联回归、必要类型检查、隔离构建及必要平台检查）；发布验收在用户批准的正式 GitHub 提交之前执行，范围见 `openspec/specs/development-workflow/`（不跑 Windows 隔离环境全量 vitest；真实 CLI 只测自上次真实验收以来有改动的）。明确记录未执行的真实账号、模型与平台验证。
 - 常用命令：`pnpm typecheck`、`pnpm test`、`pnpm build:preview`、`pnpm build`、`pnpm smoke:extended --help`；真实模型调用需已有选型授权。
 - 测试应覆盖流解析、互斥、取消、恢复、权限边界、配置继承和安装协议。不要只验证实现细节。
