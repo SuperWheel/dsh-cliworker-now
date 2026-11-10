@@ -28,12 +28,17 @@
 - [x] 2.3 `pnpm typecheck`、关联 vitest、`pnpm spec:check`
   - 2026-11-10：`pnpm typecheck` 通过；全量 `pnpm test` 280 文件通过、4 跳过，6208 条通过、14 跳过；`pnpm build:preview` 通过；`pnpm spec:check` 63 项通过。
 
-## 3. 真实验收（开放条件，glm-5.3-flash）
+## 3. 真实验收（开放条件）
 
-- [ ] 3.1 工作区内写文件发出 `session/request_permission`，拒绝后文件不存在，本轮显示“因拒绝审批而结束”
-  - 2026-11-10 22:11 探测：`session/prompt` 返回 `Internal error`，TRAE 服务端 400 `Repetition_penalty should be in (0.0, 2.0]`（重连 5 次均失败），未产生工具调用与审批；工作区为空。阻塞：服务端，用户决定不换模型。
-- [ ] 3.2 允许后文件按要求写入
-- [ ] 3.3 只读命令（`ls`）不发审批
+> glm-5.3-flash 被 TRAE 服务端以 400 拒绝（请求带的 `repetition_penalty` 越界，`model_provider` 为 `trae`，与用户配置及插件无关）。2026-11-10 用户同意换模型，3.1–3.3 改用账号默认模型 Doubao-Seed-Code（traecli 0.213.1，macOS，直接启动 `traecli -c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user" acp serve`，不经插件）。探测脚本与日志在会话草稿目录 `trae-probe/`，不进 Git。
+
+- [x] 3.1 工作区内写文件发出 `session/request_permission`，拒绝后文件不存在，本轮显示“因拒绝审批而结束”
+  - 2026-11-10 22:33，Doubao-Seed-Code：写 `probe.txt` 发出 1 次 `session/request_permission`（Edit，选项 `allow_once`/`reject_once`），选 `reject_once` 后 `stopReason: cancelled`，工作区为空。插件侧把拒绝后的 `cancelled` 显示为“因拒绝审批而结束”由模拟测试覆盖，未在 Desktop 实测（见 3.4）。
+  - 此前 22:11 glm-5.3-flash 探测：`session/prompt` 返回 `Internal error`，TRAE 服务端 400 `Repetition_penalty should be in (0.0, 2.0]`（重连 5 次均失败），未产生工具调用与审批；工作区为空。阻塞：服务端，用户决定不换模型。
+- [x] 3.2 允许后文件按要求写入
+  - 2026-11-10 22:33，Doubao-Seed-Code：同一提示 1 次审批，选 `allow_once` 后 `stopReason: end_turn`，`probe.txt` 内容为 `hello-ask-level`。
+- [x] 3.3 只读命令（`ls`）不发审批
+  - 2026-11-10 22:33，Doubao-Seed-Code：执行 `/bin/zsh -lc ls`，0 次审批，工具 completed，回复输出 `existing.txt`，与目录实际内容一致。
 - [ ] 3.4 Desktop 中以询问档派遣 TRAE，审批卡片出现位置与来源一致（主 Agent→主页面，Worker 框续聊→子会话）
 - [ ] 3.5 Windows：未验证只读沙箱，发布说明中写明
 
