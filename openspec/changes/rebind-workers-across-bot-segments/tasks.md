@@ -23,14 +23,19 @@
 - [x] 2.2 Runtime：同链重绑、非同链拒绝、旧段身份拒绝、运行中不改、回到旧段、重启后保持
   - `tests/parent-lineage.test.ts`「rebinding Workers…」5 条通过；“重启后保持”以读取持久化的 `<id>.worker.json` 验证，未重建 Runtime。
 - [x] 2.3 显示桥与存储：换父替换成功、两次打开不报错、非同链旧记录仍拒绝、同父替换校验不变
-  - `tests/harness-conversation.test.ts`「rebinding across DS Bot segments (Issue #10)」2 条、`tests/parent-lineage.test.ts`「display binding reparenting」1 条通过；原有 `tests/harness-conversation-store.test.ts` 同父替换校验通过。`index.ts` `replaceBinding` 的换父分支没有宿主层单测，仅由类型检查覆盖。
+  - `tests/harness-conversation.test.ts`「rebinding across DS Bot segments (Issue #10)」2 条、`tests/parent-lineage.test.ts`「display binding reparenting」1 条通过；原有 `tests/harness-conversation-store.test.ts` 同父替换校验通过。宿主层 `replaceBinding` 已抽为 `src/host/worker-binding-replacement.ts` `replaceWorkerBinding`（行为不变），`tests/parent-lineage.test.ts`「host binding replacement across segments」4 条覆盖：换到当前段、回滚回原段、非原父段与 Worker 身份不符时拒绝且两处存储不变、Worker 保存失败时回滚。parent-lineage 共 13 条通过；关联 5 个文件 71 条通过、typecheck 通过（2026-11-10 22:48）。
   - 关联回归（runtime、harness-conversation*、native-runtime、worker-fork-runtime-native、runtime-account-isolation、runtime-metadata-cleanup、parent-lineage）12 个文件 193 通过、1 跳过。
 - [x] 2.4 `pnpm typecheck`、关联 vitest、`pnpm spec:check`
   - 2026-11-10：`pnpm typecheck` 通过；全量 `pnpm test` 280 文件通过、4 跳过，6208 条通过、14 跳过；`pnpm build:preview` 通过；`pnpm spec:check` 63 项通过。
 
 ## 3. 真实验收
 
-- [ ] 3.1 安装 DS Bot（或按其状态格式构造换段）后在 Desktop 复现并验证 status、无参快照、续聊一轮、打开会话
+- [x] 3.1 安装 DS Bot（或按其状态格式构造换段）后在 Desktop 复现并验证 status、无参快照、续聊一轮、打开会话
+  - 2026-11-10 22:49–22:52，macOS DSH Desktop（`pnpm build` 后重启，内置浏览器连 Host Web UI）。未安装 DS Bot，按其格式临时写 `~/.dsh/bot/state.json`（0600）：旧段为前一次 TRAE 测试对话 `session-4f7c9311…`（Worker traecn-1 原属此段，原生显示子会话 `a528e285…`），当前段为新建对话 `session-493016da…`；测完已删除该文件与 `~/.dsh/bot/`。
+  - 新对话中主 Agent：无参 `cliworker_status` 列出 traecn-1；带 `worker_id` 查询返回 `parentSessionId: session-493016da…`、`formerParentSessionIds` 含 `session-4f7c9311…`，`conversationId` 不变。
+  - `cliworker_followup` 续聊一轮（运行 `ec6664c6`）completed，TRAE 回报文件内容 `hello-desktop-worker` 并说出上一轮创建的是 `ask-desktop-worker.txt`（原生会话上下文保留）。
+  - 点开 Worker 窗口无「不能跨父会话绑定 CLI 会话」「原生会话父身份不匹配」；`harness-conversations.json` 记录改为父 `session-493016da…`、新子会话 `fcbdb1fa…`、`retiredSessionIds: [a528e285…]`；`<id>.worker.json` 的 `harnessConversation` 同步。
+  - 未覆盖：真实 DS Bot 自动换段（含 `archiveSession(stopActivity)`）与群聊段链；Windows 未测。
 - [ ] 3.2 在 Issue #10 回复修复版本与行为（回复内容经用户确认后发出）
 
 ## 4. 文档

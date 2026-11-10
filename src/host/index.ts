@@ -18,6 +18,7 @@ import { createHarnessConversationBridge } from './harness-conversation.ts'
 import { workerGoalCommand } from './harness-conversation-commands.ts'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
 import { DsBotLineage } from './parent-lineage.ts'
+import { replaceWorkerBinding } from './worker-binding-replacement.ts'
 import {
   projectExternalTurnUsage,
   recoverHarnessTurnRuns,
@@ -402,46 +403,7 @@ export class CliWorkerService extends TypertRemoteService {
             this.runtime.changed()
           }
         },
-        replaceBinding: async (previous, next) => {
-          if (previous.workerId !== next.workerId) throw new Error('Worker 原生会话替换的当前身份不匹配')
-          // Issue #10: a rebound Worker replaces a display child of an earlier
-          // segment; one of the two parents must be a recorded former segment.
-          const reparent = previous.parentSessionId !== next.parentSessionId
-          const owner = reparent ? this.runtime.storage.workers.get(next.workerId)?.parentSessionId : previous.parentSessionId
-          const worker = this.runtime.get(owner ?? previous.parentSessionId, previous.workerId)
-          if (reparent) {
-            const other = worker.parentSessionId === next.parentSessionId ? previous.parentSessionId
-              : worker.parentSessionId === previous.parentSessionId ? next.parentSessionId : undefined
-            if (!other || !worker.formerParentSessionIds?.includes(other))
-              throw new Error('原生会话父身份不匹配')
-          }
-          if (worker.harnessConversation?.sessionId !== previous.sessionId)
-            throw new Error('Worker 原生会话替换的当前身份不匹配')
-          records.replace(previous, next, { reparent })
-          // The private CAS is authoritative. Publish only after its atomic commit.
-          const previousBinding = worker.harnessConversation
-          worker.harnessConversation = {
-            ...previousBinding,
-            sessionId: next.sessionId,
-            parentSessionId: next.parentSessionId,
-          }
-          try {
-            this.runtime.storage.save(worker)
-          } catch (error) {
-            worker.harnessConversation = previousBinding
-            const rollback = {
-              ...previous,
-              retiredSessionIds: [...(previous.retiredSessionIds ?? []), next.sessionId],
-            }
-            try {
-              records.replace(next, rollback, { reparent })
-            } catch (cleanup) {
-              throw new AggregateError([error, cleanup], '原生会话绑定替换及回滚未完成')
-            }
-            throw error
-          }
-          this.runtime.changed()
-        },
+        replaceBinding: async (previous, next) => replaceWorkerBinding(this.runtime, records, previous, next),
         getWorker: (parent, id) => this.runtime.get(parent, id),
         busy: (record) => {
           const snapshot = this.runtime.snapshot(record.parentSessionId, record.workerId)

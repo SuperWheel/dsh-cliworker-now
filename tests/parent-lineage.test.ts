@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { DsBotLineage, dsBotChains } from '../src/host/parent-lineage.ts'
 import { HarnessConversationStore } from '../src/host/harness-conversation-store.ts'
+import { replaceWorkerBinding } from '../src/host/worker-binding-replacement.ts'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
@@ -150,5 +151,68 @@ describe('display binding reparenting', () => {
     store.replace(old, next, { reparent: true })
     expect(new HarnessConversationStore(root).list()).toEqual([next])
     expect(() => store.replace(next, { ...next, workerId: randomUUID(), sessionId: 'third-child', retiredSessionIds: ['old-child', 'new-child'] }, { reparent: true })).toThrow()
+  })
+})
+
+describe('host binding replacement across segments (Issue #10)', () => {
+  const setup = (formerParentSessionIds?: string[]) => {
+    const project = temp('cwn-lineage-host-')
+    const storage = new WorkerStorage(join(project, 'state'))
+    const backend: ProcessBackend = {
+      resolveExecutable: vi.fn(async () => '/synthetic/no-cli'),
+      spawn: vi.fn(() => { throw new Error('Synthetic backend must never start') }),
+    }
+    const runtime = new WorkerRuntime(storage, backend, DEFAULT_CONFIG)
+    cleanup.push(() => runtime.close())
+    const records = new HarnessConversationStore(join(project, 'state'))
+    const capabilities = { message: true } as never
+    const worker: Worker = {
+      id: randomUUID(), runId: randomUUID(), parentSessionId: 'bot-third', project,
+      title: 'Synthetic rebound worker', preference: { cli: 'codex', model: 'synthetic-model', effort: 'default' },
+      conversationId: 'native-session-kept', mode: 'accept-edits', status: 'completed',
+      createdAt: '2026-11-10T00:00:00.000Z', updatedAt: '2026-11-10T00:00:01.000Z',
+      ...(formerParentSessionIds ? { formerParentSessionIds } : {}),
+      harnessConversation: { sessionId: 'old-child', parentSessionId: 'bot-first', mode: 'continuable', capabilities },
+    }
+    storage.save(worker)
+    const old = { workerId: worker.id, parentSessionId: 'bot-first', sessionId: 'old-child' }
+    records.save(old)
+    const next = { workerId: worker.id, parentSessionId: 'bot-third', sessionId: 'new-child', retiredSessionIds: ['old-child'] }
+    return { project, storage, runtime, records, worker, old, next }
+  }
+  it('moves the display child of a former segment under the current parent', () => {
+    const { project, runtime, records, worker, old, next } = setup(['bot-first'])
+    const changed = vi.spyOn(runtime, 'changed')
+    replaceWorkerBinding(runtime, records, old, next)
+    expect(records.list()).toEqual([next])
+    expect(runtime.get('bot-third', worker.id).harnessConversation).toMatchObject({ sessionId: 'new-child', parentSessionId: 'bot-third' })
+    expect(JSON.parse(readFileSync(join(project, 'state', `${worker.id}.worker.json`), 'utf8')).harnessConversation)
+      .toMatchObject({ sessionId: 'new-child', parentSessionId: 'bot-third' })
+    expect(changed).toHaveBeenCalled()
+  })
+  it('accepts the rollback back to the former segment', () => {
+    const { runtime, records, worker, old, next } = setup(['bot-first'])
+    replaceWorkerBinding(runtime, records, old, next)
+    const rollback = { ...old, retiredSessionIds: ['new-child'] }
+    replaceWorkerBinding(runtime, records, next, rollback)
+    expect(records.list()).toEqual([rollback])
+    expect(runtime.get('bot-third', worker.id).harnessConversation?.parentSessionId).toBe('bot-first')
+  })
+  it('refuses a parent change that is not a recorded former segment and leaves both stores untouched', () => {
+    const { runtime, records, worker, old, next } = setup()
+    expect(() => replaceWorkerBinding(runtime, records, old, next)).toThrow('原生会话父身份不匹配')
+    const other = setup(['bot-zero'])
+    expect(() => replaceWorkerBinding(other.runtime, other.records, other.old, other.next)).toThrow('原生会话父身份不匹配')
+    expect(records.list()).toEqual([old])
+    expect(runtime.get('bot-third', worker.id).harnessConversation?.sessionId).toBe('old-child')
+    expect(() => replaceWorkerBinding(runtime, records, old, { ...next, workerId: randomUUID() }))
+      .toThrow('Worker 原生会话替换的当前身份不匹配')
+  })
+  it('restores the previous binding when the Worker cannot be saved', () => {
+    const { storage, runtime, records, worker, old, next } = setup(['bot-first'])
+    vi.spyOn(storage, 'save').mockImplementationOnce(() => { throw new Error('synthetic disk full') })
+    expect(() => replaceWorkerBinding(runtime, records, old, next)).toThrow('synthetic disk full')
+    expect(records.list()).toEqual([{ ...old, retiredSessionIds: ['new-child'] }])
+    expect(runtime.get('bot-third', worker.id).harnessConversation).toMatchObject({ sessionId: 'old-child', parentSessionId: 'bot-first' })
   })
 })
