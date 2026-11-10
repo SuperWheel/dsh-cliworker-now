@@ -36,7 +36,8 @@
   - `cliworker_followup` 续聊一轮（运行 `ec6664c6`）completed，TRAE 回报文件内容 `hello-desktop-worker` 并说出上一轮创建的是 `ask-desktop-worker.txt`（原生会话上下文保留）。
   - 点开 Worker 窗口无「不能跨父会话绑定 CLI 会话」「原生会话父身份不匹配」；`harness-conversations.json` 记录改为父 `session-493016da…`、新子会话 `fcbdb1fa…`、`retiredSessionIds: [a528e285…]`；`<id>.worker.json` 的 `harnessConversation` 同步。
   - 未覆盖：真实 DS Bot 自动换段（含 `archiveSession(stopActivity)`）与群聊段链；Windows 未测。
-- [ ] 3.2 在 Issue #10 回复修复版本与行为（回复内容经用户确认后发出）
+- [x] 3.2 在 Issue #10 回复修复版本与行为（回复内容经用户确认后发出）
+  - 2026-11-10 用户确认后发出：https://github.com/SuperWheel/dsh-cliworker-now/issues/10#issuecomment-6770717142 。Issue 保持打开，待 v0.8.9 发布后关闭。
 
 ## 4. 文档
 
