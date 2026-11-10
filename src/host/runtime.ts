@@ -99,6 +99,7 @@ import {
   type NativeApprovalRequest,
 } from './native-approval-policy.ts'
 import { askRunsAsPlan, cliLevelOptions, workerPlanSupported } from '../shared/worker-permissions.ts'
+import type { ParentLineage } from './parent-lineage.ts'
 import { GOAL_OBJECTIVE_LIMIT, type WorkerGoal } from '../shared/conversation-features.ts'
 import {
   createIsolatedWorkspace,
@@ -291,6 +292,44 @@ export class WorkerRuntime {
     return () => {
       if (this.approvalHandler === handler) this.approvalHandler = undefined
     }
+  }
+  private parentLineage?: ParentLineage
+  /** Proven segment chains of a host conversation; absent keeps exact parent identity only. */
+  setParentLineage(lineage: ParentLineage): () => void {
+    this.parentLineage = lineage
+    return () => {
+      if (this.parentLineage === lineage) this.parentLineage = undefined
+    }
+  }
+  /**
+   * Moves idle Workers of earlier segments of `parent`'s chain to `parent`
+   * (Issue #10). Busy Workers keep their parent until a later call finds them idle;
+   * every exact-parent check after this call stays unchanged.
+   */
+  private adoptSegments(parent: string): void {
+    if (this.disposed) return
+    const former = this.parentLineage?.formerSegments(parent)
+    if (!former?.size) return
+    let moved = false
+    for (const worker of this.storage.workers.values()) {
+      if (worker.parentSessionId === parent || !former.has(worker.parentSessionId)) continue
+      if (this.stagedForks.has(worker.id) || this.busyReason(worker)) continue
+      const previous = { parentSessionId: worker.parentSessionId, formerParentSessionIds: worker.formerParentSessionIds }
+      worker.formerParentSessionIds = [...new Set([...(worker.formerParentSessionIds ?? []), worker.parentSessionId])]
+        .filter((id) => id !== parent)
+        .slice(-64)
+      worker.parentSessionId = parent
+      try {
+        this.storage.save(worker)
+        moved = true
+      } catch (error) {
+        worker.parentSessionId = previous.parentSessionId
+        if (previous.formerParentSessionIds) worker.formerParentSessionIds = previous.formerParentSessionIds
+        else delete worker.formerParentSessionIds
+        console.warn(`[CLI Worker] 换段后重绑 Worker ${worker.id} 失败`, error)
+      }
+    }
+    if (moved) this.changed()
   }
   private accessSnapshot?: (worker: Worker) => { access: NativeAccess; label: string } | undefined
   /** The run's tier (Worker level capped by the parent) and its timeline label, read once at launch. */
@@ -1214,6 +1253,7 @@ export class WorkerRuntime {
       throw new Error('此 CLI 还有运行或排队中的任务，请等待结束后再修改此 CLI 设置或管理账号')
   }
   get(parent: string, id: string): Worker {
+    this.adoptSegments(parent)
     const worker = this.storage.workers.get(id) ?? this.stagedForks.get(id)
     if (!worker || worker.parentSessionId !== parent)
       throw new Error('Worker does not belong to this conversation')
@@ -1223,6 +1263,7 @@ export class WorkerRuntime {
   /** Exact names are scoped to the owning parent; never select a partial or cross-session match. */
   resolveWorker(parent: string, id?: string, name?: string): Worker {
     if (!id && !name) throw new Error('请指定 worker_id 或 worker_name')
+    this.adoptSegments(parent)
     const normalized = name === undefined ? undefined : agentNameSchema.parse(name)
     if (id) {
       const worker = this.get(parent, id)
@@ -1247,6 +1288,7 @@ export class WorkerRuntime {
   }
   private checkAgentName(parent: string, name: string, excludingId?: string): string {
     const clean = agentNameSchema.parse(name)
+    this.adoptSegments(parent)
     if (DSH_AGENT_NAME.test(clean)) throw new Error('“dsh-数字”保留给 DSH 子 Agent，请换一个名称')
     if (
       [...this.storage.workers.values()].some(
@@ -1362,6 +1404,7 @@ export class WorkerRuntime {
     this.changed()
   }
   restoreWorker(parent: string, id: string): void {
+    this.adoptSegments(parent)
     const worker = this.storage.workers.get(id)
     if (!worker || worker.parentSessionId !== parent)
       throw new Error('Worker does not belong to this conversation')
@@ -1544,6 +1587,7 @@ export class WorkerRuntime {
   }
 
   snapshot(parent: string, selected?: string): WorkerSnapshot {
+    this.adoptSegments(parent)
     const owned = [...this.storage.workers.values()]
       .filter((w) => w.parentSessionId === parent)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))

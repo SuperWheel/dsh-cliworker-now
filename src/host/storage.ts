@@ -127,6 +127,7 @@ const workerSchema = z.object({
   initiator: z.object({ kind: z.enum(['worker', 'subagent']), id: z.string().min(1), name: z.string().min(1) }).optional(),
   id: z.uuid(),
   parentSessionId: z.string().min(1),
+  formerParentSessionIds: z.array(z.string().min(1).max(256)).max(64).optional().catch(undefined),
   project: z.string().min(1),
   title: z.string(),
   agentName: agentNameSchema.optional(),

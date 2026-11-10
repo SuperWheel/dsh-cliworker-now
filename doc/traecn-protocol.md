@@ -30,10 +30,12 @@
 参数以数组传入，不拼接任务 shell 命令：
 
 ```text
-[exe, "--permission-mode", launchMode, "acp", "serve"]
+[exe, "--permission-mode", launchMode, "acp", "serve"]                       # 仅工作区编辑、完全权限、规划
+[exe, "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="on-request"',
+      "-c", 'approvals_reviewer="user"', "acp", "serve"]                       # 询问
 ```
 
-`launchMode` 取 `default`（仅工作区编辑、规划启动）或 `bypass_permissions`（完全权限）。不使用 `exec --json`；不附加 `--enable personal_user_login`、`-s`、`-a`、`-y` 或 `-c`。安装版 `--permission-mode` 接受 `default`、`auto`、`bypass_permissions`，不接受 `plan` 或未知值；`--no-daemon` 仅支持交互模式，不能用于 ACP。
+`launchMode` 取 `default`（仅工作区编辑、规划启动）或 `bypass_permissions`（完全权限）。询问档（v0.8.9 起）不带 `--permission-mode`：2026-11-10 实测 0.213.1 同时给 `--permission-mode` 与 `-c sandbox_mode` 时退出 1（`` `sandbox_mode` and `permission_mode` overrides cannot both be set ``）；`approvals_reviewer` 只接受 `user`、`auto_review`、`guardian_subagent`，插件固定 `user`，不交给审核子代理。用户 `traecli.toml` 中的 `permission_mode`、`sandbox_mode` 不与上述 `-c` 冲突（临时 `TRAE_HOME` 实测）。不使用 `exec --json`；不附加 `--enable personal_user_login`、`-s`、`-a` 或 `-y`。安装版 `--permission-mode` 接受 `default`、`auto`、`bypass_permissions`，不接受 `plan` 或未知值；`--no-daemon` 仅支持交互模式，不能用于 ACP。
 
 ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整原始报文的逐字副本；未记录的字段、版本值与扩展结构待核实。
 
@@ -50,7 +52,7 @@ ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整�
 
 ## 3. session/new、模式与配置项
 
-`session/new` 返回原生会话 ID。插件传项目目录与 `mcpServers: []`，不注入 DSH 工具桥。安装版带 `--permission-mode` 启动时才返回 `modes` 及 `mode` 配置项；模式有 `default`（Workspace Edit）、`plan`、`auto` 和 `bypass_permissions`（Full Access）。
+`session/new` 返回原生会话 ID。插件传项目目录与 `mcpServers: []`，不注入 DSH 工具桥。安装版带 `--permission-mode` 启动时才返回 `modes` 及 `mode` 配置项；询问档的 `-c` 启动只返回 `model` 配置项，插件不设置、不回读模式；模式有 `default`（Workspace Edit）、`plan`、`auto` 和 `bypass_permissions`（Full Access）。
 
 | 配置项 | 已测形态与插件处理 |
 | --- | --- |
@@ -64,12 +66,12 @@ ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整�
 
 | Worker 档位 / 模式 | 启动与会话模式 | 边界 |
 | --- | --- | --- |
-| 询问 | 不提供 | `default` 会自动批准工作区内改动与命令，不能冒充逐项询问；非规划的 `read-only` 直接拒绝启动 |
+| 询问 | `-c` 只读沙箱 + `on-request` + `approvals_reviewer="user"`，不设会话模式 | 只读沙箱拦截改动，需写入时 TRAE 发 `session/request_permission` 转 DSH；拒绝后不执行。**工作区内写文件先询问、拒绝后无写入、只读命令免询问尚未经真实模型验证**（2026-11-10 glm-5.3-flash 服务端 400），开放条件见 `openspec/changes/add-traecn-ask-level/` |
 | 仅工作区编辑 | 启动及会话 `default` | 工作区内读写、命令及实测 `/tmp` 自动批准；其他工作区外授权请求交 DSH，不是 OS 沙箱 |
 | 完全权限 | 启动及会话 `bypass_permissions` | 免确认；不可用时仅允许降至 `default`，说明本轮按仅工作区编辑运行 |
 | 规划 | 以 `default` 启动，ACP `mode=plan` | 确认当前模式 `plan` 才发 prompt，审批直接拒绝；不能用 `--permission-mode plan` 启动 |
 
-原生 `auto` 由 TRAE 审查子 Agent 代批，插件不映射此档。Worker 没保存档位且主对话为仅可查看时拒绝派遣，提示选择 Worker 档位或切换权限预设。
+原生 `auto` 由 TRAE 审查子 Agent 代批，插件不映射此档。Worker 没保存档位且主对话为仅可查看时按询问档运行。每轮都新起 TRAE 进程，换档或切换规划从下一轮生效。
 
 ## 4. 事件与审批形态
 

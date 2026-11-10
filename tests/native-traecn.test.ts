@@ -26,7 +26,23 @@ describe('模拟：TRAE 原生 ACP 回执与权限边界', () => {
     const f = await traecnFixture(scenario, { mode: scenario === 'unconfirmed-mode' ? 'plan' : 'accept-edits' })
     expect(f.result.status).toBe('ERROR'); expect(methods(f)).not.toContain('session/prompt'); expect(f.exited).toBe(true)
   })
-  it.each([{ effort: 'high' }, { access: 'read-only' }])('rejects unsupported selection before spawning %j', async options => {
+  it('launches the ask level in the native read-only sandbox with user-reviewed on-request approval, setting no mode', async () => {
+    const f = await traecnFixture('success', { access: 'read-only' })
+    expect(f.records[0].argv).toEqual(['-c', 'sandbox_mode="read-only"', '-c', 'approval_policy="on-request"', '-c', 'approvals_reviewer="user"', 'acp', 'serve'])
+    expect(f.records[0].argv).not.toContain('--permission-mode')
+    expect(f.records.filter(v => v.method === 'session/set_config_option').map(v => v.params.configId)).toEqual(['model'])
+    expect(f.result).toMatchObject({ status: 'SUCCESS', response: '模拟新正文' })
+    expect(f.exited).toBe(true)
+  })
+  it.each(['allow-once', 'deny'])('relays an ask-level change request to DSH: %s', async decision => {
+    const f = await traecnFixture('permission', { access: 'read-only', decision })
+    expect(f.frames.find(v => v.type === 'approval')).toBeDefined()
+    expect(f.records.find(v => v.id === 'SIMULATED-approval').result.outcome.optionId).toBe(decision === 'deny' ? 'abort' : 'approved')
+    if (decision === 'deny') expect(f.result).toMatchObject({ status: 'SUCCESS', response: '', notice })
+    expect(f.records.filter(v => v.method === 'session/set_config_option').map(v => v.params.configId)).toEqual(['model'])
+    expect(f.exited).toBe(true)
+  })
+  it.each([{ effort: 'high' }])('rejects unsupported selection before spawning %j', async options => {
     const f = await traecnFixture('success', options)
     expect(f.result.status).toBe('ERROR'); expect(f.records).toEqual([])
   })

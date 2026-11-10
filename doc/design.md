@@ -1459,3 +1459,10 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 ### CodeBuddy / TRAE 图形账号引导（2026-11-07，未发布）
 
 独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。
+
+## 2026-11-10 v0.8.9：TRAE 询问档与 DS Bot 换段重绑（未发布）
+
+需求见 [v0.8.9 PRD](prd/2026-11-10-v0.8.9-PRD.md)。
+
+- TRAE「询问」档（[add-traecn-ask-level](../openspec/changes/add-traecn-ask-level/design.md)）：询问档以 `-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user" acp serve` 启动，不带 `--permission-mode`（二者同给时 TRAE 拒绝启动），不设、不回读 ACP 模式；其余三种启动不变。仅可查看且未选档时按询问档运行。工作区内改动先询问尚未经真实模型验证，验证通过前不随正式版本发布。
+- DS Bot 换段（[rebind-workers-across-bot-segments](../openspec/changes/rebind-workers-across-bot-segments/design.md)，Issue #10）：只读 DS Bot `<DSH_HOME>/bot/state.json` 识别段链（Bot 自己对话、群成员会话、群自身三类，重复 ID 的链整体丢弃）。父会话是链的当前段时，在 Worker 入口把同链旧段的空闲 Worker 改到当前段并记 `formerParentSessionIds`；运行中的 Worker 空闲后再改。显示桥只在旧记录父会话属于 `formerParentSessionIds` 时以旧记录为前身重建显示子会话，绑定存储以显式 `reparent` 接受这一换父替换。CLI 会话 ID 不变。

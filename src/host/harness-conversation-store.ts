@@ -113,7 +113,8 @@ export class HarnessConversationStore {
     next.set(row.sessionId, row)
     this.commit(next)
   }
-  replace(previous: HarnessConversationRecord, replacement: HarnessConversationRecord): void {
+  /** `reparent` is set only by the caller that proved both parents are one rebound chain (Issue #10). */
+  replace(previous: HarnessConversationRecord, replacement: HarnessConversationRecord, options: { reparent?: boolean } = {}): void {
     const row = recordSchema.parse(replacement)
     const current = this.records.get(previous.sessionId)
     if (
@@ -121,7 +122,7 @@ export class HarnessConversationStore {
       current.workerId !== previous.workerId ||
       current.parentSessionId !== previous.parentSessionId ||
       row.workerId !== current.workerId ||
-      row.parentSessionId !== current.parentSessionId ||
+      (row.parentSessionId !== current.parentSessionId && !options.reparent) ||
       row.sessionId === current.sessionId ||
       this.records.has(row.sessionId) ||
       !row.retiredSessionIds?.includes(current.sessionId) ||

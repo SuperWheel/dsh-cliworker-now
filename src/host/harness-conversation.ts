@@ -1137,8 +1137,20 @@ export class HarnessConversationBridge implements HarnessConversationApi {
     const inFlight = this.creating.get(worker.id)
     if (inFlight) return inFlight
     const existing = [...this.records.values()].find((record) => record.workerId === worker.id)
+    if (existing && existing.parentSessionId !== parent.id) {
+      // Issue #10: the Worker was rebound from an archived earlier segment; its
+      // display child lives under the old parent, so rebuild it under this one.
+      if (!worker.formerParentSessionIds?.includes(existing.parentSessionId) || !this.deps.replaceBinding)
+        throw new Error('原生会话父身份不匹配')
+      const rebinding = this.create(parent, worker, options, existing)
+      this.creating.set(worker.id, rebinding)
+      try {
+        return await rebinding
+      } finally {
+        if (this.creating.get(worker.id) === rebinding) this.creating.delete(worker.id)
+      }
+    }
     if (existing) {
-      if (existing.parentSessionId !== parent.id) throw new Error('原生会话父身份不匹配')
       const native =
         options.nativeSubmissionId &&
         this.nativeSubmissions.get(existing.sessionId)?.has(options.nativeSubmissionId)

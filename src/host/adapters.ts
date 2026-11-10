@@ -327,7 +327,6 @@ export function workerArguments(
   if (cli === 'traecn') {
     if (!nativeTransport) throw new Error('TRAE CN 必须通过原生 ACP 桥运行')
     if (preference.effort !== 'default') throw new Error('TRAE CN 不支持强度选择')
-    if (access === 'read-only' && mode !== 'plan') throw new Error('TRAE CN 不支持询问档，请在 Worker 菜单选择仅工作区编辑或完全权限')
     // The TRAE runner owns its mode argv; no prompt, model or foreign flags at launch.
     return [executable]
   }

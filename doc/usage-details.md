@@ -98,7 +98,7 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **模型。** 先确认登录，再读取 `traecli models --json`；执行 ID 为 `config_name`，显示名为 `name`。0.213.1 前置实测为 18 项，数量随原生目录变化，不固定模型列表。未登录时的 `[]` 报未登录，已登录空列表报「当前账号暂无可确认模型」。执行前通过 ACP `model` 配置项选择并核对回执；模型不在本次会话目录即要求重新选型，不改用默认模型。ACP 没有公开可核实的强度选项，不提供强度选择。
 
-**权限与规划。** 菜单只有「仅工作区编辑」和「完全权限」，没有「询问」档。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时拒绝派遣，需在 Worker 菜单选择档位或切换权限预设。
+**权限与规划。** 菜单有「询问」「仅工作区编辑」「完全权限」三档（v0.8.9 起）。询问以 TRAE 原生只读沙箱启动（`-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user"`），需要改动时由 TRAE 发起审批并转 DSH，拒绝即不执行；工作区内写文件先询问这一核心行为尚未经真实模型验证（2026-11-10 服务端故障），见 [TRAE 协议说明](traecn-protocol.md)。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时按询问档运行。
 
 规划模式以 `default` 启动，通过 ACP `mode=plan` 切换，确认 `plan` 后才发送任务，授权请求直接拒绝；不能把 `--permission-mode plan` 当启动参数。运行时模式回读不符会停止本轮。DSH 审批仅有「允许一次／拒绝」，不提供会话级授权。拒绝后 TRAE 若以 `cancelled` 结束且用户未主动停止，显示「因拒绝审批而结束：被拒操作未执行，可续聊继续」；主动停止仍按停止处理，确认进程范围退出才报告成功。
 

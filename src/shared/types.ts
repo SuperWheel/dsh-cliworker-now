@@ -146,6 +146,8 @@ export interface Worker {
   initiator?: WorkerInitiator
   id: string
   parentSessionId: string
+  /** Earlier segments of the same host conversation chain this Worker was rebound from (Issue #10). */
+  formerParentSessionIds?: string[]
   project: string
   title: string
   agentName?: string

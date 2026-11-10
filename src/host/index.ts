@@ -17,6 +17,7 @@ import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
 import { createHarnessConversationBridge } from './harness-conversation.ts'
 import { workerGoalCommand } from './harness-conversation-commands.ts'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
+import { DsBotLineage } from './parent-lineage.ts'
 import {
   projectExternalTurnUsage,
   recoverHarnessTurnRuns,
@@ -402,15 +403,27 @@ export class CliWorkerService extends TypertRemoteService {
           }
         },
         replaceBinding: async (previous, next) => {
-          const worker = this.runtime.get(previous.parentSessionId, previous.workerId)
+          if (previous.workerId !== next.workerId) throw new Error('Worker 原生会话替换的当前身份不匹配')
+          // Issue #10: a rebound Worker replaces a display child of an earlier
+          // segment; one of the two parents must be a recorded former segment.
+          const reparent = previous.parentSessionId !== next.parentSessionId
+          const owner = reparent ? this.runtime.storage.workers.get(next.workerId)?.parentSessionId : previous.parentSessionId
+          const worker = this.runtime.get(owner ?? previous.parentSessionId, previous.workerId)
+          if (reparent) {
+            const other = worker.parentSessionId === next.parentSessionId ? previous.parentSessionId
+              : worker.parentSessionId === previous.parentSessionId ? next.parentSessionId : undefined
+            if (!other || !worker.formerParentSessionIds?.includes(other))
+              throw new Error('原生会话父身份不匹配')
+          }
           if (worker.harnessConversation?.sessionId !== previous.sessionId)
             throw new Error('Worker 原生会话替换的当前身份不匹配')
-          records.replace(previous, next)
+          records.replace(previous, next, { reparent })
           // The private CAS is authoritative. Publish only after its atomic commit.
           const previousBinding = worker.harnessConversation
           worker.harnessConversation = {
             ...previousBinding,
             sessionId: next.sessionId,
+            parentSessionId: next.parentSessionId,
           }
           try {
             this.runtime.storage.save(worker)
@@ -421,7 +434,7 @@ export class CliWorkerService extends TypertRemoteService {
               retiredSessionIds: [...(previous.retiredSessionIds ?? []), next.sessionId],
             }
             try {
-              records.replace(next, rollback)
+              records.replace(next, rollback, { reparent })
             } catch (cleanup) {
               throw new AggregateError([error, cleanup], '原生会话绑定替换及回滚未完成')
             }
@@ -747,6 +760,8 @@ export class CliWorkerService extends TypertRemoteService {
       () => this.runtime.setApprovalHandler((worker, request, signal, mode) => this.decideNativeApproval(worker, request, signal, mode)),
       'cliworker:approvals',
     )
+    // Issue #10: DS Bot moves a long conversation to a fresh root Session; its team file is the only proof of the chain.
+    ctx.effect(() => this.runtime.setParentLineage(new DsBotLineage()), 'cliworker:parent-lineage')
     // Ahead of the Remote answerer, which would ask only in the Worker's child session.
     ctx.on('approval/request', (request, next) => this.answerHarnessApproval(request, next), true)
     ctx.effect(
@@ -855,8 +870,6 @@ export class CliWorkerService extends TypertRemoteService {
       throw new Error('Harness 当前为仅可查看；Antigravity 无法把授权请求转给你，请切换权限预设或改用其他 CLI')
     if (cli === 'hermes')
       throw new Error('Harness 当前为仅可查看；Hermes 没有可询问的档位，请切换权限预设或改用其他 CLI')
-    if (cli === 'traecn')
-      throw new Error('Harness 当前为仅可查看；TRAE CN 不能逐项询问，没有「询问」档，请在 Worker 菜单选择仅工作区编辑或完全权限，或切换权限预设')
     if (!runsUnderViewOnly(cli))
       throw new Error('Harness 当前为仅可查看；Kimi 的第一项会自动批准 Git 仓库内的编辑，请切换权限预设或改用其他 CLI')
   }

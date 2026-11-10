@@ -38,7 +38,7 @@ const collect = async (stream: AsyncIterable<StreamChunk>) => {
   for await (const chunk of stream) chunks.push(chunk)
   return chunks
 }
-function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: boolean; activation?: boolean; unsupported?: boolean } = {}) {
+function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: boolean; activation?: boolean; unsupported?: boolean; worker?: Partial<Worker> } = {}) {
   const parentId = 'parent-synthetic'
   const worker: Worker = {
     id: randomUUID(),
@@ -51,6 +51,7 @@ function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: 
     createdAt: '2026-10-16T00:00:00Z',
     updatedAt: '2026-10-16T00:00:00Z',
     runId: randomUUID(),
+    ...options.worker,
   }
   const records = options.records ?? []
   const events: WorkerEvent[] = []
@@ -880,5 +881,31 @@ describe('native CLI model and lifetime isolation', () => {
       type: 'finish',
       reason: { kind: 'error', failure: { message: 'synthetic CLI failure' } },
     })
+  })
+})
+
+describe('rebinding across DS Bot segments (Issue #10)', () => {
+  it('rebuilds the display child under the current segment and retires the old one without resending the task', async () => {
+    const id = randomUUID()
+    const old: HarnessConversationRecord = { workerId: id, parentSessionId: 'old-segment', sessionId: 'old-display-child' }
+    const f = fixture({ records: [old], worker: { id, formerParentSessionIds: ['old-segment'] } })
+    const binding = await f.ensure()
+    expect(binding.sessionId).not.toBe('old-display-child')
+    expect(f.deps.replaceBinding).toHaveBeenCalledTimes(1)
+    expect(f.records).toEqual([
+      expect.objectContaining({ workerId: id, parentSessionId: f.parent.id, sessionId: binding.sessionId, retiredSessionIds: ['old-display-child'] }),
+    ])
+    // The second open hits the new record instead of the stale old-parent one.
+    expect((await f.ensure()).sessionId).toBe(binding.sessionId)
+    expect(f.ctx.subagents.startContinuable).toHaveBeenCalledTimes(1)
+    expect(f.deps.run).not.toHaveBeenCalled()
+  })
+  it('still refuses a display record of a parent that is not a recorded former segment', async () => {
+    const id = randomUUID()
+    const old: HarnessConversationRecord = { workerId: id, parentSessionId: 'unrelated-parent', sessionId: 'other-display-child' }
+    const f = fixture({ records: [old], worker: { id, formerParentSessionIds: ['old-segment'] } })
+    await expect(f.ensure()).rejects.toThrow('原生会话父身份不匹配')
+    expect(f.deps.replaceBinding).not.toHaveBeenCalled()
+    expect(f.records).toEqual([old])
   })
 })

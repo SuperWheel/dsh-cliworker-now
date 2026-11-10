@@ -590,21 +590,23 @@ describe('Host Worker permission changes', () => {
   })
 })
 
-it('模拟：TRAE 菜单没有询问档，中档仅工作区编辑，支持原生规划', () => {
-  expect(cliLevelOptions('traecn').map(option => option.name)).toEqual(['仅工作区编辑', '完全权限'])
-  expect(cliLevelOptions('traecn').map(option => option.value)).toEqual(['auto', 'full'])
-  expect(cliLevelOptions('traecn')[0]?.description).toContain('工作区外')
-  expect(runsUnderViewOnly('traecn')).toBe(false)
+it('模拟：TRAE 菜单三档（询问由原生只读沙箱实现），中档仅工作区编辑，支持原生规划', () => {
+  expect(cliLevelOptions('traecn').map(option => option.name)).toEqual(['询问', '仅工作区编辑', '完全权限'])
+  expect(cliLevelOptions('traecn').map(option => option.value)).toEqual(['ask', 'auto', 'full'])
+  expect(cliLevelOptions('traecn')[0]?.description).toContain('先问你')
+  expect(cliLevelOptions('traecn')[1]?.description).toContain('工作区外')
+  expect(cliLevelOptions('traecn')[1]?.description).not.toContain('没有「询问」档')
+  expect(runsUnderViewOnly('traecn')).toBe(true)
   expect(workerPlanSupported({ preference: { cli: 'traecn', model: '模拟模型', effort: 'default' }, transport: 'traecn-acp-v1' })).toBe(true)
 })
 
-it('模拟：TRAE 仅可查看拒绝未选档派遣，已选档和原生规划仍可用', async () => {
+it('模拟：TRAE 仅可查看下未选档派遣按询问档运行，三档与原生规划可用', async () => {
   const f = await fixture('traecn')
   setSandboxMode(f.parent.session, 'read-only')
-  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).toThrow('TRAE CN 不能逐项询问')
+  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).not.toThrow()
   expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
-  await expect(f.save('ask')).rejects.toThrow('不支持')
-  expect(await f.read()).toMatchObject({ options: [{ value: 'auto' }, { value: 'full' }], plan: { supported: true } })
+  expect(await f.read()).toMatchObject({ currentValue: 'ask', options: [{ value: 'ask' }, { value: 'auto' }, { value: 'full' }], plan: { supported: true } })
+  expect(await f.save('ask')).toMatchObject({ level: 'ask' })
   expect(await f.save('plan')).toMatchObject({ mode: 'plan' })
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })

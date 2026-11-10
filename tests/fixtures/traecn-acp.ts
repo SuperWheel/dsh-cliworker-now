@@ -20,7 +20,9 @@ const mode={id:'mode',type:'select',category:'mode',currentValue:'default',optio
 if(scenario==='model-missing')model.options=[{value:'before'}];
 if(scenario==='fallback')mode.options=mode.options.filter(v=>v.value!=='bypass_permissions');
 if(scenario==='default-missing')mode.options=mode.options.filter(v=>v.value!=='default');
-const state={sessionId,configOptions:[model,mode],modes:{currentModeId:'default',availableModes:mode.options.map(v=>({id:v.value}))}};
+// 0.213.1: a -c sandbox_mode launch advertises only the model option and no modes.
+const sandboxed=process.argv.slice(2).includes('-c');
+const state=sandboxed?{sessionId,configOptions:[model]}:{sessionId,configOptions:[model,mode],modes:{currentModeId:'default',availableModes:mode.options.map(v=>({id:v.value}))}};
 let pending;
 const finish=(r,stopReason='end_turn')=>reply(r,{stopReason,usage:scenario==='zero'||stopReason!=='end_turn'?{inputTokens:0,outputTokens:0,totalTokens:0}:{inputTokens:60,outputTokens:7,totalTokens:67,thoughtTokens:2,cachedReadTokens:20,cachedWriteTokens:3},_meta:{'_trae/tokenUsage':{contextWindow:{used:67,size:128000}}}});
 log({fixture:'模拟',pid:process.pid,argv:process.argv.slice(2)});
