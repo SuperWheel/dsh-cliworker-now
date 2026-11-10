@@ -1,0 +1,174 @@
+{
+  "requirement": {
+    "title": "v0.8.9：TRAE CN 提供「询问」档；DS Bot 换段后 CLI Worker 继续可用（Issue #10）",
+    "source": "用户反馈",
+    "problem": "一、TRAE CN 缺少「询问」档。v0.8.8 接入 TRAE CN 时只评估了原生 `--permission-mode` 的 default、plan、auto、bypass_permissions 四种模式，没有任何一种能保证改动先询问，所以 TRAE CN 只提供「仅工作区编辑」和「完全权限」两档。用户在 Worker 菜单选「询问」或主对话为「仅可查看」时，派遣被拒绝（src/host/native-traecn.mjs 抛出「TRAE CN 不支持询问档」）。2026-11-10 调查发现 TRAE CLI 0.213.1 自带与 Codex 相同的原生沙箱和审批开关（sandbox_mode、approval_policy），可以按 Codex「询问」档的思路实现。\n\n二、DS Bot 自动换段后 CLI Worker 全部失联。GitHub Issue #10（2026-11-10，外部用户）：DS Bot 在上下文接近上限时新建 root Session 并归档旧会话，插件以父会话 ID 严格相等判断 Worker 归属，换段后旧段的 Worker 无法查询状态、无法续聊、无法在面板「打开会话」，报错「Worker does not belong to this conversation」「不能跨父会话绑定 CLI 会话」。报告者本机 51 个 Worker 中绑定到当前段的为 0，Worker 实际寿命只有一个段。对照本仓库 main：src/host/runtime.ts 的 get、resolveWorker、快照过滤，以及 src/host/harness-conversation.ts 的 ensure 都按父会话 ID 严格相等校验，与报告一致；尚未在本机用 DS Bot 复现。",
+    "type": "体验优化",
+    "expectDate": "2026-11-14"
+  },
+  "prd": {
+    "background": "一、TRAE CN「询问」档\n1. 现状：v0.8.8（2026-11-10 上线）的 TRAE CN 只有两档。启动参数固定为 `traecli --permission-mode default|bypass_permissions acp serve`；「询问」档在启动前直接报错。TRAE 原生 default 模式会自动批准工作区内的读写和命令，只有工作区外的操作才转交 DSH 审批，因此不能冒充「询问」。\n2. 规格要求：worker-permission-levels 规定，CLI 没有原生询问模式时，可以借助 CLI 自己的拦截机制补上（Pi 的做法）；不能保证改动先询问的，必须如实改名或不提供。\n3. 新发现（2026-11-10 调查，未改代码）：\n- `traecli --help` 显示 `-s/--sandbox read-only|workspace-write|danger-full-access` 与 `-a/--ask-for-approval on-request|never`；TRAE 自带文档 permissions.md 列出 sandbox_mode、approval_policy（含 untrusted、on-request）和 approvals_reviewer = \"user\"（人工审批）。\n- 已实测（无模型调用）：只读沙箱下 `touch` 被拒（Operation not permitted，文件未生成），`ls` 正常；以 `-c sandbox_mode=\"read-only\" -c approval_policy=\"on-request\"` 启动 `acp serve` 后会话正常创建，模型列表不变；该参数下 session/new 不返回 mode 配置项。\n- 未实测：工作区内写文件是否发出 `session/request_permission`、拒绝后文件是否不存在、允许后是否写入、只读命令是否免询问。原因是 2026-11-10 glm-5.3-flash 经 TRAE 服务端返回 400（Repetition_penalty should be in (0.0, 2.0]），插件现行参数同样失败；11-09 派遣正常。\n- 据调查子代理报告：同时给 `--permission-mode` 会拒绝启动（日志未保留，待复核）。\n- PreToolUse Hook 返回 ask 的方案需要写入用户或项目配置并在 TUI 手动信任，或使用 `--dangerously-bypass-hook-trust`，违反项目规则，不采用。\n\n二、Issue #10：DS Bot 换段后 Worker 失联\n1. 现象：DS Bot（第三方 DSH 插件）在上下文接近上限时新建 root Session，并以 `archiveSession(sid, { stopActivity: true })` 归档停活旧会话。换段后旧段 Worker 的 `cliworker_status`、`cliworker_followup` 报「Worker does not belong to this conversation」，无参快照看不到这些 Worker，面板「打开会话」报「不能跨父会话绑定 CLI 会话」。\n2. 原因：插件把父会话 ID 当作 Worker 的身份键。本仓库 main 中 runtime.ts 的 get()、resolveWorker()、快照过滤，以及 harness-conversation.ts 的 ensure()（含已有记录的「原生会话父身份不匹配」二次校验）均要求严格相等。\n3. 不能只放宽校验：旧父会话已归档停活，放行后显示子会话仍挂在已停活的父会话上，消息发不出去。需要把 Worker 和显示子会话重绑到新段。\n4. 报告者在其本地派生包按「段链识别 + 重绑 + 清理桥内陈旧记录」三点修改后，跨段 status、无参快照、followup（真实跑完一轮）、面板打开会话四类均通过（报告者自测，本项目未复核）。\n5. 影响：使用 DS Bot 的用户每次换段都会丢失全部 Worker 的可操作性；CLI 侧会话本身仍在（conversationId 独立、走 --resume），只是插件找不到。",
+    "users": "一、在 DSH 中派遣 TRAE CN 的用户：希望 TRAE 和 Codex、Claude Code 一样，可以选「询问」档，让 TRAE 每次写文件或执行改动命令前都先在 DSH 里确认；主对话为「仅可查看」时也能把只读分析任务派给 TRAE，而不是直接被拒绝。\n\n二、使用 DS Bot 长对话的用户（Issue #10 报告者及同类用户）：在 Bot 会话里派出多个 CLI Worker，Bot 换段后希望继续查看进度、续聊、打开 Worker 会话，不用重新派遣、不丢失 CLI 侧已有的上下文。\n\n三、不使用 DS Bot 的普通用户：父会话不换段，行为与 v0.8.8 完全一致；任何跨会话访问仍被拒绝。",
+    "goal": "1. TRAE CN 提供真实的「询问」档：工作区内的写文件和改动命令在执行前经 DSH 审批，拒绝后不产生改动；只读操作不打扰用户。实测达不到这一标准时不开放「询问」档，维持 v0.8.8 的两档并在文档中写明原因。\n2. Issue #10 关闭：DS Bot 换段后，属于同一条可验证段链的 Worker 可以在新段继续查询、续聊和打开会话；不属于同一段链的跨会话访问仍按原文案拒绝。\n3. 两条主线都有自动测试和真实验收证据，记录未执行的平台与账号验证。\n\n成功指标：Issue 解决时长。基线 0.99 天（2026-11-10 用 gh 统计的 9 个已关闭外部 Issue 从创建到关闭的中位数）；目标为 Issue #10 在 4 天内（2026-11-14 前）随 v0.8.9 发布关闭。",
+    "successMetric": "Issue 解决时长",
+    "baseline": 0.99,
+    "target": 4,
+    "solution": "一、TRAE CN「询问」档（先实测，后开放）\n1. 前置实测：glm-5.3-flash 恢复后，在临时目录用 2–3 轮真实调用验证候选参数 `traecli -c sandbox_mode=\"read-only\" -c approval_policy=\"on-request\" acp serve`（不带 --permission-mode）：工作区内写文件是否发出 session/request_permission；拒绝后文件不存在；允许后文件写入；ls 等只读命令不询问。按需补测 approval_policy=\"untrusted\" 和 approvals_reviewer=\"user\"。不修改用户 ~/.trae 配置。\n2. 实测通过后实施（新建 OpenSpec 变更）：\n- 「询问」档启动参数改为上述沙箱与审批设置，不再抛错；「仅工作区编辑」「完全权限」维持现有 --permission-mode 映射。\n- 「询问」档跳过 mode 设置与回读校验（该参数下 session/new 不返回 mode 配置项）。\n- 「询问」与规划模式互切、以及在三档之间切换需要重启 TRAE 进程，界面如实提示。\n- 审批请求沿用现有 ACP 审批转交：主 Agent 发起的走主页面提问卡片，Worker 框续聊的走子会话原生审批面板。\n- 主对话为「仅可查看」且 Worker 未选过档位时，TRAE 跟随为「询问」档，不再拒绝派遣（更新 runsUnderViewOnly）。\n- 同步 TRAE 协议文档、权限对照表、README 与 worker-permission-levels 规格。\n3. 实测不通过：不开放「询问」档，在协议文档中记录实测结果；评估是否保留到后续版本。\n\n二、Issue #10：换段后重绑\n1. 段链识别：插件只承认可验证的同一条段链。优先使用宿主或 DS Bot 公开提供的父子关系；没有公开接口时，只读 DS Bot 的状态文件识别同一个 Bot 的历史段与当前段；读不到、格式不符或不在同一条链上时返回「不是同一段链」，保持原有报错。\n2. 重绑而不是放行：识别为同一段链后，把 Worker 的父会话改写到当前段，复用现有 create（previous 记录写入 retiredSessionIds 与替换关系）重建显示子会话；CLI 侧 conversationId 不变，续聊仍走原生恢复，上下文不丢。\n3. 清理桥内陈旧记录：重绑时同步删除会话桥内存中旧父会话的记录，避免同一 Worker 第二次打开时命中旧记录并报「原生会话父身份不匹配」。\n4. 范围：get、resolveWorker、快照过滤、ensure 四处统一走同一个「解析归属」入口；同目录写串行、同会话互斥、权限档位等约束按当前段计算。\n5. 与报告者沟通：按报告者给出的复现步骤复核；修复发布后在 Issue 中说明版本和行为，回复内容由用户确认后发出。",
+    "items": [
+      {
+        "name": "TRAE CN「询问」档前置实测",
+        "statement": "系统应当在开放 TRAE CN「询问」档之前，用真实模型调用确认候选参数下工作区内写文件和改动命令都先发出 session/request_permission，拒绝后不产生改动，允许后正常写入，只读命令不询问；结果与原始事件日志写入 OpenSpec 变更的 tasks.md。",
+        "scenarios": [
+          {
+            "when": "以 read-only 沙箱和 on-request 审批启动 TRAE，让模型在工作区内新建文件并拒绝审批",
+            "then": "收到 session/request_permission；拒绝后文件不存在，本轮结束原因可识别为因拒绝审批而结束"
+          },
+          {
+            "when": "同样参数下允许审批",
+            "then": "文件按要求写入，内容正确"
+          },
+          {
+            "when": "让模型只执行 ls 等只读命令",
+            "then": "不发出审批请求，命令正常返回"
+          },
+          {
+            "when": "实测任一项不达标",
+            "then": "不开放「询问」档，Worker 菜单维持两档，协议文档记录实测结论"
+          }
+        ]
+      },
+      {
+        "name": "TRAE CN「询问」档启动与审批",
+        "statement": "系统应当在用户为 TRAE CN 选择「询问」档时，以原生只读沙箱加按需审批启动 TRAE，不同时传 --permission-mode，并把每个审批请求转交 DSH；「仅工作区编辑」「完全权限」两档行为不变。",
+        "scenarios": [
+          {
+            "when": "用户在 Worker 菜单为 TRAE CN 选择「询问」并派遣写文件任务",
+            "then": "派遣不再报「TRAE CN 不支持询问档」；写文件前出现审批，拒绝后文件不存在"
+          },
+          {
+            "when": "主 Agent 发起的派遣触发 TRAE 审批",
+            "then": "审批出现在主页面提问卡片；在 Worker 框续聊时出现在子会话原生审批面板"
+          },
+          {
+            "when": "用户选择「仅工作区编辑」或「完全权限」",
+            "then": "启动参数与 v0.8.8 相同（--permission-mode default 或 bypass_permissions）"
+          },
+          {
+            "when": "Worker 正在「询问」档运行，用户改为另一档或切换规划模式",
+            "then": "界面提示需要重启 TRAE 进程后生效，不在运行中的进程上假装切换成功"
+          }
+        ]
+      },
+      {
+        "name": "主对话「仅可查看」时 TRAE 可派遣",
+        "statement": "系统应当在主对话权限为「仅可查看」且用户没为 TRAE CN 选过档位时，让 TRAE 以「询问」档运行，而不是拒绝派遣；用户已选过的档位按所选运行。",
+        "scenarios": [
+          {
+            "when": "主对话为「仅可查看」，TRAE CN 未选过档位，主 Agent 派遣只读分析任务",
+            "then": "任务以「询问」档启动并正常完成；若模型尝试写文件，先出现审批"
+          },
+          {
+            "when": "用户此前为 TRAE CN 选过「完全权限」",
+            "then": "按「完全权限」运行，主 Agent 不另行询问"
+          }
+        ]
+      },
+      {
+        "name": "识别 DS Bot 同一条段链",
+        "statement": "系统应当只在能证明新旧父会话属于同一个 Bot 的同一条段链时，才把旧段 Worker 视为当前会话的 Worker；证据读取失败、格式不符或不在同一链上时，保持原有拒绝和原文案。",
+        "scenarios": [
+          {
+            "when": "DS Bot 换段后，用旧段 Worker 的 ID 在新段调用 cliworker_status",
+            "then": "返回该 Worker 的真实状态，不再报「Worker does not belong to this conversation」"
+          },
+          {
+            "when": "在一个与该 Worker 无关的普通会话里使用这个 Worker ID",
+            "then": "仍报「Worker does not belong to this conversation」"
+          },
+          {
+            "when": "DS Bot 状态文件不存在、无法解析或段链记录缺失",
+            "then": "按原逻辑拒绝，不猜测归属，日志记录读取失败原因（不含会话内容）"
+          }
+        ]
+      },
+      {
+        "name": "换段后重绑 Worker 与显示子会话",
+        "statement": "系统应当在确认同一段链后，把 Worker 的父会话改写到当前段，重建显示子会话并记录被替换的旧子会话；CLI 侧会话 ID 不变，续聊保留原有上下文。",
+        "scenarios": [
+          {
+            "when": "换段后在新段对旧段 Worker 调用 cliworker_followup",
+            "then": "CLI 用原会话恢复并跑完一轮，回复里能引用换段前的上下文；Worker 记录的父会话变为当前段"
+          },
+          {
+            "when": "换段后在面板点击旧段 Worker 的「打开会话」",
+            "then": "打开重建后的显示子会话，无「不能跨父会话绑定 CLI 会话」报错；旧子会话记入 retiredSessionIds"
+          },
+          {
+            "when": "无参调用 cliworker_status",
+            "then": "快照中包含同一段链上的历史 Worker，不包含其他会话的 Worker"
+          }
+        ]
+      },
+      {
+        "name": "清理会话桥陈旧记录",
+        "statement": "系统应当在重绑时同时删除会话桥内存中旧父会话的记录，使同一 Worker 多次打开或续聊都命中新记录。",
+        "scenarios": [
+          {
+            "when": "同一个旧段 Worker 在新段连续两次打开会话或续聊",
+            "then": "两次都成功，不出现「原生会话父身份不匹配」"
+          },
+          {
+            "when": "Harness 重启后再次访问已重绑的 Worker",
+            "then": "持久化记录中的父会话为新段，访问正常"
+          }
+        ]
+      },
+      {
+        "name": "重绑后的约束与安全边界",
+        "statement": "系统应当在重绑后按当前段计算同会话互斥、同目录写串行和 Worker 权限档位；运行中的 Worker 不在中途改写父会话，结束后再重绑。",
+        "scenarios": [
+          {
+            "when": "旧段有一个 Worker 仍在运行时 DS Bot 换段",
+            "then": "该 Worker 运行结束后才重绑；运行期间的状态查询在新段可见且结果真实"
+          },
+          {
+            "when": "重绑后在新段派遣与旧 Worker 同目录的写任务",
+            "then": "按同目录写串行规则排队，不因跨段而绕过"
+          }
+        ]
+      }
+    ],
+    "outOfScope": "1. TRAE PreToolUse Hook 方案：需要写入用户或项目配置并手动信任，或使用 --dangerously-bypass-hook-trust，违反「不修改用户现有配置」和「使用 CLI 原生保护」的规则，不采用。\n2. TRAE 原生 auto 模式：由 TRAE 的审核子代理代为批准，插件无法核查其审核内容，不映射为任何档位。\n3. 替换或升级 TRAE 模型、改为其他模型绕过 glm-5.3-flash 的服务端 400：用户 2026-11-10 决定等 glm 恢复再测，不换模型。\n4. 为 DS Bot 以外的第三方插件或宿主自行推断会话父子关系；没有可验证证据时不做任何归属放宽。\n5. 修改 Harness 核心或 DS Bot 代码：如需宿主公开段链接口，只在 Issue 中提出建议，不在本版本实现。\n6. 换段时自动迁移运行中的 CLI 进程：运行中的 Worker 结束后再重绑。",
+    "risks": "1. TRAE 服务端阻塞：glm-5.3-flash 2026-11-10 返回 400，前置实测无法进行。恢复前「询问」档不能开放；若到计划上线日仍未恢复，本条主线顺延，Issue #10 修复可单独发布。\n2. TRAE 参数冲突：用户 config.toml 里已有的 permission_mode、default_permissions 可能与 -c 覆盖冲突；auto_review 可能代批，需验证 approvals_reviewer=\"user\" 是否必须。Windows 下只读沙箱未验证。\n3. 「同时给 --permission-mode 会拒绝启动」只是调查子代理的报告，日志未保留，实施前复核。\n4. DS Bot 状态文件是第三方插件的私有数据，格式可能随版本变化。只读、只取段链所需字段，解析失败即按原逻辑拒绝；优先推动宿主或 DS Bot 提供公开接口。\n5. 本项目尚未用 DS Bot 复现 Issue #10，报告者的行号来自其派生包 0.8.3-tzl.9；需要安装 DS Bot 复现或请报告者协助验证。\n6. 跨段重绑涉及 Worker 归属这一权限边界，误判会让一个会话操作另一个会话的 Worker；测试必须覆盖非同链拒绝。",
+    "rollout": "1. 已完成（2026-11-10）：TRAE「询问」档候选方案调查（无模型调用部分）；读取 Issue #10 并对照 main 源码确认四处严格相等校验；本 PRD。\n2. 新建两个 OpenSpec 变更：TRAE「询问」档、DS Bot 换段重绑，各自维护 tasks.md。\n3. TRAE 前置实测（等 glm-5.3-flash 恢复，2–3 轮真实调用）；通过后实施，否则记录结论并不开放。\n4. Issue #10：先在本机安装 DS Bot 复现，或按报告步骤构造换段状态复现；再实施段链识别、重绑与陈旧记录清理。\n5. 自动检查：traecnAcpArgv 三档参数、「询问」档跳过 mode 回读、runsUnderViewOnly；段链识别（同链、非同链、文件缺失、格式错误）、get/resolveWorker/快照/ensure 重绑、陈旧记录清理、运行中不重绑、重启后持久化。pnpm typecheck、相关 vitest、pnpm build:preview。\n6. 真实验收（Mac）：TRAE 询问档派遣，审批允许与拒绝各一次，检查事件、退出状态与文件实际存在与否；DS Bot 换段后 status、无参快照、followup 跑完一轮、面板打开会话。Windows：只做必要平台检查，未执行的写明原因。\n7. 发布：用户确认版本号与 GitHub 发布后，按 doc/release-template.md 写发布说明；Issue #10 的回复由用户确认后发出。",
+    "ai": null,
+    "references": [
+      {
+        "title": "Issue #10：DS Bot 自动换段后全部 CLI Worker 失联",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/issues/10"
+      },
+      {
+        "title": "worker-permission-levels 规格",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/worker-permission-levels/spec.md"
+      },
+      {
+        "title": "native-permission-relay 规格",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/native-permission-relay/spec.md"
+      },
+      {
+        "title": "native-cli-conversations 规格",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/native-cli-conversations/spec.md"
+      },
+      {
+        "title": "worker-management 规格",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/worker-management/spec.md"
+      },
+      {
+        "title": "TRAE CN 接入变更（add-traecn-cli）",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/changes/add-traecn-cli"
+      }
+    ],
+    "prototypeUrl": "",
+    "prototypes": []
+  }
+}
