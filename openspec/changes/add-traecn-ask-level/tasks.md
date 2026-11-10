@@ -39,7 +39,11 @@
   - 2026-11-10 22:33，Doubao-Seed-Code：同一提示 1 次审批，选 `allow_once` 后 `stopReason: end_turn`，`probe.txt` 内容为 `hello-ask-level`。
 - [x] 3.3 只读命令（`ls`）不发审批
   - 2026-11-10 22:33，Doubao-Seed-Code：执行 `/bin/zsh -lc ls`，0 次审批，工具 completed，回复输出 `existing.txt`，与目录实际内容一致。
-- [ ] 3.4 Desktop 中以询问档派遣 TRAE，审批卡片出现位置与来源一致（主 Agent→主页面，Worker 框续聊→子会话）
+- [x] 3.4 Desktop 中以询问档派遣 TRAE，审批卡片出现位置与来源一致（主 Agent→主页面，Worker 框续聊→子会话）
+  - 2026-11-10 22:37–22:40，macOS DSH Desktop（`pnpm build` 后重启，内置浏览器连 Host Web UI），项目 `.test-data/CLI Worker Demo`，主对话「仅可查看」、TRAE 未选档，模型在设定卡片中改选 Seed-Code（Doubao-Seed-Code）。
+  - 主 Agent 派遣：回执“权限为‘询问’，跟随主对话预设”；Worker 事件 `本轮权限：询问`；主页面出现「CLI 授权 traecn-1（TRAE CN）请求授权 Edit …/ask-desktop-main.txt」卡片（允许一次/拒绝）；选拒绝后事件 `授权决定：拒绝（DSH 用户）`、工具 FAILED、提示「因拒绝审批而结束：被拒操作未执行，可续聊继续」，`ask-desktop-main.txt` 不存在。
+  - Worker 窗口：权限菜单为「询问 ✓」「仅工作区编辑」「完全权限」。在 Worker 框内续聊写 `ask-desktop-worker.txt`：审批出现在子会话内的「等待审批」面板（不在主页面），点「允许一次」后事件 `授权决定：允许一次（DSH 用户）`，Edit COMPLETED，随后 Read 未发审批；文件内容 `hello-desktop-worker`（20 字节）。
+  - 已知未改：Worker 列表对拒绝结束的轮次仍显示「已完成」（v0.8.8 验收发现②，不属本变更）。
 - [ ] 3.5 Windows：未验证只读沙箱，发布说明中写明
 
 ## 4. 文档
