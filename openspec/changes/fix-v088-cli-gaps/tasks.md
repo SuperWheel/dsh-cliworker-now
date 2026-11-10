@@ -110,5 +110,9 @@
 - [x] 6.3 发布包 `dsh-cliworker-now-0.8.8.tgz`：1039 个文件、20743104 字节，SHA256 `764abeb4337b4ebfdbfab8e7cebf051e64d0a8a000e2f56eff41123a7bc104e3`；扫描无私人路径、IP、`doc/local/`、`.test-data/` 与账号标识，无 scripts/devDependencies，repository/homepage/bugs 指向 `SuperWheel/dsh-cliworker-now`。官方 dsh 0.2.2-rc.1 于全新 `DSH_HOME` 的 `plugin --profile web add --save-exact`：exit 0，版本 0.8.8，819 个 lib 文件与包逐字节相同。
 - [x] 6.4 macOS Desktop 重启于正式构建（链接）：连接页三个新 CLI 已登录；依次派遣 CodeBuddy Code（hy4free）、WorkBuddy CN（hy4free）、TRAE CN（glm-5.3-flash），事件含写文件工具 COMPLETED 与 status completed，`rc088-<cli>.txt` 内容经磁盘核对；CodeBuddy 与 WorkBuddy CN 各一条 `codebuddy.native-context` 检查事件，窗口分类 ~4.4K/~17.5K/~261 与 ~3.9K/~15.3K/~264；TRAE CN 显示「—」。
 - [x] 6.5 Windows Desktop：经用户批准清理 C 盘两份旧远程 run 与 19 个旧预览包（余 2.31 GB）；托盘菜单正常退出 Desktop 后，原生安装器装入发布包：exit 0，版本 0.8.8，819 个 lib 文件与清单一致、Host 哈希一致。重启后只读核对（Codex Computer Use）：界面无白屏或错误，三个新 CLI 已登录、其余 CLI 均列出，WorkBuddy CN 子会话分类 ~3.9K/~16.9K/~413。界面不显示插件版本。
-- [ ] 6.6 推送、GitHub CI、GitHub Release 与 npm 发布及发布后回读：待用户批准。
+- [x] 6.6 推送、GitHub CI、GitHub Release 与 npm 发布及发布后回读（用户 2026-11-10 批准）：
+  - `main` 以合并提交 8965442 推送（9e50d04..8965442），与 `feat/general-settings` 树一致；tag `v0.8.8` 指向 8965442。
+  - GitHub CI run 42650655072（Windows native runtime）通过：21 个文件，437 通过、4 跳过。
+  - GitHub Release「dsh-cliworker-now v0.8.8」附 tgz 与 SHA256SUMS；下载回读 SHA256 `764abeb4…04e3` 与本地包一致。
+  - npm `dsh-cliworker-now@0.8.8`（2026-11-10T11:24:33Z，`latest`=0.8.8）；`npm pack` 回读 SHA256 `764abeb4…04e3`、1039 个文件，与 Release 附件一致。
 
