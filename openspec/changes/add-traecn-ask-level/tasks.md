@@ -44,10 +44,17 @@
   - 主 Agent 派遣：回执“权限为‘询问’，跟随主对话预设”；Worker 事件 `本轮权限：询问`；主页面出现「CLI 授权 traecn-1（TRAE CN）请求授权 Edit …/ask-desktop-main.txt」卡片（允许一次/拒绝）；选拒绝后事件 `授权决定：拒绝（DSH 用户）`、工具 FAILED、提示「因拒绝审批而结束：被拒操作未执行，可续聊继续」，`ask-desktop-main.txt` 不存在。
   - Worker 窗口：权限菜单为「询问 ✓」「仅工作区编辑」「完全权限」。在 Worker 框内续聊写 `ask-desktop-worker.txt`：审批出现在子会话内的「等待审批」面板（不在主页面），点「允许一次」后事件 `授权决定：允许一次（DSH 用户）`，Edit COMPLETED，随后 Read 未发审批；文件内容 `hello-desktop-worker`（20 字节）。
   - 已知未改：Worker 列表对拒绝结束的轮次仍显示「已完成」（v0.8.8 验收发现②，不属本变更）。
-- [ ] 3.5 Windows：未验证只读沙箱，发布说明中写明
+- [x] 3.5 Windows：未验证只读沙箱，发布说明中写明
+  - 2026-11-11 19:02–19:09 Windows Desktop 实测（候选包 `preview-089-20261111-185643.tgz`，原生安装器装入，825 个 lib 文件与清单一致；Codex Computer Use gpt-6.1-sol high 操作；工作区 `C:\Users\admin\cw081f1\live-codex`；主对话「仅可查看」；Seed-Code）：主 Agent 派遣回执写明「询问」；主页面出现「rc089-trae（TRAE CN）请求授权 Edit …\rc089-main-win.txt」卡片，拒绝后事件 `授权决定：拒绝（DSH 用户）`、提示「因拒绝审批而结束」，`rc089-main-win.txt` 不存在；Worker 菜单三档「询问 ✓」。Worker 框续聊：审批出现在子会话「等待审批」面板（主页面无卡片），允许后 Edit COMPLETED，`rc089-worker-win.txt` 19 字节。
+  - Windows 与 macOS 不同：同轮 TRAE 原生 Read 报 `File does not exist`（文件已落盘，TRAE 自身问题），随后改用 PowerShell `Get-ChildItem` 只读命令，只读沙箱下也发 `session/request_permission`（内容含 `Proposed Amendment: …powershell.exe`）。测试按单次审批规则拒绝，该命令未执行；因同轮已有非拒绝的工具失败，插件按既有规则显示「CLI 未成功完成（cancelled）」而不是「因拒绝审批而结束」。安全边界成立（未经批准无写入、无命令执行），已在 README、使用说明与协议文档写明 Windows 只读命令也会询问。
 
 ## 4. 文档
 
 - [x] 4.1 `doc/traecn-protocol.md` 权限表与启动参数
   - 同步更新 `doc/usage-details.md` 与 `doc/design.md` v0.8.9 小节。
 - [x] 4.2 README 权限说明（TRAE 第一项、仅可查看下的派遣）
+
+## 5. 发布验收（v0.8.9，2026-11-11）
+
+- [x] 5.1 macOS Desktop 实操（正式构建 9ba35f1，Desktop 带无障碍与防节流参数重启；Codex Computer Use gpt-6.1-sol high；项目 `CLI Worker Demo`；主对话「仅可查看」；Seed-Code）：回执「权限：询问」；主页面授权卡片拒绝后事件 `授权决定：拒绝（DSH 用户）`、「因拒绝审批而结束」、`rc089-main-mac.txt` 不存在；Worker 菜单「询问 ✓／仅工作区编辑／完全权限」；Worker 框续聊审批在子会话面板，允许后 Edit 与 Read 均 COMPLETED（Read 未询问），`rc089-worker-mac.txt` 内容 `hello-rc089-worker`。
+- [x] 5.2 Windows Desktop 实操：见 3.5。

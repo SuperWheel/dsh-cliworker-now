@@ -66,7 +66,7 @@ ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整�
 
 | Worker 档位 / 模式 | 启动与会话模式 | 边界 |
 | --- | --- | --- |
-| 询问 | `-c` 只读沙箱 + `on-request` + `approvals_reviewer="user"`，不设会话模式 | 只读沙箱拦截改动，需写入时 TRAE 发 `session/request_permission` 转 DSH；拒绝后不执行。**工作区内写文件先询问、拒绝后无写入、只读命令免询问尚未经真实模型验证**（2026-11-10 glm-5.3-flash 服务端 400），开放条件见 `openspec/changes/add-traecn-ask-level/` |
+| 询问 | `-c` 只读沙箱 + `on-request` + `approvals_reviewer="user"`，不设会话模式 | 只读沙箱拦截改动，需写入时 TRAE 发 `session/request_permission` 转 DSH；拒绝后不执行。2026-11-11 Seed-Code 实测：macOS 与 Windows 写文件先审批、拒绝后无写入、允许后写入；macOS `ls` 免询问。Windows 只读沙箱下 PowerShell 只读命令（如 `Get-ChildItem`）也发 `session/request_permission`（内容含 `Proposed Amendment: …powershell.exe`）；同轮此前有非拒绝的工具失败时，拒绝导致的 `cancelled` 按运行失败显示。记录见 `openspec/changes/add-traecn-ask-level/` |
 | 仅工作区编辑 | 启动及会话 `default` | 工作区内读写、命令及实测 `/tmp` 自动批准；其他工作区外授权请求交 DSH，不是 OS 沙箱 |
 | 完全权限 | 启动及会话 `bypass_permissions` | 免确认；不可用时仅允许降至 `default`，说明本轮按仅工作区编辑运行 |
 | 规划 | 以 `default` 启动，ACP `mode=plan` | 确认当前模式 `plan` 才发 prompt，审批直接拒绝；不能用 `--permission-mode plan` 启动 |

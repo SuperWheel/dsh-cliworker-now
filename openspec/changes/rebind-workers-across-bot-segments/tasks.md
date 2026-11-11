@@ -43,3 +43,10 @@
 
 - [x] 4.1 README 与 `doc/design.md` 记录 DS Bot 换段兼容
   - README「DS Bot 换段」段落；`doc/design.md` v0.8.9 小节。
+
+## 5. 发布验收（v0.8.9，2026-11-11）
+
+- [x] 5.1 macOS Desktop（正式构建 9ba35f1；Codex Computer Use gpt-6.1-sol high）：TRAE Worker traecn-1 原属对话 `session-0a42370f…`，新建对话 `session-2f1955e3…` 后临时写 `~/.dsh/bot/state.json` 把前者标为后者的旧段（测完删除）。新对话中无参与按名称 `cliworker_status` 均返回 `parentSessionId: session-2f1955e3…`、`formerParentSessionIds: [session-0a42370f…]`，CLI 会话 ID 不变；面板列出 traecn-1；`cliworker_followup` 一轮 completed，读回 `hello-rc089-worker` 并说出上一轮文件；打开 Worker 窗口无报错；`harness-conversations.json` 与 Worker 的 `harnessConversation` 均改到新段，`retiredSessionIds` 保留旧子会话。
+- [x] 5.2 Windows Desktop（候选包 `preview-089-20261111-185643.tgz`，原生安装器装入；Codex Computer Use gpt-6.1-sol high；工作区 live-codex）：rc089-trae 原属 `session-e026e876…`，新对话 `session-dd24ff5a…`，临时写 `%USERPROFILE%\.dsh\bot\state.json`（测完删除）。新对话中状态查询无「Worker does not belong to this conversation」，`parentSessionId` 为新段、`formerParentSessionIds` 含旧段；续聊一轮 completed（凭原生会话记忆答出上一轮文件与内容）；打开 Worker 窗口无「不能跨父会话绑定 CLI 会话」「原生会话父身份不匹配」；磁盘上 Worker `harnessConversation.parentSessionId` 已为新段。
+- 观察：跟随主对话的 Worker（未选过档位）换段后按新对话的权限预设运行（两端均由「询问」变为「仅工作区编辑」，因测试新对话为默认「工作区内修改」），符合「未选档位跟随主对话」规则。
+- 仍未验证：真实 DS Bot 自动换段与群聊段链。
