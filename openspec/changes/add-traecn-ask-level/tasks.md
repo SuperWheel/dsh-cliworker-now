@@ -58,3 +58,8 @@
 
 - [x] 5.1 macOS Desktop 实操（正式构建 9ba35f1，Desktop 带无障碍与防节流参数重启；Codex Computer Use gpt-6.1-sol high；项目 `CLI Worker Demo`；主对话「仅可查看」；Seed-Code）：回执「权限：询问」；主页面授权卡片拒绝后事件 `授权决定：拒绝（DSH 用户）`、「因拒绝审批而结束」、`rc089-main-mac.txt` 不存在；Worker 菜单「询问 ✓／仅工作区编辑／完全权限」；Worker 框续聊审批在子会话面板，允许后 Edit 与 Read 均 COMPLETED（Read 未询问），`rc089-worker-mac.txt` 内容 `hello-rc089-worker`。
 - [x] 5.2 Windows Desktop 实操：见 3.5。
+- [x] 5.3 推送、GitHub CI、GitHub Release 与 npm 发布（用户 2026-11-11 批准）：
+  - `main` 推送 9cf0d9d..538cf16；tag `v0.8.9` 指向 538cf16。
+  - GitHub CI run 43011147053（Windows native runtime）通过：21 个文件，437 通过、4 跳过。
+  - GitHub Release「dsh-cliworker-now v0.8.9」附 tgz 与 SHA256SUMS；下载回读 SHA256 `358c2630…aef0` 与本地包一致。
+  - npm `dsh-cliworker-now@0.8.9`（2026-11-11T12:40:57Z）由同一 tgz 发布，registry 元数据 `latest`=0.8.9、1045 个文件；用户要求不做 `npm pack` 下载哈希回读（未执行）。Release 正文 npm 一行仍为「待发布后回读」。
