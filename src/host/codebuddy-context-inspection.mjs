@@ -85,7 +85,7 @@ export async function inspectCodebuddyContext({ config, io, sessionId, open, mcp
   const work = (async () => {
     peer = await open(onMessage)
     const initialized = await peer.request('initialize', { protocolVersion: 1, clientCapabilities: {},
-      clientInfo: { name: 'dsh-cliworker-now', version: '0.8.8' } }, { jsonrpc: true })
+      clientInfo: { name: 'dsh-cliworker-now', version: '0.8.9' } }, { jsonrpc: true })
     if (initialized?.agentCapabilities?.loadSession !== true) return
     const state = await peer.request('session/load', { sessionId, cwd: config.project, mcpServers }, { jsonrpc: true })
     const model = state?.configOptions?.find(option => option?.id === 'model')
