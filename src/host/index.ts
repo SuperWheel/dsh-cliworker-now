@@ -1,6 +1,7 @@
+import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
-import { DshSubagents, type DshSubagentServices } from './dsh-subagents.ts'
+import { DshSubagents, ownedHarnessSessions, readDshChildren, type DshSubagentServices } from './dsh-subagents.ts'
 import { readCliAccountBinding } from './cli-account-binding.ts'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { SettingsCatalogCache } from './settings-catalog-cache.ts'
@@ -362,11 +363,17 @@ export class CliWorkerService extends TypertRemoteService {
     this.dshSubagents = new DshSubagents(stateDirectory, {
       subagents: () => this.ctx.get('subagents'),
       query: () => this.ctx.get('sessionQuery') as ReturnType<DshSubagentServices['query']>,
-      ownedSessions: () => new Set([
-        ...[...this.runtime.storage.workers.values()].flatMap((worker) =>
-          worker.harnessConversation ? [worker.harnessConversation.sessionId] : []),
-        ...(this.harnessConversationStore?.list().map((entry) => entry.sessionId) ?? []),
-      ]),
+      assertLiveChild: (parentId, id) => {
+        const child = this.ctx.agents.get(SessionId(id))
+        if (!child) return // Cold prompt restoration validates its catalog ancestry in DSH.
+        const parent = this.ctx.agents.get(SessionId(parentId))
+        if (!parent || !ownsDirectSubagent(this.ctx.get('subagents'), parent, child))
+          throw new Error('DSH 子会话所属主对话不匹配')
+      },
+      ownedSessions: () => ownedHarnessSessions(
+        this.runtime.storage.workers.values(), this.harnessConversationStore?.list(),
+      ),
+      hasWorker: (id) => this.runtime.storage.workers.has(id),
       subscribe: (notify) => {
         const offSession = this.ctx.on('session/event', (session, event) => {
           if (['subagent/catalog', 'subagent/descriptor', 'turn/start', 'turn/end', 'model/selection', 'request/header'].includes(event.type))
@@ -800,7 +807,7 @@ export class CliWorkerService extends TypertRemoteService {
     const questionAgent = surface ? this.ctx.agents.get(surface as Agent['id']) : parent
     if (!questionAgent) throw new Error('发起者当前轮的询问会话不可用；任务尚未创建')
     const label = worker ? workerName(worker)
-      : (await this.ctx.get('subagents')?.listChildren(parent.id, signal))?.find(row => row.id === caller.id)?.label
+      : (await readDshChildren(this.ctx.get('sessionQuery'), parent.id, signal)).find(row => row.id === caller.id)?.label
     return {
       questionAgent,
       initiator: { kind: worker ? 'worker' as const : 'subagent' as const, id: worker?.id ?? caller.id, name: label || caller.id },
@@ -1903,26 +1910,26 @@ export class CliWorkerService extends TypertRemoteService {
     yield* this.dshSubagents.watch(parentSessionId, signal)
   }
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param prompt - Human message. @param requestId - Browser-minted prompt identity. @param signal - Admission lifetime. @returns Native inbox receipt JSON. */
-  @Remote('promptDshSubagent')
+  @Remote({ name: 'promptDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
   async promptDshSubagent(parentSessionId: string, childSessionId: string, prompt: string, requestId: string, signal: AbortSignal): Promise<string> {
     try {
       const text = validate.string().min(1).max(100000).parse(prompt)
       validate.string().uuid().parse(requestId)
-      return JSON.stringify(await this.dshSubagents.prompt({
-        parentSessionId: SessionId(parentSessionId), childSessionId: SessionId(childSessionId),
+      return JSON.stringify(await this.dshSubagents.prompt(parentSessionId, {
+        childSessionId: SessionId(childSessionId),
         requestId: requestId as import('@deepseek-ai/dsh-subagent').SubagentPromptRequestId,
-        mode: 'continuable', delivery: 'queue', content: [{ type: 'text', text }],
+        delivery: 'queue', content: [{ type: 'text', text }],
       }, signal))
     } catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Stop confirmation lifetime. @returns JSON only after native settlement. */
-  @Remote('stopDshSubagent')
+  @Remote({ name: 'stopDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
   async stopDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<string> {
     try { return JSON.stringify(await this.dshSubagents.stop(parentSessionId, childSessionId, signal)) }
     catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Mutation lifetime. @returns Nothing; only plugin visibility changes. */
-  @Remote('hideDshSubagent')
+  @Remote({ name: 'hideDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
   async hideDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<void> {
     try { await this.dshSubagents.hide(parentSessionId, childSessionId, signal) }
     catch (error) { throw failure(error) }
@@ -3008,7 +3015,7 @@ export class CliWorkerService extends TypertRemoteService {
           (child &&
             (child.session.header.origin !== 'subagent' ||
               child.session.header.parentSession !== parent.id ||
-              !this.ctx.agents.isOwnedBy(child.id, parent))))
+              !ownsDirectSubagent(this.ctx.get('subagents'), parent, child))))
       )
         throw new Error('CLI 子会话所属主对话不匹配，未修改权限')
       if (binding && !child)

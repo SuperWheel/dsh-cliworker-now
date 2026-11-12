@@ -94,10 +94,9 @@ export function DshSubagentCard({
         autoFocus
         className="cwn-worker-menu-anchor"
         listClassName="cwn-worker-menu"
-        getAnchorRect={() => {
-          if (point.current) return new DOMRect(point.current.x, point.current.y, 0, 0)
-          return card.current?.getBoundingClientRect() ?? openButton.current?.getBoundingClientRect() ?? null
-        }}
+        anchorRef={point.current ? undefined : card}
+        anchorPoint={point.current}
+        returnFocus={() => openButton.current}
         onClose={() => setMenu(false)}
         items={entries}
         onSelect={(id) => {
@@ -105,49 +104,48 @@ export function DshSubagentCard({
           if (id === 'open') open()
           else if (id === 'delete') onHide()
         }}
-        anchor={
-          <div className="cwn-worker-layout">
-            <button
-              ref={openButton}
-              type="button"
-              className="cwn-worker-open"
-              tabIndex={collapsed ? -1 : undefined}
-              data-open-worker-id={child.id}
-              aria-haspopup="menu"
-              aria-expanded={menu}
-              aria-keyshortcuts="Shift+F10"
-              disabled={collapsed || external}
-              onClick={open}
-              onKeyDown={(event) => {
-                if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
-                  if (collapsed) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  openMenu()
-                }
-              }}
-            >
-              <span className="cwn-worker-line">
-                <span className="cwn-worker-title">{child.name}</span>
-                <span className={`cwn-worker-status ${visualStatus}`}>
-                  <span className={`cwn-dot ${visualStatus}`} />
-                  {t(child.stopped ? '已停止' : labels[child.status])}
-                </span>
-              </span>
-            </button>
-            <div className="cwn-worker-meta">
-              <NameCopy name={child.agentName} disabled={collapsed} />
-              {child.model && <>
-                <span className="cwn-meta-divider cwn-name-divider" aria-hidden="true" />
-                <span className="cwn-worker-model" title={child.model}>{child.model}</span>
-              </>}
-            </div>
-            {!external && <span className="cwn-worker-chevron" aria-hidden="true">
-              <Glyph name="chevron" />
-            </span>}
-          </div>
-        }
+        anchor={null}
       />
+      <div className="cwn-worker-layout">
+        <button
+          ref={openButton}
+          type="button"
+          className="cwn-worker-open"
+          tabIndex={collapsed ? -1 : undefined}
+          data-open-worker-id={child.id}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          aria-keyshortcuts="Shift+F10"
+          disabled={collapsed || external}
+          onClick={open}
+          onKeyDown={(event) => {
+            if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+              if (collapsed) return
+              event.preventDefault()
+              event.stopPropagation()
+              openMenu()
+            }
+          }}
+        >
+          <span className="cwn-worker-line">
+            <span className="cwn-worker-title">{child.name}</span>
+            <span className={`cwn-worker-status ${visualStatus}`}>
+              <span className={`cwn-dot ${visualStatus}`} />
+              {t(child.stopped ? '已停止' : labels[child.status])}
+            </span>
+          </span>
+        </button>
+        <div className="cwn-worker-meta">
+          <NameCopy name={child.agentName} disabled={collapsed} />
+          {child.model && <>
+            <span className="cwn-meta-divider cwn-name-divider" aria-hidden="true" />
+            <span className="cwn-worker-model" title={child.model}>{child.model}</span>
+          </>}
+        </div>
+        {!external && <span className="cwn-worker-chevron" aria-hidden="true">
+          <Glyph name="chevron" />
+        </span>}
+      </div>
     </div>
   )
 }

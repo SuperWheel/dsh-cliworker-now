@@ -373,9 +373,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   // shown. Explicit repair therefore owns an idle Runtime preparation lease;
   // it must succeed without a fresh user prompt or native CLI process.
   const oldDisplay = service.runtime.get(parent.agent.id, activeWorker.id).harnessConversation.sessionId
-  if ('drainChildren' in ctx.subagents && typeof ctx.subagents.drainChildren === 'function')
-    await ctx.subagents.drainChildren(parent.agent, [SessionId(oldDisplay)])
-  else await ctx.subagents.drainContinuableChildren(parent.agent, [SessionId(oldDisplay)])
+  await service.harnessConversation.drainChildren(parent.agent, [SessionId(oldDisplay)])
   const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
   const corrupt = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (id, options) => {
     if (id === oldDisplay)

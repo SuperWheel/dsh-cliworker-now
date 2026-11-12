@@ -28,7 +28,7 @@ declare module '../contract/chat-nodes.ts' {
         steering: ReferencedSteeringMessageNode;
         /** Non-user context injected into model history. */
         context: ContextMessageNode;
-        /** Non-human input that starts a Turn. */
+        /** Recorded notification or manual continuation that starts a Turn. */
         'turn-trigger': ContextMessageNode;
     }
 }

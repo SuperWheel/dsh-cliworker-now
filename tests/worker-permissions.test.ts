@@ -1,3 +1,4 @@
+import { ownsDirectSubagent } from '../src/host/native-subagent-ownership.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -71,10 +72,16 @@ async function fixture(cli: Worker['preference']['cli'] = 'codex') {
   })
   const child = await ctx.agents.create({
     sessionId: SessionId(randomUUID()),
-    parentAgent: parent.agent,
     meta: { cwd: directory, origin: 'subagent', parentSession: parent.agent.id },
     agentOptions: { provider: 'unavailable-fixture', model: 'must-not-call' },
   })
+  // SIMULATION: these idle Agents are created directly, so supply the live
+  // ownership service explicitly. Real rc.2 activation ownership is tested separately.
+  ctx.provide('subagents', { rootOf: (agent: typeof parent.agent) => {
+    if (ctx.agents.get(agent.id) !== agent) throw new Error('stale Agent')
+    if (agent === parent.agent || agent === child.agent) return parent.agent
+    throw new Error('no active runtime owner')
+  } } as never)
   const storage = new WorkerStorage(join(directory, 'workers'))
   const backend: ProcessBackend = {
     resolveExecutable: vi.fn(async () => {
@@ -383,7 +390,7 @@ describe('Host Worker permission changes', () => {
     const parentSeq = f.parent.session.seq
     const parentPlan = plan(f.parent)
     const parentPolicy = policy(f.parent)
-    expect(f.ctx.agents.isOwnedBy(f.child.id, f.parent)).toBe(true)
+    expect(ownsDirectSubagent(f.ctx.subagents, f.parent, f.child)).toBe(true)
     expect(plan(f.child)).toEqual({ active: false, pending: false })
 
     await f.save('plan')
@@ -433,7 +440,6 @@ describe('Host Worker permission changes', () => {
       })
       const foreignChild = await f.ctx.agents.create({
         sessionId: SessionId(randomUUID()),
-        ...(target === 'foreign-child' ? { parentAgent: foreignParent.agent } : {}),
         meta: {
           cwd: f.directory,
           origin: 'subagent',

@@ -12,10 +12,10 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 type Item = { path: string; action: 'keep' | 'remove'; reason: string; bytes: number }
 
 /** Synthetic repository; every file here is a test fixture, not real evidence. */
-function repository() {
+function repository(target = '0.2.2-rc.1') {
   const root = mkdtempSync(join(tmpdir(), 'cliworker-clean-test-'))
   roots.push(root)
-  file(root, 'package.json', JSON.stringify({ devDependencies: { '@deepseek-ai/dsh': '0.2.2-rc.1' } }))
+  file(root, 'package.json', JSON.stringify({ devDependencies: { '@deepseek-ai/dsh': target } }))
   file(root, 'lib/index.js', 'synthetic build output')
   file(root, 'node_modules/dep/index.js', 'synthetic dependency')
   file(root, 'doc/local/runbook.md', 'synthetic private note')
@@ -45,6 +45,7 @@ const removed = (items: Item[]) => items.filter((item) => item.action === 'remov
 describe('clean retention rules (synthetic repository fixtures)', () => {
   it('parses options strictly and maps the pinned SDK to its cache tag', () => {
     expect(targetTag('0.2.2-rc.1')).toBe('022rc1')
+    expect(targetTag('0.2.2-rc.2')).toBe('022rc2')
     expect(parseDuration('14d')).toBe(14 * DAY)
     expect(parseDuration('36h')).toBe(36 * 3_600_000)
     expect(parseDuration('2w')).toBe(14 * DAY)
@@ -162,6 +163,21 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     expect(find(items, '.cache/cited-ui').reason).toBe('referenced in doc/tasks.md')
     expect(find(items, '.cache/run.lock').reason).toBe('active lock (pid 4242)')
     expect(removed(plan(root, { olderThanMs: 60 * DAY, olderThan: '60d' }).items)).toEqual([])
+  })
+
+  it('keeps rc.2 SDK, source and typecheck caches while pruning aged rc.1 targets', () => {
+    const root = repository('0.2.2-rc.2')
+    const current = ['cliworker-build-deps-022rc2', 'dsh-host-source-022rc2', 'dsh-host-typecheck-022rc2']
+    const previous = ['cliworker-build-deps-022rc1', 'dsh-host-source-022rc1', 'dsh-host-typecheck-022rc1']
+    for (const name of [...current, ...previous]) file(root, `.cache/${name}/data.bin`)
+    age(join(root, '.cache'), 30)
+    expect(removed(plan(root).items)).toEqual([])
+    for (const name of previous)
+      expect(find(plan(root).items, `.cache/${name}`).reason).toBe('old DSH target (022rc1) (pass --older-than to prune)')
+    const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
+    expect(removed(items)).toEqual(previous.map(name => `.cache/${name}`).sort())
+    for (const name of current)
+      expect(find(items, `.cache/${name}`)).toMatchObject({ action: 'keep', reason: 'current DSH 0.2.2-rc.2 target' })
   })
 
   it('keeps the three newest formal release groups and every verification.json', () => {

@@ -1,3 +1,6 @@
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { readDshChildren } from './dsh-subagents.ts'
+import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { selectForkHistory, type ForkHistory, type ForkChild } from './worker-fork.ts'
 import { bridgedFeatureSupport, type BridgedConversationFeature, type BridgedFeatureSupport } from '../shared/conversation-features.ts'
 import { createHash, randomUUID } from 'node:crypto'
@@ -161,6 +164,15 @@ interface LegacySubagents {
   startContinuable(spec: NativeChildSpec): Promise<{ childId: ReturnType<typeof SessionId> }>
   drainContinuableChildren(parent: Agent, children: ReturnType<typeof SessionId>[]): Promise<void>
 }
+function currentSubagents(value: unknown): value is Context['subagents'] {
+  return typeof value === 'object' && value !== null &&
+    'rootOf' in value && typeof value.rootOf === 'function' &&
+    'startActivation' in value && typeof value.startActivation === 'function' &&
+    'registerProvider' in value && typeof value.registerProvider === 'function'
+}
+function managedSubagents(value: unknown): value is Context['subagents'] | ActivationSubagents {
+  return currentSubagents(value) || activationSubagents(value)
+}
 function activationSubagents(value: unknown): value is ActivationSubagents {
   return typeof value === 'object' && value !== null &&
     'startActivation' in value && typeof value.startActivation === 'function' &&
@@ -223,7 +235,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
     private readonly ctx: Context,
     private readonly deps: HarnessConversationDependencies,
   ) {
-    if (!activationSubagents(ctx.subagents) && !legacySubagents(ctx.subagents))
+    if (!managedSubagents(ctx.subagents) && !legacySubagents(ctx.subagents))
       throw new Error('当前宿主缺少 CLI 子会话所需的生命周期接口')
     for (const record of deps.bindings()) this.remember(record)
     this.commandGuard = new HarnessConversationCommandGuard(
@@ -315,7 +327,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
         return this.forkSeeds.has(sessionId) ? { seed: this.forkSeeds.get(sessionId)!.seed } : {}
       },
     }
-    this.disposers.push(activationSubagents(ctx.subagents)
+    this.disposers.push(managedSubagents(ctx.subagents as unknown)
       ? ctx.subagents.registerProvider({ ...provider, capabilities: {
         agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: false,
       } })
@@ -1209,6 +1221,25 @@ export class HarnessConversationBridge implements HarnessConversationApi {
     const requestId = randomUUID()
     const signal = caller ? AbortSignal.any([caller, this.lifetime.signal]) : this.lifetime.signal
     try {
+      if (currentSubagents(this.ctx.subagents)) {
+        const query = this.ctx.get('sessionQuery')
+        const catalog = await readDshChildren(query, parent.id, signal)
+        if (!catalog.some(child => child.id === record.sessionId && child.mode === 'continuable'))
+          throw new Error('CLI 子会话所属主对话不匹配')
+        const observation = await query!.observeSession(SessionId(record.sessionId), { signal }).catch((error: unknown) => {
+          signal.throwIfAborted()
+          // Match rc.2 observeContinuation/rejectPrompt so an unreadable cold
+          // display still takes the existing explicit replacement path.
+          throw new RemoteError('subagent/not-resumable', 'CLI 原生显示会话无法读取', { childSessionId: SessionId(record.sessionId) }, { cause: error })
+        })
+        try {
+          if (observation.header.origin !== 'subagent' || observation.header.parentSession !== parent.id)
+            throw new Error('CLI 子会话所属主对话不匹配')
+        } finally { observation[Symbol.dispose]() }
+        const child = this.ctx.agents.get(SessionId(record.sessionId))
+        if (child && !ownsDirectSubagent(this.ctx.subagents, parent, child))
+          throw new Error('CLI 子会话所属主对话不匹配')
+      }
       await this.updateRecord(record.sessionId, (current) => {
         if ((current.pendingRuns?.length ?? 0) >= 256)
           throw new Error('原生会话显示队列过长，请等待历史显示完成')
@@ -1221,9 +1252,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       await this.ctx.subagents.prompt(
         {
           requestId: requestId as never,
-          parentSessionId: parent.id,
           childSessionId: SessionId(record.sessionId),
-          mode: 'continuable',
           delivery: 'queue',
           content: [{ type: 'text', text: `${PROJECT}${worker.runId}` }],
         },
@@ -1284,8 +1313,14 @@ export class HarnessConversationBridge implements HarnessConversationApi {
         signal,
       }
       let result: { childId: ReturnType<typeof SessionId> }
-      if (activationSubagents(this.ctx.subagents)) {
-        const activation = await this.ctx.subagents.startActivation({ ...spec, delivery: 'caller' })
+      const subagents: unknown = this.ctx.subagents
+      if (managedSubagents(subagents)) {
+        const activation = currentSubagents(subagents)
+          ? await subagents.startActivation({
+              ...spec.request, prompt: [...spec.request.prompt], provider: spec.provider, label: spec.label,
+              childId: spec.childId, signal: spec.signal, delivery: 'caller',
+            })
+          : await subagents.startActivation({ ...spec, delivery: 'caller' })
         this.activations.set(record.sessionId, activation)
         // Observe settlement exactly once without consuming or replaying input.
         void activation.result.catch((error) => this.lifecycleIssues.push(error))
@@ -1293,11 +1328,11 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       } else if (legacySubagents(this.ctx.subagents)) result = await this.ctx.subagents.startContinuable(spec)
       else throw new Error('Harness CLI 子会话生命周期接口已失效')
       if (result.childId !== record.sessionId) throw new Error('Harness 返回了不同的 CLI 子会话身份')
-      if (forkHistory && activationSubagents(this.ctx.subagents)) {
+      if (forkHistory && managedSubagents(this.ctx.subagents)) {
         const outcome = await this.activations.get(record.sessionId)!.result as { stopReason?: string }
         if (outcome.stopReason !== 'completed') throw new Error('Harness 分支历史初始化未完成')
       }
-      if (forkHistory && !activationSubagents(this.ctx.subagents)) {
+      if (forkHistory && !managedSubagents(this.ctx.subagents)) {
         // Legacy continuable startup returns before its first Inbox item settles.
         // Retain the bootstrap marker until the real loop consumed it as a noop.
         const child = this.ctx.agents.get(SessionId(record.sessionId))
@@ -1463,9 +1498,34 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       await handle.dispose()
       if (this.activations.get(id) === handle) this.activations.delete(id)
     }))
+    const subagents: unknown = this.ctx.subagents
     // Catalog draining also covers restored children without a live activation handle.
-    if (activationSubagents(this.ctx.subagents)) await this.ctx.subagents.drainChildren(parent, children)
-    else if (legacySubagents(this.ctx.subagents)) await this.ctx.subagents.drainContinuableChildren(parent, children)
+    if (currentSubagents(subagents)) {
+      // rc.2 removed subset draining. Retained handles release their exact epoch.
+      // A cold-resumed epoch has no caller handle: cancel its owned Agent, then
+      // join SubagentManager.watchLocalSettlement through its post-cleanup end edge.
+      outcomes.push(...await Promise.allSettled(children.map(async id => {
+        const child = this.ctx.agents.get(id)
+        if (!child) return
+        if (!ownsDirectSubagent(this.ctx.subagents, parent, child))
+          throw new Error('CLI 子会话所属主对话不匹配，未清理')
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => { off(); reject(new Error('CLI 子会话清理尚未确认')) }, 30_000)
+          const off = this.ctx.on('subagent/end', info => {
+            if (info.id !== id) return
+            clearTimeout(timer)
+            off()
+            if (this.ctx.agents.get(id) === child) reject(new Error('CLI 子会话清理后仍驻留'))
+            else resolve()
+          }, { global: true })
+          // Match SubagentManager.finishDisposal(stop=true): clear pending
+          // work and use the parent teardown cause, then await actual cleanup.
+          try { child.cancel({ kind: 'parent' }) }
+          catch (error) { clearTimeout(timer); off(); reject(error) }
+        })
+      })))
+    } else if (activationSubagents(subagents)) await subagents.drainChildren(parent, children)
+    else if (legacySubagents(subagents)) await subagents.drainContinuableChildren(parent, children)
     else throw new Error('Harness CLI 子会话清理接口已失效')
     const failed = outcomes.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
     if (failed.length) throw new AggregateError(failed.map(item => item.reason), 'CLI activation 清理失败')

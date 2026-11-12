@@ -41,7 +41,7 @@ async function fixture() {
     return 'synthetic-background-receipt'
   })
   const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
-    ctx: { tools: ctx.tools, agents: sessions, effect: (register: () => unknown) => register(), get: (name: string) => name === 'subagents' ? { listChildren: async () => [{ id: child.id, label: 'Native researcher' }] } : undefined },
+    ctx: { tools: ctx.tools, agents: sessions, effect: (register: () => unknown) => register(), get: (name: string) => name === 'sessionQuery' ? { observeSession: async () => ({ header: {}, projections: { values: { subagentCatalog: [{ id: child.id, label: 'Native researcher' }] } }, [Symbol.dispose]() {} }) } : undefined },
     runtime, chooseDispatch, launch, runOrigins: new Map(), runQuestionSessions: new Map(), disposed: new AbortController(),
     dshSubagents,
   })

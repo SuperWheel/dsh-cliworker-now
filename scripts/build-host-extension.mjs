@@ -18,22 +18,20 @@ import {
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { tsImport } from 'tsx/esm/api'
-import { build as rootBuild } from 'tsdown'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const targetFlag = process.argv.indexOf('--target')
 const targetVersion = targetFlag < 0 ? '0.2.0-rc.2' : process.argv[targetFlag + 1]
-if (!['0.2.0-rc.2', '0.2.1-rc.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.2-rc.1'].includes(targetVersion)) throw new Error('Unsupported pinned extension target')
+if (!['0.2.0-rc.2', '0.2.1-rc.1', '0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2'].includes(targetVersion)) throw new Error('Unsupported pinned extension target')
 const modern = targetVersion.startsWith('0.2.1-') || targetVersion.startsWith('0.2.2-')
-const suffix = targetVersion === '0.2.2-rc.1' ? '022rc1' : targetVersion === '0.2.1-rc.5' ? '021rc5' : targetVersion === '0.2.1-rc.3' ? '021rc3' : targetVersion === '0.2.1-rc.2' ? '021rc2' : '021rc1'
+const suffix = targetVersion === '0.2.2-rc.2' ? '022rc2' : targetVersion === '0.2.2-rc.1' ? '022rc1' : targetVersion === '0.2.1-rc.5' ? '021rc5' : targetVersion === '0.2.1-rc.3' ? '021rc3' : targetVersion === '0.2.1-rc.2' ? '021rc2' : '021rc1'
 const buildDeps = join(root, '.cache', modern ? `dsh-host-build-deps-${suffix}` : 'dsh-host-build-deps')
 const upstream = {
   repository: 'https://github.com/deepseek-ai/deepseek-harness.git',
   tag: `dsh-v${targetVersion}`,
-  commit: targetVersion === '0.2.2-rc.1' ? '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db' : targetVersion === '0.2.1-rc.5' ? 'b830ec950faba0a46dda564be3e2d854afed94f1' : targetVersion === '0.2.1-rc.3' ? '1f81c047fc48fa190a683e469daa699857e9afe8' : modern ? (suffix === '021rc2' ? '687f282e8625c6b8d11ff58211a90524be2e4317' : '1600d8a1e140dcde43a1a0941940a0480712c011') : '639ed015397290b3745d163aafe02ffee4aa3f84',
+  commit: targetVersion === '0.2.2-rc.2' ? 'ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c' : targetVersion === '0.2.2-rc.1' ? '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db' : targetVersion === '0.2.1-rc.5' ? 'b830ec950faba0a46dda564be3e2d854afed94f1' : targetVersion === '0.2.1-rc.3' ? '1f81c047fc48fa190a683e469daa699857e9afe8' : modern ? (suffix === '021rc2' ? '687f282e8625c6b8d11ff58211a90524be2e4317' : '1600d8a1e140dcde43a1a0941940a0480712c011') : '639ed015397290b3745d163aafe02ffee4aa3f84',
   ...(targetVersion === '0.2.1-rc.3' ? { installedAppBuildIdentity: 'be72761', installedAppBuildCommitStatus: 'not-resolved-to-public-commit' } : {}),
-  ...(modern && !['0.2.1-rc.3', '0.2.1-rc.5', '0.2.2-rc.1'].includes(targetVersion) ? { installedDesktopBuildCommit: suffix === '021rc2' ? '332895e0f7c9d4dbfb29729f5eb367fa263ff986' : 'ed75efeffee65f9fe93625bbd76a68cb219aaaf9' } : {}),
+  ...(modern && !['0.2.1-rc.3', '0.2.1-rc.5', '0.2.2-rc.1', '0.2.2-rc.2'].includes(targetVersion) ? { installedDesktopBuildCommit: suffix === '021rc2' ? '332895e0f7c9d4dbfb29729f5eb367fa263ff986' : 'ed75efeffee65f9fe93625bbd76a68cb219aaaf9' } : {}),
 }
 const packages = ['ui-session', 'ui-conversation', 'ui-subagent', 'ui-chat']
 const allowed = [
@@ -250,6 +248,9 @@ async function main() {
   const installed = createRequire(realpathSync(modern ? join(buildDeps, 'node_modules/@deepseek-ai/dsh/package.json') : join(root, 'node_modules/@deepseek-ai/dsh/package.json')))
   if (packageVersion(installed, '@deepseek-ai/dsh') !== targetVersion)
     throw new Error('Installed DSH baseline does not match target')
+  // rc.2 uses its frozen tools even while the plugin dependency graph is being updated.
+  const buildRequire = createRequire(targetVersion === '0.2.2-rc.2' ? join(buildDeps, 'package.json') : import.meta.url)
+  const { tsImport } = await import(pathToFileURL(buildRequire.resolve('tsx/esm/api')).href)
   const stage = join(root, '.cache', `dsh-host-extension-output-${process.pid}`)
   if (existsSync(stage)) throw new Error('Build staging path already exists')
   mkdirSync(stage, { recursive: true })
@@ -257,7 +258,7 @@ async function main() {
   const builtPackages = []
   try {
     // 0.2.2 presets hand RolldownMagicString objects to the builder; both must share one rolldown instance.
-    const build = targetVersion.startsWith('0.2.2-') ? await sourceTsdownBuild(source) : rootBuild
+    const build = targetVersion.startsWith('0.2.2-') ? await sourceTsdownBuild(source) : (await import('tsdown')).build
     const { clientBundle } = await tsImport(
       pathToFileURL(join(source, 'packages/client/tsdown.client.ts')).href,
       import.meta.url,
@@ -343,7 +344,7 @@ async function main() {
     ])
       if (existsSync(input)) cpSync(input, join(provenance, output))
     cpSync(join(extensionDir, 'README.md'), join(stage, 'README.md'))
-    const require = createRequire(import.meta.url)
+    const require = buildRequire
     const outputManifest = {
       schema: 1,
       upstream,

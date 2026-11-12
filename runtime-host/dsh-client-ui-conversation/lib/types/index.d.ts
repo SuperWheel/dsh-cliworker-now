@@ -13,7 +13,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
 }>>, Schemastery.ObjectT<NoInfer<{
     busyEnter: z<"queue" | "steer", "queue" | "steer", "volatile-defined">;
 }>>, "plain">;
-/** Host preferences are consumed through the configuration form projection.
+/** Register browser conversation preferences.
  * @param ctx Plugin context used for optional settings presentation.
  */
 export declare function apply(ctx: Context): void;

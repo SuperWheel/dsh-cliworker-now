@@ -9,7 +9,8 @@ export function selectBuildDependencies(root, environment = process.env) {
   const target = manifest.devDependencies?.['@deepseek-ai/dsh']
   const isolatedRoots = { '0.2.0-rc.2': '.cache/cliworker-build-deps-020rc2',
     '0.2.1-rc.1': '.cache/cliworker-build-deps-021rc1', '0.2.1-rc.2': '.cache/cliworker-build-deps-021rc2', '0.2.1-rc.3': '.cache/cliworker-build-deps-021rc3',
-    '0.2.1-rc.5': '.cache/cliworker-build-deps-021rc5', '0.2.2-rc.1': '.cache/cliworker-build-deps-022rc1' }
+    '0.2.1-rc.5': '.cache/cliworker-build-deps-021rc5', '0.2.2-rc.1': '.cache/cliworker-build-deps-022rc1',
+    '0.2.2-rc.2': '.cache/cliworker-build-deps-022rc2' }
   if (!Object.hasOwn(isolatedRoots, target)) throw new Error('Unsupported pinned DSH build target')
   const candidate = environment.CLIWORKER_BUILD_DEPS
     ? resolve(environment.CLIWORKER_BUILD_DEPS)

@@ -3,6 +3,22 @@ import type { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand';
 import type { ConversationNodeDefinition, ConversationPublication, ConversationViewDefinition, ConversationViewSnapshotMap, ConversationViewSnapshotStore } from '../contract/conversation.ts';
 import type { ConversationGroupData, ConversationGroupDefinition, ConversationGroupedView } from '../contract/groups.ts';
 import type { ConversationEventRegistry } from './event-registry.ts';
+/**
+ * Failure of an incremental Conversation update.
+ * When `rebuilt` is true, every active view already shows a complete rebuild of
+ * the loaded window, and `cause` is the original failure. When it is false, the
+ * rebuild or its view replacement also failed, and `cause` is an
+ * `AggregateError` of both failures; the next flush retries that rebuild or replacement.
+ */
+export declare class ConversationUpdateError extends Error {
+    /** Whether every active view shows the complete rebuild. */
+    readonly rebuilt: boolean;
+    /**
+     * @param rebuilt - whether every active view shows the complete rebuild.
+     * @param options - the original failure, or an `AggregateError` of both failures, as `cause`.
+     */
+    constructor(rebuilt: boolean, options: ErrorOptions);
+}
 /** Event Registry subset consumed by a Session-owned Assembler. */
 export interface ConversationEventDefinitions extends Partial<Pick<ConversationEventRegistry, 'forEvent'>> {
     /** @returns ordinary Definitions in registration order. */
@@ -48,6 +64,7 @@ export declare class ConversationNodeAssembler implements ConversationViewSnapsh
     private readonly matchedDefinitions;
     private readonly matchedResults;
     private hasMore;
+    private rebuildPending;
     private replacePending;
     private timelineDirty;
     /**
@@ -97,12 +114,26 @@ export declare class ConversationNodeAssembler implements ConversationViewSnapsh
     rebuildRegistry(): ConversationPublication;
     /**
      * Materialize dirty Contexts and advance every active view builder.
+     * When an incremental update throws, the assembler replays the complete loaded
+     * window into new Contexts and replaces every active view before it throws a
+     * {@link ConversationUpdateError}. A Definition that throws on every incremental
+     * update therefore makes each flush replay the whole window. A failure on the
+     * complete-replacement path propagates unchanged, publishes no view, and keeps
+     * the replacement pending for the next flush.
      * @returns whether any view snapshot was rebuilt or incrementally applied.
+     * @throws {@link ConversationUpdateError} when an incremental update fails.
      */
     flush(): boolean;
+    private flushReplacement;
+    /** Replace partial incremental state with a complete rebuild, then report the original failure. */
+    private recoverIncremental;
+    /** Rebuild every Context from the loaded inputs; a failed rebuild stays pending for the next flush. */
+    private rebuildWindow;
+    private flushIncremental;
     /**
      * Add one target to the monotonic active set and materialize its current snapshot.
-     * Pending Context work is flushed before the first complete replacement.
+     * Pending Context work is flushed before the first complete replacement. When that
+     * flush throws, the target stays inactive and a later activation retries it.
      * @param target - registered or subsequently registered view target.
      * @returns whether any active target snapshot changed.
      */

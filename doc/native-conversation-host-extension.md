@@ -1,5 +1,7 @@
 # 原生子对话与主对话体验的宿主接口缺口
 
+2026-11-12 当前源码候选迁移至 **0.2.2-rc.2**，公开 tag `dsh-v0.2.2-rc.2` 固定于 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`。rc.1 的 48 文件补丁在新基线上有 10 个文件冲突，人工合并后重建四个原生界面包并纳入 `runtime-host/`；保留官方 CSS anchor、Retry、文件接收与子会话直接输入行为，移除对已删除 `useAnchoredPosition` 的引用。新输入及合并说明见 `host-extensions/dsh-0.2.2-rc.2/README.md`；Mac Desktop 0.2.2-rc.2 已做部分界面核对，Windows 与真实模型／CLI 派遣未验证，详细边界见 `openspec/changes/upgrade-host-022rc2/tasks.md`。下文 rc.1 及更早版本记录保留为历史。
+
 2026-11-05 当前源码候选迁移至 **0.2.2-rc.1**，公开 tag `dsh-v0.2.2-rc.1` 固定于 `66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`。四个原生界面包已重新构建并纳入 `runtime-host/`；rc.5 的扩展补丁有 8 个文件冲突，逐处人工合并并保留官方新行为。构建依赖使用 Cordis 4.1.0；保留 ui-chat 的 `lib/assets/` 图片及 `./assets/*` 导出。该目标从源码 checkout 加载 tsdown，使官方预设与构建器共用同一个 rolldown 实例。官方新增的日、西、法、德、俄、葡六种语言中，插件新增词条暂用英文。新输入及合并说明见 `host-extensions/dsh-0.2.2-rc.1`，验证与未验证边界见 `openspec/changes/upgrade-host-022rc1/tasks.md`；未运行真实 CLI／模型。
 
 2026-10-30 当前源码候选迁移至 **0.2.1-rc.5**，公开 tag commit 为 `b830ec950faba0a46dda564be3e2d854afed94f1`。rc.3 的 48 文件扩展在 rc.5 上无冲突应用，增删行与 rc.3 相同；随源码保留官方 rc.4/rc.5 的推理显示文本（去掉开头 `<signature>…</signature>`、Body Slot 增加 `rawText`）与视图标签提示调整。新输入见 `host-extensions/dsh-0.2.1-rc.5`，验证与未验证边界见 `openspec/changes/upgrade-host-rc5/tasks.md`。

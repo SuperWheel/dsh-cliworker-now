@@ -22,6 +22,8 @@ interface ViewportEvents {
     interact: () => void;
     /** Any reading gesture, before paging ownership is consulted. */
     intent?: () => void;
+    /** Recheck a prepared history page after an input or transition settles. */
+    history?: () => void;
 }
 /** Reading policy that fold batches consult and report tail landings to. */
 export interface FoldReader {
@@ -40,7 +42,13 @@ export declare class ChatViewport {
     private turns;
     private observation;
     private paging;
+    private historyPrepend;
     private reader;
+    private historyEdge;
+    private historyHeight;
+    private historyScrolling;
+    private historyPointer;
+    private historyTouch;
     /** Rows measured before an instant close; see {@link ChatViewport.keepAboveClosing}. */
     private closing;
     /** Discards a closing measurement that no size observation consumed by the end of its frame. */
@@ -189,14 +197,19 @@ export declare class ChatViewport {
      * @returns the actual landing, or null while detached.
      */
     restore(position: ChatScrollPosition): ViewportLanding | null;
+    /** Capture a manual paging anchor without consulting automatic-consumption blockers. */
+    beginManualPaging(): void;
     /** Retain the first eligible transcript seat in DOM order; selection reads no geometry. */
     beginPaging(): void;
+    private pagingAnchor;
     /**
      * Retain one old row and its inner/outer offsets for paging and later content growth.
      * @param position - an explicit landing to retain; omitted callers capture the current reading position.
      */
     beginPreserving(position?: ChatScrollPosition | null): void;
+    private measurePaging;
     private retain;
+    private retainPaging;
     /** Release paging ownership and its content-size observation. */
     stopPreserving(): void;
     /**
@@ -210,6 +223,9 @@ export declare class ChatViewport {
      * @returns the actual landing, or null when no visible retained row remains.
      */
     preserve(): ViewportLanding | null;
+    private resolvePaging;
+    /** Restore the captured screen position; native anchoring already applied to this change needs no further correction. */
+    private applyPaging;
     /**
      * Align with the physical floor, including fold room that newer content has not yet filled.
      * @param follow - independent follow intent and scrolling controller.
@@ -220,6 +236,43 @@ export declare class ChatViewport {
     scrollToBottom(follow: ScrollFollow, behavior?: 'instant' | 'smooth'): ViewportLanding | null;
     private align;
     private write;
+    /**
+     * Track the history control for request-distance checks.
+     * @param element - stable history control, or null when its view unmounts.
+     */
+    readonly setHistoryEdge: (element: HTMLDivElement | null) => void;
+    private pruneHistoryScrolling;
+    /**
+     * Confirm the actual history distance immediately before an automatic request.
+     * @returns whether the control is within two viewport heights.
+     */
+    confirmHistoryStart(): boolean;
+    /**
+     * Expose held input to history status copy.
+     * @returns whether a touch or pointer remains down.
+     */
+    get historyInputHeld(): boolean;
+    /**
+     * Select consumption behavior from current input and motion state.
+     * @returns the blocker or positioning path for a prepared page.
+     */
+    historyConsumption(): 'motion' | 'touch' | 'pointer' | 'inner-scroll' | 'unavailable' | 'native' | 'preserve' | 'prepend';
+    /**
+     * Capture one top-edge prepend anchor without acquiring continuous scroll ownership.
+     * @returns whether an old paging row was captured.
+     */
+    beginHistoryPrepend(): boolean;
+    /** Clear an unapplied one-shot correction when its page was not consumed. */
+    cancelHistoryPrepend(): void;
+    /**
+     * Correct a committed prepend once, then release positioning ownership.
+     * @returns the compensated landing for reading memory, or null when no anchor remains.
+     */
+    finishHistoryPrepend(): ViewportLanding | null;
+    private readonly onHistoryScroll;
+    private readonly onHistoryPointerDown;
+    private readonly onHistoryTouch;
+    private readonly onHistoryRelease;
     private readonly onScroll;
     private readonly onScrollEnd;
     private readonly onIntent;

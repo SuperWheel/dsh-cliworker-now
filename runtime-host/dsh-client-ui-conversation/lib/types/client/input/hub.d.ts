@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client';
-import type { SessionId } from '@deepseek-ai/dsh-session/types';
+import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types';
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client';
 import type { DraftInitializationOptions, DraftInitializationResult, InputTriggerController, SessionInputResolver, SessionInput } from '../contract/input.ts';
 import type { ComposerKeyboard } from '../contract/draft-editor.ts';
@@ -45,6 +45,13 @@ export declare class InputHub implements SessionInputResolver {
      * @returns the shell as the keyboard face.
      */
     keyboard(id: SessionId): ComposerKeyboard;
+    /**
+     * Submit empty input to retry a failed generation through the ordinary composer. Stale
+     * failures, active work, and drafts keep their current input unchanged.
+     * @param id - retained ordinary Session identity.
+     * @param failureSeq - failed turn/end sequence the displayed button addresses.
+     */
+    retry(id: SessionId, failureSeq: SessionSeq): void;
     /**
      * Query file intake without creating a Session input.
      * @param id - target Session.

@@ -62,14 +62,21 @@ it.each([false, true])('模拟 CLI：seeds a real same-parent child and cleans u
     subscribe: () => () => {}, run, fork, wait: async () => worker, stop: async () => {},
   }
   const realSubagents = ctx.subagents
+  const legacyActivations = new Map<string, Awaited<ReturnType<typeof realSubagents.startActivation>>>()
   const legacyFacade = {
     registerProvider: (provider: any) => realSubagents.registerProvider({ ...provider,
       capabilities: { agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: false } }),
     startContinuable: async (spec: any) => {
-      const activation = await realSubagents.startActivation({ ...spec, delivery: 'caller' })
+      const activation = await realSubagents.startActivation({
+        ...spec.request, provider: spec.provider, label: spec.label,
+        childId: spec.childId, signal: spec.signal, delivery: 'caller',
+      })
+      legacyActivations.set(activation.childId, activation)
       return { childId: activation.childId }
     },
-    drainContinuableChildren: (agent: any, ids: any) => realSubagents.drainChildren(agent, ids),
+    drainContinuableChildren: async (_agent: any, ids: string[]) => {
+      await Promise.all(ids.map(id => legacyActivations.get(id)?.dispose()))
+    },
     prompt: realSubagents.prompt.bind(realSubagents),
   }
   const bridgeContext = legacy ? new Proxy(ctx, { get: (target, key, receiver) => key === 'subagents' ? legacyFacade : Reflect.get(target, key, receiver) }) : ctx

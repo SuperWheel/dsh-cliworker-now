@@ -43,6 +43,18 @@ it('rolls back only the exact association and persists the removal', () => {
   store.remove(record)
   expect(new HarnessConversationStore(root).list()).toEqual([])
 })
+it('preserves up to 64 retired display Sessions and reads legacy bindings without that optional field', () => {
+  const root = directory(), store = new HarnessConversationStore(root)
+  const legacy = { workerId: randomUUID(), parentSessionId: 'parent', sessionId: 'current-child' }
+  store.save(legacy)
+  expect(new HarnessConversationStore(root).list()).toEqual([legacy])
+  const retiredSessionIds = Array.from({ length: 64 }, (_, index) => `synthetic-retired-${index}`)
+  store.save({ ...legacy, retiredSessionIds })
+  expect(new HarnessConversationStore(root).list()).toEqual([{ ...legacy, retiredSessionIds }])
+  expect(() => store.save({ ...legacy, retiredSessionIds: [...retiredSessionIds, 'overflow'] })).toThrow()
+  expect(() => store.save({ ...legacy, retiredSessionIds: [''] })).toThrow()
+  expect(new HarnessConversationStore(root).list()[0]?.retiredSessionIds).toEqual(retiredSessionIds)
+})
 it('atomically replaces only the current owned association and preserves every retired Session reference', () => {
   const root = directory(),
     store = new HarnessConversationStore(root)

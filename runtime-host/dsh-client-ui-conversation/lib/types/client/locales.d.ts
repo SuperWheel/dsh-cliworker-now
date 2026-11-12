@@ -14,7 +14,6 @@ export declare const zh: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -22,6 +21,7 @@ export declare const zh: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -73,6 +73,7 @@ export declare const zh: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -158,6 +159,7 @@ export declare const zh: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -192,6 +194,9 @@ export declare const zh: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -236,11 +241,12 @@ export declare const zh: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -266,7 +272,7 @@ export declare const zh: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -331,6 +337,9 @@ export declare const zh: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -402,7 +411,6 @@ export declare const en: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -410,6 +418,7 @@ export declare const en: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -461,6 +470,7 @@ export declare const en: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -546,6 +556,7 @@ export declare const en: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -580,6 +591,9 @@ export declare const en: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -624,11 +638,12 @@ export declare const en: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -654,7 +669,7 @@ export declare const en: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -719,6 +734,9 @@ export declare const en: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -788,7 +806,6 @@ export declare const ja: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -796,6 +813,7 @@ export declare const ja: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -847,6 +865,7 @@ export declare const ja: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -932,6 +951,7 @@ export declare const ja: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -966,6 +986,9 @@ export declare const ja: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -1010,11 +1033,12 @@ export declare const ja: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -1040,7 +1064,7 @@ export declare const ja: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -1105,6 +1129,9 @@ export declare const ja: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -1174,7 +1201,6 @@ export declare const es: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -1182,6 +1208,7 @@ export declare const es: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -1233,6 +1260,7 @@ export declare const es: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -1313,6 +1341,7 @@ export declare const es: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -1347,6 +1376,9 @@ export declare const es: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -1391,11 +1423,12 @@ export declare const es: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -1421,7 +1454,7 @@ export declare const es: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -1486,6 +1519,9 @@ export declare const es: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -1560,7 +1596,6 @@ export declare const fr: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -1568,6 +1603,7 @@ export declare const fr: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -1619,6 +1655,7 @@ export declare const fr: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -1699,6 +1736,7 @@ export declare const fr: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -1733,6 +1771,9 @@ export declare const fr: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -1777,11 +1818,12 @@ export declare const fr: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -1807,7 +1849,7 @@ export declare const fr: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -1872,6 +1914,9 @@ export declare const fr: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -1946,7 +1991,6 @@ export declare const de: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -1954,6 +1998,7 @@ export declare const de: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -2005,6 +2050,7 @@ export declare const de: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -2085,6 +2131,7 @@ export declare const de: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -2119,6 +2166,9 @@ export declare const de: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -2163,11 +2213,12 @@ export declare const de: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -2193,7 +2244,7 @@ export declare const de: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -2258,6 +2309,9 @@ export declare const de: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -2332,7 +2386,6 @@ export declare const ru: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -2340,6 +2393,7 @@ export declare const ru: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -2391,6 +2445,7 @@ export declare const ru: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -2471,6 +2526,7 @@ export declare const ru: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -2505,6 +2561,9 @@ export declare const ru: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -2549,11 +2608,12 @@ export declare const ru: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -2579,7 +2639,7 @@ export declare const ru: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -2644,6 +2704,9 @@ export declare const ru: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;
@@ -2718,7 +2781,6 @@ export declare const pt: {
     'placeholder.plan': string;
     'placeholder.default': string;
     'placeholder.unavailable': string;
-    'placeholder.parentOffline': string;
     'placeholder.hero': string;
     'placeholder.workspace': string;
     'placeholder.steerQueue': string;
@@ -2726,6 +2788,7 @@ export declare const pt: {
     'input.file': string;
     'input.stop': string;
     'input.send': string;
+    'input.continue': string;
     'input.sending': string;
     'input.send.queue': string;
     'input.send.steer': string;
@@ -2777,6 +2840,7 @@ export declare const pt: {
     'hero.headline': string;
     'hero.preview': string;
     'hero.chooseWorkspace': string;
+    'header.more': string;
     'session.hierarchy': string;
     'session.moreViews': string;
     'todo.title': string;
@@ -2857,6 +2921,7 @@ export declare const pt: {
     'tool.title.traceSession': string;
     'tool.title.listModels': string;
     'tool.title.subagent': string;
+    'tool.title.subagentFork': string;
     'tool.title.listAgents': string;
     'tool.title.sendMessage': string;
     'tool.title.interruptAgent': string;
@@ -2891,6 +2956,9 @@ export declare const pt: {
     'detail.status.inactive': string;
     'detail.status.provisioning': string;
     'detail.status.failed': string;
+    'detail.status.corrupt': string;
+    'detail.status.unsupported': string;
+    'detail.status.unavailable': string;
     'detail.status.completed': string;
     'detail.status.deleted': string;
     'detail.status.killed': string;
@@ -2935,11 +3003,12 @@ export declare const pt: {
     'detail.field.agents': string;
     'detail.field.result': string;
     'detail.field.parent': string;
-    'detail.field.depth': string;
     'detail.field.exitCode': string;
     'detail.field.signal': string;
     'detail.field.previousStatus': string;
     'detail.field.agent': string;
+    'detail.field.agentName': string;
+    'detail.field.agentDescription': string;
     'detail.field.job': string;
     'detail.field.task': string;
     'detail.field.processGroup': string;
@@ -2965,7 +3034,7 @@ export declare const pt: {
     'detail.wait.noProgress': string;
     'detail.wait.title': string;
     'detail.wait.timeout': string;
-    'detail.wait.changed': string;
+    'detail.wait.ended': string;
     'detail.agent.reply': string;
     'detail.models.title': string;
     'detail.output.lines': string;
@@ -3030,6 +3099,9 @@ export declare const pt: {
     'tool.title.removeCordis': string;
     'tool.title.pwsh': string;
     'tool.title.readImage': string;
+    'tool.title.officeRender': string;
+    'tool.title.officeConvert': string;
+    'tool.title.officeRecalculate': string;
     'tool.title.grep': string;
     'tool.title.glob': string;
     'tool.title.webSearch': string;

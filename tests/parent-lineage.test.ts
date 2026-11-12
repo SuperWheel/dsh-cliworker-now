@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { DsBotLineage, dsBotChains } from '../src/host/parent-lineage.ts'
 import { HarnessConversationStore } from '../src/host/harness-conversation-store.ts'
 import { replaceWorkerBinding } from '../src/host/worker-binding-replacement.ts'
+import { DshSubagents, ownedHarnessSessions, type DshSubagentServices } from '../src/host/dsh-subagents.ts'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
@@ -165,7 +166,11 @@ describe('host binding replacement across segments (Issue #10)', () => {
     const runtime = new WorkerRuntime(storage, backend, DEFAULT_CONFIG)
     cleanup.push(() => runtime.close())
     const records = new HarnessConversationStore(join(project, 'state'))
-    const capabilities = { message: true } as never
+    const capabilities = {
+      send: true, queue: true, steer: false, stop: true, model: false, permission: false,
+      plan: false, attachments: false, fork: false, skills: false, tools: false,
+      forkEarlier: false, goal: false, feedback: false,
+    }
     const worker: Worker = {
       id: randomUUID(), runId: randomUUID(), parentSessionId: 'bot-third', project,
       title: 'Synthetic rebound worker', preference: { cli: 'codex', model: 'synthetic-model', effort: 'default' },
@@ -180,8 +185,8 @@ describe('host binding replacement across segments (Issue #10)', () => {
     const next = { workerId: worker.id, parentSessionId: 'bot-third', sessionId: 'new-child', retiredSessionIds: ['old-child'] }
     return { project, storage, runtime, records, worker, old, next }
   }
-  it('moves the display child of a former segment under the current parent', () => {
-    const { project, runtime, records, worker, old, next } = setup(['bot-first'])
+  it('moves the display child of a former segment and excludes its durable retired Session from the old catalog', async () => {
+    const { project, storage, runtime, records, worker, old, next } = setup(['bot-first'])
     const changed = vi.spyOn(runtime, 'changed')
     replaceWorkerBinding(runtime, records, old, next)
     expect(records.list()).toEqual([next])
@@ -189,6 +194,41 @@ describe('host binding replacement across segments (Issue #10)', () => {
     expect(JSON.parse(readFileSync(join(project, 'state', `${worker.id}.worker.json`), 'utf8')).harnessConversation)
       .toMatchObject({ sessionId: 'new-child', parentSessionId: 'bot-third' })
     expect(changed).toHaveBeenCalled()
+    const restored = new HarnessConversationStore(join(project, 'state'))
+    expect(restored.list()[0]?.retiredSessionIds).toEqual(['old-child'])
+    expect(ownedHarnessSessions(storage.workers.values(), restored.list())).toEqual(new Set(['new-child', 'old-child']))
+    const manager = new DshSubagents(join(project, 'state'), {
+      subagents: () => ({}) as ReturnType<DshSubagentServices['subagents']>,
+      query: () => ({ observeSession: async () => ({
+        header: {}, cursor: 0,
+        projections: { values: { subagentCatalog: [
+          // No Worker label: the persisted retired ID must be sufficient.
+          { id: old.sessionId, label: 'Synthetic former display child', createdAt: 0, mode: 'continuable' },
+          { id: 'native-child', label: 'Synthetic DSH child', createdAt: 1, mode: 'external' },
+        ] } },
+        [Symbol.dispose]() {},
+      }) }) as ReturnType<DshSubagentServices['query']>,
+      ownedSessions: () => ownedHarnessSessions(storage.workers.values(), restored.list()),
+      hasWorker: id => storage.workers.has(id),
+      log: vi.fn(),
+    })
+    cleanup.push(() => manager.dispose())
+    expect((await manager.list('bot-first', new AbortController().signal)).map(row => [row.id, row.agentName]))
+      .toEqual([['native-child', 'dsh-1']])
+    expect(JSON.parse(readFileSync(join(project, 'state', 'dsh-names.json'), 'utf8')))
+      .toEqual({ 'bot-first': { 'native-child': 'dsh-1' } })
+  })
+  it('reads legacy Worker and Harness binding records without session-history fields', async () => {
+    const { project, runtime, storage, worker, old } = setup()
+    expect(JSON.parse(readFileSync(join(project, 'state', `${worker.id}.worker.json`), 'utf8')))
+      .not.toHaveProperty('formerHarnessSessionIds')
+    await runtime.close()
+    const restored = new WorkerStorage(storage.directory)
+    cleanup.push(() => restored.close())
+    const records = new HarnessConversationStore(storage.directory).list()
+    expect(records).toEqual([old])
+    expect(restored.workers.get(worker.id)).toMatchObject({ parentSessionId: 'bot-third', harnessConversation: { sessionId: 'old-child' } })
+    expect(ownedHarnessSessions(restored.workers.values(), records)).toEqual(new Set(['old-child']))
   })
   it('accepts the rollback back to the former segment', () => {
     const { runtime, records, worker, old, next } = setup(['bot-first'])

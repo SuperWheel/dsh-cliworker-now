@@ -44,6 +44,7 @@ export declare const zh: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -53,6 +54,12 @@ export declare const zh: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -83,6 +90,10 @@ export declare const zh: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -162,6 +173,7 @@ export declare const zh: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -244,6 +256,7 @@ export declare const en: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -253,6 +266,12 @@ export declare const en: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -283,6 +302,10 @@ export declare const en: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -362,6 +385,7 @@ export declare const en: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -442,6 +466,7 @@ export declare const ja: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -451,6 +476,12 @@ export declare const ja: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -481,6 +512,10 @@ export declare const ja: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -560,6 +595,7 @@ export declare const ja: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -640,6 +676,7 @@ export declare const es: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -649,6 +686,12 @@ export declare const es: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -679,6 +722,10 @@ export declare const es: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -758,6 +805,7 @@ export declare const es: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -838,6 +886,7 @@ export declare const fr: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -847,6 +896,12 @@ export declare const fr: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -877,6 +932,10 @@ export declare const fr: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -956,6 +1015,7 @@ export declare const fr: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -1036,6 +1096,7 @@ export declare const de: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -1045,6 +1106,12 @@ export declare const de: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -1075,6 +1142,10 @@ export declare const de: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -1154,6 +1225,7 @@ export declare const de: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -1234,6 +1306,7 @@ export declare const ru: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -1243,6 +1316,12 @@ export declare const ru: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -1273,6 +1352,10 @@ export declare const ru: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -1352,6 +1435,7 @@ export declare const ru: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;
@@ -1432,6 +1516,7 @@ export declare const pt: {
     'message.stepProcess.done.plan': string;
     'message.stepProcess.done.questions': string;
     'message.stepProcess.done.tools': string;
+    'message.stepProcess.done.context': string;
     'message.stepProcess.joinTwo': string;
     'message.stepProcess.comma': string;
     'message.stepProcess.sharedPrefix': string;
@@ -1441,6 +1526,12 @@ export declare const pt: {
     'message.trigger.agent': string;
     'message.trigger.team': string;
     'message.trigger.subagent': string;
+    'message.trigger.subagent.completed': string;
+    'message.trigger.subagent.aborted': string;
+    'message.trigger.subagent.error': string;
+    'message.trigger.subagent.maxTokens': string;
+    'message.trigger.subagent.refusal': string;
+    'message.trigger.subagent.unknown': string;
     'message.trigger.github': string;
     'message.trigger.webhook': string;
     'message.trigger.schedule': string;
@@ -1471,6 +1562,10 @@ export declare const pt: {
     'chat.loadingHistory': string;
     'chat.loadError': string;
     'chat.loadOlder': string;
+    'chat.loadingOlder': string;
+    'chat.processingOlder': string;
+    'chat.retryOlder': string;
+    'chat.historyStart': string;
     'chat.toBottom': string;
     'chat.deepDiving': string;
     'chat.deepDivingFor': string;
@@ -1550,6 +1645,7 @@ export declare const pt: {
     'message.retry.active': string;
     'message.retry.cancelled': string;
     'message.retry.started': string;
+    'message.continuation.requested': string;
     'message.retry.scheduled': string;
     'message.retry.status': string;
     'message.retry.delay': string;

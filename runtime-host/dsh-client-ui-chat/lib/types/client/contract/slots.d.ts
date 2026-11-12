@@ -9,7 +9,7 @@ import type { CommandNode, CompactionSummaryNode, ConversationLocationDataStore,
 import type { HostObservable, InjectFace, KeyedSnapshotSelectorHook, PropsLocale, PropsRenderSlots, PropsRuntime, PropsRenderFactories, PropsStore, SlotHookFactory, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots';
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import type { ConnectionStateSource } from '@deepseek-ai/dsh-client-connection/client';
-import type { FileDragActions, MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives';
+import type { FileDragActions, MarkdownDelegateFenceInfo, MarkdownFileMentions, MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { ContextMenuTriggerProps } from '@deepseek-ai/dsh-client-ui-context-menu/client';
 import type { ChatKey } from '../locale.ts';
 import type { createChatStore } from '../stores.ts';
@@ -290,7 +290,10 @@ export interface ChatViewInjected {
     /** Open one HTTP(S) message link at the selected destination, using an external tab if Sidebar Browser is unavailable. */
     openExternalLink: (url: string) => void;
     openFile: (path: string, options?: OpenFileOptions) => Promise<void>;
+    /** Prepare one older page without publishing it. */
     loadOlder: () => void;
+    /** Consume the prepared page synchronously; false when none is ready. */
+    consumeOlder: () => boolean;
     /** Jump loader: page history back through seq; resolves when the window covers it. */
     loadThrough: (seq: SessionSeq) => Promise<void>;
     loadImage: MessageImageLoader;
@@ -317,7 +320,7 @@ export interface ChatFlowOwnerProps extends Pick<ChatNodeOwnerProps, 'cwd' | 'op
 /** Full props of the Chat-owned flow renderer. */
 export type ChatFlowSlotProps = PropsRuntime<'conversation.chat.flow'> & PropsRenderSlots<'conversation.chat.node'> & PropsRenderFactories & PropsStore<ChatStore> & InjectFace<ChatFlowDataInjected> & PropsLocale<'chat'>;
 /** Full Chat view props. */
-export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.flow' | 'conversation.chat.text-interaction'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
+export type ChatViewSlotProps = PropsRuntime<'conversation.view'> & PropsRenderSlots<'conversation.chat.flow' | 'conversation.chat.text-interaction' | 'conversation.chat.markdown.fence'> & PropsStore<ChatStore> & InjectFace<ChatViewInjected> & PropsLocale<'chat'>;
 /** Full props shared by the user and output image entries. */
 export type MessageImagesProps = PropsRuntime<'conversation.chat.user.images' | 'conversation.chat.message.images'> & PropsRenderFactories;
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -355,6 +358,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
             kind: 'keyed';
             scope: 'session';
             owner: TextInteractionSurface;
+        };
+        /** Language-keyed layers around one Markdown fence in the Chat flow; the content is the plain code block. */
+        'conversation.chat.markdown.fence': {
+            kind: 'hoc';
+            scope: 'session';
+            owner: MarkdownDelegateFenceInfo;
         };
         /** Ordered Chat rows and local echoes with viewport-bound visibility hooks. */
         'conversation.chat.flow': {

@@ -30,7 +30,6 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
           children,
         )
       : null,
-  useAnchoredPosition: () => null,
   useDismissOnOutsidePointer: () => {},
   IconCheckOutlineRegular: () => createElement('svg'),
   IconChevronRightOutlineRegular: () => createElement('svg'),
@@ -127,6 +126,7 @@ afterEach(async () => {
     for (const r of mounted.splice(0)) r.unmount()
   })
   setLanguagePreference('follow')
+  vi.useRealTimers()
 })
 const deferred = () => {
   let resolve!: (value: any) => void, reject!: (reason: unknown) => void
@@ -1620,7 +1620,10 @@ it('offers native portaled card management with pointer and keyboard access with
     card.props.onContextMenu({ preventDefault: prevented, stopPropagation() {}, clientX: 91, clientY: 127 }),
   )
   expect(prevented).toHaveBeenCalledOnce()
-  const menu = card.findAll((node) => typeof node.type === 'function' && node.props.getAnchorRect)[0]!
+  const menu = card.findAll((node) => typeof node.type === 'function' && node.props.listClassName === 'cwn-worker-menu')[0]!
+  expect(menu.props.anchorPoint).toEqual({ x: 91, y: 127 })
+  expect(menu.props.anchorRef).toBeUndefined()
+  expect(menu.props.anchor).toBeNull()
   expect(menu.props.portal).toBe(true)
   expect(menu.props.autoFocus).toBe(true)
   await t.click('title')
@@ -1634,6 +1637,8 @@ it('offers native portaled card management with pointer and keyboard access with
       stopPropagation() {},
     }),
   )
+  expect(menu.props.anchorPoint).toBeUndefined()
+  expect(menu.props.anchorRef).toBeDefined()
   await t.click('name')
   expect(t.r.root.findByProps({ 'aria-label': '新的智能体名称' }).props.value).toBe('智能体-a')
   for (const button of card.findAllByType('button')) expect(button.findAllByType('button')).toHaveLength(1)
@@ -1667,13 +1672,16 @@ it.each([{ key: 'ContextMenu' }, { key: 'F10', shiftKey: true }])(
     expect(event.preventDefault).toHaveBeenCalledOnce()
     expect(event.stopPropagation).toHaveBeenCalledOnce()
     expect(t.streams).toHaveLength(before)
-    const menu = card.findAll((node) => typeof node.type === 'function' && node.props.getAnchorRect)[0]!
+    const menu = card.findAll((node) => typeof node.type === 'function' && node.props.listClassName === 'cwn-worker-menu')[0]!
     expect(menu.props.portal).toBe(true)
     expect(menu.props.autoFocus).toBe(true)
-    expect(menu.props.anchor.props.className).toBe('cwn-worker-layout')
-    // The native Menu owns the actual open button, so its focus-return mechanism
-    // can find the keyboard trigger instead of an empty or removed ellipsis anchor.
-    expect(menu.findByProps({ 'data-open-worker-id': 'a' }).props['aria-expanded']).toBe(true)
+    expect(menu.props.anchor).toBeNull()
+    expect(menu.props.anchorPoint).toBeUndefined()
+    expect(menu.props.anchorRef).toBeDefined()
+    expect(menu.props.returnFocus).toBeTypeOf('function')
+    // Card content stays in normal flow; the native Menu gets the external
+    // card anchor and an explicit focus return to its real open control.
+    expect(card.findByProps({ 'data-open-worker-id': 'a' }).props['aria-expanded']).toBe(true)
     await act(async () => menu.props.onClose())
     expect(card.findByProps({ 'data-open-worker-id': 'a' }).props['aria-expanded']).toBe(false)
     await act(async () => card.findByProps({ 'data-open-worker-id': 'a' }).props.onClick())
@@ -2430,6 +2438,7 @@ it('moves each consecutive priority click immediately and lets only the latest a
 it.each(['resolve', 'reject'] as const)(
   'transfers a local unacknowledged queue and ignores its late %s after a newer priority',
   async (settle) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     const queued = deferred()
     const sendRunningMessage = vi.fn().mockReturnValue(queued.promise)
     const interruptMessage = vi.fn().mockImplementation(async (_p, _w, _text, id) => priorityReply(id))
@@ -2550,6 +2559,7 @@ it('keeps an accepted priority alive when the panel closes', async () => {
 })
 
 it('keeps Stop and a newer priority available after a lost receipt without returning old cards', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const interruptMessage = vi
     .fn()
     .mockRejectedValueOnce(new Error('transport failure'))

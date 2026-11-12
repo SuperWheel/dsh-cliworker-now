@@ -60,7 +60,9 @@ it.each([
   [{ blank: true, openState: 'loading' }, true, 'hero', true],
   [{ blank: true, running: true }, undefined, 'active', false],
   [{ blank: true, promptAttempted: true }, undefined, 'active', false],
-  [{ subagent: { address: { mode: 'continuable' } } }, undefined, 'settling', false],
+  // rc.2 continuation enters through the live tree root; a missing direct
+  // parent's residency no longer blocks the sidebar phase.
+  [{ subagent: { address: { mode: 'continuable' } } }, undefined, 'active', false],
 ])('lets the installed official component select its layout for the real child state: %j', (overrides, summaryBlank, phase, hero) => {
   const f = fixture()
   f.declare(SOURCE)

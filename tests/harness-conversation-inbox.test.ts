@@ -203,7 +203,6 @@ async function fixture(initialSteering: 'ready' | 'pending' | 'unsupported' = 'u
     await ctx.subagents.prompt(
       {
         requestId: requestId as never,
-        parentSessionId: parent.agent.id,
         childSessionId: child.id,
         mode: 'continuable',
         delivery,
@@ -378,7 +377,7 @@ it('waits for real cancellation cleanup, preserves queued work, and resumes it o
   await vi.waitFor(() => expect(f.child.session.log.some((event) => event.type === 'tool/call')).toBe(true))
   await f.prompt('kept queued')
   const pending = f.child.inbox.nextTurn[0]!
-  const receipt = f.ctx.subagents.interruptByParent(f.child.id, f.parent.id, 'continuable')
+  const receipt = f.ctx.subagents.interruptByUser(f.child.id)
   expect(receipt).toBeDefined()
   await vi.waitFor(() => expect(f.stop).toHaveBeenCalledTimes(1))
   expect(f.child.status).toBe('running')
@@ -557,7 +556,7 @@ it('keeps native cancellation running until a late launch receipt and its proces
   await f.prompt('kept after cancellation')
   f.complete()
   await vi.waitFor(() => expect(f.run).toHaveBeenCalledTimes(1))
-  f.ctx.subagents.interruptByParent(f.child.id, f.parent.id, 'continuable')
+  f.ctx.subagents.interruptByUser(f.child.id)
   expect(f.child.status).toBe('running')
   admitted.resolve()
   await vi.waitFor(() => expect(f.stop).toHaveBeenCalledTimes(1))
@@ -781,7 +780,7 @@ it('waits for canceled steering restoration after CLI cleanup and preserves it u
   })
   await f.prompt('unconfirmed at stop', 'steer')
   await vi.waitFor(() => expect(f.steer).toHaveBeenCalledTimes(1))
-  f.ctx.subagents.interruptByParent(f.child.id, f.parent.id, 'continuable')
+  f.ctx.subagents.interruptByUser(f.child.id)
   f.runs.get(initialRun)!.cleanup.resolve()
   await vi.waitFor(() => expect(f.stop).toHaveBeenCalledTimes(1))
   await new Promise((resolve) => setTimeout(resolve, 20))

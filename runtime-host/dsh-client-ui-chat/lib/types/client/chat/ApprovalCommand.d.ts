@@ -2,12 +2,13 @@
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 interface ApprovalToolCall {
     readonly callId: string;
+    readonly name: string;
     readonly argsRaw: string;
 }
 /**
- * Extract a shell command from a correlated Tool call when its arguments carry one.
- * @param call - Tool call arguments, when a correlated call exists.
- * @returns command text, or undefined for absent, malformed, or unrelated arguments.
+ * Extract the command line from a correlated Tool call: a shell `command`, or the text `terminal_send` types into a terminal.
+ * @param call - Tool call name and arguments, when a correlated call exists.
+ * @returns command text, or undefined for absent, empty, malformed, or unrelated arguments.
  */
 export declare function commandOf(call: ApprovalToolCall | undefined): string | undefined;
 /**

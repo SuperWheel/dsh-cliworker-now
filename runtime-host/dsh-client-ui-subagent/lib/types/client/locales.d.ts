@@ -3,6 +3,12 @@
 export declare const NS = "subagent";
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export declare const zh: {
+    readonly 'section.title': "子智能体";
+    readonly 'section.empty': "暂无子智能体";
+    readonly 'progress.completed': "{count} 已完成";
+    readonly 'progress.active': "{count} 进行中";
+    readonly 'progress.inactive': "{count} 未运行";
+    readonly 'progress.external': "{count} 外部任务";
     readonly 'duration.seconds': "{seconds}秒";
     readonly 'duration.minutes': "{minutes}分{seconds}秒";
     readonly 'duration.hours': "{hours}小时{minutes}分{seconds}秒";
@@ -18,8 +24,8 @@ export declare const zh: {
     readonly 'tokens.million': "{value}M";
     readonly 'tokens.total': "{value} tok";
     readonly 'loading.label': "正在加载子智能体…";
+    readonly 'load.idle': "尚未加载子智能体";
     readonly 'load.error': "无法加载子智能体";
-    readonly 'catalog.migrationRequired': "需要迁移";
     readonly retry: "重试";
     readonly 'mode.external': "外部任务";
     readonly 'mode.oneShot': "一次性";
@@ -44,7 +50,6 @@ export declare const zh: {
     readonly 'readonly.oneShot.title': "一次性子智能体记录";
     readonly 'readonly.title': "此子智能体暂时只读";
     readonly 'readonly.oneShot.body': "一次性任务不支持后续消息，可在这里查看完整执行记录。";
-    readonly 'readonly.body': "父会话当前不在线，重新打开父会话后即可继续发送消息。";
 };
 /** English dictionary, key-identical to the Chinese source of truth. */
 export declare const en: Record<SubagentKey, string>;
@@ -52,6 +57,12 @@ export declare const en: Record<SubagentKey, string>;
 export type SubagentKey = keyof typeof zh;
 /** Japanese copy, checked against the English keys. */
 export declare const ja: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -67,8 +78,8 @@ export declare const ja: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -93,10 +104,15 @@ export declare const ja: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 /** Spanish dictionary, checked against the English keys. */
 export declare const es: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -112,8 +128,8 @@ export declare const es: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -138,10 +154,15 @@ export declare const es: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 /** French dictionary, checked against the English keys. */
 export declare const fr: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -157,8 +178,8 @@ export declare const fr: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -183,10 +204,15 @@ export declare const fr: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 /** German dictionary, checked against the English keys. */
 export declare const de: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -202,8 +228,8 @@ export declare const de: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -228,10 +254,15 @@ export declare const de: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 /** Russian dictionary, checked against the English keys. */
 export declare const ru: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -247,8 +278,8 @@ export declare const ru: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -273,10 +304,15 @@ export declare const ru: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 /** Portuguese dictionary, checked against the English keys. */
 export declare const pt: {
+    'section.title': string;
+    'section.empty': string;
+    'progress.completed': string;
+    'progress.active': string;
+    'progress.inactive': string;
+    'progress.external': string;
     'duration.seconds': string;
     'duration.minutes': string;
     'duration.hours': string;
@@ -292,8 +328,8 @@ export declare const pt: {
     'tokens.million': string;
     'tokens.total': string;
     'loading.label': string;
+    'load.idle': string;
     'load.error': string;
-    'catalog.migrationRequired': string;
     retry: string;
     'mode.external': string;
     'mode.oneShot': string;
@@ -318,6 +354,5 @@ export declare const pt: {
     'readonly.oneShot.title': string;
     'readonly.title': string;
     'readonly.oneShot.body': string;
-    'readonly.body': string;
 };
 //# sourceMappingURL=locales.d.ts.map

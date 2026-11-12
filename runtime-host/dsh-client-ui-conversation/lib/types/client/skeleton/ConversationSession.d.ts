@@ -9,7 +9,7 @@ export type ConversationSessionHeaderProps = ConversationSessionHeaderSlotProps;
  * @param props - Strict Session store, view ledger, navigation, render, and locale shares.
  * @returns Session navigation controls, with title and tabs after conversation starts.
  */
-export declare function ConversationSessionHeader({ sessionId, hideChrome, useSessions, useConversationViews, useStore, renderSlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions, }: ConversationSessionHeaderProps): import("react").JSX.Element;
+export declare function ConversationSessionHeader({ sessionId, hideChrome, useSessions, useConversationViews, useStore, renderSlot, renderFactorySlot, open, useContextMenu, selectView, setPinned, t, useEntryPins, useEntryActions, }: ConversationSessionHeaderProps): import("react").JSX.Element;
 /**
  * Renders the active Session view inside the resident scrollport and keeps
  * the input draft mirrored while blank Hero chrome is visible.

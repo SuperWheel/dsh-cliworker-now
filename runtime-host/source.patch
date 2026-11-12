@@ -1,8 +1,8 @@
 diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
-index 87f36a095128a16ea35736de3e3d12ee31bc2244..ce4eb5f539f93d37c674323a09d71de90ca9be19 100644
+index 820bd901716996eec6ddda4f53d5c3ae3f990d60..69e5e51d4ec40b1272df712f144dfadf3522fc74 100644
 --- a/docs/subsystems/slots.md
 +++ b/docs/subsystems/slots.md
-@@ -107,6 +107,10 @@ The renderer also creates `useStore` from a declared store and `t` from a declar
+@@ -121,6 +121,10 @@ The renderer also creates `useStore` from a declared store and `t` from a declar
  
  Framework and domain-adapter owners may extend the standard set through `ctx.slots.provideRoot()` or `ctx.uiSession.provide()` together with the corresponding `GlobalStandardProps`, `SessionStandardProps`, or `SessionMaybeStandardProps` declaration merge. A feature component should not create a React hook prop itself or add a global standard prop for entry-private data.
  
@@ -14,10 +14,10 @@ index 87f36a095128a16ea35736de3e3d12ee31bc2244..ce4eb5f539f93d37c674323a09d71de9
  
  The `inject` option on a registration is the ordinary feature-owned injection point. Its factory runs in the plugin's `apply` world, may close over injected Cordis services, and returns only the data and callbacks that the component needs. For a `session` slot it receives `sessionId`; for `session-maybe` it receives `sessionId | undefined`; when a store is declared it also receives the store's bound actions.
 diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
-index 8b70a2810008adeb3bf93f0aa567fc2863e15b0d..cde02745c2e1ff34df4dd90be73bd993ed51c2f3 100644
+index 69456901eb602a2ea6ab5da539feed1a4b8c0524..f335822791a5c66c2fd3b7038bffcc162d2aa281 100644
 --- a/docs/subsystems/slots.zh.md
 +++ b/docs/subsystems/slots.zh.md
-@@ -109,6 +109,10 @@ Renderer 还会根据声明的 store 创建 `useStore`，并根据声明的 loca
+@@ -123,6 +123,10 @@ Renderer 还会根据声明的 store 创建 `useStore`，并根据声明的 loca
  
  框架与领域 adapter owner 可以通过 `ctx.slots.provideRoot()` 或 `ctx.uiSession.provide()` 扩展标准集合，同时提供对应的 `GlobalStandardProps`、`SessionStandardProps` 或 `SessionMaybeStandardProps` 声明合并。普通功能组件不应自行创建 React hook prop，也不应为 entry 私有数据添加全局标准 prop。
  
@@ -83,10 +83,10 @@ index d83a3043ccf7e9f0d17e6c31b606ac5b390927d1..922c1cb679bdc1adc835eb0086f50f30
    ]
  })
 diff --git a/packages/client/ui-chat/src/client/chat/ChatView.module.css b/packages/client/ui-chat/src/client/chat/ChatView.module.css
-index 9929770b35ce50767884e8117cc77262e3fc6822..47c78d16444c5f4442c319d803097ba22a7653f0 100644
+index 1f84e97842c4e82cd556ae46644c8fb8768dd4a6..d4ff74a84009e0077d4eb0a01529819766294543 100644
 --- a/packages/client/ui-chat/src/client/chat/ChatView.module.css
 +++ b/packages/client/ui-chat/src/client/chat/ChatView.module.css
-@@ -407,3 +407,14 @@
+@@ -424,3 +424,14 @@
    margin: 0;
    width: max-content;
  }
@@ -102,18 +102,18 @@ index 9929770b35ce50767884e8117cc77262e3fc6822..47c78d16444c5f4442c319d803097ba2
 +  line-height: 20px;
 +}
 diff --git a/packages/client/ui-chat/src/client/chat/ChatView.tsx b/packages/client/ui-chat/src/client/chat/ChatView.tsx
-index e265ab635f61bfa7d1d396a8ad37d9ef422d00a5..e5bc48481250b4d419e5c53763ea520c551bbf27 100644
+index c9143248a1f6cc3239e560e52d05e6f819bc2e01..a8048ed679c81822ec4aa3d247ed0417340b12e0 100644
 --- a/packages/client/ui-chat/src/client/chat/ChatView.tsx
 +++ b/packages/client/ui-chat/src/client/chat/ChatView.tsx
-@@ -13,6 +13,7 @@ import {
- import { isAtOrOutside } from '../contract/group-tree.ts'
+@@ -15,6 +15,7 @@ import { isAtOrOutside } from '../contract/group-tree.ts'
  import type { ChatFlowHookContext, ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
  import type { ChatSnapshot } from '../contract/snapshot.ts'
+ import { markdownLabels } from '../markdown-labels.ts'
 +import { externalTurnAnswerEntries, resolveExternalTurnAnswers } from '../contract/external-turn-answer.ts'
  import { TurnNavigator } from './TurnNavigator.tsx'
  import { mergeTurnRailItems } from './turn-rail-items.ts'
  import { useTextInteraction } from './text-interaction.ts'
-@@ -77,9 +78,15 @@ export function ChatView({
+@@ -79,9 +80,15 @@ export function ChatView({
      }
    }), [getTriggerProps, resolveFilePath, sessionId])
    const order = useChat(s => s.order)
@@ -221,7 +221,7 @@ index 33dfba7c35cf4ae4b452ca1ba49c0622529abd50..7e52985323200357ba55089461b4fcd1
          <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{t('chat.deepDiving')}</span>
        )}
 diff --git a/packages/client/ui-chat/src/client/chat/StatsPills.tsx b/packages/client/ui-chat/src/client/chat/StatsPills.tsx
-index 7108c44719ae64355a8ea2a545953ce61667b2b1..6053616138fb7a0b23644eadc53dc50d34297387 100644
+index dd5060ff5ca46e3521b5f75b7d9ab2d365a2dd66..66de3d898773fae05687fb08f520a58cb958f40b 100644
 --- a/packages/client/ui-chat/src/client/chat/StatsPills.tsx
 +++ b/packages/client/ui-chat/src/client/chat/StatsPills.tsx
 @@ -4,6 +4,8 @@
@@ -240,7 +240,7 @@ index 7108c44719ae64355a8ea2a545953ce61667b2b1..6053616138fb7a0b23644eadc53dc50d
 +import { externalCacheRatio, externalUsageReport, type ExternalUsageReport } from '../contract/external-usage.ts'
 +import { ExternalUsageRows } from './ExternalUsageRows.tsx'
  import { formatCacheHitPercent, formatExactTokens, formatTokens } from './token-format.ts'
- import { MEASURE_STYLE, useStatDialog } from './stat-dialog.ts'
+ import { useStatDialog } from './stat-dialog.ts'
  import css from './StatsPills.module.css'
 @@ -200,7 +204,7 @@ function PlainPill({ stat, icon, label, text }: PillContent) {
   */
@@ -250,7 +250,7 @@ index 7108c44719ae64355a8ea2a545953ce61667b2b1..6053616138fb7a0b23644eadc53dc50d
 +  titleValue?: string | undefined
    children: ReactNode
  }) {
-   const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
+   const { open, setOpen, rootRef, panelRef, anchorName } = useStatDialog()
 @@ -244,6 +248,21 @@ function DialogPill({ stat, icon, label, text, title, titleValue, children }: Pi
    )
  }
@@ -441,7 +441,7 @@ index c29b831ce8153b4470afe33c2b40df0efae5a3be..4270975b1ab985701cb530c82e5f40d5
          t={t}
        />
 diff --git a/packages/client/ui-chat/src/client/chat/TurnUsagePanel.tsx b/packages/client/ui-chat/src/client/chat/TurnUsagePanel.tsx
-index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c53d3a5b53 100644
+index 70cc35aeffd6d5aae5da601c2d8a4dd914a72aea..91cf531602dde9f8df5de0c13dc4d50ba1d65402 100644
 --- a/packages/client/ui-chat/src/client/chat/TurnUsagePanel.tsx
 +++ b/packages/client/ui-chat/src/client/chat/TurnUsagePanel.tsx
 @@ -4,16 +4,27 @@ import { createPortal } from 'react-dom'
@@ -451,7 +451,7 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
 +import { externalCacheRatio, externalUsageReport, type ExternalUsageReport } from '../contract/external-usage.ts'
 +import { ExternalUsageRows } from './ExternalUsageRows.tsx'
  import { formatCacheHitPercent, formatExactTokens, formatTokens } from './token-format.ts'
- import { MEASURE_STYLE, useStatDialog } from './stat-dialog.ts'
+ import { useStatDialog } from './stat-dialog.ts'
  import css from './TurnUsagePanel.module.css'
  import dialogCss from './stat-dialog.module.css'
  
@@ -482,7 +482,7 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
 +export function TurnUsagePanel(props: TurnUsagePanelProps) {
 +  const { usage, externalUsage, sourceLabel, t } = props
 +  const unavailable = props.unavailable === true
-   const { open, setOpen, rootRef, panelRef, pos } = useStatDialog()
+   const { open, setOpen, rootRef, panelRef, anchorName } = useStatDialog()
 -
 -  const cacheHit = usage.cacheReadTokens === undefined
 +  const hasReport = Object.hasOwn(props, 'externalUsage')
@@ -510,7 +510,7 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
 +    route.provider !== 'cliworker-native').map(route => `${route.provider}/${route.model}`).join(', ') ?? '')
  
    return (
-     <span ref={rootRef} className={css.root}>
+     <span ref={rootRef} style={{ anchorName }} className={css.root}>
 @@ -47,37 +75,48 @@ export function TurnUsagePanel({ usage, t }: TurnUsagePanelProps) {
          onClick={() => { setOpen(!open) }}
        >
@@ -526,7 +526,7 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
            role="dialog"
 -          aria-label={t('message.turnUsage.title')}
 +          aria-label={title}
-           style={pos ?? MEASURE_STYLE}
+           style={{ positionAnchor: anchorName }}
          >
            <div className={dialogCss.title}>
              <span className={dialogCss.titleLabel}>
@@ -576,13 +576,13 @@ index 460d1092a2f64f0869ff81a649b6401bfd5a6572..de27c3db51b17ca5bbf0a305e8d249c5
          </div>,
          document.body,
 diff --git a/packages/client/ui-chat/src/client/chat/stat-dialog.module.css b/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
-index 769718d5138f5a9d6a26e61445223747af5011f9..fd7eb3e8c9a41232e8192112a3c4dad0ff1a5b13 100644
+index 2281494877b81212d8dd9586d9235591d1252524..efe3def5b3f63b1d2cf7ad714a23379a062e12a4 100644
 --- a/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
 +++ b/packages/client/ui-chat/src/client/chat/stat-dialog.module.css
-@@ -17,7 +17,7 @@
+@@ -10,7 +10,7 @@
    width: max-content;
-   min-width: min(300px, calc(100vw - 24px), var(--dsh-anchored-max-width, 100vw));
-   max-width: min(440px, calc(100vw - 24px), var(--dsh-anchored-max-width, 100vw));
+   min-width: min(300px, calc(100vw - 24px));
+   max-width: min(440px, calc(100vw - 24px));
 -  padding: 16px;
 +  padding: 12px;
    border: 0;
@@ -973,7 +973,7 @@ index 0000000000000000000000000000000000000000..cd87f7bdf2f1da8485552bb413d609b9
 +  return count(input) && count(cached) && cached <= input ? { cached, input } : undefined
 +}
 diff --git a/packages/client/ui-chat/src/client/index.ts b/packages/client/ui-chat/src/client/index.ts
-index c785329f0a4ef877b55d810df5b0329885364cc6..e1ee96eb3c53a40d468d3b70004ace688d784037 100644
+index 72e7c9f2349cb0197ccd88c62270e3136dd54818..149fc596aca77e100e3c31a4c725fbd746bfe356 100644
 --- a/packages/client/ui-chat/src/client/index.ts
 +++ b/packages/client/ui-chat/src/client/index.ts
 @@ -47,6 +47,8 @@ export type {
@@ -988,14 +988,14 @@ index c785329f0a4ef877b55d810df5b0329885364cc6..e1ee96eb3c53a40d468d3b70004ace68
 @@ -67,3 +69,5 @@ declare module './contract/chat-nodes.ts' {
    interface ChatNodeDataMap extends PublicChatNodeDataMap {}
  }
- export type { ProcessActivity, ProcessActivitySummary, ProcessGroupData } from './contract/process-groups.ts'
+ export type { ProcessActivity, ProcessActivitySummary, ProcessGroupData, RunningProcessActivity } from './contract/process-groups.ts'
 +
 +export type { ExternalTurnAnswer, ExternalTurnAnswerProjection } from './contract/external-turn-answer.ts'
 diff --git a/packages/client/ui-chat/src/client/locale.ts b/packages/client/ui-chat/src/client/locale.ts
-index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643084e449a 100644
+index 4d22cff80e63581828d0b4d2a535b5d6cfe5e114..681f7ba51a3fd0830bef499402936ce85daad2fe 100644
 --- a/packages/client/ui-chat/src/client/locale.ts
 +++ b/packages/client/ui-chat/src/client/locale.ts
-@@ -74,9 +74,34 @@ export const zh = {
+@@ -81,9 +81,34 @@ export const zh = {
    'duration.compactSeconds': '{seconds}秒',
    'duration.compactMinutes': '{minutes}分{seconds}秒',
    'duration.milliseconds': '{milliseconds}毫秒',
@@ -1030,7 +1030,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
    'stats.dialog.usageTitle': 'Token 用量',
    'stats.dialog.llmTime': '模型用时',
    'stats.dialog.toolTime': '工具调用用时',
-@@ -180,9 +205,22 @@ export const zh = {
+@@ -192,9 +217,22 @@ export const zh = {
    'message.tokensPerSecond': '{tps} tok/s',
    'message.turnUsage.title': '本轮用量',
    'message.turnUsage.consumed': '用量 {total}',
@@ -1053,7 +1053,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
    'message.turnUsage.cacheRead': '缓存读取',
    'message.turnUsage.cacheWrite': '缓存写入',
    'message.turnUsage.output': '输出',
-@@ -276,9 +314,34 @@ export const en = {
+@@ -295,9 +333,34 @@ export const en = {
    'duration.compactSeconds': '{seconds}s',
    'duration.compactMinutes': '{minutes}m{seconds}s',
    'duration.milliseconds': '{milliseconds}ms',
@@ -1088,7 +1088,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
    'stats.dialog.usageTitle': 'Token usage',
    'stats.dialog.llmTime': 'LLM time',
    'stats.dialog.toolTime': 'Tool time',
-@@ -382,9 +445,22 @@ export const en = {
+@@ -406,9 +469,22 @@ export const en = {
    'message.tokensPerSecond': '{tps} tok/s',
    'message.turnUsage.title': 'Turn usage',
    'message.turnUsage.consumed': 'Usage {total}',
@@ -1111,7 +1111,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
    'message.turnUsage.cacheRead': 'Cached input',
    'message.turnUsage.cacheWrite': 'Cache write',
    'message.turnUsage.output': 'Output',
-@@ -601,6 +677,45 @@ export const ja = {
+@@ -637,6 +713,45 @@ export const ja = {
    'json.truncated': '… 省略表示、全{total}文字',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1157,7 +1157,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
  } satisfies Record<keyof typeof en, string>
  
  /** Spanish dictionary, checked against the English keys. */
-@@ -800,6 +915,45 @@ export const es = {
+@@ -848,6 +963,45 @@ export const es = {
    'json.truncated': '… truncado, caracteres {total} en total',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1203,7 +1203,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
  } satisfies Record<keyof typeof en, string>
  
  /** French dictionary, checked against the English keys. */
-@@ -999,6 +1153,45 @@ export const fr = {
+@@ -1059,6 +1213,45 @@ export const fr = {
    'json.truncated': '… tronqué, nombre total de caractères {total}',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1249,7 +1249,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
  } satisfies Record<keyof typeof en, string>
  
  /** German dictionary, checked against the English keys. */
-@@ -1198,6 +1391,45 @@ export const de = {
+@@ -1270,6 +1463,45 @@ export const de = {
    'json.truncated': '… gekürzt, {total} Zeichen insgesamt',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1295,7 +1295,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
  } satisfies Record<keyof typeof en, string>
  
  /** Russian dictionary, checked against the English keys. */
-@@ -1397,6 +1629,45 @@ export const ru = {
+@@ -1481,6 +1713,45 @@ export const ru = {
    'json.truncated': '… усечено, всего символов {total}',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1341,7 +1341,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
  } satisfies Record<keyof typeof en, string>
  
  /** Portuguese dictionary, checked against the English keys. */
-@@ -1596,4 +1867,43 @@ export const pt = {
+@@ -1692,4 +1963,43 @@ export const pt = {
    'json.truncated': '… truncado, {total} caracteres no total',
    'clock.md': '{m}/{d}',
    'clock.ymd': '{y}-{m}-{d}',
@@ -1386,7 +1386,7 @@ index 6f0e6eda52ccf1938a75179e72ff5e0087b38e69..cf2680772231d13586c7fb9858499643
 +  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
  } satisfies Record<keyof typeof en, string>
 diff --git a/packages/client/ui-chat/tests/chat-view.client.spec.tsx b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
-index 2bc8286e93585af92b864a545b9cfb77744b2e53..9a39c160f97c8bced8ec66e84d511f2e01743bc3 100644
+index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2add26036 100644
 --- a/packages/client/ui-chat/tests/chat-view.client.spec.tsx
 +++ b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
 @@ -1,5 +1,6 @@
@@ -1394,17 +1394,17 @@ index 2bc8286e93585af92b864a545b9cfb77744b2e53..9a39c160f97c8bced8ec66e84d511f2e
  import { contextMenuHook } from '@deepseek-ai/dsh-client-test-runtime'
 +import { proof as recoveryProof, recoveryEntries, recoverySnapshot, sameStepLateReasoningSnapshot } from './external-turn-answer-fixture.ts'
  
+ import { ChatViewport } from '../src/client/chat/use-chat-viewport.ts'
  import type { ProcessGroupData } from '../src/client/contract/process-groups.ts'
- import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-@@ -576,6 +577,7 @@ function makeHarness(
+@@ -604,6 +605,7 @@ function makeHarness(
      set, setSession: session.set, setChat: chatSource.set, ChatView, props,
      setConnection: (state: ConnectionState) => { connection.set(state) },
-     openFile, openUserFile, loadOlder, loadThrough, openView,
+     openFile, openUserFile, loadOlder, consumeOlder, prepareOlder, loadThrough, openView,
 +    setProjection: (value: typeof props.useProjection) => { props.useProjection = ((...args: Parameters<typeof value>) => value(...args)) as typeof value },
      setOutline: (value: unknown) => { outlineValue = value },
-     chatScroll, forkAt, toolOwners,
+     chatScroll, forkAt, toolOwners, fenceCalls,
      setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
-@@ -4747,6 +4749,124 @@ describe('ChatView', () => {
+@@ -4891,6 +4893,124 @@ describe('ChatView', () => {
        .map(element => element.closest<HTMLElement>('[data-chat-node-key]')?.dataset.chatNodeKey)
      expect(rows).toEqual(['fixture:steering:3'])
    })
@@ -2220,10 +2220,10 @@ index 0000000000000000000000000000000000000000..bc76a1a42fbc40d4ebf83bbd71b02376
 +  expect(dialog.textContent).toContain('43 tok')
 +})
 diff --git a/packages/client/ui-conversation/src/client/apply.ts b/packages/client/ui-conversation/src/client/apply.ts
-index 3328e1e5da84ae045cc834d7e26bdeb0a38e31a0..fdfa0157af67be0e67742b35c730ee1ed047fa10 100644
+index 37420f7fc2ffc77e74074f553312c3910552594f..ef4430101e29230d064e1c547acf803d136ed9d7 100644
 --- a/packages/client/ui-conversation/src/client/apply.ts
 +++ b/packages/client/ui-conversation/src/client/apply.ts
-@@ -550,10 +550,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
+@@ -556,10 +556,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
          },
          toggleCommandMenu: inputTriggers === undefined
            ? undefined
@@ -2317,13 +2317,13 @@ index 0000000000000000000000000000000000000000..faaa0610ff5fa5378df1526f97dfa4c6
 +    ? state as TelemetryUnavailable : undefined
 +}
 diff --git a/packages/client/ui-conversation/src/client/contract/slots.ts b/packages/client/ui-conversation/src/client/contract/slots.ts
-index 0c438e0f4cee8d8eed1f3c3ef70ab43bcedaf9cb..7997d26cd72a3cc505c65c5b5230636517aacf8c 100644
+index f8bbf67c5bf91c52cfa20521204a1b24134c0412..f1c1a57ebc0398aa20dd409a1e4f9f9e219d7402 100644
 --- a/packages/client/ui-conversation/src/client/contract/slots.ts
 +++ b/packages/client/ui-conversation/src/client/contract/slots.ts
-@@ -535,6 +535,12 @@ export interface ConversationSessionHeaderInjected {
- export interface ComposerBarOwnerProps {
-   /** Hero uses centered placement; composer uses the active bottom placement. */
+@@ -547,6 +547,12 @@ export interface ComposerBarOwnerProps {
    variant: 'hero' | 'composer'
+   /** Conversation content occurrence rendering this composer; an unaddressed document paste reaches the main one. */
+   occurrence: ConversationContentInputProps['variant']
 +  /** Main uses the ordinary primary Stop/Send placement without changing Session capabilities. */
 +  composerPresentation?: 'default' | 'main'
 +  /** Registered slash source opened by the native command launcher; defaults to command. */
@@ -2333,16 +2333,16 @@ index 0c438e0f4cee8d8eed1f3c3ef70ab43bcedaf9cb..7997d26cd72a3cc505c65c5b52306365
    /** A feature-owned reason that makes message input inert while leaving model selection live. */
    blocked?: { readonly reason: string }
    /** Lock all message actions while preserving the resident composer surface. */
-@@ -563,7 +569,7 @@ export interface ComposerBarInjected {
+@@ -600,7 +606,7 @@ export interface ComposerBarInjected {
    resolveDraftAttachments: ((ids: readonly DraftAttachmentId[]) => readonly ComposerAttachment[]) | undefined
    /** Restart one failed file upload; absent without a session. */
    retryFileUpload: ((id: DraftAttachmentId) => void) | undefined
 -  toggleCommandMenu: ((selection: EditSelection) => void) | undefined
 +  toggleCommandMenu: ((selection: EditSelection, source?: string) => void) | undefined
    stop: (() => void) | undefined
-   hooks: {
-     /** Readable sequence while the fixed Stop command is registered. */
-@@ -635,6 +641,12 @@ export interface ConversationContentInputProps {
+   /**
+    * Submit empty input to retry the displayed failed generation.
+@@ -683,6 +689,12 @@ export interface ConversationContentInputProps {
    variant: 'main' | 'embedded'
    phase: 'settling' | 'hero' | 'active'
    hero: boolean
@@ -2356,7 +2356,7 @@ index 0c438e0f4cee8d8eed1f3c3ef70ab43bcedaf9cb..7997d26cd72a3cc505c65c5b52306365
  
  /** Values passed from shared content to its occurrence-selected width controls. */
 diff --git a/packages/client/ui-conversation/src/client/index.ts b/packages/client/ui-conversation/src/client/index.ts
-index 7a39200c30905ce5bf740cb286001119957c47b6..963792fc4b4382ccfbf319a772a09ab58f72231b 100644
+index 8a1b95e9411f552844f71a167fe9f40b2cfde30a..e6ed587d5951541f8660026f52400ed4f337abbc 100644
 --- a/packages/client/ui-conversation/src/client/index.ts
 +++ b/packages/client/ui-conversation/src/client/index.ts
 @@ -117,3 +117,4 @@ declare module '@deepseek-ai/cordis' {
@@ -2365,7 +2365,7 @@ index 7a39200c30905ce5bf740cb286001119957c47b6..963792fc4b4382ccfbf319a772a09ab5
  export type { ConversationInteractionRegistry } from './conversation/interaction-registry.ts'
 +export type { TelemetryUnavailable, TelemetryAvailability, ExternalRequestState } from './contract/external-status.ts'
 diff --git a/packages/client/ui-conversation/src/client/locales.ts b/packages/client/ui-conversation/src/client/locales.ts
-index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634f3ddbe07 100644
+index eb3c04782a9963be540459df15a71083da3f856b..4cf12d18a20dabccb7e0899d89c28d4f462ae8b7 100644
 --- a/packages/client/ui-conversation/src/client/locales.ts
 +++ b/packages/client/ui-conversation/src/client/locales.ts
 @@ -68,7 +68,19 @@ export const zh = {
@@ -2388,7 +2388,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
    'context.system': '系统提示词',
    'context.tools': '工具定义',
    'context.messages': '对话消息',
-@@ -458,7 +470,19 @@ export const en = {
+@@ -467,7 +479,19 @@ export const en = {
    'file.notStaged': 'The file has not finished uploading; re-add it and try again',
    'file.label': 'File',
    'context.aria': '{percent} of context used',
@@ -2408,7 +2408,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
    'context.system': 'System prompt',
    'context.tools': 'Tool definitions',
    'context.messages': 'Messages',
-@@ -1171,6 +1195,19 @@ export const ja = {
+@@ -1198,6 +1222,19 @@ export const ja = {
    'terminal.expandRest': '… 残り{n}行',
    'terminal.sendInput': '(入力を送信)',
    'terminal.session': 'ターミナル {sessionId}',
@@ -2428,7 +2428,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
  } satisfies Record<keyof typeof en, string>
  
  /** Spanish dictionary, checked against the English keys. */
-@@ -1560,6 +1597,19 @@ export const es = {
+@@ -1596,6 +1633,19 @@ export const es = {
    'detail.schedule.active': 'Habilitado',
    'detail.schedule.paused': 'Pausada',
    'detail.schedule.ended': 'Finalizada',
@@ -2448,7 +2448,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
  } satisfies Record<keyof typeof en, string>
  
  /** French dictionary, checked against the English keys. */
-@@ -1949,6 +1999,19 @@ export const fr = {
+@@ -1994,6 +2044,19 @@ export const fr = {
    'detail.schedule.active': 'Activé',
    'detail.schedule.paused': 'Suspendue',
    'detail.schedule.ended': 'Terminée',
@@ -2468,7 +2468,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
  } satisfies Record<keyof typeof en, string>
  
  /** German dictionary, checked against the English keys. */
-@@ -2338,6 +2401,19 @@ export const de = {
+@@ -2392,6 +2455,19 @@ export const de = {
    'detail.schedule.active': 'Aktiviert',
    'detail.schedule.paused': 'Pausiert',
    'detail.schedule.ended': 'Beendet',
@@ -2488,7 +2488,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
  } satisfies Record<keyof typeof en, string>
  
  /** Russian dictionary, checked against the English keys. */
-@@ -2727,6 +2803,19 @@ export const ru = {
+@@ -2790,6 +2866,19 @@ export const ru = {
    'detail.schedule.active': 'Включено',
    'detail.schedule.paused': 'Приостановлена',
    'detail.schedule.ended': 'Завершена',
@@ -2508,7 +2508,7 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
  } satisfies Record<keyof typeof en, string>
  
  /** Portuguese dictionary, checked against the English keys. */
-@@ -3116,4 +3205,17 @@ export const pt = {
+@@ -3188,4 +3277,17 @@ export const pt = {
    'detail.schedule.active': 'Habilitado',
    'detail.schedule.paused': 'Pausada',
    'detail.schedule.ended': 'Concluída',
@@ -2527,10 +2527,10 @@ index 2918c177a0476a159daea567ad496c86c96ce958..f5421819435dcb3c5ac8da09fd74e634
 +  'context.compositionInvalid': 'This record cannot provide valid context composition proportions.',
  } satisfies Record<keyof typeof en, string>
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
-index a563c66d1b7b7553aee59de15c29fc812495ffb3..a4a2b766ec6890bf0ad24a16c760375a6c4e1474 100644
+index 6d50c03311a7b3af6ce0d35a061f3df2e298678d..bccfeb30a56f4a39774c8ea370f7cb505995f703 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
 +++ b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.module.css
-@@ -104,7 +104,7 @@
+@@ -115,7 +115,7 @@
  .bar {
    display: flex;
    gap: 1px;
@@ -2539,7 +2539,7 @@ index a563c66d1b7b7553aee59de15c29fc812495ffb3..a4a2b766ec6890bf0ad24a16c760375a
    height: 4px;
    border-radius: 999px;
    corner-shape: round;
-@@ -144,7 +144,7 @@
+@@ -154,7 +154,7 @@
  }
  
  .rows {
@@ -2549,12 +2549,12 @@ index a563c66d1b7b7553aee59de15c29fc812495ffb3..a4a2b766ec6890bf0ad24a16c760375a
  
  .row {
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
-index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c6068edb9 100644
+index 5eafe475ffb8f9c4163109bece1b19ecbd9417ad..b1cf4fcafd239e52a689274358ab46116e5783b1 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx
 @@ -11,7 +11,8 @@ import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/clie
  import type {} from '@deepseek-ai/dsh-token-meter/client'
- import { Tooltip, useAnchoredPosition, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+ import { Tooltip, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
  import type { ComposerBarProps } from '../contract/slots.ts'
 -import { contextOccupancy } from '../context-occupancy.ts'
 +import { telemetryUnavailable } from '../contract/external-status.ts'
@@ -2605,10 +2605,10 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
 +  const nativeRatio = typeof external?.ratio === 'number' && Number.isFinite(external.ratio) &&
 +    external.ratio >= 0 && external.ratio <= 1 ? external.ratio : undefined
 +  const available = context !== null || nativeRatio !== undefined || availability !== undefined
-   const position = useAnchoredPosition({
-     open: open && available,
-     anchorRef: rootRef,
-@@ -86,9 +112,23 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+   const anchorName = `--dsh-context-${useId().replaceAll(':', '')}`
+   useDismissOnOutsidePointer(rootRef, open && available, setOpen, panelRef)
+ 
+@@ -79,9 +105,23 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
      return () => { document.removeEventListener('keydown', onKeyDown) }
    }, [available, open])
  
@@ -2617,7 +2617,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
 -  const reading = `${percent}%`
 +  if (context === null && nativeRatio === undefined) {
 +    if (availability === undefined) return null
-+    return <span ref={rootRef} className={css.root}>
++    return <span ref={rootRef} style={{ anchorName }} className={css.root}>
 +      <button type="button" className={css.trigger} aria-haspopup="dialog" aria-expanded={open}
 +        onClick={() => { setOpen(!open) }}>
 +        <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden>
@@ -2625,7 +2625,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
 +        </svg><span>{t('context.unknown')}</span>
 +      </button>
 +      {open && createPortal(<div ref={panelRef} className={css.panel} role="dialog"
-+        aria-label={t('context.unknown')} style={position ?? { visibility: 'hidden', left: 0, top: 0 }}>
++        aria-label={t('context.unknown')} style={{ positionAnchor: anchorName }}>
 +        <div className={css.header}><span className={css.headline}>{t('context.unknown')}</span></div>
 +      </div>, document.body)}
 +    </span>
@@ -2635,7 +2635,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
    const [headBefore = '', headAfter = ''] = t('context.aria', { percent: READING_SLOT })
      .split(READING_SLOT)
      .map(part => part.trim())
-@@ -97,12 +137,16 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+@@ -90,12 +130,16 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
    // breakdown only proportions its colored parts. A zero-width part is dropped
    // instead of rendered: `.segment`'s min-width keeps a hairline part visible,
    // which at 0% occupancy would draw a filled bar over an empty context.
@@ -2657,7 +2657,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
    const segments = parts.filter(part => part.width > 0)
  
    return (
-@@ -118,14 +162,14 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+@@ -111,14 +155,14 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
          >
            <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden>
              <circle className={css.track} cx="7" cy="7" r={RADIUS} />
@@ -2674,7 +2674,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
            </svg>
            <span>{reading}</span>
          </button>
-@@ -147,7 +191,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+@@ -140,7 +184,7 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
              {/* `~`: usedTokens prefers projectedTokens, whose surface delta is
                  heuristically repriced on top of the provider-anchored sample. */}
              <span className={css.figures}>
@@ -2683,7 +2683,7 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
              </span>
            </div>
            <div className={css.bar}>
-@@ -159,15 +203,15 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+@@ -152,15 +196,15 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
                />
              ))}
            </div>
@@ -2703,13 +2703,13 @@ index 85698e1ccb6266d07da7936b0fce4fe95345f884..c063fa3729265ce7446858fa30ca622c
                ))}
              </dl>
 diff --git a/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx b/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
-index 218082ae3155f5f1040c82ca26b17378fbecb175..eed9566cf6952a4663a2c7cea8a486212535d175 100644
+index 5c5d1149f8003940a19ae1c6bd6d9750fcbe3adb..e222f07429ce16e0a40d7c043567a4a025fd27c5 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/ConversationContent.tsx
-@@ -146,6 +146,9 @@ export function ConversationContent(props: ConversationContentProps) {
-   const blocked = !inert && composerBlock !== undefined
+@@ -147,6 +147,9 @@ export function ConversationContent(props: ConversationContentProps) {
    const inputBar = renderSlot('conversation.composer.bar', {
      variant: hero ? 'hero' : 'composer',
+     occurrence: props.variant,
 +    ...(props.composerPresentation === undefined ? {} : { composerPresentation: props.composerPresentation }),
 +    ...(props.commandSource === undefined ? {} : { commandSource: props.commandSource }),
 +    ...(props.childImageUploads === undefined ? {} : { childImageUploads: props.childImageUploads }),
@@ -2717,13 +2717,13 @@ index 218082ae3155f5f1040c82ca26b17378fbecb175..eed9566cf6952a4663a2c7cea8a48621
        ? {
          disabled: true,
 diff --git a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
-index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec4421d019da 100644
+index f7957393d306d9fa0ad24b1884fffdaab39b290b..2f16d9b9e9c4bf2698f92c14b5da698c7d48cef4 100644
 --- a/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
 +++ b/packages/client/ui-conversation/src/client/skeleton/InputBar.tsx
 @@ -50,6 +50,7 @@ export const InputBar = memo(function InputBar({
    renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher, useStopShortcut,
    useAccess,
-   useProjection, sessionId, variant, disabled: inert = false, blocked,
+   useProjection, sessionId, variant, occurrence, disabled: inert = false, blocked,
 +  composerPresentation = 'default', commandSource, childImageUploads = false,
    workspacePickerOpen = false, onRequestWorkspace,
    placeholder, accessory,
@@ -2737,16 +2737,7 @@ index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec44
    const [activity, setActivity] = useState(false)
    useEffect(() => { setActivity(false) }, [sessionId])
    const promptError = useSession(s => s.promptError) ?? null
-@@ -144,7 +145,7 @@ export const InputBar = memo(function InputBar({
-   const scrollRef = useRef<HTMLDivElement | null>(null)
- 
-   // A continuable child without its live parent cannot accept human input,
--  // but its independent Stop below stays available while it runs.
-+  // but its Stop remains available in either presentation while it runs.
-   const continuable = subagent?.address.mode === 'continuable'
-   const parentOffline = continuable && subagent.parentAvailable !== true
-   // Running input stays free; locked = session removed, the
-@@ -338,7 +339,8 @@ export const InputBar = memo(function InputBar({
+@@ -350,7 +351,8 @@ export const InputBar = memo(function InputBar({
      // leaves focus on the button, and restoring it afterwards would re-track an
      // empty draft and close the menu again.
      if (editor !== null) focusDraftEditor(editor, revealSelection)
@@ -2756,7 +2747,7 @@ index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec44
    }
  
    // The no-session Workspace trigger: the resident editable div acts as the
-@@ -358,13 +360,16 @@ export const InputBar = memo(function InputBar({
+@@ -370,17 +372,17 @@ export const InputBar = memo(function InputBar({
    // button (no pending upload) over a non-empty draft that is neither a
    // claimed command nor a `/` line headed for adjudication — so it never
    // describes a delivery the click cannot or does not perform; every other
@@ -2764,21 +2755,22 @@ index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec44
 -  // exposes Stop independently, and so does a running session while a
 -  // message waits for the Host.
 -  const primaryStops = running && subagent === null && !sending && (empty || blocked !== undefined)
-+  // state keeps plain Send. A continuable child defaults to independent Stop;
-+  // its presentation host can select the ordinary primary-button placement,
-+  // which then behaves like a parent session. A running session exposes Stop
-+  // independently while a message waits for the Host.
++  // Worker main presentation follows the primary Stop placement; preserve the
++  // native Retry conditions and independent Stop while waiting for Host receipt.
 +  const mainPlacement = subagent === null || composerPresentation === 'main'
-+  const primaryStops = running && mainPlacement && !sending
-+    && (empty || blocked !== undefined || (composerPresentation === 'main' && parentOffline))
++  const primaryStops = running && mainPlacement && !sending && (empty || blocked !== undefined)
+   const primaryRetries = !running && subagent === null && empty && retryableFailure !== undefined
+     && !pendingHumanInput && historyOpen && !submissionPending && !disabled && input.queue.length === 0
+     && input.phase === 'plain' && retry !== undefined
    // Disabled native buttons may omit mouseleave; their tooltip must close from state.
-   const primaryDisabled = primaryStops ? stopAction === undefined : empty || disabled || machineBusy || uploadsPending
+   const primaryDisabled = primaryStops ? stopAction === undefined
+     : (!primaryRetries && empty) || disabled || machineBusy || uploadsPending
 -  const interruptible = running && (continuable || (sending && subagent === null))
 +  const interruptible = running && ((continuable && composerPresentation !== 'main') || (sending && mainPlacement))
    const primarySubmitMode = resolveSubmitMode(busyEnter, running, 'enter', steeringAvailable)
    const plainMessageDraft = !empty && input?.phase === 'plain' && !draft.trimStart().startsWith('/')
    const primaryLabel = primaryStops
-@@ -501,7 +506,7 @@ export const InputBar = memo(function InputBar({
+@@ -521,7 +523,7 @@ export const InputBar = memo(function InputBar({
                ref={fileInputRef}
                type="file"
                multiple
@@ -2788,7 +2780,7 @@ index 892a41022331f529188cbbed9221b89d7f6d62ad..c9fb68040d0a5e1b6c9eda5df29bec44
                onChange={onPickFiles}
              />
 diff --git a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
-index d968bdc4d861824395a920798a34c6980d6ed06b..be66197f672a994b7341b54af84a79d91262b9f4 100644
+index e6384343ef440434dfaabddac65648288d8a1b6a..42a5040c5a1dbae4077b93e908f06ee6a58e0770 100644
 --- a/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/apply-inject.client.spec.tsx
 @@ -4,6 +4,7 @@ import { render, cleanup } from '@testing-library/react'
@@ -2799,7 +2791,7 @@ index d968bdc4d861824395a920798a34c6980d6ed06b..be66197f672a994b7341b54af84a79d9
  import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
  import { describe, expect, it, onTestFinished, vi } from 'vitest'
  import type { CommandContribution, CommandUiContract } from '@deepseek-ai/dsh-client-ui-commands/client'
-@@ -517,6 +518,29 @@ describe('Conversation inject API', () => {
+@@ -641,6 +642,29 @@ describe('Conversation inject API', () => {
      }
    })
  
@@ -3047,20 +3039,20 @@ index 86271de69f610f74d40b2d3845efd4c2b6629e59..01c9ccc38eda52f2688f439ecba159db
 +
  })
 diff --git a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
-index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a333f66dcb2 100644
+index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..302cb3f9ec8c305c17e3a639a709446457e50f82 100644
 --- a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
-@@ -95,6 +95,9 @@ interface BenchOptions {
-   /** The hub's steer-all face (empty-draft accelerated Enter). */
-   steerQueue?: () => void
+@@ -98,6 +98,9 @@ interface BenchOptions {
    variant?: 'hero' | 'composer'
+   occurrence?: 'main' | 'embedded'
+   registerFileIntake?: ComposerFileIntake
 +  composerPresentation?: 'default' | 'main'
 +  commandSource?: string
 +  childImageUploads?: boolean
    placeholder?: string
    t?: InputBarProps['t']
    accessory?: React.ReactNode
-@@ -112,7 +115,7 @@ interface BenchOptions {
+@@ -115,7 +118,7 @@ interface BenchOptions {
    addFiles?: (files: readonly File[], directories?: ReadonlySet<File>) => string | null
    commandMenuOpen?: boolean
    busyEnter?: 'queue' | 'steer'
@@ -3069,28 +3061,26 @@ index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a33
  }
  
  /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
-@@ -226,6 +229,9 @@ function bench(over?: BenchOptions) {
-     t: over?.t ?? makeTranslate(zh, commonZh),
+@@ -235,6 +238,9 @@ function bench(over?: BenchOptions) {
      renderSlot,
      variant: over?.variant ?? 'composer',
+     occurrence: over?.occurrence ?? 'main',
 +    ...(over?.composerPresentation === undefined ? {} : { composerPresentation: over.composerPresentation }),
 +    ...(over?.commandSource === undefined ? {} : { commandSource: over.commandSource }),
 +    ...(over?.childImageUploads === undefined ? {} : { childImageUploads: over.childImageUploads }),
      ...(over?.inert === true ? { disabled: true } : {}),
      ...(over?.blocked !== undefined ? { blocked: over.blocked } : {}),
      ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
-@@ -236,8 +242,8 @@ function bench(over?: BenchOptions) {
+@@ -245,7 +251,7 @@ function bench(over?: BenchOptions) {
    const view = render(<InputBar {...props} />)
    const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
    const sendableDraft = (over?.draft?.trim() ?? '') !== '' || (over?.attachments?.length ?? 0) > 0
 -  const primaryStops = over?.running === true && over.subagent === undefined
--    && (!sendableDraft || over.blocked !== undefined)
 +  const primaryStops = over?.running === true && (over.subagent === undefined || over.composerPresentation === 'main')
-+    && (!sendableDraft || over.blocked !== undefined || (over.composerPresentation === 'main' && over.subagent?.address.mode === 'continuable' && over.subagent.parentAvailable !== true))
+     && (!sendableDraft || over.blocked !== undefined)
    // A running steer-capable composer (ordinary session or continuable child
    // with its parent online) labels Send by the delivery mode it performs over
-   // a plain message draft; idle sessions, one-shot children, locked
-@@ -1403,6 +1409,75 @@ describe('running and lock semantics', () => {
+@@ -1458,6 +1464,76 @@ describe('running and lock semantics', () => {
      expect(empty.button.disabled).toBe(true)
    })
  
@@ -3117,18 +3107,19 @@ index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a33
 +    expect(b.view.getByRole('button', { name: '发送消息' }).getAttribute('disabled')).not.toBeNull()
 +  })
 +
-+  it('retains native unavailable-parent Stop and draft behavior under main child presentation', () => {
++  it('retains native direct child input when the parent is unavailable under main presentation', async () => {
 +    const subagent = {
 +      address: { parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' as const },
 +      parentAvailable: false,
 +    }
 +    const b = bench({ running: true, subagent, draft: 'retained', composerPresentation: 'main' })
-+    expect(b.inputDisabled).toBe(true)
-+    expect(b.view.getAllByRole('button', { name: '停止生成' })).toHaveLength(1)
-+    fireEvent.keyDown(b.textarea, { key: 'Enter' })
-+    expect(b.sink).not.toHaveBeenCalled()
++    expect(b.inputDisabled).toBe(false)
++    expect(b.view.queryByRole('button', { name: '停止生成' })).toBeNull()
 +    expect(b.shell.state.getSnapshot().draft).toBe('retained')
-+    fireEvent.click(b.button)
++    fireEvent.click(b.view.getByRole('button', { name: '排队发送' }))
++    expect(b.sink).toHaveBeenCalledWith('retained', [], 'queue', expect.any(AbortSignal))
++    await vi.waitFor(() => { expect(b.view.getAllByRole('button', { name: '停止生成' })).toHaveLength(1) })
++    fireEvent.click(b.view.getByRole('button', { name: '停止生成' }))
 +    expect(b.stop).toHaveBeenCalledOnce()
 +  })
 +
@@ -3166,7 +3157,7 @@ index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a33
    it.each([
      ['active plan', { plan: { active: true, pending: false } }],
      ['active goal', { goal: { phase: 'active' as const, objective: 'inspect files' } }],
-@@ -2101,6 +2176,21 @@ describe('command launcher chrome and control seats', () => {
+@@ -2144,6 +2220,21 @@ describe('command launcher chrome and control seats', () => {
      expect(view.queryByLabelText('Model')).toBeNull()
    })
  
@@ -3189,7 +3180,7 @@ index bf3f83e1336b6285278b68e8e9692bf0c76e4487..65aa12bd0759ee288ef17001e3814a33
      const toggleCommandMenu = vi.fn()
      const { view, shell, menuLauncher } = bench({ draft: 'draft text', toggleCommandMenu })
 diff --git a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
-index 8eb125df031efc57e5c7caa31ffcfa44924d437b..8542908fde99a765c56aa46c3edc12947889e697 100644
+index 6f599b2d22f27615a764e296b81f4992267f62e6..3d35ad42283f40bb291bd3155de51c3c38a95d02 100644
 --- a/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/skeleton.client.spec.tsx
 @@ -140,6 +140,9 @@ function mount(
@@ -3202,16 +3193,16 @@ index 8eb125df031efc57e5c7caa31ffcfa44924d437b..8542908fde99a765c56aa46c3edc1294
      /** Mutable view ledger used by registration-order regressions. */
      viewTabs?: ViewTab[]
      /** Persisted ids of unpinned View tabs. */
-@@ -205,7 +208,7 @@ function mount(
+@@ -207,7 +210,7 @@ function mount(
    const setPinned = vi.fn<(id: string, pinned: boolean) => void>()
-   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode }) => {
+   const renderSlot = ((key: string, owner: object, opts?: { only?: string; fallback?: ReactNode; children?: ReactNode }) => {
      slotCalls.push(key)
 -    if (key === 'conversation.input.model' || key === 'conversation.input.plan') {
 +    if (key === 'conversation.composer.bar' || key === 'conversation.input.model' || key === 'conversation.input.plan') {
        seatOwners.push({ key, owner })
      }
      if (key === 'conversation.hero.workspace') { pickerOwner = owner; return null }
-@@ -375,7 +378,10 @@ function mount(
+@@ -385,7 +388,10 @@ function mount(
      )) as ConversationContentProps['useFactorySlot']
      return (
        <FactoryViewsTestContext.Provider value={common}>
@@ -3223,7 +3214,7 @@ index 8eb125df031efc57e5c7caa31ffcfa44924d437b..8542908fde99a765c56aa46c3edc1294
        </FactoryViewsTestContext.Provider>
      )
    }) as ConversationSlotProps['renderFactorySlot']
-@@ -410,6 +416,23 @@ function mount(
+@@ -421,6 +427,23 @@ function mount(
    }
  }
  
@@ -3246,7 +3237,7 @@ index 8eb125df031efc57e5c7caa31ffcfa44924d437b..8542908fde99a765c56aa46c3edc1294
 +
  describe('Hero chrome', () => {
    it('renders the English preview badge through the hero locale seat', () => {
-     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
+     const renderSlot = vi.fn<(key: string, owner: object, opts?: { fallback?: ReactNode }) => ReactNode>(() => null)
 diff --git a/packages/client/ui-conversation/tests/telemetry-availability.client.spec.tsx b/packages/client/ui-conversation/tests/telemetry-availability.client.spec.tsx
 new file mode 100644
 index 0000000000000000000000000000000000000000..a2fbd21b20b9a16bf274cc4d240478096cfb65e7
@@ -3444,7 +3435,7 @@ index 860a82287ca5973bb159847f6549593ad2ff4de9..96fe8eb5f9cccb8336edeb5cf7037cb3
        key: binding.sessionId,
        ctx: binding.ctx,
 diff --git a/packages/client/ui-session/tests/ui-session.client.spec.ts b/packages/client/ui-session/tests/ui-session.client.spec.ts
-index c12901a0d8a1b7dde79699b8c35322411f953b7c..dd0fff972c084c4f5ac3a8ee3977cf72a76188d9 100644
+index 6afbe4be49cee0cf79884960419f42c86dba82c2..5a17eb205feb51f154784acc13996aee4dbe8ee0 100644
 --- a/packages/client/ui-session/tests/ui-session.client.spec.ts
 +++ b/packages/client/ui-session/tests/ui-session.client.spec.ts
 @@ -39,6 +39,13 @@ const sessionId = (value: string): SessionId => value as SessionId
@@ -3599,7 +3590,7 @@ index c12901a0d8a1b7dde79699b8c35322411f953b7c..dd0fff972c084c4f5ac3a8ee3977cf72
    await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose()))
    vi.restoreAllMocks()
 diff --git a/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx b/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx
-index ddc5bed7f925142a6744e0852d4161731beaba14..49eaca8d42355bb5701c0ac4c3392405e5be75bf 100644
+index 6d9c3fcbb56751c5f3f32a78a9225028f1a04470..5e409af5384e918062712d78f59c2a3edf02fffe 100644
 --- a/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx
 +++ b/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx
 @@ -4,7 +4,7 @@ import type {
@@ -3633,8 +3624,8 @@ index ddc5bed7f925142a6744e0852d4161731beaba14..49eaca8d42355bb5701c0ac4c3392405
  }: ConversationSlotPanelProps) {
    const session = useSession(value => value)
    const conversation = useConversation(value => value)
-@@ -142,7 +146,12 @@ export function ConversationSlotPanel({
-     || parentAvailabilityPending
+@@ -139,7 +143,12 @@ export function ConversationSlotPanel({
+   const settling = (shellPhase === 'blank' && session.openState === 'loading' && summaryBlank !== true)
    const hero = shellPhase === 'blank' && (session.openState === 'open' || summaryBlank === true)
    const phase = settling ? 'settling' : hero ? 'hero' : 'active'
 -  return renderFactorySlot('conversation.content', { variant: 'embedded', phase, hero }, {
@@ -3648,7 +3639,7 @@ index ddc5bed7f925142a6744e0852d4161731beaba14..49eaca8d42355bb5701c0ac4c3392405
    })
  }
 diff --git a/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx b/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx
-index 7b674204985bb1bd07bf04ad4eb0588d6c3238b3..dcf42f35f9a7704659c2c506afdf0986a38c6489 100644
+index f7417ea9109aa626cf79d59b5063baee20c1e917..d60b172233dd4f4e134b1c0153ae17531d44eb9c 100644
 --- a/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx
 +++ b/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx
 @@ -225,4 +225,23 @@ describe('Sidebar chat components', () => {

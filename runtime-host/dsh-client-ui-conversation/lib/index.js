@@ -16,7 +16,7 @@ z.object(ConversationSettingsFields);
 //#region lib/types/index.js
 /** Live preferences projected to the browser. */
 const Config = z.object({ [BUSY_ENTER_FIELD]: ConversationSettingsFields[BUSY_ENTER_FIELD].volatile() });
-/** Host preferences are consumed through the configuration form projection.
+/** Register browser conversation preferences.
 * @param ctx Plugin context used for optional settings presentation.
 */
 function apply(ctx) {

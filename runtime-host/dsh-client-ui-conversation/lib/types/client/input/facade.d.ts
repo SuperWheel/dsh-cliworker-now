@@ -12,6 +12,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { InboxState } from '@deepseek-ai/dsh-agent/types';
 import { type ObservableSnapshot, type SnapshotStore } from '@deepseek-ai/dsh-client-store';
 import type { LexicalEditor } from 'lexical';
+import type { QuoteSummary } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { CommandClaim, ConsumeTokenRequest, DraftAttachmentId, DraftInitializationOptions, DraftInitializationResult, InputActions, InputNotice, InputState, InputTriggerController, SessionInput, SubmitAttachment, SubmitOutcome } from '../contract/input.ts';
 import type { ArbitrateKey, ArbitrateOutcome, ComposerKeyboard, DraftInput, DraftSnapshot, ReferenceInsert, TokenSpan } from '../contract/draft-editor.ts';
 import type { InputSubmitMode, MessageSubmission, MessageSubmissionState } from '../contract/composer-submission.ts';
@@ -107,8 +108,12 @@ export declare class SessionInputShell implements SessionInput {
      * @param text - plain text or the complete semantic document.
      */
     setDraft(text: DraftInput): void;
-    /** @param text - selected transcript text. @returns whether the editable draft accepted the quote. */
-    insertQuote(text: string): boolean;
+    /**
+     * @param text - selected transcript text.
+     * @param summary - readable composer display of the quote.
+     * @returns whether the editable draft accepted the quote.
+     */
+    insertQuote(text: string, summary?: QuoteSummary): boolean;
     /**
      * Reconnect optional catalog notifications and resume a pending command
      * chip restore without waiting for another edit.
@@ -169,8 +174,9 @@ export declare class SessionInputShell implements SessionInput {
      * out from the machine; this method only feeds the event. Lock entry
      * (adjudicating/submitting/sending) force-closes the transient layers: the
      * popup dismisses and the menu tracks frozen.
+     * @param allowEmpty - explicitly admit empty continuation input through the default sink.
      */
-    submit(mode?: InputSubmitMode, source?: 'click' | 'enter'): void;
+    submit(mode?: InputSubmitMode, source?: 'click' | 'enter', allowEmpty?: boolean): void;
     /**
      * Keyboard arbitration while the menu is open.
      * @param key - the intercepted key.

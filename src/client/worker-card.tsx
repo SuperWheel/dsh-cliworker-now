@@ -82,10 +82,9 @@ export function WorkerCard({
         autoFocus
         className="cwn-worker-menu-anchor"
         listClassName="cwn-worker-menu"
-        getAnchorRect={() => {
-          if (point.current) return new DOMRect(point.current.x, point.current.y, 0, 0)
-          return card.current?.getBoundingClientRect() ?? openButton.current?.getBoundingClientRect() ?? null
-        }}
+        anchorRef={point.current ? undefined : card}
+        anchorPoint={point.current}
+        returnFocus={() => openButton.current}
         onClose={() => setMenu(false)}
         items={entries}
         onSelect={(id) => {
@@ -93,62 +92,61 @@ export function WorkerCard({
           if (id === 'open') onOpen()
           else if (id === 'title' || id === 'name' || id === 'delete') onManage(id)
         }}
-        anchor={
-          <div className="cwn-worker-layout">
-            <button
-              ref={openButton}
-              type="button"
-              className="cwn-worker-open"
-              data-open-worker-id={worker.id}
-              aria-haspopup="menu"
-              aria-expanded={menu}
-              aria-keyshortcuts="Shift+F10"
-              tabIndex={collapsed ? -1 : undefined}
-              onClick={() => {
-                if (!collapsed) onOpen()
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
-                  if (collapsed) return
-                  event.preventDefault()
-                  event.stopPropagation()
-                  openMenu()
-                }
-              }}
-            >
-              <span className="cwn-worker-line">
-                <span className="cwn-worker-title">{worker.title}</span>
-                {worker.initiator && <>
-                  <span className="cwn-meta-divider cwn-name-divider cwn-initiator-divider" aria-hidden="true" />
-                  <span className="cwn-worker-initiator">{t('由 {name} 发起', { name: worker.initiator.name })}</span>
-                </>}
-                <span className={`cwn-worker-status ${worker.status}`}>
-                  <span className={`cwn-dot ${worker.status}`} />
-                  {isUserInterrupted(worker)
-                    ? t('已停止')
-                    : worker.status === 'running' && worker.approvalWaiting
-                      ? t('等待审批')
-                      : t(status[worker.status])}
-                </span>
-              </span>
-            </button>
-            <div className="cwn-worker-meta">
-              <NameCopy name={workerName(worker)} disabled={collapsed} />
-              <span className="cwn-meta-divider cwn-name-divider" aria-hidden="true" />
-              <span className="cwn-worker-model" title={displayModelName(worker.preference)}>
-                {displayModelName(worker.preference)}
-              </span>
-              <span className="cwn-meta-divider" aria-hidden="true">
-                ·
-              </span>
-              <span>{effortLabel(worker.preference.effort)}</span>
-            </div>
-            <span className="cwn-worker-chevron" aria-hidden="true">
-              <Glyph name="chevron" />
-            </span>
-          </div>
-        }
+        anchor={null}
       />
+      <div className="cwn-worker-layout">
+        <button
+          ref={openButton}
+          type="button"
+          className="cwn-worker-open"
+          data-open-worker-id={worker.id}
+          aria-haspopup="menu"
+          aria-expanded={menu}
+          aria-keyshortcuts="Shift+F10"
+          tabIndex={collapsed ? -1 : undefined}
+          onClick={() => {
+            if (!collapsed) onOpen()
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
+              if (collapsed) return
+              event.preventDefault()
+              event.stopPropagation()
+              openMenu()
+            }
+          }}
+        >
+          <span className="cwn-worker-line">
+            <span className="cwn-worker-title">{worker.title}</span>
+            {worker.initiator && <>
+              <span className="cwn-meta-divider cwn-name-divider cwn-initiator-divider" aria-hidden="true" />
+              <span className="cwn-worker-initiator">{t('由 {name} 发起', { name: worker.initiator.name })}</span>
+            </>}
+            <span className={`cwn-worker-status ${worker.status}`}>
+              <span className={`cwn-dot ${worker.status}`} />
+              {isUserInterrupted(worker)
+                ? t('已停止')
+                : worker.status === 'running' && worker.approvalWaiting
+                  ? t('等待审批')
+                  : t(status[worker.status])}
+            </span>
+          </span>
+        </button>
+        <div className="cwn-worker-meta">
+          <NameCopy name={workerName(worker)} disabled={collapsed} />
+          <span className="cwn-meta-divider cwn-name-divider" aria-hidden="true" />
+          <span className="cwn-worker-model" title={displayModelName(worker.preference)}>
+            {displayModelName(worker.preference)}
+          </span>
+          <span className="cwn-meta-divider" aria-hidden="true">
+            ·
+          </span>
+          <span>{effortLabel(worker.preference.effort)}</span>
+        </div>
+        <span className="cwn-worker-chevron" aria-hidden="true">
+          <Glyph name="chevron" />
+        </span>
+      </div>
     </div>
   )
 }

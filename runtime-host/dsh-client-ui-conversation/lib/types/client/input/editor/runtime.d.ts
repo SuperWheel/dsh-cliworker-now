@@ -1,6 +1,7 @@
 /** The Composer model's private Lexical editor, projections, and node operations. */
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import type { LexicalEditor } from 'lexical';
+import type { QuoteSummary } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { DraftQuote, DraftReference, ReferenceInsert } from '../../contract/draft-editor.ts';
 import type { CommandClaim } from '../../contract/input.ts';
 import type { QuoteNodeLabels } from './QuoteNode.tsx';
@@ -135,9 +136,10 @@ export declare class DraftEditorRuntime {
      * Insert one quote after the retained draft selection as an independent undo edit.
      * @param text - nonblank selected transcript text.
      * @param labels - current localized editor controls.
+     * @param summary - readable display shown instead of the text.
      * @returns whether the insertion position accepted the node.
      */
-    insertQuote(text: string, labels: QuoteNodeLabels): boolean;
+    insertQuote(text: string, labels: QuoteNodeLabels, summary?: QuoteSummary): boolean;
     /** Remove one quote node and leave the editor caret at its former position. */
     private removeQuote;
     /** Delete the QuoteNode immediately beside one collapsed caret. */

@@ -5,16 +5,24 @@ import { fileURLToPath } from 'node:url'
 import { digest, hostRuntimeDirectory, hostRuntimePackages, normalizeHostClient, runtimeFiles, verifyHostRuntime } from './host-runtime.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const targets = {
+  '0.2.2-rc.1': '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db',
+  '0.2.2-rc.2': 'ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c',
+}
 const args = process.argv.slice(2)
+const targetFlag = args.indexOf('--target')
+const targetVersion = targetFlag < 0 ? '0.2.2-rc.2' : args[targetFlag + 1]
+if (!Object.hasOwn(targets, targetVersion)) throw new Error('Unsupported pinned runtime target')
+if (targetFlag >= 0) args.splice(targetFlag, 2)
 if (args.length === 0) {
   const manifest = verifyHostRuntime(root)
   console.log(JSON.stringify({ verified: true, packages: manifest.packages.map(pkg => pkg.name), files: manifest.files.length }))
 } else {
-  if (args.length !== 2 || args[0] !== '--from') throw new Error('Usage: vendor-host-extensions.mjs [--from reviewed-artifact-directory]')
+  if (args.length !== 2 || args[0] !== '--from') throw new Error('Usage: vendor-host-extensions.mjs [--target version] [--from reviewed-artifact-directory]')
   const source = resolve(root, args[1])
   const input = JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8'))
-  const patch = readFileSync(join(root, 'host-extensions/dsh-0.2.2-rc.1/source.patch'))
-  if (input.upstream?.commit !== '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db' || input.patch.sha256 !== digest(patch))
+  const patch = readFileSync(join(root, `host-extensions/dsh-${targetVersion}/source.patch`))
+  if (input.upstream?.commit !== targets[targetVersion] || input.upstream?.tag !== `dsh-v${targetVersion}` || input.patch.sha256 !== digest(patch))
     throw new Error('Reviewed artifact does not match the pinned official source and current patch')
   for (const file of input.files) {
     const bytes = readFileSync(join(source, file.path))
@@ -26,7 +34,7 @@ if (args.length === 0) {
   const packages = []
   for (const id of hostRuntimePackages) {
     const pkg = input.packages.find(pkg => pkg.name === `@deepseek-ai/dsh-client-${id}`)
-    if (!pkg || pkg.directory !== `dsh-client-${id}`) throw new Error(`Missing reviewed package: ${id}`)
+    if (!pkg || pkg.directory !== `dsh-client-${id}` || pkg.version !== targetVersion) throw new Error(`Missing reviewed package: ${id}`)
     const from = join(source, pkg.directory), to = join(stage, pkg.directory)
     mkdirSync(to, { recursive: true })
     for (const path of runtimeFiles(from)) {
@@ -37,6 +45,7 @@ if (args.length === 0) {
     }
     if (!existsSync(join(to, 'LICENSE'))) throw new Error(`Missing upstream license: ${id}`)
     const json = JSON.parse(readFileSync(join(from, 'package.json'), 'utf8'))
+    if (json.version !== targetVersion || json.name !== pkg.name) throw new Error(`Unexpected package identity: ${id}`)
     const manifest = Object.fromEntries(['name', 'description', 'version', 'type', 'license', 'main', 'types', 'dsh', 'dependencies', 'peerDependencies', 'repository'].filter(key => json[key] !== undefined).map(key => [key, json[key]]))
     // Browser platform seeds stay external. Preserve their actual official source
     // requirements explicitly rather than carrying the private build dependency graph.
@@ -50,9 +59,9 @@ if (args.length === 0) {
       declarations: 'inherited-official-baseline; extension interfaces are verified from source' })
   }
   writeFileSync(join(stage, 'source.patch'), patch)
-  writeFileSync(join(stage, 'README.md'), '# CLI Worker 原生界面运行资源\n\n基于 DeepSeek Harness 官方 0.2.2-rc.1 四包及同目录 source.patch。ui-chat 的 lib/assets 图片与官方包逐字节相同，经 ./assets/* 导出供宿主资源路由读取。各包保留原模块身份和 MIT 许可；修改版由 CLI Worker 分发，不代表上游官方发布。生成的机器路径注释已归一化，不分发未使用的 source map；代码与已验收候选仅有注释差异。详细摘要见 manifest.json。\n\n经本插件 bundle 层使用独立 cliworker-ui-* 行 ID 接入，浏览器模块身份保持官方名称；安装、更新或卸载前结束任务并退出宿主，完成后冷启动。其他自定义覆盖或带旧来源断言的设置可能冲突；预检拒绝时保留配置，由用户明确迁移或移除本插件恢复。兼容性按接口能力检查，实际验收范围以 Release 为准。\n')
+  writeFileSync(join(stage, 'README.md'), `# CLI Worker 原生界面运行资源\n\n基于 DeepSeek Harness 官方 ${targetVersion} 四包及同目录 source.patch。ui-chat 的 lib/assets 图片与官方包逐字节相同，经 ./assets/* 导出供宿主资源路由读取。各包保留原模块身份和 MIT 许可；修改版由 CLI Worker 分发，不代表上游官方发布。生成的机器路径注释已归一化，不分发未使用的 source map；代码与已验收候选仅有注释差异。详细摘要见 manifest.json。\n\n经本插件 bundle 层使用独立 cliworker-ui-* 行 ID 接入，浏览器模块身份保持官方名称；安装、更新或卸载前结束任务并退出宿主，完成后冷启动。其他自定义覆盖或带旧来源断言的设置可能冲突；预检拒绝时保留配置，由用户明确迁移或移除本插件恢复。兼容性按接口能力检查，实际验收范围以 Release 为准。\n`)
   const output = { schema: 1, upstream: { repository: input.upstream.repository, tag: input.upstream.tag,
-    commit: input.upstream.commit, version: '0.2.2-rc.1' }, patch: { path: 'source.patch', sha256: digest(patch) },
+    commit: input.upstream.commit, version: targetVersion }, patch: { path: 'source.patch', sha256: digest(patch) },
     normalization: ['generated CSS region comments use repository-relative paths', 'unused sourceMappingURL comments and maps are omitted'],
     packages, files: runtimeFiles(stage).map(path => { const bytes = readFileSync(join(stage, path)); return { path, bytes: bytes.length, sha256: digest(bytes) } }) }
   writeFileSync(join(stage, 'manifest.json'), JSON.stringify(output, null, 2) + '\n')

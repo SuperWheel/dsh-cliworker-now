@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -42,7 +43,7 @@ function fixture() {
           projections: {
             values:
               id === 'parent' || id === 'other'
-                ? {}
+                ? { subagentCatalog: catalog }
                 : {
                     subagentTiming: id === 'unknown' ? undefined : timing,
                     modelSelection: { next: null, lastUsed: { model: 'simulation-model' } },
@@ -53,15 +54,16 @@ function fixture() {
     ),
   }
   const subagents = {
-    listChildren: vi.fn(async () => catalog),
     prompt: vi.fn(async () => ({ messageId: 'simulated-inbox-id' })),
-    interruptByParent: vi.fn(() => ({ accepted: true })),
+    interruptByUser: vi.fn(() => ({ accepted: true })),
   }
   const owned = new Set(['cli'])
+  const workers = new Map<string, { parentSessionId: string; archivedAt?: string }>()
   const services: DshSubagentServices = {
     query: () => query as any,
     subagents: () => subagents as any,
     ownedSessions: () => owned,
+    hasWorker: (id) => workers.has(id),
     subscribe: (notify) => {
       events.add(notify)
       return () => {
@@ -83,6 +85,7 @@ function fixture() {
     released,
     events,
     owned,
+    workers,
     settle: (completed = false) => {
       timing = { settledMs: 2, lastTurnCompleted: completed }
       cursor++
@@ -105,7 +108,7 @@ it('lists direct children, excludes owned CLI sessions, and releases all native 
   expect(rows.map((row) => row.id)).toEqual(['native', 'once', 'unknown'])
   expect(rows[0]).toMatchObject({ status: 'running', model: 'simulation-model', parentSessionId: 'parent' })
   expect(rows[2].status).toBe('unknown')
-  expect(f.subagents.listChildren).toHaveBeenCalledWith('parent', expect.any(AbortSignal))
+  expect(f.query.observeSession).toHaveBeenCalledWith('parent', { signal: expect.any(AbortSignal) })
   expect(f.released).toHaveBeenCalledTimes(4)
   f.owned.add('native') // Includes archived/owned sessions too, regardless of status.
   expect((await f.manager.list('parent', f.signal)).map((row) => row.id)).toEqual(['once', 'unknown'])
@@ -128,13 +131,48 @@ it('names children dsh-N per main conversation in creation order, persists priva
   expect((await reloaded.list('other', f.signal)).map((row) => [row.id, row.agentName]))
     .toEqual([['native', 'dsh-2'], ['once', 'dsh-3'], ['unknown', 'dsh-4'], ['later', 'dsh-1']])
 })
+it.each([false, true])('excludes exact known Worker labels across parents (archived=%s) before assigning dsh names', async (archived) => {
+  const f = fixture(), id = randomUUID(), unknown = randomUUID()
+  f.workers.set(id, { parentSessionId: 'new-segment', ...(archived ? { archivedAt: '2026-11-12T00:00:00Z' } : {}) })
+  f.catalog.unshift({ id: 'retired-child', createdAt: 0, label: `worker/${id}`, mode: 'continuable' })
+  const visibleLabels = [`worker/${unknown}`, `worker/${id}-suffix`, `worker/${id}/extra`, `prefix-worker/${id}`, `worker/${id} `]
+  f.catalog.push(...visibleLabels.map((label, index) => ({ id: `visible-${index}`, label, createdAt: index + 5, mode: 'external' })))
+  // Resolve also names children, even when no list request has happened yet.
+  expect(await f.manager.resolve('parent', { name: 'dsh-1' }, f.signal)).toMatchObject({ id: 'native' })
+  const rows = await f.manager.list('parent', f.signal)
+  expect(rows.map(row => row.id)).toEqual(['native', 'once', 'unknown', ...visibleLabels.map((_, index) => `visible-${index}`)])
+  expect(rows.map(row => row.agentName)).toEqual(['dsh-1', 'dsh-2', 'dsh-3', 'dsh-4', 'dsh-5', 'dsh-6', 'dsh-7', 'dsh-8'])
+  const names = JSON.parse(readFileSync(join(f.directory, 'dsh-names.json'), 'utf8')).parent
+  expect(names).not.toHaveProperty('retired-child')
+  expect(names).not.toHaveProperty('cli')
+})
+it('keeps an already misnamed internal child invisible without rewriting names or permitting single-child operations', async () => {
+  const f = fixture(), id = randomUUID()
+  f.workers.set(id, { parentSessionId: 'new-segment', archivedAt: '2026-11-12T00:00:00Z' })
+  f.catalog.unshift({ id: 'retired-child', createdAt: 0, label: `worker/${id}`, mode: 'continuable' })
+  const file = join(f.directory, 'dsh-names.json')
+  const original = JSON.stringify({ parent: { 'retired-child': 'dsh-1', native: 'dsh-2', once: 'dsh-3', unknown: 'dsh-4' } }, null, 2)
+  writeFileSync(file, original)
+  expect((await f.manager.list('parent', f.signal)).map(row => row.agentName)).toEqual(['dsh-2', 'dsh-3', 'dsh-4'])
+  for (const ref of [{ id: 'retired-child' }, { name: 'dsh-1' }]) {
+    await expect(f.manager.resolve('parent', ref, f.signal)).rejects.toThrow('不在当前主会话列表中')
+  }
+  await expect(f.manager.hide('parent', 'retired-child', f.signal)).rejects.toThrow('不在当前主会话列表中')
+  await expect(f.manager.prompt('parent', { childSessionId: 'retired-child' } as any, f.signal)).rejects.toThrow('不在当前主会话列表中')
+  await expect(f.manager.stop('parent', 'retired-child', f.signal)).rejects.toThrow('不在当前主会话列表中')
+  expect(f.subagents.prompt).not.toHaveBeenCalled()
+  expect(f.subagents.interruptByUser).not.toHaveBeenCalled()
+  expect(readFileSync(file, 'utf8')).toBe(original)
+  expect(existsSync(join(f.directory, 'dsh-hidden.json'))).toBe(false)
+  expect(f.query.observeSession.mock.calls.map(([session]) => session)).not.toContain('retired-child')
+})
 it('continues a visible continuable child by its exact dsh name; unknown/hidden/read-only names never prompt', async () => {
   const f = fixture()
   await f.manager.list('parent', f.signal)
   const receipt = await f.manager.followup('parent', { name: 'DSH-1' }, '模拟续聊', f.signal)
   expect(receipt).toMatchObject({ kind: 'dsh-subagent', workerId: 'native', agentName: 'dsh-1', receipt: { messageId: 'simulated-inbox-id' } })
   expect(f.subagents.prompt).toHaveBeenCalledWith(expect.objectContaining({
-    parentSessionId: 'parent', childSessionId: 'native', mode: 'continuable', delivery: 'queue',
+    childSessionId: 'native', delivery: 'queue',
     content: [{ type: 'text', text: '模拟续聊' }], requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
   }), expect.any(AbortSignal))
   expect(await f.manager.followup('parent', { name: 'dsh-9' }, 'x', f.signal)).toBeUndefined()
@@ -160,33 +198,31 @@ it('hides only in a private parent-scoped plugin file and survives reload', asyn
   cleanup.push(() => reloaded.dispose())
   expect((await reloaded.list('parent', f.signal)).map((row) => row.id)).not.toContain('native')
   expect(f.subagents.prompt).not.toHaveBeenCalled()
-  expect(f.subagents.interruptByParent).not.toHaveBeenCalled()
+  expect(f.subagents.interruptByUser).not.toHaveBeenCalled()
 })
 it('delivers continuable prompts with the exact native identity and surfaces rejection', async () => {
   const f = fixture(),
     request: any = {
-      parentSessionId: 'parent',
       childSessionId: 'native',
-      mode: 'continuable',
       requestId: 'synthetic-request',
       delivery: 'queue',
       content: [{ type: 'text', text: '模拟续聊' }],
     }
-  await expect(f.manager.prompt(request, f.signal)).resolves.toEqual({ messageId: 'simulated-inbox-id' })
+  await expect(f.manager.prompt('parent', request, f.signal)).resolves.toEqual({ messageId: 'simulated-inbox-id' })
   expect(f.subagents.prompt).toHaveBeenCalledWith(request, expect.any(AbortSignal))
   f.subagents.prompt.mockRejectedValueOnce(new Error('simulation: parent unavailable'))
-  await expect(f.manager.prompt(request, f.signal)).rejects.toThrow('parent unavailable')
+  await expect(f.manager.prompt('parent', request, f.signal)).rejects.toThrow('parent unavailable')
 })
 it.each(['once', 'unknown', 'cli', 'foreign'])(
   'refuses follow-up and stop for non-continuable/non-owned child %s',
   async (id) => {
     const f = fixture()
     await expect(
-      f.manager.prompt({ parentSessionId: 'parent', childSessionId: id } as any, f.signal),
+      f.manager.prompt('parent', { childSessionId: id } as any, f.signal),
     ).rejects.toThrow()
     await expect(f.manager.stop('parent', id, f.signal)).rejects.toThrow()
     expect(f.subagents.prompt).not.toHaveBeenCalled()
-    expect(f.subagents.interruptByParent).not.toHaveBeenCalled()
+    expect(f.subagents.interruptByUser).not.toHaveBeenCalled()
   },
 )
 it('does not report stop on acknowledgement; succeeds only after a settled projection', async () => {
@@ -195,7 +231,7 @@ it('does not report stop on acknowledgement; succeeds only after a settled proje
     done = vi.fn()
   const stop = f.manager.stop('parent', 'native', f.signal).then(done)
   await vi.advanceTimersByTimeAsync(200)
-  expect(f.subagents.interruptByParent).toHaveBeenCalledWith('native', 'parent', 'continuable')
+  expect(f.subagents.interruptByUser).toHaveBeenCalledWith('native')
   expect(done).not.toHaveBeenCalled()
   expect((await f.manager.list('parent', f.signal))[0].stopped).toBeUndefined()
   f.settle()
@@ -208,7 +244,7 @@ it('does not report stop on acknowledgement; succeeds only after a settled proje
 it('surfaces interrupt failure and unconfirmed/unknown stop rather than success', async () => {
   vi.useFakeTimers()
   const f = fixture()
-  f.subagents.interruptByParent.mockImplementationOnce(() => {
+  f.subagents.interruptByUser.mockImplementationOnce(() => {
     throw new Error('simulation: interrupt refused')
   })
   await expect(f.manager.stop('parent', 'native', f.signal)).rejects.toThrow('interrupt refused')
@@ -229,7 +265,7 @@ it.each(['service', 'projection', 'catalog'])(
     if (kind === 'projection')
       f.query.observeSession.mockResolvedValue({ header: {}, cursor: 0, [Symbol.dispose]: f.released })
     if (kind === 'catalog')
-      f.subagents.listChildren.mockRejectedValue(new Error('simulation: private native content'))
+      f.query.observeSession.mockRejectedValue(new Error('simulation: private native content'))
     expect(await f.manager.list('parent', f.signal)).toEqual([])
     expect(f.services.log).toHaveBeenCalled()
     expect(JSON.stringify(vi.mocked(f.services.log).mock.calls)).not.toContain('private native content')
@@ -311,4 +347,35 @@ it('disposes event subscriptions even while the stream consumer is paused at a y
   f.manager.dispose()
   expect(f.events.size).toBe(0)
   await stream.return?.()
+})
+
+it('refuses a catalog entry whose actual direct lineage belongs to another conversation before prompting or interrupting', async () => {
+  const f = fixture()
+  const observe = f.query.observeSession.getMockImplementation()!
+  f.query.observeSession.mockImplementation(async id => {
+    const cut = await observe(id)
+    if (id === 'native') cut.header.parentSession = 'foreign'
+    return cut
+  })
+  await expect(f.manager.followup('parent', { id: 'native' }, 'simulation', f.signal)).rejects.toThrow('所属主对话不匹配')
+  await expect(f.manager.stop('parent', 'native', f.signal)).rejects.toThrow('所属主对话不匹配')
+  expect(f.subagents.prompt).not.toHaveBeenCalled()
+  expect(f.subagents.interruptByUser).not.toHaveBeenCalled()
+})
+it('keeps live ownership admission ahead of user interrupt and prompt', async () => {
+  const f = fixture()
+  f.services.assertLiveChild = () => { throw new Error('simulation: stale runtime owner') }
+  await expect(f.manager.followup('parent', { id: 'native' }, 'simulation', f.signal)).rejects.toThrow('stale runtime owner')
+  await expect(f.manager.stop('parent', 'native', f.signal)).rejects.toThrow('stale runtime owner')
+  expect(f.subagents.prompt).not.toHaveBeenCalled()
+  expect(f.subagents.interruptByUser).not.toHaveBeenCalled()
+})
+it('times out an accepted interrupt without reporting a still-active turn as stopped', async () => {
+  vi.useFakeTimers()
+  const f = fixture()
+  const rejected = expect(f.manager.stop('parent', 'native', f.signal)).rejects.toThrow('停止尚未确认')
+  await vi.advanceTimersByTimeAsync(30_000)
+  await rejected
+  expect((await f.manager.list('parent', f.signal))[0]).toMatchObject({ status: 'running' })
+  expect(vi.getTimerCount()).toBe(0)
 })

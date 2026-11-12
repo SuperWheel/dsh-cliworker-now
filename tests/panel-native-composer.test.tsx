@@ -14,7 +14,6 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
   StateDot: () => createElement('span'),
   Switch: () => null,
   Modal: () => null,
-  useAnchoredPosition: () => null,
   useDismissOnOutsidePointer: () => {},
   IconCheckOutlineRegular: () => createElement('svg'),
   IconChevronRightOutlineRegular: () => createElement('svg'),

@@ -6,7 +6,7 @@ export const workerManagementStyles = `
 .cwn-cli-path-settings{display:flex;flex-direction:column;gap:var(--cwn-settings-field-gap);min-width:0}.cwn-cli-path-settings>.cwn-setting-row-text{flex:none;color:var(--dsw-alias-label-primary)}.cwn-cli-path-settings form{display:flex;flex-direction:column;gap:var(--cwn-settings-action-gap);min-width:0}.cwn-cli-path-settings .cwn-cli-path-input{width:100%;min-width:0}.cwn-cli-path-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--cwn-settings-action-gap)}
 @media(prefers-reduced-motion:reduce){.cwn-settings-advanced-body,.cwn-settings-advanced-toggle>svg{transition:none}}
 .cwn-worker{display:block;padding:12px;min-height:62px}
-.cwn .cwn-worker-menu-anchor{display:block;width:100%}
+.cwn .cwn-worker-menu-anchor{display:block;width:0;height:0}
 .cwn-worker-layout{display:grid;grid-template-columns:minmax(0,1fr) 14px;column-gap:10px;align-items:center;min-width:0}
 .cwn-worker-open{display:flex;align-items:center;gap:10px;width:100%;padding:0;border:0;background:transparent;color:inherit;text-align:left;font:inherit}
 .cwn-worker-open{grid-column:1;grid-row:1}.cwn-worker-open>.cwn-worker-line{flex:1;min-width:0}

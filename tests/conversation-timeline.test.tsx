@@ -10,7 +10,6 @@ import { NativePresentationProvider, type NativeChatSettings } from '../src/clie
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async () => ({
   ...(await import('./fixtures/process-primitives.tsx')).processPrimitives,
   Tooltip: ({ children }: any) => children,
-  useAnchoredPosition: () => null,
   useDismissOnOutsidePointer: () => {},
   IconDatabaseOutlineRegular: () => createElement('svg'),
   IconCopyOutlineRegular: () => createElement('svg'),

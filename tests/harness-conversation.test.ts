@@ -909,3 +909,27 @@ describe('rebinding across DS Bot segments (Issue #10)', () => {
     expect(f.records).toEqual([old])
   })
 })
+
+it.each(['aborted', 'error'] as const)('joins a cold-resumed rc.2 epoch through its post-cleanup %s edge', async stopReason => {
+  // SIMULATION: no caller Activation handle exists for this resumed epoch.
+  const parent: any = { id: 'root', session: { header: {} } }
+  const cancel = vi.fn()
+  const child: any = { id: 'child', session: { header: { origin: 'subagent', parentSession: parent.id } }, cancel }
+  const agents = new Map([[parent.id, parent], [child.id, child]])
+  let end!: (info: any) => void
+  const off = vi.fn(), settled = vi.fn()
+  const bridge: any = Object.assign(Object.create(HarnessConversationBridge.prototype), {
+    activations: new Map(),
+    ctx: { agents, subagents: { rootOf: () => parent, startActivation() {}, registerProvider() {} },
+      on: (name: string, callback: any) => { expect(name).toBe('subagent/end'); end = callback; return off } },
+  })
+  const done = bridge.drainChildren(parent, [child.id]).then(settled)
+  // stopReason can describe a failed task; it is not by itself a cleanup failure.
+  const assertion = expect(done).resolves.toBeUndefined()
+  await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith({ kind: 'parent' }))
+  expect(settled).not.toHaveBeenCalled()
+  agents.delete(child.id)
+  end({ id: child.id, stopReason })
+  await assertion
+  expect(off).toHaveBeenCalledOnce()
+})

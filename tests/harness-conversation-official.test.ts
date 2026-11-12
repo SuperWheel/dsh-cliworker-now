@@ -1,3 +1,5 @@
+import { readDshChildren } from '../src/host/dsh-subagents.ts'
+import { ownsDirectSubagent } from '../src/host/native-subagent-ownership.ts'
 import { createNativeHarnessExecutor } from '../src/host/native-harness-executor.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -229,11 +231,21 @@ it('uses real continuable child identity, preserves ordered native history and r
   expect(binding.capabilities).toMatchObject({ send: true, queue: true, steer: true, stop: true })
   const child = ctx.agents.get(SessionId(binding.sessionId))!
   expect(child).toBeDefined()
+  expect(ownsDirectSubagent(ctx.subagents, parent.agent, child)).toBe(true)
+  expect(ownsDirectSubagent(ctx.subagents, parent.agent, { ...child })).toBe(false)
+  expect(ownsDirectSubagent(ctx.subagents, { ...parent.agent }, child)).toBe(false)
+  const unowned = await ctx.agents.create({
+    sessionId: SessionId(randomUUID()),
+    meta: { cwd: directory, origin: 'subagent', parentSession: parent.agent.id },
+    agentOptions: { provider: 'unavailable-dsh-provider', model: 'must-not-call' },
+  })
+  expect(ownsDirectSubagent(ctx.subagents, parent.agent, unowned.agent)).toBe(false)
+  await unowned.dispose()
+
   if ('startActivation' in ctx.subagents) {
     const provider = ctx.subagents.getProvider('cliworker-native-conversation')!
     expect(provider.capabilities).toEqual({ agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: false })
-    if ('listChildren' in ctx.subagents && typeof ctx.subagents.listChildren === 'function')
-      expect(await ctx.subagents.listChildren(parent.agent.id)).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id })]))
+    expect(await readDshChildren(ctx.sessionQuery, parent.agent.id, new AbortController().signal)).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id })]))
   }
 
   expect(child.session.header).toMatchObject({ origin: 'subagent', parentSession: parent.agent.id })
@@ -339,9 +351,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   await ctx.subagents.prompt(
     {
       requestId: 'synthetic-browser-followup' as never,
-      parentSessionId: parent.agent.id,
       childSessionId: child.id,
-      mode: 'continuable',
       delivery: 'queue',
       content: [{ type: 'text', text: 'ordinary continuation' }],
     },
@@ -363,9 +373,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   // Actual continuation release notifies its parent with a waking settlement.
   // Removing the inbox row alone is insufficient: idle wakes stay latched, and
   // the native runtime-context could otherwise turn that empty wake into an LLM call.
-  if ('drainChildren' in ctx.subagents && typeof ctx.subagents.drainChildren === 'function')
-    await ctx.subagents.drainChildren(parent.agent, [child.id])
-  else await ctx.subagents.drainContinuableChildren(parent.agent, [child.id])
+  await (bridge as any).drainChildren(parent.agent, [child.id])
   await parent.agent.whenIdle()
   expect(parentRequests).not.toHaveBeenCalled()
   expect(parentTurns).toEqual([])
@@ -410,9 +418,7 @@ it('uses real continuable child identity, preserves ordered native history and r
 
   // Release the actual Activation, remount only our bridge, then let the public
   // continuation manager cold-resume the official Agent from its own descriptor.
-  if ('drainChildren' in ctx.subagents && typeof ctx.subagents.drainChildren === 'function')
-    await ctx.subagents.drainChildren(parent.agent, [child.id])
-  else await ctx.subagents.drainContinuableChildren(parent.agent, [child.id])
+  await (bridge as any).drainChildren(parent.agent, [child.id])
   expect(ctx.agents.get(child.id)).toBeUndefined()
   await bridge.dispose()
   bridge = new HarnessConversationBridge(ctx, deps)
@@ -421,9 +427,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   await ctx.subagents.prompt(
     {
       requestId: 'synthetic-cold-followup' as never,
-      parentSessionId: parent.agent.id,
       childSessionId: child.id,
-      mode: 'continuable',
       delivery: 'queue',
       content: [{ type: 'text', text: 'cold continuation' }],
     },
@@ -483,9 +487,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   const before = resumed.session.seq
   await bridge.ensure(parent.agent, worker, { projectRun: true })
   expect(resumed.session.seq).toBe(before)
-  if ('drainChildren' in ctx.subagents && typeof ctx.subagents.drainChildren === 'function')
-    await ctx.subagents.drainChildren(parent.agent, [resumed.id])
-  else await ctx.subagents.drainContinuableChildren(parent.agent, [resumed.id])
+  await (bridge as any).drainChildren(parent.agent, [resumed.id])
   const oldHistory = resumed.session.deriveMessages()
   const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
   const failedRead = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (id, options) => {

@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Tooltip,
-  useAnchoredPosition,
   useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 
@@ -25,22 +24,23 @@ export function StatPopover({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement>(null),
     panelRef = useRef<HTMLDivElement>(null)
-  const position = useAnchoredPosition({
-    open,
-    anchorRef: rootRef,
-    panelRef,
-    side: 'top',
-    gap: 8,
-    margin: 12,
-  })
+  const anchorName = `--cwn-stat-${useId().replaceAll(':', '')}`
   useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
     }
+    const onClick = (event: MouseEvent) => {
+      if (event.target instanceof Node && !rootRef.current?.contains(event.target)
+        && !panelRef.current?.contains(event.target)) setOpen(false)
+    }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    document.addEventListener('click', onClick, true)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('click', onClick, true)
+    }
   }, [open])
   const button = (
     <button
@@ -55,7 +55,7 @@ export function StatPopover({
     </button>
   )
   return (
-    <span ref={rootRef} className="cwn-stat-anchor">
+    <span ref={rootRef} className="cwn-stat-anchor" style={{ anchorName }}>
       {tooltip ? (
         <Tooltip label={tooltip} side="top" delayMs={200} disabled={open} portal>
           {button}
@@ -70,7 +70,7 @@ export function StatPopover({
             role="dialog"
             aria-label={label}
             className={`cwn-stat-panel${context ? ' cwn-context-panel' : ''}`}
-            style={position ?? { visibility: 'hidden', left: 0, top: 0 }}
+            style={{ positionAnchor: anchorName }}
           >
             {children}
           </div>,

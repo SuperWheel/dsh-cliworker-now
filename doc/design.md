@@ -1355,6 +1355,17 @@ OpenSpec 变更 `upgrade-host-022rc1`；开发 SDK 与随包四个原生界面�
 - 语言：官方新增日、西、法、德、俄、葡六种语言；插件新增的 conversation 与 chat 词条暂用英文，中英文保持原文。
 - 验证边界：定向回归、资源清单校验及未验证事项记在变更任务清单；本次未运行真实 CLI／模型或启动 Desktop，不将自动检查视为真实平台验收。
 
+## 2026-11-12 随包原生界面升级到 Harness 0.2.2-rc.2（未发布）
+
+OpenSpec 变更 `upgrade-host-022rc2`；开发 SDK 与随包四个原生界面包同步升级，插件版本号不变。
+
+- 现象：Mac Desktop 升级后，rc.1 四包仍整体替换官方同名包，但 rc.2 的 ui-primitives 已删除 `useAnchoredPosition`。旧 `ContextMeter` 与 `useStatDialog`／`TurnUsagePanel` 调用时报 `is not a function`，导致 `conversation.composer.bar`、`conversation.chat.node` 两个 slot 崩溃，输入栏上下文用量与轮次统计缺失。
+- 四包与依赖：从官方 tag `dsh-v0.2.2-rc.2`（`ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`）重建四包；rc.1 的 48 文件补丁有 10 个文件冲突，人工合并并保留官方 CSS anchor、Retry、文件接收与子会话直接输入行为。独立构建及校验覆盖 630 个文件，vendor 后 `runtime-host/` 为 4 包、217 个文件，均为 0.2.2-rc.2，无已删除定位 hook 引用；ui-chat 图片及 `./assets/*` 导出保留。开发 SDK 39 个 pin 同步升到 rc.2，Cordis 与插件 peer 范围不变；合并说明见 `host-extensions/dsh-0.2.2-rc.2/README.md`。
+- Host 适配：删除的 `listChildren` 改读公开 `subagentCatalog` 投影；prompt 按 rc.2 去掉 `parentSessionId`／`mode` 字段，插件仍核对目录、直系 lineage 与 live ownership。`interruptByParent` 改为 `interruptByUser`，补目标 Session 授权，停止仍等待结束投影。`isOwnedBy` 改为 `ownsDirectSubagent`，结合直系 header 与 `rootOf` 对父、子均返回父来核对在线所有权；冷会话由 DSH 目录 lineage 校验。生命周期能力检测适配移除 `drainChildren`，`startActivation` 参数展平；清理仍等待实际结束。
+- Client 与打包：Menu 右键使用 `anchorPoint`、键盘使用 `anchorRef`，插件 `stat-popover` 改用官方 CSS anchor。rc.2 typert 生成器要求 `package.json` 的 `files` 包含 `lib/typert.remote-client.d.ts.map`，补入后隔离预览包构建通过。
+- 换段修复：旧段 CLI Worker 分组为空，是 Worker 已由 v0.8.9 换段归入新段的预期行为；旧内部 Harness 子会话混入旧段 DSH 列表则是该换段路径的遗漏，非 rc.2 回归。复用已有 `retiredSessionIds`，排除当前及 retired 内部会话，并精确排除标签为 `worker/<已知 Worker ID>` 的条目（含其他父段与已归档 Worker）；未知 ID 或相似标签仍显示。列表、命名、单条读取与操作共用判断，不改用户会话或已误分配的名称文件。
+- 验证边界：变更任务记录了四包源码类型检查、插件 typecheck、构建与清单校验通过；适配后全量回归 6222 项通过、14 项跳过，换段修复后记录为 6227 项通过、14 项跳过、0 失败。Mac Desktop 0.2.2-rc.2 经内置浏览器直连 Host Web UI 核对，输入栏、统计药丸、Worker 列表与对话、续聊输入框、设置页及回答下方用量弹层正常，旧段不再显示内部会话，未再出现定位 hook 与 slot 崩溃。上游四包 Vitest、输入栏上下文用量弹层、运行中动画与 Stop、Windows 及真实模型／CLI 派遣未验证；详细记录见 `openspec/changes/upgrade-host-022rc2/tasks.md`。
+
 ## configured 账号摘要保留具体原因（2026-10-30，未发布）
 
 OpenSpec：`fix-configured-account-status`。设置导航与账号摘要复用 Host 的安全摘要，configured 不再统一覆盖成「已配置」；空摘要保留旧回退，长原因自然换行，仍使用灰色待确认状态。MiMo 检查登录、Pi/OMP/OpenCode 缺少有效凭据、Hermes 等待续期等原因一并保留。

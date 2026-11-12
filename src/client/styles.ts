@@ -153,6 +153,69 @@ export const nativeInteractionStyles = `
 .cwn-context{border-radius:var(--dsw-radius-sm);font-size:var(--dsh-content-font-size-secondary,13px);line-height:calc(20px + var(--dsh-content-font-delta-secondary,0px));padding:1px 8px;gap:6px}
 .cwn-stat-panel{z-index:1100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);width:max-content;min-width:min(300px,100vw - 24px);max-width:min(440px,100vw - 24px);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-secondary);cursor:default;border:0;padding:16px;font-size:12px;line-height:18px;position:fixed}
 .cwn-stat-title{color:var(--dsw-alias-label-primary);display:flex;justify-content:space-between;gap:16px;margin-bottom:8px;font-weight:500}.cwn-stat-title>span{display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}.cwn-stat-rule{border-top:.5px solid var(--dsw-alias-border-l2);margin-bottom:10px}.cwn-stat-details{color:var(--dsw-alias-label-tertiary);display:grid;grid-template-columns:minmax(76px,auto) minmax(0,1fr);gap:6px 16px;margin:0}.cwn-stat-details dt,.cwn-stat-details dd{min-width:0;margin:0}.cwn-stat-details dd{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+/* rc.2 StatDialog CSS anchors: 8px gap, 12px viewport inset and edge fallbacks. */
+.cwn-stat-panel{
+  max-height: calc(100dvh - 12px - max(12px, var(--dsh-frame-overlay-top, 12px)));
+  overflow-x: hidden;
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: max(12px, calc(anchor(top) + 8px));
+  left: max(12px, anchor(left));
+  right: 12px;
+  position-try-fallbacks: --cwn-stat-window, --cwn-stat-opposite, --cwn-stat-wide-opposite, --cwn-stat-tall, --cwn-stat-viewport;
+  align-self: end;
+  justify-self: start;
+  height: fit-content;
+  min-height: 0;
+  margin: 0;}
+@position-try --cwn-stat-window {
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: max(12px, calc(anchor(top) + 8px));
+  left: 12px;
+  right: 12px;
+  margin: 0;
+  align-self: safe end;
+  justify-self: safe end;
+}
+
+@position-try --cwn-stat-opposite {
+  top: max(12px, calc(anchor(bottom) + 8px));
+  bottom: 12px;
+  align-self: start;
+}
+
+@position-try --cwn-stat-wide-opposite {
+  top: max(12px, calc(anchor(bottom) + 8px));
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  align-self: start;
+  justify-self: safe end;
+}
+
+@position-try --cwn-stat-tall {
+  position-area: none;
+  top: max(12px, var(--dsh-frame-overlay-top, 12px));
+  bottom: 12px;
+  left: max(12px, anchor(left));
+  right: 12px;
+  margin: 0;
+  align-self: safe start;
+  justify-self: start;
+}
+
+@position-try --cwn-stat-viewport {
+  position-area: none;
+  inset: max(12px, var(--dsh-frame-overlay-top, 12px)) 12px 12px;
+  margin: 0;
+  align-self: safe start;
+  justify-self: safe end;
+}
+
 .cwn-context-panel{width:min(264px,100vw - 24px);min-width:0;padding:12px;line-height:20px}.cwn-context-header{display:flex;align-items:center;gap:6px}.cwn-context-header strong{margin-left:auto;font-weight:500;color:var(--dsw-alias-label-primary);white-space:nowrap}.cwn-context-bar{height:4px;margin:10px 0 12px;background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;corner-shape:round;overflow:hidden}.cwn-context-bar>span{display:block;height:100%;min-width:2px;background:var(--dsw-alias-label-tertiary)}.cwn-context-source{margin:0 0 8px;color:var(--dsw-alias-label-tertiary)}
 .cwn .cwn-compose-model{gap:4px;padding:0 4px 0 8px;max-width:min(360px,45cqw);font-size:13px;line-height:20px}.cwn .cwn-model-effort{color:var(--dsw-alias-label-caption);flex-shrink:1000;min-width:0;overflow:hidden;text-overflow:ellipsis}.cwn-model-chevron{color:var(--dsw-alias-label-caption);transition:transform .12s}.cwn-compose-model[aria-expanded=true] .cwn-model-chevron{transform:rotate(180deg)}.cwn-model-popover button:focus-visible{outline:none;background:var(--dsw-alias-interactive-bg-hover)}
 @media(prefers-reduced-motion:reduce){.cwn-progress>summary,.cwn-progress-chevron,.cwn-model-chevron{transition:none}}

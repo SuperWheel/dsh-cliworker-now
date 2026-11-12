@@ -5,10 +5,12 @@ import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   SubagentRuntime,
+  SubagentCatalogEntry,
   SubagentTimingProjection,
   SubagentPromptRequest,
 } from '@deepseek-ai/dsh-subagent'
-import { DSH_AGENT_NAME, type DshSubagent } from '../shared/types.ts'
+import { DSH_AGENT_NAME, type DshSubagent, type Worker } from '../shared/types.ts'
+import type { HarnessConversationRecord } from './harness-conversation-types.ts'
 import { atomicJSON } from './storage.ts'
 
 /** Narrow public SessionQuery observation; reading projections never copies the log. */
@@ -17,20 +19,51 @@ export interface DshObservation extends Disposable {
   cursor: number
   projections?: {
     values: {
+      subagentCatalog?: SubagentCatalogEntry[]
       subagentTiming?: SubagentTimingProjection
       modelSelection?: { next: { model: string } | null; lastUsed: { model: string } | null }
     }
   }
 }
 export interface DshSubagentServices {
-  subagents(): Pick<SubagentRuntime, 'listChildren' | 'prompt' | 'interruptByParent'> | undefined
+  subagents(): Pick<SubagentRuntime, 'prompt' | 'interruptByUser'> | undefined
   query():
     | { observeSession(id: SessionId, options: { signal: AbortSignal }): Promise<DshObservation> }
     | undefined
   ownedSessions(): ReadonlySet<string>
+  /** All stored Workers, including archived Workers and Workers of other parents. */
+  hasWorker(id: string): boolean
+  assertLiveChild?(parent: string, id: string): void
   /** Undefined means this host has no public event source. */
   subscribe?(notify: (sessionId: string) => void): () => void
   log(reason: string): void
+}
+/** Current and replaced display Sessions remain plugin-owned across segment changes. */
+export function ownedHarnessSessions(
+  workers: Iterable<Pick<Worker, 'harnessConversation'>>,
+  records: readonly Pick<HarnessConversationRecord, 'sessionId' | 'retiredSessionIds'>[] = [],
+): ReadonlySet<string> {
+  return new Set([
+    ...[...workers].flatMap(worker => worker.harnessConversation ? [worker.harnessConversation.sessionId] : []),
+    ...records.flatMap(record => [record.sessionId, ...(record.retiredSessionIds ?? [])]),
+  ])
+}
+/** rc.2 list-children.ts reads this public projection; preserve direct rows and createdAt. */
+export async function readDshChildren(
+  query: ReturnType<DshSubagentServices['query']>, parent: string, signal: AbortSignal,
+): Promise<SubagentCatalogEntry[]> {
+  if (!query) throw new Error('DSH sessionQuery service unavailable')
+  signal.throwIfAborted()
+  const observation = await query.observeSession(SessionId(parent), { signal })
+  try {
+    signal.throwIfAborted()
+    if (observation.header.origin === 'subagent') throw new Error('DSH 目录只接受主会话')
+    const catalog = observation.projections?.values.subagentCatalog
+    if (!catalog) throw new Error('DSH public catalog projection unavailable')
+    return catalog
+  } finally {
+    observation[Symbol.dispose]()
+  }
 }
 const hiddenSchema = z.record(z.string(), z.array(z.string()))
 const namesSchema = z.record(z.string(), z.record(z.string(), z.string().regex(DSH_AGENT_NAME)))
@@ -82,11 +115,20 @@ export class DshSubagents {
     chmodSync(this.directory, 0o700)
     atomicJSON(join(this.directory, file), value)
   }
+  private isInternalSession(
+    child: Pick<SubagentCatalogEntry, 'id' | 'label'>,
+    owned = this.services.ownedSessions(),
+  ): boolean {
+    if (owned.has(child.id)) return true
+    // A label alone is not ownership: match the entire label and a stored Worker ID.
+    const workerId = /^worker\/([^/]+)$/u.exec(child.label ?? '')?.[1]
+    return workerId !== undefined && this.services.hasWorker(workerId)
+  }
   /** Stable `dsh-N` per main conversation in creation order; hidden children keep theirs so names never move. */
-  private nameChildren(parent: string, catalog: readonly { id: string; createdAt: number }[]) {
+  private nameChildren(parent: string, catalog: readonly SubagentCatalogEntry[], owned = this.services.ownedSessions()) {
     const current = this.readNames()[parent] ?? {}
     const missing = catalog
-      .filter((child) => !current[child.id] && !this.services.ownedSessions().has(child.id))
+      .filter((child) => !current[child.id] && !this.isInternalSession(child, owned))
       .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
     if (!missing.length) return current
     let next = Math.max(0, ...Object.values(current).map((name) => Number(name.slice(4))))
@@ -102,15 +144,9 @@ export class DshSubagents {
     const service = this.services.subagents(),
       query = this.services.query()
     if (!service || !query) throw new Error('DSH subagents/sessionQuery service unavailable')
-    const observation = await query.observeSession(SessionId(parent), { signal })
-    try {
-      if (!observation.projections) throw new Error('DSH public projections unavailable')
-      if (observation.header.origin === 'subagent') throw new Error('DSH 目录只接受主会话')
-    } finally {
-      observation[Symbol.dispose]()
-    }
-    return service.listChildren(SessionId(parent), signal)
+    return readDshChildren(query, parent, signal)
   }
+
   private async projection(id: string, parent: string, signal: AbortSignal) {
     const query = this.services.query()
     if (!query) throw new Error('DSH public projections unavailable')
@@ -131,10 +167,10 @@ export class DshSubagents {
       const catalog = await this.catalog(parent, signal)
       const owned = this.services.ownedSessions(),
         hidden = this.readHidden()[parent] ?? [],
-        names = this.nameChildren(parent, catalog)
+        names = this.nameChildren(parent, catalog, owned)
       const rows: DshSubagent[] = []
       for (const child of catalog) {
-        if (owned.has(child.id) || hidden.includes(child.id)) continue
+        if (this.isInternalSession(child, owned) || hidden.includes(child.id)) continue
         const row: DshSubagent = {
           id: child.id,
           parentSessionId: parent,
@@ -174,14 +210,20 @@ export class DshSubagents {
   }
   private async requireChild(parent: string, id: string, signal: AbortSignal, writable = false) {
     const child = (await this.catalog(parent, signal)).find((entry) => entry.id === id)
-    if (!child || this.services.ownedSessions().has(id) || this.readHidden()[parent]?.includes(id))
+    if (!child || this.isInternalSession(child) || this.readHidden()[parent]?.includes(id))
       throw new Error('DSH 子 Agent 不在当前主会话列表中')
-    if (writable && child.mode !== 'continuable') throw new Error('此 DSH 子 Agent 只读')
+    if (writable) {
+      if (child.mode !== 'continuable') throw new Error('此 DSH 子 Agent 只读')
+      // User interruption no longer checks a supplied parent address in rc.2.
+      // Validate durable direct lineage and live ownership before either mutation.
+      await this.projection(id, parent, signal)
+      this.services.assertLiveChild?.(parent, id)
+    }
     return child
   }
-  async prompt(request: SubagentPromptRequest, caller: AbortSignal) {
+  async prompt(parent: string, request: SubagentPromptRequest, caller: AbortSignal) {
     const signal = AbortSignal.any([caller, this.lifetime.signal])
-    await this.requireChild(request.parentSessionId, request.childSessionId, signal, true)
+    await this.requireChild(parent, request.childSessionId, signal, true)
     signal.throwIfAborted()
     return this.services.subagents()!.prompt(request, signal)
   }
@@ -201,10 +243,10 @@ export class DshSubagents {
     const child = await this.resolve(parent, ref, caller)
     if (!child) return undefined
     if (child.mode !== 'continuable') throw new Error('此 DSH 子 Agent 只读')
-    const receipt = await this.prompt({
-      parentSessionId: SessionId(parent), childSessionId: SessionId(child.id),
+    const receipt = await this.prompt(parent, {
+      childSessionId: SessionId(child.id),
       requestId: randomUUID() as SubagentPromptRequest['requestId'],
-      mode: 'continuable', delivery: 'queue', content: [{ type: 'text', text }],
+      delivery: 'queue', content: [{ type: 'text', text }],
     }, caller)
     return { kind: 'dsh-subagent' as const, workerId: child.id, agentName: child.agentName, title: child.title, receipt,
       guidance: '已交给 DSH 原生子 Agent；回复会以 DSH 子 Agent 消息回到本对话，不需要轮询。' }
@@ -229,7 +271,7 @@ export class DshSubagents {
       signal.throwIfAborted()
       const receipt = this.services
         .subagents()!
-        .interruptByParent(SessionId(id), SessionId(parent), 'continuable')
+        .interruptByUser(SessionId(id))
       if (!receipt.accepted) throw new Error('DSH 中断请求未获确认')
       // Re-read immutable public cuts until the turn is demonstrably closed. An
       // absent child, absent timing or inactive directory row is not proof.

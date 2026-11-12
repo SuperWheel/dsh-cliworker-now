@@ -1,5 +1,6 @@
 /** Atomic composer quote node and whole-node removal command. */
 import type { JSX } from 'react';
+import type { QuoteSummary } from '@deepseek-ai/dsh-client-ui-primitives';
 import type { EditorConfig, LexicalEditor, LexicalNode, NodeKey, SerializedLexicalNode, Spread } from 'lexical';
 import { DecoratorNode } from 'lexical';
 /** Localized non-persisted labels applied by the owning input shell. */
@@ -9,19 +10,22 @@ export interface QuoteNodeLabels {
 /** JSON form used only by Lexical's editor-state APIs, not browser persistence. */
 export type SerializedQuoteNode = Spread<{
     text: string;
+    summary?: QuoteSummary;
 }, SerializedLexicalNode>;
 /** Remove one quote occurrence by its Lexical identity. */
 export declare const REMOVE_QUOTE_COMMAND: import("lexical").LexicalCommand<string>;
 /** Pure React face of one quote node. */
-export declare function QuoteNodeView({ editor, nodeKey, text, labels }: {
+export declare function QuoteNodeView({ editor, nodeKey, text, summary, labels }: {
     readonly editor: LexicalEditor;
     readonly nodeKey: NodeKey;
     readonly text: string;
+    readonly summary?: QuoteSummary | undefined;
     readonly labels: QuoteNodeLabels;
 }): JSX.Element;
 /** One selected transcript range represented as an atomic inline decorator. */
 export declare class QuoteNode extends DecoratorNode<JSX.Element> {
     __text: string;
+    __summary: QuoteSummary | undefined;
     __labels: QuoteNodeLabels;
     /** Lexical node registry type tag. */
     static getType(): string;
@@ -32,9 +36,10 @@ export declare class QuoteNode extends DecoratorNode<JSX.Element> {
     /**
      * @param text - selected text.
      * @param labels - runtime-only localized labels.
+     * @param summary - readable display shown instead of the text.
      * @param key - Lexical clone-path key; absent for fresh nodes.
      */
-    constructor(text: string, labels?: QuoteNodeLabels, key?: NodeKey);
+    constructor(text: string, labels?: QuoteNodeLabels, summary?: QuoteSummary, key?: NodeKey);
     /** Serialize the quote data without its runtime presentation state. */
     exportJSON(): SerializedQuoteNode;
     /** Mount one non-editable inline host. */
@@ -49,13 +54,20 @@ export declare class QuoteNode extends DecoratorNode<JSX.Element> {
     getTextContent(): string;
     /** Selected visible quote text. */
     getQuoteText(): string;
+    /** Readable display the inserting owner supplied, if any. */
+    getQuoteSummary(): QuoteSummary | undefined;
     /** Update the localized remove label without changing persisted quote data. */
     setLabels(labels: QuoteNodeLabels): void;
     /** Render the quote body and its independent close control. */
     decorate(editor: LexicalEditor): JSX.Element;
 }
-/** @param text - selected quote text. @param labels - runtime labels. @returns a fresh node. */
-export declare function $createQuoteNode(text: string, labels: QuoteNodeLabels): QuoteNode;
+/**
+ * @param text - selected quote text.
+ * @param labels - runtime labels.
+ * @param summary - readable display shown instead of the text.
+ * @returns a fresh node.
+ */
+export declare function $createQuoteNode(text: string, labels: QuoteNodeLabels, summary?: QuoteSummary): QuoteNode;
 /** @param node - possible Lexical node. @returns whether it is a QuoteNode. */
 export declare function $isQuoteNode(node: LexicalNode | null | undefined): node is QuoteNode;
 //# sourceMappingURL=QuoteNode.d.ts.map

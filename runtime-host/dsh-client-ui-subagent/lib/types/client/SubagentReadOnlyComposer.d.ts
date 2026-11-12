@@ -2,7 +2,7 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import { NS } from './locales.ts';
 /** Why a catalog-addressed conversation cannot accept human input. */
 export interface SubagentReadOnlyMatch {
-    reason: 'one-shot' | 'parent-unavailable' | 'unknown';
+    reason: 'one-shot' | 'unknown';
 }
 /** Full chain props after the read-only subagent selector accepts the owner currency. */
 export type SubagentReadOnlyComposerProps = PropsRuntime<'conversation.composer'> & {
