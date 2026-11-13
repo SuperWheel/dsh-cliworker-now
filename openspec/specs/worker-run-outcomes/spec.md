@@ -126,3 +126,54 @@ DSH 备选工具被拒后，运行器报告「本轮最后的工具步骤失败�
 #### Scenario: 任务详情不显示处理失败
 - **WHEN** 本轮最后的工具步骤失败后 CLI 直接结束，Worker 状态为结果待核实
 - **THEN** 任务详情显示本轮回复与待核实警示，不显示「处理失败 / 本轮运行失败 / CLI_RUN_FAILED」
+
+### Requirement: Antigravity ACP 选型与会话有原生回读
+Antigravity ACP SHALL 使用返回的模型目录及 thought_level 选项设置模型强度，并在输入前回读确认；恢复 SHALL 保持原会话 ID，加载不兼容时仅以同 ID 回退 stream，MUST NOT 静默创建新会话。既有账号绑定、互斥、时限和换号续接边界 SHALL 不变。
+
+#### Scenario: 选型不匹配
+- **WHEN** 模型不在目录、强度选项缺失或设置后回读不一致
+- **THEN** 输入前停止，不猜模型与强度的映射，不自动重发
+
+#### Scenario: 旧会话恢复
+- **WHEN** 旧 stream conversation_id 在 ACP 中可见
+- **THEN** 仍实际加载并核对身份；目录可见不等于恢复成功，不兼容时保留同 ID 后备
+
+### Requirement: Antigravity 两种协议保留真实终态
+ACP SHALL 结合 tool_call 状态、permission 决定和 stopReason 判定；stream SHALL 将非空 denied_actions 标为待核实，将存在 finished_reason 的部分结果标为失败。MUST NOT 将异常结束、未完成工具、非零退出、取消或清理失败判为成功。
+
+#### Scenario: 用户拒绝后正常结束
+- **WHEN** DSH 拒绝原生请求后 ACP 有正文且以 end_turn 完整结束
+- **THEN** 按既有用户决定语义完成，保留被拒步骤；没有正文仍为待核实
+
+#### Scenario: stream 假成功
+- **WHEN** stream 返回 SUCCESS 但有 denied_actions 或 finished_reason
+- **THEN** 分别展示未执行的待核实或部分结果失败，保留正文，不自动重试
+
+### Requirement: Antigravity ACP 用量与附件按能力处理
+ACP SHALL 将 prompt usage 映射为本轮遥测，不冒充 stream 会话累计；缺少指标 SHALL 留空。附件 SHALL 遵循 promptCapabilities，未声明图片能力时仅提供路径；fork SHALL 保持不支持。
+
+#### Scenario: 未公开附件或分支能力
+- **WHEN** initialize 没有 promptCapabilities 或 session fork
+- **THEN** 不发送未经声明的图片块，不开启分支会话
+
+### Requirement: 原生拒绝即结束本轮的终态
+对已核实“拒绝任一授权即以取消结束整轮”的 CLI（CodeBuddy Code 与 TRAE CLI CN），runner SHALL 通过默认关闭的 `deniedCancelEndsTurn` 显式启用本规则。当本轮有授权请求被 DSH 拒绝（用户、权限预设或规划模式）、原生 `stopReason === 'cancelled'`、用户未停止且没有其他失败时，Worker SHALL 以 SUCCESS 结束，结果说明为“因拒绝审批而结束：被拒操作未执行，可续聊继续”，MUST NOT 因空正文降为 UNCERTAIN。被拒绝且没有原生终态的工具 SHALL 显示为已拒绝，不再另报“工具缺少终态”；其他工具缺少终态或失败 MUST 保留错误。用户主动停止、超时、缺少拒绝或取消终态时 MUST 按原有规则判定。未声明该行为的 CLI 不受影响。
+
+#### Scenario: 拒绝命令后 CodeBuddy 结束本轮
+- **WHEN** 用户拒绝 CodeBuddy 的命令审批，CodeBuddy 返回 `stopReason: cancelled` 且 `codebuddy.ai/outcome` 为 `PERMISSION_DENIED`
+- **THEN** Worker 状态为 SUCCESS，说明为“因拒绝审批而结束”，被拒命令显示已拒绝，时间线保留授权决定
+
+#### Scenario: 拒绝后用户又停止
+- **WHEN** 本轮有拒绝记录，但随后用户停止任务，CodeBuddy 以 outcome `CANCELLED` 结束
+- **THEN** 按停止处理，不显示“因拒绝审批而结束”
+
+#### Scenario: 没有拒绝却以取消结束
+- **WHEN** 本轮没有任何拒绝，CodeBuddy 仍返回 `cancelled`
+- **THEN** 按原有规则报告未成功完成，不套用拒绝结束说明
+
+### Requirement: 结果说明在 Worker 窗口可见
+CLI 本轮带有结果说明（例如因拒绝审批而结束）时，Host SHALL 把该说明以“本轮结果说明”行投影到原生 Worker 窗口的时间线，与写入结果的说明一致；MUST NOT 只保留在结果字段而不在 Worker 窗口显示。
+
+#### Scenario: 拒绝审批后结束本轮
+- **WHEN** WorkBuddy 请求的操作被用户拒绝，CLI 随后以 cancelled 结束本轮
+- **THEN** Worker 窗口显示“本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续”

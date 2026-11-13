@@ -5,7 +5,7 @@
 - 有桌面管理指引，无 CLI 登录/退出。设置行通过 `target: desktop` 打开 480px 无 PTY 窗口，复用步骤、灰卡、等待和安全结果说明；旧 Host 保留手动指引。
 - `workbuddy-desktop.ts` 独立管理观察生命周期，与账号/Worker 互斥；Gateway 校验父会话、执行权限及启用状态。打开应用由 `workbuddy-desktop-open.ts` 每次重新核实版本后使用 argv；关闭不终止桌面端。
 - 初次一次查询，显式打开/继续后串行观察：完成后至少 15 秒，最多 5 分钟/20 次，手动刷新合并，整轮 25 秒并确认清理。账号和模型共享一次元数据读取；无凭据访问扩展，无原生 runner/helper/bootstrap 修改。
-- 认证缺失尚无精确回执，泛化认证错误只显示检查登录；不证明退出或同站点换号。实施证据及未验证项目见 `openspec/changes/add-new-cli-graphical-login/tasks.md`。
+- 认证缺失尚无精确回执，泛化认证错误只显示检查登录；不证明退出或同站点换号。实施证据及未验证项目见 `openspec/archives/add-new-cli-graphical-login/tasks.md`。
 
 ## WorkBuddy 注册接线（未发布，2026-11-07）
 
@@ -1364,7 +1364,7 @@ OpenSpec 变更 `upgrade-host-022rc2`；开发 SDK 与随包四个原生界面�
 - Host 适配：删除的 `listChildren` 改读公开 `subagentCatalog` 投影；prompt 按 rc.2 去掉 `parentSessionId`／`mode` 字段，插件仍核对目录、直系 lineage 与 live ownership。`interruptByParent` 改为 `interruptByUser`，补目标 Session 授权，停止仍等待结束投影。`isOwnedBy` 改为 `ownsDirectSubagent`，结合直系 header 与 `rootOf` 对父、子均返回父来核对在线所有权；冷会话由 DSH 目录 lineage 校验。生命周期能力检测适配移除 `drainChildren`，`startActivation` 参数展平；清理仍等待实际结束。
 - Client 与打包：Menu 右键使用 `anchorPoint`、键盘使用 `anchorRef`，插件 `stat-popover` 改用官方 CSS anchor。rc.2 typert 生成器要求 `package.json` 的 `files` 包含 `lib/typert.remote-client.d.ts.map`，补入后隔离预览包构建通过。
 - 换段修复：旧段 CLI Worker 分组为空，是 Worker 已由 v0.8.9 换段归入新段的预期行为；旧内部 Harness 子会话混入旧段 DSH 列表则是该换段路径的遗漏，非 rc.2 回归。复用已有 `retiredSessionIds`，排除当前及 retired 内部会话，并精确排除标签为 `worker/<已知 Worker ID>` 的条目（含其他父段与已归档 Worker）；未知 ID 或相似标签仍显示。列表、命名、单条读取与操作共用判断，不改用户会话或已误分配的名称文件。
-- 验证边界：变更任务记录了四包源码类型检查、插件 typecheck、构建与清单校验通过；适配后全量回归 6222 项通过、14 项跳过，换段修复后记录为 6227 项通过、14 项跳过、0 失败。Mac Desktop 0.2.2-rc.2 经内置浏览器直连 Host Web UI 核对，输入栏、统计药丸、Worker 列表与对话、续聊输入框、设置页及回答下方用量弹层正常，旧段不再显示内部会话，未再出现定位 hook 与 slot 崩溃。上游四包 Vitest、输入栏上下文用量弹层、运行中动画与 Stop、Windows 及真实模型／CLI 派遣未验证；详细记录见 `openspec/changes/upgrade-host-022rc2/tasks.md`。
+- 验证边界：变更任务记录了四包源码类型检查、插件 typecheck、构建与清单校验通过；适配后全量回归 6222 项通过、14 项跳过，换段修复后记录为 6227 项通过、14 项跳过、0 失败。Mac Desktop 0.2.2-rc.2 经内置浏览器直连 Host Web UI 核对，输入栏、统计药丸、Worker 列表与对话、续聊输入框、设置页及回答下方用量弹层正常，旧段不再显示内部会话，未再出现定位 hook 与 slot 崩溃。上游四包 Vitest、输入栏上下文用量弹层、运行中动画与 Stop、Windows 及真实模型／CLI 派遣未验证；详细记录见 `openspec/archives/upgrade-host-022rc2/tasks.md`。
 
 ## configured 账号摘要保留具体原因（2026-10-30，未发布）
 
@@ -1420,7 +1420,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 现象：DSH 0.2.2-rc.1 上，官方插件管理器与 dshmarket（1.66.45、1.73.12）热启用本插件时页面立即白屏，报 `SlotAssemblyError: scope 'session-maybe' rendered without an installed adapter`；热停用同样白屏。宿主客户端先移除旧界面模块再导入新模块，根渲染器整页包在 `session-maybe` 作用域里，错误边界按设计重新抛出该错误，React 清空 `#root`；新适配器就绪后页面也不恢复。
 - 决定：宿主没有批量替换或渲染暂停接口，2026-10-24 的「销毁时恢复原版界面」候选已证明无效，因此改为事后恢复。插件客户端发现 `#root` 已挂载（React 容器标记非 null）却为空时，等客户端模块同步（`modules.entries.state`）结束并确认 0.5 秒，再对 `web/src/mount.ts` 注册的唯一 `web boot: application mount` fiber 调用 Cordis `Fiber.restart()`。它先执行 DSH 自己的 `root.unmount()` 再重新挂载，新根仍由 DSH 生命周期拥有；不另建 React 根、不替换 `uiRenderer` 服务。通过应用根 context 访问，停用本插件后仍可执行。冷启动时宿主在全部客户端插件激活后才挂载 React，不会误判；销毁后继续观察 60 秒以覆盖停用方向。
 - 兜底：找不到唯一挂载 owner、模块同步失败或重挂后仍为空时，网页刷新一次（sessionStorage 记录，30 秒内不重复）。DSH Desktop 不能刷新：`apps/desktop/src/main.ts` 的 `DESKTOP_IPC.boot` 每次返回 Host 启动时的模块注入，热切换后刷新会请求已失效的模块版本并弹出启动失败对话框（2026-11-06 第一版实测），所以 Desktop 改为在空白页写入纯文本的重启提示。原地恢复由 gpt-6-astra high 设计实现。
-- 实现与验证：`src/client/root-recovery.ts`；记录见 `openspec/changes/fix-hot-enable-blank-screen/tasks.md`。
+- 实现与验证：`src/client/root-recovery.ts`；记录见 `openspec/archives/fix-hot-enable-blank-screen/tasks.md`。
 
 ## 2026-11-06 Grok 过期凭据原生续期（未发布）
 
@@ -1428,12 +1428,12 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 决定：用 Grok 本体续期，不自拼 OAuth。Windows Grok 1.0.50 实测 `grok models` 在 access 已过期 854 分钟时 3.3 秒退出码 0，身份不变、文件原子替换、日志 `auth: silent refresh` outcome=`Renewed`，未启动 leader、无残留进程。ACP initialize 方案未采用。
 - 实现：`src/host/grok-renewal.ts`。私有 `GROK_HOME`、`GROK_AUTH_PATH` 指向用户真实 `~/.grok/auth.json`（不经 Worker 链接），经 `private-launch.mjs` 启动；按原生 home 合并在途续期，与 Grok 账号终端互斥（`reserveGrokAccount`）；固定 30 秒时限，调用方取消只结束自己的等待，避免在 IdP 轮换后、写回前被杀；无法确认进程范围退出时封锁 Grok。stdout/stderr 只计字节，结果只读私有日志的 `ctx.outcome`（最多 4 MiB）：`Failed(ManualLogin…)` 判为需重新登录并按凭据文件指纹记入 Host 内存，账号状态显示「登录已失效」直到文件变化；退出码 2 且无续期日志判为版本不支持；其他为暂时失败，不降级账号状态。access 剩余不足 5 分钟但仍有效时续期失败可继续用旧 access。`readGrokOwnAccount` 按 missing/format/unsafe/read/expired 分类提示。
 - 取舍：续期会改写用户凭据文件，效果等同用户自己运行 grok，README 已说明。macOS Worker 私有目录的 `auth.json` 链接在 Grok rename 写回时可能被替换为私有文件，本次只记录风险，未修复。
-- 记录：`openspec/changes/fix-grok-expired-access-renewal/tasks.md`。
+- 记录：`openspec/archives/fix-grok-expired-access-renewal/tasks.md`。
 
 
 ## Pi/OMP 精确退出与原生登录选项（2026-11-06，预览待 Windows 验收）
 
-- 见 `openspec/changes/fix-pi-omp-logout-and-login-options/`。Pi 通过当前安装的 ModelRuntime provider auth 注册表、OMP 通过 `get_login_providers` 获取选项，空隔离 HOME 内查询并清除继承凭据。OMP 16 RPC 需要合成占位 API 环境才能启动，只查元数据，不发送模型请求。只缓存同一安装入口身份的成功结果；启动登录前再次验证 provider 来源，失败转原生选择。
+- 见 `openspec/archives/fix-pi-omp-logout-and-login-options/`。Pi 通过当前安装的 ModelRuntime provider auth 注册表、OMP 通过 `get_login_providers` 获取选项，空隔离 HOME 内查询并清除继承凭据。OMP 16 RPC 需要合成占位 API 环境才能启动，只查元数据，不发送模型请求。只缓存同一安装入口身份的成功结果；启动登录前再次验证 provider 来源，失败转原生选择。
 - Pi 指定凭据退出只加载原生 ModelRuntime，调用 logout 并 listCredentials 回读，不初始化会话/InteractiveMode。OMP 继续原生 `/logout <provider>`，识别 16.x 及 18.x 带边框的高亮 ID，不按列表顺序定位。账号行和替换选项显示 OMP 原生凭据编号。
 - Host 按 source/provider/credential id 检查记录是否存在；过期、认证失败或临时封锁不算退出。OMP 原生 `deleted by user` 软删除算已退出。成功消息在原生回读与进程清理均完成后发送。替换保留新凭据确认后退出旧凭据的顺序，不把新增等同于替换完成。
 - 文案区分智谱 BigModel Coding（中国）/Z.AI（国际），不再使用 zai.cn 称呼国内账号。多凭据模型范围交集规则及认证失败展示由下一节 `fix-catalog-auth-denial-display` 处理。
@@ -1445,7 +1445,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 决定：Pi/OMP 同一服务商路由的多条凭据中，被服务商明确拒绝认证（401/403 或认证错误码）的凭据不参与交集；其余凭据全部确认支持时，按它们的交集显示模型。任何一条范围未知（网络、超时、无法解析）时仍保持保守规则。全部被拒绝时报「<CLI> 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新」；有凭据被跳过时，目录 notice 为「当前账号可用模型；已跳过 N 条认证失败的凭据，可在账号窗口退出」，设置页显示在模型下方。OpenCode 按服务商使用同样的提示。
 - 实现：`accountSupportedChoices` 通过 `options.report` 累计被拒绝的凭据数；桥接的 account-scope 阶段输出 `{phase, models, authenticationDenied}`，Host 同时兼容旧数组格式。notice 经 `catalog-notice.ts` 的 WeakMap 跟随模型数组，`catalogFor` 读出后放入 `Catalog.notice`；空目录在 query 目录清理后再报错。只传计数，不传凭据编号、账号或密钥。
 - 取舍：执行时 OMP 仍可能先选到失效凭据，失败一次后由原生封锁；插件不自动退出或封锁凭据，提示用户在账号窗口退出。
-- 记录：`openspec/changes/fix-catalog-auth-denial-display/tasks.md`。
+- 记录：`openspec/archives/fix-catalog-auth-denial-display/tasks.md`。
 
 ## CodeBuddy Code 原生 ACP 接入（2026-11-07，v0.8.8，未发布）
 
@@ -1453,11 +1453,11 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 决定：经 `codebuddy --acp` 复用 `runNativeAcp`，transport `codebuddy-acp-v1`；所有插件进程设置 `DISABLE_AUTOUPDATER=1`。三档映射为 `default`/`auto`/`bypassPermissions`，规划为 `plan`，不使用 `fullAccess`。强度取每个模型的 `_meta.effortOptions`，“默认”对应 `thought_level=enabled`。
 - 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（与 TRAE 共用：本轮有 DSH 拒绝、原生 cancelled、未主动停止且无其他失败时，SUCCESS 与“因拒绝审批而结束：被拒操作未执行，可续聊继续”；空正文不降为 UNCERTAIN）。其他 ACP CLI 行为不变。
 - 账号与站点：登录状态只看认证文件与 `.logged-out` 标记。2026-11-07 用户批准“允许只读站点”：显式 `CODEBUDDY_INTERNET_ENVIRONMENT`（`settings.json` 的 `env` 键或进程环境）优先，否则在内存中只取认证文件 `auth.domain`，按 CLI `product.json` 的域名表映射；域名与文件内容不落日志、事件、持久化。绑定为站点 ID 与模型目录摘要，任一变化都让旧目录与偏好失效。
-- 记录：`openspec/changes/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
+- 记录：`openspec/archives/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
 
 ## 2026-11-07 v0.8.8 TRAE CLI CN 接入决策
 
-定稿见 [add-traecn-cli](../openspec/changes/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/changes/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
+定稿见 [add-traecn-cli](../openspec/archives/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/archives/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
 
 - 只接国内版官方 `traecli`：CliId `traecn`、配置 `traecnExecutable`、transport `traecn-acp-v1`；以版本输出及 ACP `traecli-acp` 双重确认身份，不自动发现同名开源程序。2026-11-07 未发现官方国际版 CLI；官方安装脚本需直连 trae.cn。
 - 个人登录只在该次命令开启开发中特性 `personal_user_login`，另提供企业 SSO/PAT；不修改 `TRAE_HOME`、`traecli.toml` 或调用更新。目录先核对登录再读 `models --json`，模型用 `config_name`，不提供强度。
@@ -1469,11 +1469,11 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 ### CodeBuddy / TRAE 图形账号引导（2026-11-07，未发布）
 
-独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/changes/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。
+独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/archives/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。
 
 ## 2026-11-10 v0.8.9：TRAE 询问档与 DS Bot 换段重绑（未发布）
 
 需求见 [v0.8.9 PRD](prd/2026-11-10-v0.8.9-PRD.md)。
 
-- TRAE「询问」档（[add-traecn-ask-level](../openspec/changes/add-traecn-ask-level/design.md)）：询问档以 `-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user" acp serve` 启动，不带 `--permission-mode`（二者同给时 TRAE 拒绝启动），不设、不回读 ACP 模式；其余三种启动不变。仅可查看且未选档时按询问档运行。工作区内改动先询问尚未经真实模型验证，验证通过前不随正式版本发布。
-- DS Bot 换段（[rebind-workers-across-bot-segments](../openspec/changes/rebind-workers-across-bot-segments/design.md)，Issue #10）：只读 DS Bot `<DSH_HOME>/bot/state.json` 识别段链（Bot 自己对话、群成员会话、群自身三类，重复 ID 的链整体丢弃）。父会话是链的当前段时，在 Worker 入口把同链旧段的空闲 Worker 改到当前段并记 `formerParentSessionIds`；运行中的 Worker 空闲后再改。显示桥只在旧记录父会话属于 `formerParentSessionIds` 时以旧记录为前身重建显示子会话，绑定存储以显式 `reparent` 接受这一换父替换。CLI 会话 ID 不变。
+- TRAE「询问」档（[add-traecn-ask-level](../openspec/archives/add-traecn-ask-level/design.md)）：询问档以 `-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user" acp serve` 启动，不带 `--permission-mode`（二者同给时 TRAE 拒绝启动），不设、不回读 ACP 模式；其余三种启动不变。仅可查看且未选档时按询问档运行。工作区内改动先询问尚未经真实模型验证，验证通过前不随正式版本发布。
+- DS Bot 换段（[rebind-workers-across-bot-segments](../openspec/archives/rebind-workers-across-bot-segments/design.md)，Issue #10）：只读 DS Bot `<DSH_HOME>/bot/state.json` 识别段链（Bot 自己对话、群成员会话、群自身三类，重复 ID 的链整体丢弃）。父会话是链的当前段时，在 Worker 入口把同链旧段的空闲 Worker 改到当前段并记 `formerParentSessionIds`；运行中的 Worker 空闲后再改。显示桥只在旧记录父会话属于 `formerParentSessionIds` 时以旧记录为前身重建显示子会话，绑定存储以显式 `reparent` 接受这一换父替换。CLI 会话 ID 不变。

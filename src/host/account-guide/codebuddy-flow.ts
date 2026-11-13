@@ -3,7 +3,7 @@ import type { FlowDefinition, FlowStep, ScreenView } from './engine.ts'
 
 // CodeBuddy 2.181.0, isolated macOS 200×60, 2026-11-07. Stable recorded markers;
 // paths, model names and ports are deliberately not readiness evidence.
-// See openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md.
+// See openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md.
 const sites = [
   { id: 'china', label: '中国站', native: 'Log in via Chinese Site' },
   { id: 'international', label: '国际站', native: 'Log in via International Site' },

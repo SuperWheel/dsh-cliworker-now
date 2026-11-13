@@ -610,7 +610,7 @@
 - [x] `pnpm typecheck`、`pnpm test`（31 文件 / 390 项）、`pnpm build:preview` 通过；自动测试因本机进程与沙箱夹具需求在获准的本机执行环境运行，不调用真实模型。日志在 `.test-data/openspec-adoption/{typecheck,test,build-preview}.log`。
 - [x] 指南相对链接、运行时依赖/exports/安装元数据保持不变、六个生成技能版本、`git diff --check` 检查通过；正式 `lib/` 的 172 个文件 SHA256 前后完全一致。检查报告与指令快照在 `.test-data/openspec-adoption/`（忽略目录）。
 - 本次不执行正式 build、Desktop 更新或真实 CLI 模型任务，不提升插件版本；Kimi/Grok/Hermes 以及其他历史真实验收边界继续保留，未虚勾历史任务。原有 Logo 归档和历史文档整理与本次改动分别保留。
-- [x] 本次 change 已归档为 `openspec/changes/archive/2026-10-07-adopt-openspec-workflow/`；主规格 development-workflow 含 4 条需求。归档后 `pnpm spec:check`、`pnpm spec validate --archived --strict --no-interactive` 通过，活动变更为 0。
+- [x] 本次 change 已归档为 `openspec/archives/adopt-openspec-workflow/`；主规格 development-workflow 含 4 条需求。归档后 `pnpm spec:check`、`pnpm spec validate --archived --strict --no-interactive` 通过，活动变更为 0。
 
 ## 2026-10-07：v0.6.7 CLI 路由、原生模型目录与连接状态
 
@@ -640,7 +640,7 @@
 - 真实 OMP＋合成 Host 引用的生产装配探针通过：候选外层断网、scope 阶段允许受控 GET、同一私有快照，5 个已确认原生账号模型；源账号／配置哈希不变，生成和 OAuth 刷新均 0。最终候选文件仅保留身份／路由／强度及 header 名称，0600，合成 Host key 扫描不匹配；准备阶段清理边界与队列回归通过。证据 `.test-data/model-catalog-health/managed-omp-two-phase.json`。
 - Desktop 在全部 7 个 Worker 已结束、账号终端 0 后重建并重启，原构建备份 `.cache/desktop-before-cli-fixes-068/lib` 保留。真实 Host 引用下设置菜单：OMP 14 个去重模型，已确认免费额度的 5 项排前；Pi 2 项；OpenCode 6 项。OMP／OpenCode 的实际 Worker 改选菜单分别与设置的 14／6 项一致，公共 Ling 已不在可选项中。原不可用 gpt-5／Ling 偏好提示重选，均未保存；卡片已显示 GLM-5.3-Flash／gpt-5／ling-3.0-flash-fin-free 等纯名称。CUA 原生截图保存在本次聊天工具记录，未冒充模型生成成功。
 - 正式包 `artifacts/dsh-cliworker-now-0.6.8.tgz` 共 192 项，账号查询 helper、类型配套与 OpenCode native 模块齐全；无测试数据、缓存、账号或运行文件。SHA256 `b0d6d94f4f8e37f72f55efc6e1aacddf5d86341189dbf2bef5ff364e4ad7ca2b`，生产链接指向当前仓库。14 份既有 Worker／偏好／角色／CLI 设置文件检查中均未改变；最终验收摘要见 `.test-data/cli-fixes-068/desktop-verification.json` 和 `artifacts/dsh-cliworker-now-0.6.8-verification.json`。
-- OpenSpec 收尾：21／21 任务有对应实施与验收记录，三个能力域逐需求核对后同步主规格；重新归档至 `openspec/changes/archive/2026-10-07-fix-cli-routing-model-catalog-health/`。归档后严格主规格 4／4、归档变更 2／2 通过，活动变更为 0；本地分阶段提交，不推送，既有无关工作区改动保留。
+- OpenSpec 收尾：21／21 任务有对应实施与验收记录，三个能力域逐需求核对后同步主规格；重新归档至 `openspec/archives/fix-cli-routing-model-catalog-health/`。归档后严格主规格 4／4、归档变更 2／2 通过，活动变更为 0；本地分阶段提交，不推送，既有无关工作区改动保留。
 - 未做：没有提交新默认选型、登录操作或真实模型请求；主模型自然语言服从、所有 provider 的远端任务成功及未来余额／服务状态仍无本轮验收证据。未知账号范围继续隐藏，不通过付费模型请求试探权限。
 
 
@@ -657,7 +657,7 @@
 - 正式 Desktop 更新前9个worker全部结束、账号终端0；旧lib备份 `.cache/desktop-before-cli-settings-069/lib`。完整重启后原生设置确认账号/模型加载禁用状态、ZCode/OMP/Pi/OpenCode中性、Grok/Hermes错误状态及Hermes明确原因；没有保存偏好或提交登录。17份worker/preference/开关/角色文件集合和SHA256均不变。原生截图在本次CUA工具记录，摘要 `desktop-verification.json`。ZCode实时诊断仅使用上述一次用户授权GET，未为Desktop截图重复触发它。
 - 包共207项，81份源码与最终preview逐字节相同，正式入口与包内容相同，包含新增原生安装解析helper，无测试/缓存/账号数据。SHA256 `bbfa34a46e1e78bc56c4758a11e4b691e0d14172205997e6ed8fb1daeb549829`，交付摘要 `artifacts/dsh-cliworker-now-0.6.9-verification.json`。
 - 保留边界：未发起六CLI真实生成/续聊、未提交登录或刷新OAuth，主模型实际工具服从未新增生成验收。Grok 尚无可核验的当前账号 Worker 模型权益接口，故未确认候选不供选择；Hermes 未知provider/账号池仍不放行。本机Hermes原源码根已改名，旧shim失效；虽facts.json能定位完整构建环境，官方要求源码launcher优先，不能以snapshot替代其安装身份和生命周期，需另行恢复原生安装。本轮没有改全局launcher或恢复用户已改名目录。历史Kimi/订阅等缺口保持可见。
-- OpenSpec 主规格已逐条核对并同步，9/9实施与验收任务完成；归档 `openspec/changes/archive/2026-10-08-repair-cli-settings-discovery/`。归档前严格校验5项、归档后主规格4项与全部归档3项均通过，活动变更0；仅本地提交，不推送。
+- OpenSpec 主规格已逐条核对并同步，9/9实施与验收任务完成；归档 `openspec/archives/repair-cli-settings-discovery/`。归档前严格校验5项、归档后主规格4项与全部归档3项均通过，活动变更0；仅本地提交，不推送。
 
 
 ## v0.6.10 — 原生登录识别与简洁账号文案（2026-10-08）
@@ -690,7 +690,7 @@
 - [x] 数据核对：最终更新前基线的 44 份账号、配置、历史、偏好文件全部哈希不变；另行核对 MiMo 原生账号／配置／Git exclude 的前后哈希及早于本次任务的修改时间。较早首次基线有 2 份配置（Codex/Hermes）在首次正式更新前发生变化，归因未确定，保留当前内容未回滚；该阶段凭据、历史和偏好均未变。记录 `original-state-check-pre-release.json`、`post-update-state-check.json`、`post-final-update-state-check.json`、`mimo-native-source-check.json`，不将最终基线结果扩大为整段会话所有配置从未变化。
 - [x] 正式包 `artifacts/dsh-cliworker-now-0.6.11.tgz` 共 237 文件，SHA-256 `8db29b1dddd050d6f4b813724fe413b199823bad0a2ba758ab3531bcf2259523`。包内容与构建核对一致，动态辅助模块相对导入完整，无测试／账号／缓存／运行数据。Host 与 preview 逐字节相同；Client 仅构建位置产生的 node_modules 区域注释路径不同，可执行文本完全相同。验证报告 `artifacts/dsh-cliworker-now-0.6.11-verification.json`；真实模型生成 0。
 
-- [x] 3 个能力域的 8 条增量需求逐条同步主规格并核对文本一致；归档前 6 项严格校验、归档后 5 项主规格严格校验通过，任务 9/9，活动变更 0。归档为 `openspec/changes/archive/2026-10-08-isolate-cli-account-models`；能力限制和未做模型生成的边界保留在本记录及规格中。源码、文档和归档分阶段本地提交，不推送。
+- [x] 3 个能力域的 8 条增量需求逐条同步主规格并核对文本一致；归档前 6 项严格校验、归档后 5 项主规格严格校验通过，任务 9/9，活动变更 0。归档为 `openspec/archives/isolate-cli-account-models`；能力限制和未做模型生成的边界保留在本记录及规格中。源码、文档和归档分阶段本地提交，不推送。
 
 
 ## 2026-10-08：v0.6.12 原生登录入口与 Grok 账号目录
@@ -708,7 +708,7 @@
 - 包验证：251 个文件，98 个源码文件与最终隔离 preview 相同；Host 完全相同，两处 `hermes-native-entry.py` 资产与源码相同，包内文件逐个匹配构建，pnpm 仅规范化移除 `packageManager`。无测试、账号、私有日志或运行数据入包。SHA-256 `428db572f4a4d2180665dc0702c89e6dc3bac39826130213625390b8cdc097d0`；摘要 `artifacts/dsh-cliworker-now-0.6.12-verification.json`。最后的 README 版本校正后已重新打包和校验；未改执行代码，无需重复 Desktop 更新。
 - 未验证/保留事项：未提交任何 CLI 登录、未执行 Kimi Trust 后的切换、未新建真实模型任务；Grok 的 Build 许可及目录不等于额度或生成成功。OMP 关闭菜单后的瞬态状态失败仍按上述现象记录。本轮私有证据位于 `.test-data/native-login-0612/` 和 `.test-data/grok-account-probe-0612/`，不提交 Git；用户原有图标整理及既有文档改动不纳入本轮提交，不推送远程。
 - 归档前严格校验：`pnpm spec:check` 的 5 个主规格和本变更共 6 项全部通过。实现、自动检查、隔离/原生菜单、Desktop 与交付文档共 7 项任务均有上述对应证据；模型生成、登录提交及 OMP 瞬态读取的边界保持可见。
-- 最终规格复核将新增的“退出不回退全局账号”明确限定为 Hermes 独立来源；Pi/OMP 原有全局与插件自身来源合并未被文档误写成已改造。三个新增要求已同步至主规格且逐块核对，使用 `--skip-specs` 避免归档时重复合并；变更归档于 `openspec/changes/archive/2026-10-08-repair-native-cli-login-entrypoints/`，7/7 任务，归档后 `pnpm spec:check` 的 5 个主规格通过，活动变更为 0。
+- 最终规格复核将新增的“退出不回退全局账号”明确限定为 Hermes 独立来源；Pi/OMP 原有全局与插件自身来源合并未被文档误写成已改造。三个新增要求已同步至主规格且逐块核对，使用 `--skip-specs` 避免归档时重复合并；变更归档于 `openspec/archives/repair-native-cli-login-entrypoints/`，7/7 任务，归档后 `pnpm spec:check` 的 5 个主规格通过，活动变更为 0。
 
 ## 2026-10-08：v0.6.13 服务商登录与 Hermes Nous 修复交付
 
@@ -721,7 +721,7 @@
 - Desktop：确认 10 个历史 Worker 中 0 活动、0 账号/任务桥接进程，备份旧 lib 后退出并正式构建更新。实际安装仍链接当前仓库；重启后四个 CLI 侧栏绿点，Hermes 显示 Nous 账号登录及自身身份，模型下拉顶部/底部可见的 10 项与 Host 实测一致。其余三个服务商细项由本地 Host 与隔离渲染核验，本次未打开它们的远端目录。未点保存、未退出/切换账号、未生成；59 份基线账号/配置/Worker/偏好文件前后哈希完全不变。
 - 包：`artifacts/dsh-cliworker-now-0.6.13.tgz`，257 文件、100 源文件与最终 preview 对应，Host 相同、Client 可执行内容相同，包内逐文件匹配，pnpm 只移除 packageManager 元数据；无账号、测试或私有日志入包。SHA-256 `7eb2b43abd94cdf6f063c428e7fce7780ac7155a816fc06c935a6f09882e1939`。验收摘要 `artifacts/dsh-cliworker-now-0.6.13-verification.json`，私有证据 `.test-data/provider-login-0613/` 不提交 Git。
 - 边界：未执行真实模型生成或续聊，元数据成功不写作推理成功；既有 OMP 原生菜单关闭后偶发状态失败、本轮范围外订阅/权限限制不宣称已根治。保留用户既有图标及文档改动，只提交本次范围，不推送。
-- 规格交付：三个能力域新增 3 条要求并修改 1 条既有状态要求，原 Purpose 与既有场景保留；同步前后严格校验共 6 项通过。6/6 任务均有上述证据，归档于 `openspec/changes/archive/2026-10-08-fix-provider-login-status-and-hermes-catalog/`；使用 `--skip-specs` 避免重复同步，归档后 5 个主规格通过、活动变更为 0。
+- 规格交付：三个能力域新增 3 条要求并修改 1 条既有状态要求，原 Purpose 与既有场景保留；同步前后严格校验共 6 项通过。6/6 任务均有上述证据，归档于 `openspec/archives/fix-provider-login-status-and-hermes-catalog/`；使用 `--skip-specs` 避免重复同步，归档后 5 个主规格通过、活动变更为 0。
 
 ## 2026-10-09：v0.6.14 账号摘要与退出入口交付
 
@@ -732,7 +732,7 @@
 - 隔离 UI：Tabbit 模拟 profile 检查 OMP/Pi/Hermes/OpenCode/Kimi 五行，账号文字均 22px 单行；五个退出按钮 class、65×36px 尺寸及可用状态一致。OMP 可见“OpenAI账号登录”，不拼接 API 或邮箱；安全详情保留；Kimi 模拟 ID 可见。未选/取消来源零启动，选择 plugin 才发送 `accountStartForSource`；假 Host 拒绝操作后显示简短通用错误并可关闭。浏览器资源与最终 preview 可执行文本相同，最后 Host 修复后 Client SHA-256 未变。自建网页关闭、任务释放、服务器停止，0 真实账号操作/偏好写入/生成。
 - Desktop：更新前 10 个历史 Worker、0 活动、0 账号/任务桥进程，备份旧 lib；正式构建后原生退出并重启。实看 OMP“OpenAI账号登录”、Pi“zai.cn API 登录”、Hermes“Nous账号登录”、Kimi“已登录 + 当前脱敏 Kimi ID”，退出按钮可用且一致。仅查看，不点击真实退出、保存或提交登录；页面正常模型加载随切换/关闭取消，不将此写作模型调用验收。回到原会话后 59 份账号/配置/Worker/偏好基线哈希全不变，无账号/任务进程残留。
 - 包：`artifacts/dsh-cliworker-now-0.6.14.tgz`，263 文件、102 源文件与最终 preview 对应；Host 字节相同，Client 仅构建路径区域注释不同，可执行内容相同，包内逐文件匹配且无账号/测试/私有日志。SHA-256 `5a0dc4d2e8cedbd694f456e04da4f15a36e6cf14e642dad9173a77ffd821104b`；验收摘要 `artifacts/dsh-cliworker-now-0.6.14-verification.json`，详细证据 `.test-data/account-actions-0614/` 不入 Git。用户原有图标及文档整理保留，真实模型生成和真实账号退出均为 0，不推送。
-- 规格交付：1 条既有摘要需求更新、2 条新需求同步主规格，原 Purpose 和既有场景保留；4/4 任务有对应证据。同步前后各 6 项严格校验通过，归档于 `openspec/changes/archive/2026-10-09-unify-account-actions-and-summary/`，归档后 5 个主规格通过，活动变更为 0。
+- 规格交付：1 条既有摘要需求更新、2 条新需求同步主规格，原 Purpose 和既有场景保留；4/4 任务有对应证据。同步前后各 6 项严格校验通过，归档于 `openspec/archives/unify-account-actions-and-summary/`，归档后 5 个主规格通过，活动变更为 0。
 
 ## 2026-10-09：v0.6.15 原生保护、Windows 与双语 GitHub 发布
 
@@ -744,7 +744,7 @@
 - Desktop：更新前10个历史Worker、0活动/账号桥进程，备份旧lib，确认原生退出后正式构建并重启。实看原会话/任务恢复、Antigravity自身账号、OMP“OpenAI账号登录”、Pi“zai.cn API 登录”，关闭设置且无残留进程；不点真实登录/退出/保存，不生成。59份更新前账号/配置/历史/偏好基线哈希全部不变。Client渲染逻辑与v0.6.14已验收版本相同，仅21处Typert Host诊断源码行号变化，保留对应比较证据。
 - 包：`artifacts/dsh-cliworker-now-0.6.15.tgz`，267文件、105源码文件对应最终preview；Host相同，Client仅构建位置区域注释不同，包内逐字匹配，无账号/缓存/测试/运行日志。SHA256 `53940b097ee37c930c35dacf0b0eef1aa522d6c5b287845df0f6860a4b50334d`；包含README.en和全部动态helpers。公开Release为 [v0.6.15](https://github.com/SuperWheel/cliworker-now/releases/tag/v0.6.15)，最新稳定版，目标提交b18dcb2530843899647921c5ecc067c95925b60c，附tgz、SHA256SUMS.txt、verification.json。首次短target SHA被API拒绝，改完整SHA；16MB上传HTTP/2停滞，保留草稿后用仍保持TLS校验的HTTP/1重试。三项远端资产回下载逐字节匹配且服务端digest一致，未替换任何旧Release。
 - URL安装：独立DSH_HOME、自建release-install-check profile执行公开Release URL；pnpm第一次下载重试后正常完成，包0.6.15、profile.bundles注册和6个关键文件与正式包一致。用户Desktop原链接/原profile未被验证安装覆盖。详细证据 `.test-data/windows-release-0615/` 私有不入Git；本轮只推送明确授权的代码/双语首页与验证记录，保留86项用户原有素材/文档整理。
-- 规格归档：cli-account-isolation更新1条自身账号需求，新增platform-runtime的3条和package-distribution的2条；既有Purpose/场景保留。8/8任务真实完成，归档前严格校验6项、归档后7个主规格通过，活动变更0，归档路径 `openspec/changes/archive/2026-10-09-native-cli-protection-and-windows-release/`。
+- 规格归档：cli-account-isolation更新1条自身账号需求，新增platform-runtime的3条和package-distribution的2条；既有Purpose/场景保留。8/8任务真实完成，归档前严格校验6项、归档后7个主规格通过，活动变更0，归档路径 `openspec/archives/native-cli-protection-and-windows-release/`。
 
 
 ## 2026-10-09：v0.6.16 派遣询问流程简化
@@ -788,7 +788,7 @@
 - 严格规格校验归档前 8 项通过。确认 Desktop 的 20 个 Worker 中活动数 0、账号/任务桥进程 0，退出应用后正式 `pnpm build`、`pnpm pack --pack-destination artifacts`，包逐文件及 preview 源码/Host/Client 一致性核对通过。Client 仅构建位置的 node_modules region 注释路径不同，执行文本相同。包 270 文件、106 源码文件；SHA-256 `56889e7cdf6d86400dbb6bdf33dec529353809e84a633d5296ee6e23adf76df7`；摘要 `artifacts/dsh-cliworker-now-0.7.1-verification.json`。
 - 原生 Desktop 辅助功能 UI 确认 v0.7.1 启用、1 组件运行，原会话和子对话恢复、续聊框可见；没有在生产会话发送测试消息。更新前 4182 文件基线中 4181 个哈希不变，仅 `host.lock` 随重启变化，无文件丢失；账号、偏好和已记录历史保留。证据 `idle-before-update.json`、`desktop-verification.json`、`state-preservation.json`。本轮不新增远端查询或真实生成验收，不修改 Harness 核心；原有图标整理及文档改动继续保留，不推送远程。
 
-- 交付收尾：实现提交 `1b06c77`，OpenSpec 4/4 任务完成；新建 `worker-conversation-interaction` 主规格的 3 条要求，Purpose/场景与增量逐块核对。同步后严格校验 9 项通过，归档后 8 个主规格通过、活动变更 0；归档 `openspec/changes/archive/2026-10-09-align-native-chat-interactions/`。仅本地提交，保留原有未提交改动。
+- 交付收尾：实现提交 `1b06c77`，OpenSpec 4/4 任务完成；新建 `worker-conversation-interaction` 主规格的 3 条要求，Purpose/场景与增量逐块核对。同步后严格校验 9 项通过，归档后 8 个主规格通过、活动变更 0；归档 `openspec/archives/align-native-chat-interactions/`。仅本地提交，保留原有未提交改动。
 
 
 ## v0.7.2：智能体管理与 Desktop 验收（2026-10-09）
@@ -800,7 +800,7 @@
 - 原生 Desktop UI 确认 v0.7.2 启用、1 组件运行，原会话恢复，agy/codex/hermes 短名与 Low 可见，右键菜单及真实旧 9cffdf 的「新建对话」/禁用续聊可见；未在真实会话提交消息或管理修改。数据基线 4189 文件：4174 哈希不变、13 Worker 只改名称/来源/别名、host.lock 重启变化，无文件丢失。`~/.codex/config.toml` 于17:10在正式构建及更新前出现外部配置变化，单列保留；本轮代码不写该路径，其账号认证文件与插件偏好/事件/历史均未变。证据 `desktop-verification.json`、`state-preservation.json`。
 - 本轮无真实模型生成或远端账号查询，不修改 Harness 核心或用户 skill。仅本地提交本轮范围，保留原有图标/文档修改，不推送远程。规格核验及归档在交付收尾完成。
 
-- 交付收尾：实现提交 `1a3cafb`，OpenSpec 7/7 任务完成；新建 `worker-management` 主规格的6条要求，Purpose/要求/场景与增量逐块一致。同步后严格校验10项通过，归档后9个主规格通过、活动变更0；归档 `openspec/changes/archive/2026-10-09-polish-worker-management/`。仅本地提交，原有未提交修改保留。
+- 交付收尾：实现提交 `1a3cafb`，OpenSpec 7/7 任务完成；新建 `worker-management` 主规格的6条要求，Purpose/要求/场景与增量逐块一致。同步后严格校验10项通过，归档后9个主规格通过、活动变更0；归档 `openspec/archives/polish-worker-management/`。仅本地提交，原有未提交修改保留。
 
 
 ## v0.7.3：总览和编辑布局验收（2026-10-09）
@@ -819,7 +819,7 @@
 - 更新前后4189个原账号、配置、偏好和历史文件哈希核对：4188个完全相同，仅允许重启生成的 `host.lock` 改变；缺失0、意外变化0。更新后21个Worker、活动0、账号/任务桥进程0；本轮真实模型生成0、远端凭据查询0。记录 `.test-data/layout-polish-073/{desktop-verification,state-preservation}.json`。
 - 先前Mac锁定的交付缺口已补齐；实现已按阶段提交为 `b4db1a2`，保留原有未提交改动；本轮不推送。现可完成OpenSpec最后交付任务，随后同步和归档本change。
 
-- OpenSpec最后交付任务已核对完成（5/5）；主worker-management规格完整替换2块、增加3块，Purpose和其余4块及全部旧场景保持。同步后严格10/10，归档到 `openspec/changes/archive/2026-10-09-refine-panel-layout/` 后严格9/9、活动change0。本次交付补验和归档另作阶段提交，不推送。
+- OpenSpec最后交付任务已核对完成（5/5）；主worker-management规格完整替换2块、增加3块，Purpose和其余4块及全部旧场景保持。同步后严格10/10，归档到 `openspec/archives/refine-panel-layout/` 后严格9/9、活动change0。本次交付补验和归档另作阶段提交，不推送。
 
 ## v0.7.4：卡片与回收站修复实施（2026-10-09）
 
@@ -838,7 +838,7 @@
 - 重启后的原生插件详情显示v0.7.4、启用、1组件运行中。安装后实际查看Antigravity完整顶缘、名称留白、无省略号及整行居中箭头、Hermes显示ling-3.1-flash和默认；实际进入已删除视图，查看灰色四筛选和深红白图标，并逐一通过全部/进行中/已完成/异常返回正常列表及对应选中态。恢复原“调用Antigravity工具说你好”会话的全部列表，没有新增、删除、改名或发送实际任务。
 - 原账号/配置/偏好/历史4189文件中4188逐字不变，仅重启的host.lock允许改变，缺失0、意外变化0；更新后21个Worker、活动0、账号/任务桥0。真实模型生成0、远端凭据查询0。证据 `.test-data/card-regressions-074/{desktop-verification,state-preservation}.json`与 `artifacts/dsh-cliworker-now-0.7.4-verification.json`。
 
-- OpenSpec最后交付任务已核对完成（5/5）；主worker-management规格完整替换4块、增加1块，Purpose和其余5块及全部旧场景保持。同步后严格10/10，归档到 `openspec/changes/archive/2026-10-09-fix-worker-overview-regressions/` 后严格9/9、活动change0。本次交付和归档另作阶段提交，不推送。
+- OpenSpec最后交付任务已核对完成（5/5）；主worker-management规格完整替换4块、增加1块，Purpose和其余5块及全部旧场景保持。同步后严格10/10，归档到 `openspec/archives/fix-worker-overview-regressions/` 后严格9/9、活动change0。本次交付和归档另作阶段提交，不推送。
 
 ## v0.7.5：状态条与名称字距（2026-10-09）
 
@@ -851,7 +851,7 @@
 - 正式交付：更新前21 Worker/活动0/账号或任务桥0，原生退出Desktop后正式pnpm build、pnpm pack及包完整性核查通过；v0.7.5共285打包文件，111源码与preview一致，Client仅构建路径注释不同、执行文本一致。包SHA-256 dbc77e03ffa6a257d3384038c34a615accbdfcbdc8e6a5dc0ac97285bbbc115f，artifacts/dsh-cliworker-now-0.7.5-verification.json记录结果。
 - 已安装Desktop原生核对v0.7.5、启用及1组件运行；原标题下状态条加高，卡片名称与细线字距正常，agy-3无会话说明已删除但输入和发送仍禁用；返回原“调用Antigravity工具说你好”总览/全部。真实任务、发送、新建、删除及改名0。4189份原文件核对4188份完全一致，仅重启host.lock变化，账号/历史/偏好保持；交付后活动仍0。实现提交7b523ab，未推送。
 
-- OpenSpec 4/4任务按实际结果完成；worker-management主规格完整更新2块并增加无会话输入区1块，Purpose及其余8块和旧场景保持。同步后严格10/10；归档到openspec/changes/archive/2026-10-09-polish-worker-name-and-notice/后严格9/9、活动change0。本次交付及归档阶段提交，不推送。
+- OpenSpec 4/4任务按实际结果完成；worker-management主规格完整更新2块并增加无会话输入区1块，Purpose及其余8块和旧场景保持。同步后严格10/10；归档到openspec/archives/polish-worker-name-and-notice/后严格9/9、活动change0。本次交付及归档阶段提交，不推送。
 
 ## v0.7.6：简洁筛选区（2026-10-09）
 
@@ -863,7 +863,7 @@
 - 正式交付：更新前22 Worker/活动0/账号或任务桥0，Desktop原生退出并确认主进程退出后正式build、pack及包核查通过。v0.7.6包共285文件，111源码与preview相同，Client执行内容一致；SHA-256 35a3f9c395d9aa3afae2ccbcf1dd0b763f7ee69ba2859a74a8288c1c14ffea4f，artifacts/dsh-cliworker-now-0.7.6-verification.json保存核查。
 - Desktop原生插件页确认v0.7.6、启用及1组件运行；原会话三状态都没有匹配说明/清除文字，最终恢复原“进行中”视图，截图核对空白正确。原4210文件核对4208完全一致，仅重启host.lock及一份宿主session_projcache投影缓存检查点变化；已查rc.2原生SessionProjectionCache在会话释放时重写检查点的源码，原始日志/账号/历史/偏好文件保持，交付后活动0。未发送、新建、删除或改名任何真实任务，凭据查询和模型生成0。实现提交5d5b38c，本地不推送。
 
-- OpenSpec 3/3任务均实际完成；主worker-management完整更新固定筛选需求1块，保留Purpose、其余10块及旧场景。同步严格10/10，归档到openspec/changes/archive/2026-10-09-simplify-worker-filter-view/后严格9/9、活动change0；交付与归档阶段提交，不推送。
+- OpenSpec 3/3任务均实际完成；主worker-management完整更新固定筛选需求1块，保留Purpose、其余10块及旧场景。同步严格10/10，归档到openspec/archives/simplify-worker-filter-view/后严格9/9、活动change0；交付与归档阶段提交，不推送。
 
 ## v0.7.6：npm预构建分发（2026-10-10）
 
@@ -880,7 +880,7 @@
 
 - GitHub默认中文首页实际渲染推荐命令56字符，npm官方页面实际显示0.7.6、完整README及同一短命令，截图github-install-proof.png/npm-install-proof.png已查看。npm标题包含TypeScript图标替代文本，调整可访问名称匹配后核对成功，不将先前选择器超时当发布失败。Host/Client typecheck与严格规格检查通过；仅发版元数据/说明/打包脚本改变，运行lib仍与原已验包逐字相同，未再次宣称重跑1307项。
 
-- OpenSpec四项任务4/4均完成，package-distribution主规格完整更新2块并保留Purpose/旧场景；同步后严格10/10，归档到openspec/changes/archive/2026-10-10-publish-prebuilt-registry-package/后严格9/9、活动change0。主页/包页、远端字节及真实registry profile安装均验证完成；本地提交并按本轮授权推送GitHub，原未提交修改继续排除。
+- OpenSpec四项任务4/4均完成，package-distribution主规格完整更新2块并保留Purpose/旧场景；同步后严格10/10，归档到openspec/archives/publish-prebuilt-registry-package/后严格9/9、活动change0。主页/包页、远端字节及真实registry profile安装均验证完成；本地提交并按本轮授权推送GitHub，原未提交修改继续排除。
 
 
 ## 2026-10-10：Mac 到个人 Windows 的隔离远程验收
@@ -892,7 +892,7 @@
 - Mac/Windows 包 SHA-256 相同：`775bae13cb1dd5a1b1135be204ef5025de494f171ededd1a74d90d028dfc6b58`。报告、阶段日志及原始 Vitest JSON 回传，测试 JSON 哈希及计数/七文件/必要阶段/运行 ID 校验通过，正常运行两端锁释放并确认清理。
 - 初次真实试跑分别暴露 PowerShell Get-Item 隐藏 AppData 需 -Force、gitconfig 文件误作目录、冷源码缺生成 remote 声明三项准备问题，逐项修正并保留失败/回传证据；最终成功不遮蔽这些记录。另在实际安装阶段主动 SIGINT：流程非零退出、两端 interrupted、报告回传、Windows 自有进程范围清理及两端锁释放确认。
 - 私有证据在 `.test-data/windows-remote/runs/`、mac-regression-summary.json、cancellation-check.json、harness-version.json；原报告/日志/配置和个人机器信息不入 Git。最终 Mac 当前 lib 281 文件哈希与开始前完全相同，未正式 build 或更新 Desktop。模型调用为 0；官方 CLI 额外版本/帮助探针、真实模型、Windows 全量矩阵和 Desktop 界面均未验收，不以本次结果代替。
-- 交付：实施提交 `b171f24`；OpenSpec 6/6 有实际证据，新增主规格 4 条需求，归档前后严格 10/10、活动变更为 0，归档到 `openspec/changes/archive/2026-10-10-add-windows-remote-test-workflow/`。只本地阶段提交，不推送；用户原有素材和文档改动保留。
+- 交付：实施提交 `b171f24`；OpenSpec 6/6 有实际证据，新增主规格 4 条需求，归档前后严格 10/10、活动变更为 0，归档到 `openspec/archives/add-windows-remote-test-workflow/`。只本地阶段提交，不推送；用户原有素材和文档改动保留。
 
 
 ## 2026-10-10：Windows 插件运行复验与实际 Harness 安装启动
@@ -1129,7 +1129,7 @@
 - [x] Windows 对应最小回归 39 + 91 = 130 passed、0 failed；187 项仅为标题过滤排除，选中用例无跳过。测试源码快照和两份原始 JSON 哈希核对，冻结依赖恢复后仅执行两组上述用例。本次合成账号、依赖、缓存及测试进程均清理确认。
 - [x] Windows 安装前无活动 Worker/账号终端且 Harness 已退出；原生安装器 exit 0，本地 v0.7.8 的 339 个 lib 文件及 Host/包哈希与 Mac 构建完全一致。正常启动后 5 个 Harness 进程、调试参数 0；本次原生 Claude、账号授权、测试 run、UI 任务/观察器进程均为 0。不追加 UI 全量验收。
 - 私有证据：`.test-data/claude-078/mac-minimal.json`、`mac-install.json`、`package.json`、`windows/native-probe-report.json`、`windows/minimal-report.json`、`windows/claude-own-route.json`、`windows/claude-related.json`、`windows/install-report.json`、`windows/delivery-summary.json`。本地开发包 `.test-data/claude-078/dsh-cliworker-now-0.7.8.tgz`，SHA-256 `0a6391816d4030435645b7531a5980f53619768422e3071928c2674cd497f953`。不提交凭据、私人远程配置、运行报告或用户既有素材改动；未推送、未发布 GitHub/npm。
-- [x] 本次 OpenSpec 8/8 任务按最小证据核对完成，同步三项主规格后归档至 `openspec/changes/archive/2026-10-12-fix-claude-cc-switch-routing/`；归档后严格校验 11/11，原 Windows/MiMo 活动变更仍保留 34/36 的真实账号验收边界。实现本地提交 `45f95c1`，无远程推送。
+- [x] 本次 OpenSpec 8/8 任务按最小证据核对完成，同步三项主规格后归档至 `openspec/archives/fix-claude-cc-switch-routing/`；归档后严格校验 11/11，原 Windows/MiMo 活动变更仍保留 34/36 的真实账号验收边界。实现本地提交 `45f95c1`，无远程推送。
 
 
 ## 2026-10-12：v0.7.8 Windows 桌面发现与本机 CLI 路径管理
@@ -1483,7 +1483,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 - 最终 Desktop 确认旧B重启后仍paused且标“Host已重启”，模型/强度按钮禁用并准确说明先发送/取消；普通F user气泡已在其过程区之前。核对后显式取消本次测试B，待发送区收起、选型按钮重新可用，无额外模型启动。实际设置只读核对 Codex 已选“引导”、AGY显示“排队/不支持引导”。全部27 Worker保留、活动0，抽查156个受保护文件hash仍一致；最终证据 `.test-data/scheduling-desktop/final-desktop-verification.json`。
 - 最终严格规格校验与同步归档记录见本变更归档目录；Hermes真实容量、四个未保存选型CLI及Windows缺口继续保留在上表和此前原生协议迁移变更，不将其当作通过。没有push/publish或版本升级。
 
-- OpenSpec已同步本次6项MODIFIED、1项ADDED到worker-conversation-interaction，保留Purpose/标题与未涉及需求；主规格严格校验12项通过、全部规格/活动变更17项通过。完整11/11任务核对后归档至`openspec/changes/archive/2026-10-16-stabilize-message-scheduling-and-native-steering/`，此前原生协议迁移13/14的外部验收缺口仍为active，没有归档隐藏。
+- OpenSpec已同步本次6项MODIFIED、1项ADDED到worker-conversation-interaction，保留Purpose/标题与未涉及需求；主规格严格校验12项通过、全部规格/活动变更17项通过。完整11/11任务核对后归档至`openspec/archives/stabilize-message-scheduling-and-native-steering/`，此前原生协议迁移13/14的外部验收缺口仍为active，没有归档隐藏。
 
 ## 2026-10-16：当前开发版本统一为 v0.7.10
 
@@ -1505,7 +1505,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 - 沿授权保存选型，各仅 **1次**真实模型调用，无重试：OpenCode `run-4vuKqf` 21增量→1条、write调用ID/input/output与真实JSON产物匹配、当前6182/1000000、累计12378；Pi `run-dT7twb` 20增量→1条、真实write/产物、原生context2083/1000000与累计4135；OMP `run-cpRuRD` 15增量→1条、真实write/产物、原生context9464/272000与累计18921。三个原生scope结束；OMP实采24个所属PID全部退出；Pi完成及无范围残留，但未抓到运行中子PID，保留该采样限制。证据均为 `.test-data/native-smoke/<run>/report.json` 及对应 verification。
 - Claude 2.1.287 实际 **0 prompt** initialize→get_context_usage(summary)成功，返回numeric total/max及System prompt/System tools/Skills等原生分类；未请求full计数、未发送user/生成。零prompt进程未自行退出，结束时SIGKILL后close，未记为正常任务退出；证据 `.test-data/native-inspection/claude-zero-prompt/report.json`。Claude/Kimi/MiMo/Grok仍无保存选型，不猜模型做生成；Hermes原保存免费模型此前429，本轮不盲重试。Windows实机和全量发布验收本轮未执行，历史原生迁移变更13/14继续保留。
 - 正式 Desktop 更新前28个Worker、0活动；隔离preview先验后正式build并冷启动。重开截图OpenCode Worker，实见单条完整回复、原生“已完成分析→思考”展开/Markdown、旧日志约5.9K/容量未知菜单及三项未知值；没有原有灰卡/COMPLETED标签。最后Client预览hash `b12f8430…`，正式 `fae9c021…`，两者仅构建region路径注释不同，去该注释字节完全一致；Host `5285983e…` 和native bridge `69d578d6…` 与真实验收相同。最终28Worker/0活动，4717份既有状态文件中4711份未变；6份变化为已授权OpenCode/OMP自身CLI日志及OMP派生运行目录的模型数据库/SQLite sidecar，用户events/raw/Worker/选型/绑定/发送设置均未变。证据 `.test-data/native-inspection-desktop/final-verification.json`，没有新增正式会话或重发用户消息。
-- 本变更11/11完成后同步3个能力域：新增上下文检查4项、回复结果新增2项、公开过程修改1项，保留既有Purpose和未涉及需求。主规格严格13/13、全部严格17/17通过，归档至 `openspec/changes/archive/2026-10-16-fix-native-message-streaming-and-inspection/`。原生迁移及其他活动变更的外部验收缺口仍保持原状态，未用归档隐藏；没有全量测试、GitHub提交、推送或发布。
+- 本变更11/11完成后同步3个能力域：新增上下文检查4项、回复结果新增2项、公开过程修改1项，保留既有Purpose和未涉及需求。主规格严格13/13、全部严格17/17通过，归档至 `openspec/archives/fix-native-message-streaming-and-inspection/`。原生迁移及其他活动变更的外部验收缺口仍保持原状态，未用归档隐藏；没有全量测试、GitHub提交、推送或发布。
 
 
 ## v0.8.1 原生会话迁移：备份（2026-10-16）
@@ -1952,7 +1952,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 - 用户已明确授权与「确认是否能读取其他会话」协调并更新 Desktop，协调消息已发送；本节写入时，等待合并安装窗口，正式 Qoder Desktop 更新和界面核对尚未记为通过。
 - 本机未发现已安装的 qoder/qodercli；没有全局安装、没有用户登录或选型，没有真实账号/模型请求、真实文件产物、同会话续聊/取消验收，Windows/Linux 实机未验证。上述边界保留，不以模拟回归、初始化或规格归档替代。
 
-- Qoder 变更 `add-qoder-cli` 的 7 项实现与定向验收任务完成，已同步 `openspec/specs/qoder-cli/spec.md` 的 4 项需求并归档至 `openspec/changes/archive/2026-10-17-add-qoder-cli/`；归档后严格校验仍为 19 项通过。Desktop 安装和真实模型等上述边界不因归档改变。
+- Qoder 变更 `add-qoder-cli` 的 7 项实现与定向验收任务完成，已同步 `openspec/specs/qoder-cli/spec.md` 的 4 项需求并归档至 `openspec/archives/add-qoder-cli/`；归档后严格校验仍为 19 项通过。Desktop 安装和真实模型等上述边界不因归档改变。
 - 用户授权协调后，合并源码已包含另一聊天的原生 ModelSelect 标签子槽修复。最终复核补充账号与目录两类元数据进程的 stdin `error` 监听，防止 CLI 提前退出时 EPIPE 成为 Host 未捕获异常；失败使用固定安全文案，等待受管进程和读取完成后移除监听。新增四项明确模拟回归，分别覆盖单独 error 事件和真实 Writable write-callback/EPIPE 事件；修复后账号专项 **34/34**、Host/Client 类型检查通过。此前 18 文件 694 项为此窄修复前的稳定结果，各组不累加；日志为私有 stdin-error-tests.log、final-typecheck.log。
 - 按安装门禁使用普通 Node 24.19.0 与 `.cache/cliworker-build-deps-021rc2` 一次重建最终 preview 通过。全部 src 与 preview 逐文件一致；565 文件的 lib 清单（相对路径到文件 SHA-256 的排序紧凑 JSON）SHA-256 为 `49d0e09c8e57a5075cf0237ff3150f40d14f7078d11f5104dfae5cbfa3f12aca`，Host 为 `191536ae4fd0677d1997912795a8e024cea1fd88a2995169274d810377949b15`，Client 为 `6c60b6f60e3098675f78f915bb14ebb0c1f0f153f3d732bb9e928dbf7fd74c36`。独立 accepted-package、final-lib-manifest.json、final-source-manifest.json 和 verification.json 已同步；源码与构建输入真正冻结，正式构建/重启窗口交还该聊天，本聊天不并行写根 lib 或操作 Desktop。
 - 用户随后明确要求将本聊天全部任务交给负责合并的 agent，交接后结束。剩余正式安装、冷启动、Qoder Desktop 入口/官方图标/未安装提示的只读验收、证据与记录更新，全部转交「确认是否能读取其他会话」统一接续，无需再向本聊天交回 GUI。完整私有交接为 `.test-data/qoder-cli-20261017/handoff.md`；本条不表示 Desktop 已通过，未验证边界保持。
@@ -2048,7 +2048,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 - 冷启动实际 Desktop **0.2.1-rc.2** 六项核对通过：主目录仅 DeepSeek／zai-coding-cn，Qoder 原有 Qwen3.8-Flash／Low 保留，三弹层可打开，未知用量、17.6% 及来源／分类边界正确；Grok 原有23:19轮次出现缺失说明，正文及 **14.2K** 用量保留。实际截图和 AX 记录在 `desktop/`，总结为 `desktop/final-acceptance.json`。未发送消息或修改模型／权限。
 - 资料基线 **17,823 文件**中 **17,820 份字节保持、0缺失**；另3份变化已精确证明：Grok Worker 仅属性顺序规范化；Qoder Worker 仅顺序变化及清除无效全零快照，内存重构两份原哈希均完全匹配；父会话原压缩记录前187,475字节完整匹配，仅追加82字节／1条宿主正常恢复 `session/end-seed`。没有新增模型／任务事件或原对话改写，账号、偏好、raw／events 和绑定均保持。证明为 `worker-preservation-proof.json`、`session-preservation-proof.json`、`protection-after.json`；没有恢复覆盖用户文件。
 - 本轮真实模型调用、真实工具运行、真实续聊／取消及 Windows/Linux 未新增验收；整体原生会话和协议迁移未完成事项继续可见。版本保持 **v0.8.1**，未提交、推送或发布。
-- 收尾：按本次已实现范围同步 Qoder 1项、会话交互2项增量需求，保留主规格原正文和 Purpose；归档前严格校验 **20/20**，2026-10-18 归档到 `openspec/changes/archive/2026-10-18-fix-native-cli-conversation-regressions/` 后 **19/19**，`git diff --check` 通过。活动整体集成仍为92/94、原生协议迁移仍为13/14，未验证事项没有虚勾或一并归档。
+- 收尾：按本次已实现范围同步 Qoder 1项、会话交互2项增量需求，保留主规格原正文和 Purpose；归档前严格校验 **20/20**，2026-10-18 归档到 `openspec/archives/fix-native-cli-conversation-regressions/` 后 **19/19**，`git diff --check` 通过。活动整体集成仍为92/94、原生协议迁移仍为13/14，未验证事项没有虚勾或一并归档。
 
 ## 2026-10-18：v0.8.1 四图用量、公开过程与 OMP 目录优化
 
@@ -2305,7 +2305,7 @@ OpenSpec 两个增量均已同步：新增 cli-model-discovery 的跨平台展�
 - 保全对照：原 21 个 Worker 及其记录均保持原哈希，0 活动；原顶层 142 文件中 140 字节相同，变化为重启后的 host.lock，缺少的旧全局保护已原字节留存于私有备份。9 份 Qoder 项目文件均不变，原偏好不变。官方安装改变 profile package/lock 及 Host/Client bundle，cordis.patch 保持不变。Hermes config.yaml 不变，**auth.json 与本轮起始哈希不同**；基线未保存认证正文，不能逐字段证明变化原因或前后身份完全相同，也不能宣称所有凭据字节不变。本轮未手动登录、退出或改写/回滚认证文件。
 - 私有证据位于 `.test-data/windows-cleanup-20261018/` 及测试机对应独立目录：windows-regression、refresh-all-verified、recovery-mimo、mimo-audit、final-ui、kimi-status、preservation-after。完整屏幕/原始控件树下载被自动审批拒绝后，改用限定 CLI 错误、状态布尔值与哈希摘要，未重试完整屏幕导出。macOS Desktop 和 Linux 运行、真实生成/续聊/工具/取消以及全量发布验收均未执行；未新增版本号、提交、推送或发布。
 - 本次目录精确归属的 11 个已完成辅助计划任务已清理；同范围剩余任务、辅助进程、活动 Worker 均为 0，正常 Windows Desktop 保持运行，无调试参数，全局和按 CLI 清理保护均不存在（cleanup.json）。主规格仅同步 cli-model-discovery 的“目录证据和生命周期边界”，保留 Purpose、其他需求和原有场景；主规格严格检查 14/14，归档前全规格/活动变更严格检查 21/21。其他变更已有的归档提示与未完成验收不属于本次完成范围。
-- 5/5 任务与实际证据核对后，归档到 `openspec/changes/archive/2026-10-18-isolate-cli-catalog-refresh-failures`，归档后严格检查 **20/20**；归档前后主规格与本次完整增量一致。最终本次源码/文档空白检查通过，四个生产代码文件仍与已实测、安装的冻结输入相同；未顺带归档其他进行中的协议或发布变更。
+- 5/5 任务与实际证据核对后，归档到 `openspec/archives/isolate-cli-catalog-refresh-failures`，归档后严格检查 **20/20**；归档前后主规格与本次完整增量一致。最终本次源码/文档空白检查通过，四个生产代码文件仍与已实测、安装的冻结输入相同；未顺带归档其他进行中的协议或发布变更。
 
 ## 2026-10-19：Qoder CN 独立接入、Windows 路径发现与设置服务恢复（v0.8.1）
 
@@ -2359,7 +2359,7 @@ OpenSpec 两个增量均已同步：新增 cli-model-discovery 的跨平台展�
 - 最终只读证据检查 **14/14 条件为 true、0 issue**：原 **22 条 Worker** 哈希不变，本次仅新增上述 **1 条**完成记录，总数 **23、0 活动**；国际版项目 10 文件及认证 6 文件不变，中国版旧项目 6 文件不变、新增本轮历史 3 文件。中国版认证 **5 文件不变、1 文件真实字节变化**；未保存凭据正文、不能确认变化字段或原因，未回滚、未手工登录，不宣称全部凭据不变。原 profile SHA256 仍为 `7ab7523743666c3928125231a7de171d178f95d525499cb076f24605a4295dd9`，样例不变。此阶段没有正式包更新、Mac Desktop 操作、版本变更、GitHub 提交或发布。
 - 私有证据集中在 `.test-data/qodercn-20261019/native-ui-final/` 及 Windows 同名目录：恢复/输入步骤失败与成功回执、`normal-baseline.json`、两轮独立 `normal-evidence/`、`normal-final-evidence-summary.json`、`health-final-before-cleanup.json`、正常派遣与原生子会话截图；原始用户数据、日志和认证均不入 Git。正常调用证据补齐本 change 原生子会话缺口；其他 14 个中国版模型、双装询问框人工点击、Mac 运行时、所有窗口尺寸布局及永久崩溃修复仍未验证。
 - `cleanup-native-ui-final.json` 确认精确归属本阶段的 **10 个**已结束计划任务已移除，同范围剩余任务为 **0**；正常 Windows Desktop 与该原生子会话保持运行，输入框为空。没有产品源码变更，因此仅补文档与规格检查，没有重跑产品测试、构建或全量发布验收。
-- 核对 **12/12** 任务及本次证据后，使用 OpenSpec 同步中国版 4 项需求和公共 Windows 发现 1 项需求；保留既有 platform-runtime 的标题、Purpose 和全部场景，新中国版主规格沿用增量 Purpose。主规格严格校验 **15/15**；全部严格校验同步前 **21/21**、同步后归档前 **22/22**、归档后 **21/21**。增量已逐项合入后用 `pnpm --config.verify-deps-before-run=false spec archive add-qodercn-cli --skip-specs --yes --json` 归档至 `openspec/changes/archive/2026-10-19-add-qodercn-cli`，再核对归档任务、两份增量及活动列表。`--skip-specs` 仅避免重复应用已同步增量；其他活动变更的既有同步提示和未完成事项未修改，崩溃原因未确定及其他未验证边界继续保留。
+- 核对 **12/12** 任务及本次证据后，使用 OpenSpec 同步中国版 4 项需求和公共 Windows 发现 1 项需求；保留既有 platform-runtime 的标题、Purpose 和全部场景，新中国版主规格沿用增量 Purpose。主规格严格校验 **15/15**；全部严格校验同步前 **21/21**、同步后归档前 **22/22**、归档后 **21/21**。增量已逐项合入后用 `pnpm --config.verify-deps-before-run=false spec archive add-qodercn-cli --skip-specs --yes --json` 归档至 `openspec/archives/add-qodercn-cli`，再核对归档任务、两份增量及活动列表。`--skip-specs` 仅避免重复应用已同步增量；其他活动变更的既有同步提示和未完成事项未修改，崩溃原因未确定及其他未验证边界继续保留。
 
 ## 2026-10-20 v0.8.1：Host 生命周期与持久化高危缺陷修复
 
@@ -2458,7 +2458,7 @@ OpenSpec 变更 `harden-host-lifecycle-durability`。来源为 4 个 Codex gpt-6
 
 ## 2026-10-20 v0.8.1：桥接改动审查修复与 OpenSpec 归档
 
-- 规格：用户确认不再验收 Kimi（凭据过期，保持未验证）。勾选 4.3、4.4 后，严格校验通过并归档为 `openspec/changes/archive/2026-10-20-bridge-conversation-features/`；新规格 `openspec/specs/conversation-feature-bridge/spec.md` 已补写 Purpose，`validate --specs --strict` 16/16 通过。
+- 规格：用户确认不再验收 Kimi（凭据过期，保持未验证）。勾选 4.3、4.4 后，严格校验通过并归档为 `openspec/archives/bridge-conversation-features/`；新规格 `openspec/specs/conversation-feature-bridge/spec.md` 已补写 Purpose，`validate --specs --strict` 16/16 通过。
 - 审查：Codex gpt-6.1-sol high 内置审查器只读审查本轮桥接改动，报告 3 项 P2 缺陷，主会话逐项核对后均成立并已修复：
   1. 分支截点把失败或中断结束的轮当作完成轮（`src/client/harness-worker-fork.tsx`），可能静默从上一轮分支。现在只纳入结束原因为 `completed` 且有助手消息的轮，失败轮的按钮保持禁用。
   2. 清除目标后 revision 从 1 重新计数，旧窗口发来的过期请求可能删除或改动新目标。新增 `Worker.goalRevision`，清除时递增并持久保存，之后不再复用（runtime、storage、`/goal`、GoalBar）。新增模拟回归。
@@ -2543,7 +2543,7 @@ OpenSpec 变更 `harden-host-lifecycle-durability`。来源为 4 个 Codex gpt-6
 - 官方 `/Applications/DeepSeek Harness.app` 版本核验为 **0.2.1-rc.3**。正常 quit 后，仅在 `~/.dsh/profiles/desktop/package.json` 的 bundles 中将插件加到 dshmarket 后，恢复 `cordis.patch.yml` 的原五行 CLI Worker 配置；visible-dynamic-workflows 保持注释。没有编辑官方应用、DSH Desktop、凭据文件、既有会话或 Worker 数据。
 - 两份逐字节校验备份：`~/.dsh/profiles/desktop/package.json.bak-rc3-cliworker-20261024-153635`、`~/.dsh/profiles/desktop/cordis.patch.yml.bak-rc3-cliworker-20261024-153635`。配置变化仅上述恢复及对应说明注释，没有回退。
 - `open -a "DeepSeek Harness"` 后原窗口恢复，CUA 实际点击“打开 CLI Worker”，确认右侧 `CLI Worker Now` 标题、筛选栏及空列表。System Events 窗口标题与截图留于 scratch `rc3-upgrade/official-cliworker.png`；`official-result.json` 与日志前后 inventory 记录 `~/Library/Logs/DeepSeek Harness` **无新增、无修改日志文件**。未触发任务、模型、登录、账号探测或设置修改。
-- 严格规格检查归档前 **25/25**、归档后 **24/24**，`git diff --check` 通过。7/7 任务核对后，同步 package-distribution 的 1 项新增需求并归档至 `openspec/changes/archive/2026-10-24-upgrade-host-rc3/`；其余活动变更和旧待办未变。真实模型、Windows/Linux 与公开分发仍未验证，本次未提交或发布。
+- 严格规格检查归档前 **25/25**、归档后 **24/24**，`git diff --check` 通过。7/7 任务核对后，同步 package-distribution 的 1 项新增需求并归档至 `openspec/archives/upgrade-host-rc3/`；其余活动变更和旧待办未变。真实模型、Windows/Linux 与公开分发仍未验证，本次未提交或发布。
 
 
 ## 2026-10-24：dshmarket 热切换白屏隔离调查（版本仍为 0.8.2）

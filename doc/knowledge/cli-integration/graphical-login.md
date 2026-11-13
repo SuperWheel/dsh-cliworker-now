@@ -1,6 +1,6 @@
 # CLI 图形化登录开发指南
 
-本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。2026-11-07 已按[方案](../../../openspec/changes/add-new-cli-graphical-login/design.md)实施：CodeBuddy/TRAE 添加独立 flow、严格状态证明与共享方式卡片，CodeBuddy 采集授权前 C1–C6 后接入信任确认、自动斜杠命令、站点选择和浏览器引导，TRAE 个人采用回调网址模板；WorkBuddy 两版桌面管理见第 8 节。证据见[本次采集](../../../openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md)及[任务清单](../../../openspec/changes/add-new-cli-graphical-login/tasks.md)；Desktop 实机、Windows 与真实账号退出/重登仍未验收。
+本文按 2026-11-07 工作树源码整理。路径均相对仓库根；源码中的既有机制与本文的接入建议分别说明。2026-11-07 已按[方案](../../../openspec/archives/add-new-cli-graphical-login/design.md)实施：CodeBuddy/TRAE 添加独立 flow、严格状态证明与共享方式卡片，CodeBuddy 采集授权前 C1–C6 后接入信任确认、自动斜杠命令、站点选择和浏览器引导，TRAE 个人采用回调网址模板；WorkBuddy 两版桌面管理见第 8 节。证据见[本次采集](../../../openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)及[任务清单](../../../openspec/archives/add-new-cli-graphical-login/tasks.md)；Desktop 实机、Windows 与真实账号退出/重登仍未验收。
 
 ## 1、先判定账号由谁管理
 

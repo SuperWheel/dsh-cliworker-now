@@ -18,4 +18,4 @@
 
 - 已核对包内原件与运行副本的 SHA-256。
 - 四角 alpha 为 0，alpha 范围 0–255，圆角外为透明。
-- 合成预览目视核对：明暗背景下无白底、无裁切，轮廓可辨。Desktop 内的设置列表、Worker 卡片与选择器尚未目视核对，记录在 `openspec/changes/add-codebuddy-cli/tasks.md`。
+- 合成预览目视核对：明暗背景下无白底、无裁切，轮廓可辨。Desktop 内的设置列表、Worker 卡片与选择器尚未目视核对，记录在 `openspec/archives/add-codebuddy-cli/tasks.md`。

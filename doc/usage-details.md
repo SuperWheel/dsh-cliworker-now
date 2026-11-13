@@ -47,7 +47,7 @@
 | OpenCode | 1.18.21 | 原生目录与 JSONL 接入；智谱模型已实测，免费 MiMo 请求曾返回 403 |
 | Qoder | 1.1.73 | v0.8.1 新增原生 ACP；真实账号元数据及 17 项动态模型目录已核验；真实模型任务、工具产物、恢复、运行中取消及 Windows 尚未验收 |
 | Qoder CN | 1.1.74 | Windows 自身账号及 15 项动态模型目录已核验；Qwen3.8-Flash / low 的生成、文件工具、同会话续聊与运行中取消通过；另在正常新对话中实际派遣并完成原生子会话界面检查，其他模型和 Mac 运行时未实测 |
-| CodeBuddy Code | 2.181.0 | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/changes/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收 |
+| CodeBuddy Code | 2.181.0 | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/archives/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收 |
 | TRAE CN | 0.213.1 | 2026-11-07 macOS 前置协议探测：18 项模型目录及 glm-5.3-flash 读写、命令、恢复、取消和分支；插件/Desktop 与 Windows 未验收，见本次接入任务 |
 
 v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
@@ -104,7 +104,7 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **会话与能力边界。** `traecn-acp-v1` 续聊用原生 `session/load`，历史重放不进入新一轮正文；恢复失败报错，不新建会话。支持从最新完成轮原生分支，不支持较早轮次分支。原生子 Agent、记忆、skills 与联网沿用用户设置，附件按 ACP 能力传递。DSH 工具桥本期不提供：ACP 只声明 HTTP MCP，`_meta.trae.options.mcpServers` 的值为已配置服务名且有替换语义，未经核实的注入可能覆盖用户 MCP。运行中引导（steering）虽有能力声明，尚未实测，不提供此入口；运行中发送的消息按原生 Inbox 排队。
 
-2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/changes/add-traecn-cli/tasks.md)。
+2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/archives/add-traecn-cli/tasks.md)。
 
 ### Qoder 安装与登录
 

@@ -10,7 +10,7 @@
   - [traecn-dark.png](traecn-dark.png)：`#32F08C`，取自 SVG 原色，用于暗色主题。
   - 与运行资源 `src/client/assets/traecn-light.png`、`traecn-dark.png` 字节一致。SHA-256：light `10126532c4c1531f46e4d87bd8e2b75eed0a519d24a31aedfe681461cbeefd83`，dark `29c811d467411c7e078bfb43ee24237cbf773a71e7c9cb8ec469920b586f7fc2`。
 - 接入：`BrandIcon` 的 `themed` 表与 Kimi 相同，按 `body[data-ds-dark-theme]` 切换 `cwn-icon-light` / `cwn-icon-dark` 两张图，不用 `invert(1)`；光学缩放 0.82、居中，`tests/brand-icons.test.tsx` 覆盖。
-- [preview-themed.png](preview-themed.png)：PIL 在白底与 `#18181B` 底上按 22、32、64px 合成，标识清晰、无底板。Desktop 内的实际渲染见 [TRAE 接入任务](../../../../openspec/changes/add-traecn-cli/tasks.md)。
+- [preview-themed.png](preview-themed.png)：PIL 在白底与 `#18181B` 底上按 22、32、64px 合成，标识清晰、无底板。Desktop 内的实际渲染见 [TRAE 接入任务](../../../../openspec/archives/add-traecn-cli/tasks.md)。
 
 ## 旧运行图（2026-11-07 至 11-09，已不再使用）
 

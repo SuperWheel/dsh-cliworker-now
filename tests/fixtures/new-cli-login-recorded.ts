@@ -1,6 +1,6 @@
 // RECORDED stable text from isolated macOS 200×60 captures on 2026-11-07.
 // Paths, ports and query values below are SIMULATED; no authorization was submitted.
-// Evidence: openspec/changes/add-new-cli-graphical-login/capture-2026-11-07.md.
+// Evidence: openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md.
 export const codebuddyTrustRecorded = [
   'Do you trust the files in this folder?', '/private/tmp/SIMULATED',
   'CodeBuddy Code may read, write, or execute files contained in this directory. This can pose security risks, so only use files and bash commands from trusted sources.',

@@ -105,11 +105,27 @@ Release SHALL 包含版本一致的完整预构建包和校验文件，npm和Rel
 - **THEN** 设置 API 可读写原命名空间，修改持久化且 stock 界面恢复后仍读取同一值
 
 ### Requirement: 随包界面升级保留目标宿主原生行为
-随包原生 UI SHALL 基于可核验的目标官方源码与补丁构建，并保留目标版本的原生视图动作、草稿初始化和提交快照语义。发布源码身份 MUST 与实际应用构建标记分别记录；兼容声明须区分隔离验证、正式客户端和真实模型验证。
+随包原生 UI SHALL 基于可核验的目标官方源码与补丁构建，并保留目标版本的原生视图动作、草稿初始化、提交快照、推理显示语义与随包资源。随包 UI MUST NOT 引用目标宿主共享包已移除的导出。发布源码身份 MUST 与实际应用构建标记分别记录；兼容声明须区分隔离验证、正式客户端和真实模型验证。
 
 #### Scenario: rc.3 原生行为
 - **WHEN** 在 Harness 0.2.1-rc.3 启用插件
 - **THEN** 保留 header views.actions、视图 pin、whenDraftExists 的 append/replace/keep 优先语义，以及 newSession/agentPreset 提交快照字段
+
+#### Scenario: rc.5 推理显示文本
+- **WHEN** 在 Harness 0.2.1-rc.5 启用插件，模型推理以 `<signature>…</signature>` 开头
+- **THEN** 摘要、展开正文与实时过程摘要只显示签名之后的文本，全为签名时不显示推理行；`conversation.chat.reasoning.body` 同时收到 `rawText` 与显示用 `text`
+
+#### Scenario: 0.2.2-rc.1 随包资源
+- **WHEN** 在 Harness 0.2.2-rc.1 启用插件，ui-chat 显示运行中状态
+- **THEN** 随包 ui-chat 通过 `./assets/*` 导出提供与官方逐字节相同的图片，宿主资源路由可读取，运行状态动画正常显示
+
+#### Scenario: 0.2.2-rc.1 官方新行为与插件扩展并存
+- **WHEN** 在 Harness 0.2.2-rc.1 启用插件
+- **THEN** 官方的消息待接收时独立 Stop、断线暂停计时、`holding` 占位与统计药丸文本保持不变；插件的主会话呈现、外部请求状态、未知用量与积分统计仍生效
+
+#### Scenario: 0.2.2-rc.2 共享包导出变化
+- **WHEN** 在 Harness 0.2.2-rc.2 启用插件并打开含用量统计的会话
+- **THEN** 输入栏上下文用量与轮次统计面板正常渲染，`conversation.composer.bar` 与 `conversation.chat.node` 不因调用 ui-primitives 已移除的 `useAnchoredPosition` 崩溃
 
 #### Scenario: 宿主兼容与重复来源
 - **WHEN** 在声明支持的宿主启用或禁用插件
@@ -133,3 +149,41 @@ Release SHALL 包含版本一致的完整预构建包和校验文件，npm和Rel
 #### Scenario: 单例保持外部依赖
 - **WHEN** 构建插件客户端并交付本地状态工具
 - **THEN** React、React DOM、Cordis 与 UI primitives 的运行时引用仍由宿主提供，不向插件内打入第二份 React
+
+### Requirement: 统一外部分发名称并保留安装界面
+GitHub 仓库名、npm 包名、Release 标题与当前外部分发文档 SHALL 使用 `dsh-cliworker-now`。DSH 内插件界面 MUST 保留 CLI Worker / CLI Worker Now 的现有名称，运行时协议、工具、配置、会话与账号存储位置保持兼容。历史截图及已发布不可变包保持真实。
+
+#### Scenario: 外部分发入口
+- **WHEN** 用户打开当前仓库、Release 或推荐安装命令
+- **THEN** 使用 dsh-cliworker-now 名称和新仓库地址，旧新 GitHub 下载入口取得同一已发布包
+
+#### Scenario: 已安装的界面
+- **WHEN** 用户打开 DSH 中的插件页签、侧栏或设置弹窗
+- **THEN** 显示原有 CLI Worker / CLI Worker Now 名称，现有按钮提示、账号、会话和偏好保持不变
+
+#### Scenario: 外部目录尚未迁移
+- **WHEN** dshfind 改名映射提交而目录数据库迁移或统计采集尚未执行
+- **THEN** 明确区分已提交补丁与公开页面生效，不伪造下载量、不把 PR 已提交视为目录已更新
+
+### Requirement: 热切换后页面自动恢复
+插件客户端 SHALL 识别热启用、热停用或界面来源替换造成的根节点崩溃（`#root` 已由 React 挂载但没有内容），并在宿主模块同步结束、确认仍为空后，优先重启 DSH 自己的应用挂载原地恢复，MUST NOT 另建 React 根。原地恢复不可用时，网页 SHALL 刷新一次且同一标签页 30 秒内 MUST NOT 再次自动刷新；DSH Desktop MUST NOT 刷新，SHALL 显示要求完全重启的纯文本提示。冷启动时 MUST NOT 触发；销毁后的观察 SHALL 有时限并自行结束。
+
+#### Scenario: 热启用后白屏
+- **WHEN** 用户在页面打开时启用插件，宿主热重载使页面白屏
+- **THEN** 插件客户端在模块同步结束后重启 DSH 的应用挂载，页面不刷新即恢复，CLI Worker 可用
+
+#### Scenario: 热停用后白屏
+- **WHEN** 用户在页面打开时停用插件，原版界面回来前页面白屏
+- **THEN** 插件客户端销毁时开始的观察在 60 秒内原地恢复页面，显示原版界面
+
+#### Scenario: 原地恢复不可用
+- **WHEN** 找不到唯一的 DSH 应用挂载，或模块同步失败、重挂后仍为空
+- **THEN** 网页刷新一次；DSH Desktop 不刷新，显示「需要完全退出后重新打开」的提示
+
+#### Scenario: 冷启动与正常页面
+- **WHEN** 宿主冷启动加载插件，或页面在观察期内一直正常
+- **THEN** 不做任何恢复动作，观察到期后结束
+
+#### Scenario: 刷新后再次白屏
+- **WHEN** 网页自动刷新后 30 秒内再次白屏且原地恢复不可用
+- **THEN** 不再刷新，保留页面，并在控制台说明需要手动重启

@@ -37,4 +37,4 @@ node scripts/build-host-extension.mjs --target 0.2.2-rc.1 --verify
 node scripts/vendor-host-extensions.mjs --from artifacts/dsh-host-extension-022rc1-data
 ```
 
-四包官方 Host/声明继承同版 npm 基线，新增扩展类型由源码检查验证；浏览器重新构建。上述命令不安装或启动官方 app。实际验证与未验证边界见 `openspec/changes/upgrade-host-022rc1/tasks.md`。
+四包官方 Host/声明继承同版 npm 基线，新增扩展类型由源码检查验证；浏览器重新构建。上述命令不安装或启动官方 app。实际验证与未验证边界见 `openspec/archives/upgrade-host-022rc1/tasks.md`。

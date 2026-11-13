@@ -19,4 +19,4 @@ node scripts/build-host-extension.mjs --target 0.2.1-rc.5 --verify
 node scripts/vendor-host-extensions.mjs --from artifacts/dsh-host-extension-021rc5-data
 ```
 
-四包官方 Host/声明继承同版 npm 基线，新增扩展类型由源码检查验证；浏览器重新构建。上述命令不安装或启动官方 app。上游四包的 Vitest 用例本次未在本机执行（自动模式不允许运行外部仓库代码）；实际验证与未验证边界见 `openspec/changes/upgrade-host-rc5/tasks.md`。
+四包官方 Host/声明继承同版 npm 基线，新增扩展类型由源码检查验证；浏览器重新构建。上述命令不安装或启动官方 app。上游四包的 Vitest 用例本次未在本机执行（自动模式不允许运行外部仓库代码）；实际验证与未验证边界见 `openspec/archives/upgrade-host-rc5/tasks.md`。

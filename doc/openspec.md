@@ -6,7 +6,7 @@
 
 - 开发依赖固定为 `@fission-ai/openspec@1.14.1`，由锁文件管理，无需全局安装。
 - 已按 `--tools codex --profile core --language Chinese` 初始化，生成六个项目级技能。
-- 首个变更 [adopt-openspec-workflow](../openspec/changes/archive/2026-10-07-adopt-openspec-workflow/) 已归档，建立 [development-workflow](../openspec/specs/development-workflow/spec.md) 开发流程规格。
+- 首个变更 [adopt-openspec-workflow](../openspec/archives/adopt-openspec-workflow/) 已归档，建立 [development-workflow](../openspec/specs/development-workflow/spec.md) 开发流程规格。
 - 此次不补写全部业务规格，不改变业务与 Desktop 安装。
 
 统一用 `pnpm spec` 调用锁定版本，以 `OPENSPEC_TELEMETRY=0` 关闭遥测。
@@ -27,7 +27,7 @@
 | [`../openspec/config.yaml`](../openspec/config.yaml) | 项目上下文及各类产物的编写规则 |
 | `openspec/specs/<能力>/spec.md` | 已纳入管理的当前行为契约 |
 | `openspec/changes/<变更名>/` | 本次提案、规格增量、设计及任务清单 |
-| [`../openspec/changes/archive/`](../openspec/changes/archive/) | 已完成变更及其决策记录 |
+| [`../openspec/archives/`](../openspec/archives/) | 已完成变更及其决策记录 |
 | [`design.md`](design.md) | 既有设计和版本演进历史，继续保留 |
 | [`tasks.md`](tasks.md) | 2026-10-28 之前的验证与发布历史，不再追加 |
 

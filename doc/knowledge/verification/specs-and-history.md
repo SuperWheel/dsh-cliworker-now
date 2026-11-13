@@ -25,7 +25,7 @@
 ## 源码与验证入口
 
 - [OpenSpec 开发指南](../../openspec.md)与[项目配置](../../../openspec/config.yaml)：当前流程和命令。
-- [主规格](../../../openspec/specs/)与[归档变更](../../../openspec/changes/archive/)：契约和决策来源。
+- [主规格](../../../openspec/specs/)与[归档变更](../../../openspec/archives/)：契约和决策来源。
 - [设计记录](../../design.md)与[验收记录](../../tasks.md)：按日期及最终候选核对。
 
 ## 关联笔记
