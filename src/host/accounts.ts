@@ -395,10 +395,12 @@ export class AccountManager {
     return () => { this.activityListeners.delete(callback) }
   }
   private setReserved(cli: CliId, reserved: boolean): void {
+    if (reserved) this.config.cliMaintenance?.assertAvailable(cli)
     if (reserved) this.reserved.add(cli); else this.reserved.delete(cli)
     for (const callback of this.activityListeners) callback(cli)
   }
 
+  hasActiveQuery(cli: CliId): boolean { return [...this.statusQueries.values()].some(query => query.cli === cli && !query.settled) }
   isBusy(cli: CliId): boolean {
     validateCli(cli)
     return this.reserved.has(cli) || this.unsafeQueries.has(cli) || this.unsafeTerminals.has(cli)
@@ -443,6 +445,7 @@ export class AccountManager {
   }
 
   async status(cli: CliId, cwd: string, signal: AbortSignal, options: { background?: boolean } = {}): Promise<AccountStatus> {
+    this.config.cliMaintenance?.assertAvailable(cli)
     validateCli(cli)
     if (options.background && !BACKGROUND_ACCOUNT_CLIS.includes(cli as Exclude<CliId, 'harness'>)) throw new Error('此 CLI 尚无已核实的后台只读账号查询')
     if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
@@ -836,6 +839,7 @@ export class AccountManager {
     provider?: string,
     login?: string,
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
+    this.config.cliMaintenance?.assertAvailable(cli)
     validateCli(cli)
     if (isWorkBuddyCli(cli)) throw new Error('请在 WorkBuddy 桌面端登录或退出')
     if (!ACTIONS.includes(action)) throw new Error('不支持的账号操作')

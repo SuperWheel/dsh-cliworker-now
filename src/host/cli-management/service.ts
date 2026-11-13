@@ -1,13 +1,22 @@
+import { randomUUID } from 'node:crypto'
+import { rename, unlink } from 'node:fs/promises'
+import { nativeLaunchArgv } from '../native-launch.mjs'
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
-import { customRegistryProblem, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, type CliUpdateEntry, type CliUpdateSnapshot, type CliDownloadSourceSettings, type CliDownloadSourceTest } from '../../shared/cli-management.ts'
+import { customRegistryProblem, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, type CliUpdateEntry, type CliUpdateSnapshot, type CliDownloadSourceSettings, type CliDownloadSourceTest, type CliUpdateOperation } from '../../shared/cli-management.ts'
 import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
 import { identifyInstallation, fingerprintToken, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, installOffer, BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
-import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable } from './versions.ts'
+import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion } from './versions.ts'
 import { CliPreloader } from './preload.ts'
+import { CliMaintenance, CliBusyError } from './maintenance.ts'
+import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError } from './planner.ts'
+import { executeCliOperation, outputTail } from './executor.ts'
+import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
+import { resolveNpmRuntime } from './npm.ts'
+import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
 
 /** Audited file-only AccountManager.status branches. All others are skipped:
  * Grok/Hermes renew tokens; WorkBuddy bootstraps keys/config; Claude prepares a
@@ -18,16 +27,27 @@ import { CliPreloader } from './preload.ts'
  */
 export { BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
 interface Dependencies {
+  busy?(cli: ActiveCliId): { workers: number; accounts: boolean }
+  assertUpdateAllowed?(cli: ActiveCliId): void
+  invalidateModels?(cli: ActiveCliId): void
   root: string; backend: ProcessBackend; config: RuntimeConfig
   idle(): boolean; enabled(): boolean; cliEnabled(cli: ActiveCliId): boolean
   account(cli: ActiveCliId, project: string, signal: AbortSignal): Promise<AccountStatus>
+  globalCleanup?(error: ProcessCleanupUnconfirmedError): void
   cleanup?(cli: ActiveCliId, error: ProcessCleanupUnconfirmedError): void
   identify?: typeof identifyInstallation
   version?: typeof currentVersion
   releases?: ReleaseClient
+  artifactFetch?: Parameters<typeof downloadCliArtifact>[0]['fetcher']
 }
 export class CliManagementService {
+  readonly maintenance: CliMaintenance
   readonly cache: CliManagementCache
+  private operationRun?: Promise<void>
+  private operationController?: AbortController
+  private requests = new Map<string, { signature: string; operation: CliUpdateOperation }>()
+  private batches = new Set<string>()
+  private queued = new Map<ActiveCliId, { token: string; requestId: string }>()
   private state: CliUpdateSnapshot
   private identities = new Map<ActiveCliId, InstallationIdentity>()
   private listeners = new Set<() => void>()
@@ -37,15 +57,19 @@ export class CliManagementService {
   private pending = new Set<Promise<unknown>>()
   private foregroundController?: AbortController
   private project?: string
+  private registryTask?: Promise<void>
   private followRegistry?: string
   private cleanupFailure?: ProcessCleanupUnconfirmedError
+  private cleanupCli?: ActiveCliId
+  private quarantined = new Map<ActiveCliId, () => void>()
   private readonly releases: ReleaseClient
   constructor(private deps: Dependencies) {
+    this.maintenance = deps.config.cliMaintenance ?? new CliMaintenance()
     this.cache = new CliManagementCache(deps.root); this.releases = deps.releases ?? new ReleaseClient()
     const cached = this.cache.entries()
     this.state = { revision: 0, activity: 'idle', entries: CLI_IDS.map(cli => ({ ...(cached.find(e => e.cli === cli) ?? { cli, installed: false, group: 'checking' as const }), install: installOffer(cli) })), queue: [], results: [] }
     // Categories are deliberately separate: all file checks before any version/query work.
-    this.preloader = new CliPreloader({ idle: () => deps.idle() && !this.state.operation, enabled: deps.enabled,
+    this.preloader = new CliPreloader({ idle: () => deps.idle() && !this.cleanupFailure && !this.state.operation && !this.state.queue.length, enabled: deps.enabled,
       activity: active => { if (!this.running) { this.state.activity = active ? 'preloading' : 'idle'; this.changed() } },
       items: [
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, true) })),
@@ -58,20 +82,29 @@ export class CliManagementService {
         // remains a foreground operation until a side-effect-free branch is audited.
       ],
     })
+    this.track(prepareDownloads(deps.root)).catch(() => undefined)
     this.preloader.start()
   }
   context(project: string) { this.project = project }
   snapshot(): CliUpdateSnapshot { return structuredClone(this.state) }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private changed() { this.state.revision++; for (const listener of this.listeners) listener() }
-  activityChanged() { this.preloader.changed() }
+  activityChanged() {
+    this.preloader.changed()
+    let changed = false
+    for (const row of this.state.entries) {
+      const count = this.deps.busy?.(row.cli).workers ?? 0
+      if ((row.busyWorkers ?? 0) !== count) { row.busyWorkers = count; changed = true }
+    }
+    if (changed) this.changed()
+  }
   private entry(cli: ActiveCliId) { return this.state.entries.find(e => e.cli === cli)! }
   private publish(cli: ActiveCliId, patch: Partial<CliUpdateEntry>, persist = false) {
     Object.assign(this.entry(cli), patch); if (persist) this.cache.rememberEntry(this.entry(cli)); this.changed()
   }
   check(scope: 'missing' | 'all'): CliUpdateSnapshot {
-    this.lifetime.signal.throwIfAborted()
-    if (this.running) return this.snapshot()
+    this.assertHealthy()
+    if (this.running || this.state.operation || this.state.queue.length) return this.snapshot()
     this.state.activity = 'checking'; this.changed()
     const controller = new AbortController(); this.foregroundController = controller
     const unfinished = new Set<ActiveCliId>(CLI_IDS)
@@ -107,7 +140,7 @@ export class CliManagementService {
     if (failed?.status === 'rejected') throw failed.reason
   }
   private async local(cli: ActiveCliId, signal: AbortSignal, background: boolean, pathOnly: boolean) {
-    signal.throwIfAborted()
+    this.assertHealthy(); signal.throwIfAborted()
     const old = this.entry(cli)
     const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), 5000)
     const control = AbortSignal.any([signal, timer.signal])
@@ -123,22 +156,23 @@ export class CliManagementService {
       this.identities.set(cli, identity)
       if (pathOnly) return
       const cached = this.cache.version(cli, identity.fingerprint)
-      const version = cached?.version ?? await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background)
+      this.assertHealthy()
+      const version = (cached && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion) ? cached.version : undefined) ?? await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background)
       control.throwIfAborted()
-      if (version && !cached) {
+      if (version && version !== cached?.version) {
         const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, control, background)
         control.throwIfAborted()
         if (!after || fingerprintToken(after.fingerprint) !== fingerprintToken(identity.fingerprint)) throw new Error('CLI identity changed during version read')
         this.cache.rememberVersion(cli, identity.fingerprint, version)
       }
       const manual = ['desktop-app', 'winget', 'scoop', 'nix', 'bun', 'pnpm', 'unknown'].includes(identity.source)
-      const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' ? 'checking' : old.group
+      const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' || old.group === 'manual' ? 'checking' : old.group
       this.publish(cli, { installed: true, source: identity.source, currentVersion: version, planToken: fingerprintToken(identity.fingerprint), checkedAt: Date.now(), stage: undefined, group,
         reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'desktop-app' ? 'APP_MANAGED' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
         manual: manual ? { note: '请按官方说明在原安装渠道更新，然后重新检查。', guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
       }, true)
     } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.deps.cleanup?.(cli, error) }
+      if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.cleanupCli = cli; this.preloader.changed(); this.deps.cleanup?.(cli, error) }
       signal.throwIfAborted()
       const code = (error as NodeJS.ErrnoException)?.code
       const missing = ['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes(code ?? '') || (error as { reason?: string }).reason === 'not-installed'
@@ -147,12 +181,14 @@ export class CliManagementService {
     } finally { clearTimeout(timeout) }
   }
   private async remote(cli: ActiveCliId, signal: AbortSignal, force: boolean) {
-    signal.throwIfAborted()
+    this.assertHealthy(); signal.throwIfAborted()
     const row = this.entry(cli)
     if (!row.installed || !row.currentVersion) return
     const spec = CLI_SOURCES[cli]
-    if (!spec.npm && !spec.brew || row.group === 'manual') {
-      if (row.group !== 'manual') this.publish(cli, { group: 'manual', reason: 'NO_RELEASE_SOURCE', stage: undefined, manual: { note: '发布源尚未核实，请查看官方说明。', guideUrl: spec.guideUrl } }, true)
+    const identity = this.identities.get(cli), method = identity && automaticMethod(cli, identity)
+    const cannotPin = method !== 'npm' && spec.compatibility !== 'any'
+    if (!spec.npm && !spec.brew || row.group === 'manual' || !method || cannotPin || row.source === 'brew' && spec.brew?.tap) {
+      if (row.group !== 'manual') this.publish(cli, { group: 'manual', reason: 'NO_RELEASE_SOURCE', stage: undefined, planToken: undefined, manual: { note: cannotPin ? '原更新方式无法锁定已适配版本，请按官方说明手动更新。' : '自动更新方法或对应发布源尚未核实，请查看官方说明。', guideUrl: spec.guideUrl } }, true)
       return
     }
     const registry = this.effectiveRegistry(), key = this.cache.releaseKey(cli, spec.npm ?? spec.brew!.name, `${row.source}:${registry}`)
@@ -162,7 +198,7 @@ export class CliManagementService {
       signal.throwIfAborted(); this.cache.rememberRelease(key, release)
       const next = latestCompatible(cli, release.versions, row.currentVersion)
       const incompatible = !compatible(cli, release.latest)
-      this.publish(cli, { latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
+      this.publish(cli, { planToken: this.identities.has(cli) ? operationToken(cli, this.identities.get(cli)!, next, registry, row.currentVersion) : undefined, latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
         group: !incompatible && next && updateAvailable(row.currentVersion!, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
     } catch (error) {
       signal.throwIfAborted()
@@ -170,6 +206,7 @@ export class CliManagementService {
     }
   }
   private async preloadAccount(cli: ActiveCliId, signal: AbortSignal) {
+    this.assertHealthy()
     if (!this.project || !this.deps.cliEnabled(cli) || !this.identities.has(cli)) return
     const project = this.project
     if (this.cache.account(cli, project)?.cache.stale === false) return
@@ -181,15 +218,22 @@ export class CliManagementService {
     const s = this.cache.settings()
     return s.source === 'official' ? OFFICIAL_NPM_REGISTRY : s.source === 'npmmirror' ? NPMMIRROR_REGISTRY : s.source === 'custom' ? s.customUrl! : this.followRegistry ?? OFFICIAL_NPM_REGISTRY
   }
+  private assertHealthy() { this.lifetime.signal.throwIfAborted(); if (this.cleanupFailure) throw this.cleanupFailure }
   private async registry(signal: AbortSignal, background = false) {
+    this.assertHealthy()
     if (this.cache.settings().source !== 'follow' || this.followRegistry) return
+    if (this.registryTask) return this.registryTask
+    this.registryTask = this.readRegistry(signal, background)
+    try { await this.registryTask } finally { this.registryTask = undefined }
+  }
+  private async readRegistry(signal: AbortSignal, background: boolean) {
     const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), 5000)
     const control = AbortSignal.any([signal, timer.signal])
     try {
-      const npm = await bounded(this.deps.backend.resolveExecutable(process.platform === 'win32' ? 'npm.cmd' : 'npm'), control)
-      const value = (await captureReadOnly(this.deps.backend, this.deps.config, [npm, 'config', 'get', 'registry'], control, background)).trim()
+      const npm = process.platform === 'win32' ? await bounded(resolveNpmRuntime(this.deps.backend), control) : [await bounded(this.deps.backend.resolveExecutable('npm'), control)]
+      const value = (await captureReadOnly(this.deps.backend, this.deps.config, [...npm, 'config', 'get', 'registry'], control, background)).trim()
       if (!customRegistryProblem(value)) this.followRegistry = new URL(value).href
-    } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; throw error }; signal.throwIfAborted() }
+    } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.preloader.changed(); this.deps.globalCleanup?.(error); throw error }; signal.throwIfAborted() }
     finally { clearTimeout(timeout) }
   }
   private track<T>(operation: Promise<T>) { this.pending.add(operation); void operation.finally(() => this.pending.delete(operation)).catch(() => undefined); return operation }
@@ -214,6 +258,160 @@ export class CliManagementService {
       catch { return { ok: false, message: '连接失败或超时，请检查下载源地址' } }
     })())
   }
+  /** Host-only planning: inputs never include commands, URLs or environment variables. */
+  async planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', signal: AbortSignal, selected?: { target?: string; registry: string }) {
+    this.assertHealthy()
+    const identity = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, signal)
+    const version = identity && await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, signal)
+    signal.throwIfAborted()
+    return planCliOperation(cli, intent, identity, version, selected ? selected.target : this.entry(cli).latestCompatibleVersion, selected?.registry ?? this.effectiveRegistry())
+  }
+  start(cli: ActiveCliId, intent: 'update' | 'install', token: string, directory: string, requestId: string): CliUpdateSnapshot {
+    const signature = JSON.stringify([cli, intent, token, directory]), previous = this.requests.get(`single:${requestId}`)
+    if (previous) {
+      if (previous.signature !== signature) throw new CliOperationError('PLAN_EXPIRED', 'requestId 已用于不同请求')
+      return { ...this.snapshot(), operation: structuredClone(previous.operation) }
+    }
+    this.assertHealthy()
+    if (intent === 'install') throw new CliOperationError('PREREQUISITE_MISSING', '首次安装尚未支持，将在第三阶段提供')
+    if (!requestId || requestId.length > 256 || !/^[a-f0-9]{64}$/.test(token)) throw new CliOperationError('PLAN_EXPIRED', '请求或计划无效，请重新检查更新')
+    if (this.state.operation || this.state.queue.length) throw new CliBusyError(0)
+    this.launch(cli, token, `single:${requestId}`, signature)
+    return this.snapshot()
+  }
+  private launch(cli: ActiveCliId, token: string, requestId: string, signature: string) {
+    // Check external workers/accounts and acquire the lease in this same JS turn.
+    this.deps.assertUpdateAllowed?.(cli)
+    const release = this.maintenance.begin(cli, () => this.deps.busy?.(cli) ?? { workers: 0, accounts: false })
+    const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion }
+    const op: CliUpdateOperation = { id: randomUUID(), cli, intent: 'update', phase: 'preparing', startedAt: Date.now(), outputTail: '' }
+    this.requests.set(requestId, { signature, operation: op })
+    this.state.operation = op; this.state.results = this.state.results.filter(item => item.cli !== cli)
+    this.operationController = new AbortController()
+    const signal = AbortSignal.any([this.operationController.signal, this.lifetime.signal])
+    this.foregroundController?.abort(); this.preloader.changed(); this.changed()
+    this.operationRun = Promise.resolve().then(async () => {
+      let quarantine = false
+      let artifact: string | undefined
+      try {
+        await this.preloader.pause(); await this.running
+        this.assertHealthy(); signal.throwIfAborted()
+        const preparation = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+        await this.registry(preparation)
+        const plan = await this.planCliOperation(cli, 'update', preparation, selected)
+        if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
+        op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
+        if (plan.method === 'npm') {
+          const metadata = await this.releases.artifact(cli, plan.targetVersion, plan.registry, preparation)
+          if (parseIntegrity(metadata.integrity).algorithm !== 'sha512') throw new CliOperationError('INTEGRITY_MISMATCH', 'npm 主包缺少官方 sha512 校验值')
+          op.integritySource = OFFICIAL_NPM_REGISTRY
+          op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
+          // The preparation timeout does not consume the downloader's two-hour budget.
+          artifact = await downloadCliArtifact({ root: this.deps.root, ...metadata, signal, fetcher: this.deps.artifactFetch,
+            progress: value => { op.progress = value; this.changed() } })
+          const tgz = artifact.replace(/\.part$/, '.tgz')
+          await rename(artifact, tgz); artifact = tgz
+        }
+        const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+        const argv = nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        // Recheck after metadata/manager resolution, immediately before spawning.
+        const fresh = await this.planCliOperation(cli, 'update', admission, selected)
+        if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
+        signal.throwIfAborted()
+        op.command = argv; op.phase = 'installing'; op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
+        await executeCliOperation(this.deps.backend, this.deps.config, argv, signal, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() })
+        signal.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
+        const verification = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
+        const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
+        if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
+        const version = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
+        op.afterVersion = version
+        if (version === plan.beforeVersion) throw new CliOperationError('VERSION_UNCHANGED', `命令已完成，但版本仍是 ${version}`)
+        if (version !== plan.targetVersion) throw new CliOperationError('VERSION_MISMATCH', '命令已完成，但版本与目标不一致，请重新检查')
+        verification.throwIfAborted()
+        this.cache.invalidateVersion(cli); this.deps.invalidateModels?.(cli)
+        this.identities.set(cli, after)
+        this.cache.rememberVersion(cli, after.fingerprint, version)
+        const row = this.entry(cli), next = row.latestCompatibleVersion
+        const incompatible = !!row.latestVersion && !compatible(cli, row.latestVersion)
+        const updatable = !incompatible && !!next && updateAvailable(version, next)
+        this.publish(cli, { installed: true, source: after.source, currentVersion: version, group: updatable ? 'updatable' : 'latest',
+          reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined, reasonDetail: undefined, manual: undefined, stage: undefined, checkedAt: Date.now(),
+          planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version) : undefined }, true)
+        op.phase = 'succeeded'
+      } catch (error) {
+        if (error instanceof ProcessCleanupUnconfirmedError) {
+          quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
+          op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认更新进程全部退出，已暂停后续操作', retryable: false }
+        } else if (signal.aborted) {
+          op.phase = 'cancelled'; op.outputTail = outputTail(op.outputTail + '\n已取消；已写入的文件不回滚，请重新检查。')
+        } else {
+          op.phase = 'failed'
+          const code = error instanceof CliOperationError ? error.code : (error as { code?: string }).code === 'INTEGRITY_MISMATCH' ? 'INTEGRITY_MISMATCH' : 'UNKNOWN'
+          op.error = { code, message: error instanceof CliOperationError ? outputTail(error.message) : code === 'INTEGRITY_MISMATCH' ? '下载源校验值与官方源不符，未执行更新' : '更新失败，请检查网络、安装前缀与输出后重试', retryable: true }
+        }
+      } finally {
+        if (artifact && !quarantine) await unlink(artifact).catch(() => undefined)
+        op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
+        this.operationController = undefined; this.operationRun = undefined
+        if (!quarantine) release()
+        else { this.state.queue = []; this.queued.clear() }
+        this.changed(); this.preloader.changed()
+        if (!this.lifetime.signal.aborted && !quarantine) this.nextQueued()
+      }
+    })
+    void this.operationRun.catch(() => undefined)
+  }
+  updateAll(requestId: string): CliUpdateSnapshot {
+    if (this.batches.has(requestId)) return this.snapshot()
+    this.assertHealthy()
+    if (!requestId || requestId.length > 256) throw new Error('requestId 无效')
+    if (this.state.operation || this.state.queue.length) throw new CliBusyError(0)
+    this.batches.add(requestId)
+    for (const cli of CLI_IDS) {
+      const row = this.entry(cli)
+      if (row.group !== 'updatable' || !row.planToken) continue
+      this.state.queue.push(cli); this.queued.set(cli, { token: row.planToken, requestId: `batch:${requestId}:${cli}` })
+    }
+    this.nextQueued(); this.changed(); return this.snapshot()
+  }
+  private nextQueued() {
+    if (this.state.operation || this.lifetime.signal.aborted || this.cleanupFailure) return
+    while (this.state.queue.length) {
+      const cli = this.state.queue.shift()!, item = this.queued.get(cli)!
+      this.queued.delete(cli)
+      try { this.launch(cli, item.token, item.requestId, JSON.stringify([cli, 'update', item.token, ''])); return }
+      catch (error) {
+        this.state.results = this.state.results.filter(value => value.cli !== cli)
+        this.state.results.push({ id: randomUUID(), cli, intent: 'update', phase: 'failed', startedAt: Date.now(), finishedAt: Date.now(), outputTail: '', error: { code: 'CLI_BUSY', message: outputTail(error instanceof Error ? error.message : '此 CLI 正在使用'), retryable: true } })
+      }
+    }
+    this.changed(); this.preloader.changed()
+  }
+  cancel(target: string): CliUpdateSnapshot {
+    if (this.state.operation?.id === target) {
+      this.state.operation.phase = 'cancelling'; this.operationController?.abort(); this.changed()
+    } else if (this.queued.has(target as ActiveCliId)) {
+      this.queued.delete(target as ActiveCliId); this.state.queue = this.state.queue.filter(cli => cli !== target); this.changed()
+    }
+    return this.snapshot()
+  }
+  /** Called only after Runtime and AccountManager accepted the user's explicit cleanup confirmation. */
+  recoverCleanup(cli: ActiveCliId) {
+    if (this.state.operation || this.cleanupCli !== cli) return
+    this.quarantined.get(cli)?.(); this.quarantined.delete(cli)
+    this.cleanupFailure = undefined; this.cleanupCli = undefined; this.preloader.changed(); this.changed()
+  }
+  async checkDirectory(cli: ActiveCliId, path: string, signal: AbortSignal) {
+    return this.track(checkInstallDirectory(cli, path, AbortSignal.any([signal, this.lifetime.signal])))
+  }
+  async chooseDirectory(cli: ActiveCliId, signal: AbortSignal) {
+    this.assertHealthy()
+    return this.track(chooseInstallDirectory(cli, this.deps.backend, this.deps.config, AbortSignal.any([signal, this.lifetime.signal])).catch(error => {
+      if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.deps.globalCleanup?.(error); this.preloader.changed() }
+      throw error
+    }))
+  }
   async *watch(signal: AbortSignal): AsyncIterable<CliUpdateSnapshot> {
     const control = AbortSignal.any([signal, this.lifetime.signal]); let wake: (() => void) | undefined, revision = -1
     const notify = () => wake?.(), off = this.subscribe(notify)
@@ -226,5 +424,5 @@ export class CliManagementService {
       }
     } finally { off(); control.removeEventListener('abort', notify) }
   }
-  async close() { this.lifetime.abort(); this.foregroundController?.abort(); await this.preloader.close(); await this.running; await Promise.allSettled(this.pending); this.listeners.clear(); if (this.cleanupFailure) throw this.cleanupFailure }
+  async close() { this.state.queue = []; this.queued.clear(); this.lifetime.abort(); this.operationController?.abort(); await this.operationRun; this.foregroundController?.abort(); await this.preloader.close(); await this.running; await Promise.allSettled(this.pending); this.listeners.clear(); if (this.cleanupFailure) throw this.cleanupFailure }
 }

@@ -1,3 +1,4 @@
+import type { CliMaintenance } from './cli-management/maintenance.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type {
   SubprocessHandle,
@@ -51,6 +52,8 @@ export interface TaskTimeLimit {
   idleMs: number
 }
 export interface RuntimeConfig {
+  /** Host-only synchronous CLI maintenance admission, shared by all entry points. */
+  cliMaintenance?: CliMaintenance
   /** Per-run time limit snapshot, never deployment settings. */
   timeLimit?: TaskTimeLimit
   /** Host-resolved upload references for one task, never deployment settings. */

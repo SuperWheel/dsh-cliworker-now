@@ -13,6 +13,7 @@ export function cpuBusy(before: CpuInfo[], after: CpuInfo[]): number {
 /** One pass per Host. All timers belong to one abortable loop; each item owns cleanup. */
 export class CliPreloader {
   private lifetime = new AbortController()
+  private currentRun?: Promise<void>
   private current?: AbortController
   private wake?: () => void
   private active?: Promise<void>
@@ -57,15 +58,16 @@ export class CliPreloader {
       this.current = new AbortController()
       const signal = AbortSignal.any([this.current.signal, this.lifetime.signal])
       this.options.activity?.(true)
-      try { await this.options.items[this.index]!.run(signal, !this.foreground); if (!signal.aborted) this.index++ }
+      try { this.currentRun = this.options.items[this.index]!.run(signal, !this.foreground); await this.currentRun; if (!signal.aborted) this.index++ }
       catch (error) { if (!signal.aborted) { this.options.error?.(error); this.index++ } }
-      finally { this.current = undefined; this.options.activity?.(false) }
+      finally { this.currentRun = undefined; this.current = undefined; this.options.activity?.(false) }
       if (!this.foreground && !this.lifetime.signal.aborted) await this.wait(2000)
     }
     this.completed = this.index === this.options.items.length
   }
   /** Page checking takes over separately, after the current item exits, and shares its cached results. */
   async handoff(): Promise<void> { this.handedOff = true; this.foreground = true; this.wake?.(); await this.active }
+  async pause(): Promise<void> { this.changed(); this.current?.abort(); await this.currentRun?.catch(() => undefined) }
   async stop(): Promise<void> { this.lifetime.abort(); this.current?.abort(); this.wake?.(); await this.active }
   async close(): Promise<void> { await this.stop() }
 }

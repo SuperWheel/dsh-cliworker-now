@@ -54,7 +54,7 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 
 #### Scenario: npm 全局安装
 - **WHEN** Codex 的真实路径为 `<前缀>/lib/node_modules/@openai/codex/bin/codex.js`
-- **THEN** 计划为在同一前缀下安装 `@openai/codex@<目标版本>`，命令以参数数组执行
+- **THEN** Host 下载 `@openai/codex@<目标版本>` 主包并按官方 sha512 校验，在同一 `--prefix` 下安装已校验的本地 tgz；Node/npm 安装独立于包前缀解析，命令以参数数组执行
 
 #### Scenario: WinGet 安装
 - **WHEN** Grok Build 由 WinGet 安装
@@ -109,6 +109,10 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 - **WHEN** 下载完成后 integrity 与官方源给出的值不符
 - **THEN** 判为失败并删除文件，不执行安装
 
+#### Scenario: 镜像元数据保留摘要但替换文件
+- **WHEN** 镜像的目标版本元数据声明了与官方一致的 sha512，但 tarball 地址返回不同内容
+- **THEN** Host 对实际文件验算失败，返回 INTEGRITY_MISMATCH、删除临时文件，并且 MUST NOT 启动 npm 安装
+
 ### Requirement: 首次安装
 「未安装」分区的 CLI SHALL 可以在本页安装。纯 CLI SHALL 装到官方默认位置，MUST NOT 让用户选择位置；同时有 npm 包和官方脚本时，SHALL 用官方推荐的方式，同为推荐时用 npm 包。官方安装脚本 SHALL 只使用 Host 内置的官方地址，先下载到插件私有缓存，再以文件方式交给明确的解释器执行，行内显示脚本地址。ZCode、WorkBuddy CN、WorkBuddy SHALL 可以在行内选择安装位置（只有图标的文件夹按钮，直接打开系统目录选择）；能静默安装的由插件安装到所选位置，不能的打开官方安装程序。位置需要管理员权限、空间不足或目录非空时 SHALL 用错误色提示并禁用「开始安装」。安装前 SHALL 检查前置条件（Node.js、Bun 版本等），不满足时 MUST NOT 安装，只说明所需版本并给出官方说明，MUST NOT 代装运行时。安装后读得出版本才算成功，桌面应用的所选路径 SHALL 写入机器级路径记录，下一步提示登录。
 
@@ -129,7 +133,7 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 - **THEN** 插件只从内置的官方地址下载脚本，以文件方式执行，不经 `curl | bash`
 
 ### Requirement: 下载源设置
-「下载设置」分区 SHALL 提供「下载源」下拉：跟随 npm 设置（默认）、npm 官方源、国内镜像 npmmirror、自定义地址。自定义地址 MUST 为 https，MUST NOT 含用户名或密码，并可「检查连接」。所选源 SHALL 只以 `--registry <地址>` 参数作用于插件发起的 npm 安装和更新，MUST NOT 修改用户的 `.npmrc` 或全局 npm 配置；官方安装脚本、CLI 自带更新命令、Homebrew 和桌面安装包始终从官方下载。使用非官方源时，目标版本号和 integrity SHALL 优先向 npm 官方源核对，官方源连不上时才用所选源的值，并在命令下方注明校验值来源。设置按本机保存，从下一次操作开始生效。
+「下载设置」分区 SHALL 提供「下载源」下拉：跟随 npm 设置（默认）、npm 官方源、国内镜像 npmmirror、自定义地址。自定义地址 MUST 为 https，MUST NOT 含用户名或密码，并可「检查连接」。Host SHALL 从所选源的目标版本元数据取得主包 tarball 地址，按 npm 官方源同版本 sha512 验证实际文件，再交给 npm 安装本地 tgz；官方源也 SHALL 使用同一路径。安装 SHALL 传入 `--registry <地址>` 供 npm 正常解析依赖，MUST NOT 修改用户的 `.npmrc` 或全局 npm 配置；官方安装脚本、CLI 自带更新命令、Homebrew 和桌面安装包始终从官方下载。npm 主包的官方 sha512 不可得或实际文件校验失败时 MUST NOT 安装，MUST NOT 降级为信任镜像摘要；`integritySource` SHALL 标明官方源。设置按本机保存，从下一次操作开始生效。
 
 #### Scenario: 选择国内镜像
 - **WHEN** 下载源为 npmmirror，用户更新 Codex

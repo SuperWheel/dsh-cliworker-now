@@ -4,6 +4,7 @@
 - [x] 1.2 新增 `src/host/cli-management/sources.ts`：17 个 CLI 的包名、发布源、自带更新命令、默认安装位置、前置条件、兼容范围、版本读取方式与后台可用标记（按 PRD 5.3 表，待核实项不开放自动方法）
   - Phase A：`sources.ts` 明列 17 个 CLI、npm / 已核实的 brew 名称、官方说明、更新 argv（仅描述）、安装位置、前置条件、兼容范围与后台标记；未核实方法保留 manual。`corepack pnpm vitest run tests/cli-management.test.ts tests/cli-management-remotes.test.ts tests/general-settings.test.ts tests/cli-settings.test.ts tests/accounts.test.ts`：5 文件、400 项通过（2026-11-13；CLI / HTTP 均为模拟夹具）。
 - [ ] 1.3 来源核实：Gateway 能否区分设置页与 Agent 调用（PRD 第九节第 15 条）
+  - （未执行：Phase B 简报未包含 Gateway 调用来源鉴别；本阶段仅注册指定 Remote，不新增 Agent 工具，尚无来源鉴别验收证据。）
 
 ## 2. 版本检查、安装来源识别与缓存 〔后端｜10h｜前置 1〕
 - [x] 2.1 安装来源识别：真实路径、npm 前缀与包名、Homebrew 元数据、官方布局、桌面托管、手动类管理器
@@ -18,12 +19,13 @@
   - Phase A：六个页面 / 下载源 Remote 已注册，参数顺序与 `workers.ts` 对齐；watch 按 revision，snapshot 不探测，check 立即返回、30 秒截止、取消后等待所有并发读取清理。Host / Client `corepack pnpm typecheck` 通过（DSH 0.2.2-rc.2），Remote 模拟测试通过。
 - [x] 2.6 单元测试：来源识别正反例、版本比较、指纹失效、缓存损坏、只读快照不启动探测
   - Phase A：新增 `tests/cli-management.test.ts`、`tests/cli-management-remotes.test.ts`；来源、版本、指纹、缓存、网络、只读快照、Remote、账号缓存等纳入上述 400 项回归。
-- [ ] 2.7 修复阶段 A 审查（Codex 审查，2026-11-13）报告的 Host 问题
+- [x] 2.7 修复阶段 A 审查（Codex 审查，2026-11-13）报告的 Host 问题
   - P1 `service.ts`：`npm config get registry` 清理未确认后预加载与前台仍会再起 npm 进程，须立即停止后续探测。
   - P2 `service.ts`：启动器指纹不变而清单版本已变时仍用旧缓存版本，须把清单纳入缓存身份或优先用新读出的清单版本。
   - P2 `identity.ts`：自动记录的路径失效后前台检查不重找，误报未安装；前台检查须复用 `resolveCliExecutable` 的失效路径恢复，后台仍只读文件。
   - P2 `service.ts`：旧 `manual` 分组在安装归属变成可识别的 npm 后仍保留，发布源查询被永久跳过；须按新身份重算。
-  - （未执行：并入阶段 B 由 Codex 修复。）
+  - Phase B（2026-11-13）已修：registry 探测 single-flight，清理未确认立即停止后续探测并调用既有全局 cleanup 隔离；指纹加入清单版本且不沿用与当前清单冲突的缓存；失效自动路径前台复用 resolver 重找；manual → npm 重新计算分组。
+  - 模拟回归：`corepack pnpm vitest run tests/cli-management-phase-b.test.ts tests/cli-management-download.test.ts tests/cli-management-admission.test.ts`：3 文件 40 项通过（包含四项审查回归和并发 registry 清理失败）；`corepack pnpm typecheck` 通过。
 
 ## 3. 后台预加载 〔后端｜6h｜前置 2〕
 - [ ] 3.1 启动 60 秒延迟、空闲判定（无任务、无登录窗口、无更新、CPU 忙碌低于 50%）、一次一项、间隔 2 秒、子进程降优先级
@@ -38,19 +40,53 @@
   - Phase A：启动延迟、CPU / Worker / 账号 / 操作忙闲、开关关闭、暂停继续、指纹复用、停用清理模拟测试通过。`corepack pnpm vitest run tests/native-process.test.ts` 首次沙箱内因 `/bin/ps EPERM` 失败，批准沙箱外重跑后 1 项通过；这是 Node 夹具进程范围验收，不是实际 CLI / Windows 验收。
 
 ## 4. 更新执行、维护锁与停滞续传 〔后端｜14h｜前置 2〕
-- [ ] 4.1 计划与指纹：`planCliOperation`、开始前重算指纹、受控方法 ID、requestId 幂等
-- [ ] 4.2 维护锁：同步准入，接入派遣、续聊、账号、模型目录、路径修改；有任务时拒绝更新
-- [ ] 4.3 执行器：npm（同前缀、精确版本、`--registry`）、Homebrew、CLI 自带更新命令；输出去 ANSI、脱敏、32 KiB 尾部；进程树取消后才报告已取消
-- [ ] 4.4 下载器：10 秒停滞、Range 续传（206/200/416）、200 次、2 小时、integrity 校验、临时文件 24 小时与 2 GB 上限
-- [ ] 4.5 结果核对：重新解析路径与版本，等于目标才成功；版本未变、身份变化、清理未确认分开编码
+- [x] 4.1 计划与指纹：`planCliOperation`、开始前重算指纹、受控方法 ID、requestId 幂等
+  - Phase B：`planner.ts` 在 Host 内按来源与归属选择 npm / brew / self-update；token 含平台、动作、安装身份、版本、目标和下载源；执行前重算两次，变化返回 PLAN_EXPIRED；单次与批次 requestId 分开命名空间，重复请求不再启动。新增五个 Remote 与 `workers.ts` 的参数顺序一致，install 明确返回「首次安装尚未支持」。
+  - 模拟：计划过期四种变化、幂等、批次顺序与取消排队、Remote 返回值及参数约束通过。相关 9 文件 439 项命令见 4.7；后续 3 文件 40 项复核通过。
+- [x] 4.2 维护锁：同步准入，接入派遣、续聊、账号、模型目录、路径修改；有任务时拒绝更新
+  - Phase B：`maintenance.ts` 同步检查 runtime busyWorkers、账号窗口/状态查询和在途读取租约后立刻上锁。`RuntimeConfig.cliMaintenance` 由同一 Host 实例共享；运行时 assertCliEnabled / assertAccountIdle、AccountManager start / status / reservation、Host 模型与账号绑定查询、路径读写接入。统一错误为「MAINTENANCE：<CLI> 正在更新，请等待更新或取消清理完成」；更新被占用拒绝为 CLI_BUSY，Remote 错误数据含 busyWorkers。
+  - 模拟：派遣、续聊、待受理、账号、模型目录、路径修改拒绝；已有异步账号读取阻止中途更新；其他 CLI 不受影响；预加载 abort 当前项并等清理；cleanup marker 跨 Runtime 重启及明确确认后的解锁通过。
+- [x] 4.3 执行器：npm（同前缀、精确版本、`--registry`）、Homebrew、CLI 自带更新命令；输出去 ANSI、脱敏、32 KiB 尾部；进程树取消后才报告已取消
+  - Phase B 审查修订后：`executor.ts` 使用 ProcessBackend argv；独立解析 Node/npm 安装，原 CLI 前缀只传给 `--prefix`；Host 下载目标精确版本主包、按官方 sha512 验证后交给 npm 安装本地 tgz，并传所选 `--registry`。brew upgrade 使用受控名称；自带命令仅取 sources.update。Windows npm 直接以 `[node.exe, npm-cli.js, ...]` 启动，不解析或执行官方 npm.cmd，不经 cmd /c；其他 CLI 沿用 nativeLaunchArgv / nativeProcessBackend。安装阶段 10 分钟超时。
+  - 本轮用户要求取代初版简报的精确包参数方案：官方源与镜像都由 Host 自行下载和验算主包，`integritySource` 固定官方源，主包字节进度 readable=true；镜像仅伪造 packument 摘要不能绕过实际文件校验。传递依赖仍由 npm 正常解析，风险边界已写入 design.md，不声称 Host 已独立校验所有依赖。
+  - 模拟：完整行跨 chunk 脱敏 Authorization / Cookie / 令牌 / URL 凭据、ANSI 清理、UTF-8 32 KiB 尾部；取消与超时等待整个进程范围退出，未确认进入 cleanup-unconfirmed 并保留锁；窗口关闭后继续、停用等待清理通过。
+- [x] 4.4 下载器：10 秒停滞、Range 续传（206/200/416）、200 次、2 小时、integrity 校验、临时文件 24 小时与 2 GB 上限
+  - Phase B：`download.ts` 实现 10 秒无字节中断、206 起点校验后续写、200 截断重写、416 按长度核对后摘要验证；200 次重试与 2 小时总预算分别编码；sha512 / sha256 integrity 不符删片段，取消删片段；目录 0700 / 文件 0600；启动时及下载结束清理 24 小时或 2 GB 超限片段。
+  - 模拟：`corepack pnpm vitest run tests/cli-management-download.test.ts tests/cli-management-directory.test.ts`：2 文件 15 项通过；覆盖持续每 9 秒实际写入字节仍达到两小时上限、201 个请求耗尽 200 次续传预算、Range 三状态、错误摘要、取消、缓存过期/容量。审查修订后已接管 npm 主包下载，另测超过准备阶段 30 秒的续传仍可安装；npm 依赖与 brew 下载仍由外部命令负责。（未执行：失败片段跨新操作复用及跨重启累计次数尚未实现，不声称已完成 PRD 全部恢复语义。）
+- [x] 4.5 结果核对：重新解析路径与版本，等于目标才成功；版本未变、身份变化、清理未确认分开编码
+  - Phase B：命令及进程范围退出确认后，重新解析安装身份、读取版本；只有目标版本一致才 succeeded，原版本、其他版本、实际路径或归属变化分别为 VERSION_UNCHANGED / VERSION_MISMATCH / IDENTITY_CHANGED。结果写 results；成功失效版本及模型目录缓存；未把 exit 0 当成成功。
+  - 模拟：三种核对错误、成功的版本及缓存失效、退出未确认分支均通过。审查修订后 Homebrew 比较稳定前缀、formula/cask、启动器与包内入口，允许版本目录变化；其他身份变化仍拒绝。成功后刷新身份/版本缓存、重算分组并落盘，重启不会恢复虚高徽标。真实平台布局验收仍留在 7.3 / 7.5。
 - [x] 4.6 下载源设置：四个选项、自定义 https 校验、连接检查、不改用户 npm 配置
-  - Phase A：四个下载源选项按本机持久化，自定义 HTTPS / 无凭据 / 无查询参数校验，连接检查，`npm config get registry` argv 只读查询；不写 npmrc。下载源与 Remote 模拟测试通过；安装 / 更新时使用 registry 留在阶段 B。
-- [ ] 4.7 单元测试：互斥、任务占用拒绝、更新期间拒绝派遣、取消与进程树退出、停滞续传与上限、Range 不支持、校验失败、输出截断与脱敏、窗口关闭后继续、插件停用清理
+  - Phase A：四个下载源选项按本机持久化，自定义 HTTPS / 无凭据 / 无查询参数校验，连接检查，`npm config get registry` argv 只读查询；不写 npmrc。下载源与 Remote 模拟测试通过；Phase B 更新已固定受理时的 registry 并通过 argv 传入；安装沿用第三阶段边界。
+- [x] 4.7 单元测试：互斥、任务占用拒绝、更新期间拒绝派遣、取消与进程树退出、停滞续传与上限、Range 不支持、校验失败、输出截断与脱敏、窗口关闭后继续、插件停用清理
+  - Phase B 新增测试均标注「模拟」：`cli-management-phase-b.test.ts`、`cli-management-admission.test.ts`、`cli-management-download.test.ts`、`cli-management-directory.test.ts`，共用 `cli-management-phase-b-fixture.ts`；没有调用真实 CLI、npm、brew、账号、安装或更新。
+  - `corepack pnpm vitest run tests/cli-management-phase-b.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts tests/cli-management-admission.test.ts tests/cli-management.test.ts tests/cli-management-remotes.test.ts tests/cli-settings.test.ts tests/accounts.test.ts tests/native-launch.test.ts`：9 文件 439 项通过。新增明确确认清理后的解锁及后续微调后，3 文件 40 项复核通过；typecheck 通过。
+  - 目录 Remote 模拟覆盖 ADMIN_REQUIRED / NO_SPACE / NOT_EMPTY / INVALID、取消 path=''、三个桌面 CLI 限制、macOS 与 Windows 固定 argv。真实系统选择器和平台权限体验留在第三阶段与平台验收。
+  - 全量 `corepack pnpm vitest run` 沙箱内：17 文件失败、276 通过、4 跳过；348 项失败、6060 通过、14 跳过，另 20 个错误，主要为 listen EPERM、/bin/ps EPERM 及由此引起的等待超时；日志 `/private/tmp/cliworker-phase-b-vitest.log`。单独复现 `tests/native-harness-tools.test.ts`：沙箱内 32 失败/1 通过，获准沙箱外重跑 33/33 通过。
+  - 获准沙箱外全量 `corepack pnpm vitest run`（2026-11-13 17:33:40，111.32 秒，退出码 0）：**Test Files 293 passed | 4 skipped (297)；Tests 6408 passed | 14 skipped (6422)**，无失败或未处理错误；日志 `/private/tmp/cliworker-phase-b-vitest-unsandboxed.log`。测试总数与沙箱内一致，348 项失败全部在沙箱外通过，支持这些失败由沙箱进程/监听限制引起；没有借此执行真实 CLI 安装、更新或版本探测。
+  - 暂停后续跑最终复核（2026-11-13 18:28:51）：`corepack pnpm vitest run tests/cli-management-phase-b.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts`：**4 文件 46 项通过**，退出码 0；`corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.2 通过，退出码 0。不重复已完成的沙箱外全量测试。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive`：valid，退出码 0；`/Library/Developer/CommandLineTools/usr/bin/git diff --check`：通过；`git diff -- src/client src/shared/cli-management.ts`：无差异。本阶段未修改 Client 或共享协议，没有执行 build、真实 CLI 安装/更新/--version，也没有 Git 提交。
+
+- [x] 4.8 修复阶段 B 审查问题（六项，逐项模拟回归）
+  - ① 主包完整性：`ReleaseClient.artifact` 绑定官方包名/版本/sha512，`downloadCliArtifact` 实际下载所选源 tarball 后校验，校验通过才以本地 tgz 安装；官方源同路径。`cli-management-review.test.ts` 模拟覆盖两种源成功、元数据摘要一致但文件被替换时 INTEGRITY_MISMATCH/删片段/零进程、缺 sha512 拒绝、下载取消、超过 30 秒准备预算后的续传。
+  - ② npm 与包前缀分离：新增 `npm.ts`，读取 npm 包清单/bin 声明及 Node 原生文件格式，优先启动器旁 Node，否则解析 PATH；原前缀仅为安装目标。模拟覆盖 POSIX 自定义前缀及 manifest/入口/运行时无效，均不执行真实 Node/npm 探测。
+  - ③ Windows 官方 npm.cmd：不把批处理作为 cmd-shim 解析，核实固定 npm JS 入口后直接 `[node.exe, npm-cli.js, ...]`。模拟使用含 npm-prefix.js、FOR /F 的官方 npm.cmd 形态文本，Program Files 运行时与 AppData/Roaming/npm 包前缀分离，验证无 cmd /c；跟随 npm 配置的 Windows 读取同步使用此入口。
+  - ④ Homebrew：`sameInstallation` 允许同一前缀/formula 或 cask/稳定启动器/包内入口的版本目录变化。模拟覆盖 Cellar、Caskroom 正例，前缀/包名/类型/入口/启动器/来源变化六个反例，以及服务成功更新后仍核对目标版本。
+  - ⑤ 账号隔离状态：`readAccountStatus` 在取维护租约前返回无进程 cleanupBlocked 状态。`cli-management-admission.test.ts` 对 accountStatus、refreshAccountStatus 分别加模拟回归，并在真实 Host 方法配模拟更新清理失败的流程中验证两个方法可读、零额外账号/进程调用、明确确认后恢复。
+  - ⑥ 成功分组：更新核对后刷新 identity/version 缓存，重算 group/reason/planToken 并持久化。模拟覆盖 updatable → latest、徽标计数清零、磁盘读回、服务重启、再次全部更新不排入已完成条目。
+  - `corepack pnpm typecheck`：退出码 0，Host/Client against DSH 0.2.2-rc.2 通过。`corepack pnpm vitest run tests/cli-management-review.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts`：5 文件 70 项通过。
+  - 扩展关联 `corepack pnpm vitest run tests/cli-management-review.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts tests/cli-management.test.ts tests/cli-management-remotes.test.ts tests/cli-settings.test.ts tests/accounts.test.ts tests/native-launch.test.ts tests/cleanup-persistence.test.ts`：11 文件 484 项通过（2026-11-13 18:45:44，7.71 秒，退出码 0）。所有新增夹具均标注「模拟」。
+  - 获准沙箱外 `corepack pnpm vitest run`（2026-11-13 18:46:27，71.99 秒，退出码 0）：**Test Files 294 passed | 4 skipped (298)；Tests 6432 passed | 14 skipped (6446)**，无失败或未处理错误。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid，退出码 0；指定 Git 的 `diff --check` 通过。`src/client/workers.ts` 本轮前后 SHA-256 均为 `a5b5d3228dd2e0ab8aabc92233dc0e8de34c2f3cd5ceef99b3faf7dd54adfde9`，保留主会话 Omit 修正；没有修改 Client 或共享协议。
+  - （未执行：本次仍禁止真实 CLI 安装/更新/npm/brew/--version、build 和 Git 提交；Windows 与 Homebrew 行为用模拟夹具验收，未声称真实平台通过。）既有跨操作/跨重启续传、首次安装、可视验收等未完成项保持原状态。
 
 ## 5. 首次安装 〔后端｜10h｜前置 4〕
 - [ ] 5.1 纯 CLI 安装：官方推荐优先、同为推荐用 npm；官方脚本只用内置地址、先下载再以文件执行；前置条件检查
+  - （未执行：首次安装属于第三阶段；Phase B 对 intent=install 明确返回 PREREQUISITE_MISSING「首次安装尚未支持，将在第三阶段提供」。）
 - [ ] 5.2 桌面应用安装：ZCode、WorkBuddy CN、WorkBuddy 的位置校验（权限、空间、非空目录）；macOS DMG 复制流程；Windows 打开官方安装程序；装后写入路径记录
+  - Phase B 已完成目录选择及位置检查 Remote，并通过模拟测试；（未执行：DMG 复制、Windows 安装程序与装后路径写入属于第三阶段，本次禁止真实安装。）
 - [ ] 5.3 单元测试：安装方式选择、前置条件不满足、位置校验、装后路径写入、重新安装改用新路径
+  - 位置校验四类错误已通过 Phase B 模拟测试；（未执行：其余首次安装行为尚未实现，留待第三阶段一并测试。）
 
 ## 6. 「更新 CLI」设置页前端 〔前端｜14h｜前置 2〕
 - [x] 6.1 导航入口、徽标与转圈；页头（检查更新、全部更新）；分区与统一折叠按钮
@@ -60,7 +96,7 @@
 - [x] 6.3 加载与重排：缓存直显、缺的进「检查中」、最多两次重排、展开与进行中的行不动、滚动锚点、30 秒上限、整页错误与重试、`aria-busy` 与播报
   - 纯函数 `cli-update-layout.ts`（14 项测试）；30 秒截止在 Host 的 check。整页错误只在没有可显示快照时出现，已有结果时改为分区上方的错误行加「重试」（新增测试覆盖）。
 - [ ] 6.4 展开区：下载进度与续传次数、命令与输出、结果状态、手动方法气泡、安装位置气泡
-  - 界面已按快照字段实现并用模拟快照测试（`readable=false` 显示「下载进度无法读取」）。（未完成：操作 Remote 在阶段 B/C 落地前无法用真实快照核对；安装位置选择依赖 `chooseInstallDirectory`。）
+  - 界面已按快照字段实现并用模拟快照测试（`readable=false` 显示「下载进度无法读取」）。Phase B 已提供操作及安装位置 Remote；（未执行：本次禁止修改 src/client/**、构建和真实更新，尚未进行界面与实际操作快照的可视核对；首次安装仍待第三阶段。）
 - [x] 6.5 下载设置：下载源下拉与自定义地址、检查连接
   - `cli-download-source.tsx` + `NativeChoice` 新增说明行 / 分隔线参数；8 项测试。
 - [x] 6.6 文案进 `client-localization` 词表；`doc/settings-ui-design.md` 同步新增参数
@@ -74,9 +110,15 @@
 - [ ] 7.1 `pnpm typecheck`、相关 vitest、`pnpm build:preview` 隔离构建
   - Phase A：corepack pnpm typecheck 最终通过；上列 5 个后端关联测试文件 400 项通过。 （未执行：本阶段简报明确禁止 build / build:preview、全量测试。）
   - 阶段 A + 前端整合（2026-11-13）：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.2）；`corepack pnpm vitest run` 289 文件 6358 项通过、14 项跳过（首轮 8 项失败：`panel.test.tsx` 的组件桩缺新图标、`cleanup-persistence.test.ts` 的账号桩缺 `isBusy`，已补；`native-agy-acp`、`native-bridge-time-limit` 两个计时类测试在满载时偶发超时，单独与第二轮全量均通过）；`corepack pnpm build:preview` 成功。阶段 B/C 后需重跑。
+  - Phase B：最终 typecheck、关联 4 文件 46 项、沙箱外全量 293 文件 6408 项通过，详见 4.7。（未执行：本次用户明确禁止 build / build:preview，因此本组合任务保持未勾选；不把 Phase A 构建当作 Phase B 构建证据。）
+  - 阶段 B 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 294 文件 6432 项通过、14 项跳过（首轮 `native-workbuddy.test.ts` 2 项在满载时失败，该文件自 a955675 起未改动，单独连跑 3 次 39 项全过，第二轮全量全过）；`corepack pnpm build:preview` 成功。构建曾报 TS2774：Host 注册页面 Remote 后生成类型把 11 个方法变为必有，已在 `src/client/workers.ts` 的 Omit 中排除并改回可选（`pnpm typecheck` 未发现此问题，只有隔离构建能发现）。阶段 C 后需重跑。
 - [ ] 7.2 预览台与设计稿 15 张逐张截图对照，差异修完再截
+  - （未执行：Phase B 仅后端与模拟测试，禁止构建及修改 Client；可视验收留待整合阶段。）
 - [ ] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
+  - （未执行：本次明确禁止真实 CLI 安装、更新、npm、brew 及 --version；已有模拟证据不能替代真实更新验收。）
 - [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
+  - （未执行：首次安装属于第三阶段，且本次明确禁止真实安装。）
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
+  - （未执行：本次没有 Windows 真实环境验收且禁止真实更新；Windows argv 与目录选择器仅用模拟夹具验证。）
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
-  - （未执行：Phase A 文件归属仅 Host、指定共享协议与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
+  - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）

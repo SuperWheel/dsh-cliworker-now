@@ -1,3 +1,4 @@
+import { CliMaintenance, CliBusyError, MaintenanceError } from './cli-management/maintenance.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -243,6 +244,7 @@ const messageSubmissionSchema = validate
 const failure = (error: unknown) =>
   new RemoteError('cliworker/unavailable', String(error), {
     reason: String(error),
+    ...(error instanceof CliBusyError ? { code: error.code, busyWorkers: error.busyWorkers } : error instanceof MaintenanceError ? { code: error.code } : {}),
     ...(error && typeof error === 'object' && 'code' in error && error.code === 'STEER_UNKNOWN'
       ? { deliveryUnknown: true }
       : {}),
@@ -342,6 +344,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
     const stateDirectory =
       config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
+    this.options.cliMaintenance = new CliMaintenance()
     this.options.cliExecutablePaths = new CliExecutablePathStore(stateDirectory)
     // Windows: CLIs and the Host's own HTTPS reads follow the Internet Options proxy.
     const raw = nativeProcessBackend(ctx.subprocess)
@@ -369,6 +372,10 @@ export class CliWorkerService extends TypertRemoteService {
       cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
       account: (cli, project, signal) => this.accounts.status(cli, project, signal, { background: true }),
       cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
+      globalCleanup: error => this.runtime.blockOnCleanup(error),
+      busy: cli => ({ workers: this.runtime.busyCliWorkers(cli), accounts: this.accounts.isBusy(cli) || this.accounts.hasActiveQuery(cli) }),
+      assertUpdateAllowed: cli => { this.runtime.assertHostOpen(); const held = this.runtime.catalogCleanupMessage(cli); if (held) throw new Error(held) },
+      invalidateModels: cli => this.invalidateSettingsDisplay(cli),
     })
     ctx.effect(() => this.runtime.subscribe(() => this.cliManagement.activityChanged()), 'cliworker:metadata-idle')
     ctx.effect(() => this.accounts.subscribeActivity(cli => {
@@ -951,14 +958,21 @@ export class CliWorkerService extends TypertRemoteService {
     )
     return outcomeFromDecision(decision)
   }
+  private async readAccountBinding(...args: Parameters<typeof readCliAccountBinding>) {
+    const release = this.options?.cliMaintenance?.using(args[0])
+    try { return await readCliAccountBinding(...args) }
+    catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error); throw error }
+    finally { release?.() }
+  }
   private async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
+    const release = this.options?.cliMaintenance?.using(args[0])
     try {
       return await this.freshCatalog(...args)
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error)
-      if (accountBusy(error)) return this.busyAccountCatalog(error, ...args)
+      if (accountBusy(error)) return await this.busyAccountCatalog(error, ...args)
       throw error
-    }
+    } finally { release?.() }
   }
   private async freshCatalog(...args: Parameters<typeof authorizedCatalog>) {
     const [cli, , , project] = args
@@ -982,7 +996,7 @@ export class CliWorkerService extends TypertRemoteService {
   private async busyAccountCatalog(busy: unknown, ...args: Parameters<typeof authorizedCatalog>) {
     const [cli, backend, config, project, signal, expected] = args
     const saved = async () => {
-      const binding = await readCliAccountBinding(cli, backend, config, project, signal)
+      const binding = await this.readAccountBinding(cli, backend, config, project, signal)
       if (expected && binding !== expected) throw new Error(ACCOUNT_CHANGED)
       const catalog = this.settingsCatalogs?.display(project, cli, binding)
       return catalog && { catalog, binding }
@@ -1003,6 +1017,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
   private async authorizeChoice(...args: Parameters<typeof authorizeSelection>) {
+    const release = this.options?.cliMaintenance?.using(cliOf(args[0]))
     try {
       return await this.querySelection(...args)
     } catch (error) {
@@ -1011,8 +1026,8 @@ export class CliWorkerService extends TypertRemoteService {
       const [preference, backend, config, project, signal, expected] = args
       if (!expected || !(error instanceof Error) || error.message !== ACCOUNT_CHANGED) throw error
       signal.throwIfAborted()
-      return this.querySelection(preference, backend, config, project, signal)
-    }
+      return await this.querySelection(preference, backend, config, project, signal)
+    } finally { release?.() }
   }
   private async querySelection(...args: Parameters<typeof authorizeSelection>) {
     const [preference, ...rest] = args
@@ -2354,6 +2369,44 @@ export class CliWorkerService extends TypertRemoteService {
     try { await this.parent(parentSessionId); for await (const snapshot of this.cliManagement.watch(signal)) yield JSON.stringify(snapshot) }
     catch (error) { throw failure(error) }
   }
+  /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param intent - update or install. @param planToken - Host fingerprint. @param installDirectory - Validated optional desktop location. @param requestId - Idempotency key. @param signal - Admission only; does not own the operation. @returns Page snapshot JSON. */
+  @Remote('startCliOperation')
+  async startCliOperation(parentSessionId: string, cli: string, intent: 'update' | 'install', planToken: string, installDirectory: string, requestId: string, signal: AbortSignal): Promise<string> {
+    try {
+      const parent = await this.parent(parentSessionId)
+      this.assertExecution(parent)
+      signal.throwIfAborted()
+      const id = validate.enum(CLI_IDS).parse(cli), action = validate.enum(['update', 'install']).parse(intent)
+      const directory = validate.string().max(4096).parse(installDirectory)
+      if (directory) { const check = await this.cliManagement.checkDirectory(id, directory, signal); if (check.problem) throw new Error(`LOCATION_INVALID：${check.message}`) }
+      signal.throwIfAborted()
+      return JSON.stringify(this.cliManagement.start(id, action, validate.string().max(128).parse(planToken), directory, validate.string().min(1).max(256).parse(requestId)))
+    } catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param requestId - Idempotency key. @param signal - Admission lifetime only. @returns Page snapshot JSON. */
+  @Remote('updateAllClis')
+  async updateAllClis(parentSessionId: string, requestId: string, signal: AbortSignal): Promise<string> {
+    try { const parent = await this.parent(parentSessionId); this.assertExecution(parent); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.updateAll(validate.string().min(1).max(256).parse(requestId))) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param target - Operation id or queued CLI id. @param signal - Request lifetime. @returns Page snapshot JSON. */
+  @Remote('cancelCliOperation')
+  async cancelCliOperation(parentSessionId: string, target: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.cancel(validate.string().min(1).max(256).parse(target))) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param signal - Picker lifetime. @returns Directory check JSON; empty path on cancel. */
+  @Remote('chooseInstallDirectory')
+  async chooseInstallDirectory(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.chooseDirectory(validate.enum(CLI_IDS).parse(cli), signal)) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param path - Proposed directory. @param signal - Query lifetime. @returns Directory check JSON. */
+  @Remote('checkInstallDirectory')
+  async checkInstallDirectory(parentSessionId: string, cli: string, path: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.checkDirectory(validate.enum(CLI_IDS).parse(cli), validate.string().max(4096).parse(path), signal)) }
+    catch (error) { throw failure(error) }
+  }
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Machine-local download settings JSON. */
   @Remote('cliDownloadSource')
   async cliDownloadSource(parentSessionId: string, signal: AbortSignal): Promise<string> {
@@ -2384,6 +2437,7 @@ export class CliWorkerService extends TypertRemoteService {
   }
   private async readAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal, refresh: boolean): Promise<string> {
     let queriedCli: CliId | undefined
+    let release: (() => void) | undefined
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
@@ -2392,6 +2446,7 @@ export class CliWorkerService extends TypertRemoteService {
       const held = () => this.cleanupHeldStatus(id)
       const before = held()
       if (before) return JSON.stringify(before)
+      release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
       this.cliManagement?.context(project)
       if (!refresh && !this.accounts.isBusy(id)) {
@@ -2410,7 +2465,7 @@ export class CliWorkerService extends TypertRemoteService {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)
       throw failure(error)
-    }
+    } finally { release?.() }
   }
   /** A CLI paused by its own unconfirmed cleanup reports that state instead of failing the read. */
   private cleanupHeldStatus(cli: CliId): AccountStatus | undefined {
@@ -2431,6 +2486,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.accounts.assertCleanupRecoverable(id)
       this.runtime.recoverCatalogCleanup(id)
       this.accounts.recoverCleanup(id)
+      this.cliManagement?.recoverCleanup(id)
       this.invalidateSettingsDisplay(id)
       return JSON.stringify({ cli: id, recovered: true })
     } catch (error) {
@@ -2473,11 +2529,13 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Machine-local executable path and availability JSON. */
   @Remote('cliExecutablePath')
   async cliExecutablePath(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    let release: (() => void) | undefined
     try {
       await this.parent(parentSessionId)
       const id = validate.enum(CLI_IDS).parse(cli)
       const control = AbortSignal.any([signal, this.disposed.signal])
       control.throwIfAborted()
+      release = this.options?.cliMaintenance?.using(id)
       // While a CLI is in use, expose its saved selection without probing or
       // replacing an installation under an active task/account terminal.
       try {
@@ -2489,7 +2547,7 @@ export class CliWorkerService extends TypertRemoteService {
       return JSON.stringify(await this.probeExecutablePath(id, control))
     } catch (error) {
       throw failure(error)
-    }
+    } finally { release?.() }
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param path - Full file path for manual selection. @param action - manual, refresh or auto. @param signal - Mutation/query lifetime. @returns Saved machine-local path and fresh availability JSON. */
   @Remote('refreshCliExecutablePath')
@@ -2500,12 +2558,14 @@ export class CliWorkerService extends TypertRemoteService {
     action: string,
     signal: AbortSignal,
   ): Promise<string> {
+    let release: (() => void) | undefined
     try {
       await this.parent(parentSessionId)
       const id = validate.enum(CLI_IDS).parse(cli)
       const operation = validate.enum(['manual', 'refresh', 'auto']).parse(action)
       const control = AbortSignal.any([signal, this.disposed.signal])
       control.throwIfAborted()
+      release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertAccountIdle(id)
       if (this.accounts.isBusy(id)) throw new Error('请先关闭此 CLI 的账号终端再修改路径')
       const store = this.options.cliExecutablePaths
@@ -2518,7 +2578,7 @@ export class CliWorkerService extends TypertRemoteService {
       return JSON.stringify(await this.probeExecutablePath(id, control))
     } catch (error) {
       throw failure(error)
-    }
+    } finally { release?.() }
   }
   /** @param parentSessionId - Owning parent. @param cli - WorkBuddy edition. @param signal - Startup lifetime. @returns No-PTY guide identity JSON. */
   @Remote('accountDesktopStart')
@@ -2765,6 +2825,7 @@ export class CliWorkerService extends TypertRemoteService {
   @Remote('catalogForWorker')
   async catalogForWorker(parentSessionId: string, workerId: string, signal: AbortSignal): Promise<string> {
     let queriedCli: CliId | undefined
+    let release: (() => void) | undefined
     try {
       const agent = await this.parent(parentSessionId)
       const control = AbortSignal.any([signal, this.disposed.signal])
@@ -2772,6 +2833,7 @@ export class CliWorkerService extends TypertRemoteService {
       const worker = this.runtime.get(agent.id, workerId)
       const cli = cliOf(worker.preference)
       queriedCli = cli
+      release = this.options?.cliMaintenance?.using(cli)
       this.runtime.assertCliEnabled(cli)
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       // An isolated conversation's account was verified against its copy.
@@ -2781,7 +2843,7 @@ export class CliWorkerService extends TypertRemoteService {
       // After an account change the choices come from the account signed in now.
       let expected = catalog
         ? saved!
-        : await readCliAccountBinding(cli, this.backend, this.options, directory, control)
+        : await this.readAccountBinding(cli, this.backend, this.options, directory, control)
       catalog ??= this.settingsCatalogs.display(directory, cli, expected)
       for (let attempt = 0; !catalog; attempt++) {
         let result
@@ -2792,7 +2854,7 @@ export class CliWorkerService extends TypertRemoteService {
             signal: control,
             selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
             binding: async () => {
-              const current = await readCliAccountBinding(
+              const current = await this.readAccountBinding(
                 cli,
                 this.backend,
                 this.options,
@@ -2808,7 +2870,7 @@ export class CliWorkerService extends TypertRemoteService {
         } catch (error) {
           // The account changed during this read: show the one signed in now, silently.
           if (attempt > 0 || !(error instanceof Error) || error.message !== ACCOUNT_CHANGED) throw error
-          expected = await readCliAccountBinding(cli, this.backend, this.options, directory, control)
+          expected = await this.readAccountBinding(cli, this.backend, this.options, directory, control)
           catalog = this.settingsCatalogs.display(directory, cli, expected)
           continue
         }
@@ -2821,7 +2883,7 @@ export class CliWorkerService extends TypertRemoteService {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)
       throw failure(error)
-    }
+    } finally { release?.() }
   }
   /** @param parentSessionId - Parent session identity. @param cli - Selected CLI. @param signal - Caller lifetime. @returns Fresh model catalog and saved project preference. */
   @Remote('refreshCatalogForCli')
@@ -2835,11 +2897,13 @@ export class CliWorkerService extends TypertRemoteService {
     refresh: boolean,
   ): Promise<string> {
     let queriedCli: CliId | undefined
+    let release: (() => void) | undefined
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
       const project = this.project(await this.parent(parentSessionId))
       const control = AbortSignal.any([signal, this.disposed.signal])
+      release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       const { catalog, binding } = await this.settingsCatalogs.get({
@@ -2848,7 +2912,7 @@ export class CliWorkerService extends TypertRemoteService {
         signal: control,
         refresh,
         selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn' || isWorkBuddyCli(id),
-        binding: () => readCliAccountBinding(id, this.backend, this.options, project, control),
+        binding: () => this.readAccountBinding(id, this.backend, this.options, project, control),
         discover: () => this.queryCatalog(id, this.backend, this.options, project, control),
       })
       control.throwIfAborted()
@@ -2859,7 +2923,7 @@ export class CliWorkerService extends TypertRemoteService {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)
       throw failure(error)
-    }
+    } finally { release?.() }
   }
   /** @param parentSessionId - Parent session identity. @param selection - JSON model and effort. @param signal - Caller lifetime. @returns Saved JSON preference. */
   @Remote('configure')
@@ -2910,7 +2974,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.settingsCatalogs.display(
           directory,
           cliOf(preference),
-          await readCliAccountBinding(cliOf(preference), this.backend, this.options, directory, signal),
+          await this.readAccountBinding(cliOf(preference), this.backend, this.options, directory, signal),
         )
       if (!catalog) throw new Error('模型目录已失效，请重试读取或在设置中刷新')
       validatePreference(preference, catalog)

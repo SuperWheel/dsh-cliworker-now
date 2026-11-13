@@ -39,9 +39,9 @@ export function latestCompatible(cli: ActiveCliId, versions: string[], current?:
   return versions.filter(v => compatible(cli, v) && (!current || !!semver.exec(current)?.[4] || !semver.exec(v)![4])).sort(compareVersions).at(-1)
 }
 /** Own the abort and await the process range, including when output readers fail. */
-export async function captureReadOnly(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, background = false, env?: Record<string, string>): Promise<string> {
+export async function captureReadOnly(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, background = false, env?: Record<string, string>, timeoutMs = 5000): Promise<string> {
   signal.throwIfAborted()
-  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 5000)
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), timeoutMs)
   const control = AbortSignal.any([signal, controller.signal])
   let child: ReturnType<ProcessBackend['spawn']> | undefined
   const readers: Promise<void>[] = []
@@ -127,6 +127,25 @@ export class ReleaseClient {
       return JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch { throw new ReleaseError(timer.signal.aborted || signal.aborted ? 'RELEASE_TIMEOUT' : 'RELEASE_UNREACHABLE') }
     finally { clearTimeout(timeout); void reader?.cancel().catch(() => undefined); this.active--; this.waiters.values().next().value?.() }
+  }
+  async integrity(cli: ActiveCliId, version: string, registry: string, signal: AbortSignal): Promise<string> {
+    const pkg = CLI_SOURCES[cli].npm
+    if (!pkg || !validVersion(version)) throw new ReleaseError('NO_RELEASE_SOURCE')
+    const read = async (base: string) => z.object({ name: z.literal(pkg), version: z.literal(version), dist: z.object({ integrity: z.string().max(1024) }) }).parse(await this.json(new URL(`${encodeURIComponent(pkg)}/${version}`, base.endsWith('/') ? base : base + '/').href, signal)).dist.integrity
+    const official = await read(OFFICIAL_NPM_REGISTRY)
+    if (new URL(registry).href !== OFFICIAL_NPM_REGISTRY && await read(registry) !== official) throw Object.assign(new Error('下载源校验值与官方源不符'), { code: 'INTEGRITY_MISMATCH' })
+    return official
+  }
+  /** The chosen source supplies bytes; only the official registry supplies trust. */
+  async artifact(cli: ActiveCliId, version: string, registry: string, signal: AbortSignal): Promise<{ url: string; integrity: string }> {
+    const pkg = CLI_SOURCES[cli].npm
+    if (!pkg || !validVersion(version)) throw new ReleaseError('NO_RELEASE_SOURCE')
+    const read = async (base: string) => z.object({ name: z.literal(pkg), version: z.literal(version), dist: z.object({ integrity: z.string().max(1024), tarball: z.string().max(4096) }) }).parse(await this.json(new URL(`${encodeURIComponent(pkg)}/${version}`, base.endsWith('/') ? base : base + '/').href, signal)).dist
+    const official = await read(OFFICIAL_NPM_REGISTRY)
+    const selected = new URL(registry).href === OFFICIAL_NPM_REGISTRY ? official : await read(registry)
+    if (selected.integrity !== official.integrity) throw Object.assign(new Error('下载源校验值与官方源不符'), { code: 'INTEGRITY_MISMATCH' })
+    if (customRegistryProblem(selected.tarball)) throw new ReleaseError('RELEASE_UNREACHABLE')
+    return { url: selected.tarball, integrity: official.integrity }
   }
   async query(cli: ActiveCliId, registry: string, signal: AbortSignal, source?: string): Promise<ReleaseRecord> {
     const spec = CLI_SOURCES[cli]

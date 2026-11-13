@@ -12,7 +12,7 @@ import { inspectPiInstallation } from '../pi-installation.mjs'
 import { resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
 import { CLI_SOURCES } from './sources.ts'
 
-export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string }
+export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string }
 export interface InstallationIdentity {
   executable: string
   fingerprint: Fingerprint
@@ -61,7 +61,8 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   const configured = configuredCliExecutable(cli, config)
   const remembered = entry?.mode === 'manual' ? entry.path : configured || entry?.path
   let executable: string
-  if (remembered && isAbsolute(remembered)) executable = remembered
+  if (!background && entry?.mode === 'auto' && !configured) executable = await resolveCliExecutable(cli, backend, config, signal)
+  else if (remembered && isAbsolute(remembered)) executable = remembered
   else if (background) return undefined
   else executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
@@ -108,5 +109,5 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     if (receipt?.source?.tap?.toLowerCase() !== CLI_SOURCES[cli].brew!.tap!.toLowerCase()) identity.source = 'unknown'
   }
   signal.throwIfAborted()
-  return { executable, ...identity, packageRoot, manifestVersion, fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}) } }
+  return { executable, ...identity, packageRoot, manifestVersion, fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}) } }
 }

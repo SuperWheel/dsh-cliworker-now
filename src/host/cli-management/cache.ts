@@ -12,7 +12,7 @@ import { validVersion, type ReleaseRecord } from './versions.ts'
 export const RELEASE_TTL = 6 * 60 * 60 * 1000, ACCOUNT_TTL = 10 * 60 * 1000
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const version = z.string().refine(validVersion), time = z.number().finite().nonnegative()
-const fingerprintSchema = z.object({ realpath: z.string().max(4096), size: time, mtimeMs: time, appVersion: z.string().max(128).optional() }).strict()
+const fingerprintSchema = z.object({ realpath: z.string().max(4096), size: time, mtimeMs: time, appVersion: z.string().max(128).optional(), manifestVersion: z.string().max(128).optional() }).strict()
 const entrySchema = z.object({ cli: z.enum(CLI_IDS), group: z.enum(CLI_UPDATE_GROUPS), installed: z.boolean(), source: z.enum(CLI_INSTALL_SOURCES).optional(), currentVersion: version.optional(), latestVersion: version.optional(), latestCompatibleVersion: version.optional(), checkedAt: time.optional(), latestCheckedAt: time.optional(), mirrored: z.boolean().optional(), reason: z.enum(CLI_UPDATE_REASONS).optional(), planToken: z.string().length(64).optional() }).strict()
 const accountSchema = z.object({ cli: z.enum(CLI_IDS), installed: z.boolean(), state: z.enum(['authenticated', 'unconfigured', 'unauthenticated', 'configured', 'unknown', 'unavailable']), accountLabel: z.string().max(256).optional(), authMethod: z.enum(['oauth', 'api']).optional(), verification: z.enum(['cli', 'local']).optional() }).strict()
 const url = z.string().max(2048).transform(value => value.trim()).refine(value => !customRegistryProblem(value))
@@ -70,6 +70,7 @@ export class CliManagementCache {
     return old && fingerprintToken(old.fingerprint) === fingerprintToken(fingerprint) ? { version: old.version } : undefined
   }
   rememberVersion(cli: ActiveCliId, fingerprint: Fingerprint, value?: string) { this.state.versions[cli] = { fingerprint, version: value }; this.save() }
+  invalidateVersion(cli: ActiveCliId) { delete this.state.versions[cli]; this.save() }
   releaseKey(cli: ActiveCliId, source: string, registry: string) { return hash(JSON.stringify([cli, source, registry])) }
   release(key: string, now = Date.now()): ReleaseRecord | undefined {
     const value = this.state.releases[key]; return value && now >= value.checkedAt && now - value.checkedAt < RELEASE_TTL ? structuredClone(value) : undefined

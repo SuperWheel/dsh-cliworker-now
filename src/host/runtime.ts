@@ -1153,6 +1153,7 @@ export class WorkerRuntime {
     if (this.blocked) throw new Error(this.blocked)
   }
   assertCliEnabled(cli: CliId): void {
+    this.config.cliMaintenance?.assertAvailable(cli)
     this.assertHostOpen()
     if (this.catalogBlocked.has(cli)) throw new Error(this.catalogBlocked.get(cli))
     if (isRetiredCli(cli)) throw new Error(RETIRED_HARNESS_NOTICE)
@@ -1219,6 +1220,10 @@ export class WorkerRuntime {
     return this.storage.generalSettings().maxConcurrent ?? this.config.maxConcurrent
   }
   /** Includes reservations, queued starts and cleanup, not just running process handles. */
+  busyCliWorkers(cli: CliId): number {
+    const workers = new Map([...this.storage.workers, ...this.stagedForks])
+    return [...workers.values()].filter(worker => cliOf(worker.preference) === cli && (!!this.busyReason(worker) || this.stagedForks.has(worker.id))).length
+  }
   hasActiveCliWork(): boolean {
     return [...this.storage.workers.values()].some(worker => !!this.busyReason(worker)) || this.preparations.size > 0 || this.stagedForks.size > 0
   }
@@ -1247,6 +1252,7 @@ export class WorkerRuntime {
   }
   /** Account mutation must also respect a prior unconfirmed process cleanup. */
   assertAccountIdle(cli: string): void {
+    this.config.cliMaintenance?.assertAvailable(cli as CliId)
     if (this.disposed) throw new Error('插件正在关闭')
     if (this.blocked) throw new Error(this.blocked)
     if (this.catalogBlocked.has(cli as CliId)) throw new Error(this.catalogBlocked.get(cli as CliId))

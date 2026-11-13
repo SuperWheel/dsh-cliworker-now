@@ -79,10 +79,12 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 ### 决定 4：执行只走参数数组与受控方法
 
-- npm 用该安装归属的同一 Node/npm、同一 `--prefix`、精确版本（`<包>@<目标版本>`）。所选下载源以 `--registry` 传入。主包 tarball 由插件下载（可续传、可校验）后交给 npm 安装本地文件。
+- npm 的运行时安装与 CLI 全局包前缀分开解析：解析 npm 启动器对应的 `npm-cli.js`，核对 npm 包清单与 bin 声明，读取 Node 原生程序文件并核对格式，不运行版本探测。优先使用 npm 启动器旁的 Node，否则解析 PATH 中的 Node；全局包前缀只作为 `--prefix` 目标，不要求前缀下存在 npm。
+- Host 从所选源的目标精确版本元数据取得主包 tarball 地址，使用 npm 官方源同版本的 sha512 校验真实下载内容；官方源也走完全相同的下载、续传和摘要校验路径。官方摘要不可得或摘要不符时拒绝安装，不降级为信任镜像摘要。校验后的私有文件改为 `.tgz`，以 `[node, npm-cli.js, 'install', '--global', '--prefix', 原前缀, 本地tgz, '--registry', 所选源]` 安装。显示的可读字节进度只对应 Host 下载的主包。
 - Homebrew 用 `brew upgrade <包名>`，CLI 自带更新用其已核实的子命令。
 - 官方安装脚本只取 `sources.ts` 中的内置地址：先下载到 `cli-management/downloads/`，再以 `['bash', <文件>]` 或 `['powershell', '-NoProfile', '-File', <文件>]` 执行。
-- Windows 继续用 `native-launch.mjs` 的启动器转换，不用 `cmd /c`。
+- Windows 的官方 npm.cmd 不当作 cmd-shim 解析或执行：按 Node/npm 发行目录的固定布局找到并核实 `node.exe`、`node_modules/npm/bin/npm-cli.js`，直接传参数数组；其他 CLI 继续沿用 `native-launch.mjs`。不用 `cmd /c`。
+- Homebrew 更新后允许同一前缀、同一 Cellar/Caskroom 包、同一稳定启动器与包内入口的版本目录变化；来源、前缀、包名、入口变化仍拒绝，再单独核对目标版本。
 - 桌面安装包：
   - macOS DMG 只读挂载、校验 app bundle、复制到所选目录、最后卸载挂载；
   - Windows 安装器的静默与目录参数在逐个核实前不自动执行，改为打开官方安装程序，操作进入 `awaiting-user`。
@@ -142,6 +144,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 ## Risks / Trade-offs
 
+- **npm 依赖解析边界**：官方 sha512 绑定的是目标版本主包 tarball；其依赖及生命周期脚本仍由 npm 按所选 registry 和 npm 原生规则处理。本实现不声称已独立验算所有传递依赖，也不伪造其下载字节进度。
 - **识别错误装出第二份**：严格按真实路径、包名、brew 元数据匹配，识别不出就转手动；更新后核对版本与路径。
 - **官方脚本执行远端代码**：只用内置地址，先下载再以文件执行，行内显示地址。脚本内部的行为与落点逐个核实后才开放自动安装。
 - **后台探测的副作用**：只开放 `sources.ts` 中标为后台安全的读取。目前只确认 Kimi 需禁用自动升级，其余逐个验证。
