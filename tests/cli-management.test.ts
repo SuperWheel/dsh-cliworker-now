@@ -74,9 +74,9 @@ describe('versions and bounded metadata', () => {
     expect(() => compareVersions('1.0', '1.0.0')).toThrow()
   })
   it('restricts Pi whitelist and OpenCode generation', () => {
-    expect(compatible('pi', '1.0.3')).toBe(false); expect(compatible('pi', '1.1.0')).toBe(true)
+    expect(compatible('pi', '1.5.2')).toBe(true); expect(compatible('pi', '1.5.1')).toBe(false); expect(compatible('pi', '1.0.3')).toBe(false); expect(compatible('pi', '1.1.0')).toBe(true)
     expect(compatible('opencode', '2.0.0')).toBe(false)
-    expect(latestCompatible('pi', ['1.0.2', '1.1.0', '2.0.0'])).toBe('1.1.0')
+    expect(latestCompatible('pi', ['1.0.2', '1.0.4', '1.1.0', '1.5.1', '1.5.2', '2.0.0'])).toBe('1.5.2')
     expect(latestCompatible('opencode', ['1.3.0', '2.0.0', '1.4.0-beta.1'], '1.2.0')).toBe('1.3.0')
   })
   const fakeHandle = (out: string, exited = true) => ({ stdout: Readable.from([Buffer.from(out)]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => exited), terminate: vi.fn() })

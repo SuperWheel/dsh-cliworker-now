@@ -1487,3 +1487,11 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒；仅 Pi/OpenCode 的 latest 不兼容时允许版本列表请求达到 32 MiB。清单缺版本时，前台按实际可执行入口执行有界 --version；后台权限由 sources 数据按主会话提供的实机证据控制，Codex/Qoder 两版仅前台，Hermes 均跳过。版本结果按指纹缓存，Windows 保持现有安全启动链。Codex standalone 归官方安装器且手动更新；Claude cask 的读取、分组、更新计划已有模拟回归。未自行运行真实 CLI，证据记录在本变更 tasks.md 2.8。
 
 2.8 来源复测补充：Qoder/CN 的 `.qoder/entry/qoder`、`.qoder-cn/entry/qodercn` 只按 home 下完整入口匹配 self-update。保留记录入口与 `update` argv，spawn 前检查 homedir/update，存在路径或检查失败即拒绝，避免分发到 IDE；不猜测分发器的 PATH 解析结果，不修改用户路径。Grok 仅在记录入口为 home/.grok/bin/grok 且 realpath 属于 home/.grok/downloads/ 时补认 self-update，无发布源仍手动。模拟验证与外部并发创建路径的预检竞态边界见变更设计和 tasks.md 2.8。
+
+## Pi Coding Agent 1.5.2 适配（2026-11-13）
+
+安装识别与更新兼容检查共用 `pi-installation.mjs` 的明确版本表：1.0.2、1.0.4、1.1.0、1.5.2；不接受未核验的中间版本或预发布。SDK、模型目录、原生 UI、tool_call/confirm 和 JSONL v3 会话接口保持兼容，继续使用同一安装、参数数组、私有存储与进程范围清理。
+
+桥接补认 Pi 1.1.0 起新增的 `agent_settled.aborted=true`，即使助手消息正常且进程退出 0 也不能报告成功；1.0.4 缺字段保留既有判断。1.5.2 的成本总额可为服务商账单，现有 token 投影不读取成本字段，不将 reasoning 重复相加。原生登录 shell 子命令虽已增加，插件仍使用核实过的 UI/SDK，不更换交互协议。
+
+Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。

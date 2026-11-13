@@ -10,6 +10,7 @@ import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS, type ProcessBackend, type RuntimeConfig } from '../process.ts'
 import type { InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES } from './sources.ts'
+import { isSupportedPiVersion } from '../pi-installation.mjs'
 
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 export function validVersion(value: unknown): value is string { return typeof value === 'string' && value.length < 128 && semver.test(value) }
@@ -32,7 +33,7 @@ export function compareVersions(a: string, b: string): number {
 export const updateAvailable = (current: string, next: string) => validVersion(current) && validVersion(next) && !(!semver.exec(current)![4] && semver.exec(next)![4]) && compareVersions(next, current) > 0
 export function compatible(cli: ActiveCliId, version: string): boolean {
   if (!validVersion(version)) return false
-  return CLI_SOURCES[cli].compatibility === 'pi' ? ['1.0.2', '1.0.4', '1.1.0'].includes(version)
+  return CLI_SOURCES[cli].compatibility === 'pi' ? isSupportedPiVersion(version)
     : CLI_SOURCES[cli].compatibility === 'opencode-v1' ? version.startsWith('1.') : true
 }
 export function latestCompatible(cli: ActiveCliId, versions: string[], current?: string): string | undefined {

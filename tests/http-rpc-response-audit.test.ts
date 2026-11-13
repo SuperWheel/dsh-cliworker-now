@@ -76,6 +76,15 @@ async function rpc(cli: 'pi' | 'omp', overhead = false, liveStats = 'normal') {
 }
 
 describe('installed HTTP/RPC usage contracts', () => {
+  it.each(['1.0.4', '1.5.2'])('模拟 Pi %s keeps token accounting separate from provider-billed cost', (version) => {
+    const usage = { input: 10, output: 7, cacheRead: 3, cacheWrite: 2, totalTokens: 22, reasoning: 4,
+      cacheWrite1h: 1, cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0,
+        total: version === '1.5.2' ? 0.05 : 0.03, ...(version === '1.5.2' ? { totalFromProvider: true } : {}) } }
+    expect(piOmpResponseUsage(usage, 'pi')).toEqual({ inputTokens: 10, outputTokens: 7,
+      cacheReadTokens: 3, cacheWriteTokens: 2, totalTokens: 22, reasoningTokens: 4 })
+    expect(piOmpReportedUsage(usage, 'pi')).toEqual({ input: 10, output: 7, cacheRead: 3,
+      cacheWrite: 2, total: 22, reasoning: 4 })
+  })
   it('normalizes disjoint HTTP reasoning exactly once and rejects malformed receipts', () => {
     const source = { input: 10, output: 7, reasoning: 4, cache: { read: 3, write: 2 }, total: 26 }
     expect(sessionHttpResponseUsage(source)).toEqual({ inputTokens: 10, outputTokens: 11,

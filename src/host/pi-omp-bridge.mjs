@@ -978,6 +978,9 @@ try {
         (config.cli === 'omp' && value.type === 'agent_end' && value.isTerminal !== false)
       ) {
         if (!sent) throw new Error('Unexpected native terminal event')
+        // Pi 1.1.0+ adds an explicit aborted terminal, including runs without an
+        // assistant error message. Older releases omit it; absence is not failure.
+        if (config.cli === 'pi' && value.aborted === true) failure ??= '模型请求失败或被中止'
         settled = true
         finishIfReady()
       }

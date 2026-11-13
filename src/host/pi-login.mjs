@@ -1,4 +1,4 @@
-// Pi 1.0.2 / 1.0.4 native UI compatibility entry. No initial prompt, injected keystrokes,
+// Verified Pi native UI compatibility entry (see pi-installation.mjs). No initial prompt, injected keystrokes,
 // model request, or subscription validation: open its own provider login menu.
 // `login <provider>` opens that provider's own login (Pi's /login <provider>);
 // `logout <auth> <provider>` removes that stored credential with Pi's own API, no UI.
