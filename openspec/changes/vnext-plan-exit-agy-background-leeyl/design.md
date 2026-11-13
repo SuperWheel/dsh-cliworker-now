@@ -32,6 +32,16 @@
 - 本机 agy（`~/.local/bin/agy`）中子 Agent 状态枚举只有 `SUBAGENT_STATE_ALIVE`、`SUBAGENT_STATE_KILLED`、`SUBAGENT_STATE_UNSPECIFIED`。已汇报的子 Agent 仍是 ALIVE，旧提示「必要时用 manage_subagents 查看状态，仍有未完成就回复标记」会让模型一直等待。
 - 新提示要求先读已送达的子 Agent 消息并检查要求的产物是否存在，二者满足其一即视为完成，并说明 ALIVE 不表示仍在工作。是否回复标记仍由模型判断，插件只从协议上判断标记是否为本轮最后内容，规则不变。
 
+### 4. Claude 子进程不在 settings 中设置 `CLAUDE_CONFIG_DIR`
+
+- 原做法：`claudeNativeSettingsArguments` 在 `--settings` 的 `env` 中写 `CLAUDE_CONFIG_DIR=<选定目录>`，以固定账号目录，并在状态中核对 `configDirectory`。
+- 2.1.311 的只读证据（proposal 第 3 条）：这个变量一旦设置，钥匙串条目名和全局配置文件都会换；而且 settings 中的值只影响插件发起的登录，不影响状态查询。
+- 备选方案及取舍：
+  - 改在进程环境中强制设置：插件内部能保持一致，但会把用户在终端里登录的账号（不带后缀的条目和 `~/.claude.json`）当成未登录，与「使用各 CLI 原生设置」相悖。
+  - 去掉 settings 中的值、只继承 Host 自己的环境：插件和用户终端读写同一处，`configDirectory` 核对照常有效（不设置时 Claude 报告的就是 `~/.claude`，已只读核对）。选用此方案。
+- API／代理路由的私有 settings 同样去掉该值，理由相同。
+- 代价：此前经旧版插件登录、凭据写在带后缀条目里的用户，升级后会显示未登录，需要重新登录一次。插件不读取、不搬移钥匙串，保持凭据边界。
+
 ## Risks / Trade-offs
 
 - Claude Code 后续版本若改变 `ExitPlanMode` 的请求形状（例如方案不在 `input.plan`），会回到原失败判定，不会误判成功。
@@ -40,4 +50,4 @@
 
 ## Rollback
 
-三个 Host 文件的改动互相独立，可分别回退；无存储、协议或安装入口变化。
+各 Host 文件的改动互相独立，可分别回退；无插件存储、协议或安装入口变化。回退第 4 项会重新出现 2.1.311 下登录后不认的问题。

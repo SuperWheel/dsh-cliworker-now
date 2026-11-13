@@ -818,7 +818,6 @@ describe('user-operated account terminals (synthetic PTY)', () => {
       expect(JSON.parse(spec.argv[2]!)).toMatchObject({
         apiKeyHelper: '',
         env: {
-          CLAUDE_CONFIG_DIR: join(f.cwd, 'claude'),
           ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
           ANTHROPIC_AUTH_TOKEN: '',
           ANTHROPIC_API_KEY: '',
@@ -827,6 +826,9 @@ describe('user-operated account terminals (synthetic PTY)', () => {
           ANTHROPIC_DEFAULT_SONNET_MODEL: '',
         },
       })
+      // 模拟 2.1.311：登录、退出与状态查询使用同一处原生存放位置；配置目录只由进程环境继承。
+      expect(JSON.parse(spec.argv[2]!).env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
+      expect(spec.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
       expect(spec.env).toMatchObject({
         ANTHROPIC_AUTH_TOKEN: '',
         ANTHROPIC_BASE_URL: '',

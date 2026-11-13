@@ -52,8 +52,30 @@
 ## 6. 文档同步 〔产品｜1h｜前置 2〕
 - [x] 6.1 README 中英文：规划模式说明补充 `ExitPlanMode` 收尾行为；后台子 Agent 段落改写等待上限与完成依据
   - 证据：`README.md`「规划模式与档位分开」与「CLI 原生子 Agent 跟随原生设置」两条；`README.en.md` 对应两条
-- [x] 6.2 `doc/design.md` 追加「2026-11-14 Claude 规划收尾与 Antigravity 后台子 Agent 误报修复（未发布）」
+- [x] 6.2 `doc/design.md` 追加「2026-11-14 Claude 规划收尾、Claude 官方登录确认与 Antigravity 后台子 Agent 误报修复（未发布）」
   - 证据：`doc/design.md` 末尾新增章节
+
+## 7. Claude 官方登录确认 〔后端｜3h〕
+- [x] 7.1 只读核对本机 Claude Code 2.1.311 的状态输出与凭据位置（不读取、不输出凭据内容，不发起登录或退出）
+  - 证据：`claude --version` 为 `2.1.311 (Claude Code)`；`claude auth status --help` 显示 `--json`（默认）与 `--text`
+  - 证据：`security dump-keychain` 只取属性，存在 `Claude Code-credentials` 与 `Claude Code-credentials-6b949a0d`；`6b949a0d` 等于 `~/.claude` 绝对路径 SHA-256 前 8 位；带后缀条目 cdat 为 2026-11-13 16:08:47Z（用户本次登录）
+  - 证据：脱敏的状态比较。不设置为 `loggedIn:false`，退出码 1；只在 `--settings` 的 env 中设置（插件现行）同样为 `loggedIn:false`，退出码 1；进程环境设置为 `loggedIn:true`、`authMethod:claude.ai`、`subscriptionType:max`，退出码 0，但 `email` 为 null
+  - 证据：`~/.claude.json` 有 `oauthAccount` 键；`~/.claude/.claude.json` 没有（只检查键是否存在）
+- [x] 7.2 回答四个问题并写入 proposal 第 3 条与 design 决策 4
+  - 证据：登录完成依据为原生状态查询 `claude --settings … auth status --json`（`accounts.ts` 的 `confirmAccount`→`readEvidence`），不看终端画面、不读凭据文件；2.1.311 输出新增字段但与解析兼容，登录命令未变；改变的是凭据与全局配置随 `CLAUDE_CONFIG_DIR` 换位置；设置页账号行走同一状态查询，模型目录走同一 settings 下的 initialize，所以都读成未登录
+- [x] 7.3 `claude-own-route.ts`：`claudeNativeSettingsArguments` 不再写 `CLAUDE_CONFIG_DIR`，签名改为只收 `suppressedEnvironment`；API／代理私有 settings 同样去掉；`accounts.ts`、`adapters.ts` 调用点同步
+  - 证据：`grep CLAUDE_CONFIG_DIR src/host/claude-own-route.ts` 只剩注释与禁止项正则
+- [x] 7.4 模拟回归测试
+  - 证据：`tests/claude-own-route.test.ts` 新增「模拟 Claude 2.1.311：插件官方登录后，同一插件的状态查询能确认已登录」2 项（Host 未设置／已设置 `CLAUDE_CONFIG_DIR`）。夹具按核对结果模拟带哈希后缀的条目、2.1.311 状态 JSON 新字段与 null 的 `orgId`。同一用例用旧参数对照：登录后状态为「Claude 官方账号未登录」，复现了用户现象
+  - 证据：更新 `tests/claude-own-route.test.ts` 3 处、`tests/accounts.test.ts` 2 处旧断言，改为断言 settings 与启动环境中都不含 `CLAUDE_CONFIG_DIR`；`corepack pnpm vitest run tests/claude-own-route.test.ts tests/accounts.test.ts` 共 185 项通过
+- [ ] 7.5 真实登录验收：用户在 Mac Desktop 插件中重新执行「官方登录 / 切换账号」，确认登录窗口显示已登录、设置页显示官方账号并加载模型与强度（未执行：真实登录须用户亲自操作；用户当前凭据在旧版写入的带后缀条目中，修复后需再登录一次）
+- [ ] 7.6 Windows 与凭据文件（`.credentials.json`）存放方式下的同类核对（未执行：本机为 macOS 钥匙串，Windows 未测）
+- [x] 7.7 文档：`doc/usage-details.md` 与英文版在「Claude Code 与 CC Switch」中说明默认存放位置及升级后可能需要重新登录；`doc/design.md` 本次章节补充
+  - 证据：见两文件对应段落
+- [x] 7.8 加入第 3 项修复后的自动检查
+  - 证据：`corepack pnpm typecheck` 通过（Host/Client typecheck passed against DSH 0.2.2-rc.2）
+  - 证据：沙箱外全量 `corepack pnpm vitest run`：305 个文件（301 通过、4 跳过），6771 项（6757 通过、14 跳过），0 失败，用时 87.87 秒，退出码 0
+  - 证据：`corepack pnpm build:preview` 退出码 0；包内 `lib/index.js` 中 `CLAUDE_CONFIG_DIR` 只出现在默认目录读取、禁止项正则与注释，settings 构造不再写入；未运行 `pnpm build`
 
 ## 跟进
 

@@ -76,7 +76,8 @@ it('selects official native login only when own loopback is unavailable, without
   expect(route.source).toBeUndefined()
   const argv = claudeRouteStatusArguments('claude', route)
   const env = JSON.parse(argv[2]!).env
-  expect(env.CLAUDE_CONFIG_DIR).toBe(home)
+  // 模拟 2.1.311：配置目录只经进程环境继承，绝不写进 settings.env（会切换钥匙串条目与全局配置文件）。
+  expect(env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
   expect(JSON.parse(argv[2]!).apiKeyHelper).toBe('')
   expect(env.CLAUDE_CODE_USE_BEDROCK).toBe('')
   expect(env.CLAUDE_CODE_USE_VERTEX).toBe('')
@@ -235,7 +236,7 @@ it('pins native official launch to the verified process overlay with no temporar
   )
   expect(launch.argv).toEqual([
     'claude',
-    ...claudeNativeSettingsArguments(route.configDirectory),
+    ...claudeNativeSettingsArguments(route.suppressedEnvironment),
     '--print',
     'task',
   ])
@@ -454,7 +455,6 @@ it('official account preparation ignores unusable own routes and helpers without
     apiKeyHelper: '',
     model: 'default',
     env: {
-      CLAUDE_CONFIG_DIR: home,
       ANTHROPIC_BASE_URL: 'https://api.anthropic.com',
       ANTHROPIC_AUTH_TOKEN: '',
       ANTHROPIC_API_KEY: '',
@@ -462,7 +462,9 @@ it('official account preparation ignores unusable own routes and helpers without
       ANTHROPIC_CUSTOM_HEADERS: '',
     },
   })
+  expect(snapshot.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
   expect(launch.env).toMatchObject({ ANTHROPIC_BASE_URL: '', ANTHROPIC_AUTH_TOKEN: '' })
+  expect(launch.env).not.toHaveProperty('CLAUDE_CONFIG_DIR')
   expect(launch.argv.slice(-3)).toEqual(['auth', 'login', '--claudeai'])
   expect(JSON.stringify(launch)).not.toMatch(
     /synthetic-private|synthetic-ambient|invalid-route|custom-route-model/,
@@ -518,4 +520,68 @@ it('official preparation validates an absolute root and honors cancellation befo
   abort.abort()
   await expect(readClaudeOfficialAccountRoute(project, abort.signal)).rejects.toThrow()
   expect(firstParty.readFirstPartyJson).not.toHaveBeenCalled()
+})
+
+// 模拟 Claude Code 2.1.311 的凭据位置（依据 2026-11-14 本机只读核对，不是官方文档）：
+// 进程启动时设置了 CLAUDE_CONFIG_DIR（哪怕就是默认的 ~/.claude），钥匙串条目名就带目录哈希后缀，
+// 全局配置改读 <dir>/.claude.json；`auth login` 会采用 settings.env 中的值，`auth status` 不会。
+const claude2_1_311 = `
+import { createHash } from 'node:crypto'
+import { existsSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+const args = process.argv.slice(2), at = args.indexOf('--settings')
+const settings = at >= 0 ? JSON.parse(args[at + 1]) : {}
+const rest = at >= 0 ? [...args.slice(0, at), ...args.slice(at + 2)] : args
+const startup = process.env.CLAUDE_CONFIG_DIR || undefined, fromSettings = settings.env?.CLAUDE_CONFIG_DIR || undefined
+const item = (dir) => 'Claude Code-credentials' + (dir ? '-' + createHash('sha256').update(dir).digest('hex').slice(0, 8) : '')
+const store = (dir) => join(process.env.CWN_SIMULATED_KEYCHAIN, item(dir))
+if (rest[0] === 'auth' && rest[1] === 'login') { writeFileSync(store(startup ?? fromSettings), 'simulated'); process.exit(0) }
+if (rest[0] === 'auth' && rest[1] === 'status') {
+  const signedIn = existsSync(store(startup))
+  process.stdout.write(JSON.stringify({ loggedIn: signedIn, authMethod: signedIn ? 'claude.ai' : 'none', apiProvider: 'firstParty',
+    analyticsDisabled: false, projectsDirectory: join(startup ?? join(homedir(), '.claude'), 'projects'),
+    configDirectory: startup ?? join(homedir(), '.claude'),
+    ...(signedIn ? { email: 'simulated@example.test', orgId: null, orgName: null, subscriptionType: 'max' } : {}) }))
+  process.exit(signedIn ? 0 : 1)
+}
+process.exit(2)
+`
+it.each([
+  ['Host 未设置 CLAUDE_CONFIG_DIR', false],
+  ['Host 已设置 CLAUDE_CONFIG_DIR', true],
+])('模拟 Claude 2.1.311：插件官方登录后，同一插件的状态查询能确认已登录（%s）', async (_name, hostSetsDirectory) => {
+  const { execFileSync, spawnSync } = await import('node:child_process')
+  const keychain = join(root, 'keychain'), script = join(root, 'claude-2.1.311.mjs')
+  await mkdir(keychain)
+  await writeFile(script, claude2_1_311)
+  if (!hostSetsDirectory) {
+    // 默认位置：~/.claude，HOME 指向模拟目录，不读真实用户文件。
+    vi.stubEnv('HOME', root)
+    vi.stubEnv('CLAUDE_CONFIG_DIR', undefined)
+  }
+  const route = await readClaudeOfficialAccountRoute(project, control())
+  const run = (argv: string[], env: Record<string, string>) =>
+    spawnSync(process.execPath, [script, ...argv.slice(1)], {
+      env: { ...process.env, ...env, CWN_SIMULATED_KEYCHAIN: keychain }, encoding: 'utf8' })
+  // 与 accounts.ts 的官方登录终端相同的参数与环境。
+  execFileSync(process.execPath, [script, ...claudeNativeSettingsArguments(route.suppressedEnvironment), 'auth', 'login', '--claudeai'],
+    { env: { ...process.env, ...claudeLaunchEnvironment(), CWN_SIMULATED_KEYCHAIN: keychain } })
+  const status = run(claudeRouteStatusArguments('claude', route), claudeLaunchEnvironment())
+  expect(claudeRouteIdentity(route, status.stdout, status.status)).toMatchObject({
+    state: 'authenticated', authMethod: 'oauth', accountLabel: 'simulated@example.test' })
+  // 对照旧参数：配置目录写进 settings.env 时，登录写到带后缀的条目，状态查询读不到。
+  await rm(keychain, { recursive: true, force: true })
+  await mkdir(keychain)
+  if (!hostSetsDirectory) {
+    const legacy = (rest: string[]) => {
+      const args = claudeNativeSettingsArguments(route.suppressedEnvironment)
+      const settings = JSON.parse(args[1]!)
+      settings.env.CLAUDE_CONFIG_DIR = route.configDirectory
+      return ['claude', '--settings', JSON.stringify(settings), ...rest]
+    }
+    run(legacy(['auth', 'login', '--claudeai']), claudeLaunchEnvironment())
+    const stale = run(legacy(['auth', 'status', '--json']), claudeLaunchEnvironment())
+    expect(claudeRouteIdentity(route, stale.stdout, stale.status)).toMatchObject({ state: 'unconfigured', summary: 'Claude 官方账号未登录' })
+  }
 })

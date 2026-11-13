@@ -1,5 +1,5 @@
 pm:
-  title: 修复 Claude 规划收尾判错与 Antigravity 后台子 Agent 误报超时
+  title: 修复 Claude 规划收尾判错、Claude 官方登录无法确认与 Antigravity 后台子 Agent 误报超时
   version: next
   creator: leeyl
   creator_name: Leeyl

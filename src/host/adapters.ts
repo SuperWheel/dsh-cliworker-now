@@ -245,7 +245,7 @@ export async function catalogFor(
         executable,
         cwd,
         signal,
-        claudeNativeSettingsArguments(claudeRoute.configDirectory, claudeRoute.suppressedEnvironment),
+        claudeNativeSettingsArguments(claudeRoute.suppressedEnvironment),
       )
       return {
         cli,

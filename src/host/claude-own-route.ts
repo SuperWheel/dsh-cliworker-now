@@ -150,10 +150,15 @@ export interface ClaudeOwnRoute {
 }
 
 /** Verified on native 2.1.296: empty settings.env unsets provider selectors for this process. */
-export function claudeNativeSettingsArguments(
-  configDirectory?: string,
-  suppressedEnvironment: Record<string, string> = {},
-): string[] {
+/**
+ * CLAUDE_CONFIG_DIR is never set through settings.env. Verified on native 2.1.311: once it is
+ * set (even to the default ~/.claude) Claude keys its keychain item by a hash of the directory
+ * and reads `<dir>/.claude.json` instead of `~/.claude.json`. With the value in settings.env, a
+ * plugin login created the hash-suffixed keychain item while `auth status` under the same
+ * settings read the unsuffixed one, so a fresh login read back as signed out. The child
+ * inherits the Host's own CLAUDE_CONFIG_DIR at startup, exactly as the user's terminal.
+ */
+export function claudeNativeSettingsArguments(suppressedEnvironment: Record<string, string> = {}): string[] {
   return [
     '--settings',
     JSON.stringify({
@@ -162,7 +167,6 @@ export function claudeNativeSettingsArguments(
       env: {
         ...claudeLaunchEnvironment(),
         ...suppressedEnvironment,
-        ...(configDirectory ? { CLAUDE_CONFIG_DIR: configDirectory } : {}),
         ANTHROPIC_BASE_URL: officialBase,
       },
     }),
@@ -332,7 +336,7 @@ export function claudeRouteStatusArguments(executable: string, route: ClaudeOwnR
   return [
     executable,
     ...(route.kind === 'native'
-      ? claudeNativeSettingsArguments(route.configDirectory, route.suppressedEnvironment)
+      ? claudeNativeSettingsArguments(route.suppressedEnvironment)
       : []),
     'auth',
     'status',
@@ -402,7 +406,7 @@ export async function prepareClaudeWorkerLaunch(
     return {
       argv: [
         argv[0]!,
-        ...claudeNativeSettingsArguments(route.configDirectory, route.suppressedEnvironment),
+        ...claudeNativeSettingsArguments(route.suppressedEnvironment),
         ...argv.slice(1),
       ],
       env: claudeLaunchEnvironment(),
@@ -424,7 +428,6 @@ export async function prepareClaudeWorkerLaunch(
           ...claudeLaunchEnvironment(),
           ...route.suppressedEnvironment,
           ...route.modelEnvironment,
-          ...(route.configDirectory ? { CLAUDE_CONFIG_DIR: route.configDirectory } : {}),
           ANTHROPIC_BASE_URL: route.source.baseUrl,
           ANTHROPIC_AUTH_TOKEN: route.source.anthropicAuth === 'bearer' ? route.source.credential.key : '',
           ANTHROPIC_API_KEY: route.source.anthropicAuth === 'bearer' ? '' : route.source.credential.key,

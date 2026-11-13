@@ -172,6 +172,8 @@ Install with npm as described by Tencent: `npm install -g @tencent-ai/codebuddy-
 
 On macOS and Windows, the plugin reads Claude Code's current own settings. With routing disabled, sign in to the official Claude account in the plugin account section. With routing enabled, refresh Claude's model list and select a routed model. Official login and logout preserve CC Switch settings.
 
+Official login, logout, status checks and tasks use Claude Code's own default account storage, the same as running `claude` in your terminal; the plugin no longer sets `CLAUDE_CONFIG_DIR` itself (it only keeps a value you set). Claude Code 2.1.311 switches to a different keychain item and `.claude.json` when that variable is set, which made older plugin versions show "signed out" right after a login. If you signed in through the plugin before and it shows signed out after updating, sign in once more in the plugin.
+
 Native mappings, including Fable and the `[1m]` context suffix, retain their exact execution IDs. When a gateway does not implement model discovery, only its explicitly configured models are shown, with remote availability stated as unverified. Authentication rejection and query errors do not switch to the official account. Select again after changing routes or mappings; an existing task whose source changed requires a new task.
 
 ## 5. Installation and updates
