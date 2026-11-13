@@ -36,6 +36,11 @@
 - 放弃的方案：按 tasks/sync 整批重新同步 —— 原因：预演显示会把完成日期全部改成归档当天、改约 150 条任务名称、新建重复任务；未同步过的变更按主任务也要新建约 150 条，与减少条目的目标相反
 - 影响：排期
 
+### 决定 6：继续用 vendor 本地包安装 pmspec
+- 最终决定：`package.json` 引用 `vendor/pmspec-<版本>.tgz`；面板下载只作获取新版的来源
+- 放弃的方案：直接用面板下载地址安装 —— 原因：安装和 Windows CI 会依赖面板在线，面板换版后旧版本文件不再提供
+- 影响：排期
+
 ## Risks / Trade-offs
 
 - `pnpm spec update` 会重新创建空的 `openspec/changes/archive/.gitkeep`（上游的目录锚点），需要手动删除，或在 pmspec 后续版本中处理。

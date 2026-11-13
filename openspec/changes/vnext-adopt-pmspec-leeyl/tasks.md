@@ -51,7 +51,11 @@
   - 证据：对 6 个已同步变更做了 `tasks/sync?dryRun=1` 预演，发现的问题记入决定 5 与 5.4
   - 证据：面板新版发布后（妙搭 release 7707540038565579795，提交 3509050），`tasks/sync` 预演新建 5 条主任务、未执行原因不再重复，随后正式写入
   - 证据：写入请求网关返回 504，但复取快照：需求 REQ-0132 下 5 条任务已建（1～4 已完成，5 进行中 75%），需求的「OpenSpec 变更」已记 `vnext-adopt-pmspec-leeyl`，任务总数 828 → 833；换新幂等键预演为新建 0、不变 5，没有重复
-- [ ] 5.3 把 `vendor/` tgz 换成面板线上下载地址（未执行：下载地址已上线，是否改用待用户决定）
+- [x] 5.3 决定保留 `vendor/` 本地包、不改用线上下载地址，并把 pmspec 升到 1.14.1-pm.2
+  - 证据：用户 2026-11-13 同意推荐：本地包让安装与 Windows CI 不依赖面板在线（面板 11-10 出现过 503），锁文件不变
+  - 证据：`vendor/pmspec-1.14.1-pm.2.tgz`（sha256 前缀 `ba3be41ae0c62a50`，与面板仓库 `downloads/` 清单一致）；`corepack pnpm install --prefer-offline` 后 `pnpm spec --version` 为 `1.14.1-pm.2`
+  - 证据：`pnpm spec update --force` 重新生成 6 个 `pmspec-*` 技能；`pmspec validate --all --strict` 32 项全部通过
+  - 证据：`doc/openspec.md` 改为固定 pm.2，升级说明写明下载后核对 sha256 再放进 vendor
 - [x] 5.4 修复预演中发现的面板同步缺陷
   - 证据：面板仓库提交 `3509050`：tasks/sync 新增 `archived`，来源行指向 archives；「未执行：」前缀去重；已完成任务保留原完成日期；`sync-tasks.mjs` 完成日期改用 `git log --follow --diff-filter=AM`；pmspec 接受 `1b.` 这类主任务编号
   - 证据：面板类型检查、lint、`npm test` 1400 项、服务端构建通过；pmspec `vitest run` 218 个文件 6393 项通过

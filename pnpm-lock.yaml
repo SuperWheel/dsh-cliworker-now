@@ -160,8 +160,8 @@ importers:
         specifier: ^10.2.0
         version: 10.2.0
       pmspec:
-        specifier: file:vendor/pmspec-1.14.1-pm.1.tgz
-        version: file:vendor/pmspec-1.14.1-pm.1.tgz(@types/node@22.18.6)
+        specifier: file:vendor/pmspec-1.14.1-pm.2.tgz
+        version: file:vendor/pmspec-1.14.1-pm.2.tgz(@types/node@22.18.6)
       prettier:
         specifier: 3.6.2
         version: 3.6.2
@@ -5069,9 +5069,9 @@ packages:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
 
-  pmspec@file:vendor/pmspec-1.14.1-pm.1.tgz:
-    resolution: {integrity: sha512-lljxQVJQCpiH8zOnlez1WhzHYkydAsOzi2ZZpg4sNV9Z9ZhXVys17mz4E4Uc28cAPHbYSykq9o5PsfdIyzWP9g==, tarball: file:vendor/pmspec-1.14.1-pm.1.tgz}
-    version: 1.14.1-pm.1
+  pmspec@file:vendor/pmspec-1.14.1-pm.2.tgz:
+    resolution: {integrity: sha512-4wzULMpq+T4bO97ZJFvJUEJuTVsda6NfHDgq0CWiKBhnZM7aK3zBQtNkb2yg4Xp4iQw2L4G3pV4zGYmqPS3vOQ==, tarball: file:vendor/pmspec-1.14.1-pm.2.tgz}
+    version: 1.14.1-pm.2
     engines: {node: '>=20.19.0'}
     hasBin: true
 
@@ -11279,7 +11279,7 @@ snapshots:
 
   pkce-challenge@5.0.1: {}
 
-  pmspec@file:vendor/pmspec-1.14.1-pm.1.tgz(@types/node@22.18.6):
+  pmspec@file:vendor/pmspec-1.14.1-pm.2.tgz(@types/node@22.18.6):
     dependencies:
       '@inquirer/core': 12.0.4(@types/node@22.18.6)
       '@inquirer/prompts': 8.7.3(@types/node@22.18.6)

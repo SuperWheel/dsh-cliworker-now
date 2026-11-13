@@ -6,7 +6,7 @@
 
 ## 1. 已接入的范围
 
-- 开发依赖固定为 `pmspec@1.14.1-pm.1`。面板下载地址上线前，从 [`vendor/`](../vendor/) 中的 tgz 安装，由锁文件管理，无需全局安装。
+- 开发依赖固定为 `pmspec@1.14.1-pm.2`，从 [`vendor/`](../vendor/) 中的 tgz 安装，由锁文件管理，无需全局安装。面板也提供同一版本的公开下载，但本项目不依赖它，安装和 CI 不需要面板在线。
 - 项目级技能由 `pnpm spec update` 生成，共六个 `pmspec-*`。
 - 改用 pmspec 的变更为 `vnext-adopt-pmspec-leeyl`。
 - 首个变更 [adopt-openspec-workflow](../openspec/archives/adopt-openspec-workflow/) 已归档，建立 [development-workflow](../openspec/specs/development-workflow/spec.md) 开发流程规格。
@@ -166,7 +166,7 @@ Kimi 订阅 403、Grok／Hermes 真实任务未验收，参见 [支持范围](..
 升级时审阅目标版本说明，并显式固定版本：
 
 ```sh
-# 从产品面板下载新版 pmspec tgz 放进 vendor/（或面板下载地址上线后直接用该地址），再固定版本
+# 从产品面板下载新版 pmspec tgz 放进 vendor/，核对清单中的 sha256 后再固定版本（不直接引用下载地址）
 pnpm add -D pmspec@file:vendor/pmspec-<目标版本>.tgz
 pnpm spec update
 pnpm spec:check
