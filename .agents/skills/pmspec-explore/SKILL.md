@@ -7,7 +7,7 @@ compatibility: Requires pmspec CLI.
 metadata:
   author: openspec
   version: "1.0"
-  generatedBy: "1.14.1-pm.2"
+  generatedBy: "1.14.1-pm.3"
 ---
 
 <!-- // pmspec: generated from fork workflow templates; see FORK.md. -->

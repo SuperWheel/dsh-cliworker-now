@@ -7,7 +7,7 @@ compatibility: Requires pmspec CLI.
 metadata:
   author: openspec
   version: "1.0"
-  generatedBy: "1.14.1-pm.2"
+  generatedBy: "1.14.1-pm.3"
 ---
 
 <!-- // pmspec: generated from fork workflow templates; see FORK.md. -->
@@ -43,7 +43,7 @@ In both branches, never create the root as a side effect: do not run `pmspec ini
 
 **Input**: The user's request should include a change name (kebab-case) OR a description of what they want to build.
 
-**pmspec naming**: use v<major>-<minor>-<patch>-<topic>-<creator> or vnext-<topic>-<creator> (maximum 200 characters). Resolve creator from PMSPEC_CREATOR or pmspec config get creator; if absent, run the pm-board-spec whoami skill. Do not invent an author. Use the returned change id in all later commands. Default schema is pmspec; reference pm.prd instead of rewriting the PRD background.
+**pmspec naming**: use v<major>.<minor>.<patch>-<topic>-<creator> (keep the dots, e.g. v0.8.10-cli-update-page-leeyl) or vnext-<topic>-<creator> (maximum 200 characters); older dashed names such as v0-8-10-… stay valid. Resolve creator from PMSPEC_CREATOR or pmspec config get creator; if absent, run the pm-board-spec whoami skill. Do not invent an author. Use the returned change id in all later commands. Default schema is pmspec; reference pm.prd instead of rewriting the PRD background.
 
 **Steps**
 

@@ -6,7 +6,7 @@
 
 ## 1. 已接入的范围
 
-- 开发依赖固定为 `pmspec@1.14.1-pm.2`，从 [`vendor/`](../vendor/) 中的 tgz 安装，由锁文件管理，无需全局安装。面板也提供同一版本的公开下载，但本项目不依赖它，安装和 CI 不需要面板在线。
+- 开发依赖固定为 `pmspec@1.14.1-pm.3`，从 [`vendor/`](../vendor/) 中的 tgz 安装，由锁文件管理，无需全局安装。面板也提供同一版本的公开下载，但本项目不依赖它，安装和 CI 不需要面板在线。
 - 项目级技能由 `pnpm spec update` 生成，共六个 `pmspec-*`。
 - 改用 pmspec 的变更为 `vnext-adopt-pmspec-leeyl`。
 - 首个变更 [adopt-openspec-workflow](../openspec/archives/adopt-openspec-workflow/) 已归档，建立 [development-workflow](../openspec/specs/development-workflow/spec.md) 开发流程规格。
@@ -26,7 +26,7 @@
 
 ### pmspec 与 OpenSpec 的差别
 
-- **变更命名**：格式为 `v<主>-<次>-<修订>-<主题>-<创建人>`，版本号中的点改成横线；版本未定时写 `vnext`。例如 `v0-8-10-cli-update-page-leeyl`。
+- **变更命名**：格式为 `v<主>.<次>.<修订>-<主题>-<创建人>`，版本号保留点号；版本未定时写 `vnext`。例如 `v0.8.10-cli-update-page-leeyl`。pmspec 1.14.1-pm.3 之前的横线版本名（如 `v0-8-10-…`）仍可识别，`pnpm spec change rename` 会改成带点的名字。
   用 `pnpm spec new change --version 0.8.10 --topic cli-update-page --creator leeyl --creator-name Leeyl --title <中文标题>` 创建。
   中文标题、版本和飞书显示名写进 `.openspec.yaml` 的 `pm` 段；版本确定后用 `pnpm spec change rename <名> --version <x.y.z>` 改名。
 - **两级任务**：`## N. 主任务 〔职能｜工时｜前置 N〕` 下列 `- [ ] N.M 子任务`，主任务进度等于子任务完成比例。
@@ -86,7 +86,7 @@ Codex CLI／IDE 可用 `$pmspec-propose`；Desktop 从 **Skills** 选择技能�
 
 ## 4. 一个变更的完整流程
 
-以下 `v0-8-10-improve-worker-search-leeyl` 为示例，执行前替换为实际变更名。
+以下 `v0.8.10-improve-worker-search-leeyl` 为示例，执行前替换为实际变更名。
 
 ```sh
 # 确认项目根及现有变更
@@ -95,17 +95,17 @@ pnpm spec list --json
 
 # 创建骨架，并读取产物依赖
 pnpm spec new change --version 0.8.10 --topic improve-worker-search --creator leeyl --creator-name Leeyl --title "改进 Worker 搜索"
-pnpm spec status --change v0-8-10-improve-worker-search-leeyl --json
+pnpm spec status --change v0.8.10-improve-worker-search-leeyl --json
 
 # 逐项读取要求，再由开发者或 Agent 编写对应文件
-pnpm spec instructions proposal --change v0-8-10-improve-worker-search-leeyl --json
-pnpm spec instructions specs --change v0-8-10-improve-worker-search-leeyl --json
-pnpm spec instructions design --change v0-8-10-improve-worker-search-leeyl --json
-pnpm spec instructions tasks --change v0-8-10-improve-worker-search-leeyl --json
+pnpm spec instructions proposal --change v0.8.10-improve-worker-search-leeyl --json
+pnpm spec instructions specs --change v0.8.10-improve-worker-search-leeyl --json
+pnpm spec instructions design --change v0.8.10-improve-worker-search-leeyl --json
+pnpm spec instructions tasks --change v0.8.10-improve-worker-search-leeyl --json
 
 # 产物完成后校验
-pnpm spec validate v0-8-10-improve-worker-search-leeyl --strict --no-interactive
-pnpm spec status --change v0-8-10-improve-worker-search-leeyl
+pnpm spec validate v0.8.10-improve-worker-search-leeyl --strict --no-interactive
+pnpm spec status --change v0.8.10-improve-worker-search-leeyl
 ```
 
 `new change` **只创建骨架，不生成完整提案**；`instructions` 只输出要求。
@@ -118,17 +118,17 @@ pnpm spec status --change v0-8-10-improve-worker-search-leeyl
 按当前产物实施代码和测试，完成后才勾选；范围变化时同步修订规划产物。
 
 ```sh
-pnpm spec instructions apply --change v0-8-10-improve-worker-search-leeyl --json
-pnpm spec tasks v0-8-10-improve-worker-search-leeyl --json   # 各主任务进度与校验问题
+pnpm spec instructions apply --change v0.8.10-improve-worker-search-leeyl --json
+pnpm spec tasks v0.8.10-improve-worker-search-leeyl --json   # 各主任务进度与校验问题
 
 # 实施完成，检查产物、任务数量及归档要求
-pnpm spec status --change v0-8-10-improve-worker-search-leeyl --json
+pnpm spec status --change v0.8.10-improve-worker-search-leeyl --json
 pnpm spec list --json
-pnpm spec instructions archive --change v0-8-10-improve-worker-search-leeyl --json
-pnpm spec validate v0-8-10-improve-worker-search-leeyl --strict --no-interactive
+pnpm spec instructions archive --change v0.8.10-improve-worker-search-leeyl --json
+pnpm spec validate v0.8.10-improve-worker-search-leeyl --strict --no-interactive
 
 # 在实施、必要验证及规格同步范围均已明确后执行
-pnpm spec archive v0-8-10-improve-worker-search-leeyl --yes
+pnpm spec archive v0.8.10-improve-worker-search-leeyl --yes
 pnpm spec:check
 pnpm spec:list
 ```
