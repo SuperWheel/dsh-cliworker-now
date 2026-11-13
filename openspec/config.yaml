@@ -1,4 +1,8 @@
-schema: spec-driven
+schema: pmspec
+
+pmspec:
+  # 积压的旧任务没有逐条证据，先只告警；新变更按要求写证据，逐步收紧。
+  requireEvidence: false
 
 context: |
   所有产物正文使用中文；保留 OpenSpec 结构标题与 SHALL/MUST、WHEN/THEN 关键字。
@@ -14,9 +18,10 @@ context: |
   使用各 CLI 的原生保护和权限模式，不附加插件操作系统沙箱；私有存储目录在 POSIX 下为 0700、文件 0600；凭据、个人日志、运行数据不得进入 Git。
   CLI 输出是不可信文本；复用宿主主题及控件，不伪造进度、内部推理或遥测。
   活跃 CLI 和 retired harness ID 必须区分；外部 Harness 历史不能迁作 Hermes 原生会话或账号。
-  项目固定 OpenSpec 开发依赖，通过 pnpm spec 执行（包括技能示例中的裸 openspec 命令），不依赖全局安装。
-  不手改 .agents/skills/openspec-* 生成文件；项目规则放本配置与 AGENTS.md。
-  最新发布版本为 v0.8.4；之后的调整在下一次正式提交时使用用户确认的版本号，可本地分阶段提交；GitHub 提交及发布须用户明确批准。
+  项目固定 pmspec（OpenSpec 的产品面板分叉）开发依赖，通过 pnpm spec 执行（包括技能示例中的裸 openspec/pmspec 命令），不依赖全局安装。
+  新变更目录名为 v<主>-<次>-<修订>-<主题>-<创建人>（版本未定写 vnext），中文标题、版本、创建人写入 .openspec.yaml 的 pm 段；完成后归档到 openspec/archives/<变更名>/。
+  不手改 .agents/skills/pmspec-* 生成文件（由 pnpm spec update 生成）；项目规则放本配置与 AGENTS.md。
+  最新发布版本为 v0.8.9；之后的调整在下一次正式提交时使用用户确认的版本号，可本地分阶段提交；GitHub 提交及发布须用户明确批准。
   日常只做影响范围对应的最小验收（关联测试、必要 typecheck/preview/平台检查）；全量验收在获准的正式 GitHub 提交之前执行。
   验证入口：pnpm spec:check、pnpm typecheck、pnpm test <关联文件>、pnpm build:preview。
   真实 CLI 调用需已有模型选型授权；检查事件、退出状态和实际产物，模拟或本地目录可读不代表远端成功。
@@ -34,9 +39,10 @@ rules:
   design:
     - 写明模块边界、方案取舍、兼容性、存储及生命周期影响、风险和回退办法；不发明原生 CLI 能力。
   tasks:
-    - 使用可勾选的编号任务；区分实施、自动检查、真实模型或 Desktop 验收和文档同步。
-    - 检查按变更风险选择；纯文档或工具接入不强制模型调用和 Desktop 更新。
-    - 只有实际执行并核对结果后才勾选；命令、结果、证据位置与未验证边界以缩进子项记在本 change 的 tasks.md 对应任务下，不写入 doc/tasks.md。
+    - 两级结构：主任务写成「## N. 名称 〔职能｜工时｜前置 N〕」，把相似工作归为一个主任务；子任务写成顶格「- [ ] N.M 内容」，主任务进度按子任务完成比例计算。
+    - 子任务区分实施、自动检查、真实模型或 Desktop 验收和文档同步；纯文档或工具接入不强制模型调用和 Desktop 更新。
+    - 只有实际执行并核对结果后才勾选；命令、结果、证据位置与未验证边界写成该子任务下的缩进普通列表项（不用复选框），不写入 doc/tasks.md。
+    - 未执行的检查不勾选，写明「（未执行：原因）」；勾选项不得带未执行标记。归档后观察项放「## 跟进」，不计入进度。
 
 operations:
   apply:
@@ -45,5 +51,5 @@ operations:
       - 保存现有未提交修改；验证实现与规格一致，发现方案变化时同步 change 产物。
   archive:
     guidance:
-      - 归档前核对完整任务和实际证据，执行 pnpm spec:check；不以格式校验替代业务验收。
+      - 归档前核对完整任务和实际证据，执行 pnpm spec:check；不以格式校验替代业务验收。归档用 pnpm spec archive，目标为 openspec/archives/<变更名>/。
       - 未完事项保持可见；只合并本 change 的增量规格，保留历史文档和既有会话数据。
