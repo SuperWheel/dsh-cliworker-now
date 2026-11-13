@@ -144,7 +144,13 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 ## Risks / Trade-offs
 
+- **首次安装来源边界（阶段 C）**：`installationSource` 以 PRD 5.3 的平台差异选择方法。Codex、Pi、CodeBuddy 用 npm；MiMo/OpenCode 的 Windows 用 npm；Pi 添加 `--ignore-scripts` 且只取白名单，OpenCode 只取 V1。npm 通过已核实的 Node/npm 读取 Node 版本及 `npm prefix -g`，校验目标包 engines 和最低版本，前缀不可写不提权。安装与更新共用 Host 计划入口、全局操作生命周期、维护锁、下载器和执行器。
+- **脚本版本与摘要**：Kimi、TRAE CN（Mac/Linux）、Qoder/CN（Windows）只用 sources 内置脚本 URL 与解释器。脚本以文件执行，不传远端命令文本；没有官方独立摘要时仅依赖无重定向的 HTTPS 传输及 HTTP 长度，不称为已验证发布签名。目标选择器为 `official-current`，不编造精确版本或未证实的锁版本参数；执行后仍须读取有效且适配的版本，否则失败并保留旧路径设置。原生二进制没有已核实版本读法时不会据退出码宣告成功。阶段 C 审查确认 Claude 全平台及 MiMo Mac/Linux 没有足够证据实现原生版本读取，改回 manual；不根据目录名称猜版本、不新增未证实无副作用的 --version。MiMo Windows npm 不受影响。Antigravity/Grok 的前置条件或版本读法、OMP/Hermes 的禁止代装运行时参数、Qoder/CN 的 macOS 入口及 OpenCode macOS 锁 V1 参数仍待核实，保持仅说明。
+- **桌面安装不先开放**：ZCode、WorkBuddy CN、WorkBuddy 没有已核实的安装包 URL、摘要/长度及开发者身份，因此生产来源表仍为 manual。通用执行器仅以模拟描述符验证：macOS 只读挂载、codesign Team ID 要求与 spctl、暂存复制后移动、失败清理暂存和 detach；detach 未确认进入清理隔离，不删除仍可能挂载的目录。Windows 仅启动官方安装程序并等进程范围退出，不传猜测的静默/位置参数；未实现真实 Authenticode 验收。页面位置是建议值，未来已核实来源可提供常见目录用于装后查找。
+- **位置与旧路径**：纯 CLI 不接受客户端自选位置。桌面位置可不存在，但父目录须可写且空间充足，拒绝与已知项目/工作区、插件状态、账号数据及另一版 WorkBuddy 安装目录重叠。路径变更前核对路径存储 revision，只有装后身份与版本验证成功才调用现有 `CliExecutablePathStore.setManual`；失败不重置旧记录，也不删除旧安装文件。
+
 - **npm 依赖解析边界**：官方 sha512 绑定的是目标版本主包 tarball；其依赖及生命周期脚本仍由 npm 按所选 registry 和 npm 原生规则处理。本实现不声称已独立验算所有传递依赖，也不伪造其下载字节进度。
+- **阶段 C 审查修订**：Qoder/CN Windows 安装入口复用现有发现工具的官方 exe 候选；Git Bash 通过完整 PATH/git 位置与 PE/MSYS 布局作文件核实，不启动 bash/git，不依赖父目录名。Pi 损坏旧安装可生成带 unusableBefore 的重新安装计划，装后核对仍严格。桌面卸载/进程隔离错误优先保留，目录删除失败只追加原因。安装位置保护与账号读取共用 Codex/Claude 根解析，并复用 MiMo/Qoder/CodeBuddy/Hermes/ZCode/OpenCode 目录工具，包含当前生效的环境变量。
 - **识别错误装出第二份**：严格按真实路径、包名、brew 元数据匹配，识别不出就转手动；更新后核对版本与路径。
 - **官方脚本执行远端代码**：只用内置地址，先下载再以文件执行，行内显示地址。脚本内部的行为与落点逐个核实后才开放自动安装。
 - **后台探测的副作用**：只开放 `sources.ts` 中标为后台安全的读取。目前只确认 Kimi 需禁用自动升级，其余逐个验证。

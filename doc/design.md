@@ -1471,6 +1471,10 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 独立 flow 及状态证明见 `account-guide/codebuddy-flow.ts`、`traecn-flow.ts`。CodeBuddy 已采 C1–C6 授权前路径，信任由用户确认，空编辑器自动 `/login`，站点 choice 的中国/国际走 browser、企业/iOA 原生；`/logout` 只提交一次，登录菜单不发 Enter，仍回读严格状态；TRAE 个人使用浏览器/回调网址模板，企业 SSO/PAT 保留原生。两者在 PTY 分配前保存状态基线；CodeBuddy 不把读取错误/非法文件当作退出，TRAE 状态联合文本与退出码。Client 复用两列方式卡片；账号卡切换先退出和清理，再重新选 TRAE 方式。WorkBuddy 无 PTY 桌面观察由独立工作树负责。实际范围及缺口见 `openspec/archives/add-new-cli-graphical-login/tasks.md` 与采集记录，不把模拟/构建当作真实登录验收。
 
+## 2026-11-13 v0.8.10：CLI 首次安装后端（未发布）
+
+首次安装复用更新的 Host 计划入口、维护锁、下载器、执行器和清理隔离。npm 按当前可写全局前缀安装经过官方 sha512 核对的本地主包；官方脚本仅取 Host 内置地址，下载为私有文件后通过固定解释器执行。未核实的来源保持仅说明；阶段 C 审查后，Claude 全平台及 MiMo macOS/Linux 因缺少可靠原生版本读法退回仅说明，MiMo Windows npm 保留。Qoder/CN Windows 入口复用既有 exe 候选；Git Bash 按文件布局核实，不依赖安装目录名。账号目录保护复用实际路径工具及环境变量；桌面清理错误不能覆盖进程隔离错误。成功必须经过装后身份与版本检查，再写入现有 CLI 路径存储；重新安装不删除旧文件。桌面执行器已有模拟的挂载、签名要求、暂存复制、卸载及 Windows 等待流程，但三个桌面来源缺少已核实的包地址/摘要/开发者身份，尚未开放自动安装。详见 [变更设计](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务证据](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)；模拟测试不代表真实安装验收。
+
 ## 2026-11-10 v0.8.9：TRAE 询问档与 DS Bot 换段重绑（未发布）
 
 需求见 [v0.8.9 PRD](prd/2026-11-10-v0.8.9-PRD.md)。

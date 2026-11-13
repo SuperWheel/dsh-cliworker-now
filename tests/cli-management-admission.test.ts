@@ -68,7 +68,7 @@ it('模拟：已开始的元数据读取保留租约，拒绝中途更新；读�
   resolve({ cli: 'codex', installed: true, state: 'unknown', summary: '模拟', actions: [] }); await reading
   const started = f.management.start('codex', 'update', token, '', 'after-read'); expect(started.operation?.phase).toBe('preparing'); await finished(f.management)
 })
-it('模拟：Remote 签名与 JSON 返回、取消及 install 尚未支持；请求 signal 不控制已受理操作', async () => {
+it('模拟：Remote 签名与 JSON 返回、取消及 install 缺少存储；请求 signal 不控制已受理操作', async () => {
   const f = fixture(); await checked(f.management)
   const token = f.management.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, child = childFixture(), controller = new AbortController()
   vi.mocked(f.backend.spawn).mockReturnValue(child.child as any)
@@ -77,7 +77,7 @@ it('模拟：Remote 签名与 JSON 返回、取消及 install 尚未支持；请
   expect(child.child.terminate).not.toHaveBeenCalled()
   expect(JSON.parse(await f.service.cancelCliOperation('parent', started.operation.id, control())).operation.phase).toBe('cancelling')
   await until(() => child.child.waitForExit.mock.calls.length > 0); child.finish(); child.exit(true); await finished(f.management)
-  await expect(f.service.startCliOperation('parent', 'zcode', 'install', '', '', 'install', control())).rejects.toThrow('尚未支持')
+  await expect(f.service.startCliOperation('parent', 'zcode', 'install', '', '', 'install', control())).rejects.toThrow('缺少本机路径存储')
   expect(JSON.parse(await f.service.checkInstallDirectory('parent', 'zcode', '', control()))).toEqual({ path: '' })
   const choose = vi.spyOn(f.management, 'chooseDirectory').mockResolvedValue({ path: '' })
   expect(JSON.parse(await f.service.chooseInstallDirectory('parent', 'workbuddy', control()))).toEqual({ path: '' }); expect(choose).toHaveBeenCalledWith('workbuddy', expect.any(AbortSignal))

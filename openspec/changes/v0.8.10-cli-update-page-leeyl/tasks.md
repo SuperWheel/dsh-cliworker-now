@@ -81,12 +81,38 @@
   - （未执行：本次仍禁止真实 CLI 安装/更新/npm/brew/--version、build 和 Git 提交；Windows 与 Homebrew 行为用模拟夹具验收，未声称真实平台通过。）既有跨操作/跨重启续传、首次安装、可视验收等未完成项保持原状态。
 
 ## 5. 首次安装 〔后端｜10h｜前置 4〕
-- [ ] 5.1 纯 CLI 安装：官方推荐优先、同为推荐用 npm；官方脚本只用内置地址、先下载再以文件执行；前置条件检查
-  - （未执行：首次安装属于第三阶段；Phase B 对 intent=install 明确返回 PREREQUISITE_MISSING「首次安装尚未支持，将在第三阶段提供」。）
+- [x] 5.1 纯 CLI 安装：官方推荐优先、同为推荐用 npm；官方脚本只用内置地址、先下载再以文件执行；前置条件检查
+  - Phase C：新增 `install.ts`，Host `planCliOperation(..., 'install')` 按来源、平台、当前身份/缺失状态、路径记录 revision、目标版本/官方当前选择器、安装目录、Node/npm 与下载源生成 token，执行前两次复算；接入现有全局操作、维护锁、取消和插件停用清理。未安装/未知版本条目通过 install offer 与 planToken 接入原页面；旧路径失效提示旧位置。
+  - npm：Codex、Pi、CodeBuddy；Windows 另含 MiMo、OpenCode。读取当前 Node 版本及 `npm prefix -g`，核对目标包 engines/已知最低版本及可写性，不提权、不代装；主包复用官方 sha512 + 本地 tgz。Pi 限白名单并传 `--ignore-scripts`，OpenCode 限 V1。
+  - 脚本（5.4 审查后）：Kimi（Mac/Linux/Windows）、TRAE CN（Mac/Linux）、Qoder/Qoder CN（Windows）；只使用 sources 的内置 URL 和 `/bin/bash <私有文件>` 或 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <私有文件>`。Kimi Windows 区分 Git Bash 与 WSL bash。没有独立官方摘要的脚本只验证 HTTPS 传输/响应长度，不声称发布签名已验证；脚本目标为 official-current，不编造锁定版本参数。装后版本无法读取或不适配仍判失败，不写回旧路径。
+  - 仅说明：Claude 全平台、MiMo Mac/Linux 的原生版本读法（5.4 审查后退回；MiMo Windows npm 保留），Antigravity/Grok 的前置条件或安全版本读法、OMP/Hermes 禁止代装运行时的参数、Qoder/CN 的 macOS 入口、OpenCode macOS 脚本锁 V1 参数、TRAE Windows 默认入口未核实。按本阶段简报保留 manual，不猜参数或下载源。
+  - 成功后用现有 `CliExecutablePathStore.setManual` 改用验证的新入口，核对 revision 防覆盖并保留旧文件，更新身份/版本缓存与分组、失效模型目录。模拟覆盖首次安装、重装、路径写入、路径过期、找不到入口、不可写前缀、前置条件失败、脚本 argv、幂等/取消和并发拒绝，命令见 5.3。
 - [ ] 5.2 桌面应用安装：ZCode、WorkBuddy CN、WorkBuddy 的位置校验（权限、空间、非空目录）；macOS DMG 复制流程；Windows 打开官方安装程序；装后写入路径记录
-  - Phase B 已完成目录选择及位置检查 Remote，并通过模拟测试；（未执行：DMG 复制、Windows 安装程序与装后路径写入属于第三阶段，本次禁止真实安装。）
-- [ ] 5.3 单元测试：安装方式选择、前置条件不满足、位置校验、装后路径写入、重新安装改用新路径
-  - 位置校验四类错误已通过 Phase B 模拟测试；（未执行：其余首次安装行为尚未实现，留待第三阶段一并测试。）
+  - 已实现通用桌面执行器 `desktop.ts` 并以模拟描述符验证：macOS attach 只读/no browse、codesign Team ID requirement + spctl、ditto 暂存复制后移动、attach/签名/复制失败均 detach 并清理；detach 未确认沿用清理隔离。Windows 进入 awaiting-user、只传安装程序路径，不猜静默或位置参数；等待整个进程范围退出、支持取消。装后查所选/描述符已核实的常见位置，再按通用流程验证并写原路径存储。
+  - 位置校验允许目标不存在但父目录可写，拒绝系统/项目/已知工作区/插件状态/账号数据目录及其重叠路径，拒绝另一版 WorkBuddy 的安装目录；复用权限/空间/非空目录检查。
+  - （未执行：三个桌面 CLI 的官方安装包 URL、摘要或长度及开发者身份仍未核实，本次禁止联网与真实安装；来源表保持 manual，未接通实际自动安装，因此本项不勾选。Windows Authenticode 和实际向导选择位置的发现尚无真实验收；模拟 Team ID 不代表真实发布者。）
+- [x] 5.3 单元测试：安装方式选择、前置条件不满足、位置校验、装后路径写入、重新安装改用新路径
+  - 新增 `cli-management-install.test.ts`、`cli-management-desktop.test.ts`，23 项均标「模拟」；Node/npm、脚本、HTTP、hdiutil、codesign、spctl、ditto、Windows 安装器均为替身。旧阶段 B 的两项「安装尚未支持」断言更新为「缺少路径存储则拒绝」。
+  - `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts`：2 文件 23 项通过，退出码 0。
+  - `corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.2 通过，退出码 0。`corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts tests/cli-management-review.test.ts tests/cli-management-remotes.test.ts tests/cli-management.test.ts tests/cli-settings.test.ts tests/accounts.test.ts tests/native-launch.test.ts tests/cleanup-persistence.test.ts`：13 文件 507 项通过（2026-11-13 19:29:25，8.37 秒，退出码 0）。
+  - 首轮关联测试仅 2 项旧错误文案断言失败，更新为阶段 C 的缺少存储拒绝语义后通过；未修改生产逻辑迁就断言。
+  - 获准沙箱外 `corepack pnpm vitest run`（2026-11-13 19:30:01，68.32 秒，退出码 0）：**Test Files 296 passed | 4 skipped (300)；Tests 6455 passed | 14 skipped (6469)**，无失败或未处理错误。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid，退出码 0；指定 Git 的 `diff --check` 通过，`diff -- src/client src/shared/cli-management.ts` 无差异。没有改共享协议或 Client。
+  - （未执行：本阶段明确禁止联网、真实安装、真实脚本/npm/brew/hdiutil/安装程序、build 与 Git 提交；新流程均以模拟夹具验收，不作为真实平台安装证据。）
+
+- [x] 5.4 修复阶段 C 审查问题（六项，逐项模拟回归）
+  - ① 原生版本读取：仓库只证明 Claude 原生目录归属，未证明目录名可作为版本；MiMo 也没有已核实的清单/无副作用版本命令。Claude 全平台与 MiMo Mac/Linux 脚本改回 manual，MiMo Windows npm 保留；README、两份 design 和 5.1 同步。`cli-management-install.test.ts` 对两项分别验证仅说明、零下载/进程、不写路径，不添加猜测的 --version。
+  - ② Windows Qoder/CN：直接复用 `windowsCliCandidates` 的首个官方候选，分别指向 `.qoder/bin/qodercli/qodercli.exe`、`.qoder-cn/bin/qoderclicn/qoderclicn.exe`。两个模拟回归核对候选、装后 resolve 与原路径存储写回；版本由模拟版本读取器返回，不作为真实原生版本验收。
+  - ③ Git Bash：新增只读文件发现工具，扫描完整 PATH 的 bash/git 候选、已解析 git.exe 和常见安装位置；以 cmd/git.exe、usr/bin/bash.exe、MSYS DLL 的 PE 文件布局核实，不依赖目录名 Git、不启动探测进程。新增 `windows-git-bash.test.ts` 5 项模拟回归（自定义便携目录、WSL 排在前面、bash/git PATH、git 旁发现、常见位置、伪装文件、取消和隔离）；安装测试核对 prerequisites 与计划记录。
+  - ④ Pi 旧安装损坏：准备阶段专门把 Pi CLI_IDENTITY_MISMATCH 记录为 unusableBefore 并纳入 token；装后身份读取不放松，取消和 ProcessCleanupUnconfirmedError 继续抛出。4 个模拟分支覆盖修复成功、新安装仍坏、取消、清理未确认；前两项通过真实只读 Pi 身份读取器检查损坏夹具，后两项注入取消/隔离错误；旧文件与失败时旧路径均保留。
+  - ⑤ 清理隔离优先：desktop.ts 聚合附加清理错误，保留 ProcessCleanupUnconfirmedError；模拟覆盖 detach 与 stage 删除同时失败后的 cleanup-unconfirmed、镜像保留和维护锁保留，以及复制进程已隔离后目录删除失败不覆盖原错误。
+  - ⑥ 账号目录保护：Codex/Claude 的环境根解析提取为账号读取器与目录保护共用的 helper；MiMo 直接复用 mimoConfigurationPaths，包含默认 config/data、MIMOCODE_HOME 和 XDG 覆盖；另复用 Qoder、CodeBuddy、Hermes、ZCode、OpenCode 的既有目录工具。模拟经 service.checkDirectory 验证默认/环境根及子目录拒绝，无账号或进程调用。
+  - 首轮新增回归 2 项失败：Windows Qoder 测试错误继承了宿主 ARM64 架构；添加模拟 x64 架构输入后通过，生产默认仍读取 process.arch。之后 3 文件 39 项通过；再补复制清理隔离回归，最终关联命令结果见下。
+  - `corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.2 通过，退出码 0。
+  - `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/windows-git-bash.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts tests/cli-management-review.test.ts tests/cli-management-remotes.test.ts tests/cli-management.test.ts tests/cli-settings.test.ts tests/accounts.test.ts tests/native-launch.test.ts tests/cleanup-persistence.test.ts tests/windows-cli-resolution.test.ts tests/cli-account-binding.test.ts tests/claude-own-route.test.ts tests/mimo-configuration.test.ts`：**17 文件 666 项通过**（2026-11-13 19:51:44，8.71 秒，退出码 0）。最后一个 MiMo 文件过滤名不存在，Vitest 实际选择前 17 个文件；MiMo 目录保护回归位于 cli-management-install.test.ts，不声称运行了不存在的文件。
+  - 获准沙箱外 `corepack pnpm vitest run`（2026-11-13 19:52:04，67.35 秒，退出码 0）：**Test Files 297 passed | 4 skipped (301)；Tests 6472 passed | 14 skipped (6486)**，无失败或未处理错误。相较审查前新增 17 项模拟回归。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid，退出码 0；`/Library/Developer/CommandLineTools/usr/bin/git diff --check`：通过；指定 Git 的 `diff -- src/client src/shared/cli-management.ts`：无差异。
+  - （未执行：本轮禁止联网、真实安装/CLI/脚本/npm/brew/hdiutil/安装程序、build 与 Git 提交；所有新增测试均标「模拟」。桌面来源/发布者核实和真实平台验收仍未完成，5.2 保留未勾选。）
 
 ## 6. 「更新 CLI」设置页前端 〔前端｜14h｜前置 2〕
 - [x] 6.1 导航入口、徽标与转圈；页头（检查更新、全部更新）；分区与统一折叠按钮
@@ -96,7 +122,7 @@
 - [x] 6.3 加载与重排：缓存直显、缺的进「检查中」、最多两次重排、展开与进行中的行不动、滚动锚点、30 秒上限、整页错误与重试、`aria-busy` 与播报
   - 纯函数 `cli-update-layout.ts`（14 项测试）；30 秒截止在 Host 的 check。整页错误只在没有可显示快照时出现，已有结果时改为分区上方的错误行加「重试」（新增测试覆盖）。
 - [ ] 6.4 展开区：下载进度与续传次数、命令与输出、结果状态、手动方法气泡、安装位置气泡
-  - 界面已按快照字段实现并用模拟快照测试（`readable=false` 显示「下载进度无法读取」）。Phase B 已提供操作及安装位置 Remote；（未执行：本次禁止修改 src/client/**、构建和真实更新，尚未进行界面与实际操作快照的可视核对；首次安装仍待第三阶段。）
+  - 界面已按快照字段实现并用模拟快照测试（`readable=false` 显示「下载进度无法读取」）。Phase B/C 已提供操作、安装位置与首次安装后端；（未执行：本次禁止修改 src/client/**、构建和真实更新/安装，尚未进行界面与实际操作快照的可视核对；桌面安装来源仍待核实。）
 - [x] 6.5 下载设置：下载源下拉与自定义地址、检查连接
   - `cli-download-source.tsx` + `NativeChoice` 新增说明行 / 分隔线参数；8 项测试。
 - [x] 6.6 文案进 `client-localization` 词表；`doc/settings-ui-design.md` 同步新增参数
@@ -112,13 +138,16 @@
   - 阶段 A + 前端整合（2026-11-13）：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.2）；`corepack pnpm vitest run` 289 文件 6358 项通过、14 项跳过（首轮 8 项失败：`panel.test.tsx` 的组件桩缺新图标、`cleanup-persistence.test.ts` 的账号桩缺 `isBusy`，已补；`native-agy-acp`、`native-bridge-time-limit` 两个计时类测试在满载时偶发超时，单独与第二轮全量均通过）；`corepack pnpm build:preview` 成功。阶段 B/C 后需重跑。
   - Phase B：最终 typecheck、关联 4 文件 46 项、沙箱外全量 293 文件 6408 项通过，详见 4.7。（未执行：本次用户明确禁止 build / build:preview，因此本组合任务保持未勾选；不把 Phase A 构建当作 Phase B 构建证据。）
   - 阶段 B 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 294 文件 6432 项通过、14 项跳过（首轮 `native-workbuddy.test.ts` 2 项在满载时失败，该文件自 a955675 起未改动，单独连跑 3 次 39 项全过，第二轮全量全过）；`corepack pnpm build:preview` 成功。构建曾报 TS2774：Host 注册页面 Remote 后生成类型把 11 个方法变为必有，已在 `src/client/workers.ts` 的 Omit 中排除并改回可选（`pnpm typecheck` 未发现此问题，只有隔离构建能发现）。阶段 C 后需重跑。
+  - Phase C：typecheck、关联 13 文件 507 项、沙箱外全量 296 文件 6455 项通过，命令与完整统计见 5.3。（未执行：阶段 C 明确禁止 build / build:preview，本项保留未勾选。）
+  - 阶段 C 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6472 项通过、14 项跳过；`corepack pnpm build:preview` 成功；严格校验通过；`src/client`、`src/shared` 无改动。核对 `first-party-account-paths.ts` 与原写法一致（Codex 路径 resolve，Claude 路径不 resolve，绝对路径检查保留）。
 - [ ] 7.2 预览台与设计稿 15 张逐张截图对照，差异修完再截
   - （未执行：Phase B 仅后端与模拟测试，禁止构建及修改 Client；可视验收留待整合阶段。）
 - [ ] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
   - （未执行：本次明确禁止真实 CLI 安装、更新、npm、brew 及 --version；已有模拟证据不能替代真实更新验收。）
 - [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
-  - （未执行：首次安装属于第三阶段，且本次明确禁止真实安装。）
+  - （未执行：Phase C 已实现首次安装和模拟回归，但本次明确禁止真实安装；三个桌面源仍未核实。）
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
   - （未执行：本次没有 Windows 真实环境验收且禁止真实更新；Windows argv 与目录选择器仅用模拟夹具验证。）
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
   - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
+  - Phase C 已同步 README、doc/design.md 和本变更 design.md 的首次安装行为、脚本信任边界与桌面 manual 限制。（未执行：新页面与五类预加载的整体验收说明仍待整合，本项不以首次安装文档更新代替全部完成。）

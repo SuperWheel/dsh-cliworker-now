@@ -28,7 +28,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
   }
   const files: { path: string; size: number; mtimeMs: number }[] = []
   for (const name of await readdir(directory)) {
-    if (!/^[a-f0-9-]{36}\.(?:part|tgz)$/.test(name)) continue
+    if (!/^[a-f0-9-]{36}\.(?:part|tgz|sh|ps1|dmg|exe)$/.test(name)) continue
     const path = join(directory, name), info = await lstat(path)
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) continue
     if (now - info.mtimeMs > DOWNLOAD_RETENTION_MS) await unlink(path)
@@ -43,12 +43,14 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
 }
 /** Host-owned downloads, including npm's main tarball; external dependencies expose no invented progress. */
 export async function downloadCliArtifact(options: {
-  root: string; url: string; integrity: string; signal: AbortSignal
+  root: string; url: string; integrity?: string; expectedBytes?: number; officialScript?: boolean; signal: AbortSignal
   progress(value: CliDownloadProgress): void
   fetcher?: typeof hostFetch
 }): Promise<string> {
   if (customRegistryProblem(options.url)) throw new CliOperationError('NETWORK', '下载地址必须为不含凭据的 HTTPS 地址')
-  const integrity = parseIntegrity(options.integrity), directory = await prepareDownloads(options.root)
+  const integrity = options.integrity ? parseIntegrity(options.integrity) : undefined
+  if (!integrity && !options.officialScript && !(Number.isSafeInteger(options.expectedBytes) && options.expectedBytes! > 0)) throw new CliOperationError('INTEGRITY_MISMATCH', '缺少官方摘要或长度')
+  const directory = await prepareDownloads(options.root)
   options.signal.throwIfAborted()
   const file = join(directory, `${randomUUID()}.part`), handle = await open(file, 'wx', 0o600)
   let bytes = 0, total: number | undefined, resumes = 0, lastByte = Date.now(), lastReported = lastByte, lastBytes = 0
@@ -108,9 +110,12 @@ export async function downloadCliArtifact(options: {
       resumes++; report()
     }
     await handle.sync(); global.throwIfAborted()
-    const hash = createHash(integrity.algorithm)
-    for await (const chunk of createReadStream(file)) { global.throwIfAborted(); hash.update(chunk) }
-    if (!timingSafeEqual(hash.digest(), integrity.digest)) { remove = true; throw new CliOperationError('INTEGRITY_MISMATCH', '下载文件与官方校验值不符，已删除临时文件') }
+    if (options.expectedBytes !== undefined && bytes !== options.expectedBytes) { remove = true; throw new CliOperationError('INTEGRITY_MISMATCH', '下载文件与官方长度不符') }
+    if (integrity) {
+      const hash = createHash(integrity.algorithm)
+      for await (const chunk of createReadStream(file)) { global.throwIfAborted(); hash.update(chunk) }
+      if (!timingSafeEqual(hash.digest(), integrity.digest)) { remove = true; throw new CliOperationError('INTEGRITY_MISMATCH', '下载文件与官方校验值不符，已删除临时文件') }
+    }
     report(); return file
   } catch (error) {
     if (options.signal.aborted) { remove = true; throw options.signal.reason }

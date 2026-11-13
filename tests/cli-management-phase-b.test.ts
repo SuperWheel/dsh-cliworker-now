@@ -142,9 +142,9 @@ describe('模拟：受控更新计划与服务', () => {
     child.finish(); child.exit(true); await pending
     expect(f.backend.spawn).toHaveBeenCalledTimes(1); expect(f.service.snapshot().queue).toEqual([]); expect(f.service.snapshot().results[0]?.phase).toBe('cancelled')
   })
-  it('install 明确尚未支持，所有 17 CLI 不启动安装', () => {
+  it('模拟：缺少本机路径存储时所有 17 CLI 不启动安装', () => {
     const f = fixture()
-    for (const cli of CLI_IDS) expect(() => f.service.start(cli, 'install', '', '', 'install')).toThrow('首次安装尚未支持')
+    for (const cli of CLI_IDS) expect(() => f.service.start(cli, 'install', '', '', 'install')).toThrow('缺少本机路径存储')
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
 })

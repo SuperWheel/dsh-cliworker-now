@@ -2374,6 +2374,7 @@ export class CliWorkerService extends TypertRemoteService {
   async startCliOperation(parentSessionId: string, cli: string, intent: 'update' | 'install', planToken: string, installDirectory: string, requestId: string, signal: AbortSignal): Promise<string> {
     try {
       const parent = await this.parent(parentSessionId)
+      this.cliManagement.context(this.project(parent))
       this.assertExecution(parent)
       signal.throwIfAborted()
       const id = validate.enum(CLI_IDS).parse(cli), action = validate.enum(['update', 'install']).parse(intent)
@@ -2404,7 +2405,7 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param path - Proposed directory. @param signal - Query lifetime. @returns Directory check JSON. */
   @Remote('checkInstallDirectory')
   async checkInstallDirectory(parentSessionId: string, cli: string, path: string, signal: AbortSignal): Promise<string> {
-    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.checkDirectory(validate.enum(CLI_IDS).parse(cli), validate.string().max(4096).parse(path), signal)) }
+    try { this.cliManagement.context(this.project(await this.parent(parentSessionId))); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.checkDirectory(validate.enum(CLI_IDS).parse(cli), validate.string().max(4096).parse(path), signal)) }
     catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Machine-local download settings JSON. */

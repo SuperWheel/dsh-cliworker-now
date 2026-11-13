@@ -1,4 +1,5 @@
 import { readCodebuddyAccountBindingMaterial, CodebuddyAccountError } from './codebuddy-account.ts'
+import { codexConfigDirectory, claudeConfigDirectory } from './first-party-account-paths.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { readWorkBuddyMetadata } from './workbuddy-metadata.ts'
 import {
@@ -198,7 +199,7 @@ function codexConfigPaths(root: string, project: string) {
   return [...new Set([join(root, 'config.toml'), ...ancestors])]
 }
 async function codexStore(project: string, signal: AbortSignal) {
-  const root = resolve(process.env.CODEX_HOME?.trim() || join(homedir(), '.codex'))
+  const root = codexConfigDirectory()
   let store = 'file'
   for (const path of codexConfigPaths(root, project)) {
     const raw = await read(path, signal)
@@ -486,7 +487,7 @@ async function material(
           return {
             sourceIds: [
               resolve(
-                route.configDirectory || process.env.CLAUDE_CONFIG_DIR?.trim() || join(home, '.claude'),
+                route.configDirectory || claudeConfigDirectory(process.env, home),
               ),
               'native:claude-auth-status',
             ],

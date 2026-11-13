@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { rename, unlink } from 'node:fs/promises'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { nativeLaunchArgv } from '../native-launch.mjs'
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
@@ -17,6 +19,16 @@ import { executeCliOperation, outputTail } from './executor.ts'
 import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
 import { resolveNpmRuntime } from './npm.ts'
 import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
+import { CliInstaller, type InstallPlan } from './install.ts'
+import type { CliOperationPlan } from './planner.ts'
+import { installationSource } from './sources.ts'
+import { codexConfigDirectory, claudeConfigDirectory } from '../first-party-account-paths.ts'
+import { mimoConfigurationPaths } from '../mimo-configuration.ts'
+import { qoderConfigDirectory } from '../qoder-accounts.ts'
+import { codebuddyAuthDirectory } from '../codebuddy-account.ts'
+import { effectiveHermesHome } from '../hermes-account-context.ts'
+import { zcodeAuthDirectory } from '../zcode-adapter.ts'
+import { openCodeAuthDirectory } from '../opencode-adapter.ts'
 
 /** Audited file-only AccountManager.status branches. All others are skipped:
  * Grok/Hermes renew tokens; WorkBuddy bootstraps keys/config; Claude prepares a
@@ -63,9 +75,12 @@ export class CliManagementService {
   private cleanupCli?: ActiveCliId
   private quarantined = new Map<ActiveCliId, () => void>()
   private readonly releases: ReleaseClient
+  private readonly installer?: CliInstaller
+  private projects = new Set<string>()
   constructor(private deps: Dependencies) {
     this.maintenance = deps.config.cliMaintenance ?? new CliMaintenance()
     this.cache = new CliManagementCache(deps.root); this.releases = deps.releases ?? new ReleaseClient()
+    if (deps.config.cliExecutablePaths) this.installer = new CliInstaller({ root: deps.root, config: deps.config, backend: deps.backend, releases: this.releases, fetcher: deps.artifactFetch, identify: deps.identify, version: deps.version })
     const cached = this.cache.entries()
     this.state = { revision: 0, activity: 'idle', entries: CLI_IDS.map(cli => ({ ...(cached.find(e => e.cli === cli) ?? { cli, installed: false, group: 'checking' as const }), install: installOffer(cli) })), queue: [], results: [] }
     // Categories are deliberately separate: all file checks before any version/query work.
@@ -85,7 +100,7 @@ export class CliManagementService {
     this.track(prepareDownloads(deps.root)).catch(() => undefined)
     this.preloader.start()
   }
-  context(project: string) { this.project = project }
+  context(project: string) { this.project = project; this.projects.add(project) }
   snapshot(): CliUpdateSnapshot { return structuredClone(this.state) }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private changed() { this.state.revision++; for (const listener of this.listeners) listener() }
@@ -122,7 +137,7 @@ export class CliManagementService {
         const row = this.entry(cli)
         if (!row.installed || !row.currentVersion || row.group === 'manual') unfinished.delete(cli)
       }, signal)
-      await this.pool(CLI_IDS, 3, async cli => { await this.remote(cli, signal, scope === 'all'); unfinished.delete(cli) }, signal)
+      await this.pool(CLI_IDS, 3, async cli => { await this.remote(cli, signal, scope === 'all'); if (!this.entry(cli).installed || !this.entry(cli).currentVersion) await this.installEntry(cli, '', signal); unfinished.delete(cli) }, signal)
       // Finish the safe account portion of the handed-off queue as well.
       await this.pool(BACKGROUND_ACCOUNT_CLIS, 3, cli => this.preloadAccount(cli, signal), signal)
       if (!signal.aborted) this.state.checkedAt = Date.now()
@@ -142,6 +157,7 @@ export class CliManagementService {
   private async local(cli: ActiveCliId, signal: AbortSignal, background: boolean, pathOnly: boolean) {
     this.assertHealthy(); signal.throwIfAborted()
     const old = this.entry(cli)
+    const oldPath = this.deps.config.cliExecutablePaths?.read(cli)?.path
     const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), 5000)
     const control = AbortSignal.any([signal, timer.signal])
     if (!pathOnly) this.publish(cli, { stage: 'local' })
@@ -151,7 +167,7 @@ export class CliManagementService {
       if (!identity) {
         // No recorded background path is not evidence that this CLI is absent.
         if (background) { this.publish(cli, { stage: undefined }); return }
-        this.identities.delete(cli); this.publish(cli, { installed: false, group: 'notInstalled', reason: 'NOT_INSTALLED', currentVersion: undefined, source: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true); return
+        this.identities.delete(cli); this.publish(cli, { installed: false, group: 'notInstalled', reason: 'NOT_INSTALLED', reasonDetail: oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined, currentVersion: undefined, source: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true); return
       }
       this.identities.set(cli, identity)
       if (pathOnly) return
@@ -177,7 +193,7 @@ export class CliManagementService {
       const code = (error as NodeJS.ErrnoException)?.code
       const missing = ['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes(code ?? '') || (error as { reason?: string }).reason === 'not-installed'
       this.identities.delete(cli)
-      this.publish(cli, { installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
+      this.publish(cli, { installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: missing && oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
     } finally { clearTimeout(timeout) }
   }
   private async remote(cli: ActiveCliId, signal: AbortSignal, force: boolean) {
@@ -237,6 +253,20 @@ export class CliManagementService {
     finally { clearTimeout(timeout) }
   }
   private track<T>(operation: Promise<T>) { this.pending.add(operation); void operation.finally(() => this.pending.delete(operation)).catch(() => undefined); return operation }
+  private async installEntry(cli: ActiveCliId, directory: string, signal: AbortSignal) {
+    if (!this.installer) return
+    this.assertHealthy()
+    try {
+      const plan = await this.planCliOperation(cli, 'install', signal, { registry: this.effectiveRegistry(), installDirectory: directory })
+      this.publish(cli, { install: plan.offer, planToken: plan.token, latestCompatibleVersion: validVersion(plan.target) ? plan.target : undefined,
+        reasonDetail: plan.source.reason ?? this.entry(cli).reasonDetail })
+    } catch (error) {
+      if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.cleanupCli = cli; this.deps.cleanup?.(cli, error); this.preloader.changed() }
+      signal.throwIfAborted()
+      const source = installationSource(cli)
+      this.publish(cli, { planToken: undefined, install: { ...installOffer(cli), method: source.method, prerequisites: [{ name: '安装准备', required: '可核实的版本、路径和运行时', satisfied: false }] } })
+    }
+  }
   downloadSource(signal: AbortSignal): Promise<CliDownloadSourceSettings> {
     return this.track((async () => { await this.registry(AbortSignal.any([signal, this.lifetime.signal])); return { ...this.cache.settings(), ...(this.followRegistry ? { followRegistry: this.followRegistry } : {}) } })())
   }
@@ -259,8 +289,14 @@ export class CliManagementService {
     })())
   }
   /** Host-only planning: inputs never include commands, URLs or environment variables. */
-  async planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', signal: AbortSignal, selected?: { target?: string; registry: string }) {
+  async planCliOperation(cli: ActiveCliId, intent: 'update', signal: AbortSignal, selected?: { target?: string; registry: string }): Promise<CliOperationPlan>
+  async planCliOperation(cli: ActiveCliId, intent: 'install', signal: AbortSignal, selected?: { registry: string; installDirectory?: string }): Promise<InstallPlan>
+  async planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', signal: AbortSignal, selected?: { target?: string; registry: string; installDirectory?: string }) {
     this.assertHealthy()
+    if (intent === 'install') {
+      if (!this.installer) throw new CliOperationError('PREREQUISITE_MISSING', '首次安装不可用：缺少本机路径存储')
+      return this.installer.prepare(cli, selected?.registry ?? this.effectiveRegistry(), selected?.installDirectory ?? '', signal)
+    }
     const identity = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, signal)
     const version = identity && await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, signal)
     signal.throwIfAborted()
@@ -273,18 +309,18 @@ export class CliManagementService {
       return { ...this.snapshot(), operation: structuredClone(previous.operation) }
     }
     this.assertHealthy()
-    if (intent === 'install') throw new CliOperationError('PREREQUISITE_MISSING', '首次安装尚未支持，将在第三阶段提供')
+    if (intent === 'install' && !this.installer) throw new CliOperationError('PREREQUISITE_MISSING', '首次安装不可用：缺少本机路径存储')
     if (!requestId || requestId.length > 256 || !/^[a-f0-9]{64}$/.test(token)) throw new CliOperationError('PLAN_EXPIRED', '请求或计划无效，请重新检查更新')
     if (this.state.operation || this.state.queue.length) throw new CliBusyError(0)
-    this.launch(cli, token, `single:${requestId}`, signature)
+    this.launch(cli, token, `single:${requestId}`, signature, intent, directory)
     return this.snapshot()
   }
-  private launch(cli: ActiveCliId, token: string, requestId: string, signature: string) {
+  private launch(cli: ActiveCliId, token: string, requestId: string, signature: string, intent: 'update' | 'install' = 'update', directory = '') {
     // Check external workers/accounts and acquire the lease in this same JS turn.
     this.deps.assertUpdateAllowed?.(cli)
     const release = this.maintenance.begin(cli, () => this.deps.busy?.(cli) ?? { workers: 0, accounts: false })
     const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion }
-    const op: CliUpdateOperation = { id: randomUUID(), cli, intent: 'update', phase: 'preparing', startedAt: Date.now(), outputTail: '' }
+    const op: CliUpdateOperation = { id: randomUUID(), cli, intent, phase: 'preparing', startedAt: Date.now(), outputTail: '' }
     this.requests.set(requestId, { signature, operation: op })
     this.state.operation = op; this.state.results = this.state.results.filter(item => item.cli !== cli)
     this.operationController = new AbortController()
@@ -298,6 +334,24 @@ export class CliManagementService {
         this.assertHealthy(); signal.throwIfAborted()
         const preparation = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
         await this.registry(preparation)
+        if (intent === 'install') {
+          const plan = await this.planCliOperation(cli, 'install', preparation, { registry: selected.registry, installDirectory: directory })
+          if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装方法、路径、前缀、目标或运行时已变化，请重新检查')
+          const recheck = async () => {
+            const control = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+            const fresh = await this.planCliOperation(cli, 'install', control, { registry: selected.registry, installDirectory: directory })
+            if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装计划已变化')
+            if (fresh.problem) throw new CliOperationError(fresh.problem, '安装前置条件已变化，请重新检查')
+            if (plan.source.method === 'desktop') {
+              const location = await this.checkDirectory(cli, plan.directory, control)
+              if (location.problem) throw new CliOperationError('LOCATION_INVALID', location.message!)
+            }
+          }
+          const result = await this.installer!.execute(plan, op, signal, () => this.changed(), recheck)
+          this.identities.set(cli, result.identity); this.cache.invalidateVersion(cli); this.cache.rememberVersion(cli, result.identity.fingerprint, result.version); this.deps.invalidateModels?.(cli)
+          this.publish(cli, { installed: true, source: result.identity.source, currentVersion: result.version, group: plan.source.method === 'npm' ? 'latest' : 'manual', reason: undefined, reasonDetail: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true)
+          op.phase = 'succeeded'; return
+        }
         const plan = await this.planCliOperation(cli, 'update', preparation, selected)
         if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
@@ -403,11 +457,25 @@ export class CliManagementService {
     this.cleanupFailure = undefined; this.cleanupCli = undefined; this.preloader.changed(); this.changed()
   }
   async checkDirectory(cli: ActiveCliId, path: string, signal: AbortSignal) {
-    return this.track(checkInstallDirectory(cli, path, AbortSignal.any([signal, this.lifetime.signal])))
+    const control = AbortSignal.any([signal, this.lifetime.signal])
+    const other = cli === 'workbuddy' ? 'workbuddycn' : cli === 'workbuddycn' ? 'workbuddy' : undefined
+    const otherPath = other && this.deps.config.cliExecutablePaths?.read(other)?.path
+    const otherDirectory = otherPath ? /^(.*?\.app)(?:\/|$)/.exec(otherPath)?.[1] ?? dirname(otherPath) : undefined
+    const mimo = mimoConfigurationPaths()
+    const protectedPaths = [...this.projects, this.deps.root,
+      codexConfigDirectory(), claudeConfigDirectory(), mimo.config, mimo.data, join(mimo.home, '.mimocode'),
+      qoderConfigDirectory(process.env, 'qoder'), qoderConfigDirectory(process.env, 'qodercn'), codebuddyAuthDirectory(),
+      effectiveHermesHome(this.deps.config), zcodeAuthDirectory(this.deps.config.zcodeAuthDirectory, this.deps.root), openCodeAuthDirectory(this.deps.root),
+      ...['.dsh', '.codex', '.claude', '.kimi', '.kimi-code', '.mimocode', '.grok', '.pi', '.omp', '.hermes', '.qoder', '.qoder-cn', '.codebuddy', '.trae', '.workbuddy', '.workbuddy-cn'].map(p => join(homedir(), p)),
+      ...[process.env.KIMI_CODE_HOME, process.env.DSH_HOME].filter((p): p is string => !!p)]
+    return this.track(checkInstallDirectory(cli, path, control, undefined, { protectedPaths, otherWorkBuddyDirectory: otherDirectory }).then(async result => {
+      if (!result.problem && !this.state.operation && this.installer && (!this.entry(cli).installed || !this.entry(cli).currentVersion)) await this.installEntry(cli, result.path, control)
+      return result
+    }))
   }
   async chooseDirectory(cli: ActiveCliId, signal: AbortSignal) {
     this.assertHealthy()
-    return this.track(chooseInstallDirectory(cli, this.deps.backend, this.deps.config, AbortSignal.any([signal, this.lifetime.signal])).catch(error => {
+    return this.track(chooseInstallDirectory(cli, this.deps.backend, this.deps.config, AbortSignal.any([signal, this.lifetime.signal])).then(result => result.problem || !result.path ? result : this.checkDirectory(cli, result.path, signal)).catch(error => {
       if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.deps.globalCleanup?.(error); this.preloader.changed() }
       throw error
     }))

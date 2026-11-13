@@ -1,4 +1,5 @@
 import { createConnection } from 'node:net'
+import { claudeConfigDirectory } from './first-party-account-paths.ts'
 import { homedir } from 'node:os'
 import { join, isAbsolute, resolve } from 'node:path'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
@@ -198,7 +199,7 @@ export async function claudeLoopbackAvailable(url: URL, signal: AbortSignal): Pr
 
 async function readClaudeSettings(project: string, signal: AbortSignal) {
   signal.throwIfAborted()
-  const root = process.env.CLAUDE_CONFIG_DIR?.trim() || join(homedir(), '.claude')
+  const root = claudeConfigDirectory()
   if (!isAbsolute(root)) throw new ClaudeOwnRouteError('Claude 账号目录必须使用绝对路径')
   const paths = [
     join(root, 'settings.json'),

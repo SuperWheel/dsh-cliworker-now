@@ -25,8 +25,7 @@ export function automaticMethod(cli: ActiveCliId, identity: InstallationIdentity
 export function operationToken(cli: ActiveCliId, identity: InstallationIdentity, target: string | undefined, registry: string, before = identity.manifestVersion): string {
   return createHash('sha256').update(JSON.stringify([process.platform, cli, 'update', identity, before, target, registry, automaticMethod(cli, identity), CLI_SOURCES[cli].update])).digest('hex')
 }
-export function planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', identity: InstallationIdentity | undefined, before: string | undefined, target: string | undefined, registry: string): CliOperationPlan {
-  if (intent === 'install') throw new CliOperationError('PREREQUISITE_MISSING', '首次安装尚未支持，将在第三阶段提供')
+export function planCliOperation(cli: ActiveCliId, intent: 'update', identity: InstallationIdentity | undefined, before: string | undefined, target: string | undefined, registry: string): CliOperationPlan {
   const method = identity && automaticMethod(cli, identity)
   if (!identity || !method) throw new CliOperationError('PREREQUISITE_MISSING', '安装归属或自动更新方法尚未核实，请按官方说明手动更新')
   if (!validVersion(before) || !validVersion(target) || !compatible(cli, target) || !updateAvailable(before, target)) throw new CliOperationError('PLAN_EXPIRED', '目标版本尚未核实或未适配，请重新检查更新')

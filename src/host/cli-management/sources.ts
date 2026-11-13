@@ -1,5 +1,8 @@
 import type { ActiveCliId } from '../../shared/types.ts'
 import type { CliInstallOffer } from '../../shared/cli-management.ts'
+import { homedir } from 'node:os'
+import { relative } from 'node:path'
+import { windowsCliCandidates } from '../windows-cli-installation.ts'
 
 export interface CliSource {
   npm?: string
@@ -46,3 +49,40 @@ export function installOffer(cli: ActiveCliId): CliInstallOffer {
 
 /** Audited account projections read local files only; no native discovery or renewal. */
 export const BACKGROUND_ACCOUNT_CLIS: readonly ActiveCliId[] = ['mimo', 'codebuddy']
+
+export interface InstallSource {
+  method: 'npm' | 'script' | 'desktop' | 'manual'
+  command: string
+  nodeMinimum?: string
+  script?: { url: string; interpreter: readonly string[]; relativeEntry: string }
+  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; version: string; commonDirectories?: readonly string[] }
+  reason?: string
+}
+/** PRD 5.3 evidence only. Missing feeds/flags/runtime guarantees are not inferred. */
+export function installationSource(cli: ActiveCliId, platform = process.platform): InstallSource {
+  const command = ({ antigravity: 'agy', qoder: 'qodercli', qodercn: 'qoderclicn', traecn: 'traecli' } as Partial<Record<ActiveCliId, string>>)[cli] ?? cli
+  const manual = (reason: string): InstallSource => ({ method: 'manual', command, reason })
+  if (['zcode', 'workbuddycn', 'workbuddy'].includes(cli)) return manual('官方安装包地址、摘要或长度及开发者身份尚未核实，请按官方说明安装')
+  if (cli === 'antigravity') return manual('脚本的运行时前置条件和安装后版本读法尚未核实')
+  if (cli === 'omp' || cli === 'hermes') return manual('安装脚本可能代装运行时，尚无已核实的禁止代装参数；请按官方说明安装')
+  if (cli === 'grok') return manual('安装后无副作用的版本读法尚未核实')
+  if (cli === 'claude' || cli === 'mimo' && platform !== 'win32') return manual('官方原生安装的清单/版本目录语义及无副作用版本读法尚未核实，请按官方说明安装')
+  if (cli === 'codex' || cli === 'pi' || cli === 'codebuddy' || platform === 'win32' && (cli === 'mimo' || cli === 'opencode'))
+    return { method: 'npm', command, nodeMinimum: cli === 'pi' ? '22.19.0' : cli === 'codebuddy' ? '18.20.0' : cli === 'mimo' ? '18.0.0' : undefined }
+  if (cli === 'opencode') return manual('官方脚本没有已核实的精确 V1 选择参数，不能保证只安装已适配代际')
+  const scripts: Partial<Record<ActiveCliId, [string, string, string]>> = {
+    claude: ['https://claude.ai/install.sh', 'https://claude.ai/install.ps1', '.local/bin/claude'],
+    kimi: ['https://code.kimi.com/kimi-code/install.sh', 'https://code.kimi.com/kimi-code/install.ps1', '.kimi-code/bin/kimi'],
+    mimo: ['https://mimo.xiaomi.com/install', '', '.mimocode/bin/mimo'],
+    qoder: ['https://qoder.com/install', 'https://qoder.com/install.ps1', '.qoder/bin/qodercli'],
+    qodercn: ['https://static.qoder.com.cn/qoder-cli-cn/install.sh', 'https://static.qoder.com.cn/qoder-cli-cn/install.ps1', '.qoder-cn/bin/qoderclicn'],
+    traecn: ['https://trae.cn/trae-cli/install_v2.sh', 'https://trae.cn/trae-cli/install_v2.ps1', '.local/bin/traecli'],
+  }
+  if ((cli === 'qoder' || cli === 'qodercn') && platform !== 'win32') return manual('macOS 官方脚本的默认入口尚未核实')
+  if (cli === 'traecn' && platform === 'win32') return manual('Windows 官方脚本默认入口尚未核实')
+  const script = scripts[cli]
+  if (!script || platform !== 'darwin' && platform !== 'linux' && platform !== 'win32') return manual('此平台的官方安装方法尚未核实')
+  const relativeEntry = cli === 'qoder' || cli === 'qodercn'
+    ? relative(homedir(), windowsCliCandidates(cli)[0]!) : script[2]
+  return { method: 'script', command, script: { url: platform === 'win32' ? script[1] : script[0], interpreter: platform === 'win32' ? ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'] : ['/bin/bash'], relativeEntry } }
+}
