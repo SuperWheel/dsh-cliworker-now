@@ -1,0 +1,10 @@
+pm:
+  title: 「更新 CLI」设置页：检查、更新、安装与后台预加载
+  version: 0.8.10
+  creator: leeyl
+  creator_name: Leeyl
+  prd: doc/prd/2026-11-13-cli-update-PRD.md
+  previous_names:
+    - vnext-cli-update-page-leeyl
+schema: pmspec
+created: 2026-11-13

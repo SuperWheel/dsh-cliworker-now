@@ -1,4 +1,8 @@
 schema: spec-driven
 created: 2026-11-12
 pm:
+  title: 适配 DeepSeek Harness 0.2.2-rc.2
+  version: 0.8.10
+  creator: leeyl
+  creator_name: Leeyl
   archived: 2026-11-13
