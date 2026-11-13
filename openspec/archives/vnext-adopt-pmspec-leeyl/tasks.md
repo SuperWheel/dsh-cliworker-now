@@ -56,6 +56,7 @@
   - 证据：`vendor/pmspec-1.14.1-pm.2.tgz`（sha256 前缀 `ba3be41ae0c62a50`，与面板仓库 `downloads/` 清单一致）；`corepack pnpm install --prefer-offline` 后 `pnpm spec --version` 为 `1.14.1-pm.2`
   - 证据：`pnpm spec update --force` 重新生成 6 个 `pmspec-*` 技能；`pmspec validate --all --strict` 32 项全部通过
   - 证据：`doc/openspec.md` 改为固定 pm.2，升级说明写明下载后核对 sha256 再放进 vendor
+  - 证据：经用户批准发布妙搭（release 7707545328510323743，提交 d1e3419，状态 finished）；线上 `pmspec-1.14.1-pm.2.tgz` 返回 200，响应头、文件与清单的 sha256 一致，且与 vendor 中的包逐字节相同；pm.1 已返回 404
 - [x] 5.4 修复预演中发现的面板同步缺陷
   - 证据：面板仓库提交 `3509050`：tasks/sync 新增 `archived`，来源行指向 archives；「未执行：」前缀去重；已完成任务保留原完成日期；`sync-tasks.mjs` 完成日期改用 `git log --follow --diff-filter=AM`；pmspec 接受 `1b.` 这类主任务编号
   - 证据：面板类型检查、lint、`npm test` 1400 项、服务端构建通过；pmspec `vitest run` 218 个文件 6393 项通过
