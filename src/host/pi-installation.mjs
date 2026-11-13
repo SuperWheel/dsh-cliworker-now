@@ -5,7 +5,9 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { resolveNativeEntry } from './native-launch.mjs'
 
-const versions = new Set(['1.0.2', '1.0.4', '1.1.0'])
+export const PI_SUPPORTED_VERSIONS = Object.freeze(['1.0.2', '1.0.4', '1.1.0'])
+export const isSupportedPiVersion = version => PI_SUPPORTED_VERSIONS.includes(version)
+const validManagementVersion = version => typeof version === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)
 const failure = () =>
   Object.assign(
     new Error('Pi 安装身份或原生接口不匹配；需要 Pi Coding Agent 1.0.2、1.0.4 或 1.1.0，不能使用 OMP 入口'),
@@ -19,12 +21,12 @@ function metadata(path) {
 // Exact official Windows managed launcher inspected from Pi 1.1.0. It is read as
 // installation metadata, never evaluated. Unknown bootstrap code fails closed.
 const managedWindowsLauncherSHA256 = '3d8b27bb3f5c07543303b0ee774ce215e4d6ae2b0ae43311c4acf51f517ffd13'
-function windowsManagedEntry(launcher) {
+function windowsManagedEntry(launcher, accepts = isSupportedPiVersion) {
   const source = metadata(launcher).trim().replace(/\r\n/g, '\n')
   if (createHash('sha256').update(source).digest('hex') !== managedWindowsLauncherSHA256) throw failure()
   const install = join(dirname(dirname(launcher)), 'install')
   const version = metadata(join(install, 'current-version')).trim()
-  if (!versions.has(version)) throw failure()
+  if (!accepts(version)) throw failure()
   const directory = resolve(install, 'releases', version, 'node_modules/@earendil-works/pi-coding-agent')
   // A version pointer/package symlink must not select code outside this release.
   if (realpathSync(directory) !== directory) throw failure()
@@ -38,7 +40,9 @@ function windowsManagedEntry(launcher) {
   return entry
 }
 
-export function inspectPiInstallation(entry) {
+export function inspectPiInstallation(entry, { allowUnsupported = false } = {}) {
+  // Management can inspect a new release without granting Worker compatibility.
+  const accepts = allowUnsupported ? validManagementVersion : isSupportedPiVersion
   try {
     let executable = realpathSync(entry)
     if (
@@ -49,7 +53,7 @@ export function inspectPiInstallation(entry) {
       if (launcher.includes('PI_MANAGED_INSTALL_ROOT=') && launcher.includes('install/current-version')) {
         const install = join(dirname(dirname(executable)), 'install')
         const version = metadata(join(install, 'current-version')).trim()
-        if (!versions.has(version)) throw failure()
+        if (!accepts(version)) throw failure()
         executable = realpathSync(
           join(install, 'releases', version, 'node_modules/@earendil-works/pi-coding-agent/dist/cli.js'),
         )
@@ -57,7 +61,7 @@ export function inspectPiInstallation(entry) {
     }
     executable = realpathSync(resolveNativeEntry(executable))
     if (basename(executable).toLowerCase() === 'pi-launcher.js' && basename(dirname(executable)) === 'bin')
-      executable = windowsManagedEntry(executable)
+      executable = windowsManagedEntry(executable, accepts)
     let directory = dirname(executable)
     for (let depth = 0; depth < 5; depth++, directory = dirname(directory)) {
       let manifest
@@ -66,11 +70,11 @@ export function inspectPiInstallation(entry) {
       } catch {
         continue
       }
-      if (manifest.name !== '@earendil-works/pi-coding-agent' || !versions.has(manifest.version))
+      if (manifest.name !== '@earendil-works/pi-coding-agent' || !accepts(manifest.version))
         throw failure()
       const dist = join(directory, 'dist')
       if (![join(dist, 'cli.js'), join(dist, 'bundle/cli.js')].includes(executable)) throw failure()
-      for (const relative of ['cli.js', 'index.js', 'core/model-runtime.js', 'core/auth-storage.js']) {
+      for (const relative of allowUnsupported ? ['cli.js'] : ['cli.js', 'index.js', 'core/model-runtime.js', 'core/auth-storage.js']) {
         if (!statSync(join(dist, relative)).isFile()) throw failure()
       }
       return {

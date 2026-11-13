@@ -1484,6 +1484,14 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 ## 2026-11-13 版本检查实机缺陷修复（未发布）
 
-npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒；仅 Pi/OpenCode 的 latest 不兼容时允许版本列表请求达到 32 MiB。清单缺版本时，前台按实际可执行入口执行有界 --version；后台权限由 sources 数据按主会话提供的实机证据控制，Codex/Qoder 两版仅前台，Hermes 均跳过。版本结果按指纹缓存，Windows 保持现有安全启动链。Codex standalone 归官方安装器且手动更新；Claude cask 的读取、分组、更新计划已有模拟回归。未自行运行真实 CLI，证据记录在本变更 tasks.md 2.8。
+npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒；仅 OpenCode 的 latest 不兼容时允许版本列表请求达到 32 MiB（Pi 限制已按 PRD 5.3.1 取消）。清单缺版本时，前台按实际可执行入口执行有界 --version；后台权限由 sources 数据按主会话提供的实机证据控制，Codex/Qoder 两版仅前台，Hermes 均跳过。版本结果按指纹缓存，Windows 保持现有安全启动链。Codex standalone 归官方安装器（后续 PRD 5.3.1 已开放锁版脚本更新）；Claude cask 的读取、分组、更新计划已有模拟回归。未自行运行真实 CLI，证据记录在本变更 tasks.md 2.8。
 
-2.8 来源复测补充：Qoder/CN 的 `.qoder/entry/qoder`、`.qoder-cn/entry/qodercn` 只按 home 下完整入口匹配 self-update。保留记录入口与 `update` argv，spawn 前检查 homedir/update，存在路径或检查失败即拒绝，避免分发到 IDE；不猜测分发器的 PATH 解析结果，不修改用户路径。Grok 仅在记录入口为 home/.grok/bin/grok 且 realpath 属于 home/.grok/downloads/ 时补认 self-update，无发布源仍手动。模拟验证与外部并发创建路径的预检竞态边界见变更设计和 tasks.md 2.8。
+2.8 来源复测补充：Qoder/CN 的 `.qoder/entry/qoder`、`.qoder-cn/entry/qodercn` 只按 home 下完整入口匹配 self-update。保留记录入口与 `update` argv，spawn 前检查 homedir/update，存在路径或检查失败即拒绝，避免分发到 IDE；不猜测分发器的 PATH 解析结果，不修改用户路径。Grok 仅在记录入口为 home/.grok/bin/grok 且 realpath 属于 home/.grok/downloads/ 时补认 self-update。模拟验证与外部并发创建路径的预检竞态边界见变更设计和 tasks.md 2.8。
+
+## 全部 CLI 自动更新（2026-11-13，PRD 5.3.1）
+
+官方安装以 sources 内置发布 URL 和 argv 为准，npm/brew 归属优先保留原渠道；发布读取统一使用匿名 GET、8 秒、512 KiB、3 并发，只有 OpenCode V1 回退列表可用 32 MiB。后台不调用 CLI check/update。Codex standalone 采用私有下载的官方安装器，CODEX_NON_INTERACTIVE=1 与 --release 锁版；其他原生更新使用已核实子命令，锁版能力写入 Host 计划。无法锁版的命令执行后只要版本前进且仍兼容即成功，展示实际版本；不变、未知、降低仍失败。维护锁、单队列、取消及进程树清理继续共用原实现。
+
+Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道无法由记录核实时显示 unknown，不把 baseVersion 冒充准确 stable tag。其 notice 说明 stable 查询与原 canary/自定义通道的差异，以及迁移配置、依赖和服务重启。Pi 更新取 latest，Worker 适配集合统一导出自 pi-installation；管理页能读未适配包，但 Worker 核对仍严格，notice 明示适配风险。
+
+桌面查询/更新调用 desktop-update 的独立接口；WorkBuddy 保留 CLI 版本，另用 appVersion 比较应用更新，官方 204 映射已是最新。下载适配器只交付已校验完整文件，Windows 扩展名由桌面执行器处理。共享协议仅增加可选 appVersion、notice、channel；前端需显示应用版本及更新前 notice。新增路径未运行真实更新；完整模拟验证与剩余实机验收见本变更 tasks.md 第 8 节。

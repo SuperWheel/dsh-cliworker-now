@@ -10,11 +10,11 @@ import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
 import { identifyInstallation, fingerprintToken, type InstallationIdentity } from './identity.ts'
-import { CLI_SOURCES, installOffer, BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
-import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion } from './versions.ts'
+import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffer, BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
+import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
-import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError } from './planner.ts'
+import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
 import { executeCliOperation, outputTail } from './executor.ts'
 import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
 import { resolveNpmRuntime } from './npm.ts'
@@ -29,6 +29,7 @@ import { codebuddyAuthDirectory } from '../codebuddy-account.ts'
 import { effectiveHermesHome } from '../hermes-account-context.ts'
 import { zcodeAuthDirectory } from '../zcode-adapter.ts'
 import { openCodeAuthDirectory } from '../opencode-adapter.ts'
+import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError, type DesktopRelease } from './desktop-update.ts'
 
 /** Audited file-only AccountManager.status branches. All others are skipped:
  * Grok/Hermes renew tokens; WorkBuddy bootstraps keys/config; Claude prepares a
@@ -76,6 +77,7 @@ export class CliManagementService {
   private quarantined = new Map<ActiveCliId, () => void>()
   private readonly releases: ReleaseClient
   private readonly installer?: CliInstaller
+  private desktopReleases = new Map<ActiveCliId, DesktopRelease>()
   private projects = new Set<string>()
   constructor(private deps: Dependencies) {
     this.maintenance = deps.config.cliMaintenance ?? new CliMaintenance()
@@ -90,7 +92,7 @@ export class CliManagementService {
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, true) })),
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, false) })),
         ...BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadAccount(cli, signal) })),
-        ...CLI_IDS.map(cli => ({ run: async (signal: AbortSignal) => { await this.registry(signal, true); await this.remote(cli, signal, false) } })),
+        ...CLI_IDS.map(cli => ({ run: async (signal: AbortSignal) => { await this.remote(cli, signal, false) } })),
         // No catalog discovery is silently treated as read-only: MiMo can invoke
         // models --refresh; native catalogs create sessions/renew credentials.
         // Existing SettingsCatalogCache stays unchanged; missing model discovery
@@ -182,12 +184,14 @@ export class CliManagementService {
         if (!after || fingerprintToken(after.fingerprint) !== fingerprintToken(identity.fingerprint)) throw new Error('CLI identity changed during version read')
         this.cache.rememberVersion(cli, identity.fingerprint, version)
       }
-      const manual = ['desktop-app', 'winget', 'scoop', 'nix', 'bun', 'pnpm', 'unknown'].includes(identity.source)
+      const problem = updateProblem(cli, identity), manual = !!problem
+      const appVersion = identity.fingerprint.appVersion
       const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' || old.group === 'manual' ? 'checking' : old.group
       this.publish(cli, { installed: true, source: identity.source, currentVersion: version, planToken: fingerprintToken(identity.fingerprint), checkedAt: Date.now(), stage: undefined, group,
+        appVersion, channel: identity.channel, notice: piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice,
         reasonDetail: !version ? CLI_SOURCES[cli].versionNote : undefined,
-        reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'desktop-app' ? 'APP_MANAGED' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
-        manual: manual ? { note: '请按官方说明在原安装渠道更新，然后重新检查。', guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
+        reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
+        manual: manual ? { note: problem!, guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
       }, true)
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.cleanupCli = cli; this.preloader.changed(); this.deps.cleanup?.(cli, error) }
@@ -204,24 +208,47 @@ export class CliManagementService {
     if (!row.installed || !row.currentVersion) return
     const spec = CLI_SOURCES[cli]
     const identity = this.identities.get(cli), method = identity && automaticMethod(cli, identity)
-    const cannotPin = method !== 'npm' && spec.compatibility !== 'any'
-    if (!spec.npm && !spec.brew || row.group === 'manual' || !method || cannotPin || row.source === 'brew' && spec.brew?.tap) {
-      if (row.group !== 'manual') this.publish(cli, { group: 'manual', reason: 'NO_RELEASE_SOURCE', stage: undefined, planToken: undefined, manual: { note: cannotPin ? '原更新方式无法锁定已适配版本，请按官方说明手动更新。' : '自动更新方法或对应发布源尚未核实，请查看官方说明。', guideUrl: spec.guideUrl } }, true)
+    const problem = identity && updateProblem(cli, identity)
+    if (!identity || !method || problem) {
+      this.publish(cli, { group: 'manual', reason: identity?.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : 'UNSUPPORTED_MANAGER', stage: undefined, planToken: undefined, manual: { note: problem ?? '没有核实实际安装入口，无法生成更新计划。', guideUrl: spec.guideUrl } }, true)
       return
     }
-    const registry = this.effectiveRegistry(), key = this.cache.releaseKey(cli, spec.npm ?? spec.brew!.name, `${row.source}:${registry}`)
+    const registry = this.effectiveRegistry(), key = this.cache.releaseKey(cli, NATIVE_RELEASES[cli]?.url ?? spec.npm ?? spec.brew?.name ?? cli, `${row.source}:${registry}`)
     this.publish(cli, { stage: 'remote' })
     try {
-      const release = (!force && this.cache.release(key)) || await this.releases.query(cli, registry, signal, row.source)
+      let desktop: DesktopRelease | undefined
+      if (method === 'desktop' && isDesktopCli(cli)) {
+        if (!identity.appPath || !validAppVersion(row.appVersion)) throw new DesktopUnavailableError('无法核实桌面应用目录或版本，请先修复原安装。')
+        desktop = !force && this.cache.release(key) ? this.desktopReleases.get(cli) : undefined
+        desktop ??= await this.desktopRelease(cli, identity, signal)
+        this.desktopReleases.set(cli, desktop)
+      }
+      const release = desktop ? { latest: desktopVersion(cli, desktop.version), versions: [desktopVersion(cli, desktop.version)], checkedAt: Date.now(), registry: spec.guideUrl }
+        : (!force && this.cache.release(key)) || await this.releases.query(cli, registry, signal, row.source)
       signal.throwIfAborted(); this.cache.rememberRelease(key, release)
-      const next = latestCompatible(cli, release.versions, row.currentVersion)
+      const before = method === 'desktop' ? desktopVersion(cli, row.appVersion!) : row.currentVersion!
+      const next = latestCompatible(cli, release.versions, before)
       const incompatible = !compatible(cli, release.latest)
-      this.publish(cli, { planToken: this.identities.has(cli) ? operationToken(cli, this.identities.get(cli)!, next, registry, row.currentVersion) : undefined, latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
-        group: !incompatible && next && updateAvailable(row.currentVersion!, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
+      this.publish(cli, { planToken: operationToken(cli, identity, next, registry, before, desktop), latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
+        notice: piNotice(cli, next ?? row.currentVersion) ?? NATIVE_UPDATES[cli]?.notice, manual: undefined,
+        group: !incompatible && next && updateAvailable(before, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
     } catch (error) {
       signal.throwIfAborted()
-      this.publish(cli, { group: 'failed', reason: error instanceof ReleaseError ? error.code : 'RELEASE_UNREACHABLE', stage: undefined }, true)
+      if (isDesktopCli(cli) && error instanceof DesktopUnavailableError && error.message.includes('未提供更新，当前应用可能已是最新版本') && validAppVersion(row.appVersion)) {
+        const version = row.appVersion
+        this.desktopReleases.delete(cli)
+        this.publish(cli, { group: 'latest', latestVersion: version, latestCompatibleVersion: version, latestCheckedAt: Date.now(), reason: undefined, manual: undefined, planToken: undefined, stage: undefined }, true)
+        return
+      }
+      const unavailable = error instanceof DesktopUnavailableError || error instanceof ReleaseError && error.code === 'NO_RELEASE_SOURCE'
+      this.publish(cli, { group: unavailable ? 'manual' : 'failed', reason: unavailable ? 'NO_RELEASE_SOURCE' : error instanceof ReleaseError ? error.code : 'RELEASE_UNREACHABLE', stage: undefined, planToken: undefined,
+        manual: unavailable ? { note: error instanceof DesktopUnavailableError ? error.message : '官方发布清单没有此平台的可用工件，请按官方说明更新。', guideUrl: spec.guideUrl } : undefined }, true)
     }
+  }
+  private async desktopRelease(cli: 'zcode' | 'workbuddycn' | 'workbuddy', identity: InstallationIdentity, signal: AbortSignal) {
+    const fetcher: NonNullable<NonNullable<Parameters<typeof readDesktopRelease>[3]>['fetcher']> = (url, init) => this.releases.response(String(url), init?.signal ?? signal)
+    const deps = { fetcher }
+    return readDesktopRelease(cli, { appVersion: identity.fingerprint.appVersion }, signal, deps)
   }
   private async preloadAccount(cli: ActiveCliId, signal: AbortSignal) {
     this.assertHealthy()
@@ -300,9 +327,11 @@ export class CliManagementService {
       return this.installer.prepare(cli, selected?.registry ?? this.effectiveRegistry(), selected?.installDirectory ?? '', signal)
     }
     const identity = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, signal)
-    const version = identity && await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, signal)
+    let version = identity && await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, signal)
+    const desktop = identity && automaticMethod(cli, identity) === 'desktop' && isDesktopCli(cli) ? await this.desktopRelease(cli, identity, signal) : undefined
+    if (desktop && identity?.fingerprint.appVersion) version = desktopVersion(cli, identity.fingerprint.appVersion)
     signal.throwIfAborted()
-    return planCliOperation(cli, intent, identity, version, selected ? selected.target : this.entry(cli).latestCompatibleVersion, selected?.registry ?? this.effectiveRegistry())
+    return planCliOperation(cli, intent, identity, version, selected ? selected.target : this.entry(cli).latestCompatibleVersion, selected?.registry ?? this.effectiveRegistry(), desktop)
   }
   start(cli: ActiveCliId, intent: 'update' | 'install', token: string, directory: string, requestId: string): CliUpdateSnapshot {
     const signature = JSON.stringify([cli, intent, token, directory]), previous = this.requests.get(`single:${requestId}`)
@@ -331,6 +360,7 @@ export class CliManagementService {
     this.operationRun = Promise.resolve().then(async () => {
       let quarantine = false
       let artifact: string | undefined
+      const desktopArtifacts: string[] = []
       try {
         await this.preloader.pause(); await this.running
         this.assertHealthy(); signal.throwIfAborted()
@@ -368,32 +398,56 @@ export class CliManagementService {
           const tgz = artifact.replace(/\.part$/, '.tgz')
           await rename(artifact, tgz); artifact = tgz
         }
+        if (plan.method === 'official-script') {
+          const script = NATIVE_UPDATES[cli]!.script!
+          op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
+          artifact = await downloadCliArtifact({ root: this.deps.root, url: script.url, officialScript: true, signal, fetcher: this.deps.artifactFetch, progress: value => { op.progress = value; this.changed() } })
+          const scriptFile = artifact.replace(/\.part$/, '.sh')
+          await rename(artifact, scriptFile); artifact = scriptFile
+        }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
         signal.throwIfAborted()
-        op.command = argv; op.phase = 'installing'; op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
-        await executeCliOperation(this.deps.backend, this.deps.config, argv, signal, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() })
+        const run = async (command: string[], control: AbortSignal) => {
+          op.command = nativeLaunchArgv(command); op.phase = 'installing'; op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
+          await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
+            plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined)
+        }
+        if (plan.method === 'desktop' && isDesktopCli(cli)) {
+          if (!plan.identity.appPath || !plan.desktopRelease) throw new CliOperationError('PREREQUISITE_MISSING', '缺少已核实的桌面路径或发布工件')
+          await runDesktopUpdate({ cli, appPath: plan.identity.appPath, release: plan.desktopRelease, root: this.deps.root, signal, run,
+            awaiting: () => { op.phase = 'awaiting-user'; this.changed() },
+            download: async (url, expected, control) => {
+              const algorithm = expected.sha512 ? 'sha512' : 'sha256', digest = expected.sha512 ?? expected.sha256
+              if (!digest) throw new CliOperationError('INTEGRITY_MISMATCH', '桌面工件缺少官方摘要')
+              const value = new RegExp(`^[a-fA-F0-9]{${algorithm === 'sha512' ? 128 : 64}}$`).test(digest) ? Buffer.from(digest, 'hex').toString('base64') : digest
+              op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
+              const file = await downloadCliArtifact({ root: this.deps.root, url, integrity: `${algorithm}-${value}`, expectedBytes: expected.size, signal: control, fetcher: this.deps.artifactFetch,
+                progress: progress => { op.progress = progress; this.changed() } })
+              desktopArtifacts.push(file); return file
+            } })
+        } else await run(argv!, signal)
         signal.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
         const verification = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
         const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
         if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
-        const version = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
+        const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
+        const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
         op.afterVersion = version
-        if (version === plan.beforeVersion) throw new CliOperationError('VERSION_UNCHANGED', `命令已完成，但版本仍是 ${version}`)
-        if (version !== plan.targetVersion) throw new CliOperationError('VERSION_MISMATCH', '命令已完成，但版本与目标不一致，请重新检查')
+        verifyUpdatedVersion(plan, version)
         verification.throwIfAborted()
         this.cache.invalidateVersion(cli); this.deps.invalidateModels?.(cli)
         this.identities.set(cli, after)
-        this.cache.rememberVersion(cli, after.fingerprint, version)
+        this.cache.rememberVersion(cli, after.fingerprint, cliVersion)
         const row = this.entry(cli), next = row.latestCompatibleVersion
         const incompatible = !!row.latestVersion && !compatible(cli, row.latestVersion)
         const updatable = !incompatible && !!next && updateAvailable(version, next)
-        this.publish(cli, { installed: true, source: after.source, currentVersion: version, group: updatable ? 'updatable' : 'latest',
+        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice, group: updatable ? 'updatable' : 'latest',
           reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined, reasonDetail: undefined, manual: undefined, stage: undefined, checkedAt: Date.now(),
-          planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version) : undefined }, true)
+          planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
         op.phase = 'succeeded'
       } catch (error) {
         if (error instanceof ProcessCleanupUnconfirmedError) {
@@ -408,6 +462,7 @@ export class CliManagementService {
         }
       } finally {
         if (artifact && !quarantine) await unlink(artifact).catch(() => undefined)
+        if (!quarantine) await Promise.all(desktopArtifacts.map(file => unlink(file).catch(() => undefined)))
         op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
         this.operationController = undefined; this.operationRun = undefined
         if (!quarantine) release()

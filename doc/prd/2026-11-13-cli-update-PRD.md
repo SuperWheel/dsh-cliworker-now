@@ -131,6 +131,36 @@
 
 3. 生成更新计划时记录指纹（CLI、动作、平台、当前版本、可执行文件路径、方法）。开始执行前重新生成计划，指纹不一致就拒绝，提示「CLI 或安装方式已变化，请重新检查」。
 
+### 5.3.1 修订：全部 CLI 自动更新（2026-11-13 你已定）
+
+实机验收（tasks.md 7.3）时，11 个 CLI 显示「需要手动更新」，原因是 5.3 表中标「待核实」的更新方式都被当成手动处理，而且只接了 npm 与 Homebrew 两种最新版本来源。你要求**所有 CLI 都能在页面里自动更新，不再保留「需要手动更新」**。按 Codingns4DSH 的做法（调研报告第 3、5 节）与本机 `--help` 核对结果，本节覆盖 5.3 表的「更新方式」「最新版本来源」「本期能力」三列：
+
+| CLI | 自动更新方式（按识别出的安装来源） | 最新版本来源 |
+|---|---|---|
+| Antigravity | `agy update` | 官方更新服务 manifest（按系统与 CPU） |
+| Codex | npm、Homebrew 按原归属；官方独立安装器为 `codex update` | npm / brew cask；独立版读 OpenAI 发布频道 |
+| Claude Code | npm、Homebrew 按原归属；官方安装器为 `claude update` | npm / brew cask |
+| Kimi | npm 按原归属；官方安装器为 `kimi update -y` | npm `@moonshot-ai/kimi-code` |
+| MiMo Code | npm 按原归属；官方安装器重新运行内置官方脚本 | npm `@mimo-ai/cli` |
+| ZCode | 读官方 manifest，下载安装包并核对 sha512；macOS 要求先关闭 ZCode 再替换 .app，Windows 运行官方安装程序 | zcode.z.ai 官方 manifest |
+| Grok Build | `grok update --version <目标>` | `grok update --check --json` 或 x.ai 稳定通道（以实测为准） |
+| OMP | `omp update`；brew、Bun 按原归属 | `omp update --check` 或 npm（以实测为准） |
+| Pi | npm 按原归属；官方安装器为 `pi update --self` | npm，**取最新版，不再限白名单**（你已定）；插件对新版的适配在单独分支完成 |
+| Hermes Agent | `hermes update --yes` | `hermes update --check` |
+| OpenCode | npm、brew 按原归属；`opencode upgrade` | npm / brew，只到插件已适配的 V1 |
+| Qoder / Qoder CN | `qodercli update` / `qoderclicn update`（经官方分发入口） | npm 或官方 channels manifest |
+| CodeBuddy Code | npm 按原归属；其他用 `codebuddy update` | npm |
+| TRAE CN | `traecli update` | `traecli update check` |
+| WorkBuddy CN / WorkBuddy | 找到官方更新源后，按 ZCode 同样方式下载、核对、替换（应用须先关闭）；找不到时如实说明原因 | 待调研应用内置更新源 |
+
+补充规则：
+
+1. 用 CLI 自带命令更新时，必须无交互（带 `-y`、`--yes` 等官方参数，stdin 关闭），超时、取消与输出处理沿用 5.5～5.7。
+2. 最新版本只读检查（`--check`、`update check`）必须先在本机证实不改安装、不写配置；做不到的改用官方发布源。
+3. 不支持锁定目标版本的自带命令，装完后以重新探测出的版本为准，与检查时的最新版不同的记为成功并显示实际版本。
+4. 「需要手动更新」分区只保留确实无法自动执行的情况（例如 WinGet、Scoop、Nix 等外部包管理器，或调研后仍找不到官方更新源的桌面应用），每条写明原因。
+5. 每种新增的自动更新方式都要在本机做一次真实更新验收。
+
 ### 5.4 版本检查
 
 1. 当前版本由 Host 执行 `<CLI> --version`（或该 CLI 已有的版本读取方式）获得，带超时；Kimi 探测必须设置 `KIMI_CODE_NO_AUTO_UPDATE=1`，避免探测本身触发 Kimi 的自动升级（当前源码尚未设置，实施时先补）。没有可靠无副作用读法的 CLI 显示「版本未知」，不硬跑。
@@ -330,6 +360,7 @@
 | 18 | 后台预加载何时开始、怎样算空闲 | 你已定（2026-11-13，按推荐）：DSH 启动 60 秒后；没有任务、登录窗口、更新或安装，且系统 CPU 忙碌低于 50% 时才做；一次一个、间隔 2 秒、子进程低优先级 | — |
 | 19 | 账号登录状态多久算旧 | 你已定（2026-11-13，按推荐）：显示时总用上次结果；超过 10 分钟的在打开设置时原地静默重读 | — |
 | 20 | 是否给预加载开关 | 你已定（2026-11-13，按推荐）：给，放在「CLI Worker 设置」通用页，默认开 | — |
+| 21 | 哪些 CLI 可以自动更新 | 你已定（2026-11-13，实机验收后改）：全部 CLI 都能在页面里自动更新，方式见 5.3.1；Pi 取消白名单，可更新到最新版，插件适配在单独分支完成 | — |
 
 ## 十、参考资料
 

@@ -221,12 +221,12 @@ it('模拟：官方脚本只取内置地址并以私有文件执行，不接受�
   expect((await finished(f.service)).results[0]?.phase).toBe('succeeded')
   expect(f.artifactFetch.mock.calls[0]![0]).toBe('https://code.kimi.com/kimi-code/install.sh'); expect(existsSync(script)).toBe(false)
 })
-it('模拟：Pi 仅白名单版本且带 ignore-scripts；Node 范围不可猜测', async () => {
-  const f = fixture(); vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '9.0.0', versions: ['1.0.2', '1.1.0', '9.0.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
-  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.1.0', engines: { node: '>=22.19.0' } })))
-  const plan = await prepare(f, 'pi'); expect(plan.target).toBe('1.1.0'); expect(plan.problem).toBeUndefined()
+it('模拟：Pi 取最新版且带 ignore-scripts；Node 范围不可猜测', async () => {
+  const f = fixture(); vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '9.0.0', versions: ['1.0.2', '9.0.0', '9.0.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '9.0.0', engines: { node: '>=22.19.0' } })))
+  const plan = await prepare(f, 'pi'); expect(plan.target).toBe('9.0.0'); expect(plan.problem).toBeUndefined()
   vi.spyOn(f.releases, 'artifact').mockResolvedValue({ url: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') })
-  f.version.mockResolvedValue('1.1.0')
+  f.version.mockResolvedValue('9.0.0')
   f.service.start('pi', 'install', plan.token, '', 'pi-install')
   expect((await finished(f.service)).results[0]?.phase).toBe('succeeded')
   expect(vi.mocked(f.backend.spawn).mock.calls.find(([s]) => s.argv.includes('install'))![0].argv).toContain('--ignore-scripts')

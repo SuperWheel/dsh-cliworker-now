@@ -47,7 +47,7 @@ it.each([
 it('模拟：其他 home 下的同名 Qoder 入口保持 unknown', () => {
   expect(classifyInstallation('qoder', '/模拟/home-other/.qoder/entry/qoder', undefined, '/模拟/home').source).toBe('unknown')
 })
-it('模拟：Grok 官方 bin 符号链接指向 downloads，来源明确但无发布源仍手动', async () => {
+it('模拟：Grok 官方 bin 符号链接指向 downloads，使用官方 stable 源自动更新', async () => {
   const f = fixture('grok'), executable = join(f.root, '.grok/bin/grok'), target = join(f.root, '.grok/downloads/grok-1.0.62-macos-aarch64')
   mkdirSync(join(executable, '..'), { recursive: true }); mkdirSync(join(target, '..'), { recursive: true })
   writeFileSync(target, '#!/bin/sh\n# 模拟 Grok，不执行\n', { mode: 0o700 }); symlinkSync(target, executable)
@@ -55,8 +55,8 @@ it('模拟：Grok 官方 bin 符号链接指向 downloads，来源明确但无�
   const identity = await identifyInstallation('grok', f.backend, f.config, control())
   expect(identity).toMatchObject({ source: 'self-update', executable, fingerprint: { realpath: target } })
   f.identities.set('grok', { ...identity!, manifestVersion: '1.0.62' })
-  expect((await checked(f.service)).entries.find(e => e.cli === 'grok')).toMatchObject({ source: 'self-update', group: 'manual', reason: 'NO_RELEASE_SOURCE', currentVersion: '1.0.62' })
-  expect(f.metadataFetch).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
+  expect((await checked(f.service)).entries.find(e => e.cli === 'grok')).toMatchObject({ source: 'self-update', group: 'updatable', currentVersion: '1.0.62' })
+  expect(f.metadataFetch).toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
 })
 it.each([
   ['/模拟/home/.grok/downloads/grok', '/模拟/home/.grok/bin/other'],

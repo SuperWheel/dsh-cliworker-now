@@ -1,5 +1,52 @@
 ## ADDED Requirements
 
+### Requirement: 全部 CLI 的官方自动更新范围
+Host SHALL 为已识别的官方安装开放 PRD 5.3.1 的自带命令、官方安装器或桌面替换流程；npm/Homebrew 归属 SHALL 优先使用原包管理器。Codex 独立版 SHALL 下载内置官方脚本，以 `CODEX_NON_INTERACTIVE=1` 和 `--release <目标>` 执行。Hermes SHALL 在执行前提供迁移配置、更新依赖、可能重启服务及保留原通道的说明；所有更新 MUST 由前台用户发起。
+
+#### Scenario: Codex 独立安装更新
+- **WHEN** 已识别的 Codex standalone 安装有新版本
+- **THEN** Host 先下载官方脚本到私有目录，再以文件参数执行锁定版本；MUST NOT 使用未经核实的 codex update 参数
+
+#### Scenario: Hermes canary 安装
+- **WHEN** install-stamp 的 baseVersion 小于官方 stable 版本且安装通道未知或 canary
+- **THEN** Host 显示通道说明，前台使用原入口 update --yes，不暗中切换通道，并以装后重新探测结果判定
+
+### Requirement: 官方发布源与后台只读查询
+Host SHALL 按来源使用 sources 内置地址的匿名 GET：Antigravity 平台 manifest、Codex rust-v tag、Kimi native latest、MiMo FDS 文本、Grok stable 文本、OMP npm、Pi managed API、Hermes stable release、Qoder 两版 channels manifest、TRAE public stable，以及桌面专用发布读取器。字段格式、平台工件和清单摘要 SHALL 校验；普通请求统一受 8 秒、512 KiB、3 并发约束。后台发布查询 MUST NOT 启动任何 CLI check/update 子命令或 npm config 命令。
+
+#### Scenario: Grok 后台查新
+- **WHEN** 后台需要刷新 Grok 最新版本
+- **THEN** 只 GET 官方 stable 文本，不执行会写文件的 grok update --check
+
+#### Scenario: Codex tag 不是 rust-v
+- **WHEN** OpenAI latest 返回其他 tag 前缀或非法版本
+- **THEN** Host 报发布查询失败，不猜测目标
+
+### Requirement: 无法锁版方法的实际版本核对
+不能锁定目标的方法 SHALL 在身份核对后接受实际版本大于更新前版本且仍兼容的结果，即使不等于检查时目标；版本不变 MUST 返回 VERSION_UNCHANGED，降低、未知或越过 OpenCode V1 MUST 返回 VERSION_MISMATCH。成功后 SHALL 以实际版本重算分区并持久化。
+
+#### Scenario: 检查后官方又发布新版
+- **WHEN** Qoder 检查目标为 1.2.3，更新前为 1.0.0，实际更新为 1.2.4
+- **THEN** 操作成功并显示 1.2.4，不因不等于旧目标失败
+
+### Requirement: Pi 更新与 Worker 适配分离
+Pi 更新 SHALL 取官方 latest，MUST NOT 用适配集合限制目标；适配判断 SHALL 共用 pi-installation 的 PI_SUPPORTED_VERSIONS/isSupportedPiVersion。未适配目标 SHALL 带可选 notice「插件尚未适配 Pi X，更新后 Pi Worker 要等插件适配后才能使用」，Worker 身份和协议核对 MUST 保持严格。
+
+#### Scenario: 管理页读取未适配 Pi
+- **WHEN** Pi 已安装有效新版本且官方包身份、入口正确，但 Worker 尚未适配
+- **THEN** 管理页可读取版本和更新，Worker 仍拒绝不支持的协议
+
+### Requirement: 手动更新原因与桌面应用版本
+「需要手动更新」SHALL 仅保留外部管理器、未识别归属、不支持平台或确实没有可用官方源的情况，每条 SHALL 说明原因。ZCode/WorkBuddy 两版 SHALL 调用桌面更新器，下载回调仅返回已完整校验的文件。WorkBuddy 的官方 204 无更新响应 SHALL 映射为 latest，latestVersion 为当前应用版本且无更新计划，不得归检查失败。共享协议 appVersion、notice、channel SHALL 为可选字段。
+
+#### Scenario: WorkBuddy 返回无更新
+- **WHEN** 已核实应用版本的 WorkBuddy feed 返回 204
+- **THEN** 显示已是最新，不启动安装，也不生成更新 token
+
+#### Scenario: 官方 Windows 工件缺摘要
+- **WHEN** 桌面发布读取器确认此平台的官方工件没有摘要
+- **THEN** 显示具体手动原因，MUST NOT 下载执行未校验安装程序
+
 ### Requirement: 「更新 CLI」设置页入口与分区
 设置窗口 SHALL 在左侧导航「智能体设置」之后、「CLI 连接」之前提供「更新 CLI」入口，图标为原生 `IconDownloadOutlineRegular`。有可更新的 CLI 时，入口右侧 SHALL 显示数量徽标，数量来自缓存，不必先进入该页；有更新或安装进行中时，徽标 SHALL 换成转圈；数量为 0 时 MUST NOT 显示徽标。页面 SHALL 依次显示「检查中」「检查失败」「可更新」「需要手动更新」「已是最新」「未安装」「下载设置」分区，没有内容的分区 MUST NOT 显示。每个分区标题行最右侧 SHALL 有同一个折叠按钮，「未安装」默认收起，其余默认展开，收起状态按分区记在本机。页头 SHALL 只有标题、副标题、「检查更新」和页内唯一的 primary 按钮「全部更新」，MUST NOT 显示状态行。
 
@@ -35,7 +82,7 @@
 - **THEN** 其他行照常完成；OpenCode 写「查询超时」，随重排进入「检查失败」
 
 ### Requirement: 版本检查与兼容范围
-Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口执行已核实的 `--version`：参数数组、stdin ignore、5 秒超时、确认进程范围退出、去 ANSI 后取首个完整合法 SemVer。Kimi MUST 带 `KIMI_CODE_NO_AUTO_UPDATE=1`。后台仅对 sources 标为无文件改动的 CLI 开放，按指纹复用结果；Codex、Qoder/CN 仅前台。Hermes 前后台均不执行，显示版本未知及超时/租约说明；桌面应用沿用文件读法。版本 SHALL 按 SemVer 比较；正式版不提示升级到预发布版。Pi 白名单（1.0.2、1.0.4、1.1.0）与 OpenCode V1 之外的版本 SHALL 显示「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮。
+Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口执行已核实的 `--version`：参数数组、stdin ignore、5 秒超时、确认进程范围退出、去 ANSI 后取首个完整合法 SemVer。Kimi MUST 带 `KIMI_CODE_NO_AUTO_UPDATE=1`。后台仅对 sources 标为无文件改动的 CLI 开放，按指纹复用结果；Codex、Qoder/CN 仅前台。Hermes 前后台均不执行版本命令，改读 install-stamp.json 的 baseVersion；缺少可信记录时显示版本未知。ZCode SHALL 读 Info.plist 应用版本，WorkBuddy SHALL 保留 CLI 版本并另读应用版本用于更新比较。普通 CLI 版本 SHALL 按 SemVer 比较；正式版不提示升级到预发布版。OpenCode V1 之外的版本 SHALL 显示「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮；Pi 更新不受 Worker 适配集合限制。
 
 #### Scenario: 前后台版本命令权限不同
 - **WHEN** 前台或后台检查缺少清单版本的 Codex、Qoder/CN 或 Hermes
@@ -57,8 +104,8 @@ Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口
 - **THEN** Host 中止响应并报告发布查询失败，不放大其他请求上限
 
 #### Scenario: Pi 出现未适配版本
-- **WHEN** npm 上 Pi 的最新版本不在插件白名单内
-- **THEN** 行内显示「有新版本 X，插件尚未适配」，没有「更新」按钮
+- **WHEN** Pi 的最新版本不在插件适配集合内
+- **THEN** 仍允许更新，行内 notice 显示「插件尚未适配 Pi X，更新后 Pi Worker 要等插件适配后才能使用」
 
 #### Scenario: 探测 Kimi 不触发自动升级
 - **WHEN** Host 读取 Kimi 当前版本
@@ -69,7 +116,7 @@ Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口
 - **THEN** 不提示更新
 
 ### Requirement: 安装来源识别与更新计划
-Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来源：Homebrew（路径属于 Cellar 或 Caskroom，且 brew 元数据对应该 CLI 的包）、npm 全局包（路径含 `node_modules/<包名>/`，包名在该 CLI 的白名单内）、CLI 自带更新命令、官方独立安装器。WinGet、Scoop、Nix、Bun、pnpm 全局和桌面应用托管的安装 SHALL 归入「需要手动更新」，只给官方方法；识别不出时 SHALL 写「没有识别出安装方式」。npm 更新 MUST 在原前缀下进行，MUST NOT 换包管理器。计划 SHALL 记录指纹（CLI、动作、平台、当前版本、可执行文件路径与文件状态、方法、目标精确版本）；开始执行前 Host SHALL 重新生成计划，指纹不一致时 MUST 拒绝，并提示「CLI 或安装方式已变化，请重新检查」。
+Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来源：Homebrew（路径属于 Cellar 或 Caskroom，且 brew 元数据对应该 CLI 的包）、npm 全局包（路径含 `node_modules/<包名>/`，包名在该 CLI 的白名单内）、CLI 自带更新命令、官方独立安装器与桌面应用。WinGet、Scoop、Nix、Bun、pnpm 全局 SHALL 归入「需要手动更新」，只给原管理器说明；识别不出时 SHALL 写「没有识别出安装方式」。npm 更新 MUST 在原前缀下进行，MUST NOT 换包管理器。计划 SHALL 记录指纹（CLI、动作、平台、当前版本、可执行文件路径与文件状态、方法、目标版本及锁版能力）；开始执行前 Host SHALL 重新生成计划，指纹不一致时 MUST 拒绝，并提示「CLI 或安装方式已变化，请重新检查」。
 
 #### Scenario: npm 全局安装
 - **WHEN** Codex 的真实路径为 `<前缀>/lib/node_modules/@openai/codex/bin/codex.js`
@@ -88,15 +135,15 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 - **THEN** Host 在启动进程前拒绝并说明冲突，不转入 IDE，不删除用户路径
 
 #### Scenario: Grok 官方下载实体
-- **WHEN** Grok 记录入口为 `<home>/.grok/bin/grok`，真实路径位于 `<home>/.grok/downloads/`，但没有已核实发布源
-- **THEN** Host 识别为 self-update，仍归手动更新，沿用 CLI 名称显示「Grok Build 自带更新」
+- **WHEN** Grok 记录入口为 `<home>/.grok/bin/grok`，真实路径位于 `<home>/.grok/downloads/`，官方 stable 文本有新版本
+- **THEN** Host 识别为 self-update，生成 `[记录入口, 'update', '--version', 目标版本]`
 
 #### Scenario: 计划过期
 - **WHEN** 用户检查后在终端里重装了 Codex，回到页面点「更新」
 - **THEN** Host 拒绝执行，提示 CLI 或安装方式已变化，并把该行重新检查
 
 ### Requirement: 执行更新与结果核对
-更新和安装 SHALL 只能由设置页发起，MUST NOT 注册为主 Agent 或 Worker 的工具。Host 全局同一时间 SHALL 只执行一个更新或安装操作；「全部更新」SHALL 按顺序逐个执行。用户点「更新」后 SHALL 直接开始，行下展开下载进度、实际执行的命令和输出；输出 SHALL 去除 ANSI 控制序列、脱敏，只保留最后 32 KiB，按纯文本显示。命令 MUST 以参数数组执行，MUST NOT 拼接 shell。完成后 Host SHALL 确认进程范围已退出，再重新解析路径并读取版本：版本等于目标才算成功；版本没有变化 SHALL 显示「版本没有变化」；退出码为 0 MUST NOT 单独作为成功依据。关闭设置窗口 MUST NOT 取消操作；用户取消时，SHALL 在进程范围确认退出后才显示「已取消」。
+更新和安装 SHALL 只能由设置页发起，MUST NOT 注册为主 Agent 或 Worker 的工具。Host 全局同一时间 SHALL 只执行一个更新或安装操作；「全部更新」SHALL 按顺序逐个执行。用户点「更新」后 SHALL 直接开始，行下展开下载进度、实际执行的命令和输出；输出 SHALL 去除 ANSI 控制序列、脱敏，只保留最后 32 KiB，按纯文本显示。命令 MUST 以参数数组执行，MUST NOT 拼接 shell。完成后 Host SHALL 确认进程范围已退出，再重新解析路径并读取版本：能锁版的方法 SHALL 核对目标版本，不能锁版的方法 SHALL 核对版本前进且仍兼容，并显示实际版本；版本没有变化 SHALL 显示「版本没有变化」；退出码为 0 MUST NOT 单独作为成功依据。关闭设置窗口 MUST NOT 取消操作；用户取消时，SHALL 在进程范围确认退出后才显示「已取消」。
 
 #### Scenario: 更新成功
 - **WHEN** Codex 从 0.129.0 更新，执行后重新探测得到 0.130.0

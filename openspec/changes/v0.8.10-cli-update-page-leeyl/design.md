@@ -83,7 +83,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - Host 从所选源的目标精确版本元数据取得主包 tarball 地址，使用 npm 官方源同版本的 sha512 校验真实下载内容；官方源也走完全相同的下载、续传和摘要校验路径。官方摘要不可得或摘要不符时拒绝安装，不降级为信任镜像摘要。校验后的私有文件改为 `.tgz`，以 `[node, npm-cli.js, 'install', '--global', '--prefix', 原前缀, 本地tgz, '--registry', 所选源]` 安装。显示的可读字节进度只对应 Host 下载的主包。
 - Homebrew 用 `brew upgrade <包名>`，CLI 自带更新用其已核实的子命令。
 - Qoder/CN 官方分发入口仅认 `<home>/.qoder/entry/qoder`、`<home>/.qoder-cn/entry/qodercn`，不放行 entry 目录下其他名字。更新保留记录入口的 `[入口, 'update']` 与 homedir cwd，不猜测 PATH 分发得到的实体。执行器紧邻 spawn 前用 lstat 检查 `<home>/update`；存在任何文件、目录、符号链接或检查失败时拒绝启动，避免分发到 IDE；记录入口是指向分发器的符号链接也同样检查。不删除/改名用户路径。该预检不能原子阻止外部进程恰在检查与分发之间创建路径。
-- Grok 的记录入口精确为 `<home>/.grok/bin/grok` 且 realpath 在 `<home>/.grok/downloads/` 下时识别为 self-update；缺少已核实发布源，仍为手动更新，沿用 Client 品牌名显示「Grok Build 自带更新」。
+- Grok 的记录入口精确为 `<home>/.grok/bin/grok` 且 realpath 在 `<home>/.grok/downloads/` 下时识别为 self-update；查询官方 stable 文本，并执行带目标版本的自带 update。
 - 官方安装脚本只取 `sources.ts` 中的内置地址：先下载到 `cli-management/downloads/`，再以 `['bash', <文件>]` 或 `['powershell', '-NoProfile', '-File', <文件>]` 执行。
 - Windows 的官方 npm.cmd 不当作 cmd-shim 解析或执行：按 Node/npm 发行目录的固定布局找到并核实 `node.exe`、`node_modules/npm/bin/npm-cli.js`，直接传参数数组；其他 CLI 继续沿用 `native-launch.mjs`。不用 `cmd /c`。
 - Homebrew 更新后允许同一前缀、同一 Cellar/Caskroom 包、同一稳定启动器与包内入口的版本目录变化；来源、前缀、包名、入口变化仍拒绝，再单独核对目标版本。
@@ -146,7 +146,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 ## Risks / Trade-offs
 
-- **首次安装来源边界（阶段 C）**：`installationSource` 以 PRD 5.3 的平台差异选择方法。Codex、Pi、CodeBuddy 用 npm；MiMo/OpenCode 的 Windows 用 npm；Pi 添加 `--ignore-scripts` 且只取白名单，OpenCode 只取 V1。npm 通过已核实的 Node/npm 读取 Node 版本及 `npm prefix -g`，校验目标包 engines 和最低版本，前缀不可写不提权。安装与更新共用 Host 计划入口、全局操作生命周期、维护锁、下载器和执行器。
+- **首次安装来源边界（阶段 C）**：`installationSource` 以 PRD 5.3 的平台差异选择方法。Codex、Pi、CodeBuddy 用 npm；MiMo/OpenCode 的 Windows 用 npm；Pi 添加 `--ignore-scripts`；PRD 5.3.1 起 Pi 取最新版并提供未适配通知，OpenCode 仍只取 V1。npm 通过已核实的 Node/npm 读取 Node 版本及 `npm prefix -g`，校验目标包 engines 和最低版本，前缀不可写不提权。安装与更新共用 Host 计划入口、全局操作生命周期、维护锁、下载器和执行器。
 - **脚本版本与摘要**：Kimi、TRAE CN（Mac/Linux）、Qoder/CN（Windows）只用 sources 内置脚本 URL 与解释器。脚本以文件执行，不传远端命令文本；没有官方独立摘要时仅依赖无重定向的 HTTPS 传输及 HTTP 长度，不称为已验证发布签名。目标选择器为 `official-current`，不编造精确版本或未证实的锁版本参数；执行后仍须读取有效且适配的版本，否则失败并保留旧路径设置。原生二进制没有已核实版本读法时不会据退出码宣告成功。阶段 C 审查确认 Claude 全平台及 MiMo Mac/Linux 没有足够证据实现原生版本读取，改回 manual；不根据目录名称猜版本、不新增未证实无副作用的 --version。MiMo Windows npm 不受影响。Antigravity/Grok 的前置条件或版本读法、OMP/Hermes 的禁止代装运行时参数、Qoder/CN 的 macOS 入口及 OpenCode macOS 锁 V1 参数仍待核实，保持仅说明。
 - **桌面安装不先开放**：ZCode、WorkBuddy CN、WorkBuddy 没有已核实的安装包 URL、摘要/长度及开发者身份，因此生产来源表仍为 manual。通用执行器仅以模拟描述符验证：macOS 只读挂载、codesign Team ID 要求与 spctl、暂存复制后移动、失败清理暂存和 detach；detach 未确认进入清理隔离，不删除仍可能挂载的目录。Windows 仅启动官方安装程序并等进程范围退出，不传猜测的静默/位置参数；未实现真实 Authenticode 验收。页面位置是建议值，未来已核实来源可提供常见目录用于装后查找。
 - **位置与旧路径**：纯 CLI 不接受客户端自选位置。桌面位置可不存在，但父目录须可写且空间充足，拒绝与已知项目/工作区、插件状态、账号数据及另一版 WorkBuddy 安装目录重叠。路径变更前核对路径存储 revision，只有装后身份与版本验证成功才调用现有 `CliExecutablePathStore.setManual`；失败不重置旧记录，也不删除旧安装文件。
@@ -156,7 +156,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - **识别错误装出第二份**：严格按真实路径、包名、brew 元数据匹配，识别不出就转手动；更新后核对版本与路径。
 - **官方脚本执行远端代码**：只用内置地址，先下载再以文件执行，行内显示地址。脚本内部的行为与落点逐个核实后才开放自动安装。
 - **后台探测的副作用**：以用户提供的 2026-11-13 macOS 实机结果更新 sources 数据：Antigravity、Claude、Kimi、MiMo、Grok、OMP、Pi、OpenCode、CodeBuddy、TRAE 可后台读取版本；Kimi 禁自动升级。Codex、Qoder/CN 版本命令只在前台执行；Hermes 前后台都不执行。桌面应用继续只读文件。该规则只影响版本查询，不扩大账号预加载白名单。
-- **2.8 发布源与前台版本修复**：npm 最新版本先读 `/-/package/<编码包名>/dist-tags`，保持 512 KiB / 8 秒；仅兼容受限且 latest 不兼容时拉 packument，单请求上限 32 MiB（用户实测最大 OpenCode 为 14.7 MB，预留有界增长空间），流式计数。缓存结构不变，版本列表只存 latest 和最高兼容正式/预发布候选，旧缓存仍有效；integrity/artifact 精确版本接口和镜像回退不变。清单缺版本时前台以实际入口运行 `--version`，5 秒、stdin ignore、去 ANSI、首个完整合法 SemVer，退出进程树后才返回。版本/无版本结果按指纹复用，后台跳过不阻止首次前台读取。Codex standalone 仅按完整路径前缀归官方安装器，仍无自动更新；Claude cask 可经版本查询生成 brew upgrade --cask claude-code。此轮不重新开放阶段 C 暂停的首次安装脚本。
+- **2.8 发布源与前台版本修复**：npm 最新版本先读 `/-/package/<编码包名>/dist-tags`，保持 512 KiB / 8 秒；仅兼容受限且 latest 不兼容时拉 packument，单请求上限 32 MiB（用户实测最大 OpenCode 为 14.7 MB，预留有界增长空间），流式计数。缓存结构不变，版本列表只存 latest 和最高兼容正式/预发布候选，该轮旧缓存仍有效（第 8 节策略升级后重建）；integrity/artifact 精确版本接口和镜像回退不变。清单缺版本时前台以实际入口运行 `--version`，5 秒、stdin ignore、去 ANSI、首个完整合法 SemVer，退出进程树后才返回。版本/无版本结果按指纹复用，后台跳过不阻止首次前台读取。Codex standalone 仅按完整路径前缀归官方安装器，第 8 节已开放锁版官方脚本更新；Claude cask 可经版本查询生成 brew upgrade --cask claude-code。此轮不重新开放阶段 C 暂停的首次安装脚本。
 - **缓存落后于真实情况**：版本靠文件指纹发现变化；账号状态最多落后 10 分钟。
 - **Windows**：npm.cmd、进程树终止、文件占用、提权窗口不可见、空闲判定和低优先级需单独验收；不走需要管理员权限的位置。
 - **Gateway 无法区分调用来源**：在核实前，写操作只在设置页的 Remote 使用，不提供给 Agent 工具。
@@ -172,3 +172,16 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - Gateway 能否提供可靠的调用来源（第九节第 15 条）。
 - 各 CLI 的 `--version` 是否有副作用、自带更新命令是否只读可检查（Grok `update --check`、TRAE `update check`）。
 - 三个桌面安装器的静默与目录参数。
+
+
+## PRD 5.3.1 全部自动更新决定（任务 A / B）
+
+- **发布源**：sources 固定官方地址，Host 仅替换操作系统/CPU 枚举；ReleaseClient 共用 3 并发、8 秒、512 KiB 流式预算，JSON 与纯文本都受限。npm/brew 归属优先原渠道；原生 OMP 使用现有自更新器读取的 npm latest，未采用语义不明确的另一份 build.stencil 版本。OpenCode V1 仍允许 32 MiB 兼容回退；Pi 不再回退旧适配版本。
+- **Codex**：独立安装选择下载 `https://chatgpt.com/codex/install.sh` 到 0700 私有目录、0600 文件，以 `/bin/sh <文件> --release <目标>` 和 `CODEX_NON_INTERACTIVE=1` 执行。研究未证明 `codex update` 能同时锁版和无交互，因此不用它。Windows 独立版对应安装器参数未核实，显示平台手动原因；Windows npm/brew 不受此限制。沿用官方脚本 HTTPS 信任边界，脚本不具有独立发布摘要。
+- **自带更新**：Antigravity update；Claude update；Kimi update -y；MiMo upgrade <目标> --method curl；Grok update --version <目标>；OMP update；Pi update --self；Hermes update --yes；OpenCode upgrade；Qoder/CN update；CodeBuddy update；TRAE update --channel <原安装通道> --version <目标>。所有参数数组、stdin ignore、homedir cwd，复用超时、取消、输出脱敏、进程树清理、维护锁与队列。Kimi 明确更新路径不受 KIMI_CODE_NO_AUTO_UPDATE=1 控制，保留该变量阻止启动副作用。MiMo 退出 0 不代表版本正确，仍需装后核对。
+- **锁版与身份**：npm、Codex 脚本、MiMo、Grok、TRAE、桌面工件锁定目标；brew 及其余自带命令不能锁版。后者接受任意实际前进且兼容的版本，不要求等于检查目标；不变为 VERSION_UNCHANGED，未知/降低/不兼容为 VERSION_MISMATCH。只允许识别出的同一原生安装根内版本实体变化，记录入口、归属及通道不许改变。
+- **Hermes**：只读 install-stamp.baseVersion，不执行版本/check/fetch；commit 加入指纹。未记录通道时显示 unknown，notice 明示 stable 查询不能证明 canary 的精确 ahead/behind，不切换通道，只比较可核实 baseVersion，执行后重新读取。迁移配置、更新依赖及可能重启服务的说明须在前台操作前可见。
+- **Pi**：PI_SUPPORTED_VERSIONS / isSupportedPiVersion 单一来源；管理页放宽有效版本读取，包名及安装入口仍验证，Worker 默认检查完全保留。notice 为「插件尚未适配 Pi X，更新后 Pi Worker 要等插件适配后才能使用」。main 未加入另一分支的 1.5.2 适配实现。
+- **桌面接口**：直接调用任务 B 的 readDesktopRelease/runDesktopUpdate，测试使用 vi.mock；下载回调经官方 sha512/sha256 与可用长度核对后返回完整 `.part`，不提前改 exe。ZCode 读 Info.plist 短版本；WorkBuddy 保留 CLI 版本、另读 appVersion，现有官方 Info.plist/条件 feed 使用三段应用版本，四段 productVersion 的工件信息留在计划中，核对使用三段应用版本。204 的 DesktopUnavailableError 当前按明确中文 message 匹配为 latest、latestVersion=appVersion、无 token；建议任务 B 将来提供独立 no-update 错误码，避免依赖文案。
+- **缓存与手动原因**：策略版本升至 2，旧显示/版本/发布缓存整体重建；显示投影增加 appVersion/notice/channel。手动仅保留原外部管理器、未知归属、Windows ARM64 Qoder、尚无对应官方源的 TRAE 通道、未核实的平台安装器和桌面源明确不可用等具体原因。首次安装来源表独立，本任务不借更新证据开放未知首次安装。
+- **证据边界**：本次不联网、不运行真实 CLI、脚本、npm、brew 或安装器；所有新增执行证据来自标注「模拟」的夹具。原研究标未核实的交互、工件可用性和退出语义不冒充实机验证；通过 stdin ignore、有界执行及装后核对约束，真实验收另列。

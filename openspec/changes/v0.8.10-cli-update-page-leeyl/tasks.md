@@ -181,3 +181,22 @@
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
   - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
   - Phase C 已同步 README、doc/design.md 和本变更 design.md 的首次安装行为、脚本信任边界与桌面 manual 限制。（未执行：新页面与五类预加载的整体验收说明仍待整合，本项不以首次安装文档更新代替全部完成。）
+
+## 8. 全部 CLI 自动更新（PRD 5.3.1） 〔后端｜16h｜前置 4,5〕
+- [x] 8.1 补齐官方发布 GET、Hermes 清单版本与桌面应用版本
+  - 按 `.cache/cli-update-research/feeds.md` 第 2、3 节实现固定官方源；普通 JSON/文本统一 8 秒、512 KiB、3 并发，后台发布查询无 check/update/npm config 子进程。npm/brew 优先原归属，OpenCode 保留 V1 限制。模拟覆盖解析、格式错误、空摘要、非 rust-v、超限、超时及并发。
+- [x] 8.2 自带更新、Codex 锁版脚本与实际版本核对
+  - 13 个自带 argv 与 Codex 私有下载脚本均有模拟回归；不能锁版方法接受版本前进，未知、降低、不变及 OpenCode V2 拒绝。Kimi 保留防启动自更新环境变量；Hermes notice 明示迁移/依赖/服务重启和 stable 与原通道差异。维护锁、排队、取消及 Qoder homedir/update 预检沿用。
+- [x] 8.3 Pi 取消更新白名单、共享可选字段与手动范围
+  - 支持集合统一导出 PI_SUPPORTED_VERSIONS/isSupportedPiVersion；管理页允许未适配有效包，Worker 默认核对不放宽。共享仅新增可选 appVersion、notice、channel；前端需在操作前显示 notice 和桌面应用版本。外部管理器、未知安装、不支持平台、无对应官方源保留具体手动原因。
+- [x] 8.4 接入任务 B 桌面接口及 WorkBuddy 204
+  - 不修改 desktop-update.ts；模拟 read/run 接口、下载摘要核对与完整文件回传、应用/CLI 版本分离。204 明确文案映射 latest、latestVersion=当前应用版本、无更新 token；建议 B 后续增加独立 no-update 错误码。团队 ID 由 B 维护，ZCode=8A5X4JJ39T、WorkBuddy CN=FN2V63AD2J。
+- [x] 8.5 关联模拟测试、类型检查、沙箱外全量、隔离构建与严格校验
+  - `corepack pnpm typecheck`：通过，Host/Client against DSH 0.2.2-rc.2；最终复跑仍通过。
+  - `corepack pnpm vitest run tests/cli-management`：Test Files **13 passed (13)**；Tests **440 passed (440)**，无失败，4.65 秒。新增 all-updates 文件含 **94 项模拟**，同时纳入任务 B 桌面测试及原维护锁/下载/安装/版本/Remote 回归。
+  - 沙箱外 `corepack pnpm vitest run`（2026-11-13 22:39:56）：Test Files **301 passed | 4 skipped (305)**；Tests **6738 passed | 14 skipped (6752)**；无失败，80.53 秒。按用户要求在沙箱外执行，避免既往 /bin/ps EPERM 等限制。
+  - `corepack pnpm build:preview`：通过，Host 与 Client 隔离包生成于 `.cache/preview-package`；仅有既有 CommonJS/依赖打包提示，没有正式 build 或 Desktop 链接更新。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：通过。README、doc/design.md、增量规格及 change design 已同步；7.3 未改，不提交 Git。
+  - 中间失败如实保留：首轮旧关联测试 6 文件 **10 failed | 193 passed (203)**，原因是旧 Pi 白名单/旧手动方法预期及夹具仍只提供 npm 源，已按新 PRD 更新；加入新测试后同组 6 文件 **1 failed | 273 passed (274)**，唯一失败为断言把 error.code 当 message，修正后上述关联与全量全过。未以这些失败运行作为完成证据。
+- [ ] 8.6 新增自动更新路径的真实平台验收
+  - （未执行：本任务禁止联网、真实 CLI、安装脚本、npm/brew/安装器；模拟不能替代真实版本、路径、事件与退出状态验收。Windows 平台与前端新字段展示留主会话整合验收。）

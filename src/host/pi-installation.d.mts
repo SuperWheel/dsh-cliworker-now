@@ -1,7 +1,9 @@
 export interface PiInstallation {
   root: string
   dist: string
-  version: '1.0.2' | '1.0.4' | '1.1.0'
+  version: string
   executable: string
 }
-export function inspectPiInstallation(entry: string): PiInstallation
+export const PI_SUPPORTED_VERSIONS: readonly string[]
+export function isSupportedPiVersion(version: string): boolean
+export function inspectPiInstallation(entry: string, options?: { allowUnsupported?: boolean }): PiInstallation

@@ -11,7 +11,7 @@ export interface CliSource {
   guideUrl: string
   defaultLocation: string
   prerequisites: readonly { name: string; required: string }[]
-  compatibility: 'any' | 'pi' | 'opencode-v1'
+  compatibility: 'any' | 'opencode-v1'
   version: 'manifest' | 'kimi' | 'command' | 'workbuddy' | 'unknown'
   /** 2026-11-13 supplied macOS audit: no file changes; account preload is separate. */
   backgroundSafe: boolean
@@ -21,8 +21,8 @@ export interface CliSource {
   experimental?: boolean
 }
 const base = { prerequisites: [], compatibility: 'any', version: 'command', backgroundSafe: true, install: 'manual' } as const
-/** PRD 5.3: URLs are documentation, never arbitrary installation commands.
- * Unverified installers/feeds remain manual. No command in this table runs in phase A. */
+/** Host-owned provenance and capabilities. First-install offers are independent
+ * from the audited update methods below; neither accepts Client commands/URLs. */
 export const CLI_SOURCES: Record<ActiveCliId, CliSource> = {
   antigravity: { ...base, defaultLocation: '~/.local/bin/agy · Windows: %LOCALAPPDATA%\\agy\\bin', guideUrl: 'https://antigravity.google/cli', scriptUrl: 'https://antigravity.google/cli/install.sh' },
   codex: { ...base, backgroundSafe: false, npm: '@openai/codex', brew: { name: 'codex', kind: 'cask' }, defaultLocation: 'npm 全局前缀（脚本落点待核实）', prerequisites: [{ name: 'Node.js', required: '随目标包核实' }], guideUrl: 'https://developers.openai.com/codex/cli/', install: 'npm' },
@@ -32,8 +32,8 @@ export const CLI_SOURCES: Record<ActiveCliId, CliSource> = {
   zcode: { ...base, version: 'manifest', defaultLocation: '/Applications/ZCode.app · Windows: 待核实', guideUrl: 'https://zcode.z.ai/en/docs/install' },
   grok: { ...base, update: ['update'], defaultLocation: '~/.grok/bin/grok', guideUrl: 'https://x.ai/cli', scriptUrl: 'https://x.ai/cli/install.sh' },
   omp: { ...base, npm: '@oh-my-pi/pi-coding-agent', defaultLocation: 'Bun 全局 bin（官方脚本落点待核实）', prerequisites: [{ name: 'Bun（Bun 安装）', required: '≥ 1.4.4' }], guideUrl: 'https://github.com/can1357/oh-my-pi', scriptUrl: 'https://omp.sh/install' },
-  pi: { ...base, npm: '@earendil-works/pi-coding-agent', compatibility: 'pi', update: ['update'], defaultLocation: '~/.local/bin/pi · ~/.pi/agent/bin', prerequisites: [{ name: 'Node.js', required: '≥ 22.19' }], guideUrl: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md', install: 'npm' },
-  hermes: { ...base, version: 'unknown', backgroundSafe: false, versionNote: 'Hermes --version 已观察到超时及写入租约文件，前后台均不执行；没有可读清单时保留版本未知。', defaultLocation: '~/.hermes/hermes-agent · Windows: %LOCALAPPDATA%\\hermes', prerequisites: [{ name: 'Git / curl / tar', required: '已安装' }], guideUrl: 'https://nousresearch.github.io/hermes-agent/docs/getting-started/updating/', scriptUrl: 'https://hermes-agent.nousresearch.com/install.sh' },
+  pi: { ...base, npm: '@earendil-works/pi-coding-agent', update: ['update', '--self'], defaultLocation: '~/.local/bin/pi · ~/.pi/agent/bin', prerequisites: [{ name: 'Node.js', required: '≥ 22.19' }], guideUrl: 'https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md', install: 'npm' },
+  hermes: { ...base, version: 'manifest', versionNote: 'Hermes 前后台均不执行 --version；只读 install-stamp.json 的 baseVersion，缺少可信安装记录时保留版本未知。', defaultLocation: '~/.hermes/hermes-agent · Windows: %LOCALAPPDATA%\\hermes', prerequisites: [{ name: 'Git / curl / tar', required: '已安装' }], guideUrl: 'https://nousresearch.github.io/hermes-agent/docs/getting-started/updating/', scriptUrl: 'https://hermes-agent.nousresearch.com/install.sh' },
   opencode: { ...base, npm: 'opencode-ai', brew: { name: 'opencode', kind: 'formula', tap: 'anomalyco/tap' }, compatibility: 'opencode-v1', update: ['upgrade'], defaultLocation: '随原安装方式（脚本落点待核实）', guideUrl: 'https://dev.opencode.ai/v1/docs/cli/', scriptUrl: 'https://opencode.ai/install' },
   qoder: { ...base, backgroundSafe: false, npm: '@qoder-ai/qodercli', update: ['update'], defaultLocation: 'Windows: ~/.qoder/bin/qodercli · macOS: 待核实', prerequisites: [{ name: 'Node.js（旧 npm）', required: '≥ 20.0.0' }, { name: 'Windows 架构', required: '非 ARM64' }], guideUrl: 'https://docs.qoder.com/cli/installation', scriptUrl: 'https://qoder.com/install' },
   qodercn: { ...base, backgroundSafe: false, npm: '@qodercn-ai/qoderclicn', update: ['update'], defaultLocation: 'Windows: ~/.qoder-cn/bin/qoderclicn · macOS: 待核实', prerequisites: [{ name: 'Node.js（旧 npm）', required: '≥ 20.18.1' }, { name: 'Windows 架构', required: '非 ARM64' }], guideUrl: 'https://docs.qoder.cn/cli/installation', scriptUrl: 'https://static.qoder.com.cn/qoder-cli-cn/install.sh' },
@@ -42,6 +42,44 @@ export const CLI_SOURCES: Record<ActiveCliId, CliSource> = {
   workbuddycn: { ...base, version: 'workbuddy', defaultLocation: '/Applications/WorkBuddy.app · Windows: 待核实', prerequisites: [{ name: '系统', required: 'macOS ≥ 12 / Windows ≥ 10' }], guideUrl: 'https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide', experimental: true },
   workbuddy: { ...base, version: 'workbuddy', defaultLocation: '/Applications/WorkBuddy AI.app · Windows: 待核实', prerequisites: [{ name: '系统', required: 'macOS ≥ 12 / Windows ≥ 10' }], guideUrl: 'https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide', experimental: true },
 }
+/** Anonymous GET endpoints audited in .cache/cli-update-research/feeds.md §3.
+ * Templates substitute only Host platform/CPU enums, never Client input. */
+export const NATIVE_RELEASES: Partial<Record<ActiveCliId, { kind: 'antigravity' | 'codex' | 'kimi' | 'text' | 'pi' | 'hermes' | 'qoder' | 'trae'; url: string }>> = {
+  antigravity: { kind: 'antigravity', url: 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{platform}_{arch}.json' },
+  codex: { kind: 'codex', url: 'https://releases.openai.com/codex/channels/latest' },
+  kimi: { kind: 'kimi', url: 'https://code.kimi.com/kimi-code/latest.json' },
+  mimo: { kind: 'text', url: 'https://mimocode.cnbj1.mi-fds.com/mimocode/mimocode/releases/latest' },
+  grok: { kind: 'text', url: 'https://x.ai/cli/stable' },
+  pi: { kind: 'pi', url: 'https://pi.dev/api/latest-version' },
+  hermes: { kind: 'hermes', url: 'https://api.github.com/repos/NousResearch/hermes-agent/releases/latest' },
+  qoder: { kind: 'qoder', url: 'https://qoder-ide.oss-accelerate.aliyuncs.com/qodercli/channels/manifest.json' },
+  qodercn: { kind: 'qoder', url: 'https://static.qoder.com.cn/qoder-cli-cn/channels/manifest.json' },
+  traecn: { kind: 'trae', url: 'https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae-cli/v2/public/stable/latest.json' },
+}
+export interface NativeUpdate {
+  argv: readonly string[]; pinsVersion: boolean; env?: Record<string, string>; notice?: string
+  script?: { url: string; interpreter: string; platforms: readonly string[] }
+}
+export const NATIVE_UPDATES: Partial<Record<ActiveCliId, NativeUpdate>> = {
+  antigravity: { argv: ['update'], pinsVersion: false, notice: '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。' },
+  codex: { argv: ['--release', '%VERSION%'], pinsVersion: true, env: { CODEX_NON_INTERACTIVE: '1' }, script: { url: 'https://chatgpt.com/codex/install.sh', interpreter: '/bin/sh', platforms: ['darwin', 'linux'] } },
+  claude: { argv: ['update'], pinsVersion: false },
+  kimi: { argv: ['update', '-y'], pinsVersion: false, env: { KIMI_CODE_NO_AUTO_UPDATE: '1' } },
+  mimo: { argv: ['upgrade', '%VERSION%', '--method', 'curl'], pinsVersion: true },
+  grok: { argv: ['update', '--version', '%VERSION%'], pinsVersion: true },
+  omp: { argv: ['update'], pinsVersion: false, notice: '按当前自更新器的 npm latest 查询；原生工件是否可用及最终版本以执行后核对为准。' },
+  pi: { argv: ['update', '--self'], pinsVersion: false },
+  hermes: { argv: ['update', '--yes'], pinsVersion: false, notice: 'Hermes 更新会迁移配置、更新依赖并可能重启服务。查询源为 stable，当前安装可能为 canary/自定义通道；不切换原通道，执行后以重新探测版本为准。' },
+  opencode: { argv: ['upgrade'], pinsVersion: false },
+  qoder: { argv: ['update'], pinsVersion: false },
+  qodercn: { argv: ['update'], pinsVersion: false },
+  codebuddy: { argv: ['update'], pinsVersion: false },
+  traecn: { argv: ['update', '--channel', '%CHANNEL%', '--version', '%VERSION%'], pinsVersion: true },
+}
+for (const [cli, update] of Object.entries(NATIVE_UPDATES)) {
+  if (!update.script) CLI_SOURCES[cli as ActiveCliId].update = update.argv
+}
+export const isDesktopCli = (cli: ActiveCliId): cli is 'zcode' | 'workbuddycn' | 'workbuddy' => ['zcode', 'workbuddycn', 'workbuddy'].includes(cli)
 export function installOffer(cli: ActiveCliId): CliInstallOffer {
   const s = CLI_SOURCES[cli]
   return { method: s.install, defaultLocation: s.defaultLocation, selectableLocation: ['zcode', 'workbuddycn', 'workbuddy'].includes(cli), guideUrl: s.guideUrl, scriptUrl: s.scriptUrl, experimental: s.experimental,

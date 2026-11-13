@@ -28,10 +28,10 @@ it.each(['codex', 'codebuddy', 'claude', 'opencode', 'pi'] as const)('模拟：%
   expect(await new ReleaseClient(fetcher).query(cli, 'https://registry.npmjs.org/', control())).toMatchObject({ latest, versions: [latest] })
   expect(fetcher).toHaveBeenCalledTimes(1)
 })
-it.each(['pi', 'opencode'] as const)('模拟：%s latest 不兼容时才读取大版本列表，缓存仅保留候选', async cli => {
+it.each(['opencode'] as const)('模拟：%s latest 不兼容时才读取大版本列表，缓存仅保留候选', async cli => {
   const fetcher = vi.fn(async (url: string | URL) => String(url).endsWith('/dist-tags') ? response({ latest: '2.0.0' }) : response({ versions: { '1.0.2': {}, '1.1.0': {}, '1.19.0': {}, '1.20.0-beta.1': {}, '2.0.0': {} }, padding: '模拟'.repeat(300_000) }))
   const record = await new ReleaseClient(fetcher).query(cli, 'https://registry.npmjs.org/', control())
-  expect(latestCompatible(cli, record.versions, '1.0.2')).toBe(cli === 'pi' ? '1.1.0' : '1.19.0')
+  expect(latestCompatible(cli, record.versions, '1.0.2')).toBe('1.19.0')
   expect(record.latest).toBe('2.0.0'); expect(record.versions.length).toBeLessThanOrEqual(3)
   expect(fetcher).toHaveBeenCalledTimes(2)
 })
@@ -105,10 +105,10 @@ it('模拟：后台跳过 Codex 不会阻止前台探测；Hermes 明确说明�
   expect(f.service.snapshot().entries.find(e => e.cli === 'hermes')?.reasonDetail).toContain('前后台均不执行')
   expect(f.backend.spawn).toHaveBeenCalledTimes(1)
 })
-it('模拟：Codex standalone 按完整路径组件识别，仍无自动更新方法', () => {
+it('模拟：Codex standalone 按完整路径组件识别，走锁版官方脚本', () => {
   const home = '/模拟/home'
   const found = classifyInstallation('codex', `${home}/.codex/packages/standalone/0.162.1/codex`, undefined, home)
-  expect(found.source).toBe('official-installer'); expect(automaticMethod('codex', { ...nativeIdentity('codex'), ...found })).toBeUndefined()
+  expect(found.source).toBe('official-installer'); expect(automaticMethod('codex', { ...nativeIdentity('codex'), ...found })).toBe('official-script')
   for (const path of [`${home}/.codex/packages/standalone-other/codex`, `${home}-other/.codex/packages/standalone/codex`]) expect(classifyInstallation('codex', path, undefined, home).source).toBe('unknown')
 })
 it('模拟：Claude cask 无清单也能查到版本、进入可更新并生成 brew cask argv', async () => {

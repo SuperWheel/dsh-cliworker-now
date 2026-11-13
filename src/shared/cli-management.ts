@@ -89,9 +89,15 @@ export interface CliUpdateEntry {
   /** True when the npm source is not the official registry (`npm 全局安装 · 国内镜像`). */
   mirrored?: boolean
   currentVersion?: string
+  /** Desktop app version is separate from the bundled CLI version. */
+  appVersion?: string
+  /** Nonblocking compatibility/channel/migration notice, shown before updating. */
+  notice?: string
+  /** Verified installation channel, never supplied by the Client. */
+  channel?: string
   /** Newest release on the source. */
   latestVersion?: string
-  /** Newest release this plugin supports; differs from `latestVersion` for Pi, OpenCode and similar. */
+  /** Newest release this plugin supports; differs from `latestVersion` for OpenCode V1 compatibility. */
   latestCompatibleVersion?: string
   reason?: CliUpdateReason
   /** Short safe text for `failed` rows, e.g. the HTTP status. */

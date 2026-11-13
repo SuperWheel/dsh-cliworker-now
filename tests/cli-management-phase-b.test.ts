@@ -61,7 +61,7 @@ describe('模拟：受控更新计划与服务', () => {
     expect(await operationArgv(p, f.backend, '/模拟/verified.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', '/模拟/verified.tgz', '--registry', 'https://mirror.invalid/'])
     expect(await operationArgv({ ...p, method: 'brew' }, f.backend)).toEqual(['/模拟/bin/brew', 'upgrade', '--cask', 'codex'])
     expect(await operationArgv({ ...p, method: 'self-update', cli: 'qoder' }, f.backend)).toEqual(['/模拟/bin/codex', 'update'])
-    expect(() => planCliOperation('pi', 'update', { ...id, source: 'self-update' }, '1.0.2', '1.1.0', p.registry)).toThrow('无法锁定')
+    expect(planCliOperation('pi', 'update', { ...id, source: 'self-update' }, '1.0.2', '1.1.0', p.registry).pinsVersion).toBe(false)
     expect(() => planCliOperation('codex', 'update', { ...id, source: 'unknown' }, '1.0.0', '1.2.3', p.registry)).toThrow('尚未核实')
     await expect(operationArgv(p, f.backend)).rejects.toThrow('缺少已校验')
   })

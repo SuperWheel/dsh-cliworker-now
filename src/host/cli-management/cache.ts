@@ -8,16 +8,16 @@ import { CLI_DOWNLOAD_SOURCES, CLI_INSTALL_SOURCES, CLI_UPDATE_GROUPS, CLI_UPDAT
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { atomicJSON } from '../storage.ts'
 import { fingerprintToken, type Fingerprint } from './identity.ts'
-import { validVersion, type ReleaseRecord } from './versions.ts'
+import { validVersion, validAppVersion, type ReleaseRecord } from './versions.ts'
 export const RELEASE_TTL = 6 * 60 * 60 * 1000, ACCOUNT_TTL = 10 * 60 * 1000
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
-const version = z.string().refine(validVersion), time = z.number().finite().nonnegative()
-const fingerprintSchema = z.object({ realpath: z.string().max(4096), size: time, mtimeMs: time, appVersion: z.string().max(128).optional(), manifestVersion: z.string().max(128).optional() }).strict()
-const entrySchema = z.object({ cli: z.enum(CLI_IDS), group: z.enum(CLI_UPDATE_GROUPS), installed: z.boolean(), source: z.enum(CLI_INSTALL_SOURCES).optional(), currentVersion: version.optional(), latestVersion: version.optional(), latestCompatibleVersion: version.optional(), checkedAt: time.optional(), latestCheckedAt: time.optional(), mirrored: z.boolean().optional(), reason: z.enum(CLI_UPDATE_REASONS).optional(), planToken: z.string().length(64).optional() }).strict()
+const version = z.string().refine(v => validVersion(v) || validAppVersion(v)), time = z.number().finite().nonnegative()
+const fingerprintSchema = z.object({ realpath: z.string().max(4096), size: time, mtimeMs: time, appVersion: z.string().max(128).optional(), manifestVersion: z.string().max(128).optional(), metadataToken: z.string().length(64).optional() }).strict()
+const entrySchema = z.object({ cli: z.enum(CLI_IDS), group: z.enum(CLI_UPDATE_GROUPS), installed: z.boolean(), source: z.enum(CLI_INSTALL_SOURCES).optional(), currentVersion: version.optional(), appVersion: version.optional(), notice: z.string().max(2048).optional(), channel: z.string().max(64).optional(), latestVersion: version.optional(), latestCompatibleVersion: version.optional(), checkedAt: time.optional(), latestCheckedAt: time.optional(), mirrored: z.boolean().optional(), reason: z.enum(CLI_UPDATE_REASONS).optional(), planToken: z.string().length(64).optional() }).strict()
 const accountSchema = z.object({ cli: z.enum(CLI_IDS), installed: z.boolean(), state: z.enum(['authenticated', 'unconfigured', 'unauthenticated', 'configured', 'unknown', 'unavailable']), accountLabel: z.string().max(256).optional(), authMethod: z.enum(['oauth', 'api']).optional(), verification: z.enum(['cli', 'local']).optional() }).strict()
 const url = z.string().max(2048).transform(value => value.trim()).refine(value => !customRegistryProblem(value))
 export const downloadSettingsSchema = z.object({ source: z.enum(CLI_DOWNLOAD_SOURCES), customUrl: url.optional() }).strict().refine(s => s.source !== 'custom' || !!s.customUrl)
-const stateSchema = z.object({ policy: z.literal(1),
+const stateSchema = z.object({ policy: z.literal(2),
   entries: z.partialRecord(z.enum(CLI_IDS), entrySchema),
   versions: z.partialRecord(z.enum(CLI_IDS), z.object({ fingerprint: fingerprintSchema, version: version.optional() }).strict()),
   releases: z.record(z.string().regex(/^[a-f0-9]{64}$/), z.object({ latest: version, versions: z.array(version).max(10000), checkedAt: time, registry: url }).strict()),
@@ -25,7 +25,7 @@ const stateSchema = z.object({ policy: z.literal(1),
   settings: downloadSettingsSchema,
 }).strict()
 type State = z.infer<typeof stateSchema>
-const empty = (): State => ({ policy: 1, entries: {}, versions: {}, releases: {}, accounts: {}, settings: { source: 'follow' } })
+const empty = (): State => ({ policy: 2, entries: {}, versions: {}, releases: {}, accounts: {}, settings: { source: 'follow' } })
 const summaries: Record<AccountStatus['state'], string> = { authenticated: '已登录', configured: '已配置', unconfigured: '尚未配置', unauthenticated: '未登录或登录已过期', unknown: '登录状态未知', unavailable: '暂时无法读取登录状态' }
 /** Display data only. Account action handles and all command output are deliberately excluded. */
 export class CliManagementCache {
@@ -62,8 +62,8 @@ export class CliManagementCache {
   private save() { this.prepare(); atomicJSON(this.file, stateSchema.parse(this.state)) }
   entries(): CliUpdateEntry[] { return structuredClone(Object.values(this.state.entries)) }
   rememberEntry(entry: CliUpdateEntry) {
-    const { cli, group, installed, source, currentVersion, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken } = entry
-    this.state.entries[cli] = entrySchema.parse({ cli, group, installed, source, currentVersion, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken }); this.save()
+    const { cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken } = entry
+    this.state.entries[cli] = entrySchema.parse({ cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken }); this.save()
   }
   version(cli: ActiveCliId, fingerprint: Fingerprint) {
     const old = this.state.versions[cli]

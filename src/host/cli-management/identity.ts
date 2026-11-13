@@ -12,7 +12,7 @@ import { inspectPiInstallation } from '../pi-installation.mjs'
 import { resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
 import { CLI_SOURCES } from './sources.ts'
 
-export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string }
+export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
   executable: string
   fingerprint: Fingerprint
@@ -20,6 +20,9 @@ export interface InstallationIdentity {
   prefix?: string
   packageRoot?: string
   manifestVersion?: string
+  appPath?: string
+  updateRoot?: string
+  channel?: string
 }
 export const fingerprintToken = (fingerprint: Fingerprint) => createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex')
 export async function readManifest(file: string): Promise<Record<string, any> | undefined> {
@@ -33,7 +36,7 @@ export function isQoderDispatcher(cli: ActiveCliId, path: string, home = homedir
   return entry !== undefined && path.replace(/\\/g, '/') === `${home.replace(/\\/g, '/')}/${entry}`
 }
 /** Path components, not substrings or command names, decide ownership. */
-export function classifyInstallation(cli: ActiveCliId, path: string, packageName?: string, home = homedir(), selectedPath?: string): { source: CliInstallSource; prefix?: string; packageRoot?: string } {
+export function classifyInstallation(cli: ActiveCliId, path: string, packageName?: string, home = homedir(), selectedPath?: string): { source: CliInstallSource; prefix?: string; packageRoot?: string; updateRoot?: string } {
   const p = path.replace(/\\/g, '/'), lower = p.toLowerCase(), spec = CLI_SOURCES[cli]
   // Other managers can embed node_modules. Check those before npm.
   if (lower.includes('/nix/store/')) return { source: 'nix' }
@@ -53,13 +56,17 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
   }
   const h = home.replace(/\\/g, '/')
   if (isQoderDispatcher(cli, p, home)) return { source: 'self-update' }
-  if (cli === 'grok' && selectedPath?.replace(/\\/g, '/') === `${h}/.grok/bin/grok` && p.startsWith(`${h}/.grok/downloads/`)) return { source: 'self-update' }
+  if (cli === 'grok' && selectedPath?.replace(/\\/g, '/') === `${h}/.grok/bin/grok` && p.startsWith(`${h}/.grok/downloads/`)) return { source: 'self-update', updateRoot: `${h}/.grok` }
+  const exact: Partial<Record<ActiveCliId, string[]>> = { antigravity: ['.local/bin/agy'], omp: ['.local/bin/omp'], mimo: ['.local/bin/mimo'] }
+  if (exact[cli]?.some(part => p === `${h}/${part}`)) return { source: 'self-update', updateRoot: p }
   const layouts: Partial<Record<ActiveCliId, string[]>> = {
     codex: ['.codex/packages/standalone/'],
     claude: ['.local/share/claude/versions/'], grok: ['.grok/bin/'], kimi: ['.kimi-code/'], mimo: ['.mimocode/bin/'],
     traecn: ['.local/share/traecli/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'], hermes: ['.hermes/hermes-agent/'],
+    opencode: ['.opencode/bin/'], codebuddy: ['.codebuddy/bin/'],
   }
-  if (layouts[cli]?.some(part => p.startsWith(`${h}/${part}`))) return { source: spec.update ? 'self-update' : 'official-installer' }
+  const layout = layouts[cli]?.find(part => p.startsWith(`${h}/${part}`))
+  if (layout) return { source: spec.update ? 'self-update' : 'official-installer', updateRoot: `${h}/${layout.slice(0, -1)}` }
   return { source: 'unknown' }
 }
 /** Background path pass never searches PATH or executes a launcher. */
@@ -74,17 +81,46 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   else if (background) return undefined
   else executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
-  let target = await realpath(executable)
-  let manifestVersion: string | undefined, appVersion: string | undefined
+  let target = await realpath(executable), desktopRoot: string | undefined
+  if (cli === 'hermes') {
+    // Same fixed exec-shim grammar as hermes-installation.ts; inspect, never run.
+    for (let depth = 0; depth < 4; depth++) {
+      const info = await stat(target)
+      if (info.size > 128 * 1024) break
+      const source = await readFile(target, 'utf8')
+      const shim = /^#![^\r\n]*\b(?:sh|bash|zsh)\s*\r?\n\s*exec\s+(?:"(\/[^"\r\n$`]+)"|(\/[^\s$`"'\\;|&<>]+))\s+"\$@"\s*$/.exec(source)
+      if (!shim) break
+      target = await realpath(shim[1] ?? shim[2]!)
+    }
+  }
+  let manifestVersion: string | undefined, appVersion: string | undefined, channel: string | undefined, metadataToken: string | undefined
   if (cli === 'workbuddy' || cli === 'workbuddycn') {
     const app = await resolveWorkBuddyInstallation(cli, { manualPath: executable })
+    desktopRoot = app.appRoot
     target = await realpath(app.entry); manifestVersion = app.cliVersion
     const pkg = await readManifest(join(app.appRoot, process.platform === 'darwin' ? 'Contents/Resources/app/package.json' : 'resources/app/package.json'))
     appVersion = typeof pkg?.version === 'string' ? pkg.version : undefined
   } else if (cli === 'pi') {
-    const pi = inspectPiInstallation(executable); target = pi.executable; manifestVersion = pi.version
+    const pi = inspectPiInstallation(executable, { allowUnsupported: true }); target = pi.executable; manifestVersion = pi.version
   } else target = await realpath(resolveNativeEntry(target))
   const appRoot = /^(.*\.app)\/Contents\//.exec(target)?.[1]
+  desktopRoot ??= appRoot
+  // Whitelisted installation metadata only. Never invoke Hermes startup/check/fetch.
+  if (cli === 'hermes' || cli === 'traecn') {
+    for (let dir = dirname(target), depth = 0; depth < 7; dir = dirname(dir), depth++) {
+      const record = await readManifest(join(dir, cli === 'hermes' ? 'install-stamp.json' : 'trae-installation.json'))
+      if (!record) continue
+      if (cli === 'hermes' && typeof record.baseVersion === 'string') {
+        manifestVersion = record.baseVersion
+        channel = typeof record.channel === 'string' && /^[a-z0-9-]{1,32}$/.test(record.channel) ? record.channel : 'unknown'
+        metadataToken = createHash('sha256').update(JSON.stringify([record.baseVersion, record.commit, channel])).digest('hex')
+      } else if (cli === 'traecn' && ['public', 'tob', 'tob-alpha', 'internal'].includes(record.channel)) {
+        channel = record.channel
+        metadataToken = createHash('sha256').update(JSON.stringify([channel, record.release_channel])).digest('hex')
+      }
+      break
+    }
+  }
   if (appRoot) {
     try {
       const file = join(appRoot, 'Contents/Info.plist'), info = await stat(file)
@@ -92,6 +128,8 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
         const plist = await readFile(file, 'utf8')
         const value = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]{1,128})<\/string>/.exec(plist)?.[1]
         if (value) appVersion = value
+        const build = /<key>CFBundleVersion<\/key>\s*<string>([^<]{1,128})<\/string>/.exec(plist)?.[1]
+        if ((cli === 'workbuddy' || cli === 'workbuddycn') && build && /^\d+\.\d+\.\d+\.\d+$/.test(build)) appVersion = build
       }
     } catch { /* Unknown application version remains absent, never guessed. */ }
   }
@@ -117,5 +155,6 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     if (receipt?.source?.tap?.toLowerCase() !== CLI_SOURCES[cli].brew!.tap!.toLowerCase()) identity.source = 'unknown'
   }
   signal.throwIfAborted()
-  return { executable, ...identity, packageRoot, manifestVersion, fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}) } }
+  return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel,
+    fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}), ...(metadataToken ? { metadataToken } : {}) } }
 }

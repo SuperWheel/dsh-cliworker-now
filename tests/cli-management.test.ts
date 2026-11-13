@@ -1,4 +1,4 @@
-/** All process/network results are synthetic fixtures; no installed CLI is executed. */
+/** 模拟：All process/network results are synthetic fixtures; no installed CLI is executed. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, readFileSync, writeFileSync, rmSync, statSync, mkdirSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
@@ -28,7 +28,7 @@ describe('source identities', () => {
   it('describes exactly 17 active CLIs and leaves unverified installers manual', () => {
     expect(Object.keys(CLI_SOURCES)).toEqual([...CLI_IDS]); expect(CLI_IDS).toHaveLength(17)
     for (const cli of ['antigravity', 'zcode', 'hermes', 'workbuddy', 'workbuddycn'] as const) expect(CLI_SOURCES[cli].install).toBe('manual')
-    expect(CLI_SOURCES.antigravity.update).toBeUndefined()
+    expect(CLI_SOURCES.antigravity.update).toEqual(["update"])
   })
   it.each([
     ['codex', '/usr/local/lib/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'npm'],
@@ -73,10 +73,10 @@ describe('versions and bounded metadata', () => {
     expect(updateAvailable('1.0.0-beta.1', '1.0.0')).toBe(true)
     expect(() => compareVersions('1.0', '1.0.0')).toThrow()
   })
-  it('restricts Pi whitelist and OpenCode generation', () => {
-    expect(compatible('pi', '1.0.3')).toBe(false); expect(compatible('pi', '1.1.0')).toBe(true)
+  it('模拟：Pi updates accept latest while OpenCode remains V1', () => {
+    expect(compatible('pi', '1.0.3')).toBe(true); expect(compatible('pi', '1.1.0')).toBe(true)
     expect(compatible('opencode', '2.0.0')).toBe(false)
-    expect(latestCompatible('pi', ['1.0.2', '1.1.0', '2.0.0'])).toBe('1.1.0')
+    expect(latestCompatible('pi', ['1.0.2', '1.1.0', '2.0.0'])).toBe('2.0.0')
     expect(latestCompatible('opencode', ['1.3.0', '2.0.0', '1.4.0-beta.1'], '1.2.0')).toBe('1.3.0')
   })
   const fakeHandle = (out: string, exited = true) => ({ stdout: Readable.from([Buffer.from(out)]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => exited), terminate: vi.fn() })
@@ -281,7 +281,7 @@ describe('Host page service and lifecycle', () => {
   })
   it('reports incompatible targets and unknown versions without claiming updates', async () => {
     const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? identity : undefined), releases: new ReleaseClient(async url => new Response(JSON.stringify(String(url).endsWith('/dist-tags') ? { latest: '9.0.0' } : { versions: { '1.0.2': {}, '1.1.0': {}, '9.0.0': {} } }))) })
-    const result = await checked(f.service); expect(result.entries.find(e => e.cli === 'pi')).toMatchObject({ group: 'latest', reason: 'INCOMPATIBLE_TARGET', latestCompatibleVersion: '1.1.0' })
+    const result = await checked(f.service); expect(result.entries.find(e => e.cli === 'pi')).toMatchObject({ group: 'updatable', notice: '插件尚未适配 Pi 9.0.0，更新后 Pi Worker 要等插件适配后才能使用', latestCompatibleVersion: '9.0.0' })
   })
   it('watch abort unsubscribes without launching a probe', async () => {
     const f = serviceFixture(), controller = new AbortController(), stream = f.service.watch(controller.signal)
