@@ -64,8 +64,10 @@ createInterface({input:process.stdin}).on('line',async line=>{
   pending=v;prompts++;
   if(s.startsWith('subagent')){
    const say=t=>update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:t}});
-   if(prompts===1){update({sessionUpdate:'tool_call',toolCallId:'sub',name:'invoke_subagent',title:'Run invoke_subagent',status:'in_progress',rawInput:{TypeName:'image-generator'}});
-    update({sessionUpdate:'tool_call_update',toolCallId:'sub',name:'invoke_subagent',status:'completed'});say('已派发生图子 Agent，完成后通知。');finish();return;}
+   if(prompts===1){const dispatch=()=>{update({sessionUpdate:'tool_call',toolCallId:'sub',name:'invoke_subagent',title:'Run invoke_subagent',status:'in_progress',rawInput:{TypeName:'image-generator'}});
+    update({sessionUpdate:'tool_call_update',toolCallId:'sub',name:'invoke_subagent',status:'completed'});say('已派发生图子 Agent，完成后通知。');finish();};
+    // 模拟：主回合本身耗时较长（思考、等待 DSH 审批），之后才派出子 Agent。
+    if(s==='subagent-slow-main')setTimeout(dispatch,400);else dispatch();return;}
    const text=v.params.prompt[0].text;log({check:prompts,mentionsMarker:text.includes('CLIWORKER_SUBAGENTS_PENDING')});
    if(s==='subagent-never'){say('CLIWORKER_SUBAGENTS_PENDING');finish();return;}
    // Real agy 1.5.1: the marker first, then the backlog and the final report in the same turn.
@@ -338,6 +340,30 @@ it('模拟：跟进轮先回标记、同轮又送达结果时直接结束，不�
   expect(r.result).toMatchObject({ status: 'SUCCESS' })
   expect(r.result.response).toContain('图片已保存到 cat.png')
   expect(r.result.response).not.toMatch(/CLIWORKER|AGENTS_PENDING/)
+})
+it('模拟：主回合耗时超过后台等待上限时仍照常跟进，子 Agent 汇报后判成功而不是误报超时', async () => {
+  // 旧实现从主回合开始计时：这里主回合 400 ms、上限 200 ms，会不发任何跟进就报「未在限定时间内汇报」。
+  const r = await run(setup('subagent-slow-main', { timeoutMs: 5000 }), 'allow-once', undefined, false, { ...fast, budgetMs: 200 })
+  expect(r.error).toBeUndefined()
+  expect(prompts(r)).toBe(3)
+  expect(r.result).toMatchObject({ status: 'SUCCESS' })
+  expect(r.result.response).toContain('图片已保存到 cat.png')
+  expect(JSON.stringify(r.result)).not.toContain('后台子 Agent 未在限定时间内汇报结果')
+})
+it('模拟：等待上限只计跟进前的等待间隔，用尽后报告待核实', async () => {
+  const r = await run(setup('subagent-never', { timeoutMs: 5000 }), 'allow-once', undefined, false, { ...fast, delaysMs: [60, 60, 60], budgetMs: 100 })
+  // 60 + 40 ms 后预算用尽：只发两次跟进，不再发第三次。
+  expect(prompts(r)).toBe(3)
+  expect(r.result).toMatchObject({ status: 'UNCERTAIN' })
+  expect(JSON.stringify(r.result)).toContain('后台子 Agent 未在限定时间内汇报结果')
+})
+it('模拟：跟进提示不把 manage_subagents 的 ALIVE 当成未完成，并以结果消息或产物为完成依据', () => {
+  // agy 1.5.1 的子 Agent 状态只有 ALIVE/KILLED，已汇报的子 Agent 仍是 ALIVE。
+  expect(AGY_BACKGROUND.checkPrompt).toContain('ALIVE')
+  expect(AGY_BACKGROUND.checkPrompt).toContain('不能据此判断未完成')
+  expect(AGY_BACKGROUND.checkPrompt).toContain('产物')
+  expect(AGY_BACKGROUND.checkPrompt).toContain('不要重新派发')
+  expect(AGY_BACKGROUND.checkPrompt).toContain(AGY_BACKGROUND.pendingMarker)
 })
 it('模拟：成功完成本轮后 agy 关闭时非零退出，报告待核实而不是失败', async () => {
   const r = await run(setup('subagent-late-exit'), 'allow-once', undefined, false, fast)

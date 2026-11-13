@@ -313,11 +313,16 @@ export async function runNativeAcp(config, io, settings) {
    * visible same-session checks until the CLI reports instead of the pending marker. */
   const awaitBackground = async (first) => {
     const { pendingMarker, checkPrompt, delaysMs, budgetMs } = settings.background
-    const deadline = started + Math.min(budgetMs, config.timeoutMs ?? budgetMs)
+    // The plugin's limit is idle waiting given to background work. It starts when the main
+    // turn ends: time the main turn spent (thinking, DSH approvals) is not background wait.
+    // Only the task time limit bounds the whole run, check turns included.
+    const taskDeadline = config.timeoutMs === undefined ? Infinity : started + config.timeoutMs
+    let waited = 0
     let result = first
     for (const [index, delay] of delaysMs.entries()) {
-      const wait = Math.min(delay, deadline - Date.now())
+      const wait = Math.min(delay, budgetMs - waited, taskDeadline - Date.now())
       if (wait <= 0) break
+      waited += wait
       // Diagnostics, not status: the Worker process view shows them, so automatic turns stay visible.
       io.event({ kind: 'diagnostic', notice: true, text: `${settings.name} 子 Agent 仍在后台运行，${Math.round(wait / 1000)} 秒后由 CLI Worker 自动发送第 ${index + 1} 次跟进检查` })
       await new Promise((resolve, reject) => {
@@ -336,7 +341,7 @@ export async function runNativeAcp(config, io, settings) {
       markerFilter = createMarkerFilter(pendingMarker)
       try {
         result = await peer.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: checkPrompt }] },
-          { jsonrpc: true, timeoutMs: Math.max(1000, deadline - Date.now()) })
+          { jsonrpc: true, timeoutMs: Math.max(1000, (Number.isFinite(taskDeadline) ? taskDeadline : Date.now() + budgetMs) - Date.now()) })
       } finally {
         const rest = markerFilter.flush()
         markerFilter = undefined

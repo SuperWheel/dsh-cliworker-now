@@ -1,0 +1,43 @@
+# Design
+
+## Context
+
+- Claude Code Worker 只走原生 Runner：`native-bridge.mjs` 把 `claude` 映射到 `native-claude.mjs` 的 `runNativeClaude`。新派遣、续聊（`--resume`）、原生会话恢复和分支（`--fork-session`）都进同一个 `runClaudeSession`，规划与否只由 `claudePermissionMode(config)` 是否为 `plan` 决定。
+- Antigravity ACP 的后台子 Agent 等待在通用 `runNativeAcp` 的 `awaitBackground` 中，参数来自 `native-agy-acp.mjs` 的 `AGY_BACKGROUND`。只有 agy 开启该设置。
+
+## Goals / Non-Goals
+
+- 目标：规划模式下 Claude Code 的方案作为成功结果交回；Antigravity 生图子 Agent 完成后不再误报超时。
+- 非目标：不支持 Claude Code 的其他交互回调（如提问工具）；不改 agy stream 后备路径；不改变跟进间隔和 10 分钟上限的数值；不读取 agy 私有目录来判断产物。
+
+## Decisions
+
+### 1. `ExitPlanMode` 直接判「规划完成」，不转交 DSH 审批
+
+- 依据 `openspec/specs/worker-permission-levels/` 的「规划模式独立于档位」：规划开启时，授权请求 MUST 直接拒绝。`native-approval-policy.ts` 的 `decideApproval` 在规划模式下也固定返回 `{ decision: 'deny', source: 'plan' }`。
+- 依据审批转交规则（`native-permission-relay`）：转交 DSH 的是「是否允许本次操作」的授权，而 `ExitPlanMode` 请求的是「离开规划、开始执行」，这一步属于用户对规划状态的决定。在 Worker 中关闭 `/plan` 或主对话退出规划，下一轮自然按所选档位执行。在 Worker 内批准或弹卡，都会绕开宿主规划模式。
+- 因此插件只把方案作为本轮结果，并回复 `deny + interrupt: true`，让 CLI 立即停下，不执行方案中的任何步骤。选 `interrupt: true` 而不是继续：不中断时模型可能在被拒后改写回复或再次尝试退出规划，结果不可预期。
+- 中断后 CLI 给出的 `error_during_execution` 是插件自己造成的，不计为失败；`permission_denials` 中的 `ExitPlanMode` 也不计为用户拒绝。其他终态子类型（如轮数或预算用尽）、非零退出、未完成工具仍判失败。
+- 方案为空时不伪造结果，沿用原失败判定。非规划模式下的 `ExitPlanMode`（例如模型自己进入了规划）也沿用原判定：那时批准等于开始执行，超出本次范围，见 `tasks.md` 的「跟进」。
+- 结果附 `notice`「规划模式：Claude Code 已提交方案，未退出规划、未执行；关闭规划后续聊即可按方案执行」，让主 Agent 和用户知道没有执行。
+- 工具行定位：优先使用请求中的 `tool_use_id`，缺失时取尚未完成的最近一个 `ExitPlanMode` 调用；CLI 没回 `tool_result` 时在终态处补记完成。
+
+### 2. 后台等待上限从主回合结束时起算，只计等待间隔
+
+- 原实现 `deadline = started + min(budgetMs, timeoutMs)` 把主回合时长算进后台等待。改为累计每次跟进前的等待间隔，上限仍为 `budgetMs`（10 分钟）。另以任务总时限 `started + timeoutMs` 约束整轮，跟进轮请求超时取任务剩余时间：用户在跟进轮中审批得慢，不再被 10 分钟的后台上限截断。
+- 传输层的总时限与空闲时限（`native-time-limit.mjs`）不变，仍会在任务超时时终止进程。
+
+### 3. 跟进提示以结果消息或产物为完成依据
+
+- 本机 agy（`~/.local/bin/agy`）中子 Agent 状态枚举只有 `SUBAGENT_STATE_ALIVE`、`SUBAGENT_STATE_KILLED`、`SUBAGENT_STATE_UNSPECIFIED`。已汇报的子 Agent 仍是 ALIVE，旧提示「必要时用 manage_subagents 查看状态，仍有未完成就回复标记」会让模型一直等待。
+- 新提示要求先读已送达的子 Agent 消息并检查要求的产物是否存在，二者满足其一即视为完成，并说明 ALIVE 不表示仍在工作。是否回复标记仍由模型判断，插件只从协议上判断标记是否为本轮最后内容，规则不变。
+
+## Risks / Trade-offs
+
+- Claude Code 后续版本若改变 `ExitPlanMode` 的请求形状（例如方案不在 `input.plan`），会回到原失败判定，不会误判成功。
+- 后台等待现在可能长于原先的「主回合 + 等待 ≤ 10 分钟」，但仍受任务总时限约束，停止操作照常有效。
+- 提示词修改的效果依赖模型，只能用真实 agy 验证；模拟测试只能保证提示内容与协议流程。
+
+## Rollback
+
+三个 Host 文件的改动互相独立，可分别回退；无存储、协议或安装入口变化。

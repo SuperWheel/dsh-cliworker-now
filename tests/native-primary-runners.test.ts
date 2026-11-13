@@ -100,6 +100,13 @@ function claudeTurn(){
   send({type:'assistant',session_id:id,message:{id:'toolmsg',content:[{type:'tool_use',id:'tool',name:'Bash',input:{command:'synthetic'}}]}});
   send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',requires_user_interaction:scenario==='unsupported-interaction'}});return;
  }
+ if(scenario.startsWith('plan-exit')){
+  // 模拟 Claude Code 规划模式收尾：ExitPlanMode 带完整方案，并要求用户交互（2026-11-11 用户日志的帧形状）。
+  const plan=scenario==='plan-exit-empty'?' ':'模拟方案：\\n1. 读取配置\\n2. 修改解析器';
+  send({type:'assistant',session_id:id,message:{id:'planmsg',content:[{type:'text',text:'方案已整理好。'}]}});
+  send({type:'assistant',session_id:id,message:{id:'plantool',content:[{type:'tool_use',id:'plan-tool',name:'ExitPlanMode',input:{plan}}]}});
+  send({type:'control_request',request_id:'synthetic-plan',request:{subtype:'can_use_tool',tool_name:'ExitPlanMode',input:{plan},...(scenario==='plan-exit-no-id'?{}:{tool_use_id:'plan-tool'}),requires_user_interaction:true}});return;
+ }
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
  if(scenario==='ask'||scenario==='ask-nonzero-exit'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
  if(scenario==='child-model')send({type:'assistant',session_id:id,parent_tool_use_id:'synthetic-task',message:{id:'child',model:'synthetic-child-model',content:[{type:'text',text:'子任务公开进度'}]}});
@@ -235,6 +242,13 @@ lines.on('line',line=>{
    if(scenario==='context-timeout')return;
    send({type:'control_response',response:{subtype:scenario==='context-unsupported'?'error':'success',request_id:value.request_id,response:{model:scenario==='context-other-model'?'wrong-model':'synthetic-model',totalTokens:17,maxTokens:128000,categories:[{name:'System prompt',tokens:7,kind:'used'},{name:'Messages',tokens:10,kind:'used'}],systemPromptSections:[{name:'PRIVATE_BODY_MUST_NOT_LEAK',text:'PRIVATE_BODY_MUST_NOT_LEAK'}]}}});
   }else if(value.type==='user')claudeTurn();
+  else if(value.type==='control_response'&&scenario.startsWith('plan-exit')){
+   const answer=value.response.response??{};
+   if(answer.behavior==='allow'){send({type:'assistant',session_id:id,message:{id:'executed',content:[{type:'text',text:'MUST NOT EXECUTE'}]}});claudeEnd();return;}
+   if(scenario!=='plan-exit-no-tool-result')send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'plan-tool',content:'synthetic plan denial',is_error:true}]}});
+   if(answer.interrupt!==true){send({type:'assistant',session_id:id,message:{id:'after-plan',content:[{type:'text',text:'模拟拒绝后继续'}]}});claudeEnd();return;}
+   send({type:'result',subtype:'error_during_execution',session_id:id,is_error:true,errors:['aborted_tools'],permission_denials:[{tool_name:'ExitPlanMode',tool_use_id:'plan-tool'}],usage:{input_tokens:2,output_tokens:1}});
+  }
   else if(value.type==='control_response'){
    if(scenario==='deny-continue'||scenario==='unsupported-interaction'){
     send({type:'user',session_id:id,message:{content:[{type:'tool_result',tool_use_id:'tool',content:'synthetic denial',is_error:true}]}});
@@ -903,6 +917,47 @@ describe('native primary runners (synthetic protocol processes, no real accounts
     expect(result.status).toBe('SUCCESS')
     expect(result).not.toHaveProperty('notice')
     expect(result).not.toHaveProperty('error')
+  })
+  describe('模拟 Claude Code 规划模式以 ExitPlanMode 收尾', () => {
+    const plan = '模拟方案：\n1. 读取配置\n2. 修改解析器'
+    const planReply = (messages: any[]) => messages.find((value) => value.type === 'control_response' && value.response?.request_id === 'synthetic-plan')?.response
+    it.each([
+      ['派遣（新会话）', 'plan-exit', false],
+      ['续聊与原生会话恢复（--resume）', 'plan-exit', true],
+      ['原生不回工具结果', 'plan-exit-no-tool-result', true],
+      ['请求未带 tool_use_id', 'plan-exit-no-id', false],
+    ] as const)('%s：方案作为结果、终态成功，插件不批准退出规划', async (_name, scenario, resume) => {
+      const f = await runLevel('claude', scenario, 'workspace-write', 'plan', resume)
+      expect(f.launches[0]).toContain('plan')
+      if (resume) expect(f.launches[0]).toContain('--resume')
+      else expect(f.launches[0]).not.toContain('--resume')
+      // 不经 DSH 审批、不批准退出规划，立即中断，方案之后不执行任何步骤。
+      expect(f.frames.some((frame) => frame.type === 'approval')).toBe(false)
+      expect(planReply(f.messages)).toMatchObject({ subtype: 'success', response: { behavior: 'deny', interrupt: true } })
+      expect(JSON.stringify(f.frames)).not.toContain('MUST NOT EXECUTE')
+      expect(f.result).toMatchObject({ type: 'result', status: 'SUCCESS', response: plan })
+      expect(f.result.error).toBeUndefined()
+      expect(f.result.notice).toContain('未执行')
+      const tool = f.frames.filter((frame) => frame.event?.kind === 'tool' && frame.event.toolCall?.callId === 'plan-tool').at(-1)
+      expect(tool.event.state).toBe('COMPLETED')
+      expect(tool.event.toolCall.name).toBe('ExitPlanMode')
+      expect(f.frames.some((frame) => frame.event?.kind === 'diagnostic' && frame.event.text.includes('已提交规划方案'))).toBe(true)
+    })
+    it('方案为空时不伪造结果，仍按不支持的额外交互判失败', async () => {
+      const f = await runLevel('claude', 'plan-exit-empty', 'workspace-write', 'plan')
+      expect(planReply(f.messages)).toMatchObject({ response: { behavior: 'deny', interrupt: true } })
+      expect(f.result).toMatchObject({ status: 'ERROR', error: 'CLI 请求额外交互授权，插件未批准' })
+    })
+    it('非规划模式下的 ExitPlanMode 不当作规划完成，也不批准', async () => {
+      const f = await runLevel('claude', 'plan-exit', 'workspace-write', 'accept-edits')
+      expect(planReply(f.messages)).toMatchObject({ response: { behavior: 'deny', interrupt: true } })
+      expect(f.result).toMatchObject({ status: 'ERROR', error: 'CLI 请求额外交互授权，插件未批准' })
+    })
+    it('规划模式下其他需要用户交互的请求仍判失败', async () => {
+      const f = await runLevel('claude', 'unsupported-interaction', 'workspace-write', 'plan')
+      expect(f.messages.find((value) => value.type === 'control_response').response.response).toMatchObject({ behavior: 'deny', interrupt: true })
+      expect(f.result).toMatchObject({ status: 'ERROR', error: 'CLI 请求额外交互授权，插件未批准' })
+    })
   })
   it('still interrupts an unsupported Claude interactive callback', async () => {
     const { result, messages } = await run('claude', 'unsupported-interaction')

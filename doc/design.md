@@ -1495,3 +1495,10 @@ npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒
 Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道无法由记录核实时显示 unknown，不把 baseVersion 冒充准确 stable tag。其 notice 说明 stable 查询与原 canary/自定义通道的差异，以及迁移配置、依赖和服务重启。Pi 更新取 latest，Worker 适配集合统一导出自 pi-installation；管理页能读未适配包，但 Worker 核对仍严格，notice 明示适配风险。
 
 桌面查询/更新调用 desktop-update 的独立接口；WorkBuddy 保留 CLI 版本，另用 appVersion 比较应用更新，官方 204 映射已是最新。下载适配器只交付已校验完整文件，Windows 扩展名由桌面执行器处理。共享协议仅增加可选 appVersion、notice、channel；前端需显示应用版本及更新前 notice。新增路径未运行真实更新；完整模拟验证与剩余实机验收见本变更 tasks.md 第 8 节。
+
+## 2026-11-14 Claude 规划收尾与 Antigravity 后台子 Agent 误报修复（未发布）
+
+- 来源：B 站用户在 v0.8.9 上的两个报告。变更 `openspec/changes/vnext-plan-exit-agy-background-leeyl/`。
+- Claude Code 规划模式：原生 `ExitPlanMode` 带 `requires_user_interaction: true`，原实现按不支持的额外交互判失败并中断，结果正文为空。现在规划模式下带非空 `input.plan` 的 `ExitPlanMode` 视为本轮完成：方案作为结果正文，终态成功并附「未退出规划、未执行」说明；插件仍回复拒绝并中断，不转交 DSH。理由：规划模式下授权一律直接拒绝（`worker-permission-levels`），离开规划是用户对规划状态的决定，不属于单次操作授权。插件中断造成的 `error_during_execution` 与对 `ExitPlanMode` 的拒绝记录不计为失败。其他交互请求、非规划模式与空方案保持原判定。
+- Antigravity 后台子 Agent：等待上限原从主回合开始时起算，主回合与审批耗时会占满上限，导致不发跟进就判待核实；现改为只累计跟进前的等待间隔（10 分钟），整轮仍受任务总时限约束，跟进轮请求超时取任务剩余时间。agy 子 Agent 状态只有 ALIVE／KILLED，已汇报的子 Agent 仍是 ALIVE；跟进提示改为以结果消息或产物为完成依据。用户猜测的「结果直接回到主对话」没有对应通道：agy 子 Agent 只向 agy 父会话汇报，主 Agent 是在 Worker 判待核实后自行核对了文件。
+- 只有模拟验证；真实 Claude Code 规划收尾与真实 agy 生图未验收（需用户授权模型调用）。

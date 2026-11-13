@@ -1,0 +1,8 @@
+pm:
+  title: 修复 Claude 规划收尾判错与 Antigravity 后台子 Agent 误报超时
+  version: next
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-14
