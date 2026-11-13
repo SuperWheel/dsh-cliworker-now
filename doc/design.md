@@ -1481,3 +1481,9 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 - TRAE「询问」档（[add-traecn-ask-level](../openspec/archives/add-traecn-ask-level/design.md)）：询问档以 `-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user" acp serve` 启动，不带 `--permission-mode`（二者同给时 TRAE 拒绝启动），不设、不回读 ACP 模式；其余三种启动不变。仅可查看且未选档时按询问档运行。工作区内改动先询问尚未经真实模型验证，验证通过前不随正式版本发布。
 - DS Bot 换段（[rebind-workers-across-bot-segments](../openspec/archives/rebind-workers-across-bot-segments/design.md)，Issue #10）：只读 DS Bot `<DSH_HOME>/bot/state.json` 识别段链（Bot 自己对话、群成员会话、群自身三类，重复 ID 的链整体丢弃）。父会话是链的当前段时，在 Worker 入口把同链旧段的空闲 Worker 改到当前段并记 `formerParentSessionIds`；运行中的 Worker 空闲后再改。显示桥只在旧记录父会话属于 `formerParentSessionIds` 时以旧记录为前身重建显示子会话，绑定存储以显式 `reparent` 接受这一换父替换。CLI 会话 ID 不变。
+
+## 2026-11-13 版本检查实机缺陷修复（未发布）
+
+npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒；仅 Pi/OpenCode 的 latest 不兼容时允许版本列表请求达到 32 MiB。清单缺版本时，前台按实际可执行入口执行有界 --version；后台权限由 sources 数据按主会话提供的实机证据控制，Codex/Qoder 两版仅前台，Hermes 均跳过。版本结果按指纹缓存，Windows 保持现有安全启动链。Codex standalone 归官方安装器且手动更新；Claude cask 的读取、分组、更新计划已有模拟回归。未自行运行真实 CLI，证据记录在本变更 tasks.md 2.8。
+
+2.8 来源复测补充：Qoder/CN 的 `.qoder/entry/qoder`、`.qoder-cn/entry/qodercn` 只按 home 下完整入口匹配 self-update。保留记录入口与 `update` argv，spawn 前检查 homedir/update，存在路径或检查失败即拒绝，避免分发到 IDE；不猜测分发器的 PATH 解析结果，不修改用户路径。Grok 仅在记录入口为 home/.grok/bin/grok 且 realpath 属于 home/.grok/downloads/ 时补认 self-update，无发布源仍手动。模拟验证与外部并发创建路径的预检竞态边界见变更设计和 tasks.md 2.8。

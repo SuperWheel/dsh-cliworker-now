@@ -173,9 +173,10 @@ export class CliManagementService {
       if (pathOnly) return
       const cached = this.cache.version(cli, identity.fingerprint)
       this.assertHealthy()
-      const version = (cached && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion) ? cached.version : undefined) ?? await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background)
+      const reusable = cached && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion)
+      const version = reusable ? cached.version : await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background)
       control.throwIfAborted()
-      if (version && version !== cached?.version) {
+      if (!reusable && (!background || CLI_SOURCES[cli].backgroundSafe)) {
         const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, control, background)
         control.throwIfAborted()
         if (!after || fingerprintToken(after.fingerprint) !== fingerprintToken(identity.fingerprint)) throw new Error('CLI identity changed during version read')
@@ -184,6 +185,7 @@ export class CliManagementService {
       const manual = ['desktop-app', 'winget', 'scoop', 'nix', 'bun', 'pnpm', 'unknown'].includes(identity.source)
       const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' || old.group === 'manual' ? 'checking' : old.group
       this.publish(cli, { installed: true, source: identity.source, currentVersion: version, planToken: fingerprintToken(identity.fingerprint), checkedAt: Date.now(), stage: undefined, group,
+        reasonDetail: !version ? CLI_SOURCES[cli].versionNote : undefined,
         reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'desktop-app' ? 'APP_MANAGED' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
         manual: manual ? { note: '请按官方说明在原安装渠道更新，然后重新检查。', guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
       }, true)
@@ -259,7 +261,7 @@ export class CliManagementService {
     try {
       const plan = await this.planCliOperation(cli, 'install', signal, { registry: this.effectiveRegistry(), installDirectory: directory })
       this.publish(cli, { install: plan.offer, planToken: plan.token, latestCompatibleVersion: validVersion(plan.target) ? plan.target : undefined,
-        reasonDetail: plan.source.reason ?? this.entry(cli).reasonDetail })
+        reasonDetail: (this.entry(cli).installed && !this.entry(cli).currentVersion ? CLI_SOURCES[cli].versionNote : undefined) ?? plan.source.reason ?? this.entry(cli).reasonDetail })
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.cleanupCli = cli; this.deps.cleanup?.(cli, error); this.preloader.changed() }
       signal.throwIfAborted()

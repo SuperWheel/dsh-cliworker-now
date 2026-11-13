@@ -1,10 +1,32 @@
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
 import { homedir } from 'node:os'
+import { lstat, realpath } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS } from '../process.ts'
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
+import { isQoderDispatcher } from './identity.ts'
+
+/** Official dispatchers treat an existing first argument as an IDE path. */
+async function guardDispatcherUpdate(argv: string[], cwd: string): Promise<void> {
+  if (argv[1] !== 'update' || !argv[0]) return
+  const dispatcher = (path: string) => isQoderDispatcher('qoder', path, cwd) || isQoderDispatcher('qodercn', path, cwd)
+  if (!dispatcher(argv[0])) {
+    // Also cover a recorded symlink to the official dispatcher.
+    let target: string
+    try { target = await realpath(argv[0]) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return; throw error }
+    if (!dispatcher(target)) return
+  }
+  try { await lstat(join(cwd, 'update')) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw new CliOperationError('PREREQUISITE_MISSING', '无法检查主目录中的 update 路径，已阻止 Qoder 分发入口更新；请按官方说明手动更新')
+  }
+  throw new CliOperationError('PREREQUISITE_MISSING', '主目录中存在名为 update 的文件、目录或符号链接，Qoder 分发入口可能转入 IDE；请处理同名路径或按官方说明手动更新')
+}
 
 export function redactOutput(value: string): string {
   return stripVTControlCharacters(value)
@@ -39,7 +61,10 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
   let readers: Promise<void>[] = [], finished = false
   const abort = () => child?.terminate()
   try {
-    child = backend.spawn({ argv, cwd: homedir(), signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
+    const cwd = homedir()
+    if (argv[1] === 'update') await guardDispatcherUpdate(argv, cwd)
+    control.throwIfAborted()
+    child = backend.spawn({ argv, cwd, signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
     void child.done.catch(() => undefined)
     control.addEventListener('abort', abort, { once: true }); if (control.aborted) abort()
     const read = async (stream: ReturnType<ProcessBackend['spawn']>['stdout']) => {

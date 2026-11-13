@@ -83,7 +83,9 @@ Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登�
 
 ## 安装与更新
 
-源码中的「更新 CLI」页已接入首次安装后端：按 Host 核实的安装方式生成计划，npm 主包按官方 sha512 校验后装入当前全局前缀，官方脚本先保存到私有目录再执行。安装期间目标 CLI 暂停派遣与账号操作；只有重新探测得到有效版本才写入原有 CLI 路径设置。来源未核实的方式仍提供官方说明。Claude 全平台及 MiMo macOS/Linux 的原生装后版本读法尚未核实，脚本安装已退回仅说明（MiMo Windows 仍用 npm）。三个桌面 CLI 的自动安装尚未开放，安装包来源与开发者身份仍待核实；当前证据为模拟测试，不代表真实安装验收。进度及边界见 [本次任务记录](openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。
+源码中的「更新 CLI」页已接入首次安装后端：按 Host 核实的安装方式生成计划，npm 主包按官方 sha512 校验后装入当前全局前缀，官方脚本先保存到私有目录再执行。安装期间目标 CLI 暂停派遣与账号操作；只有重新探测得到有效版本才写入原有 CLI 路径设置。来源未核实的方式仍提供官方说明。Claude 全平台及 MiMo macOS/Linux 的首次安装脚本暂保持仅说明（MiMo Windows 仍用 npm）；本轮已补齐现有安装的版本检查，未重新开放首次安装脚本。三个桌面 CLI 的自动安装尚未开放，安装包来源与开发者身份仍待核实；当前证据为模拟测试，不代表真实安装验收。进度及边界见 [本次任务记录](openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。
+
+Qoder/CN 的官方分发入口可识别为自带更新；主目录中若存在名为 `update` 的路径，Host 会拒绝启动更新并说明原因，避免被分发到 IDE。Grok 官方 bin 入口链接到 downloads 中的实体时显示「Grok Build 自带更新」，但因发布源未核实仍需手动更新。
 
 先结束活动任务并完全退出 Harness，再执行：
 

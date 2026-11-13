@@ -35,7 +35,26 @@
 - **THEN** 其他行照常完成；OpenCode 写「查询超时」，随重排进入「检查失败」
 
 ### Requirement: 版本检查与兼容范围
-Host SHALL 用插件实际调用的可执行文件读取当前版本，带超时；探测 Kimi 时 MUST 设置 `KIMI_CODE_NO_AUTO_UPDATE=1`。没有已验证、无副作用读法的 CLI SHALL 显示「版本未知」，MUST NOT 猜测。最新版本 SHALL 只从官方发布源读取（npm registry、Homebrew API、官方清单），单个请求 8 秒超时、最多 3 个并发、响应体超过 512 KiB 视为无效，MUST NOT 携带凭据。版本 SHALL 按 SemVer 比较；当前是正式版、远端是预发布版时 MUST NOT 提示更新。Pi（白名单 1.0.2、1.0.4、1.1.0）、OpenCode（只到 V1）等有适配范围的 CLI，发布源上超出范围的新版本 SHALL 写「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮。
+Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口执行已核实的 `--version`：参数数组、stdin ignore、5 秒超时、确认进程范围退出、去 ANSI 后取首个完整合法 SemVer。Kimi MUST 带 `KIMI_CODE_NO_AUTO_UPDATE=1`。后台仅对 sources 标为无文件改动的 CLI 开放，按指纹复用结果；Codex、Qoder/CN 仅前台。Hermes 前后台均不执行，显示版本未知及超时/租约说明；桌面应用沿用文件读法。版本 SHALL 按 SemVer 比较；正式版不提示升级到预发布版。Pi 白名单（1.0.2、1.0.4、1.1.0）与 OpenCode V1 之外的版本 SHALL 显示「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮。
+
+#### Scenario: 前后台版本命令权限不同
+- **WHEN** 前台或后台检查缺少清单版本的 Codex、Qoder/CN 或 Hermes
+- **THEN** 仅前台允许 Codex、Qoder/CN 版本命令，Hermes 两者均跳过；指纹不变的结果不重复执行
+
+#### Scenario: Claude cask 无清单版本
+- **WHEN** 前台识别出 Claude 的 Homebrew cask 归属且清单没有版本
+- **THEN** Host 从实际入口读取版本，存在兼容更新时生成 `brew upgrade --cask claude-code` 参数数组
+
+### Requirement: 发布元数据查询边界
+最新版本 SHALL 从官方发布源读取（npm registry、Homebrew API、官方清单），每请求 8 秒超时、最多 3 并发、普通响应体限 512 KiB，MUST NOT 携带凭据。npm SHALL 先读 dist-tags；仅 compatibility 非 any 且 latest 不兼容时才读取版本列表，流式累计并限 32 MiB。镜像核对/回退顺序及精确版本 integrity/artifact 的 512 KiB 限制 SHALL 保持不变。
+
+#### Scenario: 大包的 latest 已兼容
+- **WHEN** dist-tags 返回的 latest 是插件已兼容的版本
+- **THEN** Host 只读不超过 512 KiB 的 dist-tags，不读取整份 packument
+
+#### Scenario: 兼容回退的版本列表超限
+- **WHEN** latest 不兼容且版本列表实际流式字节数超过 32 MiB
+- **THEN** Host 中止响应并报告发布查询失败，不放大其他请求上限
 
 #### Scenario: Pi 出现未适配版本
 - **WHEN** npm 上 Pi 的最新版本不在插件白名单内
@@ -59,6 +78,18 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 #### Scenario: WinGet 安装
 - **WHEN** Grok Build 由 WinGet 安装
 - **THEN** 归入「需要手动更新」，展开后显示 `winget upgrade` 命令与官方说明，没有「更新」按钮
+
+#### Scenario: Qoder 官方分发入口
+- **WHEN** Qoder/CN 真实路径分别为 `<home>/.qoder/entry/qoder` 或 `<home>/.qoder-cn/entry/qodercn`，且发布源存在兼容更新
+- **THEN** Host 识别为 self-update、进入可更新，计划为 `[记录入口, 'update']`；entry 下其他名字不据此识别
+
+#### Scenario: Qoder 分发路由冲突
+- **WHEN** 即将执行官方分发入口（或其符号链接）的 update，而 homedir 下存在同名路径或无法检查
+- **THEN** Host 在启动进程前拒绝并说明冲突，不转入 IDE，不删除用户路径
+
+#### Scenario: Grok 官方下载实体
+- **WHEN** Grok 记录入口为 `<home>/.grok/bin/grok`，真实路径位于 `<home>/.grok/downloads/`，但没有已核实发布源
+- **THEN** Host 识别为 self-update，仍归手动更新，沿用 CLI 名称显示「Grok Build 自带更新」
 
 #### Scenario: 计划过期
 - **WHEN** 用户检查后在终端里重装了 Codex，回到页面点「更新」

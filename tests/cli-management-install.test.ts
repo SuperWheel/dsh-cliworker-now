@@ -15,6 +15,7 @@ import { desktopFs } from '../src/host/cli-management/desktop.ts'
 import { directoryFs } from '../src/host/cli-management/directory.ts'
 import { mimoConfigurationPaths } from '../src/host/mimo-configuration.ts'
 import { identifyInstallation } from '../src/host/cli-management/identity.ts'
+import { currentVersion } from '../src/host/cli-management/versions.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { serviceFixture, control, finished, syntheticIdentity, childFixture, until, sri } from './cli-management-phase-b-fixture.ts'
 const fixtures: ReturnType<typeof serviceFixture>[] = []
@@ -46,9 +47,18 @@ function fixture() {
 }
 const prepare = (f: ReturnType<typeof fixture>, cli: any = 'codex') => f.installer.prepare(cli, 'https://registry.npmjs.org/', '', control())
 
-it.each(['claude', 'mimo'] as const)('模拟审查 1：%s 原生版本读法未核实时只给说明，零下载/进程', async cli => {
+it('模拟 2.8：Hermes 版本未知的原因不被重新安装说明覆盖', async () => {
+  const f = fixture(); f.identities.set('hermes', { ...syntheticIdentity('hermes'), manifestVersion: undefined })
+  f.version.mockImplementation(currentVersion as any)
+  await (f.service as any).local('hermes', control(), false, false)
+  await (f.service as any).installEntry('hermes', '', control())
+  expect(f.service.snapshot().entries.find(e => e.cli === 'hermes')?.reasonDetail).toContain('前后台均不执行')
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+it.each(['claude', 'mimo'] as const)('模拟审查 1：%s 首次安装仍仅说明，版本检查修复不自动开放脚本，零下载/进程', async cli => {
   const f = fixture(), plan = await prepare(f, cli)
-  expect(plan.offer.method).toBe('manual'); expect(plan.source.reason).toContain('版本读法尚未核实')
+  expect(plan.offer.method).toBe('manual'); expect(plan.source.reason).toContain('首次安装流程尚待重新核实')
   f.service.start(cli, 'install', plan.token, '', 'manual-native')
   expect((await finished(f.service)).results[0]?.error?.code).toBe('PREREQUISITE_MISSING')
   expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.artifactFetch).not.toHaveBeenCalled()

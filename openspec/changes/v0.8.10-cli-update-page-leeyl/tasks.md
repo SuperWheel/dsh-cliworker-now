@@ -27,6 +27,27 @@
   - Phase B（2026-11-13）已修：registry 探测 single-flight，清理未确认立即停止后续探测并调用既有全局 cleanup 隔离；指纹加入清单版本且不沿用与当前清单冲突的缓存；失效自动路径前台复用 resolver 重找；manual → npm 重新计算分组。
   - 模拟回归：`corepack pnpm vitest run tests/cli-management-phase-b.test.ts tests/cli-management-download.test.ts tests/cli-management-admission.test.ts`：3 文件 40 项通过（包含四项审查回归和并发 registry 清理失败）；`corepack pnpm typecheck` 通过。
 
+- [x] 2.8 实机发现：packument 超限、前台 --version
+  - 发布源查询改为 `GET <registry>/-/package/<编码包名>/dist-tags`；普通 JSON 保留 512 KiB、8 秒和全局 3 并发。仅 Pi/OpenCode 等 compatibility 非 any 且 latest 不兼容时请求 `<registry>/<编码包名>` 的版本列表，专用 32 MiB 上限同时检查 Content-Length 和流式累计字节；依据为用户提供的 OpenCode 14.7 MB 实测大小，保留有界增长空间。latest 兼容时不拉 packument。
+  - 镜像与官方核对/回退顺序不变；integrity()/artifact() 仍读取小型 `<pkg>/<version>`，保持 512 KiB。ReleaseRecord/cache schema 不变，新的版本列表只缓存 latest 与最高兼容正式/预发布候选；原有缓存可直接使用，无须迁移，原有严格格式校验/损坏丢弃与 0700/0600 不变。
+  - `currentVersion` 先读清单，缺版本时前台按实际 InstallationIdentity.executable 运行 --version：argv 数组、stdin ignore、5 秒、64 KiB 输出上限、去 ANSI、首个完整合法 SemVer；取消/超时经 bounded 进入整个进程范围清理，未确认则隔离。Kimi 一律 KIMI_CODE_NO_AUTO_UPDATE=1。安装/更新核对与页面检查共用此函数；Windows 继续走 nativeProcessBackend/nativeLaunchArgv，不添加 cmd /c 或拼接命令。
+  - sources 数据按本次用户提供的实机观察控制后台：Antigravity、Claude、Kimi、MiMo、Grok、OMP、Pi、OpenCode、CodeBuddy、TRAE 可运行版本命令；Codex、Qoder/CN 仅前台；Hermes 前后台均不运行，明确说明超时及写租约，且不被重新安装说明覆盖；ZCode/WorkBuddy 两版沿用清单文件。版本或无 SemVer 结果按指纹复用，指纹变化才再读；后台跳过不写负缓存，首次前台仍可探测。
+  - Codex `~/.codex/packages/standalone/` 按完整路径组件识别为 official-installer，sources 无 update，因此保持手动更新。Claude cask 用模拟 --version 读到当前版本后可进入 updatable，planner 生成 `brew upgrade --cask claude-code` argv；未执行 brew。首次安装方法保持原状态，不因本次版本检查修复重新开放脚本。
+  - 新增 `tests/cli-management-live-regression.test.ts`（42 项模拟）：dist-tags、兼容回退、大响应拒绝/超时、17 CLI 前后台策略、清单优先、ANSI/SemVer、超时等待与隔离、缓存、Codex 来源正反例、Claude cask 从检查到计划、Windows cmd 安全启动；安装测试另加 Hermes 说明不被覆盖回归。更新旧 HTTP 夹具为 dist-tags 响应。
+  - `corepack pnpm typecheck`：初轮及 Hermes 说明补充后的最终复核均通过，Host/Client against DSH 0.2.2-rc.2，退出码 0。
+  - `corepack pnpm vitest run tests/cli-management-live-regression.test.ts tests/cli-management.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-review.test.ts tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-admission.test.ts tests/cli-management-download.test.ts tests/cli-management-directory.test.ts tests/cli-management-remotes.test.ts tests/cli-settings.test.ts tests/accounts.test.ts tests/native-launch.test.ts tests/cleanup-persistence.test.ts tests/windows-cli-resolution.test.ts`：15 文件 603 项通过（21:30:35，8.10 秒，退出码 0）。Hermes 说明补充后 `corepack pnpm vitest run tests/cli-management-live-regression.test.ts tests/cli-management-install.test.ts`：2 文件 66 项通过（21:32:26，1.76 秒，退出码 0）。
+  - 首轮沙箱外 `corepack pnpm vitest run`：1 文件失败、297 通过、4 跳过（302）；1 项失败、6519 通过、14 跳过（6534），72.62 秒，退出码 1。唯一失败是 Hermes 说明回归，该轮启动后才补入最终修复/测试，不能作为稳定最终代码验收。最终代码沙箱外重跑（2026-11-13 21:33:24，74.62 秒，退出码 0）：**Test Files 298 passed | 4 skipped (302)；Tests 6520 passed | 14 skipped (6534)**，无失败或未处理错误。
+  - `corepack pnpm build:preview`：首次及最终代码复核均通过，退出码 0，产物 `.cache/preview-package`；未改正式安装链接。只有现有 CommonJS/依赖打包提示。严格规格首轮因 Requirement 正文超过 500 字警告失败，拆分版本读取与发布请求两个 Requirement 后 `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` valid（退出码 0）。
+  - `/Library/Developer/CommandLineTools/usr/bin/git diff --check`：通过；指定 Git 的 `diff -- src/client src/shared/cli-management.ts` 无差异。共享协议无新增字段，Remote 签名不变。
+  - 本轮仅使用模拟 HTTP/CLI/退出回执，没有访问外网、运行真实 CLI/npm/brew、提交 Git或修改 Client；用户提供的实机证据不在此重复记为本轮执行，7.3 保持不动。
+  - 2026-11-13 来源复测修复：Qoder/CN 只将 home 下精确的 `.qoder/entry/qoder` / `.qoder-cn/entry/qodercn` 识别为 self-update，不放行其他 entry 名字；Grok 仅在记录入口为 `.grok/bin/grok` 且 realpath 位于 `.grok/downloads/` 时补认 self-update，仍因 NO_RELEASE_SOURCE 归手动。静态核对 Client 既有标签使用 CLI_LABELS，实际文案为「Grok Build 自带更新」。没有修改 Client 或共享协议，Remote 签名不变。
+  - Qoder/CN 计划和实际执行保持 `[记录入口, 'update']`、cwd=homedir。executor 在 spawn 前 lstat 检查 homedir/update，存在文件、目录、断链或检查失败即报 PREREQUISITE_MISSING 并零启动；指向分发器的别名同样受保护，直接 qodercli 实体不套该限制。选择预检拒绝而非猜测 PATH 中的 qodercli，避免改变用户实际入口；不删除用户路径。外部进程在预检后并发创建路径的竞态无法原子排除，已写入设计边界。
+  - 新增 `tests/cli-management-source-layouts.test.ts`：20 项「模拟」覆盖真实文件夹具的双分发脚本、Grok 符号链接、完整路径反例、Qoder/CN 从检查到 updatable/计划/argv 执行、同名路径拒绝和别名；所有 spawn/HTTP 均为模拟，不运行脚本。
+  - 本次 `corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.2 通过，退出码 0。初轮关联 5 文件 178 项通过；补齐直接实体回归后执行 `corepack pnpm vitest run tests/cli-management-source-layouts.test.ts tests/cli-management-live-regression.test.ts tests/cli-management-phase-b.test.ts tests/cli-management-review.test.ts tests/cli-management.test.ts tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-admission.test.ts tests/native-launch.test.ts tests/windows-cli-resolution.test.ts`：**10 文件 281 项通过**（21:47:22，1.94 秒，退出码 0）。
+  - 本次 `corepack pnpm build:preview`：隔离包 `.cache/preview-package` 构建成功，退出码 0；只有既有 CommonJS/依赖打包提示。`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` valid，退出码 0；指定 Git 的 `diff --check` 通过，`diff -- src/client src/shared/cli-management.ts` 无差异。仅本地模拟验证，不访问外网、不运行真实 CLI、不提交 Git，7.3 不改。
+  - 来源修复首轮沙箱外 `corepack pnpm vitest run`（21:47:49，86.12 秒）：**Test Files 299 passed | 4 skipped (303)；Tests 6540 passed | 14 skipped (6554)**；断言无失败，但有 1 个未处理 AbortError，退出码 1。来源为既有 `tests/hermes-renewal.test.ts`「退出 Nous 后服务商为 auto」的 `AccountManager.finish`/`confirmAccount` 引导清理链；本轮未修改账号源码。沙箱外单独复跑 `corepack pnpm vitest run tests/hermes-renewal.test.ts`：**1 文件 34 项通过**（21:49:31，1.08 秒，退出码 0），未再出现该错误。
+  - 来源修复最终沙箱外 `corepack pnpm vitest run`（21:49:40，94.87 秒）：**Test Files 299 passed | 4 skipped (303)；Tests 6540 passed | 14 skipped (6554)**，退出码 0，无失败或未处理错误。两轮之间未改业务代码或测试；首轮账号引导 AbortError 的偶发根因不在本次来源修复范围，未宣称已修复。
+
 ## 3. 后台预加载 〔后端｜6h｜前置 2〕
 - [ ] 3.1 启动 60 秒延迟、空闲判定（无任务、无登录窗口、无更新、CPU 忙碌低于 50%）、一次一项、间隔 2 秒、子进程降优先级
   - Phase A 已实现并通过模拟测试：60 秒延迟、2 秒 CPU 双采样、忙碌低于 50%、逐项读取与间隔、可取消定时器、私有启动器对子进程调用 os.setPriority；只读取已记录路径，不后台搜索。
@@ -147,7 +168,12 @@
   - 复核：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6477 项通过；`corepack pnpm build:preview` 成功；修复后 14 个状态全部重截。（未执行：真实 DSH Desktop 里的目视核对，随 7.3 / 7.5 实机验收做。）
   - （未执行：Phase B 仅后端与模拟测试，禁止构建及修改 Client；可视验收留待整合阶段。）
 - [ ] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
-  - （未执行：本次明确禁止真实 CLI 安装、更新、npm、brew 及 --version；已有模拟证据不能替代真实更新验收。）
+  - 2026-11-13 macOS 实机（DSH Desktop 0.2.2-rc.2，内置浏览器直连 Desktop Host Web UI；主会话执行）：
+    - 首次真实检查暴露两类缺陷：npm 元数据整份读取超 512 KiB（opencode-ai 14.7 MB、@openai/codex 5.6 MB、codebuddy 1.45 MB、claude-code 534 KB）全部误报「连不上发布源」；前台未按 PRD 5.4 执行 `--version`，17 个 CLI 中 12 个「读不出当前版本」。逐个实测真实 `<cli> --version`（8 秒超时、比对文件改动）后交 Codex 修复，见 2.8；修后复检 14 个读出版本、3 个可更新。Qoder/Qoder CN 分发脚本与 Grok downloads 路径的来源识别随后补修（2.8）。
+    - npm + 停滞续传：本机测试中转（127.0.0.1 自签 CA，仅经 `NODE_EXTRA_CA_CERTS` 传给本次 Desktop 进程，「模拟」慢源）设为自定义下载源，首个主包请求发 40% 后静默。CodeBuddy 2.181.0 → 2.184.0：主包停在 27466967/68667419 字节，10.2 秒后插件发 `Range: bytes=27466967-`，中转回 206，随后 npm 安装成功，用时 28 秒；`/opt/homebrew/lib/node_modules/@tencent-ai/codebuddy-code` 路径不变，`codebuddy --version` 2.184.0。OpenCode 1.19.0 → 1.19.5：停在 1216/3041 字节，界面每秒显示「N 秒没有新数据」（警示色）与「已自动续传 0 次」，约 10 秒后续传、显示「已自动续传 1 次」，命令区显示实际 argv（`node npm-cli.js install --global --prefix /opt/homebrew <本地 tgz> --registry …`），成功后 `opencode --version` 1.19.5。两次 integrity 均以官方源为准，临时下载目录完成后清空，目录 0700、状态文件 0600。
+    - Homebrew：Claude Code 2.1.287 → 2.1.311，执行 `/opt/homebrew/bin/brew upgrade --cask claude-code`，输出实时显示（下载进度标「无法读取」），经「正在核对结果」后成功；`/opt/homebrew/bin/claude` → `Caskroom/claude-code/2.1.311/claude`，`claude --version` 2.1.311。
+    - 三项完成后缓存条目均为 latest，下载源已改回「跟随 npm 设置」，测试中转已停止。
+    - （未执行：CLI 自带更新——Qoder 来源识别修复后待装入 Desktop 再测；用户 2026-11-13 要求全部 CLI 改为可自动更新，自带命令、官方安装器与桌面应用更新随新一轮实现一并实机验收。）
 - [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
   - （未执行：Phase C 已实现首次安装和模拟回归，但本次明确禁止真实安装；三个桌面源仍未核实。）
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级

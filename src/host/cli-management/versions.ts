@@ -1,4 +1,5 @@
 import { StringDecoder } from 'node:string_decoder'
+import { stripVTControlCharacters } from 'node:util'
 import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -7,7 +8,6 @@ import type { ActiveCliId } from '../../shared/types.ts'
 import { OFFICIAL_NPM_REGISTRY, customRegistryProblem } from '../../shared/cli-management.ts'
 import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS, type ProcessBackend, type RuntimeConfig } from '../process.ts'
-import { verifyTraecnExecutable } from '../traecn-executable.ts'
 import type { InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES } from './sources.ts'
 
@@ -61,7 +61,7 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
       if (keep) output += decoder.end()
     }
     readers.push(read(child.stdout, true), read(child.stderr, false))
-    const [outcome] = await Promise.all([child.done, ...readers]); finished = true
+    const [outcome] = await bounded(Promise.all([child.done, ...readers]), control); finished = true
     control.throwIfAborted()
     if (outcome.exitCode !== 0) throw new Error('Version query failed')
     return output
@@ -82,12 +82,21 @@ export async function currentVersion(cli: ActiveCliId, identity: InstallationIde
   if (validVersion(identity.manifestVersion)) return identity.manifestVersion
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
-  if (spec.version === 'traecn') await verifyTraecnExecutable(identity.executable, backend, config, signal)
-  if (spec.version !== 'kimi' && spec.version !== 'traecn') return
+  if (spec.version !== 'kimi' && spec.version !== 'command') return
   const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : undefined)
-  const match = /^(?:kimi(?:-code)?|traecli)?\s*v?(\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?:\s|$)/i.exec(raw.trim())
-  return validVersion(match?.[1]) ? match[1] : undefined
+  return firstVersion(raw)
 }
+/** Whole tokens only: never turn 01.2.3 or 1.2.3.4 into a guessed SemVer. */
+export function firstVersion(raw: string): string | undefined {
+  for (const [token] of stripVTControlCharacters(raw).matchAll(/[0-9A-Za-z.+-]+/g)) {
+    const value = token.replace(/^v(?=\d)/, '')
+    if (validVersion(value)) return value
+  }
+}
+export const RELEASE_JSON_LIMIT = 512 * 1024
+// Measured OpenCode packument is 14.7 MB; 32 MiB provides bounded growth room.
+// Only compatibility fallback can use this limit. Dist-tags/artifacts stay small.
+export const RELEASE_VERSIONS_LIMIT = 32 * 1024 * 1024
 export class ReleaseError extends Error { constructor(readonly code: 'RELEASE_TIMEOUT' | 'RELEASE_UNREACHABLE' | 'NO_RELEASE_SOURCE') { super(code) } }
 export function bounded<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted()
@@ -103,6 +112,9 @@ export class ReleaseClient {
   private waiters = new Set<() => void>()
   constructor(private fetcher: typeof hostFetch = hostFetch) {}
   async json(url: string, signal: AbortSignal): Promise<unknown> {
+    return this.readJson(url, signal, RELEASE_JSON_LIMIT)
+  }
+  private async readJson(url: string, signal: AbortSignal, limit: number): Promise<unknown> {
     if (customRegistryProblem(url)) throw new ReleaseError('RELEASE_UNREACHABLE')
     while (this.active >= 3) {
       signal.throwIfAborted()
@@ -120,9 +132,9 @@ export class ReleaseClient {
     try {
       const response = await bounded(this.fetcher(url, { signal: control, credentials: 'omit', redirect: 'error', headers: { Accept: 'application/vnd.npm.install-v1+json, application/json' } }), control)
       reader = response.body?.getReader()
-      if (!response.ok || Number(response.headers.get('content-length')) > 512 * 1024) throw new Error('Invalid response')
+      if (!response.ok || Number(response.headers.get('content-length')) > limit) throw new Error('Invalid response')
       const chunks: Uint8Array[] = []; let bytes = 0
-      while (reader) { control.throwIfAborted(); const result = await bounded(reader.read(), control); if (result.done) break; bytes += result.value.byteLength; if (bytes > 512 * 1024) throw new Error('Response too large'); chunks.push(result.value) }
+      while (reader) { control.throwIfAborted(); const result = await bounded(reader.read(), control); if (result.done) break; bytes += result.value.byteLength; if (bytes > limit) throw new Error('Response too large'); chunks.push(result.value) }
       control.throwIfAborted()
       return JSON.parse(Buffer.concat(chunks).toString('utf8'))
     } catch { throw new ReleaseError(timer.signal.aborted || signal.aborted ? 'RELEASE_TIMEOUT' : 'RELEASE_UNREACHABLE') }
@@ -157,11 +169,19 @@ export class ReleaseClient {
     }
     if (!spec.npm) throw new ReleaseError('NO_RELEASE_SOURCE')
     const read = async (base: string) => {
-      const url = new URL(encodeURIComponent(spec.npm!), base.endsWith('/') ? base : base + '/').href
-      const data = z.object({ 'dist-tags': z.record(z.string(), z.string()), versions: z.record(z.string(), z.unknown()) }).parse(await this.json(url, signal))
-      const latest = data['dist-tags'].latest
+      const root = base.endsWith('/') ? base : base + '/', pkg = encodeURIComponent(spec.npm!)
+      const tags = z.record(z.string(), z.string()).parse(await this.json(new URL(`-/package/${pkg}/dist-tags`, root).href, signal))
+      const latest = tags.latest
       if (!validVersion(latest)) throw new ReleaseError('RELEASE_UNREACHABLE')
-      return { latest, versions: Object.keys(data.versions).filter(validVersion), checkedAt: Date.now(), registry: base }
+      let versions = [latest]
+      if (spec.compatibility !== 'any' && !compatible(cli, latest)) {
+        const data = z.object({ versions: z.record(z.string(), z.unknown()) }).parse(await this.readJson(new URL(pkg, root).href, signal, RELEASE_VERSIONS_LIMIT))
+        // Keep only the best compatible stable/prerelease candidates, not the entire
+        // packument in the small persistent cache. latest remains the dist-tag value.
+        const available = Object.keys(data.versions).filter(validVersion)
+        versions = [...new Set([latest, latestCompatible(cli, available), latestCompatible(cli, available.filter(v => !semver.exec(v)![4]))].filter((v): v is string => !!v))]
+      }
+      return { latest, versions, checkedAt: Date.now(), registry: base }
     }
     let selected: ReleaseRecord | undefined, selectedError: unknown
     try { selected = await read(registry) } catch (error) { selectedError = error }

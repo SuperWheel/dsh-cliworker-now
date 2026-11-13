@@ -65,6 +65,7 @@ export function serviceFixture(clis: ActiveCliId[] = ['codex']) {
   const backend: ProcessBackend = { resolveExecutable: vi.fn(async name => name === 'npm' || name === 'npm.cmd' ? npm.launcher : name === 'node' || name === 'node.exe' ? npm.node : name), spawn: vi.fn(() => ({ stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() }) as any) }
   const config = { ...DEFAULT_CONFIG, cliMaintenance: new CliMaintenance() }
   const metadataFetch = vi.fn<typeof hostFetch>(async url => {
+    if (String(url).endsWith('/dist-tags')) return new Response(JSON.stringify({ latest: '1.2.3' }))
     const exact = String(url).endsWith('/1.2.3')
     return new Response(JSON.stringify(exact ? { name: decodeURIComponent(new URL(String(url)).pathname.split('/')[1]!), version: '1.2.3', dist: { integrity: sri('模拟'), tarball: new URL('/模拟.tgz', String(url)).href } } : { 'dist-tags': { latest: '1.2.3' }, versions: { '1.0.0': {}, '1.2.3': {} } }))
   })

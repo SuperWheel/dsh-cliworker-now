@@ -87,7 +87,7 @@ describe('versions and bounded metadata', () => {
     expect(handle.waitForExit).toHaveBeenCalled()
   })
   it('never runs unaudited background version commands', async () => {
-    const b = backend(); expect(await currentVersion('grok', { ...identity, manifestVersion: undefined }, b, DEFAULT_CONFIG, signal(), true)).toBeUndefined(); expect(b.spawn).not.toHaveBeenCalled()
+    const b = backend(); expect(await currentVersion('codex', { ...identity, manifestVersion: undefined }, b, DEFAULT_CONFIG, signal(), true)).toBeUndefined(); expect(b.spawn).not.toHaveBeenCalled()
   })
   it('rejects oversized output and unconfirmed cleanup', async () => {
     const b = backend(), h = fakeHandle('x'.repeat(65537)); vi.mocked(b.spawn).mockReturnValue(h as any)
@@ -155,7 +155,7 @@ describe('private layered cache', () => {
 })
 
 describe('release HTTP boundaries', () => {
-  const document = (v = '1.2.3') => JSON.stringify({ 'dist-tags': { latest: v }, versions: { [v]: {} } })
+  const document = (v = '1.2.3') => JSON.stringify({ latest: v })
   it('checks a mirror against official metadata without credentials', async () => {
     const fetcher = vi.fn(async (url: string | URL, init?: RequestInit) => new Response(document(String(url).includes('npmjs') ? '1.2.3' : '9.9.9')))
     const release = await new ReleaseClient(fetcher).query('codex', 'https://mirror.example/', signal())
@@ -235,7 +235,7 @@ function serviceFixture(options: { version?: string; identify?: any; releases?: 
   const root = temp(), b = backend(); new CliManagementCache(root).saveSettings({ source: 'official' })
   const identify = options.identify ?? vi.fn(async (cli: string) => cli === 'codex' ? identity : undefined)
   const version = vi.fn(async () => options.version ?? '1.0.0')
-  const releases = options.releases ?? new ReleaseClient(async () => new Response(JSON.stringify({ 'dist-tags': { latest: '1.2.3' }, versions: { '1.0.0': {}, '1.2.3': {} } })))
+  const releases = options.releases ?? new ReleaseClient(async () => new Response(JSON.stringify({ latest: '1.2.3' })))
   const query = vi.spyOn(releases, 'query')
   const service = new CliManagementService({ root, backend: b, config: DEFAULT_CONFIG, idle: () => true, enabled: () => true, cliEnabled: () => true, account: vi.fn(), identify, version, releases }); services.push(service)
   return { root, b, service, identify, version, query }
@@ -280,7 +280,7 @@ describe('Host page service and lifecycle', () => {
     expect(f.service.snapshot().activity).toBe('idle')
   })
   it('reports incompatible targets and unknown versions without claiming updates', async () => {
-    const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? identity : undefined), releases: new ReleaseClient(async () => new Response(JSON.stringify({ 'dist-tags': { latest: '9.0.0' }, versions: { '1.0.2': {}, '1.1.0': {}, '9.0.0': {} } }))) })
+    const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? identity : undefined), releases: new ReleaseClient(async url => new Response(JSON.stringify(String(url).endsWith('/dist-tags') ? { latest: '9.0.0' } : { versions: { '1.0.2': {}, '1.1.0': {}, '9.0.0': {} } }))) })
     const result = await checked(f.service); expect(result.entries.find(e => e.cli === 'pi')).toMatchObject({ group: 'latest', reason: 'INCOMPATIBLE_TARGET', latestCompatibleVersion: '1.1.0' })
   })
   it('watch abort unsubscribes without launching a probe', async () => {

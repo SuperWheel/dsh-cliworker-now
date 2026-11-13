@@ -27,6 +27,11 @@ export async function readManifest(file: string): Promise<Record<string, any> | 
     return JSON.parse(await readFile(file, 'utf8'))
   } catch { return }
 }
+/** Only the two evidenced dispatcher entries, never the entire entry directory. */
+export function isQoderDispatcher(cli: ActiveCliId, path: string, home = homedir()): boolean {
+  const entry = cli === 'qoder' ? '.qoder/entry/qoder' : cli === 'qodercn' ? '.qoder-cn/entry/qodercn' : undefined
+  return entry !== undefined && path.replace(/\\/g, '/') === `${home.replace(/\\/g, '/')}/${entry}`
+}
 /** Path components, not substrings or command names, decide ownership. */
 export function classifyInstallation(cli: ActiveCliId, path: string, packageName?: string, home = homedir(), selectedPath?: string): { source: CliInstallSource; prefix?: string; packageRoot?: string } {
   const p = path.replace(/\\/g, '/'), lower = p.toLowerCase(), spec = CLI_SOURCES[cli]
@@ -47,7 +52,10 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
     }
   }
   const h = home.replace(/\\/g, '/')
+  if (isQoderDispatcher(cli, p, home)) return { source: 'self-update' }
+  if (cli === 'grok' && selectedPath?.replace(/\\/g, '/') === `${h}/.grok/bin/grok` && p.startsWith(`${h}/.grok/downloads/`)) return { source: 'self-update' }
   const layouts: Partial<Record<ActiveCliId, string[]>> = {
+    codex: ['.codex/packages/standalone/'],
     claude: ['.local/share/claude/versions/'], grok: ['.grok/bin/'], kimi: ['.kimi-code/'], mimo: ['.mimocode/bin/'],
     traecn: ['.local/share/traecli/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'], hermes: ['.hermes/hermes-agent/'],
   }

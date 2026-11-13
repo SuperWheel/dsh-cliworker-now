@@ -82,6 +82,8 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - npm 的运行时安装与 CLI 全局包前缀分开解析：解析 npm 启动器对应的 `npm-cli.js`，核对 npm 包清单与 bin 声明，读取 Node 原生程序文件并核对格式，不运行版本探测。优先使用 npm 启动器旁的 Node，否则解析 PATH 中的 Node；全局包前缀只作为 `--prefix` 目标，不要求前缀下存在 npm。
 - Host 从所选源的目标精确版本元数据取得主包 tarball 地址，使用 npm 官方源同版本的 sha512 校验真实下载内容；官方源也走完全相同的下载、续传和摘要校验路径。官方摘要不可得或摘要不符时拒绝安装，不降级为信任镜像摘要。校验后的私有文件改为 `.tgz`，以 `[node, npm-cli.js, 'install', '--global', '--prefix', 原前缀, 本地tgz, '--registry', 所选源]` 安装。显示的可读字节进度只对应 Host 下载的主包。
 - Homebrew 用 `brew upgrade <包名>`，CLI 自带更新用其已核实的子命令。
+- Qoder/CN 官方分发入口仅认 `<home>/.qoder/entry/qoder`、`<home>/.qoder-cn/entry/qodercn`，不放行 entry 目录下其他名字。更新保留记录入口的 `[入口, 'update']` 与 homedir cwd，不猜测 PATH 分发得到的实体。执行器紧邻 spawn 前用 lstat 检查 `<home>/update`；存在任何文件、目录、符号链接或检查失败时拒绝启动，避免分发到 IDE；记录入口是指向分发器的符号链接也同样检查。不删除/改名用户路径。该预检不能原子阻止外部进程恰在检查与分发之间创建路径。
+- Grok 的记录入口精确为 `<home>/.grok/bin/grok` 且 realpath 在 `<home>/.grok/downloads/` 下时识别为 self-update；缺少已核实发布源，仍为手动更新，沿用 Client 品牌名显示「Grok Build 自带更新」。
 - 官方安装脚本只取 `sources.ts` 中的内置地址：先下载到 `cli-management/downloads/`，再以 `['bash', <文件>]` 或 `['powershell', '-NoProfile', '-File', <文件>]` 执行。
 - Windows 的官方 npm.cmd 不当作 cmd-shim 解析或执行：按 Node/npm 发行目录的固定布局找到并核实 `node.exe`、`node_modules/npm/bin/npm-cli.js`，直接传参数数组；其他 CLI 继续沿用 `native-launch.mjs`。不用 `cmd /c`。
 - Homebrew 更新后允许同一前缀、同一 Cellar/Caskroom 包、同一稳定启动器与包内入口的版本目录变化；来源、前缀、包名、入口变化仍拒绝，再单独核对目标版本。
@@ -153,7 +155,8 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - **阶段 C 审查修订**：Qoder/CN Windows 安装入口复用现有发现工具的官方 exe 候选；Git Bash 通过完整 PATH/git 位置与 PE/MSYS 布局作文件核实，不启动 bash/git，不依赖父目录名。Pi 损坏旧安装可生成带 unusableBefore 的重新安装计划，装后核对仍严格。桌面卸载/进程隔离错误优先保留，目录删除失败只追加原因。安装位置保护与账号读取共用 Codex/Claude 根解析，并复用 MiMo/Qoder/CodeBuddy/Hermes/ZCode/OpenCode 目录工具，包含当前生效的环境变量。
 - **识别错误装出第二份**：严格按真实路径、包名、brew 元数据匹配，识别不出就转手动；更新后核对版本与路径。
 - **官方脚本执行远端代码**：只用内置地址，先下载再以文件执行，行内显示地址。脚本内部的行为与落点逐个核实后才开放自动安装。
-- **后台探测的副作用**：只开放 `sources.ts` 中标为后台安全的读取。目前只确认 Kimi 需禁用自动升级，其余逐个验证。
+- **后台探测的副作用**：以用户提供的 2026-11-13 macOS 实机结果更新 sources 数据：Antigravity、Claude、Kimi、MiMo、Grok、OMP、Pi、OpenCode、CodeBuddy、TRAE 可后台读取版本；Kimi 禁自动升级。Codex、Qoder/CN 版本命令只在前台执行；Hermes 前后台都不执行。桌面应用继续只读文件。该规则只影响版本查询，不扩大账号预加载白名单。
+- **2.8 发布源与前台版本修复**：npm 最新版本先读 `/-/package/<编码包名>/dist-tags`，保持 512 KiB / 8 秒；仅兼容受限且 latest 不兼容时拉 packument，单请求上限 32 MiB（用户实测最大 OpenCode 为 14.7 MB，预留有界增长空间），流式计数。缓存结构不变，版本列表只存 latest 和最高兼容正式/预发布候选，旧缓存仍有效；integrity/artifact 精确版本接口和镜像回退不变。清单缺版本时前台以实际入口运行 `--version`，5 秒、stdin ignore、去 ANSI、首个完整合法 SemVer，退出进程树后才返回。版本/无版本结果按指纹复用，后台跳过不阻止首次前台读取。Codex standalone 仅按完整路径前缀归官方安装器，仍无自动更新；Claude cask 可经版本查询生成 brew upgrade --cask claude-code。此轮不重新开放阶段 C 暂停的首次安装脚本。
 - **缓存落后于真实情况**：版本靠文件指纹发现变化；账号状态最多落后 10 分钟。
 - **Windows**：npm.cmd、进程树终止、文件占用、提权窗口不可见、空闲判定和低优先级需单独验收；不走需要管理员权限的位置。
 - **Gateway 无法区分调用来源**：在核实前，写操作只在设置页的 Remote 使用，不提供给 Agent 工具。
