@@ -6,5 +6,6 @@ pm:
   prd: doc/prd/2026-11-13-cli-update-PRD.md
   previous_names:
     - vnext-cli-update-page-leeyl
+    - v0-8-10-cli-update-page-leeyl
 schema: pmspec
 created: 2026-11-13
