@@ -168,14 +168,39 @@ function sourceLabel(entry: CliUpdateEntry, mirror: MirrorKind): string {
 const targetOf = (entry: CliUpdateEntry) =>
   entry.group === 'updatable' ? entry.latestCompatibleVersion ?? entry.latestVersion : entry.latestVersion
 
-function versionPart(entry: CliUpdateEntry): string {
-  const current = entry.currentVersion ?? t('版本未知')
+const DESKTOP_CLIS: ReadonlySet<ActiveCliId> = new Set<ActiveCliId>(['zcode', 'workbuddycn', 'workbuddy'])
+/**
+ * Desktop apps are updated as a whole: the Host plans against the app version, so `latestVersion`
+ * is an app version there. Other CLIs that merely live inside an `.app` keep CLI-version semantics.
+ */
+const desktopApp = (entry: CliUpdateEntry) => !!entry.appVersion && entry.source === 'desktop-app' && DESKTOP_CLIS.has(entry.cli)
+/** WorkBuddy releases carry three parts while the installed build has four (Host `desktopVersion`). */
+const appRelease = (entry: CliUpdateEntry) =>
+  entry.cli === 'workbuddy' || entry.cli === 'workbuddycn' ? entry.appVersion!.split('.').slice(0, 3).join('.') : entry.appVersion!
+/** Channels worth naming; `stable`/`public` are the default and `unknown` is not evidence of anything. */
+const channelPart = (entry: CliUpdateEntry) =>
+  entry.channel && !['unknown', 'stable', 'public'].includes(entry.channel) ? ` · ${t('{channel} 通道', { channel: entry.channel })}` : ''
+
+/** Version text with the arrow only for a newer target; desktop rows show 「应用 x → y · CLI z」. */
+function versionText(entry: CliUpdateEntry, arrow: boolean): string {
   const target = targetOf(entry)
+  if (desktopApp(entry)) {
+    const newer = arrow && !!target && (entry.group === 'updatable' || (entry.group === 'manual' && target !== appRelease(entry)))
+    const app = t('应用 {version}', { version: newer ? `${entry.appVersion} → ${target}` : entry.appVersion! })
+    return `${app}${entry.currentVersion ? ` · CLI ${entry.currentVersion}` : ''}${channelPart(entry)}`
+  }
+  const current = entry.currentVersion ?? t('版本未知')
   const newer =
-    entry.group === 'updatable' ||
-    (entry.group === 'manual' && !!entry.currentVersion && !!target && target !== entry.currentVersion)
-  return newer && target ? `${current} → ${target}` : current
+    arrow &&
+    (entry.group === 'updatable' ||
+      (entry.group === 'manual' && !!entry.currentVersion && !!target && target !== entry.currentVersion))
+  return `${newer && target ? `${current} → ${target}` : current}${channelPart(entry)}`
 }
+const versionPart = (entry: CliUpdateEntry) => versionText(entry, true)
+const versionKnown = (entry: CliUpdateEntry) => !!entry.currentVersion || desktopApp(entry)
+/** Host notice that must be read before this row updates; plain text, translated only when known. */
+const noticeOf = (entry: CliUpdateEntry | undefined) =>
+  entry?.group === 'updatable' && entry.notice?.trim() ? hostText(entry.notice.trim()) : undefined
 
 type Tone = 'error' | 'warn' | 'ok' | undefined
 interface Description {
@@ -216,10 +241,10 @@ function installText(entry: CliUpdateEntry): string {
 
 function describeEntry(entry: CliUpdateEntry, mirror: MirrorKind): Description {
   const detail = entry.reasonDetail ? ` ${hostText(entry.reasonDetail)}` : ''
-  const current = entry.currentVersion ?? t('版本未知')
+  const current = versionText(entry, false)
   if (entry.group === 'checking' || (entry.stage && entry.group === 'notInstalled' && !entry.installed)) {
-    if (entry.stage === 'remote' && entry.currentVersion)
-      return { spinner: true, text: `${entry.currentVersion} · ${t('正在查询最新版本…')}` }
+    if (entry.stage === 'remote' && versionKnown(entry))
+      return { spinner: true, text: `${current} · ${t('正在查询最新版本…')}` }
     return { spinner: true, text: t('正在读取当前版本…') }
   }
   if (entry.stage) return { spinner: true, text: `${versionPart(entry)} · ${t('正在重新检查')}` }
@@ -450,13 +475,14 @@ export function CliUpdatePane({
   const pane = useRef<HTMLDivElement>(null)
   const downloadSection = useRef<HTMLElement>(null)
   const [collapsed, setCollapsed] = useState(readCollapsed)
-  const [expanded, setExpanded] = useState<Partial<Record<ActiveCliId, 'manual' | 'install'>>>({})
+  const [expanded, setExpanded] = useState<Partial<Record<ActiveCliId, 'manual' | 'install' | 'confirm'>>>({})
   const [outputs, setOutputs] = useState<Record<string, boolean>>({})
   const [drafts, setDrafts] = useState<Partial<Record<ActiveCliId, InstallDraft>>>({})
   const [pending, setPending] = useState<ReadonlySet<ActiveCliId>>(new Set())
   const [rowErrors, setRowErrors] = useState<Partial<Record<ActiveCliId, string>>>({})
   const [pageError, setPageError] = useState<string>()
   const [requesting, setRequesting] = useState<'' | 'check' | 'all'>('')
+  const [confirmAll, setConfirmAll] = useState(false)
   const [mirror, setMirror] = useState<MirrorKind>('unknown')
   const controllers = useRef(new Set<AbortController>())
   const mounted = useRef(true)
@@ -564,6 +590,13 @@ export function CliUpdatePane({
     if (pane.current) restoreScrollAnchor(pane.current, restore.anchor)
   })
 
+  // `updateAllClis` queues every updatable row with a plan, notice or not (Host `updateAll`), so the
+  // notices of those rows are confirmed here before the batch starts.
+  const noticedForAll = CLI_IDS.flatMap((cli) => {
+    const entry = entries.get(cli)
+    const notice = noticeOf(entry)
+    return entry?.planToken && notice ? [{ cli, notice }] : []
+  })
   const busyCli = operation?.cli ?? queue[0]
   const writeBlocked = writing && busyCli ? t('一次只更新一个 CLI，{cli} 完成后再更新', { cli: CLI_LABELS[busyCli] }) : undefined
   const unsupported = t('当前 Host 版本不支持此操作，请更新 CLI Worker 插件')
@@ -598,6 +631,11 @@ export function CliUpdatePane({
     }
   }
 
+  /** An update with a Host notice waits for the inline confirmation; everything else starts at once. */
+  function requestUpdate(cli: ActiveCliId) {
+    if (noticeOf(entries.get(cli))) setExpanded((old) => ({ ...old, [cli]: old[cli] === 'confirm' ? undefined : 'confirm' }))
+    else void start(cli, 'update')
+  }
   async function start(cli: ActiveCliId, intent: 'update' | 'install', installDirectory = '') {
     const run = service.startCliOperation
     if (!run) return
@@ -624,6 +662,7 @@ export function CliUpdatePane({
   async function updateAll() {
     const run = service.updateAllClis
     if (!run) return
+    setConfirmAll(false)
     setRequesting('all')
     setPageError(undefined)
     try {
@@ -716,8 +755,9 @@ export function CliUpdatePane({
                 type="button"
                 size="md"
                 variant="primary"
+                aria-expanded={noticedForAll.length ? confirmAll : undefined}
                 disabled={!service.updateAllClis || writing || checking || requesting !== ''}
-                onClick={() => void updateAll()}
+                onClick={() => (noticedForAll.length ? setConfirmAll((open) => !open) : void updateAll())}
               >
                 {t('全部更新')}
               </Button>
@@ -747,6 +787,14 @@ export function CliUpdatePane({
       </div>
     )
   }
+
+  /** Why an update cannot start now; undefined when it can. */
+  const updateReason = (entry: CliUpdateEntry) =>
+    !service.startCliOperation
+      ? unsupported
+      : (entry.busyWorkers ?? 0) > 0
+        ? t('这些任务结束或停止后才能更新')
+        : writeBlocked
 
   function rowActions(cli: ActiveCliId, entry: CliUpdateEntry | undefined, result: CliUpdateOperation | undefined): ReactNode {
     const busy = pending.has(cli)
@@ -817,7 +865,9 @@ export function CliUpdatePane({
             size="md"
             variant="outline"
             disabled={!!reason || busy}
-            onClick={() => void start(cli, result.intent, result.installDirectory ?? '')}
+            onClick={() =>
+              result.intent === 'update' ? requestUpdate(cli) : void start(cli, result.intent, result.installDirectory ?? '')
+            }
           >
             {t('重试')}
           </Button>
@@ -827,11 +877,17 @@ export function CliUpdatePane({
     if (!entry) return null
     switch (entry.group) {
       case 'updatable': {
-        const busyWorkers = entry.busyWorkers ?? 0
-        const reason = writeReason(busyWorkers > 0 ? t('这些任务结束或停止后才能更新') : undefined)
+        const reason = updateReason(entry)
         return (
           <Explained reason={reason}>
-            <Button type="button" size="md" variant="outline" disabled={!!reason || busy} onClick={() => void start(cli, 'update')}>
+            <Button
+              type="button"
+              size="md"
+              variant="outline"
+              aria-expanded={noticeOf(entry) ? expanded[cli] === 'confirm' : undefined}
+              disabled={!!reason || busy}
+              onClick={() => requestUpdate(cli)}
+            >
               {t('更新')}
             </Button>
           </Explained>
@@ -933,15 +989,41 @@ export function CliUpdatePane({
       )
     }
     if (queue.includes(cli)) return null
+    const notice = expanded[cli] === 'confirm' ? noticeOf(entry) : undefined
+    const confirm = notice && (
+      <div className="cwn-update-bubble" data-column role="group" aria-label={t('确认更新 {cli}', { cli: CLI_LABELS[cli] })}>
+        <span className="cwn-update-note">{t('更新 {cli} 前请确认：{notice}', { cli: CLI_LABELS[cli], notice })}</span>
+        <div className="cwn-update-actions">
+          <Button type="button" size="sm" variant="ghost" onClick={() => setExpanded((old) => ({ ...old, [cli]: undefined }))}>
+            {t('取消')}
+          </Button>
+          <Explained reason={updateReason(entry!)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!!updateReason(entry!) || pending.has(cli)}
+              onClick={() => void start(cli, 'update')}
+            >
+              {t('继续更新')}
+            </Button>
+          </Explained>
+        </div>
+      </div>
+    )
     if (result && result.phase !== 'cancelled' && outputOpen(result)) {
       return (
-        <div className="cwn-update-expand">
-          <CommandBlock operation={result} />
-          <OutputLog text={result.outputTail} label={t('{cli} 命令输出', { cli: CLI_LABELS[cli] })} />
-        </div>
+        <>
+          <div className="cwn-update-expand">
+            <CommandBlock operation={result} />
+            <OutputLog text={result.outputTail} label={t('{cli} 命令输出', { cli: CLI_LABELS[cli] })} />
+          </div>
+          {confirm}
+        </>
       )
     }
     if (!entry) return null
+    if (confirm) return confirm
     if (expanded[cli] === 'manual' && entry.group === 'manual') {
       const method = entry.manual
       const guide = safeGuide(method?.guideUrl)
@@ -1075,6 +1157,11 @@ export function CliUpdatePane({
                   )}
                 </span>
               </span>
+              {!active && !queued && noticeOf(entry) && (
+                <span className="cwn-update-notice" data-tone="warn">
+                  {noticeOf(entry)}
+                </span>
+              )}
               {error && (
                 <p className="cwn-update-row-error" role="alert">
                   {error}
@@ -1133,6 +1220,34 @@ export function CliUpdatePane({
         {announcement.current}
       </div>
       {header}
+      {confirmAll && noticedForAll.length > 0 && !writing && (
+        <div className="cwn-update-bubble cwn-update-confirm-all" data-column role="group" aria-label={t('确认全部更新')}>
+          <span className="cwn-update-note">{t('以下 CLI 会一起更新，请先确认各自的说明：')}</span>
+          <ul className="cwn-update-notice-list">
+            {noticedForAll.map(({ cli, notice }) => (
+              <li key={cli}>
+                <span className="cwn-update-notice-name">{CLI_LABELS[cli]}</span>
+                {uiLanguage() === 'en' ? ': ' : '：'}
+                {notice}
+              </li>
+            ))}
+          </ul>
+          <div className="cwn-update-actions">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmAll(false)}>
+              {t('取消')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!service.updateAllClis || checking || requesting !== ''}
+              onClick={() => void updateAll()}
+            >
+              {t('继续更新')}
+            </Button>
+          </div>
+        </div>
+      )}
       {data.error && (
         <div className="cwn-update-line" data-tone="error" role="status">
           <span>{hostText(data.error)}</span>

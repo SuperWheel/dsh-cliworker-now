@@ -1234,6 +1234,22 @@ export const en = {
   '可用空间不足，请换一个目录': 'Not enough free space. Choose another folder',
   '目录里已有其他文件，请换一个空目录': 'The folder already has other files. Choose an empty folder',
   '这个位置不能用于安装，请换一个目录': 'This location cannot be used. Choose another folder',
+  '应用 {version}': 'App {version}',
+  '{channel} 通道': '{channel} channel',
+  '继续更新': 'Continue update',
+  '确认更新 {cli}': 'Confirm updating {cli}',
+  '更新 {cli} 前请确认：{notice}': 'Before updating {cli}, please confirm: {notice}',
+  '确认全部更新': 'Confirm update all',
+  '以下 CLI 会一起更新，请先确认各自的说明：': 'These CLIs will be updated together. Review their notes first:',
+  // Host update notices (sources.ts NATIVE_UPDATES / versions.ts piNotice); unknown ones stay verbatim.
+  'Hermes 更新会迁移配置、更新依赖并可能重启服务。查询源为 stable，当前安装可能为 canary/自定义通道；不切换原通道，执行后以重新探测版本为准。':
+    'Updating Hermes migrates its config, updates dependencies and may restart its service. Releases are read from stable while this installation may be on canary or a custom channel; the channel is not switched, and the version is read again afterwards.',
+  '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。':
+    'How the official update command asks for confirmation has not been verified on a real machine; stdin is closed, and a timeout or an unchanged version is reported as a failure.',
+  '按当前自更新器的 npm latest 查询；原生工件是否可用及最终版本以执行后核对为准。':
+    "Checked against the self-updater's npm latest; whether native artifacts exist and the final version are confirmed after the update.",
+  '插件尚未适配 Pi {version}，更新后 Pi Worker 要等插件适配后才能使用':
+    'The plugin does not support Pi {version} yet. After the update, Pi Workers cannot be used until the plugin supports it',
   // cli-update-page:end
   // cli-update-settings:begin（导航、下载源、通用页开关，归设置集成维护）
   '更新 CLI': 'Update CLIs',

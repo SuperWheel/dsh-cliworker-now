@@ -8,6 +8,7 @@ import { t, uiLanguage } from './i18n.ts'
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
   [/^已登录（([^（）]+)）$/u, '已登录（{site}）', 'site'],
+  [/^插件尚未适配 Pi (\S+)，更新后 Pi Worker 要等插件适配后才能使用$/u, '插件尚未适配 Pi {version}，更新后 Pi Worker 要等插件适配后才能使用', 'version'],
   [/^(WorkBuddy(?: CN)?) 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口$/u, '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口', 'cli'],
   [/^任务超时：已达到总时限 (\d+ (?:小时|分钟|秒))$/u, '任务超时：已达到总时限 {duration}', 'duration'],
   [/^任务超时：连续 (\d+ (?:小时|分钟|秒))没有收到 CLI 事件（空闲时限）$/u, '任务超时：连续 {duration}没有收到 CLI 事件（空闲时限）', 'duration'],

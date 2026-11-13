@@ -32,6 +32,8 @@ export const cliUpdateStyles = `
 .cwn-update-desc[data-tone=ok]{color:var(--dsw-alias-label-primary)}
 .cwn-update-desc .cwn-update-link{appearance:none;border:0;padding:0;margin:0;background:transparent;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .cwn-update-desc .cwn-update-link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+.cwn-update-notice{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere;white-space:normal}
+.cwn-update-notice[data-tone=warn]{color:var(--dsw-alias-state-warn-label)}
 .cwn-update-row-error{margin:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-feedback-line);color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
 .cwn-update-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--cwn-settings-action-gap);flex-shrink:0;max-width:100%}
 .cwn-update-actions button{white-space:nowrap}
@@ -42,6 +44,10 @@ export const cliUpdateStyles = `
 .cwn-update-bubble[data-column] .cwn-update-actions{align-self:flex-end}
 .cwn-update-bubble .cwn-update-cmd{background:var(--dsw-alias-bg-layer-2)}
 .cwn-update-bubble button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}
+.cwn-update-confirm-all{margin:16px 0 0}
+.cwn-update-page .cwn-update-confirm-all+.cwn-settings-section{margin-top:28px}
+.cwn-update-notice-list{margin:0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:4px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-state-warn-label);overflow-wrap:anywhere}
+.cwn-update-notice-name{font-weight:var(--cwn-settings-label-weight);color:var(--dsw-alias-label-secondary)}
 .cwn-update-note{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;min-width:0}
 .cwn-update-field-label{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary)}
 .cwn-update-field-row{display:flex;align-items:center;gap:8px;min-width:0}

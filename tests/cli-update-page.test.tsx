@@ -465,6 +465,148 @@ describe('模拟「更新 CLI」页面', () => {
     expect(retry).toHaveBeenCalled()
   })
 
+  // 模拟：notice 文案取自 Host 的 Pi / Hermes 说明格式，快照与调用全部是夹具。
+  const piNotice = '插件尚未适配 Pi 0.80.0，更新后 Pi Worker 要等插件适配后才能使用'
+  const hermesNotice = 'SIMULATED <b>Hermes</b> 更新会迁移配置并重启服务'
+  const noticed = (patch: Partial<CliUpdateSnapshot> = {}) => {
+    const base = snapshot()
+    return snapshot({
+      entries: [
+        ...base.entries,
+        entry('pi', { group: 'updatable', source: 'npm', currentVersion: '0.74.0', latestVersion: '0.80.0', planToken: 'SIMULATED-pi', notice: piNotice }),
+        entry('hermes', { group: 'updatable', source: 'official-installer', currentVersion: '0.12.0', latestVersion: '0.13.0', planToken: 'SIMULATED-hermes', notice: hermesNotice }),
+      ],
+      ...patch,
+    })
+  }
+
+  it('shows the notice under an updatable row and asks before updating it', async () => {
+    const f = await setup(data({ snapshot: noticed() }))
+    const notice = f.rowOf('pi').findByProps({ className: 'cwn-update-notice' })
+    expect(notice.props['data-tone']).toBe('warn')
+    expect(textOf(notice)).toBe(piNotice)
+    // Untrusted Host text stays plain text.
+    expect(textOf(f.rowOf('hermes').findByProps({ className: 'cwn-update-notice' }))).toBe(hermesNotice)
+    expect(f.rowOf('hermes').findAll((node) => node.type === 'b')).toHaveLength(0)
+    expect(f.rowOf('codex').findAll((node) => node.props.className === 'cwn-update-notice')).toHaveLength(0)
+
+    await act(async () => f.button('更新', f.rowOf('pi'))!.props.onClick())
+    expect(f.service.startCliOperation).not.toHaveBeenCalled()
+    expect(f.button('更新', f.rowOf('pi'))!.props['aria-expanded']).toBe(true)
+    const confirm = f.rowOf('pi').find((node) => node.props.role === 'group')
+    expect(textOf(confirm)).toBe(`更新 Pi 前请确认：${piNotice}取消继续更新`)
+    expect(f.button('继续更新', confirm)!.props).toMatchObject({ 'data-size': 'sm', 'data-variant': 'outline', disabled: false })
+    expect(f.button('取消', confirm)!.props).toMatchObject({ 'data-size': 'sm', 'data-variant': 'ghost' })
+
+    await act(async () => f.button('取消', confirm)!.props.onClick())
+    expect(f.rowOf('pi').findAll((node) => node.props.role === 'group')).toHaveLength(0)
+    expect(f.service.startCliOperation).not.toHaveBeenCalled()
+
+    await act(async () => f.button('更新', f.rowOf('pi'))!.props.onClick())
+    await act(async () => f.button('继续更新', f.rowOf('pi'))!.props.onClick())
+    expect(f.service.startCliOperation).toHaveBeenCalledTimes(1)
+    expect(f.service.startCliOperation).toHaveBeenCalledWith(
+      'SIMULATED/parent', 'pi', 'update', 'SIMULATED-pi', '', expect.any(String), expect.any(AbortSignal),
+    )
+    expect(f.rowOf('pi').findAll((node) => node.props.role === 'group')).toHaveLength(0)
+  })
+
+  it('asks again before retrying a failed update of a row with a notice', async () => {
+    const failed: CliUpdateOperation = {
+      id: 'SIMULATED-failed', intent: 'update', cli: 'pi', phase: 'failed', startedAt: 1, finishedAt: 2, outputTail: 'SIMULATED output',
+      error: { code: 'UNKNOWN', message: '更新失败', retryable: true },
+    }
+    const f = await setup(data({ snapshot: noticed({ results: [failed] }) }))
+    await act(async () => f.button('重试', f.rowOf('pi'))!.props.onClick())
+    expect(f.service.startCliOperation).not.toHaveBeenCalled()
+    // The open output and the confirmation are shown together.
+    expect(f.rowOf('pi').findAll((node) => node.props.className === 'cwn-update-log')).toHaveLength(1)
+    await act(async () => f.button('继续更新', f.rowOf('pi'))!.props.onClick())
+    expect(f.service.startCliOperation).toHaveBeenCalledWith(
+      'SIMULATED/parent', 'pi', 'update', 'SIMULATED-pi', '', expect.any(String), expect.any(AbortSignal),
+    )
+  })
+
+  it('updates all at once without asking when no row carries a notice', async () => {
+    const f = await setup(data())
+    expect(f.button('全部更新')!.props['aria-expanded']).toBeUndefined()
+    await act(async () => f.button('全部更新')!.props.onClick())
+    expect(f.service.updateAllClis).toHaveBeenCalledTimes(1)
+  })
+
+  it('lists every noticed CLI that 全部更新 would include and starts only after confirmation', async () => {
+    const f = await setup(data({ snapshot: noticed() }))
+    await act(async () => f.button('全部更新')!.props.onClick())
+    expect(f.service.updateAllClis).not.toHaveBeenCalled()
+    expect(f.button('全部更新')!.props['aria-expanded']).toBe(true)
+    const confirm = () => f.r.root.find((node) => node.props['aria-label'] === '确认全部更新')
+    // Host order (CLI_IDS): Pi before Hermes; rows without a notice are not listed.
+    expect(confirm().findAllByType('li').map(textOf)).toEqual([`Pi：${piNotice}`, `Hermes Agent：${hermesNotice}`])
+    expect(confirm().findAll((node) => node.type === 'b')).toHaveLength(0)
+
+    await act(async () => f.button('取消', confirm())!.props.onClick())
+    expect(f.r.root.findAll((node) => node.props['aria-label'] === '确认全部更新')).toHaveLength(0)
+    expect(f.service.updateAllClis).not.toHaveBeenCalled()
+
+    await act(async () => f.button('全部更新')!.props.onClick())
+    await act(async () => f.button('继续更新', confirm())!.props.onClick())
+    expect(f.service.updateAllClis).toHaveBeenCalledTimes(1)
+    expect(f.service.updateAllClis).toHaveBeenCalledWith('SIMULATED/parent', expect.any(String), expect.any(AbortSignal))
+    expect(f.service.startCliOperation).not.toHaveBeenCalled()
+    expect(f.r.root.findAll((node) => node.props['aria-label'] === '确认全部更新')).toHaveLength(0)
+  })
+
+  it('shows desktop app and CLI versions separately, with the arrow on the app version', async () => {
+    const f = await setup(data({
+      snapshot: snapshot({
+        entries: [
+          entry('workbuddycn', {
+            group: 'updatable', source: 'desktop-app', appVersion: '4.1.2.1234', currentVersion: '2.3.0',
+            latestVersion: '4.2.0', planToken: 'SIMULATED-wb',
+          }),
+          entry('zcode', { group: 'latest', source: 'desktop-app', appVersion: '1.9.0' }),
+          entry('workbuddy', { group: 'latest', source: 'desktop-app', appVersion: '4.1.2.1234', currentVersion: '2.3.0', latestVersion: '4.1.2', latestCompatibleVersion: '4.1.2' }),
+          // A CLI inside an .app bundle keeps CLI-version semantics.
+          entry('kimi', { group: 'updatable', source: 'npm', appVersion: '9.9.9', currentVersion: '1.6.0', latestVersion: '1.7.0', planToken: 'SIMULATED-kimi' }),
+        ],
+      }),
+    }))
+    expect(textOf(f.rowOf('workbuddycn'))).toContain('应用 4.1.2.1234 → 4.2.0 · CLI 2.3.0 · 由 WorkBuddy CN 桌面端管理更新')
+    expect(textOf(f.rowOf('zcode'))).toContain('应用 1.9.0 · 由 ZCode 桌面端管理更新')
+    expect(textOf(f.rowOf('zcode'))).not.toContain('CLI ')
+    expect(textOf(f.rowOf('workbuddy'))).toContain('应用 4.1.2.1234 · CLI 2.3.0 · 由 WorkBuddy 桌面端管理更新')
+    expect(textOf(f.rowOf('kimi'))).toContain('1.6.0 → 1.7.0 · npm 全局安装')
+    expect(textOf(f.rowOf('kimi'))).not.toContain('应用')
+  })
+
+  it('names only a non-default installation channel', async () => {
+    const f = await setup(data({
+      snapshot: snapshot({
+        entries: [
+          entry('hermes', { group: 'updatable', source: 'official-installer', currentVersion: '0.12.0', latestVersion: '0.13.0', channel: 'canary', planToken: 'SIMULATED-h' }),
+          entry('traecn', { group: 'latest', source: 'self-update', currentVersion: '1.0.0', channel: 'tob' }),
+          entry('kimi', { group: 'latest', source: 'npm', currentVersion: '1.6.0', channel: 'unknown' }),
+          entry('codex', { group: 'latest', source: 'npm', currentVersion: '0.130.0', channel: 'stable' }),
+          entry('qoder', { group: 'latest', source: 'npm', currentVersion: '0.5.0', channel: 'public' }),
+        ],
+      }),
+    }))
+    expect(textOf(f.rowOf('hermes'))).toContain('0.12.0 → 0.13.0 · canary 通道 · 官方安装器')
+    expect(textOf(f.rowOf('traecn'))).toContain('1.0.0 · tob 通道 · TRAE CN 自带更新')
+    for (const cli of ['kimi', 'codex', 'qoder']) expect(textOf(f.rowOf(cli))).not.toContain('通道')
+  })
+
+  it('translates the known Host notices for the English interface', async () => {
+    const f = await setup(data({ snapshot: noticed() }))
+    setLanguagePreference('en')
+    await f.update(data({ snapshot: noticed({ revision: 2 }) }))
+    expect(textOf(f.rowOf('pi').findByProps({ className: 'cwn-update-notice' }))).toBe(
+      'The plugin does not support Pi 0.80.0 yet. After the update, Pi Workers cannot be used until the plugin supports it',
+    )
+    // Unknown Host text stays verbatim rather than guessing a translation.
+    expect(textOf(f.rowOf('hermes').findByProps({ className: 'cwn-update-notice' }))).toBe(hermesNotice)
+  })
+
   it('greys out write buttons on a Host without the write methods', async () => {
     const f = await setup(data(), { startCliOperation: undefined, updateAllClis: undefined })
     expect(f.button('更新', f.rowOf('codex'))!.props.disabled).toBe(true)
