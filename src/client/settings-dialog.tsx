@@ -7,6 +7,7 @@ import {
   Switch,
   Tooltip,
   IconChevronDownOutlineRegular,
+  IconDownloadOutlineRegular,
   IconLinkOutlineRegular,
   IconRefreshOutlineRegular,
   IconSettingsOutlineRegular,
@@ -31,6 +32,9 @@ import { operationMessage } from './operation-error.ts'
 import { value, type API } from './workers.ts'
 import { RolePresetsPane } from './role-presets.tsx'
 import { GeneralSettingsPane } from './general-settings.tsx'
+import { useCliUpdateData } from './cli-update-data.ts'
+import { navIndicator } from './cli-update-layout.ts'
+import { CliUpdatePane } from './cli-update-page.tsx'
 import { useScrollingMark } from './scrolling-mark.ts'
 import { AccountQueryQueue } from './account-query-queue.ts'
 import { CliExecutableSettings } from './cli-executable-settings.tsx'
@@ -123,6 +127,12 @@ function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, 
   return { state: 'unverified', label: hostText(account.data.summary)?.trim() || t('已配置') }
 }
 
+/** Status served from the Host's background cache: display only, without login or sign-out handles. */
+function displayOnlyAccount(status: AccountStatus | undefined): { stale: boolean } | undefined {
+  const cache = (status as { cache?: { displayOnly?: unknown; stale?: unknown } } | undefined)?.cache
+  return cache?.displayOnly === true ? { stale: cache.stale === true } : undefined
+}
+
 /** Native modal owns focus, dismissal, theme, elevation and entrance animation. */
 export function SettingsDialog(props: SettingsDialogProps) {
   const fallbackSaves = useMemo(() => new SettingsPreferenceSaves(), [props.api, props.sessionId])
@@ -142,7 +152,13 @@ function OpenSettingsDialog({
   const [cli, setCli] = useState<CliId>(
     !initialCli ? 'antigravity' : isRetiredCli(initialCli) ? 'hermes' : initialCli,
   )
-  const [page, setPage] = useState<'cli' | 'roles' | 'general'>(initialCli ? 'cli' : 'general')
+  const [page, setPage] = useState<'cli' | 'roles' | 'general' | 'update'>(initialCli ? 'cli' : 'general')
+  const openCli = useRef<CliId>()
+  openCli.current = page === 'cli' ? cli : undefined
+  // One subscription per open dialog: the navigation badge and the page share it. The page itself
+  // asks for checkCliUpdates('missing') when it mounts; opening the dialog only reads the cache.
+  const updates = useCliUpdateData(api, sessionId)
+  const indicator = navIndicator(updates.snapshot)
   const [cliExpanded, setCliExpanded] = useState(true)
   const cliGroupId = useId()
   const [enabled, setEnabled] = useState<Enabled>()
@@ -201,9 +217,17 @@ function OpenSettingsDialog({
       setCatalogEntries(old => ({ ...old, [id]: { loading: true } }))
   }, [readCatalog, fallbackSaves])
   const refreshAccount = useCallback(
-    (id: CliId, replace = false, clearPrevious = false) => {
+    (id: CliId, replace = false, clearPrevious = false, force = false) => {
       if (!enabledRef.current?.[id]) return
-      if (probes.current.has(id) && !replace) return
+      if (probes.current.has(id) && !replace) {
+        // The page was opened while this CLI still has a read in flight (often its catalog after a
+        // cached account summary): read the account fresh once that slot is free.
+        if (force) probes.current.whenIdle(id, () => {
+          if (!mounted.current || openCli.current !== id || !displayOnlyAccount(accountsLatest.current[id]?.data)) return
+          refreshAccountLatest.current(id, false, false, true)
+        })
+        return
+      }
       displayCache.current?.invalidate(id, replace || clearPrevious)
       if (!displayCache.current && (replace || clearPrevious)) fallbackSaves.invalidate(id)
       const cache = displayCache.current, version = cache?.version(id)
@@ -216,11 +240,24 @@ function OpenSettingsDialog({
         id,
         async (signal) => {
           try {
-            const next: AccountStatus = JSON.parse(
-              value(await api.cliworker.accountStatus(sessionId, id, signal)),
-            )
-            if (next.cli !== id) throw new Error(t('收到不匹配的 CLI 账号状态，请重试'))
-            if (cache && cache.version(id) !== version) throw new Error(t('账号来源已变化，请刷新状态'))
+            const fresh = api.cliworker.refreshAccountStatus
+            const read = async (refresh: boolean) => {
+              const next: AccountStatus = JSON.parse(value(await (refresh && fresh
+                ? fresh(sessionId, id, signal)
+                : api.cliworker.accountStatus(sessionId, id, signal))))
+              if (next.cli !== id) throw new Error(t('收到不匹配的 CLI 账号状态，请重试'))
+              if (cache && cache.version(id) !== version) throw new Error(t('账号来源已变化，请刷新状态'))
+              return next
+            }
+            let next = await read(replace || force)
+            // The Host may answer from its background cache: the summary is shown at once, but
+            // login and sign-out handles only come with a fresh read. Read again when the cache is
+            // stale or this CLI's connection page is the one on screen.
+            const cached = displayOnlyAccount(next)
+            if (cached && fresh && !signal.aborted && (cached.stale || openCli.current === id)) {
+              setAccounts((old) => ({ ...old, [id]: { data: next, loading: true } }))
+              next = await read(true)
+            }
             if (!signal.aborted) {
               const entry = { data: next, loading: false }
               cache?.account(id, entry, version)
@@ -235,11 +272,15 @@ function OpenSettingsDialog({
           }
           if (!signal.aborted && cache) await readCatalog(id, signal, replace, cache, version)
         },
-        replace,
+        replace || force,
       )
     },
     [api, sessionId, readCatalog, fallbackSaves],
   )
+  const refreshAccountLatest = useRef(refreshAccount)
+  refreshAccountLatest.current = refreshAccount
+  const accountsLatest = useRef(accounts)
+  accountsLatest.current = accounts
 
   useEffect(() => {
     const controller = new AbortController()
@@ -295,6 +336,13 @@ function OpenSettingsDialog({
     // Selection only reprioritizes pending work; it does not repeat settled reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, cli, refreshAccount, refreshCatalog, warmCatalogs])
+
+  const openAccount = page === 'cli' ? accounts[cli] : undefined
+  useEffect(() => {
+    if (page !== 'cli' || !openAccount || openAccount.loading || !displayOnlyAccount(openAccount.data)) return
+    if (!api.cliworker.refreshAccountStatus) return
+    refreshAccount(cli, false, false, true)
+  }, [page, cli, openAccount, api, refreshAccount])
 
   async function toggleCli(id: CliId, nextValue: boolean) {
     if (!enabled || toggleController.current) return
@@ -363,6 +411,35 @@ function OpenSettingsDialog({
             variant="ghost"
             size="md"
             className="cwn-settings-nav-primary"
+            aria-label={
+              indicator?.kind === 'count'
+                ? t('更新 CLI（{count} 个可更新）', { count: indicator.count })
+                : indicator?.kind === 'spinner'
+                  ? t('更新 CLI（正在进行）')
+                  : t('更新 CLI')
+            }
+            aria-pressed={page === 'update'}
+            onClick={() => void leave(() => setPage('update'))}
+          >
+            <span className="cwn-settings-nav-icon" aria-hidden="true">
+              <IconDownloadOutlineRegular size={20} />
+            </span>
+            <span className="cwn-settings-nav-label">{t('更新 CLI')}</span>
+            {indicator?.kind === 'count' ? (
+              <span className="cwn-settings-nav-badge" aria-hidden="true">
+                {indicator.count}
+              </span>
+            ) : indicator?.kind === 'spinner' ? (
+              <span className="cwn-settings-nav-status" aria-hidden="true">
+                <StateDot state="ongoing" size={12} />
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="md"
+            className="cwn-settings-nav-primary"
             aria-label={t('CLI 连接')}
             aria-expanded={cliExpanded}
             aria-controls={cliGroupId}
@@ -425,6 +502,19 @@ function OpenSettingsDialog({
           <GeneralSettingsPane api={api} sessionId={sessionId} />
         ) : page === 'roles' ? (
           <RolePresetsPane api={api} sessionId={sessionId} />
+        ) : page === 'update' ? (
+          <CliUpdatePane
+            api={api}
+            sessionId={sessionId}
+            data={updates}
+            onOpenCli={(id) =>
+              void leave(() => {
+                setCli(id)
+                setCliExpanded(true)
+                setPage('cli')
+              })
+            }
+          />
         ) : (
           <CliSettings
             accountClose={accountClose}

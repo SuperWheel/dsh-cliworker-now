@@ -235,6 +235,7 @@ describe('durable Host cleanup quarantine', () => {
     const accounts = {
       assertCleanupRecoverable: vi.fn(),
       recoverCleanup: vi.fn(),
+      isBusy: vi.fn(() => false),
       status: vi.fn(async (cli: string) => ({ cli, installed: true, state: 'authenticated', actions: [] })),
     }
     service.accounts = accounts

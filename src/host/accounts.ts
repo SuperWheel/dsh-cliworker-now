@@ -33,7 +33,7 @@ import type { SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
 import { randomUUID } from 'node:crypto'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
-import { captureCatalogMetadata, executableFor, resolveCliExecutable } from './adapters.ts'
+import { captureCatalogMetadata, configuredCliExecutable, executableFor, resolveCliExecutable } from './adapters.ts'
 import {
   cleanupCauseText,
   METADATA_EXIT_GRACE_MS,
@@ -60,7 +60,9 @@ import {
 } from './account-identity.ts'
 import { readCodexAccount } from './codex-account.ts'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, isAbsolute } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { BACKGROUND_ACCOUNT_CLIS } from './cli-management/sources.ts'
 import {
   zcodeGrokAccountLaunch,
   zcodeGrokAccountStatus,
@@ -351,9 +353,9 @@ export class AccountManager {
         if (this.isBusy(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
         if ([...this.statusQueries.values()].some(q => q.cli === cli && !q.settled))
           throw new Error('此 CLI 的账号状态仍在读取，请稍后再试')
-        this.reserved.add(cli)
+        this.setReserved(cli, true)
       },
-      release: cli => this.reserved.delete(cli),
+      release: cli => this.setReserved(cli, false),
       settle: async (cli, signal) => {
         const running = [...this.statusQueries.values()].filter(q => q.cli === cli && !q.settled).map(q => q.operation)
         if (running.length) await abortable(Promise.allSettled(running), AbortSignal.any([signal, this.controller.signal]))
@@ -385,6 +387,16 @@ export class AccountManager {
       quarantine: (cli, error) => this.quarantineQuery(cli, error),
       invalidate: onDesktopChange,
     })
+  }
+
+  private activityListeners = new Set<(cli: CliId) => void>()
+  subscribeActivity(callback: (cli: CliId) => void): () => void {
+    this.activityListeners.add(callback)
+    return () => { this.activityListeners.delete(callback) }
+  }
+  private setReserved(cli: CliId, reserved: boolean): void {
+    if (reserved) this.reserved.add(cli); else this.reserved.delete(cli)
+    for (const callback of this.activityListeners) callback(cli)
   }
 
   isBusy(cli: CliId): boolean {
@@ -430,15 +442,16 @@ export class AccountManager {
     this.unsafeTerminals.delete(cli)
   }
 
-  async status(cli: CliId, cwd: string, signal: AbortSignal): Promise<AccountStatus> {
+  async status(cli: CliId, cwd: string, signal: AbortSignal, options: { background?: boolean } = {}): Promise<AccountStatus> {
     validateCli(cli)
+    if (options.background && !BACKGROUND_ACCOUNT_CLIS.includes(cli as Exclude<CliId, 'harness'>)) throw new Error('此 CLI 尚无已核实的后台只读账号查询')
     if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
     if (isWorkBuddyCli(cli) && this.reserved.has(cli))
       return this.cleanupHold(cli) ?? this.desktop.current(cli) ?? {
         cli, installed: true, state: 'unknown', summary: '正在确认当前登录状态…', actions: desktopActions(),
       }
     const directory = projectDirectory(cwd)
-    const key = JSON.stringify([cli, directory])
+    const key = JSON.stringify([cli, directory, !!options.background])
     let query = this.statusQueries.get(key)
     if (query && [...query.subscribers].every((reader) => reader.signal.aborted)) query.controller.abort()
     // The abandoned process still owns cleanup; a new reader must not overlap it.
@@ -447,14 +460,14 @@ export class AccountManager {
         query.operation.catch(() => undefined),
         signal,
       )
-      return this.status(cli, directory, signal)
+      return this.status(cli, directory, signal, options)
     }
     if (!query) {
       const controller = new AbortController()
       query = {
         cli,
         controller,
-        operation: this.track(this.readStatus(cli, directory, controller.signal)),
+        operation: this.track(this.readStatus(cli, directory, controller.signal, options)),
         subscribers: new Set(),
         settled: false,
       }
@@ -489,7 +502,7 @@ export class AccountManager {
     cli: CliId,
     cwd: string,
     signal: AbortSignal,
-    { renew = true }: { renew?: boolean } = {},
+    { renew = true, background = false }: { renew?: boolean; background?: boolean } = {},
   ): Promise<AccountStatus> {
     const held = this.cleanupHold(cli)
     if (held) return held
@@ -500,7 +513,14 @@ export class AccountManager {
     const control = AbortSignal.any([signal, this.controller.signal, timer.signal])
     let installed = false
     try {
-      const executable = await resolveCliExecutable(cli, this.backend, this.config, control)
+      const recorded = background ? this.config.cliExecutablePaths?.read(cli) : undefined
+      const configured = background ? configuredCliExecutable(cli, this.config) : undefined
+      const path = recorded?.mode === 'manual' ? recorded.path : configured || recorded?.path
+      // Never let background status fall back to PATH/registry discovery or an
+      // identity command. The preloader already checked this recorded file.
+      if (background && (!path || !isAbsolute(path) || !(await stat(path)).isFile()))
+        throw Object.assign(new Error('No recorded CLI installation'), { code: 'ENOENT' })
+      const executable = background ? path! : await resolveCliExecutable(cli, this.backend, this.config, control)
       installed = true
       control.throwIfAborted()
       if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable })),
@@ -867,7 +887,7 @@ export class AccountManager {
     if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
     if (this.reserved.has(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
     const directory = projectDirectory(cwd)
-    this.reserved.add(cli)
+    this.setReserved(cli, true)
     for (const query of this.statusQueries.values()) if (query.cli === cli) query.controller.abort()
     let scope = this.parents.get(parent)
     if (!scope) {
@@ -1114,7 +1134,7 @@ export class AccountManager {
             if (!(error instanceof ProcessCleanupUnconfirmedError)) await release?.()
           } finally {
             if (error instanceof ProcessCleanupUnconfirmedError) this.unsafeTerminals.set(cli, parent)
-            else this.reserved.delete(cli)
+            else this.setReserved(cli, false)
           }
           throw error
         },
@@ -1162,7 +1182,7 @@ export class AccountManager {
         try {
           await release?.()
         } finally {
-          this.reserved.delete(cli)
+          this.setReserved(cli, false)
         }
       }
       if (session && startup.aborted && !session.cleanup)
@@ -1578,7 +1598,7 @@ export class AccountManager {
         if (session.completionGuide) this.emit(session, { guide: session.completionGuide })
         session.state = state
         this.emit(session, { status: state, message, cleanupConfirmed: true })
-        this.reserved.delete(session.cli)
+        this.setReserved(session.cli, false)
         session.expiry = setTimeout(() => {
           session.frames.length = 0
           this.sessions.delete(session.id)

@@ -127,3 +127,32 @@ describe('dialog account query scheduling (synthetic)', () => {
     expect(cancelled).not.toHaveBeenCalled()
   })
 })
+
+describe('whenIdle', () => {
+  it('runs at once when idle, otherwise after the key settles, and only the latest callback', async () => {
+    const queue = new AccountQueryQueue<string>()
+    const now = vi.fn()
+    queue.whenIdle('a', now)
+    expect(now).toHaveBeenCalledOnce()
+    let release!: () => void
+    queue.enqueue('a', () => new Promise<void>(resolve => { release = resolve }))
+    const first = vi.fn(), second = vi.fn()
+    queue.whenIdle('a', first)
+    queue.whenIdle('a', second)
+    await Promise.resolve(); await Promise.resolve()
+    expect(second).not.toHaveBeenCalled()
+    release()
+    await vi.waitFor(() => expect(second).toHaveBeenCalledOnce())
+    expect(first).not.toHaveBeenCalled()
+  })
+
+  it('drops pending callbacks on clear', async () => {
+    const queue = new AccountQueryQueue<string>()
+    queue.enqueue('a', () => new Promise<void>(() => {}))
+    const then = vi.fn()
+    queue.whenIdle('a', then)
+    queue.clear()
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    expect(then).not.toHaveBeenCalled()
+  })
+})

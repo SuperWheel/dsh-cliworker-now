@@ -110,6 +110,7 @@ const generalSettingsSchema = z.object({
   isolatedParallelWrites: z.boolean().optional(),
   askBeforeDispatch: z.boolean().optional(),
   showDshSubagents: z.boolean().optional(),
+  backgroundCliCheck: z.boolean().optional(),
   taskTimeLimitMs: taskTimeLimitSchema.optional(),
   idleTimeLimitMs: idleTimeLimitSchema.optional(),
 })
@@ -618,6 +619,7 @@ export class WorkerStorage {
         isolatedParallelWrites: z.boolean().nullable().optional(),
         askBeforeDispatch: z.boolean().nullable().optional(),
         showDshSubagents: z.boolean().nullable().optional(),
+        backgroundCliCheck: z.boolean().nullable().optional(),
         taskTimeLimitMs: taskTimeLimitSchema.nullable().optional(),
         idleTimeLimitMs: idleTimeLimitSchema.nullable().optional(),
       })

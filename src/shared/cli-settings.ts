@@ -33,6 +33,8 @@ export interface GeneralSettings {
   askBeforeDispatch: boolean
   /** Show native direct children alongside CLI Workers; on for upgrades too. */
   showDshSubagents: boolean
+  /** Read CLI display metadata once after startup, while idle. */
+  backgroundCliCheck: boolean
   /** Effective total time limit of a task in ms, counted from its start. */
   taskTimeLimitMs: number
   /** Deployment value (the plugin config `timeoutMs`) used when the user has not chosen one. */

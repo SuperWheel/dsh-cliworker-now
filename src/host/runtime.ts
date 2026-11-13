@@ -1218,6 +1218,10 @@ export class WorkerRuntime {
   get maxConcurrent(): number {
     return this.storage.generalSettings().maxConcurrent ?? this.config.maxConcurrent
   }
+  /** Includes reservations, queued starts and cleanup, not just running process handles. */
+  hasActiveCliWork(): boolean {
+    return [...this.storage.workers.values()].some(worker => !!this.busyReason(worker)) || this.preparations.size > 0 || this.stagedForks.size > 0
+  }
   generalSettings(): GeneralSettings {
     return {
       maxConcurrent: this.maxConcurrent,
@@ -1226,6 +1230,7 @@ export class WorkerRuntime {
       isolatedParallelWrites: this.storage.generalSettings().isolatedParallelWrites ?? false,
       askBeforeDispatch: this.storage.generalSettings().askBeforeDispatch ?? true,
       showDshSubagents: this.storage.generalSettings().showDshSubagents ?? true,
+      backgroundCliCheck: this.storage.generalSettings().backgroundCliCheck ?? true,
       // The plugin config value stays the initial limit until the user chooses one.
       taskTimeLimitMs: this.storage.generalSettings().taskTimeLimitMs ?? this.config.timeoutMs,
       defaultTaskTimeLimitMs: this.config.timeoutMs,

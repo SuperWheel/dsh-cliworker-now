@@ -1,3 +1,4 @@
+import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
@@ -306,6 +307,7 @@ export class CliWorkerService extends TypertRemoteService {
   })
   private runtime: WorkerRuntime
   private accounts: AccountManager
+  private cliManagement: CliManagementService
   private accountParents = new Map<string, () => Promise<void>>()
   private options: RuntimeConfig
   private backend: ProcessBackend
@@ -360,6 +362,19 @@ export class CliWorkerService extends TypertRemoteService {
       this.backend,
       this.options,
     )
+    this.cliManagement = new CliManagementService({
+      root: stateDirectory, backend: this.backend, config: this.options,
+      idle: () => !this.runtime.hasActiveCliWork() && !CLI_IDS.some(cli => this.accounts.isBusy(cli)),
+      enabled: () => this.runtime.generalSettings().backgroundCliCheck,
+      cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
+      account: (cli, project, signal) => this.accounts.status(cli, project, signal, { background: true }),
+      cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
+    })
+    ctx.effect(() => this.runtime.subscribe(() => this.cliManagement.activityChanged()), 'cliworker:metadata-idle')
+    ctx.effect(() => this.accounts.subscribeActivity(cli => {
+      this.cliManagement.activityChanged()
+      if (cli !== 'harness') this.cliManagement.cache.invalidateAccount(cli)
+    }), 'cliworker:metadata-accounts')
     this.dshSubagents = new DshSubagents(stateDirectory, {
       subagents: () => this.ctx.get('subagents'),
       query: () => this.ctx.get('sessionQuery') as ReturnType<DshSubagentServices['query']>,
@@ -718,6 +733,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
+          this.cliManagement.close(),
           this.runtime.close(),
           this.accounts.close(),
           ...[...this.accountParents.values()].map((dispose) => dispose()),
@@ -2087,6 +2103,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
   private invalidateSettingsDisplay(cli: CliId) {
+    if (cli !== 'harness') this.cliManagement?.cache.invalidateAccount(cli)
     this.settingsCatalogs?.invalidate(cli)
     const revisions = (this.settingsSourceRevisions ??= new Map())
     revisions.set(cli, (revisions.get(cli) ?? 0) + 1)
@@ -2275,7 +2292,8 @@ export class CliWorkerService extends TypertRemoteService {
   @Remote('generalSettings')
   async generalSettings(parentSessionId: string, signal: AbortSignal): Promise<string> {
     try {
-      await this.parent(parentSessionId)
+      const parent = await this.parent(parentSessionId)
+      if (parent.session.header.cwd) this.cliManagement?.context(this.project(parent))
       signal.throwIfAborted()
       return JSON.stringify(this.runtime.generalSettings())
     } catch (error) {
@@ -2318,9 +2336,53 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Cached page JSON; never starts probes. */
+  @Remote('cliUpdateSnapshot')
+  async cliUpdateSnapshot(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    try { this.cliManagement.context(this.project(await this.parent(parentSessionId))); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.snapshot()) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param scope - missing or all. @param signal - Request lifetime. @returns Immediate page JSON; watch carries results. */
+  @Remote('checkCliUpdates')
+  async checkCliUpdates(parentSessionId: string, scope: 'missing' | 'all', signal: AbortSignal): Promise<string> {
+    try { this.cliManagement.context(this.project(await this.parent(parentSessionId))); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.check(validate.enum(['missing', 'all']).parse(scope))) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param signal - Stream lifetime. @returns Revision-ordered page JSON. */
+  @Remote({ name: 'watchCliUpdates', mode: 'stream' })
+  async *watchCliUpdates(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
+    try { await this.parent(parentSessionId); for await (const snapshot of this.cliManagement.watch(signal)) yield JSON.stringify(snapshot) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Machine-local download settings JSON. */
+  @Remote('cliDownloadSource')
+  async cliDownloadSource(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.downloadSource(signal)) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param json - Download settings JSON. @param signal - Request lifetime. @returns Saved settings JSON. */
+  @Remote('saveCliDownloadSource')
+  async saveCliDownloadSource(parentSessionId: string, json: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.saveDownloadSource(JSON.parse(json))) }
+    catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param url - HTTPS registry URL. @param signal - Query lifetime. @returns Connection check JSON. */
+  @Remote('testCliDownloadSource')
+  async testCliDownloadSource(parentSessionId: string, url: string, signal: AbortSignal): Promise<string> {
+    try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(await this.cliManagement.testDownloadSource(url, signal)) }
+    catch (error) { throw failure(error) }
+  }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Safe account status JSON. */
   @Remote('accountStatus')
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    return this.readAccountStatus(parentSessionId, cli, signal, false)
+  }
+  /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Read lifetime. @returns Fresh account status and action handles. */
+  @Remote('refreshAccountStatus')
+  async refreshAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    return this.readAccountStatus(parentSessionId, cli, signal, true)
+  }
+  private async readAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal, refresh: boolean): Promise<string> {
     let queriedCli: CliId | undefined
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
@@ -2331,11 +2393,18 @@ export class CliWorkerService extends TypertRemoteService {
       const before = held()
       if (before) return JSON.stringify(before)
       this.runtime.assertCliEnabled(id)
-      const status = await this.accounts.status(id, project, signal)
+      this.cliManagement?.context(project)
+      if (!refresh && !this.accounts.isBusy(id)) {
+        const cached = this.cliManagement?.cache.account(id, project)
+        if (cached) return JSON.stringify(cached)
+      }
+      const revision = this.cliManagement?.cache.accountRevision(id)
+      const status = await this.accounts.status(id, project, AbortSignal.any([signal, this.disposed.signal]))
       signal.throwIfAborted()
       const after = held()
       if (after) return JSON.stringify(after)
       this.runtime.assertCliEnabled(id)
+      if (!this.accounts.isBusy(id)) this.cliManagement?.cache.rememberAccount(id, project, status, revision)
       return JSON.stringify(status)
     } catch (error) {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)

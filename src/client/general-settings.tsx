@@ -15,7 +15,13 @@ import { operationMessage } from './operation-error.ts'
 import { value, type API } from './workers.ts'
 import { setLanguagePreference, t, useT, type MessageKey } from './i18n.ts'
 
-function readSettings(raw: string): GeneralSettings {
+/**
+ * `backgroundCliCheck` (「启动后在后台检查 CLI」) is being added to the shared GeneralSettings;
+ * until then this local extension keeps the page typed. An older Host omits it: on by default.
+ */
+type Settings = GeneralSettings & { backgroundCliCheck: boolean }
+
+function readSettings(raw: string): Settings {
   const next = JSON.parse(raw)
   const count = (input: unknown) =>
     Number.isInteger(input) && (input as number) >= 1 && (input as number) <= MAX_CONCURRENT_LIMIT
@@ -24,6 +30,7 @@ function readSettings(raw: string): GeneralSettings {
   const isolatedParallelWrites = next?.isolatedParallelWrites ?? false
   const askBeforeDispatch = next?.askBeforeDispatch ?? true
   const showDshSubagents = next?.showDshSubagents ?? true
+  const backgroundCliCheck = next?.backgroundCliCheck ?? true
   const taskTimeLimitMs = next?.taskTimeLimitMs === undefined ? 1_800_000 : next.taskTimeLimitMs
   const defaultTaskTimeLimitMs = next?.defaultTaskTimeLimitMs === undefined ? 1_800_000 : next.defaultTaskTimeLimitMs
   const idleTimeLimitMs = next?.idleTimeLimitMs === undefined ? 0 : next.idleTimeLimitMs
@@ -36,21 +43,23 @@ function readSettings(raw: string): GeneralSettings {
     typeof isolatedParallelWrites !== 'boolean' ||
     typeof askBeforeDispatch !== 'boolean' ||
     typeof showDshSubagents !== 'boolean' ||
+    typeof backgroundCliCheck !== 'boolean' ||
     !duration(taskTimeLimitMs, 1000) ||
     !duration(defaultTaskTimeLimitMs, 1000) ||
     (idleTimeLimitMs !== 0 && !duration(idleTimeLimitMs, 60_000))
   )
     throw new Error(t('收到无效的通用设置，请重试'))
-  return { ...next, language, isolatedParallelWrites, askBeforeDispatch, showDshSubagents, taskTimeLimitMs, defaultTaskTimeLimitMs, idleTimeLimitMs }
+  return { ...next, language, isolatedParallelWrites, askBeforeDispatch, showDshSubagents, backgroundCliCheck, taskTimeLimitMs, defaultTaskTimeLimitMs, idleTimeLimitMs }
 }
 
-type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch' | 'showDshSubagents' | 'taskTimeLimitMs' | 'idleTimeLimitMs'
+type Field = 'language' | 'maxConcurrent' | 'isolatedParallelWrites' | 'askBeforeDispatch' | 'showDshSubagents' | 'backgroundCliCheck' | 'taskTimeLimitMs' | 'idleTimeLimitMs'
 const SAVING: Record<Field, MessageKey> = {
   language: '正在保存界面语言…',
   maxConcurrent: '正在保存同时对话数…',
   isolatedParallelWrites: '正在保存同目录写任务并行…',
   askBeforeDispatch: '正在保存调用前询问模型…',
   showDshSubagents: '正在保存 DSH 子 Agent 显示设置…',
+  backgroundCliCheck: '正在保存后台检查 CLI 设置…',
   taskTimeLimitMs: '正在保存总时限…',
   idleTimeLimitMs: '正在保存空闲时限…',
 }
@@ -60,6 +69,7 @@ const UNSAVED: Record<Field, MessageKey> = {
   isolatedParallelWrites: '同目录写任务并行未保存，请重试',
   askBeforeDispatch: '调用前询问模型未保存，请重试',
   showDshSubagents: 'DSH 子 Agent 显示设置未保存，请重试',
+  backgroundCliCheck: '后台检查 CLI 设置未保存，请重试',
   taskTimeLimitMs: '总时限未保存，请重新选择重试',
   idleTimeLimitMs: '空闲时限未保存，请重新选择重试',
 }
@@ -73,7 +83,7 @@ const LANGUAGE_LABELS: Record<LanguagePreference, () => string> = {
 /** Profile-wide plugin settings; each section owns its own save feedback. */
 export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: string }) {
   const t = useT()
-  const [settings, setSettings] = useState<GeneralSettings>()
+  const [settings, setSettings] = useState<Settings>()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<Field>()
   const [error, setError] = useState<{ field?: Field; message: string }>()
@@ -110,7 +120,7 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
     return () => controller.abort()
   }, [service, sessionId, attempt])
 
-  async function save<K extends Field>(field: K, next: GeneralSettings[K]) {
+  async function save<K extends Field>(field: K, next: Settings[K]) {
     if (!settings || request.current || next === settings[field]) return
     const controller = new AbortController()
     request.current = controller
@@ -285,6 +295,21 @@ export function GeneralSettingsPane({ api, sessionId }: { api: API; sessionId: s
             />
           </div>
           {feedback('showDshSubagents')}
+          <div className="cwn-setting-row">
+            <span className="cwn-setting-row-text">
+              <span>{t('启动后在后台检查 CLI')}</span>
+              <span className="cwn-setting-description">
+                {t('DSH 启动约 1 分钟后，在电脑空闲时读取 CLI 版本和登录状态，打开设置时直接显示')}
+              </span>
+            </span>
+            <Switch
+              checked={settings?.backgroundCliCheck ?? true}
+              onChange={(enabled) => void save('backgroundCliCheck', enabled)}
+              label={t('启动后在后台检查 CLI')}
+              disabled={disabled}
+            />
+          </div>
+          {feedback('backgroundCliCheck')}
           {error && !error.field && (
             <div className="cwn-settings-save">
               <span className="cwn-settings-feedback-slot" role="status">

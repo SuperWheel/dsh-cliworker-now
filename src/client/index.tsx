@@ -40,6 +40,8 @@ import {
   rolePresetStyles,
 } from './styles.ts'
 import { BrandIcon } from './icons.tsx'
+import { cliUpdateSettingsStyles } from './cli-download-source.tsx'
+import { cliUpdateStyles } from './cli-update-styles.ts'
 import { installNativeJobOverlay } from './native-job-overlay.ts'
 import { workerManagementStyles } from './management-styles.ts'
 import { renameCopyStyles } from './rename-copy-styles.ts'
@@ -228,6 +230,8 @@ export function apply(ctx: Context): void {
         hoverFeedbackStyles +
         conversationInteractionStyles +
         settingsStyles +
+        cliUpdateSettingsStyles +
+        cliUpdateStyles +
         rolePresetStyles +
         workerManagementStyles +
         renameCopyStyles +

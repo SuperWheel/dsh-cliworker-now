@@ -5,6 +5,7 @@ type Running = { controller: AbortController; query: Query }
 export class AccountQueryQueue<Key extends string> {
   private readonly waiting = new Map<Key, Query>()
   private readonly running = new Map<Key, Running>()
+  private readonly settled = new Map<Key, () => void>()
   private priority?: Key
 
   constructor(private readonly limit = 2) {}
@@ -23,6 +24,16 @@ export class AccountQueryQueue<Key extends string> {
     return true
   }
 
+  /** Runs `then` once no read for `key` is queued or running; a later call for the same key replaces it. */
+  whenIdle(key: Key, then: () => void): void {
+    if (!this.has(key)) {
+      this.settled.delete(key)
+      then()
+      return
+    }
+    this.settled.set(key, then)
+  }
+
   prioritize(key: Key): void {
     this.priority = key
     this.drain()
@@ -34,6 +45,7 @@ export class AccountQueryQueue<Key extends string> {
   }
 
   clear(): void {
+    this.settled.clear()
     this.waiting.clear()
     for (const current of this.running.values()) current.controller.abort()
   }
@@ -56,6 +68,11 @@ export class AccountQueryQueue<Key extends string> {
         .catch(() => undefined)
         .finally(() => {
           if (this.running.get(key) === current) this.running.delete(key)
+          const then = this.settled.get(key)
+          if (then && !this.has(key)) {
+            this.settled.delete(key)
+            then()
+          }
           this.drain()
         })
     }

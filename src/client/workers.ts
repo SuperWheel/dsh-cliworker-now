@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
@@ -33,6 +33,30 @@ export type API = Pick<ClientRemote, '$stream'> & {
     accountStartWith?: (parentId: string, cli: CliId, action: string, options: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
     /** Release one CLI paused after an unconfirmed cleanup, once the user confirmed; absent on older Hosts. */
     recoverCliCleanup?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Fresh account read with action handles; `accountStatus` may answer from the display cache without actions. Absent on older Hosts. */
+    refreshAccountStatus?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** 「更新 CLI」page (src/shared/cli-management.ts); every method is absent on older Hosts. */
+    /** Cached page snapshot (CliUpdateSnapshot JSON); never starts a probe. */
+    cliUpdateSnapshot?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Starts a check and returns at once; `missing` only fills absent or stale rows, `all` is the 「检查更新」 button. */
+    checkCliUpdates?: (parentId: string, scope: 'missing' | 'all', signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** CliUpdateSnapshot JSON initially and after every change. */
+    watchCliUpdates?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
+    /** Re-plans in the Host and starts when `planToken` still matches; `installDirectory` only for ZCode and WorkBuddy editions, otherwise ''. */
+    startCliOperation?: (parentId: string, cli: CliId, intent: 'update' | 'install', planToken: string, installDirectory: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Queues every updatable CLI in display order; returns the snapshot. */
+    updateAllClis?: (parentId: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Cancels the running operation (its id) or removes a queued CLI (its CLI id). */
+    cancelCliOperation?: (parentId: string, target: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Opens the system folder picker in the Host; CliInstallDirectoryCheck JSON, `path` '' when dismissed. */
+    chooseInstallDirectory?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** CliInstallDirectoryCheck JSON for a directory, '' meaning the default location. */
+    checkInstallDirectory?: (parentId: string, cli: CliId, path: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** CliDownloadSourceSettings JSON. */
+    cliDownloadSource?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    saveCliDownloadSource?: (parentId: string, settings: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** CliDownloadSourceTest JSON. */
+    testCliDownloadSource?: (parentId: string, url: string, signal: AbortSignal) => Promise<RemoteResult<string>>
   }
 }
 export const value = <T>(result: RemoteResult<T>): T => {

@@ -1,6 +1,6 @@
 import { createElement, forwardRef, useEffect } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setLanguagePreference } from '../src/client/i18n.ts'
 import { SettingsDialog } from '../src/client/settings-dialog.tsx'
 import type { API } from '../src/client/workers.ts'
@@ -44,6 +44,14 @@ vi.mock('../src/client/account-terminal.tsx', () => ({
     )
   },
 }))
+// Simulated 「更新 CLI」 page: its own component tests cover the page; here only the dialog wiring.
+const updatePane = vi.hoisted(() => ({ props: undefined as any }))
+vi.mock('../src/client/cli-update-page.tsx', () => ({
+  CliUpdatePane: (props: any) => {
+    updatePane.props = props
+    return createElement('div', { 'data-update-pane': true }, '模拟更新 CLI 页面')
+  },
+}))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Modal: ({ open, title, children, onClose, closeLabel }: any) =>
     open
@@ -68,6 +76,7 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconCopyOutlineRegular: () => createElement('svg'),
   IconChevronDownOutlineRegular: () => createElement('svg'),
   IconLinkOutlineRegular: () => createElement('svg'),
+  IconDownloadOutlineRegular: () => createElement('svg'),
   IconRefreshOutlineRegular: () => createElement('svg'),
   IconPlusOutlineRegular: () => createElement('svg'),
   IconUserOutlineRegular: () => createElement('svg'),
@@ -114,6 +123,18 @@ function deferred() {
   return { promise, resolve, reject }
 }
 const remote = (data: unknown) => ({ ok: true, value: JSON.stringify(data) })
+// Minimal stand-in for the Gateway's reconnecting stream; only the 「更新 CLI」 data hook opens one here.
+function simulatedStream(options: { open: (signal: AbortSignal) => AsyncIterable<string>; ended: () => Error }) {
+  const controller = new AbortController()
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const value of options.open(controller.signal))
+        yield { generation: 1, value, signal: controller.signal, accept: () => undefined }
+      if (!controller.signal.aborted) throw options.ended()
+    },
+    dispose: async () => controller.abort(),
+  }
+}
 const catalog = (cli: CliId, model = `${cli}-fixture`) =>
   remote({ cli, models: [{ id: model, efforts: ['low', 'high'] }] })
 const status = (cli: CliId, changes: Partial<AccountStatus> = {}) =>
@@ -178,6 +199,7 @@ async function setup(
     return remote({ enabled })
   })
   const api = {
+    $stream: simulatedStream,
     cliworker: {
       catalogForCli,
       refreshCatalogForCli,
@@ -3198,4 +3220,147 @@ it('missing desktop capability on an older Host keeps manual guidance and sends 
   expect(t.button('在桌面端管理')).toBeUndefined()
   expect(t.text()).toContain('在 WorkBuddy 桌面端管理')
   expect(accountDesktopStart).not.toHaveBeenCalled()
+})
+
+// SIMULATION: cached 「更新 CLI」 snapshot only; no CLI is probed, updated or installed.
+it('shows the update count in the navigation from the cache and opens a CLI page from the update page', async () => {
+  const snapshot = {
+    revision: 4,
+    activity: 'idle',
+    entries: [
+      { cli: 'codex', group: 'updatable', installed: true },
+      { cli: 'kimi', group: 'updatable', installed: true },
+      { cli: 'pi', group: 'latest', installed: true },
+    ],
+    queue: [],
+    results: [],
+  }
+  const cliUpdateSnapshot = vi.fn(async () => remote(snapshot))
+  const watchCliUpdates = vi.fn((_session: string, signal: AbortSignal) =>
+    (async function* () {
+      await new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
+    })(),
+  )
+  const checkCliUpdates = vi.fn(async () => remote(snapshot))
+  const t = await setup({ cliUpdateSnapshot, watchCliUpdates, checkCliUpdates })
+  await act(async () => {})
+  const nav = t.r.root.findAllByType('nav')[0]!
+  const labels = nav.findAllByType('button').map((b) => b.props['aria-label'])
+  const update = '更新 CLI（2 个可更新）'
+  expect(labels.indexOf('智能体设置')).toBeLessThan(labels.indexOf(update))
+  expect(labels.indexOf(update)).toBeLessThan(labels.indexOf('CLI 连接'))
+  expect(visibleText(nav.findByProps({ className: 'cwn-settings-nav-badge' }))).toBe('2')
+  // Opening the dialog only reads the cache; the page asks for checks itself.
+  expect(cliUpdateSnapshot).toHaveBeenCalledTimes(1)
+  expect(checkCliUpdates).not.toHaveBeenCalled()
+  await t.click(update)
+  expect(t.button(update).props['aria-pressed']).toBe(true)
+  expect(updatePane.props.data.snapshot.revision).toBe(4)
+  expect(updatePane.props.sessionId).toBe('simulation-parent')
+  await act(async () => updatePane.props.onOpenCli('kimi'))
+  expect(t.button(`${CLI_LABELS.kimi} 设置`).props['aria-pressed']).toBe(true)
+  expect(t.text()).not.toContain('模拟更新 CLI 页面')
+})
+
+it('keeps the update navigation plain on a Host without the update methods (simulated)', async () => {
+  const t = await setup()
+  const nav = t.r.root.findAllByType('nav')[0]!
+  expect(nav.findAllByType('button').map((b) => b.props['aria-label'])).toContain('更新 CLI')
+  expect(nav.findAllByProps({ className: 'cwn-settings-nav-badge' })).toHaveLength(0)
+  await t.click('更新 CLI')
+  expect(updatePane.props.data.supported).toBe(false)
+})
+
+// SIMULATION: general settings only; no background probe is started here.
+it('defaults the background CLI check on, including for an older Host, and saves both directions', async () => {
+  let current: Record<string, unknown> = { maxConcurrent: 2, defaultMaxConcurrent: 2 }
+  const saveGeneralSettings = vi.fn(async (_session, raw: string) => {
+    current = { ...current, ...JSON.parse(raw) }
+    return remote(current)
+  })
+  const t = await setup({ generalSettings: vi.fn(async () => remote(current)), saveGeneralSettings })
+  await t.click('CLI Worker 设置')
+  const label = '启动后在后台检查 CLI'
+  expect(t.button(label).props['aria-checked']).toBe(true)
+  await t.click(label)
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"backgroundCliCheck":false}', expect.any(AbortSignal))
+  expect(t.button(label).props['aria-checked']).toBe(false)
+  await t.click(label)
+  expect(saveGeneralSettings).toHaveBeenLastCalledWith('simulation-parent', '{"backgroundCliCheck":true}', expect.any(AbortSignal))
+  expect(t.button(label).props['aria-checked']).toBe(true)
+})
+
+it('reports an older Host that ignores the background CLI check instead of showing it as saved', async () => {
+  const current = { maxConcurrent: 2, defaultMaxConcurrent: 2 }
+  const saveGeneralSettings = vi.fn(async () => remote(current))
+  const t = await setup({ generalSettings: vi.fn(async () => remote(current)), saveGeneralSettings })
+  await t.click('CLI Worker 设置')
+  await t.click('启动后在后台检查 CLI')
+  expect(t.button('启动后在后台检查 CLI').props['aria-checked']).toBe(true)
+  expect(t.text()).toContain('后台检查 CLI 设置未保存，请重试')
+})
+
+describe('account status from the Host background cache (simulated)', () => {
+  const withCache = (cli: CliId, stale = false) => remote({
+    ...JSON.parse(status(cli, { state: 'authenticated', summary: `${cli} 模拟缓存状态` }).value),
+    cache: { checkedAt: 1, stale, displayOnly: true },
+  })
+  const login = [{ id: 'login', label: '登录 / 切换账号', description: '模拟' }]
+
+  it('shows the cached summary, then reads the open page fresh so its login button comes back', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => withCache(cli))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    const t = await setup({ accountStatus, refreshAccountStatus })
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['antigravity'])
+    expect(t.button('登录 / 切换账号')).toBeDefined()
+  })
+
+  it('re-reads only stale cache entries for CLIs that are not on screen', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => withCache(cli, cli === 'qoder'))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    await setup({ accountStatus, refreshAccountStatus })
+    expect(new Set(refreshAccountStatus.mock.calls.map(call => call[1]))).toEqual(new Set(['antigravity', 'qoder']))
+  })
+
+  it('reads fresh when the user opens a CLI whose status came from the cache', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => withCache(cli))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    const t = await setup({ accountStatus, refreshAccountStatus })
+    await t.click(`${CLI_LABELS.qoder} 设置`)
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['antigravity', 'qoder'])
+    expect(t.button('登录 / 切换账号')).toBeDefined()
+  })
+
+  it('reads fresh after an in-flight catalog read when the user opens that CLI meanwhile', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => withCache(cli))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    const slow = deferred()
+    const catalogForCli = vi.fn((_parent, cli: CliId) => cli === 'qoder' ? slow.promise.then(() => catalog(cli)) : Promise.resolve(catalog(cli)))
+    const t = await setupWarm({ accountStatus, refreshAccountStatus, catalogForCli }, ['codex', 'qoder'])
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['codex'])
+    await t.click(`${CLI_LABELS.qoder} 设置`)
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['codex'])
+    await act(async () => slow.resolve(undefined))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['codex', 'qoder'])
+    expect(t.button('登录 / 切换账号')).toBeDefined()
+  })
+
+  it('uses the fresh read for the explicit refresh button', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => status(cli))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    const t = await setup({ accountStatus, refreshAccountStatus })
+    expect(refreshAccountStatus).not.toHaveBeenCalled()
+    await t.click('刷新状态')
+    expect(refreshAccountStatus.mock.calls.map(call => call[1])).toEqual(['antigravity'])
+    expect(accountStatus.mock.calls.filter(call => call[1] === 'antigravity')).toHaveLength(1)
+  })
+
+  it('keeps working on an older Host without refreshAccountStatus', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) => status(cli, { actions: login }))
+    const t = await setup({ accountStatus })
+    await t.click('刷新状态')
+    expect(accountStatus.mock.calls.filter(call => call[1] === 'antigravity')).toHaveLength(2)
+    expect(t.button('登录 / 切换账号')).toBeDefined()
+  })
 })

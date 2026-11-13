@@ -70,7 +70,7 @@ function normalizedBackend(
       // Leaving another pipe relay beneath it would delay the native exit
       // receipt until all descendants released their inherited output pipes.
       if (platform === 'win32' && electron && isCurrentWindowsRuntime(normalized.argv[0]!) &&
-          normalized.argv.length > 2 && win32.normalize(normalized.argv[1]!).toLowerCase() === win32.normalize(privateLauncher).toLowerCase())
+          normalized.argv.length > 2 && normalized.argv[2] !== '--cliworker-low-priority' && win32.normalize(normalized.argv[1]!).toLowerCase() === win32.normalize(privateLauncher).toLowerCase())
         return spawnWindowsHidden(backend, { ...normalized, argv: nativeLaunchArgv(normalized.argv.slice(2), platform) }, { privateUmask: true })
       return needsWindowsHiddenLaunch(normalized.argv, platform, electron)
         ? spawnWindowsHidden(backend, normalized)
