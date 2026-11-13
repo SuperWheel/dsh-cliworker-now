@@ -20,7 +20,7 @@ import { value, type API } from './workers.ts'
  */
 export const cliUpdateSettingsStyles = `
 .cwn-settings-nav-badge{flex:none;box-sizing:border-box;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:var(--dsw-font-xxs-12-font-size);line-height:18px;font-weight:500;text-align:center;color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 12%,transparent)}
-.cwn-settings-choice-text{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;white-space:normal}.cwn-settings-choice-description{font-size:var(--cwn-settings-description-size,12px);line-height:var(--cwn-settings-description-line,18px);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
+.cwn-settings-choice-text{display:flex;flex-direction:column;gap:2px;min-width:0;text-align:left;white-space:normal}.cwn-settings-choice-text>span:first-child{font-size:var(--cwn-settings-label-size,14px);line-height:var(--cwn-settings-label-line,22px)}.cwn-settings-choice-description{font-size:var(--cwn-settings-description-size,12px);line-height:var(--cwn-settings-description-line,18px);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
 .cwn-settings-choice.cwn-download-source-choice{width:auto;min-width:208px;max-width:48%}
 .cwn-download-source[data-supported=false] .cwn-setting-row-text>span:first-child{color:var(--dsw-alias-label-caption)}
 .cwn-download-source-custom{display:flex;flex-direction:column;gap:var(--cwn-settings-action-gap);padding-bottom:var(--cwn-settings-row-padding);min-width:0}

@@ -6,7 +6,9 @@
 export const cliUpdateStyles = `
 .cwn-update-page{--cwn-update-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
 .cwn-update-page .cwn-copy{margin-top:0}
-.cwn-update-tools{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--cwn-settings-action-gap);min-width:0}
+.cwn-update-page .cwn-cli-identity>.cwn-settings-cli-name,.cwn-update-page .cwn-cli-identity>.cwn-settings-cli-name>div{min-width:0}
+.cwn-update-tools{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;max-width:60%}
+.cwn-update-tools-row{display:flex;align-items:center;gap:var(--cwn-settings-action-gap);flex-wrap:nowrap}
 .cwn-update-tools button{white-space:nowrap}
 .cwn-update-page-error{flex-basis:100%;margin:0;text-align:right;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-feedback-line);color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
 .cwn-update-section .cwn-settings-section-head h3{display:flex;align-items:center;gap:6px}
@@ -22,6 +24,9 @@ export const cliUpdateStyles = `
 .cwn-update-name{font-size:var(--cwn-settings-label-size);line-height:var(--cwn-settings-label-line);font-weight:var(--cwn-settings-label-weight);color:var(--dsw-alias-label-primary)}
 .cwn-update-desc{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
 .cwn-update-desc>span{min-width:0}
+.cwn-update-desc:has(>[data-state]){flex-wrap:nowrap;align-items:flex-start}
+.cwn-update-desc>[data-state]{flex-shrink:0;margin-top:3px}
+.cwn-update-desc>[data-state=done]{margin-top:6px}
 .cwn-update-desc[data-tone=error]{color:var(--dsw-alias-state-error-primary)}
 .cwn-update-desc[data-tone=warn]{color:var(--dsw-alias-state-warn-label)}
 .cwn-update-desc[data-tone=ok]{color:var(--dsw-alias-label-primary)}

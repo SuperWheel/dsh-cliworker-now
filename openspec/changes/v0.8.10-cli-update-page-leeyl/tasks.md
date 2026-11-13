@@ -140,7 +140,11 @@
   - 阶段 B 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 294 文件 6432 项通过、14 项跳过（首轮 `native-workbuddy.test.ts` 2 项在满载时失败，该文件自 a955675 起未改动，单独连跑 3 次 39 项全过，第二轮全量全过）；`corepack pnpm build:preview` 成功。构建曾报 TS2774：Host 注册页面 Remote 后生成类型把 11 个方法变为必有，已在 `src/client/workers.ts` 的 Omit 中排除并改回可选（`pnpm typecheck` 未发现此问题，只有隔离构建能发现）。阶段 C 后需重跑。
   - Phase C：typecheck、关联 13 文件 507 项、沙箱外全量 296 文件 6455 项通过，命令与完整统计见 5.3。（未执行：阶段 C 明确禁止 build / build:preview，本项保留未勾选。）
   - 阶段 C 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6472 项通过、14 项跳过；`corepack pnpm build:preview` 成功；严格校验通过；`src/client`、`src/shared` 无改动。核对 `first-party-account-paths.ts` 与原写法一致（Codex 路径 resolve，Claude 路径不 resolve，绝对路径检查保留）。
-- [ ] 7.2 预览台与设计稿 15 张逐张截图对照，差异修完再截
+- [x] 7.2 预览台与设计稿 15 张逐张截图对照，差异修完再截
+  - 预览台（2026-11-13，Opus 子 agent 搭建，主会话复核）：`.cache/update-preview/`（不入 Git），esbuild 打包真实 `SettingsDialog` + DSH 0.2.2-rc.2 primitives 与主题 token，模拟 API 按画板推送 `CliUpdateSnapshot`（标「模拟」，不连 Host）；`node .cache/update-preview/run.mjs` 用本机无头 Chrome 截 900×780（Narrow 640×780）并生成设计稿 / 实现并排图。14 个状态控制台、异常、请求失败、横向溢出均为 0。
+  - 修复的实现差异：640px 页头按钮组换到第二行 → 按钮组不换行、标题收窄；更新 / 安装进行中「检查更新」未置灰；进行中缺「已用时 m:ss」（取 Host `startedAt`）；速度「922 KB/s」→「0.9 MB/s」；首次加载第二步出现置灰「全部更新」→ 按显示分区判断，第二次重排后才出现；首次检查期间导航改为转圈（原为数量）；安装成功文案改为「已安装 X，登录后即可派遣」（PRD 5.11.6）；纯 CLI 安装显示「安装到官方默认位置 <路径>」，桌面应用「正在下载安装包」；前置条件「官方安装脚本需要 Git，这台电脑上没有找到」（范围为空时不留空格）；可用空间取整并带 Windows 盘符；下载源菜单主行 13/20 → 14/22；带转圈的说明换行时转圈留在首行。各项加测试（页面 17 项、布局 14 项），`doc/settings-ui-design.md` 同步。
+  - 按 PRD 保留、判为设计稿自身问题：原生 Modal 外壳（圆角、关闭按钮、列间距 24）；「检查中」排在「检查失败」前（PRD 5.2.1）；失败行「重试」（PRD 5.1）；分区内按 CLI 固定顺序（Results 画板 Pi 位置）；任务占用时「全部更新」仍可点（只跳过占用的 CLI）；输出区高 150（规范值，画板为排版压到 96）；进度「已下载」前缀（PRD 5.9.4）；「由 WorkBuddy CN 桌面端管理更新」沿用 CLI 显示名，不猜桌面应用名。
+  - 复核：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6477 项通过；`corepack pnpm build:preview` 成功；修复后 14 个状态全部重截。（未执行：真实 DSH Desktop 里的目视核对，随 7.3 / 7.5 实机验收做。）
   - （未执行：Phase B 仅后端与模拟测试，禁止构建及修改 Client；可视验收留待整合阶段。）
 - [ ] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
   - （未执行：本次明确禁止真实 CLI 安装、更新、npm、brew 及 --version；已有模拟证据不能替代真实更新验收。）

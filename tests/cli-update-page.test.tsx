@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CliUpdatePane } from '../src/client/cli-update-page.tsx'
+import { CliUpdatePane, formatRate } from '../src/client/cli-update-page.tsx'
 import type { CliUpdateData } from '../src/client/cli-update-data.ts'
 import { setLanguagePreference } from '../src/client/i18n.ts'
 import type { API } from '../src/client/workers.ts'
@@ -305,7 +305,7 @@ describe('模拟「更新 CLI」页面', () => {
     expect(f.service.checkInstallDirectory).toHaveBeenCalledWith('SIMULATED/parent', 'workbuddycn', '', expect.any(AbortSignal))
     let row = f.rowOf('workbuddycn')
     expect(row.findByType('input').props).toMatchObject({ value: '/Applications', readOnly: true })
-    expect(textOf(row)).toContain('可用 90.0 GB，安装需要约 480 MB')
+    expect(textOf(row)).toContain('可用 90 GB，安装需要约 480 MB')
     expect(f.button('开始安装', row)!.props.disabled).toBe(false)
     const browse = f.buttons(row).find((node) => node.props['aria-label'] === '浏览文件夹')!
     expect(browse.props).toMatchObject({ 'data-size': 'md', 'data-variant': 'outline' })
@@ -320,6 +320,112 @@ describe('模拟「更新 CLI」页面', () => {
     expect(f.service.startCliOperation).toHaveBeenCalledWith(
       'SIMULATED/parent', 'workbuddycn', 'install', '', '', expect.any(String), expect.any(AbortSignal),
     )
+  })
+
+  it('matches the design during an update: check disabled, elapsed time, MB/s speed', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(1_800_000_042_000)
+    try {
+      const f = await setup(data({
+        snapshot: snapshot({
+          operation: {
+            id: 'SIMULATED-op', intent: 'update', cli: 'codex', phase: 'downloading', startedAt: 1_800_000_000_000,
+            targetVersion: '0.130.0', outputTail: '',
+            progress: { readable: true, downloadedBytes: 21.4 * 1024 ** 2, totalBytes: 36.8 * 1024 ** 2, bytesPerSecond: 922 * 1024, resumeCount: 1 },
+          },
+        }),
+      }))
+      expect(f.r.root.findByProps({ className: 'cwn-update-check' }).props.disabled).toBe(true)
+      const row = f.rowOf('codex')
+      expect(textOf(row)).toContain('正在下载 0.130.0… 已用时 0:42')
+      expect(textOf(row)).toContain('0.9 MB/s')
+      await act(async () => { vi.advanceTimersByTime(1000) })
+      expect(textOf(f.rowOf('codex'))).toContain('已用时 0:43')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('formats speeds in MB/s from 0.1 MB/s and KB/s below', () => {
+    expect(formatRate(922 * 1024)).toBe('0.9 MB/s')
+    expect(formatRate(1.6 * 1024 ** 2)).toBe('1.6 MB/s')
+    expect(formatRate(50 * 1024)).toBe('50 KB/s')
+  })
+
+  it('names the install method and default location, and words prerequisites without a stray space', async () => {
+    const base = snapshot()
+    const f = await setup(data({
+      snapshot: {
+        ...base,
+        entries: [
+          ...base.entries,
+          entry('hermes', {
+            group: 'notInstalled', installed: false,
+            install: { method: 'script', selectableLocation: false, prerequisites: [{ name: 'Git', required: '', satisfied: false }] },
+          }),
+        ],
+        operation: { id: 'SIMULATED-install', intent: 'install', cli: 'grok', phase: 'downloading', startedAt: 1, outputTail: '' },
+      },
+    }))
+    expect(textOf(f.rowOf('hermes'))).toContain('官方安装脚本需要 Git，这台电脑上没有找到')
+    expect(textOf(f.rowOf('grok'))).toContain('安装到官方默认位置 ~/.local/bin/grok')
+  })
+
+  it('shows the Windows drive letter and whole numbers in the install location hint', async () => {
+    const f = await setup(
+      data({
+        snapshot: snapshot({
+          entries: [entry('zcode', {
+            group: 'notInstalled', installed: false,
+            install: { method: 'desktop', selectableLocation: true, prerequisites: [], defaultLocation: 'E:\\ZCode' },
+          })],
+        }),
+      }),
+      { checkInstallDirectory: vi.fn(async () => ok({ path: 'E:\\ZCode', freeBytes: 86 * 1024 ** 3, requiredBytes: 480 * 1024 ** 2 })) },
+    )
+    await act(async () => f.section('未安装')!.findByProps({ className: 'cwn-refresh cwn-update-fold' }).props.onClick())
+    await act(async () => f.button('安装', f.rowOf('zcode'))!.props.onClick())
+    expect(textOf(f.rowOf('zcode'))).toContain('E 盘可用 86 GB，安装需要约 480 MB')
+  })
+
+  it('hides 全部更新 during the first load until rows are regrouped into 可更新', async () => {
+    const first = (cli: CliUpdateEntry['cli']) => entry(cli, { group: 'checking', stage: 'local' })
+    const f = await setup(data({
+      snapshot: { revision: 1, activity: 'checking', queue: [], results: [], entries: [first('codex'), first('kimi')] },
+    }))
+    expect(f.button('全部更新')).toBeUndefined()
+    // Local reads done (first regroup): both rows still ask their release sources.
+    await f.update(data({
+      snapshot: {
+        revision: 2, activity: 'checking', queue: [], results: [],
+        entries: [
+          entry('codex', { group: 'checking', stage: 'remote', currentVersion: '0.129.0' }),
+          entry('kimi', { group: 'checking', stage: 'remote', currentVersion: '1.4.0' }),
+        ],
+      },
+    }))
+    // Codex's release answer arrives before Kimi's: written in place, no regroup yet.
+    await f.update(data({
+      snapshot: {
+        revision: 3, activity: 'checking', queue: [], results: [],
+        entries: [
+          entry('codex', { group: 'updatable', source: 'npm', currentVersion: '0.129.0', latestVersion: '0.130.0', planToken: 'SIMULATED-plan' }),
+          entry('kimi', { group: 'checking', stage: 'remote', currentVersion: '1.4.0' }),
+        ],
+      },
+    }))
+    expect(f.section('检查中')!.findAll((node) => node.props['data-cli'] === 'codex').length).toBeGreaterThan(0)
+    expect(f.button('全部更新')).toBeUndefined()
+    await f.update(data({
+      snapshot: {
+        revision: 4, activity: 'idle', checkedAt: 1_800_000_000_000, queue: [], results: [],
+        entries: [
+          entry('codex', { group: 'updatable', source: 'npm', currentVersion: '0.129.0', latestVersion: '0.130.0', planToken: 'SIMULATED-plan' }),
+          entry('kimi', { group: 'latest', source: 'npm', currentVersion: '1.4.0' }),
+        ],
+      },
+    }))
+    expect(f.button('全部更新')).toBeDefined()
   })
 
   it('lists all CLIs as checking before the first snapshot without drawing skeletons', async () => {

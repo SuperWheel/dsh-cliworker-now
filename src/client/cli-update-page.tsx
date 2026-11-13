@@ -101,6 +101,29 @@ export function formatBytes(bytes: number): string {
   return `${text} ${units[unit]}`
 }
 
+/** Download speed: MB/s with one decimal from 0.1 MB/s up (「0.9 MB/s」), KB/s below. */
+export function formatRate(bytesPerSecond: number): string {
+  const mb = bytesPerSecond / (1024 * 1024)
+  if (mb >= 0.1) return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB/s`
+  return `${Math.max(1, Math.round(bytesPerSecond / 1024))} KB/s`
+}
+
+/** Free disk space for the location hint: whole numbers from 10 units up, with the Windows drive letter. */
+function spaceText(path: string, free: number, required: number | undefined): string {
+  const drive = /^([A-Za-z]):[\\/]/.exec(path)?.[1]?.toUpperCase()
+  const freeText = compactBytes(free)
+  if (required === undefined)
+    return drive ? t('{drive} 盘可用 {free}', { drive, free: freeText }) : t('可用 {free}', { free: freeText })
+  return drive
+    ? t('{drive} 盘可用 {free}，安装需要约 {required}', { drive, free: freeText, required: compactBytes(required) })
+    : t('可用 {free}，安装需要约 {required}', { free: freeText, required: compactBytes(required) })
+}
+function compactBytes(bytes: number): string {
+  const text = formatBytes(bytes)
+  const [number, unit] = text.split(' ')
+  return Number(number) >= 10 ? `${Math.round(Number(number))} ${unit}` : text
+}
+
 const safeGuide = (url: string | undefined) => (url && /^https:\/\/[^\s]+$/i.test(url) ? url : undefined)
 const openGuide = (url: string | undefined) => {
   const safe = safeGuide(url)
@@ -165,11 +188,12 @@ function prerequisiteProblem(entry: CliUpdateEntry): string | undefined {
   const missing = entry.install?.prerequisites.filter((item) => !item.satisfied) ?? []
   if (!missing.length) return undefined
   return missing
-    .map((item) =>
-      item.found
-        ? t('需要 {name} {required}，这台电脑上是 {found}', { name: item.name, required: item.required, found: item.found })
-        : t('需要 {name} {required}，这台电脑上没有找到', { name: item.name, required: item.required }),
-    )
+    .map((item) => {
+      const need = item.required.trim() ? `${item.name} ${item.required.trim()}` : item.name
+      return item.found
+        ? t('需要 {need}，这台电脑上是 {found}', { need, found: item.found })
+        : t('需要 {need}，这台电脑上没有找到', { need })
+    })
     .join(uiLanguage() === 'en' ? '; ' : '；')
 }
 
@@ -229,18 +253,22 @@ function describeEntry(entry: CliUpdateEntry, mirror: MirrorKind): Description {
       }
     case 'notInstalled': {
       const problem = prerequisiteProblem(entry)
-      return problem ? { tone: 'warn', text: problem } : { text: installText(entry) }
+      if (!problem) return { text: installText(entry) }
+      const method = entry.install?.method === 'script' ? t('官方安装脚本') : entry.install?.method === 'npm' ? t('官方 npm 包') : ''
+      return { tone: 'warn', text: method ? `${method}${uiLanguage() === 'en' ? ' · ' : ''}${problem}` : problem }
     }
   }
   return { text: current }
 }
 
-function operationText(operation: CliUpdateOperation): string {
+function operationText(operation: CliUpdateOperation, desktop = false): string {
   const version = operation.targetVersion
   switch (operation.phase) {
     case 'preparing':
       return operation.intent === 'install' ? t('正在准备安装…') : t('正在准备更新…')
     case 'downloading':
+      if (operation.intent === 'install' && desktop)
+        return version ? t('正在下载安装包 {version}…', { version }) : t('正在下载安装包…')
       return version ? t('正在下载 {version}…', { version }) : t('正在下载…')
     case 'verifying-download':
       return t('正在校验下载的文件…')
@@ -262,7 +290,7 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
   switch (result.phase) {
     case 'succeeded':
       return result.intent === 'install'
-        ? { tone: 'ok', text: t('已安装 {version}，下一步去登录', { version }) }
+        ? { tone: 'ok', text: t('已安装 {version}，登录后即可派遣', { version }) }
         : { tone: 'ok', text: t('已更新到 {version}', { version }) }
     case 'cancelled':
       return { tone: 'warn', text: t('已取消。已写入的文件不会回滚，建议重新检查') }
@@ -317,6 +345,20 @@ function OutputLog({ text, label }: { text: string; label: string }) {
   )
 }
 
+/** 「已用时 m:ss」 from the Host's operation start time; ticks once a second while mounted. */
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+  const seconds = Math.max(0, Math.floor((now - since) / 1000))
+  const clock = seconds >= 3600
+    ? `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+    : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+  return <> {t('已用时 {time}', { time: clock })}</>
+}
+
 function Progress({ operation }: { operation: CliUpdateOperation }) {
   const t = useT()
   const progress = operation.progress
@@ -339,7 +381,7 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
         ? t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) })
         : t('已下载 {done}', { done: formatBytes(downloaded) }),
     )
-  if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(`${formatBytes(progress.bytesPerSecond)}/s`)
+  if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(formatRate(progress.bytesPerSecond))
   const stalled = progress.stalledSeconds !== undefined && progress.stalledSeconds > 0
   if (stalled) parts.push(t('{count} 秒没有新数据', { count: Math.round(progress.stalledSeconds!) }))
   const name = CLI_LABELS[operation.cli]
@@ -639,6 +681,7 @@ export function CliUpdatePane({
       </div>
       {data.supported && !(data.error && !snapshot) && (
         <div className="cwn-update-tools">
+          <div className="cwn-update-tools-row">
           <Tooltip
             label={snapshot?.checkedAt ? t('上次检查：{time}', { time: formatTime(snapshot.checkedAt) }) : ''}
             disabled={!snapshot?.checkedAt}
@@ -653,13 +696,15 @@ export function CliUpdatePane({
               className="cwn-update-check"
               aria-label={checking ? t('正在检查') : t('检查更新')}
               icon={checking || requesting === 'check' ? <StateDot state="ongoing" size={12} /> : <IconRefreshOutlineRegular size={16} />}
-              disabled={checking || requesting !== ''}
+              disabled={checking || writing || requesting !== ''}
               onClick={() => void checkAll()}
             >
               <span className="cwn-update-check-label">{checking ? t('正在检查') : t('检查更新')}</span>
             </Button>
           </Tooltip>
-          {snapshot && snapshot.entries.some((entry) => entry.group === 'updatable') && (
+          {/* Follows the displayed sections: during the first load the button appears only once the
+              second regroup has moved rows into 可更新 (PRD 5.2.1). */}
+          {snapshot && (groups.updatable ?? []).some((cli) => entries.get(cli)?.group === 'updatable') && (
             <Explained
               reason={
                 !service.updateAllClis
@@ -678,6 +723,7 @@ export function CliUpdatePane({
               </Button>
             </Explained>
           )}
+          </div>
           {pageError && <p className="cwn-update-page-error" role="alert">{pageError}</p>}
         </div>
       )}
@@ -874,9 +920,13 @@ export function CliUpdatePane({
       return (
         <div className="cwn-update-expand">
           <Progress operation={operation} />
-          {operation.installDirectory && (
+          {operation.intent === 'install' && entry?.install?.method !== 'desktop' && (operation.installDirectory || entry?.install?.defaultLocation) ? (
+            <span className="cwn-update-place">
+              {t('安装到官方默认位置 {path}', { path: operation.installDirectory || entry!.install!.defaultLocation! })}
+            </span>
+          ) : operation.installDirectory ? (
             <span className="cwn-update-place">{t('安装到 {path}', { path: operation.installDirectory })}</span>
-          )}
+          ) : null}
           <CommandBlock operation={operation} />
           <OutputLog text={operation.outputTail} label={t('{cli} 命令输出', { cli: CLI_LABELS[cli] })} />
         </div>
@@ -925,9 +975,7 @@ export function CliUpdatePane({
         : problem
           ? hostText(check?.message) || directoryProblem(problem)
           : check?.freeBytes !== undefined
-            ? check.requiredBytes !== undefined
-              ? t('可用 {free}，安装需要约 {required}', { free: formatBytes(check.freeBytes), required: formatBytes(check.requiredBytes) })
-              : t('可用 {free}', { free: formatBytes(check.freeBytes) })
+            ? spaceText(shown, check.freeBytes, check.requiredBytes)
             : draft?.checking
               ? t('正在检查安装位置…')
               : ''
@@ -994,7 +1042,7 @@ export function CliUpdatePane({
     const queued = !active && queue.includes(cli)
     const result = !active && !queued ? results.get(cli) : undefined
     let description: Description & { stall?: boolean }
-    if (active) description = { spinner: true, text: operationText(active) }
+    if (active) description = { spinner: true, text: operationText(active, entry?.install?.method === 'desktop') }
     else if (queued) description = { text: t('排队中') }
     else if (result) description = resultDescription(result)
     else if (entry) description = describeEntry(entry, mirror)
@@ -1012,6 +1060,7 @@ export function CliUpdatePane({
                 {description.tone === 'ok' && <StateDot state="done" size={6} />}
                 <span>
                   {description.text}
+                  {active && <Elapsed since={active.startedAt} />}
                   {description.stall && (
                     <>
                       {' '}

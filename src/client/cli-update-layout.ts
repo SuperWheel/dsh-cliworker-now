@@ -179,8 +179,10 @@ export function navIndicator(
     if (entry.group === 'updatable') count += 1
     if (entry.group === 'updatable' || entry.group === 'manual' || entry.group === 'latest') usable = true
   }
+  // The very first check (no finished full check yet) spins until it ends: rows still sit in
+  // 「检查中」 and the count only appears with the closing regroup (PRD 5.2.1).
+  if (snapshot.activity === 'checking' && (!usable || snapshot.checkedAt === undefined)) return { kind: 'spinner' }
   if (count > 0) return { kind: 'count', count }
-  if (snapshot.activity === 'checking' && !usable) return { kind: 'spinner' }
   return undefined
 }
 

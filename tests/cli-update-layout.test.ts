@@ -238,9 +238,11 @@ it('导航指示：操作或队列 → 转圈；可更新数 → 数量；否则
   expect(navIndicator(snapshot(cached))).toEqual({ kind: 'count', count: 2 })
   expect(navIndicator(snapshot(all({ group: 'latest' })))).toBeUndefined()
 
-  // Foreground check: cached count stays; only a check with no usable result spins.
-  expect(navIndicator(snapshot(cached, { activity: 'checking' }))).toEqual({ kind: 'count', count: 2 })
-  expect(navIndicator(snapshot(all({ group: 'latest' }), { activity: 'checking' }))).toBeUndefined()
+  // Recheck after a finished check: cached count stays; only a check with no usable result spins.
+  expect(navIndicator(snapshot(cached, { activity: 'checking', checkedAt: 1 }))).toEqual({ kind: 'count', count: 2 })
+  expect(navIndicator(snapshot(all({ group: 'latest' }), { activity: 'checking', checkedAt: 1 }))).toBeUndefined()
+  // First check ever: spins even once some rows already have a result.
+  expect(navIndicator(snapshot(cached, { activity: 'checking' }))).toEqual({ kind: 'spinner' })
   expect(navIndicator(snapshot(all({ group: 'checking', stage: 'local' }), { activity: 'checking' }))).toEqual({ kind: 'spinner' })
   expect(
     navIndicator(snapshot(all({ group: 'checking', stage: 'remote' }, { kimi: { group: 'notInstalled', installed: false } }), { activity: 'checking' })),
