@@ -120,8 +120,12 @@ export interface CliDownloadProgress {
   downloadedBytes?: number
   totalBytes?: number
   bytesPerSecond?: number
-  /** Automatic resumes after a 10-second stall; at most 200. */
+  /** Automatic resumes after a stall, interruption or slow window; at most 200. */
   resumeCount: number
+  /** External-command retries, not HTTP Range resumes. */
+  retryCount?: number
+  /** Host currently supplying the plugin-owned download. */
+  sourceHost?: string
   /** Seconds since the last byte, shown while waiting for the stall check. */
   stalledSeconds?: number
 }

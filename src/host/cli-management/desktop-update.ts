@@ -1,13 +1,16 @@
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } from 'node:fs/promises'
+import { physicalFs } from './physical-fs.ts'
 import { basename, dirname, isAbsolute, join } from 'node:path'
 import { isAlias, isPair, isScalar, parseDocument, visit } from 'yaml'
 import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliOperationError } from './planner.ts'
 import { bounded } from './versions.ts'
+
+// App bundles contain app.asar; Electron's patched fs would treat it as a directory.
+const { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } = physicalFs().promises
 
 export type DesktopCli = 'zcode' | 'workbuddycn' | 'workbuddy'
 export interface DesktopRelease { version: string; url: string; sha512?: string; sha256?: string; size?: number; teamId?: string }
@@ -235,7 +238,7 @@ export async function runDesktopUpdate(options: {
     const info = await lstat(extracted)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new CliOperationError('IDENTITY_CHANGED', '更新包中的应用目录无效')
     const verify = async (app: string) => {
-      await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', '-R', `anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`, app], signal)
+      await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `-R=anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`, app], signal)
       await run(['/usr/sbin/spctl', '--assess', '--type', 'execute', app], signal)
       signal.throwIfAborted()
     }
@@ -283,7 +286,17 @@ export async function runDesktopUpdate(options: {
         operationError.cause = new AggregateError([operationError.cause, ...cleanupErrors], '更新进程与临时目录清理未完成')
         throw operationError
       }
-      throw new AggregateError([...(operationError ? [operationError] : []), ...cleanupErrors], movedOld ? `更新恢复未完成，旧应用保留在 ${backup}` : '更新临时目录清理失败')
+      // Surface the real cause: the first failure plus the cleanup errno and path, never a generic message.
+      const detail = cleanupErrors.map((error) => {
+        const e = error as NodeJS.ErrnoException
+        return [e?.code, e?.path ?? (error instanceof Error ? error.message : String(error))].filter(Boolean).join(' ')
+      }).join('；')
+      const cleanup = movedOld ? `更新恢复未完成，旧应用保留在 ${backup}（${detail}）` : `临时目录清理失败（${detail}）`
+      if (operationError instanceof CliOperationError) {
+        const first = operationError.message.replace(/^[A-Z_]+：/, '')
+        throw new CliOperationError(operationError.code, `${first}；${cleanup}`)
+      }
+      throw new CliOperationError(movedOld ? 'IDENTITY_CHANGED' : 'UNKNOWN', operationError instanceof Error ? `${operationError.message}；${cleanup}` : cleanup)
     }
   }
 }

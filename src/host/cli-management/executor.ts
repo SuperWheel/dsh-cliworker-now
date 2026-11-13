@@ -8,6 +8,7 @@ import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS } from '../proce
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { isQoderDispatcher } from './identity.ts'
+import type { InterruptionEvidence } from './recovery.ts'
 
 /** Official dispatchers treat an existing first argument as an IDE path. */
 async function guardDispatcherUpdate(argv: string[], cwd: string): Promise<void> {
@@ -53,7 +54,7 @@ class SafeOutput {
   flush() { if (this.discarded) this.emit('[超长输出行已省略]\n'); else if (this.line) this.emit(redactOutput(this.line)); this.line = ''; this.discarded = false }
 }
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
-export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>): Promise<void> {
+export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence): Promise<void> {
   signal.throwIfAborted()
   const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), timeoutMs)
   const control = AbortSignal.any([signal, timer.signal])
@@ -70,8 +71,9 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
     const read = async (stream: ReturnType<ProcessBackend['spawn']>['stdout']) => {
       if (!stream) return
       const decoder = new StringDecoder('utf8'), safe = new SafeOutput(output)
-      for await (const chunk of stream) safe.push(decoder.write(chunk))
-      safe.push(decoder.end()); safe.flush()
+      const publish = (text: string) => { evidence?.push(text); safe.push(text) }
+      for await (const chunk of stream) publish(decoder.write(chunk))
+      publish(decoder.end()); safe.flush()
     }
     readers = [read(child.stdout), read(child.stderr)]
     const [outcome] = await bounded(Promise.all([child.done, ...readers]), control); finished = true

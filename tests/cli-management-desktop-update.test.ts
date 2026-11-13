@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { desktopUpdateIo, DesktopUnavailableError, readDesktopRelease, runDesktopUpdate, type DesktopCli, type DesktopRelease } from '../src/host/cli-management/desktop-update.ts'
+import { CliOperationError } from '../src/host/cli-management/planner.ts'
 import { ProcessCleanupUnconfirmedError } from '../src/host/process.ts'
 
 // Every native process and every feed is simulated. An accidental native launch fails.
@@ -157,9 +158,9 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     await expect(runDesktopUpdate(f.options)).resolves.toEqual({ appPath: f.appPath })
     await f.assertClean('new')
     expect(f.download).toHaveBeenCalledWith(f.options.release.url, expect.objectContaining(cli === 'zcode' ? { sha512, size: 123 } : { sha256 }), f.controller.signal)
-    const verifications = f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/bin/codesign' && argv.includes('-R'))
+    const verifications = f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/bin/codesign' && argv.some((value) => value.startsWith('-R=')))
     expect(verifications).toHaveLength(2)
-    for (const [argv] of verifications) expect(argv).toContain(`anchor apple generic and certificate leaf[subject.OU] = "${cli === 'workbuddy' ? 'TEST123456' : cli === 'zcode' ? '8A5X4JJ39T' : 'FN2V63AD2J'}"`)
+    for (const [argv] of verifications) expect(argv).toContain(`-R=anchor apple generic and certificate leaf[subject.OU] = "${cli === 'workbuddy' ? 'TEST123456' : cli === 'zcode' ? '8A5X4JJ39T' : 'FN2V63AD2J'}"`)
     expect(f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/sbin/spctl')).toHaveLength(2)
     expect(f.capture.mock.calls.filter(([argv]) => argv[0] === '/bin/ps')).toHaveLength(2)
     expect(f.options.awaiting).not.toHaveBeenCalled()
@@ -176,8 +177,8 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     // Even a supplied release.teamId cannot override the pinned/existing-app identity.
     f.options.release.teamId = actualTeam
     f.run.mockImplementation(async (argv, control) => {
-      if (argv[0] === '/usr/bin/codesign' && argv.includes('-R')) {
-        const requirement = argv[argv.indexOf('-R') + 1]!
+      if (argv[0] === '/usr/bin/codesign' && argv.some((value) => value.startsWith('-R='))) {
+        const requirement = argv.find((value) => value.startsWith('-R='))!.slice(3)
         if (!requirement.includes(`"${actualTeam}"`)) throw new Error('模拟 codesign：新包团队签名不满足要求')
       }
       await originalRun(argv, control)
@@ -239,6 +240,18 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     })
     await expect(runDesktopUpdate(f.options)).rejects.toThrow('模拟清理失败')
     await f.assertClean()
+  })
+  it('签名核对失败且暂存清理也失败时，保留原错误码并写出 errno 与路径', async () => {
+    const f = await fixture()
+    f.run.mockImplementation(async (argv: string[]) => {
+      if (argv[0] === '/usr/bin/ditto') { await mkdir(join(argv[4]!, 'ZCode.app'), { recursive: true }); return }
+      if (argv[0] === '/usr/bin/codesign') throw new CliOperationError('EXIT_CODE', '模拟签名不符')
+    })
+    vi.spyOn(desktopUpdateIo, 'rm').mockRejectedValue(Object.assign(new Error('模拟无权删除'), { code: 'EPERM', path: '/模拟/desktop-update-x/ZCode.app/Contents' }))
+    const failure = await runDesktopUpdate(f.options).catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(CliOperationError)
+    expect((failure as Error).message).toBe('EXIT_CODE：模拟签名不符；临时目录清理失败（EPERM /模拟/desktop-update-x/ZCode.app/Contents）')
+    expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
   })
   it('回滚本身失败时保留唯一旧应用备份并报告路径', async () => {
     const f = await fixture()

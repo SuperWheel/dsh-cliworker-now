@@ -1326,8 +1326,8 @@ OpenSpec 变更 `reenable-native-cli-features` 任务 5.1/5.2（用户 2026-10-2
 
 OpenSpec 变更 `fix-windows-account-login-bridge`（用户 2026-10-29 报告 ZCode/Grok/OMP/Pi/OpenCode 登录与终端启动问题，2026-10-30 报告 Codex 无可用模型；代理处理方式由用户选择「插件自动处理」）。
 
-- 系统代理：Windows 代理软件通常只打开「Internet 选项」开关（WinINET），不导出 `HTTP(S)_PROXY`；macOS 由 launchd 导出，DSH 与 CLI 直接继承。`WindowsSystemProxySource` 用 `reg.exe query` 读 `HKCU\…\Internet Settings`（5 秒超时、64 KB 上限、15 秒 TTL；读取失败即视为无代理，不沿用旧值），只接受单一 `host:port` 或 `https=`/`http=` 项。`nativeProcessBackend` 的 `systemProxy` 选项只在 Host 入口于 win32 注入：环境与 spec 都没有决定代理时，给任务进程（用 `current()`，不阻塞启动）和账号终端（用 `fresh()`）补 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`。`NO_PROXY` 合并继承值、回环地址与 `ProxyOverride` 中主机/前导通配项，统一一种拼写；`<local>`、`10.*` 无法表达，不转换。
-- Host 查询：`host-fetch.mjs` 的 `hostFetch` 按同一规则判断 HTTPS 目标是否走代理，走代理时用 Node `https.Agent({ proxyEnv })` 以 CONNECT 建隧道（TLS 仍终止在目标；DSH Electron 内置 Node 24 与本机 Node 22.23 均已实测支持），只承载无请求体的 GET；否则调用全局 `fetch`。账号模型目录（`probeAccountModels`：Codex、Pi、OpenCode、Hermes、ZCode、Kimi 等）、Grok、Hermes Nous、Kimi OAuth 的默认 fetcher 改为 `hostFetch`；测试注入的 fetcher 不变。Pi/OMP 桥是子进程，拿不到 Host 的查询函数，Windows 上改读 Host 注入给它的 `HTTPS_PROXY`/`NO_PROXY`（仅 http/https 代理，`*` 全部直连）；用户自己导出代理变量时 Host 查询也按这组变量。macOS 仍直接用 `fetch`。Codex 子任务曾把目录改为只读本地缓存，与「远端账号目录确认模型」的规格冲突，已撤回。
+- 系统代理：Windows 代理软件通常只打开「Internet 选项」开关（WinINET），不导出 `HTTP(S)_PROXY`；macOS 从 Dock 启动也可能没有这些变量，现由 `MacOSSystemProxySource` 读取系统显式代理（2026-11-14 决定，详见下节）。`WindowsSystemProxySource` 用 `reg.exe query` 读 `HKCU\…\Internet Settings`（5 秒超时、64 KB 上限、15 秒 TTL；读取失败即视为无代理，不沿用旧值），只接受单一 `host:port` 或 `https=`/`http=` 项。`nativeProcessBackend` 的 `systemProxy` 选项在 Host 入口于 win32/darwin 注入：环境与 spec 都没有决定代理时，给任务进程（用 `current()`，不阻塞启动）和账号终端（用 `fresh()`）补 `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`。`NO_PROXY` 合并继承值、回环地址与 `ProxyOverride` 中主机/前导通配项，统一一种拼写；`<local>`、`10.*` 无法表达，不转换。
+- Host 查询：`host-fetch.mjs` 的 `hostFetch` 按同一规则判断 HTTPS 目标是否走代理，走代理时用 Node `https.Agent({ proxyEnv })` 以 CONNECT 建隧道（TLS 仍终止在目标；DSH Electron 内置 Node 24 与本机 Node 22.23 均已实测支持），只承载无请求体的 GET；否则调用全局 `fetch`。账号模型目录（`probeAccountModels`：Codex、Pi、OpenCode、Hermes、ZCode、Kimi 等）、Grok、Hermes Nous、Kimi OAuth 的默认 fetcher 改为 `hostFetch`；测试注入的 fetcher 不变。Pi/OMP 桥是子进程，拿不到 Host 的查询函数，Windows/macOS 上读取 Host 注入给它的 `HTTPS_PROXY`/`NO_PROXY`（仅 http/https 代理，`*` 全部直连）；用户自己导出代理变量时 Host 查询也按这组变量。macOS 同样按来源查找，支持大/小写 HTTPS_PROXY 和 ALL_PROXY、NO_PROXY；不走代理时仍用全局 `fetch`。Codex 子任务曾把目录改为只读本地缓存，与「远端账号目录确认模型」的规格冲突，已撤回。
 - 登录引导：`FlowGuide` 改用有界 VT 屏幕（`GuideScreen`，最多 500×200），处理 CUP/CUF/擦除/折行/备用屏幕；`has()` 只看当前屏幕，链接取当前屏幕文本与 OSC 8 目标（只保留白名单域名），设备码须整段在屏。启动结果带 Host 终端尺寸，隐藏的 xterm 按此初始化，避免光标坐标错位。CLI 尚未画出文字时不判定为改用原生终端。
 - 终端启动：基线（模拟 CLI，3 次）启动到首屏中位数 7.58 秒，其中 ConPTY 等待首个设备属性查询的回应约 4.3 秒、`Get-CimInstance` 校验父进程约 1.3 秒。现由 Host 以 xterm 身份回应首个 `CSI c` 并从回放中去掉该查询，父进程改用 Toolhelp 快照（持有进程句柄防 PID 复用）；优化后中位数 1.50 秒，进程与临时目录均清理。
 - 登录域名：OpenCode（`auth.openai.com`）与 Hermes Nous（`portal.nousresearch.com`）此前只写在流程内，客户端按共享 `ACCOUNT_LOGIN_HOSTS` 再查一次会把链接过滤掉；现统一登记。
@@ -1495,3 +1495,26 @@ npm 最新版本使用小型 dist-tags 接口，普通请求仍限 512 KiB/8 秒
 Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道无法由记录核实时显示 unknown，不把 baseVersion 冒充准确 stable tag。其 notice 说明 stable 查询与原 canary/自定义通道的差异，以及迁移配置、依赖和服务重启。Pi 更新取 latest，Worker 适配集合统一导出自 pi-installation；管理页能读未适配包，但 Worker 核对仍严格，notice 明示适配风险。
 
 桌面查询/更新调用 desktop-update 的独立接口；WorkBuddy 保留 CLI 版本，另用 appVersion 比较应用更新，官方 204 映射已是最新。下载适配器只交付已校验完整文件，Windows 扩展名由桌面执行器处理。共享协议仅增加可选 appVersion、notice、channel；前端需显示应用版本及更新前 notice。新增路径未运行真实更新；完整模拟验证与剩余实机验收见本变更 tasks.md 第 8 节。
+
+### CLI 更新下载中断与慢速恢复（2026-11-13，任务 D）
+
+Host 下载器在连接中断、提前 EOF 或 10 秒无增长时按 Range 恢复；已确认支持 Range 时，10 秒窗口平均低于 100 KB/s 也重连。所有恢复共用 200 次，次数耗尽仍有字节增长就保持连接，真正停住才失败；下载总上限 2 小时。HTTP/证书/Range 协议异常及缓存超限立即失败；完整文件长度/摘要不符则删除片段后干净重下一次，仍不符报“下载的文件校验不通过”，不占 200 次且不重置 2 小时。未知 Range 能力、服务器忽略 Range 后不主动按慢速重连。
+
+外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新先由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 撤销会关闭自动更新的 offline-install 接管，更新回原生 update --channel --version 加中断证据重跑，首次安装回既有官方脚本。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
+
+## 2026-11-14 macOS 系统代理（任务 F，未发布）
+
+- `MacOSSystemProxySource` 以参数数组运行 `/usr/sbin/scutil --proxy`，只解析根 dictionary，优先启用且有效的 HTTPS 配置，其次 HTTP；只接受一个 hostname/IPv4/带括号 IPv6 与 1–65535 端口，生成 HTTP 代理 URL。PAC/自动发现/SOCKS 无有效显式代理时不注入，只报一次固定诊断。多数 CLI 不认 SOCKS 变量或语义不同，不猜测或执行 PAC。
+- `system-proxy.ts` 统一来源接口、缓存、环境优先级和读取过程。两平台均 5 秒超时、64 KiB 输出上限、500 ms grace、15 秒 TTL，合并并发刷新，失败清除旧值；Host 初始化预读，current 不阻塞同步 spawn，fresh 用于账号终端与 Host 查询。停用中止读取、等待清理并撤销 Host lookup，无持久化、系统设置或 launchd 改动。
+- NO_PROXY 合并已有值与 localhost/127.0.0.1/::1。macOS ExceptionsList 仅保留主机、精确 IP 与 `*.` 域名转点前缀（含 *.local → .local）；IPv6 不带括号；CIDR、169.254/16、10.*、<local> 与 host:port 丢弃。依据为 [curl NO_PROXY](https://curl.se/docs/manpage.html#--noproxy) 与 [Node 24 NO_PROXY](https://nodejs.org/docs/latest-v24.x/api/http.html#built-in-proxy-support)：域名后缀可表达，CIDR 不是跨 CLI 通用形式。decidesProxy/proxyEnvironment 的继承或显式变量（含 undefined 删除）优先级保持；Linux 不注入。
+- 共用后端覆盖账号终端、Worker（包括 terminal-bridge/private/native/Pi/OMP helper）、更新/安装命令、版本与账号/模型探测；helper 内的 CLI 子进程继承已注入环境。Host hostFetch 及 Pi/OMP 内部 HTTPS 查询同样走代理，保留 User-Agent。系统代理读取本身用 raw 后端，避免递归。OMP 私有离线 --help 探测主动清空网络变量，文件权限/进程身份/桌面签名挂载等本地命令无网络需求，打开已安装 WorkBuddy GUI 由操作系统负责网络，均不增加代理注入；不改 cli-management 或 Client。
+- 本次自动回归全部使用模拟 scutil、进程和请求；本机仅只读执行一次 scutil 经解析器，不启动真实 CLI。真实账号/模型、Desktop、Windows/Linux 实机验收仍不属于本轮证据。
+
+
+### 下载自动换源通用化（2026-11-14，PRD 5.6 3c）
+
+npm 主 tarball 在用户所选 registry（follow 使用 npm 当前值）优先的标准地址与官方/npmmirror 间切换，官方 packument sha512 是唯一最终包校验依据，不读取镜像 integrity 决定信任。包名、版本来自 Host 已核实来源；标准地址按 `<registry>/<pkg>/-/<basename>-<version>.tgz` 生成，不使用镜像 packument 指定的备用地址。显式 custom 模式关闭自动换源（即使填的是官方地址），MiMo 也只保留首选官方源并在同源续传。registry 和换源策略在操作启动时一起锁定，操作中修改设置仅影响下一次。
+
+换源前 HEAD（需要时以 Range: bytes=0- 获取总长度）核对长度与 ETag/摘要。不同源的十六进制摘要形式可归一化，普通不透明 ETag 不做大小写猜测；GET 使用目标源原始强 ETag 的 If-Range 并核对响应。npm 镜像标准路径经匿名 HEAD 证实会跳到 cdn.npmmirror.com，只接受由相同包/版本生成的精确目标；其他重定向拒绝，GET 始终 redirect:error。MiMo 不接受重定向。共享进度增加可选 sourceHost，前端由主会话接线，本轮未改 Client。
+
+ZCode/WorkBuddy CN/WorkBuddy 官方现有 feed 与匿名包 HEAD 未提供第二个同对象下载域名，不配置备用源；不把 CN/国际分发或 zip/dmg 当作同对象。详情、HEAD 数字及验证边界见当前变更 design.md。

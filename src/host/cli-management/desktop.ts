@@ -1,8 +1,10 @@
-import { chmod, mkdir, mkdtemp, rm, lstat, rename } from 'node:fs/promises'
+import { physicalFs } from './physical-fs.ts'
 import { join, basename } from 'node:path'
 import type { InstallSource } from './sources.ts'
 import { CliOperationError } from './planner.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
+// App bundles contain app.asar; Electron's patched fs would treat it as a directory.
+const { chmod, mkdir, mkdtemp, rm, lstat, rename } = physicalFs().promises
 export const desktopFs = { rm }
 
 /** Only Host-verified descriptors enter here. Production sources currently have no verified desktop feeds. */
@@ -32,7 +34,7 @@ export async function installDesktop(options: {
     const app = join(mount, source.appName)
     const info = await lstat(app)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new CliOperationError('IDENTITY_CHANGED', '安装镜像没有预期的应用目录')
-    await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', '-R', `anchor apple generic and certificate leaf[subject.OU] = "${source.teamId}"`, app], signal)
+    await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `-R=anchor apple generic and certificate leaf[subject.OU] = "${source.teamId}"`, app], signal)
     await run(['/usr/sbin/spctl', '--assess', '--type', 'execute', app], signal)
     await mkdir(options.directory, { recursive: true, mode: 0o700 })
     stage = await mkdtemp(join(options.directory, '.cliworker-install-'))

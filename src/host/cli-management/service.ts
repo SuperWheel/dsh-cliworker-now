@@ -16,6 +16,8 @@ import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
 import { executeCliOperation, outputTail } from './executor.ts'
+import { withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
+import { canPrepareLocalUpdate, prepareLocalUpdate, type LocalArtifactInstall } from './local-artifacts.ts'
 import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
 import { resolveNpmRuntime } from './npm.ts'
 import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
@@ -188,7 +190,7 @@ export class CliManagementService {
       const appVersion = identity.fingerprint.appVersion
       const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' || old.group === 'manual' ? 'checking' : old.group
       this.publish(cli, { installed: true, source: identity.source, currentVersion: version, planToken: fingerprintToken(identity.fingerprint), checkedAt: Date.now(), stage: undefined, group,
-        appVersion, channel: identity.channel, notice: piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice,
+        appVersion, channel: identity.channel, notice: identity.notice ?? piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice,
         reasonDetail: !version ? CLI_SOURCES[cli].versionNote : undefined,
         reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
         manual: manual ? { note: problem!, guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
@@ -230,7 +232,7 @@ export class CliManagementService {
       const next = latestCompatible(cli, release.versions, before)
       const incompatible = !compatible(cli, release.latest)
       this.publish(cli, { planToken: operationToken(cli, identity, next, registry, before, desktop), latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
-        notice: piNotice(cli, next ?? row.currentVersion) ?? NATIVE_UPDATES[cli]?.notice, manual: undefined,
+        notice: identity.notice ?? piNotice(cli, next ?? row.currentVersion) ?? NATIVE_UPDATES[cli]?.notice, manual: undefined,
         group: !incompatible && next && updateAvailable(before, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
     } catch (error) {
       signal.throwIfAborted()
@@ -318,13 +320,13 @@ export class CliManagementService {
     })())
   }
   /** Host-only planning: inputs never include commands, URLs or environment variables. */
-  async planCliOperation(cli: ActiveCliId, intent: 'update', signal: AbortSignal, selected?: { target?: string; registry: string }): Promise<CliOperationPlan>
-  async planCliOperation(cli: ActiveCliId, intent: 'install', signal: AbortSignal, selected?: { registry: string; installDirectory?: string }): Promise<InstallPlan>
-  async planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', signal: AbortSignal, selected?: { target?: string; registry: string; installDirectory?: string }) {
+  async planCliOperation(cli: ActiveCliId, intent: 'update', signal: AbortSignal, selected?: { target?: string; registry: string; automaticSources?: boolean }): Promise<CliOperationPlan>
+  async planCliOperation(cli: ActiveCliId, intent: 'install', signal: AbortSignal, selected?: { registry: string; installDirectory?: string; automaticSources?: boolean }): Promise<InstallPlan>
+  async planCliOperation(cli: ActiveCliId, intent: 'update' | 'install', signal: AbortSignal, selected?: { target?: string; registry: string; installDirectory?: string; automaticSources?: boolean }) {
     this.assertHealthy()
     if (intent === 'install') {
       if (!this.installer) throw new CliOperationError('PREREQUISITE_MISSING', '首次安装不可用：缺少本机路径存储')
-      return this.installer.prepare(cli, selected?.registry ?? this.effectiveRegistry(), selected?.installDirectory ?? '', signal)
+      return this.installer.prepare(cli, selected?.registry ?? this.effectiveRegistry(), selected?.installDirectory ?? '', signal, selected?.automaticSources ?? this.cache.settings().source !== 'custom')
     }
     const identity = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, signal)
     let version = identity && await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, signal)
@@ -350,8 +352,9 @@ export class CliManagementService {
     // Check external workers/accounts and acquire the lease in this same JS turn.
     this.deps.assertUpdateAllowed?.(cli)
     const release = this.maintenance.begin(cli, () => this.deps.busy?.(cli) ?? { workers: 0, accounts: false })
-    const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion }
+    const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion, automaticSources: this.cache.settings().source !== 'custom' }
     const op: CliUpdateOperation = { id: randomUUID(), cli, intent, phase: 'preparing', startedAt: Date.now(), outputTail: '' }
+    const output = (value: string) => { op.outputTail = outputTail(op.outputTail + value); this.changed() }
     this.requests.set(requestId, { signature, operation: op })
     this.state.operation = op; this.state.results = this.state.results.filter(item => item.cli !== cli)
     this.operationController = new AbortController()
@@ -359,7 +362,7 @@ export class CliManagementService {
     this.foregroundController?.abort(); this.preloader.changed(); this.changed()
     this.operationRun = Promise.resolve().then(async () => {
       let quarantine = false
-      let artifact: string | undefined
+      let artifact: string | undefined, local: LocalArtifactInstall | undefined
       const desktopArtifacts: string[] = []
       try {
         await this.preloader.pause(); await this.running
@@ -367,11 +370,11 @@ export class CliManagementService {
         const preparation = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
         await this.registry(preparation)
         if (intent === 'install') {
-          const plan = await this.planCliOperation(cli, 'install', preparation, { registry: selected.registry, installDirectory: directory })
+          const plan = await this.planCliOperation(cli, 'install', preparation, { ...selected, installDirectory: directory })
           if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装方法、路径、前缀、目标或运行时已变化，请重新检查')
           const recheck = async () => {
             const control = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-            const fresh = await this.planCliOperation(cli, 'install', control, { registry: selected.registry, installDirectory: directory })
+            const fresh = await this.planCliOperation(cli, 'install', control, { ...selected, installDirectory: directory })
             if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装计划已变化')
             if (fresh.problem) throw new CliOperationError(fresh.problem, '安装前置条件已变化，请重新检查')
             if (plan.source.method === 'desktop') {
@@ -388,12 +391,12 @@ export class CliManagementService {
         if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
         if (plan.method === 'npm') {
-          const metadata = await this.releases.artifact(cli, plan.targetVersion, plan.registry, preparation)
+          const metadata = await this.releases.artifact(cli, plan.targetVersion, plan.registry, preparation, selected.automaticSources)
           if (parseIntegrity(metadata.integrity).algorithm !== 'sha512') throw new CliOperationError('INTEGRITY_MISMATCH', 'npm 主包缺少官方 sha512 校验值')
           op.integritySource = OFFICIAL_NPM_REGISTRY
           op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
           // The preparation timeout does not consume the downloader's two-hour budget.
-          artifact = await downloadCliArtifact({ root: this.deps.root, ...metadata, signal, fetcher: this.deps.artifactFetch,
+          artifact = await downloadCliArtifact({ root: this.deps.root, output, ...metadata, signal, fetcher: this.deps.artifactFetch,
             progress: value => { op.progress = value; this.changed() } })
           const tgz = artifact.replace(/\.part$/, '.tgz')
           await rename(artifact, tgz); artifact = tgz
@@ -401,21 +404,39 @@ export class CliManagementService {
         if (plan.method === 'official-script') {
           const script = NATIVE_UPDATES[cli]!.script!
           op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
-          artifact = await downloadCliArtifact({ root: this.deps.root, url: script.url, officialScript: true, signal, fetcher: this.deps.artifactFetch, progress: value => { op.progress = value; this.changed() } })
+          artifact = await downloadCliArtifact({ root: this.deps.root, output, url: script.url, officialScript: true, signal, fetcher: this.deps.artifactFetch, progress: value => { op.progress = value; this.changed() } })
           const scriptFile = artifact.replace(/\.part$/, '.sh')
           await rename(artifact, scriptFile); artifact = scriptFile
         }
+        if (plan.method === 'self-update' && canPrepareLocalUpdate(cli, plan.identity)) {
+          op.phase = 'downloading'; this.changed()
+          local = await prepareLocalUpdate({ cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output, progress: value => { op.progress = value; this.changed() } })
+        }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(local?.argv ?? await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
         signal.throwIfAborted()
-        const run = async (command: string[], control: AbortSignal) => {
+        const run = async (command: string[], control: AbortSignal, evidence?: InterruptionEvidence) => {
           op.command = nativeLaunchArgv(command); op.phase = 'installing'; op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
           await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
-            plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined)
+            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence)
         }
+        const verify = async (control: AbortSignal, evidence?: InterruptionEvidence) => {
+          control.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
+          const verification = AbortSignal.any([control, AbortSignal.timeout(15_000)])
+          const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
+          if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
+          const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
+          const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
+          op.afterVersion = version
+          if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
+          verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
+          verification.throwIfAborted()
+          return { after, cliVersion, version: version! }
+        }
+        let verified: Awaited<ReturnType<typeof verify>>
         if (plan.method === 'desktop' && isDesktopCli(cli)) {
           if (!plan.identity.appPath || !plan.desktopRelease) throw new CliOperationError('PREREQUISITE_MISSING', '缺少已核实的桌面路径或发布工件')
           await runDesktopUpdate({ cli, appPath: plan.identity.appPath, release: plan.desktopRelease, root: this.deps.root, signal, run,
@@ -425,27 +446,36 @@ export class CliManagementService {
               if (!digest) throw new CliOperationError('INTEGRITY_MISMATCH', '桌面工件缺少官方摘要')
               const value = new RegExp(`^[a-fA-F0-9]{${algorithm === 'sha512' ? 128 : 64}}$`).test(digest) ? Buffer.from(digest, 'hex').toString('base64') : digest
               op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
-              const file = await downloadCliArtifact({ root: this.deps.root, url, integrity: `${algorithm}-${value}`, expectedBytes: expected.size, signal: control, fetcher: this.deps.artifactFetch,
+              const file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity: `${algorithm}-${value}`, expectedBytes: expected.size, signal: control, fetcher: this.deps.artifactFetch,
                 progress: progress => { op.progress = progress; this.changed() } })
               desktopArtifacts.push(file); return file
             } })
-        } else await run(argv!, signal)
-        signal.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
-        const verification = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-        const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
-        if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
-        const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
-        const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
-        op.afterVersion = version
-        verifyUpdatedVersion(plan, version)
-        verification.throwIfAborted()
+          if (plan.identity.notice) op.outputTail = outputTail(op.outputTail + '\n' + plan.identity.notice)
+          verified = await verify(signal)
+        } else verified = await withInterruptionRecovery(signal, async (control, evidence) => {
+          let exitError: unknown
+          try { await run(argv!, control, evidence) }
+          catch (error) { if (!(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
+          try {
+            const result = await verify(control, evidence)
+            if (exitError) throw exitError
+            return result
+          } catch (error) {
+            if (exitError && error instanceof CliOperationError && ['VERSION_UNCHANGED', 'VERSION_MISMATCH'].includes(error.code)) throw exitError
+            throw error
+          }
+        }, count => {
+          op.progress = { readable: false, resumeCount: 0, retryCount: count }
+          output(`\n── 下载中断；已自动重试 ${count} 次 ──\n`)
+        })
+        const { after, cliVersion, version } = verified
         this.cache.invalidateVersion(cli); this.deps.invalidateModels?.(cli)
         this.identities.set(cli, after)
         this.cache.rememberVersion(cli, after.fingerprint, cliVersion)
         const row = this.entry(cli), next = row.latestCompatibleVersion
         const incompatible = !!row.latestVersion && !compatible(cli, row.latestVersion)
         const updatable = !incompatible && !!next && updateAvailable(version, next)
-        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice, group: updatable ? 'updatable' : 'latest',
+        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: after.notice ?? piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice, group: updatable ? 'updatable' : 'latest',
           reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined, reasonDetail: undefined, manual: undefined, stage: undefined, checkedAt: Date.now(),
           planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
         op.phase = 'succeeded'
@@ -461,6 +491,7 @@ export class CliManagementService {
           op.error = { code, message: error instanceof CliOperationError ? outputTail(error.message) : code === 'INTEGRITY_MISMATCH' ? '下载源校验值与官方源不符，未执行更新' : '更新失败，请检查网络、安装前缀与输出后重试', retryable: true }
         }
       } finally {
+        if (local && !quarantine) await local.cleanup()
         if (artifact && !quarantine) await unlink(artifact).catch(() => undefined)
         if (!quarantine) await Promise.all(desktopArtifacts.map(file => unlink(file).catch(() => undefined)))
         op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined

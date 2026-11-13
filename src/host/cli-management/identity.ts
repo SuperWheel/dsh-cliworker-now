@@ -10,7 +10,9 @@ import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { resolveNativeEntry } from '../native-launch.mjs'
 import { inspectPiInstallation } from '../pi-installation.mjs'
 import { resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
-import { CLI_SOURCES } from './sources.ts'
+import { CLI_SOURCES, ZCODE_DEFAULT_APP } from './sources.ts'
+import { managedZCodeEntry } from '../zcode-adapter.ts'
+import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
 
 export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
@@ -23,6 +25,18 @@ export interface InstallationIdentity {
   appPath?: string
   updateRoot?: string
   channel?: string
+  notice?: string
+}
+export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 使用独立部署的完整 CLI runtime，不会随应用同步更新，需另行核验并部署配套 runtime。'
+/** Read-only association; a filename alone is not application identity. */
+export async function managedZCodeApplication(executable: string, appPath = ZCODE_DEFAULT_APP): Promise<string | undefined> {
+  if (process.platform !== 'darwin' || executable !== managedZCodeEntry()) return
+  try {
+    const file = join(appPath, 'Contents/Info.plist'), info = await stat(file)
+    if (!info.isFile() || info.size > 128 * 1024) return
+    const plist = await readFile(file, 'utf8')
+    if (/<key>CFBundleIdentifier<\/key>\s*<string>dev\.zcode\.app<\/string>/.test(plist)) return appPath
+  } catch { /* Missing/unrecognized applications are not mapped. */ }
 }
 export const fingerprintToken = (fingerprint: Fingerprint) => createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex')
 export async function readManifest(file: string): Promise<Record<string, any> | undefined> {
@@ -76,10 +90,11 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   const configured = configuredCliExecutable(cli, config)
   const remembered = entry?.mode === 'manual' ? entry.path : configured || entry?.path
   let executable: string
-  if (!background && entry?.mode === 'auto' && !configured) executable = await resolveCliExecutable(cli, backend, config, signal)
+  if (background && entry?.mode === 'auto' && !configured && isVersionedAutoEntry(cli, entry.path)) return undefined
+  if (!background && entry?.mode === 'auto' && !configured) executable = await resolveCliExecutable(cli, backend, config, signal, { management: true })
   else if (remembered && isAbsolute(remembered)) executable = remembered
   else if (background) return undefined
-  else executable = await resolveCliExecutable(cli, backend, config, signal)
+  else executable = await resolveCliExecutable(cli, backend, config, signal, { management: true })
   signal.throwIfAborted()
   let target = await realpath(executable), desktopRoot: string | undefined
   if (cli === 'hermes') {
@@ -103,7 +118,9 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   } else if (cli === 'pi') {
     const pi = inspectPiInstallation(executable, { allowUnsupported: true }); target = pi.executable; manifestVersion = pi.version
   } else target = await realpath(resolveNativeEntry(target))
-  const appRoot = /^(.*\.app)\/Contents\//.exec(target)?.[1]
+  const managedApp = cli === 'zcode' && entry?.mode !== 'manual' && !configured
+    ? await managedZCodeApplication(executable) : undefined
+  const appRoot = managedApp ?? /^(.*\.app)\/Contents\//.exec(target)?.[1]
   desktopRoot ??= appRoot
   // Whitelisted installation metadata only. Never invoke Hermes startup/check/fetch.
   if (cli === 'hermes' || cli === 'traecn') {
@@ -148,6 +165,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     }
   }
   const identity = classifyInstallation(cli, target, packageName, homedir(), executable)
+  if (managedApp) identity.source = 'desktop-app'
   // A tapped formula must have a matching receipt; basename alone cannot prove the tap.
   if (identity.source === 'brew' && CLI_SOURCES[cli].brew?.tap) {
     const match = /^(.*\/(?:Cellar|Caskroom)\/[^/]+\/[^/]+)\//.exec(target)
@@ -156,5 +174,6 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   }
   signal.throwIfAborted()
   return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel,
+    ...(managedApp ? { notice: ZCODE_RUNTIME_NOTICE } : {}),
     fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}), ...(metadataToken ? { metadataToken } : {}) } }
 }

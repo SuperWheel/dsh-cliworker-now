@@ -1142,7 +1142,7 @@ export const en = {
   'Homebrew 安装': 'Homebrew install',
   '{cli} 自带更新': '{cli} built-in update',
   '官方安装器': 'Official installer',
-  '由 {cli} 桌面端管理更新': 'Updated by the {cli} desktop app',
+  '{cli} 桌面应用，下载官方安装包更新': '{cli} desktop app, updated from the official installer',
   '通过 WinGet 安装': 'Installed with WinGet',
   '通过 Scoop 安装': 'Installed with Scoop',
   '通过 Nix 安装': 'Installed with Nix',
@@ -1199,7 +1199,10 @@ export const en = {
   '{count} 秒没有新数据': 'no new data for {count} s',
   '{cli} 下载进度': '{cli} download progress',
   '{cli} 命令输出': '{cli} command output',
-  '下载 10 秒没有增长时，自动从中断处继续，最多 200 次': 'When a download makes no progress for 10 seconds it resumes from where it stopped, up to 200 times',
+  '下载中断、10 秒没有增长或明显过慢时，自动从中断处继续，最多 200 次': 'When a download is interrupted, makes no progress for 10 seconds or is very slow, it resumes from where it stopped, up to 200 times',
+  '下载中断时重新执行同一条命令，最多 200 次': 'When the download is interrupted, the same command runs again, up to 200 times',
+  '已自动重试 {count} 次': 'Retried automatically {count} times',
+  '来自 {host}': 'from {host}',
   '已自动续传 {count} 次': 'Resumed automatically {count} times',
   '校验值来自 {source}': 'Integrity values from {source}',
   '收到无效的安装位置结果，请重试': 'Received an invalid install location result. Please retry.',
@@ -1246,8 +1249,6 @@ export const en = {
     'Updating Hermes migrates its config, updates dependencies and may restart its service. Releases are read from stable while this installation may be on canary or a custom channel; the channel is not switched, and the version is read again afterwards.',
   '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。':
     'How the official update command asks for confirmation has not been verified on a real machine; stdin is closed, and a timeout or an unchanged version is reported as a failure.',
-  '按当前自更新器的 npm latest 查询；原生工件是否可用及最终版本以执行后核对为准。':
-    "Checked against the self-updater's npm latest; whether native artifacts exist and the final version are confirmed after the update.",
   '插件尚未适配 Pi {version}，更新后 Pi Worker 要等插件适配后才能使用':
     'The plugin does not support Pi {version} yet. After the update, Pi Workers cannot be used until the plugin supports it',
   // cli-update-page:end

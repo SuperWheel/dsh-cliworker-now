@@ -72,7 +72,7 @@ export function serviceFixture(clis: ActiveCliId[] = ['codex']) {
     return new Response(JSON.stringify(exact ? { name: decodeURIComponent(new URL(String(url)).pathname.split('/')[1]!), version: '1.2.3', dist: { integrity: sri('模拟'), tarball: new URL('/模拟.tgz', String(url)).href } } : { 'dist-tags': { latest: '1.2.3' }, versions: { '1.0.0': {}, '1.2.3': {} } }))
   })
   const releases = new ReleaseClient(metadataFetch)
-  const artifactFetch = vi.fn<typeof hostFetch>(async () => new Response('模拟', { headers: { 'content-length': String(Buffer.byteLength('模拟')) } }))
+  const artifactFetch = vi.fn<typeof hostFetch>(async (_url, init) => new Response(init?.method === 'HEAD' ? null : '模拟', { headers: { 'content-length': String(Buffer.byteLength('模拟')), etag: '"fixture-object"' } }))
   const integrity = vi.spyOn(releases, 'integrity').mockResolvedValue(sri('模拟'))
   const identify = vi.fn(async (cli: ActiveCliId) => structuredClone(identities.get(cli)))
   const version = vi.fn(async (_cli: ActiveCliId, identity: InstallationIdentity) => identity.manifestVersion)

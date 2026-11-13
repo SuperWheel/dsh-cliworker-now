@@ -36,7 +36,7 @@ afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-/** The developer Mac exports HTTPS_PROXY through launchd; clear every spelling for these cases. */
+/** 模拟：清空继承的代理变量，不依赖开发机设置。 */
 function clearInheritedProxy() {
   for (const key of Object.keys(process.env))
     if (['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'].includes(key.toUpperCase())) vi.stubEnv(key, '')
@@ -189,7 +189,7 @@ describe('Host HTTPS reads', () => {
     expect(await lookup('https://api.corp.example/')).toBeUndefined()
     // A proxy the user exported wins over the system one; on Windows the Host follows it like the CLIs.
     vi.stubEnv('HTTPS_PROXY', 'http://10.0.0.1:3128')
-    expect(await lookup('https://chatgpt.com/')).toBe(process.platform === 'win32' ? 'http://10.0.0.1:3128' : undefined)
+    expect(await lookup('https://chatgpt.com/')).toBe(['win32', 'darwin'].includes(process.platform) ? 'http://10.0.0.1:3128' : undefined)
     expect(bypassesProxy('corp.example', ['.corp.example'])).toBe(true)
     expect(bypassesProxy('notcorp.example', ['.corp.example', 'corp.example'])).toBe(false)
   })
@@ -201,7 +201,8 @@ describe('Host HTTPS reads', () => {
       expect(environmentProxy(target, env, 'win32')).toBeUndefined()
     expect(environmentProxy('https://chatgpt.com/', { ...env, NO_PROXY: '*' }, 'win32')).toBeUndefined()
     expect(environmentProxy('https://chatgpt.com/', { HTTPS_PROXY: 'socks5://127.0.0.1:1080' }, 'win32')).toBeUndefined()
-    expect(environmentProxy('https://chatgpt.com/', env, 'darwin')).toBeUndefined()
+    expect(environmentProxy('https://chatgpt.com/', env, 'darwin')).toBe('http://127.0.0.1:7897')
+    expect(environmentProxy('https://chatgpt.com/', env, 'linux')).toBeUndefined()
   })
 
   it('keeps plain fetch when no proxy applies', async () => {

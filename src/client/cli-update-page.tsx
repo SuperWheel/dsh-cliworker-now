@@ -145,7 +145,7 @@ function sourceLabel(entry: CliUpdateEntry, mirror: MirrorKind): string {
       case 'official-installer':
         return t('官方安装器')
       case 'desktop-app':
-        return t('由 {cli} 桌面端管理更新', { cli })
+        return t('{cli} 桌面应用，下载官方安装包更新', { cli })
       case 'winget':
         return t('通过 WinGet 安装')
       case 'scoop':
@@ -187,7 +187,9 @@ function versionText(entry: CliUpdateEntry, arrow: boolean): string {
   if (desktopApp(entry)) {
     const newer = arrow && !!target && (entry.group === 'updatable' || (entry.group === 'manual' && target !== appRelease(entry)))
     const app = t('应用 {version}', { version: newer ? `${entry.appVersion} → ${target}` : entry.appVersion! })
-    return `${app}${entry.currentVersion ? ` · CLI ${entry.currentVersion}` : ''}${channelPart(entry)}`
+    // ZCode reports the app version as its current version; only show a CLI version that differs.
+    const cliVersion = entry.currentVersion && entry.currentVersion !== entry.appVersion ? ` · CLI ${entry.currentVersion}` : ''
+    return `${app}${cliVersion}${channelPart(entry)}`
   }
   const current = entry.currentVersion ?? t('版本未知')
   const newer =
@@ -388,11 +390,18 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
   const t = useT()
   const progress = operation.progress
   if (!progress) return null
+  // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
+  const retries = progress.retryCount && progress.retryCount > 0 ? (
+    <Tooltip label={t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
+      <span tabIndex={0}>{t('已自动重试 {count} 次', { count: progress.retryCount })}</span>
+    </Tooltip>
+  ) : null
   if (!progress.readable)
     return (
       <div className="cwn-update-progress">
         <div className="cwn-update-progress-meta">
           <span>{t('正在执行，下载进度无法读取')}</span>
+          {retries}
         </div>
       </div>
     )
@@ -407,6 +416,8 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
         : t('已下载 {done}', { done: formatBytes(downloaded) }),
     )
   if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(formatRate(progress.bytesPerSecond))
+  // Automatic source switching (PRD 5.6 3c): name the host this download currently comes from.
+  if (progress.sourceHost) parts.push(t('来自 {host}', { host: progress.sourceHost }))
   const stalled = progress.stalledSeconds !== undefined && progress.stalledSeconds > 0
   if (stalled) parts.push(t('{count} 秒没有新数据', { count: Math.round(progress.stalledSeconds!) }))
   const name = CLI_LABELS[operation.cli]
@@ -426,9 +437,11 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
       )}
       <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
         <span>{parts.join(' · ')}</span>
-        <Tooltip label={t('下载 10 秒没有增长时，自动从中断处继续，最多 200 次')} side="top" align="end" portal>
-          <span tabIndex={0}>{t('已自动续传 {count} 次', { count: progress.resumeCount })}</span>
-        </Tooltip>
+        {retries ?? (
+          <Tooltip label={t('下载中断、10 秒没有增长或明显过慢时，自动从中断处继续，最多 200 次')} side="top" align="end" portal>
+            <span tabIndex={0}>{t('已自动续传 {count} 次', { count: progress.resumeCount })}</span>
+          </Tooltip>
+        )}
       </div>
     </div>
   )
@@ -1157,11 +1170,6 @@ export function CliUpdatePane({
                   )}
                 </span>
               </span>
-              {!active && !queued && noticeOf(entry) && (
-                <span className="cwn-update-notice" data-tone="warn">
-                  {noticeOf(entry)}
-                </span>
-              )}
               {error && (
                 <p className="cwn-update-row-error" role="alert">
                   {error}
@@ -1190,7 +1198,13 @@ export function CliUpdatePane({
         aria-busy={id === 'checking' ? true : undefined}
         data-collapsed={folded ? true : undefined}
       >
-        <div className="cwn-settings-section-head">
+        {/* The whole head row toggles; the chevron button stays the keyboard and screen-reader control. */}
+        <div
+          className="cwn-settings-section-head cwn-update-section-toggle"
+          onClick={(event) => {
+            if (!(event.target as HTMLElement).closest('button')) toggleSection(id, folded)
+          }}
+        >
           <h3>
             {label}
             {count !== undefined && <span className="cwn-update-count">{count}</span>}

@@ -37,11 +37,13 @@ it.each(['official', 'npmmirror'] as const)('模拟 P1：%s 主包以官方 sha5
 it.each(['official', 'npmmirror'] as const)('模拟 P1：%s packument 保留官方摘要但替换 tarball 字节时拒绝并删片段', async source => {
   const f = fixture(); f.service.saveDownloadSource({ source }); await checked(f.service)
   f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@openai/codex', version: '1.2.3', dist: { integrity: sri('模拟'), tarball: 'https://mirror.invalid/replaced.tgz' } })))
-  f.artifactFetch.mockResolvedValue(new Response('模拟恶意替换内容'))
+  f.artifactFetch.mockImplementation(async (_url, init) => new Response(init?.method === 'HEAD' ? null : '模拟恶意替换内容', { headers: { 'content-length': String(Buffer.byteLength('模拟恶意替换内容')), etag: '"fixture-object"' } }))
   start(f)
   expect((await finished(f.service)).results[0]?.error?.code).toBe('INTEGRITY_MISMATCH')
+  expect(f.artifactFetch.mock.calls.filter(call => call[1]?.method !== 'HEAD')).toHaveLength(2)
   expect(f.backend.spawn).not.toHaveBeenCalled()
-  expect(f.artifactFetch).toHaveBeenCalledWith('https://mirror.invalid/replaced.tgz', expect.any(Object))
+  expect(f.artifactFetch).toHaveBeenCalledWith(`${source === 'official' ? 'https://registry.npmjs.org' : 'https://registry.npmmirror.com'}/@openai/codex/-/codex-1.2.3.tgz`, expect.any(Object))
+  expect(f.artifactFetch.mock.calls.some(call => String(call[0]).includes('mirror.invalid'))).toBe(false)
   expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
 })
 
@@ -54,7 +56,7 @@ it('模拟 P1：npm 主包缺少官方 sha512 时不下载、不安装', async (
 
 it('模拟 P1：下载期间取消删除片段且不启动 npm', async () => {
   const f = fixture(); await checked(f.service)
-  f.artifactFetch.mockImplementation(async () => new Response(new ReadableStream({ start(c) { c.enqueue(Buffer.from('模拟')); } })))
+  f.artifactFetch.mockImplementation(async (_url, init) => new Response(init?.method === 'HEAD' ? null : new ReadableStream({ start(c) { c.enqueue(Buffer.from('模拟')); } }), { headers: { 'content-length': '6', etag: '"fixture-object"' } }))
   const op = start(f).operation!
   await until(() => (f.service.snapshot().operation?.progress?.downloadedBytes ?? 0) > 0)
   expect(f.service.snapshot().operation?.phase).toBe('downloading'); f.service.cancel(op.id)
@@ -65,12 +67,14 @@ it('模拟 P1：下载期间取消删除片段且不启动 npm', async () => {
 it('模拟 P1：主包下载超过准备阶段 30 秒仍可续传、核对并安装', async () => {
   vi.useFakeTimers(); const f = fixture(); await checked(f.service)
   const bytes = Buffer.from('模拟')
+  let n = 0
   f.artifactFetch.mockImplementation(async (_url, init) => {
-    const n = f.artifactFetch.mock.calls.length
-    if (n === 1) return new Response(new ReadableStream({ start(c) { c.enqueue(bytes.subarray(0, 1)) } }), { headers: { 'content-length': String(bytes.length) } })
+    if (init?.method === 'HEAD') return new Response(null, { headers: { 'content-length': String(bytes.length), etag: '"fixture-object"' } })
+    n++
+    if (n === 1) return new Response(new ReadableStream({ start(c) { c.enqueue(bytes.subarray(0, 1)) } }), { headers: { 'content-length': String(bytes.length), etag: '"fixture-object"' } })
     expect((init!.headers as Record<string, string>).Range).toBe('bytes=1-')
-    if (n < 5) return new Response(new ReadableStream({ start() {} }), { status: 206, headers: { 'content-range': `bytes 1-${bytes.length - 1}/${bytes.length}` } })
-    return new Response(bytes.subarray(1), { status: 206, headers: { 'content-range': `bytes 1-${bytes.length - 1}/${bytes.length}` } })
+    if (n < 5) return new Response(new ReadableStream({ start() {} }), { status: 206, headers: { 'content-range': `bytes 1-${bytes.length - 1}/${bytes.length}`, etag: '"fixture-object"' } })
+    return new Response(bytes.subarray(1), { status: 206, headers: { 'content-range': `bytes 1-${bytes.length - 1}/${bytes.length}`, etag: '"fixture-object"' } })
   })
   vi.mocked(f.backend.spawn).mockImplementation(() => { f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); return exited() })
   start(f)

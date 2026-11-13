@@ -38,7 +38,7 @@ it.each(['attach', 'ditto', 'codesign', 'success'] as const)('模拟：macOS %s 
   if (failure === 'ditto') expect(readdirSync(join(directory, 'target'))).toEqual([])
   if (failure === 'success') {
     expect(run.mock.calls.map(([a]) => a[0])).toEqual(['/usr/bin/hdiutil', '/usr/bin/codesign', '/usr/sbin/spctl', '/usr/bin/ditto', '/usr/bin/hdiutil'])
-    expect(run.mock.calls[1]![0]).toContain('anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345"')
+    expect(run.mock.calls[1]![0]).toContain('-R=anchor apple generic and certificate leaf[subject.OU] = "ABCDE12345"')
   }
 })
 it.each([false, true])('模拟：Windows 安装器等待退出及取消=%s，不传静默或位置参数', async cancel => {

@@ -1,5 +1,25 @@
 ## ADDED Requirements
 
+### Requirement: macOS 系统代理注入
+Host SHALL 在 macOS 用参数数组运行 `/usr/sbin/scutil --proxy`，复用 Windows 的 5 秒超时、64 KiB 输出上限、15 秒按需缓存、并发合并及进程清理。读取失败或关闭代理后 SHALL 清除旧代理。Host SHALL 优先使用有效且启用的 HTTPS 代理，其次 HTTP，只接受单个主机名、IPv4 或带括号 IPv6 与 1–65535 端口，统一作为 HTTP 代理。已有代理环境变量或显式删除 SHALL 优先，不得覆盖。账号终端、Worker、更新/安装命令和探测 SHALL 通过同一进程后端获得代理；Host 的 HTTPS 请求与 Pi/OMP 子进程 SHALL 按相同来源与例外规则查找代理，保留代理请求的 User-Agent。Linux MUST NOT 新增系统代理注入。
+
+#### Scenario: macOS 图形启动未继承环境变量
+- **WHEN** Host 没有代理环境变量，而系统启用了有效的显式 HTTP(S) 代理
+- **THEN** 新启动的 CLI SHALL 获得 HTTP_PROXY、HTTPS_PROXY 与 NO_PROXY；NO_PROXY SHALL 合并既有值、localhost、127.0.0.1、::1 以及 ExceptionsList 中可表达的主机、域名后缀与精确 IP
+- **AND** `*.example.com` 和 `*.local` SHALL 转为 `.example.com` 和 `.local`；CIDR、短网段、任意位置通配、主机端口等非通用形式 SHALL 丢弃
+
+#### Scenario: 只有 PAC 或 SOCKS
+- **WHEN** 没有有效显式 HTTP(S) 代理，而 PAC、自动发现或 SOCKS 已启用
+- **THEN** Host MUST NOT 执行 PAC、推测代理或注入 SOCKS 变量，来源生命周期内 SHALL 仅记录一次不含原始输出的诊断
+
+#### Scenario: 继承变量或显式删除决定代理
+- **WHEN** Host 环境或进程 spec 中任意大小写的 HTTP_PROXY、HTTPS_PROXY、ALL_PROXY 已有非空值，或 spec 明确设为 undefined
+- **THEN** 系统代理 MUST NOT 覆盖该进程的环境
+
+#### Scenario: 系统变更或插件停用
+- **WHEN** 系统代理关闭、读取失败或插件停用
+- **THEN** 关闭/失败 SHALL 在下次过期刷新后不再保留旧值，停用 SHALL 中止读取、等待进程范围退出并撤销 Host 代理查找；同步 spawn 不等待刷新，账号终端与 Host 查询等待 fresh
+
 ### Requirement: 全部 CLI 的官方自动更新范围
 Host SHALL 为已识别的官方安装开放 PRD 5.3.1 的自带命令、官方安装器或桌面替换流程；npm/Homebrew 归属 SHALL 优先使用原包管理器。Codex 独立版 SHALL 下载内置官方脚本，以 `CODEX_NON_INTERACTIVE=1` 和 `--release <目标>` 执行。Hermes SHALL 在执行前提供迁移配置、更新依赖、可能重启服务及保留原通道的说明；所有更新 MUST 由前台用户发起。
 
@@ -173,7 +193,7 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 - **THEN** Claude Code 行的「更新」置灰，悬停说明需等任务结束或停止
 
 ### Requirement: 下载停滞检测与断点续传
-插件自己掌控的下载（npm 主包 tarball、官方安装脚本、桌面安装包）SHALL 每 10 秒检查一次已下载字节；没有增长时 SHALL 中断连接，用 HTTP Range 从已下载位置继续，最多 200 次，总时长上限 2 小时。服务器不支持 Range 时 SHALL 整包重下，并计入同一次数预算。下载完成后 SHALL 校验 integrity 或摘要，不符时 MUST 判为失败、MUST NOT 安装。外部命令只有在能读到下载字节时才适用停滞规则，否则页面显示「下载进度无法读取」，安装阶段另设 10 分钟上限。续传 200 次仍失败与超过 2 小时 SHALL 分开提示。取消时 SHALL 删除临时文件；失败或重启后临时文件保留 24 小时，总量有上限，用户重试时接着用。
+插件自己掌控的下载（npm 主包 tarball、官方安装脚本、桌面安装包）SHALL 每 10 秒检查一次已下载字节；没有增长时 SHALL 中断连接，用 HTTP Range 从已下载位置继续，最多 200 次，总时长上限 2 小时。服务器不支持 Range 时 SHALL 整包重下，并计入同一次数预算。下载完成后 SHALL 校验官方长度或摘要；不符时 SHALL 删除文件并干净重下一次，仍不符才判为失败，校验通过前 MUST NOT 安装。外部命令只有在能读到下载字节时才适用停滞规则，否则页面显示「下载进度无法读取」，安装阶段另设 10 分钟上限。续传 200 次仍失败与超过 2 小时 SHALL 分开提示。取消时 SHALL 删除临时文件；失败或重启后临时文件保留 24 小时，总量有上限，用户重试时接着用。
 
 #### Scenario: 停滞后续传
 - **WHEN** 下载到 32 MB 后 10 秒没有增长
@@ -181,15 +201,15 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 
 #### Scenario: 达到上限
 - **WHEN** 第 200 次续传后仍然停滞
-- **THEN** 判为失败，写「续传 200 次仍未完成」，提示可在页面底部切换下载源后重试，不自动换源
+- **THEN** 判为失败，写「续传 200 次仍未完成」，提示可在页面底部切换下载源后重试；次数耗尽后不再主动换源，若仍有进展则继续当前连接至完成或总超时
 
 #### Scenario: 校验失败
 - **WHEN** 下载完成后 integrity 与官方源给出的值不符
-- **THEN** 判为失败并删除文件，不执行安装
+- **THEN** 删除文件后干净重下一次，不消耗恢复计数；仍不符才失败且不执行安装
 
 #### Scenario: 镜像元数据保留摘要但替换文件
 - **WHEN** 镜像的目标版本元数据声明了与官方一致的 sha512，但 tarball 地址返回不同内容
-- **THEN** Host 对实际文件验算失败，返回 INTEGRITY_MISMATCH、删除临时文件，并且 MUST NOT 启动 npm 安装
+- **THEN** Host SHALL 使用官方 sha512 验算实际文件；一次干净重下仍不符时返回 INTEGRITY_MISMATCH、删除临时文件，并且 MUST NOT 启动 npm 安装
 
 ### Requirement: 首次安装
 「未安装」分区的 CLI SHALL 可以在本页安装。纯 CLI SHALL 装到官方默认位置，MUST NOT 让用户选择位置；同时有 npm 包和官方脚本时，SHALL 用官方推荐的方式，同为推荐时用 npm 包。官方安装脚本 SHALL 只使用 Host 内置的官方地址，先下载到插件私有缓存，再以文件方式交给明确的解释器执行，行内显示脚本地址。ZCode、WorkBuddy CN、WorkBuddy SHALL 可以在行内选择安装位置（只有图标的文件夹按钮，直接打开系统目录选择）；能静默安装的由插件安装到所选位置，不能的打开官方安装程序。位置需要管理员权限、空间不足或目录非空时 SHALL 用错误色提示并禁用「开始安装」。安装前 SHALL 检查前置条件（Node.js、Bun 版本等），不满足时 MUST NOT 安装，只说明所需版本并给出官方说明，MUST NOT 代装运行时。安装后读得出版本才算成功，桌面应用的所选路径 SHALL 写入机器级路径记录，下一步提示登录。
@@ -211,7 +231,7 @@ Host SHALL 解析可执行文件的符号链接，按真实路径识别安装来
 - **THEN** 插件只从内置的官方地址下载脚本，以文件方式执行，不经 `curl | bash`
 
 ### Requirement: 下载源设置
-「下载设置」分区 SHALL 提供「下载源」下拉：跟随 npm 设置（默认）、npm 官方源、国内镜像 npmmirror、自定义地址。自定义地址 MUST 为 https，MUST NOT 含用户名或密码，并可「检查连接」。Host SHALL 从所选源的目标版本元数据取得主包 tarball 地址，按 npm 官方源同版本 sha512 验证实际文件，再交给 npm 安装本地 tgz；官方源也 SHALL 使用同一路径。安装 SHALL 传入 `--registry <地址>` 供 npm 正常解析依赖，MUST NOT 修改用户的 `.npmrc` 或全局 npm 配置；官方安装脚本、CLI 自带更新命令、Homebrew 和桌面安装包始终从官方下载。npm 主包的官方 sha512 不可得或实际文件校验失败时 MUST NOT 安装，MUST NOT 降级为信任镜像摘要；`integritySource` SHALL 标明官方源。设置按本机保存，从下一次操作开始生效。
+「下载设置」分区 SHALL 提供「下载源」下拉：跟随 npm 设置（默认）、npm 官方源、国内镜像 npmmirror、自定义地址。自定义地址 MUST 为 https，MUST NOT 含用户名或密码，并可「检查连接」。Host SHALL 在自动模式按所选 registry 标准包路径生成主包 tarball 地址（custom 模式仅用该源元数据的主地址），按 npm 官方源同版本 sha512 验证实际文件，再交给 npm 安装本地 tgz；官方源也 SHALL 使用同一路径。安装 SHALL 传入 `--registry <地址>` 供 npm 正常解析依赖，MUST NOT 修改用户的 `.npmrc` 或全局 npm 配置；官方安装脚本、CLI 自带更新命令、Homebrew 和桌面安装包始终从官方下载。npm 主包的官方 sha512 不可得或实际文件校验失败时 MUST NOT 安装，MUST NOT 降级为信任镜像摘要；`integritySource` SHALL 标明官方源。设置按本机保存，从下一次操作开始生效。
 
 #### Scenario: 选择国内镜像
 - **WHEN** 下载源为 npmmirror，用户更新 Codex
@@ -261,3 +281,99 @@ CLI 状态缓存 SHALL 保存在插件私有目录，按本机保存，目录 07
 #### Scenario: 缓存不含凭据
 - **WHEN** 检查缓存文件内容
 - **THEN** 只有版本、来源、分区、时间、登录状态与显示用账号名，没有令牌或 Cookie
+
+### Requirement: 自动入口与独立 runtime 的更新一致性
+Host SHALL 保存自动发现的启动器或符号链接入口，每次使用时重新解析实体；旧 auto 记录命中已核实的托管版本目录时 SHALL 在前台重新发现入口，以 revision 比较写回，MUST NOT 修改 manual 记录。Pi 管理检查 SHALL 从入口重读 current-version，Worker MUST 保持原支持集合。
+
+#### Scenario: Pi 更新切换版本指针
+- **WHEN** Pi 自带更新将 current-version 从 1.0.4 改为 1.5.2，旧实体仍存在
+- **THEN** 更新后检查读出 1.5.2，旧版本缓存失效；Worker 拒绝未适配 1.5.2，不回退旧实体
+
+#### Scenario: ZCode 自动入口为独立 runtime
+- **WHEN** 自动入口为插件固定 ZCode runtime 且默认应用 bundle id 已核实
+- **THEN** 更新对象为 desktop-app，读取应用版本；检查行及更新结果说明独立 runtime 未随桌面应用更新且需要另行核验部署
+
+#### Scenario: ZCode 应用身份不符
+- **WHEN** 固定 runtime 对应的默认应用不存在或 bundle id 不符
+- **THEN** 不将该 runtime 映射到桌面应用，不猜测版本或来源
+
+### Requirement: 下载中断恢复与外部命令证据重试
+Host SHALL 将连接关闭、重置、超时、fetch 网络错误及正文提前结束与下载停滞纳入同一 200 次续传和 2 小时预算；不可恢复的 HTTP、证书、Range 协议错误及缓存超限 MUST 直接失败；完整文件长度或摘要不符 SHALL 删除临时文件后干净重下一次，仍失败报告“下载的文件校验不通过”，该重下 MUST NOT 消耗或重置 200 次恢复预算或重置 2 小时总上限。
+
+#### Scenario: 中断后按已写入字节续传
+- **WHEN** 插件下载发生可恢复网络中断
+- **THEN** Host SHALL 发送匹配已写入长度的 Range，并区分中断与停滞文案；200 响应从头覆盖，206 严格核对范围
+
+#### Scenario: 外部下载退出但未更新
+- **WHEN** 外部命令非零退出或版本未前进，原始输出包含下载中断证据，且进程范围退出已确认
+- **THEN** Host SHALL 重跑同一 argv，保留脱敏输出及分隔行，用独立的自动重试次数表示，共用 200 次及 2 小时恢复预算，并允许取消
+- **AND** 无中断证据、版本已前进、身份变化、进程清理未确认时 MUST NOT 自动重跑
+
+### Requirement: 官方本地工件交接
+Host SHALL 优先使用已核实的官方本地工件入口，在私有目录下载并校验官方工件，再交由官方安装器；URL MUST 来自内置官方模板或受限发布源，禁止用户输入下载地址或复刻 MiMo 安装步骤。MiMo macOS 默认原生更新 SHALL 下载内置官方 zip，校验 HEAD 长度、content-md5 与 zip 结构、精确提取根成员 mimo，交私有官方脚本 --binary 安装；SHALL 明示同源 MD5 不代表独立签名。TRAE CN MUST NOT 使用会关闭自动更新的 offline-install 接管，SHALL 保留原生 update --channel --version 与中断证据重跑。
+
+#### Scenario: 官方安装器支持本地工件
+- **WHEN** 官方提供本地工件入口及可核对的摘要或长度
+- **THEN** Host SHALL 先完成可续传下载、校验及安全的本地工件准备，再调用官方入口；不支持的方式保留按中断证据重跑
+
+
+#### Scenario: 校验失败只允许一次干净重下
+- **WHEN** 完整文件与官方长度或摘要不符
+- **THEN** Host SHALL 先删除临时文件，再不带 Range 从零重下；既有恢复计数及总超时保持，第二次仍不符删除文件并报校验失败
+
+#### Scenario: MiMo 本地安装不越过维护锁与复核
+- **WHEN** MiMo macOS 默认原生安装使用官方本地工件入口
+- **THEN** Host SHALL 在维护锁内先下载后启动安装阶段，官方脚本只从内置地址下载到私有目录并以参数数组执行；安装后身份与目标版本均符合才成功，不清理安装器自有残留目录
+
+#### Scenario: TRAE 保留自身自动更新配置
+- **WHEN** 更新或首次安装 TRAE CN
+- **THEN** Host MUST NOT 构造离线清单或调用 offline-install；已有安装保留原生更新及证据重跑，首次安装保留既有官方脚本
+
+### Requirement: 可续传下载的低速重连
+Host SHALL 使用一处 100,000 B/s 阈值，每个 10 秒窗口新增少于 1,000,000 B 且仍有进展时，仅对已证实支持 Range 的插件下载重连，共用 200 次计数；外部命令 MUST NOT 因低速被终止或重跑。
+
+#### Scenario: 低速恢复保留已下载字节
+- **WHEN** 206 或 Accept-Ranges: bytes 已证明续传能力，10 秒平均速度低于 100 KB/s 且仍有可用次数
+- **THEN** Host SHALL 从已写入长度重新连接，并输出“下载过慢（X KB/s），从 Y 处重新连接（第 N 次）”；服务器忽略 Range 返回 200 后，后续 MUST NOT 再主动按慢速重连
+
+#### Scenario: 次数用完后仍在前进
+- **WHEN** 200 次已用完且正文仍在增长
+- **THEN** Host SHALL 保持当前连接直到完成或 2 小时上限，不因低速报告失败；若真正 10 秒无增长才以次数耗尽失败
+
+### Requirement: 官方同对象多源续传
+Host 下载器 SHALL 提供 sources 列表能力，MiMo 配置官方双 FDS 源：API 域名优先、原域名备用；地址 MUST 匹配内置 host 与路径前缀白名单，无凭据，禁止重定向。最新版本查询 SHALL API 优先、失败回落原域名。首个成功源 HEAD SHALL 建立固定长度、ETag/content-md5 身份，换源前 MUST 核对目标 HEAD 一致；换源续传 SHALL 使用原已写字节的 Range/可用的 If-Range，核对 GET 身份及 206 范围，完成后核对长度与 content-md5（hex/base64），不符走一次干净重下。
+
+#### Scenario: 慢速或中断轮换官方源
+- **WHEN** MiMo 下载中断或达到已有低速重连条件
+- **THEN** Host SHALL 在同一个 200 次/2 小时预算内选择下一个身份一致的源，继续 Range 并输出“切换到 <host> 继续下载（第 N 次）”；次数耗尽仍在前进时继续当前连接
+
+#### Scenario: 换源身份不一致
+- **WHEN** 备用源 HEAD 长度、ETag/content-md5 不匹配初始身份，或 GET ETag/MD5 不匹配已核实身份
+- **THEN** Host MUST 拒绝换源或追加文件，不将不同对象片段合并
+
+#### Scenario: 所有源不可用或校验重下仍失败
+- **WHEN** 所有 HEAD 源不可用、GET 恢复预算耗尽或第二次完整文件校验仍失败
+- **THEN** Host SHALL 报告失败，校验失败的文件 SHALL 删除，不执行安装器；取消 SHALL 停止回落/重试
+
+### Requirement: npm 主包自动换源尊重所选源与官方校验
+Host SHALL 为 npm 主 tarball 提供官方 registry 与 npmmirror 的多源列表，所选 registry 优先，follow 时使用 npm 当前 registry；显式 custom 模式 MUST NOT 自动换源（含 MiMo）。tarball 地址 SHALL 按各 registry 标准包路径生成，最终 integrity MUST 始终来自官方精确版本 packument 的 sha512，MUST NOT 采用镜像 integrity。中断/低速恢复 SHALL 复用 HEAD 身份检查、Range/If-Range、200 次和 2 小时预算；共享进度 SHALL 提供可选 sourceHost 表示实际下载 host。桌面包仅在匿名 HEAD 证实同对象第二官方域名与长度/摘要一致时配置备用源；证据不足 SHALL 保持单源。
+
+#### Scenario: npm 官方和镜像双向恢复
+- **WHEN** 所选官方或 npmmirror 主 tarball 下载过慢或中断，备用 HEAD 长度和 ETag/摘要一致
+- **THEN** Host SHALL 从原已写字节换源，按目标源原始 ETag 发送 If-Range，推送 sourceHost 和切换输出，完成后仍按官方 sha512 校验
+
+#### Scenario: 镜像元数据不能替换信任根
+- **WHEN** 镜像 packument 的 integrity 或 tarball 地址被替换
+- **THEN** 自动多源模式 SHALL 使用官方 sha512 和标准构造地址；实际文件校验失败只干净重下一次，仍失败不安装
+
+#### Scenario: 自定义地址与未核实桌面备用源
+- **WHEN** 下载设置为 custom 或桌面安装包没有同对象第二源证据
+- **THEN** Host MUST NOT 自动切换下载 host；同源 Range 恢复及原校验规则保持
+
+#### Scenario: npm 镜像 CDN 精确跳转
+- **WHEN** npmmirror 标准 tarball 的 HEAD 返回跳转
+- **THEN** Host SHALL 仅接受同包/版本预构造的 cdn.npmmirror.com/packages 精确目标；HEAD 可用严格的 Range 总长度，GET 禁止再次重定向；任意其他目标 SHALL 被拒绝
+
+#### Scenario: 操作启动后修改下载源
+- **WHEN** 操作已启动，用户在异步准备期间从 custom 改为官方源或反向修改
+- **THEN** 当前操作 SHALL 使用启动时锁定的 registry 与自动换源策略，修改仅影响下一次操作

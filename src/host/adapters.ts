@@ -22,6 +22,8 @@ import { GrokProtocol } from './grok-adapter.ts'
 import { OpenCodeProtocol } from './opencode-adapter.ts'
 import { BridgeProtocol } from './bridge-protocol.ts'
 import { verifyPiOmpExecutable } from './pi-omp-identity.ts'
+import { inspectPiInstallation } from './pi-installation.mjs'
+import { isVersionedAutoEntry } from './cli-auto-entry.ts'
 import {
   findWindowsCodexAppx,
   hasWindowsHermesInstallDirectory,
@@ -448,10 +450,11 @@ export async function resolveCliExecutable(
   backend: ProcessBackend,
   config: RuntimeConfig,
   signal: AbortSignal = AbortSignal.timeout(15000),
+  options: { management?: boolean } = {},
 ): Promise<string> {
   signal.throwIfAborted()
   const store = config.cliExecutablePaths
-  if (!store || cli === 'harness') return resolveUncachedCliExecutable(cli, backend, config, signal)
+  if (!store || cli === 'harness') return resolveUncachedCliExecutable(cli, backend, config, signal, false, undefined, options.management)
   let entry = store.read(cli)
   const deployment = configuredCliExecutable(cli, config)
   if (entry?.mode === 'auto' && !deployment) {
@@ -469,23 +472,27 @@ export async function resolveCliExecutable(
     }
   }
   const revision = store.revision(cli)
-  const selected = entry?.mode === 'manual' ? entry.path : deployment ? undefined : entry?.path
+  const migrate = entry?.mode === 'auto' && !deployment && isVersionedAutoEntry(cli, entry.path)
+  const selected = entry?.mode === 'manual' ? entry.path : deployment || migrate ? undefined : entry?.path
+  let discovered: string | undefined
   const result = await resolveUncachedCliExecutable(
     cli,
     backend,
     selected ? configWithExecutable(cli, config, selected) : config,
     signal,
     entry?.mode === 'auto' && !deployment,
+    path => { discovered = path },
+    options.management,
   )
   signal.throwIfAborted()
   const current = store.read(cli)
   if (store.revision(cli) !== revision) {
     // Concurrent identical initial discovery is harmless; a new manual source
     // or any different location must not admit work from this old request.
-    if (current?.mode === 'auto' && current.path === result && entry?.mode !== 'manual') return result
+    if (current?.mode === 'auto' && current.path === discovered && entry?.mode !== 'manual') return result
     throw new Error('CLI 路径已更新，请刷新后重试')
   }
-  if (entry?.mode !== 'manual' && !deployment && !store.remember(cli, result, revision))
+  if (entry?.mode !== 'manual' && !deployment && !store.remember(cli, discovered ?? result, revision))
     throw new Error('CLI 路径已更新，请刷新后重试')
   return result
 }
@@ -496,6 +503,8 @@ async function resolveUncachedCliExecutable(
   config: RuntimeConfig,
   signal: AbortSignal = AbortSignal.timeout(15000),
   automaticSelection = false,
+  discovered?: (path: string) => void,
+  management = false,
 ): Promise<string> {
   signal.throwIfAborted()
   if (isWorkBuddyCli(cli)) {
@@ -517,6 +526,7 @@ async function resolveUncachedCliExecutable(
       install = await resolveWorkBuddyInstallation(cli, { candidates })
     }
     signal.throwIfAborted()
+    discovered?.(install.entry)
     return install.entry
   }
   const executable = executableFor(cli, config)
@@ -645,6 +655,13 @@ async function resolveUncachedCliExecutable(
   if (process.platform === 'win32' && cli === 'opencode') {
     const bundled = windowsOpenCodeDesktopCli(resolved, explicit)
     if (bundled) resolved = bundled
+  }
+  // Keep the PATH/launcher spelling before Pi identity resolves a release entity.
+  // dsh-subprocess-local resolves PATH to an entry without dereferencing symlinks.
+  discovered?.(resolved)
+  if (cli === 'pi' && management) {
+    inspectPiInstallation(resolved, { allowUnsupported: true })
+    return resolved
   }
   if (cli === 'traecn') return verifyTraecnExecutable(resolved, backend, config, signal)
   if (cli === 'pi' || cli === 'omp')

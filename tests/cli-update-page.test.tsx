@@ -124,7 +124,7 @@ describe('模拟「更新 CLI」页面', () => {
     expect(textOf(f.rowOf('codex'))).toContain('0.129.0 → 0.130.0 · npm 全局安装')
     expect(f.button('更新', f.rowOf('codex'))!.props).toMatchObject({ 'data-size': 'md', 'data-variant': 'outline', disabled: false })
     expect(f.button('查看方法', f.rowOf('zcode'))).toBeDefined()
-    expect(textOf(f.rowOf('zcode'))).toContain('1.8.0 · 由 ZCode 桌面端管理更新')
+    expect(textOf(f.rowOf('zcode'))).toContain('1.8.0 · ZCode 桌面应用，下载官方安装包更新')
     expect(f.button('去设置路径', f.rowOf('omp'))).toBeDefined()
     expect(f.button('重新安装', f.rowOf('omp'))).toBeDefined()
     expect(f.button('重试', f.rowOf('opencode'))).toBeDefined()
@@ -197,6 +197,21 @@ describe('模拟「更新 CLI」页面', () => {
     expect(f.service.cancelCliOperation).toHaveBeenCalledWith('SIMULATED/parent', 'SIMULATED-op', expect.any(AbortSignal))
   })
 
+  it('toggles a section from anywhere on its head row, not only the chevron', async () => {
+    const f = await setup(data())
+    const head = () => f.section('未安装')!.findByProps({ className: 'cwn-settings-section-head cwn-update-section-toggle' })
+    const fold = () => f.section('未安装')!.findByProps({ className: 'cwn-refresh cwn-update-fold' })
+    expect(fold().props['aria-expanded']).toBe(false)
+    const target = { closest: () => null }
+    await act(async () => head().props.onClick({ target }))
+    expect(fold().props['aria-expanded']).toBe(true)
+    await act(async () => head().props.onClick({ target }))
+    expect(fold().props['aria-expanded']).toBe(false)
+    // A click on the chevron itself is handled by the button only, never twice.
+    await act(async () => head().props.onClick({ target: { closest: () => ({}) } }))
+    expect(fold().props['aria-expanded']).toBe(false)
+  })
+
   it('keeps 未安装 collapsed by default and opens it while an install runs', async () => {
     const f = await setup(data())
     const fold = () => f.section('未安装')!.findByProps({ className: 'cwn-refresh cwn-update-fold' })
@@ -239,6 +254,37 @@ describe('模拟「更新 CLI」页面', () => {
     expect(textOf(row)).toContain('下载进度无法读取')
     expect(row.findAll((node) => node.props.role === 'progressbar')).toHaveLength(0)
     expect(textOf(row)).not.toContain('已自动续传')
+    expect(textOf(row)).not.toContain('已自动重试')
+
+    // 模拟：外部命令因下载中断重跑后，次数与 HTTP 续传分开显示。
+    await f.update(
+      data({
+        snapshot: snapshot({
+          revision: 3,
+          operation: {
+            id: 'SIMULATED-op', intent: 'update', cli: 'codex', phase: 'downloading', startedAt: 1,
+            targetVersion: '0.130.0', outputTail: '', progress: { readable: false, resumeCount: 0, retryCount: 2 },
+          },
+        }),
+      }),
+    )
+    expect(textOf(f.rowOf('codex'))).toContain('下载进度无法读取已自动重试 2 次')
+    expect(textOf(f.rowOf('codex'))).not.toContain('已自动续传')
+
+    // 模拟：插件下载换源后，进度行写出当前来源 host。
+    await f.update(
+      data({
+        snapshot: snapshot({
+          revision: 4,
+          operation: {
+            id: 'SIMULATED-op', intent: 'update', cli: 'codex', phase: 'downloading', startedAt: 1, targetVersion: '0.130.0', outputTail: '',
+            progress: { readable: true, downloadedBytes: 1024, totalBytes: 2048, resumeCount: 1, sourceHost: 'registry.npmmirror.example' },
+          },
+        }),
+      }),
+    )
+    expect(textOf(f.rowOf('codex'))).toContain('来自 registry.npmmirror.example')
+    expect(textOf(f.rowOf('codex'))).toContain('已自动续传 1 次')
   })
 
   it('renders command output as plain text', async () => {
@@ -480,15 +526,14 @@ describe('模拟「更新 CLI」页面', () => {
     })
   }
 
-  it('shows the notice under an updatable row and asks before updating it', async () => {
+  it('keeps the notice out of the row and asks before updating it', async () => {
     const f = await setup(data({ snapshot: noticed() }))
-    const notice = f.rowOf('pi').findByProps({ className: 'cwn-update-notice' })
-    expect(notice.props['data-tone']).toBe('warn')
-    expect(textOf(notice)).toBe(piNotice)
-    // Untrusted Host text stays plain text.
-    expect(textOf(f.rowOf('hermes').findByProps({ className: 'cwn-update-notice' }))).toBe(hermesNotice)
-    expect(f.rowOf('hermes').findAll((node) => node.type === 'b')).toHaveLength(0)
-    expect(f.rowOf('codex').findAll((node) => node.props.className === 'cwn-update-notice')).toHaveLength(0)
+    // The row itself carries no notice text; it appears only in the confirmation.
+    for (const cli of ['pi', 'hermes', 'codex']) {
+      expect(f.rowOf(cli).findAll((node) => node.props.className === 'cwn-update-notice')).toHaveLength(0)
+      expect(textOf(f.rowOf(cli))).not.toContain('请确认')
+    }
+    expect(textOf(f.rowOf('pi'))).not.toContain(piNotice)
 
     await act(async () => f.button('更新', f.rowOf('pi'))!.props.onClick())
     expect(f.service.startCliOperation).not.toHaveBeenCalled()
@@ -564,17 +609,17 @@ describe('模拟「更新 CLI」页面', () => {
             group: 'updatable', source: 'desktop-app', appVersion: '4.1.2.1234', currentVersion: '2.3.0',
             latestVersion: '4.2.0', planToken: 'SIMULATED-wb',
           }),
-          entry('zcode', { group: 'latest', source: 'desktop-app', appVersion: '1.9.0' }),
+          entry('zcode', { group: 'latest', source: 'desktop-app', appVersion: '1.9.0', currentVersion: '1.9.0' }),
           entry('workbuddy', { group: 'latest', source: 'desktop-app', appVersion: '4.1.2.1234', currentVersion: '2.3.0', latestVersion: '4.1.2', latestCompatibleVersion: '4.1.2' }),
           // A CLI inside an .app bundle keeps CLI-version semantics.
           entry('kimi', { group: 'updatable', source: 'npm', appVersion: '9.9.9', currentVersion: '1.6.0', latestVersion: '1.7.0', planToken: 'SIMULATED-kimi' }),
         ],
       }),
     }))
-    expect(textOf(f.rowOf('workbuddycn'))).toContain('应用 4.1.2.1234 → 4.2.0 · CLI 2.3.0 · 由 WorkBuddy CN 桌面端管理更新')
-    expect(textOf(f.rowOf('zcode'))).toContain('应用 1.9.0 · 由 ZCode 桌面端管理更新')
+    expect(textOf(f.rowOf('workbuddycn'))).toContain('应用 4.1.2.1234 → 4.2.0 · CLI 2.3.0 · WorkBuddy CN 桌面应用，下载官方安装包更新')
+    expect(textOf(f.rowOf('zcode'))).toContain('应用 1.9.0 · ZCode 桌面应用，下载官方安装包更新')
     expect(textOf(f.rowOf('zcode'))).not.toContain('CLI ')
-    expect(textOf(f.rowOf('workbuddy'))).toContain('应用 4.1.2.1234 · CLI 2.3.0 · 由 WorkBuddy 桌面端管理更新')
+    expect(textOf(f.rowOf('workbuddy'))).toContain('应用 4.1.2.1234 · CLI 2.3.0 · WorkBuddy 桌面应用，下载官方安装包更新')
     expect(textOf(f.rowOf('kimi'))).toContain('1.6.0 → 1.7.0 · npm 全局安装')
     expect(textOf(f.rowOf('kimi'))).not.toContain('应用')
   })
@@ -600,11 +645,14 @@ describe('模拟「更新 CLI」页面', () => {
     const f = await setup(data({ snapshot: noticed() }))
     setLanguagePreference('en')
     await f.update(data({ snapshot: noticed({ revision: 2 }) }))
-    expect(textOf(f.rowOf('pi').findByProps({ className: 'cwn-update-notice' }))).toBe(
+    await act(async () => f.button('Update', f.rowOf('pi'))!.props.onClick())
+    expect(textOf(f.rowOf('pi').find((node) => node.props.role === 'group'))).toContain(
       'The plugin does not support Pi 0.80.0 yet. After the update, Pi Workers cannot be used until the plugin supports it',
     )
     // Unknown Host text stays verbatim rather than guessing a translation.
-    expect(textOf(f.rowOf('hermes').findByProps({ className: 'cwn-update-notice' }))).toBe(hermesNotice)
+    await act(async () => f.button('Update', f.rowOf('hermes'))!.props.onClick())
+    expect(textOf(f.rowOf('hermes').find((node) => node.props.role === 'group'))).toContain(hermesNotice)
+    expect(f.rowOf('hermes').findAll((node) => node.type === 'b')).toHaveLength(0)
   })
 
   it('greys out write buttons on a Host without the write methods', async () => {

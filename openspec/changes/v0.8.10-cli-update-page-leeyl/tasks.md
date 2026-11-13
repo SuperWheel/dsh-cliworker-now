@@ -167,13 +167,20 @@
   - 按 PRD 保留、判为设计稿自身问题：原生 Modal 外壳（圆角、关闭按钮、列间距 24）；「检查中」排在「检查失败」前（PRD 5.2.1）；失败行「重试」（PRD 5.1）；分区内按 CLI 固定顺序（Results 画板 Pi 位置）；任务占用时「全部更新」仍可点（只跳过占用的 CLI）；输出区高 150（规范值，画板为排版压到 96）；进度「已下载」前缀（PRD 5.9.4）；「由 WorkBuddy CN 桌面端管理更新」沿用 CLI 显示名，不猜桌面应用名。
   - 复核：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6477 项通过；`corepack pnpm build:preview` 成功；修复后 14 个状态全部重截。（未执行：真实 DSH Desktop 里的目视核对，随 7.3 / 7.5 实机验收做。）
   - （未执行：Phase B 仅后端与模拟测试，禁止构建及修改 Client；可视验收留待整合阶段。）
-- [ ] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
+- [x] 7.3 macOS 真实更新：npm 全局、Homebrew、CLI 自带命令各一次；人为限速验证停滞续传；核对更新前后版本、路径、事件与退出状态
   - 2026-11-13 macOS 实机（DSH Desktop 0.2.2-rc.2，内置浏览器直连 Desktop Host Web UI；主会话执行）：
     - 首次真实检查暴露两类缺陷：npm 元数据整份读取超 512 KiB（opencode-ai 14.7 MB、@openai/codex 5.6 MB、codebuddy 1.45 MB、claude-code 534 KB）全部误报「连不上发布源」；前台未按 PRD 5.4 执行 `--version`，17 个 CLI 中 12 个「读不出当前版本」。逐个实测真实 `<cli> --version`（8 秒超时、比对文件改动）后交 Codex 修复，见 2.8；修后复检 14 个读出版本、3 个可更新。Qoder/Qoder CN 分发脚本与 Grok downloads 路径的来源识别随后补修（2.8）。
     - npm + 停滞续传：本机测试中转（127.0.0.1 自签 CA，仅经 `NODE_EXTRA_CA_CERTS` 传给本次 Desktop 进程，「模拟」慢源）设为自定义下载源，首个主包请求发 40% 后静默。CodeBuddy 2.181.0 → 2.184.0：主包停在 27466967/68667419 字节，10.2 秒后插件发 `Range: bytes=27466967-`，中转回 206，随后 npm 安装成功，用时 28 秒；`/opt/homebrew/lib/node_modules/@tencent-ai/codebuddy-code` 路径不变，`codebuddy --version` 2.184.0。OpenCode 1.19.0 → 1.19.5：停在 1216/3041 字节，界面每秒显示「N 秒没有新数据」（警示色）与「已自动续传 0 次」，约 10 秒后续传、显示「已自动续传 1 次」，命令区显示实际 argv（`node npm-cli.js install --global --prefix /opt/homebrew <本地 tgz> --registry …`），成功后 `opencode --version` 1.19.5。两次 integrity 均以官方源为准，临时下载目录完成后清空，目录 0700、状态文件 0600。
     - Homebrew：Claude Code 2.1.287 → 2.1.311，执行 `/opt/homebrew/bin/brew upgrade --cask claude-code`，输出实时显示（下载进度标「无法读取」），经「正在核对结果」后成功；`/opt/homebrew/bin/claude` → `Caskroom/claude-code/2.1.311/claude`，`claude --version` 2.1.311。
     - 三项完成后缓存条目均为 latest，下载源已改回「跟随 npm 设置」，测试中转已停止。
     - （未执行：CLI 自带更新——Qoder 来源识别修复后待装入 Desktop 再测；用户 2026-11-13 要求全部 CLI 改为可自动更新，自带命令、官方安装器与桌面应用更新随新一轮实现一并实机验收。）
+  - 2026-11-14 macOS 实机续（同一方法，正式 `corepack pnpm build` 后从终端启动 Desktop，保留宿主代理环境变量，不再 `env -u`）：
+    - CLI 自带命令：Qoder 1.1.73 → 1.1.89、Qoder CN 1.1.74 → 1.1.89、Grok Build 1.0.62 → 1.0.77、TRAE CN 0.213.1 → 0.215.0、OMP 16.4.4 → 18.20.0（原生 `omp update`，无交互）、Kimi 2.4.1 → 2.6.1（带 `KIMI_CODE_NO_AUTO_UPDATE=1`）。Hermes 首轮因 Desktop 以无代理环境启动、`git ls-remote` GitHub 60 秒超时失败，旧安装未动；macOS 系统代理注入（第 10 节）后重测 0.21.7 → 0.23.1：`/Users/leeyl/.local/bin/hermes update --yes`，确认框先说明迁移与通道，输出依次为 stable v0.23.1（3b4215785882）、拉取、Python/Node 依赖，用时约 2 分 30 秒，`hermes --version` 为 v0.23.1 stable。
+    - 插件本地交接（MiMo）：0.1.15 → 0.1.17，进度行「已下载 12.1 MB / 32.3 MB · 5.2 MB/s · 来自 cnbj1.fds.api.xiaomi.com」，11 秒完成并按 content-md5 校验，执行 `/bin/bash …/downloads/local-XXXXXX/install.sh --binary … --no-modify-path`；`~/.mimocode/bin/mimo --version` 0.1.17，downloads 目录完成后为空（0700）。此前两次在无代理/慢域名下失败时旧安装完好、界面如实报错。
+    - 官方安装器（Codex）：首轮失败、输出为空，原因是 `https://chatgpt.com/codex/install.sh` 现 302 到 `https://releases.openai.com/codex/install.sh`，插件下载 `redirect: 'error'` 被拒且只显示笼统文案；改用目标地址并给跳转单独报错（见 8.13）后重测 0.162.1 → 0.169.0：「已下载 42.6 KB / 42.6 KB · 来自 releases.openai.com」，执行 `/bin/sh …/downloads/<uuid>.sh --release 0.169.0`（`CODEX_NON_INTERACTIVE=1`），约 15 秒成功；`codex` 解析到 `~/.codex/packages/standalone/releases/0.169.0-aarch64-apple-darwin/bin/codex`，`codex --version` 0.169.0，旧版 0.162.1 目录由官方脚本保留。首轮失败留下的 0 字节 `.part` 按下载缓存保留期处理（设计如此，不是泄漏）。
+    - 桌面应用（ZCode）：首轮 codesign `-R` 参数格式错误；修为单个 `-R=…` 后第二轮签名通过，但 Host 在 Electron 下用补丁版 fs 删除暂存目录，把 `Contents/Resources/app.asar` 当目录处理而 `ENOTEMPTY`，触发回滚：新应用移到 `/Applications/.cliworker-update-*/failed.app`、旧 3.17.2 恢复，暂存残留 366 MB（即 8.11 记录的「原因未明」残留）。改用 `original-fs`（见 8.13）、清掉两处插件残留目录后重测 3.17.2 → 3.18.2：确认框说明 Worker runtime 不随应用更新；从 cdn-zcode.z.ai 下载 291 MB（最高 15.6 MB/s），ditto 解包、两次 codesign（Team 8A5X4JJ39T）与 spctl 通过后替换，约 30 秒成功；`/Applications/ZCode.app` 3.18.2，`codesign --verify --deep --strict` 与 `spctl --assess` 通过，`/Applications` 与 `cli-management` 下无暂存残留。
+    - 页面：下载来源 host、重试/续传计数实时显示；OMP 开发期提示已删除；区块标题整行可展开收起。
+    - （未执行：Antigravity 无可用新版、WorkBuddy CN 已是最新、Pi 由用户手动更新到 1.5.2，三者本轮未走插件更新；人为限速仍只有 2026-11-13 的 npm 中转那一次，插件接管下载的慢速换源只有模拟测试。）
 - [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
   - （未执行：Phase C 已实现首次安装和模拟回归，但本次明确禁止真实安装；三个桌面源仍未核实。）
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
@@ -200,3 +207,108 @@
   - 中间失败如实保留：首轮旧关联测试 6 文件 **10 failed | 193 passed (203)**，原因是旧 Pi 白名单/旧手动方法预期及夹具仍只提供 npm 源，已按新 PRD 更新；加入新测试后同组 6 文件 **1 failed | 273 passed (274)**，唯一失败为断言把 error.code 当 message，修正后上述关联与全量全过。未以这些失败运行作为完成证据。
 - [ ] 8.6 新增自动更新路径的真实平台验收
   - （未执行：本任务禁止联网、真实 CLI、安装脚本、npm/brew/安装器；模拟不能替代真实版本、路径、事件与退出状态验收。Windows 平台与前端新字段展示留主会话整合验收。）
+
+- [x] 8.7 修复实机检查的 Kimi 跳转、auto 入口迁移与 Pi 重探测、ZCode runtime 应用关联
+  - 本轮任务 C：仅 Host、测试及本变更文档；不改真实路径记录，不执行真实更新，不修改 Pi Worker 支持集合。
+  - 根因与修复：Kimi 旧域名四个地址均 302，改为直接 CDN，保持 redirect:error；auto 保存发现入口，旧已知版本目录前台迁移并保留 revision 保护，manual 不变；Pi 管理解析允许新版本但 Worker 仍拒绝 1.5.2，current-version 切换后实体路径和 manifestVersion 改变使缓存失效；ZCode 固定 runtime 以已核实 bundle id 关联默认应用，读取 Info.plist，并在 notice/outputTail 明示独立 runtime 未同步更新。
+  - 新增 `cli-management-acceptance-fixes.test.ts` 的 31 项均为模拟，涵盖各旧版本实体迁移/manual 不动、失败与并发手动覆盖保护、Pi 缓存/真实 resolver 链/更新后重探测、ZCode bundle 不符/缺失不映射/应用版本和更新结果提示、Kimi CDN 地址及无跳转。首次 29 passed / 2 failed 为夹具误用导出名与可选字段断言，已修正；随后关联回归中 31/31 通过。
+  - 只读实机证据：16 条 auto 中 Pi 为 1.0.4 实体而 current-version=1.5.2；ZCode 应用 3.17.2、bundle=dev.zcode.app、codesign team=8A5X4JJ39T，独立 runtime INSTALL-MANIFEST 为 2026-10-05 源树构建 0.16.9。17 CLI 清单、来源脚本与 runtime 不自动覆盖依据见本变更 design.md。匿名 GET 读取 Kimi JSON/text 均为 2.6.1；四个 CDN HEAD 均 200。
+- [x] 8.8 任务 C 模拟回归、类型检查、全量测试、隔离构建与严格校验
+  - `corepack pnpm typecheck`：两次通过，Host/Client against DSH 0.2.2-rc.2，退出码 0。
+  - `corepack pnpm vitest run tests/cli-management tests/cli-executable-paths.test.ts tests/cli-executable-management.test.ts tests/pi-installation.test.ts tests/pi-omp-adapter.test.ts tests/zcode-adapter.test.ts tests/windows-cli-resolution.test.ts`：沙箱内 18 文件通过/1 文件失败，626 passed / 118 failed（744），失败均为 Pi/OMP fixture 的 `listen EPERM: operation not permitted 127.0.0.1`；获准沙箱外同命令重跑（23:07:18，165.60 秒），**19 文件、744 项通过**，退出码 0。`tests/pi-installation.test.ts` 不存在，过滤名未选中测试，不计入执行证据。
+  - `corepack pnpm vitest run tests/pi-omp-identity.test.ts tests/pi-omp-native.test.ts tests/pi-omp-windows-directories.test.ts`：沙箱内 **3 文件，46 passed / 1 skipped（47）**，1.46 秒，退出码 0；是模拟入口/身份/目录覆盖，不是 Windows 实机验收。
+  - 获准沙箱外 `corepack pnpm vitest run` 第一轮（23:07:27，171.32 秒）：**1 failed / 301 passed / 4 skipped（306 文件）；1 failed / 6776 passed / 14 skipped（6791 项）**，退出码 1。唯一失败为未改动的 `native-bridge-time-limit.test.ts` 工具审批 hold/release 用例，原始错误“原生引导通路已关闭或尚未准备”。日志 `/tmp/task-c-full.log`。
+  - 沙箱外 `corepack pnpm vitest run tests/native-bridge-time-limit.test.ts`：**1 文件、4 项通过**，10.16 秒，退出码 0。第二轮默认并发全量（23:11:24，152.97 秒）仍 **1 failed / 301 passed / 4 skipped（306 文件）；1 failed / 6776 passed / 14 skipped（6791 项）**，退出码 1；这次失败是同文件的 heartbeat 用例，期待 total timeout、实际 idle timeout。日志 `/tmp/task-c-full-final.log`。没有改用例、放宽阈值或修改无关生产逻辑；后续以 4 worker 全量核对负载影响。
+  - `corepack pnpm build:preview`：通过，退出码 0，生成 `.cache/preview-package`；仅既有 CJS/依赖打包提示。5 个本次 Host 源文件与 preview/src/host 逐字节一致（5/5）；没有正式 build、Desktop 链接更新。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid，退出码 0；指定 Git `diff --check` 通过。
+  - 获准沙箱外 `corepack pnpm vitest run --maxWorkers=4`（23:14:13，156.23 秒）：**Test Files 302 passed / 4 skipped（306）；Tests 6777 passed / 14 skipped（6791）**，退出码 0，无失败。日志 `/tmp/task-c-full-4workers.log`。仅限制测试进程并发，未改计时阈值、未跳过新增用例。默认并发两轮未全绿的风险保留，不把本轮结果描述为默认命令通过。
+  - 最终严格校验与指定 Git diff --check 均通过；新增 8.7/8.8 完成，本变更整体仍有其他真实平台验收待办，不归档。未执行真实 CLI 更新、账号/模型或 Desktop/Windows 实机验收；未写 ~/.dsh 真实路径记录；未提交 Git。Client、UI 文档和已有其他改动由主会话维护，本轮未触碰。
+
+- [x] 8.9 任务 D：下载网络中断续传、慢速重连与外部命令证据重跑
+  - 网络异常/提前 EOF 与停滞共用 200 次和 2 小时；新增单一 100,000 B/s 阈值，确认 Range 能力的 10 秒窗口低于阈值才重连，保留已写入字节；200 次耗尽仍进展则不断开，真正停住 10 秒失败。无 Range 声明或已忽略 Range 时不按慢速中断，外部命令不因慢速或无输出重跑。
+  - executor 在脱敏/32 KiB 显示截断之前流式识别中断，跨块窗口 256 字符；原 argv 重跑必须在进程范围退出及版本核对后，身份改变/清理未确认/无证据/版本前进不重跑，取消和 2 小时边界保留。新增可选 progress.retryCount，输出区复用“已自动重试 N 次”；未改 Client。
+  - 本轮新增 3 个模拟文件，最终合计 68 项：interruption 44、local-artifacts 18、slow-download 6。包含下载各类中断、TLS/HTTP/206/长度拒绝、200/2 小时、原始超长输出、跨块证据、退出 0/非零、清理隔离、取消、慢速阈值、预算耗尽后继续/真正停住、外部慢速不重跑。
+- [x] 8.10 任务 D：逐个核实官方本地工件入口并接管可支持的下载
+  - 任务 D 初版（接管决策已由任务 D 续 §9 覆盖）：14 CLI 审计表、原始脚本行号与 MiMo 方案写入本变更 design.md；Unix 默认原生 OpenCode V1、OMP 和 TRAE public 接管官方工件下载/校验后交官方本地入口，实际安装版本必须等于已锁定工件目标；TRAE 首次 Unix 安装也交 offline-install。只使用内置模板、受限发布源与固定签名资产主机。npm 主包接管、其他归属与手动安装范围保留。
+  - 用户追加要求将 MiMo 接管留主会话决定：最终代码明确不启用，保留原生中断重跑；设计列出官方 --binary 和原脚本 335–368 行步骤，无需复刻安装。TRAE 离线模式关闭自身自动更新，输出/文档均明确。
+  - 网络实际仅匿名 GET 5 个官方脚本（MiMo、TRAE v2、OpenCode、OMP、Claude，另读 TRAE 旧 install.sh），HEAD MiMo zip 200/33,817,652 B/Accept-Ranges: bytes，未 GET 二进制或执行脚本。初次沙箱 OpenCode GET 为 DNS 错误，获准沙箱外重试成功。
+  - 只读见外部 MiMo 临时目录 2 个、各 1 文件：11,091,327 B 与 27,181,941 B，合计 38,273,268 B；未删除。实机更新退出和原安装完好由用户提供，本轮没有执行真实更新。
+- [x] 8.11 任务 D：模拟、类型、全量、隔离构建与严格校验，记录边界
+  - `corepack pnpm typecheck`：最终含慢速规则通过，Host/Client against DSH 0.2.2-rc.2，退出码 0；日志 `/tmp/task-d-typecheck-final2.log`。
+  - `corepack pnpm vitest run tests/cli-management`：最终 **17 files passed；539 tests passed**，0 failed/0 skipped，3.50 秒，退出码 0；`/tmp/task-d-related-final2.log`。
+  - 获准沙箱外 `corepack pnpm vitest run`（23:46:12）：最终 **305 files passed / 4 skipped（309）；6845 tests passed / 14 skipped（6859）**，0 failed，103.28 秒，退出码 0；`/tmp/task-d-full-final2.log`。使用默认并发，没有排除用例或改计时阈值。
+  - 本地工件目标版本一致性补充前的全量（23:41:18）也通过：**305 files passed / 4 skipped（309）；6844 tests passed / 14 skipped（6858）**，78.95 秒，退出码 0；`/tmp/task-d-full-final.log`。补充对应模拟后重新执行上一条全量。
+  - 新增慢速要求前的中间全量（23:37:29）：**304 files passed / 4 skipped（308）；6839 tests passed / 14 skipped（6853）**，82.54 秒，退出码 0；`/tmp/task-d-full.log`。仅作中间记录，最终验收以上一条为准。
+  - `corepack pnpm build:preview`：通过、退出码 0，仅隔离 `.cache/preview-package`；8 个相关源码与隔离包逐字节一致（8/8），日志 `/tmp/task-d-preview-final.log`；既有 CJS/打包提示，没有正式 build/更新 Desktop 链接。`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid、退出码 0；指定 Git diff --check 通过。
+  - 中间失败保留：首次 typecheck 的闭包 file 可选类型错误已修正；首轮关联 470 passed/1 failed 是退出码被版本错误覆盖，已修复错误优先级；中断新文件首轮 31 passed/11 failed 为逐字符证据窗口拼接缺陷，修复后全过；接管首轮 80 passed/3 failed 为模拟 HTTP Header/依赖路径误用中文，改用明确模拟 ASCII 路径后全过。没有修改无关生产逻辑来规避失败。
+  - README 中英、doc/design.md 与本变更规格/设计同步。未改 src/client/**、doc/settings-ui-design.md、PRD 或任务 C 其他文件；Client 顶层及设置设计文档哈希 70/70 与任务开始时一致；未提交 Git。真实 CLI/安装器、模型/账号、Desktop、Windows/Linux 实机验证均未执行；不归档。
+  - 主会话桌面更新追加信息核对（23:50:12）：只读确认 `desktop-update.ts` 已使用单个 `-R=anchor …` 参数，清理失败保留原 CliOperationError 码并附 errno/路径；没有覆盖该文件及其测试。补跑 `corepack pnpm vitest run tests/cli-management-desktop-update.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-interruption.test.ts`：**3 文件、244 项通过**（桌面 106 + 全部更新 94 + 中断 44），0 failed/0 skipped，1.08 秒，退出码 0；日志 `/tmp/task-d-desktop-followup.log`。
+  - 用户补充签名失败后 `cli-management/desktop-update-XXXX` 约 366 MB 残留，原因未明。本轮仅记录用户实机证据，未定位实际目录、未删除；保留原错误码的修改不等于清理失败根因已解决。任务 D 的 downloads/local-* 清理不扩展到桌面暂存目录。
+- [ ] 8.12 MiMo 与 OMP 本地交接真实验收（任务 D 续已授权实施，实机复测留主会话）
+  - 任务 D 续已批准并实施 MiMo macOS 默认原生 zip/--binary 接管；本项仅剩实机验收，仍未执行。OMP PI_BUILD_URL 本地交接也需实机复测；用户提供原生 omp update 16.4.4→18.20.0 成功不能替代交接验证。
+  - 2026-11-14 主会话：MiMo 接管实机通过（0.1.15 → 0.1.17，来自 cnbj1.fds.api.xiaomi.com，content-md5 校验，证据见 7.3）。（未执行：OMP PI_BUILD_URL 交接——本机 OMP 已是 18.20.0，没有可更新版本可测。）
+
+  - 最终 OpenSpec 共 52 子任务：41 完成、11 未完成（含 MiMo 8.12 及此前真实验收缺口）；本轮不归档。工作区结束时另见 desktop-update.ts 及其测试的并行修改，本轮未触碰；上述全量数字仅对应实际记录的测试运行。
+
+- [x] 8.13 修复实机验收发现的桌面应用暂存清理、Codex 安装脚本跳转与笼统报错
+  - 桌面应用（`desktop-update.ts`、首次安装 `desktop.ts`）的文件操作改走新增的 `src/host/cli-management/physical-fs.ts`（Electron 下取 `original-fs`，普通 Node 不变），避免 `app.asar` 被当作目录导致 `ENOTEMPTY` 回滚；`desktop.ts` 的 codesign 要求同样改成单个 `-R=…` 参数。
+  - Codex 安装脚本地址改为 `https://releases.openai.com/codex/install.sh`；下载遇到跳转（`redirect: 'error'`）时报 NETWORK「官方下载地址 <host> 已跳转到其他位置，插件不跟随跳转」，不再落到「更新失败，请检查网络…」。
+  - 测试（模拟）：新增 `tests/cli-management-physical-fs.test.ts` 3 项、`tests/cli-management-download.test.ts` 跳转 1 项；`tests/cli-management-desktop.test.ts` 断言改为 `-R=`。`corepack pnpm typecheck` 通过；`corepack pnpm vitest run tests/cli-management` 20 文件 594 项通过；页面相关 `tests/cli-update-page.test.tsx tests/client-i18n.test.tsx tests/cli-management` 636 项通过。真实复测见 7.3。
+  - 2026-11-14 01:07 全量 `corepack pnpm vitest run`：313 文件（309 通过、4 跳过）、6954 项通过、14 项跳过，0 失败；退出码 1，原因是 `tests/codebuddy-account.test.ts` 满载时 1 个未处理拒绝（临时目录 lstat ENOENT），该文件与对应源码本轮未改，单独连跑 3 次各 76 项全过、无错误。`corepack pnpm build:preview` 成功；`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过（提示主任务 8 子任务超过 12 个）。
+
+## 9. 任务 D 续与多源恢复 〔后端｜4h｜前置 8〕
+
+- [x] 9.1 任务 D 续：MiMo 接管、撤销 TRAE 离线接管与单次校验重下
+  - 已按用户授权实施；MiMo macOS 默认原生更新使用内置 FDS zip 与官方脚本 --binary，先完成下载再启动安装计时，保留维护锁、身份/目标版本复核；追加自动换源后校验长度、content-md5 与 zip 结构，同源 MD5 不代表独立签名。Linux/Windows、非默认布局保持原归属，首次安装范围不扩张。
+  - TRAE CN 更新回原生 update --channel --version 加证据重跑，首次安装回既有官方脚本，删除所有 offline-install 接管分支；不关闭其自动更新。OMP 保留 PI_BUILD_URL，差别、脚本行号与风险同步 design.md。
+  - 完整文件长度/摘要失败删临时文件后干净重下一次，不占用/重置恢复次数或重置 2 小时；HTTP/证书/Range 协议及缓存上限仍直接失败。README 中英、doc/design.md 和增量规格同步。
+- [x] 9.2 任务 D 续：模拟回归、全量校验、隔离构建与交付证据
+  - 首轮聚焦模拟 2 文件、33 passed / 3 failed（36）；3 项仅断言漏了 CliOperationError 固有 INTEGRITY_MISMATCH 前缀，修正测试断言，不改生产错误格式。日志 /tmp/task-d-cont-focused.log。
+
+  - 中间关联：/tmp/task-d-cont-related.log 为 550 passed / 2 failed（552），两项旧夹具复用了已消费的 Response；改为每次返回新 Response 后 17 文件 552 项通过（23:57:57，3.62 秒，/tmp/task-d-cont-related-final.log）。npm 通用化首轮 572 passed / 4 failed（576，/tmp/task-d-npm-related-initial.log）是旧夹具未模拟新增 HEAD/ETag，补齐协议夹具并保留恶意字节、取消及 30 秒准备预算回归。
+  - 中间全量（未含后续多源追加，23:58:12）：305 files passed / 4 skipped（309），6858 passed / 14 skipped（6872），85.23 秒、退出 0；/tmp/task-d-cont-full.log。
+  - 中间全量（MiMo 多源，00:06:55）：305 files passed / 1 failed / 4 skipped（310），6879 passed / 3 failed / 14 skipped（6896），286.60 秒；/tmp/task-d-final-full.log。失败在未由本任务修改的 pi-omp-adapter.test.ts：Pi/OMP resume identity 两项 15000ms 超时、OMP metadata cleanup 的 catalog-started ENOENT；未降低计时阈值、未排除测试，最终全量另行重跑。
+  - 通用多源阶段 typecheck 已通过（Host/Client against DSH 0.2.2-rc.2，退出 0，/tmp/task-d-universal-typecheck.log）。该阶段关联 `corepack pnpm vitest run tests/cli-management`：19 文件、588 项通过，0 failed/0 skipped，00:13:56，23.74 秒、退出 0；/tmp/task-d-universal-related.log。
+  - 通用多源阶段 `corepack pnpm build:preview` 通过、退出 0，仅隔离 .cache/preview-package；7 个相关 Host 文件和共享协议共 8/8 与隔离包逐字节一致，/tmp/task-d-universal-preview.log。未正式 build 或修改 Desktop 链接。
+  - 本续任务网络只额外执行 8 次获准沙箱外匿名 HEAD（npm 标准地址/CDN/官方普通及 Range HEAD/scoped Codex 跳转共 5 次，三个官方桌面包各 1 次），未 GET 工件或执行真实安装器；npm 首次沙箱 HEAD DNS 失败后申请升级。所有新测试均为模拟。
+
+  - scoped npm 的额外 HEAD 发现 CDN 把 @openai 编码为 %40openai，已修正标准路径生成及模拟。正在运行的默认并发全量（00:17:18）未保持固定源码快照，记录为中间结果：305 files passed / 3 failed / 4 skipped（312），6944 passed / 4 failed / 14 skipped（6962），1 unhandled error，280.66 秒、退出 1；/tmp/task-d-universal-full.log。失败含 npm 双向慢速 2 项、native-agy-acp 1 项、pi-omp-adapter 1 项；不作为最终验收证据。
+  - scoped 修正后 typecheck 再次通过，/tmp/task-d-delivery-typecheck.log；关联再次 19 文件 588/588 passed，0 failed/0 skipped，00:22:28，10.32 秒、退出 0，/tmp/task-d-delivery-related.log。冻结本任务 14 个源码/测试文件哈希；最终全量改用 maxWorkers=4 执行全部用例，不改测试超时、不排除文件。
+
+  - 固定源码 maxWorkers=4 全量（00:24:04）：307 files passed / 1 failed / 4 skipped（312），6947 passed / 1 failed / 14 skipped（6962），209.98 秒、退出 1；/tmp/task-d-delivery-full.log。唯一失败 native-agy-acp 的 sandbox argv 断言，该文件单独复跑 42/42 passed（12.15 秒，/tmp/task-d-delivery-failure-recheck.log）；根因未定位，不据单跑抹去全量失败。
+  - 固定源码单 worker 全量（00:29:57）：`corepack pnpm vitest run --maxWorkers=1`，308 files passed / 4 skipped（312），6948 passed / 14 skipped（6962），0 failed，449.30 秒、退出 0；/tmp/task-d-delivery-full-serial.log。未改测试、阈值或排除文件。
+  - 交付复核发现操作中修改 source 设置会影响已启动操作。新增官方/custom 双向设置切换模拟先复现：11 passed / 2 failed（13），/tmp/task-d-settings-regression-before.log。修复为 launch 同步锁定 registry 与 automaticSources，首次安装规划/重查、npm 更新与 MiMo 交接都使用快照；不变更下一次操作生效规则。
+  - 该边界修复后关联 `corepack pnpm vitest run tests/cli-management`：19 文件、590/590 passed，0 failed/0 skipped，00:38:43，3.72 秒、退出 0；/tmp/task-d-complete-related.log。typecheck 再次通过，/tmp/task-d-complete-typecheck.log；随后重新跑完整交付验证。
+
+  - **最终全量（包含操作设置快照修复，00:39:47）**：获准沙箱外 `corepack pnpm vitest run --maxWorkers=1`，**308 files passed / 4 skipped（312）；6950 tests passed / 14 skipped（6964）；0 failed**，425.80 秒、退出 0；/tmp/task-d-complete-full.log。全部文件参与，没有修改超时或跳过新增用例；本任务 14 个源码/测试文件的运行前后哈希 14/14 一致。
+  - 最终 typecheck、关联 19 文件 590 项、build:preview、严格规格校验及指定 Git diff --check 均通过；完整命令日志使用 /tmp/task-d-complete-{typecheck,related,preview,spec}.log。隔离构建后源码 8/8 与两份 README 2/2 核对；保护文件（Client、设置设计、PRD、主会话桌面更新等）哈希 95/95 保持一致。本续任务 20 个文件，不提交 Git、不改版本、不正式 build、不更新 Desktop 链接。
+  - 整体 change 共 60 子任务，49 完成、11 未完成；保留 8.12 MiMo/OMP 本地交接实机及此前平台/界面验收缺口，不归档。新增 progress.sourceHost 前端显示由主会话负责；桌面 366 MB 残留原因仍未定位，未删除外部安装器目录。网络范围仅上述匿名 HEAD，新增测试全部模拟；无真实 CLI 更新/安装、账号/模型或 Desktop/Windows/Linux 实机验收。
+
+- [x] 9.3 任务 D 续追加：MiMo 与 npm 通用自动换源、身份一致性与校验
+  - 通用 sources 列表已加入下载器，MiMo 传入内置 host/路径白名单源，API 域名优先、原域名备用；latest 同步回落。每次切换前 HEAD 核对首个成功源的长度/ETag/content-md5，Range/If-Range 保留字节，GET 身份/206 范围严格复核；MD5 支持 hex/base64，失败复用一次干净重下。
+  - 3c 追加后 npm 主 tarball 同步接入；所选源/follow 当前 registry 优先、custom 关闭换源（含 MiMo），官方 sha512 始终作为最终校验，不采用镜像 integrity。镜像标准 URL 的精确 CDN 跳转及官方 Range HEAD 总长度通过匿名 HEAD 核实；GET 不跟随重定向。
+  - 可选 progress.sourceHost 已加入，前端显示留主会话；不改 src/client/**。三个桌面包匿名 HEAD 均 200，长度 305,360,326 / 447,126,372 / 478,466,147 B，未获取第二官方同对象域名，保持单源；详情在 design.md。
+  - 全部新增网络/归档/安装测试均为模拟；用户提供两源实机速度、长度/MD5 一致性记入 design.md，未冒充本轮实测。其他候选仅列 Codex/Grok 官方脚本双地址依据，未配置多源、未推断实测同对象一致。
+
+## 10. macOS 系统代理注入（任务 F） 〔后端｜4h｜前置 2,4〕
+- [x] 10.1 新增有界 scutil 解析来源，共享 Windows 缓存、环境优先级与进程清理，接入 darwin 后端及 Host 查找
+  - 新增 system-proxy.ts（共享接口、缓存、环境规则、有界读与生命周期）、macos-system-proxy.ts（仅根字典，HTTPS 优先再 HTTP），Windows 保留旧导出兼容；index darwin 接线，停用 close 等待读取退出并撤销 lookup。5 秒/64 KiB/500 ms grace/15 秒按需 TTL；同步 current 不等待、终端与 Host fresh 等待；失败或关掉清空旧值。
+  - 主机仅 hostname/IPv4/带括号 IPv6 与 1–65535 端口；PAC/自动发现/SOCKS 无显式 HTTP(S) 时不猜不注入，每来源一次固定诊断；保留已有代理及显式 undefined 决定权。ExceptionsList 的主机、精确 IP 与 *.domain 转点前缀（含 .local），CIDR/169.254/16/任意通配等丢弃；回环始终加入注入环境。host-fetch 同时支持 macOS Host/Pi/OMP，保留 User-Agent。
+- [x] 10.2 模拟回归覆盖解析、环境/显式删除、回环、darwin/linux、Host 查找、刷新与清理
+  - 新增 tests/macos-system-proxy.test.ts：54 项全部为模拟，覆盖有效/关闭/异常代理、HTTPS→HTTP、PAC/自动发现/SOCKS、IPv6/异常端口、例外各形态、环境/显式删除、回环、darwin/linux、Host 查询、User-Agent、刷新合并/失效/失败/超限/超时及停用清理；另更新 Windows 既有测试以匹配共享 Host 查找。
+  - 首轮沙箱内 2 文件、65 passed / 2 failed（67），其中本轮 parser 对 IPv6 zone id 的 Invalid URL 已修正；另一项为 Windows CONNECT 模拟 listen EPERM（连带 15 秒超时与 1 unhandled error）。日志 /tmp/cliworker-F-proxy-tests.log，不作为通过证据。
+  - 修正后沙箱内 macOS 文件 54/54 passed，1.27 秒；获准沙箱外 `corepack pnpm vitest run tests/macos-system-proxy.test.ts tests/windows-system-proxy.test.ts`：2 文件、68/68 passed，0 failed/0 skipped，0.887 秒，退出码 0；/tmp/cliworker-F-proxy-tests-final.log。
+  - 沙箱外 `corepack pnpm vitest run tests/native-process.test.ts tests/native-launch.test.ts tests/windows-hidden-process.test.ts tests/windows-codex-launch.test.ts tests/windows-codex-background.test.ts tests/hermes-nous-proxy.test.ts tests/hermes-nous.test.ts`：7 文件、126/126 passed，0 failed/0 skipped，2.96 秒，退出码 0；/tmp/cliworker-F-related-tests.log。
+- [x] 10.3 只读运行一次本机 scutil 经解析器，核对主机端口及 NO_PROXY 条目数
+  - 沙箱内 node --import tsx 运行解析时读数为无代理；获准沙箱外只读运行一次 `/usr/sbin/scutil --proxy`，参数数组、5 秒/64 KiB，经 parseScutilProxy/proxyEnvironment，仅输出主机 127.0.0.1、端口 7897、NO_PROXY 条目数 5；退出码 0，stderr 0 B。结果 /tmp/cliworker-F-local-proxy-live.json。没有输出 scutil 原文或其他配置，没有修改系统/launchd，没有真实 CLI/模型/账号调用。
+- [x] 10.4 同步中英 README、架构设计、增量规格及进程覆盖面
+  - README.md/README.en.md、doc/design.md、本变更 design.md/specs/cli-update/spec.md 同步；覆盖表与 curl/Node 依据见 design.md 决定 F。只核对调用链，不冒充真实 CLI 验收。
+  - 共用 backend 覆盖 Worker、账号终端、更新/安装命令、版本/账号/模型探测；native/terminal/private/Pi/OMP helper 的子进程继承已注入环境。例外：系统代理读取用 raw backend 避免递归；OMP 私有离线 --help 主动移除网络变量；本地文件权限/进程身份/签名挂载命令不需要网络；WorkBuddy GUI 由操作系统负责网络。未改 src/host/cli-management/** 或 src/client/**。
+  - 并行任务把原 8.13/8.14 调整为第 9 组，故 F 使用第 10 组；严格校验发现第 9 组职能“开发与测试”无效，仅改为其实际职能“后端”，不改该组内容和勾选。
+- [x] 10.5 执行 typecheck、相关测试、获准沙箱外全量 vitest、隔离 preview 与严格规格校验并记录确切结果
+  - `corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.2 通过，退出码 0；/tmp/cliworker-F-typecheck.log。
+  - 获准沙箱外 `corepack pnpm vitest run`（00:10:06）：311 文件中 304 passed / 3 failed / 4 skipped；6950 项中 6929 passed / 7 failed / 14 skipped，276.03 秒，退出码 1；/tmp/cliworker-F-full-vitest.log。全量未达到零失败，本项勾选仅表示已执行并记录完整结果。
+  - 全量失败文件（均非本轮修改）：native-agy-acp.test.ts 3 项（探测 argv/审批标志断言）；native-agy-account-permissions.test.ts 1 项（模拟 audit.jsonl ENOENT）；native-bridge-time-limit.test.ts 3 项（模拟 pid ENOENT 2 项、审批 hold 超时 1 项）。这些测试直接启动本地 Node 夹具，不经过此次 Host/nativeProcessBackend 代理注入；未发现直接关联，失败根因未定位，不能凭此宣称全量通过。
+  - 获准沙箱外 `corepack pnpm vitest run tests/native-agy-acp.test.ts tests/native-agy-account-permissions.test.ts tests/native-bridge-time-limit.test.ts`：3 文件、62/62 passed，26.55 秒，退出码 0；/tmp/cliworker-F-full-failures-recheck.log。保留上条全量失败，未改用例、超时或并发阈值。
+  - `corepack pnpm build:preview`：通过、退出码 0，仅 .cache/preview-package；6 个本轮 Host 文件与隔离源码逐字节一致（6/6），/tmp/cliworker-F-preview.log；未正式 build 或更新 Desktop 链接。`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：valid，退出码 0；/tmp/cliworker-F-spec-validate-final.log。指定文件 git diff --check 通过。
+  - 边界：全量零失败尚未取得；真实 CLI/安装/更新、账号/模型、Desktop、Windows/Linux 实机验收没有执行，不以模拟/只读配置证据代替。保留整个 change 其他未完成项，不归档；不提交 Git、不推送、不改版本或用户配置。

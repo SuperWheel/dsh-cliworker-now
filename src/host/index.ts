@@ -98,7 +98,9 @@ import {
   type RuntimeConfig,
 } from './process.ts'
 import { nativeProcessBackend } from './native-process.ts'
-import { hostProxyLookup, WindowsSystemProxySource } from './windows-system-proxy.ts'
+import { WindowsSystemProxySource } from './windows-system-proxy.ts'
+import { MacOSSystemProxySource } from './macos-system-proxy.ts'
+import { hostProxyLookup } from './system-proxy.ts'
 import { setHostProxy } from './host-fetch.mjs'
 import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
 import { CliExecutablePathStore } from './cli-executable-paths.ts'
@@ -346,9 +348,10 @@ export class CliWorkerService extends TypertRemoteService {
       config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
     this.options.cliMaintenance = new CliMaintenance()
     this.options.cliExecutablePaths = new CliExecutablePathStore(stateDirectory)
-    // Windows: CLIs and the Host's own HTTPS reads follow the Internet Options proxy.
+    // macOS/Windows: CLIs and Host HTTPS reads share the system proxy.
     const raw = nativeProcessBackend(ctx.subprocess)
-    const systemProxy = process.platform === 'win32' ? new WindowsSystemProxySource((spec) => raw.spawn(spec)) : undefined
+    const systemProxy = process.platform === 'win32' ? new WindowsSystemProxySource((spec) => raw.spawn(spec))
+      : process.platform === 'darwin' ? new MacOSSystemProxySource((spec) => raw.spawn(spec)) : undefined
     this.backend = nativeProcessBackend(ctx.subprocess, process.platform, { systemProxy })
     if (systemProxy) {
       void systemProxy.refresh()
@@ -740,6 +743,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
+          systemProxy?.close(),
           this.cliManagement.close(),
           this.runtime.close(),
           this.accounts.close(),

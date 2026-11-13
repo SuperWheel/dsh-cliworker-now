@@ -89,6 +89,8 @@ Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登�
 
 Qoder/CN 保留官方分发入口；主目录中若存在名为 `update` 的路径，Host 会拒绝启动更新并说明原因，避免被分发到 IDE。Grok 官方 bin 入口链接到 downloads 实体时，以官方 stable 文本查询目标并执行带版本参数的自带更新。WorkBuddy 的 CLI 版本与应用版本分开读取，官方 feed 返回无更新时显示「已是最新」。上述自动更新新增路径均只有模拟回归证据，真实更新验收另列于任务记录。
 
+插件托管的 CLI 下载支持网络中断续传；已确认支持 Range 时，10 秒窗口低于 100 KB/s 会重新连接。恢复最多 200 次，用完仍在前进则继续下载，下载总上限 2 小时。外部命令仅在中断证据和退出/版本核对满足条件后重试，不因慢速重跑。长度或摘要校验失败会删除临时文件、干净重下一次，仍不符才失败，不消耗 200 次。MiMo macOS 默认原生安装由插件下载官方 zip，首选小米 FDS API 域名，慢速或中断时在两个内置官方源间切换；换源先核对 HEAD 长度、ETag/content-md5，续传保留 Range 并复核响应身份。完成后校验长度、content-md5 和 zip 结构，再交官方 `--binary` 安装；同源 MD5 不代表独立签名。npm 主 tarball 支持官方 registry 与 npmmirror 自动换源，始终按官方 sha512 校验；所选源优先，“跟随 npm”以当前 registry 为首选，“自定义地址”关闭自动换源；操作中修改设置从下一次操作生效。进度提供当前下载 host。桌面包未找到已核实同对象备用域名，保持单源。TRAE CN 保持原生更新，不使用会关闭自动更新的离线模式。OMP 默认原生安装保留官方 `PI_BUILD_URL` 本地交接。
+
 先结束活动任务并完全退出 Harness，再执行：
 
 ```sh
@@ -225,9 +227,9 @@ Desktop 不读取 `.zshrc`。插件会识别常见安装位置；仍找不到时
 </details>
 
 <details>
-<summary><strong>Windows 上登录页面打不开，或已登录却显示无可用模型？</strong></summary>
+<summary><strong>macOS / Windows 上网络请求失败、登录页面打不开，或已登录却显示无可用模型？</strong></summary>
 
-很多代理软件在 Windows 上只打开「Internet 选项」里的系统代理，命令行工具读不到。插件会在你没有设置 `HTTP_PROXY`/`HTTPS_PROXY` 时读取这个系统代理，交给它启动的 CLI 和登录窗口，插件自己查询模型目录时也经过它；本机地址始终直连。你自己设置了代理环境变量时以你的设置为准。关掉系统代理后，约 15 秒后新启动的 CLI 不再使用它。
+从 Dock 打开的 macOS Desktop 不一定继承终端里的代理变量；Windows 代理软件也常只打开「Internet 选项」里的系统代理。插件会读取 macOS 系统网络代理或 Windows Internet 选项，把有效的显式 HTTP(S) 代理交给它启动的 CLI、登录终端、更新/安装命令和探测进程，插件自身的 HTTPS 请求也使用它；注入的例外列表始终包含本机回环地址。已有 `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`（含小写）或启动配置明确删除这些变量时，以已有决定为准，不覆盖。关掉或修改系统代理后，约 15 秒的按需缓存过期后刷新；同步启动使用上次读数，登录终端与 Host 查询等待刷新。macOS 只有 PAC、自动发现或 SOCKS 而没有有效显式 HTTP(S) 代理时不会注入，并记录一次诊断；不会执行 PAC 或修改系统设置。
 
 Hermes Nous 的模型与思考强度按当前账号目录读取，不依赖 Hermes 配置中的默认模型。若提示「Nous 元数据请求被网络服务拦截」，请检查代理或网络后刷新；这条提示不表示登录已失效。
 

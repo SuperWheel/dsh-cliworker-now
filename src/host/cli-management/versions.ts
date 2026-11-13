@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 import type { ActiveCliId } from '../../shared/types.ts'
-import { OFFICIAL_NPM_REGISTRY, customRegistryProblem } from '../../shared/cli-management.ts'
+import { OFFICIAL_NPM_REGISTRY, NPMMIRROR_REGISTRY, customRegistryProblem } from '../../shared/cli-management.ts'
 import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS, type ProcessBackend, type RuntimeConfig } from '../process.ts'
 import type { InstallationIdentity } from './identity.ts'
@@ -169,12 +169,23 @@ export class ReleaseClient {
     if (!feed) throw new ReleaseError('NO_RELEASE_SOURCE')
     const os = this.platform === 'win32' ? 'windows' : this.platform, cpu = this.arch === 'x64' ? 'amd64' : this.arch
     if (!['darwin', 'linux', 'windows'].includes(os) || !['arm64', 'amd64'].includes(cpu) || os === 'windows' && cpu === 'arm64' && (cli === 'qoder' || cli === 'qodercn')) throw new ReleaseError('NO_RELEASE_SOURCE')
-    const url = feed.url.replace('{platform}', os).replace('{arch}', cpu)
+    let url = feed.url.replace('{platform}', os).replace('{arch}', cpu)
     let version: unknown
     const sha = (value: unknown, size: number) => typeof value === 'string' && new RegExp(`^[a-fA-F0-9]{${size}}$`).test(value)
     const https = (value: unknown) => typeof value === 'string' && !customRegistryProblem(value)
     try {
-      if (feed.kind === 'text') version = (await this.text(url, signal)).trim()
+      if (feed.kind === 'text') {
+        let failure: unknown
+        for (const candidate of [url, ...feed.fallbackUrls ?? []]) {
+          signal.throwIfAborted()
+          try {
+            const value = (await this.text(candidate, signal)).trim()
+            if (!validVersion(value)) throw new ReleaseError('RELEASE_UNREACHABLE')
+            version = value; url = candidate; break
+          } catch (error) { signal.throwIfAborted(); failure = error }
+        }
+        if (!version) throw failure
+      }
       else {
         const data = await this.json(url, signal) as Record<string, any>
         switch (feed.kind) {
@@ -221,13 +232,25 @@ export class ReleaseClient {
     return official
   }
   /** The chosen source supplies bytes; only the official registry supplies trust. */
-  async artifact(cli: ActiveCliId, version: string, registry: string, signal: AbortSignal): Promise<{ url: string; integrity: string }> {
+  async artifact(cli: ActiveCliId, version: string, registry: string, signal: AbortSignal, automaticSources = false): Promise<{ url: string; integrity: string; sources?: string[]; sourceRedirects?: Record<string, string> }> {
     const pkg = CLI_SOURCES[cli].npm
     if (!pkg || !validVersion(version)) throw new ReleaseError('NO_RELEASE_SOURCE')
-    const read = async (base: string) => z.object({ name: z.literal(pkg), version: z.literal(version), dist: z.object({ integrity: z.string().max(1024), tarball: z.string().max(4096) }) }).parse(await this.json(new URL(`${encodeURIComponent(pkg)}/${version}`, base.endsWith('/') ? base : base + '/').href, signal)).dist
+    const read = async (base: string) => z.object({ name: z.literal(pkg), version: z.literal(version), dist: z.object({ integrity: z.string().max(1024).optional(), tarball: z.string().max(4096) }) }).parse(await this.json(new URL(`${encodeURIComponent(pkg)}/${version}`, base.endsWith('/') ? base : base + '/').href, signal)).dist
     const official = await read(OFFICIAL_NPM_REGISTRY)
+    if (!official.integrity) throw new ReleaseError('RELEASE_UNREACHABLE')
+    if (automaticSources) {
+      const selected = new URL(registry.endsWith('/') ? registry : registry + '/').href
+      const registries = [...new Set([selected, OFFICIAL_NPM_REGISTRY, NPMMIRROR_REGISTRY])]
+      const name = pkg.split('/').at(-1)!, filename = `${name}-${version}.tgz`
+      const sources = registries.map(base => new URL(`${pkg}/-/${filename}`, base).href)
+      if (sources.some(customRegistryProblem)) throw new ReleaseError('RELEASE_UNREACHABLE')
+      // Anonymous HEAD verified the registry's exact standard-path -> CDN form.
+      // Only this generated target may redirect; GET itself remains redirect:error.
+      const mirror = new URL(`${pkg}/-/${filename}`, NPMMIRROR_REGISTRY).href
+      const sourceRedirects = { [mirror]: `https://cdn.npmmirror.com/packages/${pkg.split('/').map(encodeURIComponent).join('/')}/${version}/${filename}` }
+      return { url: sources[0]!, sources, sourceRedirects, integrity: official.integrity }
+    }
     const selected = new URL(registry).href === OFFICIAL_NPM_REGISTRY ? official : await read(registry)
-    if (selected.integrity !== official.integrity) throw Object.assign(new Error('下载源校验值与官方源不符'), { code: 'INTEGRITY_MISMATCH' })
     if (customRegistryProblem(selected.tarball)) throw new ReleaseError('RELEASE_UNREACHABLE')
     return { url: selected.tarball, integrity: official.integrity }
   }

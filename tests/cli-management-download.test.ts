@@ -70,3 +70,52 @@ it('模拟：24 小时与 2 GB 缓存清理，只处理私有目录的普通片�
   await prepareDownloads(root)
   expect(readdirSync(directory).sort()).toEqual([recent.split('/').at(-1)!, 'unrelated.txt'].sort())
 })
+
+it.each(['length', 'sha256', 'sha512'])('模拟：%s 不符删除片段干净重下一次，不消耗中断次数', async mode => {
+  const root = temp(), progress = vi.fn(), output = vi.fn()
+  const fetcher = vi.fn(async (_url, init) => {
+    expect(init.headers.Range).toBeUndefined()
+    const files = readdirSync(join(root, 'cli-management/downloads'))
+    expect(files).toHaveLength(1); expect(statSync(join(root, 'cli-management/downloads', files[0]!)).size).toBe(0)
+    return new Response(fetcher.mock.calls.length === 1 ? 'bad' : 'abcdef')
+  })
+  const file = await downloadCliArtifact({ root, url: 'https://模拟.invalid/f', expectedBytes: mode === 'length' ? 6 : undefined, integrity: mode === 'length' ? undefined : sri('abcdef', mode), signal: control(), fetcher, progress, output })
+  expect(readFileSync(file, 'utf8')).toBe('abcdef'); expect(fetcher).toHaveBeenCalledTimes(2)
+  expect(progress.mock.calls.at(-1)![0].resumeCount).toBe(0); expect(output).toHaveBeenCalledOnce()
+})
+it.each(['length', 'sha256', 'sha512'])('模拟：%s 两次仍不符固定错误并删除所有失败文件', async mode => {
+  const root = temp(), fetcher = vi.fn(async () => new Response('bad'))
+  await expect(downloadCliArtifact({ root, url: 'https://模拟.invalid/f', expectedBytes: mode === 'length' ? 6 : undefined, integrity: mode === 'length' ? undefined : sri('abcdef', mode), signal: control(), fetcher, progress: vi.fn() })).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH', message: 'INTEGRITY_MISMATCH：下载的文件校验不通过' })
+  expect(fetcher).toHaveBeenCalledTimes(2); expect(readdirSync(join(root, 'cli-management/downloads'))).toEqual([])
+})
+it('模拟：干净重下保留既有网络重连计数，第二份仍可 Range 续传', async () => {
+  const root = temp(), progress = vi.fn()
+  const fetcher = vi.fn(async (_url, init) => {
+    const n = fetcher.mock.calls.length
+    if (n === 1) throw new TypeError('fetch failed')
+    if (n === 2) return new Response('bad')
+    if (n === 3) { expect(init.headers.Range).toBeUndefined(); return new Response(stream('abc', true), { headers: { 'content-length': '6' } }) }
+    expect(init.headers.Range).toBe('bytes=3-'); return new Response('def', { status: 206, headers: { 'content-range': 'bytes 3-5/6' } })
+  })
+  const file = await downloadCliArtifact({ root, url: 'https://模拟.invalid/f', integrity: sri('abcdef'), signal: control(), fetcher, progress })
+  expect(readFileSync(file, 'utf8')).toBe('abcdef'); expect(fetcher).toHaveBeenCalledTimes(4)
+  expect(progress.mock.calls.at(-1)![0].resumeCount).toBe(2)
+})
+it('模拟：校验失败后的重下可取消并删除片段', async () => {
+  const root = temp(), controller = new AbortController()
+  const fetcher = vi.fn(async () => {
+    if (fetcher.mock.calls.length === 2) controller.abort(new Error('模拟取消重下'))
+    return new Response('bad')
+  })
+  await expect(downloadCliArtifact({ root, url: 'https://模拟.invalid/f', expectedBytes: 6, signal: controller.signal, fetcher, progress: vi.fn() })).rejects.toThrow('模拟取消重下')
+  expect(fetcher).toHaveBeenCalledTimes(2); expect(readdirSync(join(root, 'cli-management/downloads'))).toEqual([])
+})
+
+it('模拟：官方地址跳转时不跟随，直接报出跳转原因而不是笼统失败', async () => {
+  const root = temp()
+  const fetcher = vi.fn(async () => { throw new TypeError('fetch failed: unexpected redirect') })
+  const error = await downloadCliArtifact({ root, url: 'https://moved.example/install.sh', integrity: sri(''), signal: control(), progress: vi.fn(), fetcher }).catch(value => value)
+  expect(error.code).toBe('NETWORK')
+  expect(error.message).toContain('moved.example 已跳转到其他位置')
+  expect(fetcher).toHaveBeenCalledOnce()
+})

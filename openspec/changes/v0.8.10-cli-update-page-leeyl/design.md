@@ -29,6 +29,27 @@
 
 ## Decisions
 
+### 决定 F：macOS 与 Windows 共用系统代理注入（2026-11-14）
+
+- 用户决定 macOS 与 Windows 一致。`system-proxy.ts` 提取共享来源接口、15 秒按需缓存、环境优先级、NO_PROXY 合并及 Host 查找；Windows 保留原导出兼容。`macos-system-proxy.ts` 以参数数组 `['/usr/sbin/scutil', '--proxy']` 读取，只解析根 dictionary，不执行 PAC、读取凭据或更改系统/launchd。
+- 两个平台复用 5 秒超时、64 KiB 输出预算、500 ms grace、失败即清除旧值、finally 终止并等待退出。首次在 Host 创建时刷新；同步 spawn 用 current，账号终端/Host 查询用 fresh，过期刷新合并为一个请求。停用 abort 来源并等待待处理读取，撤销全局 Host 查找。不新增持久化或定时轮询。
+- HTTPS 开启且主机端口有效优先，否则尝试 HTTP；主机仅合法 hostname、IPv4 或带括号 IPv6，端口为 1–65535，不接受 URL、认证信息或多个代理。所有代理都转为 `http://host:port`（HTTPSProxy 表示 HTTPS 流量使用的 HTTP 代理）。没有有效显式代理时 PAC/自动发现/SOCKS 不注入，生命周期内只报一次固定诊断；多数 CLI 不认 SOCKS 变量或语义不一。
+- ExceptionsList 保留主机、精确 IPv4/IPv6 与前导 `*.` 域名，后者转为点前缀，包括 `*.local` → `.local`；IPv6 去括号后用于 NO_PROXY。CIDR、169.254/16、10.*、<local>、主机端口等丢弃。依据：[curl NO_PROXY](https://curl.se/docs/manpage.html#--noproxy) 支持域名后缀、无括号 IPv6，但 CIDR 要求 curl 7.86+；[Node 24 代理支持](https://nodejs.org/docs/latest-v24.x/api/http.html#built-in-proxy-support) 的通用例外形式不包含 CIDR，因此不声称各 CLI 支持网段。始终合并回环三项，并保持继承/spec 决定代理（含显式 undefined）优先。
+- `nativeProcessBackend` 覆盖 Worker、账号终端、更新/安装命令与版本/模型探测；Host `hostFetch` 和 Pi/OMP 子进程读取在 darwin 启用 HTTP(S) 代理环境解析，保留 `User-Agent: node`。Linux 不创建来源，也不注入。禁止修改 cli-management 或 Client；不运行真实 CLI。只读本机 scutil 解析仅报告主机端口与 NO_PROXY 数量，自动测试均为模拟。
+- 回退仅撤回 Host 接线与该来源，无用户数据或系统设置需要迁移；不以模拟测试替代真实 CLI、模型、账号或 Desktop 验收。
+
+| 进程类别 | 注入路径或例外原因（源码核对，非真实 CLI 验收） |
+| --- | --- |
+| Worker、原生 helper、terminal/private bridge、Pi/OMP bridge | WorkerRuntime → backend spawn/spawnTerminal；其内部 native-transport 子进程继承已注入环境 |
+| 登录/退出/账号终端 | AccountManager → 同一 backend spawnTerminal/spawn |
+| 更新、首次安装、npm/brew/官方脚本及自带 update | CliManagementService → executor → 同一 backend.spawn；脚本及 git/curl 等后代继承 |
+| 版本、账号、模型探测与续期子进程 | adapters/captureCatalogMetadata、versions、账号模块 → 同一 backend；native helper 内探测继承 |
+| Host 发布源、下载与目录 HTTPS 请求 | hostFetch → setHostProxy(hostProxyLookup(source))；Pi/OMP 内部请求按继承的代理环境查找 |
+| 系统代理读取 | raw backend，避免系统代理探测递归 |
+| OMP 私有离线 --help 能力探测 | pi-omp-environment 主动创建无网络变量的离线环境，不需要访问网络 |
+| 文件权限/进程身份/桌面签名、挂载等本地命令 | 本地操作，不增加网络代理；desktop-update capture 不经后端，无网络命令无需注入 |
+| 打开 WorkBuddy 桌面应用 | workbuddy-desktop-open 启动已安装 GUI，网络由应用与操作系统管理，不等同 CLI 登录终端 |
+
 ### 决定 1：一个 Host 服务，多个子模块
 
 Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.effect` 清理时关闭。子模块拆成以下文件：
@@ -80,7 +101,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 ### 决定 4：执行只走参数数组与受控方法
 
 - npm 的运行时安装与 CLI 全局包前缀分开解析：解析 npm 启动器对应的 `npm-cli.js`，核对 npm 包清单与 bin 声明，读取 Node 原生程序文件并核对格式，不运行版本探测。优先使用 npm 启动器旁的 Node，否则解析 PATH 中的 Node；全局包前缀只作为 `--prefix` 目标，不要求前缀下存在 npm。
-- Host 从所选源的目标精确版本元数据取得主包 tarball 地址，使用 npm 官方源同版本的 sha512 校验真实下载内容；官方源也走完全相同的下载、续传和摘要校验路径。官方摘要不可得或摘要不符时拒绝安装，不降级为信任镜像摘要。校验后的私有文件改为 `.tgz`，以 `[node, npm-cli.js, 'install', '--global', '--prefix', 原前缀, 本地tgz, '--registry', 所选源]` 安装。显示的可读字节进度只对应 Host 下载的主包。
+- Host 自动换源时按所选 registry 的标准路径生成主包 tarball 地址（显式 custom 模式使用所选源元数据中的主地址），使用 npm 官方源同版本的 sha512 校验真实下载内容；官方源也走完全相同的下载、续传和摘要校验路径。官方摘要不可得或摘要不符时拒绝安装，不降级为信任镜像摘要。校验后的私有文件改为 `.tgz`，以 `[node, npm-cli.js, 'install', '--global', '--prefix', 原前缀, 本地tgz, '--registry', 所选源]` 安装。显示的可读字节进度只对应 Host 下载的主包。
 - Homebrew 用 `brew upgrade <包名>`，CLI 自带更新用其已核实的子命令。
 - Qoder/CN 官方分发入口仅认 `<home>/.qoder/entry/qoder`、`<home>/.qoder-cn/entry/qodercn`，不放行 entry 目录下其他名字。更新保留记录入口的 `[入口, 'update']` 与 homedir cwd，不猜测 PATH 分发得到的实体。执行器紧邻 spawn 前用 lstat 检查 `<home>/update`；存在任何文件、目录、符号链接或检查失败时拒绝启动，避免分发到 IDE；记录入口是指向分发器的符号链接也同样检查。不删除/改名用户路径。该预检不能原子阻止外部进程恰在检查与分发之间创建路径。
 - Grok 的记录入口精确为 `<home>/.grok/bin/grok` 且 realpath 在 `<home>/.grok/downloads/` 下时识别为 self-update；查询官方 stable 文本，并执行带目标版本的自带 update。
@@ -177,7 +198,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 ## PRD 5.3.1 全部自动更新决定（任务 A / B）
 
 - **发布源**：sources 固定官方地址，Host 仅替换操作系统/CPU 枚举；ReleaseClient 共用 3 并发、8 秒、512 KiB 流式预算，JSON 与纯文本都受限。npm/brew 归属优先原渠道；原生 OMP 使用现有自更新器读取的 npm latest，未采用语义不明确的另一份 build.stencil 版本。OpenCode V1 仍允许 32 MiB 兼容回退；Pi 不再回退旧适配版本。
-- **Codex**：独立安装选择下载 `https://chatgpt.com/codex/install.sh` 到 0700 私有目录、0600 文件，以 `/bin/sh <文件> --release <目标>` 和 `CODEX_NON_INTERACTIVE=1` 执行。研究未证明 `codex update` 能同时锁版和无交互，因此不用它。Windows 独立版对应安装器参数未核实，显示平台手动原因；Windows npm/brew 不受此限制。沿用官方脚本 HTTPS 信任边界，脚本不具有独立发布摘要。
+- **Codex**：独立安装选择下载 `https://releases.openai.com/codex/install.sh`（2026-11-14 起 `chatgpt.com/codex/install.sh` 302 跳转至此，插件不跟随跳转，故直接用目标地址）到 0700 私有目录、0600 文件，以 `/bin/sh <文件> --release <目标>` 和 `CODEX_NON_INTERACTIVE=1` 执行。研究未证明 `codex update` 能同时锁版和无交互，因此不用它。Windows 独立版对应安装器参数未核实，显示平台手动原因；Windows npm/brew 不受此限制。沿用官方脚本 HTTPS 信任边界，脚本不具有独立发布摘要。
 - **自带更新**：Antigravity update；Claude update；Kimi update -y；MiMo upgrade <目标> --method curl；Grok update --version <目标>；OMP update；Pi update --self；Hermes update --yes；OpenCode upgrade；Qoder/CN update；CodeBuddy update；TRAE update --channel <原安装通道> --version <目标>。所有参数数组、stdin ignore、homedir cwd，复用超时、取消、输出脱敏、进程树清理、维护锁与队列。Kimi 明确更新路径不受 KIMI_CODE_NO_AUTO_UPDATE=1 控制，保留该变量阻止启动副作用。MiMo 退出 0 不代表版本正确，仍需装后核对。
 - **锁版与身份**：npm、Codex 脚本、MiMo、Grok、TRAE、桌面工件锁定目标；brew 及其余自带命令不能锁版。后者接受任意实际前进且兼容的版本，不要求等于检查目标；不变为 VERSION_UNCHANGED，未知/降低/不兼容为 VERSION_MISMATCH。只允许识别出的同一原生安装根内版本实体变化，记录入口、归属及通道不许改变。
 - **Hermes**：只读 install-stamp.baseVersion，不执行版本/check/fetch；commit 加入指纹。未记录通道时显示 unknown，notice 明示 stable 查询不能证明 canary 的精确 ahead/behind，不切换通道，只比较可核实 baseVersion，执行后重新读取。迁移配置、更新依赖及可能重启服务的说明须在前台操作前可见。
@@ -185,3 +206,125 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - **桌面接口**：直接调用任务 B 的 readDesktopRelease/runDesktopUpdate，测试使用 vi.mock；下载回调经官方 sha512/sha256 与可用长度核对后返回完整 `.part`，不提前改 exe。ZCode 读 Info.plist 短版本；WorkBuddy 保留 CLI 版本、另读 appVersion，现有官方 Info.plist/条件 feed 使用三段应用版本，四段 productVersion 的工件信息留在计划中，核对使用三段应用版本。204 的 DesktopUnavailableError 当前按明确中文 message 匹配为 latest、latestVersion=appVersion、无 token；建议任务 B 将来提供独立 no-update 错误码，避免依赖文案。
 - **缓存与手动原因**：策略版本升至 2，旧显示/版本/发布缓存整体重建；显示投影增加 appVersion/notice/channel。手动仅保留原外部管理器、未知归属、Windows ARM64 Qoder、尚无对应官方源的 TRAE 通道、未核实的平台安装器和桌面源明确不可用等具体原因。首次安装来源表独立，本任务不借更新证据开放未知首次安装。
 - **证据边界**：本次不联网、不运行真实 CLI、脚本、npm、brew 或安装器；所有新增执行证据来自标注「模拟」的夹具。原研究标未核实的交互、工件可用性和退出语义不冒充实机验证；通过 stdin ignore、有界执行及装后核对约束，真实验收另列。
+
+## 任务 C：实机检查修复决定（2026-11-13）
+
+- Kimi 固定匿名源改用最终 CDN 地址，仍拒绝 HTTP 跳转；同时核对纯文本 latest 与两个安装脚本地址。
+- 自动路径记录持久化发现的入口，身份验证产生的版本实体仅用于本次调用。旧 auto 的已核实托管版本目录在前台重新发现后以 revision 比较写回；manual 和部署路径优先级保持不变，失败不覆写旧记录。后台不通过 PATH 迁移旧实体，等待前台发现。
+- 管理页解析 Pi 入口时允许读取未适配版本，Worker 仍按原支持集合校验。每次检查从入口读取 current-version 并解析实体，以实体路径和清单版本使版本缓存失效。
+- ZCode 固定 managed runtime 的自动入口在 macOS 关联默认 ZCode.app，先核对 Info.plist 的 CFBundleIdentifier=dev.zcode.app，再读应用版本；其他 manual 路径保持原行为。该 runtime 是官方源树构建的完整 CLI（本机 INSTALL-MANIFEST 记录 2026-10-05、0.16.9、treeSha 29628c9acdb81b703bbd4080c207a0e7ce5e276e），由临时 staging 脚本部署，不是从应用复制；不能用桌面内置 CLI 自动覆盖完整 runtime。检查行及更新结果必须明确说明桌面更新不会同步更新独立 Worker runtime，需另行核验与部署。
+
+### 任务 C：逐 CLI 影响核对
+
+下表为本次只读核对的 macOS 记录与源码布局；不表示真实更新验收。通用 auto 写回均保存发现入口。迁移只适用于 auto、没有更高优先级部署配置、命中已知版本目录；保留 revision 竞争保护和现有 0700/0600 持久化。
+
+| CLI | 本机记录与影响 | 旧版本实体迁移覆盖 |
+| --- | --- | --- |
+| Antigravity | auto `~/.local/bin/agy`，未受此缺陷影响 | 未发现已核实版本目录，不猜测 |
+| Codex | auto `~/.local/bin/codex`，当前稳定 | `.codex/packages/standalone/releases/<v>/…`、对应 Caskroom |
+| Claude | auto `/opt/homebrew/bin/claude`，当前稳定 | `.local/share/claude/versions/<v>`、对应 Caskroom |
+| Kimi | auto `~/.kimi-code/bin/kimi`，路径稳定；发布源跳转受影响 | 未发现已核实版本目录；固定 CDN URL 修复 |
+| MiMo | auto `~/.mimocode/bin/mimo`，当前稳定 | 未发现已核实版本目录，不猜测 |
+| ZCode | auto 插件 runtime，应用来源和版本识别受影响 | 独立 runtime 不当作版本实体迁移；关联核实后的应用 |
+| Grok | auto `~/.grok/bin/grok`，当前稳定 | `.grok/downloads/grok-<v>-…` |
+| OMP | auto `~/.local/bin/omp`，当前稳定 | 原地更新布局，未发现此类版本目录 |
+| Pi | auto 固定 1.0.4 实体；只读 current-version 已为 1.5.2，受影响 | `.pi/agent/install/releases/<v>/…`；不迁移插件刻意冻结的私有 Pi runtime |
+| Hermes | auto `~/.local/bin/hermes`，当前稳定 | checkout/shim 布局，不猜测版本目录 |
+| OpenCode | auto `/opt/homebrew/bin/opencode`，当前稳定 | 对应 Cellar |
+| Qoder | auto `~/.qoder/entry/qoder`，当前稳定 | `.qoder/bin/qodercli/qodercli-<v>` |
+| Qoder CN | auto `~/.qoder-cn/entry/qodercn`，当前稳定 | `.qoder-cn/bin/qoderclicn/qoderclicn-<v>` |
+| CodeBuddy | auto `/opt/homebrew/bin/codebuddy`，当前稳定 | 对应 Cellar |
+| TRAE CN | auto `~/.local/bin/traecli`，当前稳定 | `.local/share/traecli/releases/<v>-…/…` |
+| WorkBuddy CN | auto 应用内固定 CLI 入口，当前稳定 | 无此类版本目录 |
+| WorkBuddy | 本机没有路径记录；源码为应用内入口 | 无此类版本目录；不推断实际安装状态 |
+
+### 任务 C：只读来源证据与刷新边界
+
+- Kimi：旧域名的 latest.json、latest、install.sh、install.ps1 均实测 HTTP 302，Location 为同路径 cdn.kimi.com；四个 CDN 端点均直接 HTTP 200。匿名 GET 的 latest.json 版本与 latest 纯文本均为 2.6.1。Host 没有使用纯文本 latest，因此不新增冗余请求。
+- ZCode：本机 Info.plist 为 XML，CFBundleIdentifier=dev.zcode.app、CFBundleShortVersionString=3.17.2；`codesign -dv` 只读输出 TeamIdentifier=8A5X4JJ39T。后台关联采用最低充分证据 bundle id，无需启动 codesign 子进程；桌面更新器原有团队签名验证保留。
+- runtime 的 INSTALL-MANIFEST.generatedAt=2026-10-05T09:17:48.149Z，VERIFICATION.verifiedAt=2026-10-05T09:19:06.562Z、filesVerified=3424、symlinks=0。`.cache/stage-zcode-runtime.mjs` 从 `/private/tmp/ZCode-main/apps/zcode-cli/packages/cli/dist` 收集完整 CLI、TUI/Playwright 运行依赖及配套 provider 文件，用 copyFile 形成 staging，写出 source.origin=https://github.com/zai-org/ZCode 及源树 SHA。Host 源码只选择该已部署入口，没有从 `.app` 复制或定时刷新的逻辑。最后从 staging 搬入用户 runtime 的具体命令/操作者未获取，不作推断。
+- 桌面包内 CLI 与该完整 runtime 能力不同，不能套用不存在的“应用副本刷新”。本次使用简报允许的明确说明路径：检查行 notice 和桌面更新操作 outputTail 均保留“独立 runtime 不会随应用同步更新，需另行核验并部署”的说明，不声称 Worker runtime 已升级或与新应用配套。
+
+## 任务 D：中断恢复设计
+
+下载器只对白名单网络异常、提前 EOF 与真实字节停滞恢复，协议错误立即终止，完整文件校验失败干净重下一次；原始输出在脱敏前流式识别中断证据，只保存布尔值和有限的跨块匹配窗口，展示仍使用原脱敏/截断规则。外部重跑在整个进程范围退出并完成版本核对后决定，保持同一 argv，200 次与 2 小时共同预算，禁止用无输出时间冒充下载停滞。官方本地交接优先；任务 D 续已批准 MiMo macOS zip/--binary 接管及官方双源自动切换，撤销有配置副作用的 TRAE offline-install 接管。详细核实表与验证证据见下文。
+
+### 任务 D：最终恢复策略与审计表
+
+`recovery.ts` 集中保存 200 次、2 小时及中断证据规则。下载器的滑动 10 秒无字节计时与固定 10 秒速度窗口独立：`DOWNLOAD_SLOW_BYTES_PER_SECOND=100_000`，1 KB=1000 B；必须先见到 `Accept-Ranges: bytes` 或 206 才按慢速重连，服务器无声明时不推测能力，Range 被忽略返回 200 后禁用后续慢速重连。200 次耗尽后不再主动断开仍有进展的连接；真正无增长 10 秒失败，持续传输仍受 2 小时约束。已断线且次数耗尽不能继续传输，照常报告耗尽。
+
+外部命令不监听“无输出”或慢速，也不虚构外部文件字节。原始 stdout/stderr 每个块在脱敏前被检查，保留的只有中断布尔值和 256 字符跨块窗口；显示仍为脱敏后的 32 KiB 尾部，超长行仍省略。每次重试复用同一 argv、确认进程树退出、追加分隔行，新增共享可选字段 `progress.retryCount`，不复用 `resumeCount`。版本前进后即使仍有中断文本也不重跑；非零退出仍保留 EXIT_CODE 失败，不伪装成功。未知归属、身份改变、清理未确认均不重试。
+
+证据常量：curl (18)/(28)/(52)/(56)，transfer closed，connection reset/closed/timed out，ECONNRESET、ETIMEDOUT、ECONNABORTED、EPIPE，socket hang up，unexpected EOF/end of file，premature close，UND_ERR_SOCKET/CONNECT_TIMEOUT/HEADERS_TIMEOUT/BODY_TIMEOUT/RES_CONTENT_LENGTH_MISMATCH。下载器另处理 fetch TypeError 和 Content-Length 提前 EOF；先遍历 cause 排除证书/TLS/SSL/非法 URL/redirect 错误，HTTP/Range 协议错误不按网络中断恢复，完整文件校验另走单次干净重下。依据：本次 MiMo 实机证据；本机 `curl --manual` 6571–6573、6608–6611、6682–6684、6698–6700 行对 18/28/52/56 的定义。任务 D 续已按主会话决定对齐 PRD 5.6 第 7 条：完整文件长度/摘要不符删除片段后干净重下一次，仍失败固定报“下载的文件校验不通过”；不占用/重置 200 次，不重置总超时。HTTP、证书、Range 协议异常和 2 GB 上限仍直接失败。
+
+以下 `net/`、`static/`、`task-d/` 均相对 `.cache/cli-update-research/`。所有脚本仅阅读，未执行；任务 D 新 GET 的 MiMo/OMP/TRAE v2 与缓存逐字节相同。GET OpenCode/Claude 新脚本保存于 task-d。
+
+| CLI | 本轮结论 | 官方依据与边界 |
+|---|---|---|
+| MiMo | 接管（macOS 默认原生更新）；其他原归属 | `task-d/mimo.sh:19,48–78,186–205,335–368`：官方 --binary 安装入口。内置双 FDS 源 zip 模板 + HEAD 长度/ETag/content-md5 一致性 + 文件 MD5；精确提取根成员 mimo，解压 CRC/普通文件/单链接/大小校验，再以私有脚本文件执行。无独立摘要。npm 归属仍接管主包；Linux tar 与非默认布局保持原生。 |
+| Kimi | 外部下载重跑 | `net/kimi-install-direct/body:21–22,521–553`：下载基址硬赋值，manifest/tar/raw URL 自行构造，没有已核实本地工件入口；`--version`/安装目录不是本地包开关。 |
+| Codex | 外部下载重跑 | `net/codex-install-direct/body:5–10,82–98,330,392–395`：支持 --release，发布基址固定，无已核实本地工件入口；npm 主包原有接管保留。 |
+| TRAE CN | 原生更新 + 中断证据重跑 | 主会话撤销 offline-install 接管：`task-d/trae-install-v2.sh:2124–2125` 会关闭自动更新，属于用户配置副作用。回 `traecli update --channel <原通道> --version <目标>`，不引入新环境变量；首次安装回既有官方脚本。用户提供原生 0.213.1→0.215.0 实机通过，本轮仅模拟。 |
+| Claude | 外部下载重跑 | `task-d/claude.sh:6–10,38,148–159,196–226`：可传版本，但脚本固定下载新版安装器并调用 install；没有已核实本地包参数。 |
+| OpenCode | 接管（Unix 默认原生 V1 更新） | `task-d/opencode.sh:19,48–58,80–89,173–180,216–218,351–375`：--binary；只选择 V1 官方工件，HEAD 核对长度，精确提取根成员 opencode 后交官方脚本。仅允许 github.com 官方模板跳转至 release-assets.githubusercontent.com，GET 禁止再跳转。首次安装原有 manual 边界不变。 |
+| Antigravity | 外部下载重跑 | `net/agy-install-direct/body:11,20,102`：固定 manifest 基址，--dir 只改安装位置；未见本地包入口。 |
+| Grok | 外部下载重跑 | `net/grok-install-direct/body:203–204,401–437`：primary/fallback 固定，下载自己的工件；现有 update --version 不提供本地包参数，见 feeds.md §3.6。 |
+| OMP | 接管（Unix 默认原生更新） | `task-d/omp.sh:20–21,293–324,325–335`：官方 PI_BUILD_URL + --binary --ref；构建元数据给 sha256/size，插件先下载已核实 R2 主机上的签名工件，私有清单只将 download 改为 file URL，官方 curl 读取本地清单/文件后自行校验安装。不开 --source，不代装 Bun。 |
+| Pi | managed 外部下载重跑 | `net/pi-install-direct/body:5,1005–1028,1045–1062`：PI_INSTALLER_API_BASE 只控制 metadata/package/lock，要求 HTTP 200（file:// 的 000 不可用），后续依赖由 npm 安装；没有已核实无需另启 HTTP 服务的本地交接。npm 主包仍由插件下载。 |
+| Qoder | 外部下载重跑 | `net/qoder-install-direct/body:13,31–36,254–277,324`：基址固定、只提供版本/force/quiet/path 开关，脚本下载包后调用内置 install。原 dispatcher 同名 update 防护保留。 |
+| Qoder CN | 外部下载重跑 | `net/qodercn-install-direct/body:13,31–36,254–277,324`：同上，使用独立 CN 基址，不混用国际版。 |
+| Hermes | 外部下载重跑 | `~/.hermes/hermes-agent/hermes_cli/subcommands/update.py:10–13,40–44,51–56,99–115`：git+依赖更新、channel/branch/yes，无本地工件入口；不改迁移/服务重启语义。 |
+| CodeBuddy | native 外部下载重跑；npm 主包接管 | 本机 `@tencent-ai/codebuddy-code/dist/codebuddy.js:1522`，摘录 `task-d/codebuddy-update-parser.txt`：update 无本地参数，install [target] 仅目标版本；npm 归属继续原同前缀 tarball 路线。 |
+
+所有本地工件按锁定版本准备，安装后实际版本必须等于该目标（仅版本前进不足以成功）。本地工件位于插件 0700 目录、文件 0600；归档只选指定根成员，拒绝符号链接/硬链接/非文件，输出二进制仍由官方脚本安装，不复刻更新安装步骤。跨平台模板只取 Host 平台/架构；x64 使用官方 baseline，Linux libc 根据 Host 判定。失败/取消清理自身交接目录，进程清理未确认时保留；过期 local-* 私有交接目录按 24 小时清理。未清理安装器自有目录。
+
+### MiMo 已批准实施的方案与边界（任务 D 续）
+
+- 官方 `task-d/mimo.sh:66–78` 固定安装位置 `$HOME/.mimocode/bin`，支持 `--binary <path>` 并跳过下载/检测；`186–205` 固定 FDS 模板，darwin-arm64 目标为 `.../releases/v0.1.17/mimocode-darwin-arm64.zip`。
+- 原流程 `335–354`：建立 `$TMPDIR/mimocode_install_$$`，curl 到 zip，macOS unzip（Linux tar），将根成员 mimo 移到安装目录，chmod 755，成功后 rm 临时目录。`357–368` 的官方本地分支为 cp 本地 mimo 到同一目录并 chmod 755。现按授权由插件下载并校验 zip、只提取根成员 mimo，然后参数数组 `[/bin/bash, 私有官方脚本, --binary, 私有mimo, --no-modify-path]`。不必复刻安装逻辑。
+- 本次匿名 HEAD 200，Content-Length=**33,817,652 B**，Accept-Ranges=bytes；ETag/content-md5 存在但不是 SHA256/SHA512 独立发布摘要。任务 D 续追加后使用官方 HTTPS HEAD 长度和 content-md5（支持 hex/base64）校验文件，再核对 zip 结构/解压 CRC、安装后身份/版本。ETag 用于对象一致性/If-Range，不冒充 SHA256；同源 MD5 不代表独立签名验证。
+- 风险：同源 MD5 只能校验传输完整性，不提供独立签名认证；官方脚本本地 cp 非原子替换，需维护锁、进程范围清理和安装后重新探测；自定义安装位置不可直接套默认目录；x64 baseline/Linux musl 与 Windows 需独立核实；下载/解包后不得让安装阶段 10 分钟倒计时提前覆盖 2 小时下载预算。
+- 用户提供第一次代理断线 11,091,327 B、第二次直连约 40 KB/s 在 10 分钟后留 27,181,941 B 的证据。只读磁盘确实见 `$TMPDIR/mimocode_install_31818` 1 文件 **11,091,327 B**、`mimocode_install_52437` 1 文件 **27,181,941 B**，合计 **38,273,268 B**，均未删除、改写。未自行运行两次更新，退出/原安装完好结论来自用户证据。
+- **任务 D 续已启用 macOS 默认原生 MiMo 更新接管**，先下载后启动安装器 10 分钟计时；Linux tar、Windows 与自定义位置按原归属，首次安装 manual 不扩张。本轮全部测试模拟，尚未真实更新 MiMo。
+
+### OMP 与原生更新的差别及风险（任务 D 续）
+
+- 用户提供原生 `omp update` 从 16.4.4 到 18.20.0 实机通过。该证据只证明原生更新器，不代表本地交接已实测。
+- 本地交接不执行原生 `omp update`：插件按锁定版本/Host 平台构建官方 API 请求，校验 SHA256 和 size，将工件落到 0700 私有目录；保持官方 build/file 清单结构，仅把 download 改为 file URL，通过进程局部 `PI_BUILD_URL=file://...`、`PI_INSTALL_DIR=$HOME/.local/bin` 调用官方脚本 `--binary --ref v<version>`。
+- `task-d/omp.sh:293–324` 用 curl 读清单和工件，再次核对 SHA256；`325–335` chmod 后同目录 mv，随后运行 --version。没有 --source 或 Bun 代装，也不写用户持久配置。
+- 风险：官方脚本/API schema/签名资产主机可能变化；file:// 需官方 curl 支持；脚本通过 uname/libc 选平台而插件按 Host 平台/架构选平台，Rosetta 或特殊 libc 的组合可能不一致（本地清单找不到则失败，不猜另一平台）；默认路径之外不接管。脚本自身后续行为可能与原生 update 不同，必须由主会话实机复测；本轮不把原生成功外推为交接成功。
+
+### MiMo 官方多源（2026-11-14，任务 D 续追加）
+
+- 用户已同意自动换源，主会话提供 2026-11-13 23:5x 实机证据：两个小米 FDS 域名上的 v0.1.17 macOS arm64 zip 长度均为 **33,817,652 B**，ETag/content-md5 均为 **fef70ee7fcb83ec003fd29ecb85cea68**，Last-Modified 相同、均支持 Range。原域名 40–137 KB/s；API 域名完整下载 7.29 秒、4.6 MB/s，经代理约 1 MB/s，下载 MD5 一致；API latest 返回 0.1.17。这些数字来自用户，本轮未重做真实下载。
+- `sources.ts` 保存 host 白名单与 `/mimocode/mimocode/releases/` 前缀，首选 `cnbj1.fds.api.xiaomi.com`，备用 `mimocode.cnbj1.mi-fds.com`；生成地址只含经过校验的目标版本/Host 平台，拒绝凭据、query/hash/port，GET/HEAD 均 credentials:omit、redirect:error。latest 同样 API 优先，失败/无效版本回原域名。
+- 通用下载器接收 `sources: string[]`；首个可达源 HEAD 建立固定身份，换源必须再次 HEAD 且长度、ETag、content-md5 一致（MD5 hex/base64 归一化）。来源身份变化直接拒绝，不拼接新对象；GET 复核 ETag/MD5，206 复核范围及总长度，发送 Range 和可用的 If-Range。200 忽略 Range 时覆盖重下；完成后的长度或文件 MD5 不符走一次干净重下，既有计数/2 小时不重置。
+- 中断、低速或停滞重连轮换源，计入同一 200 次，新增输出“切换到 <host> 继续下载（第 N 次）”；200 次用尽仍有进展保留当前连接，真正停滞才失败。HEAD 失联可尝试其他列出的源，全部不可用则失败；证书或源身份不符不视为可恢复网络中断。随后 PRD 3c 已扩展至 npm 主 tarball；桌面包缺少已核实第二源仍单源，CLI 自带下载仍按证据重跑。
+
+### 其他 CLI 官方多地址证据（仅列候选，不启用）
+
+| CLI | 已有官方证据 | 尚缺的同对象证据 |
+|---|---|---|
+| Codex | `net/codex-install-direct/body:319–330,494–506,1420` 对同一版本、同一 asset 构造 releases.openai.com/codex/releases 与 github.com/openai/codex/releases/download/rust-v 两条地址，官方 download_file_with_fallback 共用 expected_digest。 | 本轮未 HEAD 两端工件核对长度/ETag/content-md5；GitHub 重定向到签名资产须独立适配，不能直接套 MiMo 白名单。 |
+| Grok | `net/grok-install-direct/body:203–204,401–437` 明确 x.ai/cli 与 storage.googleapis.com/grok-build-public-artifacts/cli 是 primary/fallback，同一 version/platform 的 artifact_base 仅切 base。 | 仅脚本级回退依据，未获得两端同对象 HEAD/摘要；不能声称已证实可跨域 Range 拼接。 |
+
+Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到签名资产的重定向，OMP 是 API 到 R2 下载地址，TRAE 是原站与 CDN 脚本地址；均不构成本轮已核实的“同安装包多域名”证据，不列为可直接启用的多源。
+
+### 通用自动换源与 npm 设置（2026-11-14，覆盖仅 MiMo 的临时范围）
+
+- PRD 5.6 3c 已读原文。npm 主包与 MiMo 使用同一多源能力；外部命令自己下载不适用。官方/npmmirror 设置以对应 registry 为首选；follow 以 npm 当前 registry 为首选，再补官方/npmmirror 去重；custom 显式关闭自动切换（MiMo 同样仅首选源，同源恢复不受影响）。操作启动时同时锁定 registry 与换源策略，准备期间修改设置仅影响下一次操作。
+- npm 工件只从官方精确版本 packument 取 sha512；自动模式不读取镜像 packument 的 integrity 或 tarball，按 `<registry>/<scope/name>/-/<name>-<version>.tgz` 构造地址；custom 主地址可来自该 registry 元数据，但其 integrity 不参与信任。安装与更新均接线，npm 子依赖仍由 npm 处理。
+- HEAD 核对完整长度；Range HEAD 的 206 必须为 bytes 0-(total-1)/total。ETag 相等或可识别的 32 位 hex ETag/content-md5 摘要相等方可切换，长度不同/摘要冲突直接拒绝；一般 ETag 保持大小写敏感。If-Range 使用当前源的原始强 ETag，不拿上一源的标签替代。最终仍核对官方 sha512；同源 MD5 不取代该校验。
+- 本轮匿名 HEAD `is-number@7.0.0`：registry.npmmirror.com 标准路径返回 **302**，Location 为 `https://cdn.npmmirror.com/packages/is-number/7.0.0/is-number-7.0.0.tgz`；CDN **200 / 3,730 B**，ETag `6C6E00114E00C2815FC0AEAE3DA1AF23`，content-md5 `bG4AEU4AwoFfwK6uPaGvIw==`。npm 官方普通 HEAD **200** 无 Content-Length；带 Range 的 HEAD **206 / bytes 0-3729/3730**，ETag `6c6e00114e00c2815fc0aeae3da1af23`。另对已记录版本 @openai/codex@0.162.1 的标准包地址执行 HEAD，返回 **302**，Location 为 `https://cdn.npmmirror.com/packages/%40openai/codex/0.162.1/codex-0.162.1.tgz`，据此对 scoped 包的每个路径段编码（保留分隔 /）。仅 HEAD，无 tarball GET。该证据支持精确映射的镜像 CDN HEAD 跳转及摘要归一化，不表示所有包均可切换；运行时每个对象仍必须复核。
+- 镜像只允许标准地址到同包/版本的 `cdn.npmmirror.com/packages/...` 精确跳转；不跟随任意 Location。HEAD 的已核实跳转目标成为 GET 地址，GET 始终 redirect:error。MiMo URL 的 host/路径白名单和禁止重定向不放宽。
+- 新增可选 `CliDownloadProgress.sourceHost?: string`，每次有效源变化随进度推送当前实际 GET host，npm CDN 时显示 cdn.npmmirror.com；复用“切换到 <host> 继续下载（第 N 次）”。Client 本轮未修改，主会话负责显示。
+
+### 桌面包第二源核实结果（匿名 HEAD，未配置多源）
+
+| CLI | 已有官方包与本轮 HEAD | 第二源结论 |
+|---|---|---|
+| ZCode | 已有 feed `net/zcode-mac-direct/body:1–10` 的 3.18.2 macOS arm64 zip；cdn-zcode.z.ai 返回 **200 / 305,360,326 B**，ETag `99D36E8C5D465A340C10F98E7C87CF81-30`，无 Location。feed 有 SHA512。 | 未获取第二官方域名；同清单 dmg 是不同文件，不作为备用 zip。 |
+| WorkBuddy CN | `net/workbuddycn-latest-darwin-arm64-direct/body` 的 5.9.3.42398134；download.codebuddy.cn 返回 **200 / 447,126,372 B**，ETag `80ea3a42a97094e485de2c88ae205048-427`，x-cos-meta-md5 `ecded5aedfef7d276a14d14c0e276bf0`，无 Location。feed 有 SHA256。 | 未获取第二官方同对象域名；不将国际版地址当镜像。 |
+| WorkBuddy | `net/workbuddy-latest-darwin-arm64-direct/body` 的 5.9.4.42593613；download.codebuddy.ai 返回 **200 / 478,466,147 B**，ETag `6b5d8abc5ade49edeb9e41867c8acfd8-457`，x-cos-meta-md5 `0d931f9ebea458d7ff2976c329d10ba1`，无 Location。feed 有 SHA256。 | 未获取第二官方同对象域名；不将 CN 地址当镜像。 |
+
+以上为当前已知官方 feed 指向对象的响应证据，不是全网不存在镜像的证明。本轮不猜测 OSS/COS 内部桶域名、不下载桌面包，不改 desktop-update.ts。

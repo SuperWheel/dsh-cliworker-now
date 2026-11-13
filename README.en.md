@@ -80,6 +80,8 @@ TRAE CN's account window offers personal, enterprise SSO and enterprise PAT card
 
 ## Install and update
 
+Plugin-managed CLI downloads resume after network interruptions. When Range support is confirmed, a 10-second window below 100 KB/s reconnects, sharing the 200-recovery budget; after that, a progressing transfer continues up to the two-hour limit. External commands retry only with interruption evidence and exit/version checks, never merely because they are slow. A length or digest mismatch deletes the temporary file and permits one clean download, outside the 200-recovery count. Default native MiMo installations on macOS use the official zip and local `--binary` installer; the Xiaomi FDS API endpoint is preferred, with identity-checked failover to the original official host on slow or interrupted transfers. HEAD length, ETag and content-md5 must agree before switching; Range/If-Range preserves downloaded bytes. Length, content-md5 and zip structure are verified, without claiming an independent signature. npm main tarballs can switch between the official registry and npmmirror, always verified against the official SHA-512. The selected or current npm registry comes first; custom-address mode disables automatic switching. Settings changed during an operation take effect on the next operation. Progress includes the current source host. Desktop packages remain single-source without a verified equivalent official mirror. TRAE CN keeps its native updater to preserve its automatic update setting. Default native OMP installations use the official `PI_BUILD_URL` local handoff.
+
 End active tasks and quit Harness completely, then run:
 
 ```sh
@@ -219,6 +221,13 @@ Desktop does not read `.zshrc`. The plugin checks common install locations; if i
 <summary><strong>After updating, the model menu fails or shows HTTP 404.</strong></summary>
 
 End running tasks, quit Harness completely and reopen it. Refreshing only the plugin list can leave an old Host with a new Client.
+
+</details>
+
+<details>
+<summary><strong>Network requests or sign-ins fail on macOS / Windows.</strong></summary>
+
+A macOS Desktop launched from the Dock may not inherit terminal proxy variables; Windows proxy apps often change only Internet Options. The plugin reads the macOS network proxy or Windows Internet Options and passes a valid explicit HTTP(S) proxy to its CLI processes, account terminals, update/install commands and probes. Its own HTTPS requests use the same proxy; injected bypass entries always include loopback. Existing `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` (including lowercase) or explicit removal in the launch environment takes priority. Settings refresh on demand after a 15-second cache: synchronous spawns use the last reading, while account terminals and Host requests await a fresh one. On macOS, PAC, auto-discovery or SOCKS alone is not injected; one diagnostic explains why. The plugin does not execute PAC or change system settings.
 
 </details>
 

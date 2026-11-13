@@ -208,7 +208,7 @@ it('模拟：安装退出码 0 但找不到入口明确失败，保留旧路径'
 })
 it('模拟：官方脚本只取内置地址并以私有文件执行，不接受纯 CLI 自选目录', async () => {
   const f = fixture(), plan = await prepare(f, 'kimi')
-  expect(plan.source.script?.url).toBe('https://code.kimi.com/kimi-code/install.sh')
+  expect(plan.source.script?.url).toBe('https://cdn.kimi.com/kimi-code/install.sh')
   await expect(f.installer.prepare('kimi', plan.registry, '/模拟/自选', control())).rejects.toThrow('纯 CLI')
   let script = ''
   vi.mocked(f.backend.spawn).mockImplementation(spec => {
@@ -219,7 +219,7 @@ it('模拟：官方脚本只取内置地址并以私有文件执行，不接受�
   })
   f.service.start('kimi', 'install', plan.token, '', 'script')
   expect((await finished(f.service)).results[0]?.phase).toBe('succeeded')
-  expect(f.artifactFetch.mock.calls[0]![0]).toBe('https://code.kimi.com/kimi-code/install.sh'); expect(existsSync(script)).toBe(false)
+  expect(f.artifactFetch.mock.calls[0]![0]).toBe('https://cdn.kimi.com/kimi-code/install.sh'); expect(existsSync(script)).toBe(false)
 })
 it('模拟：Pi 取最新版且带 ignore-scripts；Node 范围不可猜测', async () => {
   const f = fixture(); vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '9.0.0', versions: ['1.0.2', '9.0.0', '9.0.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })

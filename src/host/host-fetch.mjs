@@ -5,7 +5,7 @@ import { Readable } from 'node:stream'
 let proxyFor
 const NULL_BODY = new Set([204, 205, 304])
 
-/** Windows: the Host's own catalog/account reads follow the system proxy the CLIs are given. */
+/** macOS/Windows: Host reads follow the system proxy the CLIs are given. */
 export function setHostProxy(lookup) {
   proxyFor = lookup
 }
@@ -19,20 +19,20 @@ export function bypassesProxy(hostname, entries) {
 }
 
 /**
- * Windows only: the proxy variables a CLI would use for `target`. The Pi/OMP
+ * macOS/Windows: the proxy variables a CLI would use for `target`. The Pi/OMP
  * bridge is a child process without the Host's lookup; it receives the system
- * proxy as these variables. macOS keeps plain `fetch`.
+ * proxy as these variables.
  */
 export function environmentProxy(target, env = process.env, platform = process.platform) {
-  if (platform !== 'win32') return undefined
-  const value = env.HTTPS_PROXY?.trim()
+  if (platform !== 'win32' && platform !== 'darwin') return undefined
+  const value = (env.https_proxy || env.HTTPS_PROXY || env.all_proxy || env.ALL_PROXY)?.trim()
   if (!value) return undefined
   try {
     if (!['http:', 'https:'].includes(new URL(value).protocol)) return undefined
   } catch {
     return undefined
   }
-  const entries = (env.NO_PROXY ?? '')
+  const entries = (env.no_proxy ?? env.NO_PROXY ?? '')
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean)
