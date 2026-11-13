@@ -1,0 +1,8 @@
+pm:
+  title: 改用 pmspec 管理开发变更
+  version: next
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-13

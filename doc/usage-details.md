@@ -517,4 +517,4 @@ pnpm spec:list
 pnpm spec:check
 ```
 
-Codex 中选择 `openspec-propose` 技能准备方案，再用 `openspec-apply-change` 实施；完成验证后用 `openspec-archive-change` 归档。具体命令、文档分工及其他 CLI 的接入见 [OpenSpec 开发指南](openspec.md)。OpenSpec 是本仓库的开发工具，插件使用者无需安装。
+Codex 中选择 `pmspec-propose` 技能准备方案，再用 `pmspec-apply-change` 实施；完成验证后用 `pmspec-archive-change` 归档。具体命令、文档分工及其他 CLI 的接入见 [OpenSpec 开发指南](openspec.md)。OpenSpec 是本仓库的开发工具，插件使用者无需安装。

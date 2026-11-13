@@ -492,4 +492,4 @@ pnpm spec:list
 pnpm spec:check
 ```
 
-In Codex, use `openspec-propose` to prepare a change, `openspec-apply-change` to implement it, and `openspec-archive-change` after verification. See the [OpenSpec development guide](openspec.md). Plugin users do not need OpenSpec.
+In Codex, use `pmspec-propose` to prepare a change, `pmspec-apply-change` to implement it, and `pmspec-archive-change` after verification. See the [OpenSpec development guide](openspec.md). Plugin users do not need OpenSpec.

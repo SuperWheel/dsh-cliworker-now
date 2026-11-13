@@ -5070,7 +5070,7 @@ packages:
     engines: {node: '>=16.20.0'}
 
   pmspec@file:vendor/pmspec-1.14.1-pm.1.tgz:
-    resolution: {integrity: sha512-MdTfPe+9H6LoTAeOSaNQeFH87EUBuQbmMa7TzOzZ4IMi8TLfdGp9iKEKJYG8SDj5apCAU9oYlfPYPFLDjR5YVA==, tarball: file:vendor/pmspec-1.14.1-pm.1.tgz}
+    resolution: {integrity: sha512-lljxQVJQCpiH8zOnlez1WhzHYkydAsOzi2ZZpg4sNV9Z9ZhXVys17mz4E4Uc28cAPHbYSykq9o5PsfdIyzWP9g==, tarball: file:vendor/pmspec-1.14.1-pm.1.tgz}
     version: 1.14.1-pm.1
     engines: {node: '>=20.19.0'}
     hasBin: true

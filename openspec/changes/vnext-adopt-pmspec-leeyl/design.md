@@ -1,0 +1,41 @@
+# Design
+
+## Context
+
+见 proposal。pmspec 的设计稿在产品面板仓库 `tools/pmspec/PMSPEC.md`。本仓库只接入 pmspec，不在此修改其源码。
+
+## Goals / Non-Goals
+
+- 目标：本仓库的变更能按「主任务 + 子任务」同步到面板；归档路径稳定；积压清零。
+- 非目标：补写旧变更的逐条证据，改动插件功能。
+
+## Decisions
+
+### 决定 1：旧命名变更的任务问题只作提示
+- 最终决定：名称不符合 pmspec 规则的旧变更，`tasks.md` 中的结构问题和「勾选却写着未执行」都降为警告，可以原样归档
+- 放弃的方案：先把 41 个旧 tasks.md 改成两级格式再归档 —— 原因：工作量大，且会改动历史记录；用户已决定按原样归档
+- 影响：范围
+
+### 决定 2：release-v078-latest-install 归档时不合并规格
+- 最终决定：用 `--skip-specs` 归档；它的三条需求已经手工同步进主规格，且主规格中的措辞更新
+- 放弃的方案：把 ADDED 改成 MODIFIED 再合并 —— 原因：会用旧措辞覆盖主规格里更新的内容
+- 影响：范围
+
+### 决定 3：面板下载地址上线前先用本地 tgz
+- 最终决定：在 `vendor/` 保存 pmspec tgz，并以 `file:` 依赖安装
+- 放弃的方案：等妙搭面板发布后再接入 —— 原因：会阻塞积压清理；面板发布需要用户另行批准
+- 影响：排期
+
+### 决定 4：证据缺失先只告警
+- 最终决定：`pmspec.requireEvidence: false`
+- 放弃的方案：直接设为 true —— 原因：唯一的活动旧变更 add-workbuddy-cli 没有逐条证据；新变更按规则写证据，以后再收紧
+- 影响：指标
+
+## Risks / Trade-offs
+
+- `pnpm spec update` 会重新创建空的 `openspec/changes/archive/.gitkeep`（上游的目录锚点），需要手动删除，或在 pmspec 后续版本中处理。
+- 本地 tgz 换成线上下载时，锁文件中的完整性哈希会变化。
+
+## Migration Plan
+
+已在工作分支 `chore/adopt-pmspec` 分阶段提交：先切换工具，再迁移归档并归档积压变更，最后更新文档和规格。回退时撤销这些提交即可。
