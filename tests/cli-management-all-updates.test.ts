@@ -184,7 +184,10 @@ it('模拟：没有桌面应用对应时，ZCode 插件 runtime 从 INSTALL-MANI
   try {
     const runtime = join(home, '.local/share/cliworker-now/runtimes/zcode'), entry = join(runtime, 'cli/zcode.cjs')
     mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, '// 模拟')
-    writeFileSync(join(runtime, 'INSTALL-MANIFEST.json'), JSON.stringify({ version: '0.16.9', target: 'win32-x64', source: { origin: 'https://github.com/zai-org/ZCode' } }))
+    // 实际清单带全部 npm 包的 integrity，Windows 版 723 KB，超过普通元数据 128 KB 上限
+    const npmPackages = Array.from({ length: 3000 }, (_, i) => ({ name: `模拟包-${i}`, integrity: 'sha512-' + 'a'.repeat(200) }))
+    writeFileSync(join(runtime, 'INSTALL-MANIFEST.json'), JSON.stringify({ version: '0.16.9', target: 'win32-x64', source: { origin: 'https://github.com/zai-org/ZCode' }, npmPackages }))
+    expect(statSync(join(runtime, 'INSTALL-MANIFEST.json')).size).toBeGreaterThan(128 * 1024)
     const id = await identifyInstallation('zcode', f.backend, { ...f.config, zcodeExecutable: entry }, control(), true)
     expect(id).toMatchObject({ source: 'plugin-runtime', manifestVersion: '0.16.9' })
     expect(await currentVersion('zcode', id!, f.backend, f.config, control(), true)).toBe('0.16.9')

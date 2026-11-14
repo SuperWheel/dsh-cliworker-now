@@ -28,6 +28,7 @@ export interface InstallationIdentity {
   notice?: string
 }
 /** Same origin as the deployed runtime's INSTALL-MANIFEST (design 2026-10-11): official source tree only. */
+export const ZCODE_RUNTIME_MANIFEST_LIMIT = 4 * 1024 * 1024
 export const ZCODE_RUNTIME_ORIGIN = 'https://github.com/zai-org/ZCode'
 export const ZCODE_PLUGIN_RUNTIME_NOTE = '此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。'
 export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 使用独立部署的完整 CLI runtime，不会随应用同步更新，需另行核验并部署配套 runtime。'
@@ -42,8 +43,8 @@ export async function managedZCodeApplication(executable: string, appPath = ZCOD
   } catch { /* Missing/unrecognized applications are not mapped. */ }
 }
 export const fingerprintToken = (fingerprint: Fingerprint) => createHash('sha256').update(JSON.stringify(fingerprint)).digest('hex')
-export async function readManifest(file: string): Promise<Record<string, any> | undefined> {
-  try { const info = await stat(file); if (!info.isFile() || info.size > 128 * 1024) return
+export async function readManifest(file: string, limit = 128 * 1024): Promise<Record<string, any> | undefined> {
+  try { const info = await stat(file); if (!info.isFile() || info.size > limit) return
     return JSON.parse(await readFile(file, 'utf8'))
   } catch { return }
 }
@@ -129,7 +130,8 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   // reports its own version from INSTALL-MANIFEST.json; never run it to ask.
   let pluginRuntime = false
   if (cli === 'zcode' && !managedApp && executable === managedZCodeEntry()) {
-    const manifest = await readManifest(join(dirname(dirname(executable)), 'INSTALL-MANIFEST.json'))
+    // Lists every bundled npm package with integrity: 633 KB (macOS) / 723 KB (Windows) on 2026-11-14.
+    const manifest = await readManifest(join(dirname(dirname(executable)), 'INSTALL-MANIFEST.json'), ZCODE_RUNTIME_MANIFEST_LIMIT)
     if (manifest?.source?.origin === ZCODE_RUNTIME_ORIGIN && typeof manifest.version === 'string') { manifestVersion = manifest.version; pluginRuntime = true }
   }
   const appRoot = managedApp ?? /^(.*\.app)\/Contents\//.exec(target)?.[1]
