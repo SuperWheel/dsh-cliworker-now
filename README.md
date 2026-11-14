@@ -83,6 +83,9 @@ Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高
 
 账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；文件夹信任由用户在窗口确认，空编辑器自动打开 `/login`，中国站/国际站提供浏览器引导，企业/iOA 保留原生。切换沿已核实路径自动 `/logout`，明确退出并完成清理后再登录；未知画面回退原生。详见 [授权前采集与未完成验收](openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)。
 
+「其他服务商」的 Host 表单接口支持 Pi、OpenCode（v1 配置）和 Hermes：按各自原生协议填写服务商 ID、Base URL、API 类型、API Key 与模型 ID，保存到原生配置和独立凭据位置，失败回滚并在成功后作废账号与模型目录缓存。OMP、Kimi、TRAE CN 暂保留原生终端。此阶段为 Host 实现，前端接入与 Desktop 验收另行记录；不联网验证密钥、不调用模型。原生版本证据、字段和边界见[变更设计](openspec/changes/vnext-custom-provider-form-leeyl/design.md)。
+
+
 ## 安装与更新
 
 源码中的「更新 CLI」页已接入首次安装后端：按 Host 核实的安装方式生成计划，npm 主包按官方 sha512 校验后装入当前全局前缀，官方脚本先保存到私有目录再执行。安装期间目标 CLI 暂停派遣与账号操作；只有重新探测得到有效版本才写入原有 CLI 路径设置。来源未核实的方式仍提供官方说明。Claude 全平台及 MiMo macOS/Linux 的首次安装脚本暂保持仅说明（MiMo Windows 仍用 npm）；本轮已补齐现有安装的版本检查，未重新开放首次安装脚本。macOS 桌面首次安装复用 ZCode / WorkBuddy 两版的官方更新清单，校验 SHA-512 / SHA-256 与固定开发者签名后，将应用放到所选目录并核对应用版本、写回 CLI 路径；也支持原有 DMG 流程。Windows 首次安装的发布者与向导落点尚待核实，保留官方说明。2026-11-14 隔离安装 Pi npm 版 1.5.2、ZCode 3.18.2 通过；国际版 WorkBuddy 当前 ZIP 与官方 feed 摘要不一致，拒绝安装。进度及边界见 [本次任务记录](openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。
