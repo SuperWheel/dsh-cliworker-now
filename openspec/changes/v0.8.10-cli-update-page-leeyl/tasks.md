@@ -333,6 +333,13 @@
   - Windows 实机（DSH 0.2.2-rc.3，经「应用 → 退出」正常关闭，空闲闸门 activeWorkers=0）：6c00cdc 包 SHA-256 74f1d4ab7b50…，原生安装器退出 0，1169/1169 文件逐一哈希一致。冷启动后立即打开「更新 CLI」：0 项检查失败，可更新 10（Codex、Kimi、MiMo、Grok、Pi、Hermes 0.21.7→0.23.1、OpenCode、Qoder、Qoder CN、CodeBuddy），需手动 5（ZCode 0.16.9「CLI Worker 部署的完整 runtime」、Antigravity、Claude Code、OMP、TRAE CN「没有识别出安装方式」），未安装 1（WorkBuddy）；WorkBuddy CN 为桌面应用手动（NO_RELEASE_SOURCE）。Host 状态文件 17 项与界面一致。
   - 未执行：任何真实更新（含 Hermes）；Antigravity、Claude Code、OMP、TRAE CN 的 Windows 安装布局与自带更新命令尚未核实，仍为手动；英文界面实机；全量 vitest。Windows `%LOCALAPPDATA%\hermes\.hermes-update-in-progress.lock`（0 字节，2026-10-11）为旧遗留，可能影响 Hermes 自带更新，未处理。
 
+- [ ] 11.9 Windows 适配 Antigravity、Claude Code、OMP、TRAE CN 自带更新并真实更新验收
+  - 识别（633a530）：按官方 install.ps1 目标精确匹配 `%LOCALAPPDATA%\agy\bin\agy.exe`、`%LOCALAPPDATA%\omp\omp.exe`、`~/.local/bin/claude.exe`（NTFS 不区分大小写，仅 Windows 盘符路径生效，POSIX 不放宽）；TRAE 增加 `AppData/Local/TraeCLI/` 布局与带版本 auto 入口，同一 releases 根下同名入口视为同一安装。模拟回归在 cli-management-source-layouts。Windows 实机（DSH 0.2.2-rc.3，633a530 包）：可更新 14，四项均为「自带更新」，需手动仅 ZCode（plugin-runtime）与 WorkBuddy CN。
+  - 真实更新（2026-11-14 15:25–15:48，逐个执行，C 盘约 1.9 GB）：四项全部在下载阶段停住，没有一项完成。Claude `claude.exe update` 下载到 `~/.cache/claude/staging/<版本>.<pid>.<时间>/claude.exe`，停在 134,306,034 B；同一命令经 SSH 带代理直接执行 4 分钟停在 81,108,992 B（说明与插件无关）。TRAE `traex.exe update --channel public --version 0.215.0` 内部官方 install.ps1 停在 18,483,484 B。OMP `omp.exe update` 写 `omp.exe.<时间>.<pid>.0.new` 停在 82,509,153 B（完整约 225 MB）。Antigravity `agy.exe update`（先出现「确认行为尚未实机核实」行内确认）写 `bin\.new` 停在 33,830,276 B。
+  - 根因：Windows 走 Clash Verge（mihomo，127.0.0.1:7897）代理，长连接中途断流；curl 经同一代理取 Claude 150 MB 区间，36.9 秒取到 153,384,276 B 后 20 秒无数据退出 28。四个 CLI 自带更新器都没有续传，界面只显示「正在执行，下载进度无法读取」，插件对外部命令只按输出中的中断证据重跑，静默停滞要等 10 分钟安装超时。下载文件字节实际可读（上述四个路径），PRD 5.6 第 3 条要求的「能读到本次下载字节时按 10 秒规则终止重跑」及第 3a 条「优先由插件接管下载」均未对这四项实现。
+  - 取消：四项「取消更新」均在进程树退出后显示「已取消。已写入的文件不会回滚」，旧版本仍可用（omp/18.8.7、agy 1.4.11）。残留（未删除）：Claude `versions\2.1.325`（0 B）及两个 staging 目录（134 MB、81 MB）；TRAE `%TEMP%\traecli-install-*.ps1` 与 18 MB 部分下载（官方脚本 finally 未执行）；OMP `omp.exe.*.new` 82 MB；agy `bin\.new` 33 MB。取消 OMP 后侧栏 OMP 状态点变红，原因未查。
+  - 未完成：四项真实更新成功的验收；停滞检测/接管下载的实现。
+
 ## 12. 设置页连接状态预加载 〔后端｜8h｜前置 3〕
 - [x] 12.1 审计 17 个 CLI 的账号、模型及强度读取；将安全投影接入空闲队列，记录跳过原因
   - 证据：sources 两份后台名单、accounts 的 background/activeOnly 分支与 settings-connection-background；完整 17 CLI 审计表见 design 决定 12，仅源码审计和模拟测试。
