@@ -3441,6 +3441,23 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     expect(t.accountStatus).not.toHaveBeenCalled()
   })
 
+  it('shows why a signed-in CLI has no model list instead of a spinner or an empty section', async () => {
+    const reason = 'Qoder 返回的 16 个模型在当前账号下均为停用状态，暂无可选模型；请在 Qoder 中确认账号额度或套餐后刷新'
+    // Simulated Host: the account is verified, its catalog read is still running.
+    const t = await setupLive([row('qoder', signedIn('qoder'), { loading: true })], {}, ['qoder'])
+    expect(dot(t, 'qoder')).toBe('connected')
+    expect(t.text()).not.toContain(reason)
+    await act(async () => t.watch.push(snapshot(2, [row('qoder', signedIn('qoder'), { loading: false, error: reason })])))
+    await settle()
+    expect(t.text()).toContain(reason)
+    expect(dot(t, 'qoder')).toBe('connected')
+    expect(t.text()).not.toContain('正在读取 Qoder 模型')
+    // The failed slot is not read again on its own; only the refresh button does.
+    await settle(60)
+    expect(t.catalogForCli).not.toHaveBeenCalled()
+    expect(t.refreshCatalogForCli).not.toHaveBeenCalled()
+  })
+
   it('drops older or foreign snapshots and clears a CLI whose revision changed', async () => {
     const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-old-model'))], {}, ['codex'])
     await act(async () => t.watch.push(snapshot(0, [row('codex', signedIn('codex'), listed('codex', 'codex-older-model'))])))

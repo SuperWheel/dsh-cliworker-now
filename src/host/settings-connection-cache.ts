@@ -8,6 +8,12 @@ export const CONNECTION_TTL = 10 * 60_000
 export type CatalogReceipt = { catalog: ConnectionCatalog; binding: string }
 type Values = { account: AccountStatus; catalog: CatalogReceipt }
 type Kind = keyof Values
+const READ_FAILED = '连接状态读取失败，请刷新重试'
+/** The reason the direct Remote already reports for this read, without the error class prefix. */
+function failureReason(error: unknown): string {
+  const text = (error instanceof Error ? error.message : String(error)).trim()
+  return text ? text.slice(0, 1024) : READ_FAILED
+}
 type Entry = { value?: Values[Kind]; checkedAt?: number; error?: string; pending?: Promise<Values[Kind]>; controller?: AbortController }
 /** Memory only: no credentials, raw native outputs, or account handles are persisted. */
 export class SettingsConnectionCache {
@@ -61,7 +67,8 @@ export class SettingsConnectionCache {
     }).catch(error => {
       if (!control.aborted && revision === this.revision(cli)) {
         current.value = undefined; current.checkedAt = undefined
-        current.error = '连接状态读取失败，请刷新重试'
+        // The snapshot replaces what the dialog shows; a generic text here would hide why the read failed.
+        current.error = failureReason(error)
       }
       throw error
     }).finally(() => {

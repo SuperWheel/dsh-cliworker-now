@@ -738,6 +738,20 @@ async function simulatedPackage(directory: string, version: string, name = '@qod
   return entry
 }
 describe('模拟 Qoder SDK daemon 元数据', () => {
+  it('模拟：原生目录全部停用时报告账号侧原因和数量，有启用模型时返回模型与强度', async () => {
+    const disabled = Array.from({ length: 16 }, (_, index) => ({ value: `SIMULATED-${index}`, displayName: `模拟 ${index}`, isEnabled: false, efforts: ['low', 'high'] }))
+    expect(() => parseQoderModelState({ models: disabled })).toThrow('Qoder 返回的 16 个模型在当前账号下均为停用状态，暂无可选模型；请在 Qoder 中确认账号额度或套餐后刷新')
+    expect(() => parseQoderModelState({ models: disabled }, 'Qoder CN')).toThrow('Qoder CN 返回的 16 个模型')
+    expect(() => parseQoderModelState({ models: [] })).toThrow('Qoder 未公开可用的结构化模型目录')
+    const f = await fixture(), executable = await simulatedPackage(f.directory, '1.1.89')
+    const blocked = accountControlFixture({ daemon: true, models: disabled })
+    await expect(discoverQoderModels(blocked.backend, DEFAULT_CONFIG, executable, f.directory, new AbortController().signal))
+      .rejects.toThrow('16 个模型在当前账号下均为停用状态')
+    expect(blocked.calls.map(v => v.request.type)).toEqual(['daemon.initialize', 'daemon.account_info', 'daemon.get_models', 'daemon.shutdown'])
+    const mixed = accountControlFixture({ daemon: true, models: [...disabled, { value: 'SIMULATED-on', displayName: '模拟可用', isEnabled: true, efforts: ['low', 'high'], supportsDisabled: true }] })
+    expect(await discoverQoderModels(mixed.backend, DEFAULT_CONFIG, executable, f.directory, new AbortController().signal))
+      .toEqual([{ id: 'SIMULATED-on', label: '模拟可用', efforts: ['default', 'none', 'low', 'high'] }])
+  })
   it.each(['account', 'models'] as const)('模拟新版 %s：握手、字段、私有权限、代理继承和 shutdown', async kind => {
     const f = await fixture(), transport = accountControlFixture({ daemon: true })
     const executable = await simulatedPackage(f.directory, '1.1.89')

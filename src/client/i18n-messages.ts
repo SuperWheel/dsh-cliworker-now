@@ -961,6 +961,9 @@ export const en = {
   '正在退出 {cli}…': 'Signing out of {cli}…',
   '已退出 {cli}': 'Signed out of {cli}',
   '当前未登录 {cli}，无需退出。': 'Not signed in to {cli}; nothing to sign out.',
+  '{cli} 返回的 {count} 个模型在当前账号下均为停用状态，暂无可选模型；请在 {cli} 中确认账号额度或套餐后刷新':
+    '{cli} returned {count} model(s), all disabled for the current account, so there is nothing to choose. Check the account quota or plan in {cli}, then refresh',
+  '连接状态读取失败，请刷新重试': 'Could not read the connection status. Refresh to try again',
   '{cli} 账号认证失败，请在账号窗口重新登录或退出失效凭据后刷新':
     'The provider rejected the {cli} credentials. Sign in again or sign out of the invalid credential in the account window, then refresh',
   '当前账号可用模型；已跳过 {count} 条认证失败的凭据，可在账号窗口退出':
