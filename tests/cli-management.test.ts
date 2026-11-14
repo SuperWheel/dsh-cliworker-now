@@ -237,7 +237,7 @@ function serviceFixture(options: { version?: string; identify?: any; releases?: 
   const version = vi.fn(async () => options.version ?? '1.0.0')
   const releases = options.releases ?? new ReleaseClient(async () => new Response(JSON.stringify({ latest: '1.2.3' })))
   const query = vi.spyOn(releases, 'query')
-  const service = new CliManagementService({ root, backend: b, config: DEFAULT_CONFIG, idle: () => true, enabled: () => true, cliEnabled: () => true, account: vi.fn(), identify, version, releases }); services.push(service)
+  const service = new CliManagementService({ npmRuntimeHost: async () => ({ platform: process.platform, arch: process.arch, libc: process.platform === 'linux' ? 'glibc' : undefined }), npmCheck: vi.fn(async () => {}), root, backend: b, config: DEFAULT_CONFIG, idle: () => true, enabled: () => true, cliEnabled: () => true, account: vi.fn(), identify, version, releases }); services.push(service)
   return { root, b, service, identify, version, query }
 }
 async function checked(service: CliManagementService, scope: 'all' | 'missing' = 'missing') {

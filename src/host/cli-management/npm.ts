@@ -1,7 +1,9 @@
 import { access, open, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import type { ProcessBackend } from '../process.ts'
+import type { NpmHost } from './npm-platform.ts'
+import { captureReadOnly, bounded } from './versions.ts'
+import type { RuntimeConfig, ProcessBackend } from '../process.ts'
 import { readManifest } from './identity.ts'
 
 const unavailable = () => Object.assign(new Error('无法核实 Node/npm 安装，请确认 Node 运行时与 npm-cli.js；全局包前缀只用作安装目标'), { code: 'PREREQUISITE_MISSING' })
@@ -53,4 +55,14 @@ export async function resolveNpmRuntime(backend: ProcessBackend, platform = proc
     } finally { await file.close() }
     return [node, entry]
   } catch { throw unavailable() }
+}
+
+/** Probe the selected native Node, not Electron/Harness (which can be emulated).
+ * The script emits only architecture/libc metadata; environment is inherited unchanged. */
+export async function resolveNpmHost(backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, npm?: readonly string[]): Promise<NpmHost> {
+  const runtime = npm ?? await bounded(resolveNpmRuntime(backend), signal)
+  const script = "const h=process.report?.getReport().header;console.log(JSON.stringify({platform:process.platform,arch:process.arch,libc:process.platform==='linux'?(h?.glibcVersionRuntime?'glibc':'musl'):undefined}))"
+  const value = JSON.parse(await captureReadOnly(backend, config, [runtime[0]!, '-e', script], signal)) as NpmHost
+  if (!['win32', 'darwin', 'linux', 'aix', 'freebsd', 'openbsd', 'sunos', 'android'].includes(value.platform) || !/^(x64|arm64|arm|ia32|ppc64|s390x|riscv64|loong64)$/.test(value.arch) || value.platform === 'linux' && !['glibc', 'musl'].includes(value.libc ?? '')) throw unavailable()
+  return value
 }

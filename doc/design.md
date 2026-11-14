@@ -1622,3 +1622,18 @@ Pi 仅准入 ~/.pi/agent/install 托管标记。锁版 lock 与发布清单补�
 2026-11-14 任务 8.7–8.9：`runHermesUpdate` 在失败后、重跑前及最终错误返回前复用 service 的只读身份/版本验证；恰为目标时继续原成功发布流程，更新页面版本。清理未确认、取消保持原语义。`hermes-version.ts` 仅在安装记录对应的 checkout HEAD 精确匹配唯一的本地稳定标签时补充落后记录的版本（支持松散轻量/注释标签及 packed-refs peeled SHA；松散对象按哈希、类型、长度校验并限制读取/解压大小与嵌套深度，不沿符号链接，只有 packfile 且无 peeled 证据时沿用记录），不运行 Hermes 或用 pyproject 猜版本。依赖终止错误说明实际重跑次数，不再承诺不存在的接管。
 
 Python 镜像实测只证明同 venv 可复用：uv 0.12.3 的 export 保留锁哈希，阿里云 PyPI 镜像 hash-pinned install 后离线 frozen sync 通过。但 Hermes v0.23.1 的 PM 每次重建创建新的 UUID generation；新 venv 使用同一缓存或已校验 wheelhouse/find-links 时，离线 frozen sync 都因锁定 files.pythonhosted.org URL 未缓存而失败。因尚无可用的跨 generation 恢复路径，本轮没有交付 Python 接管或修改下载源映射。完整实验及源码依据记录在当前变更决定 8 / 任务 8.8，Windows 实机复验仍待办。
+
+## 2026-11-14 npm 平台 optionalDependencies 下载与安装核验（未发布）
+
+Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 optionalDependency 并 exit 0，主包 4.9 KB 完成和 package.json 版本更新均不代表安装成功。本节取代前文 npm 只下载主包、所选源优先的规则。
+
+- `npm-platform.ts` 从有效 registry 的精确版本清单解析 optionalDependencies，保留别名安装键，按真实包名与 semver 范围取平台包清单，以 os/cpu/libc（含排除项）判定。下载前以已解析的原生 Node 执行有界平台探针，读取 process.platform/process.arch 与运行时 libc；下载、安装、核验使用同一 runtime，不能用可能处于模拟模式的 Harness 架构代替。安装后只读主包和组件 package.json（支持同前缀内 npm hoist）及插件私有、按主包版本/依赖图/运行时平台散列的已验证元数据，不请求 registry；元数据缺失或无效仅表示没有额外证据，不能单独判损坏。Codex 平台别名必需；OpenCode 普通包与 baseline 为至少一个的替代组；CodeBuddy node-pty 可回退 child_process，不列为必需，sandbox 平台包独立核验。其他声明组件依赖已核实的匹配平台元数据，未知缺件不会靠在线请求猜平台。只有下载准备查询清单，有大小/并发上限和内存 TTL；不读取 npmrc 或账号。
+- `npm-download.ts` 生成主包与本平台组件的多文件描述，共用 `downloadDescription`、下载摘要校验、Range、10 秒停滞恢复、2 GB 上限。主包要求官方 SHA-512；组件允许官方 integrity，缺失时用 shasum/SHA-1。非自定义源保留标准 npm 路径及精确 CDN 跳转约束，先官方，30 秒无进展、60 秒低于 100 KB/s 或 10 分钟预算后切接管；失败记忆 7 天，接管失败/取消清除，清理未确认保留文件。全部工件长度已知前不提供总百分比。
+- npm 本地平台 tgz 通过同一 Node/npm 的 `cache add <file> --global --prefix <prefix> --registry <registry>` 进入安装实际使用的默认缓存；再 `install --global --prefix <prefix> <main.tgz> --registry <registry> --prefer-offline --include=optional`。两次不传 --cache、不覆写缓存环境，因此不向无关缓存写入。缓存填充与安装均受原进程退出确认、取消和维护锁管理；不增加 fetch-timeout，不移除代理或增加 NO_PROXY。
+- `service.ts` 与 `install.ts` 共用下载和安装树核验；`currentVersion(..., verifyNpm=true)` 明确绕过主包版本快捷返回，使用既有有界 `--version` 与进程退出确认。必需组件组满足且版本探针通过才成功；安装时清除下载百分比，文字说明元数据和普通依赖仍可能联网。
+- 后台在复用版本缓存前检查组件树，失败清除 currentVersion/版本缓存，使用 `installed=true, group=failed, reason=UNKNOWN_VERSION` 和具体 reasonDetail；前台已有“重新安装到默认位置”操作负责修复同版本损坏安装。背景禁止执行的 CLI 继续只读检查。无须新增共享状态，本轮不改 src/client。
+- 真实 Mac 实验：Node 22.23.1，npm 10.9.8 和 11.12.1，esbuild 0.25.0 与 @esbuild/darwin-arm64（4,151,127 B），普通依赖和本地 npm alias 夹具均安装成功、平台 tgz 命中缓存且无再次网络 GET，二进制输出 0.25.0。实验独立 prefix/cache/空 userconfig/globalconfig，不污染用户全局缓存。命令与日志见变更任务 9.1；这不等于 Windows/真实 CLI 更新验收。
+
+- P2 修复：官方 watchdog 的 30 秒停滞、60 秒低速和 10 分钟预算只中断当前连接；接管仍在同一个 downloadCliArtifact 调用、临时文件、总时限与恢复次数内执行。先前官方 GET 的长度/强 ETag/MD5 作为换源锚点；目标源同对象验证后用当前偏移 Range 与目标源 If-Range 追加，慢镜像可旋转至官方。服务不支持 Range、验证标识变化或没有安全追加所需的标识时才清空重取；下载完成仍以官方 integrity 校验，异物不能进入 npm 缓存。非 npm 描述仍保留原有身份漂移拒绝策略。
+- P2 收尾：文件与 ChannelMemory 清理独立执行并收集异常，最外层 finally 始终清空 operation/operationRun、写 finishedAt，非进程清理隔离状态下释放维护锁并推进队列。ENOSPC/EACCES 等文件或记忆写入错误只留收尾提示；无法确认进程退出仍保留原隔离与维护锁语义。
+- 用户提供的 Windows 手动修复证据（2026-11-14，不是插件验收）：同一 127.0.0.1:7897 代理，npmmirror 的 Codex 0.166.0-win32-x64 约 50 KB/s（15 秒 0.78 MB），官方约 6 MB/s；官方连接在 152 MB 停滞，curl 100 KB/s 持续 20 秒低速退出 28，随后 Range 续到 172.3 MB、31 秒完成，SHA-512 匹配官方清单。cache add 后 npm install 经 npmmirror 在 7 秒完成，平台 alias cache hit、实际目录存在且 codex --version 为 codex-cli 0.166.0。npm 独自下载两次各在 5 分钟失败，包括指定官方 registry；缓存 packument 中仍有镜像 URL 是用户提出的可能原因，未独立证实。插件自行获取精确目标清单并核对官方摘要，自动源 URL 按包/版本重新生成，先官方而非沿用 npm 缓存中的镜像 dist URL；本地内容缓存预置后即使 npm 元数据仍引用镜像地址，也复用相同内容摘要。元数据及其他依赖仍可能联网，不能保证 npm 整体离线。

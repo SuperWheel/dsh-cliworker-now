@@ -145,3 +145,48 @@ Host MUST NOT 伪造百分比；暂存文件不能确定属于本次运行时 MU
 #### Scenario: Pi 环回 registry
 - **WHEN** Pi 托管安装由插件接管
 - **THEN** 插件逐个用 sha512 校验 122 个 tarball，只在 127.0.0.1 上临时提供这些文件，交官方 `pi update --self` 完成安装；操作结束（成功、失败或取消）后关闭服务
+
+### Requirement: npm 平台组件与安装可运行性
+Host SHALL 从有效 registry 的目标清单解析 optionalDependencies（含 npm 别名），以实际 npm Node 运行时的 platform/arch/libc 对照 os/cpu/libc 选择平台组件。主包及组件 MUST 共用统一下载、官方摘要校验和合计进度，沿用官方优先、接管、镜像、续传及 7 天失败记忆；自定义源不得自动换源。
+
+Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer-offline/include=optional 安装主包；不得移除代理或添加 NO_PROXY，不以延长 fetch-timeout 修复。安装成功 MUST 同时满足 CLI 必需组件组的名称与版本核验、CLI 版本探针和目标版本核对。安装阶段清除字节百分比并说明其余网络活动。
+
+#### Scenario: npm 静默跳过 Windows Codex 平台包
+- **WHEN** npm exit 0 且 @openai/codex package.json 已到 0.169.0，但 alias @openai/codex-win32-x64 对应组件缺失
+- **THEN** Host MUST 报告失败和具体组件名称，MUST NOT 显示已更新；即使版本字段正确也不能绕过安装树及 CLI --version 探针
+
+#### Scenario: 已安装版本等于最新但平台组件已损坏
+- **WHEN** 后台或前台检查发现本平台组件缺失，即使缓存和主包版本等于最新
+- **THEN** Host SHALL 清除可用版本缓存，以既有 failed/UNKNOWN_VERSION 和 reasonDetail 标明需修复，保留 installed=true，提供已有重新安装入口，MUST NOT 归入 latest
+
+#### Scenario: 多文件实际下载进度
+- **WHEN** npm 主包 4.9 KB 下载完成而平台包尚未完成
+- **THEN** 进度 SHALL 累加主包与平台包实际字节，全部长度未取得前总量为未知，MUST NOT 用主包 100% 表示整个下载或安装完成
+
+#### Scenario: 本地平台缓存复用
+- **WHEN** 已校验的普通名称或 npm alias 平台 tarball 经 cache add 预置，同一 cache 下 install 主包
+- **THEN** npm SHALL 使用本地内容缓存，平台 tarball 无再次网络 GET；元数据与其他依赖的联网不得冒充受控字节下载
+
+#### Scenario: 取消及清理未确认
+- **WHEN** npm 缓存预置或安装中取消，或无法确认进程范围退出
+- **THEN** Host SHALL 等待原进程退出确认，禁止报告成功；清理未确认时保留本次文件和维护锁，确认退出后清理私有下载目录
+
+#### Scenario: 平台可选组件具有替代或回退路径
+- **WHEN** OpenCode Windows x64 只有普通包或 baseline 包，或 CodeBuddy 缺少可回退 child_process 的 node-pty 包
+- **THEN** Host SHALL 按必需组件组判定，OpenCode 两种二进制至少一个即可，CodeBuddy 不因 node-pty 缺失失败；Codex 对应平台 alias 与其他真正必需组件仍必须存在，且版本探针必须通过
+
+#### Scenario: 健康安装遇到注册表离线
+- **WHEN** 本地安装核验运行，其他 OS 的 optionalDependency 未安装，或已验证平台元数据不可用
+- **THEN** Host MUST NOT 为判定本地缺件请求 registry；SHALL 使用本地清单、CLI 必需组及持久化已验证元数据，元数据不可用与确定缺件区分，不因远端故障将健康安装判坏
+
+#### Scenario: Harness 与 npm 的架构不同
+- **WHEN** Windows ARM64 机器运行 x64 Harness，但解析得到原生 ARM64 Node/npm
+- **THEN** Host SHALL 用该 Node 的实际平台与架构选择和核验 ARM64 组件，下载与安装使用同一个 Node/npm 参数数组
+
+#### Scenario: 官方接管和慢镜像旋转均保留断点
+- **WHEN** 官方已下载部分字节后停滞、低速或预算到期，或镜像低速而官方可用
+- **THEN** Host SHALL 中断当前连接并保留临时文件与偏移，验证同对象后用 Range/If-Range 从断点续传；只有无法安全追加或验证标识变化才从零重取，最终仍核对官方摘要
+
+#### Scenario: 临时目录或失败记忆清理拒绝
+- **WHEN** 安装结束后的目录删除或 ChannelMemory 写入因 ENOSPC/EACCES 等错误失败
+- **THEN** Host SHALL 记录清理提示，仍完成操作、清空运行句柄、释放维护锁并继续队列；进程退出未确认的隔离策略 SHALL 保持不变

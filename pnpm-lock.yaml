@@ -17,6 +17,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.0.0
         version: 6.0.0
+      semver:
+        specifier: 7.7.3
+        version: 7.7.3
       yaml:
         specifier: 2.9.1
         version: 2.9.1
@@ -156,6 +159,9 @@ importers:
       '@types/react-test-renderer':
         specifier: 18.3.1
         version: 18.3.1
+      '@types/semver':
+        specifier: 7.7.1
+        version: 7.7.1
       immer:
         specifier: ^10.2.0
         version: 10.2.0
@@ -4118,6 +4124,9 @@ packages:
   '@types/retry@0.12.0':
     resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
 
+  '@types/semver@7.7.1':
+    resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
+
   '@vitest/expect@4.1.8':
     resolution: {integrity: sha512-h3nDO677RDLEGlBxyQ5CW8RlMThSKSRLUePLOx09gNIWRL40edgA1GCZSZgf1W55MFAG6/Sw14KeaAnqv0NKdQ==}
 
@@ -5238,6 +5247,11 @@ packages:
 
   scheduler@0.23.2:
     resolution: {integrity: sha512-UOShsPwz7NrMUqhR6t0hWjFduvOzbtv7toDH1/hIrfRNIDBnnBWd0CwJTGvTpngVlmwGCdP9/Zl/tVrDqcuYzQ==}
+
+  semver@7.7.3:
+    resolution: {integrity: sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q==}
+    engines: {node: '>=10'}
+    hasBin: true
 
   semver@7.8.5:
     resolution: {integrity: sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA==}
@@ -10428,6 +10442,8 @@ snapshots:
 
   '@types/retry@0.12.0': {}
 
+  '@types/semver@7.7.1': {}
+
   '@vitest/expect@4.1.8':
     dependencies:
       '@standard-schema/spec': 1.1.0
@@ -11484,6 +11500,8 @@ snapshots:
   scheduler@0.23.2:
     dependencies:
       loose-envify: 1.4.0
+
+  semver@7.7.3: {}
 
   semver@7.8.5: {}
 

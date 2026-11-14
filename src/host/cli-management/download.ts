@@ -8,7 +8,7 @@ import { hostFetch } from '../host-fetch.mjs'
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { OFFICIAL_SIGNED_ARTIFACT_HOSTS } from './sources.ts'
-import { ArtifactSources, PresignedExpiredError, responseMd5 } from './download-sources.ts'
+import { ArtifactSources, PresignedExpiredError, SourceIdentityError, responseMd5 } from './download-sources.ts'
 import { recoverableDownloadError, RECOVERY_LIMIT, RECOVERY_TIMEOUT_MS } from './recovery.ts'
 
 export const DOWNLOAD_STALL_MS = 10_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWNLOAD_TIMEOUT_MS = RECOVERY_TIMEOUT_MS
@@ -16,11 +16,11 @@ export const DOWNLOAD_STALL_MS = 10_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWN
 export const DOWNLOAD_SLOW_BYTES_PER_SECOND = 100_000
 export const DOWNLOAD_MAX_BYTES = 2 * 1024 ** 3, DOWNLOAD_RETENTION_MS = 24 * 60 * 60_000
 export function parseIntegrity(integrity: string) {
-  const candidates = integrity.split(/\s+/).map(value => /^(sha512|sha256|md5)-([A-Za-z0-9+/]+={0,2})$/.exec(value)).filter(value => value !== null)
+  const candidates = integrity.split(/\s+/).map(value => /^(sha512|sha256|sha1|md5)-([A-Za-z0-9+/]+={0,2})$/.exec(value)).filter(value => value !== null)
   const match = candidates.find(m => m[1] === 'sha512') ?? candidates.find(m => m[1] === 'sha256') ?? candidates[0]
-  if (!match) throw new CliOperationError('INTEGRITY_MISMATCH', '官方元数据没有受支持的 sha512 / sha256 / md5 校验值')
+  if (!match) throw new CliOperationError('INTEGRITY_MISMATCH', '官方元数据没有受支持的 sha512 / sha256 / sha1 / md5 校验值')
   const digest = Buffer.from(match[2]!, 'base64')
-  if (digest.length !== (match[1] === 'sha512' ? 64 : match[1] === 'sha256' ? 32 : 16) || digest.toString('base64') !== match[2]) throw new CliOperationError('INTEGRITY_MISMATCH', '官方校验值格式无效')
+  if (digest.length !== (match[1] === 'sha512' ? 64 : match[1] === 'sha256' ? 32 : match[1] === 'sha1' ? 20 : 16) || digest.toString('base64') !== match[2]) throw new CliOperationError('INTEGRITY_MISMATCH', '官方校验值格式无效')
   return { algorithm: match[1]!, digest }
 }
 export async function prepareDownloads(root: string, now = Date.now()): Promise<string> {
@@ -51,7 +51,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
   }
   return directory
 }
-/** Host-owned downloads, including npm's main tarball; external dependencies expose no invented progress. */
+/** Host-owned authenticated files; callers aggregate multi-file download progress. */
 export async function downloadCliArtifact(options: {
   root: string; url: string; sources?: string[]; sourceRedirects?: Record<string, string>; lengthProbe?: 'HEAD' | 'RANGE'; requireContentMd5?: boolean; integrity?: string; expectedBytes?: number; officialScript?: boolean; signal: AbortSignal
   progress(value: CliDownloadProgress): void
@@ -63,6 +63,10 @@ export async function downloadCliArtifact(options: {
   fetcher?: typeof hostFetch
   redirectHosts?: readonly string[]
   refreshSources?: (signal: AbortSignal) => Promise<string[]>
+  /** npm's official watchdog changes channel inside this file's resume loop. */
+  officialFirst?: { signal: AbortSignal; takeover(): void }
+  /** Pinned npm integrity allows a clean restart when transport validators change. */
+  restartOnValidatorChange?: boolean
 }): Promise<string> {
   const address = new URL(options.url)
   const maxBytes = options.maxBytes ?? DOWNLOAD_MAX_BYTES
@@ -87,7 +91,9 @@ export async function downloadCliArtifact(options: {
   const reporting = setInterval(report, 1000)
   let remove = false
   try {
-    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe, options.redirectHosts) : undefined
+    let sources = options.sources && !options.officialFirst ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe, options.redirectHosts) : undefined
+    let official = !!options.officialFirst
+    const reset = async () => { await handle.truncate(0); bytes = 0; total = undefined; lastBytes = 0; headerMd5 = undefined; singleEtag = undefined; rangeRejected = false }
     const refresh = async () => {
       if (!options.refreshSources || ++refreshes > 3) throw new CliOperationError('NETWORK', '预签名地址失效，重新取清单后仍不可用')
       const urls = await options.refreshSources(global)
@@ -96,7 +102,11 @@ export async function downloadCliArtifact(options: {
     }
     const select = async (rotate = false) => {
       for (;;) {
-        try { await sources?.select(rotate); return } catch (error) {
+        try {
+          const changed = await sources?.select(rotate, options.restartOnValidatorChange)
+          if (changed) await reset()
+          return
+        } catch (error) {
           if (!(error instanceof PresignedExpiredError) || !options.refreshSources) throw error
           await refresh()
         }
@@ -111,7 +121,7 @@ export async function downloadCliArtifact(options: {
     for (let validationAttempt = 0; ; validationAttempt++) {
       for (;;) {
         global.throwIfAborted()
-        const stall = new AbortController(), control = AbortSignal.any([global, stall.signal])
+        const stall = new AbortController(), control = AbortSignal.any([global, stall.signal, ...(official ? [options.officialFirst!.signal] : [])])
         let timer = setTimeout(() => stall.abort(), DOWNLOAD_STALL_MS)
         let speedTimer: ReturnType<typeof setInterval> | undefined, slowSpeed: number | undefined
         const heartbeat = () => { clearTimeout(timer); timer = setTimeout(() => stall.abort(), DOWNLOAD_STALL_MS); lastByte = Date.now() }
@@ -133,7 +143,12 @@ export async function downloadCliArtifact(options: {
           sources?.validate(response)
           if (response.status === 200 || response.status === 206) {
             const md5 = responseMd5(response.headers), etag = response.headers.get('etag')?.trim()
-            if (headerMd5 && (md5 !== undefined || !sources) && md5 !== headerMd5 || !sources && singleEtag && etag !== singleEtag) throw new CliOperationError('INTEGRITY_MISMATCH', '续传响应摘要或 ETag 已变化')
+            if (headerMd5 && (md5 !== undefined || !sources) && md5 !== headerMd5 || !sources && singleEtag && etag !== singleEtag) {
+              if (!options.restartOnValidatorChange) throw new CliOperationError('INTEGRITY_MISMATCH', '续传响应摘要或 ETag 已变化')
+              await reset()
+              // A 206 belongs to the old offset and cannot be appended after reset.
+              if (response.status === 206) throw new SourceIdentityError('续传响应摘要或 ETag 已变化')
+            }
             headerMd5 ??= md5; singleEtag ??= etag
             if (options.requireContentMd5 && !md5) throw new CliOperationError('INTEGRITY_MISMATCH', '官方响应缺少 MD5')
           }
@@ -188,10 +203,19 @@ export async function downloadCliArtifact(options: {
           global.throwIfAborted()
           // Undeclared redirects are never followed; report the cause explicitly.
           if (error instanceof TypeError && /unexpected redirect/.test(error.message)) throw new CliOperationError('NETWORK', `官方下载地址 ${new URL(sources?.url ?? currentUrl).host} 已跳转到其他位置，插件不跟随跳转；请等待插件更新下载地址`)
-          if (!(error instanceof PresignedExpiredError) && !stall.signal.aborted && !recoverableDownloadError(error)) throw error
+          if (error instanceof SourceIdentityError && options.restartOnValidatorChange) await reset()
+          else if (!(error instanceof PresignedExpiredError) && !stall.signal.aborted && !(official && (options.officialFirst!.signal.aborted || error instanceof CliOperationError && error.code === 'NETWORK' && error.message.includes('下载失败（HTTP '))) && !recoverableDownloadError(error)) throw error
         } finally { clearTimeout(timer); clearInterval(speedTimer); void reader?.cancel().catch(() => undefined) }
         if (resumes >= DOWNLOAD_RESUMES) throw new CliOperationError('STALL_LIMIT', '下载停滞或中断，自动续传 200 次仍未完成，请检查网络后重试')
         resumes++
+        if (official && (options.officialFirst!.signal.aborted || !stall.signal.aborted && slowSpeed === undefined)) {
+          official = false; options.officialFirst!.takeover()
+          sources = new ArtifactSources(options.sources ?? [options.url], options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe, options.redirectHosts)
+          // Missing validators cannot justify appending a different source. The
+          // next request will start clean; with validators it retains exact offset.
+          if (bytes && (total === undefined || !(singleEtag && !singleEtag.startsWith('W/')) && !headerMd5)) await reset()
+          sources.seed(total, singleEtag, headerMd5)
+        }
         if (sources) {
           const previous = sources.url
           await select(true)

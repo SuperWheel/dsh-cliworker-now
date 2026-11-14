@@ -62,6 +62,7 @@ export interface ArtifactDescription {
   after?: (signal: AbortSignal) => Promise<(signal: AbortSignal) => Promise<void>>
 }
 export interface ArtifactDownloadContext {
+  download?: typeof import('../download.ts').downloadCliArtifact
   root: string; directory: string; signal: AbortSignal; fetcher?: typeof hostFetch
   progress(value: CliDownloadProgress): void
   output?(value: string): void

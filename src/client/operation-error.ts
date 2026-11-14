@@ -7,6 +7,8 @@ import { t, uiLanguage } from './i18n.ts'
  * other details stay verbatim.
  */
 const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
+  [/^npm 安装需要修复：平台组件 (.+) 未安装或版本不符；npm 可能下载超时或失败，请重新安装$/u, 'npm 安装需要修复：平台组件 {name} 未安装或版本不符；npm 可能下载超时或失败，请重新安装', 'name'],
+  [/^npm 安装需要修复：平台组件 (.+) 的声明缺失$/u, 'npm 安装需要修复：平台组件 {name} 的声明缺失', 'name'],
   [/^已登录（([^（）]+)）$/u, '已登录（{site}）', 'site'],
   [/^插件尚未适配 Pi (\S+)，更新后 Pi Worker 要等插件适配后才能使用$/u, '插件尚未适配 Pi {version}，更新后 Pi Worker 要等插件适配后才能使用', 'version'],
   [/^(WorkBuddy(?: CN)?) 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口$/u, '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口', 'cli'],

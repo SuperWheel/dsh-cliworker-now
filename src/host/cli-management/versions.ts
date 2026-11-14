@@ -93,9 +93,9 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
     }
   }
 }
-export async function currentVersion(cli: ActiveCliId, identity: InstallationIdentity, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background = false, timeoutMs = 5000): Promise<string | undefined> {
+export async function currentVersion(cli: ActiveCliId, identity: InstallationIdentity, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background = false, timeoutMs = 5000, verifyNpm = false): Promise<string | undefined> {
   if (cli === 'zcode' && validAppVersion(identity.fingerprint.appVersion)) return identity.fingerprint.appVersion
-  if (validVersion(identity.manifestVersion)) return identity.manifestVersion
+  if (validVersion(identity.manifestVersion) && !(verifyNpm && identity.source === 'npm')) return identity.manifestVersion
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
   if (spec.version !== 'kimi' && spec.version !== 'command') return

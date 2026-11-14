@@ -861,6 +861,13 @@ export const en = {
   '关闭后新对话直接使用项目的默认模型、强度与上次确认的角色；无有效设定时仍会询问': 'When off, a new conversation starts with the project\'s default model, effort and last confirmed role; it still asks if no valid choice is saved',
   '正在保存调用前询问模型…': 'Saving ask-before-dispatch…',
   '调用前询问模型未保存，请重试': 'Ask-before-dispatch setting was not saved. Try again',
+  // npm platform components: Host messages shown by hostText(); keep exactly equal to the Host source text
+  'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试': 'The npm installation needs repair or rechecking: a platform component or the version probe failed. Reinstall, or try again later',
+  'npm 安装需要修复：无法读取已安装主包清单': 'The npm installation needs repair: the installed main package manifest cannot be read',
+  'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖': 'npm is installing from the local cache; it may still query metadata or download other dependencies',
+  'npm 安装需要修复：平台组件 {name} 未安装或版本不符；npm 可能下载超时或失败，请重新安装': 'The npm installation needs repair: platform component {name} is missing or has the wrong version. npm may have timed out or failed while downloading it. Reinstall',
+  'npm 安装需要修复：平台组件 {name} 的声明缺失': 'The npm installation needs repair: the declaration of platform component {name} is missing',
+  '临时文件或下载通道记忆未能清理；操作已结束。': 'Temporary files or the download-channel memory could not be cleaned up; the operation has finished.',
   // isolated parallel writes: Host messages shown by hostText(); keep exactly equal to the Host source text
   '上次合并在 Host 关闭时中断，可重新合并；已写回的文件会被跳过': 'The last merge was interrupted when the Host closed. You can merge again; files already written back are skipped',
   '隔离副本目录已缺失，只能丢弃': 'The isolated copy folder is missing; it can only be discarded',

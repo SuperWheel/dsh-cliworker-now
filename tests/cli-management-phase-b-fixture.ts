@@ -77,7 +77,7 @@ export function serviceFixture(clis: ActiveCliId[] = ['codex']) {
   const identify = vi.fn(async (cli: ActiveCliId) => structuredClone(identities.get(cli)))
   const version = vi.fn(async (_cli: ActiveCliId, identity: InstallationIdentity) => identity.manifestVersion)
   const busy = vi.fn(() => ({ workers: 0, accounts: false })), invalidateModels = vi.fn(), cleanup = vi.fn(), globalCleanup = vi.fn()
-  const service = new CliManagementService({ root, backend, config, idle: () => true, enabled: () => false, cliEnabled: () => true, account: vi.fn(), identify, version, releases, artifactFetch, busy, invalidateModels, cleanup, globalCleanup })
+  const service = new CliManagementService({ root, backend, config, idle: () => true, enabled: () => false, cliEnabled: () => true, account: vi.fn(), identify, version, npmRuntimeHost: async () => ({ platform: process.platform, arch: process.arch, libc: process.platform === 'linux' ? 'glibc' : undefined }), npmCheck: vi.fn(async () => {}), releases, artifactFetch, busy, invalidateModels, cleanup, globalCleanup })
   service.saveDownloadSource({ source: 'official' })
   return { root, service, config, backend, identities, releases, integrity, identify, version, busy, invalidateModels, cleanup, globalCleanup, npm, metadataFetch, artifactFetch,
     async close() { await service.close().catch(() => undefined); rmSync(root, { recursive: true, force: true }) } }

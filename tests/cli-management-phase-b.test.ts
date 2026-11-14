@@ -58,7 +58,7 @@ describe('模拟：受控更新计划与服务', () => {
   it('所有方法仅按 sources 与归属生成：精确 npm、同前缀 brew、自带命令、兼容限制', async () => {
     const f = fixture(), id = syntheticIdentity()
     const p = planCliOperation('codex', 'update', id, '1.0.0', '1.2.3', 'https://mirror.invalid/')
-    expect(await operationArgv(p, f.backend, '/模拟/verified.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', '/模拟/verified.tgz', '--registry', 'https://mirror.invalid/'])
+    expect(await operationArgv(p, f.backend, '/模拟/verified.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', '/模拟/verified.tgz', '--registry', 'https://mirror.invalid/', '--prefer-offline', '--include=optional'])
     expect(await operationArgv({ ...p, method: 'brew' }, f.backend)).toEqual(['/模拟/bin/brew', 'upgrade', '--cask', 'codex'])
     expect(await operationArgv({ ...p, method: 'self-update', cli: 'qoder' }, f.backend)).toEqual(['/模拟/bin/codex', 'update'])
     expect(planCliOperation('pi', 'update', { ...id, source: 'self-update' }, '1.0.2', '1.1.0', p.registry).pinsVersion).toBe(false)
@@ -75,7 +75,7 @@ describe('模拟：受控更新计划与服务', () => {
     await until(() => vi.mocked(f.backend.spawn).mock.calls.length === 1)
     f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); child.finish(); await until(() => child.child.waitForExit.mock.calls.length > 0); child.exit(true)
     const result = (await finished(f.service)).results[0]!
-    expect(result).toMatchObject({ id: first.operation!.id, phase: 'succeeded', beforeVersion: '1.0.0', afterVersion: '1.2.3', integritySource: 'https://registry.npmjs.org/', progress: { readable: true, downloadedBytes: Buffer.byteLength('模拟') } })
+    expect(result).toMatchObject({ id: first.operation!.id, phase: 'succeeded', beforeVersion: '1.0.0', afterVersion: '1.2.3', integritySource: 'https://registry.npmjs.org/', progress: { readable: false, byteProgress: false } })
     expect(f.invalidateModels).toHaveBeenCalledWith('codex'); expect(f.service.cache.version('codex', syntheticIdentity().fingerprint)).toBeUndefined()
     expect(f.service.start('codex', 'update', token, '', 'req').operation?.id).toBe(result.id); expect(f.backend.spawn).toHaveBeenCalledTimes(1)
     expect(() => f.service.start('codex', 'update', token + 'a', '', 'req')).toThrow('requestId')

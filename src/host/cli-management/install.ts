@@ -1,3 +1,5 @@
+import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
+import { verifyNpmPlatforms } from './npm-platform.ts'
 import { createHash } from 'node:crypto'
 import { access, lstat, realpath, rename, unlink } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -10,9 +12,9 @@ import { identifyInstallation, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, type InstallSource } from './sources.ts'
 import { readDesktopRelease } from './desktop-update.ts'
 import { captureReadOnly, compareVersions, compatible, currentVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
-import { resolveNpmRuntime } from './npm.ts'
+import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { CliOperationError } from './planner.ts'
-import { downloadCliArtifact, parseIntegrity } from './download.ts'
+import { downloadCliArtifact } from './download.ts'
 import { executeCliOperation, outputTail } from './executor.ts'
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
@@ -53,7 +55,7 @@ export class CliInstaller {
   constructor(private deps: {
     root: string; backend: ProcessBackend; config: RuntimeConfig; releases: ReleaseClient
     fetcher?: Parameters<typeof downloadCliArtifact>[0]['fetcher']; platform?: NodeJS.Platform; arch?: string
-    identify?: typeof identifyInstallation; version?: typeof currentVersion
+    identify?: typeof identifyInstallation; version?: typeof currentVersion; npmCheck?: typeof verifyNpmPlatforms; npmRuntimeHost?: typeof resolveNpmHost
   }) {}
   private get platform() { return this.deps.platform ?? process.platform }
   async inspect(cli: ActiveCliId, signal: AbortSignal): Promise<InstallationIdentity | undefined> {
@@ -125,20 +127,23 @@ export class CliInstaller {
   async execute(plan: InstallPlan, op: CliUpdateOperation, signal: AbortSignal, changed: () => void, recheck: () => Promise<void>): Promise<{ identity: InstallationIdentity; version: string }> {
     if (plan.problem || plan.source.method === 'manual') throw new CliOperationError(plan.problem ?? 'PREREQUISITE_MISSING', `${plan.source.reason ?? '安装前置条件不满足'}；官方说明：${plan.offer.guideUrl}`)
     const { cli, source } = plan
-    let file: string | undefined, quarantined = false
+    let file: string | undefined, quarantined = false, npmDownload: NpmDownload | undefined, succeeded = false
     const output = (text: string) => { op.outputTail = outputTail(op.outputTail + text); changed() }
     try {
       op.installDirectory = plan.directory; op.targetVersion = validVersion(plan.target) ? plan.target : undefined; op.phase = 'downloading'; changed()
-      {
-        let url: string, integrity: string | undefined, expectedBytes: number | undefined, sources: string[] | undefined, sourceRedirects: Record<string, string> | undefined
-        if (source.method === 'npm') {
-          const metadata = await this.deps.releases.artifact(cli, plan.target!, plan.registry, signal, plan.automaticSources)
-          if (parseIntegrity(metadata.integrity).algorithm !== 'sha512') throw new CliOperationError('INTEGRITY_MISMATCH', 'npm 主包缺少官方 sha512')
-          url = metadata.url; sources = metadata.sources; sourceRedirects = metadata.sourceRedirects; integrity = metadata.integrity; op.integritySource = OFFICIAL_NPM_REGISTRY
-        } else if (source.method === 'script') { url = source.script!.url; op.outputTail = outputTail(`官方安装脚本：${url}\n仅验证 HTTPS 传输，官方未提供独立摘要。\n`) }
+      if (source.method === 'npm') {
+        const host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, signal, plan.npm)
+        op.integritySource = OFFICIAL_NPM_REGISTRY
+        npmDownload = await prepareNpmDownload({ cli, version: plan.target!, registry: plan.registry, automaticSources: plan.automaticSources,
+          root: this.deps.root, releases: this.deps.releases, signal, identity: plan.before, host, fetcher: this.deps.fetcher,
+          output, progress: value => { op.progress = value; changed() } })
+        file = npmDownload.main
+      } else {
+        let url: string, integrity: string | undefined, expectedBytes: number | undefined
+        if (source.method === 'script') { url = source.script!.url; op.outputTail = outputTail(`官方安装脚本：${url}\n仅验证 HTTPS 传输，官方未提供独立摘要。\n`) }
         else { url = source.desktop!.url; integrity = source.desktop!.integrity; expectedBytes = source.desktop!.bytes }
-        file = await downloadCliArtifact({ root: this.deps.root, output, url, sources, sourceRedirects, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
-        const extension = source.method === 'npm' ? '.tgz' : source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : source.desktop?.archive === 'zip' ? '.zip' : '.dmg'
+        file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
+        const extension = source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : source.desktop?.archive === 'zip' ? '.zip' : '.dmg'
         const renamed = file.replace(/\.part$/, extension); await rename(file, renamed); file = renamed
       }
       await recheck(); signal.throwIfAborted(); op.phase = 'installing'; changed()
@@ -153,7 +158,9 @@ export class CliInstaller {
         let candidate: string
         if (source.method === 'npm') {
           await writablePrefix(plan.directory)
-          await run([...plan.npm!, 'install', '--global', '--prefix', plan.directory, packageFile, '--registry', plan.registry, ...(cli === 'pi' ? ['--ignore-scripts'] : [])])
+          op.progress = { readable: false, byteProgress: false, resumeCount: 0, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }; changed()
+          for (const file of npmDownload!.platforms) await executeCliOperation(this.deps.backend, this.deps.config, npmCacheAddArgv(plan.npm!, file, plan.directory, plan.registry), control, output)
+          await run([...plan.npm!, 'install', '--global', '--prefix', plan.directory, packageFile, '--registry', plan.registry, '--prefer-offline', '--include=optional', ...(cli === 'pi' ? ['--ignore-scripts'] : [])])
           candidate = join(plan.directory, this.platform === 'win32' ? '' : 'bin', source.command + (this.platform === 'win32' ? '.cmd' : ''))
         } else if (source.method === 'script') {
           // Re-read the built-in descriptor; a client cannot supply a URL or interpreter.
@@ -177,7 +184,9 @@ export class CliInstaller {
           } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError || control.aborted) throw error }
         }
         if (!identity) throw exitError ?? new CliOperationError('VERSION_MISMATCH', `安装命令已完成，但在 ${candidate} 找不到 ${cli}`)
-        const version = await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, config, control)
+        if (source.method === 'npm' && identity.source !== 'npm') throw new CliOperationError('IDENTITY_CHANGED', 'npm 安装后的实际归属不符')
+        if (source.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.deps.releases, plan.registry, control, npmDownload!.host, npmDownload!.components, this.deps.root)
+        const version = await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, config, control, false, 45_000, source.method === 'npm')
         if (version && validVersion(version) && (!plan.before?.manifestVersion || compareVersions(version, plan.before.manifestVersion) > 0)) evidence.interrupted = false
         if (exitError) throw exitError
         if (!validVersion(version) || !compatible(cli, version)) throw new CliOperationError('VERSION_MISMATCH', '安装命令已完成，但无法确认已适配的 CLI 版本，请检查路径')
@@ -189,12 +198,17 @@ export class CliInstaller {
         store.setManual(cli, identity.executable)
         op.afterVersion = version
         if (plan.oldPath && plan.oldPath !== identity.executable) op.outputTail = outputTail(op.outputTail + `\n已改用新位置；旧位置 ${plan.oldPath} 未删除。\n`)
+        succeeded = true
         return { identity, version }
       }, count => {
         op.progress = { readable: false, resumeCount: 0, retryCount: count }
         output(`\n── 下载中断；已自动重试 ${count} 次 ──\n`)
       })
     } catch (error) { quarantined = error instanceof ProcessCleanupUnconfirmedError; throw error }
-    finally { if (file && !quarantined) await unlink(file).catch(() => undefined) }
+    finally {
+      try { if (npmDownload) await npmDownload.cleanup(succeeded, quarantined) }
+      catch { op.outputTail = outputTail(op.outputTail + '\n临时文件或下载通道记忆未能清理；操作已结束。\n') }
+      finally { if (file && !npmDownload && !quarantined) await unlink(file).catch(() => undefined) }
+    }
   }
 }

@@ -1,3 +1,5 @@
+import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
+import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { codexInstallerEnv } from './artifacts/codex.ts'
 import { runHermesUpdate } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
@@ -24,8 +26,8 @@ import { OfficialWatch, officialLockState } from './official-watch.ts'
 import { officialProbe } from './artifacts/probes.ts'
 import { ChannelMemory, channelMemoryKey } from './channel-memory.ts'
 import { cliDownloadProgressSchema, type CliChannelReason } from '../../shared/cli-management.ts'
-import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
-import { resolveNpmRuntime } from './npm.ts'
+import { downloadCliArtifact, prepareDownloads } from './download.ts'
+import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
 import { CliInstaller, type InstallPlan } from './install.ts'
 import type { CliOperationPlan } from './planner.ts'
@@ -52,6 +54,8 @@ interface Dependencies {
   globalCleanup?(error: ProcessCleanupUnconfirmedError): void
   cleanup?(cli: ActiveCliId, error: ProcessCleanupUnconfirmedError): void
   identify?: typeof identifyInstallation
+  npmCheck?: typeof verifyNpmPlatforms
+  npmRuntimeHost?: typeof resolveNpmHost
   version?: typeof currentVersion
   releases?: ReleaseClient
   artifactFetch?: Parameters<typeof downloadCliArtifact>[0]['fetcher']
@@ -92,7 +96,7 @@ export class CliManagementService {
   constructor(private deps: Dependencies) {
     this.maintenance = deps.config.cliMaintenance ?? new CliMaintenance()
     this.cache = new CliManagementCache(deps.root); this.releases = deps.releases ?? new ReleaseClient()
-    if (deps.config.cliExecutablePaths) this.installer = new CliInstaller({ root: deps.root, config: deps.config, backend: deps.backend, releases: this.releases, fetcher: deps.artifactFetch, identify: deps.identify, version: deps.version })
+    if (deps.config.cliExecutablePaths) this.installer = new CliInstaller({ root: deps.root, config: deps.config, backend: deps.backend, releases: this.releases, fetcher: deps.artifactFetch, identify: deps.identify, version: deps.version, npmCheck: deps.npmCheck, npmRuntimeHost: deps.npmRuntimeHost })
     const cached = this.cache.entries()
     this.state = { revision: 0, activity: 'idle', entries: CLI_IDS.map(cli => ({ ...(cached.find(e => e.cli === cli) ?? { cli, installed: false, group: 'checking' as const }), install: installOffer(cli) })), queue: [], results: [] }
     // Categories are deliberately separate: all file checks before any version/query work.
@@ -205,10 +209,15 @@ export class CliManagementService {
       if (previous && fingerprintToken(previous.fingerprint) !== fingerprintToken(identity.fingerprint)) this.deps.invalidateModels?.(cli)
       this.identities.set(cli, identity)
       if (pathOnly) return
+      // A main-package fingerprint does not cover optional component removal.
+      if (identity.source === 'npm') {
+        const host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, control)
+        await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.releases, this.effectiveRegistry(), control, host, undefined, this.deps.root)
+      }
       const cached = this.cache.version(cli, identity.fingerprint)
       this.assertHealthy()
       const reusable = cached && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion)
-      const version = reusable ? cached.version : await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background)
+      const version = reusable ? cached.version : await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background, 5000, identity.source === 'npm' && !background)
       control.throwIfAborted()
       if (!reusable && (!background || CLI_SOURCES[cli].backgroundSafe)) {
         const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, control, background)
@@ -230,9 +239,11 @@ export class CliManagementService {
       signal.throwIfAborted()
       const code = (error as NodeJS.ErrnoException)?.code
       const missing = ['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes(code ?? '') || (error as { reason?: string }).reason === 'not-installed'
+      const failedIdentity = this.identities.get(cli)
+      this.cache.invalidateVersion(cli)
       this.identities.delete(cli)
-      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : undefined
-      this.publish(cli, { installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: detail, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
+      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : error instanceof NpmInstallationError ? error.message : old.source === 'npm' || failedIdentity?.source === 'npm' ? 'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试' : undefined
+      this.publish(cli, { source: failedIdentity?.source, installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: detail, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
     } finally { clearTimeout(timeout) }
   }
   private async remote(cli: ActiveCliId, signal: AbortSignal, force: boolean) {
@@ -394,7 +405,7 @@ export class CliManagementService {
     this.foregroundController?.abort(); this.preloader.changed(); this.changed()
     this.operationRun = Promise.resolve().then(async () => {
       let quarantine = false
-      let artifact: string | undefined, local: LocalArtifactInstall | undefined
+      let artifact: string | undefined, local: LocalArtifactInstall | undefined, npmDownload: NpmDownload | undefined
       const desktopArtifacts: string[] = []
       try {
         await this.preloader.pause(); await this.running
@@ -422,16 +433,16 @@ export class CliManagementService {
         const plan = await this.planCliOperation(cli, 'update', preparation, selected)
         if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
+        let npmRuntime: [string, string] | undefined
         if (plan.method === 'npm') {
-          const metadata = await this.releases.artifact(cli, plan.targetVersion, plan.registry, preparation, selected.automaticSources)
-          if (parseIntegrity(metadata.integrity).algorithm !== 'sha512') throw new CliOperationError('INTEGRITY_MISMATCH', 'npm 主包缺少官方 sha512 校验值')
+          npmRuntime = await bounded(resolveNpmRuntime(this.deps.backend), preparation)
+          const host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, preparation, npmRuntime)
           op.integritySource = OFFICIAL_NPM_REGISTRY
           op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
-          // The preparation timeout does not consume the downloader's two-hour budget.
-          artifact = await downloadCliArtifact({ root: this.deps.root, output, ...metadata, signal, fetcher: this.deps.artifactFetch,
+          npmDownload = await prepareNpmDownload({ cli, version: plan.targetVersion, registry: plan.registry, automaticSources: selected.automaticSources,
+            root: this.deps.root, releases: this.releases, signal, identity: plan.identity, host, fetcher: this.deps.artifactFetch, output,
             progress: value => { op.progress = value; this.changed() } })
-          const tgz = artifact.replace(/\.part$/, '.tgz')
-          await rename(artifact, tgz); artifact = tgz
+          artifact = npmDownload.main
         }
         if (plan.method === 'official-script') {
           const script = NATIVE_UPDATES[cli]!.script!
@@ -444,13 +455,15 @@ export class CliManagementService {
         const localOptions = { cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, beforeVersion: plan.beforeVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output,
           progress: (value: import('../../shared/cli-management.ts').CliDownloadProgress) => { op.progress = cliDownloadProgressSchema.parse({ ...value, reason: value.reason ?? (value.channel === 'takeover' ? op.progress?.reason : undefined), officialFailedAt: value.channel === 'takeover' && (value.reason ?? op.progress?.reason) === 'OFFICIAL_RECENT_FAILURE' ? value.officialFailedAt ?? op.progress?.officialFailedAt : undefined }); this.changed() } }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact, process.platform, npmRuntime), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
         signal.throwIfAborted()
         const run = async (command: string[], control: AbortSignal, evidence?: InterruptionEvidence) => {
-          op.command = nativeLaunchArgv(command); op.phase = 'installing'; op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
+          op.command = nativeLaunchArgv(command); op.phase = 'installing'
+          if (plan.method === 'npm') op.progress = { readable: false, byteProgress: false, resumeCount: 0, retryCount: op.progress?.retryCount, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }
+          op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
           await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
             local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence)
         }
@@ -463,7 +476,8 @@ export class CliManagementService {
             const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
             verification.throwIfAborted()
             if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
-            const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000)
+            if (plan.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(after, this.releases, plan.registry, verification, npmDownload!.host, npmDownload!.components, this.deps.root)
+            const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000, plan.method === 'npm')
             verification.throwIfAborted()
             const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
             op.afterVersion = version
@@ -604,7 +618,10 @@ export class CliManagementService {
           }
         } else verified = await withInterruptionRecovery(signal, async (control, evidence) => {
           let exitError: unknown
-          try { await run(argv!, control, evidence) }
+          try {
+            if (npmDownload) for (const file of npmDownload.platforms) await run(npmCacheAddArgv(argv!.slice(0, 2), file, plan.identity.prefix!, plan.registry), control, evidence)
+            await run(argv!, control, evidence)
+          }
           catch (error) { if (!(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
           try {
             const result = await verify(control, evidence)
@@ -641,15 +658,27 @@ export class CliManagementService {
           op.error = { code, message: error instanceof CliOperationError ? outputTail(error.message) : code === 'INTEGRITY_MISMATCH' ? '下载源校验值与官方源不符，未执行更新' : '更新失败，请检查网络、安装前缀与输出后重试', retryable: true }
         }
       } finally {
-        if (local && !quarantine) await local.cleanup()
-        if (artifact && !quarantine) await unlink(artifact).catch(() => undefined)
-        if (!quarantine) await Promise.all(desktopArtifacts.map(file => unlink(file).catch(() => undefined)))
-        op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
-        this.operationController = undefined; this.operationRun = undefined
-        if (!quarantine) { release(); this.deps.invalidateModels?.(cli) }
-        else { this.state.queue = []; this.queued.clear() }
-        this.changed(); this.preloader.changed()
-        if (!this.lifetime.signal.aborted && !quarantine) this.nextQueued()
+        // Files and channel-memory are best effort. Their failures must never
+        // strand the operation, maintenance lease, or remaining batch entries.
+        try {
+          const cleanup = await Promise.allSettled([
+            ...(local && !quarantine ? [Promise.resolve().then(() => local!.cleanup())] : []),
+            ...(npmDownload ? [Promise.resolve().then(() => npmDownload!.cleanup(op.phase === 'succeeded', quarantine))] : []),
+            ...(artifact && !npmDownload && !quarantine ? [unlink(artifact)] : []),
+            ...(!quarantine ? desktopArtifacts.map(file => unlink(file)) : []),
+          ])
+          if (cleanup.some(result => result.status === 'rejected')) op.outputTail = outputTail(op.outputTail + '\n临时文件或下载通道记忆未能清理；操作已结束。\n')
+        } finally {
+          op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
+          this.operationController = undefined; this.operationRun = undefined
+          try {
+            if (!quarantine) { release(); this.deps.invalidateModels?.(cli) }
+            else { this.state.queue = []; this.queued.clear() }
+          } finally {
+            try { this.changed(); this.preloader.changed() }
+            finally { if (!this.lifetime.signal.aborted && !quarantine) this.nextQueued() }
+          }
+        }
       }
     })
     void this.operationRun.catch(() => undefined)

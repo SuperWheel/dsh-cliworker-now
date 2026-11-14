@@ -88,7 +88,7 @@ it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 
     return { ...syntheticIdentity('pi', '1.1.0'), executable: config.piExecutable! }
   })
   vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '1.1.0', versions: ['1.1.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
-  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.1.0', engines: { node: '>=22.19.0' } })))
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.1.0', engines: { node: '>=22.19.0' }, dist: { tarball: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') } })))
   vi.spyOn(f.releases, 'artifact').mockResolvedValue({ url: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') }); f.version.mockResolvedValue('1.1.0')
   if (mode === 'cleanup') {
     const error = new ProcessCleanupUnconfirmedError(); f.identify.mockRejectedValue(error)
@@ -224,7 +224,7 @@ it('模拟：官方脚本只取内置地址并以私有文件执行，不接受�
 })
 it('模拟：Pi 取最新版且带 ignore-scripts；Node 范围不可猜测', async () => {
   const f = fixture(); vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '9.0.0', versions: ['1.0.2', '9.0.0', '9.0.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
-  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '9.0.0', engines: { node: '>=22.19.0' } })))
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '9.0.0', engines: { node: '>=22.19.0' }, dist: { tarball: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') } })))
   const plan = await prepare(f, 'pi'); expect(plan.target).toBe('9.0.0'); expect(plan.problem).toBeUndefined()
   vi.spyOn(f.releases, 'artifact').mockResolvedValue({ url: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') })
   f.version.mockResolvedValue('9.0.0')

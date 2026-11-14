@@ -51,9 +51,10 @@ export async function downloadDescription(description: Pick<ArtifactDescription,
     context.signal.throwIfAborted()
     const destination = privatePath(context.directory, file.dest)
     await mkdir(dirname(destination), { recursive: true, mode: 0o700 })
+    let channel: 'official' | 'takeover' = 'takeover'
     let path: string | undefined, lastBytes = 0, lastResumes = 0, lastHost = new URL(file.sources[0]!).host
     try {
-      path = await downloadCliArtifact({ root: context.root, url: file.sources[0]!, sources: file.sources.length > 1 || typeof file.bytes === 'string' ? file.sources : undefined, lengthProbe: file.bytes === 'RANGE' ? 'RANGE' : 'HEAD',
+      path = await (context.download ?? downloadCliArtifact)({ root: context.root, url: file.sources[0]!, sources: file.sources.length > 1 || typeof file.bytes === 'string' ? file.sources : undefined, lengthProbe: file.bytes === 'RANGE' ? 'RANGE' : 'HEAD',
         integrity: file.integrity === 'response-md5' ? undefined : file.integrity, requireContentMd5: file.integrity === 'response-md5',
         expectedBytes: typeof file.bytes === 'number' ? file.bytes : undefined, officialSignedArtifact: file.officialSignedArtifact,
         sourceRedirects: file.sourceRedirects, redirectHosts: file.redirectHosts, maxBytes: DOWNLOAD_MAX_BYTES - stored, signal: context.signal, fetcher: context.fetcher, output: context.output,
@@ -63,9 +64,9 @@ export async function downloadDescription(description: Pick<ArtifactDescription,
           return next.sources
         } : undefined,
         progress: p => {
-          lastHost = p.sourceHost ?? lastHost; lastBytes = p.downloadedBytes ?? 0; lastResumes = p.resumeCount
+          channel = p.channel ?? 'takeover'; lastHost = p.sourceHost ?? lastHost; lastBytes = p.downloadedBytes ?? 0; lastResumes = p.resumeCount
           lengths[index] ??= p.totalBytes
-          context.progress({ ...p, channel: 'takeover', stage: `下载官方工件（${index + 1}/${files.length}）`, byteProgress: true,
+          context.progress({ ...p, channel, stage: `下载官方工件（${index + 1}/${files.length}）`, byteProgress: true,
             byteProgressState: lengths.every(v => v !== undefined) ? 'known-total' : 'unknown-total', currentStep: index + 1, totalSteps: files.length, stepName: file.dest, fileCount: files.length, completedFiles: completed,
             downloadedBytes: completedBytes + lastBytes, totalBytes: lengths.every(v => v !== undefined) ? lengths.reduce<number>((a, b) => a + b!, 0) : undefined, resumeCount: resumes + lastResumes })
         } })
@@ -76,7 +77,7 @@ export async function downloadDescription(description: Pick<ArtifactDescription,
       if (stored > DOWNLOAD_MAX_BYTES) throw new CliOperationError('INTEGRITY_MISMATCH', '官方离线工件合计超过 2 GB 私有缓存上限')
       await rename(path, destination); path = undefined
       completed++; completedBytes += lastBytes; resumes += lastResumes
-      context.progress({ readable: true, channel: 'takeover', stage: completed === files.length ? '官方工件下载校验完成' : '继续下载下一工件', byteProgress: true,
+      context.progress({ readable: true, channel, stage: completed === files.length ? '官方工件下载校验完成' : '继续下载下一工件', byteProgress: true,
         byteProgressState: lengths.every(v => v !== undefined) ? 'known-total' : 'unknown-total', currentStep: index + 1, totalSteps: files.length, stepName: file.dest, fileCount: files.length, completedFiles: completed,
         downloadedBytes: completedBytes, totalBytes: lengths.every(v => v !== undefined) ? lengths.reduce<number>((a, b) => a + b!, 0) : undefined, resumeCount: resumes, sourceHost: lastHost })
     } finally { if (path) await rm(path, { force: true }) }

@@ -49,7 +49,7 @@
 
 ## Out of Scope
 
-- npm、Homebrew、WinGet 等包管理器安装的进度条（这些安装方式继续交给对应包管理器）。
+- Homebrew、WinGet 等包管理器安装的进度条；npm 主包及本平台 optionalDependencies 下载、缓存预置和安装核验纳入决定 9。
 - 桌面应用：ZCode、WorkBuddy CN 与 WorkBuddy 已由插件下载。
 - 复用官方已下载的部分。第一版一律删除后从零下载，复用以后作为描述里的可选字段。
 - OpenCode 在 Windows 上的接管，以及 CodeBuddy 原生更新的接管。这两项还没有调研，单列为后续调研项。

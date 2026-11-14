@@ -23,7 +23,7 @@
 
 **Non-Goals**
 
-- 包管理器安装的进度条。
+- Homebrew、WinGet 等包管理器内部进度；npm 主包与平台组件下载纳入决定 9。
 - 复用官方已下载的部分（第一版不做）。
 - 修改 CLI 自身的自动更新设置。
 - 降级。
@@ -210,3 +210,17 @@ Hermes 没有可替换的发布包，所以接管的含义是：插件预取并�
 - 官方进度中的 MiMo HEAD 按本次暂存实际文件名查询，避免 baseline 选择不同造成错误百分比；无法获取总量仍可显示已确认字节，不显示百分比。
 - TRAE 主工件进度包含主件、host、存在时的两项辅助件与 ripgrep；官方安装脚本、改写元数据属于 extras，显示单独准备阶段。自动更新策略文件 `auto_update` 仍按任务 4.5 留待核实，本轮只保持现有标记恢复行为。
 - `.gitignore` 原有全局 `artifacts/` 规则会忽略新源码目录，添加仅针对 `src/host/cli-management/artifacts/` 的反向规则，其他工件目录仍忽略。
+
+### 决定 9：npm 平台组件（2026-11-14 Windows Codex 证据）
+
+npm 可以静默跳过下载失败的 optionalDependency 并退出 0。主包 package.json 的版本不能证明 CLI 可运行。Host 从有效 registry 的目标清单解析 optionalDependencies（包括 npm 别名），按已解析 npm 的原生 Node 运行时 platform/arch/libc 与子包 os/cpu/libc 选择平台包（不采用 Harness 进程架构），摘要以官方清单为信任根。平台 tarball 与主包进入统一文件下载器，共用真实合计字节、续传、官方优先与 7 天失败记忆。
+
+先在隔离 Mac prefix/cache 证明 npm cache add 本地平台 tgz，再以同一 cache 安装主包时普通名称和别名均命中内容缓存，无平台 tarball 网络 GET；交付只采用该机制。产品沿用 npm 安装实际使用的默认缓存，不另设 --cache；两条命令使用同一个 Node/npm、registry 与进程环境。npm 仍可能查询依赖元数据和下载普通依赖，安装阶段显示阶段文字，不能保留主包 100% 冒充整个安装进度。
+
+更新和首次安装完成后必须检查已装主包声明的本平台必需组件组：Codex 对应平台 alias 必需；OpenCode 普通二进制与 baseline 至少一个；CodeBuddy node-pty 有 child_process 回退，不要求存在，sandbox 平台包另行核验，并通过既有 --version 探针（不采信主包版本字段）。缺组件报告具体依赖名称、npm 下载失败/超时可能性；后台检查在复用版本缓存之前核验平台树，损坏时复用 failed + UNKNOWN_VERSION + reasonDetail，清除 currentVersion，保留 installed=true，由已有重新安装入口修复。后台不运行此前禁止后台探测的 CLI。本地核验禁止 registry 请求，仅使用已装清单、已知 CLI 必需组与插件持久化的已验证元数据；后者按主包版本/依赖图/运行时平台分键。未知或过期元数据缺失不等于安装损坏，不以远端不可达错误覆盖本地健康状态。安装后仍必须通过版本探针。
+
+不修改 src/client、不改变代理环境、不增加 fetch-timeout、不提交或升级版本。真实 Windows npm 更新和 Desktop 页面验收仍需后续执行。
+
+P2 补充：官方阶段、重试与换源始终使用同一临时文件和偏移量；官方 watchdog 只取消当前连接，接管前用原响应长度/强 ETag/MD5 锚定对象，向新源发 Range/If-Range。镜像低于 100 KB/s 可转官方，停滞后从断点恢复；只有无法安全追加（服务器不支持续传、缺少验证标识或标识变化）才重取，最终仍验证官方摘要。文件和 7 天记忆清理失败不能中断 mandatory finally：完成操作、清空运行句柄、释放非隔离维护锁及继续队列。进程范围退出未确认保持原隔离策略。
+
+2026-11-14 用户提供的 Windows 手动修复进一步证明 cache add 支持 Codex npm alias：npmmirror 约 50 KB/s；同代理官方约 6 MB/s，152 MB 停滞后 curl exit 28，再 Range 续至 172.3 MB/31 秒，SHA-512 一致；缓存预置后 npmmirror npm install 7 秒、平台 cache hit、codex-cli 0.166.0。不是新插件 Windows 验收。npm 独自从镜像与指定官方 registry 下载均曾 5 分钟超时；缓存 packument 镜像 URL 是待核实解释。插件生成标准官方/镜像 URL、自取精确版本并验证摘要，不信任 npm 缓存中的 tarball 路由；同摘要内容缓存供 npm 复用。详见 tasks 9.9。

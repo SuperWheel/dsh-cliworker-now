@@ -4,7 +4,7 @@ import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { recoverableDownloadError } from './recovery.ts'
 
-class SourceIdentityError extends CliOperationError {
+export class SourceIdentityError extends CliOperationError {
   constructor(message = '下载源工件身份不一致，拒绝换源或追加文件') { super('NETWORK', message) }
 }
 
@@ -39,6 +39,10 @@ export class ArtifactSources {
   private resolved = new Map<number, string>()
   constructor(private urls: readonly string[], private fetcher: typeof hostFetch, private signal: AbortSignal, private maxBytes: number, private requireMd5 = false, private redirects: Record<string, string> = {}, private lengthProbe: 'HEAD' | 'RANGE' = 'HEAD', private redirectHosts: readonly string[] = []) {
     if (!urls.length || urls.length > 8 || new Set(urls).size !== urls.length || urls.some(url => customRegistryProblem(url) || new URL(url).port)) throw new CliOperationError('NETWORK', '下载源列表必须是无凭据的 HTTPS 地址')
+  }
+  /** Anchor the initial official GET before takeover, preserving its partial bytes. */
+  seed(length: number | undefined, etag?: string, md5?: string) {
+    if (length !== undefined && (etag && !etag.startsWith('W/') || md5)) this.identity = { length, etag, md5, rangeSupported: true }
   }
   replaceUrls(urls: string[]) {
     if (!urls.length || urls.length > 8) mismatch()
@@ -82,7 +86,7 @@ export class ArtifactSources {
       return { length, etag, md5, rangeSupported: response.status === 206 || response.headers.get('accept-ranges')?.toLowerCase() === 'bytes' }
     } finally { clearTimeout(timer) }
   }
-  async select(rotate = false): Promise<void> {
+  async select(rotate = false, restartOnChange = false): Promise<boolean> {
     let lastError: unknown
     for (let offset = 0; offset < this.urls.length; offset++) {
       this.signal.throwIfAborted()
@@ -95,13 +99,17 @@ export class ArtifactSources {
         if (error instanceof SourceIdentityError || !(error instanceof CliOperationError) && !recoverableDownloadError(error) && !(error instanceof DOMException && error.name === 'AbortError')) throw error
         lastError = error; continue
       }
+      let changed = false
       if (this.identity) {
         const digest = (value: Identity) => value.md5 ?? (/^"[a-fA-F0-9]{32}"$/.test(value.etag ?? '') ? value.etag!.slice(1, -1).toLowerCase() : undefined)
         const same = this.requireMd5 ? identity.etag === this.identity.etag && identity.md5 === this.identity.md5
           : !!identity.etag && identity.etag === this.identity.etag || !!digest(identity) && digest(identity) === digest(this.identity)
-        if (identity.length !== this.identity.length || !same || identity.md5 && this.identity.md5 && identity.md5 !== this.identity.md5) mismatch()
+        if (identity.length !== this.identity.length || !same || identity.md5 && this.identity.md5 && identity.md5 !== this.identity.md5) {
+          if (!restartOnChange) mismatch()
+          changed = true; this.identity = undefined
+        }
       }
-      this.identity ??= identity; this.current = identity; this.index = next; this.rangeCapable = identity.rangeSupported; return
+      this.identity ??= identity; this.current = identity; this.index = next; this.rangeCapable = identity.rangeSupported; return changed
     }
     throw lastError ?? new CliOperationError('NETWORK', '全部下载源不可用')
   }

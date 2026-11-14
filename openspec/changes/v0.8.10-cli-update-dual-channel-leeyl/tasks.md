@@ -175,6 +175,8 @@
 - [x] 8.12 Hermes 步数按回执「结束标记」推算当前步：最近完成阶段的下一步才是当前步，整体成功后为第 6 步完成
   - 2026-11-14：复用原生 next 映射推算六步编号，success/skipped 推进，failed/running 保留该阶段，fetch 映射 apply，restart 封顶第 6 步，整体 success 固定第 6 步。状态文件、日志与输出片段不写步数；新增 10 项模拟用例，按 8.11 实机提供的 13:46:38→13:52:13 阶段时间线逐点断言 currentStep/stepName（包括构建期间第 5 步与整体成功第 6 步），并覆盖 fetch、失败/运行中、缺省阶段列表及较新旧阶段文本不使步数倒退。README、doc/design.md、决定 8 和增量规格同步。
   - 验证：`corepack pnpm typecheck` 通过（Host/Client against DSH 0.2.2-rc.3）；`corepack pnpm exec vitest run tests/cli-management-hermes-takeover.test.ts tests/cli-management-hermes-version.test.ts tests/cli-management-all-updates.test.ts tests/cli-update-page.test.tsx`：4 文件、247/247 通过；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict` 通过；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。仅模拟回归，未执行真实 Hermes/Windows 更新、账号或模型调用；未修改 src/client、未更新 Desktop、未提交/推送/归档或变更版本。
+  - 2026-11-14 Windows 实机复验（插件 8536439，1241 文件哈希一致；Hermes 先以官方 install.ps1 带系统代理回退到 0.23.0，再由页面更新）：回执 `update_20261114_142459_14808`，apply 14:25:23、deps 14:26:18、build 14:31:14、restart 14:31:22 均 success，outcome success。页面步数依次为 3/6 apply → 4/6 deps（约 0:58 起）→ 5/6 build（约 1:39 起，持续到 6:30）→ 6/6 restart（6:35），与回执阶段一致，不再落后一整步；按页面已用时对照回执，切换约晚 10–15 秒（CU 分批采样，间隔 5–20 秒，未单独定位延迟来源）。最终「已更新到 0.23.1」，第二次检查「上次检查」更新为 22:32。
+  - 遗留观察：阶段文字来自 Hermes 状态文件，build 段后半（Code updated!、技能同步、配置检查）仍显示「Building the web UI」约 3.5 分钟；这是 Hermes 未发布细分状态，步数正确，未改。CU 子 agent（gpt-6.1-sol）采样，主会话核对回执。
 
 ## 7. 待决定与后续调研 〔产品｜2h〕
 - [x] 7.1 Grok 接管校验强度
@@ -182,3 +184,52 @@
 - [x] 7.2 Pi 与 Hermes 方案
   - 2026-11-14 用户定「pi用插件，hermes按照推荐（但也要有进度条）」：Pi 本版接管；Hermes 不接管、显示阶段进度条，见设计决定 7
 - [ ] 7.3 OpenCode Windows、CodeBuddy 原生更新的进度与接管调研
+
+## 9. npm 平台组件下载与安装核验 〔后端｜12h｜前置 1〕
+- [x] 9.1 隔离 Mac 真实 npm 实验：平台 tarball 预置缓存、普通依赖及 npm alias 命中验证
+  - 2026-11-14：Mac ARM64 / Node 22.23.1，npm 10.9.8 与下载到临时目录的 npm 11.12.1，esbuild 0.25.0 + @esbuild/darwin-arm64 0.25.0（4,151,127 B）真实 tarball，按官方 dist.integrity 校验 SHA-512。普通 optionalDependency 和本地 alias 夹具各跑一次，两版共 4 例 cache add/install 均 exit 0；日志均有平台 tgz cache hit，无平台 tarball HTTP GET；独立回读安装清单 name，并执行平台 bin/esbuild --version，全部输出 0.25.0、exit 0。
+  - 实际 argv（npm 11）：`node <npm11/package/bin/npm-cli.js> cache add <platform.tgz> --global --prefix <prefix> --cache <cache> --userconfig <empty.npmrc> --globalconfig <global.npmrc> --registry https://registry.npmjs.org/ --loglevel silly --no-audit --no-fund`；随后同 runtime/prefix/cache 执行 `install --global --prefix <prefix> <main.tgz|alias.tgz> --prefer-offline --include=optional` 并保留上述 cache/config/registry/log 参数。
+  - 完整脚本、命令、日志与结果：[RESULTS.md](/private/tmp/claude-501/-Users-leeyl-AI-Project-DeepSeekHarness-cliworker-now/63f78787-0a41-4a97-82fc-6ac9a10e2670/scratchpad/npm-platform-experiment/RESULTS.md)。首次沙箱 DNS 被阻止，获准后运行；首次 userconfig/globalconfig 共用文件被 npm 拒绝，拆为两个空文件后通过。只交付已证明的 cache add 机制，没有试验或交付同时安装多个 tgz 的方案。
+  - 实验 prefix/cache 全隔离；产品不覆盖 --cache，用本次 npm 安装本来采用的默认缓存，两条命令同 runtime/prefix/registry/cwd/环境。没有移除代理变量或添加 NO_PROXY，没有读取用户 npmrc/凭据，也没有安装全局实验包。
+- [x] 9.2 从有效 registry 清单解析平台 optionalDependencies，统一下载及合计进度、摘要、换源与失败记忆
+  - 新增 npm-platform.ts、npm-download.ts：npm alias 保留目录键，真实包名/版本及范围用 semver 解析；从有效 registry 获取目标和平台清单，以 os/cpu/libc（含排除项）选组件，摘要和平台声明与官方核对。复用 downloadDescription 聚合下载，主包结束而组件未完成时不报总量 100%；支持组件 shasum/SHA-1 回退，主包仍要求 SHA-512。
+  - 自动源官方优先，30 秒无增长、60 秒低速或预算到期才切接管，接管复用原下载器的多源、精确 CDN 跳转、Range/摘要校验；自定义源不换源。成功接管后保存 7 天失败记忆，失败/取消清除；内存清单缓存 6 小时、请求与清单大小有界。验证证据见 9.4。
+- [x] 9.3 更新与首次安装共用缓存预置；安装后核验平台树和版本探针；后台损坏安装显示需修复
+  - service.ts/install.ts 在 npm install 前为全部平台文件执行同 runtime/registry/prefix 的 cache add，install 增加 --prefer-offline/--include=optional，未增加 fetch-timeout。安装阶段清除下载字节进度，保留自动重试计数。
+  - 所有 npm 安装后检查已安装主包声明与平台包 package.json（含 alias 真实 name/version 和同 prefix 内 hoist），再以既有有界 --version 探针回读版本；主包 manifestVersion 不能绕过探针。npm exit 0 缺平台包为 VERSION_MISMATCH。后台先核验平台树，再复用版本缓存；损坏时清除版本缓存与 currentVersion，保留 installed=true，以 failed/UNKNOWN_VERSION 和具体缺件 reasonDetail 显示，复用已有重新安装入口修复同版本损坏安装。
+  - 清理未确认保留本次文件和维护锁；普通结束清理私有下载目录。未修改 src/client 或共享状态枚举。
+- [x] 9.4 Windows Codex 缺件、alias、聚合进度与缓存 argv 模拟回归，类型检查、隔离构建和严格规格校验
+  - `corepack pnpm typecheck`：通过，Host/Client against DSH 0.2.2-rc.3。
+  - `corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx`：最终 33 文件、1006/1006 通过，18.71 秒。新增 npm-platform 文件 22 项模拟：Windows Codex 缺件/别名/平台与 libc/范围、版本探针失败、后台旧缓存、首装和更新 exit 0 缺件失败、聚合进度、摘要、官方停滞接管/7 天记忆和缓存 argv。原用例更新为安装阶段不显示主包 100%、官方优先和缓存参数。
+  - 首轮整组测试的 Pi 环回监听 listen EPERM，经允许后沙箱外重跑；新增看门狗测试依赖固定 GET 次数导致假时钟竞态，改为识别 HEAD 接管边界后最终整组通过。没有用放宽生产断言规避失败。日志：`/private/tmp/npm-platform-tests-final.log`。
+  - `corepack pnpm build:preview`：通过，产物仅 `.cache/preview-package`，未运行正式 build/更新 Desktop。
+  - `OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict`：通过（初次长需求段警告，缩短后通过）。`/Library/Developer/CommandLineTools/usr/bin/git diff --check`：通过。
+  - 证据边界：回归是模拟，真实执行仅为 9.1 的 Mac npm/esbuild 实验及公开清单读取。未运行 Windows Codex/OpenCode/CodeBuddy 修复验收、Desktop UI、真实账号或模型。
+- [x] 9.5 同步 README、设计与增量规格，记录真实实验与未验收边界
+  - README.md、doc/design.md、change proposal/design 与 cli-update 增量规格已同步。依赖增加 semver 7.7.3 与 @types/semver 7.7.1，用于 npm 完整范围匹配；未改变插件版本。
+  - 必需新增的 Client 静态字串：无；复用已有“读不出当前版本。可以改路径，或重新安装到默认位置”、failed/UNKNOWN_VERSION 和 Host reasonDetail。Host 新显示文字需后续英文映射时，精确模板为：`npm 安装需要修复：平台组件 {name} 未安装或版本不符；npm 可能下载超时或失败，请重新安装`、`npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试`、`npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖`；接管日志为 `npm 官方工件下载未完成，改由插件续传与换源下载。`。没有新增“需要修复”枚举或按钮。
+  - Windows 实机端到端仍待后续验收；此前变更中的未完成任务保持原样。未提交、推送、归档或升级版本；保留原有未跟踪 PRD/video 文件。
+- [x] 9.6 修复 P2-1/P2-2：必需组件按 CLI 分组，本地核验不访问 registry
+  - OpenCode 普通版与 baseline 至少一个；CodeBuddy node-pty 有 child_process 回退，不列为必需，sandbox 保持单独核验；Codex 对应平台 alias 必需。保留 alias 真实 name/version、版本范围、同 prefix hoist 核对；缺件及声明缺失沿用原 Host 文案模板。
+  - 下载准备将经官方一致性核对的平台元数据以 0700 目录/0600 原子文件存入插件私有 npm-platforms，键含主包名/版本/依赖图/实际运行时平台。本地验证只读该元数据和安装树；缺失/无效元数据是证据不可用，不是损坏，不发 registry 请求。已知 CLI 必需组仍可发现从未经过插件安装的 Windows Codex 缺件；坏件继续 failed/UNKNOWN_VERSION + installed=true，并用现有重新安装入口。
+  - 模拟新增覆盖：OpenCode 两个单包分别成功、全缺失败；CodeBuddy 无 node-pty 成功；registry 完全断网且其他 OS 包缺失仍可核验健康 Codex；持久化元数据离线发现缺件、无元数据不误判及架构键隔离。9.10 记录最终整组验证。
+- [x] 9.7 修复 P2-3/P2-4：按实际 Node/npm 平台选包，跨接管与换源保留断点
+  - resolveNpmHost 用已核实 npm 所属原生 Node 的有界只读 argv 探测 platform/arch/libc；更新和首装把同一 runtime 交 cache add/install、把该 host 交下载和安装后核验。删除平台帮助函数对 Harness process.platform/process.arch 的默认回退；本地检查同样解析当前 npm 运行时，不读取或改动代理环境。
+  - 官方 watchdog 改为同一 downloadCliArtifact 调用内取消连接并切换通道，保留文件、偏移、总时限/恢复次数。初始响应长度/强 ETag/MD5 锚定对象，跨源 HEAD 验证后携带 Range/If-Range；无安全追加标识、标识变化或服务器忽略 Range 才清空重取，最终官方摘要仍必需。接管慢镜像可转官方，断流从断点恢复，不先删 .part。
+  - 模拟新增覆盖：ARM64 npm 与 Harness 不同架构、Linux musl 探测；官方 30 秒停滞的完整接管、slow/budget 信号在已收字节后接管（后两项注入传输层信号，不宣称跑满 60 秒/10 分钟）、镜像低速转官方且偏移不倒退、validator 改变/不支持 Range 的干净重取。
+- [x] 9.8 修复 P2-5：清理异常不阻塞 mandatory finally
+  - 文件清理与通道记忆写入以 allSettled 独立收集异常，最外层 finally 清空 operation/operationRun、写完成时间；非进程隔离状态下释放维护锁、继续队列。首装同样保留原安装结果。进程退出未确认仍保留原隔离和维护锁，不把磁盘清理错误当作进程存活。
+  - 模拟 ENOSPC、EACCES 通道写入失败及目录删除 EACCES：两项队列均结束、运行句柄清空、两把维护锁可再次取得，结果保留成功并记录收尾提示。
+  - 本轮未改 src/client，你已新增的 5 个 Host 文案/模式保持原文；唯一新增需英文映射的精确 Host 日志为 `临时文件或下载通道记忆未能清理；操作已结束。`。没有新增状态或按钮；OpenCode 二选一缺件时仍用原 `{name}` 模板，值为两个组件名以 ` / ` 连接。
+- [x] 9.9 记录用户提供的 Windows 手动修复证据，同步设计/规格与 README
+  - 2026-11-14 用户提供，手动修复，不是本插件新代码的 Windows 验收：同一系统代理 127.0.0.1:7897，npmmirror 的 @openai/codex 0.166.0-win32-x64 tarball 约 50 KB/s（15 秒 0.78 MB）；registry.npmjs.org 约 6 MB/s，但一条连接在 152 MB 停滞，curl speed-limit 100 KB/s 持续 20 秒后 exit 28。后续 Range 续到 172.3 MB，31 秒完成，SHA-512 匹配官方 dist.integrity。
+  - 用户提供的手动命令：`npm cache add <tgz>`；`npm install --global --prefix <p> @openai/codex@0.166.0 --registry https://registry.npmmirror.com/ --prefer-offline --include=optional`。7 秒完成，日志 `http cache @openai/codex-win32-x64@https://registry.npmmirror.com/... (cache hit)`，平台包实际存在，`codex --version` 输出 `codex-cli 0.166.0`。证明 Windows npm alias 内容缓存可复用；本轮没有重新运行这些手动命令。
+  - npm 独自下载先后在镜像与指定官方 registry 下各失败一次，均约 5 分钟；“可能复用了缓存 packument 的 npmmirror tarball URL”是用户提出的解释，未独立确认。插件自行取精确目标清单并核对官方摘要，按包/版本生成官方优先 URL，不从 npm 缓存继承 tarball URL；预置同摘要内容缓存后 npm 即使仍引用镜像 URL 也可命中。安装的元数据/普通依赖联网边界保留，不增加 fetch-timeout。
+  - 文档已同步 required groups、本地证据与远端不可用区分、原生 Node 平台、连续断点、清理最终化及上述 Windows 证据。9.1 的 Mac 真实实验仍是既有证据；本轮未再下载真实 CLI，未做 Windows 插件端到端、Desktop、账号或模型验收。
+- [x] 9.10 P2 修复后执行指定完整回归、类型检查、严格规格校验与 diff 检查
+  - 最终 `corepack pnpm typecheck`：exit 0，`Host/Client typecheck passed against DSH 0.2.2-rc.3`。
+  - 最终 `corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx`：33 文件、1026/1026 通过，18.83 秒；npm-platform 文件由原 22 项增至 42 项。最初完整回归在沙箱内为 31 文件通过/2 文件失败、1019 项通过/5 项失败，均由 Pi 环回 listen EPERM 及其下游断言引发；允许后在沙箱外运行同一命令通过，没有改变代理。
+  - 定向 `corepack pnpm exec vitest run tests/cli-management-npm-platform.test.ts tests/cli-management-download-sources.test.ts tests/cli-management-npm-sources.test.ts`：3 文件、79/79 通过。补测发现 HTTP 503 接管判断遗漏 CliOperationError 的 NETWORK 前缀，修正后通过；同时覆盖单源 206 validator 改变后干净重取。此前 4 文件 npm/download/install 定向组 83/83 通过。
+  - `OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict`：exit 0，`Change 'v0.8.10-cli-update-dual-channel-leeyl' is valid`；`/Library/Developer/CommandLineTools/usr/bin/git diff --check`：exit 0。
+  - 最终 `corepack pnpm build:preview`：exit 0，`Isolated package ready: /Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now/.cache/preview-package`；仅隔离产物，没有正式 build 或 Desktop 更新。
+  - 验证边界：本轮新增测试均为模拟；Pi 既有原型测试包含真实 npm 与本地微型包，不是 Windows CLI 更新。Windows 手动修复仅按 9.9 记录用户提供证据，没有重新执行；Mac 实验沿用 9.1，没有再次运行。未改 src/client、未提交/推送/归档/升级版本，保留其他未提交改动。

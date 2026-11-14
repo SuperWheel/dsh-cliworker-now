@@ -24,13 +24,13 @@ it.each(['official', 'npmmirror'] as const)('模拟 P1：%s 主包以官方 sha5
     const argv = options.argv
     tarball = argv.find(a => a.endsWith('.tgz'))!
     expect(readFileSync(tarball, 'utf8')).toBe('模拟')
-    expect(argv).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', tarball, '--registry', source === 'official' ? 'https://registry.npmjs.org/' : 'https://registry.npmmirror.com/'])
+    expect(argv).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', tarball, '--registry', source === 'official' ? 'https://registry.npmjs.org/' : 'https://registry.npmmirror.com/', '--prefer-offline', '--include=optional'])
     expect(argv).not.toContain('@openai/codex@1.2.3')
     f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); return exited()
   })
   start(f); const result = (await finished(f.service)).results[0]!
-  expect(result).toMatchObject({ phase: 'succeeded', integritySource: 'https://registry.npmjs.org/', progress: { readable: true, downloadedBytes: Buffer.byteLength('模拟') } })
-  expect(String(f.artifactFetch.mock.calls[0]![0])).toContain(source === 'official' ? 'registry.npmjs.org' : 'registry.npmmirror.com')
+  expect(result).toMatchObject({ phase: 'succeeded', integritySource: 'https://registry.npmjs.org/', progress: { readable: false, byteProgress: false } })
+  expect(String(f.artifactFetch.mock.calls[0]![0])).toContain('registry.npmjs.org')
   expect(existsSync(tarball)).toBe(false)
 })
 
@@ -42,7 +42,7 @@ it.each(['official', 'npmmirror'] as const)('模拟 P1：%s packument 保留官�
   expect((await finished(f.service)).results[0]?.error?.code).toBe('INTEGRITY_MISMATCH')
   expect(f.artifactFetch.mock.calls.filter(call => call[1]?.method !== 'HEAD')).toHaveLength(2)
   expect(f.backend.spawn).not.toHaveBeenCalled()
-  expect(f.artifactFetch).toHaveBeenCalledWith(`${source === 'official' ? 'https://registry.npmjs.org' : 'https://registry.npmmirror.com'}/@openai/codex/-/codex-1.2.3.tgz`, expect.any(Object))
+  expect(f.artifactFetch).toHaveBeenCalledWith('https://registry.npmjs.org/@openai/codex/-/codex-1.2.3.tgz', expect.any(Object))
   expect(f.artifactFetch.mock.calls.some(call => String(call[0]).includes('mirror.invalid'))).toBe(false)
   expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
 })
@@ -65,7 +65,7 @@ it('模拟 P1：下载期间取消删除片段且不启动 npm', async () => {
 })
 
 it('模拟 P1：主包下载超过准备阶段 30 秒仍可续传、核对并安装', async () => {
-  vi.useFakeTimers(); const f = fixture(); await checked(f.service)
+  vi.useFakeTimers(); const f = fixture(); f.service.saveDownloadSource({ source: 'custom', customUrl: 'https://registry.npmjs.org/' }); await checked(f.service)
   const bytes = Buffer.from('模拟')
   let n = 0
   f.artifactFetch.mockImplementation(async (_url, init) => {
@@ -81,13 +81,13 @@ it('模拟 P1：主包下载超过准备阶段 30 秒仍可续传、核对并安
   await vi.waitFor(() => expect(f.service.snapshot().operation?.progress?.downloadedBytes).toBe(1), { interval: 1 })
   await vi.advanceTimersByTimeAsync(40_010)
   const result = (await finished(f.service)).results[0]!
-  expect(result).toMatchObject({ phase: 'succeeded', progress: { readable: true, resumeCount: 4, downloadedBytes: bytes.length } })
+  expect(result).toMatchObject({ phase: 'succeeded', progress: { readable: false, byteProgress: false } })
 })
 
 it('模拟 P2：POSIX 自定义全局前缀仅作为安装目标，npm 与 Node 从独立安装解析', async () => {
   const f = fixture(), id = { ...syntheticIdentity(), prefix: join(f.root, '自定义 global prefix') }
   const plan = planCliOperation('codex', 'update', id, '1.0.0', '1.2.3', 'https://registry.npmjs.org/')
-  expect(await operationArgv(plan, f.backend, '/模拟/main.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', id.prefix, '/模拟/main.tgz', '--registry', plan.registry])
+  expect(await operationArgv(plan, f.backend, '/模拟/main.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', id.prefix, '/模拟/main.tgz', '--registry', plan.registry, '--prefer-offline', '--include=optional'])
   expect(f.backend.resolveExecutable).toHaveBeenCalledWith('npm')
   expect(vi.mocked(f.backend.resolveExecutable).mock.calls.some(([path]) => path.startsWith(id.prefix))).toBe(false)
   expect(f.backend.spawn).not.toHaveBeenCalled()
@@ -110,7 +110,7 @@ it('模拟 P2/P3：官方 npm.cmd 结构不交给 inspectBatch，Program Files N
   const prefix = 'C:\\Users\\模拟 User\\AppData\\Roaming\\npm'
   const plan = planCliOperation('codex', 'update', { ...syntheticIdentity(), prefix }, '1.0.0', '1.2.3', 'https://registry.npmjs.org/')
   const argv = await operationArgv(plan, f.backend, 'C:\\模拟 cache\\verified.tgz', 'win32')
-  expect(argv).toEqual([npm.node, npm.entry, 'install', '--global', '--prefix', prefix, 'C:\\模拟 cache\\verified.tgz', '--registry', plan.registry])
+  expect(argv).toEqual([npm.node, npm.entry, 'install', '--global', '--prefix', prefix, 'C:\\模拟 cache\\verified.tgz', '--registry', plan.registry, '--prefer-offline', '--include=optional'])
   expect(nativeLaunchArgv(argv, 'win32')).toEqual(argv)
   expect(argv.join(' ')).not.toMatch(/cmd\.exe|cmd \/c|npm\.cmd/)
   expect(f.backend.spawn).not.toHaveBeenCalled()

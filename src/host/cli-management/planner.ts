@@ -54,14 +54,14 @@ export function planCliOperation(cli: ActiveCliId, intent: 'update', identity: I
   return { cli, intent, identity, method, beforeVersion: before, targetVersion: target, registry, pinsVersion, desktopRelease, token: operationToken(cli, identity, target, registry, before, desktopRelease) }
 }
 /** npm's runtime is independent; only the target prefix belongs to the CLI. */
-export async function operationArgv(plan: CliOperationPlan, backend: ProcessBackend, artifact?: string, platform = process.platform): Promise<string[]> {
+export async function operationArgv(plan: CliOperationPlan, backend: ProcessBackend, artifact?: string, platform = process.platform, runtime?: [string, string]): Promise<string[]> {
   const s = CLI_SOURCES[plan.cli], path = platform === 'win32' ? win32 : { join }
   if (plan.method === 'npm') {
     if (!artifact || !(isAbsolute(artifact) || win32.isAbsolute(artifact)) || !artifact.endsWith('.tgz')) throw new CliOperationError('PREREQUISITE_MISSING', '缺少已校验的本地主包文件')
     let npm: [string, string]
-    try { npm = await resolveNpmRuntime(backend, platform) }
+    try { npm = runtime ?? await resolveNpmRuntime(backend, platform) }
     catch { throw new CliOperationError('PREREQUISITE_MISSING', '无法核实 Node/npm 安装，请检查 Node 运行时与 npm-cli.js') }
-    return [...npm, 'install', '--global', '--prefix', plan.identity.prefix!, artifact, '--registry', plan.registry]
+    return [...npm, 'install', '--global', '--prefix', plan.identity.prefix!, artifact, '--registry', plan.registry, '--prefer-offline', '--include=optional']
   }
   if (plan.method === 'brew') {
     const brew = await backend.resolveExecutable(path.join(plan.identity.prefix!, 'bin', 'brew'))

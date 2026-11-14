@@ -1,3 +1,4 @@
+import * as npmDownload from '../src/host/cli-management/npm-download.ts'
 /** 模拟：npm packument、HEAD/GET、低速时钟、配置与安装进程；无真实安装。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
@@ -9,7 +10,7 @@ import { OFFICIAL_NPM_REGISTRY, NPMMIRROR_REGISTRY } from '../src/shared/cli-man
 import { checked, control, finished, serviceFixture, sri, syntheticIdentity } from './cli-management-phase-b-fixture.ts'
 const fixtures: ReturnType<typeof serviceFixture>[] = []
 const fixture = () => { const f = serviceFixture(); fixtures.push(f); return f }
-afterEach(async () => { vi.useRealTimers(); for (const f of fixtures.splice(0)) await f.close() })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); for (const f of fixtures.splice(0)) await f.close() })
 const hash = createHash('md5').update('abcdef').digest('hex')
 const metadata = (url: string) => new Response(JSON.stringify({ name: '@openai/codex', version: '1.2.3', dist: { integrity: url.startsWith(OFFICIAL_NPM_REGISTRY) ? sri('abcdef') : sri('MALICIOUS'), tarball: 'https://attacker.invalid/not-used.tgz' } }))
 const urls = { official: `${OFFICIAL_NPM_REGISTRY}@openai/codex/-/codex-1.2.3.tgz`, mirror: `${NPMMIRROR_REGISTRY}@openai/codex/-/codex-1.2.3.tgz`, cdn: 'https://cdn.npmmirror.com/packages/%40openai/codex/1.2.3/codex-1.2.3.tgz' }
@@ -85,12 +86,12 @@ it.each(['official', 'npmmirror', 'custom', 'follow'] as const)('模拟：服务
     if (argv.includes('config')) return child(NPMMIRROR_REGISTRY)
     f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); return child()
   })
-  const spy = vi.spyOn(f.releases, 'artifact')
+  const spy = vi.spyOn(npmDownload, 'prepareNpmDownload')
   await checked(f.service)
   f.service.start('codex', 'update', f.service.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, '', `模拟-${source}`)
   expect((await finished(f.service)).results[0]!.phase).toBe('succeeded')
-  expect(spy.mock.calls[0]![4]).toBe(source !== 'custom')
-  expect(spy.mock.calls[0]![2]).toBe(source === 'npmmirror' || source === 'follow' ? NPMMIRROR_REGISTRY : OFFICIAL_NPM_REGISTRY)
+  expect(spy.mock.calls.at(-1)![0].automaticSources).toBe(source !== 'custom')
+  expect(spy.mock.calls.at(-1)![0].registry).toBe(source === 'npmmirror' || source === 'follow' ? NPMMIRROR_REGISTRY : OFFICIAL_NPM_REGISTRY)
   if (source === 'custom') expect(f.artifactFetch.mock.calls.some(c => c[1]?.method === 'HEAD')).toBe(false)
 })
 it.each(['official', 'custom'] as const)('模拟：%s 操作启动后切换设置，仅下一次操作改变自动换源策略', async source => {
@@ -101,11 +102,11 @@ it.each(['official', 'custom'] as const)('模拟：%s 操作启动后切换设�
     return { stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() }
   })
   await checked(f.service)
-  const artifact = vi.spyOn(f.releases, 'artifact')
+  const artifact = vi.spyOn(npmDownload, 'prepareNpmDownload')
   f.service.start('codex', 'update', f.service.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, '', `模拟-锁定-${source}`)
   // Preparation is asynchronous; keep the same registry URL while changing policy.
   f.service.saveDownloadSource(source === 'official' ? { source: 'custom', customUrl: OFFICIAL_NPM_REGISTRY } : { source: 'official' })
   expect((await finished(f.service)).results[0]!.phase).toBe('succeeded')
-  expect(artifact.mock.calls[0]![4]).toBe(source !== 'custom')
-  expect(f.artifactFetch.mock.calls.some(c => c[1]?.method === 'HEAD')).toBe(source !== 'custom')
+  expect(artifact.mock.calls.at(-1)![0].automaticSources).toBe(source !== 'custom')
+  expect(decodeURI(String(f.artifactFetch.mock.calls[0]![0]))).toBe(source === 'custom' ? 'https://registry.npmjs.org/模拟.tgz' : urls.official)
 })
