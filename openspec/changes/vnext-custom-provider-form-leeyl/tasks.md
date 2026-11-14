@@ -42,5 +42,10 @@
   - 2026-11-14 Mac Desktop（构建 44740eb）：Pi「添加账号」卡片显示「其他服务商（在本窗口中填写配置）」，继续后进入同窗口表单：服务商 ID*、服务商名称、Base URL*、API 协议*（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Google Generative AI）、API Key*（可显隐）、模型 ID*；底部「在原生终端中配置」「返回」「保存」。空表单保存逐字段显示必填错误；返回、关闭均正常。
   - 未执行：真实保存写入（会改动用户 Pi 配置，待用户提供测试服务商或授权）、OpenCode/Hermes 表单、深色主题与英文界面、Windows。
   - （未执行：本次只做 Host 与临时 HOME 模拟验收；没有真实账号写入、模型调用、Desktop 或 Windows 验收。）
+  - 2026-11-15 Mac Desktop（34133b9 构建）真实写入，使用虚构测试服务商（ID `cwn-test`、名称「CWN 测试服务商（模拟）」、Base URL `https://api.example.invalid/v1`、OpenAI Chat Completions、测试密钥、模型 `test-model`），不调用模型；写前备份，验后按摘要恢复原样。
+  - Pi：保存后显示「已添加 CWN 测试服务商（模拟）· 已保存原生配置；密钥有效性与模型可用性尚未验证」。写入 `~/.pi/agent/models.json`（providers 只含 cwn-test，api openai-completions）与 `auth.json`（cwn-test 为测试密钥），权限均 600；已删除新建的 models.json、auth.json 按备份恢复（摘要一致）。发现：账号窗口当前账号显示「插件目录 · 只在 CLI Worker 中使用」（`~/.dsh/cliworker-now/accounts/pi/agent`），但表单写入的是原生 `~/.pi/agent`，插件目录两文件未变；需确认这是否为预期目标。
+  - OpenCode：写入 `~/.config/opencode/opencode.json` 新增 cwn-test（OpenAI 兼容、测试 Base URL、test-model），`~/.local/share/opencode/auth.json` 只含测试密钥、权限 600；已恢复，配置摘要与原文件一致，新建 auth.json 已删除。
+  - Hermes：保存失败，页面提示「保存失败，原生配置未更改；请检查文件格式、权限或原生账号锁」；`config.yaml` 与 `.env` 摘要未变，config.yaml YAML 解析正常。原因未查明：核对 `.env` 能否被插件解析需读取用户凭据文件，未获授权，未执行。
+  - 仍未验证：Hermes 写入、深色主题与英文界面、Windows。本项保持未勾选。
 - [x] 3.3 README、doc/design.md 同步
   - README.md、README.en.md、doc/design.md 同步 Host 支持范围、原生写入、回滚/凭据边界及前端独立验收状态；版本号未改，src/client/** 未改。

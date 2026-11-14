@@ -123,6 +123,8 @@
   - 2026-11-14 按用户「删我们的测试文件和之前安装的残留和旧插件的安装包」清理 Windows：先列清单预演，再删除 106 项共 2,187 MB（10 个旧 rc3 安装目录及其中的安装前备份、desktop-audit 下 45 个探针／预览目录、旧 tgz、agy 安装文件、备份 tar、zcode zip、插件 downloads 下 3 个 local-* 残留），C 盘由 0.00 GB 升到 2.15 GB；保留当前 rc3-3ab3d26、脚本与 observer 启动器，复跑空闲检查各路径仍有效。随后按用户「pnpm共享缓存也清掉」用 DSH 自带 pnpm 11.28.5 执行 `store prune`（退出码 0，删 2540 个未被引用的文件、96 个包、1.6 GB），仓库余 54 MB，C 盘升到 3.67 GB；已装插件 1229/1229 文件哈希仍一致，Desktop（pid 3672）照常运行。
   - Windows C 盘剩余 0.00 GB（D 盘 291 GB），Hermes 与 Pi 的最终安装待腾出空间后复测；Hermes 进度行仍显示「超时未完成会停止官方更新，改由插件下载」，随 8.4 修正。
 - [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
+  - 2026-11-15 Mac Desktop（34133b9 构建）检查更新后只有 OMP 有新版本（18.20.0 → 18.20.2，16 项其余为最新）。点更新后走官方通道 `omp update`，不到 1 分钟完成，增量补丁 36.6MB 并 sha256 校验，页面显示「已更新到 18.20.2」；官方很快完成，未触发切换到插件接管。当前会话处于规划模式时页面提示「请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」，换普通会话后正常。
+  - 未验证：其他 CLI（暂无新版本）及 Mac 上的官方→接管切换。本项保持未勾选。
 - [ ] 6.4 13.5 遗留：接管下载期间取消
 
 ## 8. Hermes 慢速接管 〔后端｜10h｜前置 4〕
@@ -302,7 +304,8 @@
   - （未执行：由用户后续验证；本轮不更新真实 CLI、不删除真实安装目录、不改变账号或代理。）
   - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；Hermes 新路径和零字节锁行为需实机复核，TRAE lease 格式仍未确认。
   - Windows 已覆盖（11-15）：① 859bcee 包上 OMP 官方更新成功，清理 0 项，证据见本节 c1e3845 记录；② 34133b9 包上 OMP 接管更新成功，输出「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」，复核 `.bak` 已删除，downloads 0 项，Temp 中插件目录 0 个，详见 10.13；③ Host 启动清扫回收旧插件临时目录，以及共享 omp-natives，见临时目录变更 3.2/4.3。
-  - 仍未覆盖：更新失败或取消后的清理；npm 私有缓存与本包 reify 残留（CodeBuddy 实测在 200d97f 包上，早于残留回收）；Grok、Qoder/CN、Claude、TRAE、Hermes 规则的真实更新；Mac 全部。本项保持未勾选。
+  - Mac（11-15，34133b9 构建）：OMP 官方更新 18.20.0 → 18.20.2 成功，输出「更新清理：已删除 0 项，释放 0 B。」；复核 `~/.local/bin` 留下 `omp.<毫秒>.<pid>.0.bak`（18.20.0）与 0 字节 `omp.lock`，即 OMP 备份规则当时只覆盖 Windows，macOS 扩展另行实现。
+  - 仍未覆盖：更新失败或取消后的清理；npm 私有缓存与本包 reify 残留（CodeBuddy 实测在 200d97f 包上，早于残留回收）；Grok、Qoder/CN、Claude、TRAE、Hermes 规则的真实更新；Mac 修复后的 OMP 备份回收。本项保持未勾选。
 
 - [x] 10.7 接入 Hermes 更新后回执与版本证据，校验 facts/锁后清理原生残留
   - HermesWatch 暴露本次最新的目标匹配整体 success，runHermesUpdate 仅在托管范围退出后返回该证据；service 经过既有 identify/currentVersion/verifyUpdatedVersion 且严格等于 target 才登记最终清理，最终失败/取消仍不删。无需新增版本命令，hermes-version.ts 的 install-stamp/HEAD 稳定标签链保持原样。
