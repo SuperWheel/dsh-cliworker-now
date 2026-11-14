@@ -377,3 +377,33 @@ Host SHALL 为 npm 主 tarball 提供官方 registry 与 npmmirror 的多源列�
 #### Scenario: 操作启动后修改下载源
 - **WHEN** 操作已启动，用户在异步准备期间从 custom 改为官方源或反向修改
 - **THEN** 当前操作 SHALL 使用启动时锁定的 registry 与自动换源策略，修改仅影响下一次操作
+
+### Requirement: 项目连接状态静默预加载与缓存消费
+Host SHALL 将已审计无副作用的账号状态、模型目录及其原生强度纳入既有 60 秒后空闲预加载队列。账号 SHALL 只读已记录入口对应的安全投影；目录 SHALL 禁止 prompt、原生会话、续期、刷新令牌与自动升级。Kimi 探测 MUST 设置 KIMI_CODE_NO_AUTO_UPDATE=1。无法证明满足该边界的查询 SHALL 保留前台，逐 CLI 原因写入设计。
+
+#### Scenario: 项目已激活但设置未打开
+- **WHEN** 主会话提供有效项目，后台检查开启且 Host 满足既有空闲条件
+- **THEN** Host SHALL 按项目排入安全账号与目录项，取得的模型和强度不得来自猜测
+
+#### Scenario: 后台被任务或登录打断
+- **WHEN** 安全连接项尚未完成而新任务或账号窗口开始
+- **THEN** Host SHALL 中止当前项并等待清理，空闲 30 秒后重试，旧取消结果不得写缓存
+
+### Requirement: 连接快照、过期更新与来源作废
+Host SHALL 按 Host 生命周期、项目和 CLI 隔离连接展示缓存，账号与目录分别保存 checkedAt、过期状态和 revision，10 分钟有效，时钟回拨视为过期。设置首屏 SHALL 可取得已有快照；请求连接状态 SHALL 先返回已有结果并对缺失或过期槽现查，通过订阅推送更新。未过期槽 MUST NOT 重复启动探测。旧接口 SHALL 仍兼容，强制刷新 SHALL 不被正在进行的读取吞掉。
+
+#### Scenario: 缓存已命中
+- **WHEN** 同一项目与 CLI 的账号及目录均未过期
+- **THEN** 设置查询直接得到账号、模型和强度及 checkedAt，不再启动 CLI 进程
+
+#### Scenario: 过期或未核实登录
+- **WHEN** 账号缓存过期或 authenticated 没有 verification
+- **THEN** 展示快照 SHALL 将其降为 unknown，不得显示绿色已登录；查询失败 SHALL 清除旧成功值并发布错误
+
+#### Scenario: 登录或入口变化期间旧查询返回
+- **WHEN** 登录/退出/账号切换、CLI 启用状态或执行入口发生变化
+- **THEN** Host SHALL 作废相关 CLI 各项目的账号和目录缓存、增加 revision、中止旧查询并等待清理，旧回执不得恢复已作废内容
+
+#### Scenario: Host 停用或项目切换
+- **WHEN** Host 停用或客户端切换项目
+- **THEN** 停用 SHALL 中止并等待所有读取及清理订阅，项目快照不得串用，重启不得将上次 Host 的登录缓存当作已核实状态

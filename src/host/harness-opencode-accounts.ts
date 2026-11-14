@@ -20,7 +20,7 @@ export async function readPiOmpAccount(
   cli: 'pi' | 'omp',
   config: RuntimeConfig,
   signal: AbortSignal,
-  options: { nativeHome?: string } = {},
+  options: { nativeHome?: string; activeOnly?: boolean } = {},
 ): Promise<AccountIdentity> {
   const native = await inspectPiOmpNativeAccount(cli, config.stateDirectory, signal, options)
   return native

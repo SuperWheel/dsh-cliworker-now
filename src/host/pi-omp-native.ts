@@ -765,7 +765,7 @@ export async function inspectPiOmpNativeAccount(
   cli: PiOmpCli,
   stateDirectory: string | undefined,
   signal: AbortSignal,
-  options: { nativeHome?: string } = {},
+  options: { nativeHome?: string; activeOnly?: boolean } = {},
 ): Promise<AccountIdentity> {
   signal.throwIfAborted()
   try {
@@ -809,7 +809,7 @@ export async function inspectPiOmpNativeAccount(
           if (usableNativeApiKey(ownValue(value.key ?? value.apiKey))) add(provider, 'api', stored)
         } else if (
           usableNativeApiKey(value.access) &&
-          (value.expires >= Date.now() || usableNativeApiKey(value.refresh))
+          (value.expires >= Date.now() || !options.activeOnly && usableNativeApiKey(value.refresh))
         )
           add(provider, 'oauth', stored, value.email)
         else invalidOAuth = true

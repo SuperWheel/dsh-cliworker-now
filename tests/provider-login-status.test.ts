@@ -227,3 +227,16 @@ describe('OpenCode own provider login projection', () => {
     expect((await f.status()).state).toBe('unavailable')
   })
 })
+
+it.each(['pi', 'omp', 'opencode'] as const)('模拟：%s 后台不把过期但可续期的 OAuth 当已登录', async cli => {
+  const f = await fixture(cli)
+  const path = cli === 'opencode' ? join(f.data, 'opencode/auth.json') : join(f.own, cli === 'omp' ? 'agent.db' : 'auth.json')
+  if (cli === 'omp') database(path, [{ provider: 'openai', type: 'oauth', data: oauth({ expires: 1 }) }])
+  else await save(path, { openai: oauth({ expires: 1 }) })
+  const before = await readFile(path)
+  const status = cli === 'opencode'
+    ? await inspectOpenCodeProfile(f.data, { nativeHome: f.root, activeOnly: true })
+    : await inspectPiOmpNativeAccount(cli, join(f.root, 'state'), new AbortController().signal, { nativeHome: f.root, activeOnly: true })
+  expect(status.state).toBe('unauthenticated')
+  expect(await readFile(path)).toEqual(before)
+})

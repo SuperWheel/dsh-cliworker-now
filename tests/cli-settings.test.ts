@@ -731,3 +731,33 @@ describe('saved Worker model directory', () => {
 vi.mock('../src/host/cli-account-binding.ts', () => ({
   readCliAccountBinding: vi.fn(async () => 'synthetic-settings-account'),
 }))
+
+it('模拟：后台目录供设置页直接使用，保留模型强度及账号绑定，启用状态改变作废', async () => {
+  const f = fixture(), cache = (f.service as any).connectionCache()
+  await cache.read(f.project, 'antigravity', 'catalog', f.signal, async () => ({ catalog, binding: 'SIMULATED-original-account' }))
+  const first = JSON.parse(await f.service.catalogForCli('parent', 'antigravity', f.signal))
+  expect(first.models).toEqual(catalog.models); expect(first.cache.stale).toBe(false)
+  expect(catalogFor).not.toHaveBeenCalled(); expect(readCliAccountBinding).not.toHaveBeenCalled()
+  expect((f.service as any).displayedBindings.get(JSON.stringify(['parent', 'antigravity']))).toBe('SIMULATED-original-account')
+  await f.service.setCliEnabled('parent', 'antigravity', false, f.signal)
+  expect(cache.status(f.project, 'antigravity').catalog.value).toBeUndefined()
+})
+
+it.each(['login', 'logout'] as const)('模拟：账号 %s 入口作废所有项目的账号与目录，不影响其他 CLI', async action => {
+  const f = fixture(), cache = (f.service as any).connectionCache()
+  ;(f.service as any).accountParents.set('parent', () => {})
+  f.accounts.start.mockResolvedValue({ id: 'simulated-account', instruction: '模拟' })
+  for (const project of [f.project, '/simulated-other-project']) {
+    await cache.read(project, 'zcode', 'account', f.signal, async () => ({ cli: 'zcode', installed: true,
+      state: 'authenticated', verification: 'local', summary: '模拟', actions: [] }))
+    await cache.read(project, 'zcode', 'catalog', f.signal, async () => ({ catalog: { ...catalog, cli: 'zcode' }, binding: 'simulated-binding' }))
+  }
+  await cache.read(f.project, 'codex', 'account', f.signal, async () => ({ cli: 'codex', installed: true,
+    state: 'authenticated', verification: 'local', summary: '模拟其他 CLI', actions: [] }))
+  await f.service.accountStart('parent', 'zcode', action, f.signal)
+  for (const project of [f.project, '/simulated-other-project']) {
+    expect(cache.status(project, 'zcode').account.value).toBeUndefined()
+    expect(cache.status(project, 'zcode').catalog.value).toBeUndefined()
+  }
+  expect(cache.status(f.project, 'codex').account.value?.state).toBe('authenticated')
+})

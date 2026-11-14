@@ -10,7 +10,7 @@ import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
 import { identifyInstallation, fingerprintToken, type InstallationIdentity } from './identity.ts'
-import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffer, BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
+import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffer, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './sources.ts'
 import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
@@ -33,13 +33,6 @@ import { zcodeAuthDirectory } from '../zcode-adapter.ts'
 import { openCodeAuthDirectory } from '../opencode-adapter.ts'
 import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError, type DesktopRelease } from './desktop-update.ts'
 
-/** Audited file-only AccountManager.status branches. All others are skipped:
- * Grok/Hermes renew tokens; WorkBuddy bootstraps keys/config; Claude prepares a
- * route; Codex starts app-server; Qoder/CN and TRAE start native sessions;
- * Pi/OMP discover native login providers; Antigravity may query OS/account services;
- * Kimi provider listing, ZCode status and OpenCode profile discovery have not
- * been audited for background use.
- */
 export { BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
 interface Dependencies {
   busy?(cli: ActiveCliId): { workers: number; accounts: boolean }
@@ -47,6 +40,7 @@ interface Dependencies {
   invalidateModels?(cli: ActiveCliId): void
   root: string; backend: ProcessBackend; config: RuntimeConfig
   idle(): boolean; enabled(): boolean; cliEnabled(cli: ActiveCliId): boolean
+  preloadConnection?(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal): Promise<void>
   account(cli: ActiveCliId, project: string, signal: AbortSignal): Promise<AccountStatus>
   globalCleanup?(error: ProcessCleanupUnconfirmedError): void
   cleanup?(cli: ActiveCliId, error: ProcessCleanupUnconfirmedError): void
@@ -93,18 +87,28 @@ export class CliManagementService {
       items: [
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, true) })),
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, false) })),
-        ...BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadAccount(cli, signal) })),
+        ...(!deps.preloadConnection ? BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadAccount(cli, signal) })) : []),
         ...CLI_IDS.map(cli => ({ run: async (signal: AbortSignal) => { await this.remote(cli, signal, false) } })),
-        // No catalog discovery is silently treated as read-only: MiMo can invoke
-        // models --refresh; native catalogs create sessions/renew credentials.
-        // Existing SettingsCatalogCache stays unchanged; missing model discovery
-        // remains a foreground operation until a side-effect-free branch is audited.
       ],
     })
     this.track(prepareDownloads(deps.root)).catch(() => undefined)
     this.preloader.start()
   }
-  context(project: string) { this.project = project; this.projects.add(project) }
+  context(project: string) {
+    this.project = project
+    if (this.projects.has(project)) return
+    this.projects.add(project)
+    if (this.deps.preloadConnection) {
+      this.preloader.enqueue(BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'account', signal) })), CLI_IDS.length * 2)
+      this.preloader.enqueue(BACKGROUND_CATALOG_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'catalog', signal) })))
+    }
+  }
+  private async preloadConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+    this.assertHealthy()
+    if (!this.deps.cliEnabled(cli) || !this.identities.has(cli)) return
+    try { await this.deps.preloadConnection?.(cli, project, kind, signal) }
+    catch (error) { if (signal.aborted || error instanceof ProcessCleanupUnconfirmedError) throw error }
+  }
   snapshot(): CliUpdateSnapshot { return structuredClone(this.state) }
   subscribe(listener: () => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private changed() { this.state.revision++; for (const listener of this.listeners) listener() }
@@ -143,7 +147,12 @@ export class CliManagementService {
       }, signal)
       await this.pool(CLI_IDS, 3, async cli => { await this.remote(cli, signal, scope === 'all'); if (!this.entry(cli).installed || !this.entry(cli).currentVersion) await this.installEntry(cli, '', signal); unfinished.delete(cli) }, signal)
       // Finish the safe account portion of the handed-off queue as well.
-      await this.pool(BACKGROUND_ACCOUNT_CLIS, 3, cli => this.preloadAccount(cli, signal), signal)
+      if (this.deps.preloadConnection) {
+        for (const project of this.projects) {
+          for (const cli of BACKGROUND_ACCOUNT_CLIS) await this.preloadConnection(cli, project, 'account', signal)
+          for (const cli of BACKGROUND_CATALOG_CLIS) await this.preloadConnection(cli, project, 'catalog', signal)
+        }
+      } else await this.pool(BACKGROUND_ACCOUNT_CLIS, 3, cli => this.preloadAccount(cli, signal), signal)
       if (!signal.aborted) this.state.checkedAt = Date.now()
     })().catch(() => {
       for (const row of this.state.entries) if (row.stage || row.group === 'checking') this.publish(row.cli, { group: 'failed', reason: signal.aborted ? 'RELEASE_TIMEOUT' : 'RELEASE_UNREACHABLE', stage: undefined })
@@ -173,6 +182,8 @@ export class CliManagementService {
         if (background) { this.publish(cli, { stage: undefined }); return }
         this.identities.delete(cli); this.publish(cli, { installed: false, group: 'notInstalled', reason: 'NOT_INSTALLED', reasonDetail: oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined, currentVersion: undefined, source: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true); return
       }
+      const previous = this.identities.get(cli)
+      if (previous && fingerprintToken(previous.fingerprint) !== fingerprintToken(identity.fingerprint)) this.deps.invalidateModels?.(cli)
       this.identities.set(cli, identity)
       if (pathOnly) return
       const cached = this.cache.version(cli, identity.fingerprint)

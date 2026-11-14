@@ -312,3 +312,5 @@ pnpm build
 [MIT License](LICENSE)。本项目是独立社区插件，DeepSeek Harness 及各 CLI 的名称和商标归各自权利人所有，不表示官方关联或背书。
 
 感谢 [codex-host](https://github.com/BytePioneer-AI/codex-host)、[Codingns4DSH](https://github.com/jingyi0605/Codingns4DSH) 和 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的作者与贡献者，以及 [Codex](https://github.com/openai/codex)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)、[Kimi Code](https://github.com/MoonshotAI/kimi-code)、[Grok Build](https://github.com/xai-org/grok-build)、[Pi](https://github.com/earendil-works/pi)、[Oh My Pi](https://github.com/can1357/oh-my-pi)、[OpenCode](https://github.com/anomalyco/opencode)、[MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) 和 [ZCode](https://github.com/zai-org/ZCode) 的开发者公开源码与协议文档。参考范围见 [CLI 数据接口核查](doc/cli-native-data-audit.md) 与 [Codingns4DSH 参考记录](doc/codingns-reference-audit.md)。
+
+设置页连接状态的 Host 预加载：启动约 1 分钟后，在空闲时读取已审计安全的账号投影，并补齐安全的模型与强度目录。结果按项目和 CLI 隔离，有效期 10 分钟；登录、退出、入口或启用状态变化后作废。会创建原生会话、续期或刷新配置的查询仍在前台执行。Host 已提供连接快照及更新订阅；设置页消费新快照的前端接入另行实施，后台支持范围见 [连接预加载设计](openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。

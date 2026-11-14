@@ -350,7 +350,7 @@ it('includes application bundle version changes in the executable fingerprint', 
 it('background account status rejects unaudited branches and never discovers missing paths', async () => {
   const root = temp(), b = backend(), accounts = new AccountManager(b, { ...DEFAULT_CONFIG, stateDirectory: root }, async () => undefined)
   try {
-    for (const cli of CLI_IDS.filter(cli => !['mimo', 'codebuddy'].includes(cli)))
+    for (const cli of CLI_IDS.filter(cli => !['mimo', 'codebuddy', 'zcode', 'grok', 'pi', 'omp', 'opencode'].includes(cli)))
       await expect(accounts.status(cli, root, signal(), { background: true })).rejects.toThrow('后台只读')
     expect((await accounts.status('codebuddy', root, signal(), { background: true })).installed).toBe(false)
     expect(b.resolveExecutable).not.toHaveBeenCalled(); expect(b.spawn).not.toHaveBeenCalled()
@@ -376,4 +376,18 @@ it('idle notifications cannot shorten the two-second CPU sampling window', async
   const p = new CliPreloader({ items: [{ run }], idle: () => true, enabled: () => true, sample: samples() }); preloaders.push(p); p.start()
   await vi.advanceTimersByTimeAsync(60_500); p.changed(); await vi.advanceTimersByTimeAsync(1499); expect(run).not.toHaveBeenCalled()
   await vi.advanceTimersByTimeAsync(501); expect(run).toHaveBeenCalledTimes(1)
+})
+
+it('模拟：后台连接工作按项目分开，只交给安全账号与目录回调，跳过关闭的 CLI', async () => {
+  const f = serviceFixture({ identify: vi.fn(async () => identity) })
+  const load = vi.fn(async () => {})
+  ;(f.service as any).deps.preloadConnection = load
+  ;(f.service as any).deps.cliEnabled = (cli: string) => cli !== 'mimo'
+  f.service.context('/simulated-project-a'); f.service.context('/simulated-project-b')
+  await checked(f.service)
+  for (const project of ['/simulated-project-a', '/simulated-project-b']) {
+    expect(load.mock.calls.filter((call: unknown[]) => call[1] === project).map((call: unknown[]) => [call[0], call[2]])).toEqual([
+      ['codebuddy', 'account'], ['zcode', 'account'], ['grok', 'account'], ['pi', 'account'], ['omp', 'account'], ['opencode', 'account'], ['zcode', 'catalog'],
+    ])
+  }
 })

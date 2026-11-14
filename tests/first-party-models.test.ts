@@ -249,7 +249,7 @@ describe('first-party model scopes', () => {
       MIMOCODE_PURE: '1',
       MIMOCODE_AUTH_CONTENT: '',
     })
-    expect(firstPartyEnvironment('kimi')).toEqual({})
+    expect(firstPartyEnvironment('kimi')).toEqual({ KIMI_CODE_NO_AUTO_UPDATE: '1' })
   })
   it('cancellation after a scope response never returns stale choices', async () => {
     const controller = new AbortController(),
