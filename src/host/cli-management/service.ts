@@ -49,6 +49,13 @@ interface Dependencies {
   releases?: ReleaseClient
   artifactFetch?: Parameters<typeof downloadCliArtifact>[0]['fetcher']
 }
+/**
+ * Budget for one CLI's local identity + version read. Windows cold-starts 100-200 MB executables under
+ * Defender while the settings dialog starts every check at once; 2026-11-14 OMP/TRAE CN exceeded 5 s there
+ * although each answered in < 1 s alone.
+ */
+export const localCheckTimeoutMs = (platform: NodeJS.Platform = process.platform) => platform === 'win32' ? 15_000 : 5_000
+export const LOCAL_CHECK_TIMEOUT_DETAIL = '读取当前版本超时，可点「检查更新」重试'
 export class CliManagementService {
   readonly maintenance: CliMaintenance
   readonly cache: CliManagementCache
@@ -176,7 +183,7 @@ export class CliManagementService {
     this.assertHealthy(); signal.throwIfAborted()
     const old = this.entry(cli)
     const oldPath = this.deps.config.cliExecutablePaths?.read(cli)?.path
-    const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), 5000)
+    const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), localCheckTimeoutMs())
     const control = AbortSignal.any([signal, timer.signal])
     if (!pathOnly) this.publish(cli, { stage: 'local' })
     try {
@@ -217,7 +224,8 @@ export class CliManagementService {
       const code = (error as NodeJS.ErrnoException)?.code
       const missing = ['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes(code ?? '') || (error as { reason?: string }).reason === 'not-installed'
       this.identities.delete(cli)
-      this.publish(cli, { installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: missing && oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
+      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : undefined
+      this.publish(cli, { installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: detail, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
     } finally { clearTimeout(timeout) }
   }
   private async remote(cli: ActiveCliId, signal: AbortSignal, force: boolean) {

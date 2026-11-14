@@ -1174,6 +1174,7 @@ export const en = {
   '有新版本 {version}，插件尚未适配': 'version {version} is out but the plugin does not support it yet',
   '读不出当前版本。可以改路径，或重新安装到默认位置': 'Could not read the current version. Change the path, or reinstall to the default location',
   'CLI Worker 部署的完整 runtime': 'Full runtime deployed by CLI Worker',
+  '读取当前版本超时，可点「检查更新」重试': 'Reading the current version timed out. Click “Check for updates” to retry',
   '此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。':
     "This full ZCode runtime was deployed by CLI Worker from the official source. It can't be updated with the ZCode desktop installer or the CLI's own command; verify and deploy a newer runtime separately.",
   '连不上发布源': 'could not reach the release source',

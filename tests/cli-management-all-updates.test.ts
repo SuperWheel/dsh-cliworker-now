@@ -11,6 +11,7 @@ import { planCliOperation, operationArgv, verifyUpdatedVersion, sameInstallation
 import { identifyInstallation, classifyInstallation, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { PI_SUPPORTED_VERSIONS, inspectPiInstallation } from '../src/host/pi-installation.mjs'
 import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError } from '../src/host/cli-management/desktop-update.ts'
+import { localCheckTimeoutMs, LOCAL_CHECK_TIMEOUT_DETAIL } from '../src/host/cli-management/service.ts'
 import { serviceFixture, syntheticIdentity, checked, control, finished, sri } from './cli-management-phase-b-fixture.ts'
 
 vi.mock('../src/host/cli-management/desktop-update.ts', () => ({
@@ -155,6 +156,18 @@ it('模拟：Hermes 只读 install-stamp，不把 pyproject 的占位版本当�
   expect(await currentVersion('hermes', id!, f.backend, config, control(), true)).toBe('0.21.7')
   expect(f.backend.spawn).not.toHaveBeenCalled()
   expect(NATIVE_UPDATES.hermes?.notice).toContain('迁移配置')
+})
+it('模拟：本机版本读取超时写明原因；Windows 时限 15 秒', async () => {
+  expect(localCheckTimeoutMs('win32')).toBe(15_000); expect(localCheckTimeoutMs('darwin')).toBe(5_000)
+  vi.useFakeTimers()
+  try {
+    const f = fixture('omp')
+    f.version.mockImplementation((_cli, _id, _b, _c, signal: AbortSignal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })))
+    const pending = checked(f.service)
+    await vi.advanceTimersByTimeAsync(localCheckTimeoutMs() + 10)
+    const row = (await pending).entries.find(e => e.cli === 'omp')!
+    expect(row).toMatchObject({ group: 'failed', reason: 'UNKNOWN_VERSION', reasonDetail: LOCAL_CHECK_TIMEOUT_DETAIL })
+  } finally { vi.useRealTimers() }
 })
 it('模拟：Windows Hermes 启动器在 bin，install-stamp 在同级 hermes-agent 检出目录', async () => {
   // 2026-11-14 Windows 实机布局：%LOCALAPPDATA%\\hermes\\bin\\hermes.exe + hermes\\hermes-agent\\install-stamp.json
