@@ -53,3 +53,21 @@ it('模拟：return from provider cards does not start a multi-account login', a
   expect(renderer.root.findAllByProps({ role: 'radio' })).toHaveLength(0)
   await act(async () => renderer.unmount())
 })
+
+it.each([true, false])('模拟：reads the account fresh right before signing one login out (still listed=%s)', async listed => {
+  let renderer!: ReturnType<typeof create>
+  const login = { id: 'omp:zhipu-coding-plan:plugin.1', source: 'plugin' as const, providerLabel: 'SIMULATED provider', authMethod: 'api' as const }
+  const status = { cli: 'omp' as const, installed: true, state: 'configured' as const, summary: 'SIMULATED', actions: [], logins: [login] }
+  const prepare = vi.fn(async () => ({ ...status, logins: listed ? [login] : [] }))
+  await act(async () => { renderer = create(createElement(AccountsWindow, {
+    api: {} as any, sessionId: 'SIMULATED', cli: 'omp', closeControl: { current: undefined }, onRefresh: vi.fn(), onClose: vi.fn(),
+    status, prepare,
+  })) })
+  const text = (node: any): string => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : ''
+  await act(async () => renderer.root.findAllByType('li')[0]!.findAllByType('button')[0]!.props.onClick())
+  expect(prepare).not.toHaveBeenCalled()
+  await act(async () => renderer.root.findAllByType('button').find(b => text(b) === '确认退出')!.props.onClick())
+  expect(prepare).toHaveBeenCalledTimes(1)
+  expect(renderer.root.findAllByType('synthetic-terminal').map(node => node.props.login)).toEqual(listed ? [login.id] : [])
+  await act(async () => renderer.unmount())
+})

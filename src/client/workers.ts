@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
@@ -35,6 +35,10 @@ export type API = Pick<ClientRemote, '$stream'> & {
     recoverCliCleanup?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** Fresh account read with action handles; `accountStatus` may answer from the display cache without actions. Absent on older Hosts. */
     refreshAccountStatus?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** One CLI's display-only SettingsConnectionStatus JSON at once; starts the Host's missing or expired reads. Absent on older Hosts. */
+    settingsConnectionStatus?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** SettingsConnectionSnapshot JSON for the project, then after every change. Absent on older Hosts. */
+    watchSettingsConnections?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     /** 「更新 CLI」page (src/shared/cli-management.ts); every method is absent on older Hosts. */
     /** Cached page snapshot (CliUpdateSnapshot JSON); never starts a probe. */
     cliUpdateSnapshot?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
