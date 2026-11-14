@@ -1,0 +1,9 @@
+pm:
+  title: 检查替代界面与宿主浏览器原语兼容性
+  version: next
+  creator: contributor
+  creator_name: Contributor
+  previous_names: []
+  archived: 2026-11-14
+schema: pmspec
+created: 2026-11-14
