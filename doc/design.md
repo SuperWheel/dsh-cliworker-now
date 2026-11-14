@@ -1564,6 +1564,8 @@ OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoin
 
 ### 2026-11-14 Windows 官方默认安装的下载接管（任务 W）
 
+更新完成后的 verify 独立使用 60 秒总预算，并向 currentVersion → captureReadOnly 传入 45 秒版本命令预算；常规／后台检查和首次安装路径不扩张预算。captureReadOnly 以 ReadOnlyTimeoutError 标记自身超时并先完成进程范围清理，verify 将探测或总预算超时映射为 VERIFY_TIMEOUT，提示已替换但首次启动超时、稍后重查。用户取消保留 cancelled，ProcessCleanupUnconfirmedError 保留隔离状态，均不被超时错误覆盖；超时不会触发重新安装或回滚。共享错误码增加 VERIFY_TIMEOUT，现有前端按 Host message 显示，无需修改 client/。任务 13.7 记录用户提供的 Defender 首次扫描证据与模拟回归；修复后的 Windows 实机验证另列。
+
 Windows x64/arm64 的 Claude Code、Antigravity、OMP、TRAE CN 在 self-update 身份及默认布局精确匹配后复用插件下载器，保留 10 秒停滞续传、低速恢复、200 次／2 小时与真实进度。Claude/OMP/TRAE 使用同源 SHA-256，Antigravity 使用同源 SHA-512；不称为独立签名。Claude 主站与官方 GCS 源须运行时 HEAD 长度／ETag 一致方可续传换源；自定义下载设置仍关闭自动换源。
 
 下载准备不写安装目录；服务在实际放置前重新核对计划。Claude 原子写 versions/<目标> 后替换 .local/bin/claude.exe，失败回滚本次版本写入；Antigravity/OMP 只写同目录临时文件并 rename，不执行 PATH／Bash 配置。锁定错误 EBUSY/EPERM/EACCES 统一 FILE_LOCKED，原 exe 保持不动。TRAE 按官方 Export-OfflineBundle 结构装配主件、sidecar、存在时的两项沙箱辅助件与筛选后的 ripgrep，交内置 CDN 下载的官方 PowerShell offline-install，跳过用户 PATH 修改并保留自动更新标记状态。安装单独计时 10 分钟；完成仍调用 sameInstallation 与 verifyUpdatedVersion 精确核对目标。

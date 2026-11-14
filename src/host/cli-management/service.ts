@@ -11,7 +11,7 @@ import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
 import { identifyInstallation, fingerprintToken, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffer, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './sources.ts'
-import { bounded, captureReadOnly, currentVersion, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
+import { bounded, captureReadOnly, currentVersion, ReadOnlyTimeoutError, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
@@ -449,16 +449,27 @@ export class CliManagementService {
         }
         const verify = async (control: AbortSignal, evidence?: InterruptionEvidence) => {
           control.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
-          const verification = AbortSignal.any([control, AbortSignal.timeout(15_000)])
-          const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
-          if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
-          const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification)
-          const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
-          op.afterVersion = version
-          if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
-          verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
-          verification.throwIfAborted()
-          return { after, cliVersion, version: version! }
+          // A freshly replaced Windows executable may spend seconds in Defender's first-launch scan.
+          const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 60_000)
+          const verification = AbortSignal.any([control, deadline.signal])
+          try {
+            const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
+            verification.throwIfAborted()
+            if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
+            const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000)
+            verification.throwIfAborted()
+            const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
+            op.afterVersion = version
+            if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
+            verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
+            return { after, cliVersion, version: version! }
+          } catch (error) {
+            if (error instanceof ProcessCleanupUnconfirmedError) throw error
+            control.throwIfAborted()
+            if (deadline.signal.aborted || error instanceof ReadOnlyTimeoutError)
+              throw new CliOperationError('VERIFY_TIMEOUT', '已替换，但新版本首次启动超时，无法确认版本；请稍后重新检查')
+            throw error
+          } finally { clearTimeout(timer) }
         }
         let verified: Awaited<ReturnType<typeof verify>>
         if (plan.method === 'desktop' && isDesktopCli(cli)) {

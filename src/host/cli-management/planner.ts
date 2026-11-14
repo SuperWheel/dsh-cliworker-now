@@ -82,8 +82,10 @@ export function verifyUpdatedVersion(plan: CliOperationPlan, version: string | u
   if (!validUpdateVersion(plan.cli, version) || compareVersions(version, plan.beforeVersion) <= 0 || !compatible(plan.cli, version) || plan.pinsVersion && version !== plan.targetVersion)
     throw new CliOperationError('VERSION_MISMATCH', '命令已完成，但版本未前进、未适配或与锁定目标不一致，请重新检查')
 }
+const foldPath = (value: string) => /^[A-Za-z]:[\\/]/.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value
+const samePath = (a: string | undefined, b: string | undefined) => a === b || a !== undefined && b !== undefined && foldPath(a) === foldPath(b)
 export function sameInstallation(before: InstallationIdentity, after: InstallationIdentity, cli?: ActiveCliId): boolean {
-  if (before.source === after.source && before.executable === after.executable && before.updateRoot && before.updateRoot === after.updateRoot && before.channel === after.channel) return true
+  if (before.source === after.source && samePath(before.executable, after.executable) && before.updateRoot && samePath(before.updateRoot, after.updateRoot) && before.channel === after.channel) return true
   if (before.source === 'brew' && after.source === 'brew' && before.prefix && before.prefix === after.prefix && before.executable === after.executable && cli) {
     const spec = CLI_SOURCES[cli].brew
     const stable = (identity: InstallationIdentity) => {
@@ -100,10 +102,9 @@ export function sameInstallation(before: InstallationIdentity, after: Installati
     return identity !== undefined && identity === stable(after)
   }
   // TRAE Windows records the release entry itself; an update only swaps the <updateRoot>/releases/<ver> component.
-  if (cli === 'traecn' && before.source === 'self-update' && after.source === 'self-update' && before.updateRoot && before.updateRoot === after.updateRoot && before.channel === after.channel) {
+  if (cli === 'traecn' && before.source === 'self-update' && after.source === 'self-update' && before.updateRoot && samePath(before.updateRoot, after.updateRoot) && before.channel === after.channel) {
     const release = (identity: InstallationIdentity) => {
-      const fold = (value: string) => { const v = value.replace(/\\/g, '/'); return /^[A-Za-z]:\//.test(v) ? v.toLowerCase() : v }
-      const root = fold(identity.updateRoot!).replace(/\/$/, ''), entry = fold(identity.executable)
+      const root = foldPath(identity.updateRoot!).replace(/\/$/, ''), entry = foldPath(identity.executable)
       if (!entry.startsWith(root + '/releases/')) return undefined
       const parts = entry.slice(root.length + 1).split('/')
       return parts.length === 3 && parts[1] && !['.', '..'].includes(parts[1]) && parts[2] ? parts[2] : undefined
@@ -111,6 +112,6 @@ export function sameInstallation(before: InstallationIdentity, after: Installati
     const name = release(before)
     if (name !== undefined && name === release(after)) return true
   }
-  return before.executable === after.executable && before.source === after.source && before.prefix === after.prefix &&
-    before.packageRoot === after.packageRoot && before.fingerprint.realpath === after.fingerprint.realpath
+  return samePath(before.executable, after.executable) && before.source === after.source && samePath(before.prefix, after.prefix) &&
+    samePath(before.packageRoot, after.packageRoot) && samePath(before.fingerprint.realpath, after.fingerprint.realpath)
 }

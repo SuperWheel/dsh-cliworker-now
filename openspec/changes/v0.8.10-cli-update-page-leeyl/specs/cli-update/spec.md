@@ -336,6 +336,15 @@ Windows 上 Claude Code、Antigravity、OMP 与 TRAE CN 的官方默认布局更
 - **WHEN** Windows 上更新 Claude Code、Antigravity 或 OMP 的官方默认布局
 - **THEN** Host SHALL 从内置官方清单取得版本、地址与摘要（Claude manifest sha256、Antigravity manifest sha512、OMP 构建服务 sha256），用可续传下载器取得工件并校验，再按官方脚本的位置写入：Claude 写入 `versions/<版本>` 后替换 `.local/bin/claude.exe`；Antigravity 与 OMP 先写同目录临时文件再替换 `agy.exe`、`omp.exe`；替换失败（文件被占用）SHALL 保留原文件并报告失败，不留下临时文件
 
+#### Scenario: 更新后的首次版本启动较慢
+- **WHEN** 更新完成后新程序因首次启动扫描等原因超过常规 5 秒版本命令预算
+- **THEN** 更新后校验 SHALL 使用 60 秒总预算及 45 秒版本命令预算，身份及版本符合要求后成功；常规和后台版本检查的默认预算保持不变
+
+#### Scenario: 更新后版本校验仍超时
+- **WHEN** 更新后版本命令达到 45 秒或校验达到 60 秒总预算
+- **THEN** Host SHALL 在进程范围退出确认后返回 VERIFY_TIMEOUT，说明已替换但首次启动超时、需要稍后重新检查；MUST NOT 因此重新安装或回滚已写入文件
+- **AND** 用户取消 SHALL 保留 cancelled；进程范围清理未确认 SHALL 保留 CLEANUP_UNCONFIRMED 与维护隔离，不被 VERIFY_TIMEOUT 覆盖
+
 #### Scenario: 接管下载显示真实进度
 - **WHEN** 更新由插件下载器执行
 - **THEN** 行内 SHALL 显示已下载字节、总大小、速度与续传/换源次数，不再显示「下载进度无法读取」

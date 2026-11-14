@@ -66,6 +66,12 @@ async function replaceFile(source: string, target: string, signal: AbortSignal) 
 async function placeBinary(source: string, target: string, versionFile: string | undefined, signal: AbortSignal, label: string) {
   let wroteVersion = false, backup: string | undefined
   try {
+    try {
+      const existing = await realpath(target)
+      // Preserve on-disk casing without following an entry outside the exact whitelist.
+      if (!same(existing, target)) invalid('Windows 实际入口不在已核实的默认位置')
+      target = existing
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     if (versionFile) {
       await mkdir(dirname(versionFile), { recursive: true, mode: 0o700 })
       try {

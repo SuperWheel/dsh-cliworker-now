@@ -427,3 +427,17 @@
   - 构建/规格：corepack pnpm build:preview 退出 0，隔离包 .cache/preview-package（/tmp/task-w-preview.log）；corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict 退出 0，仅现有“主任务超过 10 个”建议警告。git diff --check 通过。README 双语、doc/design.md 与本变更决定 13/14 已同步。
   - 调试记录：首次 typecheck 因 sidecars 的 unknown 类型收窄报错，修正后通过；服务级 TRAE 初次夹具遗漏 binary_version、且 ReleaseClient 在模拟 Windows 前初始化，导致计划缺失，完善模拟清单与初始化顺序后全过。真实 Windows、Clash 下载/续传、占用与取消仍由 13.5 单列；没有正式构建、Desktop 链接更新、版本修改、提交或推送。
 - [ ] 13.5 Windows 实机：四项真实更新经代理完成、进度条与续传次数、取消与残留、红点不复现
+- [x] 13.6 Windows 路径大小写不再误判安装身份
+  - 实施：planner.ts 共用路径比较函数，只对带盘符的 Windows 路径折叠大小写与正反斜杠，覆盖 executable、updateRoot、prefix、packageRoot、fingerprint.realpath 及 TRAE 版本目录分支；POSIX 路径保持精确匹配，Homebrew 分支、来源和通道比较规则保持不变。
+  - 实施：windows-artifacts.ts 在放置前读取现有入口 realpath，按原有忽略大小写的精确入口规则核对白名单后，以磁盘上的名称替换，保留 agy.EXE 等大小写；入口不存在时沿用默认目标，真实路径偏离白名单时拒绝写入。Claude versions/<目标版本> 为版本命名的新文件，本次保持其放置及回滚逻辑。
+  - 模拟回归：新增 12 项测试并扩展 TRAE 用例，覆盖各路径字段的 Windows 大小写／分隔符等价、不同路径／来源／通道拒绝、POSIX 精确比较、保留 agy.EXE 落盘名称、拒绝偏离白名单的真实路径。corepack pnpm exec vitest run tests/cli-management* tests/settings-connection-cache.test.ts：22 文件、722 passed、0 failed、0 skipped（4.06 秒）。
+  - 调试记录：首轮同命令为 21 文件通过、1 文件失败，721 passed、1 failed。新增用例「模拟：POSIX 安装身份的 prefix 保持大小写与分隔符精确匹配」报「AssertionError: expected true to be false // Object.is equality」；夹具前缀 /模拟 不含可变大小写的字母，改用 /Users/admin 后重跑全过，未修改生产比较规则来适配断言。
+  - 检查：corepack pnpm typecheck 退出 0，Host/Client 类型检查通过；corepack pnpm build:preview 退出 0，隔离包位于 .cache/preview-package。没有正式构建、Desktop 链接更新、前端源码修改、版本修改、提交或推送。
+  - 审查：更新计划 token 在执行前复核；fingerprintToken 用于版本读取期间的一致性检查、缓存命中及模型缓存失效。更新后 service.ts 只用 sameInstallation 核对安装归属，再清除旧版本缓存并记录新指纹，没有跨替换比较旧／新指纹 token，保持这些规则。local-artifacts.ts 的精确字符串比较只在 Unix 分支执行；install.ts 的 oldPath 比较只产生首次安装位置提示，不参与更新成功判定。
+  - Windows 实机依据由用户提供（2026-11-14）：Antigravity 下载接管已替换文件，agy --version 为 1.5.9，但服务报 IDENTITY_CHANGED「命令已完成，但实际路径或安装归属已变化」。记录入口为 C:\Users\admin\AppData\Local\agy\bin\agy.EXE，替换目标为小写 agy.exe；用户验证创建 Q.EXE 后 realpath('q.exe') 返回磁盘名称 Q.EXE，同名替换改变大小写导致误判。本次只完成模拟回归，修复后的 Windows 实机复测仍由 13.5 保留。
+- [x] 13.7 更新后首次启动的版本校验不再因 5 秒上限误报失败
+  - 实施：service.ts 仅在更新完成后的 verify 使用 60 秒总预算，currentVersion 新增可选 timeoutMs 并向 captureReadOnly 传入 45 秒；普通检查、后台检查、更新前计划复核及首次安装保持原默认预算。校验计时器在 finally 清理。
+  - 错误码：共享 CLI_OPERATION_ERRORS 增加 VERIFY_TIMEOUT。captureReadOnly 自身超时使用 ReadOnlyTimeoutError，等待进程范围清理后由 verify 转为 CliOperationError，消息为「已替换，但新版本首次启动超时，无法确认版本；请稍后重新检查」。取消和 CLEANUP_UNCONFIRMED 优先保留；不自动重装或回滚已写文件。只读检查 client/cli-update-page.tsx 的 resultDescription 和 operation-error.ts 的 hostText，确认现有前端按 Host 消息显示新代码，未知翻译保留原文，未修改 client/。
+  - 模拟回归：新增 6 项服务级 Windows Claude 接管测试，实际执行 currentVersion/captureReadOnly，使用模拟进程和假计时器覆盖 9032 ms、20000 ms 成功，45000 ms 探测超时、60000 ms 总预算超时，用户取消与清理未确认；断言进程范围退出前不发布终态、已写 exe 和版本文件保留、只启动一次版本命令。现有普通版本读取 5 秒超时回归继续通过。
+  - 验证：corepack pnpm typecheck 退出 0；corepack pnpm exec vitest run tests/cli-management* tests/settings-connection-cache.test.ts 为 22 文件、728 passed、0 failed、0 skipped（4.05 秒）。此前定向测试 2 文件、119 项通过；本次没有测试失败。README、doc/design.md 和本变更增量规格同步更新后预算与超时行为。
+  - Windows 实机依据由用户提供（2026-11-14）：Claude takeover 写入 claude.exe 372461728 B 和 versions/2.1.325，claude --version 为 2.1.325，无残留，但操作以 UNKNOWN 失败。同机新写入 372 MB 副本首次 --version 用时 9032 ms、第二次 623 ms，首次 Defender 扫描超过 captureReadOnly 原 5000 ms 上限。本次为模拟验证，修复后的 Windows 实机复测仍保留在 13.5，没有执行真实 CLI、正式构建、Desktop 更新、版本修改、提交或推送。

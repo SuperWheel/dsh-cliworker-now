@@ -49,10 +49,13 @@ export function compatible(cli: ActiveCliId, version: string): boolean {
 export function latestCompatible(cli: ActiveCliId, versions: string[], current?: string): string | undefined {
   return versions.filter(v => compatible(cli, v) && (!current || !!semver.exec(current)?.[4] || !semver.exec(v)?.[4])).sort(compareVersions).at(-1)
 }
+export class ReadOnlyTimeoutError extends Error {
+  constructor() { super('Read-only command timed out'); this.name = 'ReadOnlyTimeoutError' }
+}
 /** Own the abort and await the process range, including when output readers fail. */
 export async function captureReadOnly(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, background = false, env?: Record<string, string>, timeoutMs = 5000): Promise<string> {
   signal.throwIfAborted()
-  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), timeoutMs)
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(new ReadOnlyTimeoutError()), timeoutMs)
   const control = AbortSignal.any([signal, controller.signal])
   let child: ReturnType<ProcessBackend['spawn']> | undefined
   const readers: Promise<void>[] = []
@@ -89,13 +92,13 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
     }
   }
 }
-export async function currentVersion(cli: ActiveCliId, identity: InstallationIdentity, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background = false): Promise<string | undefined> {
+export async function currentVersion(cli: ActiveCliId, identity: InstallationIdentity, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background = false, timeoutMs = 5000): Promise<string | undefined> {
   if (cli === 'zcode' && validAppVersion(identity.fingerprint.appVersion)) return identity.fingerprint.appVersion
   if (validVersion(identity.manifestVersion)) return identity.manifestVersion
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
   if (spec.version !== 'kimi' && spec.version !== 'command') return
-  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : undefined)
+  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : undefined, timeoutMs)
   if (cli === 'traecn') {
     const channel = /\binstallation:\s*(public|tob|tob-alpha|internal)\b/.exec(stripVTControlCharacters(raw))?.[1]
     if (channel) identity.channel = channel

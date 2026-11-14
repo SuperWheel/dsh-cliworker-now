@@ -118,12 +118,47 @@ it('模拟：Windows TRAE 版本目录为自带更新，自动入口按版本目
   expect(isVersionedAutoEntry('traecn', path.replace(/\//g, '\\'), winHome)).toBe(true)
   expect(isVersionedAutoEntry('traecn', 'C:\\Users\\admin\\AppData\\Local\\Programs\\TraeCLI\\bin\\traecli.cmd', winHome)).toBe(false)
 })
+it.each(['executable', 'prefix', 'packageRoot', 'realpath'] as const)('模拟：Windows 安装身份的 %s 忽略大小写与分隔符，拒绝不同路径', field => {
+  const path = 'C:\\Users\\admin\\AppData\\Local\\agy\\bin\\agy.EXE'
+  const before: InstallationIdentity = { source: 'self-update', executable: path, prefix: 'C:\\Users\\admin', packageRoot: 'C:\\Users\\admin\\AppData\\Local\\agy', fingerprint: { realpath: path, size: 10, mtimeMs: 100 } }
+  const original = field === 'realpath' ? before.fingerprint.realpath : before[field]!
+  const withPath = (value: string): InstallationIdentity => field === 'realpath' ? { ...before, fingerprint: { ...before.fingerprint, realpath: value } } : { ...before, [field]: value }
+  const changed = original.replace(/\\/g, '/').toLowerCase()
+  expect(sameInstallation(before, withPath(changed), 'antigravity')).toBe(true)
+  expect(sameInstallation(withPath(changed), before, 'antigravity')).toBe(true)
+  expect(sameInstallation(before, withPath(changed + '-other'), 'antigravity')).toBe(false)
+  expect(sameInstallation(before, { ...withPath(changed), source: 'unknown' }, 'antigravity')).toBe(false)
+})
+it.each(['executable', 'prefix', 'packageRoot', 'realpath'] as const)('模拟：POSIX 安装身份的 %s 保持大小写与分隔符精确匹配', field => {
+  const before = { ...syntheticIdentity('codex'), prefix: '/Users/admin' }
+  const original = field === 'realpath' ? before.fingerprint.realpath : before[field]!
+  for (const value of [original.toUpperCase(), original.replace(/\//g, '\\')]) {
+    const after = field === 'realpath' ? { ...before, fingerprint: { ...before.fingerprint, realpath: value } } : { ...before, [field]: value }
+    expect(sameInstallation(before, after, 'codex')).toBe(false)
+  }
+})
+it.each(['windows', 'posix'] as const)('模拟：稳定更新根按 %s 路径规则比较，保持来源和通道校验', platform => {
+  const path = platform === 'windows' ? 'C:\\Users\\admin\\AppData\\Local\\agy\\bin\\agy.EXE' : '/Users/admin/.local/bin/agy'
+  const before: InstallationIdentity = { executable: path, updateRoot: path, source: 'self-update', channel: 'public', fingerprint: { realpath: path, size: 10, mtimeMs: 100 } }
+  const changed = platform === 'windows' ? path.replace(/\\/g, '/').toLowerCase() : path.toUpperCase()
+  // 不同版本实体强制走 updateRoot 分支，避免通用分支掩盖根路径误判。
+  const after = { ...before, executable: changed, updateRoot: changed, fingerprint: { ...before.fingerprint, realpath: path + '-new' } }
+  expect(sameInstallation(before, after, 'antigravity')).toBe(platform === 'windows')
+  expect(sameInstallation(before, { ...after, updateRoot: changed + '-other' }, 'antigravity')).toBe(false)
+  expect(sameInstallation(before, { ...after, source: 'unknown' }, 'antigravity')).toBe(false)
+  expect(sameInstallation(before, { ...after, channel: 'internal' }, 'antigravity')).toBe(false)
+  expect(sameInstallation(before, { ...after, executable: path }, 'antigravity')).toBe(platform === 'windows')
+})
 it('模拟：TRAE 更新只换 releases/<版本> 一层时仍是同一安装', () => {
   const root = 'C:/Users/admin/AppData/Local/TraeCLI'
   const at = (version: string, file = 'traex.exe', patch: Partial<InstallationIdentity> = {}): InstallationIdentity => ({
     ...syntheticIdentity('traecn'), source: 'self-update', updateRoot: root, channel: 'public',
     executable: `C:\\Users\\admin\\AppData\\Local\\TraeCLI\\releases\\${version}-x86_64-pc-windows-msvc\\${file}`, ...patch })
   expect(sameInstallation(at('0.213.1'), at('0.215.0'), 'traecn')).toBe(true)
+  expect(sameInstallation(at('0.213.1'), at('0.215.0', 'TRAEX.EXE', {
+    updateRoot: root.toUpperCase().replace(/\//g, '\\'),
+    executable: `${root.toUpperCase()}/RELEASES/0.215.0-x86_64-pc-windows-msvc/TRAEX.EXE`,
+  }), 'traecn')).toBe(true)
   expect(sameInstallation(at('0.213.1'), at('0.215.0', 'other.exe'), 'traecn')).toBe(false)
   expect(sameInstallation(at('0.213.1'), at('0.215.0', 'traex.exe', { channel: 'internal' }), 'traecn')).toBe(false)
   expect(sameInstallation(at('0.213.1'), at('0.215.0', 'traex.exe', { updateRoot: 'C:/Other/TraeCLI' }), 'traecn')).toBe(false)

@@ -1,18 +1,19 @@
 /** 模拟：Windows 平台、官方元数据、二进制和文件占用；仅写测试临时目录，不运行真实安装器。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync, rmSync, renameSync } from 'node:fs'
 import { dirname, join, win32 } from 'node:path'
 import { canPrepareLocalUpdate, prepareLocalUpdate } from '../src/host/cli-management/local-artifacts.ts'
 import { WINDOWS_LOCAL_SOURCES } from '../src/host/cli-management/sources.ts'
-import { serviceFixture, control, syntheticIdentity, checked, finished } from './cli-management-phase-b-fixture.ts'
+import { currentVersion } from '../src/host/cli-management/versions.ts'
+import { serviceFixture, control, syntheticIdentity, checked, finished, childFixture } from './cli-management-phase-b-fixture.ts'
 import type { ActiveCliId } from '../src/shared/types.ts'
 
-const simulated = vi.hoisted(() => ({ home: undefined as string | undefined, locked: '', code: 'EBUSY' }))
+const simulated = vi.hoisted(() => ({ home: undefined as string | undefined, locked: '', code: 'EBUSY', realpaths: new Map<string, string>() }))
 vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => simulated.home ?? '/模拟/home' }))
 vi.mock('node:fs/promises', async original => {
   const fs = await original<typeof import('node:fs/promises')>()
-  return { ...fs, rename: async (source: string, target: string) => {
+  return { ...fs, realpath: async (path: string) => simulated.realpaths.get(path) ?? fs.realpath(path), rename: async (source: string, target: string) => {
     if (target === simulated.locked) throw Object.assign(new Error('模拟 Windows 文件占用'), { code: simulated.code })
     return fs.rename(source, target)
   } }
@@ -50,7 +51,9 @@ function fixture(cli: Cli, arch = 'x64') {
   return { ...f, options, metadata, rg, target, state }
 }
 afterEach(async () => {
+  vi.useRealTimers()
   simulated.locked = ''; simulated.home = undefined; simulated.code = 'EBUSY'
+  simulated.realpaths.clear()
   Object.defineProperty(process, 'platform', platformDescriptor); vi.unstubAllEnvs()
   for (const f of fixtures.splice(0)) await f.close()
 })
@@ -71,6 +74,26 @@ it.each(['claude', 'antigravity', 'omp'] as const)('模拟：%s x64/arm64 校验
     expect(f.backend.spawn).not.toHaveBeenCalled(); await local.cleanup()
     expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
   }
+})
+it('模拟：Antigravity 替换保留已存在的 agy.EXE 名称', async () => {
+  const f = fixture('antigravity'), existing = join(dirname(f.target), 'agy.EXE')
+  renameSync(f.target, existing)
+  // 模拟 Windows 不区分大小写查找，但 realpath 返回磁盘上的名称；兼容区分大小写的测试宿主。
+  simulated.realpaths.set(f.target, existing)
+  const local = await prepareLocalUpdate(f.options)
+  await local.install!(control(), vi.fn())
+  expect(readFileSync(existing, 'utf8')).toBe(bytes)
+  expect(readdirSync(dirname(f.target))).toEqual(['agy.EXE'])
+  expect(f.backend.spawn).not.toHaveBeenCalled(); await local.cleanup()
+})
+it('模拟：现有 Windows 入口真实路径偏离白名单时拒绝替换', async () => {
+  const f = fixture('antigravity'), other = join(f.root, 'other.exe')
+  writeFileSync(other, '模拟其他安装'); simulated.realpaths.set(f.target, other)
+  const local = await prepareLocalUpdate(f.options)
+  await expect(local.install!(control(), vi.fn())).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
+  expect(readFileSync(other, 'utf8')).toBe('模拟其他安装')
+  expect(readFileSync(f.target, 'utf8')).toBe('模拟 old')
+  expect(readdirSync(dirname(f.target))).toEqual(['agy.exe']); await local.cleanup()
 })
 it.each(['claude', 'antigravity', 'omp'] as const)('模拟：%s 摘要错误仅干净重下一次，不写安装目录', async cli => {
   const f = fixture(cli)
@@ -205,6 +228,66 @@ it.each(['success', 'wrong-version', 'wrong-identity'] as const)('模拟：Windo
   expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.invalidateModels).toHaveBeenCalledTimes(1)
   expect(result.progress).toMatchObject({ readable: true, downloadedBytes: size })
   expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
+})
+
+it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfirmed'] as const)('模拟：Claude 更新后的首次版本启动使用独立预算并保留清理边界 %s', async mode => {
+  const f = fixture('claude', process.arch), probe = childFixture()
+  Object.defineProperty(process, 'platform', { ...platformDescriptor, value: 'win32' }); vi.stubEnv('LOCALAPPDATA', f.options.localAppData)
+  let started!: () => void
+  const probeStarted = new Promise<void>(resolve => { started = resolve })
+  let identifying!: () => void
+  const verificationStarted = new Promise<void>(resolve => { identifying = resolve })
+  const identify = f.identify.getMockImplementation()!
+  f.identify.mockImplementation(async cli => {
+    if (mode === 'deadline' && f.service.snapshot().operation?.phase === 'verifying-installation') {
+      identifying()
+      // 模拟身份读取先消耗 20 秒，版本进程应受剩余的 40 秒总预算限制。
+      await new Promise(resolve => setTimeout(resolve, 20_000))
+    }
+    return identify(cli)
+  })
+  vi.mocked(f.backend.spawn).mockImplementation(() => { started(); return probe.child as any })
+  const versionProbe: typeof currentVersion = async (cli, identity, backend, config, signal, background, timeoutMs) => {
+    if (readFileSync(f.target, 'utf8') !== bytes) return identity.manifestVersion
+    return currentVersion(cli, { ...identity, manifestVersion: undefined }, backend, config, signal, background, timeoutMs)
+  }
+  f.version.mockImplementation(versionProbe)
+  await checked(f.service)
+  const token = f.service.snapshot().entries.find(e => e.cli === 'claude')!.planToken!
+  vi.useFakeTimers()
+  f.service.start('claude', 'update', token, '', `模拟首次启动${mode}`)
+  if (mode === 'deadline') { await verificationStarted; await vi.advanceTimersByTimeAsync(20_000) }
+  await probeStarted
+  const pending = finished(f.service)
+  await vi.advanceTimersByTimeAsync(5001)
+  expect(probe.child.terminate).not.toHaveBeenCalled()
+  expect(f.service.snapshot().operation?.phase).toBe('verifying-installation')
+  if (mode === '9032ms' || mode === '20000ms') {
+    await vi.advanceTimersByTimeAsync((mode === '9032ms' ? 9032 : 20_000) - 5001)
+    expect(probe.child.terminate).not.toHaveBeenCalled()
+    probe.child.stdout.write(`${version} (Claude Code)\n`); probe.finish()
+    await vi.advanceTimersByTimeAsync(0); probe.exit(true)
+  } else {
+    if (mode === 'cancel') f.service.cancel(f.service.snapshot().operation!.id)
+    else {
+      await vi.advanceTimersByTimeAsync((mode === 'deadline' ? 39_999 : 44_999) - 5001)
+      expect(probe.child.terminate).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+    }
+    await vi.advanceTimersByTimeAsync(0)
+    expect(probe.child.terminate).toHaveBeenCalled()
+    // 超时／取消必须等待进程范围退出，不能提前发布失败或释放维护锁。
+    expect(f.service.snapshot().results).toHaveLength(0)
+    probe.finish(); probe.exit(mode !== 'cleanup-unconfirmed')
+  }
+  const result = (await pending).results[0]!
+  expect(result.phase).toBe(mode === 'timeout' || mode === 'deadline' ? 'failed' : mode === 'cancel' ? 'cancelled' : mode === 'cleanup-unconfirmed' ? 'cleanup-unconfirmed' : 'succeeded')
+  if (mode === 'timeout' || mode === 'deadline') expect(result.error).toMatchObject({ code: 'VERIFY_TIMEOUT', message: 'VERIFY_TIMEOUT：已替换，但新版本首次启动超时，无法确认版本；请稍后重新检查', retryable: true })
+  if (mode === 'cleanup-unconfirmed') expect(result.error?.code).toBe('CLEANUP_UNCONFIRMED')
+  if (mode === '9032ms' || mode === '20000ms') expect(result.afterVersion).toBe(version)
+  expect(readFileSync(f.target, 'utf8')).toBe(bytes)
+  expect(readFileSync(join(f.root, '.local/share/claude/versions', version), 'utf8')).toBe(bytes)
+  expect(f.backend.spawn).toHaveBeenCalledTimes(1)
 })
 
 it.each(['same', 'different', 'custom'] as const)('模拟：Claude 内置双源 %s 必须经 HEAD 身份校验，遵守禁用自动换源设置', async mode => {
