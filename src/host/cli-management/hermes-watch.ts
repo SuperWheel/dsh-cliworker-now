@@ -41,6 +41,7 @@ export class HermesWatch {
   stoppedStage?: HermesStage
   reason?: SlowReason
   receiptPidAlive?: boolean
+  receiptSucceeded = false
   expectedSha?: string
   stopClass?: string
   exitCode?: number
@@ -80,6 +81,8 @@ export class HermesWatch {
     }
   }
   async poll(now = Date.now(), judge = true) {
+    // Cleanup needs a fresh terminal receipt, even if this poll fails midway.
+    this.receiptSucceeded = false
     let active = false
     const observe = async (path: string, tail = false) => {
       const value = await safeObservation(path, 65536, tail)
@@ -121,10 +124,11 @@ export class HermesWatch {
       // Only a terminal success for this target protects the run; individual stage
       // successes (notably apply before handoff) are not completion receipts.
       const post = r.post_update
-      if (r.outcome === 'success' && (
+      this.receiptSucceeded = r.outcome === 'success' && !!(
         this.target?.sha && [post?.commit, post?.sha, r.target_sha, r.expected_sha].includes(this.target.sha) ||
         this.target?.version && [post?.baseVersion, post?.version, r.target_version].includes(this.target.version)
-      )) this.completed = true
+      )
+      if (this.receiptSucceeded) this.completed = true
       const stages = Array.isArray(r.stages) ? r.stages : []
       const last = stages.filter((s: any) => HERMES_STEPS.includes(s?.name) || s?.name === 'fetch').at(-1)
       // Native stage marks are END marks. Do not leave a child in its parent's completed apply.
@@ -214,7 +218,7 @@ export interface HermesUpdateOptions {
 export async function runHermesUpdate(o: HermesUpdateOptions) {
   let privateDir: string | undefined
   let quarantine = false, stopped = false, attempt = 0, depsRetries = 0, fallbackRetries = 0, prefetched = false
-  let recoveryFailure: unknown
+  let recoveryFailure: unknown, receiptSucceeded = false
   try {
     privateDir = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(o.root), 'local-')))
     for (;;) {
@@ -234,11 +238,11 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
           ...(o.npmRegistry !== undefined ? { npm_config_registry: o.npmRegistry } : {}),
         }, undefined, undefined, text => watch.output(text))
       } catch (error) { failure = error; if (error instanceof ProcessCleanupUnconfirmedError) throw error }
-      finally { clearInterval(timer); await polling; stopped ||= watch.controller.signal.aborted || o.signal.aborted; await watch.poll(Date.now(), false).catch(() => undefined) }
+      finally { clearInterval(timer); await polling; stopped ||= watch.controller.signal.aborted || o.signal.aborted; await watch.poll(Date.now(), false).catch(() => undefined); receiptSucceeded = watch.receiptSucceeded }
       o.signal.throwIfAborted()
-      if (failure && await o.verifyInstalled?.()) return
+      if (failure && await o.verifyInstalled?.()) return {receiptSucceeded}
       if (recoveryFailure) throw recoveryFailure
-      if (!failure) return
+      if (!failure) return {receiptSucceeded}
       if (watch.stopClass) o.output(`Hermes 更新失败：${watch.stopClass}\n`)
       if (watch.exitCode === 2 || failure instanceof CliOperationError && /退出码 2(?:\D|$)/.test(failure.message)) throw failure
       if (watch.reason && watch.stoppedStage === 'fetch' && !prefetched) {
@@ -267,7 +271,7 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
     }
   } catch (error) {
     quarantine = error instanceof ProcessCleanupUnconfirmedError
-    if (!quarantine && !o.signal.aborted && await o.verifyInstalled?.()) return
+    if (!quarantine && !o.signal.aborted && await o.verifyInstalled?.()) return {receiptSucceeded}
     if (stopped && (o.platform ?? process.platform) === 'win32') o.output('Hermes 网关可能仍处于暂停状态；请启动一次 Hermes 以恢复网关。\n')
     throw error
   } finally { if (privateDir && !quarantine) await removeUpdateTemporary(privateDir) }

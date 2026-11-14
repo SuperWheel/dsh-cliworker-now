@@ -278,7 +278,7 @@
   - 下载断点只在操作内保留；残留清理不删除 channel-memory.json。通道记忆规则不变：接管自身失败或取消仍清除记录，下次恢复官方优先（2026-11-15 主会话复核时撤回了 Codex 擅自改成「失败保留原记录」的改动，`tests/cli-management-dual-channel.test.ts` 还原）。
 - [x] 10.3 实现有当前入口和版本探针证据的自更新残留规则，失败保留旧版本及恢复备份
   - 新增 update-residue.ts，规则表见 design 决定 10。Grok、Qoder/CN、Claude、TRAE 的路径由仓库布局和用户证据限定；重新识别入口并调用既有版本探针，记录与当前文件/指针匹配才清理。失败仅删操作前快照以外、非当前、非恢复备份的候选。Qoder native 缓存仅匹配给出的前缀及当前用户名，不推断 CN 前缀。
-  - Hermes facts.json packages.*.entry 引用保护有模拟规则；npm 工具族没有 entry 不猜。sources.ts 明确只读 Hermes 安装记录并禁止 --version，无法提供本要求的 runnable 证据，故生产路径保留 Hermes 原生副本。TRAE lease 格式/存活协议在仓库未确认，lease 保留，有 lease 的版本保守跳过。
+  - Hermes facts.json packages.*.entry 引用保护有模拟规则；npm 工具族没有 entry 不猜。初版因 sources.ts 禁止 --version 而保留 Hermes；后续按用户指定改用更新后回执与版本验证，见 10.7。TRAE lease 格式/存活协议在仓库未确认，lease 保留，有 lease 的版本保守跳过。
   - 所有候选和父链 lstat，链接/junction 与 foreign 名称不删，只读 current 指向可解析；计数/递归删除不跟随候选内的链接。仅「检查更新」不做清理，因为没有更新维护锁和实时可运行证明。
 - [x] 10.4 增加各规则、链接隔离、不可核验与非致命清理回归，更新行为文档
   - 新增 cli-management-update-cleanup.test.ts 共 61 项模拟测试：六 CLI × macOS/Windows 布局的成功、失败、无法核验、链接/foreign 保留；Qoder stamp/用户名、TRAE current/lease、Hermes facts 引用、npm prefix/bin 和进程检查、私有缓存/partial、清理抛错、进程未确认、排队上下文。
@@ -292,4 +292,29 @@
   - 未提交、推送、归档或升级版本，未读凭据/.env，未改 src/client；既有未跟踪 PRD/video 保持不动。
 - [ ] 10.6 Windows/Mac 实机验证
   - （未执行：由用户后续验证；本轮不更新真实 CLI、不删除真实安装目录、不改变账号或代理。）
-  - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；另需补齐 Hermes 可运行证明及 TRAE lease 格式证据，当前不宣称这两类已回收。
+  - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；Hermes 新路径和零字节锁行为需实机复核，TRAE lease 格式仍未确认。
+
+- [x] 10.7 接入 Hermes 更新后回执与版本证据，校验 facts/锁后清理原生残留
+  - HermesWatch 暴露本次最新的目标匹配整体 success，runHermesUpdate 仅在托管范围退出后返回该证据；service 经过既有 identify/currentVersion/verifyUpdatedVersion 且严格等于 target 才登记最终清理，最终失败/取消仍不删。无需新增版本命令，hermes-version.ts 的 install-stamp/HEAD 稳定标签链保持原样。
+  - update-residue.ts 新增专用 Hermes 规则并移除旧通用探针入口：facts 有界无链接读取、非空 packages、每个 entry 是安全 basename 且引用真实目录；通过才删普通 bin/*.deleteme 及未引用的完整 store 名称目录（覆盖 node/python/uv/npm/ripgrep/ffmpeg/git，不按工具白名单猜当前）。候选/父链 lstat，链接/junction 不跟随；删除前复核 facts 与锁。
+  - 锁复用 Hermes pidAlive 与 safeObservation：pid/writer_pid 任一活则跳过，全部明确 ESRCH 才判 stale；缺 PID、权限未知、空文件、链接均保留。仓库 hermes-native-entry.py 显示 .install.lock 使用系统文件锁，文件年龄不构成存活证据；初版对 Windows 10-11 零字节锁保守跳过；后续由用户指定改用进程路径证据，见 10.9。
+  - 失败/取消接管仍清除通道记忆；本轮没有修改 channel-memory 或相关语义。
+- [x] 10.8 补充 Hermes 规则及服务集成回归、同步文档并运行指定检查
+  - 新增 cli-management-hermes-residue.test.ts（34 项合成测试），覆盖两平台 store 布局与全部七个工具族、所有引用保留、facts 缺失/损坏/空/字段无效/越界/引用缺失/链接、候选链接/junction 和内部链接、live/dead/unknown/空锁、失败/无回执/版本不符、锁定删除失败不改结果、facts 中途变化、退出未确认，以及真实 service 控制流的五种模拟结果。大小写变体保守保护，避免 Windows/macOS 同名引用误删。
+  - hermes-takeover 新增 3 项回执失效回归：旧目标、单阶段成功、回执消失均撤销清理证据，stdout 完成文字不代替回执。update-cleanup 中旧 Hermes 通用探针夹具移至专用规则，不再以模拟 runnable 授权 Hermes 删除。
+  - corepack pnpm typecheck：exit 0，Host/Client typecheck passed against DSH 0.2.2-rc.3。corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/temporary-cleanup.test.ts：沙箱外 36 文件、1133/1133 通过（18.86 秒）；此前沙箱 1125 通过、5 失败，仅 Pi 环回 listen EPERM 和下游断言。最终大小写保护调整后，hermes-residue/hermes-takeover/update-cleanup 三文件 167/167 通过（7.67 秒），再次 typecheck 通过。
+  - OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict 与 git diff --check：exit 0；仅既有主任务 9 子项过多的建议警告。README、doc/design、本变更 design/spec 已替换旧「Hermes 全部保留」说明。
+  - 实机证据仍仅为用户提供的旧版本目录/.deleteme/零字节锁；没有执行真实 Hermes、账号、模型或 Windows/Mac 更新。未改通道记忆语义、代理、版本号；未提交/推送/归档，10.6 保持未勾选。
+
+- [x] 10.9 无 PID Hermes 锁改用安装路径进程证据判定，不依赖文件年龄
+  - update-residue.ts 使用现有 captureReadOnly 托管枚举：Windows 固定 argv 的 CIM ExecutablePath（忽略仅 kernel 的 PID 0/4），macOS ps 完整 comm，Linux ps PID 快照加 /proc/<pid>/exe。路径必须绝对且在本次 home/checkout 边界内；Windows 大小写/分隔符归一化；bin/hermes、installs venv Python、tools runtime 同样识别，不按进程名字或命令行子串匹配。
+  - 无 PID 可读普通锁只有在完整枚举无内部进程时对本次清理判 stale；有进程为 active，路径缺失/不可读、枚举失败/不可用为 unknown。PID-bearing 锁原三态不变；链接/不安全锁不进入 fallback。每项删除前复查，无锁修改、无目标进程终止、无 Hermes 命令或代理更改。
+  - service 把本次 Hermes home、checkout 和既有 backend/config 传给清理检查，仅在已确认退出的成功操作最终化内执行。PID-less 锁仍留盘，但不再因零字节/旧日期自身阻止回收；外部同名进程不计入，因为它的可执行路径不属于该安装。
+- [x] 10.10 补充进程路径匹配和空锁回收测试，同步文档及指定校验
+  - Hermes residue 文件由 34 增至 50 项合成测试：零字节/未知格式无 PID 锁无内部进程时清理且锁内容不变；内部进程/枚举失败/不可用时保留并解释；Windows bin、installs venv、tools runtime、路径大小写/分隔符及 home 前缀边界；独立 checkout；外部同名 hermes 不阻止；PID-bearing 活/未知锁不被空快照覆盖。service 模拟成功路径新增两种空锁，证明用既有 backend 枚举而非运行 Hermes 版本命令。定向 50/50 通过。
+  - corepack pnpm typecheck：exit 0，Host/Client typecheck passed against DSH 0.2.2-rc.3。corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/temporary-cleanup.test.ts：沙箱内 1145 通过、5 失败（Pi 环回 listen EPERM 及下游断言）；同命令获准沙箱外重跑，36 文件、1150/1150 通过，18.57 秒。代理环境未改。
+  - OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict 与 git diff --check：exit 0，保留既有任务 9 子项过多建议警告。README、doc/design、本变更 design/spec 已更新为进程证据 fallback，不再把零字节自身当作跳过理由。
+  - 已确认的是仓库执行器/PID 证据复用与模拟行为；真实 Windows CIM 的路径可见性、Mac/Linux 进程路径枚举及用户所述两份 10-11 空锁的实际回收未验收。若真实系统存在不可读 executable，仍按 unknown 保留；10.6 未勾选。未提交、未升版、未运行 Hermes、未终止目标进程、未改锁文件或通道记忆语义。
+- [x] 10.11 主会话复核：不可读进程路径只对 Hermes 锁宿主计为无法判定
+  - Windows 实测 346 个进程中 16 个系统进程（svchost、csrss、services、Registry 等）对普通用户无 ExecutablePath；Mac `ps comm=` 有 ssh、node、codex 等裸名。原规则任一不可读即跳过，会让 Hermes 清理在两平台几乎永远跳过。
+  - 改为：路径不可读或非绝对时，仅当进程名为 hermes／python／pythonw／uv／uvx（可带版本与 .exe）才计为无法判定，其余忽略；Windows 枚举加取 Name。新增模拟测试覆盖系统进程、Mac 裸名放行与 Hermes 宿主名保持跳过；`tests/cli-management-hermes-residue.test.ts` 51/51 通过。

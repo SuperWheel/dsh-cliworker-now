@@ -228,7 +228,7 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 
 #### Scenario: 自更新旧版本
 - **WHEN** 已识别当前入口且既有版本探针确认可运行并匹配版本记录
-- **THEN** 按 Grok、Qoder/Qoder CN、Claude、Hermes、TRAE CN 的已知安装根与规则回收非当前版本；MUST NOT 跟随候选链接或 junction，除读取 current 指向外不解析外部目标
+- **THEN** 按 Grok、Qoder/Qoder CN、Claude、TRAE CN 的已知安装根与规则回收非当前版本；MUST NOT 跟随候选链接或 junction，除读取 current 指向外不解析外部目标
 
 #### Scenario: 更新失败或当前不可核验
 - **WHEN** 操作失败但旧当前版本仍可核验，或当前完全不可核验
@@ -237,3 +237,15 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 #### Scenario: 清理抛错
 - **WHEN** 清理遇锁定、权限或统计错误
 - **THEN** 原成功或失败结果不变，尽力继续清理其他项，不把格式校验或模拟结果当实机验收
+
+#### Scenario: Hermes 更新后原生残留
+- **WHEN** Hermes 本次更新已有匹配目标的成功回执、现有安装记录或 HEAD 精确稳定标签经 verifyUpdatedVersion 确认为目标版本，且托管进程范围退出
+- **THEN** Host SHALL 仅在 tools/facts.json 校验通过、每个 entry 引用均为真实存在的目录、所有更新锁和 tools/.install.lock 均可判为无活 owner 时，删除 bin/*.deleteme 普通文件及 tools 中符合 <name>-<version>-<platform>-<arch> 且未被任何 entry 引用的真实目录；MUST NOT 运行 hermes --version，不跟随链接/junction，不删除锁、facts.json 或 dot entries
+
+#### Scenario: Hermes 清理证据不全
+- **WHEN** 更新失败/取消、版本或成功回执不可核验、facts 无效/缺失/引用目录缺失，或 PID-bearing 锁存活证据为 active/unknown，或无 PID 锁的进程枚举失败/不可用/路径不完整/发现内部进程
+- **THEN** Host MUST NOT 删除任何 Hermes 原生残留，SHALL 在清理汇总说明跳过原因；PID-bearing 锁保持原三态判定
+
+#### Scenario: 无 PID 锁与安装路径进程
+- **WHEN** 成功更新的托管范围已退出，零字节或未知格式的无 PID 普通锁仍在，但完整进程枚举没有可执行路径位于本次 Hermes home 或 checkout 内的进程（只有安装根外的同名 hermes 进程也属无匹配）
+- **THEN** Host SHALL 仅对本次清理判锁 stale，并继续已获授权的残留清理；MUST NOT 以锁年龄或进程名字代替路径证据，不终止被枚举进程、不运行 Hermes 命令、不修改锁文件；Windows 路径大小写与分隔符 SHALL 归一化，home 名称前缀相似的外部目录不算内部

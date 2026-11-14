@@ -235,7 +235,7 @@ npm 下载接管每条进度都有非空 sourceHost（包括跨文件/最终完�
 
 npm cache add 与 install 显式使用同一下载目录内的 --cache，保持全部代理环境。reify 名称严格匹配包名/清单 bin 与八位字母数字后缀；保守检查所有 npm 进程，其他前缀或无法枚举时也不删除。运行前快照用于失败只删除新增未使用资源。只读检查更新不做顺便清理：缺少维护租约和实时可运行探针，收益不足以安全删除。
 
-规则证据：Grok downloads 与 .old、Qoder version.txt/versionFile、Claude versions、TRAE releases/current 可由仓库放置代码与用户实机证据交叉核对；Qoder temp natives 只匹配当前用户名及已给出的 qodercli 前缀。Hermes tools/facts.json packages.*.entry 是当前引用，只有有合法 entry 的工具族才可枚举旧版（npm 没有引用则不猜）。Hermes 既有 sources.ts 明确只读安装记录且禁止 --version，不能把静态版本当 runnable 证明，故生产路径暂保留其原生副本；TRAE .traex-release-lease.* 未找到格式/存活证明，未知 lease 保留且有 lease 的版本目录保守跳过。两者列为明确待核验项，不伪称已清理。
+规则证据：Grok downloads 与 .old、Qoder version.txt/versionFile、Claude versions、TRAE releases/current 可由仓库放置代码与用户实机证据交叉核对；Qoder temp natives 只匹配当前用户名及已给出的 qodercli 前缀。Hermes 的证据按下文 follow-up 改用成功回执与既有更新后版本验证，不执行 --version；tools/facts.json packages.*.entry 保护所有引用，清理不限四个工具族。TRAE .traex-release-lease.* 未找到格式/存活证明，未知 lease 保留且有 lease 的版本目录保守跳过。
 
 私有 stage 可回收不等于回滚备份可删；回滚未完成保留最后旧副本。所有路径 lstat 检查，候选目录递归计数不跟随链接，安装根/父链需真实目录；仅 current 入口可读链接目标。Windows/Mac 真实更新与磁盘回收留待用户验收。
 
@@ -246,4 +246,18 @@ npm cache add 与 install 显式使用同一下载目录内的 --cache，保持�
 | Qoder natives | 系统临时根下 `qodercli-natives-v<version>-<当前用户名>` | 用户提供的 Windows 路径证据；必须有已核验 Qoder 当前版本，仅真实目录，不推断 CN 前缀 |
 | Claude | `~/.local/share/claude/versions/<version>` | 仓库 Windows/Unix 放置布局；当前版本文件和入口探针对应，保留当前文件 |
 | TRAE CN | Unix `~/.local/share/traecli/releases/<version>`；Windows `~/AppData/Local/TraeCLI/releases/<version>` | 只读 `current` 链接目标必须是同根的探针版本；lease 格式未知，不删 lease，有 lease 则保守跳过 |
-| Hermes | 已知根 `tools/<node/python/uv/npm>-<version>`、`bin/hermes.exe.deleteme` | `facts.json` 的合法 `packages.*.entry` 保护全部引用，npm 无 entry 不猜；由于既有版本协议禁止命令探测，生产路径不执行原生副本删除 |
+| Hermes | 本次更新实际 home 下 `tools/<name>-<version>-<platform>-<arch>`、`bin/*.deleteme` | 成功回执与更新后只读版本验证严格匹配目标；facts 全部引用目录有效、锁无活/未知 owner 才删；失败/取消全部保留，详见下文 |
+
+
+### Hermes follow-up（2026-11-15）
+
+Hermes 改用已有的更新后验证证据，不执行命令探针。HermesWatch 暴露本次最新回执是否为匹配目标的整体 success（不是阶段 success 或 stdout 完成文字），runHermesUpdate 在托管范围退出后传回；service 的 identify/currentVersion/verifyUpdatedVersion 只读 install-stamp 或 hermes-version.ts 剥离的 HEAD 精确稳定标签，版本等于目标且最终操作成功才登记清理。失败/取消不清理 Hermes 原生树。
+
+facts.json 必须是有界普通文件、packages 为非空对象、每个记录有合法 basename entry，全部引用目录 lstat 为真实目录；任何不完整都保留包括 .deleteme 在内的全部候选。工具目录只匹配完整 name-version-platform-arch（平台 darwin/linux/win32，架构 x64/arm64），不再限定 node/python/uv/npm 四族。引用集合保护 npm、ripgrep、ffmpeg、git 等所有当前 entry。bin 只删真实 *.deleteme 文件，tools 不删 dot entries、facts 或锁。删除前复核锁和 facts 快照，锁/引用变化立即停止。
+
+锁证据复用 Hermes pidAlive 的 kill(pid, 0) 三态判定及 safeObservation 的有界无链接读取；检查 home/.hermes-update-in-progress* 和 tools/.install.lock。全部已声明 pid/writer_pid 明确 ESRCH 才判 stale；任何活 PID 或 PID 权限不明均跳过并说明；无 PID 的格式未知或零字节普通文件改用下文 process evidence 决策。已有 native-entry.py 说明 .install.lock 使用操作系统文件锁，因此文件存在/年龄不能证明 owner 存活或已退出；不通过启动 Hermes 或导入原生代码推断零字节锁，实际进程枚举与回收仍待平台验收。
+
+
+### Hermes lock process evidence（2026-11-15）
+
+用户决定覆盖前述无 PID/零字节锁直接跳过的规则。托管更新范围退出后，无 PID 的可读普通锁文件改用现有 captureReadOnly 托管枚举：Windows CIM ExecutablePath；macOS ps 的完整 comm；Linux 同一 ps PID 快照加 /proc/<pid>/exe。只核对可执行路径位于本次 Hermes home 或 checkout 的进程（含 bin、installs venv、tools runtime）。完整枚举无匹配才对本次清理视为 stale，不删除/改写锁；同名但根外不算占用，路径不能只做字符串前缀。不可读 executable、未知输出、枚举失败均 unknown；PID-bearing 锁仍复用 pidAlive 三态，符号链接/不安全锁不走 fallback。删除每项前重新检查，不按年龄，不运行 Hermes，不终止目标进程，不改代理环境。

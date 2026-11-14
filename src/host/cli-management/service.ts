@@ -1,5 +1,5 @@
 import { withUpdateCleanup, finishUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
-import { registerNativeResidueCleanup, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
+import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { codexInstallerEnv } from './artifacts/codex.ts'
@@ -526,7 +526,8 @@ export class CliManagementService {
           // The installation's own home (HERMES_HOME or native default), never the plugin's account home:
           // `hermes update` writes logs/receipts there (2026-11-14 Windows 实机：账号目录导致看不到阶段、5 分钟误杀).
           const home = hermesHomeDirectory()
-          await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress,
+          const checkout = plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent')
+          const receipt = await runHermesUpdate({ root: this.deps.root, home, checkout, argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress,
             beforeVersion: plan.beforeVersion, targetVersion: plan.targetVersion, npmRegistry: selected.hermesRegistry,
             activityRoots: [process.env.npm_config_cache ?? join(homedir(), process.platform === 'win32' ? 'AppData/Local/npm-cache' : '.npm'),
               join(process.env.PNPM_HOME ?? (process.platform === 'darwin' ? join(homedir(), 'Library/pnpm') : process.platform === 'win32' ? join(homedir(), 'AppData/Local/pnpm') : join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'pnpm')), 'store')],
@@ -546,6 +547,9 @@ export class CliManagementService {
             },
           })
           verified = await verify(signal)
+          const installedVersion = verified.version
+          afterUpdateCleanup(() => cleanHermesResidues(home, {success: op.phase === 'succeeded', receiptSucceeded: receipt.receiptSucceeded, targetVersion: plan.targetVersion, verifiedVersion: installedVersion},
+            () => hermesProcessState(home,checkout,this.deps.backend,this.deps.config)))
         } else if (dualChannel) {
           const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity)
           const remembered = await memory.get(key)

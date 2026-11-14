@@ -36,20 +36,13 @@ async function fixture(cli: ActiveCliId, platform: 'darwin' | 'win32' = 'darwin'
     old = dirname(await put(join(store,'releases/1.0.0/traex')))
     fresh = join(store,'releases/2.0.0')
     await symlink(join(store,'releases/1.2.0'),join(store,'current'),'dir')
-  } else {
-    const store = join(home,win ? 'AppData/Local/hermes' : '.hermes')
-    current = await put(join(store,win ? 'bin/hermes.exe' : 'bin/hermes'))
-    old = dirname(await put(join(store,'tools/node-1.0.0/node')))
-    fresh = join(store,'tools/node-2.0.0')
-    await put(join(store,'tools/node-1.2.0/node'))
-    await put(join(store,'tools/facts.json'),JSON.stringify({packages:{node:{entry:'node-1.2.0'}}}))
-    backup = join(store,'bin/hermes.exe.deleteme')
-  }
+  } else throw new Error('Use the dedicated Hermes post-update fixture')
+
   const proof: NativeCleanupProof = {runnable:true,version:'1.2.0',identity:{executable:current,fingerprint:{realpath:current,size:4,mtimeMs:1},source:'self-update'}}
-  const createFresh = async () => { if (cli === 'traecn' || cli === 'hermes') await put(join(fresh,'binary')); else await put(fresh); if (backup) await put(backup) }
+  const createFresh = async () => { if (cli === 'traecn') await put(join(fresh,'binary')); else await put(fresh); if (backup) await put(backup) }
   return {home,temp,location,current,old,fresh,backup,proof,createFresh}
 }
-describe.each((['grok','qoder','qodercn','claude','traecn','hermes'] as const).flatMap(cli => (['darwin','win32'] as const).map(platform => ({cli,platform}))))('$cli / $platform evidenced cleanup rule (synthetic)', ({cli,platform}) => {
+describe.each((['grok','qoder','qodercn','claude','traecn'] as const).flatMap(cli => (['darwin','win32'] as const).map(platform => ({cli,platform}))))('$cli / $platform evidenced cleanup rule (synthetic)', ({cli,platform}) => {
   it.each([true,false])('success=%s preserves current; failure removes only new unused copies', async success => {
     const f = await fixture(cli,platform), before = new Set((await nativeResidueCandidates(cli,f.location)).map(x=>x.path))
     await f.createFresh()
@@ -89,14 +82,6 @@ it('TRAE external current junction and unknown lease preserve versions', async (
   const lease = await put(join(f.home,'.local/share/traecli/.traex-release-lease.unknown'))
   await cleanNativeResidues('traecn',new Set(),true,f.proof,f.location)
   expect(await exists(f.old)).toBe(true); expect(await exists(lease)).toBe(true)
-})
-it('Hermes only prunes tool families with valid facts entries, including npm only when declared', async () => {
-  const f = await fixture('hermes'), tools = join(f.home,'.hermes/tools')
-  for (const name of ['node','python','uv','npm']) { await put(join(tools,`${name}-3.0.0/bin`)); await put(join(tools,`${name}-1.0.0/bin`)) }
-  await put(join(tools,'facts.json'),JSON.stringify({packages:Object.fromEntries(['node','python','uv'].map(name=>[name,{entry:`${name}-3.0.0` }]))}))
-  await cleanNativeResidues('hermes',new Set(),true,f.proof,f.location)
-  for (const name of ['node','python','uv']) { expect(await exists(join(tools,`${name}-3.0.0`))).toBe(true); expect(await exists(join(tools,`${name}-1.0.0`))).toBe(false) }
-  expect(await exists(join(tools,'npm-1.0.0'))).toBe(true)
 })
 it.each(['darwin','win32'] as const)('npm %s only deletes exact package and declared bin reify names when idle', async platform => {
   const prefix = await root(), parent = join(prefix,platform === 'win32' ? 'node_modules' : 'lib/node_modules','@scope'), bins = join(prefix,platform === 'win32' ? '' : 'bin')

@@ -43,6 +43,19 @@ function held(confirm: Promise<boolean> = Promise.resolve(true)) {
 function options(root: string, checkout: string, spawn = vi.fn(() => finished())): HermesUpdateOptions {
   return { root, home: root, checkout, argv: ['simulated-hermes', 'update', '--yes'], beforeVersion: '0.21.7', targetVersion: '0.23.1', targetSha: sha(3), backend: { spawn, resolveExecutable: vi.fn(async () => '/simulated/git') } as any, config: DEFAULT_CONFIG, signal: new AbortController().signal, output: vi.fn(), progress: p => { cliDownloadProgressSchema.parse(p) } }
 }
+
+it.each(['wrong-target','stage-only','missing'])('模拟：清理只接受本轮匹配目标的整体成功回执，%s 撤销证据', async mode => {
+  const {root,checkout} = await fixture(), now = Date.now() - 1000
+  const watch = new HermesWatch(root,checkout,join(root,'status.json'),now,()=>{},{version:'0.23.1'})
+  await watch.snapshot()
+  const receipt = join(root,'logs/update_receipts/latest.json')
+  await put(receipt,{outcome:'success',post_update:{version:'0.23.1'}},now + 1)
+  await watch.poll(now + 1,false); expect(watch.receiptSucceeded).toBe(true)
+  if (mode === 'missing') await rm(receipt)
+  else await put(receipt,mode === 'wrong-target' ? {outcome:'success',post_update:{version:'0.21.7'}} : {outcome:'running',pid:process.pid,stages:[{name:'apply',outcome:'success'}]},now + 2)
+  watch.output('Update complete!')
+  await watch.poll(now + 2,false); expect(watch.receiptSucceeded).toBe(false)
+})
 function captureWatches() {
   const watches: HermesWatch[] = [], original = HermesWatch.prototype.snapshot
   vi.spyOn(HermesWatch.prototype, 'snapshot').mockImplementation(async function (this: HermesWatch, cache) { watches.push(this); await original.call(this, cache) })
