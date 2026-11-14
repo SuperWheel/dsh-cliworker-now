@@ -293,6 +293,8 @@
 - [ ] 10.6 Windows/Mac 实机验证
   - （未执行：由用户后续验证；本轮不更新真实 CLI、不删除真实安装目录、不改变账号或代理。）
   - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；Hermes 新路径和零字节锁行为需实机复核，TRAE lease 格式仍未确认。
+  - Windows 已覆盖（11-15）：① 859bcee 包上 OMP 官方更新成功，清理 0 项，证据见本节 c1e3845 记录；② 34133b9 包上 OMP 接管更新成功，输出「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」，复核 `.bak` 已删除，downloads 0 项，Temp 中插件目录 0 个，详见 10.13；③ Host 启动清扫回收旧插件临时目录，以及共享 omp-natives，见临时目录变更 3.2/4.3。
+  - 仍未覆盖：更新失败或取消后的清理；npm 私有缓存与本包 reify 残留（CodeBuddy 实测在 200d97f 包上，早于残留回收）；Grok、Qoder/CN、Claude、TRAE、Hermes 规则的真实更新；Mac 全部。本项保持未勾选。
 
 - [x] 10.7 接入 Hermes 更新后回执与版本证据，校验 facts/锁后清理原生残留
   - HermesWatch 暴露本次最新的目标匹配整体 success，runHermesUpdate 仅在托管范围退出后返回该证据；service 经过既有 identify/currentVersion/verifyUpdatedVersion 且严格等于 target 才登记最终清理，最终失败/取消仍不删。无需新增版本命令，hermes-version.ts 的 install-stamp/HEAD 稳定标签链保持原样。

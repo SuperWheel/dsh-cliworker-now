@@ -164,13 +164,15 @@
   - 账号缓存接线：`accountStatus` 命中 Host 缓存时只有显示字段；前端先显示缓存，再对当前打开的 CLI 或已过期条目调用 `refreshAccountStatus` 恢复登录 / 退出按钮；「刷新状态」直接走新读取；旧 Host 无该方法时退回 `accountStatus`。
 
 ## 7. 验收与文档 〔测试｜10h｜前置 3,4,5,6〕
-- [ ] 7.1 `pnpm typecheck`、相关 vitest、`pnpm build:preview` 隔离构建
+- [x] 7.1 `pnpm typecheck`、相关 vitest、`pnpm build:preview` 隔离构建
   - Phase A：corepack pnpm typecheck 最终通过；上列 5 个后端关联测试文件 400 项通过。 （未执行：本阶段简报明确禁止 build / build:preview、全量测试。）
   - 阶段 A + 前端整合（2026-11-13）：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.2）；`corepack pnpm vitest run` 289 文件 6358 项通过、14 项跳过（首轮 8 项失败：`panel.test.tsx` 的组件桩缺新图标、`cleanup-persistence.test.ts` 的账号桩缺 `isBusy`，已补；`native-agy-acp`、`native-bridge-time-limit` 两个计时类测试在满载时偶发超时，单独与第二轮全量均通过）；`corepack pnpm build:preview` 成功。阶段 B/C 后需重跑。
   - Phase B：最终 typecheck、关联 4 文件 46 项、沙箱外全量 293 文件 6408 项通过，详见 4.7。（未执行：本次用户明确禁止 build / build:preview，因此本组合任务保持未勾选；不把 Phase A 构建当作 Phase B 构建证据。）
   - 阶段 B 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 294 文件 6432 项通过、14 项跳过（首轮 `native-workbuddy.test.ts` 2 项在满载时失败，该文件自 a955675 起未改动，单独连跑 3 次 39 项全过，第二轮全量全过）；`corepack pnpm build:preview` 成功。构建曾报 TS2774：Host 注册页面 Remote 后生成类型把 11 个方法变为必有，已在 `src/client/workers.ts` 的 Omit 中排除并改回可选（`pnpm typecheck` 未发现此问题，只有隔离构建能发现）。阶段 C 后需重跑。
   - Phase C：typecheck、关联 13 文件 507 项、沙箱外全量 296 文件 6455 项通过，命令与完整统计见 5.3。（未执行：阶段 C 明确禁止 build / build:preview，本项保留未勾选。）
   - 阶段 C 主会话复核（2026-11-13）：`corepack pnpm typecheck` 通过；`corepack pnpm vitest run` 297 文件 6472 项通过、14 项跳过；`corepack pnpm build:preview` 成功；严格校验通过；`src/client`、`src/shared` 无改动。核对 `first-party-account-paths.ts` 与原写法一致（Codex 路径 resolve，Claude 路径不 resolve，绝对路径检查保留）。
+  - 2026-11-15 当前代码复核（本地提交 34133b9，含双通道与临时目录回收的全部后续改动）：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；`corepack pnpm exec vitest run tests/cli-management tests/cli-update-page.test.tsx tests/temporary-cleanup.test.ts tests/probe-process.test.ts tests/workbuddy-probe-temporary.test.ts` 及账号/适配器关联测试 90 文件 2299 项全部通过；`corepack pnpm build:preview` 成功（隔离包 1262 文件，已装入 Windows 实测）。三项要求均由同一份代码满足，故勾选。全量 vitest 本轮未跑。
+
 - [x] 7.2 预览台与设计稿 15 张逐张截图对照，差异修完再截
   - 预览台（2026-11-13，Opus 子 agent 搭建，主会话复核）：`.cache/update-preview/`（不入 Git），esbuild 打包真实 `SettingsDialog` + DSH 0.2.2-rc.2 primitives 与主题 token，模拟 API 按画板推送 `CliUpdateSnapshot`（标「模拟」，不连 Host）；`node .cache/update-preview/run.mjs` 用本机无头 Chrome 截 900×780（Narrow 640×780）并生成设计稿 / 实现并排图。14 个状态控制台、异常、请求失败、横向溢出均为 0。
   - 修复的实现差异：640px 页头按钮组换到第二行 → 按钮组不换行、标题收窄；更新 / 安装进行中「检查更新」未置灰；进行中缺「已用时 m:ss」（取 Host `startedAt`）；速度「922 KB/s」→「0.9 MB/s」；首次加载第二步出现置灰「全部更新」→ 按显示分区判断，第二次重排后才出现；首次检查期间导航改为转圈（原为数量）；安装成功文案改为「已安装 X，登录后即可派遣」（PRD 5.11.6）；纯 CLI 安装显示「安装到官方默认位置 <路径>」，桌面应用「正在下载安装包」；前置条件「官方安装脚本需要 Git，这台电脑上没有找到」（范围为空时不留空格）；可用空间取整并带 Windows 盘符；下载源菜单主行 13/20 → 14/22；带转圈的说明换行时转圈留在首行。各项加测试（页面 17 项、布局 14 项），`doc/settings-ui-design.md` 同步。
@@ -198,6 +200,9 @@
   - Windows 未执行：没有 Windows 环境，组合项 7.4 因 Windows 部分保持未勾选。隔离 HOME、npm 全局前缀/缓存、OMP 安装、custom-apps/ZCode.app、下载/挂载状态目录、签名检查解包目录及独立 WorkBuddy ZIP 已清理，9 个清理目标独立回读均不存在（cleanup-report.json，退出 0）；只保留被忽略的脱敏证据文件。另以沙箱外 ps 在内存中过滤本轮隔离路径，残留验收进程计数 0；没有打印其他进程参数。
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
   - （未执行：本次没有 Windows 真实环境验收且禁止真实更新；Windows argv 与目录选择器仅用模拟夹具验证。）
+  - 2026-11-15 Windows 实机（200d97f 隔离包，详见双通道变更 9.17）：npm 全局更新 CodeBuddy Code 2.183.0→2.184.0 成功，共 3 个工件 86.4 MB；停滞 10 秒后从 13483712 B 处续传 1 次，页面显示「已自动续传 1 次」；`codebuddy --version` 2.184.0，downloads 目录无残留。npm 全局更新、停滞续传两项已满足。
+  - 未验证：预加载空闲判定与低优先级。34133b9 包 06:17:43 启动后，06:23 有一次后台检查（共享 omp-natives 06:23:32 被写入），只能说明后台检查跑过；没有核对空闲判定的时机，也没有核对子进程的优先级。所以本项保持未勾选。
+
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
   - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
   - Phase C 已同步 README、doc/design.md 和本变更 design.md 的首次安装行为、脚本信任边界与桌面 manual 限制。（未执行：新页面与五类预加载的整体验收说明仍待整合，本项不以首次安装文档更新代替全部完成。）
@@ -333,12 +338,13 @@
   - Windows 实机（DSH 0.2.2-rc.3，经「应用 → 退出」正常关闭，空闲闸门 activeWorkers=0）：6c00cdc 包 SHA-256 74f1d4ab7b50…，原生安装器退出 0，1169/1169 文件逐一哈希一致。冷启动后立即打开「更新 CLI」：0 项检查失败，可更新 10（Codex、Kimi、MiMo、Grok、Pi、Hermes 0.21.7→0.23.1、OpenCode、Qoder、Qoder CN、CodeBuddy），需手动 5（ZCode 0.16.9「CLI Worker 部署的完整 runtime」、Antigravity、Claude Code、OMP、TRAE CN「没有识别出安装方式」），未安装 1（WorkBuddy）；WorkBuddy CN 为桌面应用手动（NO_RELEASE_SOURCE）。Host 状态文件 17 项与界面一致。
   - 未执行：任何真实更新（含 Hermes）；Antigravity、Claude Code、OMP、TRAE CN 的 Windows 安装布局与自带更新命令尚未核实，仍为手动；英文界面实机；全量 vitest。Windows `%LOCALAPPDATA%\hermes\.hermes-update-in-progress.lock`（0 字节，2026-10-11）为旧遗留，可能影响 Hermes 自带更新，未处理。
 
-- [ ] 11.9 Windows 适配 Antigravity、Claude Code、OMP、TRAE CN 自带更新并真实更新验收
+- [x] 11.9 Windows 适配 Antigravity、Claude Code、OMP、TRAE CN 自带更新并真实更新验收
   - 识别（633a530）：按官方 install.ps1 目标精确匹配 `%LOCALAPPDATA%\agy\bin\agy.exe`、`%LOCALAPPDATA%\omp\omp.exe`、`~/.local/bin/claude.exe`（NTFS 不区分大小写，仅 Windows 盘符路径生效，POSIX 不放宽）；TRAE 增加 `AppData/Local/TraeCLI/` 布局与带版本 auto 入口，同一 releases 根下同名入口视为同一安装。模拟回归在 cli-management-source-layouts。Windows 实机（DSH 0.2.2-rc.3，633a530 包）：可更新 14，四项均为「自带更新」，需手动仅 ZCode（plugin-runtime）与 WorkBuddy CN。
   - 真实更新（2026-11-14 15:25–15:48，逐个执行，C 盘约 1.9 GB）：四项全部在下载阶段停住，没有一项完成。Claude `claude.exe update` 下载到 `~/.cache/claude/staging/<版本>.<pid>.<时间>/claude.exe`，停在 134,306,034 B；同一命令经 SSH 带代理直接执行 4 分钟停在 81,108,992 B（说明与插件无关）。TRAE `traex.exe update --channel public --version 0.215.0` 内部官方 install.ps1 停在 18,483,484 B。OMP `omp.exe update` 写 `omp.exe.<时间>.<pid>.0.new` 停在 82,509,153 B（完整约 225 MB）。Antigravity `agy.exe update`（先出现「确认行为尚未实机核实」行内确认）写 `bin\.new` 停在 33,830,276 B。
   - 根因：Windows 走 Clash Verge（mihomo，127.0.0.1:7897）代理，长连接中途断流；curl 经同一代理取 Claude 150 MB 区间，36.9 秒取到 153,384,276 B 后 20 秒无数据退出 28。四个 CLI 自带更新器都没有续传，界面只显示「正在执行，下载进度无法读取」，插件对外部命令只按输出中的中断证据重跑，静默停滞要等 10 分钟安装超时。下载文件字节实际可读（上述四个路径），PRD 5.6 第 3 条要求的「能读到本次下载字节时按 10 秒规则终止重跑」及第 3a 条「优先由插件接管下载」均未对这四项实现。
   - 取消：四项「取消更新」均在进程树退出后显示「已取消。已写入的文件不会回滚」，旧版本仍可用（omp/18.8.7、agy 1.4.11）。残留（未删除）：Claude `versions\2.1.325`（0 B）及两个 staging 目录（134 MB、81 MB）；TRAE `%TEMP%\traecli-install-*.ps1` 与 18 MB 部分下载（官方脚本 finally 未执行）；OMP `omp.exe.*.new` 82 MB；agy `bin\.new` 33 MB。取消 OMP 后侧栏 OMP 状态点变红，原因未查。
   - 未完成：四项真实更新成功的验收；停滞检测/接管下载的实现。
+  - 2026-11-15 补记：上面列的「未完成」两项都已完成。接管下载在第 13 节实现；四项真实更新都把正确版本落到了磁盘（13.5：Antigravity 1.5.9、Claude Code 2.1.325、OMP 18.20.0、TRAE CN 0.215.0，各自 `--version` 核实）。OMP 18.20.0→18.20.2 在当前代码（34133b9）上再次实测：官方补丁超时后插件接管、续传 4 次，页面直接显示「已更新到 18.20.2」，`omp --version` 18.20.2。适配与真实更新都已验收，故勾选。Antigravity 和 Claude 当时被误报失败，修复（13.6/13.7）后未再做一次真实更新来确认成功提示，这一点与接管期间取消一起留在 13.5。
 
 ## 12. 设置页连接状态预加载 〔后端｜8h｜前置 3〕
 - [x] 12.1 审计 17 个 CLI 的账号、模型及强度读取；将安全投影接入空闲队列，记录跳过原因
@@ -435,6 +441,9 @@
   - 残留：每项完成后插件 cli-management 目录只剩状态文件（TRAE 后另有空 downloads 目录），无 .part、临时脚本或离线包；agy/omp/.local/bin 无 .download 临时文件。C 盘可用空间 1.96 → 1.51 → 1.39 → 1.40 GB（Claude 新版本比旧版本大约 112 MB，且旧版本保留）。
   - 未完成：接管下载期间的取消未实测。11.9 只证明接管前原生更新器的取消；本次四项均已更新到最新，没有可取消的更新，留到这四个 CLI 下次有新版本时补测，故本项保持未勾选。
   - 发现但未修：OMP 来源主机名过长时在进度行下单独换行；TRAE 多文件下载时进度条与「已自动续传」按文件重置，不显示总进度。两者均为显示问题，留待前端处理。
+  - 2026-11-15 OMP 复测（34133b9 包）：先把 OMP 用官方备份回退到 18.20.0，再在页面点更新。官方 `Downloading patch from 18.20.0 (38.6MB)` 约 6 分钟后超时，转下整包时插件接管（提示「官方更新超过时间预算……改由插件下载」），sha256 校验；停滞续传 4 次（159485587、173326300、181010396、196296650 B）。06:47:03 开始，06:59:13 显示「已更新到 18.20.2」。输出末行「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」。复核：omp 目录只剩 omp.exe，`--version` 18.20.2，downloads 0 项。本次未核对侧栏红点。
+  - 仍未完成：接管下载期间的取消；Antigravity、Claude 修复后的成功提示复测。
+
 - [x] 13.6 Windows 路径大小写不再误判安装身份
   - 实施：planner.ts 共用路径比较函数，只对带盘符的 Windows 路径折叠大小写与正反斜杠，覆盖 executable、updateRoot、prefix、packageRoot、fingerprint.realpath 及 TRAE 版本目录分支；POSIX 路径保持精确匹配，Homebrew 分支、来源和通道比较规则保持不变。
   - 实施：windows-artifacts.ts 在放置前读取现有入口 realpath，按原有忽略大小写的精确入口规则核对白名单后，以磁盘上的名称替换，保留 agy.EXE 等大小写；入口不存在时沿用默认目标，真实路径偏离白名单时拒绝写入。Claude versions/<目标版本> 为版本命名的新文件，本次保持其放置及回滚逻辑。
