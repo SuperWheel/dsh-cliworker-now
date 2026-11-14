@@ -3,9 +3,11 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdirSync, writeFileSync, symlinkSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { classifyInstallation, identifyInstallation } from '../src/host/cli-management/identity.ts'
-import { operationArgv } from '../src/host/cli-management/planner.ts'
+import { operationArgv, automaticMethod, sameInstallation } from '../src/host/cli-management/planner.ts'
+import type { InstallationIdentity } from '../src/host/cli-management/identity.ts'
+import { isVersionedAutoEntry } from '../src/host/cli-auto-entry.ts'
 import { executeCliOperation } from '../src/host/cli-management/executor.ts'
-import { serviceFixture, control, checked } from './cli-management-phase-b-fixture.ts'
+import { serviceFixture, control, checked, syntheticIdentity } from './cli-management-phase-b-fixture.ts'
 
 const simulated = vi.hoisted(() => ({ home: undefined as string | undefined }))
 vi.mock('node:os', async importOriginal => {
@@ -92,4 +94,39 @@ it('模拟：直接 qodercli 实体不受分发器同名路径限制', async () 
   mkdirSync(join(f.root, 'update'))
   await executeCliOperation(f.backend, f.config, [executable, 'update'], control(), () => {})
   expect(f.backend.spawn).toHaveBeenCalledWith(expect.objectContaining({ argv: [executable, 'update'], cwd: f.root }))
+})
+
+// 2026-11-14 Windows 实机布局（路径为模拟字符串，不访问文件系统）
+const winHome = 'C:\\Users\\admin'
+it.each([
+  ['claude', 'C:/Users/admin/.local/bin/claude.exe'],
+  ['antigravity', 'C:/Users/admin/AppData/Local/agy/bin/agy.EXE'],
+  ['omp', 'C:/Users/admin/AppData/Local/omp/omp.exe'],
+] as const)('模拟：Windows %s 官方安装入口识别为自带更新', (cli, path) => {
+  const id = classifyInstallation(cli, path, undefined, winHome)
+  expect(id).toEqual({ source: 'self-update', updateRoot: path })
+  expect(automaticMethod(cli, { ...syntheticIdentity(cli), ...id })).toBe('self-update')
+})
+it('模拟：Windows 路径规则不套到 macOS，macOS 的 agy 仍区分大小写', () => {
+  expect(classifyInstallation('omp', '/Users/a/AppData/Local/omp/omp.exe', undefined, '/Users/a').source).toBe('unknown')
+  expect(classifyInstallation('antigravity', '/Users/a/.local/bin/AGY', undefined, '/Users/a').source).toBe('unknown')
+  expect(classifyInstallation('claude', 'C:/Users/admin/Downloads/claude.exe', undefined, winHome).source).toBe('unknown')
+})
+it('模拟：Windows TRAE 版本目录为自带更新，自动入口按版本目录重新发现', () => {
+  const path = 'C:/Users/admin/AppData/Local/TraeCLI/releases/0.213.1-x86_64-pc-windows-msvc/traex.exe'
+  expect(classifyInstallation('traecn', path, undefined, winHome)).toEqual({ source: 'self-update', updateRoot: 'C:/Users/admin/AppData/Local/TraeCLI' })
+  expect(isVersionedAutoEntry('traecn', path.replace(/\//g, '\\'), winHome)).toBe(true)
+  expect(isVersionedAutoEntry('traecn', 'C:\\Users\\admin\\AppData\\Local\\Programs\\TraeCLI\\bin\\traecli.cmd', winHome)).toBe(false)
+})
+it('模拟：TRAE 更新只换 releases/<版本> 一层时仍是同一安装', () => {
+  const root = 'C:/Users/admin/AppData/Local/TraeCLI'
+  const at = (version: string, file = 'traex.exe', patch: Partial<InstallationIdentity> = {}): InstallationIdentity => ({
+    ...syntheticIdentity('traecn'), source: 'self-update', updateRoot: root, channel: 'public',
+    executable: `C:\\Users\\admin\\AppData\\Local\\TraeCLI\\releases\\${version}-x86_64-pc-windows-msvc\\${file}`, ...patch })
+  expect(sameInstallation(at('0.213.1'), at('0.215.0'), 'traecn')).toBe(true)
+  expect(sameInstallation(at('0.213.1'), at('0.215.0', 'other.exe'), 'traecn')).toBe(false)
+  expect(sameInstallation(at('0.213.1'), at('0.215.0', 'traex.exe', { channel: 'internal' }), 'traecn')).toBe(false)
+  expect(sameInstallation(at('0.213.1'), at('0.215.0', 'traex.exe', { updateRoot: 'C:/Other/TraeCLI' }), 'traecn')).toBe(false)
+  expect(sameInstallation(at('0.213.1'), { ...at('0.215.0'), executable: 'C:\\Users\\admin\\AppData\\Local\\TraeCLI\\releases\\x\\y\\traex.exe' }, 'traecn')).toBe(false)
+  expect(sameInstallation({ ...at('0.213.1') }, { ...at('0.215.0') }, 'grok')).toBe(false)
 })

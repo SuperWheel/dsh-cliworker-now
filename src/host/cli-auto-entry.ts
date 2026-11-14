@@ -10,7 +10,7 @@ export function isVersionedAutoEntry(cli: CliId, path: string, home = homedir())
     codex: /^\.codex\/packages\/standalone\/releases\/[^/]+\//,
     claude: /^\.local\/share\/claude\/versions\/[^/]+(?:\/|$)/,
     grok: /^\.grok\/downloads\/grok-[^/]+(?:\/|$)/,
-    traecn: /^\.local\/share\/traecli\/releases\/[^/]+\//,
+    traecn: /^(?:\.local\/share\/traecli|AppData\/Local\/TraeCLI)\/releases\/[^/]+\//,
     qoder: /^\.qoder\/bin\/qodercli\/qodercli-[^/]+(?:\/|$)/,
     qodercn: /^\.qoder-cn\/bin\/qoderclicn\/qoderclicn-[^/]+(?:\/|$)/,
   }

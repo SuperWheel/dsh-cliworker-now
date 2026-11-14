@@ -99,6 +99,18 @@ export function sameInstallation(before: InstallationIdentity, after: Installati
     const identity = stable(before)
     return identity !== undefined && identity === stable(after)
   }
+  // TRAE Windows records the release entry itself; an update only swaps the <updateRoot>/releases/<ver> component.
+  if (cli === 'traecn' && before.source === 'self-update' && after.source === 'self-update' && before.updateRoot && before.updateRoot === after.updateRoot && before.channel === after.channel) {
+    const release = (identity: InstallationIdentity) => {
+      const fold = (value: string) => { const v = value.replace(/\\/g, '/'); return /^[A-Za-z]:\//.test(v) ? v.toLowerCase() : v }
+      const root = fold(identity.updateRoot!).replace(/\/$/, ''), entry = fold(identity.executable)
+      if (!entry.startsWith(root + '/releases/')) return undefined
+      const parts = entry.slice(root.length + 1).split('/')
+      return parts.length === 3 && parts[1] && !['.', '..'].includes(parts[1]) && parts[2] ? parts[2] : undefined
+    }
+    const name = release(before)
+    if (name !== undefined && name === release(after)) return true
+  }
   return before.executable === after.executable && before.source === after.source && before.prefix === after.prefix &&
     before.packageRoot === after.packageRoot && before.fingerprint.realpath === after.fingerprint.realpath
 }

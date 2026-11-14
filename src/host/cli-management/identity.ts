@@ -75,12 +75,18 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
   const h = home.replace(/\\/g, '/')
   if (isQoderDispatcher(cli, p, home)) return { source: 'self-update' }
   if (cli === 'grok' && selectedPath?.replace(/\\/g, '/') === `${h}/.grok/bin/grok` && p.startsWith(`${h}/.grok/downloads/`)) return { source: 'self-update', updateRoot: `${h}/.grok` }
-  const exact: Partial<Record<ActiveCliId, string[]>> = { antigravity: ['.local/bin/agy'], omp: ['.local/bin/omp'], mimo: ['.local/bin/mimo'] }
-  if (exact[cli]?.some(part => p === `${h}/${part}`)) return { source: 'self-update', updateRoot: p }
+  // Windows entries (2026-11-14 实机): official install.ps1 targets; NTFS is case-insensitive (agy.EXE from PATHEXT).
+  const exact: Partial<Record<ActiveCliId, string[]>> = {
+    antigravity: ['.local/bin/agy', 'AppData/Local/agy/bin/agy.exe'], omp: ['.local/bin/omp', 'AppData/Local/omp/omp.exe'],
+    mimo: ['.local/bin/mimo'], claude: ['.local/bin/claude.exe'],
+  }
+  const windows = /^[A-Za-z]:\//.test(p), same = (a: string, b: string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b
+  if (exact[cli]?.some(part => same(p, `${h}/${part}`) && (windows || !part.includes('AppData/') && !part.endsWith('.exe')))) return { source: 'self-update', updateRoot: p }
   const layouts: Partial<Record<ActiveCliId, string[]>> = {
     codex: ['.codex/packages/standalone/'],
     claude: ['.local/share/claude/versions/'], grok: ['.grok/bin/'], kimi: ['.kimi-code/'], mimo: ['.mimocode/bin/'],
-    traecn: ['.local/share/traecli/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'],
+    // Windows: %LOCALAPPDATA%\\TraeCLI\\releases\\<ver>\\traex.exe behind the current / Programs\\TraeCLI\\bin junctions.
+    traecn: ['.local/share/traecli/', 'AppData/Local/TraeCLI/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'],
     // Windows official installer: %LOCALAPPDATA%\hermes\bin\hermes.exe + hermes-agent checkout (2026-11-14 Windows 实机).
     hermes: ['.hermes/hermes-agent/', 'AppData/Local/hermes/'],
     opencode: ['.opencode/bin/'], codebuddy: ['.codebuddy/bin/'],
