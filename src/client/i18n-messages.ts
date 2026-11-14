@@ -1295,6 +1295,30 @@ export const en = {
   '正在保存后台检查 CLI 设置…': 'Saving background CLI check…',
   '后台检查 CLI 设置未保存，请重试': 'Background CLI check not saved. Please retry.',
   // cli-update-settings:end
+  // custom-provider-form:start
+  '收到无效的服务商表单，请在原生终端中配置': 'Received an invalid provider form. Configure it in the native terminal.',
+  '其他服务商（在本窗口中填写配置）': 'Other provider (fill in the settings here)',
+  '在本窗口中填写配置': 'Fill in the settings here',
+  '在本窗口中填写服务商配置，也可以改用原生终端。': 'Fill in the provider settings here, or use the native terminal instead.',
+  '在本窗口中填写服务商配置。': 'Fill in the provider settings here.',
+  '无法读取图形化配置：{reason}。继续将在原生终端中配置。': 'Could not read the settings form: {reason}. Continue to configure it in the native terminal.',
+  '在原生终端中配置': 'Configure in native terminal',
+  '保存失败，请检查后重试': 'Could not save. Check the settings and try again.',
+  '已添加 {provider}': '{provider} added',
+  '请选择{label}': 'Choose {label}',
+  '请填写{label}': 'Enter {label}',
+  '请填写以 http:// 或 https:// 开头的地址': 'Enter an address that starts with http:// or https://',
+  '{label}格式不正确': '{label} is not in a valid format',
+  '请选择': 'Choose',
+  '每行一项': 'One per line',
+  '显示': 'Show',
+  '隐藏': 'Hide',
+  '显示 {label}': 'Show {label}',
+  '隐藏 {label}': 'Hide {label}',
+  '保存到 {target}': 'Saved to {target}',
+  '保存': 'Save',
+  '正在保存…': 'Saving…',
+  // custom-provider-form:end
   // @end
 } as const satisfies Record<string, string>
 

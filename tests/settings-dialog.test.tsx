@@ -82,6 +82,10 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   IconRefreshOutlineRegular: () => createElement('svg'),
   IconPlusOutlineRegular: () => createElement('svg'),
   IconUserOutlineRegular: () => createElement('svg'),
+  IconInfoOutlineRegular: () => createElement('svg'),
+  IconEyeOutlineRegular: () => createElement('svg'),
+  IconEyeOffOutlineRegular: () => createElement('svg'),
+  IconCheckCircleFillRegular: () => createElement('svg'),
   Menu: ({ anchor, open, items = [], onSelect }: any) =>
     createElement(
       'div',
@@ -3060,6 +3064,35 @@ it('lets the user add another Hermes key or replace a chosen one', async () => {
     provider: 'deepseek',
     replaces: 'hermes:deepseek:d4e5f6',
   })
+})
+it('模拟：a saved other provider re-reads the account and forces the model catalog', async () => {
+  // Simulated Host form and save; no CLI configuration is written.
+  const providers = [{ id: 'deepseek', label: 'DeepSeek' }]
+  const accountStatus = pickedStatus('pi', [{ providerLabel: 'DeepSeek', authMethod: 'api', id: 'pi:deepseek' }], providers)
+  const refreshAccountStatus = vi.fn(async (parent: string, cli: CliId) => accountStatus(parent, cli))
+  const customProviderForm = vi.fn(async () => remote({
+    cli: 'pi', title: '添加其他服务商', nativeFallback: true, token: 'SIMULATED-TOKEN',
+    fields: [{ id: 'apiKey', label: 'API Key', kind: 'secret', required: true }],
+  }))
+  const saveCustomProvider = vi.fn(async () => remote({ ok: true, cli: 'pi', providerId: 'simulated', providerLabel: 'Simulated' }))
+  const t = await setup({ accountStatus, refreshAccountStatus, customProviderForm, saveCustomProvider })
+  await t.click('Pi 设置')
+  await t.click('账号')
+  await t.click('添加账号')
+  await act(async () => t.r.root.findAllByProps({ role: 'radio' }).at(-1)!.props.onClick())
+  await t.click('继续')
+  const key = t.r.root.findAllByType('input').find((input) => input.props.type === 'password')!
+  await act(async () => key.props.onChange({ target: { value: 'sk-SIMULATED' } }))
+  const accountReads = refreshAccountStatus.mock.calls.filter((call) => call[1] === 'pi').length
+  const catalogReads = (t.api.cliworker.refreshCatalogForCli as any).mock.calls.filter((call: any[]) => call[1] === 'pi').length
+  await act(async () => t.r.root.findAllByType('form').find((form) => String(form.props.className).includes('cwn-provider-form'))!.props.onSubmit({ preventDefault() {} }))
+  expect(saveCustomProvider).toHaveBeenCalledWith('simulation-parent', 'pi', 'SIMULATED-TOKEN', JSON.stringify({ apiKey: 'sk-SIMULATED' }), expect.any(AbortSignal))
+  await vi.waitFor(() => {
+    expect(refreshAccountStatus.mock.calls.filter((call) => call[1] === 'pi').length).toBeGreaterThan(accountReads)
+    expect((t.api.cliworker.refreshCatalogForCli as any).mock.calls.filter((call: any[]) => call[1] === 'pi').length).toBeGreaterThan(catalogReads)
+  })
+  expect(t.text()).toContain('已添加 Simulated')
+  expect(terminal.started).not.toHaveBeenCalled()
 })
 it('names each OMP account of one provider by its email when replacing one', async () => {
   const providers = [{ id: 'openai-codex', label: 'OpenAI', signedIn: true, multi: true }]

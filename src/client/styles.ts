@@ -357,6 +357,24 @@ export const settingsStyles = `
 .cwn-accounts-actions{display:flex;justify-content:flex-end;gap:8px}
 .cwn-accounts-mark .cwn-brand{display:inline-flex}.cwn-accounts-state{flex:none;display:inline-flex;align-items:center;gap:6px;padding-right:4px;color:var(--dsw-alias-state-success-primary);font-size:var(--dsw-font-xxs-12-font-size);line-height:18px}.cwn-accounts-state::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor}
 .cwn-accounts-run{display:flex;flex-direction:column;gap:12px}.cwn-accounts-run-head{color:var(--dsw-alias-label-secondary);font-weight:500}
+.cwn-login-callout[data-tone=error]{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,transparent)}
+.cwn-provider-title{display:inline-flex;align-items:center;gap:6px;min-width:0;overflow-wrap:anywhere}
+.cwn-provider-fields{display:flex;flex-direction:column;gap:16px}
+.cwn-provider-field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.cwn-provider-label{display:flex;align-items:center;gap:4px;min-height:22px;color:var(--dsw-alias-label-primary);font-size:var(--dsw-font-s-14-font-size);line-height:22px;overflow-wrap:anywhere}
+.cwn-provider-required{color:var(--dsw-alias-state-error-primary)}
+.cwn-provider-help{flex:none;display:inline-flex;align-items:center;color:var(--dsw-alias-label-tertiary);border-radius:var(--dsw-radius-sm);cursor:help}.cwn-provider-help:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
+.cwn-provider-control{position:relative;display:flex;min-width:0}
+.cwn-provider-input{flex:1;min-width:0;box-sizing:border-box}
+.cwn-provider-control[data-secret] .cwn-provider-input{padding-right:36px}
+.cwn-provider-reveal{position:absolute;top:4px;right:4px;width:28px;padding:0;color:var(--dsw-alias-label-secondary)}
+.cwn-provider-textarea{box-sizing:border-box;display:block;width:100%;min-height:80px;max-height:200px;margin:0;padding:6px 8px;border:0.5px solid var(--dsw-alias-border-l4);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:14px;line-height:22px;resize:vertical;outline:none}
+.cwn-provider-textarea::placeholder{color:var(--dsw-alias-label-dimmed)}.cwn-provider-textarea:focus{border-color:var(--dsw-alias-state-business-primary)}.cwn-provider-textarea:disabled{opacity:.6}
+.cwn-provider-choice.cwn-settings-choice{width:100%}
+.cwn-provider-field[data-invalid] .cwn-provider-input,.cwn-provider-field[data-invalid] .cwn-provider-textarea{border-color:var(--dsw-alias-state-error-primary)}
+.cwn-provider-field[data-invalid] .cwn-settings-choice>button{--dsh-button-outline-color:var(--dsw-alias-state-error-primary)}
+.cwn-provider-field>.cwn-provider-issue{margin:-4px 0 0;color:var(--dsw-alias-state-error-primary);font-size:var(--dsw-font-xxs-12-font-size);line-height:18px;overflow-wrap:anywhere}
+.cwn-provider-actions{flex-wrap:wrap}.cwn-provider-actions>.cwn-provider-native{margin-right:auto}.cwn-provider-actions>button{white-space:nowrap}
 @media(prefers-reduced-motion:reduce){.cwn-login-step-mark{transition:none}}
 .cwn-account-terminal-head{margin-bottom:8px;min-height:36px}.cwn-account-terminal-head strong{font-size:12px;font-weight:500}.cwn-account-terminal-view{height:300px;min-height:200px;margin:12px 0;overflow:hidden}.cwn-account-terminal-view .xterm{height:100%}.cwn-account-terminal-view .xterm-viewport{background-color:var(--dsw-alias-bg-layer-2)!important}.cwn-account-terminal-view .xterm-helper-textarea{resize:none!important;min-height:0!important;max-height:0!important}
 .cwn-native-model-settings>p{margin:0 0 16px;color:var(--dsw-alias-label-secondary);font-size:var(--cwn-font-sm);line-height:1.6}.cwn-account-dialog{width:min(480px,90vw);max-width:90vw}.cwn-account-dialog:has(.cwn-account-terminal-view:not([hidden])){width:min(720px,90vw)}.cwn-account-dialog-content{min-height:0;overflow:auto}.cwn-account-dialog-content>:last-child{margin-top:4px}.cwn-account-dialog .cwn-account-terminal{margin:0;padding:0;border:0;background:transparent}.cwn-account-dialog .cwn-account-terminal-view{height:300px;max-height:48vh}.cwn-account-dialog .cwn-account-terminal>button,.cwn-account-dialog .cwn-account-terminal-head button{border:0!important;transition:background-color 180ms ease,color 180ms ease}.cwn-account-dialog .cwn-account-terminal>button:hover:not(:disabled),.cwn-account-dialog .cwn-account-terminal-head button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-active)}

@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource' | 'customProviderForm' | 'saveCustomProvider'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
@@ -61,6 +61,10 @@ export type API = Pick<ClientRemote, '$stream'> & {
     saveCliDownloadSource?: (parentId: string, settings: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** CliDownloadSourceTest JSON. */
     testCliDownloadSource?: (parentId: string, url: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** 「其他服务商」 (src/shared/custom-provider.ts): CustomProviderForm JSON, or 'null' to keep the native terminal. Absent on older Hosts. */
+    customProviderForm?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Saves the form bound to `token`; `values` is CustomProviderValues JSON, the answer CustomProviderResult JSON. Absent on older Hosts. */
+    saveCustomProvider?: (parentId: string, cli: CliId, token: string, values: string, signal: AbortSignal) => Promise<RemoteResult<string>>
   }
 }
 export const value = <T>(result: RemoteResult<T>): T => {

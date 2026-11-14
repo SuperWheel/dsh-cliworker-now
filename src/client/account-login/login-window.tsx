@@ -40,7 +40,8 @@ function Step({ index, state, title, children }: { index: number; state: StepSta
   )
 }
 
-function Result({ tone, title, detail, children }: { tone: AccountGuide['tone']; title: string; detail?: string; children?: ReactNode }) {
+/** The centered result view; the provider form template reuses it after a save. */
+export function Result({ tone, title, detail, children }: { tone: AccountGuide['tone']; title: string; detail?: string; children?: ReactNode }) {
   return (
     <div className="cwn-login-result" data-tone={tone} role="status" aria-live="polite">
       {tone === 'success' && <IconCheckCircleFillRegular size={40} className="cwn-login-result-icon" />}
