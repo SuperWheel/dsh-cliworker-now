@@ -234,7 +234,8 @@ export async function finishPiOmpRefresh(root, nonce, executable, expectedReceip
         const { dist } = inspectPiInstallation(executable)
         const require = createRequire(join(dist, 'core/auth-storage.js'))
         const lockfile = require('proper-lockfile')
-        // Same canonical auth path and lock convention as Pi 1.0.4. Never call
+        // Pi 1.5.2 resolves lock paths (1.0.4 did not). Our no-symlink
+        // canonical source checks make both conventions identical here. Never call
         // AuthStorage.create here: its initialization would recreate a logged-out file.
         const unlock = await lockfile.lock(entry.path, { realpath: false, retries: 0, stale: 30000 })
         try {

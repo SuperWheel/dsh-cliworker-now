@@ -34,7 +34,7 @@ export function piToolCallFacts(event) {
 }
 
 /**
- * Pi 1.0.4 documents a blocking `tool_call` result and an RPC `confirm`
+ * Pi 1.0.4 and 1.5.2 document a blocking `tool_call` result and an RPC `confirm`
  * request; without both the gate cannot ask, so the caller runs read-only.
  */
 export async function preparePiPermissionGate(executable, access, harnessTools = []) {

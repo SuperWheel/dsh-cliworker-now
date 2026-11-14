@@ -235,7 +235,7 @@ if(scenario==='tool-error'||scenario==='tool-recovered'){send({type:'tool_execut
 if(scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'retry',toolName:'edit'});send({type:'tool_execution_end',toolCallId:'retry',toolName:'edit',isError:false,result:{content:[{type:'text',text:'edited'}]}})}
 if(scenario==='malformed'){process.stdout.write('not-json\\n');return}
 streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:scenario==='public-thinking'?[{type:'thinking',thinking:'模拟公开过程（权威快照）',thinkingSignature:'OPAQUE_SIGNATURE'},{type:'text',text:'HELLO'},{type:'thinking',thinking:'REDACTED_TEXT',redacted:true,thinkingSignature:'OPAQUE_SIGNATURE'},{type:'redactedThinking',data:'ENCRYPTED_DATA'},{type:'thinking',thinking:'模拟仅完成时提供'}]:[{type:'text',text:resumed?'RESUMED':'HELLO'}],stopReason:'stop'}});
-send({type:'agent_end'});if(cli==='pi'&&scenario!=='unsettled')send({type:'agent_settled'});
+send({type:'agent_end'});if(cli==='pi'&&scenario!=='unsettled')send({type:'agent_settled',...(['1.1.0','1.5.2'].includes(${JSON.stringify(version)})?{aborted:scenario==='native-aborted'}:{})});
 if(scenario==='unsettled')setTimeout(()=>process.exit(0),20);
 }});
 input.on('close',()=>{if(scenario!=='cancel')process.exit(0)});
@@ -501,8 +501,8 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
       )
     },
   )
-  it.each(['1.0.2', '1.0.4'])(
-    'Pi %s discovers and executes through the same SDK and native RPC package',
+  it.each(['1.0.2', '1.0.4', '1.1.0', '1.5.2'])(
+    '模拟 Pi %s discovers and executes through the same SDK and native RPC package',
     async (version) => {
       const { input } = await fixture('pi', 'non-glm', version)
       const catalog = await discoverPiOmp(
@@ -519,6 +519,14 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
       expect(run.frames.at(-1)).toMatchObject({ type: 'result', status: 'SUCCESS' })
     },
   )
+  it.each(['1.0.4', '1.1.0', '1.5.2'])('模拟 Pi %s keeps old terminal events but rejects explicit aborted terminal', async (version) => {
+    const { input } = await fixture('pi', 'native-aborted', version)
+    const run = await launch(input)
+    expect(run.code).toBe(version === '1.0.4' ? 0 : 1)
+    expect(run.frames.at(-1)).toMatchObject(version !== '1.0.4'
+      ? { status: 'ERROR', error: '模型请求失败或被中止' }
+      : { status: 'SUCCESS' })
+  })
   it('uses native arguments for SDK discovery and account metadata on the same managed OMP snapshot', async () => {
     const { root, input } = await fixture('omp', 'non-glm')
     vi.stubEnv('HOME', root)
@@ -820,10 +828,10 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     if (process.platform !== 'win32')
       expect(await readFile(join(root, 'native-stopped'), 'utf8')).toBe('STOPPED')
   })
-  it.each(['pi', 'omp'] as const)(
-    '%s persists the returned session path and resumes without guessing it',
-    async (cli) => {
-      const { input } = await fixture(cli)
+  it.each([['pi', '1.0.4'], ['pi', '1.5.2'], ['omp', '1.0.2']] as const)(
+    '模拟 %s %s persists native session IDs, usage and context across resume',
+    async (cli, version) => {
+      const { input } = await fixture(cli, 'success', version)
       const first = await launch(input)
       expect(first.code).toBe(0)
       expect(first.frames.at(-1)).toEqual({ type: 'result', status: 'SUCCESS', response: 'HELLO', resultScope: 'run' })
@@ -1105,10 +1113,12 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     expect(argv).not.toContain('--approval-mode')
   })
   it.each([
-    ['allow-once', true, false],
-    ['deny', false, true],
-  ] as const)('Pi 询问 relays its gated write to the Host (%s → confirmed %s)', async (decision, confirmed, blocked) => {
-    const { input } = await fixture('pi', 'gate')
+    ['1.0.4', 'allow-once', true, false],
+    ['1.0.4', 'deny', false, true],
+    ['1.5.2', 'allow-once', true, false],
+    ['1.5.2', 'deny', false, true],
+  ] as const)('模拟 Pi %s 询问 relays gated write (%s → confirmed %s)', async (version, decision, confirmed, blocked) => {
+    const { input } = await fixture('pi', 'gate', version)
     const { frames, state } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => decision)
     expect(frames.find((frame) => frame.type === 'approval')).toEqual({ type: 'approval', id: 'approval-1',
       request: { kind: 'file', summary: '写入文件：fixture.txt', detail: '3 字节', allowSession: false } })
@@ -1141,8 +1151,8 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     const argv = JSON.parse(await readFile(join(state, 'agent/observed-argv.json'), 'utf8'))
     expect(argv.some((value: string) => value.endsWith('pi-permission-gate.mjs'))).toBe(false)
   })
-  it('starts no Pi turn when the gate never reports itself registered', async () => {
-    const { input } = await fixture('pi', 'gate-silent')
+  it.each(['1.0.4', '1.5.2'])('模拟 Pi %s starts no turn when the gate never reports itself registered', async (version) => {
+    const { input } = await fixture('pi', 'gate-silent', version)
     const { frames } = await relayRun({ ...input, mode: 'accept-edits', access: 'read-only' }, () => 'allow-once')
     expect(frames.some((frame) => frame.event?.kind === 'assistant')).toBe(false)
     expect(frames.at(-1)).toMatchObject({ status: 'ERROR', error: 'Pi 权限确认扩展未加载，本轮未开始' })

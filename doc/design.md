@@ -1537,3 +1537,11 @@ ZCode/WorkBuddy CN/WorkBuddy 官方现有 feed 与匿名包 HEAD 未提供第二
 - Haiku 规划回合（2026-11-14 用户决定）：Claude Code 选 Haiku 时规划回合由 Sonnet 回答；插件只在规划模式下接受同一进程初始化返回的唯一 `sonnet` 映射，其余情况仍判模型不一致。
 - 宿主规划边界（2026-11-14 Mac Desktop 实测发现并修复）：DSH 0.2.2-rc.3 Desktop 停用宿主层 `plan-mode`，改由各 Agent 预设在 `planning` 组内以 `isolate: { planMode: true }` 挂载，插件上下文和主 Agent 上下文都取不到 `planMode` 服务。原实现读不到即当作未规划，主对话 `/plan` 时仍放行派遣，未传 `read_only` 的 Worker 按「自动审批」运行。现由 `host-plan-state.ts` 先读服务，取不到时读进程级 `sessionProjections` 的 `plan` 投影；投影存在但读不出布尔状态时按规划处理（拒绝），宿主未注册该投影才视为未规划。规划中派遣一律拒绝，以前「`/plan` + `read_only`」可派遣的用法也随之拒绝，与 `worker-dispatch` 规格一致。Worker 子会话的 `planMode.set` 在 rc.3 同样取不到服务，目前无作用；Worker 规划仍由插件按 `worker.mode` 以 CLI 原生规划模式运行。
 - 只有模拟验证；真实 Claude Code 规划收尾、真实 agy 生图（需用户授权模型调用）与 Claude 官方真实登录（需用户亲自操作）均未验收。
+
+## Pi Coding Agent 1.5.2 适配（2026-11-13）
+
+Worker 安装识别使用 `pi-installation.mjs` 的明确版本表：1.0.2、1.0.4、1.1.0、1.5.2；Worker 不接受未核验的中间版本或预发布。更新页仍按「全部 CLI 自动更新」取 latest（2026-11-14 合并时保留 main 的更新策略）。SDK、模型目录、原生 UI、tool_call/confirm 和 JSONL v3 会话接口保持兼容，继续使用同一安装、参数数组、私有存储与进程范围清理。
+
+桥接补认 Pi 1.1.0 起新增的 `agent_settled.aborted=true`，即使助手消息正常且进程退出 0 也不能报告成功；1.0.4 缺字段保留既有判断。1.5.2 的成本总额可为服务商账单，现有 token 投影不读取成本字段，不将 reasoning 重复相加。原生登录 shell 子命令虽已增加，插件仍使用核实过的 UI/SDK，不更换交互协议。
+
+Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。

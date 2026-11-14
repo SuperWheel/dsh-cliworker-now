@@ -5,12 +5,13 @@ import { createHash } from 'node:crypto'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { resolveNativeEntry } from './native-launch.mjs'
 
-export const PI_SUPPORTED_VERSIONS = Object.freeze(['1.0.2', '1.0.4', '1.1.0'])
-export const isSupportedPiVersion = version => PI_SUPPORTED_VERSIONS.includes(version)
+// Exact releases whose SDK/RPC contract has been reviewed. No implied SemVer range.
+export const PI_SUPPORTED_VERSIONS = Object.freeze(['1.0.2', '1.0.4', '1.1.0', '1.5.2'])
+export const isSupportedPiVersion = (version) => PI_SUPPORTED_VERSIONS.includes(version)
 const validManagementVersion = version => typeof version === 'string' && /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)
 const failure = () =>
   Object.assign(
-    new Error('Pi 安装身份或原生接口不匹配；需要 Pi Coding Agent 1.0.2、1.0.4 或 1.1.0，不能使用 OMP 入口'),
+    new Error(`Pi 安装身份或原生接口不匹配；需要 Pi Coding Agent ${PI_SUPPORTED_VERSIONS.join('、')}，不能使用 OMP 入口`),
     { code: 'CLI_IDENTITY_MISMATCH' },
   )
 function metadata(path) {
@@ -20,6 +21,8 @@ function metadata(path) {
 }
 // Exact official Windows managed launcher inspected from Pi 1.1.0. It is read as
 // installation metadata, never evaluated. Unknown bootstrap code fails closed.
+// 1.5.2's packaged managed updater retains the launcher and changes current-version;
+// it does not ship a fresh Windows installer template. Do not guess another hash.
 const managedWindowsLauncherSHA256 = '3d8b27bb3f5c07543303b0ee774ce215e4d6ae2b0ae43311c4acf51f517ffd13'
 function windowsManagedEntry(launcher, accepts = isSupportedPiVersion) {
   const source = metadata(launcher).trim().replace(/\r\n/g, '\n')
