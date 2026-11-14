@@ -258,3 +258,11 @@
   - `src/client/cli-update-page.tsx`：`Progress` 新增 `npm` 入参，更新按 `entry.source === 'npm'`、安装按 `entry.install.method === 'npm'` 判定（与 Host `automaticMethod` 一致）；npm 接管提示改为「{reason}，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 {cli} 会直接由插件换源下载。」，自更新 CLI 保留「已停止官方更新并删除半成品」原文。`sourceHost` 在所有插件下载接管中都存在，不能单独区分 npm。
   - 英文映射：新提示及 Host 三条文案（必需组件无法准备、可选组件未预下载、尝试同组其他组件）；`operation-error.ts` 增加「无法准备 npm 必需平台组件 {name}」模式。
   - 模拟测试：原 7 项切换原因改用 Claude Code（自更新）断言原文；新增 Codex npm 接管断言新文案且不含「半成品」。`corepack pnpm typecheck` exit 0；`corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/client-i18n.test.tsx`：34 文件、1064/1064 通过（沙箱外运行）。Windows 页面尚未查看新提示。
+- [x] 9.17 Windows 实机复验 200d97f：npm 健康判定、下载提示、断点续传与平台组件安装
+  - 2026-11-15 已部署：`build:preview` 隔离包 `rc3-200d97f-20261115`，Windows 安装 1247/1247 文件一致，退出时无活动任务，Desktop 已重启。
+  - gpt-6.1-sol high 页面检查：「检查完成：1 个可更新，2 个需要手动更新」；四个 npm 全局安装的 CLI（Codex 0.169.0、Pi 1.5.2、OpenCode 1.19.5、CodeBuddy Code 2.184.0）均在「已是最新」，无「需要修复」或错误文案。
+  - 未执行：没有 npm CLI 可更新（唯一可更新的是 OMP 自带更新），下载提示、npm 接管提示、可选/同组组件输出均未在实机出现；需回退一个 npm CLI 后再测。
+  - 回退 CodeBuddy 2.184.0→2.183.0（带 WinINET 代理）：首次 npm 从 registry.npmjs.org 拉主包 EIDLETIMEOUT，npm 自动保留 2.184.0；改用 curl 断点续传下载主包（sha512 一致）后从缓存安装时 C 盘 0 GB 触发 ENOSPC，CodeBuddy 一度不可运行。只删除自己上传的 5 个旧测试包与回退包后剩 689 MB，重装 2.183.0 成功（sandbox-cli 5.12.0-beta.9、node-pty 1.2.0-beta.14，`codebuddy --version` 2.183.0）。C 盘已用 476 GB 的来源不是本插件测试目录（约 0.5 GB）或 npm 缓存（约 1.1 GB），未处理。
+  - gpt-6.1-sol high 页面更新 CodeBuddy 2.183.0→2.184.0：无确认弹窗；「下载官方工件（1/3）」共 3 个文件（主包、sandbox-cli、node-pty），来自 registry.npmjs.org，合计 86.4 MB；10 秒停滞后输出「下载停滞 10 秒，从 13483712 B 处续传（第 1 次）」，页面显示「已自动续传 1 次」；下载提示与预期原文一致「下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留」；安装阶段提示「npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖」，npm 命令为本地 0.tgz + `--registry https://registry.npmmirror.com/ --prefer-offline --include=optional`；约 77 秒后「已更新到 2.184.0」，再次检查不变。
+  - 远程核验：主包 2.184.0、sandbox-cli-win32-x64 5.13.0-beta.2、node-pty-win32-x64 1.2.0-beta.14，`codebuddy --version` 2.184.0；插件 downloads 目录无残留；C 盘剩 647.6 MB。
+  - 未覆盖：本次未触发接管，npm 接管提示与可选组件失败/同组切换输出只有模拟测试；未看到 ENOSPC。下载中途曾显示「已接收 12.9 MB，总大小未知」，随后才显示 86.4 MB 总量。CU 未能滚动到结束后的完整输出。
