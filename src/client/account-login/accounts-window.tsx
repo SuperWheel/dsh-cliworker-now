@@ -47,6 +47,7 @@ export function AccountsWindow({
   closeControl,
   onRefresh,
   onClose,
+  prepare,
 }: {
   api: API
   sessionId: string
@@ -55,6 +56,8 @@ export function AccountsWindow({
   closeControl: AccountCloseControl
   onRefresh: () => void
   onClose: () => void
+  /** Reads the account fresh right before one login is signed out; its login ids replace the shown ones. */
+  prepare?: () => Promise<AccountStatus | undefined>
 }) {
   useT()
   const name = CLI_LABELS[cli]
@@ -71,6 +74,7 @@ export function AccountsWindow({
   const [request, setRequest] = useState<Request>()
   const [adding, setAdding] = useState(false)
   const [confirming, setConfirming] = useState<number>()
+  const [preparing, setPreparing] = useState(false)
   const closingAll = useRef(false)
   const terminalClose: AccountCloseControl = useRef<(() => Promise<boolean>) | undefined>(undefined)
   // The dialog's close button ends a running window first, then the whole dialog.
@@ -130,6 +134,18 @@ export function AccountsWindow({
     )
 
   const signOut = (login: AccountLogin) => {
+    if (login.id && prepare) {
+      if (preparing) return
+      setPreparing(true)
+      return prepare()
+        .then((fresh) => {
+          const current = fresh?.logins?.find((item) => item.id === login.id)
+          setConfirming(undefined)
+          if (current?.id)
+            setRequest({ action: 'logout', login: current.id, title: t('退出 {account}', { account: loginText(current) }) })
+        })
+        .finally(() => setPreparing(false))
+    }
     if (login.id)
       return setRequest({
         action: 'logout',
@@ -197,7 +213,7 @@ export function AccountsWindow({
               <Button variant="ghost" size="md" onClick={() => setConfirming(undefined)}>
                 {t('取消')}
               </Button>
-              <Button variant="primary" size="md" onClick={() => signOut(login)}>
+              <Button variant="primary" size="md" disabled={preparing} onClick={() => signOut(login)}>
                 {t('确认退出')}
               </Button>
             </div>

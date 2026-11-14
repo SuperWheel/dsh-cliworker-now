@@ -45,6 +45,12 @@ import { settingsCacheMetadata, settingsDisplayPool, type SettingsDisplayCache,
 } from './settings-display-cache.ts'
 import { effortLabel, t, useT } from './i18n.ts'
 import { hostText } from './operation-error.ts'
+import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
+import type { ConnectionCacheInfo } from '../shared/settings-connection.ts'
+import {
+  accountEntryFromPart, actionsKnown, catalogEntryFromPart, CONNECTION_FRESH_MS, ConnectionReceipts, connectionState,
+  freshReceipt, nextExpiry, parseConnectionStatus, slotNeed, type ConnectionChange,
+} from './settings-connection-view.ts'
 
 interface SettingsDialogProps {
   open: boolean
@@ -99,38 +105,48 @@ function authenticatedLabel(account: AccountStatus): string {
   if (isWorkBuddy(account.cli) && /^已登录（(?:www\.)?workbuddy\.(?:cn|ai)）$/u.test(account.summary)) return hostText(account.summary)
   return providerLoginSummary(account)?.label ?? (account.authMethod === 'api' ? t('API 登录') : t('已登录'))
 }
-function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, settingsError = '') {
-  if (enabled === false) return { state: 'disabled', label: t('已关闭') }
-  if (settingsError) return { state: 'failed', label: t('CLI 开关配置读取失败，请重新打开设置') }
-  if (enabled === undefined || !account || (account.loading && !account.data))
-    return { state: 'pending', label: t('正在检查连接') }
-  if (!account.error && account.data?.state === 'unconfigured')
-    return {
-      state: 'unconfigured',
-      label: account.data.installed
-        ? account.data.cli === 'claude'
-          ? hostText(account.data.summary)
-          : t('未登录')
-        : t('未安装'),
-    }
-  if (account.error || !account.data || ['unavailable', 'unauthenticated'].includes(account.data.state)) {
-    return { state: 'failed', label: hostText(account.error || account.data?.summary) || t('连接失败') }
+function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, settingsError = '', now = Date.now()) {
+  const state = connectionState(enabled, account, settingsError, now)
+  const data = account?.data
+  switch (state) {
+    case 'disabled':
+      return { state, label: t('已关闭') }
+    case 'pending':
+      return { state, label: t('正在检查连接') }
+    case 'failed':
+      return {
+        state,
+        label: settingsError
+          ? t('CLI 开关配置读取失败，请重新打开设置')
+          : hostText(account?.error || data?.summary) || t('连接失败'),
+      }
+    case 'unconfigured':
+      return { state, label: data!.installed ? (data!.cli === 'claude' ? hostText(data!.summary) : t('未登录')) : t('未安装') }
+    case 'connected':
+      return { state, label: authenticatedLabel(data!) }
+    case 'unverified':
+      return {
+        state,
+        label: data!.state === 'authenticated' ? authenticatedLabel(data!) : hostText(data!.summary)?.trim() || t('已配置'),
+      }
+    // A sign-in receipt past its ten minutes is neutral until the Host has checked it again.
+    case 'expired':
+      return { state: 'unknown', label: t('登录状态已过期，等待重新核实') }
+    default:
+      return { state, label: hostText(data?.summary) || t('状态待确认') }
   }
-  if (!['authenticated', 'configured'].includes(account.data.state)) {
-    return {
-      state: 'unknown',
-      label: hostText(account.data.summary) || t('状态待确认'),
-    }
-  }
-  if (account.data.state === 'authenticated')
-    return { state: 'connected', label: authenticatedLabel(account.data) }
-  return { state: 'unverified', label: hostText(account.data.summary)?.trim() || t('已配置') }
 }
-
-/** Status served from the Host's background cache: display only, without login or sign-out handles. */
-function displayOnlyAccount(status: AccountStatus | undefined): { stale: boolean } | undefined {
-  const cache = (status as { cache?: { displayOnly?: unknown; stale?: unknown } } | undefined)?.cache
-  return cache?.displayOnly === true ? { stale: cache.stale === true } : undefined
+/** The connection snapshot this dialog may reuse: same response (Host instance) and project as the rest of settingsCache. */
+function connectionSnapshot(api: API, metadata: SettingsCacheMetadata | undefined) {
+  const connections = metadata?.connections
+  if (!connections || !api.cliworker.settingsConnectionStatus || !api.cliworker.watchSettingsConnections) return
+  return connections.project === metadata.project ? connections : undefined
+}
+const without = <T,>(entries: Partial<Record<CliId, T>>, id: CliId) => {
+  if (!(id in entries)) return entries
+  const next = { ...entries }
+  delete next[id]
+  return next
 }
 
 /** Native modal owns focus, dismissal, theme, elevation and entrance animation. */
@@ -179,6 +195,17 @@ function OpenSettingsDialog({
   const toggleController = useRef<AbortController>()
   const accountClose = useRef<() => Promise<boolean>>()
   const leaving = useRef(false)
+  // Host connection snapshot (settingsCache.connections): receipts order its watch, status answers and
+  // direct reads. `live` while the watch subscription of this open dialog is running.
+  const receipts = useRef<ConnectionReceipts>()
+  const connectionsSupported = useRef(false)
+  const [live, setLive] = useState(false)
+  const preferences = useRef<Partial<Record<CliId, Preference>>>({})
+  const statusRequests = useRef(new Set<AbortController>())
+  const requested = useRef(new Set<string>())
+  const openedStatus = useRef<CliId>()
+  // Re-renders when a receipt reaches its ten minutes, so no dot stays green past it.
+  const [expiryTick, tick] = useState(0)
   const leave = async (transition: () => void) => {
     if (leaving.current) return
     leaving.current = true
@@ -190,6 +217,41 @@ function OpenSettingsDialog({
     }
   }
 
+  /** A direct read is shown only when it is not older than the revision on screen. */
+  const admitRead = useCallback((id: CliId, cache: ConnectionCacheInfo | undefined, slot: 'account' | 'catalog') => {
+    const current = receipts.current
+    if (!current) return true
+    const verdict = current.read(id, cache)
+    if (verdict === 'drop') return false
+    if (verdict === 'newer') {
+      // The Host invalidated after the last snapshot: the other slot and drafts belong to the old scope.
+      ;(displayCache.current?.preferenceSaves ?? fallbackSaves).invalidate(id)
+      if (slot === 'account') setCatalogEntries(old => without(old, id))
+      else setAccounts(old => without(old, id))
+    }
+    return true
+  }, [fallbackSaves])
+  const applyConnection = useCallback((change: ConnectionChange) => {
+    const id = change.cli
+    if (!enabledRef.current?.[id]) return
+    if (change.revisionChanged) {
+      probes.current.cancel(id)
+      displayCache.current?.invalidate(id)
+      if (!displayCache.current) fallbackSaves.invalidate(id)
+    }
+    const { account, catalog } = change.parts
+    if (change.revisionChanged || account)
+      setAccounts(old => {
+        const entry = account && accountEntryFromPart(account)
+        return entry ? { ...old, [id]: entry } : without(old, id)
+      })
+    if (change.revisionChanged || catalog)
+      setCatalogEntries(old => {
+        const entry = catalog && catalogEntryFromPart(catalog, preferences.current[id])
+        return entry ? { ...old, [id]: entry } : without(old, id)
+      })
+  }, [fallbackSaves])
+
   const readCatalog = useCallback(async (id: CliId, signal: AbortSignal, force = false,
     cache = displayCache.current, version = cache?.version(id)) => {
     try {
@@ -200,6 +262,7 @@ function OpenSettingsDialog({
       if (next.cli !== id || !Array.isArray(next.models)) throw new Error(t('收到不匹配的 CLI 模型目录，请重试'))
       if (signal.aborted) return
       if (cache && cache.version(id) !== version) throw new Error(t('设置来源已变化，请刷新状态'))
+      if (!admitRead(id, next.cache, 'catalog')) throw new Error(t('设置来源已变化，请刷新状态'))
       const entry = { data: next, loading: false }
       cache?.catalog(id, entry, version)
       setCatalogEntries(old => ({ ...old, [id]: entry }))
@@ -209,7 +272,7 @@ function OpenSettingsDialog({
       cache?.catalog(id, entry, version)
       setCatalogEntries(old => ({ ...old, [id]: entry }))
     }
-  }, [api, sessionId])
+  }, [api, sessionId, admitRead])
   const refreshCatalog = useCallback((id: CliId, force = false) => {
     if (!enabledRef.current?.[id]) return
     if (force) (displayCache.current?.preferenceSaves ?? fallbackSaves).invalidate(id)
@@ -223,7 +286,7 @@ function OpenSettingsDialog({
         // The page was opened while this CLI still has a read in flight (often its catalog after a
         // cached account summary): read the account fresh once that slot is free.
         if (force) probes.current.whenIdle(id, () => {
-          if (!mounted.current || openCli.current !== id || !displayOnlyAccount(accountsLatest.current[id]?.data)) return
+          if (!mounted.current || openCli.current !== id || actionsKnown(accountsLatest.current[id])) return
           refreshAccountLatest.current(id, false, false, true)
         })
         return
@@ -247,19 +310,23 @@ function OpenSettingsDialog({
                 : api.cliworker.accountStatus(sessionId, id, signal))))
               if (next.cli !== id) throw new Error(t('收到不匹配的 CLI 账号状态，请重试'))
               if (cache && cache.version(id) !== version) throw new Error(t('账号来源已变化，请刷新状态'))
+              if (!signal.aborted && !admitRead(id, next.cache, 'account')) throw new Error(t('账号来源已变化，请刷新状态'))
               return next
             }
-            let next = await read(replace || force)
-            // The Host may answer from its background cache: the summary is shown at once, but
-            // login and sign-out handles only come with a fresh read. Read again when the cache is
-            // stale or this CLI's connection page is the one on screen.
-            const cached = displayOnlyAccount(next)
-            if (cached && fresh && !signal.aborted && (cached.stale || openCli.current === id)) {
+            const first = replace || force
+            let next = await read(first)
+            let handles = (first && !!fresh) || next.cache === undefined
+            // An older Host without connection snapshots may answer from its background cache: the
+            // summary is shown at once, but login and sign-out handles only come with a fresh read.
+            // With snapshots the handles are read right before an account operation instead.
+            if (!handles && fresh && !connectionsSupported.current && !signal.aborted &&
+              (next.cache?.stale || openCli.current === id)) {
               setAccounts((old) => ({ ...old, [id]: { data: next, loading: true } }))
               next = await read(true)
+              handles = true
             }
             if (!signal.aborted) {
-              const entry = { data: next, loading: false }
+              const entry = { data: next, loading: false, handles }
               cache?.account(id, entry, version)
               setAccounts((old) => ({ ...old, [id]: entry }))
             }
@@ -275,15 +342,85 @@ function OpenSettingsDialog({
         replace || force,
       )
     },
-    [api, sessionId, readCatalog, fallbackSaves],
+    [api, sessionId, readCatalog, fallbackSaves, admitRead],
   )
   const refreshAccountLatest = useRef(refreshAccount)
   refreshAccountLatest.current = refreshAccount
   const accountsLatest = useRef(accounts)
   accountsLatest.current = accounts
+  const catalogsLatest = useRef(catalogEntries)
+  catalogsLatest.current = catalogEntries
+
+  /** Missing or expired slots of a CLI that is not on screen: the bounded queue, never a forced refresh. */
+  const queueMissing = useCallback((id: CliId, account: boolean, catalog: boolean) => {
+    if (!enabledRef.current?.[id] || (!account && !catalog)) return
+    const queued = probes.current.enqueue(id, async (signal) => {
+      if (account) {
+        try {
+          const next: AccountStatus = JSON.parse(value(await api.cliworker.accountStatus(sessionId, id, signal)))
+          if (next.cli !== id) throw new Error(t('收到不匹配的 CLI 账号状态，请重试'))
+          if (!signal.aborted && admitRead(id, next.cache, 'account'))
+            setAccounts(old => ({ ...old, [id]: { data: next, loading: false, handles: next.cache === undefined } }))
+        } catch (error) {
+          if (!signal.aborted) setAccounts(old => ({ ...old, [id]: { loading: false, error: operationMessage(error) } }))
+        }
+      }
+      if (catalog && !signal.aborted) await readCatalog(id, signal)
+    })
+    if (!queued) return
+    if (account) setAccounts(old => ({ ...old, [id]: { data: old[id]?.data, loading: true } }))
+    if (catalog) setCatalogEntries(old => ({ ...old, [id]: { data: old[id]?.data, loading: true } }))
+  }, [api, sessionId, admitRead, readCatalog])
+  /** The CLI on screen: the Host answers at once and starts only its missing or expired reads. */
+  const requestStatus = useCallback(async (id: CliId) => {
+    const read = api.cliworker.settingsConnectionStatus, current = receipts.current
+    if (!read || !current || !enabledRef.current?.[id]) return
+    const ticket = current.ticket, controller = new AbortController()
+    statusRequests.current.add(controller)
+    try {
+      const raw: unknown = JSON.parse(value(await read(sessionId, id, controller.signal)))
+      if (controller.signal.aborted || receipts.current !== current) return
+      const answer = parseConnectionStatus(raw)
+      const change = current.status(raw, ticket)
+      if (change) applyConnection(change)
+      if (!answer || answer.project !== current.project) return
+      // A slot the Host neither has nor is reading still gets the bounded direct read. A loading
+      // account also gets one: it joins the Host's running read, and an account paused after an
+      // unconfirmed cleanup is reported only by a direct read, never by the snapshot.
+      const idle = (part: { value?: unknown; loading: boolean; error?: string }) =>
+        part.value === undefined && !part.loading && !part.error
+      queueMissing(id, idle(answer.account) || answer.account.loading, !!change && idle(answer.catalog))
+    } catch {
+      // Without a quick answer this CLI still gets the bounded direct read.
+      if (!controller.signal.aborted && receipts.current === current && mounted.current) {
+        const now = Date.now()
+        queueMissing(id, !!slotNeed(accountsLatest.current[id], now), !!slotNeed(catalogsLatest.current[id], now))
+      }
+    } finally {
+      statusRequests.current.delete(controller)
+    }
+  }, [api, sessionId, applyConnection, queueMissing])
+  /** Right before an account operation: current actions and login ids, never cached handles. */
+  const prepareAccount = useCallback(async (id: CliId, signal: AbortSignal): Promise<AccountStatus | undefined> => {
+    const fresh = api.cliworker.refreshAccountStatus
+    const shown = accountsLatest.current[id]
+    if (!fresh || (!connectionsSupported.current && actionsKnown(shown))) return shown?.data
+    setAccounts(old => ({ ...old, [id]: { data: old[id]?.data, loading: true } }))
+    try {
+      const next: AccountStatus = JSON.parse(value(await fresh(sessionId, id, signal)))
+      if (next.cli !== id) throw new Error(t('收到不匹配的 CLI 账号状态，请重试'))
+      if (signal.aborted) return
+      if (!admitRead(id, next.cache, 'account')) throw new Error(t('账号来源已变化，请刷新状态'))
+      setAccounts(old => ({ ...old, [id]: { data: next, loading: false, handles: true } }))
+      return next
+    } catch (error) {
+      if (!signal.aborted) setAccounts(old => ({ ...old, [id]: { loading: false, error: operationMessage(error) } }))
+    }
+  }, [api, sessionId, admitRead])
 
   useEffect(() => {
     const controller = new AbortController()
+    const requests = statusRequests.current
     void (async () => {
       try {
         const readVersion = preferenceReadVersion()
@@ -295,11 +432,37 @@ function OpenSettingsDialog({
         const saves = displayCache.current?.preferenceSaves ?? fallbackSaves
         if (!metadata) for (const id of CLI_IDS) saves.sync(id, readVersion)
         setPreferenceSaves(saves)
-        setAccounts(displayCache.current?.accountSnapshot() ?? {})
-        setCatalogEntries(displayCache.current?.catalogSnapshot() ?? {})
+        preferences.current = { ...metadata?.preferences }
+        // The Host's connection snapshot is reused only for this Host and project; without it, or
+        // without its status and watch methods, the dialog keeps the older per-CLI reads.
+        const connections = connectionSnapshot(api, metadata)
+        receipts.current = connections ? new ConnectionReceipts(connections.project) : undefined
+        connectionsSupported.current = !!receipts.current
+        requested.current.clear()
+        openedStatus.current = undefined
+        const initial = receipts.current?.snapshot(connections)
+        if (initial) {
+          const accounts: Partial<Record<CliId, AccountEntry>> = {}
+          const catalogs: Partial<Record<CliId, SettingsCatalogEntry>> = {}
+          for (const change of initial) {
+            if (!next[change.cli]) continue
+            const account = change.parts.account && accountEntryFromPart(change.parts.account)
+            const catalog = change.parts.catalog && catalogEntryFromPart(change.parts.catalog, preferences.current[change.cli])
+            if (account) accounts[change.cli] = account
+            if (catalog) catalogs[change.cli] = catalog
+          }
+          setAccounts(accounts)
+          setCatalogEntries(catalogs)
+        } else {
+          receipts.current = undefined
+          connectionsSupported.current = false
+          setAccounts(displayCache.current?.accountSnapshot() ?? {})
+          setCatalogEntries(displayCache.current?.catalogSnapshot() ?? {})
+        }
         setWarmCatalogs(metadata !== undefined)
         enabledRef.current = next
         setEnabled(next)
+        setLive(!!receipts.current)
         // Keep this ordering for the lifetime of the open dialog. A toggle does
         // not move the row under the pointer; reopening applies the saved order.
         setOrder([...CLI_IDS].sort((a, b) => Number(next[b]) - Number(next[a])))
@@ -311,38 +474,132 @@ function OpenSettingsDialog({
       controller.abort()
       toggleController.current?.abort()
       probes.current.clear()
+      for (const request of requests) request.abort()
+      requests.clear()
+      receipts.current = undefined
+      setLive(false)
+      // Another Host session or project: nothing of the old connection state stays on screen.
+      setAccounts({})
+      setCatalogEntries({})
     }
   }, [api, sessionId, fallbackSaves])
+  // One watch per open dialog: the full project snapshot first, then each finished, failed or
+  // invalidated read. It ends on close; a failed watch falls back to the bounded direct reads.
+  useEffect(() => {
+    const watch = api.cliworker.watchSettingsConnections
+    const current = receipts.current
+    if (!live || !watch || !current) return
+    const controller = new AbortController()
+    const stream = api.$stream<string>({
+      name: `CLI connections ${sessionId}`,
+      open: (signal) => watch(sessionId, signal),
+      ended: () => new Error(t('连接已结束')),
+    })
+    void (async () => {
+      try {
+        for await (const item of stream) {
+          if (controller.signal.aborted || receipts.current !== current) return
+          let raw: unknown
+          try { raw = JSON.parse(item.value) } catch { raw = undefined }
+          for (const change of current.snapshot(raw, item.generation) ?? []) applyConnection(change)
+          item.accept()
+        }
+      } catch {
+        // Reported below as a fallback, not as a CLI connection failure.
+      }
+      if (!controller.signal.aborted && receipts.current === current) setLive(false)
+    })()
+    return () => {
+      controller.abort()
+      void stream.dispose().catch(() => undefined)
+    }
+  }, [live, api, sessionId, applyConnection])
+  const wasLive = useRef(false)
+  useEffect(() => {
+    if (live) {
+      wasLive.current = true
+      return
+    }
+    if (!wasLive.current || !receipts.current) return
+    wasLive.current = false
+    // The watch ended while the Host was still reading: finish those through the bounded queue.
+    for (const id of CLI_IDS) {
+      if (!enabledRef.current?.[id]) continue
+      if (accountsLatest.current[id]?.loading) refreshAccount(id)
+      else if (catalogsLatest.current[id]?.loading) refreshCatalog(id)
+    }
+  }, [live, refreshAccount, refreshCatalog])
   useEffect(() => {
     if (!enabled) return
     probes.current.prioritize(cli)
     for (const id of [cli, ...CLI_IDS.filter((id) => id !== cli)]) {
       if (enabled[id]) {
+        if (live) continue
         if (!accounts[id]) refreshAccount(id)
         else if (warmCatalogs && !catalogEntries[id]) refreshCatalog(id)
       } else {
         probes.current.cancel(id)
         displayCache.current?.invalidate(id)
         if (!displayCache.current) fallbackSaves.invalidate(id)
-        if (accounts[id])
-          setAccounts((old) => {
-            const next = { ...old }
-            delete next[id]
-            return next
-          })
+        for (const key of [...requested.current]) if (key.startsWith(`${id}:`)) requested.current.delete(key)
+        if (accounts[id]) setAccounts((old) => without(old, id))
+        if (catalogEntries[id]) setCatalogEntries((old) => without(old, id))
       }
     }
     // A completed or failed probe is cached until explicitly refreshed. This
     // Selection only reprioritizes pending work; it does not repeat settled reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, cli, refreshAccount, refreshCatalog, warmCatalogs])
+  }, [enabled, cli, refreshAccount, refreshCatalog, warmCatalogs, live])
+  // With connection snapshots: the CLI on screen asks the Host's status method (on opening it and
+  // whenever a slot is missing or its receipt expired); the other enabled CLIs use the bounded
+  // queue for missing or expired slots only. Each request is made once per receipt.
+  useEffect(() => {
+    if (!live || !enabled) return
+    const now = Date.now()
+    const current = page === 'cli' && enabled[cli] ? cli : undefined
+    let opened = false
+    if (current && openedStatus.current !== current) {
+      openedStatus.current = current
+      opened = true
+    } else if (!current) openedStatus.current = undefined
+    for (const id of [cli, ...CLI_IDS.filter((id) => id !== cli)]) {
+      if (!enabled[id]) continue
+      const scope = `${id}:${receipts.current?.revision(id) ?? 0}`
+      const due = (slot: string, need: string | undefined) => {
+        if (!need) return false
+        const key = `${scope}:${slot}:${need}`
+        if (requested.current.has(key)) return false
+        requested.current.add(key)
+        return true
+      }
+      const account = due('account', slotNeed(accounts[id], now))
+      const catalog = due('catalog', slotNeed(catalogEntries[id], now))
+      if (id === current) {
+        if (opened || account || catalog) void requestStatus(id)
+      } else queueMissing(id, account, catalog)
+    }
+  }, [live, enabled, cli, page, accounts, catalogEntries, expiryTick, requestStatus, queueMissing])
+  useEffect(() => {
+    const now = Date.now()
+    const deadline = nextExpiry(
+      [...Object.values(accounts), ...Object.values(catalogEntries)].map(entry => entry?.data?.cache),
+      now,
+    )
+    if (deadline === undefined) return
+    const timer = setTimeout(() => tick(n => n + 1), Math.min(CONNECTION_FRESH_MS, deadline - now) + 1)
+    return () => clearTimeout(timer)
+  }, [accounts, catalogEntries, expiryTick])
 
   const openAccount = page === 'cli' ? accounts[cli] : undefined
   useEffect(() => {
-    if (page !== 'cli' || !openAccount || openAccount.loading || !displayOnlyAccount(openAccount.data)) return
+    // Only Hosts without connection snapshots: their cached summary has no handles.
+    if (connectionsSupported.current) return
+    if (page !== 'cli' || !openAccount || openAccount.loading || actionsKnown(openAccount)) return
     if (!api.cliworker.refreshAccountStatus) return
     refreshAccount(cli, false, false, true)
   }, [page, cli, openAccount, api, refreshAccount])
+  const freshBeforeAction = !!api.cliworker.refreshAccountStatus &&
+    (connectionsSupported.current || !actionsKnown(accounts[cli]))
 
   async function toggleCli(id: CliId, nextValue: boolean) {
     if (!enabled || toggleController.current) return
@@ -531,6 +788,7 @@ function OpenSettingsDialog({
             onRefreshModels={() => refreshCatalog(cli, true)}
             onPreferenceSaved={preference => {
               const id = preference.cli ?? 'antigravity'
+              preferences.current = { ...preferences.current, [id]: preference }
               displayCache.current?.preference(id, preference)
               if (!mounted.current) return
               setCatalogEntries(old => {
@@ -540,6 +798,8 @@ function OpenSettingsDialog({
             }}
             connection={connectionStatus(enabled?.[cli], accounts[cli], settingsError)}
             onRefreshAccount={(replace = true, clearPrevious) => refreshAccount(cli, replace, clearPrevious)}
+            freshBeforeAction={freshBeforeAction}
+            onPrepareAccount={signal => prepareAccount(cli, signal)}
             onToggle={(next) => void toggleCli(cli, next)}
             toggleBusy={!!togglingCli}
             toggling={togglingCli === cli}
@@ -594,9 +854,11 @@ function AccountSummary({
             ? hostText(account.error)
             : connection.state === 'failed'
               ? connection.label
-              : connection.state === 'pending'
+              : connection.state === 'pending' && !data
                 ? t('正在检查连接…')
-                : authenticated
+                : authenticated && connection.state === 'unknown'
+                  ? connection.label
+                  : authenticated
                   ? authenticatedLabel(data)
                   : data?.state === 'unconfigured'
                     ? data.installed
@@ -650,6 +912,8 @@ function CliSettings({
   onPreferenceSaved,
   connection,
   onRefreshAccount,
+  freshBeforeAction = false,
+  onPrepareAccount,
   onToggle,
   toggleBusy,
   toggling,
@@ -670,6 +934,9 @@ function CliSettings({
   onPreferenceSaved: (preference: Preference) => void
   connection: ReturnType<typeof connectionStatus>
   onRefreshAccount: (replace?: boolean, clearPrevious?: boolean) => void
+  /** Read the account fresh before every login, sign-out or account window (connection snapshots). */
+  freshBeforeAction?: boolean
+  onPrepareAccount?: (signal: AbortSignal) => Promise<AccountStatus | undefined>
   onToggle: (enabled: boolean) => void
   toggleBusy: boolean
   toggling: boolean
@@ -698,6 +965,46 @@ function CliSettings({
   const [release, setRelease] = useState<'confirm' | 'running'>()
   const [releaseError, setReleaseError] = useState('')
   const selection = useRef({ model: '', effort: 'default' as Preference['effort'] })
+  // The account an operation window runs against: the fresh read taken right before it opened,
+  // kept while snapshot updates replace the display entry.
+  const [opStatus, setOpStatus] = useState<AccountStatus>()
+  const preparing = useRef<AbortController>()
+  const windowReads = useRef(new Set<AbortController>())
+  useEffect(() => {
+    const reads = windowReads.current
+    return () => {
+      preparing.current?.abort()
+      for (const read of reads) read.abort()
+    }
+  }, [])
+  const prepareInWindow = () => {
+    const controller = new AbortController()
+    windowReads.current.add(controller)
+    return (onPrepareAccount?.(controller.signal) ?? Promise.resolve(undefined))
+      .then((fresh) => (controller.signal.aborted ? undefined : fresh))
+      .finally(() => windowReads.current.delete(controller))
+  }
+  useEffect(() => {
+    if ((action || accountsOpen) && account?.data && actionsKnown(account)) setOpStatus(account.data)
+  }, [account, action, accountsOpen])
+  // A display-only status has no actions yet: offer the buttons and read the real ones on click.
+  const handlesPending = freshBeforeAction && !!account?.data && !actionsKnown(account)
+  const runFresh = (use: (status: AccountStatus) => void) => {
+    if (preparing.current) return
+    if (!freshBeforeAction || !onPrepareAccount) {
+      if (account?.data) use(account.data)
+      return
+    }
+    const controller = new AbortController()
+    preparing.current = controller
+    return onPrepareAccount(controller.signal)
+      .then((fresh) => {
+        if (fresh && !controller.signal.aborted) use(fresh)
+      })
+      .finally(() => {
+        if (preparing.current === controller) preparing.current = undefined
+      })
+  }
   useEffect(() => {
     const update = () => setWriteState(preferenceSaves.snapshot(cli))
     const unsubscribe = preferenceSaves.subscribe(cli, update)
@@ -747,10 +1054,11 @@ function CliSettings({
       setEffort(effort)
     }
     if (warmCatalogs) {
-      if (!catalogEntry || catalogEntry.loading) return
+      // A catalog being re-read keeps its last list on screen; choices stay disabled meanwhile.
+      if (!catalogEntry || (catalogEntry.loading && !catalogEntry.data)) return
       if (catalogEntry.data) applyCatalog(catalogEntry.data)
       else setModelError(hostText(catalogEntry.error) || t('模型目录不可用，请刷新重试'))
-      setModelLoading(false)
+      setModelLoading(catalogEntry.loading)
       return
     }
     const controller = new AbortController()
@@ -787,7 +1095,9 @@ function CliSettings({
   const settingsPending = enabled === undefined && !settingsError
   const accountLoading = !settingsError && enabled !== false && (!account || account.loading)
   const supportedEfforts = catalog?.models.find((item) => item.id === model)?.efforts ?? []
-  const choiceDisabled = inactive || pathChanging || modelLoading || accountLoading || accountBusy || !catalog
+  // A snapshot catalog past its receipt is display only until the Host has read it again.
+  const catalogExpired = warmCatalogs && !!catalogEntry?.data?.cache && !freshReceipt(catalogEntry.data.cache, Date.now())
+  const choiceDisabled = inactive || pathChanging || modelLoading || accountLoading || accountBusy || !catalog || catalogExpired
   function savePreference(preference: Preference) {
     preferenceSaves.stage(preference, async (next, signal) => {
       const saved = JSON.parse(value(await api.cliworker.configure(sessionId, JSON.stringify(next), signal)))
@@ -841,13 +1151,16 @@ function CliSettings({
   }
   const closeAccounts = () => {
     setAccountsOpen(false)
+    setOpStatus(undefined)
     onRefreshAccount(true)
   }
   const closeAccount = () => {
     setAction(undefined)
     setAccountSource(undefined)
+    setOpStatus(undefined)
     onRefreshAccount(true)
   }
+  const operationAccount = opStatus ?? account?.data
   const sources = chosenAction?.sources?.filter(
     (source, index, all) =>
       ['native', 'plugin'].includes(source.id) && all.findIndex((item) => item.id === source.id) === index,
@@ -855,8 +1168,10 @@ function CliSettings({
   const choosingSource = action === 'logout' && chosenAction?.sources !== undefined && !accountSource
   const accountAction = (id: AccountAction) => {
     const item = account?.data?.actions.find((candidate) => candidate.id === id)
+    // Before the fresh read only WorkBuddy's target is known: all of its account actions are desktop ones.
+    const target = item ? item.target : handlesPending && isWorkBuddy(cli) ? 'desktop' : undefined
     const label =
-      item?.target === 'desktop' ? t(account?.data?.state === 'unconfigured' ? '登录' : '在桌面端管理') : item?.target === 'models'
+      target === 'desktop' ? t(account?.data?.state === 'unconfigured' ? '登录' : '在桌面端管理') : target === 'models'
         ? id === 'login'
           ? t('登录设置')
           : t('打开原生设置')
@@ -888,26 +1203,30 @@ function CliSettings({
           accountBusy ||
           saving ||
           pathChanging ||
-          !item ||
-          (item.target === 'models' && !openNativeSettings)
+          (!item && !handlesPending) ||
+          (target === 'models' && !openNativeSettings)
         }
         onClick={() => {
-          if (!inactive && item) {
-            if (item.target === 'models') {
+          if (inactive) return
+          return runFresh((fresh) => {
+            const chosen = fresh.actions.find((candidate) => candidate.id === id)
+            if (!chosen) return
+            if (chosen.target === 'models') {
               openNativeSettings?.()
               return
             }
             preferenceSaves.invalidate(cli)
-            setChosenAction(item)
-                    setAccountSource(
+            setOpStatus(fresh)
+            setChosenAction(chosen)
+            setAccountSource(
               id === 'logout' &&
-                item.sources?.length === 1 &&
-                ['native', 'plugin'].includes(item.sources[0]!.id)
-                ? item.sources[0]!.id
+                chosen.sources?.length === 1 &&
+                ['native', 'plugin'].includes(chosen.sources[0]!.id)
+                ? chosen.sources[0]!.id
                 : undefined,
             )
-            setAction(item.id)
-          }
+            setAction(chosen.id)
+          })
         }}
       >
         {id === 'logout' ? (
@@ -915,7 +1234,7 @@ function CliSettings({
             <Glyph name="logout" />
             {t('退出')}
           </>
-        ) : item?.target === 'models' || item?.target === 'desktop' ? (
+        ) : target === 'models' || target === 'desktop' ? (
           label
         ) : id === 'manage' ? (
           <>
@@ -1004,7 +1323,7 @@ function CliSettings({
                 {t('解除暂停')}
               </Button>
             ) : isWorkBuddy(cli) ? (
-              account?.data?.installed && (account.data.actions.some(item => item.target === 'desktop') &&
+              account?.data?.installed && ((handlesPending || account.data.actions.some(item => item.target === 'desktop')) &&
                 api.cliworker.accountDesktopStart && api.cliworker.accountDesktopWatch && api.cliworker.accountDesktopRespond && api.cliworker.accountDesktopStop
                 ? accountAction('manage') : <span className="cwn-cli-subtitle">{t('在 WorkBuddy 桌面端管理')}</span>)
             ) : multiAccount ? (
@@ -1020,12 +1339,16 @@ function CliSettings({
                   accountBusy ||
                   saving ||
                   pathChanging ||
-                  !account?.data?.actions.some((item) => item.id === 'login' && item.target !== 'models')
+                  (!handlesPending && !account?.data?.actions.some((item) => item.id === 'login' && item.target !== 'models'))
                 }
                 onClick={() => {
                   if (inactive) return
-                  preferenceSaves.invalidate(cli)
-                  setAccountsOpen(true)
+                  return runFresh((fresh) => {
+                    if (!fresh.actions.some((item) => item.id === 'login' && item.target !== 'models')) return
+                    preferenceSaves.invalidate(cli)
+                    setOpStatus(fresh)
+                    setAccountsOpen(true)
+                  })
                 }}
               >
                 {account?.data?.state === 'authenticated' ? t('账号') : t('登录账号')}
@@ -1083,10 +1406,11 @@ function CliSettings({
               api={api}
               sessionId={sessionId}
               cli={cli}
-              status={account?.data}
+              status={operationAccount}
               closeControl={accountClose}
               onRefresh={() => onRefreshAccount(true)}
               onClose={closeAccounts}
+              prepare={freshBeforeAction && onPrepareAccount ? prepareInWindow : undefined}
             />
           </Modal>
         )}
@@ -1103,7 +1427,7 @@ function CliSettings({
             contentClassName="cwn-account-dialog-content"
           >
             {chosenAction?.target === 'desktop' ? (
-              <WorkBuddyDesktopWindow api={api} sessionId={sessionId} cli={cli} account={account?.data}
+              <WorkBuddyDesktopWindow api={api} sessionId={sessionId} cli={cli} account={operationAccount}
                 closeControl={accountClose} onClose={closeAccount} />
             ) : choosingSource ? (
               <section aria-label={t('选择退出账号来源')}>
@@ -1129,8 +1453,8 @@ function CliSettings({
                 cli={cli}
                 action={action}
                 source={accountSource}
-                signedIn={account?.data?.state === 'authenticated'}
-                account={account?.data}
+                signedIn={operationAccount?.state === 'authenticated'}
+                account={operationAccount}
                 onClose={closeAccount}
                 onFinished={finishedAccountAction}
               />

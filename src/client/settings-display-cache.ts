@@ -1,6 +1,7 @@
 import { CLI_IDS, EFFORTS, type CliId, type ModelChoice, type Preference } from '../shared/types.ts'
 import type { AccountStatus } from '../shared/accounts.ts'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
+import type { ConnectionCacheInfo } from '../shared/settings-connection.ts'
 import { preferenceReadVersion, SettingsPreferenceSaves } from './settings-preference-saves.ts'
 import { t } from './i18n.ts'
 
@@ -9,8 +10,11 @@ export interface SettingsCatalog {
   models: ModelChoice[]
   preference?: Preference
   notice?: string
+  /** Host display receipt; never a configure or dispatch authorization. */
+  cache?: ConnectionCacheInfo
 }
-export interface SettingsAccountEntry { loading: boolean; data?: AccountStatus; error?: string }
+/** `handles`: read with `refreshAccountStatus`, so its actions and login ids are current. */
+export interface SettingsAccountEntry { loading: boolean; data?: AccountStatus; error?: string; handles?: boolean }
 export interface SettingsCatalogEntry { loading: boolean; data?: SettingsCatalog; error?: string }
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)

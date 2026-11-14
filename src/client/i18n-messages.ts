@@ -452,6 +452,8 @@ export const en = {
   '未安装': 'Not installed',
   '连接失败': 'Connection failed',
   '状态待确认': 'Status unconfirmed',
+  '登录状态已过期，等待重新核实': 'Sign-in status has expired; waiting to check it again',
+  '登录状态尚未核实': 'Sign-in status not verified yet',
   '已配置': 'Configured',
   '{cli} 设置': '{cli} settings',
   '设置读取失败，请重新打开': 'Could not read settings. Reopen them',

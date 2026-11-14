@@ -1236,9 +1236,8 @@ it('waits for a refreshed account before reading its new model scope and ignores
   expect(refreshCatalogForCli.mock.calls[0]![2].aborted).toBe(true)
   expect(t.button('默认模型').props.disabled).toBe(true)
   expect(visibleText(accountSummary(t.r))).toContain('已登录')
-  expect(
-    t.button('Antigravity 设置').findByProps({ className: 'cwn-connection-dot' }).props['data-state'],
-  ).toBe('connected')
+  // The account re-read shows the spinner, not the previous green dot.
+  expect(t.button('Antigravity 设置').findAllByProps({ 'data-loading': true })).toHaveLength(1)
   await act(async () => oldModels.resolve(catalog('antigravity', 'stale-account-model')))
   expect(t.text()).not.toContain('stale-account-model')
   await act(async () =>
@@ -1420,6 +1419,7 @@ it.each(['rejected', 'empty'] as const)(
       accountStatus: accountFixture({
         state: 'authenticated',
         authMethod: 'oauth',
+        verification: 'cli',
         accountLabel: 'fixture@example.invalid',
         actions: accountActions,
       }),
@@ -1881,6 +1881,7 @@ it.each(['configured', 'unknown', 'unconfigured', 'unauthenticated', 'unavailabl
 it('preserves provider logins through a failed model refresh and removes them when refreshed account evidence fails', async () => {
   const accountStatus = accountFixture({
     state: 'authenticated',
+    verification: 'cli',
     logins: [
       { providerLabel: 'OpenAI', authMethod: 'oauth' },
       { providerLabel: 'zai.cn', authMethod: 'api' },
@@ -2042,10 +2043,11 @@ it('preserves the last confirmed account while refreshing and replaces it after 
   expect(accountSummary(t.r)).toBe(before)
   expect(visibleText(accountSummary(t.r))).toContain('stale-fixture@example.invalid')
   expect(visibleText(accountSummary(t.r))).toContain('已登录')
+  // 12.5 contract: a re-read is never green; the sidebar shows its spinner meanwhile.
   expect(accountSummary(t.r).findByProps({ className: 'cwn-account-status-dot' }).props['data-state']).toBe(
-    'connected',
+    'pending',
   )
-  expect(t.button('Antigravity 设置').findAllByProps({ 'data-loading': true })).toHaveLength(0)
+  expect(t.button('Antigravity 设置').findAllByProps({ 'data-loading': true })).toHaveLength(1)
   expect(t.button('刷新状态').props.disabled).toBe(true)
   expect(t.button('默认模型').props.disabled).toBe(true)
   await act(async () => refresh.reject(new Error('模拟：账号状态刷新失败')))
@@ -3362,5 +3364,189 @@ describe('account status from the Host background cache (simulated)', () => {
     await t.click('刷新状态')
     expect(accountStatus.mock.calls.filter(call => call[1] === 'antigravity')).toHaveLength(2)
     expect(t.button('登录 / 切换账号')).toBeDefined()
+  })
+})
+
+describe('settings connection snapshots from the Host (simulated)', () => {
+  const PROJECT = 'SIMULATED-project'
+  const receipt = (checkedAt = Date.now(), revision = 0, stale = false) =>
+    ({ checkedAt, stale, project: PROJECT, revision, displayOnly: true })
+  const signedIn = (cli: CliId, checkedAt?: number, revision = 0) => ({
+    loading: false,
+    value: { cli, installed: true, state: 'authenticated', summary: '模拟：已登录', verification: 'cli', actions: [] },
+    cache: receipt(checkedAt, revision),
+  })
+  const listed = (cli: CliId, model: string, checkedAt?: number, revision = 0) => ({
+    loading: false,
+    value: { cli, models: [{ id: model, efforts: ['low', 'high'] }], notice: '' },
+    cache: receipt(checkedAt, revision),
+  })
+  const row = (cli: CliId, account: unknown, catalog: unknown, revision = 0) =>
+    ({ cli, project: PROJECT, revision, account, catalog })
+  const snapshot = (sequence: number, entries: unknown[], project = PROJECT) => ({ sequence, project, entries })
+  // Simulated watch: yields only what a test pushes, ends on abort.
+  function channel() {
+    const queue: string[] = [], signals: AbortSignal[] = []
+    let wake: (() => void) | undefined
+    return {
+      signals,
+      push(value: unknown) { queue.push(JSON.stringify(value)); wake?.() },
+      async *open(signal: AbortSignal) {
+        signals.push(signal)
+        while (!signal.aborted) {
+          if (queue.length) { yield queue.shift()!; continue }
+          await new Promise<void>((resolve) => { wake = resolve; signal.addEventListener('abort', () => resolve(), { once: true }) })
+        }
+      },
+    }
+  }
+  const settle = (ms = 0) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) })
+  async function setupLive(entries: any[], overrides: Record<string, any> = {}, ids: readonly CliId[] = ['codex', 'qoder'],
+    project = PROJECT) {
+    const watch = channel()
+    const metadata = { ...warmMetadata(), connections: snapshot(1, entries, project) }
+    const enabled = Object.fromEntries(CLI_IDS.map((id) => [id, ids.includes(id)]))
+    const cliSettings = vi.fn(async () => remote({ enabled, settingsCache: metadata }))
+    const watchSettingsConnections = vi.fn((_parent, signal: AbortSignal) => watch.open(signal))
+    // The Host answers at once and marks the reads it starts as loading.
+    const settingsConnectionStatus = vi.fn(async (_parent, cli: CliId) =>
+      remote(entries.find((entry) => entry.cli === cli) ?? row(cli, { loading: true }, { loading: true })))
+    const refreshAccountStatus = vi.fn(async (_parent, cli: CliId) =>
+      status(cli, { state: 'authenticated', verification: 'cli', actions: accountActions, cache: receipt() } as any))
+    const t = await setup({ cliSettings, watchSettingsConnections, settingsConnectionStatus, refreshAccountStatus, ...overrides },
+      undefined, ids[0])
+    await settle()
+    return { ...t, watch, watchSettingsConnections, settingsConnectionStatus, refreshAccountStatus }
+  }
+  const dot = (t: { button: (label: string) => any }, cli: CliId) =>
+    t.button(`${CLI_LABELS[cli]} 设置`).findAllByProps({ className: 'cwn-connection-dot' })[0]?.props['data-state'] ?? 'spinner'
+
+  it('shows the first screen from the snapshot without per-CLI reads, one watch and one status call', async () => {
+    const t = await setupLive([
+      row('codex', signedIn('codex'), listed('codex', 'codex-snapshot-model')),
+      row('qoder', signedIn('qoder'), listed('qoder', 'qoder-snapshot-model')),
+    ])
+    expect(t.accountStatus).not.toHaveBeenCalled()
+    expect(t.catalogForCli).not.toHaveBeenCalled()
+    expect(t.refreshAccountStatus).not.toHaveBeenCalled()
+    expect(t.watchSettingsConnections).toHaveBeenCalledTimes(1)
+    expect(t.settingsConnectionStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(dot(t, 'codex')).toBe('connected')
+    expect(dot(t, 'qoder')).toBe('connected')
+    expect(t.text()).toContain('codex-snapshot-model')
+    // Display only: the choice is saved through configure, which the Host authorizes live.
+    expect(t.configure).not.toHaveBeenCalled()
+    await t.click(`${CLI_LABELS.qoder} 设置`)
+    expect(t.settingsConnectionStatus.mock.calls.map((call) => call[1])).toEqual(['codex', 'qoder'])
+    expect(t.accountStatus).not.toHaveBeenCalled()
+  })
+
+  it('drops older or foreign snapshots and clears a CLI whose revision changed', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-old-model'))], {}, ['codex'])
+    await act(async () => t.watch.push(snapshot(0, [row('codex', signedIn('codex'), listed('codex', 'codex-older-model'))])))
+    await settle()
+    await act(async () => t.watch.push(snapshot(9, [row('codex', { loading: true }, { loading: false }, 1)], 'SIMULATED-other')))
+    await settle()
+    expect(t.text()).toContain('codex-old-model')
+    expect(t.text()).not.toContain('codex-older-model')
+    expect(dot(t, 'codex')).toBe('connected')
+    await act(async () => t.watch.push(snapshot(2, [row('codex', { loading: true }, { loading: true }, 1)])))
+    await settle()
+    expect(t.text()).not.toContain('codex-old-model')
+    expect(dot(t, 'codex')).toBe('spinner')
+    await act(async () => t.watch.push(snapshot(3, [row('codex', signedIn('codex', undefined, 1), listed('codex', 'codex-new-model', undefined, 1), 1)])))
+    await settle()
+    expect(t.text()).toContain('codex-new-model')
+    expect(dot(t, 'codex')).toBe('connected')
+    expect(t.accountStatus).not.toHaveBeenCalled()
+  })
+
+  it('never keeps a green dot past ten minutes and re-checks once through the status method and the queue', async () => {
+    const nearlyExpired = Date.now() - 600_000 + 40
+    const t = await setupLive([
+      row('codex', signedIn('codex', nearlyExpired), listed('codex', 'codex-model')),
+      row('qoder', signedIn('qoder', nearlyExpired), listed('qoder', 'qoder-model')),
+    ])
+    expect(dot(t, 'codex')).toBe('connected')
+    await settle(120)
+    expect(t.settingsConnectionStatus.mock.calls.map((call) => call[1])).toEqual(['codex', 'codex'])
+    expect(t.accountStatus.mock.calls.map((call) => call[1])).toEqual(['qoder'])
+    expect(dot(t, 'codex')).not.toBe('connected')
+    expect(dot(t, 'qoder')).not.toBe('connected')
+    await settle(30)
+    expect(t.settingsConnectionStatus).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads the account fresh right before a login and never uses snapshot handles', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'])
+    expect(t.button('登录 / 切换账号').props.disabled).toBeFalsy()
+    await t.click('登录 / 切换账号')
+    expect(t.refreshAccountStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(terminal.started).toHaveBeenCalledWith('codex', 'login')
+    await t.click('关闭模拟账号操作')
+    // Afterwards both slots are read again: the fresh account, then the forced catalog.
+    expect(t.refreshAccountStatus).toHaveBeenCalledTimes(2)
+    expect(t.refreshCatalogForCli.mock.calls.map((call) => call[1])).toEqual(['codex'])
+  })
+
+  it('does not open an action the fresh read no longer offers', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {
+      refreshAccountStatus: vi.fn(async (_parent, cli: CliId) => status(cli, { state: 'authenticated', verification: 'cli', actions: [] })),
+    }, ['codex'])
+    await t.click('账号终端')
+    expect(terminal.started).not.toHaveBeenCalled()
+    expect(t.button('账号终端').props.disabled).toBe(true)
+  })
+
+  it('refreshes the account fresh and then forces the catalog on the manual refresh', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'])
+    await t.click('刷新状态')
+    await settle()
+    expect(t.refreshAccountStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(t.refreshCatalogForCli.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(t.accountStatus).not.toHaveBeenCalled()
+  })
+
+  it('ends its one watch when the dialog closes', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'])
+    expect(t.watch.signals).toHaveLength(1)
+    expect(t.watch.signals[0]!.aborted).toBe(false)
+    await t.click('关闭设置')
+    expect(t.watch.signals[0]!.aborted).toBe(true)
+    expect(t.watchSettingsConnections).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads CLIs that are not on screen through the two-slot queue', async () => {
+    const reads: ReturnType<typeof deferred>[] = []
+    const accountStatus = vi.fn(() => { const read = deferred(); reads.push(read); return read.promise })
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], { accountStatus },
+      ['codex', 'qoder', 'kimi', 'mimo'])
+    expect(t.settingsConnectionStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(accountStatus).toHaveBeenCalledTimes(2)
+    const first = accountStatus.mock.calls[0]![1] as CliId
+    await act(async () => reads[0]!.resolve(status(first)))
+    await settle()
+    // The third CLI starts only after one of the two slots is free.
+    expect(accountStatus).toHaveBeenCalledTimes(3)
+    expect(new Set(accountStatus.mock.calls.map((call: any) => call[1]))).toEqual(new Set(['qoder', 'kimi', 'mimo']))
+    expect(t.refreshAccountStatus).not.toHaveBeenCalled()
+  })
+
+  it('shows a cleanup pause of the CLI on screen, which only a direct read reports', async () => {
+    const accountStatus = vi.fn(async (_parent, cli: CliId) =>
+      status(cli, { state: 'unavailable', summary: '模拟：清理未确认，已暂停', cleanupBlocked: true }))
+    const t = await setupLive([], { accountStatus }, ['codex'])
+    expect(t.settingsConnectionStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(accountStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+    expect(dot(t, 'codex')).toBe('failed')
+    expect(t.text()).toContain('解除暂停')
+    expect(t.refreshAccountStatus).not.toHaveBeenCalled()
+  })
+
+  it('keeps the older Host path when the snapshot belongs to another project', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'], 'SIMULATED-other')
+    expect(t.watchSettingsConnections).not.toHaveBeenCalled()
+    expect(t.settingsConnectionStatus).not.toHaveBeenCalled()
+    expect(t.accountStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
   })
 })
