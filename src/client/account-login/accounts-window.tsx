@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountLogin, AccountProvider, AccountSource, AccountStatus } from '../../shared/accounts.ts'
 import { GUIDED_ACCOUNT_CLIS, parseAccountLoginId } from '../../shared/account-links.ts'
+import type { CustomProviderForm, CustomProviderResult } from '../../shared/custom-provider.ts'
 import { CLI_LABELS, type CliId } from '../../shared/types.ts'
 import { ProviderCards } from './provider-cards.tsx'
+import { ProviderForm, validProviderForm } from './provider-form.tsx'
 import { AccountTerminal, type AccountCloseControl } from '../account-terminal.tsx'
 import { t, useT } from '../i18n.ts'
-import { hostText } from '../operation-error.ts'
-import type { API } from '../workers.ts'
+import { hostText, operationMessage } from '../operation-error.ts'
+import { value, type API } from '../workers.ts'
 
 /** The account window's own choice for a native picker. */
 const NATIVE = '__native__'
@@ -48,6 +50,7 @@ export function AccountsWindow({
   onRefresh,
   onClose,
   prepare,
+  onProviderSaved,
 }: {
   api: API
   sessionId: string
@@ -58,6 +61,8 @@ export function AccountsWindow({
   onClose: () => void
   /** Reads the account fresh right before one login is signed out; its login ids replace the shown ones. */
   prepare?: () => Promise<AccountStatus | undefined>
+  /** After 「其他服务商」 was saved: re-read the account and the model catalog (defaults to `onRefresh`). */
+  onProviderSaved?: () => void
 }) {
   useT()
   const name = CLI_LABELS[cli]
@@ -125,11 +130,14 @@ export function AccountsWindow({
   if (adding)
     return (
       <AddAccount
+        api={api}
+        sessionId={sessionId}
         cli={cli}
         providers={providers}
         logins={logins}
         onCancel={() => setAdding(false)}
         onStart={(next) => setRequest(next)}
+        onSaved={onProviderSaved ?? onRefresh}
       />
     )
 
@@ -311,29 +319,67 @@ export function AccountsWindow({
   )
 }
 
+/** The 「其他服务商」 form as read once when 添加账号 opens; `form: null` keeps the native terminal. */
+type FormRead = { state: 'loading' } | { state: 'ready'; form: CustomProviderForm | null } | { state: 'failed'; error: string }
+
 function AddAccount({
+  api,
+  sessionId,
   cli,
   providers,
   logins,
   onCancel,
   onStart,
+  onSaved,
 }: {
+  api: API
+  sessionId: string
   cli: CliId
   providers: AccountProvider[] | undefined
   logins: AccountLogin[]
   onCancel: () => void
   onStart: (request: Request) => void
+  onSaved: () => void
 }) {
   const name = CLI_LABELS[cli]
   const list = providers ?? []
   const [chosen, setChosen] = useState(list[0]?.id ?? NATIVE)
   const [replace, setReplace] = useState<string>()
+  // ZCode has only its two providers; other CLIs keep their own full picker.
+  const other = cli !== 'zcode'
+  const readForm = api.cliworker?.customProviderForm
+  const [read, setRead] = useState<FormRead>(() =>
+    other && readForm ? { state: 'loading' } : { state: 'ready', form: null },
+  )
+  const [waiting, setWaiting] = useState(false)
+  const [editing, setEditing] = useState(false)
+  // Read once when the page opens, so the card can say what 「继续」 will do; older Hosts have no form.
+  useEffect(() => {
+    if (!other || !readForm) return
+    const controller = new AbortController()
+    void (async () => {
+      try {
+        const raw = value(await readForm(sessionId, cli, controller.signal))
+        const parsed: unknown = JSON.parse(raw)
+        if (parsed !== null && (!validProviderForm(parsed) || parsed.cli !== cli))
+          throw new Error(t('收到无效的服务商表单，请在原生终端中配置'))
+        if (!controller.signal.aborted) setRead({ state: 'ready', form: parsed })
+      } catch (error) {
+        if (!controller.signal.aborted) setRead({ state: 'failed', error: operationMessage(error) })
+      }
+    })()
+    return () => controller.abort()
+  }, [other, readForm, sessionId, cli])
   const provider = list.find((item) => item.id === chosen)
+  const form = read.state === 'ready' ? read.form : null
   // Hermes keeps several keys of one provider: add another, or replace one of them.
   const held = provider?.multi
     ? logins.filter((login) => login.id && parseAccountLoginId(login.id)?.provider === provider.id)
     : []
-  useEffect(() => setReplace(undefined), [chosen])
+  useEffect(() => {
+    setReplace(undefined)
+    setWaiting(false)
+  }, [chosen])
   const choices = [
     ...list.map((item) => ({
       id: item.id,
@@ -342,21 +388,39 @@ function AddAccount({
       note: item.signedIn ? t('已登录') : undefined,
       signedIn: item.signedIn,
     })),
-    // ZCode has only its two providers; other CLIs keep their own full picker.
-    ...(cli === 'zcode'
-      ? []
-      : [
-          {
-            id: NATIVE,
-            mark: '…',
-            name: t('其他服务商'),
-            label: t('其他服务商（在原生终端中选择）'),
-            note: t('在原生终端中选择'),
-          },
-        ]),
+    ...(other
+      ? [
+          form
+            ? {
+                id: NATIVE,
+                mark: '…',
+                name: t('其他服务商'),
+                label: t('其他服务商（在本窗口中填写配置）'),
+                note: t('在本窗口中填写配置'),
+              }
+            : {
+                id: NATIVE,
+                mark: '…',
+                name: t('其他服务商'),
+                label: t('其他服务商（在原生终端中选择）'),
+                note: t('在原生终端中选择'),
+              },
+        ]
+      : []),
   ]
+  const native = () => onStart({ action: 'login', title: t('在原生终端中添加 {cli} 账号', { cli: name }) })
+  // 「其他服务商」: the form when the Host gave one, otherwise the CLI's own picker.
+  const continueOther = (current: FormRead) => {
+    if (current.state === 'loading') return setWaiting(true)
+    setWaiting(false)
+    if (current.state === 'ready' && current.form) setEditing(true)
+    else native()
+  }
+  useEffect(() => {
+    if (waiting && read.state !== 'loading') continueOther(read)
+  })
   const start = () => {
-    if (!provider) return onStart({ action: 'login', title: t('在原生终端中添加 {cli} 账号', { cli: name }) })
+    if (!provider) return continueOther(read)
     onStart({
       action: 'login',
       provider: provider.id,
@@ -364,6 +428,32 @@ function AddAccount({
       title: t('登录到 {provider}', { provider: hostText(provider.label) }),
     })
   }
+
+  if (editing && form)
+    return (
+      <ProviderForm
+        form={form}
+        native={form.nativeFallback ? { label: t('在原生终端中配置'), onStart: native } : undefined}
+        onBack={() => setEditing(false)}
+        onDone={onCancel}
+        submit={async (values, signal) => {
+          const save = api.cliworker?.saveCustomProvider
+          if (!save) throw new Error(t('当前插件 Host 不支持此账号操作，请更新插件后重试'))
+          const result = JSON.parse(
+            value(await save(sessionId, cli, form.token, JSON.stringify(values), signal)),
+          ) as CustomProviderResult
+          if (!result || typeof result.ok !== 'boolean') throw new Error(t('保存失败，请检查后重试'))
+          if (!result.ok) return { ok: false, issues: Array.isArray(result.issues) ? result.issues : [] }
+          onSaved()
+          return {
+            ok: true,
+            title: t('已添加 {provider}', { provider: hostText(result.providerLabel) }),
+            ...(result.notice ? { detail: hostText(result.notice) } : {}),
+          }
+        }}
+      />
+    )
+
   return (
     <div className="cwn-accounts-window">
       <div className="cwn-accounts-lead">
@@ -371,10 +461,19 @@ function AddAccount({
         <span>
           {provider
             ? t('在本窗口中完成授权或填写 API Key，原生终端在后台运行。')
-            : t('在原生终端中选择服务商并登录。')}
+            : form
+              ? form.nativeFallback
+                ? t('在本窗口中填写服务商配置，也可以改用原生终端。')
+                : t('在本窗口中填写服务商配置。')
+              : t('在原生终端中选择服务商并登录。')}
         </span>
       </div>
       <ProviderCards choices={choices} chosen={chosen} label={t('登录到')} onChoose={setChosen} />
+      {!provider && read.state === 'failed' && (
+        <p className="cwn-login-callout" data-tone="warning" role="status">
+          <span>{t('无法读取图形化配置：{reason}。继续将在原生终端中配置。', { reason: read.error })}</span>
+        </p>
+      )}
       {provider?.signedIn && !provider.multi && (
         <p className="cwn-login-callout" data-tone="warning">
           <span>{t('{provider} 已登录，继续会替换它现有的凭据。', { provider: hostText(provider.label) })}</span>
@@ -419,8 +518,8 @@ function AddAccount({
         <Button variant="ghost" size="md" onClick={onCancel}>
           {t('返回')}
         </Button>
-        <Button variant="primary" size="md" onClick={start}>
-          {t('继续')}
+        <Button variant="primary" size="md" disabled={waiting} onClick={start}>
+          {waiting ? t('正在读取…') : t('继续')}
         </Button>
       </div>
     </div>

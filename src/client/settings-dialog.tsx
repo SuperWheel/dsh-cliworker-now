@@ -1149,6 +1149,15 @@ function CliSettings({
   const finishedAccountAction = () => {
     onRefreshAccount(true)
   }
+  // A saved 「其他服务商」 changes both the logins and the models: the fresh account read re-reads the
+  // catalog with snapshots; without them the next catalog read after it is forced here.
+  const providerSaved = () => {
+    if (!warmCatalogs) {
+      forceCatalogRefresh.current = true
+      refreshModels((n) => n + 1)
+    }
+    onRefreshAccount(true)
+  }
   const closeAccounts = () => {
     setAccountsOpen(false)
     setOpStatus(undefined)
@@ -1411,6 +1420,7 @@ function CliSettings({
               onRefresh={() => onRefreshAccount(true)}
               onClose={closeAccounts}
               prepare={freshBeforeAction && onPrepareAccount ? prepareInWindow : undefined}
+              onProviderSaved={providerSaved}
             />
           </Modal>
         )}
