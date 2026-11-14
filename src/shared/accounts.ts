@@ -37,6 +37,7 @@ export interface AccountLogin {
   group?: string
 }
 export interface AccountStatus {
+  cache?: import('./settings-connection.ts').ConnectionCacheInfo
   cli: CliId
   installed: boolean
   /** unconfigured is absence; unauthenticated is known invalid/expired auth; unavailable is a read/config error. */

@@ -58,3 +58,61 @@ it('cached accounts never bypass disabled CLI checks or process cleanup quaranti
   ;(f.service as any).runtime.assertCliEnabled.mockImplementation(() => { throw new Error('synthetic disabled') })
   await expect(f.service.accountStatus('parent', 'codex', f.control)).rejects.toThrow('disabled'); expect(f.status).toHaveBeenCalledTimes(1)
 })
+
+it('模拟：连接预加载和账号 Remote 共用缓存，过期重查且保持原摘要', async () => {
+  const f = fixture(), cache = (f.service as any).connectionCache()
+  await cache.read(f.root, 'codex', 'account', f.control, async () => ({
+    cli: 'codex', installed: true, state: 'authenticated', verification: 'local', summary: '模拟预加载摘要', actions: [],
+  }))
+  const first = JSON.parse(await f.service.accountStatus('parent', 'codex', f.control))
+  expect(first.summary).toBe('模拟预加载摘要'); expect(first.cache.project).toBe(cache.project(f.root))
+  expect(f.status).not.toHaveBeenCalled(); expect(f.spawn).not.toHaveBeenCalled()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 600_001)
+  try {
+    await f.service.accountStatus('parent', 'codex', f.control)
+    expect(f.status).toHaveBeenCalledTimes(1)
+  } finally { clock.mockRestore() }
+})
+it('模拟：连接快照先返回已有值，再经订阅推送过期重查完成结果', async () => {
+  const f = fixture(), cache = (f.service as any).connectionCache(), watcher = new AbortController()
+  ;(f.service as any).settingsCatalog = vi.fn(async () => '')
+  await cache.read(f.root, 'codex', 'account', f.control, async () => ({ cli: 'codex', installed: true,
+    state: 'authenticated', verification: 'local', summary: '模拟旧值', actions: [] }))
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 600_001)
+  try {
+    let finish!: (value: unknown) => void
+    f.status.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }) as any)
+    const stream = f.service.watchSettingsConnections('parent', watcher.signal)
+    await stream.next()
+    const old = JSON.parse(await f.service.settingsConnectionStatus('parent', 'codex', f.control))
+    expect(old.account.cache.stale).toBe(true); expect(old.account.value.state).toBe('unknown')
+    await vi.waitFor(() => expect(f.status).toHaveBeenCalledTimes(1))
+    finish({ cli: 'codex', installed: true, state: 'unconfigured', verification: 'local', summary: '模拟新值', actions: [] })
+    await vi.waitFor(() => expect(cache.status(f.root, 'codex').account.loading).toBe(false))
+    const update = JSON.parse((await stream.next()).value!)
+    expect(update.entries.find((x: any) => x.cli === 'codex').account.value.state).toBe('unconfigured')
+    watcher.abort(); await stream.return(undefined)
+  } finally { clock.mockRestore(); watcher.abort() }
+})
+
+it('模拟：读取期间账号 epoch 变化，旧 authenticated 不能作为无 cache 的新结果返回', async () => {
+  const f = fixture()
+  f.status.mockImplementationOnce(async () => {
+    f.management.cache.invalidateAccount('codex')
+    return { cli: 'codex', installed: true, state: 'authenticated', verification: 'local', summary: '模拟旧账号', actions: [] } as any
+  })
+  await expect(f.service.accountStatus('parent', 'codex', f.control)).rejects.toThrow('来源已变化')
+  expect((f.service as any).connectionCache().status(f.root, 'codex').account.value).toBeUndefined()
+})
+it('模拟：入口 revision 变化清除账号，第一次自动记录入口不误判为切换', async () => {
+  const f = fixture(); let revision = 0, entry: any
+  ;(f.service as any).options = { cliExecutablePaths: { read: () => entry, revision: () => revision } }
+  f.status.mockImplementationOnce(async () => {
+    entry = { mode: 'auto', path: '/simulated/codex' }; revision++
+    return { cli: 'codex', installed: true, state: 'authenticated', verification: 'local', summary: '模拟首次识别', actions: [] } as any
+  })
+  expect(JSON.parse(await f.service.accountStatus('parent', 'codex', f.control)).cache.stale).toBe(false)
+  entry = { mode: 'manual', path: '/simulated/other' }; revision++
+  await f.service.accountStatus('parent', 'codex', f.control)
+  expect(f.status).toHaveBeenCalledTimes(2)
+})

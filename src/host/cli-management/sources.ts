@@ -90,7 +90,7 @@ export function installOffer(cli: ActiveCliId): CliInstallOffer {
 }
 
 /** Audited account projections read local files only; no native discovery or renewal. */
-export const BACKGROUND_ACCOUNT_CLIS: readonly ActiveCliId[] = ['mimo', 'codebuddy']
+export const BACKGROUND_ACCOUNT_CLIS: readonly ActiveCliId[] = ['mimo', 'codebuddy', 'zcode', 'grok', 'pi', 'omp', 'opencode']
 
 /** Audited official --binary/offline-install interfaces; never client supplied. */
 export const OFFICIAL_SIGNED_ARTIFACT_HOSTS = ['release-assets.githubusercontent.com', 'd4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com'] as const
@@ -148,3 +148,6 @@ export function installationSource(cli: ActiveCliId, platform = process.platform
     ? relative(homedir(), windowsCliCandidates(cli)[0]!) : script[2]
   return { method: 'script', command, script: { url: platform === 'win32' ? script[1] : script[0], interpreter: platform === 'win32' ? ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'] : ['/bin/bash'], relativeEntry } }
 }
+
+/** ZCode reads its native files and GET model lists; no CLI session or renewal. */
+export const BACKGROUND_CATALOG_CLIS: readonly ActiveCliId[] = ['zcode']

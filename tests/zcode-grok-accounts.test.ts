@@ -824,3 +824,13 @@ it('does not label refresh-only or expired ZCode OAuth as authenticated', () => 
     }),
   ).toMatchObject({ state: 'unknown' })
 })
+
+it('模拟：Grok 后台只认仍有效的本地登录，不通过 refresh_token 声称已登录', () => {
+  const raw = { 'https://auth.x.ai::synthetic-client': {
+    auth_mode: 'oidc', key: 'SIMULATED-ACCESS', refresh_token: 'SIMULATED-REFRESH',
+    email: 'fixture@example.invalid', expires_at: '2020-01-01T00:00:00Z',
+    oidc_issuer: 'https://auth.x.ai', oidc_client_id: 'synthetic-client', user_id: 'synthetic-user',
+  } }
+  expect(projectGrokIdentity(raw, Date.now(), true).state).toBe('unauthenticated')
+  expect(projectGrokIdentity(raw).state).toBe('authenticated')
+})

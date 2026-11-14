@@ -89,10 +89,10 @@ export class CliManagementCache {
     this.save()
   }
   private accountKey(cli: ActiveCliId, project: string) { return hash(JSON.stringify([cli, resolve(project)])) }
-  account(cli: ActiveCliId, project: string, now = Date.now()): (AccountStatus & { cache: { checkedAt: number; stale: boolean; displayOnly: true } }) | undefined {
+  account(cli: ActiveCliId, project: string, now = Date.now()): (AccountStatus & { cache: NonNullable<AccountStatus['cache']> }) | undefined {
     const entry = this.state.accounts[this.accountKey(cli, project)]
     if (!entry) return
-    return { ...entry.value, summary: summaries[entry.value.state], actions: [], cache: { checkedAt: entry.checkedAt, stale: now < entry.checkedAt || now - entry.checkedAt >= ACCOUNT_TTL, displayOnly: true } }
+    return { ...entry.value, summary: summaries[entry.value.state], actions: [], cache: { checkedAt: entry.checkedAt, stale: now < entry.checkedAt || now - entry.checkedAt >= ACCOUNT_TTL, displayOnly: true, project: hash(resolve(project)), revision: this.accountRevision(cli) } }
   }
   rememberAccount(cli: ActiveCliId, project: string, status: AccountStatus, revision = this.accountRevision(cli)) {
     if (revision !== this.accountRevision(cli) || status.cleanupBlocked) return

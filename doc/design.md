@@ -1547,3 +1547,9 @@ Worker 安装识别使用 `pi-installation.mjs` 的明确版本表：1.0.2、1.0
 桥接补认 Pi 1.1.0 起新增的 `agent_settled.aborted=true`，即使助手消息正常且进程退出 0 也不能报告成功；1.0.4 缺字段保留既有判断。1.5.2 的成本总额可为服务商账单，现有 token 投影不读取成本字段，不将 reasoning 重复相加。原生登录 shell 子命令虽已增加，插件仍使用核实过的 UI/SDK，不更换交互协议。
 
 Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。
+
+## 2026-11-14：设置页连接状态纳入静默预加载（Host 与共享协议）
+
+新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。安全账号扩展为 MiMo、CodeBuddy、ZCode、Grok、Pi、OMP、OpenCode；后三类 OAuth 来源及 Grok 在后台只认仍有效的本地登录，不以可续期代替有效登录。完整 Hermes 状态、原生会话目录、MiMo refresh、WorkBuddy bootstrap 继续前台查询；逐 CLI 审计见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 决定 12。ZCode 目录以已记录入口读取配置与绑定、GET 模型列表，不启动 CLI。
+
+主会话解析登记项目并加入原 60 秒/CPU 空闲/逐项队列；任务或账号窗口打断后等清理并在 30 秒空闲后重试。设置首屏 `cliSettings.settingsCache.connections` 直接带结果，新 `settingsConnectionStatus` 返回缓存并补查缺失/过期槽，`watchSettingsConnections` 推送状态。旧账号/模型接口共用缓存，显式刷新强制读取；账号动作与执行选型仍实时核验。账号切换、登录/退出、启用状态、入口或更新后同时作废两槽，晚到结果不得回填。过期或未核实 authenticated 映射 unknown，缓存不持久化、不恢复跨 Host 绿色登录态。前端接入独立交付，不能把 Host 测试当作 UI 已完成。

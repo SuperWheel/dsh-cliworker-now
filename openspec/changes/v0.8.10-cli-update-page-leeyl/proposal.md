@@ -36,7 +36,7 @@ CLI Worker 接入了 17 个 CLI，但插件不显示它们的版本，也没有�
 
 ### Modified Capabilities
 
-无。路径记录（`harness-cli-path-settings`）、账号状态和模型目录缓存的现有规则保持不变，本变更只新增调用方。
+路径记录（`harness-cli-path-settings`）与执行授权保持不变。任务 12 在 `cli-update` 增量中增加设置连接快照、10 分钟内存展示缓存与失效/订阅行为；原模型磁盘缓存继续用于既有授权绑定，不将展示缓存当作执行授权。
 
 ## Impact
 

@@ -186,10 +186,10 @@ function grokReadFailure(error: unknown): AccountIdentity {
     return { state: 'unavailable', verification: 'local', summary: 'Grok 凭据文件未通过安全检查' }
   return { state: 'unavailable', verification: 'local', summary: 'Grok 凭据读取失败，请刷新' }
 }
-export function projectGrokIdentity(raw: unknown, now = Date.now()): AccountIdentity {
+export function projectGrokIdentity(raw: unknown, now = Date.now(), activeOnly = false): AccountIdentity {
   if (!record(raw)) throw new Error('Invalid account metadata')
   const account = selectGrokOwnAccount(raw, now)
-  if (account && (account.active || account.refresh)) {
+  if (account && (account.active || !activeOnly && account.refresh)) {
     return {
       state: 'authenticated',
       authMethod: 'oauth',
@@ -210,7 +210,7 @@ export async function zcodeGrokAccountStatus(
   cli: ZCodeGrokCli,
   config: RuntimeConfig,
   signal: AbortSignal,
-  options: { home?: string; credentialSecret?: string } = {},
+  options: { home?: string; credentialSecret?: string; activeOnly?: boolean } = {},
 ): Promise<AccountIdentity> {
   signal.throwIfAborted()
   const home = options.home ?? homedir()
@@ -276,7 +276,7 @@ export async function zcodeGrokAccountStatus(
     }
     const projected =
       cli === 'grok'
-        ? projectGrokIdentity(raw)
+        ? projectGrokIdentity(raw, Date.now(), options.activeOnly)
         : undefined
     // Grok refused to renew exactly this file: show it as expired until a new login rewrites it.
     const identity =

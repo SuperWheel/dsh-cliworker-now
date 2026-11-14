@@ -50,10 +50,10 @@
   - 来源修复最终沙箱外 `corepack pnpm vitest run`（21:49:40，94.87 秒）：**Test Files 299 passed | 4 skipped (303)；Tests 6540 passed | 14 skipped (6554)**，退出码 0，无失败或未处理错误。两轮之间未改业务代码或测试；首轮账号引导 AbortError 的偶发根因不在本次来源修复范围，未宣称已修复。
 
 ## 3. 后台预加载 〔后端｜6h｜前置 2〕
-- [ ] 3.1 启动 60 秒延迟、空闲判定（无任务、无登录窗口、无更新、CPU 忙碌低于 50%）、一次一项、间隔 2 秒、子进程降优先级
+- [x] 3.1 启动 60 秒延迟、空闲判定（无任务、无登录窗口、无更新、CPU 忙碌低于 50%）、一次一项、间隔 2 秒、子进程降优先级
   - Phase A 已实现并通过模拟测试：60 秒延迟、2 秒 CPU 双采样、忙碌低于 50%、逐项读取与间隔、可取消定时器、私有启动器对子进程调用 os.setPriority；只读取已记录路径，不后台搜索。
-  - （未执行：决定 7 的第五类「缺失模型目录」后台补齐尚未接入。现有 MiMo 目录路径可执行 models --refresh，其他原生目录可能建会话或续期；没有把这些读法标成无副作用。保留本项未勾选，不声称五类预加载已全部完成。）
-  - 后台账号仅允许 MiMo、CodeBuddy 的本地文件投影，并禁止其退回 PATH / 注册表 / 原生身份探测。跳过 Antigravity、Codex、Claude、Kimi、ZCode、Grok、OMP、Pi、Hermes、OpenCode、Qoder、Qoder CN、TRAE CN、WorkBuddy CN、WorkBuddy；原因列于 service.ts 白名单注释。
+  - 2026-11-14 任务 12 补齐第五类的安全子集：ZCode 本地配置/账号绑定 + GET 模型目录，强度随目录取得；其余原生目录按决定 12 的逐 CLI 审计留在前台（建会话、续期、MiMo refresh 或无副作用证据不足）。本项完成的是安全调度接线，不代表所有 CLI 均能后台探测。
+  - 任务 12 将本地投影扩展到 MiMo、CodeBuddy、ZCode、Grok、OMP、Pi、OpenCode；禁止退回 PATH / 注册表 / 原生身份探测，Pi/OMP 不做原生 provider 发现，过期但可续期的 OAuth 不显示已登录。其余 CLI 原因见决定 12。
 - [x] 3.2 派遣、账号窗口、更新时暂停并确认子进程退出，空闲 30 秒后从断点继续；页面打开时切前台并复用结果
   - Phase A：runtime 与账号 reservation 发出通知；当前项 abort 后等待退出，30 秒空闲后重试；页面接管等待当前读取完成，复用版本 / 发布源 / 安全账号缓存，剩余页面检查并发执行。模拟暂停、CPU 采样中接管、并发清理等待、账号队列接管测试通过；实际更新操作的准入接线由阶段 B 的 4.2 继续。
 - [x] 3.3 通用页开关「启动后在后台检查 CLI」（默认开）接入 `generalSettings`
@@ -326,3 +326,31 @@
   - Codex 安装脚本地址改为 `https://releases.openai.com/codex/install.sh`；下载遇到跳转（`redirect: 'error'`）时报 NETWORK「官方下载地址 <host> 已跳转到其他位置，插件不跟随跳转」，不再落到「更新失败，请检查网络…」。
   - 测试（模拟）：新增 `tests/cli-management-physical-fs.test.ts` 3 项、`tests/cli-management-download.test.ts` 跳转 1 项；`tests/cli-management-desktop.test.ts` 断言改为 `-R=`。`corepack pnpm typecheck` 通过；`corepack pnpm vitest run tests/cli-management` 20 文件 594 项通过；页面相关 `tests/cli-update-page.test.tsx tests/client-i18n.test.tsx tests/cli-management` 636 项通过。真实复测见 7.3。
   - 2026-11-14 01:07 全量 `corepack pnpm vitest run`：313 文件（309 通过、4 跳过）、6954 项通过、14 项跳过，0 失败；退出码 1，原因是 `tests/codebuddy-account.test.ts` 满载时 1 个未处理拒绝（临时目录 lstat ENOENT），该文件与对应源码本轮未改，单独连跑 3 次各 76 项全过、无错误。`corepack pnpm build:preview` 成功；`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过（提示主任务 8 子任务超过 12 个）。
+
+## 12. 设置页连接状态预加载 〔后端｜8h｜前置 3〕
+- [x] 12.1 审计 17 个 CLI 的账号、模型及强度读取；将安全投影接入空闲队列，记录跳过原因
+  - 证据：sources 两份后台名单、accounts 的 background/activeOnly 分支与 settings-connection-background；完整 17 CLI 审计表见 design 决定 12，仅源码审计和模拟测试。
+- [x] 12.2 接入项目与 CLI 隔离的连接缓存、时间与版本、失效及推送，兼容原有前台接口
+  - 新增 settings-connection-cache（内存、10 分钟、项目 SHA-256 + CLI + account/catalog 分槽），共享 checkedAt/stale/project/revision/displayOnly；失效中止并等旧查询清理，旧版本回执不得发布；订阅与 Host 关闭可取消/清理。
+  - cliSettings.settingsCache.connections、settingsConnectionStatus 和 watchSettingsConnections 供前端读取；原 accountStatus/catalogForCli 命中无需起进程，过期/缺失现查后推送。账号切换/登录/退出、启用与入口变化、安装身份变化和清理阻塞使两槽失效；快照剔除动作/退出句柄，过期或无 verification 的 authenticated 降为 unknown。
+  - 仅 ZCode 模型目录纳入后台，7 个 CLI 的安全账号投影纳入；Kimi 探测统一补 KIMI_CODE_NO_AUTO_UPDATE=1。安全集合外仍走原前台查询，不改 Hermes 续期。实际实现与隔离包 16 个 src 文件逐字节一致（16/16）。
+- [x] 12.3 执行模拟回归、类型检查、沙箱外全量测试、隔离构建与严格规格校验并记录结果
+  - 新工作树先执行 corepack pnpm install --frozen-lockfile --prefer-offline，安装完成；新增夹具均标注“模拟”。最终相关命令：corepack pnpm vitest run tests/settings-connection-cache.test.ts tests/cli-management-remotes.test.ts tests/cli-management.test.ts tests/settings-catalog-cache.test.ts tests/accounts.test.ts tests/cli-settings.test.ts tests/provider-login-status.test.ts tests/zcode-grok-accounts.test.ts tests/first-party-models.test.ts --maxWorkers=4，9 文件、547 passed、0 failed，35.44 秒；日志 /tmp/connection-related-final.log。
+  - 随后补充登录/退出跨项目作废用例并执行 corepack pnpm vitest run tests/cli-settings.test.ts --maxWorkers=1：1 文件、166 passed、0 failed，22.36 秒；/tmp/connection-login-regression.log。覆盖缓存命中不起进程、TTL/时钟回退、项目隔离、source revision/入口/启用/登录退出作废、晚回执拒绝、强刷串行、无副作用集合、任务/登录打断后恢复、清理与订阅退出。
+  - 沙箱内原生进程夹具曾因 /bin/ps EPERM 失败，随后获准沙箱外执行全量。默认并发 corepack pnpm vitest run：10 failed / 301 passed / 4 skipped（315 文件），35 failed / 7015 passed / 14 skipped（7064 项），465.90 秒，退出 1；/tmp/connection-full-unsandboxed.log。此轮处于后续修复与生成类型文件期间，包含未生成 lib、当轮尚未完成的来源回执围栏及原生时序失败，不作为最终代码通过证据。
+  - 最终生产代码沙箱外 corepack pnpm vitest run --maxWorkers=4：3 failed / 308 passed / 4 skipped（315 文件），3 failed / 7048 passed / 14 skipped（7065 项），260.26 秒，退出 1；/tmp/connection-full-4workers.log。失败文件均未修改：cli-management-acceptance-fixes.test.ts 的 Pi 1.5.2 拒绝预期、native-agy-acp.test.ts 的模拟 audit.jsonl ENOENT、native-bridge-time-limit.test.ts 的审批 hold/release 通路关闭。
+  - 沙箱外 corepack pnpm vitest run tests/cli-management-acceptance-fixes.test.ts tests/native-agy-acp.test.ts tests/native-bridge-time-limit.test.ts --maxWorkers=1：2 passed / 1 failed（3 文件），79 passed / 1 failed（80 项），23.75 秒，退出 1；/tmp/connection-full-failures-isolated.log。两个原生文件复跑全过；Pi 测试第 106 行仍要求拒绝 1.5.2，而基线 f510f75 的 pi-installation.mjs 已支持该版，是基线断言冲突；未修改无关用例、超时或生产逻辑。保留全量未全绿事实。
+  - corepack pnpm build:preview 通过，仅 .cache/preview-package；/tmp/connection-preview-final.log。新工作树需要 Remote 类型，将该隔离包 lib 复制为本工作树被忽略的 lib 目录后 corepack pnpm typecheck 通过（Host/Client against DSH 0.2.2-rc.3）；/tmp/connection-typecheck-final.log。未正式 build、未更新 Desktop 链接。
+  - corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict 与指定 Git diff --check 通过。本项勾选仅表示已执行并记录，零失败全量结果尚未取得；真实 CLI/账号/模型、用户目录元信息前后对比、Desktop 与其他平台实机验证没有执行，不能以源码审计和模拟代替。
+- [x] 12.4 同步设计、README 与前端接入契约，本地提交
+  - README.md、doc/design.md、增量规格及本变更 proposal/design 同步；3.1 按安全账号与目录范围完成，17 CLI 审计及未纳入原因见 design 决定 12。前端精确契约见 12.5，保持未勾选；src/client/** 与 src/host/hermes-renewal.ts 无修改。仅本地提交、不推送、不改版本、不归档。
+- [ ] 12.5 前端消费连接快照和订阅、缓存时效及侧栏状态（未执行：由后续 Opus 前端 agent 实施，本次禁止修改 src/client/**）
+
+  - 前端精确接入契约（12.5）：
+    - 打开设置先读取 `cliSettings`：保留 `settingsCache.host/project/revisions/preferences` 校验，新增可选 `settingsCache.connections` 为 `SettingsConnectionSnapshot`。只有 host/project 匹配才能复用；新字段缺失时走旧 Host 路径。
+    - 快照形状：`{sequence,project,entries:[{cli,project,revision,account,catalog}]}`。两个分槽均为 `{value?,cache?,loading,error?}`；cache 为 `{checkedAt,stale,project,revision,displayOnly:true}`。account.value 为 AccountStatus（无动作/退出句柄），catalog.value 为 `{cli,models,notice}`；efforts/variants 从 models 原样使用，偏好取 settingsCache.preferences，不推测缺失强度。
+    - 打开期间仅订阅一次 `watchSettingsConnections(parentSessionId, signal)`；它先发整份项目快照，再发完成/失败/作废变化。按当前 Host、project、sequence 丢弃旧回执，CLI revision 变化或 value 被清空时同步删除客户端旧账号/目录/草稿。关闭时 abort 订阅。
+    - 当前 CLI 优先调用 `settingsConnectionStatus(parentSessionId, cli, signal)`，其他已启用 CLI 复用原最多两项并发队列。该方法立即返回已有值并启动缺失/过期部分；不可为了拿动作在每次打开时无条件 refresh。未过期缓存直接显示，账号和目录分别判断加载；有 value 的目录刷新时可保留带过期标记的展示，不代表可执行授权。
+    - 状态点：只有 account.value.state=authenticated、有 verification、cache.stale=false 且 `0 <= Date.now()-checkedAt < 600000`、无 loading/error/cleanupBlocked 时显示绿；loading 显示转圈；缺失/unknown/configured/unconfigured 显示中性灰，错误/cleanupBlocked 沿用红；unauthenticated 按原未登录规则，绝不绿。Host 已将过期和未核实 authenticated 降为 unknown；前端仍按时间检查，长期开窗到期时调用状态接口补查，不永久保留绿点。
+    - 手动账号刷新使用 `refreshAccountStatus`，随后强制 `refreshCatalogForCli`；仅刷新目录时用后者。执行登录/退出/逐条退出前才 `refreshAccountStatus` 获取最新 actions/logins.id，不使用缓存句柄；操作后清除两槽并重新读取。启用状态、入口修改及 host/project 切换也清除旧值。
+    - 原 `accountStatus` 与 `catalogForCli` 参数不变，新增可选 cache；命中不探测，缺失/过期等待现查。新订阅/接口由 preview 构建生成 Remote 类型。禁止将快照目录作为 configure/派遣授权。

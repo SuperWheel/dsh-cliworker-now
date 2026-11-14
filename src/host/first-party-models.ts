@@ -133,6 +133,7 @@ export function claudeManagedSettingsPath(
 
 /** Disable inherited SDK credentials and cross-CLI plugin/session imports in native MiMo. */
 export function firstPartyEnvironment(cli: string): Record<string, string> {
+  if (cli === 'kimi') return { KIMI_CODE_NO_AUTO_UPDATE: '1' }
   if (cli !== 'mimo') return {}
   return {
     // mimocode 0.1.15 otherwise copies ~/.claude/projects transcripts into its DB on every start.
@@ -345,7 +346,7 @@ export async function readFirstPartyModelSources(
     const key = await keyFor(),
       cached = kimiOAuthCapabilities.get(key)
     if (cached) return readKimiOAuthModelSources(cached, sourceId, signal)
-    const raw = parseMetadata(await capture([executable, 'provider', 'list', '--json']))
+    const raw = parseMetadata(await capture([executable, 'provider', 'list', '--json'], firstPartyEnvironment('kimi')))
     signal.throwIfAborted()
     const sources = [
       ...parseKimiModelSources(raw, sourceId),

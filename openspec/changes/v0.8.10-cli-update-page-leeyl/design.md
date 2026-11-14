@@ -338,3 +338,39 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 - [WorkBuddy 官方安装页](https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide) 与 `https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0`：5.9.4.42593613，download.codebuddy.ai 的 `/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.zip`。清单 SHA-256 为 `6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6`；插件两次下载均不符而删除片段。独立 curl 下载 478,466,147 B 的 SHA-256 为 `754926260c0ab867b5fe1050ab5cc01724a1330451617c8f339c679ff3bbc542`；保留拒绝，不替换官方摘要、不绕过完整性检查。仅解包检查签名：`com.workbuddy.workbuddy-ai`、Developer ID Application Tencent Technology (Shanghai) Company Limited、Team `FN2V63AD2J`，codesign --verify --deep --strict 通过，存在 stapled notarization ticket。此签名检查不是插件安装成功证据，也未打开应用、读账号或登录。
 - Windows 仍只提供官方说明：当前没有 Windows 实机、没有已核实的首次安装 Authenticode 与向导实际落点，不猜静默参数或把用户建议位置当成实际位置。任务 5.2、7.4 因 Windows 部分保留未勾选。
 - OMP 的 `https://omp.sh/install` 本次 HEAD 为 302，目标是 `https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh`；因下载器拒绝跳转，将本地交接脚本固定为该官方目标。GET 构建 API 已确认 18.19.0 / 18.20.0 可用；16.4.4 的 HEAD 404 不用于推断 GET 不可用。真实交接及脚本调用的最终结果见任务 11.6。
+
+### 决定 12：设置页连接状态使用 Host 预加载缓存（2026-11-14）
+
+设置页连接状态包括账号投影和模型目录（`ModelChoice.efforts` / `variants` 随目录一起取得，不另起强度查询）。新增 `SettingsConnectionCache`，在 Host 内存中按规范化项目路径哈希、CLI、账号/目录分槽；有效期均为 10 分钟。该缓存不持久化、不恢复上次 Host 的绿色登录态，不用于执行授权。保留原 `SettingsCatalogCache` 的磁盘目录及账号绑定机制，任务和保存选型仍实时授权。
+
+`cliSettings.settingsCache.connections` 首屏携带所有 CLI 已有状态；`settingsConnectionStatus(parentSessionId, cli, signal)` 立即返回已有或缺失的分槽，并为缺失/过期槽启动前台查询；`watchSettingsConnections(parentSessionId, signal)` 首次返回整份项目快照，此后推送加载、完成、失败和作废。原 `accountStatus` / `catalogForCli` 未过期直接复用同一缓存，过期/缺失等待现查；`refreshAccountStatus` / `refreshCatalogForCli` 强制查询。旧客户端无需新字段仍可用；前端消费新快照由独立任务实施。
+
+时间使用 `checkedAt`（epoch ms），时钟回拨视为过期。快照含 `project`（SHA-256）、CLI `revision`、全局递增 `sequence`；每槽含 `loading`、`value?`、`error?`、`cache?={checkedAt,stale,project,revision,displayOnly:true}`。账号快照保留 Host 原摘要，但移除动作及逐条退出句柄；过期的 authenticated 降为 unknown，没有 verification 的 authenticated 也降为 unknown。目录只返回模型、强度与 notice，不返回 Host binding。缓存读取不替代登录操作前的即时校验。
+
+登录/退出窗口 reservation 开始与结束、账号变更回调、CLI 开关、执行入口变化及更新后经统一失效机制清除两槽并增加 revision。保留 `accountRevision` 和执行入口 revision 的同步检查。作废同时 abort 进行中查询；后续请求先等旧查询清理，旧结果不得回填。显式刷新也排在正在进行的读取之后，不被该读取吞掉。查询失败清除旧成功值；关闭 Host 中止并等待全部查询，取消订阅移除监听。
+
+项目在解析主会话时登记，因而不依赖先打开设置；无项目时不猜项目。已知项目的安全连接项加入原空闲队列，后加入项目可继续入队；同一项目只登记一次，无定时重复全量查询。启动 60 秒、2 秒 CPU 双采样/间隔、CPU <50%、无任务/登录/更新、打断清理与 30 秒空闲恢复规则不变。进入更新页接管时也完成已知项目的安全连接项。关闭开关后不启动后台项；前台显式查询不受该开关限制。
+
+以下为源码审计结论，**不是本机 CLI 或账号实测**。所有后台账号都要求已记录的绝对入口且文件存在，不退回 PATH/注册表/身份命令。未确认无副作用的原生命令仍只在前台运行；“未核实”不等同于已证实有副作用。
+
+| CLI | 后台账号/登录 | 后台模型与强度 | 路径、理由及前台保留行为 |
+| --- | --- | --- | --- |
+| Antigravity | 不纳入 | 不纳入 | 原生账号读取涉及 macOS security 钥匙串 / Windows credential helper；静默无交互边界未核实。模型走 agy models 和账号服务，原生初始化副作用未核实。 |
+| Codex | 不纳入 | 不纳入 | 账号 app-server account/read，模型 app-server/model list；启动原生服务及配置行为未证明无写入/续期，不能以没有 prompt 推断安全。 |
+| Claude Code | 不纳入 | 不纳入 | 账号可能 prepareClaudeWorkerLaunch 写路由配置；原生目录 initialize/get_usage 或路由查询，启动阶段账号续期等副作用未核实。 |
+| Kimi | 不纳入 | 不纳入 | provider list --json 可能调用 provider 自身解析器，未证明不会写入/续期；模型还会读自身 OAuth 能力及请求目录。已统一给账号和模型的 provider 探测加 KIMI_CODE_NO_AUTO_UPDATE=1，禁升级不等于已证明无其他副作用。 |
+| MiMo | 纳入 | 不纳入 | readMimoAccount 本地投影；discoverMimoModels 可执行 models --refresh，保留前台。 |
+| ZCode | 纳入 | 纳入 | zcodeGrokAccountStatus('zcode') 只读本地身份；模型读取配置和绑定后 GET 模型列表，前后核对绑定。专用 backgroundZCodeCatalog 钉住已记录入口，禁止 spawn/spawnTerminal 和其他路径发现，不创建原生会话。efforts/variants 来自原生配置解析，不猜测。 |
+| Grok Build | 纳入本地有效态 | 不纳入 | zcodeGrokAccountStatus('grok', activeOnly) 本地投影不续期；过期但有 refresh_token 不能显示已登录。完整模型路径可能续期，前台照旧。 |
+| OMP | 纳入本地有效态 | 不纳入 | inspectPiOmpNativeAccount 使用本地文件/SQLite 私有临时副本（不写源库，finally 删除副本）；后台不调用 nativeLoginProviders。activeOnly 不把可续期的过期 OAuth 视为已登录。目录的原生 helper/credential lease 可续期和写快照。 |
+| Pi | 纳入本地有效态 | 不纳入 | 同 OMP，但读取 Pi 自己的目录与格式；不会混用 OMP 的配置。模型目录原生初始化/续期仅前台。 |
+| Hermes Agent | 不纳入完整状态 | 不纳入 | 现有 AccountManager 状态先校验安装并可能 ensureHermesNousFresh；授权目录也会续期。本任务不改 Hermes 续期逻辑，不将局部本地读取冒充完整状态。 |
+| OpenCode | 纳入本地有效态 | 不纳入 | inspectOpenCodeProfile 只读原生/插件来源并 activeOnly；模型 snapshotOpenCodeAuth/openCodeEnvironment 写运行配置后执行 models --verbose，未开放后台。 |
+| Qoder | 不纳入 | 不纳入 | 原生账号/模型组合查询需要 SDK/session 生命周期；后台禁止建会话。 |
+| Qoder CN | 不纳入 | 不纳入 | 与 Qoder 独立来源，原生 session 查询同样保留前台。 |
+| CodeBuddy Code | 纳入 | 不纳入 | readCodebuddyAccount 本地状态与站点投影；目录 bridge 虽 no-session-persistence，仍明确发送 session/new，所以不纳入。 |
+| TRAE CN | 不纳入 | 不纳入 | 账号和目录调用原生协议会话，不能静默创建。强度当前无可选项，随前台目录返回。 |
+| WorkBuddy CN | 不纳入 | 不纳入 | readWorkBuddyMetadata/bootstrap 可能准备认证密钥和配置；试验性桌面接口只前台调用。 |
+| WorkBuddy | 不纳入 | 不纳入 | 国际版有独立入口和账号根；同样可能 bootstrap 密钥/配置，不借用 CN 的结果。 |
+
+决定 7 的“缺失模型目录”在本轮按此审计边界接入：只补齐无原生进程的 ZCode，其他目录按具体理由保留前台；不宣称全部 17 个 CLI 都已能后台查询。尚未进行实际账号、模型调用、Desktop、Windows 验收；不读取真实用户凭据来制作验收证据。回退可关闭后台开关，或撤回新连接缓存接线；没有用户数据迁移。

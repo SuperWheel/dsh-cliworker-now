@@ -13,6 +13,7 @@ export function cpuBusy(before: CpuInfo[], after: CpuInfo[]): number {
 /** One pass per Host. All timers belong to one abortable loop; each item owns cleanup. */
 export class CliPreloader {
   private lifetime = new AbortController()
+  private startAt = Date.now() + 60_000
   private currentRun?: Promise<void>
   private current?: AbortController
   private wake?: () => void
@@ -25,6 +26,13 @@ export class CliPreloader {
   private handedOff = false
   constructor(private options: { items: PreloadItem[]; idle(): boolean; enabled(): boolean; sample?: () => CpuInfo[]; activity?(running: boolean): void; error?(error: unknown): void }) {}
   start() { if (!this.active && !this.completed) this.active = this.loop().finally(() => { this.active = undefined }) }
+  enqueue(items: PreloadItem[], after = this.options.items.length) {
+    // Never insert ahead of the item that currently owns cleanup.
+    this.options.items.splice(Math.max(after, this.index + (this.current ? 1 : 0)), 0, ...items)
+    this.completed = false
+    if (!this.active && !this.lifetime.signal.aborted) { this.handedOff = false; this.foreground = false; this.start() }
+    this.wake?.()
+  }
   promote() { this.foreground = true; this.wake?.() }
   /** Synchronous busy notification cancels immediately; the loop awaits run's cleanup before resuming. */
   changed() {
@@ -42,7 +50,7 @@ export class CliPreloader {
     })
   }
   private async loop() {
-    const startAt = Date.now() + 60_000
+    const startAt = this.startAt
     while (!this.lifetime.signal.aborted && !this.handedOff && Date.now() < startAt) await this.wait(startAt - Date.now())
     while (!this.lifetime.signal.aborted && this.index < this.options.items.length && !this.handedOff) {
       if (!this.foreground) {

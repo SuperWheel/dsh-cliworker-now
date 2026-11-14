@@ -1,3 +1,5 @@
+import { SettingsConnectionCache } from './settings-connection-cache.ts'
+import { backgroundZCodeCatalog } from './settings-connection-background.ts'
 import { CliMaintenance, CliBusyError, MaintenanceError } from './cli-management/maintenance.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
@@ -328,6 +330,24 @@ export class CliWorkerService extends TypertRemoteService {
   /** DSH tool calls the tool bridge is executing, by their DSH call id. */
   private bridgeCalls = new Map<string, { worker: Worker; runId: string; child: Agent; name: string; arguments: unknown }>
   private displayedBindings = new Map<string, string>()
+  private connections?: SettingsConnectionCache
+  private connectionEpochs?: Map<string, { account: number; path: number; recorded: boolean; held: boolean }>
+  private connectionCache() {
+    const cache = this.connections ??= new SettingsConnectionCache()
+    const epochs = this.connectionEpochs ??= new Map()
+    for (const cli of CLI_IDS) {
+      const entry = this.options?.cliExecutablePaths?.read(cli)
+      const epoch = { account: this.cliManagement?.cache.accountRevision(cli) ?? 0,
+        path: this.options?.cliExecutablePaths?.revision(cli) ?? 0, recorded: !!entry,
+        held: !!this.runtime?.catalogCleanupMessage?.(cli) }
+      const previous = epochs.get(cli)
+      // The first auto-discovery records the very entry just queried; it is not a source switch.
+      const initialAuto = previous && !previous.recorded && entry?.mode === 'auto'
+      if (previous && (previous.account !== epoch.account || previous.held !== epoch.held || previous.path !== epoch.path && !initialAuto)) cache.invalidate(cli)
+      epochs.set(cli, epoch)
+    }
+    return cache
+  }
   private settingsCatalogs?: SettingsCatalogCache
   private settingsInstance?: string
   private settingsSourceRevisions?: Map<CliId, number>
@@ -375,16 +395,26 @@ export class CliWorkerService extends TypertRemoteService {
       enabled: () => this.runtime.generalSettings().backgroundCliCheck,
       cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
       account: (cli, project, signal) => this.accounts.status(cli, project, signal, { background: true }),
+      preloadConnection: async (cli, project, kind, signal) => {
+        const release = this.options.cliMaintenance?.using(cli)
+        try {
+          this.runtime.assertCliEnabled(cli)
+          if (kind === 'account') await this.connectionCache().read(project, cli, 'account', signal,
+            control => this.accounts.status(cli, project, control, { background: true }))
+          else await this.connectionCache().read(project, cli, 'catalog', signal,
+            control => backgroundZCodeCatalog(this.backend, this.options, project, control))
+        } finally { release?.() }
+      },
       cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
       globalCleanup: error => this.runtime.blockOnCleanup(error),
       busy: cli => ({ workers: this.runtime.busyCliWorkers(cli), accounts: this.accounts.isBusy(cli) || this.accounts.hasActiveQuery(cli) }),
       assertUpdateAllowed: cli => { this.runtime.assertHostOpen(); const held = this.runtime.catalogCleanupMessage(cli); if (held) throw new Error(held) },
       invalidateModels: cli => this.invalidateSettingsDisplay(cli),
     })
-    ctx.effect(() => this.runtime.subscribe(() => this.cliManagement.activityChanged()), 'cliworker:metadata-idle')
+    ctx.effect(() => this.runtime.subscribe(() => { this.cliManagement.activityChanged(); this.connectionCache() }), 'cliworker:metadata-idle')
     ctx.effect(() => this.accounts.subscribeActivity(cli => {
       this.cliManagement.activityChanged()
-      if (cli !== 'harness') this.cliManagement.cache.invalidateAccount(cli)
+      this.invalidateSettingsDisplay(cli)
     }), 'cliworker:metadata-accounts')
     this.dshSubagents = new DshSubagents(stateDirectory, {
       subagents: () => this.ctx.get('subagents'),
@@ -746,6 +776,7 @@ export class CliWorkerService extends TypertRemoteService {
         return Promise.all([
           systemProxy?.close(),
           this.cliManagement.close(),
+          this.connections?.close(),
           this.runtime.close(),
           this.accounts.close(),
           ...[...this.accountParents.values()].map((dispose) => dispose()),
@@ -790,6 +821,9 @@ export class CliWorkerService extends TypertRemoteService {
     await this.ctx.typert.lookups.get('agent')?.resolve(id)
     const agent = this.ctx.agents.get(id as Agent['id'])
     if (!agent) throw new Error('请先在主对话发送一条消息以激活会话，然后重试')
+    if (agent.session.header.cwd) {
+      try { this.cliManagement?.context(this.project(agent)) } catch { /* A non-project session has no preload scope. */ }
+    }
     return agent
   }
   private project(agent: Agent): string {
@@ -2092,10 +2126,11 @@ export class CliWorkerService extends TypertRemoteService {
       } catch {
         return JSON.stringify(settings)
       }
+      this.cliManagement?.context(project)
       // Reusing the same project's display list in another parent still pins
       // configure() to the original verified account; no CLI query is needed.
       for (const cli of CLI_IDS) {
-        const binding = this.settingsCatalogs?.displayBinding(project, cli)
+        const binding = this.connectionCache().fresh(project, cli, 'catalog')?.binding ?? this.settingsCatalogs?.displayBinding(project, cli)
         const key = JSON.stringify([parentSessionId, cli])
         if (binding) (this.displayedBindings ??= new Map()).set(key, binding)
       }
@@ -2108,6 +2143,7 @@ export class CliWorkerService extends TypertRemoteService {
     this.settingsInstance ??= randomUUID()
     return {
       policy: 1,
+      connections: this.connectionCache().snapshot(project),
       host: this.settingsInstance,
       project: createHash('sha256').update(project).digest('hex'),
       revisions: Object.fromEntries(
@@ -2117,7 +2153,7 @@ export class CliWorkerService extends TypertRemoteService {
         ]),
       ) as Record<CliId, string>,
       catalogReady: Object.fromEntries(
-        CLI_IDS.map((cli) => [cli, !!this.settingsCatalogs?.displayBinding(project, cli)]),
+        CLI_IDS.map((cli) => [cli, !!this.connectionCache().fresh(project, cli, 'catalog') || !!this.settingsCatalogs?.displayBinding(project, cli)]),
       ) as Record<CliId, boolean>,
       preferences: Object.fromEntries(
         CLI_IDS.flatMap((cli) => {
@@ -2128,7 +2164,7 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
   private invalidateSettingsDisplay(cli: CliId) {
-    if (cli !== 'harness') this.cliManagement?.cache.invalidateAccount(cli)
+    if (cli !== 'harness') { this.cliManagement?.cache.invalidateAccount(cli); this.connections?.invalidate(cli) }
     this.settingsCatalogs?.invalidate(cli)
     const revisions = (this.settingsSourceRevisions ??= new Map())
     revisions.set(cli, (revisions.get(cli) ?? 0) + 1)
@@ -2437,6 +2473,33 @@ export class CliWorkerService extends TypertRemoteService {
     catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Safe account status JSON. */
+  @Remote('settingsConnectionStatus')
+  async settingsConnectionStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    try {
+      const id = validate.enum(CLI_IDS).parse(cli)
+      const project = this.project(await this.parent(parentSessionId))
+      signal.throwIfAborted(); this.runtime.assertCliEnabled(id)
+      this.cliManagement?.context(project)
+      // Host-owned refresh outlives this quick snapshot request; close/invalidation cancels it.
+      const account = !this.connectionCache().fresh(project, id, 'account')
+      const catalog = !this.connectionCache().fresh(project, id, 'catalog')
+      if (account) void this.readAccountStatus(parentSessionId, id, this.disposed.signal, false).catch(() => undefined)
+      if (catalog) void this.settingsCatalog(parentSessionId, id, this.disposed.signal, false).catch(() => undefined)
+      const status = this.connectionCache().status(project, id)
+      // These reads have been scheduled even if their parent lookup has not yielded yet.
+      if (account) status.account.loading = true
+      if (catalog) status.catalog.loading = true
+      return JSON.stringify(status)
+    } catch (error) { throw failure(error) }
+  }
+  @Remote({ name: 'watchSettingsConnections', mode: 'stream' })
+  async *watchSettingsConnections(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
+    try {
+      const project = this.project(await this.parent(parentSessionId))
+      for await (const snapshot of this.connectionCache().watch(project, AbortSignal.any([signal, this.disposed.signal])))
+        yield JSON.stringify(snapshot)
+    } catch (error) { throw failure(error) }
+  }
   @Remote('accountStatus')
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
     return this.readAccountStatus(parentSessionId, cli, signal, false)
@@ -2460,19 +2523,21 @@ export class CliWorkerService extends TypertRemoteService {
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
       this.cliManagement?.context(project)
-      if (!refresh && !this.accounts.isBusy(id)) {
-        const cached = this.cliManagement?.cache.account(id, project)
-        if (cached) return JSON.stringify(cached)
+      if (!refresh && this.connectionCache().fresh(project, id, 'account')) {
+        const receipt = this.connectionCache().status(project, id).account
+        return JSON.stringify({ ...receipt.value, cache: receipt.cache })
       }
-      const revision = this.cliManagement?.cache.accountRevision(id)
-      const status = await this.accounts.status(id, project, AbortSignal.any([signal, this.disposed.signal]))
+      const status = await this.connectionCache().read(project, id, 'account', AbortSignal.any([signal, this.disposed.signal]),
+        control => this.accounts.status(id, project, control), refresh)
       signal.throwIfAborted()
       const after = held()
       if (after) return JSON.stringify(after)
       this.runtime.assertCliEnabled(id)
-      if (!this.accounts.isBusy(id)) this.cliManagement?.cache.rememberAccount(id, project, status, revision)
-      return JSON.stringify(status)
+      const receipt = this.connectionCache().status(project, id).account
+      if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
+      return JSON.stringify({ ...status, cache: receipt.cache })
     } catch (error) {
+      if (queriedCli) this.runtime.assertCliEnabled(queriedCli)
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)
       throw failure(error)
@@ -2917,19 +2982,21 @@ export class CliWorkerService extends TypertRemoteService {
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
-      const { catalog, binding } = await this.settingsCatalogs.get({
-        cli: id,
-        project,
-        signal: control,
-        refresh,
-        selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn' || isWorkBuddyCli(id),
-        binding: () => this.readAccountBinding(id, this.backend, this.options, project, control),
-        discover: () => this.queryCatalog(id, this.backend, this.options, project, control),
-      })
+      const { catalog, binding } = await this.connectionCache().read(project, id, 'catalog', control, async querySignal => {
+        this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
+        return this.settingsCatalogs.get({
+          cli: id, project, signal: querySignal, refresh: true,
+          selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn' || isWorkBuddyCli(id),
+          binding: () => this.readAccountBinding(id, this.backend, this.options, project, querySignal),
+          discover: () => this.queryCatalog(id, this.backend, this.options, project, querySignal),
+        })
+      }, refresh)
       control.throwIfAborted()
       ;(this.displayedBindings ??= new Map()).set(JSON.stringify([parentSessionId, id]), binding)
       this.runtime.assertCliEnabled(id)
-      return JSON.stringify({ ...catalog, preference: this.runtime.storage.preference(project, id) })
+      const receipt = this.connectionCache().status(project, id).catalog
+      if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
+      return JSON.stringify({ ...catalog, preference: this.runtime.storage.preference(project, id), cache: receipt.cache })
     } catch (error) {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)

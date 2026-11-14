@@ -14,6 +14,8 @@ const object = (value: unknown): value is Record<string, any> =>
 const text = (value: unknown): value is string => typeof value === 'string' && !!value.trim()
 export const OPENCODE_OAUTH_UNSUPPORTED = 'OpenCode OAuth 暂无法安全续期，请使用该 CLI 自身 API 配置'
 export interface OpenCodeNativeOptions {
+  /** Background display must not assume an expired OAuth token can renew. */
+  activeOnly?: boolean
   nativeHome?: string
   modelsPath?: string
   signal?: AbortSignal
@@ -428,7 +430,7 @@ export async function inspectOpenCodeProfile(
         typeof auth.expires === 'number' &&
         Number.isFinite(auth.expires) &&
         (auth.refresh === undefined || typeof auth.refresh === 'string')
-      const oauth = oauthShape && (auth.expires > Date.now() || usableNativeApiKey(auth.refresh))
+      const oauth = oauthShape && (auth.expires > Date.now() || !options.activeOnly && usableNativeApiKey(auth.refresh))
       if (oauthShape && !oauth) expired = true
       if (api || oauth) {
         const config = profile.providers[id]

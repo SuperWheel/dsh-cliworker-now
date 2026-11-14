@@ -566,12 +566,12 @@ export class AccountManager {
       if (isExtendedCli(cli)) {
         const identity = await abortable(
           cli === 'zcode' || cli === 'grok'
-            ? zcodeGrokAccountStatus(cli, this.config, control)
+            ? zcodeGrokAccountStatus(cli, this.config, control, { activeOnly: background })
             : cli === 'opencode'
-              ? readOpenCodeAccount(this.config, control)
+              ? readOpenCodeAccount(this.config, control, { activeOnly: background })
               : cli === 'hermes'
                 ? readHermesAccount(this.config, control)
-                : readPiOmpAccount(cli, this.config, control),
+                : readPiOmpAccount(cli, this.config, control, { activeOnly: background }),
           control,
         )
         const sources =
@@ -580,7 +580,7 @@ export class AccountManager {
             : cli === 'hermes'
               ? await listHermesAccountSources(this.config, control)
               : undefined
-        const native = cli === 'pi' || cli === 'omp'
+        const native = !background && (cli === 'pi' || cli === 'omp')
           ? await this.nativeLoginProviders.read(cli, executable, control).catch(error => {
               if (error instanceof ProcessCleanupUnconfirmedError) throw error
               signal.throwIfAborted()
