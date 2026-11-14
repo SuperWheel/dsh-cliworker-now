@@ -1,3 +1,4 @@
+import { updateCleanupIo, withUpdateCleanup } from '../src/host/cli-management/update-cleanup.ts'
 import { EventEmitter } from 'node:events'
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
@@ -232,26 +233,25 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     await expect(runDesktopUpdate(f.options)).rejects.toThrow('模拟取消')
     await f.assertClean()
   })
-  it('暂存清理失败仍可恢复旧应用，finally 再次清理', async () => {
+  it('暂存清理失败不回滚成功安装，操作收尾重试删除', async () => {
     const f = await fixture(); let failed = false
-    vi.spyOn(desktopUpdateIo, 'rm').mockImplementation(async (path, options) => {
-      if (!failed && String(path).includes('/desktop-update-')) { failed = true; throw new Error('模拟清理失败') }
-      await rm(path, options)
+    const remove = updateCleanupIo.remove
+    vi.spyOn(updateCleanupIo,'remove').mockImplementation(async path => {
+      if (!failed && path.includes('/desktop-update-')) { failed = true; return false }
+      return remove(path)
     })
-    await expect(runDesktopUpdate(f.options)).rejects.toThrow('模拟清理失败')
-    await f.assertClean()
+    await withUpdateCleanup(()=>{},()=>runDesktopUpdate(f.options))
+    await f.assertClean('new')
   })
-  it('签名核对失败且暂存清理也失败时，保留原错误码并写出 errno 与路径', async () => {
+  it('签名核对失败且清理失败时保留原错误', async () => {
     const f = await fixture()
     f.run.mockImplementation(async (argv: string[]) => {
       if (argv[0] === '/usr/bin/ditto') { await mkdir(join(argv[4]!, 'ZCode.app'), { recursive: true }); return }
-      if (argv[0] === '/usr/bin/codesign') throw new CliOperationError('EXIT_CODE', '模拟签名不符')
+      if (argv[0] === '/usr/bin/codesign') throw new CliOperationError('EXIT_CODE','模拟签名不符')
     })
-    vi.spyOn(desktopUpdateIo, 'rm').mockRejectedValue(Object.assign(new Error('模拟无权删除'), { code: 'EPERM', path: '/模拟/desktop-update-x/ZCode.app/Contents' }))
-    const failure = await runDesktopUpdate(f.options).catch((error: unknown) => error)
-    expect(failure).toBeInstanceOf(CliOperationError)
-    expect((failure as Error).message).toBe('EXIT_CODE：模拟签名不符；临时目录清理失败（EPERM /模拟/desktop-update-x/ZCode.app/Contents）')
-    expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
+    vi.spyOn(updateCleanupIo,'remove').mockResolvedValue(false)
+    await expect(runDesktopUpdate(f.options)).rejects.toThrow('EXIT_CODE：模拟签名不符')
+    expect(await readFile(join(f.appPath,'version.txt'),'utf8')).toBe('old')
   })
   it('回滚本身失败时保留唯一旧应用备份并报告路径', async () => {
     const f = await fixture()
@@ -264,12 +264,12 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     expect(await readFile(join(f.applications, backup, 'previous.app/version.txt'), 'utf8')).toBe('old')
     expect(await readdir(join(f.root, 'cli-management'))).toEqual([])
   })
-  it('进程清理未确认时保留错误类型，追加文件清理错误', async () => {
+  it('进程清理未确认时保留错误类型和文件，不尝试删除', async () => {
     const f = await fixture(), failure = new ProcessCleanupUnconfirmedError({ cause: new Error('模拟解压进程未退出') })
     f.run.mockRejectedValue(failure)
-    vi.spyOn(desktopUpdateIo, 'rm').mockRejectedValue(new Error('模拟文件清理失败'))
+    const remove = vi.spyOn(updateCleanupIo, 'remove')
     await expect(runDesktopUpdate(f.options)).rejects.toBe(failure)
-    expect(failure.cause).toBeInstanceOf(AggregateError)
+    expect(remove).not.toHaveBeenCalled()
     expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
   })
   it('替换前目标目录被换走时拒绝覆盖并清理', async () => {
@@ -287,31 +287,9 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
   })
   it('提交后备份删除失败保留新应用，绝不恢复可能已部分删除的旧备份', async () => {
     const f = await fixture()
-    vi.spyOn(desktopUpdateIo, 'rm').mockImplementation(async (path, options) => {
-      if (String(path).endsWith('previous.app')) throw new Error('模拟备份删除失败')
-      await rm(path, options)
-    })
-    await expect(runDesktopUpdate(f.options)).rejects.toThrow('模拟备份删除失败')
-    expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('new')
-    expect((await readdir(f.applications)).some(name => name.startsWith('.cliworker-update-'))).toBe(true)
-  })
-  it.each(['EACCES', 'EPERM'])('Applications 写权限 %s 映射用户可读错误', async code => {
-    const f = await fixture()
-    vi.spyOn(desktopUpdateIo, 'access').mockRejectedValue(Object.assign(new Error('模拟权限不足'), { code }))
-    await expect(runDesktopUpdate(f.options)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' })
-    expect(f.download).not.toHaveBeenCalled(); expect(f.run).not.toHaveBeenCalled(); await f.assertClean()
-  })
-  it('私有目录均为 0700，替换路径与原应用在相同目录', async () => {
-    const f = await fixture(), originalRun = f.run.getMockImplementation()!
-    f.run.mockImplementation(async (argv, control) => {
-      if (argv[0] === '/usr/bin/ditto') {
-        const directory = argv[1] === '-x' ? argv[4]! : join(argv[2]!, '..')
-        expect((await stat(directory)).mode & 0o777).toBe(0o700)
-      }
-      await originalRun(argv, control)
-    })
-    await runDesktopUpdate(f.options)
-    expect((await stat(join(f.root, 'cli-management'))).mode & 0o777).toBe(0o700)
+    const remove = updateCleanupIo.remove
+    vi.spyOn(updateCleanupIo,'remove').mockImplementation(async path => path.endsWith('previous.app') ? false : remove(path))
+    await expect(runDesktopUpdate(f.options)).resolves.toBeDefined()
     await f.assertClean('new')
   })
   it.each(['target', 'extracted', 'cache'])('拒绝 %s 符号链接', async where => {

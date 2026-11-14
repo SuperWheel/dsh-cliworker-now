@@ -1,3 +1,4 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
 import { chmod, lstat, mkdir, open, readdir, rm, unlink } from 'node:fs/promises'
@@ -77,7 +78,7 @@ export async function downloadCliArtifact(options: {
   if (!integrity && !options.officialScript && !options.sources?.length && !(Number.isSafeInteger(options.expectedBytes) && options.expectedBytes! > 0)) throw new CliOperationError('INTEGRITY_MISMATCH', '缺少官方摘要或长度')
   const directory = await prepareDownloads(options.root)
   options.signal.throwIfAborted()
-  const file = join(directory, `${randomUUID()}.part`)
+  const file = trackUpdateTemporary(join(directory, `${randomUUID()}.part`))
   let handle = await open(file, 'wx', 0o600)
   let bytes = 0, total: number | undefined, resumes = 0, lastByte = Date.now(), lastReported = lastByte, lastBytes = 0, rangeRejected = false
   const deadline = new AbortController(), deadlineTimer = setTimeout(() => deadline.abort(), DOWNLOAD_TIMEOUT_MS)
@@ -255,7 +256,6 @@ export async function downloadCliArtifact(options: {
     throw error
   } finally {
     clearInterval(reporting); clearTimeout(deadlineTimer); await handle.close()
-    if (remove) await unlink(file).catch(() => undefined)
-    await prepareDownloads(options.root)
+    if (remove) await removeUpdateTemporary(file)
   }
 }

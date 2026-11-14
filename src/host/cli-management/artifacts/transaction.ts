@@ -1,3 +1,4 @@
+import { trackUpdateTemporary, removeUpdateTemporary, retainUpdateTemporary } from '../update-cleanup.ts'
 import { ProcessCleanupUnconfirmedError } from '../../process.ts'
 import { copyFile, lstat, mkdir, rename, rm, symlink, chmod, readFile, readlink } from 'node:fs/promises'
 import { dirname, relative, join, basename } from 'node:path'
@@ -22,7 +23,7 @@ export async function atomicMutations(mutations: Mutation[], description: Artifa
       await mkdir(dirname(change.target), { recursive: true, mode: 0o700 })
       const info = await lstat(change.target).catch(e => { if (e.code !== 'ENOENT') throw e; return undefined })
       if (info && !info.isFile() && !info.isSymbolicLink() || info?.isFile() && info.nlink !== 1) invalidArtifact('替换目标不是普通文件或链接')
-      const entry = { change, temp: `${change.target}.tmp.${randomUUID()}${description.platform === 'win32' ? '.exe' : ''}`, backup: `${change.target}.old.${Date.now()}.${randomUUID()}`, backed: false, installed: false }; staged.push(entry)
+      const entry = { change, temp: `${change.target}.tmp.${randomUUID()}${description.platform === 'win32' ? '.exe' : ''}`, backup: `${change.target}.old.${Date.now()}.${randomUUID()}`, backed: false, installed: false }; staged.push(entry); trackUpdateTemporary(entry.temp)
       if (change.link) {
         try { await symlink(change.link, entry.temp) } catch (e) {
           if (!change.copyFallback || !['EPERM', 'EACCES', 'ENOTSUP'].includes((e as NodeJS.ErrnoException).code ?? '') || !change.source) throw e
@@ -51,7 +52,11 @@ export async function atomicMutations(mutations: Mutation[], description: Artifa
     if (rollbackFailed) throw new CliOperationError('FILE_LOCKED', '放置回滚失败，原文件 .old 备份已保留')
     throw error
   } finally {
-    for (const entry of quarantine ? [] : staged) { await rm(entry.temp, { force: true }).catch(() => undefined); if (!rollbackFailed) await rm(entry.backup, { force: true }).catch(() => undefined) }
+    for (const entry of staged) {
+      if (quarantine) { retainUpdateTemporary(entry.temp); continue }
+      await removeUpdateTemporary(entry.temp)
+      if (!rollbackFailed) { trackUpdateTemporary(entry.backup); await removeUpdateTemporary(entry.backup) }
+    }
   }
 }
 export async function verifyGrokSignature(o: LocalArtifactOptions, files: string[], signal: AbortSignal) {
@@ -91,9 +96,9 @@ export async function placeNative(description: ArtifactDescription, directory: s
   if (p.mingit) {
     await guardTarget(p.mingit.target, description)
     if (!await lstat(p.mingit.target).catch(() => undefined)) {
-      mingit = `${p.mingit.target}.staging.${randomUUID()}`
+      mingit = trackUpdateTemporary(`${p.mingit.target}.staging.${randomUUID()}`)
       // Cleanup covers both extraction and rename: a cancelled or corrupt extract must not leave staging dirs.
-      try { await extractZip(privatePath(directory, p.mingit.archive), mingit, signal); signal.throwIfAborted(); await rename(mingit, p.mingit.target); mingit = undefined } finally { if (mingit) await rm(mingit, { recursive: true, force: true }) }
+      try { await extractZip(privatePath(directory, p.mingit.archive), mingit, signal); signal.throwIfAborted(); await rename(mingit, p.mingit.target); mingit = undefined } finally { if (mingit) await removeUpdateTemporary(mingit) }
     }
   }
   const after = await description.after?.(signal)
@@ -102,7 +107,7 @@ export async function placeNative(description: ArtifactDescription, directory: s
 export async function placeRelease(description: ArtifactDescription, directory: string, signal: AbortSignal, o: LocalArtifactOptions, run: (argv: string[], signal: AbortSignal) => Promise<void>) {
   const p = description.placement; if (p.kind !== 'release-package') return
   await guardTarget(p.target, description)
-  const staging = join(dirname(p.target), `.staging.${basename(p.target)}.${process.pid}.${randomUUID()}`)
+  const staging = trackUpdateTemporary(join(dirname(p.target), `.staging.${basename(p.target)}.${process.pid}.${randomUUID()}`))
   let quarantine = false
   try {
     // Refuse an existing destination: never overwrite another process's completed release.
@@ -117,5 +122,5 @@ export async function placeRelease(description: ArtifactDescription, directory: 
     signal.throwIfAborted(); await rename(staging, p.target)
     await run(p.argv, signal)
   } catch (error) { quarantine = error instanceof ProcessCleanupUnconfirmedError; throw error }
-  finally { if (!quarantine) await rm(staging, { recursive: true, force: true }) }
+  finally { if (!quarantine) await removeUpdateTemporary(staging); else retainUpdateTemporary(staging) }
 }

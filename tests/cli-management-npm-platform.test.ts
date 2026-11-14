@@ -123,7 +123,7 @@ describe('模拟：统一 npm 多文件下载', () => {
   it('自定义源不越过用户指定的源，cache add 与 install 保持同 runtime/registry/prefix', async () => {
     const f = fixture(), bundle = await prepareNpmDownload({ ...f.options, automaticSources: false })
     expect(f.options.fetcher.mock.calls.every(([url]) => String(url).startsWith('https://registry.npmjs.org/'))).toBe(true)
-    expect(npmCacheAddArgv(['C:/node.exe', 'C:/npm-cli.js'], bundle.platforms[0]!, 'C:/Program Files/npm', f.options.registry)).toEqual(['C:/node.exe', 'C:/npm-cli.js', 'cache', 'add', bundle.platforms[0], '--global', '--prefix', 'C:/Program Files/npm', '--registry', f.options.registry])
+    expect(npmCacheAddArgv(['C:/node.exe', 'C:/npm-cli.js'], bundle.platforms[0]!, 'C:/Program Files/npm', f.options.registry, bundle.cache)).toEqual(['C:/node.exe', 'C:/npm-cli.js', 'cache', 'add', bundle.platforms[0], '--global', '--prefix', 'C:/Program Files/npm', '--registry', f.options.registry, '--cache', bundle.cache])
     await bundle.cleanup(true)
   })
 })
@@ -146,6 +146,7 @@ it.each([false, true])('模拟服务：npm exit 0，平台 present=%s 必须在�
   const commands: string[][] = []
   vi.mocked(f.backend.spawn).mockImplementation(spec => {
     commands.push(spec.argv)
+    if (spec.argv.includes('--cache')) write(join(spec.argv[spec.argv.indexOf('--cache')+1]!, 'synthetic-cache'), {bytes:'fixture'})
     if (spec.argv.includes('install')) {
       f.identities.set('codex', f.identity); write(join(f.identity.packageRoot, 'package.json'), target)
       if (present) write(join(f.identity.packageRoot, 'node_modules', alias, 'package.json'), selectedComponent)
@@ -157,9 +158,12 @@ it.each([false, true])('模拟服务：npm exit 0，平台 present=%s 必须在�
   const result = (await finished(f.service)).results[0]!
   expect(result.phase).toBe(present ? 'succeeded' : 'failed')
   if (!present) expect(result.error).toMatchObject({ code: 'VERSION_MISMATCH', message: expect.stringContaining(alias) })
-  expect(commands.map(c => c[2])).toEqual(['cache', 'install'])
+  expect(commands.filter(c => c[1]?.endsWith('npm-cli.js')).map(c => c[2])).toEqual(['cache', 'install'])
   expect(commands[1]).toContain('--prefer-offline'); expect(commands[1]).toContain('--include=optional')
-  expect(commands[0]).not.toContain('--cache'); expect(commands[1]).not.toContain('--cache')
+  expect(commands[0]).toContain('--cache'); expect(commands[1]).toContain('--cache')
+  const privateCache = commands[0]![commands[0]!.indexOf('--cache')+1]!
+  expect(commands[1]).toContain(privateCache)
+  expect(existsSync(privateCache)).toBe(false)
   expect(result.progress).toMatchObject({ byteProgress: false }); expect(result.progress?.totalBytes).toBeUndefined()
 })
 it('模拟：官方持续 30 秒无字节后改用接管，安装成功才记忆 7 天', async () => {

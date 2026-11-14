@@ -1,4 +1,5 @@
-import { mkdtemp, rm, chmod } from 'node:fs/promises'
+import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
+import { mkdtemp, chmod } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { ActiveCliId } from '../../shared/types.ts'
@@ -12,12 +13,11 @@ import { npmArtifact, npmManifestFromSources, npmDigest, npmPlatformComponents, 
 import type { ReleaseClient } from './versions.ts'
 import type { InstallationIdentity } from './identity.ts'
 
-export const npmDownloadFs = { rm }
+export const npmDownloadFs = { rm: removeUpdateTemporary }
 
-/** Same npm runtime, prefix, registry, cwd/environment and cache configuration as install.
- * No --cache override: populate only the cache this npm invocation actually uses. */
-export const npmCacheAddArgv = (npm: readonly string[], file: string, prefix: string, registry: string) =>
-  [...npm, 'cache', 'add', file, '--global', '--prefix', prefix, '--registry', registry]
+/** Use the same operation-private cache for verified tarballs and install; never the global cache. */
+export const npmCacheAddArgv = (npm: readonly string[], file: string, prefix: string, registry: string, cache: string) =>
+  [...npm, 'cache', 'add', file, '--global', '--prefix', prefix, '--registry', registry, '--cache', cache]
 
 export async function prepareNpmDownload(options: {
   cli: ActiveCliId; version: string; registry: string; automaticSources: boolean; root: string
@@ -43,7 +43,7 @@ export async function prepareNpmDownload(options: {
   // Authenticate the main manifest before any body download. Component failures
   // are handled according to their group below, including metadata failures.
   const mainFile = await npmArtifact(main, releases, registry, signal, options.automaticSources, '0.tgz')
-  const directory = await mkdtemp(join(await prepareDownloads(options.root), 'local-'))
+  const directory = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(options.root), 'local-')))
   await chmod(directory, 0o700)
   const memory = new ChannelMemory(options.root)
   const key = options.identity ? channelMemoryKey(options.cli, options.identity, host.platform, host.arch) : createHash('sha256').update(JSON.stringify(['npm-install', options.cli, host])).digest('hex')
@@ -55,7 +55,7 @@ export async function prepareNpmDownload(options: {
         if (!successful || !takeover || !takeoverSucceeded) await memory.set(key, undefined)
         else if (failure) await memory.set(key, failure)
       }
-    } finally { if (!preserveFiles) await npmDownloadFs.rm(directory, { recursive: true, force: true }) }
+    } finally { if (!preserveFiles) await npmDownloadFs.rm(directory) }
   }
   const download: typeof downloadCliArtifact = async input => {
     if (options.automaticSources && !takeover) {
@@ -125,7 +125,7 @@ export async function prepareNpmDownload(options: {
     await rememberNpmPlatforms(options.root, main, host, verified)
     if (lastProgress) publish({ ...lastProgress, stage: '官方工件下载校验完成', stepName: lastPreparedAlias, downloadedBytes: completedBytes, totalBytes: completedBytes, byteProgressState: 'known-total',
       completedFiles: prepared.length, fileCount: prepared.length, currentStep: prepared.length, totalSteps: prepared.length, resumeCount: resumes })
-    return { host, main: prepared[0]!, platforms: prepared.slice(1), components: verified, cleanup }
+    return { host, cache: join(directory, 'npm-cache'), packageName: main.name, bins: typeof main.bin === 'string' ? [main.name.split('/').at(-1)!] : Object.keys(main.bin ?? {}), main: prepared[0]!, platforms: prepared.slice(1), components: verified, cleanup }
   } catch (error) { await cleanup(false).catch(() => undefined); throw error }
 }
 export type NpmDownload = Awaited<ReturnType<typeof prepareNpmDownload>>

@@ -206,7 +206,7 @@ Hermes 没有可替换的发布包，所以接管的含义是：插件预取并�
 ## Implementation Notes（主任务 1–3 的迁移边界）
 
 - 依照本轮“迁移行为不变”，MiMo macOS 保留单成员解压后交官方 `--binary`，以 `official-local.extract` 表达；未改成直接覆盖入口。OpenCode 旧路径仅有官方 HTTPS 长度和归档 CRC，采用显式 `archiveCrc` 兼容项，没有虚构发布者摘要；新增描述默认仍要求摘要。官方脚本 extras 的原信任边界保持不变。
-- 失败记忆按决定 1 先写入；若接管下载、放置、核验失败或取消则清除此键，满足“接管失败，下次仍先试官方”。
+- 失败记忆按决定 1 先写入；决定 10 后接管失败/取消仅撤销本轮新建记录，已有记忆及其时间保留，磁盘残留回收不重置通道策略。
 - 官方进度中的 MiMo HEAD 按本次暂存实际文件名查询，避免 baseline 选择不同造成错误百分比；无法获取总量仍可显示已确认字节，不显示百分比。
 - TRAE 主工件进度包含主件、host、存在时的两项辅助件与 ripgrep；官方安装脚本、改写元数据属于 extras，显示单独准备阶段。自动更新策略文件 `auto_update` 仍按任务 4.5 留待核实，本轮只保持现有标记恢复行为。
 - `.gitignore` 原有全局 `artifacts/` 规则会忽略新源码目录，添加仅针对 `src/host/cli-management/artifacts/` 的反向规则，其他工件目录仍忽略。
@@ -215,7 +215,7 @@ Hermes 没有可替换的发布包，所以接管的含义是：插件预取并�
 
 npm 可以静默跳过下载失败的 optionalDependency 并退出 0。主包 package.json 的版本不能证明 CLI 可运行。Host 从有效 registry 的目标清单解析 optionalDependencies（包括 npm 别名），按已解析 npm 的原生 Node 运行时 platform/arch/libc 与子包 os/cpu/libc 选择平台包（不采用 Harness 进程架构），摘要以官方清单为信任根。平台 tarball 与主包进入统一文件下载器，共用真实合计字节、续传、官方优先与 7 天失败记忆。
 
-先在隔离 Mac prefix/cache 证明 npm cache add 本地平台 tgz，再以同一 cache 安装主包时普通名称和别名均命中内容缓存，无平台 tarball 网络 GET；交付只采用该机制。产品沿用 npm 安装实际使用的默认缓存，不另设 --cache；两条命令使用同一个 Node/npm、registry 与进程环境。npm 仍可能查询依赖元数据和下载普通依赖，安装阶段显示阶段文字，不能保留主包 100% 冒充整个安装进度。
+先在隔离 Mac prefix/cache 证明 npm cache add 本地平台 tgz，再以同一 cache 安装主包时普通名称和别名均命中内容缓存，无平台 tarball 网络 GET；交付只采用该机制。缓存位置已由决定 10 改为操作下载目录内的私有 --cache；两条命令仍使用同一个 Node/npm、registry 与进程环境。npm 仍可能查询依赖元数据和下载普通依赖，安装阶段显示阶段文字，不能保留主包 100% 冒充整个安装进度。
 
 更新和首次安装完成后必须检查已装主包声明的本平台必需组件组：Codex 对应平台 alias 必需；OpenCode 普通二进制与 baseline 至少一个；CodeBuddy node-pty 有 child_process 回退，不要求存在，sandbox 平台包另行核验，并通过既有 --version 探针（不采信主包版本字段）。缺组件报告具体依赖名称、npm 下载失败/超时可能性；后台检查在复用版本缓存之前核验平台树，损坏时复用 failed + UNKNOWN_VERSION + reasonDetail，清除 currentVersion，保留 installed=true，由已有重新安装入口修复。后台不运行此前禁止后台探测的 CLI。本地核验禁止 registry 请求，仅使用已装清单、已知 CLI 必需组与插件持久化的已验证元数据；后者按主包版本/依赖图/运行时平台分键。未知或过期元数据缺失不等于安装损坏，不以远端不可达错误覆盖本地健康状态。安装后仍必须通过版本探针。
 
@@ -228,3 +228,22 @@ P2 补充：官方阶段、重试与换源始终使用同一临时文件和偏�
 决定 9 第二轮审查：准备阶段复用同一 required/one-of/optional 语义。必需组全部满足，替代组按顺序尝试到一项成功，可选组失败仅日志说明 npm 可能自行下载；失败文件不进 cache add，取消仍终止。元数据的所选 registry 不可用或缺目标时，automaticSources 允许官方回退，custom 禁止该回退，完整性冲突仍失败。聚合长度随每次响应更新，摘要失败的重试先开新句柄再处理 validator 变化。npm 不可解析属于更新前置条件，不是安装损坏证据；本地跳过无法可靠定平台的检查，按已有安全规则从绝对路径探针或缓存获取 CLI 版本。
 
 npm 下载接管每条进度都有非空 sourceHost（包括跨文件/最终完成），安装阶段不保留下载 channel/sourceHost；客户端可用 channel=takeover 且 sourceHost 存在选择插件续传文案，无新增共享字段。客户端文字由主会话修改，本轮 Host 不停“官方更新器”也不在接管时删除断点。d6ce88b 的 Codex Windows 页面通过证据已在任务 9.11，本轮新路径仍以模拟回归为证。
+
+## 决定 10：每次更新与安装收尾回收（2026-11-15）
+
+用户要求每次成功或失败均清理。复用 temporary-tree.mjs 的有界重试删除；操作上下文登记下载文件/目录和 staging，路径一经创建即登记，防止下载抛错未返回路径。结束前按托管范围退出状态清理；进程未退出与回滚失败时保留恢复资源。只统计实际删除的逻辑文件字节，不宣称等同文件系统空闲空间增量。输出日志原样渲染，不经 t()/hostText，因此中文清理汇总无需英文映射。
+
+npm cache add 与 install 显式使用同一下载目录内的 --cache，保持全部代理环境。reify 名称严格匹配包名/清单 bin 与八位字母数字后缀；保守检查所有 npm 进程，其他前缀或无法枚举时也不删除。运行前快照用于失败只删除新增未使用资源。只读检查更新不做顺便清理：缺少维护租约和实时可运行探针，收益不足以安全删除。
+
+规则证据：Grok downloads 与 .old、Qoder version.txt/versionFile、Claude versions、TRAE releases/current 可由仓库放置代码与用户实机证据交叉核对；Qoder temp natives 只匹配当前用户名及已给出的 qodercli 前缀。Hermes tools/facts.json packages.*.entry 是当前引用，只有有合法 entry 的工具族才可枚举旧版（npm 没有引用则不猜）。Hermes 既有 sources.ts 明确只读安装记录且禁止 --version，不能把静态版本当 runnable 证明，故生产路径暂保留其原生副本；TRAE .traex-release-lease.* 未找到格式/存活证明，未知 lease 保留且有 lease 的版本目录保守跳过。两者列为明确待核验项，不伪称已清理。
+
+私有 stage 可回收不等于回滚备份可删；回滚未完成保留最后旧副本。所有路径 lstat 检查，候选目录递归计数不跟随链接，安装根/父链需真实目录；仅 current 入口可读链接目标。Windows/Mac 真实更新与磁盘回收留待用户验收。
+
+| CLI | 规则与已知路径 | 当前证据与保留边界 |
+| --- | --- | --- |
+| Grok | `~/.grok/downloads/grok-<version或平台>`、`bin/grok[.exe].old` | 仓库 native 放置布局及用户磁盘证据；当前入口位于该根且版本探针成功才删。失败不删 `.old` |
+| Qoder / Qoder CN | `~/.qoder[或.qoder-cn]/bin/qodercli[或qoderclicn]/<bin>-<version>[.exe]` | `version.txt` 与可运行探针一致，保留当前版本；仅普通文件 |
+| Qoder natives | 系统临时根下 `qodercli-natives-v<version>-<当前用户名>` | 用户提供的 Windows 路径证据；必须有已核验 Qoder 当前版本，仅真实目录，不推断 CN 前缀 |
+| Claude | `~/.local/share/claude/versions/<version>` | 仓库 Windows/Unix 放置布局；当前版本文件和入口探针对应，保留当前文件 |
+| TRAE CN | Unix `~/.local/share/traecli/releases/<version>`；Windows `~/AppData/Local/TraeCLI/releases/<version>` | 只读 `current` 链接目标必须是同根的探针版本；lease 格式未知，不删 lease，有 lease 则保守跳过 |
+| Hermes | 已知根 `tools/<node/python/uv/npm>-<version>`、`bin/hermes.exe.deleteme` | `facts.json` 的合法 `packages.*.entry` 保护全部引用，npm 无 entry 不猜；由于既有版本协议禁止命令探测，生产路径不执行原生副本删除 |

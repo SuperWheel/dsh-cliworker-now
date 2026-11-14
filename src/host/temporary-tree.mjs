@@ -7,11 +7,11 @@ export const TEMPORARY_TREE_MAX_AGE_MS = 60 * 60 * 1000
 export const temporaryTreeRemovalOptions = { recursive: true, force: true, maxRetries: 6, retryDelay: 150 }
 
 /** Disk cleanup must never replace a successful probe or its original failure. */
-export async function removeTemporaryTree(path) {
+export async function removeTemporaryTree(path, remove = rm) {
   try {
     // Called only after range exit; a failed disk removal must be sweepable later.
     await rmdir(join(path, `.cliworker-owner-${process.pid}`)).catch(() => {})
-    await rm(path, temporaryTreeRemovalOptions)
+    await remove(path, temporaryTreeRemovalOptions)
     return true
   } catch { return false }
 }

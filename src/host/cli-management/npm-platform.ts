@@ -12,6 +12,7 @@ import type { ArtifactFile } from './artifacts/types.ts'
 
 const packageName = /^(?:@[a-z0-9_.-]+\/)?[a-z0-9_][a-z0-9_.-]*$/i
 const manifestSchema = z.object({ name: z.string().regex(packageName), version: z.string().refine(v => !!valid(v)),
+  bin: z.union([z.string(), z.record(z.string(), z.string())]).optional(),
   os: z.array(z.string()).optional(), cpu: z.array(z.string()).optional(), libc: z.array(z.string()).optional(),
   optionalDependencies: z.record(z.string(), z.string()).optional(),
   dist: z.object({ tarball: z.string(), integrity: z.string().max(1024).optional(), shasum: z.string().optional() }).optional(),

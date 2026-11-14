@@ -47,7 +47,9 @@ describe('模拟：应用目录文件操作绕开 Electron ASAR 补丁', () => {
 
   it('桌面应用更新与首次安装的删除都走物理文件系统', async () => {
     versions.electron = '40.0.0'
-    const { desktopFs } = await import('../src/host/cli-management/desktop.ts')
-    expect((desktopFs.rm as unknown as () => string)()).toBe('physical-rm')
+    const { updateCleanupIo } = await import('../src/host/cli-management/update-cleanup.ts')
+    const removal = vi.spyOn(marker.promises, 'rm')
+    expect(await updateCleanupIo.remove('/synthetic-never-created')).toBe(true)
+    expect(removal).toHaveBeenCalledWith('/synthetic-never-created', expect.objectContaining({recursive:true, maxRetries:6}))
   })
 })

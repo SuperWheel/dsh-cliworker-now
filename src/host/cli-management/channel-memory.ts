@@ -1,6 +1,7 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { createHash } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, lstat, mkdir, open, rename, rm } from 'node:fs/promises'
+import { chmod, lstat, mkdir, open, rename } from 'node:fs/promises'
 import { join, win32 } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
@@ -47,12 +48,12 @@ export class ChannelMemory {
       const info = await lstat(this.directory)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('CLI channel memory directory invalid')
       await chmod(this.directory, 0o700)
-      const temporary = join(this.directory, `.channel-memory-${randomUUID()}.tmp`)
+      const temporary = trackUpdateTemporary(join(this.directory, `.channel-memory-${randomUUID()}.tmp`))
       try {
         const handle = await open(temporary, 'wx', 0o600)
         try { await handle.writeFile(JSON.stringify(records.parse(state))); await handle.sync() } finally { await handle.close() }
         await rename(temporary, this.file)
-      } finally { await rm(temporary, { force: true }) }
+      } finally { await removeUpdateTemporary(temporary) }
     })
     this.queue = operation.catch(() => undefined); return operation
   }

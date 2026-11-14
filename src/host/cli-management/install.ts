@@ -1,7 +1,9 @@
+import { withUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
+import { registerNativeResidueCleanup, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms } from './npm-platform.ts'
 import { createHash } from 'node:crypto'
-import { access, lstat, realpath, rename, unlink } from 'node:fs/promises'
+import { access, lstat, realpath, rename } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -125,10 +127,14 @@ export class CliInstaller {
     return plan
   }
   async execute(plan: InstallPlan, op: CliUpdateOperation, signal: AbortSignal, changed: () => void, recheck: () => Promise<void>): Promise<{ identity: InstallationIdentity; version: string }> {
+    return withUpdateCleanup(text => { op.outputTail = outputTail(op.outputTail + text); changed() }, () => this.executeOperation(plan,op,signal,changed,recheck))
+  }
+  private async executeOperation(plan: InstallPlan, op: CliUpdateOperation, signal: AbortSignal, changed: () => void, recheck: () => Promise<void>): Promise<{ identity: InstallationIdentity; version: string }> {
     if (plan.problem || plan.source.method === 'manual') throw new CliOperationError(plan.problem ?? 'PREREQUISITE_MISSING', `${plan.source.reason ?? '安装前置条件不满足'}；官方说明：${plan.offer.guideUrl}`)
     const { cli, source } = plan
     let file: string | undefined, quarantined = false, npmDownload: NpmDownload | undefined, succeeded = false
     const output = (text: string) => { op.outputTail = outputTail(op.outputTail + text); changed() }
+    await registerNativeResidueCleanup({ ...this.deps, cli, success: () => succeeded })
     try {
       op.installDirectory = plan.directory; op.targetVersion = validVersion(plan.target) ? plan.target : undefined; op.phase = 'downloading'; changed()
       if (source.method === 'npm') {
@@ -137,6 +143,7 @@ export class CliInstaller {
         npmDownload = await prepareNpmDownload({ cli, version: plan.target!, registry: plan.registry, automaticSources: plan.automaticSources,
           root: this.deps.root, releases: this.deps.releases, signal, identity: plan.before, host, fetcher: this.deps.fetcher,
           output, progress: value => { op.progress = value; changed() } })
+        afterUpdateCleanup(() => cleanNpmResidues({ prefix: plan.directory, packageName: npmDownload!.packageName, bins: npmDownload!.bins, platform: this.platform, idle: () => npmPrefixIdle(this.deps.backend,this.deps.config,this.platform) }))
         file = npmDownload.main
       } else {
         let url: string, integrity: string | undefined, expectedBytes: number | undefined
@@ -144,7 +151,7 @@ export class CliInstaller {
         else { url = source.desktop!.url; integrity = source.desktop!.integrity; expectedBytes = source.desktop!.bytes }
         file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
         const extension = source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : source.desktop?.archive === 'zip' ? '.zip' : '.dmg'
-        const renamed = file.replace(/\.part$/, extension); await rename(file, renamed); file = renamed
+        const renamed = file.replace(/\.part$/, extension); await rename(file, renamed); file = trackUpdateTemporary(renamed)
       }
       await recheck(); signal.throwIfAborted(); op.phase = 'installing'; changed()
       const packageFile = file!
@@ -159,8 +166,8 @@ export class CliInstaller {
         if (source.method === 'npm') {
           await writablePrefix(plan.directory)
           op.progress = { readable: false, byteProgress: false, resumeCount: 0, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }; changed()
-          for (const file of npmDownload!.platforms) await executeCliOperation(this.deps.backend, this.deps.config, npmCacheAddArgv(plan.npm!, file, plan.directory, plan.registry), control, output)
-          await run([...plan.npm!, 'install', '--global', '--prefix', plan.directory, packageFile, '--registry', plan.registry, '--prefer-offline', '--include=optional', ...(cli === 'pi' ? ['--ignore-scripts'] : [])])
+          for (const file of npmDownload!.platforms) await executeCliOperation(this.deps.backend, this.deps.config, npmCacheAddArgv(plan.npm!, file, plan.directory, plan.registry, npmDownload!.cache), control, output)
+          await run([...plan.npm!, 'install', '--global', '--prefix', plan.directory, packageFile, '--registry', plan.registry, '--cache', npmDownload!.cache, '--prefer-offline', '--include=optional', ...(cli === 'pi' ? ['--ignore-scripts'] : [])])
           candidate = join(plan.directory, this.platform === 'win32' ? '' : 'bin', source.command + (this.platform === 'win32' ? '.cmd' : ''))
         } else if (source.method === 'script') {
           // Re-read the built-in descriptor; a client cannot supply a URL or interpreter.
@@ -204,11 +211,11 @@ export class CliInstaller {
         op.progress = { readable: false, resumeCount: 0, retryCount: count }
         output(`\n── 下载中断；已自动重试 ${count} 次 ──\n`)
       })
-    } catch (error) { quarantined = error instanceof ProcessCleanupUnconfirmedError; throw error }
+    } catch (error) { quarantined = error instanceof ProcessCleanupUnconfirmedError; if (quarantined) quarantineUpdateCleanup(); throw error }
     finally {
       try { if (npmDownload) await npmDownload.cleanup(succeeded, quarantined) }
       catch { op.outputTail = outputTail(op.outputTail + '\n临时文件或下载通道记忆未能清理；操作已结束。\n') }
-      finally { if (file && !npmDownload && !quarantined) await unlink(file).catch(() => undefined) }
+      finally { if (file && !npmDownload && !quarantined) await removeUpdateTemporary(file) }
     }
   }
 }

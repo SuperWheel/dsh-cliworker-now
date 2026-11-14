@@ -1,3 +1,4 @@
+import { trackUpdateTemporary, retainUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -174,7 +175,7 @@ export async function runDesktopUpdate(options: {
         if (!info.isDirectory() || info.isSymbolicLink() || !artifact.isFile() || artifact.isSymbolicLink()) throw new CliOperationError('LOCATION_INVALID', '安装包必须位于实际的私有下载目录中')
         await chmod(parent, 0o700)
         // The verified download remains in its cache; only this execution copy is removed.
-        const executionCopy = join(parent, `${randomUUID()}.exe`)
+        const executionCopy = trackUpdateTemporary(join(parent, `${randomUUID()}.exe`))
         await copyFile(file, executionCopy, constants.COPYFILE_EXCL)
         temporaryExe = executionCopy
         await chmod(temporaryExe, 0o600)
@@ -186,14 +187,8 @@ export async function runDesktopUpdate(options: {
     } catch (error) { operationError = error; throw error }
     finally {
       if (temporaryExe) {
-        try { await desktopUpdateIo.rm(temporaryExe, { force: true }) }
-        catch (error) {
-          if (operationError instanceof ProcessCleanupUnconfirmedError) {
-            operationError.cause = new AggregateError([operationError.cause, error], '安装进程与临时程序清理未完成')
-            throw operationError
-          }
-          throw new AggregateError([...(operationError ? [operationError] : []), error], '安装临时程序清理失败')
-        }
+        if (operationError instanceof ProcessCleanupUnconfirmedError) retainUpdateTemporary(temporaryExe)
+        else await removeUpdateTemporary(temporaryExe)
       }
     }
   }
@@ -230,7 +225,7 @@ export async function runDesktopUpdate(options: {
     const cacheInfo = await lstat(cache)
     if (!cacheInfo.isDirectory() || cacheInfo.isSymbolicLink()) throw new CliOperationError('LOCATION_INVALID', '更新缓存不是实际目录')
     await chmod(cache, 0o700)
-    stage = await mkdtemp(join(cache, 'desktop-update-')); await chmod(stage, 0o700)
+    stage = trackUpdateTemporary(await mkdtemp(join(cache, 'desktop-update-'))); await chmod(stage, 0o700)
     await run(['/usr/bin/ditto', '-x', '-k', file, stage], signal); signal.throwIfAborted()
     const apps = (await readdir(stage)).filter(name => name.endsWith('.app'))
     if (apps.length !== 1) throw new CliOperationError('IDENTITY_CHANGED', '更新包必须包含唯一的应用目录')
@@ -244,7 +239,7 @@ export async function runDesktopUpdate(options: {
     }
     await verify(extracted)
     // Copy before renaming: the private cache may be on another volume.
-    sibling = await mkdtemp(join(parent, '.cliworker-update-')); await chmod(sibling, 0o700)
+    sibling = trackUpdateTemporary(await mkdtemp(join(parent, '.cliworker-update-'))); await chmod(sibling, 0o700)
     const incoming = join(sibling, basename(appPath)); backup = join(sibling, 'previous.app')
     await run(['/usr/bin/ditto', extracted, incoming], signal)
     await verify(incoming)
@@ -257,11 +252,11 @@ export async function runDesktopUpdate(options: {
     await desktopUpdateIo.rename(incoming, appPath); movedNew = true
     signal.throwIfAborted()
     // Finish fallible staging cleanup while a complete old app is still available.
-    await desktopUpdateIo.rm(stage, { recursive: true, force: true }); stage = undefined
+    await removeUpdateTemporary(stage); stage = undefined
     signal.throwIfAborted()
     committed = true
     // After commit, a failed backup cleanup must never restore a partly deleted app.
-    await desktopUpdateIo.rm(backup, { recursive: true, force: true }); movedOld = false
+    await removeUpdateTemporary(backup); movedOld = false
     return { appPath }
   } catch (error) {
     operationError = error
@@ -278,9 +273,13 @@ export async function runDesktopUpdate(options: {
         await desktopUpdateIo.rename(backup, appPath); movedOld = false
       } catch (error) { cleanupErrors.push(error) }
     }
-    if (stage) await desktopUpdateIo.rm(stage, { recursive: true, force: true }).catch(error => cleanupErrors.push(error))
+    if (operationError instanceof ProcessCleanupUnconfirmedError) {
+      if (stage) retainUpdateTemporary(stage)
+      if (sibling) retainUpdateTemporary(sibling)
+    } else if (stage) await removeUpdateTemporary(stage)
     // Never delete the last old copy when rollback or backup cleanup failed.
-    if (sibling && !movedOld) await desktopUpdateIo.rm(sibling, { recursive: true, force: true }).catch(error => cleanupErrors.push(error))
+    if (sibling && movedOld) retainUpdateTemporary(sibling)
+    if (sibling && !movedOld && !(operationError instanceof ProcessCleanupUnconfirmedError)) await removeUpdateTemporary(sibling)
     if (cleanupErrors.length) {
       if (operationError instanceof ProcessCleanupUnconfirmedError) {
         operationError.cause = new AggregateError([operationError.cause, ...cleanupErrors], '更新进程与临时目录清理未完成')

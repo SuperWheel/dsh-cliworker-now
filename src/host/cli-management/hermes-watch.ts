@@ -1,4 +1,5 @@
-import { lstat, readdir, mkdtemp, rm } from 'node:fs/promises'
+import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
+import { lstat, readdir, mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 import type { CliDownloadProgress } from '../../shared/cli-management.ts'
@@ -215,7 +216,7 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
   let quarantine = false, stopped = false, attempt = 0, depsRetries = 0, fallbackRetries = 0, prefetched = false
   let recoveryFailure: unknown
   try {
-    privateDir = await mkdtemp(join(await prepareDownloads(o.root), 'local-'))
+    privateDir = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(o.root), 'local-')))
     for (;;) {
       o.signal.throwIfAborted()
       const before = await observeHermesCache(o.home)
@@ -269,5 +270,5 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
     if (!quarantine && !o.signal.aborted && await o.verifyInstalled?.()) return
     if (stopped && (o.platform ?? process.platform) === 'win32') o.output('Hermes 网关可能仍处于暂停状态；请启动一次 Hermes 以恢复网关。\n')
     throw error
-  } finally { if (privateDir && !quarantine) await rm(privateDir, { recursive: true, force: true }) }
+  } finally { if (privateDir && !quarantine) await removeUpdateTemporary(privateDir) }
 }

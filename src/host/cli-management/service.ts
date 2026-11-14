@@ -1,9 +1,11 @@
+import { withUpdateCleanup, finishUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
+import { registerNativeResidueCleanup, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { codexInstallerEnv } from './artifacts/codex.ts'
 import { runHermesUpdate } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
-import { rename, unlink } from 'node:fs/promises'
+import { rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { nativeLaunchArgv } from '../native-launch.mjs'
@@ -412,7 +414,7 @@ export class CliManagementService {
     this.operationController = new AbortController()
     const signal = AbortSignal.any([this.operationController.signal, this.lifetime.signal])
     this.foregroundController?.abort(); this.preloader.changed(); this.changed()
-    this.operationRun = Promise.resolve().then(async () => {
+    this.operationRun = Promise.resolve().then(() => withUpdateCleanup(output, async () => {
       let quarantine = false
       let artifact: string | undefined, local: LocalArtifactInstall | undefined, npmDownload: NpmDownload | undefined
       const desktopArtifacts: string[] = []
@@ -441,6 +443,7 @@ export class CliManagementService {
         }
         const plan = await this.planCliOperation(cli, 'update', preparation, selected)
         if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
+        await registerNativeResidueCleanup({ ...this.deps, cli, success: () => op.phase === 'succeeded' })
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
         let npmRuntime: [string, string] | undefined
         if (plan.method === 'npm') {
@@ -451,6 +454,7 @@ export class CliManagementService {
           npmDownload = await prepareNpmDownload({ cli, version: plan.targetVersion, registry: plan.registry, automaticSources: selected.automaticSources,
             root: this.deps.root, releases: this.releases, signal, identity: plan.identity, host, fetcher: this.deps.artifactFetch, output,
             progress: value => { op.progress = value; this.changed() } })
+          afterUpdateCleanup(() => cleanNpmResidues({ prefix: plan.identity.prefix!, packageName: npmDownload!.packageName, bins: npmDownload!.bins, idle: () => npmPrefixIdle(this.deps.backend,this.deps.config) }))
           artifact = npmDownload.main
         }
         if (plan.method === 'official-script') {
@@ -458,13 +462,13 @@ export class CliManagementService {
           op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
           artifact = await downloadCliArtifact({ root: this.deps.root, output, url: script.url, officialScript: true, signal, fetcher: this.deps.artifactFetch, progress: value => { op.progress = value; this.changed() } })
           const scriptFile = artifact.replace(/\.part$/, '.sh')
-          await rename(artifact, scriptFile); artifact = scriptFile
+          await rename(artifact, scriptFile); artifact = trackUpdateTemporary(scriptFile)
         }
         const dualChannel = interruptionRecoveryChannel((plan.method === 'self-update' || plan.method === 'official-script') && canPrepareLocalUpdate(cli, plan.identity)) === 'takeover'
         const localOptions = { cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, beforeVersion: plan.beforeVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output,
           progress: (value: import('../../shared/cli-management.ts').CliDownloadProgress) => { op.progress = cliDownloadProgressSchema.parse({ ...value, reason: value.reason ?? (value.channel === 'takeover' ? op.progress?.reason : undefined), officialFailedAt: value.channel === 'takeover' && (value.reason ?? op.progress?.reason) === 'OFFICIAL_RECENT_FAILURE' ? value.officialFailedAt ?? op.progress?.officialFailedAt : undefined }); this.changed() } }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact, process.platform, npmRuntime), admission))
+        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv([...(await bounded(operationArgv(plan, this.deps.backend, artifact, process.platform, npmRuntime), admission)), ...(npmDownload ? ['--cache', npmDownload.cache] : [])])
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
@@ -628,7 +632,7 @@ export class CliManagementService {
         } else verified = await withInterruptionRecovery(signal, async (control, evidence) => {
           let exitError: unknown
           try {
-            if (npmDownload) for (const file of npmDownload.platforms) await run(npmCacheAddArgv(argv!.slice(0, 2), file, plan.identity.prefix!, plan.registry), control, evidence)
+            if (npmDownload) for (const file of npmDownload.platforms) await run(npmCacheAddArgv(argv!.slice(0, 2), file, plan.identity.prefix!, plan.registry, npmDownload!.cache), control, evidence)
             await run(argv!, control, evidence)
           }
           catch (error) { if (!(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
@@ -657,7 +661,7 @@ export class CliManagementService {
         op.phase = 'succeeded'
       } catch (error) {
         if (error instanceof ProcessCleanupUnconfirmedError) {
-          quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
+          quarantineUpdateCleanup(); quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
           op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认更新进程全部退出，已暂停后续操作', retryable: false }
         } else if (signal.aborted) {
           op.phase = 'cancelled'; op.outputTail = outputTail(op.outputTail + '\n已取消；已写入的文件不回滚，请重新检查。')
@@ -673,11 +677,16 @@ export class CliManagementService {
           const cleanup = await Promise.allSettled([
             ...(local && !quarantine ? [Promise.resolve().then(() => local!.cleanup())] : []),
             ...(npmDownload ? [Promise.resolve().then(() => npmDownload!.cleanup(op.phase === 'succeeded', quarantine))] : []),
-            ...(artifact && !npmDownload && !quarantine ? [unlink(artifact)] : []),
-            ...(!quarantine ? desktopArtifacts.map(file => unlink(file)) : []),
+            ...(artifact && !npmDownload && !quarantine ? [removeUpdateTemporary(artifact)] : []),
+            ...(!quarantine ? desktopArtifacts.map(file => removeUpdateTemporary(file)) : []),
           ])
           if (cleanup.some(result => result.status === 'rejected')) op.outputTail = outputTail(op.outputTail + '\n临时文件或下载通道记忆未能清理；操作已结束。\n')
         } finally {
+          if (await finishUpdateCleanup() && !quarantine) {
+            quarantine = true
+            const error = new ProcessCleanupUnconfirmedError()
+            this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli,error)
+          }
           op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
           this.operationController = undefined; this.operationRun = undefined
           try {
@@ -689,7 +698,7 @@ export class CliManagementService {
           }
         }
       }
-    })
+    }))
     void this.operationRun.catch(() => undefined)
   }
   updateAll(requestId: string): CliUpdateSnapshot {

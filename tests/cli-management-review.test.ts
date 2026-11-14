@@ -24,7 +24,7 @@ it.each(['official', 'npmmirror'] as const)('模拟 P1：%s 主包以官方 sha5
     const argv = options.argv
     tarball = argv.find(a => a.endsWith('.tgz'))!
     expect(readFileSync(tarball, 'utf8')).toBe('模拟')
-    expect(argv).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', tarball, '--registry', source === 'official' ? 'https://registry.npmjs.org/' : 'https://registry.npmmirror.com/', '--prefer-offline', '--include=optional'])
+    expect(argv).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', '/模拟', tarball, '--registry', source === 'official' ? 'https://registry.npmjs.org/' : 'https://registry.npmmirror.com/', '--prefer-offline', '--include=optional', '--cache', argv.at(-1)])
     expect(argv).not.toContain('@openai/codex@1.2.3')
     f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); return exited()
   })

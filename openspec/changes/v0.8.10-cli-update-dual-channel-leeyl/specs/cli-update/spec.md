@@ -210,3 +210,30 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 #### Scenario: npm 下载接管的进度身份
 - **WHEN** npm 插件下载进入 takeover，包括文件交界与下载完成
 - **THEN** 每条下载进度 SHALL 包含非空 sourceHost，客户端可据此与官方更新器接管区分；进入 npm 安装阶段 SHALL 清除下载 channel/sourceHost，MUST NOT 暗示已删除断点
+
+### Requirement: 每次操作结束清理残留
+每次更新或安装 SHALL 在成功、失败或取消后，确认全部托管进程范围退出才尽力删除本次下载、stage、私有 npm 缓存及 partial，不保留跨操作断点；下载通道记忆 SHALL 独立保留。清理失败 MUST NOT 改变操作结果；输出尾部 SHALL 追加一行中文，列明清理类别、删除项数与实际删除的逻辑字节数，无法确认退出时说明延期。
+
+#### Scenario: 下载失败前没有返回文件路径
+- **WHEN** 下载在返回路径之前失败
+- **THEN** 本次已登记 partial 仍在操作收尾清理，原失败结果保持
+
+#### Scenario: npm 私有缓存
+- **WHEN** 插件 cache add 已核验 tgz 并运行 npm install
+- **THEN** 两条 argv SHALL 指定同一个本次下载目录内的 --cache，代理环境保持，操作结束后删除该目录而不清理用户全局 npm 缓存
+
+#### Scenario: npm reify 残留
+- **WHEN** 操作进程已退出，且进程检查能确认没有 npm 正在操作该前缀
+- **THEN** 仅回收本包 .name-八位字母数字目录及声明 bin 的 .bin[.cmd|.ps1]-八位字母数字备份；检查不确定、链接或其他包名称保持
+
+#### Scenario: 自更新旧版本
+- **WHEN** 已识别当前入口且既有版本探针确认可运行并匹配版本记录
+- **THEN** 按 Grok、Qoder/Qoder CN、Claude、Hermes、TRAE CN 的已知安装根与规则回收非当前版本；MUST NOT 跟随候选链接或 junction，除读取 current 指向外不解析外部目标
+
+#### Scenario: 更新失败或当前不可核验
+- **WHEN** 操作失败但旧当前版本仍可核验，或当前完全不可核验
+- **THEN** 前者仅回收本次新增且未使用的副本，保留原有版本及恢复备份；后者保留所有 CLI 原生残留，仅清理确认退出的插件私有资源
+
+#### Scenario: 清理抛错
+- **WHEN** 清理遇锁定、权限或统计错误
+- **THEN** 原成功或失败结果不变，尽力继续清理其他项，不把格式校验或模拟结果当实机验收

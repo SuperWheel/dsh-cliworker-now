@@ -266,3 +266,30 @@
   - gpt-6.1-sol high 页面更新 CodeBuddy 2.183.0→2.184.0：无确认弹窗；「下载官方工件（1/3）」共 3 个文件（主包、sandbox-cli、node-pty），来自 registry.npmjs.org，合计 86.4 MB；10 秒停滞后输出「下载停滞 10 秒，从 13483712 B 处续传（第 1 次）」，页面显示「已自动续传 1 次」；下载提示与预期原文一致「下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留」；安装阶段提示「npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖」，npm 命令为本地 0.tgz + `--registry https://registry.npmmirror.com/ --prefer-offline --include=optional`；约 77 秒后「已更新到 2.184.0」，再次检查不变。
   - 远程核验：主包 2.184.0、sandbox-cli-win32-x64 5.13.0-beta.2、node-pty-win32-x64 1.2.0-beta.14，`codebuddy --version` 2.184.0；插件 downloads 目录无残留；C 盘剩 647.6 MB。
   - 未覆盖：本次未触发接管，npm 接管提示与可选组件失败/同组切换输出只有模拟测试；未看到 ENOSPC。下载中途曾显示「已接收 12.9 MB，总大小未知」，随后才显示 86.4 MB 总量。CU 未能滚动到结束后的完整输出。
+
+## 10. 更新与安装结束后的残留回收 〔后端｜8h｜前置 9〕
+- [x] 10.1 实现操作级资源登记与确认退出后的尽力清理，输出删除项与字节数
+  - 2026-11-15 源码确认：下载失败可在返回路径前留下 UUID.part；旧 cache add/install 未传 --cache；多处 stage/backup 的 finally 删除可抛错覆盖成功。用户提供的 11-14 Mac partial、Windows npm 缓存/reify、自更新副本体积属于外部实机证据，本轮未读取或删除这些真实文件。
+  - 新增 update-cleanup.ts，以 AsyncLocalStorage 隔离各队列项、创建即登记资源、操作结束前最终化；复用 temporary-tree.mjs 的 6 次/150ms 删除重试，允许传 physical original-fs 以支持 Electron ASAR。下载、解压、官方私有临时根、放置、Desktop stage/execution copy 均接入；失败下载尚未返回路径也可回收。
+  - 磁盘和汇总回调异常不改原结果；输出尾部追加一行中文类别/项数/逻辑字节数，非文件系统实际空闲空间增量。OutputLog 原样呈现 outputTail，不经 t()/hostText，无须新增英文映射。进程退出未确认则延期并保持维护隔离；回滚失败的最后副本保留。上一项最终化后启动下一项时创建新上下文，已补回归。
+- [x] 10.2 npm 下载预置及安装使用同一操作私有缓存，回收本包 reify 与 bin 备份
+  - cache add 和 install 均传下载私有目录内的 --cache，使用原 Node/npm、registry 和宿主代理环境；结束删除私有缓存。目标公开清单保留 bin 声明，按本包 .name-八位字母数字及声明 bin 的 .bin[.cmd|.ps1]-八位字母数字精确枚举。
+  - 有候选才通过托管只读进程检查核对 npm，每次删除前重查；任何 npm 进程（包括其他前缀）、枚举失败或不可读命令行均保守跳过。Windows 使用固定 PowerShell argv，POSIX 使用 ps argv；没有 shell 拼接任务命令，没有改代理或 NO_PROXY。
+  - 下载断点只在操作内保留；残留清理不删除 channel-memory.json。通道记忆规则不变：接管自身失败或取消仍清除记录，下次恢复官方优先（2026-11-15 主会话复核时撤回了 Codex 擅自改成「失败保留原记录」的改动，`tests/cli-management-dual-channel.test.ts` 还原）。
+- [x] 10.3 实现有当前入口和版本探针证据的自更新残留规则，失败保留旧版本及恢复备份
+  - 新增 update-residue.ts，规则表见 design 决定 10。Grok、Qoder/CN、Claude、TRAE 的路径由仓库布局和用户证据限定；重新识别入口并调用既有版本探针，记录与当前文件/指针匹配才清理。失败仅删操作前快照以外、非当前、非恢复备份的候选。Qoder native 缓存仅匹配给出的前缀及当前用户名，不推断 CN 前缀。
+  - Hermes facts.json packages.*.entry 引用保护有模拟规则；npm 工具族没有 entry 不猜。sources.ts 明确只读 Hermes 安装记录并禁止 --version，无法提供本要求的 runnable 证据，故生产路径保留 Hermes 原生副本。TRAE lease 格式/存活协议在仓库未确认，lease 保留，有 lease 的版本保守跳过。
+  - 所有候选和父链 lstat，链接/junction 与 foreign 名称不删，只读 current 指向可解析；计数/递归删除不跟随候选内的链接。仅「检查更新」不做清理，因为没有更新维护锁和实时可运行证明。
+- [x] 10.4 增加各规则、链接隔离、不可核验与非致命清理回归，更新行为文档
+  - 新增 cli-management-update-cleanup.test.ts 共 61 项模拟测试：六 CLI × macOS/Windows 布局的成功、失败、无法核验、链接/foreign 保留；Qoder stamp/用户名、TRAE current/lease、Hermes facts 引用、npm prefix/bin 和进程检查、私有缓存/partial、清理抛错、进程未确认、排队上下文。
+  - 更新 npm-platform、dual-channel、desktop-update、physical-fs、review 回归：私有缓存 argv 和删除、已有通道记忆保留、磁盘清理失败不回滚成功、原失败保持、退出未确认保留、original-fs 及重试选项。README、doc/design 和本变更 design/spec 同步，并替换旧默认 npm 缓存说明。
+- [x] 10.5 执行 cli-management、更新页、类型检查、隔离构建、严格规格与差异检查
+  - 最终 corepack pnpm typecheck：exit 0，Host/Client typecheck passed against DSH 0.2.2-rc.3。
+  - 最终 corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/temporary-cleanup.test.ts：35 文件、1106/1106 通过，18.80 秒。最初沙箱全组为 1069 通过、5 失败，均为 Pi 环回 listen EPERM 及下游断言；获准沙箱外同范围回归通过，没有改代理。最终定向 update-cleanup + dual-channel 为 74/74 通过。
+  - 收尾再把 versioned-link 的临时链接加入登记，删除重试耗尽后可由操作最终化再试；随后 artifact-descriptions + update-cleanup 定向 2 文件、90/90 通过，重新 build:preview 成功。
+  - OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict：exit 0，Change is valid；保留历史主任务 9 超过 12 子项的建议性警告。git diff --check：exit 0。
+  - corepack pnpm build:preview：exit 0，隔离包 .cache/preview-package；未正式 build 或更新 Desktop。测试中的 Pi 既有原型会运行真实 npm 和本地微型包，不等于真实 CLI 更新验收；新增规则均为临时目录/模拟进程夹具。
+  - 未提交、推送、归档或升级版本，未读凭据/.env，未改 src/client；既有未跟踪 PRD/video 保持不动。
+- [ ] 10.6 Windows/Mac 实机验证
+  - （未执行：由用户后续验证；本轮不更新真实 CLI、不删除真实安装目录、不改变账号或代理。）
+  - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；另需补齐 Hermes 可运行证明及 TRAE lease 格式证据，当前不宣称这两类已回收。

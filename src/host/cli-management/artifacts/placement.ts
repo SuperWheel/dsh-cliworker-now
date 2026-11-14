@@ -1,3 +1,4 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from '../update-cleanup.ts'
 import { extractZip } from './archive.ts'
 import { constants } from 'node:fs'
 import { chmod, copyFile, lstat, mkdir, realpath, rename, rm, unlink, symlink, readlink } from 'node:fs/promises'
@@ -12,7 +13,7 @@ const invalid = (message: string): never => { throw new CliOperationError('INTEG
 const same = (a: string, b: string) => win32.normalize(a).toLowerCase() === win32.normalize(b).toLowerCase()
 /** Never remove a live destination before rename. Windows sharing violations leave it intact. */
 export async function replaceFile(source: string, target: string, signal: AbortSignal, platform: NodeJS.Platform = process.platform) {
-  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.download`)
+  const temporary = trackUpdateTemporary(join(dirname(target), `.${basename(target)}.${randomUUID()}.download`))
   try {
     signal.throwIfAborted()
     await mkdir(dirname(target), { recursive: true, mode: 0o700 })
@@ -26,7 +27,7 @@ export async function replaceFile(source: string, target: string, signal: AbortS
         await delay((attempt + 1) * 500, undefined, { signal })
       }
     }
-  } finally { await rm(temporary, { force: true }) }
+  } finally { await removeUpdateTemporary(temporary) }
 }
 export async function placeBinary(source: string, target: string, versionFile: string | undefined, signal: AbortSignal, label: string, platform: NodeJS.Platform = process.platform) {
   let wroteVersion = false, rollbackFailed = false, backup: string | undefined
@@ -55,7 +56,7 @@ export async function placeBinary(source: string, target: string, versionFile: s
     }
     if (['EBUSY', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) throw new CliOperationError('FILE_LOCKED', `${label} 正被其他程序占用，未替换；关闭后重试`)
     throw error
-  } finally { if (backup && !rollbackFailed) await rm(backup, { force: true }) }
+  } finally { if (backup && !rollbackFailed) { trackUpdateTemporary(backup); await removeUpdateTemporary(backup) } }
 }
 
 /** Check every existing ancestor: a symlinked parent must not redirect writes outside the allowlist. */
@@ -101,7 +102,7 @@ export async function placeArtifact(description: ArtifactDescription, directory:
     await readlink(p.target)
     const resolved = await realpath(p.target)
     if (dirname(resolved) !== dirname(p.versionFile)) invalid('启动器未指向版本白名单目录')
-    const temporary = `${p.target}.${randomUUID()}.link`, backup = `${p.versionFile}.${randomUUID()}.backup`
+    const temporary = trackUpdateTemporary(`${p.target}.${randomUUID()}.link`), backup = `${p.versionFile}.${randomUUID()}.backup`
     let existed = false, wrote = false, rollbackFailed = false
     try {
       try { const info = await lstat(p.versionFile); if (!info.isFile() || info.isSymbolicLink()) invalid('版本文件不是普通文件'); await copyFile(p.versionFile, backup, constants.COPYFILE_EXCL); existed = true } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e }
@@ -110,7 +111,7 @@ export async function placeArtifact(description: ArtifactDescription, directory:
     } catch (error) {
       if (wrote) { if (existed) { try { await rename(backup, p.versionFile) } catch { rollbackFailed = true; throw new CliOperationError('FILE_LOCKED', '版本文件回滚失败，原文件备份已保留；请检查文件占用') } } else await rm(p.versionFile) }
       throw error
-    } finally { await rm(temporary, { force: true }); if (!rollbackFailed) await rm(backup, { force: true }) }
+    } finally { await removeUpdateTemporary(temporary); if (!rollbackFailed) { trackUpdateTemporary(backup); await removeUpdateTemporary(backup) } }
   } else {
     const source = p.kind === 'extract-replace' ? await extractMember(directory, p.archive, p.format, p.member, signal, run) : privatePath(directory, p.file)
     await placeBinary(source, p.target, p.kind === 'versioned-link' ? p.versionFile : undefined, signal, 'CLI', description.platform)

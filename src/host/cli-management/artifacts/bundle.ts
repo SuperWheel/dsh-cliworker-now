@@ -1,6 +1,7 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from '../update-cleanup.ts'
 import { placePi } from './pi.ts'
 import { placeNative, placeRelease } from './transaction.ts'
-import { chmod, lstat, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { downloadCliArtifact, DOWNLOAD_MAX_BYTES, DOWNLOAD_TIMEOUT_MS, prepareDownloads } from '../download.ts'
 import { executeCliOperation } from '../executor.ts'
@@ -13,9 +14,9 @@ import { extractMember, placeArtifact } from './placement.ts'
 
 /** Resolve -> stage -> placement; all seven callers share this lifecycle and byte budget. */
 export async function prepareArtifactBundle(options: LocalArtifactOptions, describe: (directory: string, signal: AbortSignal) => Promise<ArtifactDescription>): Promise<LocalArtifactInstall> {
-  const directory = await mkdtemp(join(await prepareDownloads(options.root), 'local-'))
+  const directory = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(options.root), 'local-')))
   await chmod(directory, 0o700)
-  const cleanup = () => rm(directory, { recursive: true, force: true })
+  const cleanup = () => removeUpdateTemporary(directory)
   const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), DOWNLOAD_TIMEOUT_MS)
   const signal = AbortSignal.any([options.signal, deadline.signal])
   try {
@@ -34,7 +35,7 @@ export async function prepareArtifactBundle(options: LocalArtifactOptions, descr
         // Scripts have no publisher digest in the existing contract; never mix their bytes with payload totals.
         const file = await downloadCliArtifact({ root: options.root, url: extra.script, officialScript: true, maxBytes: DOWNLOAD_MAX_BYTES - reserved, signal, fetcher: options.fetcher, output: options.output,
           progress: () => options.progress({ channel: 'takeover', readable: false, byteProgress: false, resumeCount: 0, stage: '准备官方本地安装入口' }) })
-        try { reserved += (await lstat(file)).size; await rename(file, dest) } finally { await rm(file, { force: true }) }
+        try { reserved += (await lstat(file)).size; await rename(file, dest) } finally { await removeUpdateTemporary(file) }
       }
     }
     await downloadDescription(description, { ...options, directory, signal }, reserved)

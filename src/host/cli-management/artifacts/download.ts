@@ -1,5 +1,6 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from '../update-cleanup.ts'
 import { createReadStream, createWriteStream } from 'node:fs'
-import { lstat, mkdir, rename, rm } from 'node:fs/promises'
+import { lstat, mkdir, rename } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import { dirname, isAbsolute, join, relative } from 'node:path'
 import { Transform } from 'node:stream'
@@ -21,7 +22,7 @@ export async function decodeArtifact(source: string, file: ArtifactFile, signal:
   if (!file.compression || file.compression === 'none') return source
   if (!file.decodedIntegrity) throw new CliOperationError('INTEGRITY_MISMATCH', '压缩工件缺少解压后摘要')
   if (file.compression === 'zstd' && !zstd) throw new CliOperationError('PREREQUISITE_MISSING', '宿主 Node 缺少 zlib.createZstdDecompress，不能解压此工件')
-  const expected = parseIntegrity(file.decodedIntegrity), hash = createHash(expected.algorithm), target = `${source}.decoded`
+  const expected = parseIntegrity(file.decodedIntegrity), hash = createHash(expected.algorithm), target = trackUpdateTemporary(`${source}.decoded`)
   let size = 0
   try {
     const limit = new Transform({ transform(chunk: Buffer, _encoding, callback) {
@@ -31,8 +32,8 @@ export async function decodeArtifact(source: string, file: ArtifactFile, signal:
     } })
     await pipeline(createReadStream(source), file.compression === 'gzip' ? zlib.createGunzip() : zstd!(), limit, createWriteStream(target, { flags: 'wx', mode: 0o600 }), { signal })
     if (!hash.digest().equals(expected.digest) || file.decodedBytes !== undefined && size !== file.decodedBytes) throw new CliOperationError('INTEGRITY_MISMATCH', '解压后的工件摘要或长度不符')
-    await rm(source); return target
-  } catch (error) { await rm(target, { force: true }); throw error }
+    await removeUpdateTemporary(source); return target
+  } catch (error) { await removeUpdateTemporary(target); throw error }
 }
 
 /** All migrated CLIs use this single file loop. The transport retains its Range/deadline policy. */
@@ -81,6 +82,6 @@ export async function downloadDescription(description: Pick<ArtifactDescription,
       context.progress({ readable: true, channel, stage: completed === files.length ? '官方工件下载校验完成' : '继续下载下一工件', byteProgress: true,
         byteProgressState: lengths.every(v => v !== undefined) ? 'known-total' : 'unknown-total', currentStep: index + 1, totalSteps: files.length, stepName: file.dest, fileCount: files.length, completedFiles: completed,
         downloadedBytes: completedBytes, totalBytes: lengths.every(v => v !== undefined) ? lengths.reduce<number>((a, b) => a + b!, 0) : undefined, resumeCount: resumes, sourceHost: lastHost })
-    } finally { if (path) await rm(path, { force: true }) }
+    } finally { if (path) await removeUpdateTemporary(path) }
   }
 }

@@ -1,11 +1,12 @@
+import { trackUpdateTemporary, retainUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { physicalFs } from './physical-fs.ts'
 import { join, basename } from 'node:path'
 import type { InstallSource } from './sources.ts'
 import { CliOperationError } from './planner.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 // App bundles contain app.asar; Electron's patched fs would treat it as a directory.
-const { chmod, mkdir, mkdtemp, rm, lstat, rename } = physicalFs().promises
-export const desktopFs = { rm }
+const { chmod, mkdir, mkdtemp, lstat, rename } = physicalFs().promises
+export const desktopFs = { rm: (path: string, _options?: unknown) => removeUpdateTemporary(path) }
 
 /** Only Host-verified official feeds and pinned publisher identities enter here. */
 export async function installDesktop(options: {
@@ -41,7 +42,7 @@ export async function installDesktop(options: {
     await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `-R=anchor apple generic and certificate leaf[subject.OU] = "${source.teamId}"`, app], signal)
     await run(['/usr/sbin/spctl', '--assess', '--type', 'execute', app], signal)
     await mkdir(options.directory, { recursive: true, mode: 0o700 })
-    stage = await mkdtemp(join(options.directory, '.cliworker-install-'))
+    stage = trackUpdateTemporary(await mkdtemp(join(options.directory, '.cliworker-install-')))
     await run(['/usr/bin/ditto', app, join(stage, source.appName)], signal)
     signal.throwIfAborted()
     const target = join(options.directory, source.appName)
@@ -58,13 +59,15 @@ export async function installDesktop(options: {
       try { await run(['/usr/bin/hdiutil', 'detach', mount], AbortSignal.timeout(30_000)); confirmed = true }
       catch (cause) { isolation = cause instanceof ProcessCleanupUnconfirmedError ? cause : new ProcessCleanupUnconfirmedError({ cause }) }
     }
-    if (stage) await desktopFs.rm(stage, { recursive: true, force: true }).catch(error => cleanupErrors.push(error))
+    if (stage && isolation) retainUpdateTemporary(stage)
+    if (stage && !isolation) await desktopFs.rm(stage, { recursive: true, force: true }).catch(error => cleanupErrors.push(error))
     // Never remove a mountpoint unless detach has been confirmed.
+    if (confirmed) trackUpdateTemporary(mount)
     if (confirmed) await desktopFs.rm(mount, { recursive: true, force: true }).catch(error => cleanupErrors.push(error))
     if (isolation) {
       if (cleanupErrors.length) isolation.cause = new AggregateError([isolation.cause, ...cleanupErrors], '卸载与临时目录清理未完成')
       throw isolation
     }
-    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, '安装临时目录清理失败')
+    // Disk cleanup is best effort; detach/rollback errors above retain their safety semantics.
   }
 }

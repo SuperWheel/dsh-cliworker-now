@@ -1,7 +1,8 @@
+import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { observedPackages } from './artifacts/observations.ts'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { lstat, readdir, rmdir, rm, unlink, open, mkdtemp, chmod } from 'node:fs/promises'
+import { lstat, readdir, rmdir, open, mkdtemp, chmod } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { Stats } from 'node:fs'
@@ -77,7 +78,7 @@ export class OfficialWatch extends InterruptionEvidence {
   static async prepare(probe: OfficialProbe, root: string, progress: (value: CliDownloadProgress) => void) {
     const watch = new OfficialWatch({ ...probe }, progress)
     if (probe.privateTemp) {
-      watch.probe.directory = await mkdtemp(join(await prepareDownloads(root), 'local-'))
+      watch.probe.directory = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(root), 'local-')))
       await chmod(watch.probe.directory, 0o700)
       watch.env[probe.privateTemp] = watch.probe.directory
       if (probe.privateTemp === 'TEMP') watch.env.TMP = watch.probe.directory
@@ -211,7 +212,7 @@ export class OfficialWatch extends InterruptionEvidence {
     await this.collect()
     for (const entry of this.owned.values()) {
       const info = await lstat(entry.path).catch(() => undefined)
-      if (info?.isFile() && !info.isSymbolicLink() && info.nlink === 1 && info.ino === entry.stat.ino && info.dev === entry.stat.dev && info.mtimeMs >= this.startedAt) await unlink(entry.path)
+      if (info?.isFile() && !info.isSymbolicLink() && info.nlink === 1 && info.ino === entry.stat.ino && info.dev === entry.stat.dev && info.mtimeMs >= this.startedAt) await removeUpdateTemporary(entry.path)
     }
     for (const entry of [...this.ownedDirs.values()].sort((a, b) => b.path.length - a.path.length)) {
       const info = await lstat(entry.path).catch(() => undefined)
@@ -222,7 +223,7 @@ export class OfficialWatch extends InterruptionEvidence {
       // there (Qoder natives ~38 MB, Bun DLLs; 2026-11-14 Windows 实机) is ours to remove. A locked file keeps it.
       const info = await lstat(this.probe.directory).catch(() => undefined)
       if (info?.isDirectory() && !info.isSymbolicLink() && (!this.rootIdentity || info.ino === this.rootIdentity.ino && info.dev === this.rootIdentity.dev))
-        await rm(this.probe.directory, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined)
+        await removeUpdateTemporary(this.probe.directory)
     }
   }
 }

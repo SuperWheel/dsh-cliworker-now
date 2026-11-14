@@ -1579,7 +1579,7 @@ Windows Claude、Antigravity、OMP、TRAE CN，以及已开放的 Unix OMP/OpenC
 
 看门狗使用 30 秒无增长、大小回落、60 秒窗口低于 100 KB/s、下载满 30 秒后的硬截止预测、不可观测时长度 / 200 KB/s（3–10 分钟）的总预算。中断文字含 curl 18/28/52/56、Download stalled、retrying from GitHub Releases 等。先通过宿主进程管理器 terminate，grace 最多 5 秒（本地 provider 先 TERM 后 KILL）；`waitForExit` 确认整个受管范围退出后才删除本次暂存并接管。清理未确认保持维护隔离，不接管。非零退出仍先重新探测版本，已前进且符合版本策略时采用官方结果。零退出并报告已是最新不触发失败或降级。锁仅在 PID 明确失效时可作为停滞证据；有效或无法确认的锁报告 UPDATE_LOCKED。
 
-`channel-memory.json` 采用私有目录 0700、原子文件 0600，键为 CLI、平台、架构及 executable/updateRoot 的布局散列；Windows 路径大小写归一化。有效期 7 天，布局改变或记录过期后恢复官方优先。官方失败后先记录，接管若失败/取消则清除该键；官方成功、已是最新和锁冲突清除该键。实际放置前仍重新核对计划、布局和目标严格高于已装版本，验证保留 60 秒总预算及 45 秒版本命令预算。
+`channel-memory.json` 采用私有目录 0700、原子文件 0600，键为 CLI、平台、架构及 executable/updateRoot 的布局散列；Windows 路径大小写归一化。有效期 7 天，布局改变或记录过期后恢复官方优先。官方失败后先记录，接管若失败/取消仅撤销本轮新建的记录，保留原有记录及时间；官方成功、已是最新和锁冲突按既有规则清除该键。实际放置前仍重新核对计划、布局和目标严格高于已装版本，验证保留 60 秒总预算及 45 秒版本命令预算。
 
 `artifacts/` 集中描述与共用实现，`windows-artifacts.ts` / `local-artifacts.ts` 保留兼容入口。文件描述覆盖 sources、bytes、integrity、compression、decodedIntegrity、presigned、dest；多文件进度对主工件求和，官方脚本/元数据 extras 单独显示准备阶段。下载仍保留 10 秒停滞续传、100 KB/s 低速重连、200 次/2 小时、多源长度/ETag 与 2 GB 缓存预算。GCS MD5 解析 x-goog-hash 的 base64；gzip/zstd 流式解码并限制解压大小，二次摘要通过才提供放置输入。OMP 403 刷新构建清单，版本、长度、摘要不变才保留 Range。白名单放置共用同目录临时文件与 rename，Windows 占用重试 500/1000 ms，版本文件写入失败回滚，回滚失败保留备份。Windows agy 入口保留磁盘大小写；TRAE 保留原自动更新标记恢复逻辑，策略文件 auto_update 的核实仍属任务 4.5。
 
@@ -1628,8 +1628,8 @@ Python 镜像实测只证明同 venv 可复用：uv 0.12.3 的 export 保留锁�
 Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 optionalDependency 并 exit 0，主包 4.9 KB 完成和 package.json 版本更新均不代表安装成功。本节取代前文 npm 只下载主包、所选源优先的规则。
 
 - `npm-platform.ts` 从有效 registry 的精确版本清单解析 optionalDependencies，保留别名安装键，按真实包名与 semver 范围取平台包清单，以 os/cpu/libc（含排除项）判定。下载前以已解析的原生 Node 执行有界平台探针，读取 process.platform/process.arch 与运行时 libc；下载、安装、核验使用同一 runtime，不能用可能处于模拟模式的 Harness 架构代替。安装后只读主包和组件 package.json（支持同前缀内 npm hoist）及插件私有、按主包版本/依赖图/运行时平台散列的已验证元数据，不请求 registry；元数据缺失或无效仅表示没有额外证据，不能单独判损坏。Codex 平台别名必需；OpenCode 普通包与 baseline 为至少一个的替代组；CodeBuddy node-pty 可回退 child_process，不列为必需，sandbox 平台包独立核验。其他声明组件依赖已核实的匹配平台元数据，未知缺件不会靠在线请求猜平台。只有下载准备查询清单，有大小/并发上限和内存 TTL；不读取 npmrc 或账号。
-- `npm-download.ts` 生成主包与本平台组件的多文件描述，共用 `downloadDescription`、下载摘要校验、Range、10 秒停滞恢复、2 GB 上限。主包要求官方 SHA-512；组件允许官方 integrity，缺失时用 shasum/SHA-1。非自定义源保留标准 npm 路径及精确 CDN 跳转约束，先官方，30 秒无进展、60 秒低于 100 KB/s 或 10 分钟预算后切接管；失败记忆 7 天，接管失败/取消清除，清理未确认保留文件。全部工件长度已知前不提供总百分比。
-- npm 本地平台 tgz 通过同一 Node/npm 的 `cache add <file> --global --prefix <prefix> --registry <registry>` 进入安装实际使用的默认缓存；再 `install --global --prefix <prefix> <main.tgz> --registry <registry> --prefer-offline --include=optional`。两次不传 --cache、不覆写缓存环境，因此不向无关缓存写入。缓存填充与安装均受原进程退出确认、取消和维护锁管理；不增加 fetch-timeout，不移除代理或增加 NO_PROXY。
+- `npm-download.ts` 生成主包与本平台组件的多文件描述，共用 `downloadDescription`、下载摘要校验、Range、10 秒停滞恢复、2 GB 上限。主包要求官方 SHA-512；组件允许官方 integrity，缺失时用 shasum/SHA-1。非自定义源保留标准 npm 路径及精确 CDN 跳转约束，先官方，30 秒无进展、60 秒低于 100 KB/s 或 10 分钟预算后切接管；失败记忆 7 天，接管失败/取消保留此前记忆，不新增失败记忆；清理未确认保留文件。全部工件长度已知前不提供总百分比。
+- npm 本地平台 tgz 通过同一 Node/npm 的 `cache add <file> --global --prefix <prefix> --registry <registry> --cache <operation-cache>` 进入本次下载目录内的私有缓存；再 `install --global --prefix <prefix> <main.tgz> --registry <registry> --cache <operation-cache> --prefer-offline --include=optional`。两次使用同一个私有缓存，操作结束后删除，不写入用户全局缓存。缓存填充与安装均受原进程退出确认、取消和维护锁管理；不增加 fetch-timeout，不移除代理或增加 NO_PROXY。
 - `service.ts` 与 `install.ts` 共用下载和安装树核验；`currentVersion(..., verifyNpm=true)` 明确绕过主包版本快捷返回，使用既有有界 `--version` 与进程退出确认。必需组件组满足且版本探针通过才成功；安装时清除下载百分比，文字说明元数据和普通依赖仍可能联网。
 - 后台在复用版本缓存前检查组件树，失败清除 currentVersion/版本缓存，使用 `installed=true, group=failed, reason=UNKNOWN_VERSION` 和具体 reasonDetail；前台已有“重新安装到默认位置”操作负责修复同版本损坏安装。背景禁止执行的 CLI 继续只读检查。无须新增共享状态，本轮不改 src/client。
 - 真实 Mac 实验：Node 22.23.1，npm 10.9.8 和 11.12.1，esbuild 0.25.0 与 @esbuild/darwin-arm64（4,151,127 B），普通依赖和本地 npm alias 夹具均安装成功、平台 tgz 命中缓存且无再次网络 GET，二进制输出 0.25.0。实验独立 prefix/cache/空 userconfig/globalconfig，不污染用户全局缓存。命令与日志见变更任务 9.1；这不等于 Windows/真实 CLI 更新验收。
@@ -1642,7 +1642,7 @@ Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 opti
 
 准备阶段与安装后核验共用 `npmRequiredGroups`：主包与单独必需组必须准备成功；OpenCode 普通包优先，失败尝试 baseline，至少一个成功即可，成功后不重复下载其他替代成员。CodeBuddy node-pty 等可选组尽力准备，元数据/摘要/传输失败只记录名称与 npm 后续可能自行下载，不让可选优化阻断安装；取消不吞掉。只有校验成功的文件进入 cache add，安装后仍检查必需组与版本。进度以最终准备文件计数，替代尝试重置本文件长度，失败可选件不计入完成文件，未完成组的长度保持未知。
 
-自动选源的主包及组件元数据查询先用有效 registry，在不可用、缺目标版本或无法解析时回退官方精确版本/范围清单；身份/完整性冲突不作为回退理由。custom 不增加此回退，既有官方摘要信任根核对保持不变。npm 安装 registry 仍是用户选定值，代理与缓存配置不变。
+自动选源的主包及组件元数据查询先用有效 registry，在不可用、缺目标版本或无法解析时回退官方精确版本/范围清单；身份/完整性冲突不作为回退理由。custom 不增加此回退，既有官方摘要信任根核对保持不变。npm 安装 registry 仍是用户选定值，代理保持不变；缓存按下文操作级回收规则隔离。
 
 摘要重试先重新打开临时文件，再探测源；validator 变化触发 reset 时句柄仍有效。多文件聚合的响应长度每次随进度更新，未知长度使总量未知，不锁存先前源的值；固定清单 bytes 仍作为必须满足的长度约束。
 
@@ -1660,3 +1660,12 @@ Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 opti
 Host 启动异步清扫，目录查询创建前合并并节流为每状态根十分钟一次；卸载中止扫描并等待在途工作。只处理 `<state>/catalog/*/query-*` 和系统临时目录内源码确认的 mkdtemp 前缀（identity、login-options、Qoder/Qoder CN metadata、OMP approval、Hermes statistics、native-read、CodeBuddy catalog、cwn-、dshwb-），至少一小时未修改、lstat 确认真实目录，排除链接与仍存活的所有者标记；旧版无标记残留使用年龄门槛，锁定目录留待后续重试。
 
 OMP 身份、目录、登录选项与权限帮助探测使用 `<state>/omp-natives/`（0700），通过 PI_NATIVES_DIR 共用按版本解包的原生模块；按数值版本保留最新三个真实版本目录，年轻或锁定目录延后回收。Pi 1.5.2 安装包未发现相同变量，不套用。正式 Worker 原生 HOME 与运行环境不改；仅其权限帮助子探测使用此缓存。代理变量（含大小写变体）保持。Windows 实际复用和 Defender 占用回收仍由用户实机验收。
+
+
+### 2026-11-15 更新/安装结束清理（双通道任务 10）
+
+`update-cleanup.ts` 用操作级异步上下文登记路径，下载尚未返回即失败也能回收 partial；每个队列项独立上下文，维护锁在最终清理后释放。成功、失败、取消均清理，未确认进程退出保留；回滚失败的最后备份不加入可删列表。删除复用 `temporary-tree.mjs` 的有界重试，可传 original-fs 绕过 Electron ASAR；磁盘错误和输出回调错误不改原结果。统计真实删除的逻辑字节，不等同文件系统空闲空间变化；输出尾部为原始文字，一行中文摘要不走 t()/hostText。
+
+npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不修改代理环境，结束删除私有缓存。已存在的下载通道记忆不因本轮失败而清除（成功恢复官方后仍按既有规则失效），跨操作不保留 partial。reify 只匹配本包和目标公开清单声明的 bin、八位字母数字后缀；候选存在时才枚举进程，任何 npm 进程或无法核实都跳过，删除每项前重查。
+
+`update-residue.ts` 对 Grok downloads/.old、Qoder/Qoder CN version.txt/版本文件、Claude versions、TRAE releases/current 和当前用户名 Qoder temp natives 使用精确规则。运行前记录候选路径，失败只删新增未使用副本并保留备份；所有候选 lstat，不跟随链接或 junction，仅为读取 TRAE 当前指向解析 current。Hermes tools/facts.json 的 entry 规则有合成测试，但既有策略禁止 --version，生产不能用静态安装记录冒充 runnable，所以保留其原生副本；npm 工具族仅有明确 facts entry 才可识别，未知 TRAE lease 保留。只读检查更新不删除，以免绕开维护锁与实时运行证据。真实 Mac/Windows 验收继续未勾选。
