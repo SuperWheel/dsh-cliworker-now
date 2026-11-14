@@ -282,8 +282,11 @@ pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm test
 pnpm build:preview   # 隔离包：.cache/preview-package
+pnpm check:browser --frontend <frontend-dist> # 检查宿主浏览器原语导出
 pnpm build
 ```
+
+浏览器兼容性检查及验收边界见 [原语检查说明](doc/knowledge/verification/browser-primitives.md)。
 
 变更用 [OpenSpec](doc/openspec.md) 管理（`pnpm spec:list`、`pnpm spec:check`）。真实 CLI 验收会消耗账号额度，入口为 `pnpm smoke:extended --help`；Windows 远程测试见 [指南](doc/windows-remote-testing.md)。
 
