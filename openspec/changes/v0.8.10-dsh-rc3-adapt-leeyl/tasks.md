@@ -54,4 +54,8 @@
   - 以验收参数启动正式 Desktop 0.2.2-rc.3，内置浏览器直连 Host Web UI：主界面、右侧栏 CLI Worker 面板、「CLI Worker 设置」通用页与 17 项 CLI 导航正常；「更新 CLI」页列出已安装 16 项、全部「已是最新」、未安装 1 项；Claude Code 页显示「Claude 官方账号未登录」（预期，见 vnext-plan-exit-agy-background 7.5），Antigravity 页已登录、默认 Gemini 3.8 Flash／Low。启动日志无插件报错。
   - 真实派遣：主对话（DeepSeek-V4.1-Flash；GLM-5.3-Flash 返回 429 余额不足后切换）派遣 Antigravity 生成 `agy-bg-test/cat.png`，问题卡片选型、终态 completed、文件为 1024×1024 PNG；续聊同一 Worker 生成 `dog.png`（证据见 vnext-plan-exit-agy-background 5.2）。
 - [ ] 4.3 其余未覆盖项
-  - （未执行：Windows 适配与界面验收、审批、停止、运行中动画与 Stop、上游四包 Vitest。真实派遣与续聊已在 4.2 用 Antigravity 覆盖一次。）
+  - 2026-11-14 Windows 基础部署与启动验收：官方 win-x64 nightly 清单的 rc.3 安装包大小与 SHA-512 均匹配，安装器退出 0，安装后 FileVersion 为 0.2.2-rc.3；安装前确认活动 Worker、账号进程与 Desktop 下 CLI 子进程均为 0。按用户授权只清空 pip Cache，C 盘空间达到 2.5 GiB 门槛后才安装。
+  - 将 main `e03db09` 的现有正式构建冻结打包，通过原生 `dsh plugin --profile desktop add --save-exact` 安装；修改前备份 profile 配置及旧插件。独立读回 1142/1142 文件 SHA-256 一致，lib 文件数 918/918，Host SHA-256 为 `d6734ad59b097895ce4894278245f19f79ea36c7f2f7095d1dcc5186b0318ab0`。安装后的汇总脚本因 PowerShell 保留变量名报错，随后独立只读校验通过，未重复安装。
+  - 用四个指定验收参数在用户交互会话启动 Desktop，窗口可响应，原生 UI Automation 确认「CLI Worker Now」面板可见；Host stdout 出现 `dsh web:`，无错误或 431，stderr 为空。日志保留 Windows 用户私有 ACL，仅回传端口与安全投影，未取回 token。安全证据位于本地忽略目录 `.test-data/windows-remote/desktop-audit/rc3-e03db09-20261114/`；Desktop 保持运行，未派遣模型任务。
+  - Windows 真实派遣受阻：经 SSH 隧道进入 Windows Desktop Web UI 后，主对话只有 zai-coding-cn 的 GLM 系列可选；GLM-5.3 强度「默认」返回 400（始终思考模型），改为 Low 后返回 429「余额不足或无可用资源包」，主 Agent 未能派遣 Worker。需用户在 Windows DSH 登录 DeepSeek 账号或为 GLM 充值后再测。
+  - （未执行：Windows 真实派遣、完整界面与权限验收、审批、停止、运行中动画与 Stop、上游四包 Vitest。真实派遣与续聊已在 4.2 用 Antigravity 覆盖一次。）

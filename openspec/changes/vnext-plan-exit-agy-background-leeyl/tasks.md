@@ -61,7 +61,7 @@
   - 2026-11-14 正常情形已通过（用户授权真实调用；正式 Mac Desktop 0.2.2-rc.3，main `930de2e` 正式构建）：Worker `caa8273b`，Antigravity 1.5.8，Gemini 3.8 Flash／Low，自动审批（agy 报告有终端沙箱）
   - 首轮派遣 agy 自行用 Pillow 绘制 `cat.png`，未用子 Agent，不覆盖本修复；终态 completed，文件 1024×1024 RGBA PNG、18,854 字节
   - 续聊要求用自带生图：01:08:38 `invoke_subagent`（image-generator），01:08:41 诊断「15 秒后第 1 次跟进」，01:08:56 自动跟进 1 次，01:09:22 result SUCCESS、终态 completed；事件中无待核实（UNCERTAIN）。`dog.png` 实际存在：1024×1024 RGB PNG、1,515,167 字节，由子 Agent 产物 `blue_watercolor_dog_*.jpg`（782,443 字节）经 Pillow 转码保存
-  - 未执行：主回合较长（含审批）情形，本次 agy 档位为自动审批，未改用户档位；Windows 无沙箱路径未测
+  - 未执行：主回合较长（含审批）情形，本次 agy 档位为自动审批，未改用户档位；Windows 无沙箱路径未测（2026-11-14 Windows 已升级 rc.3 并部署 e03db09，但主对话仅有 GLM 且返回 429 余额不足，未能派遣；见 v0.8.10-dsh-rc3-adapt 4.3）
 - [ ] 5.3 向报告用户索取 Worker 的 `events.jsonl`，确认其误报属于哪种原因（未执行：需用户联系报告者）
 
 ## 6. 文档同步 〔产品｜1h｜前置 2〕
