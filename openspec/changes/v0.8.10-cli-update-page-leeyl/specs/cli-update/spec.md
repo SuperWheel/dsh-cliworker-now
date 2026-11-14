@@ -410,7 +410,7 @@ Host SHALL 按 Host 生命周期、项目和 CLI 隔离连接展示缓存，账�
 
 #### Scenario: 过期或未核实登录
 - **WHEN** 账号缓存过期或 authenticated 没有 verification
-- **THEN** 展示快照 SHALL 将其降为 unknown，不得显示绿色已登录；查询失败 SHALL 清除旧成功值并发布错误
+- **THEN** 展示快照 SHALL 将其降为 unknown，不得显示绿色已登录；查询失败 SHALL 清除旧成功值并发布该次读取的真实原因，MUST NOT 以通用失败文案替换已知原因
 
 #### Scenario: 登录或入口变化期间旧查询返回
 - **WHEN** 登录/退出/账号切换、CLI 启用状态或执行入口发生变化

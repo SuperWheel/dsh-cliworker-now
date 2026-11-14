@@ -347,7 +347,7 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 
 时间使用 `checkedAt`（epoch ms），时钟回拨视为过期。快照含 `project`（SHA-256）、CLI `revision`、全局递增 `sequence`；每槽含 `loading`、`value?`、`error?`、`cache?={checkedAt,stale,project,revision,displayOnly:true}`。账号快照保留 Host 原摘要，但移除动作及逐条退出句柄；过期的 authenticated 降为 unknown，没有 verification 的 authenticated 也降为 unknown。目录只返回模型、强度与 notice，不返回 Host binding。缓存读取不替代登录操作前的即时校验。
 
-登录/退出窗口 reservation 开始与结束、账号变更回调、CLI 开关、执行入口变化及更新后经统一失效机制清除两槽并增加 revision。保留 `accountRevision` 和执行入口 revision 的同步检查。作废同时 abort 进行中查询；后续请求先等旧查询清理，旧结果不得回填。显式刷新也排在正在进行的读取之后，不被该读取吞掉。查询失败清除旧成功值；关闭 Host 中止并等待全部查询，取消订阅移除监听。
+登录/退出窗口 reservation 开始与结束、账号变更回调、CLI 开关、执行入口变化及更新后经统一失效机制清除两槽并增加 revision。保留 `accountRevision` 和执行入口 revision 的同步检查。作废同时 abort 进行中查询；后续请求先等旧查询清理，旧结果不得回填。显式刷新也排在正在进行的读取之后，不被该读取吞掉。查询失败清除旧成功值，槽内 `error` 保留该次读取的原因（去掉错误类名、最长 1024 字符，与直读接口报告的一致），空原因才用「连接状态读取失败，请刷新重试」；关闭 Host 中止并等待全部查询，取消订阅移除监听。
 
 项目在解析主会话时登记，因而不依赖先打开设置；无项目时不猜项目。已知项目的安全连接项加入原空闲队列，后加入项目可继续入队；同一项目只登记一次，无定时重复全量查询。启动 60 秒、2 秒 CPU 双采样/间隔、CPU <50%、无任务/登录/更新、打断清理与 30 秒空闲恢复规则不变。进入更新页接管时也完成已知项目的安全连接项。关闭开关后不启动后台项；前台显式查询不受该开关限制。
 

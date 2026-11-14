@@ -45,6 +45,22 @@ it('模拟：未核实登录不会变绿；刷新失败不保留旧登录', asyn
   expect(cache.status('/a', 'zcode').account).toMatchObject({ loading: false, error: expect.any(String) })
   expect(cache.status('/a', 'zcode').account.value).toBeUndefined()
 })
+it('模拟：读取失败在快照中保留真实原因，不带错误类名，空原因才用通用文案', async () => {
+  const cache = fixture()
+  class SimulatedAccountError extends Error { name = 'SimulatedAccountError' }
+  const reason = '模拟：返回的 16 个模型在当前账号下均为停用状态'
+  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new SimulatedAccountError(reason) })).rejects.toThrow(reason)
+  expect(cache.status('/a', 'qoder').catalog).toEqual({ loading: false, error: reason, value: undefined, cache: undefined })
+  expect(cache.snapshot('/a').entries.find(entry => entry.cli === 'qoder')?.catalog.error).toBe(reason)
+  expect(cache.fresh('/a', 'qoder', 'catalog')).toBeUndefined()
+  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new Error('  ') }, true)).rejects.toThrow()
+  expect(cache.status('/a', 'qoder').catalog.error).toBe('连接状态读取失败，请刷新重试')
+  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new Error('模'.repeat(5000)) }, true)).rejects.toThrow()
+  expect(cache.status('/a', 'qoder').catalog.error).toHaveLength(1024)
+  // A later successful read clears the reason.
+  await cache.read('/a', 'qoder', 'catalog', signal(), async () => ({ ...catalog, catalog: { ...catalog.catalog, cli: 'qoder' as const } }), true)
+  expect(cache.status('/a', 'qoder').catalog).toMatchObject({ loading: false, error: undefined, value: { models: [{ efforts: ['low', 'high'] }] } })
+})
 it('模拟：并发请求复用一次读取，作废等待旧清理后重查且旧结果不能回填', async () => {
   const cache = fixture(); let finish!: (value: AccountStatus) => void, active!: AbortSignal
   const load = vi.fn((control: AbortSignal) => { active = control; return new Promise<AccountStatus>(resolve => { finish = resolve }) })

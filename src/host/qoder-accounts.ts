@@ -429,7 +429,7 @@ async function queryQoderMetadataAttempt(backend: ProcessBackend, config: Runtim
           if (!text(result.account.userId)) return null
           if (kind === 'account') return result.account
           const models = await request('get_models', { fetchStrategy: 'live', uid: result.account.userId })
-          return { models: parseQoderModelState(models), account: {
+          return { models: parseQoderModelState(models, qoderVariant(cli).label), account: {
             userId: result.account.userId, email: result.account.email, organization: result.account.organization,
           } }
         } finally { await request('shutdown') }
@@ -438,7 +438,7 @@ async function queryQoderMetadataAttempt(backend: ProcessBackend, config: Runtim
       initializedProtocol = true
       if (anonymous) return null
       try {
-        if (kind === 'models') return { models: parseQoderModelState(initialized),
+        if (kind === 'models') return { models: parseQoderModelState(initialized, qoderVariant(cli).label),
           account: record(initialized?.account) ? { userId: initialized.account.userId,
             email: initialized.account.email, organization: initialized.account.organization } : null }
         const result = await request('account_info')
@@ -582,9 +582,11 @@ export const QODER_METADATA_ARGUMENTS = [
   '--acp', '--permission-mode', 'default', '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}',
   '--settings', '{"disableAllHooks":true,"general":{"enableAutoUpdate":false},"aiCodeTracking":{"installGitCommitHook":false}}',
 ]
+export const qoderAllModelsDisabled = (label: string, count: number) =>
+  `${label} 返回的 ${count} 个模型在当前账号下均为停用状态，暂无可选模型；请在 ${label} 中确认账号额度或套餐后刷新`
 /** Official SDK initialize.models. BHs always exposes isEnabled; disabled SDK
  * entries must not become selectable because ACP getAvailableModels filters them. */
-export function parseQoderModelState(state: unknown): ModelChoice[] {
+export function parseQoderModelState(state: unknown, label = 'Qoder'): ModelChoice[] {
   if (!record(state) || !Array.isArray(state.models) || state.models.length > 4096) throw new QoderAccountError('Qoder 未公开结构化模型目录')
   const models = new Map<string, ModelChoice>()
   for (const model of state.models) {
@@ -597,6 +599,8 @@ export function parseQoderModelState(state: unknown): ModelChoice[] {
     models.set(model.value, { id: model.value, label: model.displayName,
       efforts: ['default', ...EFFORTS.filter((effort) => effort !== 'default' && advertised.has(effort))] as Effort[] })
   }
+  // Every entry disabled is the account's answer, not a missing catalog: say so with the count.
+  if (!models.size && state.models.length) throw new QoderAccountError(qoderAllModelsDisabled(label, state.models.length))
   if (!models.size) throw new QoderAccountError('Qoder 未公开可用的结构化模型目录')
   return [...models.values()]
 }
