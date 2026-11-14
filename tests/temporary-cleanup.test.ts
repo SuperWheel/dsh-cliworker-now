@@ -56,6 +56,15 @@ it('sweeps only old owned real directories, skips live owners, links, young and 
   expect(await readdir(target)).toEqual(['keep'])
 })
 
+it('also sweeps the separate ZCode scratch root (macOS /tmp) for cwn- trees only', async () => {
+  const root = await fixture(), state = join(root,'state'), temp = join(root,'tmp'), zcode = join(root,'zcode-tmp')
+  await mkdir(temp); await mkdir(zcode)
+  const scratch = await old(join(zcode,'cwn-old')), other = await old(join(zcode,'cliworker-login-options-old'))
+  await sweepTemporaryTrees(state,{temporaryRoot:temp,zcodeTemporaryRoot:zcode})
+  await expect(stat(scratch)).rejects.toMatchObject({code:'ENOENT'})
+  expect(await stat(other)).toBeDefined()
+})
+
 it('does not enter a linked catalog or scan after cancellation', async () => {
   const root = await fixture(), state = join(root,'state'), temp = join(root,'tmp'), target = join(root,'external')
   await mkdir(state); await mkdir(temp)

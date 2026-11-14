@@ -1,7 +1,7 @@
 /** 模拟：Windows npm 静默跳过 optionalDependency、发布元数据及下载；不运行真实 CLI。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { npmDependency, npmPlatformMatches, npmPlatformComponents, npmManifest, npmDigest, verifyNpmPlatforms, type NpmManifest } from '../src/host/cli-management/npm-platform.ts'
 import { prepareNpmDownload, npmCacheAddArgv, npmDownloadFs } from '../src/host/cli-management/npm-download.ts'
@@ -165,6 +165,38 @@ it.each([false, true])('模拟服务：npm exit 0，平台 present=%s 必须在�
   expect(commands[1]).toContain(privateCache)
   expect(existsSync(privateCache)).toBe(false)
   expect(result.progress).toMatchObject({ byteProgress: false }); expect(result.progress?.totalBytes).toBeUndefined()
+})
+it('模拟服务：收尾清理无法确认进程退出时，结果标为 cleanup-unconfirmed 并暂停该 CLI', async () => {
+  const f = fixture(), before = { ...f.identity, manifestVersion: '0.168.0' }
+  f.identities.set('codex', before)
+  ;(f.service as any).deps.npmRuntimeHost = async () => host
+  const target = { ...main, optionalDependencies: { [alias]: main.optionalDependencies![alias]! } }
+  ;(f.service as any).deps.npmCheck = async (id: any, releases: any, registry: string, signal: AbortSignal, platform?: any, expected?: any) => {
+    if (id.manifestVersion === '0.168.0') return
+    return verifyNpmPlatforms(id, releases, registry, signal, platform ?? host, expected)
+  }
+  f.metadataFetch.mockImplementation(async url => {
+    if (String(url).endsWith('dist-tags')) return new Response(JSON.stringify({ latest: main.version }))
+    const v = decodeURIComponent(new URL(String(url)).pathname.split('/').at(-1)!)
+    return new Response(JSON.stringify(v === main.version ? target : component))
+  })
+  f.artifactFetch.mockImplementation(f.options.fetcher as any)
+  vi.mocked(f.backend.spawn).mockImplementation(spec => {
+    if (spec.argv.includes('install')) {
+      f.identities.set('codex', f.identity); write(join(f.identity.packageRoot, 'package.json'), target)
+      write(join(f.identity.packageRoot, 'node_modules', alias, 'package.json'), component)
+      // A reify leftover makes the finalizer inspect npm processes.
+      write(join(dirname(f.identity.packageRoot), '.codex-AbCd1234', 'package.json'), { bytes: 'leftover' })
+    }
+    // The npm-prefix residue finalizer's process inventory cannot confirm its own exit.
+    const inventory = ['/bin/ps', 'powershell.exe'].includes(spec.argv[0]!)
+    return { stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0 }), waitForExit: async () => !inventory, terminate() {} } as any
+  })
+  const row = (await checked(f.service)).entries.find(e => e.cli === 'codex')!
+  f.service.start('codex', 'update', row.planToken!, '', 'npm-platform')
+  const result = (await finished(f.service)).results[0]!
+  expect(result.phase).toBe('cleanup-unconfirmed')
+  expect(result.error).toMatchObject({ code: 'CLEANUP_UNCONFIRMED', retryable: false })
 })
 it('模拟：官方持续 30 秒无字节后改用接管，安装成功才记忆 7 天', async () => {
   vi.useFakeTimers(); const f = fixture()

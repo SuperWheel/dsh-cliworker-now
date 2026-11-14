@@ -10,9 +10,11 @@ const temporaryPrefixes = ['cliworker-omp-identity-', 'cliworker-login-options-'
   'cwn-', 'dshwb-']
 
 export async function sweepTemporaryTrees(stateDirectory: string, options: {
-  temporaryRoot?: string; signal?: AbortSignal; now?: number
+  temporaryRoot?: string; zcodeTemporaryRoot?: string | null; signal?: AbortSignal; now?: number
 } = {}): Promise<void> {
   const { signal, now = Date.now(), temporaryRoot = tmpdir() } = options
+  const zcodeTemporaryRoot = options.zcodeTemporaryRoot === undefined ? (options.temporaryRoot === undefined && process.platform === 'darwin' ? '/tmp' : undefined) : options.zcodeTemporaryRoot
+  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined
   const scan = async (parent: string, matches: (name: string) => boolean, ancestors: string[] = []) => {
     const locationsSafe = async () => (await Promise.all([...ancestors, parent].map(realDirectory))).every(Boolean)
     if (signal?.aborted || !await locationsSafe()) return
@@ -22,7 +24,8 @@ export async function sweepTemporaryTrees(stateDirectory: string, options: {
       const path = join(parent, name)
       try {
         const info = await realDirectory(path)
-        if (!info || now - info.mtimeMs < TEMPORARY_TREE_MAX_AGE_MS || await temporaryTreeHasLiveOwner(path)) continue
+        // Shared roots such as macOS /tmp hold other users' entries; only this user's trees are ours.
+        if (!info || (uid !== undefined && info.uid !== uid) || now - info.mtimeMs < TEMPORARY_TREE_MAX_AGE_MS || await temporaryTreeHasLiveOwner(path)) continue
         // Recheck the candidate and parent after asynchronous owner inspection.
         const current = await realDirectory(path)
         if (signal?.aborted || !await locationsSafe() || !current || current.ino !== info.ino || current.dev !== info.dev ||
@@ -43,6 +46,11 @@ export async function sweepTemporaryTrees(stateDirectory: string, options: {
   } catch { /* Best effort; still scan system temp if catalog is unavailable. */ }
   try { await scan(temporaryRoot, name => temporaryPrefixes.some(prefix => name.startsWith(prefix))) }
   catch { /* Startup and metadata queries do not depend on reclamation. */ }
+  // ZCode scratch lives under /tmp on macOS (extended-adapters nativeTemporaryRoot), not os.tmpdir().
+  if (zcodeTemporaryRoot && zcodeTemporaryRoot !== temporaryRoot) {
+    try { await scan(zcodeTemporaryRoot, name => name.startsWith('cwn-')) }
+    catch { /* Best effort, same as the system temp scan. */ }
+  }
 }
 
 const sweeps = new Map<string, { at: number; pending: Promise<void>; running: boolean }>()

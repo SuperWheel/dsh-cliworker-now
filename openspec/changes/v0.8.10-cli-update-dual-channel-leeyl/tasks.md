@@ -318,3 +318,6 @@
 - [x] 10.11 主会话复核：不可读进程路径只对 Hermes 锁宿主计为无法判定
   - Windows 实测 346 个进程中 16 个系统进程（svchost、csrss、services、Registry 等）对普通用户无 ExecutablePath；Mac `ps comm=` 有 ssh、node、codex 等裸名。原规则任一不可读即跳过，会让 Hermes 清理在两平台几乎永远跳过。
   - 改为：路径不可读或非绝对时，仅当进程名为 hermes／python／pythonw／uv／uvx（可带版本与 .exe）才计为无法判定，其余忽略；Windows 枚举加取 Name。新增模拟测试覆盖系统进程、Mac 裸名放行与 Hermes 宿主名保持跳过；`tests/cli-management-hermes-residue.test.ts` 51/51 通过。
+- [x] 10.12 Codex 审查（b9973f4..8511875，0 个 P0/P1、2 个 P2）修复
+  - P2-1：收尾清理的版本探针或进程枚举抛出 `ProcessCleanupUnconfirmedError` 时，原先保留维护锁却仍显示 `succeeded`；现与 catch 分支一致，置 `cleanup-unconfirmed`／`CLEANUP_UNCONFIRMED`。新增服务级模拟测试（npm reify 残留触发进程枚举、退出未确认），撤掉修复时该测试失败、加回后通过。
+  - P2-2：macOS ZCode 的 `cwn-*` 临时目录在 `/tmp`（`nativeTemporaryRoot`），原清扫只扫 `os.tmpdir()`；现额外扫描 ZCode 临时根，仅限 `cwn-` 前缀，并在 POSIX 上只回收当前用户 uid 的目录（共享 /tmp 有其他用户条目）。新增模拟测试。

@@ -688,6 +688,8 @@ export class CliManagementService {
         } finally {
           if (await finishUpdateCleanup() && !quarantine) {
             quarantine = true
+            // A finalizer that cannot confirm process exit blocks the CLI like the catch branch does.
+            op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认更新进程全部退出，已暂停后续操作', retryable: false }
             const error = new ProcessCleanupUnconfirmedError()
             this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli,error)
           }
