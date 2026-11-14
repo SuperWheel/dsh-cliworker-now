@@ -49,7 +49,9 @@
   - 用 Desktop 0.2.2-rc.3 自带的 `runtime/cli/bin/dsh`，临时 `DSH_HOME`（会话临时目录）执行 `dsh plugin --profile web add --save-exact <预览 tgz>` 退出 0，再 `dsh --profile web --no-open --host 127.0.0.1 --port 0` 启动。`--dump-config` 显示 `cliworker-ui-session/conversation/subagent/chat` 四行均指向该 profile 内插件的 `runtime-host/*/lib/index.js`。
   - 内置浏览器直连：主界面（侧栏、空白会话输入栏）正常；右侧栏「CLI Worker」面板打开显示筛选与空状态；齿轮打开「CLI Worker 设置」，通用页与 17 项 CLI 导航正常；「更新 CLI」页列出 Antigravity、Codex、Claude Code、Kimi、MiMo、ZCode 等版本状态；插件页「已安装插件」显示 dsh-cliworker-now 已启用。全程无白屏，控制台 0 条消息；Host 日志只有启动地址一行，无插件报错。
   - 只做查看，未点击任何更新、登录或派遣；后台预加载为只读探测。结束后停止 Host，`ps` 确认无残留进程；启动日志中的 token 未写入任何文件或记录。
-- [ ] 4.2 正式 Mac Desktop 加载验收
-  - （未执行：Desktop profile 的 node_modules 软链指向主仓库，需主会话合并本分支并在主仓库正式构建后再验收；已向主会话报告。）
+- [x] 4.2 正式 Mac Desktop 加载验收
+  - 2026-11-14 主会话：分支合并入 main（`3cca31d`，随后 `930de2e`），`corepack pnpm install --frozen-lockfile` 后 `corepack pnpm build` 退出 0；构建前确认 Desktop Host 无 CLI 子进程，`osascript` 退出 Desktop。Desktop profile 的 `node_modules/dsh-cliworker-now` 软链指向主仓库，构建即生效。
+  - 以验收参数启动正式 Desktop 0.2.2-rc.3，内置浏览器直连 Host Web UI：主界面、右侧栏 CLI Worker 面板、「CLI Worker 设置」通用页与 17 项 CLI 导航正常；「更新 CLI」页列出已安装 16 项、全部「已是最新」、未安装 1 项；Claude Code 页显示「Claude 官方账号未登录」（预期，见 vnext-plan-exit-agy-background 7.5），Antigravity 页已登录、默认 Gemini 3.8 Flash／Low。启动日志无插件报错。
+  - 真实派遣：主对话（DeepSeek-V4.1-Flash；GLM-5.3-Flash 返回 429 余额不足后切换）派遣 Antigravity 生成 `agy-bg-test/cat.png`，问题卡片选型、终态 completed、文件为 1024×1024 PNG；续聊同一 Worker 生成 `dog.png`（证据见 vnext-plan-exit-agy-background 5.2）。
 - [ ] 4.3 其余未覆盖项
-  - （未执行：Windows 适配与界面验收、真实模型／CLI 派遣、续聊、审批、停止、运行中动画与 Stop、上游四包 Vitest——均不在本次授权或环境范围内。）
+  - （未执行：Windows 适配与界面验收、审批、停止、运行中动画与 Stop、上游四包 Vitest。真实派遣与续聊已在 4.2 用 Antigravity 覆盖一次。）
