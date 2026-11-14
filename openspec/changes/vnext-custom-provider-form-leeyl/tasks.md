@@ -39,6 +39,8 @@
   - 新 worktree 初次 typecheck 因缺少生成 Remote 声明失败；隔离 build:preview 后只把生成 lib 复制到此 worktree 的忽略目录，再运行 typecheck 通过。软链依赖触发 pnpm 的自动重装保护，因此按命令禁用依赖重检；Vitest 默认加载器写软链 node_modules 被拒绝，改用 runner 和 --no-cache，未改主仓库依赖。
   - （未执行：全量 vitest 不属于本次 Host 最小验收；前端由另一 agent 实施，整项保留待办。）
 - [ ] 3.2 Mac Desktop 实机：Pi 等已核实 CLI 的表单显示与写入（使用测试用服务商与测试密钥，不调用模型）
+  - 2026-11-14 Mac Desktop（构建 44740eb）：Pi「添加账号」卡片显示「其他服务商（在本窗口中填写配置）」，继续后进入同窗口表单：服务商 ID*、服务商名称、Base URL*、API 协议*（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Google Generative AI）、API Key*（可显隐）、模型 ID*；底部「在原生终端中配置」「返回」「保存」。空表单保存逐字段显示必填错误；返回、关闭均正常。
+  - 未执行：真实保存写入（会改动用户 Pi 配置，待用户提供测试服务商或授权）、OpenCode/Hermes 表单、深色主题与英文界面、Windows。
   - （未执行：本次只做 Host 与临时 HOME 模拟验收；没有真实账号写入、模型调用、Desktop 或 Windows 验收。）
 - [x] 3.3 README、doc/design.md 同步
   - README.md、README.en.md、doc/design.md 同步 Host 支持范围、原生写入、回滚/凭据边界及前端独立验收状态；版本号未改，src/client/** 未改。

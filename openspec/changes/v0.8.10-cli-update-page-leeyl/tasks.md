@@ -380,6 +380,7 @@
   - `corepack pnpm --config.verifyDepsBeforeRun=false build:preview` 通过，仅生成本工作树 `.cache/preview-package`；新工作树缺 Remote 生成声明导致首次 typecheck 失败，隔离构建完成后使用该隔离包生成的 lib 声明（本工作树被忽略的 lib），再运行 `corepack pnpm --config.verifyDepsBeforeRun=false typecheck` 通过，Host/Client against DSH 0.2.2-rc.3。共享 node_modules 链接使 pnpm 自动依赖校验拒绝安装，故上述命令显式关闭启动前依赖重装检查；测试因 Vite 缓存写入权限失败后获准沙箱外执行，未更改主仓库源码或正式构建。
   - 未执行的真实验证：真实登录/退出、真实模型调用均为 0；未安装本次预览包、未更新 Desktop 链接、未在 Desktop 点击登录终端、未做 Windows/Linux 实机验收。现有现场日志不足以闭环原始全 CLI 故障；本次提交只确认共有清理状态缺陷已修复及模拟链路通过，没有证据要求修改前端生产文件。
   - 严格校验：`corepack pnpm --config.verifyDepsBeforeRun=false spec validate v0.8.10-cli-update-page-leeyl --strict` valid、退出码 0，仅提示主任务超过 10 个；Git diff --check 通过，隔离包 `src/host/accounts.ts` 与本工作树源码逐字节一致。仅本地提交，不推送、不归档。
+  - 主会话 Mac Desktop 实机（构建 e4857d1，2026-11-14 13:04）：Codex「账号终端」约 4 秒显示原生界面；Claude Code 账号终端在系统负载约 25 时约 15 秒后显示原生界面；关闭终端后账号状态重新读取。本机未复现「全部无法打开」，需用户提供失败的 CLI 与界面提示后再闭环，保持未勾选。
 - [x] 12.8 修复 Qoder 模型与强度目录
   - 现象（用户 2026-11-14，Mac Desktop 0.2.2-rc.3，main 0245b35 正式构建）：Qoder 显示已登录，但模型与思考强度目录取不到。
   - 根因分两层。账号侧：真实只读探测确认 Qoder 国际版 1.1.89 原生目录返回 16 个模型、启用 0、停用 16（13 个声明强度），账号已识别、Free；插件按既有规则不把停用模型列为可选，因此确实没有可选模型和强度，这部分不是插件缺陷，未放宽过滤。插件侧（d584398 引入）：`SettingsConnectionCache.read` 在读取失败时把槽内 `error` 一律写成「连接状态读取失败，请刷新重试」（原 src/host/settings-connection-cache.ts:64），设置页模型区在快照模式下只显示快照的 `error`（src/client/settings-dialog.tsx:1060），直读接口返回的真实原因随后也被快照覆盖；用户只看到通用失败、刷新无效，看不到是账号下模型全部停用。另外原文案「Qoder 未公开可用的结构化模型目录」（src/host/qoder-accounts.ts:600）把「账号下全部停用」说成了「没有目录」。
@@ -394,3 +395,4 @@
   - 实机发现（2026-11-14 Mac Desktop，构建 7642cd9）：冷启动并打开会话后约 4 分钟打开设置，首屏仅 Codex 为绿，其余仍在查询。原因是连接项排在 17 项路径检查、17 项版本检查之后，目录项更排在 17 项发布检查之后；每项另有约 2 秒 CPU 采样与 2 秒间隔，全程约 6–7 分钟，期间 CPU 超过 50% 还会顺延 30 秒。
   - 修改 `src/host/cli-management/service.ts` 的 `context()`：连接项插在路径检查（已登记执行入口身份）之后，按 CLI 顺序把账号与目录相邻排列；空闲门槛、串行和打断清理不变。
   - `tests/settings-connection-preload.test.ts` 新增「连接项紧接路径检查」模拟用例；旧顺序下该用例失败（expected 17 to be less than 0），新顺序 19 passed。`tests/cli-management.test.ts`、`cli-management-remotes`、`cli-management-admission` 与之合计 107 passed；typecheck 通过。
+  - Mac Desktop 复验（构建 44740eb，2026-11-14 13:20 冷启动、打开会话后不开设置等待约 3.5 分钟，负载约 3–5）：首次打开设置首屏 Antigravity、Codex、Claude Code、Kimi、MiMo、ZCode、Grok Build 已为绿点，OMP、Pi、Hermes 仍在后台队列中加载；调整前（构建 7642cd9，同样条件约 4 分钟）首屏只有 Antigravity、Codex 为绿。负载 25（10 核）时 CPU 门槛使后台顺延，属既定行为。
