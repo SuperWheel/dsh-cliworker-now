@@ -268,10 +268,7 @@ try {
       'TMPDIR',
       'NODE_EXTRA_CA_CERTS',
       'SSL_CERT_FILE',
-      'HTTPS_PROXY',
-      'HTTP_PROXY',
-      'ALL_PROXY',
-      'NO_PROXY',
+      ...Object.keys(process.env).filter(key => /^(?:https?|all|no)_proxy$/i.test(key)),
     ].flatMap((key) => (process.env[key] ? [[key, process.env[key]]] : [])),
   )
   Object.assign(env, {

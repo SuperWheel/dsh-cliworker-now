@@ -7,7 +7,7 @@ import { Readable, PassThrough } from 'node:stream'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { customRegistryProblem } from '../src/shared/cli-management.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
-import { CLI_SOURCES } from '../src/host/cli-management/sources.ts'
+import { CLI_SOURCES, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from '../src/host/cli-management/sources.ts'
 import { classifyInstallation, identifyInstallation, fingerprintToken, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { compareVersions, compatible, currentVersion, latestCompatible, updateAvailable, ReleaseClient, captureReadOnly } from '../src/host/cli-management/versions.ts'
 import { CliManagementCache, ACCOUNT_TTL, RELEASE_TTL } from '../src/host/cli-management/cache.ts'
@@ -350,8 +350,8 @@ it('includes application bundle version changes in the executable fingerprint', 
 it('background account status rejects unaudited branches and never discovers missing paths', async () => {
   const root = temp(), b = backend(), accounts = new AccountManager(b, { ...DEFAULT_CONFIG, stateDirectory: root }, async () => undefined)
   try {
-    for (const cli of CLI_IDS.filter(cli => !['mimo', 'codebuddy', 'zcode', 'grok', 'pi', 'omp', 'opencode'].includes(cli)))
-      await expect(accounts.status(cli, root, signal(), { background: true })).rejects.toThrow('后台只读')
+    for (const cli of CLI_IDS.filter(cli => !BACKGROUND_ACCOUNT_CLIS.includes(cli)))
+      await expect(accounts.status(cli, root, signal(), { background: true })).rejects.toThrow('保留前台')
     expect((await accounts.status('codebuddy', root, signal(), { background: true })).installed).toBe(false)
     expect(b.resolveExecutable).not.toHaveBeenCalled(); expect(b.spawn).not.toHaveBeenCalled()
   } finally { await accounts.close() }
@@ -387,7 +387,8 @@ it('模拟：后台连接工作按项目分开，只交给安全账号与目录�
   await checked(f.service)
   for (const project of ['/simulated-project-a', '/simulated-project-b']) {
     expect(load.mock.calls.filter((call: unknown[]) => call[1] === project).map((call: unknown[]) => [call[0], call[2]])).toEqual([
-      ['codebuddy', 'account'], ['zcode', 'account'], ['grok', 'account'], ['pi', 'account'], ['omp', 'account'], ['opencode', 'account'], ['zcode', 'catalog'],
+      ...BACKGROUND_ACCOUNT_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'account']),
+      ...BACKGROUND_CATALOG_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'catalog']),
     ])
   }
 })

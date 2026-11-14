@@ -1550,6 +1550,6 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 
 ## 2026-11-14：设置页连接状态纳入静默预加载（Host 与共享协议）
 
-新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。安全账号扩展为 MiMo、CodeBuddy、ZCode、Grok、Pi、OMP、OpenCode；后三类 OAuth 来源及 Grok 在后台只认仍有效的本地登录，不以可续期代替有效登录。完整 Hermes 状态、原生会话目录、MiMo refresh、WorkBuddy bootstrap 继续前台查询；逐 CLI 审计见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 决定 12。ZCode 目录以已记录入口读取配置与绑定、GET 模型列表，不启动 CLI。
+新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。2026-11-14 用户决定扩大到「除原生会话外全部」：Codex、Claude Code、Kimi、MiMo、Grok、OMP、Pi、Hermes、OpenCode、ZCode 的账号和目录，以及 CodeBuddy 账号。允许打开设置时已有的原生服务初始化、令牌续期和插件运行配置写入；共用前台加载路径、分槽缓存与同一 CLI 串行读取队列。Antigravity（钥匙串授权）、Qoder 两版/TRAE CN（原生会话）、WorkBuddy 两版（bootstrap 密钥）、CodeBuddy 目录（session/new）仍保留前台。后台不发 prompt、不调用真实模型、不弹终端/窗口、不升级，Kimi 保留禁升级变量，宿主代理环境保持。逐 CLI 函数及命令见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 决定 12。
 
 主会话解析登记项目并加入原 60 秒/CPU 空闲/逐项队列；任务或账号窗口打断后等清理并在 30 秒空闲后重试。设置首屏 `cliSettings.settingsCache.connections` 直接带结果，新 `settingsConnectionStatus` 返回缓存并补查缺失/过期槽，`watchSettingsConnections` 推送状态。旧账号/模型接口共用缓存，显式刷新强制读取；账号动作与执行选型仍实时核验。账号切换、登录/退出、启用状态、入口或更新后同时作废两槽，晚到结果不得回填。过期或未核实 authenticated 映射 unknown，缓存不持久化、不恢复跨 Host 绿色登录态。前端接入独立交付，不能把 Host 测试当作 UI 已完成。

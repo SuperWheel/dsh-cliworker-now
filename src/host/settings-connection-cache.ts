@@ -22,6 +22,7 @@ export class SettingsConnectionCache {
   private listeners = new Set<() => void>()
   private lifetime = new AbortController()
   private pending = new Set<Promise<unknown>>()
+  private cliReads = new Map<ActiveCliId, Promise<unknown>>()
   private sequence = 0
   project(project: string) { return createHash('sha256').update(resolve(project)).digest('hex') }
   revision(cli: ActiveCliId) { return this.revisions.get(cli) ?? 0 }
@@ -59,7 +60,13 @@ export class SettingsConnectionCache {
     const current = entry, revision = this.revision(cli), controller = new AbortController()
     current.controller = controller
     const control = AbortSignal.any([signal, controller.signal, this.lifetime.signal])
-    const operation = Promise.resolve().then(() => { control.throwIfAborted(); return load(control) }).then(value => {
+    // Account and catalog slots (including other projects) share one CLI process lane.
+    // Reserve synchronously; even an aborted queued read waits for its predecessor's cleanup.
+    const previous = this.cliReads.get(cli)
+    const ready = previous ? previous.catch(() => undefined) : Promise.resolve()
+    const operation = ready.then(() => {
+      control.throwIfAborted(); return load(control)
+    }).then(value => {
       control.throwIfAborted()
       if (revision !== this.revision(cli)) throw new Error('CLI 来源已变化，请重试')
       current.value = structuredClone(value); current.checkedAt = Date.now(); current.error = undefined
@@ -72,9 +79,11 @@ export class SettingsConnectionCache {
       }
       throw error
     }).finally(() => {
-      current.pending = undefined; current.controller = undefined; this.pending.delete(operation); this.changed()
+      current.pending = undefined; current.controller = undefined; this.pending.delete(operation)
+      if (this.cliReads.get(cli) === operation) this.cliReads.delete(cli)
+      this.changed()
     })
-    current.pending = operation; this.pending.add(operation); this.changed()
+    current.pending = operation; this.pending.add(operation); this.cliReads.set(cli, operation); this.changed()
     return operation
   }
   status(project: string, cli: ActiveCliId): SettingsConnectionStatus {

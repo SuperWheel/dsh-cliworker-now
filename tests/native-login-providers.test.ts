@@ -62,11 +62,12 @@ it('OMP metadata helper scrubs inherited credentials, asks only native metadata 
     let input=''; process.stdin.setEncoding('utf8'); process.stdin.on('data', s=>input+=s);
     process.stdin.on('end',()=>{
       const query=JSON.parse(input);
+      if(process.env.HTTPS_PROXY!=='http://proxy.invalid:8080' || process.env.http_proxy!=='http://proxy.invalid:8080' || process.env.No_PrOxY!=='.invalid') process.exit(10);
       if(query.type!=='get_login_providers' || process.env.PRIVATE_TEST_KEY || process.env.OMP_AUTH_BROKER_TOKEN || process.env.OPENAI_API_KEY!=='SYNTHETIC_CLIWORKER_METADATA_NO_INFERENCE' || process.env.HOME!==process.cwd()) process.exit(9);
       process.stdout.write(JSON.stringify({type:'response',id:query.id,command:query.type,success:true,data:{providers:[{id:'zai',name:'ZAI'},{id:'unavailable',name:'Hidden',available:false}]}})+'\\n');
     });
   `)
-  const result = await promisify(execFile)(process.execPath,[new URL('../src/host/native-login-providers.mjs',import.meta.url).pathname,'omp',entry],{cwd:root,env:{...process.env,CLIWORKER_LOGIN_METADATA_HOME:root,PRIVATE_TEST_KEY:'SYNTHETIC_SECRET',OMP_AUTH_BROKER_TOKEN:'SYNTHETIC_BROKER'},timeout:10000})
+  const result = await promisify(execFile)(process.execPath,[new URL('../src/host/native-login-providers.mjs',import.meta.url).pathname,'omp',entry],{cwd:root,env:{...process.env,CLIWORKER_LOGIN_METADATA_HOME:root,PRIVATE_TEST_KEY:'SYNTHETIC_SECRET',OMP_AUTH_BROKER_TOKEN:'SYNTHETIC_BROKER',HTTPS_PROXY:'http://proxy.invalid:8080',http_proxy:'http://proxy.invalid:8080',No_PrOxY:'.invalid'},timeout:10000})
   expect(JSON.parse(result.stdout)).toEqual({providers:[{id:'zai',name:'ZAI'}]})
   expect(result.stderr).toBe('')
 })
