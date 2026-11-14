@@ -1,6 +1,7 @@
+import { removeTemporaryTree, markTemporaryTreeActive } from './temporary-tree.mjs'
 import { qoderVariant, type QoderCliId } from './qoder-variant.ts'
 import { constants } from 'node:fs'
-import { lstat, open, mkdtemp, mkdir, writeFile, rm, readdir, realpath } from 'node:fs/promises'
+import { lstat, open, mkdtemp, mkdir, writeFile, readdir, realpath } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { homedir, tmpdir } from 'node:os'
@@ -297,6 +298,7 @@ async function queryQoderMetadataAttempt(backend: ProcessBackend, config: Runtim
   if (!env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN'] && !(await read(join(env[qoderVariant(cli).prefix + 'CONFIG_DIR']!, '.auth', 'machine_id'), signal))?.trim())
     throw new QoderAccountError('Qoder 原生登录机器标识缺失，请在原生 CLI 检查登录')
   const root = await mkdtemp(join(tmpdir(), `cliworker-${cli}-metadata-`))
+  markTemporaryTreeActive(root)
   const payload = join(root, 'auth.json')
   let cleanupConfirmed = true
   try {
@@ -460,7 +462,7 @@ async function queryQoderMetadataAttempt(backend: ProcessBackend, config: Runtim
       } finally { child.stdin?.removeListener('error', inputError) }
     }
   } finally {
-    if (cleanupConfirmed) await rm(root, { recursive: true, force: true })
+    if (cleanupConfirmed) await removeTemporaryTree(root)
   }
 }
 export async function queryQoderAccountInfo(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, signal: AbortSignal, cli: QoderCliId = 'qoder'): Promise<unknown> {

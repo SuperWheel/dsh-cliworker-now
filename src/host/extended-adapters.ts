@@ -1,3 +1,6 @@
+import { removeTemporaryTree, markTemporaryTreeActive, prepareOmpNativesDirectory } from './temporary-tree.mjs'
+import { sweepTemporaryTreesThrottled } from './temporary-sweep.ts'
+import { ProcessCleanupUnconfirmedError } from './process.ts'
 import { fileURLToPath } from 'node:url'
 import {
   mkdirSync,
@@ -5,7 +8,6 @@ import {
   chmodSync,
   realpathSync,
   mkdtempSync,
-  rmSync,
   readdirSync,
   openSync,
   closeSync,
@@ -210,7 +212,7 @@ export async function extendedLaunch(
         config,
       )
     temporary = cli === 'zcode' ? mkdtempSync(join(nativeTemporaryRoot(), 'cwn-')) : undefined
-    if (temporary) chmodSync(temporary, 0o700)
+    if (temporary) { chmodSync(temporary, 0o700); markTemporaryTreeActive(temporary) }
     const env = {
       ...launch.env,
       ...(temporary ? { TMPDIR: temporary, TMP: temporary, TEMP: temporary } : {}),
@@ -229,7 +231,7 @@ export async function extendedLaunch(
           await cleanupLaunch()
           sealPrivateTree(state)
         } finally {
-          if (temporary) rmSync(temporary, { recursive: true, force: true })
+          if (temporary) await removeTemporaryTree(temporary)
         }
       },
     }
@@ -237,7 +239,7 @@ export async function extendedLaunch(
     try {
       await cleanupLaunch()
     } finally {
-      if (temporary) rmSync(temporary, { recursive: true, force: true })
+      if (temporary) await removeTemporaryTree(temporary)
     }
     throw error
   }
@@ -252,62 +254,76 @@ export async function extendedCatalog(
   renewal?: HermesRenewalContext,
 ): Promise<ModelChoice[]> {
   signal?.throwIfAborted()
+  await sweepTemporaryTreesThrottled(stateDirectory, signal)
+  signal?.throwIfAborted()
   const catalogRoot = privateDirectory(join(stateDirectory, 'catalog', cli))
   const state = privateDirectory(mkdtempSync(join(catalogRoot, 'query-')))
+  markTemporaryTreeActive(state)
+  let cleanupConfirmed = true
   const run = async (argv: string[], env?: Record<string, string>) => {
     const temporary = cli === 'zcode' ? mkdtempSync(join(nativeTemporaryRoot(), 'cwn-')) : undefined
-    if (temporary) chmodSync(temporary, 0o700)
+    if (temporary) { chmodSync(temporary, 0o700); markTemporaryTreeActive(temporary) }
     try {
       return await capture(privateArgv(argv), {
         ...env,
+        ...(cli === 'omp' ? { PI_NATIVES_DIR: await prepareOmpNativesDirectory(config.stateDirectory ?? stateDirectory) } : {}),
         ...(temporary ? { TMPDIR: temporary, TMP: temporary, TEMP: temporary } : {}),
         ELECTRON_RUN_AS_NODE: '1',
       })
+    } catch (error) {
+      if (error instanceof ProcessCleanupUnconfirmedError) cleanupConfirmed = false
+      throw error
     } finally {
-      if (temporary) rmSync(temporary, { recursive: true, force: true })
+      if (temporary && cleanupConfirmed) await removeTemporaryTree(temporary)
     }
   }
-  const models =
-    cli === 'zcode'
-      ? await discoverZCode(
-          executable,
-          run,
-          state,
-          zcodeAuthDirectory(config.zcodeAuthDirectory, config.stateDirectory ?? stateDirectory),
-          config.zcodeBuiltinConfig,
-          { signal },
-        )
-      : cli === 'pi' || cli === 'omp'
-        ? await discoverPiOmp(cli, executable, run, state, {
-            accountRoot: config.stateDirectory ?? stateDirectory,
-            signal,
-          })
-        : cli === 'opencode'
-          ? await discoverOpenCode(
-              executable,
-              run,
-              state,
-              openCodeAuthDirectory(config.stateDirectory ?? stateDirectory),
-              false,
-              { signal },
-            )
-          : cli === 'hermes'
-            ? await discoverHermes(
+  try {
+    const models =
+      cli === 'zcode'
+        ? await discoverZCode(
+            executable,
+            run,
+            state,
+            zcodeAuthDirectory(config.zcodeAuthDirectory, config.stateDirectory ?? stateDirectory),
+            config.zcodeBuiltinConfig,
+            { signal },
+          )
+        : cli === 'pi' || cli === 'omp'
+          ? await discoverPiOmp(cli, executable, run, state, {
+              accountRoot: config.stateDirectory ?? stateDirectory,
+              signal,
+            })
+          : cli === 'opencode'
+            ? await discoverOpenCode(
                 executable,
                 run,
                 state,
-                effectiveHermesHome({ ...config, stateDirectory: config.stateDirectory ?? stateDirectory }),
-                { signal, renewal },
+                openCodeAuthDirectory(config.stateDirectory ?? stateDirectory),
+                false,
+                { signal },
               )
-            : cli === 'grok'
-              ? await discoverGrok(executable, run, state, { signal, ...(renewal ? { renewal } : {}) })
-              : undefined
-  if (!models) throw new Error('未知 CLI')
-  signal?.throwIfAborted()
-  // A successful capture has confirmed that its process range exited. Only
-  // model values leave this operation; its private snapshots and native caches
-  // are no longer needed. Rejected captures keep their potentially live files.
-  sealPrivateTree(state)
-  rmSync(state, { recursive: true, force: true })
-  return models
+            : cli === 'hermes'
+              ? await discoverHermes(
+                  executable,
+                  run,
+                  state,
+                  effectiveHermesHome({ ...config, stateDirectory: config.stateDirectory ?? stateDirectory }),
+                  { signal, renewal },
+                )
+              : cli === 'grok'
+                ? await discoverGrok(executable, run, state, { signal, ...(renewal ? { renewal } : {}) })
+                : undefined
+    if (!models) throw new Error('未知 CLI')
+    signal?.throwIfAborted()
+    return models
+  } catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) cleanupConfirmed = false
+    throw error
+  } finally {
+    if (cleanupConfirmed) {
+      // Native files can have permissive modes; seal leftovers even if deletion is locked.
+      try { sealPrivateTree(state) } catch { /* Never mask the probe result with disk cleanup. */ }
+      await removeTemporaryTree(state)
+    }
+  }
 }

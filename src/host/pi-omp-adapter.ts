@@ -1,3 +1,4 @@
+import { prepareOmpNativesDirectory } from './temporary-tree.mjs'
 import { mkdir, mkdtemp, realpath, writeFile, lstat, open, rename, rm, chmod } from 'node:fs/promises'
 import { constants, existsSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
@@ -127,6 +128,7 @@ async function contextFor(
         JSON.stringify({
           ...input,
           ...extra,
+          ...(input.cli === 'omp' ? { ompNativesDirectory: await prepareOmpNativesDirectory(input.accountRoot ?? input.stateDirectory) } : {}),
           // The run capability is child-process environment only, never a
           // persisted request or native account snapshot.
           harnessTools: undefined,

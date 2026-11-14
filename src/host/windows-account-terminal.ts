@@ -1,3 +1,4 @@
+import { markTemporaryTreeActive } from './temporary-tree.mjs'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,6 +85,7 @@ export async function spawnAccountTerminal(
   if ((options.platform ?? process.platform) !== 'win32') return backend.spawnTerminal!(spec)
   spec.signal?.throwIfAborted()
   const directory = await mkdtemp(join(tmpdir(), 'cwn-account-job-'))
+  markTemporaryTreeActive(directory)
   const windows = process.env.SystemRoot ?? 'C:\\Windows'
   let terminal: SubprocessTerminalHandle | undefined
   let startupOutput: ReturnType<typeof bootstrapOutput> | undefined

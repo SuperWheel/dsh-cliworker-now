@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, open, realpath } from 'node:fs/promises'
+import { mkdir, mkdtemp, open, realpath } from 'node:fs/promises'
+import { removeTemporaryTree, prepareOmpNativesDirectory, markTemporaryTreeActive } from './temporary-tree.mjs'
 import { constants } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -66,6 +67,7 @@ export async function verifyPiOmpExecutable(
   cli: 'pi' | 'omp',
   executable: string,
   capture: (argv: string[], cwd: string, env: Record<string, string>) => Promise<string>,
+  stateDirectory?: string,
 ): Promise<string> {
   if (cli === 'pi') return inspectPiInstallation(executable).executable
   let isPi = false
@@ -79,6 +81,7 @@ export async function verifyPiOmpExecutable(
   const before = await binaryRevision(executable)
   if (before && ompCapabilities.get(before.path) === before.revision) return executable
   const root = await mkdtemp(join(tmpdir(), 'cliworker-omp-identity-'))
+  markTemporaryTreeActive(root)
   let cleanupConfirmed = true
   try {
     const windowsAgent = join(root, 'config', 'agent')
@@ -87,6 +90,7 @@ export async function verifyPiOmpExecutable(
       ? nativeLaunchArgv([executable, '--help'])
       : [executable, '--help']
     const help = await capture(argv, root, {
+      PI_NATIVES_DIR: await prepareOmpNativesDirectory(stateDirectory),
       PI_CODING_AGENT_DIR: root,
       PI_CONFIG_DIR: root,
       OMP_PROFILE: '',
@@ -136,6 +140,6 @@ export async function verifyPiOmpExecutable(
     if (error instanceof ProcessCleanupUnconfirmedError) cleanupConfirmed = false
     throw error
   } finally {
-    if (cleanupConfirmed) await rm(root, { recursive: true, force: true })
+    if (cleanupConfirmed) await removeTemporaryTree(root)
   }
 }

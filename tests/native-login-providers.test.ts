@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdtemp, writeFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, stat, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { NativeLoginProviders, parseNativeLoginProviders } from '../src/host/native-login-providers.ts'
@@ -32,16 +32,17 @@ it.each([null,{}, {providers:[{id:'x\n/logout',name:'bad'}]}, {providers:[{id:'x
   expect(()=>parseNativeLoginProviders('omp',JSON.stringify(value))).toThrow()
 })
 it('caches only successful metadata for the installed entry, retries failures and cleans private homes', async () => {
-  const root = await mkdtemp(join(tmpdir(),'synthetic-login-provider-test-')); roots.push(root)
+  const root = await realpath(await mkdtemp(join(tmpdir(),'synthetic-login-provider-test-'))); roots.push(root)
   const exe = join(root,'omp.exe'); await writeFile(exe,'synthetic binary metadata, never executed')
   capture.mockImplementation(async (_backend,_config,_argv,cwd)=> {
     expect((await stat(cwd)).mode & 0o777).toBe(0o700)
     expect((await stat(join(cwd,'config.json'))).mode & 0o777).toBe(0o600)
     return raw([{id:'zhipu-coding-plan',name:'China'}])
   })
-  const registry = new NativeLoginProviders({} as ProcessBackend,DEFAULT_CONFIG)
+  const registry = new NativeLoginProviders({} as ProcessBackend,{...DEFAULT_CONFIG,stateDirectory:root})
   const signal = new AbortController().signal
   await registry.read('omp',exe,signal); await registry.read('omp',exe,signal)
+  expect(capture.mock.calls[0]![5]?.PI_NATIVES_DIR).toBe(join(root,'omp-natives'))
   expect(capture).toHaveBeenCalledTimes(1)
   await expect(stat(capture.mock.calls[0]![3])).rejects.toMatchObject({code:'ENOENT'})
   await writeFile(exe,'synthetic changed installed native version')
@@ -63,11 +64,11 @@ it('OMP metadata helper scrubs inherited credentials, asks only native metadata 
     process.stdin.on('end',()=>{
       const query=JSON.parse(input);
       if(process.env.HTTPS_PROXY!=='http://proxy.invalid:8080' || process.env.http_proxy!=='http://proxy.invalid:8080' || process.env.No_PrOxY!=='.invalid') process.exit(10);
-      if(query.type!=='get_login_providers' || process.env.PRIVATE_TEST_KEY || process.env.OMP_AUTH_BROKER_TOKEN || process.env.OPENAI_API_KEY!=='SYNTHETIC_CLIWORKER_METADATA_NO_INFERENCE' || process.env.HOME!==process.cwd()) process.exit(9);
+      if(query.type!=='get_login_providers' || process.env.PRIVATE_TEST_KEY || process.env.OMP_AUTH_BROKER_TOKEN || process.env.OPENAI_API_KEY!=='SYNTHETIC_CLIWORKER_METADATA_NO_INFERENCE' || process.env.HOME!==process.cwd() || process.env.PI_NATIVES_DIR!==process.cwd()+'/omp-natives') process.exit(9);
       process.stdout.write(JSON.stringify({type:'response',id:query.id,command:query.type,success:true,data:{providers:[{id:'zai',name:'ZAI'},{id:'unavailable',name:'Hidden',available:false}]}})+'\\n');
     });
   `)
-  const result = await promisify(execFile)(process.execPath,[new URL('../src/host/native-login-providers.mjs',import.meta.url).pathname,'omp',entry],{cwd:root,env:{...process.env,CLIWORKER_LOGIN_METADATA_HOME:root,PRIVATE_TEST_KEY:'SYNTHETIC_SECRET',OMP_AUTH_BROKER_TOKEN:'SYNTHETIC_BROKER',HTTPS_PROXY:'http://proxy.invalid:8080',http_proxy:'http://proxy.invalid:8080',No_PrOxY:'.invalid'},timeout:10000})
+  const result = await promisify(execFile)(process.execPath,[new URL('../src/host/native-login-providers.mjs',import.meta.url).pathname,'omp',entry],{cwd:root,env:{...process.env,CLIWORKER_LOGIN_METADATA_HOME:root,PI_NATIVES_DIR:join(root,'omp-natives'),PRIVATE_TEST_KEY:'SYNTHETIC_SECRET',OMP_AUTH_BROKER_TOKEN:'SYNTHETIC_BROKER',HTTPS_PROXY:'http://proxy.invalid:8080',http_proxy:'http://proxy.invalid:8080',No_PrOxY:'.invalid'},timeout:10000})
   expect(JSON.parse(result.stdout)).toEqual({providers:[{id:'zai',name:'ZAI'}]})
   expect(result.stderr).toBe('')
 })

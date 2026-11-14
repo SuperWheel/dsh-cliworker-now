@@ -171,6 +171,7 @@ for (const name of [
   'native-mimo',
   'native-hermes',
   'native-hermes-home',
+  'temporary-tree',
   'pi-omp-environment',
   'terminal-bridge',
   'pi-omp-bridge',
@@ -217,7 +218,7 @@ cpSync('src/host/workbuddy-key-helper.cjs', 'lib/types/host/workbuddy-key-helper
 cpSync('src/host/private-launch.mjs', 'lib/types/host/private-launch.mjs')
 cpSync('src/host/pi-omp-environment.mjs', 'lib/types/host/pi-omp-environment.mjs')
 cpSync('src/host/pi-omp-environment.d.mts', 'lib/types/host/pi-omp-environment.d.mts')
-for (const name of ['own-account-lease', 'pi-omp-refresh', 'pi-omp-control', 'host-fetch']) {
+for (const name of ['temporary-tree', 'own-account-lease', 'pi-omp-refresh', 'pi-omp-control', 'host-fetch']) {
   cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
   if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
 }

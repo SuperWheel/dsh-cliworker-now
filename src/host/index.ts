@@ -1,3 +1,4 @@
+import { startTemporaryTreeMaintenance } from './temporary-sweep.ts'
 import { SettingsConnectionCache } from './settings-connection-cache.ts'
 import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-management/sources.ts'
 import { backgroundConnectionConfig } from './settings-connection-background.ts'
@@ -763,6 +764,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.runtime.assertCliEnabled(cliOf(worker.preference))
       if (this.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
     })
+    const temporarySweep = startTemporaryTreeMaintenance(stateDirectory)
     ctx.effect(
       () => () => {
         this.disposed.abort()
@@ -770,6 +772,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
+          temporarySweep.close(),
           systemProxy?.close(),
           this.cliManagement.close(),
           this.connections?.close(),

@@ -667,6 +667,7 @@ async function resolveUncachedCliExecutable(
   if (cli === 'pi' || cli === 'omp')
     return verifyPiOmpExecutable(cli, resolved, (argv, cwd, env) =>
       captureCatalogMetadata(backend, config, argv, cwd, signal, env),
+      config.stateDirectory,
     )
   return resolved
 }

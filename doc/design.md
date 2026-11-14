@@ -1651,3 +1651,12 @@ Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 opti
 前端接管判别无需新增字段：npm 插件下载发布的每个 `channel: takeover` 进度均带非空 `sourceHost` 和 `byteProgress: true`，包括失败记忆直达、换源/重连等待、文件交界及最终下载完成。安装阶段会替换为无下载 channel/sourceHost 的阶段进度。`sourceHost` 表示插件拥有下载观测，不是 npm 专属类型；因此客户端可以在 takeover 下据其存在切换为“保留断点/换源”文案，不能说停掉官方更新器并删除部分文件。本轮不修改 src/client。
 
 任务 9.11 已记录 d6ce88b 的真实 Windows 页面验收：Codex 0.166.0→0.169.0、2 文件约 178 MB、官方源两次 10 秒停滞续传、平台包 cache hit 和实际 --version 成功。本轮修正仅有后续模拟验证，不把那次验收扩张为本轮 OpenCode/CodeBuddy 或新回退路径的实机验收。
+
+
+### 2026-11-15 临时探测目录与 OMP native 缓存
+
+变更 `v0.8.10-temp-dir-cleanup-leeyl`：catalog 的 query-* 在进程范围确认退出后，无论查询成功或拒绝都尽力删除；identity、login-options、Qoder metadata 同用递归删除重试（6 次、150 ms 递增间隔），最终磁盘错误不覆盖查询结果。ProcessCleanupUnconfirmedError 保留临时树和原有 CLI 保护。
+
+Host 启动异步清扫，目录查询创建前合并并节流为每状态根十分钟一次；卸载中止扫描并等待在途工作。只处理 `<state>/catalog/*/query-*` 和系统临时目录内源码确认的 mkdtemp 前缀（identity、login-options、Qoder/Qoder CN metadata、OMP approval、Hermes statistics、native-read、CodeBuddy catalog、cwn-、dshwb-），至少一小时未修改、lstat 确认真实目录，排除链接与仍存活的所有者标记；旧版无标记残留使用年龄门槛，锁定目录留待后续重试。
+
+OMP 身份、目录、登录选项与权限帮助探测使用 `<state>/omp-natives/`（0700），通过 PI_NATIVES_DIR 共用按版本解包的原生模块；按数值版本保留最新三个真实版本目录，年轻或锁定目录延后回收。Pi 1.5.2 安装包未发现相同变量，不套用。正式 Worker 原生 HOME 与运行环境不改；仅其权限帮助子探测使用此缓存。代理变量（含大小写变体）保持。Windows 实际复用和 Defender 占用回收仍由用户实机验收。

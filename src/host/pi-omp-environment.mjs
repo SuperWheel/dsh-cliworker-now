@@ -1,5 +1,6 @@
+import { removeTemporaryTree, prepareOmpNativesDirectory, markTemporaryTreeActive } from './temporary-tree.mjs'
 import { execFile } from 'node:child_process'
-import { mkdtemp, mkdir, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -9,13 +10,14 @@ const capture = promisify(execFile)
 export const OMP_APPROVAL_UNAVAILABLE = 'OMP 原生询问模式不可用，已拒绝启动；请检查安装版本'
 
 /** Help is installation evidence only; never expose the account snapshot to this probe. */
-export async function probeOmpApprovalModes(executable, signal) {
+export async function probeOmpApprovalModes(executable, signal, nativesDirectory) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-omp-approval-')))
+  markTemporaryTreeActive(root)
   try {
     await mkdir(join(root, 'agent'), { mode: 0o700 })
-    const env = Object.fromEntries(['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'ComSpec', 'PATHEXT']
+    const env = Object.fromEntries(['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'ComSpec', 'PATHEXT', ...Object.keys(process.env).filter(key => /^(?:https?|all|no)_proxy$/i.test(key))]
       .flatMap(key => process.env[key] ? [[key, process.env[key]]] : []))
-    Object.assign(env, { HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
+    Object.assign(env, { PI_NATIVES_DIR: nativesDirectory ?? await prepareOmpNativesDirectory(), HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
       PI_CONFIG_DIR: 'config', OMP_PROFILE: '', PI_PROFILE: '', TMPDIR: root, TMP: root, TEMP: root,
       PI_OFFLINE: '1', PI_TELEMETRY: '0', ELECTRON_RUN_AS_NODE: '1', NO_COLOR: '1' })
     const argv = nativeLaunchArgv([executable, '--help'])
@@ -26,7 +28,7 @@ export async function probeOmpApprovalModes(executable, signal) {
   } catch {
     return []
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeTemporaryTree(root)
   }
 }
 

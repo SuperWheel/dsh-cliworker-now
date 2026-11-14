@@ -158,12 +158,13 @@ let gateHandler,pendingConfirm;const gatePath=process.argv.find(a=>a.endsWith('p
 if(gatePath&&scenario!=='gate-silent'){const gate=await import(pathToFileURL(gatePath).href);gate.default({on:(name,handler)=>{if(name==='tool_call')gateHandler=handler}})}
 const provider=${JSON.stringify(provider)},modelId=${JSON.stringify(modelId)},agent=process.env.PI_CODING_AGENT_DIR;
 if(process.argv.includes('--help')){
-writeFileSync(${JSON.stringify(join(root, 'help-observed.json'))},JSON.stringify({home:process.env.HOME,cwd:process.cwd(),accountKey:!!process.env.FIXTURE_API_KEY}));
+writeFileSync(${JSON.stringify(join(root, 'help-observed.json'))},JSON.stringify({home:process.env.HOME,cwd:process.cwd(),accountKey:!!process.env.FIXTURE_API_KEY,natives:process.env.PI_NATIVES_DIR}));
 if(scenario==='help-error')process.exit(1);
 const modes=scenario==='no-write'?'always-ask|yolo':scenario==='no-ask'?'write|yolo':scenario==='no-modes'?'':scenario==='no-yolo'?'always-ask|write':'always-ask|write|yolo';
 process.stdout.write('omp v16.4.4 --approval-mode=<value> ('+modes+')');process.exit(0);
 }
 if(process.argv.includes('models')){
+writeFileSync(${JSON.stringify(join(root, 'catalog-natives.json'))},JSON.stringify({natives:process.env.PI_NATIVES_DIR}));
 if(scenario==='catalog-cancel'){writeFileSync(${JSON.stringify(join(root, 'catalog-pid'))},String(process.pid));writeFileSync(${JSON.stringify(join(root, 'catalog-started'))},'STARTED');setInterval(()=>{},1000);process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));}
 else if(scenario==='catalog-refresh'&&!process.argv.includes('refresh')){process.stdout.write('[]');process.exit(0);}
 else if(scenario==='catalog-refresh'){writeFileSync(join(agent,'refreshed-model-registry.json'),JSON.stringify(${JSON.stringify(catalog)}));process.stdout.write(JSON.stringify(${JSON.stringify(catalog)}));process.exit(0);}
@@ -172,6 +173,7 @@ else{process.stdout.write(JSON.stringify(${JSON.stringify(catalog)}));process.ex
 }
 else {
 if(scenario==='catalog-refresh'&&!existsSync(join(agent,'refreshed-model-registry.json')))process.exit(3);
+writeFileSync(${JSON.stringify(join(root, 'run-natives.json'))},JSON.stringify({natives:process.env.PI_NATIVES_DIR}));
 mkdirSync(join(agent,'sessions'),{recursive:true});
 let path=join(agent,'sessions','fixture.jsonl'),nativeSessionId='fixture-id';const resumed=process.argv.includes(cli==='pi'?'--session':'--resume');
 if(resumed){const flag=cli==='pi'?'--session':'--resume';path=process.argv[process.argv.indexOf(flag)+1];if(path.endsWith('fixture-fork.jsonl'))nativeSessionId='fixture-fork-id';if(!existsSync(path))process.exit(2);}
@@ -1554,4 +1556,16 @@ it('模拟 Pi clone preserves the source mapping, persists the returned branch I
   await expect(stat(mapping.path)).rejects.toThrow()
   expect(await readFile(sourcePath, 'utf8')).toBe(sourceBefore)
   expect((await launch({ ...input, conversationId: 'fixture-id' })).code).toBe(0)
+})
+
+it('OMP metadata and approval help share natives while the actual Worker environment stays unchanged (simulated)', async () => {
+  const { root, input } = await fixture('omp')
+  const prepared = await prepareConfirmed(input)
+  const cache = join(await realpath(input.accountRoot!), 'omp-natives')
+  expect(JSON.parse(await readFile(join(root, 'catalog-natives.json'), 'utf8'))).toEqual({natives:cache})
+  try {
+    await exec(prepared.argv[0]!, prepared.argv.slice(1), {env:fixtureEnvironment(input.nativeHome,prepared.env),timeout:10000})
+    expect(JSON.parse(await readFile(join(root,'help-observed.json'),'utf8')).natives).toBe(cache)
+    expect(JSON.parse(await readFile(join(root,'run-natives.json'),'utf8'))).toEqual({})
+  } finally { await prepared.cleanup() }
 })

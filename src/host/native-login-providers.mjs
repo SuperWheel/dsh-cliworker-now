@@ -11,7 +11,7 @@ const [cli, executable] = process.argv.slice(2)
 try {
   const root = process.env.CLIWORKER_LOGIN_METADATA_HOME
   if (!root || root !== process.cwd()) throw new Error('Missing isolated metadata home')
-  const allowed = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'])
+  const allowed = new Set(['PI_NATIVES_DIR', 'PATH', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'PATHEXT', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY'])
   for (const key of Object.keys(process.env)) if (!allowed.has(key.toUpperCase())) delete process.env[key]
   Object.assign(process.env, { HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
     PI_CONFIG_DIR: 'config', XDG_CONFIG_HOME: join(root, 'config'), XDG_CACHE_HOME: join(root, 'cache'),

@@ -296,6 +296,8 @@ try {
   )
     throw new Error('Invalid native environment snapshot')
   Object.assign(env, nativeEnvironment)
+  if (config.cli === 'omp' && (config.discover || config.metadataPhase) && config.ompNativesDirectory)
+    env.PI_NATIVES_DIR = config.ompNativesDirectory
   // Account .env/provider snapshots are not authority for another Worker's
   // bridge. Only the Host-injected run capability can reach this extension.
   if (harnessTools) env[HARNESS_CONNECTION_ENV] = JSON.stringify(harnessTools)
@@ -306,7 +308,7 @@ try {
   const ompPermissions = config.cli === 'omp'
     ? ompPermissionSettings(config.access, config.discover || config.metadataPhase
       ? ['always-ask', 'write', 'yolo']
-      : await probeOmpApprovalModes(config.executable, metadataController.signal))
+      : await probeOmpApprovalModes(config.executable, metadataController.signal, config.ompNativesDirectory))
     : undefined
   if (stopped) throw new Error('任务已停止')
   if (ompPermissions?.notice) event({ kind: 'status', text: ompPermissions.notice })

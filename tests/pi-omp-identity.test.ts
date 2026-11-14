@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync, existsSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +25,7 @@ function piPackage(directory: string, version = '1.0.4', name = '@earendil-works
     writeFileSync(join(directory, 'dist', file), '// Synthetic package; never executed.\n')
   return join(directory, 'dist/cli.js')
 }
+beforeEach(() => { vi.stubEnv('DSH_HOME', root()) })
 const ompHelp =
   'omp v16.4.4\n  setup  Native setup\n  models  Native models\n--mode rpc --config --thinking --session-dir --tools --no-rules --no-title --no-lsp --no-pty --approval-mode\n'
 afterEach(() => {
@@ -164,6 +165,7 @@ describe('distinct Pi and OMP entry identities', () => {
         expect(env.USERPROFILE).toBe(cwd)
         expect(env.PI_CONFIG_DIR).toBe('config')
       }
+      expect(env.PI_NATIVES_DIR).toBe(join(process.env.DSH_HOME!, 'cliworker-now', 'omp-natives'))
       expect(env.OMP_PROFILE).toBe('')
       scratch = cwd
       expect(existsSync(cwd)).toBe(true)

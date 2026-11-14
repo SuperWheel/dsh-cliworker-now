@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, stat, writeFile } from 'node:fs/promises'
+import { removeTemporaryTree, prepareOmpNativesDirectory, markTemporaryTreeActive } from './temporary-tree.mjs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -46,6 +47,7 @@ export class NativeLoginProviders {
     const cached = this.cache.get(key)
     if (cached) return cached
     const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-login-options-')))
+    markTemporaryTreeActive(root)
     let cleanup = true
     try {
       await mkdir(join(root, 'agent'), { mode: 0o700 })
@@ -58,7 +60,8 @@ export class NativeLoginProviders {
       // The helper scrubs inherited credentials before importing or spawning native code.
       const raw = await captureCatalogMetadata(this.backend, this.config,
         [process.execPath, fileURLToPath(new URL('./native-login-providers.mjs', import.meta.url)), cli, executable],
-        root, signal, { CLIWORKER_LOGIN_METADATA_HOME: root, ELECTRON_RUN_AS_NODE: '1' })
+        root, signal, { CLIWORKER_LOGIN_METADATA_HOME: root, ELECTRON_RUN_AS_NODE: '1',
+          ...(cli === 'omp' ? { PI_NATIVES_DIR: await prepareOmpNativesDirectory(this.config.stateDirectory) } : {}) })
       const providers = parseNativeLoginProviders(cli, raw)
       signal.throwIfAborted()
       // Bound memory and invalidate entries after installation changes.
@@ -69,7 +72,7 @@ export class NativeLoginProviders {
       if (error instanceof ProcessCleanupUnconfirmedError) cleanup = false
       throw error
     } finally {
-      if (cleanup) await rm(root, { recursive: true, force: true })
+      if (cleanup) await removeTemporaryTree(root)
     }
   }
 }
