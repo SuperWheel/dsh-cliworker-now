@@ -70,7 +70,7 @@ export async function runHermesUpdate(o: { root: string; home: string; checkout:
       const timer = setInterval(() => { polling = polling.then(() => watch.poll()).catch(() => undefined) }, 1000)
       let failure: unknown
       try {
-        await executeCliOperation(o.backend, o.config, o.argv, AbortSignal.any([o.signal, watch.controller.signal]), o.output, 2147483647, { HERMES_UPDATE_STATUS_FILE: watch.status })
+        await executeCliOperation(o.backend, o.config, o.argv, AbortSignal.any([o.signal, watch.controller.signal]), o.output, 2147483647, { HERMES_HOME: o.home, HERMES_UPDATE_STATUS_FILE: watch.status })
       } catch (error) { failure = error; if (error instanceof ProcessCleanupUnconfirmedError) { quarantine = true; throw error } }
       finally { clearInterval(timer); await polling; await watch.poll().catch(() => undefined) }
       o.signal.throwIfAborted()

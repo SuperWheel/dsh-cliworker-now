@@ -10,9 +10,17 @@ const unavailable = () => Object.assign(new Error('无法核实 Node/npm 安装�
  * npm.cmd is never interpreted: the Windows distribution has a fixed JS entry,
  * verified against npm's manifest. In particular it is not a cmd-shim launcher.
  */
+/** The host resolver canonicalizes .cmd files via inspectBatch, which rejects npm.cmd's own
+ * (non cmd-shim) script (2026-11-14 Windows 实机：Pi npm 更新报 PREREQUISITE_MISSING). The official
+ * Windows distribution ships npm.cmd beside node.exe; every later check still verifies that layout. */
+async function npmLauncher(backend: ProcessBackend, platform: NodeJS.Platform): Promise<string> {
+  if (platform !== 'win32') return backend.resolveExecutable('npm')
+  try { return await backend.resolveExecutable('npm.cmd') }
+  catch { return join(dirname(await backend.resolveExecutable('node.exe')), 'npm.cmd') }
+}
 export async function resolveNpmRuntime(backend: ProcessBackend, platform = process.platform): Promise<[string, string]> {
   try {
-    const launcher = await backend.resolveExecutable(platform === 'win32' ? 'npm.cmd' : 'npm')
+    const launcher = await npmLauncher(backend, platform)
     if (!isAbsolute(launcher)) throw unavailable()
     const selected = await realpath(launcher)
     if (!(await stat(selected)).isFile()) throw unavailable()

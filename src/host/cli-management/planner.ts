@@ -112,6 +112,16 @@ export function sameInstallation(before: InstallationIdentity, after: Installati
     const name = release(before)
     if (name !== undefined && name === release(after)) return true
   }
+  // Qoder auto entries record <updateRoot>/<bin>/<bin>-<ver>.exe (2026-11-14 Windows 实机); `update` only swaps <ver>.
+  if ((cli === 'qoder' || cli === 'qodercn') && before.source === 'self-update' && after.source === 'self-update' && before.updateRoot && samePath(before.updateRoot, after.updateRoot) && before.channel === after.channel) {
+    const bin = cli === 'qoder' ? 'qodercli' : 'qoderclicn'
+    const versioned = (identity: InstallationIdentity) => {
+      const root = foldPath(identity.updateRoot!).replace(/\/$/, ''), entry = foldPath(identity.executable)
+      const rest = entry.startsWith(root + '/') ? entry.slice(root.length + 1).split('/') : []
+      return rest.length === 2 && rest[0] === bin && new RegExp(`^${bin}-[0-9][0-9a-z.+-]*?(?:\\.exe)?$`, 'i').test(rest[1]!)
+    }
+    if (versioned(before) && versioned(after)) return true
+  }
   return samePath(before.executable, after.executable) && before.source === after.source && samePath(before.prefix, after.prefix) &&
     samePath(before.packageRoot, after.packageRoot) && samePath(before.fingerprint.realpath, after.fingerprint.realpath)
 }

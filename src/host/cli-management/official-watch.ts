@@ -1,7 +1,7 @@
 import { observedPackages } from './artifacts/observations.ts'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { lstat, readdir, rmdir, unlink, open, mkdtemp, chmod } from 'node:fs/promises'
+import { lstat, readdir, rmdir, rm, unlink, open, mkdtemp, chmod } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
 import type { Stats } from 'node:fs'
@@ -217,7 +217,13 @@ export class OfficialWatch extends InterruptionEvidence {
       const info = await lstat(entry.path).catch(() => undefined)
       if (info?.isDirectory() && info.ino === entry.stat.ino && info.dev === entry.stat.dev) await rmdir(entry.path).catch(e => { if (!missing(e) && (e as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw e })
     }
-    if (this.probe.privateTemp && this.probe.directory) await rmdir(this.probe.directory).catch(e => { if (!missing(e) && (e as NodeJS.ErrnoException).code !== 'ENOTEMPTY') throw e })
+    if (this.probe.privateTemp && this.probe.directory) {
+      // Private TEMP is this run's own mkdtemp; once the managed range exited, whatever the CLI left
+      // there (Qoder natives ~38 MB, Bun DLLs; 2026-11-14 Windows 实机) is ours to remove. A locked file keeps it.
+      const info = await lstat(this.probe.directory).catch(() => undefined)
+      if (info?.isDirectory() && !info.isSymbolicLink() && (!this.rootIdentity || info.ino === this.rootIdentity.ino && info.dev === this.rootIdentity.dev))
+        await rm(this.probe.directory, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined)
+    }
   }
 }
 

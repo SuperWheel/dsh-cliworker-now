@@ -98,6 +98,19 @@
   - Codex 审查（gpt-6-astra high）发现 5 项，主会话修 4 项：Pi 不再覆盖 `PI_INSTALLER_API_BASE`（本机 Pi 1.5.2 源码核实官方默认基址含 `/releases`，原覆盖会让元数据地址错误）；tar 符号链接改为逐段解析整条链接链，拒绝 `dir/a -> ../other` 再 `../../outside` 这类词法规范化看不出的越界与循环；Grok 在 Windows 的签名校验加进程级 `-ExecutionPolicy Bypass`；MinGit 解压与改名放进同一个清理范围。第 5 项（npm 访问环回 registry 会经宿主代理）按用户「所有都走代理，按照默认走」保持不变，Clash 下能否完成留待 6.2 实机验证。
   - 修复后复测：`corepack pnpm typecheck` 通过；`vitest run tests/cli-management* tests/settings-connection-cache.test.ts tests/cli-update-page.test.tsx tests/client-i18n.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts`：34 个文件、939 项通过；`build:preview` 通过；pmspec 严格校验通过；`git diff --check` 通过。新增模拟用例：链式越界、链接循环、Pi 不覆盖基址、PowerShell 执行策略参数。
 - [ ] 6.2 Windows 实机：Kimi、MiMo、Grok（官方阶段）、Qoder、Qoder CN、Hermes 的官方或接管更新；断流时切换与残留清理；失败记忆生效
+  - 2026-11-14 第一轮（插件 5b03227，Windows Desktop 经 Codex Computer Use 操作，宿主 Clash 代理保持默认）：Kimi 2.4.1→2.5.3、MiMo 0.1.15→0.1.17、Grok Build 1.0.50→1.0.77 页面显示「已更新到」目标版本。
+  - MiMo：官方通道约 1 分钟只到 6.2 MB（48–100 KB/s，总量未知），看门狗按「速度过低」停官方并清半成品，切「插件接管」从 `cnbj1.fds.api.xiaomi.com` 下完 45.6 MB；原因提示原文「官方下载速度过低，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内……直接由插件下载」。`channel-memory.json` 记有一条 `OFFICIAL_SLOW`（MiMo），符合失败记忆。
+  - Qoder CN：官方 21.9/94.2 MB 停 30 秒，按「30 秒没有新数据」切接管；接管自 `static.qoder.com.cn` 续传 2 次（停滞 10 秒）后 94.2/94.2 MB。Grok 官方阶段只显示官方输出的阶段文字、无字节。
+  - 发现 1：Qoder 与 Qoder CN 实际已换到 1.1.89（`~/.qoder/bin/qodercli/qodercli.exe` 链接指向新版本、`version.txt` 已更新），插件却报 `IDENTITY_CHANGED`。根因：自动入口记录的是带版本的 `qodercli-1.1.73.exe`，更新后解析成 `qodercli-1.1.89.exe`，`sameInstallation` 判为另一安装。已修：Qoder/Qoder CN 在同 `updateRoot`、同来源、同通道且前后都是 `<bin>/<bin>-<版本>.exe` 时视为同一安装（`planner.ts`），附模拟用例（大小写、其他目录、其他文件、来源变化、跨 CLI 均拒绝）。
+  - 发现 2：官方私有 TEMP（`cli-management/downloads/local-*`）在进程退出后只删匹配下载规则的文件，CLI 自带的 Qoder natives（每次约 38 MB）和 Bun DLL 留下，本轮留下 3 个目录共约 78 MB。已修：进程范围退出确认后，校验目录 ino/dev 仍是本次创建的那个，再整体删除（文件被占用时保留，不让更新失败），附模拟用例。Windows 上已留下的 3 个目录未删除，待用户确认。
+  - 修复后：`corepack pnpm typecheck` 通过；`vitest run` 相关 5 个文件 177 项通过。修复尚未装到 Windows 实机复验（Qoder 已是 1.1.89，需等下一个版本或回退旧版才能实测更新路径）。
+  - 第一轮 Kimi、Grok、Qoder 结束太快，未截到下载中的画面；Kimi 输出面板事后可见 `100% (34/35 MB)`。
+  - Hermes 0.21.7→0.23.1 失败：第 1 次 git fetch 报 `RPC failed; curl 56 schannel`，回执 `stop_class: fetch_failed`；自动重跑后 19:12:46 拉到 46 MB 包、`apply` 成功、`Installing Python dependencies` 完成，随后插件以「Hermes 日志和回执连续 5 分钟没有活动」（INSTALL_TIMEOUT）终止。页面全程只显示「执行 Hermes 官方更新」和 tmp_pack 字节（20.8/31.4 MB），没有「第 N/6 步」。
+  - 发现 3（根因）：Windows 选了插件自有 Hermes 账号目录（`.dsh/cliworker-now/accounts/hermes-source.json`），`effectiveHermesHome` 返回账号目录，监视器去那里读 `logs/update.log` 与回执；`hermes update` 实际写 `%LOCALAPPDATA%\hermes\logs`。所以阶段永远读不到，fetch 结束后被误判 5 分钟无活动而误杀。已修：更新改用安装自身的 home（`hermesHomeDirectory()`：`HERMES_HOME` 或原生默认），并显式把同一 `HERMES_HOME` 传给更新进程，监视器与进程看同一目录。
+  - 发现 4：Hermes 进度行出现「30 秒没有新数据会停止官方更新，改由插件下载」，与当时「Hermes 不接管」不符。用户 2026-11-14 改定「hermes我允许接管，只要下的太慢就接管」，提示随 Hermes 接管实现一并核对（方案调研中）。
+  - Pi 1.1.0→1.5.2（Windows 识别为 npm 全局安装）失败：`PREREQUISITE_MISSING：无法核实 Node/npm 安装`。Windows 上 `C:\Program Files\nodejs` 的 npm 11.12.1 布局用 node 逐项复核全部通过。根因：生产用的 `nativeProcessBackend.resolveExecutable` 会把 `.cmd` 交给 inspectBatch，官方 `npm.cmd` 不是 cmd-shim 被拒。已修：Windows 上该解析失败时改取 `node.exe` 同目录的官方 `npm.cmd`，其后 npm-cli.js、清单与 PE 头校验不变；附模拟用例。
+  - 「检查更新」后 Qoder、Qoder CN 仍显示 IDENTITY_CHANGED（Windows 上仍是 5b03227，修复未部署）。
+  - 修复后：`corepack pnpm typecheck` 通过；`vitest run` 相关 7 个文件 208 项通过。三处修复均待部署到 Windows 复验。
 - [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
 - [ ] 6.4 13.5 遗留：接管下载期间取消
 

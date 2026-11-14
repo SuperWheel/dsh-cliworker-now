@@ -78,6 +78,13 @@ it('模拟：MiMo 私有 TMPDIR 与观察到的文件名 HEAD 总量，不猜 ba
   expect(progress).toHaveBeenLastCalledWith(expect.objectContaining({ downloadedBytes: 3, totalBytes: 42 }))
   await watch.cleanup(); await expect(lstat(watch.env.TMPDIR!)).rejects.toThrow()
 })
+it('模拟：私有 TEMP 中 CLI 自带的非下载文件（Qoder natives、Bun DLL）在进程退出后整体删除', async () => {
+  const root = await fixture()
+  const watch = await OfficialWatch.prepare(officialProbe({ cli: 'mimo', platform: 'darwin', version: '1.2.3' }), root, vi.fn()); watches.push(watch); watch.start(started)
+  const natives = join(watch.env.TMPDIR!, 'qodercli-natives-v1.1.73-admin', 'node_modules'); await mkdir(natives, { recursive: true })
+  await writeFile(join(natives, 'sharp.node'), 'simulated'); await writeFile(join(watch.env.TMPDIR!, '.b8ff-00000000.dll'), 'simulated')
+  await watch.cleanup(); await expect(lstat(watch.env.TMPDIR!)).rejects.toThrow()
+})
 it('模拟：无法确定属于本次运行时只有阶段；日志、分块中断及 OMP 差分输出', async () => {
   const root = await fixture(), progress = vi.fn(), path = join(root, 'status.log'); await writeFile(path, 'previous')
   const watch = await OfficialWatch.prepare({ kind: 'stage', stageFiles: [path] }, root, progress); watches.push(watch); watch.start(started)

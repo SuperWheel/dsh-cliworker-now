@@ -116,6 +116,15 @@ it('模拟 P2/P3：官方 npm.cmd 结构不交给 inspectBatch，Program Files N
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })
 
+it('模拟：宿主解析器拒绝官方 npm.cmd 时，改用 node.exe 同目录的官方 npm.cmd，并照旧校验', async () => {
+  const f = fixture(), npm = npmFixture(f.root, 'win32')
+  vi.mocked(f.backend.resolveExecutable).mockImplementation(async name => { if (name === 'npm.cmd') throw new Error('模拟 inspectBatch 拒绝'); return npm.node })
+  expect(await resolveNpmRuntime(f.backend, 'win32')).toEqual([npm.node, npm.entry])
+  unlinkSync(npm.entry)
+  await expect(resolveNpmRuntime(f.backend, 'win32')).rejects.toMatchObject({ code: 'PREREQUISITE_MISSING' })
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
 function brewed(version: string, kind = 'Caskroom', name = 'codex'): InstallationIdentity {
   return { executable: '/模拟 brew/bin/codex', prefix: '/模拟 brew', source: 'brew', manifestVersion: version,
     packageRoot: `/模拟 brew/${kind}/${name}/${version}/lib`, fingerprint: { realpath: `/模拟 brew/${kind}/${name}/${version}/bin/cli`, size: 10, mtimeMs: 100 } }

@@ -35,6 +35,7 @@ import { mimoConfigurationPaths } from '../mimo-configuration.ts'
 import { qoderConfigDirectory } from '../qoder-accounts.ts'
 import { codebuddyAuthDirectory } from '../codebuddy-account.ts'
 import { effectiveHermesHome } from '../hermes-account-context.ts'
+import { hermesHomeDirectory } from '../hermes-adapter.ts'
 import { zcodeAuthDirectory } from '../zcode-adapter.ts'
 import { openCodeAuthDirectory } from '../opencode-adapter.ts'
 import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError, type DesktopRelease } from './desktop-update.ts'
@@ -494,7 +495,9 @@ export class CliManagementService {
           verified = await verify(signal)
         } else if (cli === 'hermes' && plan.method === 'self-update') {
           op.command = argv!; op.phase = 'installing'; this.changed()
-          const home = effectiveHermesHome(this.deps.config)
+          // The installation's own home (HERMES_HOME or native default), never the plugin's account home:
+          // `hermes update` writes logs/receipts there (2026-11-14 Windows 实机：账号目录导致看不到阶段、5 分钟误杀).
+          const home = hermesHomeDirectory()
           await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress })
           verified = await verify(signal)
         } else if (dualChannel) {

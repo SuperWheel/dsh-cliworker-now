@@ -149,6 +149,18 @@ it.each(['windows', 'posix'] as const)('模拟：稳定更新根按 %s 路径规
   expect(sameInstallation(before, { ...after, channel: 'internal' }, 'antigravity')).toBe(false)
   expect(sameInstallation(before, { ...after, executable: path }, 'antigravity')).toBe(platform === 'windows')
 })
+it.each([['qoder', '.qoder', 'qodercli'], ['qodercn', '.qoder-cn', 'qoderclicn']] as const)('模拟：%s Windows 自动入口记录带版本的 exe，更新只换版本号时仍是同一安装', (cli, dir, bin) => {
+  const root = `C:/Users/admin/${dir}/bin`
+  const at = (file: string, patch: Partial<InstallationIdentity> = {}): InstallationIdentity => ({
+    ...syntheticIdentity(cli), source: 'self-update', updateRoot: root, executable: `C:\\Users\\admin\\${dir}\\bin\\${bin}\\${file}`, ...patch })
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at(`${bin}-1.1.89.exe`), cli)).toBe(true)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at(`${bin.toUpperCase()}-1.1.89.EXE`, { updateRoot: root.toUpperCase() }), cli)).toBe(true)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at('other-1.1.89.exe'), cli)).toBe(false)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at(`${bin}-1.1.89.exe`, { updateRoot: 'C:/Users/admin/other/bin' }), cli)).toBe(false)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at(`${bin}-1.1.89.exe`, { source: 'npm' }), cli)).toBe(false)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), { ...at(''), executable: `C:\\Users\\admin\\${dir}\\bin\\x\\${bin}-1.1.89.exe` }, cli)).toBe(false)
+  expect(sameInstallation(at(`${bin}-1.1.73.exe`), at(`${bin}-1.1.89.exe`), cli === 'qoder' ? 'qodercn' : 'qoder')).toBe(false)
+})
 it('模拟：TRAE 更新只换 releases/<版本> 一层时仍是同一安装', () => {
   const root = 'C:/Users/admin/AppData/Local/TraeCLI'
   const at = (version: string, file = 'traex.exe', patch: Partial<InstallationIdentity> = {}): InstallationIdentity => ({
