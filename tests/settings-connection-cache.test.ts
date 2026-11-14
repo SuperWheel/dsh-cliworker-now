@@ -79,9 +79,9 @@ it('模拟：Host 关闭中止查询并等待清理，不复用上次 Host 的�
   expect(active.aborted).toBe(true); await Promise.resolve(); expect(closed).toBe(false)
   finish(account); await rejected; await closing; expect(closed).toBe(true)
 })
-it('模拟：后台名单不包含会建会话、续期或刷新目录的完整查询', () => {
-  expect(BACKGROUND_ACCOUNT_CLIS).toEqual(['mimo', 'codebuddy', 'zcode', 'grok', 'pi', 'omp', 'opencode'])
-  expect(BACKGROUND_CATALOG_CLIS).toEqual(['zcode'])
+it('模拟：后台允许原生初始化与续期，排除会话和交互查询', () => {
+  expect(BACKGROUND_ACCOUNT_CLIS).toEqual(['codex', 'claude', 'kimi', 'mimo', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'zcode', 'codebuddy'])
+  expect(BACKGROUND_CATALOG_CLIS).toEqual(['codex', 'claude', 'kimi', 'mimo', 'grok', 'omp', 'pi', 'hermes', 'opencode', 'zcode'])
 })
 it.each(['任务', '登录窗口'])('模拟：%s 打断后台，确认清理后 30 秒空闲重试，结束无计时器', async () => {
   vi.useFakeTimers(); let idle = true, n = 0, finish!: () => void, active!: AbortSignal
@@ -91,7 +91,8 @@ it.each(['任务', '登录窗口'])('模拟：%s 打断后台，确认清理后 
     preloader.start(); await vi.advanceTimersByTimeAsync(62_000)
     idle = false; preloader.changed(); expect(active.aborted).toBe(true)
     idle = true; preloader.changed(); await vi.advanceTimersByTimeAsync(40_000); expect(run).toHaveBeenCalledTimes(1)
-    finish(); await vi.advanceTimersByTimeAsync(4_000); expect(run).toHaveBeenCalledTimes(2)
+    finish(); await vi.advanceTimersByTimeAsync(29_999); expect(run).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(4001); expect(run).toHaveBeenCalledTimes(2)
     await vi.advanceTimersByTimeAsync(2_000)
     const late = vi.fn(async () => {}); preloader.enqueue([{ run: late }]); await vi.advanceTimersByTimeAsync(4_000)
     expect(late).toHaveBeenCalledTimes(1)
@@ -109,4 +110,21 @@ it('模拟：后登记项目的账号项在版本后、发布源前执行，不�
     await vi.advanceTimersByTimeAsync(85_000)
     expect(seen).toEqual(['path', 'version', 'account', 'release', 'catalog'])
   } finally { await preloader.close() }
+})
+
+it('模拟：跨项目同 CLI 排队，Host 关闭等待首项清理且不启动排队目录', async () => {
+  const cache = fixture(); let finish!: (value: AccountStatus) => void
+  const first = cache.read('/a', 'zcode', 'account', signal(), () => new Promise(resolve => { finish = resolve }))
+  const firstRejected = expect(first).rejects.toThrow()
+  await Promise.resolve()
+  const models = vi.fn(async () => catalog)
+  const queued = cache.read('/b', 'zcode', 'catalog', signal(), models)
+  const queuedRejected = expect(queued).rejects.toThrow()
+  await Promise.resolve(); expect(models).not.toHaveBeenCalled()
+  let closed = false
+  const closing = cache.close().then(() => { closed = true })
+  await Promise.resolve(); expect(closed).toBe(false)
+  finish(account); await Promise.all([firstRejected, queuedRejected, closing])
+  expect(closed).toBe(true); expect(models).not.toHaveBeenCalled()
+  expect(cache.status('/b', 'zcode').catalog.value).toBeUndefined()
 })

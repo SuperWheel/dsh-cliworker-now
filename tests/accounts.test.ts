@@ -2292,3 +2292,21 @@ describe('Kimi account window launches (synthetic terminal and status)', () => {
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
   })
 })
+
+
+it('模拟：后台 Kimi 账号使用已记录入口和原生 provider 探测，禁止升级且不删除代理', async () => {
+  const f = fixture(), executable = join(f.cwd, 'simulated-kimi')
+  writeFileSync(executable, '模拟入口，不执行')
+  ;(f.manager as any).config.kimiExecutable = executable
+  vi.stubEnv('HTTPS_PROXY', 'http://proxy.example.invalid:8080')
+  f.status(JSON.stringify({ providers: {} }))
+  await f.manager.status('kimi', f.cwd, f.signal, { background: true })
+  const spec = vi.mocked(f.backend.spawn).mock.calls.at(-1)![0]
+  expect(spec.argv).toEqual([executable, 'provider', 'list', '--json'])
+  expect(spec.env).toMatchObject({ KIMI_CODE_NO_AUTO_UPDATE: '1' })
+  expect(Object.keys(spec.env ?? {}).filter(key => /proxy/i.test(key))).toEqual([])
+  expect(process.env.HTTPS_PROXY).toBe('http://proxy.example.invalid:8080')
+  expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
+  expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
+  expect(f.statusProcesses.every(child => vi.mocked(child.waitForExit).mock.calls.length === 1)).toBe(true)
+})

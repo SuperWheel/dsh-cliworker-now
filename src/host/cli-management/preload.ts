@@ -68,7 +68,10 @@ export class CliPreloader {
       this.options.activity?.(true)
       try { this.currentRun = this.options.items[this.index]!.run(signal, !this.foreground); await this.currentRun; if (!signal.aborted) this.index++ }
       catch (error) { if (!signal.aborted) { this.options.error?.(error); this.index++ } }
-      finally { this.currentRun = undefined; this.current = undefined; this.options.activity?.(false) }
+      finally {
+        if (signal.aborted) this.resumeAt = Math.max(this.resumeAt, Date.now() + 30_000)
+        this.currentRun = undefined; this.current = undefined; this.options.activity?.(false)
+      }
       if (!this.foreground && !this.lifetime.signal.aborted) await this.wait(2000)
     }
     this.completed = this.index === this.options.items.length

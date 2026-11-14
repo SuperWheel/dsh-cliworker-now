@@ -447,14 +447,14 @@ export class AccountManager {
   async status(cli: CliId, cwd: string, signal: AbortSignal, options: { background?: boolean } = {}): Promise<AccountStatus> {
     this.config.cliMaintenance?.assertAvailable(cli)
     validateCli(cli)
-    if (options.background && !BACKGROUND_ACCOUNT_CLIS.includes(cli as Exclude<CliId, 'harness'>)) throw new Error('此 CLI 尚无已核实的后台只读账号查询')
+    if (options.background && !BACKGROUND_ACCOUNT_CLIS.includes(cli as Exclude<CliId, 'harness'>)) throw new Error('此 CLI 的账号查询保留前台')
     if (signal.aborted || this.controller.signal.aborted) throw new Error('账号状态查询已取消')
     if (isWorkBuddyCli(cli) && this.reserved.has(cli))
       return this.cleanupHold(cli) ?? this.desktop.current(cli) ?? {
         cli, installed: true, state: 'unknown', summary: '正在确认当前登录状态…', actions: desktopActions(),
       }
     const directory = projectDirectory(cwd)
-    const key = JSON.stringify([cli, directory, !!options.background])
+    const key = JSON.stringify([cli, directory])
     let query = this.statusQueries.get(key)
     if (query && [...query.subscribers].every((reader) => reader.signal.aborted)) query.controller.abort()
     // The abandoned process still owns cleanup; a new reader must not overlap it.
@@ -566,12 +566,12 @@ export class AccountManager {
       if (isExtendedCli(cli)) {
         const identity = await abortable(
           cli === 'zcode' || cli === 'grok'
-            ? zcodeGrokAccountStatus(cli, this.config, control, { activeOnly: background })
+            ? zcodeGrokAccountStatus(cli, this.config, control)
             : cli === 'opencode'
-              ? readOpenCodeAccount(this.config, control, { activeOnly: background })
+              ? readOpenCodeAccount(this.config, control)
               : cli === 'hermes'
                 ? readHermesAccount(this.config, control)
-                : readPiOmpAccount(cli, this.config, control, { activeOnly: background }),
+                : readPiOmpAccount(cli, this.config, control),
           control,
         )
         const sources =
@@ -580,7 +580,7 @@ export class AccountManager {
             : cli === 'hermes'
               ? await listHermesAccountSources(this.config, control)
               : undefined
-        const native = !background && (cli === 'pi' || cli === 'omp')
+        const native = (cli === 'pi' || cli === 'omp')
           ? await this.nativeLoginProviders.read(cli, executable, control).catch(error => {
               if (error instanceof ProcessCleanupUnconfirmedError) throw error
               signal.throwIfAborted()

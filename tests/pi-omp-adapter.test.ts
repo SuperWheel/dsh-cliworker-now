@@ -1428,12 +1428,12 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
   )
 })
 
-it('sanitizes the bridge process before the Pi SDK reads environment credential fallbacks', async () => {
+it('sanitizes credentials but preserves Host proxies before Pi SDK metadata reads (simulated)', async () => {
   const { root, input } = await fixture('pi', 'non-glm')
   const sdk = join(root, 'dist/core/model-runtime.js')
   await writeFile(
     sdk,
-    `// SYNTHETIC SDK checks only fixture environment, never network.\nif(process.env.SYNTHETIC_FOREIGN_API_KEY || process.env.OMP_AUTH_BROKER_URL) throw new Error('foreign credential source');\nif(process.env.FIXTURE_API_KEY !== ${JSON.stringify(fixtureKey)}) throw new Error('missing own source');\n` +
+    `// SYNTHETIC SDK checks only fixture environment, never network.\nif(process.env.SYNTHETIC_FOREIGN_API_KEY || process.env.OMP_AUTH_BROKER_URL) throw new Error('foreign credential source');\nif(process.env.FIXTURE_API_KEY !== ${JSON.stringify(fixtureKey)}) throw new Error('missing own source');\nif(process.env.http_proxy!=='http://proxy.invalid:8080' || process.env.HTTPS_PROXY!=='http://proxy.invalid:8080' || process.env.No_PrOxY!=='.invalid') throw new Error('Host proxy lost');\n` +
       (await readFile(sdk, 'utf8')),
   )
   const catalog = await discoverPiOmp(
@@ -1444,6 +1444,7 @@ it('sanitizes the bridge process before the Pi SDK reads environment credential 
         await exec(argv[0]!, argv.slice(1), {
           env: {
             ...fixtureEnvironment(input.nativeHome, env),
+            http_proxy: 'http://proxy.invalid:8080', HTTPS_PROXY: 'http://proxy.invalid:8080', No_PrOxY: '.invalid',
             SYNTHETIC_FOREIGN_API_KEY: 'SYNTHETIC_OTHER_CLI',
             OMP_AUTH_BROKER_URL: 'https://other-account.invalid',
           },

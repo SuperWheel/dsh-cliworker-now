@@ -1,5 +1,6 @@
 import { SettingsConnectionCache } from './settings-connection-cache.ts'
-import { backgroundZCodeCatalog } from './settings-connection-background.ts'
+import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-management/sources.ts'
+import { backgroundConnectionConfig } from './settings-connection-background.ts'
 import { CliMaintenance, CliBusyError, MaintenanceError } from './cli-management/maintenance.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
@@ -86,6 +87,7 @@ import {
   effortLabel,
   EFFORTS,
   type CliId,
+  type ActiveCliId,
   type Preference,
   type TaskMode,
   type RoleSnapshot,
@@ -395,16 +397,7 @@ export class CliWorkerService extends TypertRemoteService {
       enabled: () => this.runtime.generalSettings().backgroundCliCheck,
       cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
       account: (cli, project, signal) => this.accounts.status(cli, project, signal, { background: true }),
-      preloadConnection: async (cli, project, kind, signal) => {
-        const release = this.options.cliMaintenance?.using(cli)
-        try {
-          this.runtime.assertCliEnabled(cli)
-          if (kind === 'account') await this.connectionCache().read(project, cli, 'account', signal,
-            control => this.accounts.status(cli, project, control, { background: true }))
-          else await this.connectionCache().read(project, cli, 'catalog', signal,
-            control => backgroundZCodeCatalog(this.backend, this.options, project, control))
-        } finally { release?.() }
-      },
+      preloadConnection: (cli, project, kind, signal) => this.preloadSettingsConnection(cli, project, kind, signal),
       cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
       globalCleanup: error => this.runtime.blockOnCleanup(error),
       busy: cli => ({ workers: this.runtime.busyCliWorkers(cli), accounts: this.accounts.isBusy(cli) || this.accounts.hasActiveQuery(cli) }),
@@ -2511,6 +2504,37 @@ export class CliWorkerService extends TypertRemoteService {
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
     return this.readAccountStatus(parentSessionId, cli, signal, false)
   }
+  private async preloadSettingsConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+    const release = this.options.cliMaintenance?.using(cli)
+    try {
+      const allowed = kind === 'account' ? BACKGROUND_ACCOUNT_CLIS : BACKGROUND_CATALOG_CLIS
+      if (!allowed.includes(cli)) throw new Error('此 CLI 的连接查询保留前台')
+      this.runtime.assertCliEnabled(cli)
+      const held = this.runtime.catalogCleanupMessage(cli)
+      if (held) throw new Error(held)
+      if (kind === 'account') await this.loadSettingsAccount(project, cli, signal, false, true)
+      else await this.loadSettingsCatalog(project, cli, signal, false, true)
+    } catch (error) {
+      if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(cli, error)
+      throw error
+    } finally { release?.() }
+  }
+  private loadSettingsAccount(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+    return this.connectionCache().read(project, cli, 'account', AbortSignal.any([signal, this.disposed.signal]),
+      control => this.accounts.status(cli, project, control, { background }), refresh)
+  }
+  private loadSettingsCatalog(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+    return this.connectionCache().read(project, cli, 'catalog', AbortSignal.any([signal, this.disposed.signal]), async control => {
+      const config = background ? await backgroundConnectionConfig(cli, this.options, control) : this.options
+      this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
+      return this.settingsCatalogs.get({
+        cli, project, signal: control, refresh: true,
+        selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
+        binding: () => this.readAccountBinding(cli, this.backend, config, project, control),
+        discover: () => this.queryCatalog(cli, this.backend, config, project, control),
+      })
+    }, refresh)
+  }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Read lifetime. @returns Fresh account status and action handles. */
   @Remote('refreshAccountStatus')
   async refreshAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
@@ -2534,8 +2558,7 @@ export class CliWorkerService extends TypertRemoteService {
         const receipt = this.connectionCache().status(project, id).account
         return JSON.stringify({ ...receipt.value, cache: receipt.cache })
       }
-      const status = await this.connectionCache().read(project, id, 'account', AbortSignal.any([signal, this.disposed.signal]),
-        control => this.accounts.status(id, project, control), refresh)
+      const status = await this.loadSettingsAccount(project, id, signal, refresh)
       signal.throwIfAborted()
       const after = held()
       if (after) return JSON.stringify(after)
@@ -2988,16 +3011,7 @@ export class CliWorkerService extends TypertRemoteService {
       const control = AbortSignal.any([signal, this.disposed.signal])
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
-      this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
-      const { catalog, binding } = await this.connectionCache().read(project, id, 'catalog', control, async querySignal => {
-        this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
-        return this.settingsCatalogs.get({
-          cli: id, project, signal: querySignal, refresh: true,
-          selfVerifiedDiscovery: id === 'qoder' || id === 'qodercn' || isWorkBuddyCli(id),
-          binding: () => this.readAccountBinding(id, this.backend, this.options, project, querySignal),
-          discover: () => this.queryCatalog(id, this.backend, this.options, project, querySignal),
-        })
-      }, refresh)
+      const { catalog, binding } = await this.loadSettingsCatalog(project, id, control, refresh)
       control.throwIfAborted()
       ;(this.displayedBindings ??= new Map()).set(JSON.stringify([parentSessionId, id]), binding)
       this.runtime.assertCliEnabled(id)
