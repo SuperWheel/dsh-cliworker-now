@@ -1678,3 +1678,11 @@ npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不�
 临时目录变更主任务 4：`spawnProbe` 为 Windows 短时 CLI 创建 `cliworker-probe-`、0700 与活 Host owner marker，覆盖 captureCatalogMetadata/captureReadOnly、Antigravity models、Codex account/models、Claude OAuth catalog、TRAE metadata、Qoder account/catalog、ZCode help、通用账号状态及 Grok/Hermes 有界续期子进程。只改 TMP/TEMP（去除这两个键的大小写重复），代理原样保留；普通 done 不授权删除，只在宿主 waitForExit 返回 true 后复用共享删除辅助器，false/抛错保留。WorkBuddy 元数据使用同一环境工厂，在 native stopChildren 已确认后释放；原生私有助手若覆盖 TEMP，仍指向其已有隔离目录。原 Worker/交互终端/官方更新入口不接入新辅助器。
 
 `cliworker-probe-` 纳入既有一小时/当前 uid/活 Host 排除规则，磁盘删除失败交后续 sweep。Bun 系统 Temp 历史 `.<16 hex>-00000000.dll` 没有插件所有权，不添加文件级 sweep；用户可在无占用时手动清理旧文件。新的 Windows DLL 落点与实际占用回收须实机复验。
+
+## 2026-11-15：「更新 CLI」页与后台版本检查（整体说明）
+
+- 入口：CLI Worker 设置导航的「更新 CLI」项（`settings-dialog.tsx` → `cli-update-page.tsx`）。Client 只经 Gateway 调用 Host 的 `cli-management` 服务：读取快照与订阅、检查更新、开始/取消操作、选择与检查安装目录、保存下载源；进程、下载、校验、替换与清理全部在 Host。
+- 分区与重排：可更新、需要手动更新、检查失败、已是最新、未安装五组，归类与重排规则在 `cli-update-layout.ts`；展开或进行中的行不随重排移动，导航徽标显示可更新数量，有操作时显示转圈。
+- 展开区：下载进度（跨文件合计字节、速度、来源主机、续传次数、官方/插件接管标签、阶段文字与已用时）、命令与输出、结果状态与「更新清理」摘要；手动方法气泡给出命令与官方说明；可选位置的桌面应用先展开安装位置气泡，确认后才开始安装。
+- 后台版本检查：「启动后在后台检查 CLI」默认开启，回退即关闭该开关。`preload.ts` 在 Host 启动 60 秒后进入空闲判定（无任务、账号窗口、更新，CPU 两次采样忙碌比例低于 50%），按路径 → 版本 → 账号 → 最新版本 → 模型目录逐项执行；版本探测经 `private-launch.mjs --cliworker-low-priority`，Windows 为 BELOW_NORMAL；`backgroundSafe: false`（Codex、Qoder 两版）只在前台读取；版本按指纹缓存，命中时不启动进程。忙碌时中断当前项并等待清理，30 秒后重试；页面「检查更新」把剩余项转为前台并共用结果。
+- 实机：2026-11-15 Windows（34133b9 包）启动后 120 秒出现首个后台探测进程，全部为 BelowNormal；Mac Desktop 上页面检查、OMP 官方更新与备份回收、展开区与安装位置气泡通过。详细证据见 `openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md` 与双通道变更。

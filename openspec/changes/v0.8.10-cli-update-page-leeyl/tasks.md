@@ -207,9 +207,10 @@
   - 2026-11-15 补测（34133b9 包，Windows 实机）：先从状态文件只删除 Kimi、OpenCode、Grok 三条版本缓存（其余不动；状态文件备份在 `%LOCALAPPDATA%\cliworker-now-remote\state-backup-20261115\`），以迫使后台预加载真实启动版本探测；Desktop 07:37:47.219 启动后无任务、无操作，用 40 ms 间隔的 Get-Process 轮询 5 分钟。第一个新子进程出现在 07:39:47.654（启动后 120.4 秒，晚于 60 秒空闲起点）；此后 `node`、`kimi`（+145.6 s）、`grok`（+158.4 s）、`reg` 及承载 `private-launch.mjs` 的 DeepSeek Harness（Electron 作 Node）子进程与其 conhost 全部为 BelowNormal，没有 Normal 优先级的新探测进程。结束时 CPU 负载 1%。另有一个 OfficeC2RClient BelowNormal 进程属 Office，与插件无关。
   - 四项均已覆盖，勾选。未覆盖：CPU 高于 50% 时推迟的分支只在模拟测试中验证，实机未制造高负载。
 
-- [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
+- [x] 7.6 README、`doc/design.md` 同步新页面与预加载说明
   - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
   - Phase C 已同步 README、doc/design.md 和本变更 design.md 的首次安装行为、脚本信任边界与桌面 manual 限制。（未执行：新页面与五类预加载的整体验收说明仍待整合，本项不以首次安装文档更新代替全部完成。）
+  - 2026-11-15 整合：README.md「安装与更新」开头新增「更新 CLI」页的入口、分区、按钮、展开区、取消与下载设置说明，以及「启动后在后台检查 CLI」的启动时机、空闲条件、低优先级、前台限定 CLI 与 Windows 实测；README.en.md 同步英文版；README 中「Windows 接管仅完成模拟验证」改为已真实更新并指向 13.5。doc/design.md 末尾新增「「更新 CLI」页与后台版本检查（整体说明）」一节，描述与 `preload.ts`、`sources.ts` 的 backgroundSafe、`cli-update-layout.ts` 及决定 7/8 一致。
 
 ## 8. 全部 CLI 自动更新（PRD 5.3.1） 〔后端｜16h｜前置 4,5〕
 - [x] 8.1 补齐官方发布 GET、Hermes 清单版本与桌面应用版本
