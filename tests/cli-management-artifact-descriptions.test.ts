@@ -199,3 +199,24 @@ it('模拟：多个摘要优先选择 sha512、sha256，MD5 不覆盖较强摘�
   expect(parseIntegrity([sri('mock', 'md5'), sri('mock', 'sha256')].join(' ')).algorithm).toBe('sha256')
   expect(parseIntegrity([sri('mock', 'sha256'), sri('mock', 'sha512')].join(' ')).algorithm).toBe('sha512')
 })
+it('模拟：摘要失败后重取遇到 validator/长度变化，不截断已关闭句柄，合计改用新总量', async () => {
+  const { downloadCliArtifact } = await import('../src/host/cli-management/download.ts')
+  const f = await fixture()
+  let heads = 0, gets = 0
+  const fetcher = vi.fn(async (_url, init) => {
+    if (init?.method === 'HEAD') {
+      heads++
+      return new Response(null, { headers: { etag: heads === 1 ? '"old"' : '"new"', 'content-length': heads === 1 ? '4' : '6' } })
+    }
+    gets++
+    return new Response(gets === 1 ? 'xxxx' : 'abcdef', { headers: { etag: gets === 1 ? '"old"' : '"new"', 'content-length': gets === 1 ? '4' : '6' } })
+  })
+  const item = { dest: 'binary', sources: ['https://fixture.invalid/one', 'https://fixture.invalid/two'], integrity: sri('abcdef') }
+  await downloadDescription({ files: [item] }, { ...f, fetcher, download: input => downloadCliArtifact({ ...input, restartOnValidatorChange: true }) })
+  expect(await readFile(join(f.directory, 'binary'), 'utf8')).toBe('abcdef')
+  expect(gets).toBe(2)
+  const progress = f.progress.mock.calls.map(([p]) => cliDownloadProgressSchema.parse(p))
+  expect(progress.some(p => p.totalBytes === 4)).toBe(true)
+  expect(progress.some(p => p.totalBytes === undefined && p.downloadedBytes === 0)).toBe(true)
+  expect(progress.at(-1)).toMatchObject({ downloadedBytes: 6, totalBytes: 6, byteProgressState: 'known-total' })
+})

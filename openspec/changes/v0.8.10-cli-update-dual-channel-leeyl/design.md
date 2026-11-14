@@ -224,3 +224,7 @@ npm 可以静默跳过下载失败的 optionalDependency 并退出 0。主包 pa
 P2 补充：官方阶段、重试与换源始终使用同一临时文件和偏移量；官方 watchdog 只取消当前连接，接管前用原响应长度/强 ETag/MD5 锚定对象，向新源发 Range/If-Range。镜像低于 100 KB/s 可转官方，停滞后从断点恢复；只有无法安全追加（服务器不支持续传、缺少验证标识或标识变化）才重取，最终仍验证官方摘要。文件和 7 天记忆清理失败不能中断 mandatory finally：完成操作、清空运行句柄、释放非隔离维护锁及继续队列。进程范围退出未确认保持原隔离策略。
 
 2026-11-14 用户提供的 Windows 手动修复进一步证明 cache add 支持 Codex npm alias：npmmirror 约 50 KB/s；同代理官方约 6 MB/s，152 MB 停滞后 curl exit 28，再 Range 续至 172.3 MB/31 秒，SHA-512 一致；缓存预置后 npmmirror npm install 7 秒、平台 cache hit、codex-cli 0.166.0。不是新插件 Windows 验收。npm 独自从镜像与指定官方 registry 下载均曾 5 分钟超时；缓存 packument 镜像 URL 是待核实解释。插件生成标准官方/镜像 URL、自取精确版本并验证摘要，不信任 npm 缓存中的 tarball 路由；同摘要内容缓存供 npm 复用。详见 tasks 9.9。
+
+决定 9 第二轮审查：准备阶段复用同一 required/one-of/optional 语义。必需组全部满足，替代组按顺序尝试到一项成功，可选组失败仅日志说明 npm 可能自行下载；失败文件不进 cache add，取消仍终止。元数据的所选 registry 不可用或缺目标时，automaticSources 允许官方回退，custom 禁止该回退，完整性冲突仍失败。聚合长度随每次响应更新，摘要失败的重试先开新句柄再处理 validator 变化。npm 不可解析属于更新前置条件，不是安装损坏证据；本地跳过无法可靠定平台的检查，按已有安全规则从绝对路径探针或缓存获取 CLI 版本。
+
+npm 下载接管每条进度都有非空 sourceHost（包括跨文件/最终完成），安装阶段不保留下载 channel/sourceHost；客户端可用 channel=takeover 且 sourceHost 存在选择插件续传文案，无新增共享字段。客户端文字由主会话修改，本轮 Host 不停“官方更新器”也不在接管时删除断点。d6ce88b 的 Codex Windows 页面通过证据已在任务 9.11，本轮新路径仍以模拟回归为证。

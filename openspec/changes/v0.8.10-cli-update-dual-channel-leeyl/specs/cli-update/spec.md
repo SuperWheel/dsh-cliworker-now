@@ -190,3 +190,23 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 #### Scenario: 临时目录或失败记忆清理拒绝
 - **WHEN** 安装结束后的目录删除或 ChannelMemory 写入因 ENOSPC/EACCES 等错误失败
 - **THEN** Host SHALL 记录清理提示，仍完成操作、清空运行句柄、释放维护锁并继续队列；进程退出未确认的隔离策略 SHALL 保持不变
+
+#### Scenario: 准备阶段尊重必需和替代组件
+- **WHEN** OpenCode 普通平台包不可获取但 baseline 可以获取，或 CodeBuddy 可选 node-pty 预下载失败
+- **THEN** Host SHALL 为替代组依次尝试至一项已校验工件成功，可选件失败仅记录且继续；真正必需组全部失败 MUST 终止，未校验文件 MUST NOT 进入 npm 缓存
+
+#### Scenario: 所选镜像缺少精确版本清单
+- **WHEN** automaticSources 已开启且主包或平台组件清单在所选源不可获取
+- **THEN** Host SHALL 允许官方清单回退；custom 模式 MUST NOT 增加该回退，身份或完整性冲突 MUST NOT 作为换源理由
+
+#### Scenario: 摘要重试期间对象长度变化
+- **WHEN** 摘要失败后的干净重试探测到新的 validator 和长度
+- **THEN** Host SHALL 在有效的新文件句柄上重置下载，聚合总量改用新响应长度，未知时撤销总量，MUST NOT 截断已关闭句柄或保留旧总量
+
+#### Scenario: CLI 可运行但 npm 不在可解析路径中
+- **WHEN** 已安装的 npm 来源 CLI 可通过已保存绝对路径运行，而 npm 无法解析
+- **THEN** Host MUST NOT 仅因此判定安装损坏或清除健康缓存/身份；SHALL 按既有安全规则探测 CLI 或复用缓存，并继续把 npm 可用性作为更新执行前置条件
+
+#### Scenario: npm 下载接管的进度身份
+- **WHEN** npm 插件下载进入 takeover，包括文件交界与下载完成
+- **THEN** 每条下载进度 SHALL 包含非空 sourceHost，客户端可据此与官方更新器接管区分；进入 npm 安装阶段 SHALL 清除下载 channel/sourceHost，MUST NOT 暗示已删除断点

@@ -868,6 +868,9 @@ export const en = {
   'npm 安装需要修复：平台组件 {name} 未安装或版本不符；npm 可能下载超时或失败，请重新安装': 'The npm installation needs repair: platform component {name} is missing or has the wrong version. npm may have timed out or failed while downloading it. Reinstall',
   'npm 安装需要修复：平台组件 {name} 的声明缺失': 'The npm installation needs repair: the declaration of platform component {name} is missing',
   '临时文件或下载通道记忆未能清理；操作已结束。': 'Temporary files or the download-channel memory could not be cleaned up; the operation has finished.',
+  '无法准备 npm 必需平台组件 {name}': 'Could not prepare the required npm platform component {name}',
+  'npm 可选平台组件 {name} 未能预下载；继续安装，npm 仍可能自行下载。': 'The optional npm platform component {name} could not be downloaded in advance; installing anyway, and npm may still download it itself.',
+  'npm 平台组件 {name} 未能预下载；尝试同组其他组件。': 'The npm platform component {name} could not be downloaded in advance; trying another component in its group.',
   // isolated parallel writes: Host messages shown by hostText(); keep exactly equal to the Host source text
   '上次合并在 Host 关闭时中断，可重新合并；已写回的文件会被跳过': 'The last merge was interrupted when the Host closed. You can merge again; files already written back are skipped',
   '隔离副本目录已缺失，只能丢弃': 'The isolated copy folder is missing; it can only be discarded',
@@ -1229,6 +1232,7 @@ export const en = {
   '官方下载中断': 'The official download was interrupted',
   '官方更新失败退出': 'The official update exited with a failure',
   '官方更新超过时间预算': 'The official update exceeded its time budget',
+  '{reason}，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 {cli} 会直接由插件换源下载。': '{reason}. The plugin switched to another source and keeps downloading; the downloaded part is kept. For the next 7 days, {cli} updates on this computer download through the plugin from another source directly.',
   '{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。': '{reason}. The official update was stopped, its partial files were deleted, and the plugin is downloading instead. For the next 7 days, {cli} updates on this computer download through the plugin directly.',
   '官方更新 {count} 天前在这台电脑上失败，7 天内直接由插件下载': 'The official update failed on this computer {count} day(s) ago; for 7 days the plugin downloads directly',
   '官方更新今天在这台电脑上失败，7 天内直接由插件下载': 'The official update failed on this computer today; for 7 days the plugin downloads directly',

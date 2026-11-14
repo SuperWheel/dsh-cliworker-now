@@ -243,9 +243,9 @@ export async function downloadCliArtifact(options: {
       await handle.close(); await unlink(file)
       if (validationAttempt === 1) throw new CliOperationError('INTEGRITY_MISMATCH', '下载的文件校验不通过')
       global.throwIfAborted()
+      handle = await open(file, 'wx', 0o600); remove = false
       if (sources) { await select(); sourceHost = new URL(sources.url).host }
       options.output?.('下载的文件校验不通过，已删除临时文件，干净重新下载一次。\n')
-      handle = await open(file, 'wx', 0o600); remove = false
       bytes = 0; total = undefined; lastBytes = 0; lastByte = lastReported = Date.now(); rangeRejected = false
       report()
     }

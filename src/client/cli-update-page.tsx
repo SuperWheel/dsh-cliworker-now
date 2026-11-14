@@ -443,7 +443,8 @@ export function recentFailureText(failedAt: unknown, now = Date.now()): string {
     : t('官方更新 {count} 天前在这台电脑上失败，7 天内直接由插件下载', { count: days })
 }
 
-function Progress({ operation }: { operation: CliUpdateOperation }) {
+/** `npm`: the plugin downloads the official npm packages itself, so a takeover only switches sources. */
+function Progress({ operation, npm = false }: { operation: CliUpdateOperation; npm?: boolean }) {
   const t = useT()
   const progress = operation.progress as ShownProgress | undefined
   if (!progress) return null
@@ -481,10 +482,15 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     <div className="cwn-update-callout" role="note">
       {hermes
         ? t('{reason}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。', { reason: switched })
-        : t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
-            reason: switched,
-            cli: name,
-          })}
+        : npm
+          ? t('{reason}，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 {cli} 会直接由插件换源下载。', {
+              reason: switched,
+              cli: name,
+            })
+          : t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
+              reason: switched,
+              cli: name,
+            })}
     </div>
   )
   /** `clip`: untrusted CLI text kept to one line with the full text on hover. */
@@ -1139,7 +1145,7 @@ export function CliUpdatePane({
     if (operation?.cli === cli) {
       return (
         <div className="cwn-update-expand">
-          <Progress operation={operation} />
+          <Progress operation={operation} npm={operation.intent === 'install' ? entry?.install?.method === 'npm' : entry?.source === 'npm'} />
           {operation.intent === 'install' && entry?.install?.method !== 'desktop' && (operation.installDirectory || entry?.install?.defaultLocation) ? (
             <span className="cwn-update-place">
               {t('安装到官方默认位置 {path}', { path: operation.installDirectory || entry!.install!.defaultLocation! })}

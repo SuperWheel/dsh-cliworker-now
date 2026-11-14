@@ -398,3 +398,116 @@ it('模拟：官方 HTTP 503 仍进入接管，不受新的断点边界阻断', 
   expect(f.options.progress.mock.calls.at(-1)![0]).toMatchObject({ channel: 'takeover', reason: 'OFFICIAL_EXIT', downloadedBytes: 21 })
   await bundle.cleanup(true)
 })
+
+describe('模拟：第二轮审查的准备分组、元数据回退与接管字段', () => {
+  function groupedFixture(cli: 'opencode' | 'codebuddy') {
+    const f = fixture(), pkg = cli === 'opencode' ? 'opencode-ai' : '@tencent-ai/codebuddy-code'
+    const names = cli === 'opencode' ? ['opencode-windows-x64', 'opencode-windows-x64-baseline'] : ['@tencent-ai/sandbox-cli-win32-x64', '@lydell/node-pty-win32-x64']
+    const manifest: NpmManifest = { name: pkg, version: '1.0.0', optionalDependencies: Object.fromEntries(names.map(n => [n, '1.0.0'])), dist: { tarball: `https://custom.example/${encodeURIComponent(pkg)}.tgz`, integrity: sri('main') } }
+    const components = names.map(name => ({ name, version: '1.0.0', os: ['win32'], cpu: ['x64'], dist: { tarball: `https://custom.example/${encodeURIComponent(name)}.tgz`, integrity: sri('binary') } }))
+    const metadata = vi.fn(async (url: unknown) => {
+      const name = decodeURIComponent(new URL(String(url)).pathname.split('/')[1]!)
+      return new Response(JSON.stringify(name === pkg ? manifest : components.find(c => c.name === name)))
+    })
+    const fetcher = vi.fn(async (url: unknown) => new Response(String(url).includes(encodeURIComponent(pkg)) ? 'main' : 'binary'))
+    return { ...f, names, pkg, metadata, fetcher, options: { ...f.options, cli, version: '1.0.0', registry: 'https://custom.example/', automaticSources: false, releases: new ReleaseClient(metadata), fetcher } }
+  }
+  it.each(['preferred', 'baseline', 'none'])('OpenCode 准备组：%s 可用时的结果', async available => {
+    const f = groupedFixture('opencode')
+    f.fetcher.mockImplementation(async url => {
+      if (String(url).includes(f.pkg)) return new Response('main')
+      const preferred = String(url).includes('opencode-windows-x64.tgz')
+      if (available === (preferred ? 'preferred' : 'baseline')) return new Response('binary')
+      return new Response(null, { status: 503 })
+    })
+    if (available === 'none') { await expect(prepareNpmDownload(f.options)).rejects.toThrow('HTTP 503'); return }
+    const bundle = await prepareNpmDownload(f.options)
+    expect(bundle.platforms).toHaveLength(1)
+    const bodies = f.fetcher.mock.calls.map(([url]) => String(url))
+    expect(bodies.some(url => url.includes('baseline'))).toBe(available === 'baseline')
+    expect(f.options.progress.mock.calls.at(-1)![0]).toMatchObject({ fileCount: 2, completedFiles: 2, downloadedBytes: 10, totalBytes: 10 })
+    await bundle.cleanup(true)
+  })
+  it.each(['metadata', 'body'])('CodeBuddy node-pty %s 失败不阻止已准备 sandbox 的安装', async phase => {
+    const f = groupedFixture('codebuddy'), original = f.metadata.getMockImplementation()!
+    if (phase === 'metadata') f.metadata.mockImplementation(async url => String(url).includes(encodeURIComponent(f.names[1]!)) ? new Response(null, { status: 404 }) : original(url))
+    else f.fetcher.mockImplementation(async url => String(url).includes(encodeURIComponent(f.names[1]!)) ? new Response(null, { status: 503 }) : new Response(String(url).includes(encodeURIComponent(f.pkg)) ? 'main' : 'binary'))
+    const bundle = await prepareNpmDownload(f.options)
+    expect(bundle.platforms).toHaveLength(1)
+    expect(f.options.output.mock.calls.flat().join('')).toContain(`npm 可选平台组件 ${f.names[1]} 未能预下载；继续安装，npm 仍可能自行下载。`)
+    expect(f.options.progress.mock.calls.at(-1)![0]).toMatchObject({ completedFiles: 2, fileCount: 2, totalBytes: 10, downloadedBytes: 10 })
+    await bundle.cleanup(true)
+  })
+  it('可选件失败后跳过不算接管成功，不保存 7 天失败记忆', async () => {
+    const f = groupedFixture('codebuddy')
+    f.fetcher.mockImplementation(async url => {
+      if (String(url).includes('node-pty')) return new Response(null, { status: 503 })
+      return new Response(String(url).includes('sandbox-cli') ? 'binary' : 'main')
+    })
+    const bundle = await prepareNpmDownload({ ...f.options, automaticSources: true })
+    expect(bundle.platforms).toHaveLength(1)
+    await bundle.cleanup(true)
+    expect(await new ChannelMemory(f.root).get(channelMemoryKey('codebuddy', f.identity, host.platform, host.arch))).toBeUndefined()
+  })
+  it.each(['main', 'component'])('自动源在镜像 %s 清单滞后时回退官方', async missing => {
+    const f = fixture(), registry = 'https://registry.npmmirror.com/', original = f.fetcher.getMockImplementation()!
+    f.fetcher.mockImplementation(async url => {
+      const isMain = String(url).endsWith('/0.169.0')
+      if (String(url).startsWith(registry) && isMain === (missing === 'main')) return new Response(null, { status: 404 })
+      return original(url)
+    })
+    const bundle = await prepareNpmDownload({ ...f.options, registry })
+    expect(f.fetcher.mock.calls.some(([url]) => String(url).startsWith('https://registry.npmjs.org/') && String(url).endsWith(missing === 'main' ? '/0.169.0' : '/0.169.0-win32-x64'))).toBe(true)
+    expect(bundle.platforms).toHaveLength(1)
+    await bundle.cleanup(true)
+  })
+  it('自定义 registry 主包清单不可用时不切官方', async () => {
+    const f = fixture(); f.fetcher.mockResolvedValue(new Response(null, { status: 404 }))
+    await expect(prepareNpmDownload({ ...f.options, registry: 'https://custom.example/', automaticSources: false })).rejects.toThrow()
+    expect(f.fetcher.mock.calls.every(([url]) => String(url).startsWith('https://custom.example/'))).toBe(true)
+    expect(f.options.fetcher).not.toHaveBeenCalled()
+  })
+  it.each([false, true])('npm 接管 remembered=%s：所有接管进度含 sourceHost，安装前可据此判别', async remembered => {
+    const f = fixture()
+    if (remembered) await new ChannelMemory(f.root).set(channelMemoryKey('codex', f.identity, host.platform, host.arch), 'OFFICIAL_SLOW')
+    else {
+      const original = f.options.fetcher.getMockImplementation()!
+      f.options.fetcher.mockImplementation(async (url, init) => String(url).includes('npmjs.org') ? new Response(null, { status: 503 }) : original(url, init))
+    }
+    const bundle = await prepareNpmDownload(f.options)
+    const progress = f.options.progress.mock.calls.map(([p]) => cliDownloadProgressSchema.parse(p)).filter(p => p.channel === 'takeover')
+    expect(progress.length).toBeGreaterThan(0)
+    expect(progress.every(p => !!p.sourceHost && p.byteProgress === true)).toBe(true)
+    expect(progress.some(p => p.completedFiles === 1)).toBe(true)
+    expect(progress.at(-1)).toMatchObject({ completedFiles: 2, fileCount: 2 })
+    await bundle.cleanup(true)
+  })
+})
+it.each([false, true])('模拟：npm 不可解析不损坏通过绝对路径运行的 OpenCode，background=%s', async background => {
+  const f = serviceFixture(['opencode']); roots.push(f)
+  const identity = { ...syntheticIdentity('opencode', '1.19.5'), executable: '/saved/native/opencode' }
+  f.identities.set('opencode', identity)
+  ;(f.service as any).deps.npmRuntimeHost = undefined
+  vi.mocked(f.backend.resolveExecutable).mockRejectedValue(new Error('npm missing'))
+  f.version.mockImplementation(currentVersion as any)
+  vi.mocked(f.backend.spawn).mockReturnValue({ stdout: Readable.from(['1.19.5']), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0 }), waitForExit: async () => true, terminate() {} } as any)
+  f.service.cache.rememberVersion('opencode', identity.fingerprint, '1.19.5')
+  await (f.service as any).local('opencode', control(), background, false)
+  const row = f.service.snapshot().entries.find(e => e.cli === 'opencode')!
+  expect(row).toMatchObject({ installed: true, source: 'npm', currentVersion: '1.19.5' })
+  expect(row.group).not.toBe('failed'); expect(row.reason).not.toBe('UNKNOWN_VERSION')
+  expect((f.service as any).identities.get('opencode')).toEqual(identity)
+  expect(f.service.cache.version('opencode', identity.fingerprint)?.version).toBe('1.19.5')
+  if (!background) {
+    expect(f.version).toHaveBeenCalledWith('opencode', identity, f.backend, f.config, expect.any(AbortSignal), false, 5000, true)
+    expect(vi.mocked(f.backend.spawn).mock.calls[0]![0].argv).toEqual([identity.executable, '--version'])
+  }
+  expect((f.service as any).deps.npmCheck).not.toHaveBeenCalled()
+})
+it('模拟：npm 缺失时 CLI 版本探针的真实失败仍报告失败', async () => {
+  const f = serviceFixture(['opencode']); roots.push(f)
+  ;(f.service as any).deps.npmRuntimeHost = async () => { throw new Error('npm missing') }
+  f.version.mockRejectedValue(new Error('CLI cannot run'))
+  await (f.service as any).local('opencode', control(), false, false)
+  expect(f.service.snapshot().entries.find(e => e.cli === 'opencode')).toMatchObject({ group: 'failed', currentVersion: undefined })
+})

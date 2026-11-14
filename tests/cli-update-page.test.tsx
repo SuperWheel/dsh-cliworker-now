@@ -710,16 +710,30 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     ['OFFICIAL_EXIT', '官方更新失败退出'],
     ['OFFICIAL_BUDGET', '官方更新超过时间预算'],
   ] as const)('explains a switch to the plugin download caused by %s', async (reason, cause) => {
-    const f = await setup(running({ channel: 'takeover', reason, readable: false, byteProgress: false, resumeCount: 0, stage: '官方进程已退出，切换插件接管' }))
-    const row = f.rowOf('codex')
+    // Claude updates itself: the plugin stops that updater before downloading.
+    const f = await setup(running({ channel: 'takeover', reason, readable: false, byteProgress: false, resumeCount: 0, stage: '官方进程已退出，切换插件接管' }, { cli: 'claude' }))
+    const row = f.rowOf('claude')
     const callouts = byClass(row, 'cwn-update-callout')
     expect(callouts.map(textOf)).toEqual([
-      `${cause}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 Codex 会直接由插件下载。`,
+      `${cause}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 Claude Code 会直接由插件下载。`,
     ])
     // The Host's own transition note would only repeat the callout; nothing pretends to be progress.
     expect(textOf(row)).not.toContain('官方进程已退出')
     expect(bars(row)).toHaveLength(0)
     expect(textOf(row)).not.toContain('下载进度无法读取')
+  })
+
+  it('says an npm takeover only switches sources and keeps the downloaded part', async () => {
+    // Codex is npm-installed: the plugin already downloads the official packages, so nothing is stopped or deleted.
+    const f = await setup(running({
+      channel: 'takeover', reason: 'OFFICIAL_SLOW', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 60 * 1024 ** 2, totalBytes: 178 * 1024 ** 2, resumeCount: 1, sourceHost: 'registry.npmjs.org',
+    }))
+    const callout = byClass(f.rowOf('codex'), 'cwn-update-callout').map(textOf)
+    expect(callout).toEqual([
+      '官方下载速度过低，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 Codex 会直接由插件换源下载。',
+    ])
+    expect(callout.join('')).not.toContain('半成品')
   })
 
   it('keeps the switch callout above the plugin progress once bytes arrive', async () => {

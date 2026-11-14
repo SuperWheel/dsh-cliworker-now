@@ -237,3 +237,24 @@
   - 2026-11-14 插件本地提交 d6ce88b 隔离包（1247 文件哈希一致）装入 Windows DSH 0.2.2-rc.3。页面检查显示 `0.166.0 → 0.169.0 · npm 全局安装 · 国内镜像`；点「更新」后显示 2 个文件、合计 178 MB，来源 registry.npmjs.org，渠道「官方」，约 40 秒下载完成；输出两次「下载停滞 10 秒，从 38235484 B / 167894004 B 处续传」，均续上。随后 `npm cache add …\1.tgz`，再以 `install --global --prefix C:/Users/admin/AppData/Roaming/npm …\0.tgz --registry https://registry.npmmirror.com/ --prefer-offline --include=optional` 安装，`changed 2 packages in 5s`；页面「已更新到 0.169.0」，复查归入已是最新。
   - 主会话复核：已装 package.json 0.169.0，`node_modules/@openai/codex-win32-x64` 为 0.169.0-win32-x64，`codex --version` 输出 `codex-cli 0.169.0`；npm 日志该平台包为 `http cache … (cache hit)`，未重新下载。CU 子 agent（gpt-6.1-sol）操作页面。
   - 发现并修复前端文案：插件自己下载的官方源仍显示「官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载」，与实际续传不符。改为有 `sourceHost` 时显示「下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留」并显示续传次数；CLI 自带更新器仍用原文案。`corepack pnpm typecheck` 通过；`vitest run tests/cli-update-page.test.tsx` 与 i18n 测试 2 文件 67/67 通过（新增 1 项）。前端修改尚未在 Windows 页面复看。
+
+- [x] 9.12 第二轮 P2-1/P2-2：准备组件组与元数据自动回退
+  - npm 下载准备共用 npmRequiredGroups；OpenCode 普通包优先、失败试 baseline、成功即停止同组其他下载；CodeBuddy node-pty 的清单或下载失败只日志提示，必需 sandbox/Codex 组件仍必须成功。只有已校验文件进入 cache add，取消照常终止；失败可选件从最终文件总数剔除，替代组进度仅计当前尝试；可选件失败后跳过不算接管成功，只有实际接管完成文件才保存失败记忆。
+  - 主包及组件的有效 registry 清单查询在 automaticSources 下允许官方回退，处理镜像不可用/缺版本；custom 无此回退，官方身份/完整性冲突仍拒绝。安装 registry、缓存位置、代理环境未改变。
+  - 新 Host 文案精确模板：`npm 可选平台组件 {name} 未能预下载；继续安装，npm 仍可能自行下载。`、`npm 平台组件 {name} 未能预下载；尝试同组其他组件。`、`无法准备 npm 必需平台组件 {name}`。原有 Host 文案保持不变，未改客户端翻译。
+- [x] 9.13 第二轮 P2-3/P3-5：摘要重试句柄与长度聚合
+  - 摘要不符清理后先重新 open，再 select/reset，避免新 validator 触发已关闭句柄 truncate/EBADF。聚合长度随每次进度更新/撤销，固定清单数值仍是强制长度约束；新增真实临时文件、模拟响应回归：4 B 错摘要→新 ETag/6 B 正确内容，完成文件为 abcdef，总量从 4→未知→6。
+- [x] 9.14 第二轮 P2-4/P3-6 后端：npm 前置条件与进度判别
+  - npm 解析失败不当作 CLI 损坏：组件核验仅在运行时已确认时执行，前台继续已保存绝对路径的版本探针；后台遵循既有缓存/安全探测规则。npm 缺失时保留健康身份与缓存，CLI 自身探针失败仍失败，更新执行仍需 npm。进程清理未确认及取消不吞掉。
+  - 对前端的精确答复：`progress.channel === 'takeover' && !!progress.sourceHost` 可选择插件拥有下载的续传文案；npm 每条 takeover 下载进度均有非空 sourceHost，含记忆直达、切源、文件交界和最终完成，byteProgress 为 true。安装阶段不保留下载 channel/sourceHost。sourceHost 不是 npm 专属枚举，无须新增字段；本轮不修改 src/client，callout 由主会话处理。
+  - 9.11 已有 d6ce88b 的 Windows 页面验收记录，原文保留、不重复登记，也不把该验收当成本轮修改的实机证据。
+- [x] 9.15 第二轮指定回归、类型检查、规格/文档与差异核对
+  - `corepack pnpm typecheck`：exit 0，Host/Client typecheck passed against DSH 0.2.2-rc.3。
+  - 最终 `corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx`：33 文件、1042/1042 通过，18.57 秒；本轮新增 15 项模拟回归（npm-platform 增至 56 项，artifact-descriptions 增至 29 项）。覆盖优先/备选/全失败、可选元数据与传输失败、镜像主包/组件清单 404 官方回退、custom 不回退、npm 缺失但绝对路径 CLI 可运行、真实版本探针失败、摘要重试句柄/长度和所有 takeover 进度 sourceHost。
+  - 初次沙箱完整回归 31 文件通过/2 文件失败、1036 项通过/5 项失败，原因是 Pi 环回 listen EPERM 及后续断言；获准沙箱外重跑同一命令通过。定向 `corepack pnpm exec vitest run tests/cli-management-npm-platform.test.ts tests/cli-management-artifact-descriptions.test.ts` 为 2 文件、84/84 通过（最后增加失败记忆用例前）；此前三文件组（另含 cli-management-download-sources）94/94 通过。
+  - `OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict`：exit 0，Change is valid；保留任务 9 超过 12 子项的建议性警告，以保留历史验收与本轮独立证据。`/Library/Developer/CommandLineTools/usr/bin/git diff --check`：exit 0。
+  - README、doc/design 与变更 design/spec 已同步。没有本轮 Windows、真实 CLI 更新、账号、模型或 Desktop 验收；9.11 的 d6ce88b 实机证据仍有效但不覆盖本轮新增行为。未改 src/client、未提交、未升级版本、未改变代理或添加 NO_PROXY。
+- [x] 9.16 第二轮 P3-6 前端：npm 接管提示只说换源续传
+  - `src/client/cli-update-page.tsx`：`Progress` 新增 `npm` 入参，更新按 `entry.source === 'npm'`、安装按 `entry.install.method === 'npm'` 判定（与 Host `automaticMethod` 一致）；npm 接管提示改为「{reason}，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 {cli} 会直接由插件换源下载。」，自更新 CLI 保留「已停止官方更新并删除半成品」原文。`sourceHost` 在所有插件下载接管中都存在，不能单独区分 npm。
+  - 英文映射：新提示及 Host 三条文案（必需组件无法准备、可选组件未预下载、尝试同组其他组件）；`operation-error.ts` 增加「无法准备 npm 必需平台组件 {name}」模式。
+  - 模拟测试：原 7 项切换原因改用 Claude Code（自更新）断言原文；新增 Codex npm 接管断言新文案且不含「半成品」。`corepack pnpm typecheck` exit 0；`corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/client-i18n.test.tsx`：34 文件、1064/1064 通过（沙箱外运行）。Windows 页面尚未查看新提示。

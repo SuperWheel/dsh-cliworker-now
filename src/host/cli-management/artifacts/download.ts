@@ -65,7 +65,8 @@ export async function downloadDescription(description: Pick<ArtifactDescription,
         } : undefined,
         progress: p => {
           channel = p.channel ?? 'takeover'; lastHost = p.sourceHost ?? lastHost; lastBytes = p.downloadedBytes ?? 0; lastResumes = p.resumeCount
-          lengths[index] ??= p.totalBytes
+          // A clean restart may change or invalidate the response length.
+          lengths[index] = p.totalBytes ?? (typeof file.bytes === 'number' ? file.bytes : undefined)
           context.progress({ ...p, channel, stage: `下载官方工件（${index + 1}/${files.length}）`, byteProgress: true,
             byteProgressState: lengths.every(v => v !== undefined) ? 'known-total' : 'unknown-total', currentStep: index + 1, totalSteps: files.length, stepName: file.dest, fileCount: files.length, completedFiles: completed,
             downloadedBytes: completedBytes + lastBytes, totalBytes: lengths.every(v => v !== undefined) ? lengths.reduce<number>((a, b) => a + b!, 0) : undefined, resumeCount: resumes + lastResumes })

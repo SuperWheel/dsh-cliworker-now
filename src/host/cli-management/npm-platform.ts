@@ -55,17 +55,29 @@ export async function npmManifest(releases: ReleaseClient, name: string, range: 
   if (entries.size >= 512) entries.delete(entries.keys().next().value!)
   entries.set(key, { at: Date.now(), manifest }); return manifest
 }
+/** Automatic metadata routing can escape an unavailable/lagging selected mirror.
+ * Integrity/identity failures remain fatal; custom sources never fall back here. */
+export async function npmManifestFromSources(releases: ReleaseClient, name: string, range: string, registry: string, signal: AbortSignal, automaticSources: boolean): Promise<NpmManifest> {
+  try { return await npmManifest(releases, name, range, registry, signal) }
+  catch (error) {
+    signal.throwIfAborted()
+    if (!automaticSources || new URL(registry).href === OFFICIAL_NPM_REGISTRY || error instanceof CliOperationError && error.code === 'INTEGRITY_MISMATCH') throw error
+    return npmManifest(releases, name, range, OFFICIAL_NPM_REGISTRY, signal)
+  }
+}
 export interface NpmComponent { alias: string; manifest: NpmManifest }
-export async function npmPlatformComponents(main: NpmManifest, releases: ReleaseClient, registry: string, signal: AbortSignal, host: NpmHost): Promise<NpmComponent[]> {
+export async function npmPlatformComponents(main: NpmManifest, releases: ReleaseClient, registry: string, signal: AbortSignal, host: NpmHost, routing?: { automaticSources: boolean; unavailable(alias: string, error: unknown): void }): Promise<NpmComponent[]> {
   const dependencies = Object.entries(main.optionalDependencies ?? {})
   if (dependencies.length > 128) throw new CliOperationError('PREREQUISITE_MISSING', 'npm 平台组件清单超过上限')
   // ReleaseClient bounds concurrent HTTP requests; await all callers before returning on failure.
   const outcomes = await Promise.allSettled(dependencies.map(async ([alias, value]) => {
-    const dep = npmDependency(alias, value), manifest = await npmManifest(releases, dep.name, dep.range, registry, signal)
+    const dep = npmDependency(alias, value), manifest = await npmManifestFromSources(releases, dep.name, dep.range, registry, signal, routing?.automaticSources ?? false)
     return platformRestricted(manifest) && npmPlatformMatches(manifest, host) ? { alias, manifest } : undefined
   }))
   const failed = outcomes.find(r => r.status === 'rejected')
-  if (failed?.status === 'rejected') throw failed.reason
+  signal.throwIfAborted()
+  if (failed?.status === 'rejected' && !routing) throw failed.reason
+  outcomes.forEach((r, i) => { if (r.status === 'rejected') routing?.unavailable(dependencies[i]![0], r.reason) })
   return outcomes.flatMap(r => r.status === 'fulfilled' && r.value ? [r.value] : [])
 }
 export function npmDigest(m: NpmManifest): string {

@@ -210,14 +210,23 @@ export class CliManagementService {
       this.identities.set(cli, identity)
       if (pathOnly) return
       // A main-package fingerprint does not cover optional component removal.
+      let npmUnavailable = false
       if (identity.source === 'npm') {
-        const host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, control)
-        await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.releases, this.effectiveRegistry(), control, host, undefined, this.deps.root)
+        let host: Awaited<ReturnType<typeof resolveNpmHost>> | undefined
+        try { host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, control) }
+        catch (error) {
+          control.throwIfAborted()
+          if (error instanceof ProcessCleanupUnconfirmedError) throw error
+          // npm is an update prerequisite. Its absence says nothing about an
+          // installed native CLI reachable through a saved absolute path.
+          npmUnavailable = true
+        }
+        if (host) await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.releases, this.effectiveRegistry(), control, host, undefined, this.deps.root)
       }
       const cached = this.cache.version(cli, identity.fingerprint)
       this.assertHealthy()
-      const reusable = cached && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion)
-      const version = reusable ? cached.version : await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background, 5000, identity.source === 'npm' && !background)
+      const reusable = cached && !(npmUnavailable && !background) && (!validVersion(identity.manifestVersion) || cached.version === identity.manifestVersion)
+      const version = reusable ? cached.version : await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, this.deps.config, control, background, 5000, identity.source === 'npm' && (!background || npmUnavailable))
       control.throwIfAborted()
       if (!reusable && (!background || CLI_SOURCES[cli].backgroundSafe)) {
         const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, control, background)
