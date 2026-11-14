@@ -401,6 +401,20 @@ export class AccountManager {
   }
 
   hasActiveQuery(cli: CliId): boolean { return [...this.statusQueries.values()].some(query => query.cli === cli && !query.settled) }
+  /** Waits (bounded by `signal`) until no status read of this CLI is running; a read started meanwhile is awaited too. */
+  async settleQueries(cli: CliId, signal: AbortSignal): Promise<void> {
+    validateCli(cli)
+    for (;;) {
+      signal.throwIfAborted()
+      const running = [...this.statusQueries.values()].filter(query => query.cli === cli && !query.settled).map(query => query.operation)
+      if (!running.length) return
+      await new Promise<void>((resolve, reject) => {
+        const abort = () => reject(signal.reason ?? new Error('已取消'))
+        signal.addEventListener('abort', abort, { once: true })
+        void Promise.allSettled(running).then(() => { signal.removeEventListener('abort', abort); resolve() })
+      })
+    }
+  }
   /** Synchronous reservation shared by native terminals, desktop accounts and form writes. */
   reserveCustomProvider(cli: CliId): () => void {
     validateCli(cli)

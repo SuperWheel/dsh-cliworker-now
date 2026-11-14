@@ -12,6 +12,10 @@
   - tests/custom-provider.test.ts：41 项模拟通过，三个支持 CLI 均覆盖成功、冲突、必填/URL/API/模型校验、暂存失败、第二次 rename 失败、取消及新文件回滚；补充 JSONC、外部编辑、原生账号锁、符号链接、凭据/名称冲突和密钥不回显、不记录日志。
   - 最终关联命令：pnpm_config_verify_deps_before_run=false corepack pnpm test --configLoader runner --no-cache --reporter=json --outputFile=.cache/custom-provider-tests.json tests/custom-provider.test.ts tests/custom-provider-remotes.test.ts tests/accounts.test.ts tests/settings-connection-cache.test.ts tests/cli-management-remotes.test.ts tests/settings-catalog-cache.test.ts；6 文件、227 项通过、0 失败（新增 50 项；accounts 141、cli-management-remotes 9、settings-connection-cache 10、settings-catalog-cache 17）。
 
+- [x] 1.4 实机发现：读表单与账号窗口的状态刷新冲突，导致「其他服务商」始终退回原生终端
+  - 2026-11-14 Mac Desktop（构建 7642cd9）：Pi「添加账号 → 其他服务商」两次均提示「无法读取图形化配置：此 CLI 的账号状态仍在读取」。原因是 `customProviderForm` 也占用账号 reservation，而添加账号打开时会同时刷新账号状态。
+  - 修改：读表单不再占 reservation（仍做维护锁、启用检查与父会话追踪）；保存前用新增的 `AccountManager.settleQueries` 等待进行中的状态读取（最长 30 秒，可取消），再占 reservation 写入。
+  - `tests/custom-provider-remotes.test.ts` 互斥用例改为新语义（读表单不受 reservation/查询影响；保存在查询结束前等待、结束后写入；reservation 被终端占用时保存拒绝）；`corepack pnpm vitest run tests/custom-provider-remotes.test.ts tests/custom-provider.test.ts tests/accounts.test.ts` 192 passed，typecheck 通过。
 ## 2. 通用表单模板与账号窗口接入 〔前端｜5h｜前置 1〕
 - [x] 2.1 通用服务商表单模板（Host 描述驱动），样式与登录窗口一致，doc/settings-ui-design.md 补规则
   - 新增 `src/client/account-login/provider-form.tsx`（`ProviderForm` / `ProviderFormSpec` / `validProviderForm`）：text、url、secret、select、list 五种字段，必填「*」、placeholder、help 悬浮提示、逐字段与整表错误、保存中、成功结果页；secret 只存组件状态，返回、关闭或保存成功即清空。

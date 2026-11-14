@@ -105,17 +105,27 @@ it('模拟：宿主规划/只读拒绝写入；已取消请求和 Host 关闭不
   f.controller.abort(); await expect(f.save(form.token)).rejects.toThrow()
   expect(existsSync(join(f.root, '.pi'))).toBe(false)
 })
-it('模拟：账号 reservation 与终端、查询、更新互斥，释放幂等', async () => {
-  const f = fixture(), release = f.accounts.reserveCustomProvider('pi')
+it('模拟：读表单不占账号 reservation；保存与终端、查询、更新互斥，释放幂等', async () => {
+  const f = fixture(), form = await f.form(), release = f.accounts.reserveCustomProvider('pi')
   expect(f.accounts.isBusy('pi')).toBe(true)
-  await expect(f.form()).rejects.toThrow('账号操作')
+  expect(await f.form()).not.toBeNull()
+  expect(f.accounts.isBusy('pi')).toBe(true)
+  await expect(f.save(form.token)).rejects.toThrow('账号操作')
   expect(() => f.accounts.reserveCustomProvider('pi')).toThrow()
   expect(() => f.maintenance.begin('pi', () => ({ workers: 0, accounts: f.accounts.isBusy('pi') }))).toThrow('CLI_BUSY')
   release(); release(); expect(f.accounts.isBusy('pi')).toBe(false)
-  ;(f.accounts as any).statusQueries.set('synthetic', { cli: 'pi', settled: false })
-  await expect(f.form()).rejects.toThrow('仍在读取')
-  ;(f.accounts as any).statusQueries.clear()
+  let finish!: () => void
+  const query = { cli: 'pi', settled: false, operation: new Promise<void>(resolve => { finish = () => { query.settled = true; resolve() } }) }
+  ;(f.accounts as any).statusQueries.set('synthetic', query)
   expect(await f.form()).not.toBeNull()
+  let saved = false
+  const pending = f.save((await f.form()).token).then(value => { saved = true; return value })
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(saved).toBe(false)
+  finish(); (f.accounts as any).statusQueries.clear()
+  await pending
+  expect(saved).toBe(true)
+  expect(f.accounts.isBusy('pi')).toBe(false)
 })
 it('模拟：父会话释放作废 token；新父会话无法重用旧 token', async () => {
   const f = fixture(), form = await f.form()

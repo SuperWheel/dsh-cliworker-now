@@ -2842,8 +2842,8 @@ export class CliWorkerService extends TypertRemoteService {
       control.throwIfAborted()
       release = this.options.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
-      this.runtime.assertAccountIdle(id)
-      releaseAccount = this.accounts.reserveCustomProvider(id)
+      // Reading the form writes nothing, so it must not contend with the status read the account
+      // window starts at the same moment; only saving takes the account reservation.
       this.trackAccountParent(parent)
       // Unsupported CLIs must not touch their entry stores (notably retired Harness).
       if (!['pi', 'opencode', 'hermes'].includes(id)) return 'null'
@@ -2864,6 +2864,8 @@ export class CliWorkerService extends TypertRemoteService {
       release = this.options.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
       this.runtime.assertAccountIdle(id)
+      // The account window refreshes status when it opens; wait for that read instead of refusing the save.
+      await this.accounts.settleQueries(id, AbortSignal.any([control, AbortSignal.timeout(30_000)]))
       releaseAccount = this.accounts.reserveCustomProvider(id)
       this.trackAccountParent(parent)
       if (!['pi', 'opencode', 'hermes'].includes(id)) return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
