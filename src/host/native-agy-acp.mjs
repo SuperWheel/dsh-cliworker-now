@@ -11,7 +11,9 @@ export const AGY_SUBAGENTS_PENDING = 'CLIWORKER_SUBAGENTS_PENDING'
 export const AGY_BACKGROUND = Object.freeze({
   isBackgroundTool: update => update?.name === 'invoke_subagent',
   pendingMarker: AGY_SUBAGENTS_PENDING,
-  checkPrompt: `[CLI Worker 自动跟进，不是用户的新任务] 你在本任务中用 invoke_subagent 派出的子 Agent 在后台运行。先阅读已送达的子 Agent 消息，必要时用 manage_subagents 查看状态；不要重新派发子 Agent。若仍有子 Agent 未完成，只回复 ${AGY_SUBAGENTS_PENDING} 并结束本轮。若都已完成，按原任务要求完成剩余步骤（例如把生成的文件保存到要求的位置并确认存在），再汇报最终结果与实际文件路径。`,
+  // agy 1.5.1 knows only ALIVE/KILLED subagent states: a subagent that already reported stays
+  // ALIVE, so its listed state must never be read as "still working".
+  checkPrompt: `[CLI Worker 自动跟进，不是用户的新任务] 你在本任务中用 invoke_subagent 派出的子 Agent 在后台运行。先阅读已送达的子 Agent 消息，并检查原任务要求的产物（例如生成的文件）是否已经存在；不要重新派发子 Agent。子 Agent 已送达结果消息，或要求的产物已经存在，就算已完成；manage_subagents 列出的 ALIVE 只表示子 Agent 仍可接收消息，不表示仍在工作，不能据此判断未完成。只有既没有收到某个子 Agent 的结果消息、它的产物也还不存在时，才只回复 ${AGY_SUBAGENTS_PENDING} 并结束本轮。若都已完成，按原任务要求完成剩余步骤（例如把生成的文件保存到要求的位置并确认存在），再汇报最终结果与实际文件路径。`,
   // First check after a short grace; the whole wait stays within the task timeout.
   delaysMs: Object.freeze([15_000, 20_000, 30_000, 45_000, 60_000, 60_000, 90_000, 90_000, 120_000]),
   budgetMs: 10 * 60_000,

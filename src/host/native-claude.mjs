@@ -27,6 +27,9 @@ function modelEvidence(config, initialized) {
   return new Set([selected, ...canonical])
 }
 
+/** Shown with a plan-mode result: the plan was produced, nothing was executed. */
+export const PLAN_NOTICE = '规划模式：Claude Code 已提交方案，未退出规划、未执行；关闭规划后续聊即可按方案执行'
+
 // Claude 2.1.287 takes `manual` on the command line but reports that mode back as `default`.
 const reportedMode = (mode) => mode === 'default' ? 'manual' : mode
 
@@ -110,6 +113,8 @@ export async function runNativeClaude(config, io) {
 async function runClaudeSession(config, io) {
   const peer = await io.openStdio(nativeClaudeArgv(config), { env: config.env, cwd: config.project })
   let sessionId, reported = false, result, response = '', failure, submitted = false, models, denied = false
+  // { text, toolId } once native plan mode submitted its plan through ExitPlanMode.
+  let planned
   let permissionMode = claudePermissionMode(config)
   const steps = new Map(), text = new Map(), thinking = new Map(), finished = new Set(), tools = new Set(), answers = new Map(), toolMetadata = new Map()
   const childEvents = []
@@ -120,6 +125,18 @@ async function runClaudeSession(config, io) {
     else io.event(event)
   }
   const flushChildren = () => { for (const event of childEvents.splice(0)) io.event(event) }
+  /** The ExitPlanMode step ends as delivered: its native denial only kept plan mode. */
+  const closePlanTool = () => {
+    const id = planned?.toolId
+    if (!string(id) || planned.closed) return
+    planned.closed = true
+    tools.delete(id)
+    finished.add(`tool:${id}`)
+    toolOutcomes.succeeded()
+    emit({ kind: 'tool', step: step(`tool:${id}`), text: '工具结果', state: 'COMPLETED',
+      ...(toolResponses.has(id) ? { response: toolResponses.get(id) } : {}),
+      toolCall: { ...toolMetadata.get(id), callId: id, output: '规划已提交；仍处于规划模式，未执行' } })
+  }
   const responses = new ClaudeResponseTracker((event) => emit(event))
   const toolResponses = new Map(), streams = new Map()
   const step = (id) => {
@@ -151,6 +168,17 @@ async function runClaudeSession(config, io) {
     if (value.type === 'control_request') {
       if (!string(value.request_id)) throw fail('反向请求缺少标识')
       const request = value.request
+      // Native plan mode ends with ExitPlanMode carrying the whole plan. Under DSH plan mode
+      // every authorization is denied and leaving plan mode belongs to the user, so the plan
+      // is this turn's result: never approve, never relay, and stop before any execution.
+      if (request?.subtype === 'can_use_tool' && request.tool_name === 'ExitPlanMode' && permissionMode === 'plan' && !planned
+        && string(request.input?.plan)) {
+        const pending = [...tools].filter((id) => toolMetadata.get(id)?.name === 'ExitPlanMode')
+        planned = { text: request.input.plan, toolId: string(request.tool_use_id) ? request.tool_use_id : pending.at(-1) }
+        io.event({ kind: 'diagnostic', text: 'Claude Code 已提交规划方案；规划模式下不退出规划、不执行方案，方案作为本轮结果' })
+        return peer.send({ type: 'control_response', response: { subtype: 'success', request_id: value.request_id,
+          response: { behavior: 'deny', message: 'CLI Worker：规划已完成，方案已交回；仍处于规划模式，不执行方案。', interrupt: true } } })
+      }
       // Tool authorization goes to the Host; a request needing user interaction stays unsupported.
       if (request?.subtype === 'can_use_tool' && string(request.tool_name) && request.requires_user_interaction !== true) {
         void io.approval(claudeApprovalRequest(request)).then((answer) => {
@@ -280,6 +308,11 @@ async function runClaudeSession(config, io) {
         if (finished.has(`tool:${block.tool_use_id}`)) continue
         tools.delete(block.tool_use_id)
         finished.add(`tool:${block.tool_use_id}`)
+        if (planned && planned.toolId === block.tool_use_id) {
+          // The native denial only keeps plan mode; the plan itself was delivered.
+          closePlanTool()
+          continue
+        }
         if (block.is_error) toolOutcomes.failed(block.tool_use_id)
         else toolOutcomes.succeeded()
         emit({ kind: 'tool', step: step(`tool:${block.tool_use_id}`), text: '工具结果', state: block.is_error ? 'FAILED' : 'COMPLETED',
@@ -292,10 +325,15 @@ async function runClaudeSession(config, io) {
       responses.finish()
       flushChildren()
       result = value
-      if (Array.isArray(value.permission_denials) && value.permission_denials.length) denied = true
-      if (value.is_error || value.subtype !== 'success') failure ??= Array.isArray(value.errors) ? value.errors.filter((entry) => typeof entry === 'string').join('; ') || 'Claude 原生任务失败' : 'Claude 原生任务失败'
+      // The plugin's own plan-mode interrupt ends the turn as error_during_execution; any other
+      // terminal error, and every other denial, keep their usual meaning.
+      const planTerminal = planned && ['success', 'error_during_execution'].includes(value.subtype)
+      if (planTerminal) closePlanTool()
+      if (Array.isArray(value.permission_denials) && value.permission_denials.some((entry) => !(planned && entry?.tool_name === 'ExitPlanMode'))) denied = true
+      if (!planTerminal && (value.is_error || value.subtype !== 'success')) failure ??= Array.isArray(value.errors) ? value.errors.filter((entry) => typeof entry === 'string').join('; ') || 'Claude 原生任务失败' : 'Claude 原生任务失败'
       if (tools.size) failure ??= '原生任务结束时仍有未完成工具'
-      if (typeof value.result === 'string' && value.result.trim()) response = value.result
+      if (planned) response = planned.text
+      else if (typeof value.result === 'string' && value.result.trim()) response = value.result
     } else if (value.type === 'error') failure ??= 'Claude 原生任务错误'
     // Control frames and initialization/account metadata never enter private raw logs.
     if (value.type === 'assistant') io.native({ ...value, message: { ...value.message, content: value.message.content.filter((block) => block.type !== 'redacted_thinking' && block.redacted !== true).map((block) => block.type === 'thinking' ? { type: 'thinking', thinking: block.thinking } : block) } })
@@ -352,6 +390,7 @@ async function runClaudeSession(config, io) {
     io.signal?.throwIfAborted()
     if (outcome.exitCode !== 0) failure ??= 'Claude 原生进程非零退出'
     if (failure) io.result('ERROR', response, failure, 'response')
+    else if (planned) io.result('SUCCESS', response, undefined, 'response', PLAN_NOTICE)
     else toolOutcomes.settle(io, response, 'response', denied)
   } finally {
     io.signal?.removeEventListener('abort', abort)

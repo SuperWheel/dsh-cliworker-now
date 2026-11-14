@@ -951,10 +951,7 @@ export class AccountManager {
         // Login/logout always address the native official account; proxy settings remain untouched.
         launch.argv = [
           executable,
-          ...claudeNativeSettingsArguments(
-            claudeAccountRoute.configDirectory,
-            claudeAccountRoute.suppressedEnvironment,
-          ),
+          ...claudeNativeSettingsArguments(claudeAccountRoute.suppressedEnvironment),
           ...argumentsFor(cli, action),
           ...(action === 'login' ? ['--claudeai'] : []),
         ]

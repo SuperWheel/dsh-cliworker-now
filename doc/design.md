@@ -1526,3 +1526,11 @@ npm 主 tarball 在用户所选 registry（follow 使用 npm 当前值）优先�
 换源前 HEAD（需要时以 Range: bytes=0- 获取总长度）核对长度与 ETag/摘要。不同源的十六进制摘要形式可归一化，普通不透明 ETag 不做大小写猜测；GET 使用目标源原始强 ETag 的 If-Range 并核对响应。npm 镜像标准路径经匿名 HEAD 证实会跳到 cdn.npmmirror.com，只接受由相同包/版本生成的精确目标；其他重定向拒绝，GET 始终 redirect:error。MiMo 不接受重定向。共享进度增加可选 sourceHost，前端由主会话接线，本轮未改 Client。
 
 ZCode/WorkBuddy CN/WorkBuddy 官方现有 feed 与匿名包 HEAD 未提供第二个同对象下载域名，不配置备用源；不把 CN/国际分发或 zip/dmg 当作同对象。详情、HEAD 数字及验证边界见当前变更 design.md。
+
+## 2026-11-14 Claude 规划收尾、Claude 官方登录确认与 Antigravity 后台子 Agent 误报修复（未发布）
+
+- 来源：B 站用户在 v0.8.9 上的两个报告。变更 `openspec/changes/vnext-plan-exit-agy-background-leeyl/`。
+- Claude Code 规划模式：原生 `ExitPlanMode` 带 `requires_user_interaction: true`，原实现按不支持的额外交互判失败并中断，结果正文为空。现在规划模式下带非空 `input.plan` 的 `ExitPlanMode` 视为本轮完成：方案作为结果正文，终态成功并附「未退出规划、未执行」说明；插件仍回复拒绝并中断，不转交 DSH。理由：规划模式下授权一律直接拒绝（`worker-permission-levels`），离开规划是用户对规划状态的决定，不属于单次操作授权。插件中断造成的 `error_during_execution` 与对 `ExitPlanMode` 的拒绝记录不计为失败。其他交互请求、非规划模式与空方案保持原判定。
+- Antigravity 后台子 Agent：等待上限原从主回合开始时起算，主回合与审批耗时会占满上限，导致不发跟进就判待核实；现改为只累计跟进前的等待间隔（10 分钟），整轮仍受任务总时限约束，跟进轮请求超时取任务剩余时间。agy 子 Agent 状态只有 ALIVE／KILLED，已汇报的子 Agent 仍是 ALIVE；跟进提示改为以结果消息或产物为完成依据。用户猜测的「结果直接回到主对话」没有对应通道：agy 子 Agent 只向 agy 父会话汇报，主 Agent 是在 Worker 判待核实后自行核对了文件。
+- Claude 官方登录不认（2026-11-14 用户 Mac Desktop 实机，Claude Code 2.1.311）：插件在所有 Claude 子进程的 `--settings` env 中设置 `CLAUDE_CONFIG_DIR=~/.claude`。2.1.311 一旦设置该变量，就改用带目录哈希后缀的钥匙串条目和 `<dir>/.claude.json`；插件发起的登录写入了带后缀条目，同样参数下的 `auth status` 却读不带后缀的条目，登录窗口因此「未能确认」，设置页显示未登录、模型为空。现在不再经 settings 设置该变量，Host 自己设置时由子进程在启动时继承，与用户终端读写同一处。旧版插件登录写入带后缀条目的用户需要重新登录一次；插件不读取、不迁移钥匙串。
+- 只有模拟验证；真实 Claude Code 规划收尾、真实 agy 生图（需用户授权模型调用）与 Claude 官方真实登录（需用户亲自操作）均未验收。
