@@ -328,7 +328,7 @@
 3. 官方安装脚本（`curl … | bash`、`irm … | iex`）会以用户身份执行远端脚本，风险高于包管理器。第九节第 5 条你已定自动执行，对策：只用 Host 内置的官方地址，先下载到私有缓存再以文件方式执行，行内显示脚本地址。
 4. Kimi 探测会自动升级真实安装（已有记录）；检查和更新流程都必须设置 `KIMI_CODE_NO_AUTO_UPDATE=1`，当前源码尚未设置。
 5. 断点续传依赖服务器支持 Range；npm registry 和部分 CDN 的行为需实测。包管理器自身的下载不受插件控制，只能「停滞后重跑」。
-6. Windows：npm 全局前缀、`npm.cmd` 调用、进程树终止和文件占用（正在运行的 CLI 无法覆盖）都与 macOS 不同，需单独验收；Windows 系统代理需沿用插件已有的代理注入。
+6. Windows：npm 全局前缀、`npm.cmd` 调用、进程树终止和文件占用（正在运行的 CLI 无法覆盖）都与 macOS 不同，需单独验收；Windows 系统代理需沿用插件已有的代理注入。macOS 同样读取系统代理（`scutil --proxy`）注入插件启动的 CLI 与 Host 下载（你已定，2026-11-14）：环境已有代理变量时不覆盖，也从不移除宿主设置的代理变量。
 7. 更新期间如果用户在终端里直接运行同一个 CLI，插件无法阻止，可能导致文件占用而更新失败；失败时提示关闭后重试。
 8. 安装：纯 CLI 只用官方默认位置，若该位置不在 Desktop 的 PATH 里，依赖插件已有的常见位置识别；装完找不到即判失败，不猜路径。桌面应用的静默安装参数、dmg 签名核对方式、默认目录逐个待核实；Windows 提权窗口在 Desktop 中不可见（已有记录），因此一律不走需要管理员权限的位置。
 9. Pi、OpenCode 的最新发布版可能超出插件已适配的协议或版本白名单，盲目更新到 latest 会让插件拒绝启动该 CLI。
@@ -385,7 +385,7 @@
 
 ## 十一、原型
 
-[CLI Worker 更新 CLI 设计稿](https://claude.ai/artifact/Drk2Ti7JmUhYEAWV5mG5Yk)（Claude Design 画布，15 张；方括号内为占位数据）：
+[CLI Worker 更新 CLI 设计稿](https://claude.ai/artifact/Drk2Ti7JmUhYEAWV5mG5Yk)（Claude Design 画布，15 张；方括号内为占位数据）。静态 HTML 导出：`doc/prd/prototypes/2026-11-13-cli-update-prototype.html`（2026-11-14，随 PRD 上传面板）：
 
 1. 默认态：检查完成
 2. 正在更新 Codex（下载进度、续传次数、命令与输出、其他按钮置灰）
