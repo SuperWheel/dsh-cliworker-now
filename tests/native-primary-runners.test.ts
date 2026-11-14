@@ -104,8 +104,10 @@ function claudeTurn(){
   // 模拟 Claude Code 规划模式收尾：ExitPlanMode 带完整方案，并要求用户交互（2026-11-11 用户日志的帧形状）。
   const plan=scenario==='plan-exit-empty'?' ':'模拟方案：\\n1. 读取配置\\n2. 修改解析器';
   send({type:'assistant',session_id:id,message:{id:'planmsg',content:[{type:'text',text:'方案已整理好。'}]}});
-  send({type:'assistant',session_id:id,message:{id:'plantool',content:[{type:'tool_use',id:'plan-tool',name:'ExitPlanMode',input:{plan}}]}});
-  send({type:'control_request',request_id:'synthetic-plan',request:{subtype:'can_use_tool',tool_name:'ExitPlanMode',input:{plan},...(scenario==='plan-exit-no-id'?{}:{tool_use_id:'plan-tool'}),requires_user_interaction:true}});return;
+  // 模拟 Claude Code 2.1.311 真实帧（2026-11-14 Mac Desktop 实测）：工具入参为空，方案由 CLI 从规划文件注入到授权请求，中断后进程退出码 1。
+  const real=scenario.startsWith('plan-exit-real');
+  send({type:'assistant',session_id:id,message:{id:'plantool',content:[{type:'tool_use',id:'plan-tool',name:'ExitPlanMode',input:real?{}:{plan}}]}});
+  send({type:'control_request',request_id:'synthetic-plan',request:{subtype:'can_use_tool',tool_name:'ExitPlanMode',input:real?{plan,planFilePath:'/synthetic/plans/plan.md'}:{plan},...(scenario==='plan-exit-no-id'?{}:{tool_use_id:'plan-tool'}),requires_user_interaction:true}});return;
  }
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
  if(scenario==='ask'||scenario==='ask-nonzero-exit'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'},tool_use_id:'tool',permission_suggestions:[{type:'addRules',rules:[{toolName:'Bash',ruleContent:'synthetic'}],behavior:'allow',destination:'localSettings'}]}});return;}
@@ -259,7 +261,7 @@ lines.on('line',line=>{
   else if(value.request?.subtype==='interrupt'){send({type:'control_response',response:{subtype:'success',request_id:value.request_id,response:{}}});claudeEnd(true);}
  }else if(value.event==='user')agyTurn();
 });
-lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit','ask-nonzero-exit','cua-nonzero-exit'].includes(scenario)?7:0);});
+lines.on('close',()=>{process.exit(['nonzero-exit','deny-nonzero-exit','tool-failure-nonzero-exit','ask-nonzero-exit','cua-nonzero-exit'].includes(scenario)?7:scenario==='plan-exit-real'?1:scenario==='plan-exit-real-exit7'?7:0);});
 `
 
 function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', resume = true) {
@@ -926,6 +928,7 @@ describe('native primary runners (synthetic protocol processes, no real accounts
       ['续聊与原生会话恢复（--resume）', 'plan-exit', true],
       ['原生不回工具结果', 'plan-exit-no-tool-result', true],
       ['请求未带 tool_use_id', 'plan-exit-no-id', false],
+      ['2.1.311 真实帧：工具入参为空、方案由规划文件注入、中断后进程退出码 1', 'plan-exit-real', true],
     ] as const)('%s：方案作为结果、终态成功，插件不批准退出规划', async (_name, scenario, resume) => {
       const f = await runLevel('claude', scenario, 'workspace-write', 'plan', resume)
       expect(f.launches[0]).toContain('plan')
@@ -942,6 +945,11 @@ describe('native primary runners (synthetic protocol processes, no real accounts
       expect(tool.event.state).toBe('COMPLETED')
       expect(tool.event.toolCall.name).toBe('ExitPlanMode')
       expect(f.frames.some((frame) => frame.event?.kind === 'diagnostic' && frame.event.text.includes('已提交规划方案'))).toBe(true)
+    })
+    it('规划收尾后只接受原生中断对应的退出码 1，其他非零退出仍判失败', async () => {
+      const f = await runLevel('claude', 'plan-exit-real-exit7', 'workspace-write', 'plan', true)
+      expect(planReply(f.messages)).toMatchObject({ response: { behavior: 'deny', interrupt: true } })
+      expect(f.result).toMatchObject({ status: 'ERROR', error: 'Claude 原生进程非零退出' })
     })
     it('方案为空时不伪造结果，仍按不支持的额外交互判失败', async () => {
       const f = await runLevel('claude', 'plan-exit-empty', 'workspace-write', 'plan')

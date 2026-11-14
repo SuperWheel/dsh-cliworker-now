@@ -115,6 +115,8 @@ async function runClaudeSession(config, io) {
   let sessionId, reported = false, result, response = '', failure, submitted = false, models, denied = false
   // { text, toolId } once native plan mode submitted its plan through ExitPlanMode.
   let planned
+  // The plugin's own plan-mode interrupt ended the turn; the native process then exits non-zero.
+  let planEnded = false
   let permissionMode = claudePermissionMode(config)
   const steps = new Map(), text = new Map(), thinking = new Map(), finished = new Set(), tools = new Set(), answers = new Map(), toolMetadata = new Map()
   const childEvents = []
@@ -328,7 +330,7 @@ async function runClaudeSession(config, io) {
       // The plugin's own plan-mode interrupt ends the turn as error_during_execution; any other
       // terminal error, and every other denial, keep their usual meaning.
       const planTerminal = planned && ['success', 'error_during_execution'].includes(value.subtype)
-      if (planTerminal) closePlanTool()
+      if (planTerminal) { planEnded = true; closePlanTool() }
       if (Array.isArray(value.permission_denials) && value.permission_denials.some((entry) => !(planned && entry?.tool_name === 'ExitPlanMode'))) denied = true
       if (!planTerminal && (value.is_error || value.subtype !== 'success')) failure ??= Array.isArray(value.errors) ? value.errors.filter((entry) => typeof entry === 'string').join('; ') || 'Claude 原生任务失败' : 'Claude 原生任务失败'
       if (tools.size) failure ??= '原生任务结束时仍有未完成工具'
@@ -388,7 +390,9 @@ async function runClaudeSession(config, io) {
     peer.end()
     const outcome = await peer.done
     io.signal?.throwIfAborted()
-    if (outcome.exitCode !== 0) failure ??= 'Claude 原生进程非零退出'
+    // Claude Code 2.1.311 exits 1 after the interrupt that keeps plan mode; only that exit is ours, not a failure.
+    if (outcome.exitCode === 1 && planEnded) peer.acceptExitCode?.(1)
+    else if (outcome.exitCode !== 0) failure ??= 'Claude 原生进程非零退出'
     if (failure) io.result('ERROR', response, failure, 'response')
     else if (planned) io.result('SUCCESS', response, undefined, 'response', PLAN_NOTICE)
     else toolOutcomes.settle(io, response, 'response', denied)

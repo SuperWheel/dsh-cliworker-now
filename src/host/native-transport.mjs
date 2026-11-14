@@ -315,7 +315,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
         issue,
         outcome,
         stopRequested = false,
-        expectedStopExitCode
+        expectedStopExitCode,
+        acceptedExitCode
       let rejectDone
       const done = new Promise((resolve, reject) => {
         rejectDone = reject
@@ -370,7 +371,8 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
           if (issue) throw issue
           if (
             outcome &&
-            ((outcome.exitCode !== null && outcome.exitCode !== 0 && outcome.exitCode !== expectedStopExitCode) ||
+            ((outcome.exitCode !== null && outcome.exitCode !== 0 && outcome.exitCode !== expectedStopExitCode &&
+              outcome.exitCode !== acceptedExitCode) ||
               (outcome.signal && !stopRequested))
           )
             throw Object.assign(failure(`Native process exited unsuccessfully (${outcome.exitCode ?? outcome.signal})`),
@@ -378,6 +380,11 @@ export function createNativeIO(config, emit, signal, onNativeStderr = () => {}, 
         },
         markUnhealthy: (error) => {
           issue ??= error
+        },
+        // The runner ended the turn itself (e.g. Claude plan mode interrupted after ExitPlanMode)
+        // and has verified that this exact exit code follows from that; other codes stay failures.
+        acceptExitCode: (code) => {
+          if (Number.isInteger(code) && code !== 0) acceptedExitCode = code
         },
         async stop() {
           if (!exited) {
@@ -598,6 +605,7 @@ export function createLinePeer(owned, options = {}) {
     process: owned.process,
     done,
     stderr: owned.stderr,
+    acceptExitCode: (code) => owned.acceptExitCode?.(code),
     feed(chunk) {
       try {
         buffer += decoder.write(chunk)

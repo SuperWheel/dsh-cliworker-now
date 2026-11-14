@@ -18,7 +18,10 @@
 - [x] 2.2 `native-acp.mjs`：后台等待上限改为累计等待间隔、从主回合结束起算；整轮受任务总时限约束，跟进轮请求超时取任务剩余时间
   - 证据：`awaitBackground` 用 `waited` 累计等待、`taskDeadline = started + timeoutMs`；测试见 3.2
 - [x] 2.3 `native-agy-acp.mjs`：跟进提示以「子 Agent 已送达结果消息或产物已存在」为完成依据，说明 ALIVE 不代表仍在工作
-  - 证据：`AGY_BACKGROUND.checkPrompt` 新文本；提示效果依赖模型，只做了内容断言（3.2），真实效果待 5.2
+  - 证据：`AGY_BACKGROUND.checkPrompt` 新文本；提示效果依赖模型，只做了内容断言（3.2），真实效果见 5.2
+- [x] 2.4 实测发现：Claude Code 2.1.311 对插件 `deny + interrupt` 以退出码 1 结束，原实现仍判「Claude 原生进程非零退出」；改为仅在规划收尾（已认作规划完成且终态为 `success`/`error_during_execution`）时接受退出码 1
+  - 证据：`native-claude.mjs` 记 `planEnded`，退出码 1 时调用 `peer.acceptExitCode(1)`；`native-transport.mjs` 增加运行器确认的 `acceptedExitCode`，健康检查不再把这一个退出码记为失败，其他退出码与信号照旧
+  - 证据：2.1.311 的 `ExitPlanMode` 工具入参为空 `{}`，方案由 CLI 从规划文件注入到授权请求的 `input.plan`（二进制 schema 注释「injected by normalizeToolInput from disk」）；现实现读取的正是授权请求的 `input.plan`，无需改动
 
 ## 3. 模拟回归测试 〔测试｜2h｜前置 2〕
 - [x] 3.1 `tests/native-primary-runners.test.ts` 新增「模拟 Claude Code 规划模式以 ExitPlanMode 收尾」7 项
@@ -29,6 +32,10 @@
   - 主回合 400 ms、上限 200 ms：照常跟进 2 次、SUCCESS、不含误报；回退原实现时失败（只发 1 次 prompt）
   - 等待上限只计等待间隔，用尽后 UNCERTAIN；跟进提示包含 ALIVE 说明、产物依据、不得重新派发与待完成标记
   - `corepack pnpm vitest run tests/native-agy-acp.test.ts`：45 项通过
+
+- [x] 3.3 `tests/native-primary-runners.test.ts` 新增 2.1.311 真实帧模拟 2 项
+  - 「工具入参为空、方案由规划文件注入、中断后进程退出码 1」：SUCCESS、正文为方案；「退出码 7」仍为 ERROR「Claude 原生进程非零退出」
+  - `corepack pnpm vitest run tests/native-primary-runners.test.ts`：165 项通过；连同 `native-transport*` 共 188 项通过（加退出码 7 用例前）
 
 ## 4. 自动检查 〔测试｜1h｜前置 3〕
 - [x] 4.1 `corepack pnpm typecheck`
@@ -45,7 +52,11 @@
   - `corepack pnpm spec:check` 脚本内部调用裸 `pnpm`，本机 PATH 没有 pnpm 而直接报错，所以改为直接运行同一命令
 
 ## 5. 真实验收 〔测试｜2h｜前置 4〕
-- [ ] 5.1 真实 Claude Code 规划模式派遣、续聊各一次，核对事件、终态与结果正文为方案（未执行：需用户另行授权真实模型调用）
+- [x] 5.1 真实 Claude Code 规划模式派遣、续聊各一次，核对事件、终态与结果正文为方案
+  - 2026-11-14 用户授权；正式 Mac Desktop 0.2.2-rc.3，Claude Code 2.1.311（用户已按 7.5 重新登录），主对话 DeepSeek-V4.1-Flash，`/plan` 开启规划
+  - 修复前（main `a9b4a86` 构建）Worker `9896f603` 续聊：Claude 未写规划文件时 `ExitPlanMode` 入参与注入方案均为空，按空方案判失败；写规划文件后插件已认作规划完成（诊断「已提交规划方案」、正文为方案），但进程退出码 1 致 ERROR「Claude 原生进程非零退出」→ 修复见 2.4
+  - 修复后正式构建并重启 Desktop：续聊（同一 Worker `9896f603`，原生会话恢复）01:32:24 诊断「已提交规划方案」、01:32:25 result SUCCESS、notice 为 `PLAN_NOTICE`、正文为压缩方案；新派遣 Worker `d08a4b24`（Sonnet／Low）01:41:20 同样 SUCCESS、正文为 greet.sh 方案；两次工作区均无 hello.py、test_hello.py、greet.sh，无审批帧
+  - 另见跟进：选 Haiku 时规划轮被判「原生回复模型与明确选型不一致」
 - [ ] 5.2 真实 agy 生图：主回合较长（含审批）与正常两种情形，核对跟进次数、终态与实际文件
   - 2026-11-14 正常情形已通过（用户授权真实调用；正式 Mac Desktop 0.2.2-rc.3，main `930de2e` 正式构建）：Worker `caa8273b`，Antigravity 1.5.8，Gemini 3.8 Flash／Low，自动审批（agy 报告有终端沙箱）
   - 首轮派遣 agy 自行用 Pillow 绘制 `cat.png`，未用子 Agent，不覆盖本修复；终态 completed，文件 1024×1024 RGBA PNG、18,854 字节
@@ -85,3 +96,4 @@
 
 - 非规划模式下 Claude Code 自行进入规划后的 `ExitPlanMode`，仍按不支持的交互判失败；是否改为转交 DSH 审批（批准即开始执行），待用户决定。
 - agy stream 后备路径（规划模式、旧版）是否同样会截断后台子 Agent，仍未覆盖。
+- 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。需要把 Haiku＋规划模式的这一替换列为可接受映射，待用户确认后另行修复。
