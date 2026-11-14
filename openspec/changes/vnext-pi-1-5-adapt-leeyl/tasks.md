@@ -42,11 +42,22 @@
   - 隔离包 1.5.2 报告：`/private/var/folders/5n/q6g32bkn2vd22k0012gfzjxw0000gn/T/cliworker-pi-offline-ziz4rI/report.json`；日志 `/tmp/pi-1.5-preview-probe.log`；同样 5 阶段 code=0、6 个 RPC success、1773 models/43 providers、prompt/model calls=0。
   - 额外旧版对照：`node scripts/probe-pi-offline.mjs /Users/leeyl/.pi/agent/install/releases/1.0.4/node_modules/@earendil-works/pi-coding-agent/dist/cli.js`（exit 0），同样 5 阶段和 6 个 RPC 成功；1620 models / 42 providers，可用目录和隔离会话为 0。报告 `/private/var/folders/5n/q6g32bkn2vd22k0012gfzjxw0000gn/T/cliworker-pi-offline-T7oAtv/report.json`，日志 `/tmp/pi-1.0.4-offline.log`。
   - 三份报告均独立回读核对；临时根目录 0700、报告文件 0600。报告含完整 argv、事件类型及逐阶段退出状态，不入 Git。真实探测是原生 RPC+生产扩展+插件元数据桥，不是完整模型任务桥或用户历史会话验收。
-- [ ] 3.4 真实模型验收（未执行：需模型授权）
-  - 包括真实生成、工具执行、审批往返、续聊、在线账号范围、计费和实际请求上下文统计；本次只有模拟或离线结构证据。
+- [ ] 3.4 真实模型验收（阻塞：用户的智谱 GLM Coding Plan 已到期）
+  - 包括真实生成、工具执行、审批往返、续聊、在线账号范围、计费和实际请求上下文统计。
+  - 2026-11-14 Mac Desktop 0.2.2-rc.3（main 合并 1.5.2 适配后正式构建）：设置页 Pi 由「执行入口身份不匹配」恢复为绿点，账号「智谱 GLM Coding（中国）· API 服务」，模型 GLM-5.3、强度 Low。用户要求修复后派遣 Pi 写 `pi-test/hello152.txt`：Worker `d4464291`（pi-1，zai-coding-cn/glm-5.3，Low）原生模型已确认后失败。Pi 原生会话中每次助手回复 `stopReason: error`，`errorMessage` 为 `429` 加 `code 1309`「GLM Coding Plan 套餐已到期，暂无法使用」，Pi 自动重试后放弃，文件未生成。属账号订阅状态，不是 1.5.2 接口问题；需用户续订或为 Pi 配置其他可用提供商后再验收
 - [ ] 3.5 Windows 原生执行验收（未执行：本次仅 macOS 环境；Windows 仅模拟结构验证）
   - 1.5.2 包中无全新 Windows 安装器 launcher 模板，该模板是否变化待核实；已验证的旧模板升级指针路径保持支持，未知模板拒绝。
 
+## 4. 实机发现：模型失败原因透传 〔后端｜2h｜前置 3〕
+- [x] 4.1 Pi 桥把助手 `errorMessage`（及 `auto_retry_end.finalError`）提炼为「模型请求失败：<状态码>：<服务商消息>」，限 300 字、去控制字符；`aborted` 记为「模型请求被中止」
+  - 证据：`src/host/http-rpc-response.mjs` 的 `modelRequestFailure`；`src/host/pi-omp-bridge.mjs` message_end 与 auto_retry_end 分支
+- [x] 4.2 Pi 自动重试成功（`auto_retry_end.success=true`）时撤销前一次助手错误造成的失败，最终以重试结果为准；修复前一次可恢复的 429 也会让整轮判失败
+  - 证据：同上 `retryableFailure` 只记录由助手错误产生的失败，其他失败不被清除
+- [x] 4.3 runner：CLI 非零退出且桥已给出 `ERROR` 结果时，优先使用桥的错误原因，不再显示「CLI exited with 1: no diagnostic」
+  - 证据：`src/host/runtime.ts` 退出码分支
+- [x] 4.4 模拟测试：`tests/pi-omp-adapter.test.ts` 新增「服务商失败原因」「自动重试恢复」两项（与 aborted 三项一起 5 项通过）；`corepack pnpm typecheck` 通过
+  - 证据：`corepack pnpm vitest run tests/pi-omp-adapter.test.ts -t "provider reason|auto-retry|aborted terminal"`：5 passed
+
 ## 跟进
-- 无提交、推送、正式构建或 Desktop 更新；主会话复核后处理合并冲突，尤其 src/host/cli-management/versions.ts。
+- 2026-11-14 主会话已合并入 main（f510f75），冲突按 main 的「更新页跟随 latest、Worker 用白名单」解决。
 - 保留此活动变更，模型和平台验收缺口关闭后再决定归档，不虚勾或隐藏缺口。

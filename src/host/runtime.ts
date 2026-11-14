@@ -2828,7 +2828,7 @@ export class WorkerRuntime {
         throw new UserStoppedError()
       if (outcome.exitCode !== 0)
         throw new Error(
-          `CLI exited with ${outcome.exitCode}: ${stderr || protocol.result?.response || 'no diagnostic'}`,
+          `CLI exited with ${outcome.exitCode}: ${(protocol.result?.status === 'ERROR' && protocol.result.error) || stderr || protocol.result?.response || 'no diagnostic'}`,
         )
       if (!protocol.result) throw new Error('CLI exited without a final result')
       // The Host denied a DSH fallback tool, so the runner saw only a failed tool.

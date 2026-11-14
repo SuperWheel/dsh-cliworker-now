@@ -10,3 +10,4 @@ export class NativeBlockResponses {
   finish(id: string, usage?: NativeResponseUsage): void
   completed(id: string): boolean
 }
+export function modelRequestFailure(detail: unknown, aborted?: boolean): string

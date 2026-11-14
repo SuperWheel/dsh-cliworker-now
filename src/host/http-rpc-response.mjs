@@ -98,3 +98,24 @@ export class NativeBlockResponses {
   }
   completed(id) { return this.responses.get(id)?.complete === true }
 }
+/**
+ * The provider's own reason for a failed model request, as plain bounded text.
+ * Pi records it in `message.errorMessage` (for example `429: {"code":"1309",
+ * "message":"…套餐已到期…"}`) and in `auto_retry_end.finalError`. A JSON body's
+ * `message`/`error.message` is preferred; control characters are dropped.
+ */
+export function modelRequestFailure(detail, aborted = false) {
+  if (aborted) return '模型请求被中止'
+  if (typeof detail !== 'string' || !detail.trim()) return '模型请求失败或被中止'
+  let text = detail
+  const match = /^\s*(\d{3})\s*:\s*(\{[\s\S]*\})\s*$/.exec(detail)
+  if (match) {
+    try {
+      const body = JSON.parse(match[2])
+      const message = typeof body?.message === 'string' ? body.message : typeof body?.error?.message === 'string' ? body.error.message : undefined
+      if (message) text = `${match[1]}：${message}`
+    } catch {}
+  }
+  text = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300)
+  return text ? `模型请求失败：${text}` : '模型请求失败或被中止'
+}

@@ -1,6 +1,6 @@
 // Subprocess protocol bridge. The Host owns the external sandbox, credentials,
 // deadlines, directory/session locks, and descendant cleanup. No shell is used.
-import { NativeBlockResponses, piOmpResponseUsage, piOmpReportedUsage } from './http-rpc-response.mjs'
+import { NativeBlockResponses, modelRequestFailure, piOmpResponseUsage, piOmpReportedUsage } from './http-rpc-response.mjs'
 import { OmpContextInspection } from './omp-context-inspection.mjs'
 import { PI_CONTEXT_ENV, preparePiContextObserver, readPiContextObservation } from './pi-context-observer.mjs'
 import { PI_GATE_ENV, preparePiPermissionGate, readPiGateConfirm } from './pi-permission-gate.mjs'
@@ -101,6 +101,8 @@ async function writePrivateFile(path, contents) {
 let child,
   stopped = false,
   failure,
+  // A failure from an assistant error that Pi may still retry; cleared when a retry succeeds.
+  retryableFailure,
   closeTimer,
   forceTimer,
   startupTimer,
@@ -903,7 +905,9 @@ try {
         return
       }
       if (value.type === 'message_end' && value.message?.role === 'assistant') {
-        if (['error', 'aborted'].includes(value.message.stopReason)) failure ??= '模型请求失败或被中止'
+        if (['error', 'aborted'].includes(value.message.stopReason) && failure === undefined) {
+          failure = retryableFailure = modelRequestFailure(value.message.errorMessage, value.message.stopReason === 'aborted')
+        }
         if (value.message.model && value.message.model !== selectedModel)
           failure ??= '模型响应与所选型号不一致'
         if (value.message.provider && value.message.provider !== selectedProvider)
@@ -971,6 +975,14 @@ try {
           state: value.isError ? 'FAILED' : 'COMPLETED',
           toolCall: { callId: value.toolCallId, output: value.result },
         })
+        return
+      }
+      if (config.cli === 'pi' && value.type === 'auto_retry_end') {
+        // Pi retries transient provider errors itself; only the final outcome counts.
+        if (value.success === true && failure !== undefined && failure === retryableFailure) failure = undefined
+        else if (value.success === false && failure === retryableFailure && typeof value.finalError === 'string')
+          failure = retryableFailure = modelRequestFailure(value.finalError)
+        if (value.success === true) retryableFailure = undefined
         return
       }
       if (

@@ -234,6 +234,8 @@ streaming=false;send({type:'message_end',message:{role:'assistant',provider:mode
 if(scenario==='tool-error'||scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'t',toolName:'write'});send({type:'tool_execution_end',toolCallId:'t',toolName:'write',isError:true,result:{content:[{type:'text',text:'denied'}]}})}
 if(scenario==='tool-recovered'){send({type:'tool_execution_start',toolCallId:'retry',toolName:'edit'});send({type:'tool_execution_end',toolCallId:'retry',toolName:'edit',isError:false,result:{content:[{type:'text',text:'edited'}]}})}
 if(scenario==='malformed'){process.stdout.write('not-json\\n');return}
+// SIMULATED Pi provider failure (429 body as recorded by Pi 1.5.2) and an auto-retry that recovers.
+if(scenario==='provider-error'||scenario==='retry-recovered'){send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:[],stopReason:'error',errorMessage:'429: {"code":"1309","message":"模拟套餐已到期，暂无法使用"}'}});if(scenario==='provider-error'){send({type:'agent_end'});send({type:'agent_settled'});return}send({type:'auto_retry_start',attempt:1,maxAttempts:3,delayMs:0,errorMessage:'429'});send({type:'auto_retry_end',success:true,attempt:1})}
 streaming=false;send({type:'message_end',message:{role:'assistant',provider:model.provider,model:model.id,content:scenario==='public-thinking'?[{type:'thinking',thinking:'模拟公开过程（权威快照）',thinkingSignature:'OPAQUE_SIGNATURE'},{type:'text',text:'HELLO'},{type:'thinking',thinking:'REDACTED_TEXT',redacted:true,thinkingSignature:'OPAQUE_SIGNATURE'},{type:'redactedThinking',data:'ENCRYPTED_DATA'},{type:'thinking',thinking:'模拟仅完成时提供'}]:[{type:'text',text:resumed?'RESUMED':'HELLO'}],stopReason:'stop'}});
 send({type:'agent_end'});if(cli==='pi'&&scenario!=='unsettled')send({type:'agent_settled',...(['1.1.0','1.5.2'].includes(${JSON.stringify(version)})?{aborted:scenario==='native-aborted'}:{})});
 if(scenario==='unsettled')setTimeout(()=>process.exit(0),20);
@@ -526,6 +528,18 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     expect(run.frames.at(-1)).toMatchObject(version !== '1.0.4'
       ? { status: 'ERROR', error: '模型请求失败或被中止' }
       : { status: 'SUCCESS' })
+  })
+  it('模拟 Pi reports the provider reason for a failed model request', async () => {
+    const { input } = await fixture('pi', 'provider-error', '1.5.2')
+    const run = await launch(input)
+    expect(run.code).toBe(1)
+    expect(run.frames.at(-1)).toMatchObject({ status: 'ERROR', error: '模型请求失败：429：模拟套餐已到期，暂无法使用' })
+  })
+  it('模拟 Pi treats a failed attempt that its auto-retry recovered as success', async () => {
+    const { input } = await fixture('pi', 'retry-recovered', '1.5.2')
+    const run = await launch(input)
+    expect(run.code).toBe(0)
+    expect(run.frames.at(-1)).toMatchObject({ type: 'result', status: 'SUCCESS' })
   })
   it('uses native arguments for SDK discovery and account metadata on the same managed OMP snapshot', async () => {
     const { root, input } = await fixture('omp', 'non-glm')
