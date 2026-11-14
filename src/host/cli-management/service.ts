@@ -501,6 +501,15 @@ export class CliManagementService {
           const home = hermesHomeDirectory()
           await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress,
             beforeVersion: plan.beforeVersion, targetVersion: plan.targetVersion, npmRegistry: selected.hermesRegistry,
+            activityRoots: [process.env.npm_config_cache ?? join(homedir(), process.platform === 'win32' ? 'AppData/Local/npm-cache' : '.npm'),
+              join(process.env.PNPM_HOME ?? (process.platform === 'darwin' ? join(homedir(), 'Library/pnpm') : process.platform === 'win32' ? join(homedir(), 'AppData/Local/pnpm') : join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'pnpm')), 'store')],
+            verifyInstalled: async () => {
+              try { return (await verify(signal)).version === plan.targetVersion }
+              catch (error) {
+                if (!(error instanceof CliOperationError) || !['VERSION_UNCHANGED', 'VERSION_MISMATCH'].includes(error.code)) throw error
+                return false
+              } finally { op.phase = 'installing'; this.changed() }
+            },
             releaseSha: async (version, control) => {
               // A release's target_commitish may be "main". Resolve the exact stable tag to a
               // commit through the official API instead of treating that branch name as a SHA.

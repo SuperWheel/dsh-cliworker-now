@@ -114,9 +114,25 @@ Host MUST NOT 伪造百分比；暂存文件不能确定属于本次运行时 MU
 - **WHEN** 用户的下载源设为 npmmirror、官方或自定义，并更新 Hermes
 - **THEN** 插件以 `npm_config_registry=<该 registry>` 执行 `hermes update --yes`（含重跑），内容由 Hermes 按锁文件摘要校验；下载源为「跟随」时插件 MUST NOT 设置该变量
 
-#### Scenario: Hermes 依赖段停滞
-- **WHEN** Hermes 处于依赖阶段，缓存与日志连续 120 秒都无变化
-- **THEN** 插件停掉 Hermes 后重跑 `hermes update --yes`，最多 3 次，且每次都必须比上次多落盘内容；apply 与 restart 阶段 MUST NOT 被判慢而中途停止。Windows 上最终仍失败时，提示用户网关可能处于暂停
+#### Scenario: Hermes 依赖下载停滞
+- **WHEN** Hermes 处于工具阶段且有下载文字或本次活动分片，或 deps 阶段本次分片发生过变化且仍有 part 文件，分片、范围检查点及完成文件连续 30 秒没有活动
+- **THEN** 插件确认进程退出后最多重跑官方更新 3 次，每次须有完成文件增长；无增长或耗尽后如实报告重跑次数，MUST NOT 声称即将进行没有实现的 Python/Node 接管。历史分片存在本身 MUST NOT 作为本次下载证据
+
+#### Scenario: Hermes 安静的 Node 依赖和构建
+- **WHEN** Node/pnpm、Python 依赖或 build 阶段（包括发布历史/元数据查询）没有可核实的下载证据，缓存 120 秒不变
+- **THEN** Host MUST NOT 因下载停滞停止进程；输出片段、日志、状态、回执、checkout 三处 node_modules、pnpm store/npm cache 写入均续期，等待官方退出；依赖/build/apply/restart 使用 20 分钟无活动租约，plan/snapshot/未知阶段保留 5 分钟兜底
+
+#### Scenario: Hermes 已输出完成标记但尚未退出
+- **WHEN** 本次输出、日志或状态包含 Update complete! 或 Code updated!，或整体成功回执匹配目标版本/提交
+- **THEN** Host SHALL 禁用下载判慢并等待退出，MUST NOT 因 30/120 秒下载规则或 5 分钟静默停止；仍保留 20 分钟无活动租约和用户取消。阶段 success 本身 MUST NOT 等同整体完成
+
+#### Scenario: Hermes 失败后检出已经到目标
+- **WHEN** 已确认官方进程范围退出，但命令非零退出、看门狗或接管/恢复路径报错
+- **THEN** Host SHALL 在重跑或报告失败前只读安装记录/checkout，执行既有安装身份与 verifyUpdatedVersion 验证；版本恰为目标时发布成功并展示新版本。记录落后时仅以 HEAD 精确对应的唯一稳定标签补充版本，MUST NOT 运行 Hermes 查询版本。版本未前进、身份变化、用户取消或清理未确认 MUST NOT 被掩盖
+
+#### Scenario: Hermes Python 镜像只在验证可复用后交付
+- **WHEN** 镜像按锁哈希安装到同一 venv 后可离线 sync，但官方重跑创建新 generation，缓存与 find-links 无法让新环境离线 frozen sync
+- **THEN** Host MUST NOT 启用未经该恢复流程验证的 Python takeover，MUST 保留官方依赖流程并如实记录实验失败边界
 
 #### Scenario: Grok 接管校验
 - **WHEN** Grok 官方渠道被判为不可用，且四项接管前提都满足

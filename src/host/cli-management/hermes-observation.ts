@@ -7,7 +7,7 @@ export function hermesStage(text: unknown): HermesStage | undefined {
   if (typeof text !== 'string') return
   if (/\brestart(?:ing)?\b|restarting services/i.test(text)) return 'restart'
   if (/\bapply\b|applying|pulling updates|switching to source commit|checking out|moving checkout/i.test(text)) return 'apply'
-  if (/\bfetch(?:ing)?\b|downloading updates/i.test(text)) return 'fetch'
+  if (/^fetch$/i.test(text.trim()) || /\bgit fetch\b|fetch(?:ing)?\s+(?:latest\s+)?(?:updates|changes|code|origin|commits|tags)\b|downloading updates/i.test(text)) return 'fetch'
   if (/downloading.*(?:tool|python|node|uv|pnpm)|\btools\b|tool downloads/i.test(text)) return 'tools'
   // The 0.21.7 handoff publishes this BEFORE ensure_tools_for_sync, not just uv sync.
   if (/python dependencies\s*\(PM\)/i.test(text)) return 'deps'
@@ -67,7 +67,7 @@ export async function observeTree(root: string, accept: (name: string, path: str
 export async function observeHermesCache(home: string): Promise<HermesCacheObservation> {
   const [partials, ...finished] = await Promise.all([
     observeTree(join(home, 'cache/partials')),
-    ...['uv', 'pnpm/store'].map(p => observeTree(join(home, 'cache', p))),
+    ...['uv', 'pnpm/store', 'npm'].map(p => observeTree(join(home, 'cache', p))),
     // PM publishes verified archives as tools/fetch-<sha256>/<filename>, then immutable
     // tool entries. Its .staging-* directories and bookkeeping are not completed content.
     observeTree(join(home, 'tools'), (_name, path) => dirname(path) !== join(home, 'tools'), true, (name, depth) => depth > 0 || !name.startsWith('.')),

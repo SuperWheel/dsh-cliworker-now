@@ -1611,10 +1611,14 @@ Pi 仅准入 ~/.pi/agent/install 托管标记。锁版 lock 与发布清单补�
 
 ### 2026-11-14 Hermes 按阶段接管（任务 8.1–8.3，未发布）
 
-`hermes-watch.ts` 按状态、日志与最新修改回执观察阶段，廉价 PID 存活检查排除已死父进程的 running 回执；阶段结束标记与子回执切换分别处理。`hermes-observation.ts` 只读临时包与缓存元数据；fetch 首字节前宽限 60 秒，之后 30 秒无增长或 60 秒窗口均速低于 100 KB/s 判慢；工具分片 `.part` 的 mtime/ctime、`.ranges` 检查点及完成文件全部静止 30 秒才判停滞（分片会预分配，不能按长度判断），uv/pnpm 的缓存、日志、回执全部静止 120 秒才判停滞。apply/restart 不受自动中止规则影响，用户取消仍通过进程树清理。其他阶段保留 5 分钟无活动兜底和活动续期 20 分钟。
+`hermes-watch.ts` 按状态、日志与最新修改回执观察阶段，廉价 PID 存活检查排除已死父进程的 running 回执；阶段结束标记与子回执切换分别处理。`hermes-observation.ts` 只读临时包与缓存元数据；fetch 首字节前宽限 60 秒，之后 30 秒无增长或 60 秒窗口均速低于 100 KB/s 判慢；工具分片 `.part` 的 mtime/ctime、`.ranges` 检查点及完成文件全部静止 30 秒才判停滞（分片会预分配，不能按长度判断），本轮修正为：没有下载证据的 uv/pnpm、build、apply/restart 使用 20 分钟无活动租约，删除静默 120 秒判停滞。stdout/stderr 在脱敏行缓冲之前仅向内部观察器提供活动与完成标记，日志/状态/回执、根/web/ui-tui 的 node_modules、Hermes uv/pnpm/npm 缓存与宿主已知 pnpm store/npm cache 写入续期。泛 deps 仅有旧 part 不构成本次下载证据。其他阶段保留 5 分钟无活动兜底。Update complete!、Code updated! 或匹配目标的整体成功回执禁用下载判慢，等待退出，但保留 20 分钟租约和用户取消。
 
 `hermes-prefetch.ts` 复用 `executeCliOperation` 的终止与退出确认，Windows 先只读解析本安装 PM 锁定版本或 facts 中的 Git，验证为 Hermes 根内普通文件；缺失或路径不安全时通过 backend 解析 PATH Git，POSIX 直接使用 PATH Git。继承宿主环境与代理，关闭交互及自动维护，在检出目录按稳定标签分段取 origin 对象。每段使用独立 fetch 看门狗，最多重试 3 次，成功段不重取。fetch 使用空 `--refmap=`、`--no-prune` 并关闭全局与 origin 的 prune/pruneTags，屏蔽用户 fetch 映射与清理配置；命令不写 FETCH_HEAD、引用、工作区或索引。目标以计划 SHA、当前回执 expected_sha、官方 GitHub 精确发布标签的 commit 记录依次核对，再通过 cat-file 确认 commit 存在。当前服务的计划仅保存版本，因此回执无 SHA 时通过既有 ReleaseClient 查询精确标签对应的 commit；不把 release.target_commitish 的分支名当 SHA。预取完成后执行同一条 Hermes argv；进度为 takeover、OFFICIAL_SLOW/OFFICIAL_STALLED、真实段数及未知总量字节，不给百分比；使用 Hermes 专用阶段文案，resumeCount 固定 0，每段重试只记 retryCount，不设置 officialFailedAt，也不进入 ChannelMemory 分支。
 
 依赖停滞后每次先核对该次运行前后的缓存，存在完成文件新增或字节增长才允许重跑（排除 `.part`、`.ranges`、临时下载及 PM staging，包含已发布 PM 工件），最多 3 次；普通失败仍只自动重跑一次，退出码 2 从不重跑。Windows 预取失败后允许一次官方恢复运行，但保留原预取/校验失败；取消或进程清理未确认时禁止继续。插件停止 Hermes 后最终失败会输出网关可能暂停、需启动一次 Hermes 的提示。所有轮询及进程经统一退出边界清理；清理未确认保留私有状态和维护隔离。仅模拟验收，Windows GitHub 真实预取与依赖恢复仍留在任务 8.5。
 
 任务 8.6：service 在操作准入时快照下载源对应的 effectiveRegistry，非 follow 时作为 npmRegistry 选项传入 Hermes runner；runner 的统一官方执行点对首次运行、普通失败、fetch 接管、依赖停滞及 Windows 恢复重跑都设置 npm_config_registry。follow 不增加该变量，保留用户自身 npm 配置；不覆盖或移除代理变量。Git 来源与 uv 冻结锁文件地址保持原状。Hermes 仍负责锁文件摘要校验，该 registry 可能改变其可复用 Node 安装指纹。
+
+2026-11-14 任务 8.7–8.9：`runHermesUpdate` 在失败后、重跑前及最终错误返回前复用 service 的只读身份/版本验证；恰为目标时继续原成功发布流程，更新页面版本。清理未确认、取消保持原语义。`hermes-version.ts` 仅在安装记录对应的 checkout HEAD 精确匹配唯一的本地稳定标签时补充落后记录的版本（支持松散轻量/注释标签及 packed-refs peeled SHA；松散对象按哈希、类型、长度校验并限制读取/解压大小与嵌套深度，不沿符号链接，只有 packfile 且无 peeled 证据时沿用记录），不运行 Hermes 或用 pyproject 猜版本。依赖终止错误说明实际重跑次数，不再承诺不存在的接管。
+
+Python 镜像实测只证明同 venv 可复用：uv 0.12.3 的 export 保留锁哈希，阿里云 PyPI 镜像 hash-pinned install 后离线 frozen sync 通过。但 Hermes v0.23.1 的 PM 每次重建创建新的 UUID generation；新 venv 使用同一缓存或已校验 wheelhouse/find-links 时，离线 frozen sync 都因锁定 files.pythonhosted.org URL 未缓存而失败。因尚无可用的跨 generation 恢复路径，本轮没有交付 Python 接管或修改下载源映射。完整实验及源码依据记录在当前变更决定 8 / 任务 8.8，Windows 实机复验仍待办。

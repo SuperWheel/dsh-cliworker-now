@@ -120,7 +120,7 @@
 - [ ] 6.4 13.5 遗留：接管下载期间取消
 
 ## 8. Hermes 慢速接管 〔后端｜10h｜前置 4〕
-- [x] 8.1 按阶段判慢：以最新回执为准并核对 pid；fetch 用 tmp_pack（首字节宽限 60 秒、30 秒无增长、60 秒均速 <100 KB/s），工具下载用 `cache/partials/*.part`，uv 与 Node 依赖用缓存与日志 120 秒无变化；apply、restart 不判慢
+- [x] 8.1 按阶段判慢：以最新回执为准并核对 pid；fetch 用 tmp_pack（首字节宽限 60 秒、30 秒无增长、60 秒均速 <100 KB/s），工具下载用 `cache/partials/*.part`，uv/Node/build 无下载证据时不判慢；完成标记后等待退出（5/20 分钟规则见 8.7）
   - 2026-11-14 审查修正：只读核对本机 Hermes pm/downloader.py 的 truncate 预分配、范围覆盖及 .ranges 持久化检查点；工具停滞改为 .part 元数据、.ranges 和完成文件连续 30 秒无活动。cacheGrew 只计完成文件新增或字节增长，排除预分配逻辑长度、检查点及 PM .staging-*，包含 tools 下已发布的校验工件和工具内容。
   - 新增模拟验证覆盖 128 MiB 预分配分片在 mtime 或 .ranges 持续变化时不误停、完全不变满 30 秒才停、PM 完成文件延续活动，以及完成文件允许重跑而单纯预分配拒绝重跑。最终类型检查通过；全套 CLI management 回归 30 个文件、881/881 测试通过。
   - 2026-11-14 已实现：hermes-watch.ts 与 hermes-observation.ts 按状态、日志和最新 mtime 回执识别阶段，廉价核对 pid/writer_pid；识别阶段结束标记及旧版 PM 子回执，排除已死父进程 running 回执。
@@ -132,7 +132,7 @@
   - 2026-11-14 已实现：Hermes 退出确认后由 backend 解析 PATH Git，在 checkout 执行 ls-remote、按稳定标签排序的 fetch 和 cat-file；argv 保留 no-tags/no-write-fetch-head、上一段提交与 HEAD negotiation-tip，并关闭自动 gc/maintenance，Windows 添加 appendAtomically=false。继承全部宿主代理环境，不写引用、工作区或索引。
   - 目标 SHA 依次取计划、当前回执、官方精确发布标签的 commit 记录；标签 peeled SHA 不匹配或 cat-file 失败时拒绝。每段最多重试 3 次，成功段不重取；进度通过共享 schema 校验，提供 takeover、原因、段数和 unknown-total 字节。
   - 模拟验证覆盖完整停止确认→分段预取→校验→同 argv 重跑、SHA 缺失/不匹配、发布记录/回执回退、当前段重试成功与耗尽、代理保留、Windows 参数及预取取消等待进程退出。
-- [x] 8.3 依赖段停滞停掉重跑，最多 3 次且每次须有新落盘；Windows 最终失败时提示网关可能暂停；保留 5 分钟兜底与退出码 2 不重跑
+- [x] 8.3 有下载证据的依赖段停滞才停掉重跑，最多 3 次且每次须有新落盘；Windows 最终失败时提示网关可能暂停；5/20 分钟兜底及失败先回读见 8.7，退出码 2 不重跑
   - 2026-11-14 已实现：依赖停滞后比较每次运行前后的缓存内容，有新增落盘才允许重跑，最多 3 次；普通失败保留一次兜底，退出码 2 不重跑；保留 5 分钟无活动与 20 分钟活动续期。Windows 预取失败给予一次官方恢复但保留原失败，最终失败输出网关可能暂停提示。
   - 模拟验证覆盖零增长拒绝、仅首轮增长、连续增长到 3 次上限、缓存 mtime 变化不算增长、退出码 2、完整更新预取取消、清理未确认禁止后续进程与私有状态隔离；所有退出路径停止轮询并复用进程范围确认。
   - 最终验证：corepack pnpm typecheck 通过（Host/Client，DSH 0.2.2-rc.3）；corepack pnpm exec vitest run tests/cli-management* 在已批准的沙箱外运行通过 30 个文件、869 个测试。首轮沙箱中的 Pi 环回 listen EPERM 已通过沙箱外重跑排除；Hermes 真实缓存读取造成的模拟超时已通过临时 HERMES_HOME 隔离和扫描优化修正。
@@ -145,6 +145,28 @@
   - Hermes 官方渠道的提示改为「拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑」（含英文），其他 CLI 保持原提示；接管段沿用 `currentStep/totalSteps/stepName` 与已接收字节，前端未新增控件。新增模拟用例覆盖阶段与字节两种 Hermes 进度；`vitest run tests/cli-update-page.test.tsx tests/client-i18n.test.tsx` 66 项通过，`corepack pnpm typecheck` 通过。
   - Codex 审查（gpt-6-astra high）指出前端两处：Hermes 接管沿用通用说明，误称「删除半成品」「7 天内直接接管」，续传与重试提示写「最多 200 次」；正常 6 步进度分支不显示规则提示。已改：Hermes 接管说明为「{原因}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。」；重试提示为「拉取过慢时只重取当前一段，每段最多 3 次；依赖停滞时重跑官方更新，最多 3 次」；Hermes 不显示字节续传次数；6 步分支也显示规则提示。用例扩到阶段、字节、6 步与接管四种情形，66 项通过，类型检查通过。
 - [ ] 8.5 Windows 实机：对 GitHub 真实远端分段预取后官方 fetch 不再下载；依赖段停掉重跑能补完；记录回执变化
+
+
+- [x] 8.7 修复 Windows Node 阶段 120 秒误停、完成后等待和失败后的版本回读
+  - 2026-11-14 本次实现取代 8.1/8.3 早先的 120 秒规则及 apply/restart 无限等待：无下载证据的 deps/uv/pnpm/build/apply/restart 采用 20 分钟无活动租约，其他阶段 5 分钟。stdout/stderr 非空片段（也识别最新阶段）、日志/状态/回执、根/web/ui-tui node_modules 和 pnpm/npm 缓存文件变化续期。完成标记/目标成功回执禁用下载判慢但保留租约与取消；旧分片存在本身不判下载；仅 tools 阶段名也不判下载；Fetching release history 不误判为代码 fetch。依赖错误如实说明重跑次数。
+  - service 给 runHermesUpdate 提供既有 identify/currentVersion/sameInstallation/verifyUpdatedVersion 回读；失败且版本恰为目标则成功。安装记录滞后时，只读 Git HEAD 与唯一精确稳定标签补充版本，不运行 Hermes。取消和清理未确认保持原语义。三类失败覆盖：退出 1、退出 2、安装记录仍旧但 packed 标签与 HEAD 已到目标；页面发布新版本的服务级模拟通过。
+  - 验证证据见 8.9；README、doc/design、决定 8 与增量规格已同步。保留原先历史测试证据，不将其 120 秒行为继续作为现行规则。
+- [x] 8.8 在 Mac 临时目录验证 Python 镜像锁哈希方案及跨 generation 复用
+  - uv 0.12.3 / Python 3.14.7，三个小包真实镜像实验：export 保留 SHA-256 → 阿里云 PyPI pip install --no-deps --require-hashes → 同 venv frozen sync --offline 均 exit 0。按 Hermes 首代 extra all、空默认 groups 复验也通过。初次全局 exclude-newer 配置导致镜像缺上传日期而拒绝，--no-config 隔离配置后成功；代理环境未改。
+  - 公开 v0.23.1（3b421578588243f920886e6fe79a6faa87ea026e）源码核对：PM 每次 Venv.apply 都新建 UUID generation；已建立的安装保留 extras 和插件联合，不能一律假定 checkout uv.lock + 当前 venv。新 venv 使用同 UV_CACHE_DIR 的离线 frozen sync exit 1，仍请求 files.pythonhosted.org；三个镜像 wheel 经锁 SHA-256 校验后，fresh venv 加 find-links 的离线 sync 同样 exit 1。因此小项目同 venv 成功不代表 Hermes 重跑可复用，本轮未交付 Python 接管。
+  - 完整命令、公开源码行号及结果：[实验报告](/private/tmp/claude-501/-Users-leeyl-AI-Project-DeepSeekHarness-cliworker-now/63f78787-0a41-4a97-82fc-6ac9a10e2670/scratchpad/hermes-uv-experiment/RESULTS.md)；同目录保留 experiment-mirror-offline.log、experiment-hermes-selection.log、experiment-fresh-generation.log、experiment-findlinks.log 和小项目锁文件。
+- [x] 8.9 本轮定向回归、类型检查、隔离构建与严格规格校验
+  - 2026-11-14 P2 复核修复：松散注释标签按 Git loose object 布局解压并校验 SHA-1、tag 长度和目标类型，支持最多 8 层嵌套；压缩/解压各限 64 KiB，拒绝符号链接、损坏及超限对象。保留 packed-refs peeled 支持；无 loose object/peeled 证据时不猜测，也不回退到被 loose ref 覆盖的旧 packed 值。新增真实 v0.23.1 HEAD 的模拟松散标签对象及安全边界测试。
+  - 同轮完成标记修复：在 stdout/stderr 片段截断前扫描全部输入，保留 64 字符边界尾部；两种标记各覆盖其后超过 4096 字符及跨块两种情况，安静 10 分钟不触发下载停滞，20 分钟租约仍生效。
+  - 同轮 `corepack pnpm typecheck` 通过；`corepack pnpm exec vitest run tests/cli-management-hermes-takeover.test.ts tests/cli-management-hermes-version.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-official-watch.test.ts tests/cli-update-page.test.tsx`：5 文件、249/249 通过（本轮新增 16 项）。未修改 src/client；以下隔离构建及其他回归为此前证据，本轮未重跑构建。
+  - 同轮 `OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict` 与 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 均通过。上述新用例均为临时 Git 元数据或进程输出模拟，未执行真实 Hermes/Windows 更新。
+  - `corepack pnpm typecheck`：通过，Host/Client against DSH 0.2.2-rc.3。
+  - `corepack pnpm exec vitest run tests/cli-management-hermes-takeover.test.ts tests/cli-management-hermes-version.test.ts tests/cli-management-all-updates.test.ts tests/cli-management.test.ts tests/cli-management-phase-b.test.ts`：5 文件、272/272 通过（最终一轮含开放 stdout/stderr 无换行、非 EOF 的完成标记集成模拟、仅 stdout 的 Node 阶段、release-history 非 fetch 及无下载证据的 tools 阶段）。
+  - `corepack pnpm exec vitest run tests/cli-management-interruption.test.ts tests/cli-management-source-layouts.test.ts tests/cli-management-official-watch.test.ts`：3 文件、94/94 通过；两组共 8 文件 366 项。
+  - `corepack pnpm build:preview`：通过，产物 `.cache/preview-package`；未更新 Desktop 链接。`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict`：通过。`git diff --check`：通过。
+  - 验证边界：上述回归是模拟；本轮真实执行仅为临时小项目 uv/镜像实验。没有真实 Hermes、Windows、账号、模型或 Desktop UI 验收；8.5、8.10 保持待办，不归档、不提交、不推送、不变更版本。
+- [ ] 8.10 Python 下载镜像接管的跨 generation 恢复路径（未执行：8.8 的同 venv 方案无法支持官方重跑，新环境缓存与 find-links 替代实验均失败；不得交付未经验证的接管）
+  - 待验证可沿用官方锁定 URL 身份的缓存预置或原生支持的环境复用，再实现下载源映射、Hermes 自有 uv/venv 解析和 takeover 进度。不修改 src/client；建议前端将 Hermes 规则改为「拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待」，重试提示改为「拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次」。
 
 ## 7. 待决定与后续调研 〔产品｜2h〕
 - [x] 7.1 Grok 接管校验强度

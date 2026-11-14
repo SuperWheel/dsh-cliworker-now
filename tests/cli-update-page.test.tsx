@@ -860,7 +860,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
       entries: [entry('hermes', { group: 'updatable', source: 'self-update', currentVersion: '0.21.7', latestVersion: '0.23.1', planToken: 'SIMULATED-plan' })],
       operation: { id: 'SIMULATED-op', intent: 'update', cli: 'hermes', phase: 'installing', startedAt: 1, targetVersion: '0.23.1', outputTail: '', progress },
     }) })
-    const rule = '拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑'
+    const rule = '拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待'
     const f = await setup(hermes({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', stage: '执行 Hermes 官方更新', elapsedSeconds: 20, resumeCount: 0 }))
     expect(hints(f.rowOf('hermes'))).toEqual([rule])
     await f.update(hermes({ channel: 'official', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 2048, elapsedSeconds: 30, resumeCount: 0 }))

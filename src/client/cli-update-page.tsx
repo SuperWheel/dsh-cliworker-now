@@ -451,10 +451,10 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
   const official = progress.channel === 'official'
   // Hermes has no replaceable package: slow fetch → plugin prefetches in segments; stalled deps → stop and rerun (决定 8).
   const hermes = operation.cli === 'hermes'
-  const hermesRule = t('拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑')
+  const hermesRule = t('拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待')
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
-    <Tooltip label={hermes ? t('拉取过慢时只重取当前一段，每段最多 3 次；依赖停滞时重跑官方更新，最多 3 次') : t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
+    <Tooltip label={hermes ? t('拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次') : t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
       <span className="cwn-update-meta-side" tabIndex={0}>
         {t('已自动重试 {count} 次', { count: progress.retryCount })}
       </span>

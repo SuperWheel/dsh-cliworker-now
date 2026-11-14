@@ -306,3 +306,39 @@ it.each([
     for (const key of Object.keys(spec.env ?? {})) expect(/proxy/i.test(key)).toBe(false)
   }
 })
+
+it.each([[1, false], [2, false], [1, true]] as const)('模拟：Hermes 官方退出 %s、旧安装记录=%s，检出已到目标时回读成功', async (exitCode, staleStamp) => {
+  const f = fixture('hermes'), root = join(f.root, '.hermes/hermes-agent'), entry = join(root, '.venv/bin/hermes')
+  mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, '#!/bin/sh\n# 模拟 Hermes 启动器', { mode: 0o700 })
+  const stamp = join(root, 'install-stamp.json')
+  writeFileSync(stamp, JSON.stringify({ baseVersion: '1.0.0', commit: 'a'.repeat(40), channel: 'canary' }))
+  f.config.hermesExecutable = entry
+  f.identify.mockImplementation(async () => ({ ...(await identifyInstallation('hermes', f.backend, f.config, control(), true))!, source: 'self-update', updateRoot: root }))
+  f.version.mockImplementation((_cli, id) => currentVersion('hermes', id, f.backend, f.config, control()))
+  await (f.service as any).local('hermes', control(), true, false)
+  await (f.service as any).remote('hermes', control(), true)
+  const row = f.service.snapshot().entries.find(e => e.cli === 'hermes')!
+  vi.mocked(f.backend.spawn).mockClear()
+  vi.mocked(f.backend.spawn).mockImplementation(spec => {
+    expect(spec.argv).toEqual([entry, 'update', '--yes'])
+    if (staleStamp) {
+      mkdirSync(join(root, '.git'), { recursive: true })
+      writeFileSync(join(root, '.git/HEAD'), 'b'.repeat(40) + '\n')
+      writeFileSync(join(root, '.git/packed-refs'), 'c'.repeat(40) + ' refs/tags/v1.2.3\n^' + 'b'.repeat(40) + '\n')
+    } else writeFileSync(stamp, JSON.stringify({ baseVersion: '1.2.3', commit: 'b'.repeat(40), channel: 'canary' }))
+    return { ...exited(), done: Promise.resolve({ exitCode, signal: null }) }
+  })
+  f.service.start('hermes', 'update', row.planToken!, '', `模拟-exit-${exitCode}-installed`)
+  const state = await finished(f.service)
+  expect(state.results.find(r => r.cli === 'hermes')).toMatchObject({ phase: 'succeeded', afterVersion: '1.2.3' })
+  expect(state.entries.find(e => e.cli === 'hermes')).toMatchObject({ currentVersion: '1.2.3', group: 'latest' })
+  expect(f.backend.spawn).toHaveBeenCalledTimes(1)
+})
+it('模拟：Hermes 失败且版本未前进仍报失败，不绕过 verifyUpdatedVersion', async () => {
+  const f = fixture('hermes')
+  await (f.service as any).local('hermes', control(), true, false); await (f.service as any).remote('hermes', control(), true)
+  const row = f.service.snapshot().entries.find(e => e.cli === 'hermes')!
+  vi.mocked(f.backend.spawn).mockImplementation(() => ({ ...exited(), done: Promise.resolve({ exitCode: 2, signal: null }) }))
+  f.service.start('hermes', 'update', row.planToken!, '', '模拟-exit-unchanged')
+  expect((await finished(f.service)).results.find(r => r.cli === 'hermes')).toMatchObject({ phase: 'failed', error: { code: 'EXIT_CODE' } })
+})

@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, realpath, mkdir, writeFile, rm, utimes, readFile, readdir, truncate, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Readable } from 'node:stream'
+import { PassThrough, Readable } from 'node:stream'
 import { HermesWatch, runHermesUpdate, type HermesUpdateOptions } from '../src/host/cli-management/hermes-watch.ts'
 import { HermesFetchWatchdog, cacheGrew, observeHermesCache } from '../src/host/cli-management/hermes-observation.ts'
 import { hermesSegments, prefetchHermes } from '../src/host/cli-management/hermes-prefetch.ts'
@@ -50,7 +50,7 @@ function captureWatches() {
 }
 async function stall(watch: HermesWatch, stage = 'fetch', growth?: () => Promise<void>) {
   const now = Date.now()
-  await put(watch.status, { stage }, now)
+  await put(watch.status, { stage, ...(stage === 'tools' ? { message: 'Downloading runtime tools' } : {}) }, now)
   await growth?.()
   await watch.poll(now)
   await watch.poll(now + (stage === 'fetch' ? 60_000 : 120_000))
@@ -86,9 +86,11 @@ it('模拟：状态与新日志能识别 fetch、uv、pnpm，旧 fetch 行不盖
   await put(status, { message: 'Installing Python dependencies with uv' }, now + 4); await watch.poll(now + 4); expect(watch.currentStage).toBe('uv')
   await put(status, { message: 'Installing Node dependencies with pnpm' }, now + 5); await watch.poll(now + 5); expect(watch.currentStage).toBe('pnpm')
 })
-it.each(['apply', 'restart'])('模拟：%s 超过 20 分钟也不因 watchdog 中止', async stage => {
+it.each(['apply', 'restart', 'pnpm', 'uv', 'deps', 'build'])('模拟：%s 静默 120 秒与 5 分钟不误停，20 分钟租约兜底', async stage => {
   const { watch, now } = await observer(stage)
-  await watch.poll(now + 30 * 60_000); expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 120_000); expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 19 * 60_000); expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 20 * 60_000); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
 })
 it('模拟：tmp_pack 增长计入活动，完成改名不丢字节，未知总量不带百分比', async () => {
   const { watch, now, checkout, progress } = await observer('fetch'), path = join(checkout, '.git/objects/pack/tmp_pack_test')
@@ -132,12 +134,13 @@ it('模拟：PM 完成文件出现延续工具活动，预分配、检查点和 
   await watch.poll(now + 58_999); expect(watch.reason).toBeUndefined()
   await watch.poll(now + 59_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
-it.each(['uv', 'pnpm'])('模拟：%s 仅在缓存和日志全部静止 120 秒后停，不按速度判慢', async stage => {
+it.each(['uv', 'pnpm'])('模拟：%s 缓存和日志更新延长 20 分钟租约，不按速度判慢', async stage => {
   const { watch, now, root } = await observer(stage), path = join(root, stage === 'uv' ? 'cache/uv/wheel' : 'cache/pnpm/store/pkg')
   for (let t = 10_000; t <= 130_000; t += 10_000) { await put(path, String(t)); await watch.poll(now + t); expect(watch.reason).toBeUndefined() }
   await put(join(root, 'logs/update.log'), '→ Compiling bytecode\n', now + 249_000); await watch.poll(now + 249_000)
   await watch.poll(now + 368_999); expect(watch.reason).toBeUndefined()
-  await watch.poll(now + 369_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await watch.poll(now + 369_000); expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 1_449_000); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
 })
 it('模拟：plan 保留 5 分钟无活动兜底，持续活动可续期超过 20 分钟', async () => {
   const { watch, now, root } = await observer('plan')
@@ -264,7 +267,7 @@ it.each([0, 1, 4])('模拟：依赖每次需新增缓存；连续有增长的尝
   const run = runHermesUpdate(o).catch(e => e), attempts = Math.min(grows + 1, 4)
   for (let n = 0; n < attempts; n++) {
     await until(() => spawn.mock.calls.length === n + 1)
-    await stall(watches[n]!, 'uv', n < grows ? () => put(join(root, `cache/uv/wheel${n}`), 'new cached wheel') : undefined)
+    await stall(watches[n]!, 'tools', n < grows ? () => put(join(root, `cache/uv/wheel${n}`), 'new cached wheel') : undefined)
   }
   expect(await run).toBeInstanceOf(Error); expect(spawn).toHaveBeenCalledTimes(attempts)
   for (const [spec] of (spawn.mock.calls as any[])) expect(spec.env.npm_config_registry).toBe(o.npmRegistry)
@@ -363,4 +366,118 @@ it('模拟：原生 Downloading updates 与旧版 PM 子进程状态区分 fetch
   const next = new HermesWatch(root, watch.checkout, status, now, () => {})
   await put(join(root, 'logs/update.log'), 'Installing Python dependencies\n', now + 30_003)
   await next.poll(now + 30_003); expect(next.currentStage).toBe('uv')
+})
+
+it.each(['stdout', 'log', 'status', 'receipt'])('模拟：%s 完成标记后安静等待退出，只有 20 分钟租约兜底', async source => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json')
+  const watch = new HermesWatch(root, checkout, status, now, () => {}, { version: '0.23.1', sha: sha(3) })
+  await watch.snapshot(); await put(status, { stage: 'fetch' }, now + 1)
+  if (source === 'stdout') { watch.output('✓ Code up', now + 1); watch.output('dated!', now + 1) }
+  if (source === 'log') await put(join(root, 'logs/update.log'), '✓ Update complete! (v0.23.1)', now + 1)
+  if (source === 'status') await put(status, { stage: 'fetch', message: '✓ Code updated!' }, now + 1)
+  if (source === 'receipt') await put(join(root, 'logs/update_receipts/latest.json'), { outcome: 'success', post_update: { commit: sha(3) } }, now + 1)
+  await watch.poll(now + 1); await watch.poll(now + 600_000)
+  expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 1_200_001); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+})
+it.each([
+  ['Update complete!', false], ['Code updated!', false],
+  ['Update complete!', true], ['Code updated!', true],
+] as const)('模拟：完成标记 %s 后接大于 4096 字符（跨块=%s）仍等待退出', async (marker, split) => {
+  const { watch, now } = await observer('fetch')
+  if (split) watch.output(`✓ ${marker.slice(0, 6)}`, now + 1)
+  watch.output(`${split ? marker.slice(6) : `✓ ${marker}`}\n${'x'.repeat(8192)}`, now + 1)
+  await watch.poll(now + 600_001)
+  expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 1_200_001)
+  expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+})
+it('模拟：非目标成功回执不屏蔽 fetch 停滞', async () => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json')
+  const watch = new HermesWatch(root, checkout, status, now, () => {}, { version: '0.23.1' })
+  await watch.snapshot(); await put(status, { stage: 'fetch' }, now + 1)
+  await put(join(root, 'logs/update_receipts/latest.json'), { outcome: 'success', post_update: { version: '0.21.7' } }, now + 1)
+  await watch.poll(now + 1); await watch.poll(now + 60_001); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each(['node_modules', 'web/node_modules', 'ui-tui/node_modules'])('模拟：%s 文件写入延长安静构建租约', async tree => {
+  const { watch, checkout, now } = await observer('build'), dir = join(checkout, tree)
+  await mkdir(dir, { recursive: true }); await put(join(dir, 'built.js'), 'compiled')
+  await watch.poll(now + 1_100_000); await watch.poll(now + 1_300_000)
+  expect(watch.controller.signal.aborted).toBe(false)
+  await watch.poll(now + 2_300_000); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+})
+it('模拟：stdout/stderr 无换行的活动直接识别完成，不等待行缓冲或 EOF', async () => {
+  const { root, checkout } = await fixture(), watches = captureWatches(), child = held()
+  const stdout = new PassThrough(), stderr = new PassThrough(), activity = vi.spyOn(HermesWatch.prototype, 'output')
+  child.stdout = stdout; child.stderr = stderr
+  const spawn = vi.fn(() => child), o = options(root, checkout, spawn), result = runHermesUpdate(o)
+  await until(() => spawn.mock.calls.length === 1)
+  stdout.write('✓ Code updated!'); stderr.write('waiting')
+  await until(() => activity.mock.calls.length >= 2)
+  expect(o.output).not.toHaveBeenCalled()
+  await put(watches[0]!.status, { stage: 'fetch' })
+  await watches[0]!.poll(); await watches[0]!.poll(Date.now() + 180_000)
+  expect(child.terminate).not.toHaveBeenCalled()
+  stdout.end(); stderr.end()
+  o.verifyInstalled = vi.fn(async () => true); child.terminate(); await result
+  expect(o.verifyInstalled).toHaveBeenCalledTimes(1)
+})
+it('模拟：失败后版本已到目标不重跑；清理未确认不回读成成功', async () => {
+  const { root, checkout } = await fixture(), spawn = vi.fn(() => finished('', 2)), o = options(root, checkout, spawn)
+  o.verifyInstalled = vi.fn(async () => true)
+  await runHermesUpdate(o); expect(spawn).toHaveBeenCalledTimes(1)
+  expect(o.verifyInstalled).toHaveBeenCalledTimes(1)
+  const blocked = options(root, checkout, vi.fn(() => ({ ...finished('', 1), waitForExit: vi.fn(async () => false) })))
+  blocked.verifyInstalled = vi.fn(async () => true)
+  await expect(runHermesUpdate(blocked)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+  expect(blocked.verifyInstalled).not.toHaveBeenCalled()
+})
+it('模拟：无接管路径的依赖错误如实说明重跑次数', async () => {
+  const { root, checkout } = await fixture(), watches = captureWatches(), o = options(root, checkout, vi.fn(() => held()))
+  const result = runHermesUpdate(o).catch(e => e)
+  await until(() => watches.length === 1); await stall(watches[0]!, 'tools')
+  const error = await result
+  expect(error.message).toContain('重跑 0 次后仍无进展'); expect(error.message).not.toContain('准备切换插件接管')
+})
+it('模拟：标准输出无换行也为 plan 的 5 分钟兜底续期', async () => {
+  const { watch, now } = await observer('plan')
+  for (let t = 240_000; t < 1_500_000; t += 240_000) {
+    watch.output('still working', now + t); await watch.poll(now + t)
+    expect(watch.controller.signal.aborted).toBe(false)
+  }
+  await watch.poll(now + 1_740_000); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+})
+it('模拟：旧的下载分片不是本次 deps 下载证据', async () => {
+  const { root, checkout } = await fixture(), status = join(root, 'status.json'), now = Date.now()
+  await put(join(root, 'cache/partials/old.part'), 'old', now - 100_000)
+  const watch = new HermesWatch(root, checkout, status, now, () => {})
+  await watch.snapshot(); await put(status, { stage: 'deps' }, now + 1)
+  await watch.poll(now + 1); await watch.poll(now + 180_000)
+  expect(watch.controller.signal.aborted).toBe(false)
+})
+it.each(['npm-cache', 'pnpm-store'])('模拟：显式 %s 文件写入延长 Node 阶段租约', async name => {
+  const { root, checkout } = await fixture(), status = join(root, 'status.json'), now = Date.now(), cache = join(root, name)
+  await mkdir(cache)
+  const watch = new HermesWatch(root, checkout, status, now, () => {}, undefined, [cache])
+  await watch.snapshot(); await put(status, { stage: 'pnpm' }, now + 1); await watch.poll(now + 1)
+  await put(join(cache, 'package'), 'new cache content'); await watch.poll(now + 1_100_000)
+  await watch.poll(now + 1_300_000); expect(watch.controller.signal.aborted).toBe(false)
+})
+
+it('模拟：只有 tools 阶段名而无下载文字或本次分片，不按下载停滞中止', async () => {
+  const { watch, now } = await observer('tools')
+  await watch.poll(now + 180_000); expect(watch.controller.signal.aborted).toBe(false)
+})
+it('模拟：Fetching release history 不误判为代码 fetch', async () => {
+  const { watch, now, root } = await observer('pnpm')
+  await put(join(root, 'logs/update.log'), 'Fetching release history (timeout 30 s)', now + 1)
+  await watch.poll(now + 1); expect(watch.currentStage).toBe('pnpm')
+  await watch.poll(now + 180_000); expect(watch.controller.signal.aborted).toBe(false)
+})
+
+it('模拟：仅 stdout 提供 Node 阶段时也使用 20 分钟租约', async () => {
+  const { watch, now } = await observer('plan')
+  watch.output('Updating Node dependencies', now + 1)
+  await watch.poll(now + 360_000)
+  expect(watch.currentStage).toBe('pnpm'); expect(watch.controller.signal.aborted).toBe(false)
 })

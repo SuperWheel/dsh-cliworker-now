@@ -54,7 +54,7 @@ class SafeOutput {
   flush() { if (this.discarded) this.emit('[超长输出行已省略]\n'); else if (this.line) this.emit(redactOutput(this.line)); this.line = ''; this.discarded = false }
 }
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
-export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir()): Promise<void> {
+export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void): Promise<void> {
   signal.throwIfAborted()
   const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), timeoutMs)
   const control = AbortSignal.any([signal, timer.signal])
@@ -70,7 +70,7 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
     const read = async (stream: ReturnType<ProcessBackend['spawn']>['stdout']) => {
       if (!stream) return
       const decoder = new StringDecoder('utf8'), safe = new SafeOutput(output)
-      const publish = (text: string) => { evidence?.push(text); safe.push(text) }
+      const publish = (text: string) => { if (text) activity?.(text); evidence?.push(text); safe.push(text) }
       for await (const chunk of stream) publish(decoder.write(chunk))
       publish(decoder.end()); safe.flush()
     }

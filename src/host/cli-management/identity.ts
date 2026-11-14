@@ -13,6 +13,7 @@ import { resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
 import { CLI_SOURCES, ZCODE_DEFAULT_APP } from './sources.ts'
 import { managedZCodeEntry } from '../zcode-adapter.ts'
 import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
+import { hermesCheckoutVersion } from './hermes-version.ts'
 
 export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
@@ -151,12 +152,14 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
         ? ['install-stamp.json', ...(depth === 1 && /^bin$/i.test(basename(dirname(target))) ? [join('hermes-agent', 'install-stamp.json')] : [])]
         : ['trae-installation.json']
       let record: Record<string, any> | undefined
-      for (const name of names) if ((record = await readManifest(join(dir, name)))) break
+      let recordPath: string | undefined
+      for (const name of names) if ((record = await readManifest(join(dir, name)))) { recordPath = join(dir, name); break }
       if (!record) continue
       if (cli === 'hermes' && typeof record.baseVersion === 'string') {
-        manifestVersion = record.baseVersion
+        const checkout = await hermesCheckoutVersion(dirname(recordPath!), record.commit)
+        manifestVersion = checkout?.version ?? record.baseVersion
         channel = typeof record.channel === 'string' && /^[a-z0-9-]{1,32}$/.test(record.channel) ? record.channel : 'unknown'
-        metadataToken = createHash('sha256').update(JSON.stringify([record.baseVersion, record.commit, channel])).digest('hex')
+        metadataToken = createHash('sha256').update(JSON.stringify([manifestVersion, checkout?.commit ?? record.commit, channel])).digest('hex')
       } else if (cli === 'traecn' && ['public', 'tob', 'tob-alpha', 'internal'].includes(record.channel)) {
         channel = record.channel
         releaseChannel = typeof record.release_channel === 'string' ? record.release_channel : undefined

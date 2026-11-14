@@ -173,10 +173,12 @@ Windows 上已验收的四项，也从「接管优先」改为这一流程。在
 Hermes 没有可替换的发布包，所以接管的含义是：插件预取并校验内容，再让 `hermes update --yes` 用这些内容自己完成安装。插件不替 Hermes 改检出、依赖、配置或服务。
 
 - **判慢按阶段。** 阶段取自状态文件、`update.log` 和最新修改的回执；0.21.7 在 apply 之后会把剩余工作交给新树的子进程，子进程另开回执，所以以最新回执为准，并核对其中的 pid 是否存活。
-  - fetch：沿用 `tmp_pack_*` 增长量；首字节前宽限 60 秒，之后 30 秒无增长、或 60 秒均速低于 100 KB/s 判慢。
-  - deps 中的工具下载：`<Hermes 根>/cache/partials/*.part` 30 秒无增长判慢。
-  - uv 与 Node 依赖：解包、链接、编译期间没有下载，不按均速判；缓存（`cache/uv`、`cache/pnpm/store`）与日志连续 120 秒都无变化才判停滞。
-  - plan、snapshot、build 只受总预算约束；apply 与 restart 不判慢，不中途停止。
+  - fetch：只识别代码拉取，Fetching release history 等元数据查询不归入 fetch；沿用 `tmp_pack_*` 增长量；首字节前宽限 60 秒，之后 30 秒无增长、或 60 秒均速低于 100 KB/s 判慢。
+  - deps 中的工具下载（只有 tools 阶段名不够，必须有下载文字或本次活动分片）：`<Hermes 根>/cache/partials/*.part` 30 秒无增长判慢。
+  - uv、Node 依赖与 build：没有可核实的下载证据时不判下载停滞，删除静默 120 秒中止规则。stdout/stderr 的每个非空输出片段（不要求换行）、日志/状态/回执变化、checkout 根及 `web/`、`ui-tui/` 的 node_modules、Hermes uv/pnpm/npm 缓存与宿主已知 pnpm store/npm cache 的文件变化均计入活动。元数据遍历有界，扫描不完整本身不能作为持续活动证据。
+  - plan、snapshot、未知阶段保留 5 分钟无活动兜底；依赖、build、apply、restart 使用活动可续期的 20 分钟租约。apply/restart 不受下载看门狗影响，但不再无限等待；用户取消仍立即进入进程范围清理。
+  - `Update complete!`、`Code updated!` 出现在本次输出/日志/状态，或本次回执 outcome=success 且 post_update 等目标字段匹配目标版本/提交后，禁用所有下载判慢，等待退出，仅保留用户取消和 20 分钟无活动租约。单个 deps/apply 阶段的 success 不等于整次完成。
+  - 泛 deps 阶段仅有历史 `.part` 文件不是本次下载证据；必须本次观察到分片变化，且仍有 `.part` 才采用工具下载判定。
 - **fetch 接管：分段预取。** 确认 Hermes 进程树已退出后，插件用 Hermes 实际使用的 git（参数数组，保留宿主代理变量，`GIT_TERMINAL_PROMPT=0`）：
   1. `git ls-remote --tags origin` 取当前版本与目标版本之间的稳定标签；
   2. 逐段执行 `git fetch --progress --no-tags --no-write-fetch-head --negotiation-tip=<上一段> --negotiation-tip=HEAD origin refs/tags/<标签>`，每段受同一看门狗约束，慢了只重取当前段；
@@ -184,12 +186,21 @@ Hermes 没有可替换的发布包，所以接管的含义是：插件预取并�
   4. 重新执行同一条 `hermes update --yes`，它的 fetch 变为空操作，其余由 Hermes 完成。
 
   不写引用、不动工作区和索引，只从 origin 取包（保留部分克隆的 `.promisor` 标记）；不使用 bundle、alternates、浅克隆或 codeload 源码 zip（后者没有长度和摘要）。进度显示「第 k/N 段（标签）」和已接收字节，不显示字节百分比。
-- **依赖段：停掉重跑。** uv 在 `--frozen` 下只按锁文件绝对地址下载，没有可用的挂钩，插件不接管 wheel。判定停滞后停掉 Hermes 再跑一次 `hermes update --yes`；各缓存按文件保留，相当于文件粒度续传。最多重跑 3 次，每次都必须比上次多落盘内容才继续。
+- **依赖段：仅下载证据允许停止重跑。** 本版未实现 Python wheel 镜像接管（下述实验未证明可跨 Hermes generation 复用）。工具下载判定停滞后停掉 Hermes 再跑 `hermes update --yes`；缓存按文件保留，最多重跑 3 次且每次须有完成文件增长。失败文案为「Hermes 依赖下载停滞，重跑 N 次后仍无进展」，不得写「准备切换插件接管」。Node、构建及无下载证据的 Python 阶段不走这条 30/120 秒路径。
 - **npm 依赖跟随下载源（2026-11-14 用户定「加，跟随下载源」）。** Hermes 官方读取 `npm_config_registry`（或 `.npmrc` 的 `registry`），把锁文件里的 npm 地址换到该 registry，内容仍由锁文件的 sha512／sha256 校验（`pm/index_config.py` 的 `npm_registry_url`、`pm/artifact_mirror.py`）。插件下载源为「跟随」时不额外设置，Hermes 自己读用户的 npm 配置；为「官方」「npmmirror」「自定义」时，以 `npm_config_registry=<该 registry>` 执行 `hermes update --yes`（含接管后的重跑）。代价：该变量进入 Hermes 可复用安装的指纹，之后不带它的更新会重装一次 Node 依赖，包已在本地仓库中，不重新下载。git 代码没有官方镜像，Python wheel 在 `--frozen` 下只按锁文件绝对地址下载，二者不随下载源变化。
 - **Windows 网关。** Windows 在 fetch 之前暂停网关，Hermes 被停后网关保持暂停，直到下一次 `hermes` 运行。所以插件停掉 Hermes 后必须再跑一次 `hermes update --yes`；最终仍失败时，提示用户网关可能处于暂停，需要启动一次 Hermes。
 - **本版不做。** PM 工具预置（`tools/fetch-<sha256>/` 属内部布局，Hermes 自带下载器已能续传、有官方镜像）和 pnpm 环回 registry（未实测，且会改变 Hermes 可复用安装的指纹），待 Windows 实测后再定。
-- **兜底。** 现有「日志和回执连续 5 分钟无活动才停、失败自动重跑一次、退出码 2 不重跑」保留，作为以上规则之外的兜底。
+- **失败先验证。** 每次官方失败、接管/恢复失败及最终错误返回前，已确认进程退出且用户未取消时，调用 service 原有 identifyInstallation/currentVersion/sameInstallation/verifyUpdatedVersion 链；版本恰为目标则进入成功发布流程，更新页面 currentVersion。即使退出码 2 也先只读验证，但不重跑。安装记录尚未重写时，只在 checkout HEAD 精确匹配唯一的本地稳定标签（松散轻量/注释标签或 packed-refs 的 peeled SHA；松散注释对象须通过 SHA-1、类型和长度校验，压缩及解压上限各 64 KiB，嵌套最多 8 层，不沿符号链接；仅存在 packfile 且无 peeled 证据的对象保持未知）时补充版本；不猜最近标签、不采用 pyproject 占位版本、不运行 Hermes。没有精确证据则沿用安装记录。取消和清理未确认不能被版本成功覆盖。
+- **兜底。** 普通失败自动重跑一次，退出码 2 不重跑；静默时限按上面的 5/20 分钟分阶段规则执行。
 - **提示文字。** Hermes 官方阶段的提示改为如实描述上述规则，不再套用其他 CLI 的「30 秒没有新数据……改由插件下载」。
+
+
+#### Python 镜像接管实验（2026-11-14，未交付接管）
+
+- 对照 v0.23.1 / `3b421578588243f920886e6fe79a6faa87ea026e` 的 `hermes_cli/venv_sync.py`、`pm/extras.py`、`pm/packages.py`、`pm/workspace.py`、`pm/environment.py`：首代选择 extra `all`，已建立的 PM 安装保留记录的 extras/插件联合；默认 groups 为空。执行形状为 `sync --frozen --all-packages --python <python> --compile-bytecode --extra <选择>`；存在插件成员时还会使用生成 workspace 的锁，而不能假定只导出 checkout 的 uv.lock。
+- Mac uv 0.12.3、Python 3.14.7，三个小包 idna 3.10、certifi 2025.1.31、six 1.17.0：`export --frozen --format requirements-txt` 保留锁定 SHA-256；阿里云 `https://mirrors.aliyun.com/pypi/simple/` 的 `pip install --no-deps --require-hashes` 成功；同一 venv 的 `sync --frozen --offline` 成功。额外以 `--extra all`、空默认 groups 重复成功。使用 `--no-config` 隔离本机全局 exclude-newer 策略（镜像不提供上传时间），没有移除代理环境。
+- **适用性失败：** Hermes `Venv.apply` 每次创建 `environments/<uuid>/venv` 和 workspace。换到全新 venv、共享刚才的 UV_CACHE_DIR 后，离线 frozen sync 仍请求 files.pythonhosted.org 的锁定 URL 并失败（exit 1）。将三个 mirror wheel 下载并逐个按锁 SHA-256 校验后，给新 venv 的 frozen sync 加 `--find-links <wheelhouse> --offline` 仍同样失败。故“填充当前 venv 后重跑 Hermes”不能据此交付；没有改写锁文件、PM facts 或 uv 内部缓存索引冒充成功。
+- 详细命令、源代码位置及日志见任务 8.8；这些是小包实测与公开源码核对，不是 Hermes/Windows 更新验收。下载源的 PyPI 映射与 takeover 进度尚未实现，现有 npm 规则保持不变。
 
 ## Implementation Notes（主任务 1–3 的迁移边界）
 
