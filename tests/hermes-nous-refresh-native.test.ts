@@ -64,6 +64,18 @@ def refresh(src,*,timeout_seconds,force_refresh,on_state_update):
 auth._provider_state_transaction=transaction; auth._auth_file_path=lambda:home/'auth.json'
 auth._nous_shared_store_path=shared_path; auth._nous_shared_store_lock=lambda timeout_seconds=15:lock('shared')
 auth._save_provider_state_to_source=persist; auth._write_shared_nous_state=mirror
+if options.get('mirror_contract'):
+ contract=options['mirror_contract']
+ def current_mirror(state, *, renewal):
+  assert renewal is True
+  event('mirror-renewal')
+  if options.get('mirror_type_error'): raise TypeError('SYNTHETIC_SECRET_INTERNAL_ERROR')
+  mirror(state)
+ def future_mirror(state, *, renewal, unknown):
+  raise AssertionError('unknown contract must never run')
+ def opaque_mirror(*args, **kwargs):
+  raise AssertionError('opaque contract must never run')
+ auth._write_shared_nous_state={'current':current_mirror,'future':future_mirror,'opaque':opaque_mirror}[contract]
 auth._select_nous_invoke_jwt=select; auth.refresh_nous_oauth_from_state=refresh
 def forbidden(*a,**kw): raise AssertionError('forbidden broader native resolver')
 auth.resolve_nous_runtime_credentials=forbidden; auth._sync_nous_pool_from_auth_store=forbidden
@@ -210,6 +222,38 @@ function fixture() {
 afterEach(() => roots.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })))
 
 describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () => {
+  it.each([false, true])('模拟 Hermes 0.23.1 必需 renewal 参数，含旧共享镜像恢复=%s', (staleMirror) => {
+    const f = fixture()
+    if (staleMirror) f.share(state(now - 100, 'synthetic-subject', 'synthetic-older-refresh'))
+    const result = f.run({ entry: true, mirror_contract: 'current' })
+    expect(result.receipt).toEqual({ version: 1, state: 'ready' })
+    expect(result.stderr).toBe('')
+    expect(result.events.filter((x) => x === 'refresh')).toHaveLength(1)
+    expect(result.events).toContain('mirror-renewal')
+    expect(f.read().providers.nous.refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read('shared/nous-auth.json').refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read().credential_pool.nous[0]).toMatchObject({ label: 'synthetic-label', priority: 7 })
+  })
+  it.each(['future', 'opaque'])('模拟未知共享写入签名 %s 在任何兑换或写入前拒绝', (contract) => {
+    const f = fixture()
+    f.share(state(now - 100, 'synthetic-subject', 'synthetic-older-refresh'))
+    const shared = f.read('shared/nous-auth.json')
+    const result = f.run({ mirror_contract: contract })
+    expect(result.receipt).toEqual({ version: 1, state: 'unsupported' })
+    expect(result.events).toEqual([])
+    expect(f.read()).toEqual(f.store)
+    expect(f.read('shared/nous-auth.json')).toEqual(shared)
+  })
+  it('模拟共享写入内部 TypeError 不降级重试，保留已经落盘的轮换', () => {
+    const f = fixture()
+    const result = f.run({ mirror_contract: 'current', mirror_type_error: true })
+    expect(result.receipt.state).toBe('unavailable')
+    expect(result.stderr).toBe('')
+    expect(result.events.filter((x) => x === 'refresh')).toHaveLength(1)
+    expect(result.events.filter((x) => x === 'mirror-renewal')).toHaveLength(1)
+    expect(f.read().providers.nous.refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read().credential_pool.nous.every((row: any) => row.refresh_token === f.fresh.refresh_token)).toBe(true)
+  })
   it('uses the official parser without importing an absent PyYAML package', () => {
     const f = fixture()
     const result = f.run({ entry: true })

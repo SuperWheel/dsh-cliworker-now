@@ -200,6 +200,22 @@ def checked_shared(shared, expected):
     return found
 
 
+def shared_write_options(write):
+    # Hermes 0.23.1 (3b4215785882), auth_nous.py, requires renewal=True:
+    # a refresh must not replace a different shared identity as a new login.
+    # Earlier reviewed versions take only state. Bind BEFORE spending a grant
+    # or repairing a mirror; never retry a write on TypeError from its body.
+    try:
+        signature = inspect.signature(write)
+        if tuple(signature.parameters) not in (("state",), ("state", "renewal")):
+            raise Refusal("unsupported")
+        options = {"renewal": True} if "renewal" in signature.parameters else {}
+        signature.bind({}, **options)
+        return options
+    except (TypeError, ValueError):
+        raise Refusal("unsupported") from None
+
+
 def _run(home, expected_digest, cancelled):
     if not re.fullmatch(r"[a-f0-9]{64}", expected_digest or ""):
         raise Refusal("unsupported")
@@ -211,6 +227,7 @@ def _run(home, expected_digest, cancelled):
         raise Refusal("unsupported")
     if "on_state_update" not in inspect.signature(auth.refresh_nous_oauth_from_state).parameters:
         raise Refusal("unsupported")
+    mirror_options = shared_write_options(auth._write_shared_nous_state)
     home = Path(home)
     if home != home.resolve() or not home.is_dir() or get_default_hermes_root().resolve() != home:
         raise Refusal()
@@ -273,7 +290,7 @@ def _run(home, expected_digest, cancelled):
                 state = merged
                 # Native mirror is best-effort, so verify the saved pair before
                 # reporting ready. No outside-home store is ever touched.
-                auth._write_shared_nous_state(state)
+                auth._write_shared_nous_state(state, **mirror_options)
                 saved = read_json(shared_path)
                 if checked_shared(saved, expected)[:2] != expected[:2] or any(saved.get(k) != state.get(k) for k in ("access_token", "refresh_token")):
                     raise Refusal("unavailable")
