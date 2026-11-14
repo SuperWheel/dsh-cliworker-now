@@ -42,4 +42,6 @@
   - `corepack pnpm typecheck` exit 0（DSH 0.2.2-rc.3）；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-temp-dir-cleanup-leeyl --strict`、同命令校验 `v0.8.10-cli-update-dual-channel-leeyl` 及 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 均 exit 0。双通道仅主任务 9/10 子项过多的建议警告。
   - README/doc/design 与两个变更的 design/spec/tasks 已同步；doc/design 顺手纠正旧通道记忆描述为「残留清理不删除 channel-memory.json，接管失败/取消仍按既有逻辑清除」，实现不变。没有正式构建、Desktop 部署、真实 CLI 更新、提交、版本变更或真实临时文件删除。历史共享 Bun DLL 不归插件所有，用户可确认无占用后手动删除。
 - [ ] 4.3 Windows/Mac 实机复验 OMP 备份回收及短时探测临时目录与 Bun DLL 增长
-  - 未执行：由用户复验。本轮只做合成夹具与静态检查，不删除真实安装或共享 Temp 文件。
+  - 主会话本地提交 `34133b9` 复核：`corepack pnpm typecheck` 通过；关联回归 90 文件 2299 通过；两个变更 strict 校验 valid；`git diff --check` 通过。
+  - Windows 实机（11-15，隔离包 `rc3-34133b9-20261115`，1262 文件，已装插件 `lib/index.js` 含 `cliworker-probe-`）：安装前 Temp 共有 241 个 `.<16hex>-00000000.dll`（263 MB），最新一个 06:15:47 由旧包产生。06:17:43 启动新包，06:23 后台检查与 06:24:28 手动「检查更新」（sol 点击，13 秒完成，16 行显示版本）均已执行探测（共享 omp-natives 06:23:32 被使用，状态文件 06:24:35 写入）。06:26:23 复查：DLL 仍 241 个、最新仍为 06:15:47，Temp 中无 `cliworker-`/`cwn-`/`dshwb-` 目录残留。结论：Windows 短时探测不再向共享 Temp 新增 Bun DLL，私有目录已在退出后回收。
+  - 仍未验证：OMP 原生备份回收需要一次真实 OMP 自更新（Windows 现为 18.20.2 已最新，旧备份 `omp.exe.1794693071300.27728.0.bak` 251 MB 仍在，合成测试已用此真实文件名覆盖）；Mac 未复验（非 Windows 不注入私有 TEMP，行为不变）。历史 241 个 DLL 未删除，待用户决定。
