@@ -12,6 +12,7 @@ import { identifyInstallation, classifyInstallation, type InstallationIdentity }
 import { PI_SUPPORTED_VERSIONS, inspectPiInstallation } from '../src/host/pi-installation.mjs'
 import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError } from '../src/host/cli-management/desktop-update.ts'
 import { localCheckTimeoutMs, LOCAL_CHECK_TIMEOUT_DETAIL } from '../src/host/cli-management/service.ts'
+import { ChannelMemory } from '../src/host/cli-management/channel-memory.ts'
 import { serviceFixture, syntheticIdentity, checked, control, finished, sri } from './cli-management-phase-b-fixture.ts'
 
 vi.mock('../src/host/cli-management/desktop-update.ts', () => ({
@@ -37,6 +38,8 @@ function sample(cli: ActiveCliId): unknown {
 }
 function fixture(cli: ActiveCliId) {
   const f = serviceFixture([cli]); fixtures.push(f); f.identities.set(cli, identity(cli))
+  // 模拟 Hermes 的日志/缓存必须完全隔离，不读取宿主真实更新回执与依赖缓存。
+  if (cli === 'hermes') vi.stubEnv('HERMES_HOME', join(f.root, 'simulated-hermes-home'))
   f.metadataFetch.mockImplementation(async url => {
     for (const [id, feed] of Object.entries(NATIVE_RELEASES)) {
       const address = feed.url.replace('{platform}', 'darwin').replace('{arch}', 'arm64').replace('{musl}', '')
@@ -49,7 +52,7 @@ function fixture(cli: ActiveCliId) {
   Object.assign(f.releases, { platform: 'darwin', arch: 'arm64' })
   return f
 }
-afterEach(async () => { vi.useRealTimers(); for (const f of fixtures.splice(0)) await f.close(); vi.restoreAllMocks(); vi.mocked(readDesktopRelease).mockReset(); vi.mocked(runDesktopUpdate).mockReset() })
+afterEach(async () => { vi.useRealTimers(); for (const f of fixtures.splice(0)) await f.close(); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.mocked(readDesktopRelease).mockReset(); vi.mocked(runDesktopUpdate).mockReset() })
 
 it.each(Object.keys(NATIVE_RELEASES) as ActiveCliId[])('模拟：%s 官方原生源解析成功且仅 GET、无凭据', async cli => {
   const fetcher = vi.fn(async () => { const value = sample(cli); return typeof value === 'string' ? new Response(value) : json(value) })
@@ -269,4 +272,37 @@ it('模拟：任务 B 缺摘要原因保留，后台不启动更新程序', asyn
   await (f.service as any).local('workbuddy', control(), true, false); await (f.service as any).remote('workbuddy', control(), true)
   expect(f.service.snapshot().entries.find(e => e.cli === 'workbuddy')).toMatchObject({ group: 'manual', manual: { note: '官方更新源没有提供校验值，暂不能自动更新' } })
   expect(runDesktopUpdate).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+it.each([
+  ['follow', undefined], ['official', 'https://registry.npmjs.org/'], ['npmmirror', 'https://registry.npmmirror.com/'], ['custom', 'https://registry.example.invalid/npm/'],
+] as const)('模拟：Hermes 下载源 %s 在首次运行与失败重跑传递 registry，follow 不设置', async (source, registry) => {
+  const memoryGet = vi.spyOn(ChannelMemory.prototype, 'get'), memorySet = vi.spyOn(ChannelMemory.prototype, 'set')
+  const f = fixture('hermes')
+  f.service.saveDownloadSource({ source, ...(source === 'custom' ? { customUrl: registry } : {}) })
+  await (f.service as any).local('hermes', control(), true, false)
+  await (f.service as any).remote('hermes', control(), true)
+  const row = f.service.snapshot().entries.find(e => e.cli === 'hermes')!
+  let calls = 0
+  vi.mocked(f.backend.spawn).mockClear() // follow 的模拟 npm config get 属于前面的只读查询。
+  vi.mocked(f.backend.spawn).mockImplementation(spec => {
+    if (!spec.argv.includes('--yes')) return { ...exited(), stdout: Readable.from(['https://registry.npmjs.org/\n']) }
+    calls++
+    if (calls === 2) f.identities.set('hermes', { ...identity('hermes'), manifestVersion: '1.2.3' })
+    return { ...exited(), done: Promise.resolve({ exitCode: calls === 1 ? 1 : 0, signal: null }) }
+  })
+  f.service.start('hermes', 'update', row.planToken!, '', `模拟-registry-${source}`)
+  expect((await finished(f.service)).results.find(r => r.cli === 'hermes')).toMatchObject({ phase: 'succeeded' })
+  expect(calls).toBe(2)
+  expect(memoryGet).not.toHaveBeenCalled(); expect(memorySet).not.toHaveBeenCalled()
+  expect(existsSync(join(f.root, 'cli-management/channel-memory.json'))).toBe(false)
+  const updates = vi.mocked(f.backend.spawn).mock.calls.filter(([spec]) => spec.argv.includes('--yes'))
+  expect(updates).toHaveLength(2)
+  for (const [spec] of updates) {
+    expect(spec.argv.slice(-2)).toEqual(['update', '--yes'])
+    expect(spec.env).toMatchObject({ HERMES_HOME: join(f.root, 'simulated-hermes-home'), HERMES_UPDATE_STATUS_FILE: expect.any(String) })
+    if (source === 'follow') expect(spec.env).not.toHaveProperty('npm_config_registry')
+    else expect(spec.env).toHaveProperty('npm_config_registry', registry)
+    for (const key of Object.keys(spec.env ?? {})) expect(/proxy/i.test(key)).toBe(false)
+  }
 })

@@ -54,7 +54,7 @@ class SafeOutput {
   flush() { if (this.discarded) this.emit('[超长输出行已省略]\n'); else if (this.line) this.emit(redactOutput(this.line)); this.line = ''; this.discarded = false }
 }
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
-export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence): Promise<void> {
+export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir()): Promise<void> {
   signal.throwIfAborted()
   const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), timeoutMs)
   const control = AbortSignal.any([signal, timer.signal])
@@ -62,7 +62,6 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
   let readers: Promise<void>[] = [], finished = false
   const abort = () => child?.terminate()
   try {
-    const cwd = homedir()
     if (argv[1] === 'update') await guardDispatcherUpdate(argv, cwd)
     control.throwIfAborted()
     child = backend.spawn({ argv, cwd, ...(env ? { env } : {}), signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })

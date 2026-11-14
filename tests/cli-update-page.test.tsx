@@ -855,6 +855,31 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(byClass(row, 'cwn-update-meta-side')).toHaveLength(0)
   })
 
+  it('gives Hermes its own rule hint instead of the generic plugin-download hint', async () => {
+    const hermes = (progress: CliDownloadProgress) => data({ snapshot: snapshot({
+      entries: [entry('hermes', { group: 'updatable', source: 'self-update', currentVersion: '0.21.7', latestVersion: '0.23.1', planToken: 'SIMULATED-plan' })],
+      operation: { id: 'SIMULATED-op', intent: 'update', cli: 'hermes', phase: 'installing', startedAt: 1, targetVersion: '0.23.1', outputTail: '', progress },
+    }) })
+    const rule = '拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑'
+    const f = await setup(hermes({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', stage: '执行 Hermes 官方更新', elapsedSeconds: 20, resumeCount: 0 }))
+    expect(hints(f.rowOf('hermes'))).toEqual([rule])
+    await f.update(hermes({ channel: 'official', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 2048, elapsedSeconds: 30, resumeCount: 0 }))
+    expect(hints(f.rowOf('hermes'))).toEqual([rule])
+    expect(textOf(f.rowOf('hermes'))).not.toContain('改由插件下载')
+    // Normal receipts give six steps: the rule hint stays.
+    await f.update(hermes({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', currentStep: 3, totalSteps: 6, stepName: 'apply', elapsedSeconds: 40, resumeCount: 0 }))
+    expect(hints(f.rowOf('hermes'))).toContain(rule)
+    // Takeover: Hermes-specific callout, no cleanup or 7-day claim, no byte-resume count.
+    await f.update(hermes({ channel: 'takeover', reason: 'OFFICIAL_SLOW', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 4096, currentStep: 2, totalSteps: 10, stepName: '第 2/10 段（v0.22.1）', elapsedSeconds: 50, resumeCount: 0, retryCount: 1 }))
+    const row = f.rowOf('hermes')
+    const callout = byClass(row, 'cwn-update-callout').map(textOf).join('')
+    expect(callout).toContain('改由插件按版本分段拉取代码')
+    expect(callout).not.toContain('7 天')
+    expect(callout).not.toContain('删除')
+    expect(textOf(row)).not.toContain('已自动续传')
+    expect(textOf(row)).toContain('已自动重试 1 次')
+  })
+
   it('shows only the stage line for phase-only official progress, as plain text', async () => {
     const hostile = '<b>Downloading update...</b>'
     const f = await setup(running({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', stage: hostile, elapsedSeconds: 35, resumeCount: 0 }))

@@ -111,8 +111,40 @@
   - Pi 1.1.0→1.5.2（Windows 识别为 npm 全局安装）失败：`PREREQUISITE_MISSING：无法核实 Node/npm 安装`。Windows 上 `C:\Program Files\nodejs` 的 npm 11.12.1 布局用 node 逐项复核全部通过。根因：生产用的 `nativeProcessBackend.resolveExecutable` 会把 `.cmd` 交给 inspectBatch，官方 `npm.cmd` 不是 cmd-shim 被拒。已修：Windows 上该解析失败时改取 `node.exe` 同目录的官方 `npm.cmd`，其后 npm-cli.js、清单与 PE 头校验不变；附模拟用例。
   - 「检查更新」后 Qoder、Qoder CN 仍显示 IDENTITY_CHANGED（Windows 上仍是 5b03227，修复未部署）。
   - 修复后：`corepack pnpm typecheck` 通过；`vitest run` 相关 7 个文件 208 项通过。三处修复均待部署到 Windows 复验。
+  - 2026-11-14 复验（插件 3ab3d26，`build:preview` 后 npm pack，Windows 安装 1229/1229 文件哈希一致，Desktop 经应用菜单退出后重开）：「检查更新」后 Qoder、Qoder CN 均显示「1.1.89 · 自带更新」、归入已是最新、无错误，发现 1 修复生效。
+  - Hermes：页面出现「第 2/6 步：snapshot」（6 段中 2 段填充）、「已接收 31.9 MB，总大小未知」、「第 3/6 步：apply」，发现 3 修复生效，未再被 5 分钟兜底误杀。前 2 分 49 秒为 Hermes 先补做上次被中断的更新（输出「The previous update … was interrupted … last stage: apply」），期间只有阶段文字。最终 `VERSION_UNCHANGED`（仍 0.21.7）：uv 解压 `google-api-python-client` 时 `磁盘空间不足 (os error 112)`。
+  - Pi：Node/npm 核验通过，按「插件接管」从 `cdn.npmmirror.com` 下载 7.5 MB、校验值来自 `registry.npmjs.org`，以 `node.exe …npm-cli.js install --global --prefix …` 安装，npm.cmd 修复生效；npm 解包 `ENOSPC` 退出码 1。
+  - 2026-11-14 按用户「删我们的测试文件和之前安装的残留和旧插件的安装包」清理 Windows：先列清单预演，再删除 106 项共 2,187 MB（10 个旧 rc3 安装目录及其中的安装前备份、desktop-audit 下 45 个探针／预览目录、旧 tgz、agy 安装文件、备份 tar、zcode zip、插件 downloads 下 3 个 local-* 残留），C 盘由 0.00 GB 升到 2.15 GB；保留当前 rc3-3ab3d26、脚本与 observer 启动器，复跑空闲检查各路径仍有效。随后按用户「pnpm共享缓存也清掉」用 DSH 自带 pnpm 11.28.5 执行 `store prune`（退出码 0，删 2540 个未被引用的文件、96 个包、1.6 GB），仓库余 54 MB，C 盘升到 3.67 GB；已装插件 1229/1229 文件哈希仍一致，Desktop（pid 3672）照常运行。
+  - Windows C 盘剩余 0.00 GB（D 盘 291 GB），Hermes 与 Pi 的最终安装待腾出空间后复测；Hermes 进度行仍显示「超时未完成会停止官方更新，改由插件下载」，随 8.4 修正。
 - [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
 - [ ] 6.4 13.5 遗留：接管下载期间取消
+
+## 8. Hermes 慢速接管 〔后端｜10h｜前置 4〕
+- [x] 8.1 按阶段判慢：以最新回执为准并核对 pid；fetch 用 tmp_pack（首字节宽限 60 秒、30 秒无增长、60 秒均速 <100 KB/s），工具下载用 `cache/partials/*.part`，uv 与 Node 依赖用缓存与日志 120 秒无变化；apply、restart 不判慢
+  - 2026-11-14 审查修正：只读核对本机 Hermes pm/downloader.py 的 truncate 预分配、范围覆盖及 .ranges 持久化检查点；工具停滞改为 .part 元数据、.ranges 和完成文件连续 30 秒无活动。cacheGrew 只计完成文件新增或字节增长，排除预分配逻辑长度、检查点及 PM .staging-*，包含 tools 下已发布的校验工件和工具内容。
+  - 新增模拟验证覆盖 128 MiB 预分配分片在 mtime 或 .ranges 持续变化时不误停、完全不变满 30 秒才停、PM 完成文件延续活动，以及完成文件允许重跑而单纯预分配拒绝重跑。最终类型检查通过；全套 CLI management 回归 30 个文件、881/881 测试通过。
+  - 2026-11-14 已实现：hermes-watch.ts 与 hermes-observation.ts 按状态、日志和最新 mtime 回执识别阶段，廉价核对 pid/writer_pid；识别阶段结束标记及旧版 PM 子回执，排除已死父进程 running 回执。
+  - 模拟验证覆盖 fetch 首字节 60 秒、无增长 30 秒及 60 秒低均速，工具 .part 30 秒，uv/pnpm 缓存与日志 120 秒全部静止；apply/restart 超过 20 分钟仍不因看门狗中止。缓存元数据扫描有界并限并发，模拟服务的 HERMES_HOME 已隔离到临时目录。
+- [x] 8.2 fetch 接管：按稳定标签分段预取（`--no-write-fetch-head`、`--negotiation-tip`），每段受看门狗约束、慢了只重取当前段；校验目标 sha；交回 `hermes update --yes`；进度「第 k/N 段」加已接收字节
+  - 2026-11-14 审查修正：只读核对 expose_pm_git、PM Git binary_rel/store_entry、lock/facts 与 runtimeDir 布局；新增 hermes-git.ts，Windows 优先解析根内的 PM pin/facts Git，验证普通文件及父目录、拒绝链接和越界路径，缺失时回退 backend PATH Git，POSIX 使用 PATH Git。模拟覆盖 x64/arm64 未记录 facts 的已安装 pin、已记录 Git、自定义根内 runtimeDir、缺失、链接、目录及根外拒绝。
+  - fetch 新增空 --refmap= 与 --no-prune，并以 -c 关闭 fetch.prune、fetch.pruneTags、remote.origin.prune 和 remote.origin.pruneTags，避免用户 refmap/pruning 配置写引用；完整 argv 模拟断言已更新。代理继承不变，Hermes 接管阶段明确说明分段拉取后交回官方更新；模拟断言 officialFailedAt 不存在、resumeCount 始终为 0、retryCount 仅记录本段 0–3 次重试。服务四种下载源的首次执行及失败重跑均通过 spy 确认不读写 ChannelMemory，磁盘无 channel-memory.json。
+  - 审查修正验证：corepack pnpm typecheck 输出 Host/Client typecheck passed against DSH 0.2.2-rc.3；关联两文件 144/144 模拟用例通过；corepack pnpm exec vitest run tests/cli-management* 按已批准的沙箱外方式执行，Test Files 30 passed (30)、Tests 881 passed (881)、Duration 21.74s。未运行真实 Hermes 或网络 Git，未改 src/client、8.4/8.5，未提交或推送。
+  - 2026-11-14 已实现：Hermes 退出确认后由 backend 解析 PATH Git，在 checkout 执行 ls-remote、按稳定标签排序的 fetch 和 cat-file；argv 保留 no-tags/no-write-fetch-head、上一段提交与 HEAD negotiation-tip，并关闭自动 gc/maintenance，Windows 添加 appendAtomically=false。继承全部宿主代理环境，不写引用、工作区或索引。
+  - 目标 SHA 依次取计划、当前回执、官方精确发布标签的 commit 记录；标签 peeled SHA 不匹配或 cat-file 失败时拒绝。每段最多重试 3 次，成功段不重取；进度通过共享 schema 校验，提供 takeover、原因、段数和 unknown-total 字节。
+  - 模拟验证覆盖完整停止确认→分段预取→校验→同 argv 重跑、SHA 缺失/不匹配、发布记录/回执回退、当前段重试成功与耗尽、代理保留、Windows 参数及预取取消等待进程退出。
+- [x] 8.3 依赖段停滞停掉重跑，最多 3 次且每次须有新落盘；Windows 最终失败时提示网关可能暂停；保留 5 分钟兜底与退出码 2 不重跑
+  - 2026-11-14 已实现：依赖停滞后比较每次运行前后的缓存内容，有新增落盘才允许重跑，最多 3 次；普通失败保留一次兜底，退出码 2 不重跑；保留 5 分钟无活动与 20 分钟活动续期。Windows 预取失败给予一次官方恢复但保留原失败，最终失败输出网关可能暂停提示。
+  - 模拟验证覆盖零增长拒绝、仅首轮增长、连续增长到 3 次上限、缓存 mtime 变化不算增长、退出码 2、完整更新预取取消、清理未确认禁止后续进程与私有状态隔离；所有退出路径停止轮询并复用进程范围确认。
+  - 最终验证：corepack pnpm typecheck 通过（Host/Client，DSH 0.2.2-rc.3）；corepack pnpm exec vitest run tests/cli-management* 在已批准的沙箱外运行通过 30 个文件、869 个测试。首轮沙箱中的 Pi 环回 listen EPERM 已通过沙箱外重跑排除；Hermes 真实缓存读取造成的模拟超时已通过临时 HERMES_HOME 隔离和扫描优化修正。
+  - 隔离构建 corepack pnpm build:preview 通过，产物仅在 .cache/preview-package，未更新 Desktop 链接；本变更严格校验通过。
+  - 证据边界：Hermes 回归均为标注「模拟」的临时文件和进程后端，未运行真实 Hermes、网络 Git、账号或模型；Windows 实机 GitHub 预取和依赖恢复保留在 8.5。
+- [x] 8.6 Hermes npm 依赖跟随下载源：非「跟随」时以 `npm_config_registry` 执行 `hermes update --yes`（含接管后重跑）；「跟随」不设置；模拟用例覆盖四种下载源
+  - 2026-11-14 已实现：service 在操作开始快照下载源，非 follow 时把 effectiveRegistry 作为 npmRegistry 选项传入 runHermesUpdate；首次执行、普通失败、fetch 接管、依赖停滞和 Windows 恢复均使用同一执行点设置 npm_config_registry。follow 不增加该变量，未修改代理环境。README.md 与 doc/design.md 已同步来源边界及 Node 安装指纹影响。
+  - 模拟验证：cli-management-all-updates.test.ts 覆盖 follow/official/npmmirror/custom 四种设置的首次执行与失败重跑；cli-management-hermes-takeover.test.ts 额外核对 fetch 接管及依赖停滞重跑保留 registry。三个关联测试文件合计 139/139 通过；最终全套为 30 文件、869/869，通过类型检查。
+- [x] 8.4 前端：Hermes 官方阶段提示如实描述规则，接管段复用现有步数条与字节显示，不新增控件
+  - Hermes 官方渠道的提示改为「拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑」（含英文），其他 CLI 保持原提示；接管段沿用 `currentStep/totalSteps/stepName` 与已接收字节，前端未新增控件。新增模拟用例覆盖阶段与字节两种 Hermes 进度；`vitest run tests/cli-update-page.test.tsx tests/client-i18n.test.tsx` 66 项通过，`corepack pnpm typecheck` 通过。
+  - Codex 审查（gpt-6-astra high）指出前端两处：Hermes 接管沿用通用说明，误称「删除半成品」「7 天内直接接管」，续传与重试提示写「最多 200 次」；正常 6 步进度分支不显示规则提示。已改：Hermes 接管说明为「{原因}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。」；重试提示为「拉取过慢时只重取当前一段，每段最多 3 次；依赖停滞时重跑官方更新，最多 3 次」；Hermes 不显示字节续传次数；6 步分支也显示规则提示。用例扩到阶段、字节、6 步与接管四种情形，66 项通过，类型检查通过。
+- [ ] 8.5 Windows 实机：对 GitHub 真实远端分段预取后官方 fetch 不再下载；依赖段停掉重跑能补完；记录回执变化
 
 ## 7. 待决定与后续调研 〔产品｜2h〕
 - [x] 7.1 Grok 接管校验强度

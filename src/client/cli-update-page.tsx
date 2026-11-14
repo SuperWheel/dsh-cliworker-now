@@ -449,9 +449,12 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
   if (!progress) return null
   const name = CLI_LABELS[operation.cli]
   const official = progress.channel === 'official'
+  // Hermes has no replaceable package: slow fetch → plugin prefetches in segments; stalled deps → stop and rerun (决定 8).
+  const hermes = operation.cli === 'hermes'
+  const hermesRule = t('拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑')
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
-    <Tooltip label={t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
+    <Tooltip label={hermes ? t('拉取过慢时只重取当前一段，每段最多 3 次；依赖停滞时重跑官方更新，最多 3 次') : t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
       <span className="cwn-update-meta-side" tabIndex={0}>
         {t('已自动重试 {count} 次', { count: progress.retryCount })}
       </span>
@@ -465,15 +468,18 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     </Tooltip>
   )
   // Official runs never resume, so their count would always read 0.
-  const side = retries ?? (official ? null : resumes)
+  // Hermes never resumes bytes (git has no Range); only bounded reruns are shown.
+  const side = retries ?? (official || hermes ? null : resumes)
 
   const switched = progress.channel === 'takeover' ? switchReason(progress.reason) : undefined
   const callout = switched && (
     <div className="cwn-update-callout" role="note">
-      {t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
-        reason: switched,
-        cli: name,
-      })}
+      {hermes
+        ? t('{reason}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。', { reason: switched })
+        : t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
+            reason: switched,
+            cli: name,
+          })}
     </div>
   )
   /** `clip`: untrusted CLI text kept to one line with the full text on hover. */
@@ -516,7 +522,7 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     const percent = Math.min(100, Math.round((downloaded / total) * 100))
     const parts = [t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()]
     if (progress.fileCount !== undefined && progress.fileCount > 1) parts.unshift(t('{count} 个文件', { count: progress.fileCount }))
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
     body = (
       <div className="cwn-update-progress">
         <div
@@ -545,6 +551,7 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     }
     // The official CLI's own last line explains the step; Host notes for plugin downloads would only repeat it.
     if (official && stageText && stageText !== steps.name) hint(stageText, true)
+    if (official && hermes) hint(hermesRule)
     body = (
       <div className="cwn-update-progress">
         {steps.total <= SEGMENT_LIMIT ? (
@@ -563,11 +570,11 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     )
   } else if (downloaded !== undefined) {
     // No denominator: never a percentage, only what has really arrived.
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
     body = <div className="cwn-update-progress">{meta([receivedText(downloaded), ...transferParts()].join(' · '), side)}</div>
   } else if (state === 'none' || progress.channel || stageText) {
     // Phase only: the CLI's own stage line, no bar. The row already shows 「已用时」.
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
     body = stageText || retries ? <div className="cwn-update-progress">{meta(stageText ?? '', retries)}</div> : null
   } else {
     body = <div className="cwn-update-progress">{meta(t('正在执行，下载进度无法读取'), retries)}</div>

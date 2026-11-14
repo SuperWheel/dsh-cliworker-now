@@ -111,7 +111,7 @@ Windows 上已验收的四项，也从「接管优先」改为这一流程。在
 | OpenCode | macOS、Linux | 未调研，只显示阶段 | 现有描述 | (a) | 迁移 |
 | Grok | 全部 | 只显示阶段（官方无可观测暂存） | 响应头 md5（base64）加长度，`x.ai/cli` 与 GCS 双源；冒烟 `--version` 含目标版本；平台签名必做（macOS TeamIdentifier 5Y6N3AJ54S，Windows Authenticode CN=X.AI LLC） | Unix 为 (c) `downloads/grok-<v>-<平台>` 加 `bin/grok`、`bin/agent` 链接；Windows 为 (b) 复制两份，grove 三件全有或全无，MinGit 版本目录已在则跳过 | 新增（决定 7） |
 | Pi | 全部（托管布局） | 阶段文字加包计数（第 N/122 个包） | 版本锁文件 122 个 tarball，sha512（8 个取自发布清单），长度取 Range 0-0 | (a) 环回 registry：插件下载校验后经 127.0.0.1 临时服务交 `pi update --self` | 新增（决定 7） |
-| Hermes | 全部 | 阶段进度条：回执 `stages[]` 的 6 步（plan、snapshot、apply、deps、build、restart）显示「第 N/6 步」加日志最新阶段行；fetch 阶段另显示 `.git/objects/pack/tmp_pack_*` 已接收字节（无总量）；已用时间 | 不适用 | (e) | 不接管；失败后读 `stop_class`、自动重跑一次（决定 7） |
+| Hermes | 全部 | 阶段进度条：回执 `stages[]` 的 6 步（plan、snapshot、apply、deps、build、restart）显示「第 N/6 步」加日志最新阶段行；fetch 阶段另显示 `.git/objects/pack/tmp_pack_*` 已接收字节（无总量）；已用时间 | 分段预取 git（决定 8） | (e) | 慢了就接管：fetch 段由插件分段预取后交回官方；依赖段停滞则停掉重跑（决定 8） |
 | CodeBuddy | 全部 | 未调研 | 未调研 | — | 后续调研 |
 
 ### 决定 5：放置的安全边界
@@ -165,6 +165,31 @@ Windows 上已验收的四项，也从「接管优先」改为这一流程。在
 
   总时限为 20 分钟，日志或回执有活动就续期；日志和回执连续 5 分钟都无变化，判定停滞。失败后读 `stop_class` 给出原因，自动重跑一次，仍失败就提示用户。退出码 2（已有更新在运行）不重跑。
 
+
+### 决定 8：Hermes 慢了就接管（2026-11-14 用户改定）
+
+用户原话：「hermes我允许接管，只要下的太慢就接管」。起因是 Windows 实机：Hermes 第一次 git fetch 失败（`curl 56 schannel`），重跑后整次更新超过 7 分钟。本决定取代决定 7 中「Hermes 不接管」一条，阶段进度条保留。调研报告见 `.cache/cli-update-research/task-p/report-hermes-takeover.md`（不入 Git）。
+
+Hermes 没有可替换的发布包，所以接管的含义是：插件预取并校验内容，再让 `hermes update --yes` 用这些内容自己完成安装。插件不替 Hermes 改检出、依赖、配置或服务。
+
+- **判慢按阶段。** 阶段取自状态文件、`update.log` 和最新修改的回执；0.21.7 在 apply 之后会把剩余工作交给新树的子进程，子进程另开回执，所以以最新回执为准，并核对其中的 pid 是否存活。
+  - fetch：沿用 `tmp_pack_*` 增长量；首字节前宽限 60 秒，之后 30 秒无增长、或 60 秒均速低于 100 KB/s 判慢。
+  - deps 中的工具下载：`<Hermes 根>/cache/partials/*.part` 30 秒无增长判慢。
+  - uv 与 Node 依赖：解包、链接、编译期间没有下载，不按均速判；缓存（`cache/uv`、`cache/pnpm/store`）与日志连续 120 秒都无变化才判停滞。
+  - plan、snapshot、build 只受总预算约束；apply 与 restart 不判慢，不中途停止。
+- **fetch 接管：分段预取。** 确认 Hermes 进程树已退出后，插件用 Hermes 实际使用的 git（参数数组，保留宿主代理变量，`GIT_TERMINAL_PROMPT=0`）：
+  1. `git ls-remote --tags origin` 取当前版本与目标版本之间的稳定标签；
+  2. 逐段执行 `git fetch --progress --no-tags --no-write-fetch-head --negotiation-tip=<上一段> --negotiation-tip=HEAD origin refs/tags/<标签>`，每段受同一看门狗约束，慢了只重取当前段；
+  3. 校验目标标签解出的提交等于计划目标 sha，且 `git cat-file -e <sha>^{commit}` 成立；对象哈希由 git 收包时校验；
+  4. 重新执行同一条 `hermes update --yes`，它的 fetch 变为空操作，其余由 Hermes 完成。
+
+  不写引用、不动工作区和索引，只从 origin 取包（保留部分克隆的 `.promisor` 标记）；不使用 bundle、alternates、浅克隆或 codeload 源码 zip（后者没有长度和摘要）。进度显示「第 k/N 段（标签）」和已接收字节，不显示字节百分比。
+- **依赖段：停掉重跑。** uv 在 `--frozen` 下只按锁文件绝对地址下载，没有可用的挂钩，插件不接管 wheel。判定停滞后停掉 Hermes 再跑一次 `hermes update --yes`；各缓存按文件保留，相当于文件粒度续传。最多重跑 3 次，每次都必须比上次多落盘内容才继续。
+- **npm 依赖跟随下载源（2026-11-14 用户定「加，跟随下载源」）。** Hermes 官方读取 `npm_config_registry`（或 `.npmrc` 的 `registry`），把锁文件里的 npm 地址换到该 registry，内容仍由锁文件的 sha512／sha256 校验（`pm/index_config.py` 的 `npm_registry_url`、`pm/artifact_mirror.py`）。插件下载源为「跟随」时不额外设置，Hermes 自己读用户的 npm 配置；为「官方」「npmmirror」「自定义」时，以 `npm_config_registry=<该 registry>` 执行 `hermes update --yes`（含接管后的重跑）。代价：该变量进入 Hermes 可复用安装的指纹，之后不带它的更新会重装一次 Node 依赖，包已在本地仓库中，不重新下载。git 代码没有官方镜像，Python wheel 在 `--frozen` 下只按锁文件绝对地址下载，二者不随下载源变化。
+- **Windows 网关。** Windows 在 fetch 之前暂停网关，Hermes 被停后网关保持暂停，直到下一次 `hermes` 运行。所以插件停掉 Hermes 后必须再跑一次 `hermes update --yes`；最终仍失败时，提示用户网关可能处于暂停，需要启动一次 Hermes。
+- **本版不做。** PM 工具预置（`tools/fetch-<sha256>/` 属内部布局，Hermes 自带下载器已能续传、有官方镜像）和 pnpm 环回 registry（未实测，且会改变 Hermes 可复用安装的指纹），待 Windows 实测后再定。
+- **兜底。** 现有「日志和回执连续 5 分钟无活动才停、失败自动重跑一次、退出码 2 不重跑」保留，作为以上规则之外的兜底。
+- **提示文字。** Hermes 官方阶段的提示改为如实描述上述规则，不再套用其他 CLI 的「30 秒没有新数据……改由插件下载」。
 
 ## Implementation Notes（主任务 1–3 的迁移边界）
 

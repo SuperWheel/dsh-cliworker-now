@@ -40,7 +40,7 @@
   - (e) 不接管，只显示阶段。
 - **迁移现有接管。** Windows 上的 Claude、Antigravity、OMP、TRAE CN，以及 macOS 上的 MiMo、OpenCode、OMP，改用统一描述，行为保持不变。Windows 这四项由「接管优先」改为「官方优先 + 失败记忆」。
 - **新增接管**：Kimi（三平台）、Qoder 与 Qoder CN、MiMo（Windows 与 Linux）、Antigravity 与 Claude（macOS 与 Linux）、TRAE CN（macOS 与 Linux）、Codex 独立安装（macOS 与 Linux）。Grok（md5、长度、冒烟测试、平台签名）和 Pi 托管布局（环回 registry 交官方命令）也在本版接管（2026-11-14 用户定，见设计决定 7）。
-- **Hermes 阶段进度条**：Hermes 不接管，进度条按回执的 6 个真实阶段显示「第 N/6 步」，同时显示已用时间。官方失败后读回执说明原因，自动重跑一次，再失败就提示用户。
+- **Hermes 阶段进度条与慢速接管**：进度条按回执的 6 个真实阶段显示「第 N/6 步」，同时显示已用时间。2026-11-14 用户改定「hermes我允许接管，只要下的太慢就接管」：git 拉取慢时由插件分段预取并校验目标提交，再交回 `hermes update` 完成；依赖段停滞时停掉重跑（设计决定 8）。
 - **前端**：
   - 进度区分「官方」和「插件接管」两种来源；
   - 多文件下载显示合计进度；

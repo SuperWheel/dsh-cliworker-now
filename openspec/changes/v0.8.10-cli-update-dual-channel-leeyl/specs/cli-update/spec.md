@@ -106,6 +106,18 @@ Host MUST NOT 伪造百分比；暂存文件不能确定属于本次运行时 MU
 - **WHEN** 用户更新 Hermes
 - **THEN** 进度条按回执的 6 个阶段显示「第 N/6 步」，并显示日志中的真实阶段行和已用时间；fetch 阶段另显示已接收字节，不显示字节百分比。官方失败时读回执给出原因，自动重跑一次（退出码 2 除外），仍失败则提示用户
 
+#### Scenario: Hermes 拉取过慢由插件接管
+- **WHEN** Hermes 处于 fetch 阶段，首字节宽限后 30 秒无增长或 60 秒均速低于 100 KB/s
+- **THEN** 插件停止 Hermes 并确认进程树退出，用 git 按稳定标签分段预取，校验目标标签解出的提交等于计划目标 sha 后，重新执行 `hermes update --yes` 完成安装；插件 MUST NOT 写引用、改工作区或索引，MUST NOT 使用没有摘要的源码 zip；进度只显示「第 k/N 段」与已接收字节
+
+#### Scenario: Hermes npm 依赖跟随下载源
+- **WHEN** 用户的下载源设为 npmmirror、官方或自定义，并更新 Hermes
+- **THEN** 插件以 `npm_config_registry=<该 registry>` 执行 `hermes update --yes`（含重跑），内容由 Hermes 按锁文件摘要校验；下载源为「跟随」时插件 MUST NOT 设置该变量
+
+#### Scenario: Hermes 依赖段停滞
+- **WHEN** Hermes 处于依赖阶段，缓存与日志连续 120 秒都无变化
+- **THEN** 插件停掉 Hermes 后重跑 `hermes update --yes`，最多 3 次，且每次都必须比上次多落盘内容；apply 与 restart 阶段 MUST NOT 被判慢而中途停止。Windows 上最终仍失败时，提示用户网关可能处于暂停
+
 #### Scenario: Grok 接管校验
 - **WHEN** Grok 官方渠道被判为不可用，且四项接管前提都满足
 - **THEN** 插件按响应头 md5 与长度校验工件，冒烟 `--version` 含目标版本，平台签名有效后才放置；任一项不通过就拒绝放置

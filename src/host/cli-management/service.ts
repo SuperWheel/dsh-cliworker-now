@@ -383,7 +383,8 @@ export class CliManagementService {
     // Check external workers/accounts and acquire the lease in this same JS turn.
     this.deps.assertUpdateAllowed?.(cli)
     const release = this.maintenance.begin(cli, () => this.deps.busy?.(cli) ?? { workers: 0, accounts: false })
-    const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion, automaticSources: this.cache.settings().source !== 'custom' }
+    const selected = { registry: this.effectiveRegistry(), target: this.entry(cli).latestCompatibleVersion, automaticSources: this.cache.settings().source !== 'custom',
+      hermesRegistry: this.cache.settings().source === 'follow' ? undefined : this.effectiveRegistry() }
     const op: CliUpdateOperation = { id: randomUUID(), cli, intent, phase: 'preparing', startedAt: Date.now(), outputTail: '' }
     const output = (value: string) => { op.outputTail = outputTail(op.outputTail + value); this.changed() }
     this.requests.set(requestId, { signature, operation: op })
@@ -498,7 +499,16 @@ export class CliManagementService {
           // The installation's own home (HERMES_HOME or native default), never the plugin's account home:
           // `hermes update` writes logs/receipts there (2026-11-14 Windows 实机：账号目录导致看不到阶段、5 分钟误杀).
           const home = hermesHomeDirectory()
-          await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress })
+          await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress,
+            beforeVersion: plan.beforeVersion, targetVersion: plan.targetVersion, npmRegistry: selected.hermesRegistry,
+            releaseSha: async (version, control) => {
+              // A release's target_commitish may be "main". Resolve the exact stable tag to a
+              // commit through the official API instead of treating that branch name as a SHA.
+              const record = await this.releases.json(`https://api.github.com/repos/NousResearch/hermes-agent/commits/v${encodeURIComponent(version.replace(/^v/, ''))}`, control) as { sha?: unknown }
+              if (typeof record?.sha !== 'string' || !/^[a-f0-9]{40}$/i.test(record.sha)) throw new CliOperationError('INTEGRITY_MISMATCH', 'Hermes 发布标签缺少可核对的目标提交')
+              return record.sha
+            },
+          })
           verified = await verify(signal)
         } else if (dualChannel) {
           const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity)
