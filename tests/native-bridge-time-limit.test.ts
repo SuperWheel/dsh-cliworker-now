@@ -1,8 +1,9 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, onTestFinished } from 'vitest'
 import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { prepareNativeWorker } from '../src/host/native-worker.ts'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
 import { workerArguments } from '../src/host/adapters.ts'
@@ -28,8 +29,8 @@ async function bridge(
     cli?: 'antigravity' | 'claude'
     stderrEveryMs?: number
     keepAliveEveryMs?: number
-    /** Runs once the synthetic CLI has started under the bridge. */
-    whileRunning?: (launch: Awaited<ReturnType<typeof prepareNativeWorker>>) => Promise<void>
+    /** Runs only after the real synthetic child reports readiness. */
+    whileRunning?: (launch: Awaited<ReturnType<typeof prepareNativeWorker>>, clock: { advance: (ms: number, finish?: boolean) => Promise<void>; renewed: () => Promise<void> }) => Promise<void>
   } = {},
 ) {
   const cli = output.cli ?? 'antigravity'
@@ -45,6 +46,7 @@ import { writeFileSync } from 'node:fs'
 // The runner first confirms Antigravity's native modes from --help.
 if (process.argv.includes('--help')) { console.log('  --mode Set mode (accept-edits, auto, plan)'); process.exit(0) }
 writeFileSync(${JSON.stringify(pidFile)}, String(process.pid))
+process.stderr.write('SIMULATED ready\\n')
 ${output.stderrEveryMs ? `setInterval(() => process.stderr.write('SIMULATED progress\\n'), ${output.stderrEveryMs})` : ''}
 ${output.keepAliveEveryMs ? `setInterval(() => process.stdout.write(JSON.stringify({ type: 'keep_alive' }) + '\\n'), ${output.keepAliveEveryMs})` : ''}
 setInterval(() => {}, 60000)
@@ -66,26 +68,75 @@ setInterval(() => {}, 60000)
     },
     { ...DEFAULT_CONFIG, timeLimit: { deadlineAt: startedAt + limit.totalMs, ...limit } },
   )
-  try {
-    const child = spawn(launch.argv[0]!, launch.argv.slice(1), {
-      cwd: directory,
-      env: { ...process.env, ...launch.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
+  const bootstrap = fileURLToPath(new URL('./fixtures/clocked-native-bridge.mjs', import.meta.url))
+  const child = spawn(launch.argv[0]!, [bootstrap, ...launch.argv.slice(1), String(startedAt)], {
+    cwd: directory,
+    env: { ...process.env, ...launch.env },
+    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+  })
+  let stdout = '', stderr = '', elapsed = 0, sequence = 0
+  child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
+  const closed = new Promise<number | null>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', resolve)
+  })
+  // A failed startup reports the bridge evidence instead of polling a missing PID forever.
+  const exitedEarly = closed.then(() => { throw new Error(`Bridge exited before readiness: ${stdout} ${stderr}`) })
+  void exitedEarly.catch(() => {})
+  const waitMessage = (matches: (message: any) => boolean) => {
+    let listener: (message: any) => void
+    const received = new Promise<any>(resolve => {
+      listener = message => { if (matches(message)) resolve(message) }
+      child.on('message', listener)
     })
-    let stdout = ''
-    child.stdout.setEncoding('utf8').on('data', (chunk) => (stdout += chunk))
-    child.stderr.resume()
-    const closed = new Promise<number | null>((resolve) => child.once('close', resolve))
-    if (output.whileRunning) {
-      while (!existsSync(pidFile)) await new Promise((resolve) => setTimeout(resolve, 10))
-      await output.whileRunning(launch)
+    return Promise.race([received, exitedEarly]).finally(() => child.off('message', listener))
+  }
+  const clock = {
+    async advance(milliseconds: number, finish = false) {
+      const id = ++sequence
+      const advanced = waitMessage(message => message.type === 'advanced' && message.id === id)
+      child.send({ id, milliseconds, finish })
+      elapsed = (await advanced).now - startedAt
+    },
+    async renewed() {
+      // Observe the real runner rearming the idle timer after consuming native output.
+      await waitMessage(message => message.type === 'scheduled' && message.delay === limit.idleMs)
+    },
+  }
+  const ready = new Promise<void>(resolve => {
+    child.stderr.setEncoding('utf8').on('data', chunk => {
+      stderr += chunk
+      if (stderr.includes('SIMULATED ready')) resolve()
+    })
+  })
+  let cleanup: Promise<void> | undefined
+  const close = () => cleanup ??= (async () => {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGTERM')
+      await closed
     }
+    await launch.cleanup()
+  })()
+  onTestFinished(close)
+  try {
+    await Promise.race([ready, exitedEarly])
+    if (output.whileRunning) await output.whileRunning(launch, clock)
+    else if (output.stderrEveryMs || output.keepAliveEveryMs) {
+      // Advance less than one idle window, then wait for native output to renew it.
+      // Total time still reaches exactly the original shared deadline.
+      while (elapsed + 500 < limit.totalMs) {
+        await clock.advance(500)
+        await clock.renewed()
+      }
+      await clock.advance(limit.totalMs - elapsed, true)
+    } else await clock.advance(limit.idleMs, true)
     const code = await closed
     const pid = Number(readFileSync(pidFile, 'utf8'))
     const frames = stdout.trim().split('\n').map((line) => JSON.parse(line))
-    return { code, frames, result: frames.at(-1), elapsed: Date.now() - startedAt, cliAlive: alive(pid) }
+    return { code, frames, result: frames.at(-1), elapsed, cliAlive: alive(pid) }
   } finally {
-    await launch.cleanup()
+    // Preserve process cleanup even if a readiness/control assertion fails.
+    await close()
   }
 }
 
@@ -93,14 +144,14 @@ it('stops a silent CLI on the idle window and exits only after the CLI process i
   const run = await bridge({ totalMs: 20_000, idleMs: 400 })
   expect(run.code).toBe(0)
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task idle timed out' })
-  expect(run.elapsed).toBeLessThan(15_000)
+  expect(run.elapsed).toBe(400)
   expect(run.cliAlive).toBe(false)
 }, 30_000)
 
 it('renews the idle window on native output and stops on the shared deadline instead', async () => {
   const run = await bridge({ totalMs: 1500, idleMs: 600 }, { stderrEveryMs: 100 })
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task timed out' })
-  expect(run.elapsed).toBeGreaterThanOrEqual(1400)
+  expect(run.elapsed).toBe(1500)
   expect(run.cliAlive).toBe(false)
 }, 30_000)
 
@@ -109,22 +160,25 @@ it('renews the idle window on heartbeats a runner drops before forwarding', asyn
   const run = await bridge({ totalMs: 1500, idleMs: 600 }, { cli: 'claude', keepAliveEveryMs: 100 })
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task timed out' })
   expect(run.frames.some((frame) => JSON.stringify(frame).includes('keep_alive'))).toBe(false)
+  expect(run.elapsed).toBe(1500)
   expect(run.cliAlive).toBe(false)
 }, 30_000)
 
 it('pauses the idle window while the Host holds it for a DSH tool approval', async () => {
   let releasedAt = 0
   const run = await bridge({ totalMs: 20_000, idleMs: 400 }, {
-    whileRunning: async (launch) => {
+    whileRunning: async (launch, clock) => {
       await launch.holdIdle('idle-1', 'hold')
       // Three idle windows pass while the user decides.
-      await new Promise((resolve) => setTimeout(resolve, 1200))
+      await clock.advance(1200)
       releasedAt = Date.now()
       await launch.holdIdle('idle-1', 'release')
+      await clock.advance(399)
+      await clock.advance(1, true)
     },
   })
   expect(run.result).toMatchObject({ type: 'result', status: 'ERROR', error: 'Native task idle timed out' })
   expect(releasedAt).toBeGreaterThan(0)
-  expect(run.elapsed).toBeGreaterThanOrEqual(1500)
+  expect(run.elapsed).toBe(1600)
   expect(run.cliAlive).toBe(false)
 }, 30_000)

@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +11,7 @@ import { extractTelemetry } from '../src/host/telemetry.ts'
 
 // 模拟 CLI、模型、会话与审批；不使用真实账号或真实模型。
 const roots: string[] = []
-afterEach(() => { for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }) })
+afterEach(() => { vi.useRealTimers(); for (const p of roots.splice(0)) rmSync(p, { recursive: true, force: true }) })
 const fixture = `
 import {createInterface} from 'node:readline';
 import {appendFileSync} from 'node:fs';
@@ -34,6 +34,7 @@ const finish=()=>reply(pending,{stopReason:s==='partial'?'max_tokens':'end_turn'
 if(!process.argv.includes('acp')){
  if(s==='host-sandboxless')process.stderr.write('warning: --mode auto is not available because the terminal sandbox is not available on this host; continuing in the default mode.\\n');
  else if(s!=='probe-silent'){if(s==='account-auto')process.stderr.write('warning: --mode auto is not available for this account; continuing in the default mode.\\n');send({event:'init',conversation_id:id,init:{model:'simulated-low'}});}
+ else process.stderr.write('SIMULATED probe-ready\\n');
 }
 createInterface({input:process.stdin}).on('line',async line=>{
  const v=JSON.parse(line);log(v);
@@ -119,7 +120,36 @@ async function run(f: ReturnType<typeof setup>, decide = 'allow-once', abortAt?:
     if (abortAt === 'text' && frame.event?.kind === 'assistant') controller.abort(new Error('模拟停止'))
     if (abortAt === 'background' && /自动发送第 1 次跟进/.test(frame.event?.text ?? '')) controller.abort(new Error('模拟停止'))
   }, controller.signal, (chunk: Buffer) => { stderr += chunk.toString('utf8') })
-  try { await (auto ? runNativeAgyAuto(f.config, io) : runNativeAgyAcp(f.config, io, background ? { background } : {})) } catch (e) { error = e }
+  const openStdio = io.openStdio.bind(io)
+  io.openStdio = async (argv: string[], options: any = {}) => {
+    if (options.reportStderr !== false) return openStdio(argv, options)
+    // SIMULATED sandbox discovery: its 250 ms observation budget is not an OS
+    // startup benchmark. Keep actual pipes/probe parsing, and advance only after
+    // the child reports init, a native warning, or readiness with no report.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    let probeStderr = ''
+    const observed = (milliseconds = 0) => {
+      vi.advanceTimersByTime(milliseconds)
+      vi.useRealTimers()
+    }
+    return openStdio(argv, {
+      ...options,
+      onMessage(value: any) {
+        options.onMessage?.(value)
+        if (value?.event === 'init' && vi.isFakeTimers()) observed(50)
+      },
+      onStderr(chunk: Buffer) {
+        options.onStderr?.(chunk)
+        if (!vi.isFakeTimers()) return
+        probeStderr += chunk.toString()
+        if (probeStderr.includes('warning: --mode auto is not available')) observed()
+        else if (probeStderr.includes('SIMULATED probe-ready')) observed(Math.min(10000, f.config.timeoutMs / 4))
+      },
+    })
+  }
+  try { await (auto ? runNativeAgyAuto(f.config, io) : runNativeAgyAcp(f.config, io, background ? { background } : {})) }
+  catch (e) { error = e }
+  finally { vi.useRealTimers() }
   await io.close(error)
   return { frames, error, result: frames.at(-1), rows: f.rows(), stderr }
 }

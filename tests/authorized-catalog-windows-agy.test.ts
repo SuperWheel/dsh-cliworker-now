@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
@@ -13,6 +13,15 @@ vi.mock('node:os', async (actual) => ({
   homedir: () => state.home,
 }))
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+const probeRoots = new Set<string>()
+// Synthetic handles can deliberately refuse exit confirmation. Production must
+// retain their directory; this fixture still owns it after assertions finish.
+function ownProbe(spec: Parameters<ProcessBackend['spawn']>[0]) {
+  if (spec.env?.TEMP) {
+    expect(spec.env.TEMP).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+    probeRoots.add(spec.env.TEMP)
+  }
+}
 beforeEach(() => {
   state.home = mkdtempSync(join(tmpdir(), 'cwn-agy-operation-synthetic-'))
   state.keychain = undefined
@@ -22,6 +31,8 @@ beforeEach(() => {
 afterEach(() => {
   Object.defineProperty(process, 'platform', platform)
   vi.unstubAllEnvs()
+  for (const root of probeRoots) rmSync(root, { recursive: true, force: true })
+  probeRoots.clear()
   rmSync(state.home, { recursive: true, force: true })
 })
 const account = (subject = 'a') => ({ state: 'authenticated', principalHash: subject.repeat(64) })
@@ -37,6 +48,7 @@ function fixture(projections: object[] = [account(), account()], onModels?: () =
   const backend: ProcessBackend = {
     resolveExecutable: vi.fn(async () => 'synthetic-agy'),
     spawn: vi.fn((spec) => {
+      ownProbe(spec)
       let output: string
       let exitCode = 0
       if (spec.argv.some((arg) => arg.endsWith('windows-agy-account.ps1'))) {
@@ -78,11 +90,22 @@ it.each(['win32', 'darwin'] as const)('AGY background current model discovery sc
   const catalog = await catalogFor('antigravity', f.backend, DEFAULT_CONFIG, state.home, signal())
   expect(catalog.models.map(model => model.id)).toEqual(['synthetic-model'])
   const launches = vi.mocked(f.backend.spawn).mock.calls.map(([spec]) => spec)
-  expect(launches.find(spec => spec.argv[1] === 'models')?.env)
-    .toEqual(system === 'win32' ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {})
+  const environment = launches.find(spec => spec.argv[1] === 'models')!.env
+  if (system === 'win32') {
+    expect(environment).toEqual({ AGY_CLI_DISABLE_AUTO_UPDATE: 'true', TEMP: expect.any(String), TMP: expect.any(String) })
+    expect(environment!.TEMP).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+    expect(environment!.TMP).toBe(environment!.TEMP)
+    expect(existsSync(environment!.TEMP!)).toBe(false)
+  } else expect(environment).toEqual({})
   for (const spec of launches.filter(spec =>
-    spec.argv[0] === '/usr/bin/security' || spec.argv.some(arg => arg.endsWith('windows-agy-account.ps1'))))
-    expect(spec.env).toBeUndefined()
+    spec.argv[0] === '/usr/bin/security' || spec.argv.some(arg => arg.endsWith('windows-agy-account.ps1')))) {
+    if (system === 'win32') {
+      expect(spec.env).toEqual({ TEMP: expect.any(String), TMP: expect.any(String) })
+      expect(spec.env!.TMP).toBe(spec.env!.TEMP)
+      expect(spec.env!.TEMP).not.toBe(environment!.TEMP)
+      expect(existsSync(spec.env!.TEMP!)).toBe(false)
+    } else expect(spec.env).toBeUndefined()
+  }
   expect(process.env.AGY_CLI_DISABLE_AUTO_UPDATE).toBe('false')
   for (const handle of f.handles) expect(handle.waitForExit).toHaveBeenCalledOnce()
 })
@@ -188,6 +211,7 @@ it.each([true, false])(
     const backend: ProcessBackend = {
       resolveExecutable: vi.fn(async () => 'synthetic-agy'),
       spawn: vi.fn((spec) => {
+        ownProbe(spec)
         spec.signal!.addEventListener(
           'abort',
           () => {
@@ -228,6 +252,9 @@ it.each([true, false])(
     if (confirmed) expect(await result).toBe(cancellation)
     else expect(await result).toBeInstanceOf(ProcessCleanupUnconfirmedError)
     expect(backend.spawn).toHaveBeenCalledOnce()
+    const temporary = vi.mocked(backend.spawn).mock.calls[0]![0].env!.TEMP!
+    expect(existsSync(temporary)).toBe(!confirmed)
+    if (!confirmed) expect(existsSync(join(temporary, `.cliworker-owner-${process.pid}`))).toBe(true)
   },
 )
 

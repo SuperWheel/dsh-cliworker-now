@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Readable } from 'node:stream'
+import { existsSync } from 'node:fs'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
 import { agyBackgroundEnvironment } from '../src/host/agy-background-environment.ts'
 import { firstPartyEnvironment } from '../src/host/first-party-models.ts'
@@ -47,7 +48,12 @@ it.each(['win32', 'darwin', 'linux'] as const)('AGY background legacy model disc
     .resolves.toEqual([{ id: 'synthetic-model', label: 'Synthetic Model' }])
   const launch = vi.mocked(backend.spawn).mock.calls[0]![0]
   expect(launch.argv).toEqual(['/synthetic/custom-agy', 'models'])
-  expect(launch.env).toEqual(system === 'win32' ? { AGY_CLI_DISABLE_AUTO_UPDATE: 'true' } : {})
+  if (system === 'win32') {
+    expect(launch.env).toEqual({ AGY_CLI_DISABLE_AUTO_UPDATE: 'true', TEMP: expect.any(String), TMP: expect.any(String) })
+    expect(launch.env!.TEMP).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+    expect(launch.env!.TMP).toBe(launch.env!.TEMP)
+    expect(existsSync(launch.env!.TEMP!)).toBe(false)
+  } else expect(launch.env).toEqual({})
   expect(launch.stdio).toEqual({ stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' })
   expect(child.terminate).toHaveBeenCalledOnce()
   expect(child.waitForExit).toHaveBeenCalledOnce()

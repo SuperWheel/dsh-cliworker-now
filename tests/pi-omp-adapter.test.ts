@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile, spawn } from 'node:child_process'
 import { createServer } from 'node:http'
 import { promisify } from 'node:util'
+import { watch } from 'node:fs'
 import {
   mkdtemp,
   mkdir,
@@ -165,7 +166,7 @@ process.stdout.write('omp v16.4.4 --approval-mode=<value> ('+modes+')');process.
 }
 if(process.argv.includes('models')){
 writeFileSync(${JSON.stringify(join(root, 'catalog-natives.json'))},JSON.stringify({natives:process.env.PI_NATIVES_DIR}));
-if(scenario==='catalog-cancel'){writeFileSync(${JSON.stringify(join(root, 'catalog-pid'))},String(process.pid));writeFileSync(${JSON.stringify(join(root, 'catalog-started'))},'STARTED');setInterval(()=>{},1000);process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));}
+if(scenario==='catalog-cancel'){process.on('SIGTERM',()=>setTimeout(()=>{writeFileSync(marker,'STOPPED');process.exit(143)},80));setInterval(()=>{},1000);writeFileSync(${JSON.stringify(join(root, 'catalog-pid'))},String(process.pid));writeFileSync(${JSON.stringify(join(root, 'catalog-started'))},'STARTED');}
 else if(scenario==='catalog-refresh'&&!process.argv.includes('refresh')){process.stdout.write('[]');process.exit(0);}
 else if(scenario==='catalog-refresh'){writeFileSync(join(agent,'refreshed-model-registry.json'),JSON.stringify(${JSON.stringify(catalog)}));process.stdout.write(JSON.stringify(${JSON.stringify(catalog)}));process.exit(0);}
 else if(scenario==='secret-model-error'){process.stdout.write('{SYNTHETIC_TEST_KEY_NOT_A_CREDENTIAL');process.exit(0);}
@@ -831,13 +832,23 @@ describe('Pi/OMP bridge with simulated native RPC processes', () => {
     const { root, input } = await fixture('omp', 'catalog-cancel')
     const { queryNativeCandidates } = await import('../src/host/pi-native-catalog.mjs')
     const controller = new AbortController()
+    // Subscribe before spawning; readiness is published only after the signal
+    // handler and PID exist. A short polling budget races OS process startup.
+    let started!: () => void
+    const ready = new Promise<void>(resolve => { started = resolve })
+    const watcher = watch(root, (_event, name) => { if (name === 'catalog-started') started() })
     const pending = queryNativeCandidates('omp', input.executable, root,
       fixtureEnvironment(root), () => {}, { refresh: true, signal: controller.signal })
     // Attach rejection before cancellation so the test never leaves it unhandled.
     const rejected = expect(pending).rejects.toThrow('无法读取 Pi/OMP 原生模型目录')
-    await vi.waitFor(async () => expect(await readFile(join(root, 'catalog-started'), 'utf8')).toBe('STARTED'))
-    controller.abort()
-    await rejected
+    try {
+      await Promise.race([ready, pending.then(() => { throw new Error('SIMULATED catalog exited before readiness') })])
+      expect(await readFile(join(root, 'catalog-started'), 'utf8')).toBe('STARTED')
+    } finally {
+      watcher.close()
+      controller.abort()
+      await rejected
+    }
     const nativePid = Number(await readFile(join(root, 'catalog-pid'), 'utf8'))
     expect(nativePid).toBeGreaterThan(0)
     expect(() => process.kill(nativePid, 0)).toThrow()

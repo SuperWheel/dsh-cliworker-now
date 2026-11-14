@@ -185,6 +185,15 @@ it('PID-bearing unknown/live locks are not overridden by an empty process snapsh
 it.each(['success','stale-locks','no-receipt','wrong-target','failed','unconfirmed'] as const)('service integration: %s uses post-update verification and never a Hermes version command', async mode => {
   const files = await fixture(), f = serviceFixture(['hermes']); services.push(f)
   vi.stubEnv('HERMES_HOME',files.home)
+  // The service watches package-cache activity after a receipt. Keep those
+  // filesystem observations inside the fixture too: the real user caches can
+  // contain thousands of files and turn a simulated update into a host scan.
+  vi.stubEnv('npm_config_cache', join(f.root, 'npm-cache'))
+  vi.stubEnv('PNPM_HOME', join(f.root, 'pnpm-home'))
+  const caches = await Promise.all([
+    put(join(f.root, 'npm-cache/simulated-package')),
+    put(join(f.root, 'pnpm-home/store/simulated-package')),
+  ])
   if (mode === 'stale-locks') { await put(join(files.home,'.hermes-update-in-progress.lock'),''); await put(join(files.home,'tools/.install.lock'),'') }
   await mkdir(join(files.home,'hermes-agent'),{recursive:true}); await mkdir(join(files.home,'logs/update_receipts'),{recursive:true})
   const identity = {executable:join(files.home,'bin/hermes'),source:'self-update' as const,updateRoot:join(files.home,'hermes-agent'),manifestVersion:'0.21.7',fingerprint:{realpath:join(files.home,'bin/hermes'),size:4,mtimeMs:1}}
@@ -208,4 +217,5 @@ it.each(['success','stale-locks','no-receipt','wrong-target','failed','unconfirm
   expect(result.phase).toBe(mode === 'failed' ? 'failed' : mode === 'unconfirmed' ? 'cleanup-unconfirmed' : 'succeeded')
   expect(await exists(files.marked)).toBe(mode !== 'success' && mode !== 'stale-locks')
   for (const p of files.current) expect(await exists(p)).toBe(true)
+  for (const p of caches) expect(await readFile(p, 'utf8')).toBe('fixture')
 })

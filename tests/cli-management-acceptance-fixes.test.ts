@@ -101,6 +101,9 @@ it('模拟：Pi auto 迁移、后台不做 PATH 迁移、current-version 切换�
   const after = await identifyInstallation('pi', f.backend, f.config, control(), true)
   expect(after?.fingerprint.realpath).toBe(next.target); expect(cache.version('pi', after!.fingerprint)).toBeUndefined()
   expect(await resolveCliExecutable('pi', f.backend, f.config, control())).toBe(next.target)
+  const supported = pi(f, '1.5.2')
+  expect((await identifyInstallation('pi', f.backend, f.config, control()))?.manifestVersion).toBe('1.5.2')
+  expect(await resolveCliExecutable('pi', f.backend, f.config, control())).toBe(supported.target)
   // 1.5.2 is adapted since 2026-11-14; 1.6.0 stands in for an unreviewed release.
   pi(f, '1.6.0')
   expect((await identifyInstallation('pi', f.backend, f.config, control()))?.manifestVersion).toBe('1.6.0')

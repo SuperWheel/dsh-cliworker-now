@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -38,6 +38,13 @@ const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const appx = vi.mocked(findWindowsCodexAppx)
 const desktop = vi.mocked(findWindowsDesktopCli)
 const desktopGui = vi.mocked(windowsOpenCodeDesktopCli)
+const probeRoots = new Set<string>()
+function ownProbe(spec: Parameters<ProcessBackend['spawn']>[0]) {
+  const root = spec.env?.TEMP
+  expect(root).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+  probeRoots.add(root!)
+  return root!
+}
 beforeEach(() => {
   state.home = mkdtempSync(join(tmpdir(), 'synthetic-windows-resolution-'))
   vi.stubEnv('APPDATA', join(state.home, 'Roaming'))
@@ -52,6 +59,10 @@ beforeEach(() => {
 afterEach(() => {
   Object.defineProperty(process, 'platform', platform)
   vi.unstubAllEnvs()
+  // These tests use synthetic processes. Keep the production retention assertion
+  // below, then remove only directories captured from this fixture's own spawns.
+  for (const root of probeRoots) rmSync(root, { recursive: true, force: true })
+  probeRoots.clear()
   rmSync(state.home, { recursive: true, force: true })
 })
 function backend(resolve: (entry: string) => Promise<string>): ProcessBackend {
@@ -441,6 +452,7 @@ describe('Windows default executable fallback without changing other platforms',
         throw new SubprocessExecutableNotFoundError('synthetic missing PATH')
       })
       process.spawn = vi.fn((spec) => {
+        ownProbe(spec)
         spec.signal!.addEventListener(
           'abort',
           () => {
@@ -481,6 +493,8 @@ describe('Windows default executable fallback without changing other platforms',
       const error = await result
       if (confirmed) expect(error).toBe(cancellation)
       else expect(error).toBeInstanceOf(ProcessCleanupUnconfirmedError)
+      const temporary = vi.mocked(process.spawn).mock.calls[0]![0].env!.TEMP!
+      expect(existsSync(temporary)).toBe(!confirmed)
       expect(process.resolveExecutable).toHaveBeenCalledOnce()
     },
   )
@@ -555,13 +569,18 @@ describe('synthetic shared latest Windows PATH resolution', () => {
     const stdout = new PassThrough(), stderr = new PassThrough()
     stdout.end('{"user":"","machine":""}'); stderr.end()
     const terminate = vi.fn(), waitForExit = vi.fn(async () => false)
+    let temporary!: string
     const lookup: ProcessBackend = {
       resolveExecutable: async () => { throw new SubprocessExecutableNotFoundError('Synthetic missing') },
-      spawn: () => ({ stdout, stderr, done: Promise.resolve({ exitCode: 0 }), terminate, waitForExit }) as never,
+      spawn: spec => {
+        temporary = ownProbe(spec)
+        return { stdout, stderr, done: Promise.resolve({ exitCode: 0 }), terminate, waitForExit } as never
+      },
     }
     await expect(resolveCliExecutable('claude', lookup, DEFAULT_CONFIG)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
     // A bounded natural-exit wait, then terminate and the confirming wait.
     expect(terminate).toHaveBeenCalledOnce(); expect(waitForExit).toHaveBeenCalledTimes(2)
+    expect(existsSync(join(temporary, `.cliworker-owner-${process.pid}`))).toBe(true)
   })
   it('keeps explicit known Qoder CN and international native entries isolated', async () => {
     for (const [cli, other] of [['qoder', 'qoderclicn'], ['qodercn', 'qodercli']] as const) {

@@ -22,7 +22,7 @@ import {
   extendedLaunch,
   extendedCatalog,
 } from '../src/host/extended-adapters.ts'
-import { DEFAULT_CONFIG } from '../src/host/process.ts'
+import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError } from '../src/host/process.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 
@@ -442,7 +442,7 @@ describe('extended worker boundaries (simulated protocol)', () => {
           native = join(dirname(env!.OPENCODE_CONFIG_DIR!), 'still-owned')
           writeFileSync(native, 'synthetic')
           chmodSync(native, 0o644)
-          throw new Error('Synthetic cleanup could not confirm quiescence')
+          throw new ProcessCleanupUnconfirmedError({ cause: new Error('SIMULATED unconfirmed process range') })
         }
         await expect(
           extendedCatalog('opencode', '/synthetic/opencode', capture, root, DEFAULT_CONFIG),

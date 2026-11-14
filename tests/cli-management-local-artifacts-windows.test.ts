@@ -21,6 +21,7 @@ vi.mock('node:fs/promises', async original => {
 })
 const platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
 const fixtures: ReturnType<typeof serviceFixture>[] = []
+const probeRoots = new Set<string>()
 const bytes = '模拟 MZ binary', sha256 = createHash('sha256').update(bytes).digest('hex'), sha512 = createHash('sha512').update(bytes).digest('hex'), size = Buffer.byteLength(bytes)
 const version = '1.2.3'
 type Cli = 'claude' | 'antigravity' | 'omp' | 'traecn'
@@ -57,6 +58,10 @@ afterEach(async () => {
   simulated.realpaths.clear()
   Object.defineProperty(process, 'platform', platformDescriptor); vi.unstubAllEnvs()
   for (const f of fixtures.splice(0)) await f.close()
+  // Unconfirmed synthetic handles intentionally retain their query directory.
+  // The test owns those paths, independently of the production retention rule.
+  for (const root of probeRoots) rmSync(root, { recursive: true, force: true })
+  probeRoots.clear()
 })
 
 it.each(['claude', 'antigravity', 'omp'] as const)('模拟：%s x64/arm64 校验下载后同目录原子放置，无子进程和临时文件', async cli => {
@@ -251,7 +256,14 @@ it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfir
     }
     return identify(cli)
   })
-  vi.mocked(f.backend.spawn).mockImplementation(() => { started(); return probe.child as any })
+  let temporary!: string
+  vi.mocked(f.backend.spawn).mockImplementation(spec => {
+    temporary = spec.env!.TEMP!
+    expect(temporary).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+    probeRoots.add(temporary)
+    started()
+    return probe.child as any
+  })
   const versionProbe: typeof currentVersion = async (cli, identity, backend, config, signal, background, timeoutMs) => {
     if (readFileSync(f.target, 'utf8') !== bytes) return identity.manifestVersion
     return currentVersion(cli, { ...identity, manifestVersion: undefined }, backend, config, signal, background, timeoutMs)
@@ -297,6 +309,8 @@ it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfir
   expect(readFileSync(f.target, 'utf8')).toBe(bytes)
   expect(readFileSync(join(f.root, '.local/share/claude/versions', version), 'utf8')).toBe(bytes)
   expect(f.backend.spawn).toHaveBeenCalledTimes(1)
+  expect(existsSync(temporary)).toBe(mode === 'cleanup-unconfirmed')
+  if (mode === 'cleanup-unconfirmed') expect(existsSync(join(temporary, `.cliworker-owner-${process.pid}`))).toBe(true)
 })
 
 it.each(['same', 'different', 'custom'] as const)('模拟：Claude 内置双源 %s 必须经 HEAD 身份校验，遵守禁用自动换源设置', async mode => {
