@@ -262,6 +262,8 @@ More account, path and model rules are in [usage details](doc/usage-details.en.m
 
 ## Development
 
+Run `pnpm check:browser --frontend <frontend-dist>` to check browser primitive exports; see the [method and validation limits](doc/knowledge/verification/browser-primitives.md).
+
 TypeScript ESM + React: the Host owns processes and persistence, and the Client reaches the Host only through the Harness Gateway.
 
 ```sh

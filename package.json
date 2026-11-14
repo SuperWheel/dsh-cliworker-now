@@ -68,6 +68,7 @@
   },
   "scripts": {
     "typecheck": "node scripts/build.mjs --typecheck-only",
+    "check:browser": "node scripts/check-browser-primitives.mjs",
     "build": "node scripts/build.mjs",
     "prepack": "node scripts/build.mjs",
     "test": "vitest run",
