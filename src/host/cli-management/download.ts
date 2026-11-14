@@ -8,7 +8,7 @@ import { hostFetch } from '../host-fetch.mjs'
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { OFFICIAL_SIGNED_ARTIFACT_HOSTS } from './sources.ts'
-import { ArtifactSources } from './download-sources.ts'
+import { ArtifactSources, PresignedExpiredError, responseMd5 } from './download-sources.ts'
 import { recoverableDownloadError, RECOVERY_LIMIT, RECOVERY_TIMEOUT_MS } from './recovery.ts'
 
 export const DOWNLOAD_STALL_MS = 10_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWNLOAD_TIMEOUT_MS = RECOVERY_TIMEOUT_MS
@@ -16,11 +16,11 @@ export const DOWNLOAD_STALL_MS = 10_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWN
 export const DOWNLOAD_SLOW_BYTES_PER_SECOND = 100_000
 export const DOWNLOAD_MAX_BYTES = 2 * 1024 ** 3, DOWNLOAD_RETENTION_MS = 24 * 60 * 60_000
 export function parseIntegrity(integrity: string) {
-  const candidates = integrity.split(/\s+/).map(value => /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/.exec(value)).filter(value => value !== null)
-  const match = candidates.find(m => m[1] === 'sha512') ?? candidates[0]
-  if (!match) throw new CliOperationError('INTEGRITY_MISMATCH', '官方元数据没有受支持的 sha512 / sha256 校验值')
+  const candidates = integrity.split(/\s+/).map(value => /^(sha512|sha256|md5)-([A-Za-z0-9+/]+={0,2})$/.exec(value)).filter(value => value !== null)
+  const match = candidates.find(m => m[1] === 'sha512') ?? candidates.find(m => m[1] === 'sha256') ?? candidates[0]
+  if (!match) throw new CliOperationError('INTEGRITY_MISMATCH', '官方元数据没有受支持的 sha512 / sha256 / md5 校验值')
   const digest = Buffer.from(match[2]!, 'base64')
-  if (digest.length !== (match[1] === 'sha512' ? 64 : 32) || digest.toString('base64') !== match[2]) throw new CliOperationError('INTEGRITY_MISMATCH', '官方校验值格式无效')
+  if (digest.length !== (match[1] === 'sha512' ? 64 : match[1] === 'sha256' ? 32 : 16) || digest.toString('base64') !== match[2]) throw new CliOperationError('INTEGRITY_MISMATCH', '官方校验值格式无效')
   return { algorithm: match[1]!, digest }
 }
 export async function prepareDownloads(root: string, now = Date.now()): Promise<string> {
@@ -38,7 +38,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
       if (info.isDirectory() && !info.isSymbolicLink() && now - info.mtimeMs > DOWNLOAD_RETENTION_MS) await rm(path, { recursive: true, force: true })
       continue
     }
-    if (!/^[a-f0-9-]{36}\.(?:part|tgz|sh|ps1|dmg|zip|exe)$/.test(name)) continue
+    if (!/^[a-f0-9-]{36}\.(?:part(?:\.decoded)?|tgz|sh|ps1|dmg|zip|exe)$/.test(name)) continue
     const path = join(directory, name), info = await lstat(path)
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) continue
     if (now - info.mtimeMs > DOWNLOAD_RETENTION_MS) await unlink(path)
@@ -53,7 +53,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
 }
 /** Host-owned downloads, including npm's main tarball; external dependencies expose no invented progress. */
 export async function downloadCliArtifact(options: {
-  root: string; url: string; sources?: string[]; sourceRedirects?: Record<string, string>; requireContentMd5?: boolean; integrity?: string; expectedBytes?: number; officialScript?: boolean; signal: AbortSignal
+  root: string; url: string; sources?: string[]; sourceRedirects?: Record<string, string>; lengthProbe?: 'HEAD' | 'RANGE'; requireContentMd5?: boolean; integrity?: string; expectedBytes?: number; officialScript?: boolean; signal: AbortSignal
   progress(value: CliDownloadProgress): void
   output?(value: string): void
   /** Only for signed official artifact hosts checked by local-artifacts. */
@@ -61,6 +61,8 @@ export async function downloadCliArtifact(options: {
   /** Remaining allowance when assembling a multi-file private bundle. */
   maxBytes?: number
   fetcher?: typeof hostFetch
+  redirectHosts?: readonly string[]
+  refreshSources?: (signal: AbortSignal) => Promise<string[]>
 }): Promise<string> {
   const address = new URL(options.url)
   const maxBytes = options.maxBytes ?? DOWNLOAD_MAX_BYTES
@@ -76,18 +78,32 @@ export async function downloadCliArtifact(options: {
   let bytes = 0, total: number | undefined, resumes = 0, lastByte = Date.now(), lastReported = lastByte, lastBytes = 0, rangeRejected = false
   const deadline = new AbortController(), deadlineTimer = setTimeout(() => deadline.abort(), DOWNLOAD_TIMEOUT_MS)
   const global = AbortSignal.any([options.signal, deadline.signal])
-  let sourceHost = address.host
+  let sourceHost = address.host, currentUrl = options.url, headerMd5: string | undefined, singleEtag: string | undefined, refreshes = 0
   const report = () => {
     const now = Date.now(), seconds = (now - lastReported) / 1000
-    options.progress({ readable: true, sourceHost, downloadedBytes: bytes, totalBytes: total, bytesPerSecond: seconds > 0 ? Math.max(0, bytes - lastBytes) / seconds : 0, resumeCount: resumes, stalledSeconds: Math.floor((now - lastByte) / 1000) })
+    options.progress({ channel: 'takeover', byteProgress: true, byteProgressState: total === undefined ? 'unknown-total' : 'known-total', readable: true, sourceHost, downloadedBytes: bytes, totalBytes: total, bytesPerSecond: seconds > 0 ? Math.max(0, bytes - lastBytes) / seconds : 0, resumeCount: resumes, stalledSeconds: Math.floor((now - lastByte) / 1000) })
     lastReported = now; lastBytes = bytes
   }
   const reporting = setInterval(report, 1000)
   let remove = false
   try {
-    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects) : undefined
+    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe) : undefined
+    const refresh = async () => {
+      if (!options.refreshSources || ++refreshes > 3) throw new CliOperationError('NETWORK', '预签名地址失效，重新取清单后仍不可用')
+      const urls = await options.refreshSources(global)
+      if (!urls.length || urls.some(url => { const u = new URL(url); return u.protocol !== 'https:' || u.username || u.password || u.hash || u.port || !(OFFICIAL_SIGNED_ARTIFACT_HOSTS as readonly string[]).includes(u.hostname) })) throw new CliOperationError('NETWORK', '清单刷新地址不在官方签名工件白名单')
+      currentUrl = urls[0]!; sources?.replaceUrls(urls); sourceHost = new URL(currentUrl).host
+    }
+    const select = async (rotate = false) => {
+      for (;;) {
+        try { await sources?.select(rotate); return } catch (error) {
+          if (!(error instanceof PresignedExpiredError) || !options.refreshSources) throw error
+          await refresh()
+        }
+      }
+    }
     if (sources) {
-      await sources.select()
+      await select()
       sourceHost = new URL(sources.url).host
       if (options.expectedBytes !== undefined && sources.length !== options.expectedBytes) throw new CliOperationError('NETWORK', '下载源长度与官方元数据不一致')
     }
@@ -101,9 +117,26 @@ export async function downloadCliArtifact(options: {
         const heartbeat = () => { clearTimeout(timer); timer = setTimeout(() => stall.abort(), DOWNLOAD_STALL_MS); lastByte = Date.now() }
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, responseEnd: number | undefined
         try {
-          const response = await bounded((options.fetcher ?? hostFetch)(sources?.url ?? options.url, { signal: control, credentials: 'omit', redirect: 'error', headers: { 'Accept-Encoding': 'identity', ...(bytes ? { Range: `bytes=${bytes}-`, ...(sources?.etag ? { 'If-Range': sources.etag } : {}) } : {}) } }), control)
+          let requestUrl = sources?.url ?? currentUrl
+          const request = (url: string) => bounded((options.fetcher ?? hostFetch)(url, { signal: control, credentials: 'omit', redirect: options.redirectHosts?.length ? 'manual' : 'error', headers: { 'Accept-Encoding': 'identity', ...(bytes ? { Range: `bytes=${bytes}-`, ...((sources?.etag ?? singleEtag) ? { 'If-Range': sources?.etag ?? singleEtag! } : {}) } : {}) } }), control)
+          let response = await request(requestUrl)
+          for (let redirects = 0; [301, 302, 303, 307, 308].includes(response.status); redirects++) {
+            if (!response.headers.get('location')) throw new CliOperationError('NETWORK', '官方工件跳转缺少地址')
+            const next = new URL(response.headers.get('location')!, requestUrl)
+            if (redirects >= 3 || next.protocol !== 'https:' || next.username || next.password || next.port || next.hash || !options.redirectHosts?.includes(next.hostname)) throw new CliOperationError('NETWORK', '官方工件跳转不在描述白名单')
+            await response.body?.cancel(); requestUrl = next.href; response = await request(requestUrl)
+          }
+          sourceHost = new URL(requestUrl).host
+          if (!sources) currentUrl = requestUrl
           reader = response.body?.getReader()
+          if (response.status === 403 && options.refreshSources) { await refresh(); throw new PresignedExpiredError() }
           sources?.validate(response)
+          if (response.status === 200 || response.status === 206) {
+            const md5 = responseMd5(response.headers), etag = response.headers.get('etag')?.trim()
+            if (headerMd5 && (md5 !== undefined || !sources) && md5 !== headerMd5 || !sources && singleEtag && etag !== singleEtag) throw new CliOperationError('INTEGRITY_MISMATCH', '续传响应摘要或 ETag 已变化')
+            headerMd5 ??= md5; singleEtag ??= etag
+            if (options.requireContentMd5 && !md5) throw new CliOperationError('INTEGRITY_MISMATCH', '官方响应缺少 MD5')
+          }
           if (response.status === 416) {
             const match = /^bytes \*\/(\d+)$/.exec(response.headers.get('content-range') ?? '')
             if (!match || Number(match[1]) !== bytes) throw new CliOperationError('NETWORK', '续传长度与服务器不一致')
@@ -153,15 +186,15 @@ export async function downloadCliArtifact(options: {
           // An incomplete response resumes just like a stalled connection.
         } catch (error) {
           global.throwIfAborted()
-          // Redirects are never followed; name the cause instead of the generic failure text.
-          if (error instanceof TypeError && /unexpected redirect/.test(error.message)) throw new CliOperationError('NETWORK', `官方下载地址 ${new URL(sources?.url ?? options.url).host} 已跳转到其他位置，插件不跟随跳转；请等待插件更新下载地址`)
-          if (!stall.signal.aborted && !recoverableDownloadError(error)) throw error
+          // Undeclared redirects are never followed; report the cause explicitly.
+          if (error instanceof TypeError && /unexpected redirect/.test(error.message)) throw new CliOperationError('NETWORK', `官方下载地址 ${new URL(sources?.url ?? currentUrl).host} 已跳转到其他位置，插件不跟随跳转；请等待插件更新下载地址`)
+          if (!(error instanceof PresignedExpiredError) && !stall.signal.aborted && !recoverableDownloadError(error)) throw error
         } finally { clearTimeout(timer); clearInterval(speedTimer); void reader?.cancel().catch(() => undefined) }
         if (resumes >= DOWNLOAD_RESUMES) throw new CliOperationError('STALL_LIMIT', '下载停滞或中断，自动续传 200 次仍未完成，请检查网络后重试')
         resumes++
         if (sources) {
           const previous = sources.url
-          await sources.select(true)
+          await select(true)
           sourceHost = new URL(sources.url).host
           if (sources.url !== previous) options.output?.(`切换到 ${new URL(sources.url).host} 继续下载（第 ${resumes} 次）\n`)
         }
@@ -176,17 +209,17 @@ export async function downloadCliArtifact(options: {
         for await (const chunk of createReadStream(file)) { global.throwIfAborted(); hash.update(chunk) }
         mismatch ||= !timingSafeEqual(hash.digest(), integrity.digest)
       }
-      if (sources?.md5) {
+      if (sources?.md5 ?? headerMd5) {
         const hash = createHash('md5')
         for await (const chunk of createReadStream(file)) { global.throwIfAborted(); hash.update(chunk) }
-        mismatch ||= hash.digest('hex') !== sources.md5
+        mismatch ||= hash.digest('hex') !== (sources?.md5 ?? headerMd5)
       }
       if (!mismatch) { report(); return file }
       remove = true
       await handle.close(); await unlink(file)
       if (validationAttempt === 1) throw new CliOperationError('INTEGRITY_MISMATCH', '下载的文件校验不通过')
       global.throwIfAborted()
-      if (sources) { await sources.select(); sourceHost = new URL(sources.url).host }
+      if (sources) { await select(); sourceHost = new URL(sources.url).host }
       options.output?.('下载的文件校验不通过，已删除临时文件，干净重新下载一次。\n')
       handle = await open(file, 'wx', 0o600); remove = false
       bytes = 0; total = undefined; lastBytes = 0; lastByte = lastReported = Date.now(); rangeRejected = false

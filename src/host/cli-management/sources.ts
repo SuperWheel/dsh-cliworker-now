@@ -65,20 +65,20 @@ export interface NativeUpdate {
   script?: { url: string; interpreter: string; platforms: readonly string[] }
 }
 export const NATIVE_UPDATES: Partial<Record<ActiveCliId, NativeUpdate>> = {
-  antigravity: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源清单 sha512 校验后替换；同源摘要不等于独立签名。', notice: '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。' },
+  antigravity: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局先走官方更新；不可用时由插件下载，按同源清单 sha512 校验后替换；同源摘要不等于独立签名。', notice: '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。' },
   codex: { argv: ['--release', '%VERSION%'], pinsVersion: true, env: { CODEX_NON_INTERACTIVE: '1' }, script: { url: 'https://releases.openai.com/codex/install.sh', interpreter: '/bin/sh', platforms: ['darwin', 'linux'] } },
-  claude: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源清单 sha256 与长度校验后替换版本文件及启动器。' },
+  claude: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局先走官方更新；不可用时由插件下载，按同源清单 sha256 与长度校验后替换版本文件及启动器。' },
   kimi: { argv: ['update', '-y'], pinsVersion: false, env: { KIMI_CODE_NO_AUTO_UPDATE: '1' } },
   mimo: { argv: ['upgrade', '%VERSION%', '--method', 'curl'], pinsVersion: true },
   grok: { argv: ['update', '--version', '%VERSION%'], pinsVersion: true },
-  omp: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源构建清单 sha256 与长度校验后替换。' },
+  omp: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局先走官方更新；不可用时由插件下载，按同源构建清单 sha256 与长度校验后替换。' },
   pi: { argv: ['update', '--self'], pinsVersion: false },
   hermes: { argv: ['update', '--yes'], pinsVersion: false, notice: 'Hermes 更新会迁移配置、更新依赖并可能重启服务。查询源为 stable，当前安装可能为 canary/自定义通道；不切换原通道，执行后以重新探测版本为准。' },
   opencode: { argv: ['upgrade'], pinsVersion: false },
   qoder: { argv: ['update'], pinsVersion: false },
   qodercn: { argv: ['update'], pinsVersion: false },
   codebuddy: { argv: ['update'], pinsVersion: false },
-  traecn: { argv: ['update', '--channel', '%CHANNEL%', '--version', '%VERSION%'], pinsVersion: true, windowsNotice: 'Windows 官方默认布局由插件下载并校验完整离线包，交官方 offline-install；保留自动更新标记的启用状态。' },
+  traecn: { argv: ['update', '--channel', '%CHANNEL%', '--version', '%VERSION%'], pinsVersion: true, windowsNotice: 'Windows 官方默认布局先走官方更新；不可用时由插件下载并校验完整离线包，交官方 offline-install；保留自动更新标记的启用状态。' },
 }
 for (const [cli, update] of Object.entries(NATIVE_UPDATES)) {
   if (!update.script) CLI_SOURCES[cli as ActiveCliId].update = update.argv

@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { ActiveCliId } from './types.ts'
 
 /**
@@ -119,6 +120,20 @@ export interface CliUpdateEntry {
 export interface CliDownloadProgress {
   /** False when the external command does not expose bytes ("下载进度无法读取"). */
   readable: boolean
+  channel?: 'official' | 'takeover'
+  stage?: string
+  elapsedSeconds?: number
+  byteProgress?: boolean
+  /** Explicitly distinguish byte counts without a denominator from phase-only progress. */
+  byteProgressState?: 'none' | 'unknown-total' | 'known-total'
+  /** Real observed step/package ordinal, independent of any byte percentage. */
+  currentStep?: number
+  totalSteps?: number
+  stepName?: string
+  /** downloadedBytes / totalBytes / resumeCount are sums across these files. */
+  fileCount?: number
+  completedFiles?: number
+  reason?: CliChannelReason
   downloadedBytes?: number
   totalBytes?: number
   bytesPerSecond?: number
@@ -131,6 +146,27 @@ export interface CliDownloadProgress {
   /** Seconds since the last byte, shown while waiting for the stall check. */
   stalledSeconds?: number
 }
+
+export const CLI_CHANNEL_REASONS = ['OFFICIAL_INTERRUPTED', 'OFFICIAL_STALLED', 'OFFICIAL_RESTARTED', 'OFFICIAL_SLOW', 'OFFICIAL_DEADLINE', 'OFFICIAL_BUDGET', 'OFFICIAL_EXIT', 'OFFICIAL_RECENT_FAILURE', 'ALREADY_LATEST', 'UPDATE_LOCKED'] as const
+export type CliChannelReason = (typeof CLI_CHANNEL_REASONS)[number]
+const nonnegative = z.number().finite().nonnegative()
+export const cliDownloadProgressSchema = z.object({
+  readable: z.boolean(), channel: z.enum(['official', 'takeover']).optional(), stage: z.string().max(2048).optional(),
+  elapsedSeconds: nonnegative.optional(), byteProgress: z.boolean().optional(),
+  byteProgressState: z.enum(['none', 'unknown-total', 'known-total']).optional(),
+  currentStep: nonnegative.int().optional(), totalSteps: nonnegative.int().positive().optional(), stepName: z.string().trim().min(1).max(2048).optional(),
+  downloadedBytes: nonnegative.optional(), totalBytes: nonnegative.optional(), bytesPerSecond: nonnegative.optional(),
+  resumeCount: nonnegative.int(), retryCount: nonnegative.int().optional(), sourceHost: z.string().max(253).optional(),
+  stalledSeconds: nonnegative.optional(), fileCount: nonnegative.int().optional(), completedFiles: nonnegative.int().optional(),
+  reason: z.enum(CLI_CHANNEL_REASONS).optional(),
+}).superRefine((p, ctx) => {
+  if (p.byteProgress !== undefined && p.byteProgress !== p.readable) ctx.addIssue({ code: 'custom', message: '字节进度标记与可读性不一致' })
+  if (p.byteProgress === false && [p.downloadedBytes, p.totalBytes, p.bytesPerSecond].some(v => v !== undefined)) ctx.addIssue({ code: 'custom', message: '阶段进度不能携带字节值' })
+  if (p.fileCount !== undefined && p.completedFiles !== undefined && p.completedFiles > p.fileCount) ctx.addIssue({ code: 'custom', message: '已完成文件数超过合计' })
+  if ([p.currentStep, p.totalSteps, p.stepName].some(v => v !== undefined) && (p.currentStep === undefined || p.totalSteps === undefined || p.stepName === undefined || p.currentStep > p.totalSteps)) ctx.addIssue({ code: 'custom', message: '阶段步数必须包含当前步、总步数和步骤名，且当前步不能超过总步数' })
+  if (p.byteProgressState === 'none' && (p.readable || p.byteProgress === true || [p.downloadedBytes, p.totalBytes, p.bytesPerSecond].some(v => v !== undefined))) ctx.addIssue({ code: 'custom', message: '无字节进度状态不能携带字节值' })
+  if (p.byteProgressState && p.byteProgressState !== 'none' && (!p.readable || p.byteProgress === false || p.downloadedBytes === undefined || (p.byteProgressState === 'known-total') !== (p.totalBytes !== undefined))) ctx.addIssue({ code: 'custom', message: '字节进度状态必须匹配已接收字节与总量是否已知' })
+})
 
 export const CLI_OPERATION_PHASES = [
   'preparing',
@@ -162,6 +198,8 @@ export const CLI_OPERATION_ERRORS = [
   'PLAN_EXPIRED',
   'PERMISSION_DENIED',
   'FILE_LOCKED',
+  'UPDATE_LOCKED',
+  'OFFICIAL_UNAVAILABLE',
   'PREREQUISITE_MISSING',
   'LOCATION_INVALID',
   'CLI_BUSY',

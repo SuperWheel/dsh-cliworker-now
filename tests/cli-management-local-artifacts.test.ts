@@ -1,4 +1,5 @@
 /** 模拟：官方脚本、HEAD、归档解包、离线清单与进程均由夹具提供；不执行安装器。 */
+import { ChannelMemory, channelMemoryKey } from '../src/host/cli-management/channel-memory.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -91,6 +92,10 @@ it('模拟：TRAE 服务使用原生相同 argv 中断重跑，不调用离线�
     if (++attempts === 2) f.identities.get('traecn')!.manifestVersion = '1.2.3'
     return { ...child(), stdout: Readable.from(attempts === 1 ? ['curl: (18) transfer closed\n'] : []) }
   })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (cli === 'mimo' || cli === 'omp') await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service)
   f.service.start('traecn', 'update', f.service.snapshot().entries.find(e => e.cli === 'traecn')!.planToken!, '', '模拟TRAE原生重跑')
   const result = (await finished(f.service)).results[0]!
@@ -104,6 +109,10 @@ it('模拟：OMP 本地工件锁定目标，实际版本虽前进但不等于工
   f.metadataFetch.mockImplementation(async (url, init) => String(url).startsWith(LOCAL_INSTALLERS.omp.base) ? new Response(JSON.stringify({ build: { version: '1.2.3' }, file: { platform: 'macos', arch: 'arm64', name: 'omp-darwin-arm64', sha256, size: 6 }, download: 'https://d4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com/ompcast/builds/omp/fixture/omp?signature=fixture' })) : metadataFetch(url, init))
   f.artifactFetch.mockImplementation(async () => new Response('模拟'))
   vi.mocked(f.backend.spawn).mockImplementation(() => { f.identities.get('omp')!.manifestVersion = '1.2.4'; return child() })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (cli === 'mimo' || cli === 'omp') await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service)
   f.service.start('omp', 'update', f.service.snapshot().entries.find(e => e.cli === 'omp')!.planToken!, '', '模拟锁定版本')
   expect((await finished(f.service)).results[0]).toMatchObject({ phase: 'failed', afterVersion: '1.2.4', error: { code: 'VERSION_MISMATCH' } })
@@ -124,6 +133,10 @@ it.each(['success', 'wrong-version', 'wrong-identity'] as const)('模拟：MiMo 
     }
     return child()
   })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (cli === 'mimo' || cli === 'omp') await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service)
   f.service.start('mimo', 'update', f.service.snapshot().entries.find(e => e.cli === 'mimo')!.planToken!, '', '模拟MiMo接管')
   const result = (await finished(f.service)).results[0]!

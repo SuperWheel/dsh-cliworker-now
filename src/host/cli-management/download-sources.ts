@@ -17,9 +17,19 @@ export function contentMd5(value: string | null): string | undefined {
   if (bytes.length === 16 && bytes.toString('base64') === text) return bytes.toString('hex')
   throw new SourceIdentityError('下载源 content-md5 格式无效')
 }
+/** GCS can send crc32c and md5 in one header; crc32c alone is not an MD5. */
+export function responseMd5(headers: Headers): string | undefined {
+  const direct = contentMd5(headers.get('content-md5'))
+  const values = (headers.get('x-goog-hash') ?? '').split(',').map(v => v.trim()).filter(v => v.startsWith('md5=')).map(v => { const value = v.slice(4), bytes = Buffer.from(value, 'base64'); if (bytes.length !== 16 || bytes.toString('base64') !== value) mismatch(); return bytes.toString('hex') })
+  if (values.some(v => !v || v !== values[0]) || direct && values.length && direct !== values[0]) mismatch()
+  return direct ?? values[0]
+}
+export class PresignedExpiredError extends CliOperationError {
+  constructor() { super('NETWORK', '下载地址已失效（HTTP 403）') }
+}
 interface Identity { length: number; etag?: string; md5?: string; rangeSupported: boolean }
 const mismatch = (): never => { throw new SourceIdentityError() }
-/** Fixed Host-supplied URLs only. Every connection is preceded by HEAD; identity
+/** Fixed Host-supplied URLs only. Every connection is preceded by a metadata probe; identity
  * stays anchored to the first reachable source, even after a clean retry. */
 export class ArtifactSources {
   private index = 0
@@ -27,30 +37,44 @@ export class ArtifactSources {
   private identity?: Identity
   private current?: Identity
   private resolved = new Map<number, string>()
-  constructor(private urls: readonly string[], private fetcher: typeof hostFetch, private signal: AbortSignal, private maxBytes: number, private requireMd5 = false, private redirects: Record<string, string> = {}) {
+  constructor(private urls: readonly string[], private fetcher: typeof hostFetch, private signal: AbortSignal, private maxBytes: number, private requireMd5 = false, private redirects: Record<string, string> = {}, private lengthProbe: 'HEAD' | 'RANGE' = 'HEAD') {
     if (!urls.length || urls.length > 8 || new Set(urls).size !== urls.length || urls.some(url => customRegistryProblem(url) || new URL(url).port)) throw new CliOperationError('NETWORK', '下载源列表必须是无凭据的 HTTPS 地址')
+  }
+  replaceUrls(urls: string[]) {
+    if (!urls.length || urls.length > 8) mismatch()
+    this.urls = urls; this.index = 0; this.resolved.clear()
   }
   get url() { return this.resolved.get(this.index) ?? this.urls[this.index]! }
   get supportsRange() { return this.rangeCapable }
   get length() { return this.identity?.length }
   get md5() { return this.identity?.md5 }
   get etag() { return this.current?.etag }
-  private async head(index: number): Promise<Identity> {
+  private async probe(index: number): Promise<Identity> {
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 8000)
     const signal = AbortSignal.any([this.signal, controller.signal])
     try {
       let url = this.urls[index]!
-      const request = (value: string) => bounded(this.fetcher(value, { method: 'HEAD', signal, credentials: 'omit', redirect: this.redirects[value] ? 'manual' : 'error', headers: { 'Accept-Encoding': 'identity', Range: 'bytes=0-' } }), signal)
+      const request = async (value: string) => {
+        const response = await bounded(this.fetcher(value, { method: this.lengthProbe === 'RANGE' ? 'GET' : 'HEAD', signal, credentials: 'omit', redirect: this.redirects[value] ? 'manual' : 'error', headers: { 'Accept-Encoding': 'identity', Range: this.lengthProbe === 'RANGE' ? 'bytes=0-0' : 'bytes=0-' } }), signal)
+        // Metadata only: cancel even an ignored Range response without consuming its body.
+        await bounded(response.body?.cancel() ?? Promise.resolve(), signal)
+        return response
+      }
       let response = await request(url)
       if ([301, 302, 307, 308].includes(response.status) && this.redirects[url]) {
         const target = this.redirects[url]!
         if (response.headers.get('location') !== target || customRegistryProblem(target)) mismatch()
         url = target; response = await request(url)
       }
-      if (response.status !== 200 && response.status !== 206) throw new CliOperationError('NETWORK', `下载源 HEAD 失败（HTTP ${response.status}）`)
+      if (response.status === 403) throw new PresignedExpiredError()
+      if (response.status !== 200 && response.status !== 206) throw new CliOperationError('NETWORK', `下载源 ${this.lengthProbe} 探测失败（HTTP ${response.status}）`)
       const range = /^bytes 0-(\d+)\/(\d+)$/.exec(response.headers.get('content-range') ?? '')
-      const value = response.status === 206 && range && Number(range[1]) + 1 === Number(range[2]) ? range[2]! : response.status === 200 ? response.headers.get('content-length') : null, length = Number(value)
-      const etag = response.headers.get('etag')?.trim(), md5 = contentMd5(response.headers.get('content-md5'))
+      const value = this.lengthProbe === 'RANGE'
+        ? response.status === 206 && range?.[1] === '0' && (!response.headers.has('content-length') || response.headers.get('content-length') === '1') ? range[2]! : null
+        : response.status === 206 && range && Number(range[1]) + 1 === Number(range[2]) ? range[2]! : response.status === 200 ? response.headers.get('content-length') : null
+      const length = Number(value)
+      const etag = response.headers.get('etag')?.trim(), md5 = responseMd5(response.headers)
+      if (response.headers.has('content-encoding') && response.headers.get('content-encoding') !== 'identity') mismatch()
       if (!value || !/^\d+$/.test(value) || !Number.isSafeInteger(length) || length <= 0 || length > this.maxBytes || etag?.startsWith('W/') || !etag && !md5 || this.requireMd5 && !md5) mismatch()
       this.resolved.set(index, url)
       return { length, etag, md5, rangeSupported: response.status === 206 || response.headers.get('accept-ranges')?.toLowerCase() === 'bytes' }
@@ -62,7 +86,7 @@ export class ArtifactSources {
       this.signal.throwIfAborted()
       const next = (this.index + (rotate ? 1 : 0) + offset) % this.urls.length
       let identity: Identity
-      try { identity = await this.head(next) }
+      try { identity = await this.probe(next) }
       catch (error) {
         this.signal.throwIfAborted()
         // A different object/invalid identity is never a network failover.
@@ -83,7 +107,7 @@ export class ArtifactSources {
     if (response.status !== 200 && response.status !== 206) return
     if (!this.current) mismatch()
     const { length, etag, md5 } = this.current!
-    if (etag && response.headers.get('etag')?.trim() !== etag || md5 && contentMd5(response.headers.get('content-md5')) !== md5) mismatch()
+    if (etag && response.headers.get('etag')?.trim() !== etag || md5 && responseMd5(response.headers) !== md5) mismatch()
     if (response.status === 206 && !response.headers.get('content-range')?.endsWith(`/${length}`)) mismatch()
   }
 }

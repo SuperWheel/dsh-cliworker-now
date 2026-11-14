@@ -1510,7 +1510,7 @@ Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道�
 
 Host 下载器在连接中断、提前 EOF 或 10 秒无增长时按 Range 恢复；已确认支持 Range 时，10 秒窗口平均低于 100 KB/s 也重连。所有恢复共用 200 次，次数耗尽仍有字节增长就保持连接，真正停住才失败；下载总上限 2 小时。HTTP/证书/Range 协议异常及缓存超限立即失败；完整文件长度/摘要不符则删除片段后干净重下一次，仍不符报“下载的文件校验不通过”，不占 200 次且不重置 2 小时。未知 Range 能力、服务器忽略 Range 后不主动按慢速重连。
 
-外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新先由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 的 macOS/Linux 更新保留原生 update --channel --version 加中断证据重跑；2026-11-14 任务 W 在 Windows 官方默认布局恢复离线接管，以更新前存在的自动更新标记为依据，在官方 offline-install 成功后原子恢复为实际新 release 目录名，首次安装不变。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
+没有已核实且布局匹配的接管描述时，外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新现采用官方优先；切换接管时由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 的 macOS/Linux 更新保留原生 update --channel --version 加中断证据重跑；2026-11-14 任务 W 在 Windows 官方默认布局恢复离线接管，以更新前存在的自动更新标记为依据，在官方 offline-install 成功后原子恢复为实际新 release 目录名，首次安装不变。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
 
 ## 2026-11-14 macOS 系统代理（任务 F，未发布）
 
@@ -1571,3 +1571,18 @@ Windows x64/arm64 的 Claude Code、Antigravity、OMP、TRAE CN 在 self-update 
 下载准备不写安装目录；服务在实际放置前重新核对计划。Claude 原子写 versions/<目标> 后替换 .local/bin/claude.exe，失败回滚本次版本写入；Antigravity/OMP 只写同目录临时文件并 rename，不执行 PATH／Bash 配置。锁定错误 EBUSY/EPERM/EACCES 统一 FILE_LOCKED，原 exe 保持不动。TRAE 按官方 Export-OfflineBundle 结构装配主件、sidecar、存在时的两项沙箱辅助件与筛选后的 ripgrep，交内置 CDN 下载的官方 PowerShell offline-install，跳过用户 PATH 修改并保留自动更新标记状态。安装单独计时 10 分钟；完成仍调用 sameInstallation 与 verifyUpdatedVersion 精确核对目标。
 
 维护期 MAINTENANCE 拒绝不缓存为连接错误；更新成功、失败、取消在释放锁后统一作废连接显示，进程清理隔离状态仍保留锁。实现与验收边界见变更 design 决定 13/14 及 tasks 13；本轮仅模拟与匿名清单/HEAD 核对，Windows 实机验收单列。
+
+
+### 2026-11-14 CLI 更新双通道（主任务 1–3，未发布）
+
+Windows Claude、Antigravity、OMP、TRAE CN，以及已开放的 Unix OMP/OpenCode 与 macOS MiMo 默认布局统一为官方优先。没有匹配描述的布局保留原更新/恢复路径，不扩张 CLI 或平台支持范围。官方执行期间，`official-watch.ts` 在启动前建立目录快照，只有新出现、文件名规则匹配、mtime 不早于本次启动的普通单链接文件提供字节进度；旧文件即使增长也不纳入，符号链接目录和文件不提供进度。Claude 仅扫描目标版本 staging；OMP 差分退到阶段；MiMo 子进程使用插件私有 TMPDIR，按实际观察到的 zip 文件名查 HEAD，不推算 baseline。OpenCode 只显示阶段。日志/状态文件探针仅支持描述显式指定的更新日志路径。
+
+看门狗使用 30 秒无增长、大小回落、60 秒窗口低于 100 KB/s、下载满 30 秒后的硬截止预测、不可观测时长度 / 200 KB/s（3–10 分钟）的总预算。中断文字含 curl 18/28/52/56、Download stalled、retrying from GitHub Releases 等。先通过宿主进程管理器 terminate，grace 最多 5 秒（本地 provider 先 TERM 后 KILL）；`waitForExit` 确认整个受管范围退出后才删除本次暂存并接管。清理未确认保持维护隔离，不接管。非零退出仍先重新探测版本，已前进且符合版本策略时采用官方结果。零退出并报告已是最新不触发失败或降级。锁仅在 PID 明确失效时可作为停滞证据；有效或无法确认的锁报告 UPDATE_LOCKED。
+
+`channel-memory.json` 采用私有目录 0700、原子文件 0600，键为 CLI、平台、架构及 executable/updateRoot 的布局散列；Windows 路径大小写归一化。有效期 7 天，布局改变或记录过期后恢复官方优先。官方失败后先记录，接管若失败/取消则清除该键；官方成功、已是最新和锁冲突清除该键。实际放置前仍重新核对计划、布局和目标严格高于已装版本，验证保留 60 秒总预算及 45 秒版本命令预算。
+
+`artifacts/` 集中描述与共用实现，`windows-artifacts.ts` / `local-artifacts.ts` 保留兼容入口。文件描述覆盖 sources、bytes、integrity、compression、decodedIntegrity、presigned、dest；多文件进度对主工件求和，官方脚本/元数据 extras 单独显示准备阶段。下载仍保留 10 秒停滞续传、100 KB/s 低速重连、200 次/2 小时、多源长度/ETag 与 2 GB 缓存预算。GCS MD5 解析 x-goog-hash 的 base64；gzip/zstd 流式解码并限制解压大小，二次摘要通过才提供放置输入。OMP 403 刷新构建清单，版本、长度、摘要不变才保留 Range。白名单放置共用同目录临时文件与 rename，Windows 占用重试 500/1000 ms，版本文件写入失败回滚，回滚失败保留备份。Windows agy 入口保留磁盘大小写；TRAE 保留原自动更新标记恢复逻辑，策略文件 auto_update 的核实仍属任务 4.5。
+
+迁移兼容例外：MiMo 继续「单成员解压后交官方 --binary」，不改为直接覆盖；OpenCode 保留既有 HTTPS 长度与归档 CRC 检查，没有凭空补造发布者摘要，描述以 archiveCrc 明确标记；官方安装脚本继续由内置 HTTPS 地址取回。新描述没有摘要且未声明这一既有归档例外时拒绝下载。共享 `CliDownloadProgress` 新增可选 channel、stage、elapsedSeconds、byteProgress、fileCount/completedFiles 和 reason，`cliDownloadProgressSchema` 在双通道进度发布处校验，旧字段和前端兼容。本轮不改 client/、版本号或 Desktop 链接；没有真实更新/账号/模型/平台验收。
+
+2026-11-14 决定 7 的基础协议补充：`currentStep/totalSteps/stepName` 必须成组提供，表示实际步骤或包的序号（允许尚未开始时 0/M），独立于字节百分比；`byteProgressState` 为 `none`、`unknown-total` 或 `known-total`。未知总量仍携带真实 downloadedBytes，但不得携带 totalBytes；schema 拒绝步骤越界、缺项及状态矛盾。下载器与官方探针发布明确的字节状态，多文件下载同时发布文件步骤。工件 `bytes: 'RANGE'` 用匿名 GET `Range: bytes=0-0` 探测，严格核对 206 的 `Content-Range: bytes 0-0/N`、长度、强 ETag/MD5、2 GB 上限，读取响应头后取消响应体；后续续传和换源保留同一身份检查。122 个 SHA-512 小文件、两次续传及合计通过模拟测试；所有文件长度未确认前合计总量保持未知。Hermes 回执六步、Pi 官方包计数和 Grok/Pi 新接管描述仍属于任务 4，本轮只提供协议和通用下载能力。

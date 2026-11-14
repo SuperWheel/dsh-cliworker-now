@@ -6,6 +6,9 @@ export const RECOVERY_LIMIT = 200, RECOVERY_TIMEOUT_MS = 2 * 60 * 60_000
  * Node/undici transport errors and the observed MiMo curl(18) output are documented
  * in the change design's task D audit. These are evidence, never a silence timer. */
 export const DOWNLOAD_INTERRUPTION_EVIDENCE = /curl:\s*\((?:18|28|52|56)\)|transfer closed|connection (?:reset|closed|timed out)|\b(?:ECONNRESET|ETIMEDOUT|ECONNABORTED|EPIPE|UND_ERR_SOCKET|UND_ERR_CONNECT_TIMEOUT|UND_ERR_HEADERS_TIMEOUT|UND_ERR_BODY_TIMEOUT|UND_ERR_RES_CONTENT_LENGTH_MISMATCH)\b|socket hang up|unexpected (?:end of file|EOF)|premature close/i
+/** This evidence selects takeover only after the service has admitted a matching descriptor. */
+export const OFFICIAL_INTERRUPTION_EVIDENCE = new RegExp(`${DOWNLOAD_INTERRUPTION_EVIDENCE.source}|retrying from GitHub Releases|Download stalled|timeout:\u0020*300000ms`, 'i')
+export const interruptionRecoveryChannel = (hasMatchingDescription: boolean) => hasMatchingDescription ? 'takeover' as const : 'retry' as const
 /** Examine every raw chunk before redaction/truncation, retain no raw log. */
 export class InterruptionEvidence {
   interrupted = false

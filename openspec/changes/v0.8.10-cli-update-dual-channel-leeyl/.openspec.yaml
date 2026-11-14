@@ -1,0 +1,8 @@
+pm:
+  title: CLI 更新双通道：官方优先、插件接管兜底与统一下载器
+  version: 0.8.10
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-14

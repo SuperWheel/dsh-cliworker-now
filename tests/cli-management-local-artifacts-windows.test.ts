@@ -1,4 +1,5 @@
 /** 模拟：Windows 平台、官方元数据、二进制和文件占用；仅写测试临时目录，不运行真实安装器。 */
+import { ChannelMemory, channelMemoryKey } from '../src/host/cli-management/channel-memory.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync, rmSync, renameSync } from 'node:fs'
@@ -219,6 +220,10 @@ it.each(['success', 'wrong-version', 'wrong-identity'] as const)('模拟：Windo
     if (id && mode === 'wrong-identity' && readFileSync(f.target, 'utf8') === bytes) id.source = 'unknown'
     return id
   })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (true) await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service); f.invalidateModels.mockClear()
   const token = f.service.snapshot().entries.find(e => e.cli === 'claude')!.planToken!
   expect(token).toBeTruthy(); f.service.start('claude', 'update', token, '', `模拟${mode}`)
@@ -252,6 +257,10 @@ it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfir
     return currentVersion(cli, { ...identity, manifestVersion: undefined }, backend, config, signal, background, timeoutMs)
   }
   f.version.mockImplementation(versionProbe)
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (true) await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service)
   const token = f.service.snapshot().entries.find(e => e.cli === 'claude')!.planToken!
   vi.useFakeTimers()
@@ -352,6 +361,10 @@ it('模拟：Windows TRAE 服务使用离线 argv 和专用环境，恢复标记
     f.identities.set('traecn', { ...f.identities.get('traecn')!, executable: target, manifestVersion: version, fingerprint: { realpath: target, size, mtimeMs: 200 } })
     return spawn(options)
   })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (true) await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service); f.invalidateModels.mockClear()
   f.service.start('traecn', 'update', f.service.snapshot().entries.find(e => e.cli === 'traecn')!.planToken!, '', '模拟TRAE服务')
   const result = (await finished(f.service)).results[0]!
@@ -368,8 +381,28 @@ it('模拟：下载期间安装身份变化，服务再次核对计划后拒绝�
     if (init?.method !== 'HEAD') f.identities.get('claude')!.fingerprint.mtimeMs++
     return fetch(url, init)
   })
+  // 模拟：已有官方失败记忆；保留原接管/核验回归，官方优先另有独立用例。
+  for (const [cli, id] of f.identities) {
+    if (true) await new ChannelMemory(f.root).set(channelMemoryKey(cli, id), 'OFFICIAL_INTERRUPTED')
+  }
   await checked(f.service)
   f.service.start('claude', 'update', f.service.snapshot().entries.find(e => e.cli === 'claude')!.planToken!, '', '模拟身份变化')
   expect((await finished(f.service)).results[0]).toMatchObject({ phase: 'failed', error: { code: 'PLAN_EXPIRED' } })
   expect(readFileSync(f.target, 'utf8')).toBe('模拟 old'); expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+it('模拟：Windows 入口短暂占用后重试成功，仍保留同目录原子替换', async () => {
+  const f = fixture('antigravity'), local = await prepareLocalUpdate(f.options)
+  simulated.locked = f.target
+  const releaseLock = setTimeout(() => { simulated.locked = '' }, 250)
+  try {
+    await local.install!(control(), vi.fn())
+    expect(readFileSync(f.target, 'utf8')).toBe(bytes)
+    expect(readdirSync(dirname(f.target))).toEqual(['agy.exe'])
+  } finally { clearTimeout(releaseLock); await local.cleanup() }
+})
+it('模拟：显式已装版本相同或更高时不下载、不放置', async () => {
+  const f = fixture('omp')
+  for (const beforeVersion of ['1.2.3', '1.2.4']) await expect(prepareLocalUpdate({ ...f.options, beforeVersion })).rejects.toMatchObject({ code: 'PLAN_EXPIRED' })
+  expect(f.artifactFetch).not.toHaveBeenCalled(); expect(readFileSync(f.target, 'utf8')).toBe('模拟 old')
 })

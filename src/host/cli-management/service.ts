@@ -16,8 +16,12 @@ import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
 import { executeCliOperation, outputTail } from './executor.ts'
-import { withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
-import { canPrepareLocalUpdate, prepareLocalUpdate, type LocalArtifactInstall } from './local-artifacts.ts'
+import { interruptionRecoveryChannel, withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
+import { canPrepareLocalUpdate, prepareLocalUpdate, describeLocalUpdate, type LocalArtifactInstall } from './local-artifacts.ts'
+import { OfficialWatch, officialLockState } from './official-watch.ts'
+import { officialProbe } from './artifacts/probes.ts'
+import { ChannelMemory, channelMemoryKey } from './channel-memory.ts'
+import { cliDownloadProgressSchema, type CliChannelReason } from '../../shared/cli-management.ts'
 import { downloadCliArtifact, parseIntegrity, prepareDownloads } from './download.ts'
 import { resolveNpmRuntime } from './npm.ts'
 import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
@@ -432,12 +436,11 @@ export class CliManagementService {
           const scriptFile = artifact.replace(/\.part$/, '.sh')
           await rename(artifact, scriptFile); artifact = scriptFile
         }
-        if (plan.method === 'self-update' && canPrepareLocalUpdate(cli, plan.identity)) {
-          op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
-          local = await prepareLocalUpdate({ cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output, progress: value => { op.progress = value; this.changed() } })
-        }
+        const dualChannel = interruptionRecoveryChannel(plan.method === 'self-update' && canPrepareLocalUpdate(cli, plan.identity)) === 'takeover'
+        const localOptions = { cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, beforeVersion: plan.beforeVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output,
+          progress: (value: import('../../shared/cli-management.ts').CliDownloadProgress) => { op.progress = cliDownloadProgressSchema.parse({ ...value, reason: value.reason ?? (value.channel === 'takeover' ? op.progress?.reason : undefined) }); this.changed() } }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = plan.method === 'desktop' || local?.install ? undefined : nativeLaunchArgv(local?.argv ?? await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
@@ -447,7 +450,7 @@ export class CliManagementService {
           await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
             local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence)
         }
-        const verify = async (control: AbortSignal, evidence?: InterruptionEvidence) => {
+        const verify = async (control: AbortSignal, evidence?: InterruptionEvidence, allowLatest = false) => {
           control.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
           // A freshly replaced Windows executable may spend seconds in Defender's first-launch scan.
           const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 60_000)
@@ -461,7 +464,7 @@ export class CliManagementService {
             const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
             op.afterVersion = version
             if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
-            verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
+            if (!(allowLatest && version === plan.beforeVersion)) verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
             return { after, cliVersion, version: version! }
           } catch (error) {
             if (error instanceof ProcessCleanupUnconfirmedError) throw error
@@ -487,17 +490,88 @@ export class CliManagementService {
             } })
           if (plan.identity.notice) op.outputTail = outputTail(op.outputTail + '\n' + plan.identity.notice)
           verified = await verify(signal)
-        } else if (local?.install) {
-          op.phase = 'installing'; this.changed()
-          const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 10 * 60_000)
-          try {
-            await local.install(AbortSignal.any([signal, deadline.signal]), run)
-            if (deadline.signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
-          } catch (error) {
-            if (deadline.signal.aborted && !signal.aborted && !(error instanceof ProcessCleanupUnconfirmedError)) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
-            throw error
-          } finally { clearTimeout(timer) }
-          verified = await verify(signal)
+        } else if (dualChannel) {
+          const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity)
+          const remembered = await memory.get(key)
+          let failure: CliChannelReason | undefined
+          let officialResult: Awaited<ReturnType<typeof verify>> | undefined
+          if (!remembered) {
+            let probe = officialProbe(localOptions)
+            // Manifest/HEAD failure must not prevent the independent official updater from running.
+            try { probe = (await describeLocalUpdate({ ...localOptions, signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]) }, this.deps.root)).officialProbe }
+            catch (error) { signal.throwIfAborted(); output('官方进度总量暂不可读；保留阶段与总预算。\n') }
+            const watch = await OfficialWatch.prepare(probe, this.deps.root, localOptions.progress)
+            let cleanupConfirmed = true, officialError: unknown
+            try {
+              op.command = argv!; op.phase = 'installing'; this.changed()
+              watch.start()
+              try {
+                const env = { ...NATIVE_UPDATES[cli]?.env, ...watch.env }
+                // Keep the Host environment, including proxies; only augment the child PATH.
+                if (cli === 'mimo') env.PATH = [dirname(plan.identity.executable), process.env.PATH ?? ''].join(process.platform === 'win32' ? ';' : ':')
+                await executeCliOperation(this.deps.backend, { ...this.deps.config, graceMs: Math.min(5000, this.deps.config.graceMs) }, argv!, AbortSignal.any([signal, watch.controller.signal]), output, 10 * 60_000, env, watch)
+              } catch (error) {
+                if (error instanceof ProcessCleanupUnconfirmedError) { cleanupConfirmed = false; throw error }
+                signal.throwIfAborted()
+                if (!(error instanceof CliOperationError) || !['EXIT_CODE', 'INSTALL_TIMEOUT', 'OFFICIAL_UNAVAILABLE', 'UPDATE_LOCKED'].includes(error.code)) throw error
+                officialError = error
+              } finally { await watch.stop() }
+              signal.throwIfAborted()
+              if (watch.lockConflict && await officialLockState(probe.lockFile) !== 'stale') {
+                await memory.set(key, undefined)
+                throw new CliOperationError('UPDATE_LOCKED', '官方更新锁仍有效或无法确认归属，请等待另一个更新结束')
+              }
+              // Even a nonzero exit may have installed successfully. Read back before deciding.
+              try { officialResult = await verify(signal, undefined, !officialError && watch.alreadyLatest) }
+              catch (error) {
+                if (!(error instanceof CliOperationError) || !['VERSION_UNCHANGED', 'VERSION_MISMATCH'].includes(error.code)) throw error
+                // A version that advanced but mismatches a pin is not a download failure.
+                if (op.afterVersion && updateAvailable(plan.beforeVersion, op.afterVersion)) throw error
+                if (!officialError && !watch.reason && !watch.lockConflict) throw error
+                failure = watch.reason ?? (watch.lockConflict ? 'OFFICIAL_STALLED' : officialError instanceof CliOperationError && officialError.code === 'INSTALL_TIMEOUT' ? 'OFFICIAL_BUDGET' : 'OFFICIAL_EXIT')
+              }
+              if (officialResult) {
+                await memory.set(key, undefined)
+                if (watch.alreadyLatest && officialResult.version === plan.beforeVersion) {
+                  op.progress = { channel: 'official', readable: false, byteProgress: false, resumeCount: 0, stage: '已是最新', reason: 'ALREADY_LATEST' }
+                  output('官方命令报告已是最新，未切换接管。\n')
+                }
+              }
+            } finally {
+              await watch.stop()
+              if (cleanupConfirmed) await watch.cleanup()
+            }
+          }
+          if (officialResult) verified = officialResult
+          else {
+            if (failure) await memory.set(key, failure)
+            op.progress = { readable: false, byteProgress: false, resumeCount: 0, channel: 'takeover', reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : failure,
+              stage: remembered ? '官方渠道近期在本机失败（7 天内），直接接管' : '官方进程已退出，切换插件接管' }
+            output(op.progress.stage! + '\n')
+            try {
+              signal.throwIfAborted()
+              op.phase = 'downloading'; this.changed()
+              // Re-admit before downloading and again immediately before placement; never downgrade.
+              const recheck = async () => {
+                const fresh = await this.planCliOperation(cli, 'update', AbortSignal.any([signal, AbortSignal.timeout(30_000)]), selected)
+                if (fresh.token !== token || !canPrepareLocalUpdate(cli, fresh.identity) || !updateAvailable(fresh.beforeVersion, plan.targetVersion)) throw new CliOperationError('PLAN_EXPIRED', '切换接管前安装身份或版本已变化')
+              }
+              await recheck()
+              local = await prepareLocalUpdate(localOptions)
+              await recheck()
+              op.phase = 'installing'; this.changed()
+              const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 10 * 60_000)
+              try {
+                const control = AbortSignal.any([signal, deadline.signal])
+                if (local.install) await local.install(control, run); else await run(local.argv, control)
+                control.throwIfAborted()
+              } catch (error) {
+                if (deadline.signal.aborted && !signal.aborted && !(error instanceof ProcessCleanupUnconfirmedError)) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
+                throw error
+              } finally { clearTimeout(timer) }
+              verified = await verify(signal)
+            } catch (error) { await memory.set(key, undefined); throw error }
+          }
         } else verified = await withInterruptionRecovery(signal, async (control, evidence) => {
           let exitError: unknown
           try { await run(argv!, control, evidence) }
