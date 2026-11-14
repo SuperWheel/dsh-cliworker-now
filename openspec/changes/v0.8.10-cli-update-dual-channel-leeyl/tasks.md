@@ -91,6 +91,12 @@
 
 ## 5. 「更新 CLI」页进度显示 〔前端｜6h｜前置 3〕
 - [ ] 5.1 通道标签、多文件合计、阶段文字与已用时间、直接接管原因；长主机名截断悬停显示（13.5 发现）
+  - 2026-11-15 核对：通道标签（官方／插件接管）、切换气泡、阶段文字、「已用时 m:ss」与多文件合计已在 be99f86 实现；13.5 的两项发现是在其之前的 c84b0c4 包上观察到的。Host 统一下载器（`artifacts/download.ts`、`npm-download.ts`）已发布跨文件合计的 downloadedBytes/totalBytes/resumeCount 与 fileCount/completedFiles，TRAE 各工件长度来自官方清单，从第一个文件起就是 known-total。因此本次没有改 Host 或共享协议。
+  - 实施（`src/client/cli-update-page.tsx`、`cli-update-styles.ts`）：说明行拆成前段与「· 来自 <主机>」两段。说明行改为 flex，前段不收缩（最宽 100%，超出时自身省略），主机段先收缩并省略，始终一行；主机段悬停显示「来自 <完整主机>」，外层仍悬停显示全文。停滞秒数移到主机之前，长主机名不再遮住停滞秒数；没有字节的阶段行不写主机。总量未知、没有步数的多文件进度（official-watch）也加「N 个文件 ·」前缀。npm 安装的 CLI 在 7 天内直接接管时改写「官方下载…失败，7 天内直接由插件换源下载」（中英文，`i18n-messages.ts`），与 9.16 的 npm 切换说明一致；自更新 CLI 保持原文。`doc/settings-ui-design.md`「进度来源」已同步。
+  - 模拟测试（`tests/cli-update-page.test.tsx` 新增 5 项、调整 3 项）：用 OMP 那样的长预签名主机验证主机单独成段、title、停滞秒数在主机前，以及 CSS 中 flex/省略/不换行规则；TRAE 两文件由 Host `downloadDescription` 生成真实进度序列（传输层用夹具代替，每个文件各续传 2 次），逐条渲染后进度条百分比单调不减、最终 100%，每行都是「2 个文件 · 已下载 … / 150 MB」，续传次数单调累加到 4；总量未知的多文件前缀；接管后安装与核对阶段显示阶段文字、「已用时 1:15」和「插件接管」标签；npm 近期失败的中英文提示。原有两项近期失败用例改用 Claude Code（自更新），以保留原文断言。
+  - 验证：`corepack pnpm typecheck`：`Host/Client typecheck passed against DSH 0.2.2-rc.3`。`corepack pnpm exec vitest run tests/cli-update-page.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts tests/client-i18n.test.tsx`：`Test Files 4 passed (4)`、`Tests 102 passed (102)`。指定完整命令加 `tests/cli-management*` 以 `--maxWorkers=2` 运行：`Test Files 38 passed (38)`、`Tests 1215 passed (1215)`。同一命令按默认并发跑了 2 次、`--maxWorkers=4` 跑了 1 次，各有 1–2 项 Host 用例 15 秒超时（hermes-residue 的 service integration、npm-platform 的 stall 接管），机器负载 10–14；这些文件单独重跑全部通过（51/51、57/57），本次也没有改 Host。为生成 `lib/typert.remote-client.d.ts` 跑过一次 `corepack pnpm build:preview`，输出 `Isolated package ready`。
+  - 布局核对：在本机浏览器用页面 CSS 渲染一份模拟说明行，宽度分别为 560/420/300/200px。每种宽度都只有一行（高 18px），没有横向溢出，续传次数和说明行同在一行；主机段先省略，窄到 300px 以下时前段也省略。这只是静态 CSS 检查，没有在 DSH 中运行。
+  - 未验证：Windows／Mac DSH 实机外观（OMP 长主机、TRAE 多文件合计、npm 近期失败提示）、英文界面实机，以及真实 7 天失败记忆下的直接接管；没有正式构建，没有更新 Desktop 链接。
 
 ## 6. 验收与文档 〔测试｜10h｜前置 4,5〕
 - [x] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步

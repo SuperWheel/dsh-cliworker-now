@@ -750,8 +750,9 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
   it('shows no callout for an official run or for the remembered recent failure', async () => {
     const f = await setup(running({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '执行官方更新命令' }))
     expect(byClass(f.rowOf('codex'), 'cwn-update-callout')).toHaveLength(0)
-    await f.update(running({ channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', readable: false, byteProgress: false, resumeCount: 0, stage: '官方渠道近期在本机失败（7 天内），直接接管' }))
-    const row = f.rowOf('codex')
+    // Claude updates itself (not npm): the plugin replaces the official updater for 7 days.
+    await f.update(running({ channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', readable: false, byteProgress: false, resumeCount: 0, stage: '官方渠道近期在本机失败（7 天内），直接接管' }, { cli: 'claude' }))
+    const row = f.rowOf('claude')
     expect(byClass(row, 'cwn-update-callout')).toHaveLength(0)
     expect(hints(row)).toEqual(['官方更新近期在这台电脑上失败，7 天内直接由插件下载'])
     expect(textOf(row)).not.toContain('官方渠道近期在本机失败')
@@ -774,8 +775,8 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
         readable: true, byteProgress: true, byteProgressState: 'known-total', fileCount: 3, completedFiles: 1,
         currentStep: 2, totalSteps: 3, stepName: 'SIMULATED/bin.tar.gz',
         downloadedBytes: 120 * 1024 ** 2, totalBytes: 194 * 1024 ** 2, bytesPerSecond: 2.1 * 1024 ** 2, resumeCount: 4, sourceHost: 'lf-cdn.simulated.example',
-      }))
-      const row = f.rowOf('codex')
+      }, { cli: 'claude' }))
+      const row = f.rowOf('claude')
       // Progress first, then the hint underneath.
       const expand = byClass(row, 'cwn-update-expand')[0]!
       const order = classOrder(expand)
@@ -796,6 +797,9 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     const main = byClass(row, 'cwn-update-meta-main')
     expect(main.map(textOf)).toEqual(['3 个文件 · 已下载 120 MB / 194 MB · 2.1 MB/s · 来自 lf-cdn.simulated.example'])
     expect(main[0]!.props.title).toBe(textOf(main[0]!))
+    // The host sits in its own span at the very end so a long host is what gets cut.
+    expect(byClass(main[0]!, 'cwn-update-meta-lead').map(textOf)).toEqual(['3 个文件 · 已下载 120 MB / 194 MB · 2.1 MB/s'])
+    expect(byClass(main[0]!, 'cwn-update-meta-host').map(textOf)).toEqual([' · 来自 lf-cdn.simulated.example'])
     expect(byClass(row, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 4 次'])
     // One byte bar for the sum of every file; no per-file step bar alongside it.
     const bar = bars(row)
@@ -808,6 +812,148 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
       downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0,
     }))
     expect(byClass(f.rowOf('codex'), 'cwn-update-meta-main').map(textOf)).toEqual(['已下载 1.0 KB / 4.0 KB'])
+  })
+
+  it('cuts only a long source host on one line, keeps the stall seconds before it and shows the full host on hover (13.5)', async () => {
+    // 模拟：OMP 预签名下载那种很长的主机名；数值为夹具。
+    const host = '0123456789abcdef0123456789abcdef.r2.cloudflarestorage.simulated.example'
+    const f = await setup(running({
+      channel: 'takeover', reason: 'OFFICIAL_BUDGET', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 152 * 1024 ** 2, totalBytes: 240 * 1024 ** 2, bytesPerSecond: 0, stalledSeconds: 6, resumeCount: 3, sourceHost: host,
+    }, { cli: 'omp' }))
+    const row = f.rowOf('omp')
+    const [main, ...more] = byClass(row, 'cwn-update-meta-main')
+    expect(more).toHaveLength(0)
+    expect(main!.props['data-host']).toBe(true)
+    expect(textOf(main!)).toBe(`已下载 152 MB / 240 MB · 6 秒没有新数据 · 来自 ${host}`)
+    expect(main!.props.title).toBe(textOf(main!))
+    const [hostSpan] = byClass(main!, 'cwn-update-meta-host')
+    expect(textOf(hostSpan!)).toBe(` · 来自 ${host}`)
+    expect(hostSpan!.props.title).toBe(`来自 ${host}`)
+    // Same flex line as the resume count; nothing breaks onto a separate line.
+    const meta = byClass(row, 'cwn-update-progress-meta')
+    expect(meta).toHaveLength(1)
+    expect(byClass(meta[0]!, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 3 次'])
+    // The page CSS keeps the lead whole and truncates the host span with an ellipsis, never wrapping it.
+    const { cliUpdateStyles } = await import('../src/client/cli-update-styles.ts')
+    expect(cliUpdateStyles).toContain('.cwn-update-meta-main[data-host]{display:flex}')
+    expect(cliUpdateStyles).toContain('.cwn-update-meta-lead{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
+    expect(cliUpdateStyles).toContain('.cwn-update-meta-host{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}')
+    expect(cliUpdateStyles).toMatch(/\.cwn-update-progress-meta\{[^}]*flex-wrap:nowrap/)
+
+    // Lines without bytes never name a host.
+    await f.update(running({ channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '准备官方本地安装入口', sourceHost: host }, { cli: 'omp', phase: 'installing' }))
+    expect(byClass(f.rowOf('omp'), 'cwn-update-meta-main').map(textOf)).toEqual(['准备官方本地安装入口'])
+    expect(byClass(f.rowOf('omp'), 'cwn-update-meta-host')).toHaveLength(0)
+  })
+
+  it('keeps a multi-file total from the Host downloader: the bar and resume count never restart per file (13.5 TRAE)', async () => {
+    // 模拟：用 Host 统一下载器 downloadDescription 生成真实进度序列；传输层以夹具代替，每个文件的传输计数从 0 开始、各续传 2 次。
+    const { mkdtemp, realpath, rm, writeFile, mkdir } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { downloadDescription } = await import('../src/host/cli-management/artifacts/download.ts')
+    const { cliDownloadProgressSchema } = await import('../src/shared/cli-management.ts')
+    const root = await realpath(await mkdtemp(join(tmpdir(), 'cli-update-page-simulated-')))
+    try {
+      const directory = join(root, 'bundle')
+      await mkdir(directory, { recursive: true, mode: 0o700 })
+      const mb = 1024 ** 2
+      const sizes: Record<string, number> = { 'traex-simulated.exe.gz': 141 * mb, 'code-mode-host-simulated.exe.gz': 9 * mb }
+      const files = Object.entries(sizes).map(([name, bytes]) => ({
+        sources: [`https://lf-cdn.simulated.example/${name}`], bytes, integrity: 'sha256-SIMULATED', dest: `artifacts/${name}`,
+      }))
+      const seen: CliDownloadProgress[] = []
+      await downloadDescription({ files }, {
+        root, directory, signal: new AbortController().signal,
+        progress: (value) => seen.push(cliDownloadProgressSchema.parse(value)),
+        download: async (input) => {
+          const name = new URL(input.url).pathname.slice(1), size = sizes[name]!
+          const base = { channel: 'takeover' as const, readable: true, byteProgress: true, byteProgressState: 'known-total' as const, totalBytes: size, sourceHost: 'lf-cdn.simulated.example' }
+          input.progress!({ ...base, downloadedBytes: Math.floor(size / 3), bytesPerSecond: 2 * mb, resumeCount: 0 })
+          input.progress!({ ...base, downloadedBytes: Math.floor((size * 2) / 3), bytesPerSecond: 2 * mb, resumeCount: 1 })
+          input.progress!({ ...base, downloadedBytes: size, bytesPerSecond: 2 * mb, resumeCount: 2 })
+          const path = join(root, `${name}.part`)
+          await writeFile(path, 'SIMULATED')
+          return path
+        },
+      })
+      expect(seen.length).toBeGreaterThan(4)
+      const f = await setup(running(seen[0]!))
+      const percents: number[] = [], sides: string[] = [], leads: string[] = []
+      for (const value of seen) {
+        await f.update(running(value))
+        const row = f.rowOf('codex')
+        const [bar, ...others] = bars(row)
+        expect(others).toHaveLength(0)
+        percents.push(bar!.props['aria-valuenow'])
+        sides.push(byClass(row, 'cwn-update-meta-side').map(textOf).join(''))
+        leads.push(byClass(row, 'cwn-update-meta-lead').map(textOf).join(''))
+      }
+      expect(percents.every((value, index) => index === 0 || value >= percents[index - 1]!)).toBe(true)
+      expect(percents.at(-1)).toBe(100)
+      // Every line shows the sum of both files against the same 150 MB total.
+      expect(leads.every((text) => text.startsWith('2 个文件 · 已下载 ') && text.includes(' / 150 MB'))).toBe(true)
+      const counts = sides.map((text) => Number(/已自动续传 (\d+) 次/.exec(text)?.[1]))
+      expect(counts.every((value, index) => index === 0 || value >= counts[index - 1]!)).toBe(true)
+      expect(counts.at(-1)).toBe(4)
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('prefixes the file count when several files arrive without a known total', async () => {
+    // 模拟：官方更新器暂存多个文件、总量未知（Host official-watch 只给 fileCount 与已接收字节）。
+    const f = await setup(running({
+      channel: 'official', readable: true, byteProgress: true, byteProgressState: 'unknown-total', fileCount: 2,
+      downloadedBytes: 30 * 1024 ** 2, bytesPerSecond: 1.5 * 1024 ** 2, resumeCount: 0,
+    }))
+    const row = f.rowOf('codex')
+    expect(bars(row)).toHaveLength(0)
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['2 个文件 · 已接收 30.0 MB，总大小未知 · 1.5 MB/s'])
+  })
+
+  it('keeps the phase text and elapsed time while installing after a plugin download', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
+    vi.setSystemTime(1_800_000_075_000)
+    try {
+      const f = await setup(running(
+        { channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '准备官方本地安装入口' },
+        { cli: 'claude', phase: 'installing', startedAt: 1_800_000_000_000, targetVersion: '2.1.42' },
+      ))
+      const row = f.rowOf('claude')
+      expect(textOf(byClass(row, 'cwn-update-desc')[0]!)).toBe('正在安装 2.1.42… 已用时 1:15插件接管')
+      expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['准备官方本地安装入口'])
+      expect(bars(row)).toHaveLength(0)
+      await f.update(running(
+        { channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0 },
+        { cli: 'claude', phase: 'verifying-installation', startedAt: 1_800_000_000_000, targetVersion: '2.1.42' },
+      ))
+      expect(textOf(byClass(f.rowOf('claude'), 'cwn-update-desc')[0]!)).toBe('正在核对结果… 已用时 1:15插件接管')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('words the remembered failure for npm as a direct source switch, not a stopped official updater', async () => {
+    const now = 1_800_000_000_000
+    expect(recentFailureText(now - 3 * 86_400_000, now, true)).toBe('官方下载 3 天前在这台电脑上失败，7 天内直接由插件换源下载')
+    expect(recentFailureText(now - 60_000, now, true)).toBe('官方下载今天在这台电脑上失败，7 天内直接由插件换源下载')
+    expect(recentFailureText(undefined, now, true)).toBe('官方下载近期在这台电脑上失败，7 天内直接由插件换源下载')
+    // Codex is npm-installed in the fixture snapshot; the Host sends the remembered reason with every takeover progress.
+    const f = await setup(running({
+      channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 10 * 1024 ** 2, totalBytes: 60 * 1024 ** 2, resumeCount: 0, sourceHost: 'registry.npmmirror.simulated.example',
+    }))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-callout')).toHaveLength(0)
+    expect(hints(row)).toEqual(['官方下载近期在这台电脑上失败，7 天内直接由插件换源下载'])
+    setLanguagePreference('en')
+    await f.update(running({
+      channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 10 * 1024 ** 2, totalBytes: 60 * 1024 ** 2, resumeCount: 0, sourceHost: 'registry.npmmirror.simulated.example',
+    }))
+    expect(hints(f.rowOf('codex'))).toEqual(['The official download failed on this computer recently; for 7 days the plugin downloads directly from another source'])
   })
 
   it('tells official byte progress apart: no resume count and the 30-second switch rule', async () => {

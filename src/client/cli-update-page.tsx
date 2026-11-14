@@ -433,13 +433,18 @@ function switchReason(reason: CliChannelReason | undefined): string | undefined 
   }
 }
 
-/** 「官方更新 N 天前在这台电脑上失败…」; without a usable timestamp the wording stays unspecific. */
-export function recentFailureText(failedAt: unknown, now = Date.now()): string {
+/**
+ * 「官方更新 N 天前在这台电脑上失败…」; without a usable timestamp the wording stays unspecific.
+ * `npm`: the remembered failure is the plugin's own download from the preferred source, so the
+ * plugin goes straight to resuming with source switching instead of replacing an official updater.
+ */
+export function recentFailureText(failedAt: unknown, now = Date.now(), npm = false): string {
   if (typeof failedAt !== 'number' || !Number.isFinite(failedAt) || failedAt <= 0)
-    return t('官方更新近期在这台电脑上失败，7 天内直接由插件下载')
+    return npm ? t('官方下载近期在这台电脑上失败，7 天内直接由插件换源下载') : t('官方更新近期在这台电脑上失败，7 天内直接由插件下载')
   const days = Math.floor((now - failedAt) / DAY_MS)
-  return days <= 0
-    ? t('官方更新今天在这台电脑上失败，7 天内直接由插件下载')
+  if (days <= 0) return npm ? t('官方下载今天在这台电脑上失败，7 天内直接由插件换源下载') : t('官方更新今天在这台电脑上失败，7 天内直接由插件下载')
+  return npm
+    ? t('官方下载 {count} 天前在这台电脑上失败，7 天内直接由插件换源下载', { count: days })
     : t('官方更新 {count} 天前在这台电脑上失败，7 天内直接由插件下载', { count: days })
 }
 
@@ -496,7 +501,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
   /** `clip`: untrusted CLI text kept to one line with the full text on hover. */
   const hints: { text: string; clip?: boolean }[] = []
   const hint = (text: string, clip?: boolean) => hints.push({ text, clip })
-  if (progress.reason === 'OFFICIAL_RECENT_FAILURE') hint(recentFailureText(progress.officialFailedAt))
+  if (progress.reason === 'OFFICIAL_RECENT_FAILURE') hint(recentFailureText(progress.officialFailedAt, Date.now(), npm))
 
   const downloaded = progress.readable ? progress.downloadedBytes : undefined
   const state = progress.byteProgressState
@@ -510,29 +515,47 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
   const transferParts = (): string[] => {
     const parts: string[] = []
     if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(formatRate(progress.bytesPerSecond))
-    // Automatic source switching (PRD 5.6 3c): name the host this download currently comes from, last so it can be cut.
-    if (progress.sourceHost) parts.push(t('来自 {host}', { host: progress.sourceHost }))
     if (stalled) parts.push(t('{count} 秒没有新数据', { count: Math.round(progress.stalledSeconds!) }))
     return parts
   }
+  // Automatic source switching (PRD 5.6 3c): the host this download currently comes from goes last,
+  // in its own span, so a long presigned host is the part that gets cut (13.5: it used to wrap).
+  const sourceHost = progress.sourceHost?.replace(/\s+/g, ' ').trim()
+  const hostPart = sourceHost ? t('来自 {host}', { host: sourceHost }) : undefined
+  /** Several files are one sum (bytes, total, resumes); the count only prefixes the line. */
+  const filesPrefix = (parts: string[]) =>
+    progress.fileCount !== undefined && progress.fileCount > 1 ? [t('{count} 个文件', { count: progress.fileCount }), ...parts] : parts
   const receivedText = (bytes: number) =>
     state === 'unknown-total' ? t('已接收 {done}，总大小未知', { done: formatBytes(bytes) }) : t('已下载 {done}', { done: formatBytes(bytes) })
-  const meta = (text: string, withSide: ReactNode) => (
-    <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
-      <span className="cwn-update-meta-main" title={text}>
-        {text}
-      </span>
-      {withSide}
-    </div>
-  )
+  /** `host`: only lines that show transferred bytes name their source. */
+  const meta = (parts: string[], withSide: ReactNode, host?: string) => {
+    const lead = parts.join(' · ')
+    const full = host ? (lead ? `${lead} · ${host}` : host) : lead
+    return (
+      <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
+        <span className="cwn-update-meta-main" title={full} data-host={host ? true : undefined}>
+          {host ? (
+            <>
+              {lead && <span className="cwn-update-meta-lead">{lead}</span>}
+              <span className="cwn-update-meta-host" title={host}>
+                {lead ? ` · ${host}` : host}
+              </span>
+            </>
+          ) : (
+            lead
+          )}
+        </span>
+        {withSide}
+      </div>
+    )
+  }
   const stageText = progress.stage?.trim() && !TRANSITION_STAGES.has(progress.stage.trim()) ? hostText(progress.stage.trim()) : undefined
 
   let body: ReactNode
   if (downloaded !== undefined && total !== undefined) {
     // Sums across every file of this run; the bar never restarts per file.
     const percent = Math.min(100, Math.round((downloaded / total) * 100))
-    const parts = [t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()]
-    if (progress.fileCount !== undefined && progress.fileCount > 1) parts.unshift(t('{count} 个文件', { count: progress.fileCount }))
+    const parts = filesPrefix([t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()])
     if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
     body = (
       <div className="cwn-update-progress">
@@ -546,7 +569,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
         >
           <span style={{ width: `${percent}%` }} />
         </div>
-        {meta(parts.join(' · '), side)}
+        {meta(parts, side, hostPart)}
       </div>
     )
   } else if (steps) {
@@ -576,19 +599,20 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
             <span style={{ width: `${(steps.current / steps.total) * 100}%` }} />
           </div>
         )}
-        {meta(parts.join(' · '), downloaded !== undefined ? side : retries)}
+        {downloaded !== undefined ? meta(parts, side, hostPart) : meta(parts, retries)}
       </div>
     )
   } else if (downloaded !== undefined) {
     // No denominator: never a percentage, only what has really arrived.
     if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
-    body = <div className="cwn-update-progress">{meta([receivedText(downloaded), ...transferParts()].join(' · '), side)}</div>
+    // Several files without a known total (an official updater staging more than one file) are still one sum.
+    body = <div className="cwn-update-progress">{meta(filesPrefix([receivedText(downloaded), ...transferParts()]), side, hostPart)}</div>
   } else if (state === 'none' || progress.channel || stageText) {
     // Phase only: the CLI's own stage line, no bar. The row already shows 「已用时」.
     if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
-    body = stageText || retries ? <div className="cwn-update-progress">{meta(stageText ?? '', retries)}</div> : null
+    body = stageText || retries ? <div className="cwn-update-progress">{meta(stageText ? [stageText] : [], retries)}</div> : null
   } else {
-    body = <div className="cwn-update-progress">{meta(t('正在执行，下载进度无法读取'), retries)}</div>
+    body = <div className="cwn-update-progress">{meta([t('正在执行，下载进度无法读取')], retries)}</div>
   }
 
   return (

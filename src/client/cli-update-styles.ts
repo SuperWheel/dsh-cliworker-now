@@ -64,6 +64,9 @@ export const cliUpdateStyles = `
 .cwn-update-progress-meta{display:flex;justify-content:space-between;flex-wrap:nowrap;gap:12px;min-width:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
 .cwn-update-progress-meta[data-tone=warn]{color:var(--dsw-alias-state-warn-label)}
 .cwn-update-meta-main{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwn-update-meta-main[data-host]{display:flex}
+.cwn-update-meta-lead{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwn-update-meta-host{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
 .cwn-update-meta-side{flex-shrink:0;white-space:nowrap}
 .cwn-update-seg{display:grid;gap:3px;height:4px}
 .cwn-update-seg>span{border-radius:2px;background:var(--dsw-alias-interactive-bg-hover)}
