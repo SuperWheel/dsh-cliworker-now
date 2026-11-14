@@ -310,7 +310,7 @@ Host SHALL 将连接关闭、重置、超时、fetch 网络错误及正文提前
 - **AND** 无中断证据、版本已前进、身份变化、进程清理未确认时 MUST NOT 自动重跑
 
 ### Requirement: 官方本地工件交接
-Host SHALL 优先使用已核实的官方本地工件入口，在私有目录下载并校验官方工件，再交由官方安装器；URL MUST 来自内置官方模板或受限发布源，禁止用户输入下载地址或复刻 MiMo 安装步骤。MiMo macOS 默认原生更新 SHALL 下载内置官方 zip，校验 HEAD 长度、content-md5 与 zip 结构、精确提取根成员 mimo，交私有官方脚本 --binary 安装；SHALL 明示同源 MD5 不代表独立签名。TRAE CN MUST NOT 使用会关闭自动更新的 offline-install 接管，SHALL 保留原生 update --channel --version 与中断证据重跑。
+Host SHALL 优先使用已核实的官方本地工件入口，在私有目录下载并校验官方工件，再交由官方安装器；URL MUST 来自内置官方模板或受限发布源，禁止用户输入下载地址或复刻 MiMo 安装步骤。MiMo macOS 默认原生更新 SHALL 下载内置官方 zip，校验 HEAD 长度、content-md5 与 zip 结构、精确提取根成员 mimo，交私有官方脚本 --binary 安装；SHALL 明示同源 MD5 不代表独立签名。 TRAE CN 的接管见「Windows 自带更新的插件下载接管」。
 
 #### Scenario: 官方安装器支持本地工件
 - **WHEN** 官方提供本地工件入口及可核对的摘要或长度
@@ -325,9 +325,20 @@ Host SHALL 优先使用已核实的官方本地工件入口，在私有目录下
 - **WHEN** MiMo macOS 默认原生安装使用官方本地工件入口
 - **THEN** Host SHALL 在维护锁内先下载后启动安装阶段，官方脚本只从内置地址下载到私有目录并以参数数组执行；安装后身份与目标版本均符合才成功，不清理安装器自有残留目录
 
-#### Scenario: TRAE 保留自身自动更新配置
-- **WHEN** 更新或首次安装 TRAE CN
-- **THEN** Host MUST NOT 构造离线清单或调用 offline-install；已有安装保留原生更新及证据重跑，首次安装保留既有官方脚本
+### Requirement: Windows 自带更新的插件下载接管
+Windows 上 Claude Code、Antigravity、OMP 与 TRAE CN 的官方默认布局更新 SHALL 由插件下载器取得官方工件（可续传、低速重连、真实进度），按官方清单摘要校验后交给官方入口或按官方脚本相同的位置放置；不执行官方脚本中的 PATH 或 shell 配置。TRAE CN 改用官方 offline-install 时 MUST 保留更新前的自动更新标记状态（2026-11-14 用户批准，撤销 9.1 的不接管决定）。
+
+#### Scenario: TRAE 接管下载并保留自身自动更新配置
+- **WHEN** 更新 TRAE CN（官方 install_v2 布局）
+- **THEN** Host SHALL 按官方发布清单下载主工件、全部 sidecar、Windows 沙箱辅助件与 ripgrep 依赖，逐个按官方 sha256 与长度校验，组成与官方 offline-download 相同结构的私有离线包并以参数数组调用 offline-install；更新前存在的 `auto-update-version` 标记 SHALL 恢复为新 release 目录名，更新前不存在则不创建；首次安装保留既有官方脚本
+
+#### Scenario: Windows 官方脚本只做放置时由插件放置
+- **WHEN** Windows 上更新 Claude Code、Antigravity 或 OMP 的官方默认布局
+- **THEN** Host SHALL 从内置官方清单取得版本、地址与摘要（Claude manifest sha256、Antigravity manifest sha512、OMP 构建服务 sha256），用可续传下载器取得工件并校验，再按官方脚本的位置写入：Claude 写入 `versions/<版本>` 后替换 `.local/bin/claude.exe`；Antigravity 与 OMP 先写同目录临时文件再替换 `agy.exe`、`omp.exe`；替换失败（文件被占用）SHALL 保留原文件并报告失败，不留下临时文件
+
+#### Scenario: 接管下载显示真实进度
+- **WHEN** 更新由插件下载器执行
+- **THEN** 行内 SHALL 显示已下载字节、总大小、速度与续传/换源次数，不再显示「下载进度无法读取」
 
 ### Requirement: 可续传下载的低速重连
 Host SHALL 使用一处 100,000 B/s 阈值，每个 10 秒窗口新增少于 1,000,000 B 且仍有进展时，仅对已证实支持 Range 的插件下载重连，共用 200 次计数；外部命令 MUST NOT 因低速被终止或重跑。
@@ -432,3 +443,7 @@ Host SHALL 按 Host 生命周期、项目和 CLI 隔离连接展示缓存，账�
 #### Scenario: Host 停用或项目切换
 - **WHEN** Host 停用或客户端切换项目
 - **THEN** 停用 SHALL 中止并等待所有读取及清理订阅，项目快照不得串用，重启不得将上次 Host 的登录缓存当作已核实状态
+
+#### Scenario: 维护期读取被拒不显示为连接错误
+- **WHEN** 账号或目录读取因该 CLI 正在更新（MAINTENANCE）被拒
+- **THEN** 连接缓存 MUST NOT 把它记为读取错误（不显示红点）；更新以任何结果结束（成功、失败、取消）并释放维护锁后，Host SHALL 作废该 CLI 的连接显示缓存，让设置页重新读取

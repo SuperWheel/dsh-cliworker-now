@@ -376,3 +376,27 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 两个名单分别为 11 个账号、10 个模型目录。后台队列按项目登记且连接项串行；同一 CLI 的账号与目录（含不同项目）共用 `SettingsConnectionCache` 的读取队列和维护锁，单槽未完成请求合并，显式刷新排在旧查询之后。不同 CLI 的前台读取仍可并发。后台任务或账号窗口打断立即 abort，等待进程范围清理后再空闲至少 30 秒重试；Host 关闭中止并等待队列与缓存读取。失败仅更新对应槽 error；进程清理无法确认时沿用该 CLI 的隔离机制，不以普通失败继续启动它。取消与 revision 校验阻止旧结果写入内存及目录缓存。
 
 所有后台路径禁止 prompt、真实模型调用、原生任务会话、终端/窗口/交互和自动升级。保持宿主代理环境，不删除代理变量，不执行 env -u；Pi/OMP 登录服务商 helper 与目录 bridge 均保留大小写代理键，继续过滤无关凭据。允许的是前台已有的服务初始化、原生续期与私有配置写入。决定 7 的“缺失模型目录”按本次用户决定扩展，不再要求“无文件改动/无续期”；版本与发布源后台权限保持原规则。真实账号、原生服务、Desktop 和 Windows/Linux 验收仍未执行；模拟不证明本机账号可用或所有版本均无弹窗。回退可关闭后台开关；没有用户数据迁移。
+
+## 2026-11-14 Windows 接管下载（任务 W）
+
+### 决定 13：Windows 四个自带更新改由插件下载（用户 2026-11-14 批准，含 TRAE）
+
+背景（11.9 实机）：Windows 经 Clash Verge 代理时，长下载在 18–153 MB 处断流后不再有数据；Claude、TRAE、OMP、Antigravity 自带更新器都不续传，插件只能等 10 分钟安装超时，界面显示「下载进度无法读取」。curl 经同一代理复现（36.9 秒 153,384,276 B 后停）。
+
+逐个核实的官方入口（脚本保存在 `.cache/cli-update-research/task-w/`，仅阅读未执行）：
+
+| CLI | 官方来源与校验 | 官方脚本的放置步骤 | 插件做法 |
+| --- | --- | --- | --- |
+| Claude Code | `https://downloads.claude.ai/claude-code-releases/<v>/manifest.json` 的 `platforms["win32-x64"].checksum`（sha256）与 size；工件 `<v>/win32-x64/claude.exe` | 下载后执行 `claude.exe install <target>`；实测（断网代理 127.0.0.1:9）`install` 会重新联网下载，不能作本地入口；Windows 启动器 `.local/bin/claude.exe` 与 `versions/<v>` 逐字节相同；二进制内无下载源环境变量 | 下载校验后写 `~/.local/share/claude/versions/<v>`（临时文件再改名），再替换 `.local/bin/claude.exe` |
+| Antigravity | `https://antigravity-cli-auto-updater-…run.app/manifests/windows_amd64.json` 的 version、url、sha512 | 下载到 staging、校验 sha512、`Copy-Item` 到 `%LOCALAPPDATA%\agy\bin\agy.exe`、`Unblock-File`，再 `agy install`（实测只配置 PATH 与 shell 别名） | 下载校验后写同目录临时文件再替换 `agy.exe`；不执行 `agy install` |
+| OMP | `https://build.stencil.so/api/products/omp/versions/<v>/windows-x86_64` 的 build.version、file.name、file.sha256、download | `Install-Binary`：写 `$InstallDir\.omp.download.exe`、校验 sha256、`Move-Item -Force` 到 `omp.exe`，再配置 PATH 与 Git Bash | 同上放置，不做 PATH/Bash 配置。PI_BUILD_URL 指向 file:// 在 Windows PowerShell 5.1 不可用（实测 Invoke-RestMethod 返回字符串，不解析 JSON） |
+| TRAE CN | `https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae-cli/v2/releases/<v>/manifest.json`（或 public/stable/latest.json）：主工件、sidecars、windows_sandbox_helpers 的 url/sha256/size；ripgrep `v2/deps/ripgrep/latest.json` | 官方 `install_v2.ps1 offline-install <目录>` 读取 `offline-manifest.json`（相对路径工件），但离线模式把 `$AutoUpdateEnabled` 置 false 并删除 `auto-update-version` 标记 | 按官方 `Export-OfflineBundle` 结构组离线包交 offline-install；更新前标记存在则装后写回新 release 目录名（实测标记内容为 `0.213.1-x86_64-pc-windows-msvc`，即 release 目录名），否则不写 |
+
+- 下载全部走插件下载器：10 秒停滞续传、低速重连、200 次与 2 小时上限、真实进度。多源只在有官方同对象第二地址时启用（Claude 另有 GCS 桶 `storage.googleapis.com/claude-code-dist-…`，需 HEAD 核对长度一致后才轮换）。
+- 校验：Claude/OMP/TRAE 用官方 sha256，Antigravity 用官方 sha512；均为同源发布清单，不等于独立签名，输出中注明。
+- 替换失败（exe 被其他进程占用）：保留原文件、删除临时文件、报告「文件被占用」，不半途改动。
+- 撤销：本决定替代任务 D 续 9.1「TRAE 不使用 offline-install」以及 spec 中对应场景；macOS/Linux TRAE 与其他 CLI 维持原归属，本轮只改 Windows 四项（TRAE Unix 待另核其标记逻辑）。
+
+### 决定 14：维护期账号读取不记为错误；维护结束统一作废连接显示
+
+11.9 取消 OMP 后侧栏红点根因：更新持有维护锁时，账号状态读取被 `MaintenanceError` 拒绝，`SettingsConnectionCache.read` 把它存为 `entry.error`；更新只在成功路径调用 `invalidateModels`，失败/取消后不作废，红点保留到用户点开该 CLI。修复：缓存遇到 `MAINTENANCE` 不写 error（保持无值、不转红）；`launch` 的 finally 在释放维护锁后（非隔离情形）对该 CLI 调用一次 `invalidateModels`。

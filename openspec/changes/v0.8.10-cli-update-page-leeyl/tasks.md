@@ -409,3 +409,10 @@
   - 修改 `src/host/cli-management/service.ts` 的 `context()`：连接项插在路径检查（已登记执行入口身份）之后，按 CLI 顺序把账号与目录相邻排列；空闲门槛、串行和打断清理不变。
   - `tests/settings-connection-preload.test.ts` 新增「连接项紧接路径检查」模拟用例；旧顺序下该用例失败（expected 17 to be less than 0），新顺序 19 passed。`tests/cli-management.test.ts`、`cli-management-remotes`、`cli-management-admission` 与之合计 107 passed；typecheck 通过。
   - Mac Desktop 复验（构建 44740eb，2026-11-14 13:20 冷启动、打开会话后不开设置等待约 3.5 分钟，负载约 3–5）：首次打开设置首屏 Antigravity、Codex、Claude Code、Kimi、MiMo、ZCode、Grok Build 已为绿点，OMP、Pi、Hermes 仍在后台队列中加载；调整前（构建 7642cd9，同样条件约 4 分钟）首屏只有 Antigravity、Codex 为绿。负载 25（10 核）时 CPU 门槛使后台顺延，属既定行为。
+
+## 13. Windows 接管下载与维护期状态（任务 W） 〔后端｜12h｜前置 11〕
+- [ ] 13.1 Claude Code、Antigravity、OMP 在 Windows 由插件下载、按官方摘要校验后按官方脚本位置放置（决定 13）
+- [ ] 13.2 TRAE CN 在 Windows 组官方离线包交 offline-install，并恢复更新前存在的自动更新标记
+- [ ] 13.3 维护期读取被拒不记红点，更新结束（含失败、取消）作废连接显示（决定 14）
+- [ ] 13.4 模拟回归、类型检查、相关测试、隔离构建与严格校验
+- [ ] 13.5 Windows 实机：四项真实更新经代理完成、进度条与续传次数、取消与残留、红点不复现
