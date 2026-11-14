@@ -77,6 +77,8 @@ WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面�
 
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
 
+Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高于 1.1.80 使用本次私有 SDK daemon，较旧版本保留 SDK worker；未知版本仅在明确协议不支持时切换一次。查询不发送 prompt，配置写入隔离到临时目录，确认结束与进程退出后清理；自定义模型保留，停用模型不可选。真实 Worker 继续使用 ACP。
+
 **TRAE CN**（`traecn`）只使用官方 `traecli`。官方安装脚本 `https://trae.cn/trae-cli/install_v2.sh` 需要直连 trae.cn；2026-11-07 境外出口探测返回 HTTP 403（`denied by region block`）。请使用官方安装脚本，不提供非官方安装包。官方文档仅对企业版旗舰版套餐开放 CLI；个人登录使用 `traecli --enable personal_user_login login --personal`，依赖开发中的 `personal_user_login` 特性；企业 SSO 使用 `traecli login --enterprise`，企业 PAT 使用 `traecli login --with-trae-pat`。v0.8.9 起提供「询问」档（原生只读沙箱 + 按需审批），不提供强度选择；2026-11-11 用 Seed-Code 在 macOS 与 Windows 实测写文件先审批、拒绝后不写入。Windows 上 TRAE 原生只读沙箱对 PowerShell 只读命令也会请求审批；拒绝后若本轮此前已有工具失败，该轮显示为运行失败。截至 2026-11-07 未发现官方国际版 CLI。Windows 已于 2026-11-09 真实登录并派遣。TRAE 没有原生上下文分类来源，系统提示词、工具定义、对话消息显示 `—`。详见 [TRAE 安装、账号与权限说明](doc/usage-details.md#trae-cn-安装与登录)。
 
 账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；文件夹信任由用户在窗口确认，空编辑器自动打开 `/login`，中国站/国际站提供浏览器引导，企业/iOA 保留原生。切换沿已核实路径自动 `/logout`，明确退出并完成清理后再登录；未知画面回退原生。详见 [授权前采集与未完成验收](openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)。

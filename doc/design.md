@@ -936,11 +936,11 @@ Client生成的Typert纯helper从选定SDK解析并按官方inline-safe规则内
 
 Qoder 作为独立 CLI 进入已有选择、项目偏好、原生子会话及两层任务树，外部分发与已安装界面名称均沿用现有约定。依据官方 npm CLI 1.1.73 的实际包、帮助和 ACP 初始化，使用 `qoder --acp` / JSON-RPC 2.0 NDJSON，保存 `qoder-acp-v1`；不把 Claude 相似消息当兼容证据，也不引入 SDK 1.0.53 默认 worker transport 所指的另一版 CLI 1.1.71。包哈希、官方来源和逐项证据见 `qoder-protocol.md`。
 
-模型目录由同一已安装 CLI 的 SDK stream-json initialize 返回完整 ID、启用状态与动态强度，等待 catalog-ready 后仅返回启用模型，不从 `--list-models` 表格推断。实际任务仍通过 ACP 设置当前模型、`reasoning_effort` 及 `mode` 并核对回执；失配、未宣告能力和账号变化在 prompt 前失败。账号只能取自 Qoder 自身登录或 PAT，经对应来源核验后绑定，不导入其他 CLI 或宿主凭据，不把认证密文刷新误认为稳定账号身份。单独账号查询通过 initialize → account_info 取得主键；授权目录使用同次 catalog-ready initialize 的账号投影。不另装 SDK 运行时，不由插件解密登录文件。认证读取、动态目录与实际任务是独立证据。
+模型目录由同一已安装 CLI 的官方 SDK 元数据协议返回完整 ID、启用状态与动态强度，仅返回启用模型，不从 `--list-models` 表格推断。2026-11-14 补充：高于 1.1.80 的入口改走 SDK 1.0.59 私有 stdio daemon（`--sdk`，协议版本 2），校验 `multi_session_v2` 与 `daemon_queries_v1`，通过 `daemon.account_info` 和 `daemon.get_models(fetchStrategy:live)` 查询；较旧入口保持 SDK 1.0.53 的 stream-json catalog-ready initialize。官方包名/版本或原生版本化安装路径作为版本依据，未知时先 worker，仅明确协议不支持可在前次清理确认后切换一次。两次共用账号 15 秒、模型 30 秒总预算，不发送 prompt 或打开 session，也不连接全局 daemon。实际任务仍通过 ACP 设置当前模型、`reasoning_effort` 及 `mode` 并核对回执；失配、未宣告能力和账号变化在 prompt 前失败。账号只能取自 Qoder 自身登录或 PAT，经对应来源核验后绑定，不导入其他 CLI 或宿主凭据，不把认证密文刷新误认为稳定账号身份。单独账号查询通过 initialize → account_info 取得主键；授权目录在同一次私有进程取得账号与模型，旧 worker 使用 catalog-ready initialize 的账号投影，daemon 使用独立账号面请求。不另装 SDK 运行时，不由插件解密登录文件。认证读取、动态目录与实际任务是独立证据。
 
-Desktop 复验发现原 ACP 临时会话 close→delete 失败，且原生目录初始化会刷新共享默认缓存，因此账号和目录元数据统一使用私有配置目录及官方 SDK 认证策略。浏览器登录保留原只读认证根且要求已有机器标识；PAT 使用私有认证根，按需复制已有机器标识。必要用户配置和 customs 安全复制，项目设置语义保留；会迁移写回的旧项目配置及尚未绑定的 `.env` 控制声明提前拒绝。end_session 回执、正常终止归属、完整流结算与进程范围退出全部确认后才返回目录并删除临时根。详细边界与实际验收见 `qoder-protocol.md` 第 9 节。
+Desktop 复验发现原 ACP 临时会话 close→delete 失败，且原生目录初始化会刷新共享默认缓存，因此账号和目录元数据统一使用私有配置目录及官方 SDK 认证策略。浏览器登录保留原只读认证根且要求已有机器标识；PAT 使用私有认证根，按需复制已有机器标识。必要用户配置和 customs 安全复制，项目设置语义保留；会迁移写回的旧项目配置及尚未绑定的 `.env` 控制声明提前拒绝。end_session（旧 worker）或 daemon.shutdown 回执、正常终止归属、完整流结算与进程范围退出全部确认后才返回目录并删除临时根。详细边界与实际验收见 `qoder-protocol.md` 第 9 节。
 
-设置加载沿用其他 CLI 的操作内快照和目录缓存模式：Qoder 在同一次 catalog-ready 初始化中取得账号与完整模型，操作前后独立校验认证、配置、环境、自定义模型和可执行入口来源。冷目录和显式刷新省去重复账号进程；热目录仍重新核对账号绑定，真实任务仍独立进行运行前校验。快照只在本次操作内有效，不对登录身份增加 TTL。来源指纹表示本地来源一致，不冒充初始化后的再次远端认证；实际耗时与进程数以 `tasks.md` 实测为准。
+设置加载沿用其他 CLI 的操作内快照和目录缓存模式：Qoder 在同一次私有元数据进程中取得账号与完整模型，操作前后独立校验认证、配置、环境、自定义模型和可执行入口来源。冷目录和显式刷新省去重复账号进程；热目录仍重新核对账号绑定，真实任务仍独立进行运行前校验。快照只在本次操作内有效，不对登录身份增加 TTL。来源指纹表示本地来源一致，不冒充初始化后的再次远端认证；实际耗时与进程数以 `tasks.md` 实测为准。
 
 本版 ACP 实际模式为 default/acceptEdits/auto/dontAsk/yolo，插件只开放现有“允许编辑”映射到 acceptEdits；额外审批拒绝，不使用绕过权限。没有宣告 plan，宿主或子任务要求规划时提前拒绝，不能以默认模式或提示词替代原生只读保护。运行期间配置变化继续核对，恢复必须沿用已确认的原生 sessionId，历史重放不进入本轮正文。停止先发 session/cancel，再由已有进程管理确认整个范围退出；协议回执不单独代表停止成功。
 
@@ -984,7 +984,7 @@ Windows 按已核验的官方原生位置 `~/.qoder/bin/qodercli/qodercli.exe` �
 
 ## 2026-10-18：Windows Qoder 账号收尾与 Desktop 终端来源（v0.8.1）
 
-Qoder 元数据查询必须先取得原生成功回执并确认 `end_session`。官方 Windows SDK 使用 `TerminateJobObject(1)` 收尾，因此仅在该请求由插件正常主动终止、没有取消或协议错误、进程范围已确认退出时接纳对应的 `1/null` 退出；自然非零、提前退出和未确认清理仍拒绝。该分类不执行登录、续期或模型请求，不改变账号文件与派遣前授权核验。
+Qoder 元数据查询必须先取得原生成功回执并确认 `end_session`（旧 worker）或 `daemon.shutdown`（daemon）。官方 Windows SDK 使用 `TerminateJobObject(1)` 收尾，因此仅在该请求由插件正常主动终止、没有取消或协议错误、进程范围已确认退出时接纳对应的 `1/null` 退出；自然非零、提前退出和未确认清理仍拒绝。该分类不执行登录、续期或模型请求，不改变账号文件与派遣前授权核验。
 
 正式 Desktop 的 ConPTY 二进制与清单可能分别在 `app.asar.unpacked` 和 `app.asar`。新增受当前 Host 安装位置、随机 nonce、归档只读锁与固定版本约束的清单证明；Electron 的逻辑读取和 `original-fs` 的物理无链接检查分离。继续按同一实际 helper 校验固定 exe/DLL 摘要、对应源码副本、父 PID、创建时间和控制台身份，并以 Job 范围为空及终端释放作为停止成功条件。普通 npm 物理清单路径保持。来源及完整边界见 `windows-conpty-source.md`；真实账号、模拟终端和实际 UI 的验收证据分别记入 `tasks.md`。
 

@@ -156,7 +156,7 @@ it('binds PAT customs conservatively while ignoring the native .models/default o
   expect(await f.binding()).toEqual(second)
 })
 
-function accountControlFixture(options: { anonymous?: boolean; error?: boolean; stdinError?: 'event' | 'callback'; malformed?: boolean; exitCode?: number; cleanupThrows?: boolean; cleanup?: boolean; terminateThrows?: boolean; endError?: boolean; earlyExit?: boolean; naturalEndExit?: boolean; trailing?: boolean; signal?: string; models?: unknown; abortAtEnd?: AbortController } = {}) {
+function accountControlFixture(options: { daemon?: boolean; badHandshake?: boolean; hang?: boolean; unsupported?: 'worker' | 'daemon'; oversized?: boolean; anonymous?: boolean; error?: boolean; stdinError?: 'event' | 'callback'; malformed?: boolean; exitCode?: number; cleanupThrows?: boolean; cleanup?: boolean; terminateThrows?: boolean; endError?: boolean; earlyExit?: boolean; naturalEndExit?: boolean; trailing?: boolean; signal?: string; models?: unknown; abortAtEnd?: AbortController } = {}) {
   const calls: any[] = [], stdout = new PassThrough(), stderr = new PassThrough()
   let resolveDone!: (value: SubprocessOutcome) => void, stopped = false, payloadContent = '', payloadMode = 0
   const done = new Promise<SubprocessOutcome>((resolve) => { resolveDone = resolve })
@@ -164,7 +164,7 @@ function accountControlFixture(options: { anonymous?: boolean; error?: boolean; 
     if (stopped) return; stopped = true
     if (options.trailing) stdout.write('{"synthetic":"truncated')
     stdout.end(); stderr.end()
-    resolveDone({ exitCode: options.exitCode ?? (options.anonymous ? 41 : 0), signal: options.signal ?? null } as SubprocessOutcome)
+    resolveDone({ exitCode: options.exitCode ?? (options.unsupported === 'worker' ? 42 : options.unsupported === 'daemon' ? 1 : options.anonymous ? 41 : 0), signal: options.signal ?? null } as SubprocessOutcome)
   }
   const stdin = new Writable({ write(chunk, _encoding, callback) {
     const value = JSON.parse(String(chunk)); calls.push(value)
@@ -175,18 +175,24 @@ function accountControlFixture(options: { anonymous?: boolean; error?: boolean; 
       return
     }
     queueMicrotask(() => {
+      if (options.hang) return
+      if (options.unsupported) {
+        stderr.write(options.unsupported === 'worker' ? 'sdk_worker_removed: simulated' : "error: unknown option '--sdk'")
+        finish(); return
+      }
+      if (options.oversized) { stdout.write('x'.repeat(2048)); return }
       if (options.anonymous) {
         stdout.write(JSON.stringify({ type: 'result', terminal_reason: 'auth_required', num_turns: 0 }) + '\n'); finish(); return
       }
       if (options.malformed) { stdout.write('synthetic invalid JSON\n'); return }
       if (options.earlyExit) { finish(); return }
-      const failed = options.error || options.endError && value.request.type === 'end_session'
-      if (value.request.type === 'end_session') options.abortAtEnd?.abort(new Error('synthetic-cancel'))
+      const failed = options.error || options.endError && ['end_session', 'daemon.shutdown'].includes(value.request.type)
+      if (['end_session', 'daemon.shutdown'].includes(value.request.type)) options.abortAtEnd?.abort(new Error('synthetic-cancel'))
       stdout.write(JSON.stringify({ type: 'control_response', response: { request_id: value.request_id,
-        subtype: failed ? 'error' : 'success', response: { account: { userId: 'synthetic-native-uid', email: 'native@example.invalid' }, models: options.models ?? modelCatalog.models },
+        subtype: failed ? 'error' : 'success', response: options.daemon && value.request.type === 'daemon.initialize' ? { daemon_protocol_version: options.badHandshake ? 1 : 2, daemon_version: '1.1.89', capabilities: ['multi_session_v2', 'daemon_queries_v1'] } : { account: { userId: 'synthetic-native-uid', email: 'native@example.invalid' }, models: options.models ?? modelCatalog.models },
         ...(failed ? { error: 'synthetic-secret-in-error' } : {}),
       } }) + '\n')
-      if (options.naturalEndExit && value.request.type === 'end_session') finish()
+      if (options.naturalEndExit && ['end_session', 'daemon.shutdown'].includes(value.request.type)) finish()
     })
     callback()
   } })
@@ -719,4 +725,138 @@ describe('Qoder account status budget includes native cleanup (synthetic clocks)
     expect(f.calls).toEqual(['initialize'])
     await f.manager.close()
   })
+})
+
+
+// 以下 daemon 协议及官方包布局均为模拟，不执行真实 CLI。
+async function simulatedPackage(directory: string, version: string, name = '@qoder-ai/qodercli') {
+  const root = join(directory, 'SIMULATED-package')
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, 'package.json'), JSON.stringify({ name, version }))
+  const entry = join(root, 'qoder.exe')
+  await writeFile(entry, 'SIMULATED-native-entry')
+  return entry
+}
+describe('模拟 Qoder SDK daemon 元数据', () => {
+  it.each(['account', 'models'] as const)('模拟新版 %s：握手、字段、私有权限、代理继承和 shutdown', async kind => {
+    const f = await fixture(), transport = accountControlFixture({ daemon: true })
+    const executable = await simulatedPackage(f.directory, '1.1.89')
+    vi.stubEnv('HTTPS_PROXY', 'http://SIMULATED.invalid:1234')
+    const signal = new AbortController().signal
+    const value = kind === 'account'
+      ? await queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, executable, f.directory, signal)
+      : await discoverQoderModels(transport.backend, DEFAULT_CONFIG, executable, f.directory, signal)
+    if (kind === 'models') expect(value).toEqual(parseQoderModelState(modelCatalog))
+    else expect(value).toMatchObject({ userId: 'synthetic-native-uid' })
+    expect(transport.calls.map(v => v.request.type)).toEqual(['daemon.initialize', 'daemon.account_info', ...(kind === 'models' ? ['daemon.get_models'] : []), 'daemon.shutdown'])
+    expect(transport.calls[0].request).toMatchObject({ daemon_protocol_version: 2, sdk_version: '1.0.59', auth: { type: 'qodercli' } })
+    expect(transport.calls.every(v => v.session_id === undefined && v.request.subtype === undefined)).toBe(true)
+    if (kind === 'models') expect(transport.calls[2].request).toMatchObject({ fetchStrategy: 'live', uid: 'synthetic-native-uid' })
+    const spec = transport.spawn.mock.calls[0][0]
+    expect(spec.argv).toEqual([executable, '--sdk'])
+    expect(spec.env).toMatchObject({ QODER_AGENT_SDK_DAEMON: '1', QODER_AGENT_SDK_VERSION: '1.0.59', QODER_SDK_AUTH_CONFIG_DIR: f.directory })
+    expect(spec.env.HTTPS_PROXY).toBeUndefined() // Backend inherits the Host environment.
+    expect(process.env.HTTPS_PROXY).toBe('http://SIMULATED.invalid:1234')
+    if (process.platform !== 'win32') expect(transport.payload().payloadMode).toBe(0o600)
+    expect(transport.stopped()).toBe(true)
+    await expect(readFile(spec.env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it.each(['1.1.73', '1.1.80', '1.1.81', '1.2.0', '2.0.0'])('模拟官方包版本分流 %s', async version => {
+    const f = await fixture(), daemon = !['1.1.73', '1.1.80'].includes(version)
+    const transport = accountControlFixture({ daemon })
+    await queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, version), f.directory, new AbortController().signal)
+    expect(transport.spawn.mock.calls[0][0].argv).toContain(daemon ? '--sdk' : '--print')
+  })
+  it('模拟其他包名不能充当 Qoder 版本证据', async () => {
+    const f = await fixture(), transport = accountControlFixture()
+    await queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89', '@qodercn-ai/qoderclicn'), f.directory, new AbortController().signal)
+    expect(transport.spawn.mock.calls[0][0].argv).toContain('--print')
+  })
+  it.each(['worker', 'daemon'] as const)('模拟 %s 明确不支持时仅切换一次且先清理', async protocol => {
+    const f = await fixture(), first = accountControlFixture({ unsupported: protocol }), second = accountControlFixture({ daemon: protocol === 'worker' })
+    const executable = protocol === 'daemon' ? await simulatedPackage(f.directory, '1.1.89') : '/synthetic/unknown.exe'
+    const spawn = vi.fn((spec:any) => {
+      if (spawn.mock.calls.length === 1) return first.spawn(spec)
+      expect(first.stopped()).toBe(true)
+      expect(() => statSync(first.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE)).toThrow()
+      return second.spawn(spec)
+    })
+    await expect(queryQoderAccountInfo({ ...first.backend, spawn }, DEFAULT_CONFIG, executable, f.directory, new AbortController().signal)).resolves.toMatchObject({ userId: 'synthetic-native-uid' })
+    expect(spawn).toHaveBeenCalledTimes(2)
+    expect(second.stopped()).toBe(true)
+  })
+  it('模拟两个协议都不支持时保留兼容提示且不启动第三次', async () => {
+    const f = await fixture(), first = accountControlFixture({ unsupported: 'worker' }), second = accountControlFixture({ unsupported: 'daemon' })
+    const spawn = vi.fn((spec:any) => spawn.mock.calls.length === 1 ? first.spawn(spec) : second.spawn(spec))
+    await expect(queryQoderAccountInfo({ ...first.backend, spawn }, DEFAULT_CONFIG, '/synthetic/unknown.exe', f.directory, new AbortController().signal)).rejects.toThrow('插件尚未适配')
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+  it.each(['earlyExit', 'endError', 'malformed', 'badHandshake', 'error', 'oversized', 'trailing'] as const)('模拟 daemon %s 失败清理且不重试', async kind => {
+    const f = await fixture(), transport = accountControlFixture({ daemon: true, [kind]: true })
+    await expect(queryQoderAccountInfo(transport.backend, { ...DEFAULT_CONFIG, maxLineBytes: 1024 }, await simulatedPackage(f.directory, '1.1.89'), f.directory, new AbortController().signal)).rejects.toThrow()
+    expect(transport.spawn).toHaveBeenCalledTimes(1)
+    expect(transport.stopped()).toBe(true)
+    await expect(readFile(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('模拟 daemon 在 shutdown 回执时 abort 不返回成功且清理', async () => {
+    const f = await fixture(), controller = new AbortController(), transport = accountControlFixture({ daemon: true, abortAtEnd: controller })
+    await expect(queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89'), f.directory, controller.signal)).rejects.toThrow()
+    expect(transport.stopped()).toBe(true)
+    await expect(readFile(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it.each(['account', 'models'] as const)('模拟 %s 预算超时终止并清理', async kind => {
+    const f = await fixture(), transport = accountControlFixture({ daemon: true, hang: true }), controller = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
+    const executable = await simulatedPackage(f.directory, '1.1.89')
+    const pending = kind === 'account'
+      ? queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, executable, f.directory, new AbortController().signal)
+      : discoverQoderModels(transport.backend, DEFAULT_CONFIG, executable, f.directory, new AbortController().signal)
+    const assertion = expect(pending).rejects.toThrow()
+    await vi.waitFor(() => expect(transport.spawn).toHaveBeenCalledTimes(1))
+    expect(timeout).toHaveBeenCalledWith(kind === 'models' ? 30000 : 15000)
+    controller.abort(new DOMException('模拟超时', 'TimeoutError'))
+    await assertion; timeout.mockRestore()
+    expect(transport.stopped()).toBe(true)
+    await expect(readFile(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  it('模拟 daemon 清理未确认保留私有文件且不回退', async () => {
+    const f = await fixture(), transport = accountControlFixture({ daemon: true, cleanup: false })
+    await expect(queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89'), f.directory, new AbortController().signal)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+    const root = dirname(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE); roots.push(root)
+    expect(statSync(root).isDirectory()).toBe(true)
+    expect(transport.spawn).toHaveBeenCalledTimes(1)
+  })
+  it('模拟 daemon 启动前拒绝 .env 认证覆盖', async () => {
+    const f = await fixture(), transport = accountControlFixture({ daemon: true })
+    await writeFile(join(f.directory, '.env'), 'QODER_PAT=SIMULATED')
+    await expect(queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89'), f.directory, new AbortController().signal)).rejects.toThrow('.env')
+    expect(transport.spawn).not.toHaveBeenCalled()
+  })
+})
+
+it('模拟 daemon abort 同时范围退出未确认时保留清理错误', async () => {
+  const f = await fixture(), controller = new AbortController(), transport = accountControlFixture({ daemon: true, cleanup: false, abortAtEnd: controller })
+  await expect(queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89'), f.directory, controller.signal)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+  roots.push(dirname(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE))
+  expect(transport.spawn).toHaveBeenCalledTimes(1)
+})
+
+it('模拟 daemon PAT 仅经私有 payload 与握手传递，清理后不保留认证文件', async () => {
+  const f = await fixture(), transport = accountControlFixture({ daemon: true })
+  vi.stubEnv('QODER_PERSONAL_ACCESS_TOKEN', 'SIMULATED-pat')
+  const result = await queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, await simulatedPackage(f.directory, '1.1.89'), f.directory, new AbortController().signal)
+  const spec = transport.spawn.mock.calls[0][0]
+  expect(spec.env.QODER_SDK_AUTH_CONFIG_DIR).toBe(spec.env.QODER_CONFIG_DIR)
+  expect(spec.env.QODER_PERSONAL_ACCESS_TOKEN).toBe('')
+  expect(transport.calls[0].request.auth).toEqual({ type: 'accessToken', accessToken: 'SIMULATED-pat' })
+  expect(JSON.parse(transport.payload().payloadContent)).toEqual({ type: 'accessToken', accessToken: 'SIMULATED-pat' })
+  if (process.platform !== 'win32') expect(transport.payload().payloadMode).toBe(0o600)
+  expect(JSON.stringify(result)).not.toContain('SIMULATED-pat')
+  await expect(readFile(spec.env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('模拟 worker 已移除但清理未确认时禁止 daemon 回退', async () => {
+  const f = await fixture(), transport = accountControlFixture({ unsupported: 'worker', cleanup: false })
+  await expect(queryQoderAccountInfo(transport.backend, DEFAULT_CONFIG, '/synthetic/unknown.exe', f.directory, new AbortController().signal)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+  roots.push(dirname(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE))
+  expect(transport.spawn).toHaveBeenCalledTimes(1)
 })

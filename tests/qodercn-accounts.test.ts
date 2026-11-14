@@ -39,7 +39,7 @@ async function fixture() {
     binding: () => readQoderAccountBindingMaterial(syntheticExecutable, signal, options) }
 }
 
-function metadataFixture(account = { userId: 'SIMULATED-cn-user', email: 'cn@example.invalid' }) {
+function metadataFixture(account = { userId: 'SIMULATED-cn-user', email: 'cn@example.invalid' }, daemon = false) {
   const calls: any[] = [], stdout = new PassThrough(), stderr = new PassThrough()
   let stopped = false, resolveDone!: (value: SubprocessOutcome) => void, payload = ''
   const done = new Promise<SubprocessOutcome>(resolve => { resolveDone = resolve })
@@ -51,7 +51,7 @@ function metadataFixture(account = { userId: 'SIMULATED-cn-user', email: 'cn@exa
   const stdin = new Writable({ write(chunk, _encoding, callback) {
     const request = JSON.parse(String(chunk)); calls.push(request)
     queueMicrotask(() => stdout.write(JSON.stringify({ type: 'control_response', response: {
-      request_id: request.request_id, subtype: 'success', response: {
+      request_id: request.request_id, subtype: 'success', response: daemon && request.request.type === 'daemon.initialize' ? { daemon_protocol_version: 2, daemon_version: '1.1.89', capabilities: ['multi_session_v2', 'daemon_queries_v1'] } : {
         account,
         models: [{ value: 'cn/native-full-model-key', displayName: 'Synthetic CN model', isEnabled: true, efforts: ['high'] },
           { value: 'cn/disabled', displayName: 'Synthetic disabled CN model', isEnabled: false, efforts: [] }],
@@ -249,4 +249,24 @@ describe('Qoder CN SDK metadata transport (simulated; no login or real model)', 
     expect(transport.spawn).toHaveBeenCalledTimes(1)
     expect(transport.stopped()).toBe(true)
   })
+})
+
+it('模拟 Qoder CN daemon 使用中国版包身份与独立认证根并复用单次快照', async () => {
+  const f = await fixture(), transport = metadataFixture(undefined, true)
+  await f.login()
+  const executable = join(f.root, 'qoderclicn.exe')
+  await writeFile(executable, 'SIMULATED-native-entry')
+  await writeFile(join(f.root, 'package.json'), JSON.stringify({ name: '@qodercn-ai/qoderclicn', version: '1.1.89' }))
+  const config = { ...DEFAULT_CONFIG }
+  const result = await withQoderCatalogSnapshot(transport.backend, config, executable, f.project, f.signal, async () => ({
+    account: await queryQoderAccountInfo(transport.backend, config, executable, f.project, f.signal, 'qodercn'),
+    models: await discoverQoderModels(transport.backend, config, executable, f.project, f.signal, 'qodercn'),
+  }), 'qodercn')
+  expect(result.account).toMatchObject({ userId: 'SIMULATED-cn-user' })
+  expect(result.models).toEqual([{ id: 'cn/native-full-model-key', label: 'Synthetic CN model', efforts: ['default', 'high'] }])
+  expect(transport.spawn).toHaveBeenCalledTimes(1)
+  expect(transport.spawn.mock.calls[0][0].env).toMatchObject({ QODERCLI_SITE: 'cn', QODER_CONFIG_DIR: '', QODER_SDK_AUTH_CONFIG_DIR: f.cn, QODER_AGENT_SDK_VERSION: '1.0.59', QODER_AGENT_SDK_DAEMON: '1' })
+  expect(transport.calls.map(v => v.request.type)).toEqual(['daemon.initialize', 'daemon.account_info', 'daemon.get_models', 'daemon.shutdown'])
+  expect(transport.stopped()).toBe(true)
+  await expect(readFile(transport.spawn.mock.calls[0][0].env.QODER_SDK_AUTH_PAYLOAD_FILE)).rejects.toMatchObject({ code: 'ENOENT' })
 })

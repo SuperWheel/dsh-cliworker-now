@@ -1,0 +1,8 @@
+pm:
+  title: Qoder 1.1.89 元数据查询改走 SDK daemon
+  version: 0.8.10
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-14

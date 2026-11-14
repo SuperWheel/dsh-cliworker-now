@@ -1,6 +1,6 @@
 import { qoderVariant, type QoderCliId } from './qoder-variant.ts'
 import { constants } from 'node:fs'
-import { lstat, open, mkdtemp, mkdir, writeFile, rm, readdir } from 'node:fs/promises'
+import { lstat, open, mkdtemp, mkdir, writeFile, rm, readdir, realpath } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { homedir, tmpdir } from 'node:os'
@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { accountEmail, type AccountIdentity } from './account-identity.ts'
 import { safePiOmpAncestors } from './pi-omp-native.ts'
-import { nativeLaunchArgv } from './native-launch.mjs'
+import { nativeLaunchArgv, resolveNativeEntry } from './native-launch.mjs'
 import { parseNativeJsonc } from './opencode-native.ts'
 import { metadataFileFingerprint } from './native-capability-cache.ts'
 import { nativeMetadataKey } from './mimo-metadata-cache.ts'
@@ -148,7 +148,7 @@ export function qoderEnvironment(cli: QoderCliId = 'qoder'): Record<string, stri
     [prefix + 'CONFIG_DIR']: qoderConfigDirectory(process.env, cli),
     [prefix + 'WORKING_DIR']: '', [prefix + 'SESSION_ID']: '', [prefix + 'SESSION_NAME']: '', [prefix + 'MODEL']: '', GEMINI_MODEL: '',
     [prefix + 'PERSONAL_ACCESS_TOKEN']: token || '',
-    QODER_AGENT_SDK_ENTRYPOINT: '', QODER_AGENT_SDK_VERSION: '',
+    QODER_AGENT_SDK_ENTRYPOINT: '', QODER_AGENT_SDK_VERSION: '', QODER_AGENT_SDK_DAEMON: '',
     QODER_SDK_AUTH_PAYLOAD_FILE: '', QODER_SDK_AUTH_CONFIG_DIR: '',
   }
 }
@@ -244,9 +244,50 @@ async function copyQoderMetadataSettings(source: string, target: string, signal:
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
 }
 
+type MetadataProtocol = 'worker' | 'daemon'
+class QoderProtocolUnsupportedError extends QoderAccountError {
+  constructor(kind: 'account' | 'models') {
+    super(`${kind === 'models' ? 'Qoder 原生模型目录暂不可用' : 'Qoder 原生账号查询暂不可用'}：插件尚未适配此 Qoder 版本的元数据协议`)
+  }
+}
+
+/** Read the selected entry without executing a version/updater dispatcher. */
+async function metadataProtocol(executable: string, cli: QoderCliId, signal: AbortSignal): Promise<MetadataProtocol> {
+  signal.throwIfAborted()
+  const variant = qoderVariant(cli)
+  let version: string | undefined
+  try {
+    const target = await realpath(resolveNativeEntry(await realpath(executable)))
+    const nativeRoot = await realpath(join(homedir(), variant.directory, 'bin', variant.executable)).catch(() => '')
+    if (dirname(target) === nativeRoot)
+      version = new RegExp(`^${variant.executable}-(\\d+\\.\\d+\\.\\d+)(?:\\.exe)?$`).exec(basename(target))?.[1]
+    if (!version) for (let dir = dirname(target), depth = 0; depth < 7; dir = dirname(dir), depth++) {
+      const raw = await read(join(dir, 'package.json'), signal, 128 * 1024, false)
+      if (raw === undefined) continue
+      const pkg: unknown = JSON.parse(raw)
+      if (record(pkg) && pkg.name === variant.package && typeof pkg.version === 'string') version = pkg.version
+      break
+    }
+  } catch { signal.throwIfAborted() }
+  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(version ?? '')?.slice(1).map(Number)
+  return parts && (parts[0]! > 1 || parts[0] === 1 && (parts[1]! > 1 || parts[1] === 1 && parts[2]! > 80)) ? 'daemon' : 'worker'
+}
+
+async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, signal: AbortSignal, kind: 'account' | 'models', cli: QoderCliId): Promise<unknown> {
+  const control = AbortSignal.any([signal, AbortSignal.timeout(kind === 'models' ? 30_000 : 15_000)])
+  const protocol = await metadataProtocol(executable, cli, control)
+  try { return await queryQoderMetadataAttempt(backend, config, executable, cwd, control, kind, cli, protocol) }
+  catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
+    if (control.aborted || !(error instanceof QoderProtocolUnsupportedError)) throw error
+    // The attempt only rejects after range exit and private-directory cleanup.
+    return queryQoderMetadataAttempt(backend, config, executable, cwd, control, kind, cli, protocol === 'worker' ? 'daemon' : 'worker')
+  }
+}
+
 /** Same installed CLI's SDK control protocol, without a prompt or SDK dependency.
  * qodercli is native readOnly/none; accessToken is native memoryOnly/none. */
-async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, signal: AbortSignal, kind: 'account' | 'models', cli: QoderCliId): Promise<unknown> {
+async function queryQoderMetadataAttempt(backend: ProcessBackend, config: RuntimeConfig, executable: string, cwd: string, signal: AbortSignal, kind: 'account' | 'models', cli: QoderCliId, protocol: MetadataProtocol): Promise<unknown> {
   signal.throwIfAborted()
   const env = qoderEnvironment(cli)
   await checkQoderDotEnv(env[qoderVariant(cli).prefix + 'CONFIG_DIR']!, cwd, signal, cli)
@@ -269,23 +310,26 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
         await writeFile(join(root, '.auth', 'machine_id'), machine, { flag: 'wx', mode: 0o600 })
       }
     }
-    await writeFile(payload, JSON.stringify(env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN']
-      ? { type: 'accessToken', accessToken: env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN'] } : { type: 'qodercli' }), { flag: 'wx', mode: 0o600 })
-    const control = AbortSignal.any([signal, AbortSignal.timeout(kind === 'models' ? 30_000 : 15_000)])
+    const auth = env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN']
+      ? { type: 'accessToken', accessToken: env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN'] } : { type: 'qodercli' }
+    await writeFile(payload, JSON.stringify(auth), { flag: 'wx', mode: 0o600 })
+    const control = signal, daemon = protocol === 'daemon'
     control.throwIfAborted()
     const child = backend.spawn({
-      argv: nativeLaunchArgv([executable, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
+      argv: nativeLaunchArgv(daemon ? [executable, '--sdk'] : [executable, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
         '--no-session-persistence', '--tools', '', '--disable-builtin-skills', '--permission-mode', 'default',
         '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--settings',
         '{"disableAllHooks":true,"general":{"enableAutoUpdate":false},"aiCodeTracking":{"installGitCommitHook":false}}']),
       cwd, env: { ...env, [qoderVariant(cli).prefix + 'CONFIG_DIR']: root, QODER_SDK_AUTH_CONFIG_DIR: env[qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN'] ? root : env[qoderVariant(cli).prefix + 'CONFIG_DIR']!,
-        [qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN']: '', QODER_AGENT_SDK_ENTRYPOINT: 'sdk-ts', QODER_AGENT_SDK_VERSION: '1.0.53',
+        [qoderVariant(cli).prefix + 'PERSONAL_ACCESS_TOKEN']: '', QODER_AGENT_SDK_ENTRYPOINT: 'sdk-ts', QODER_AGENT_SDK_VERSION: daemon ? '1.0.59' : '1.0.53',
+        QODER_AGENT_SDK_DAEMON: daemon ? '1' : '',
         QODER_SDK_AUTH_PAYLOAD_FILE: payload, QODER_SDK_CUSTOM_BASE_URL_BYOK: '1' },
       stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' }, signal: control, graceMs: config.graceMs,
     })
-    const failure = () => new QoderAccountError(kind === 'models'
+    let unsupported = false, initializedProtocol = false, diagnosticTail = '', failureDetail = ''
+    const failure = () => unsupported && !initializedProtocol ? new QoderProtocolUnsupportedError(kind) : new QoderAccountError((kind === 'models'
       ? 'Qoder 原生模型目录暂不可用，请在原生 CLI 检查登录和网络'
-      : 'Qoder 原生账号查询暂不可用，请在原生 CLI 中检查登录')
+      : 'Qoder 原生账号查询暂不可用，请在原生 CLI 中检查登录') + failureDetail)
     const pending = new Map<string, { type: string; resolve: (value: any) => void; reject: (error: Error) => void }>()
     let bytes = 0, buffer = '', issue: Error | undefined, anonymous = false
     let endAcknowledged = false, exitObserved = false, ownedTermination = false
@@ -300,7 +344,7 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
       return new Promise((resolve, reject) => {
         const id = randomUUID(); pending.set(id, { type, resolve, reject })
         if (!child.stdin?.writable || child.stdin.destroyed) { fail(); return }
-        child.stdin.write(JSON.stringify({ type: 'control_request', request_id: id, request: { ...params, type, subtype: type } }) + '\n', (error) => { if (error) fail() })
+        child.stdin.write(JSON.stringify({ type: 'control_request', request_id: id, request: daemon ? { ...params, type: `daemon.${type}` } : { ...params, type, subtype: type } }) + '\n', (error) => { if (error) fail() })
       })
     }
     const consume = async (stream: typeof child.stdout, stdout: boolean) => {
@@ -308,7 +352,14 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
       if (stream) for await (const chunk of stream) {
         bytes += Buffer.byteLength(chunk)
         if (bytes > Math.min(config.maxRunBytes, 4 * 1024 * 1024)) throw failure()
-        if (!stdout) continue
+        if (!stdout) {
+          // Match only fixed protocol diagnostics, never return raw stderr.
+          diagnosticTail += String(chunk)
+          if (!initializedProtocol && (protocol === 'worker' && diagnosticTail.includes('sdk_worker_removed') ||
+              daemon && /(?:unknown|unrecognized|unexpected|unsupported) (?:option|argument)[^\r\n]{0,80}--sdk/i.test(diagnosticTail))) unsupported = true
+          diagnosticTail = diagnosticTail.slice(-1024)
+          continue
+        }
         buffer += decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)))
         if (Buffer.byteLength(buffer) > config.maxLineBytes && !buffer.includes('\n')) throw failure()
         let index: number
@@ -317,15 +368,25 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
           if (!line.trim()) continue
           if (Buffer.byteLength(line) > config.maxLineBytes) throw failure()
           const value: unknown = JSON.parse(line)
-          if (!record(value)) throw failure()
+          if (!record(value) || daemon && value.session_id !== undefined) throw failure()
           if (value.type === 'control_response' && pending.has(value.response?.request_id)) {
             const item = pending.get(value.response.request_id)!; pending.delete(value.response.request_id)
-            if (value.response.subtype !== 'success') { fail(); item.reject(failure()); continue }
-            if (item.type === 'end_session') endAcknowledged = true
+            if (value.response.subtype !== 'success') {
+              if (!initializedProtocol && value.response.code === 'sdk_worker_removed') unsupported = true
+              const reasons: Record<string, string> = {
+                AUTH_REQUIRED: '原生账号未认证', AUTH_PAYLOAD_REQUIRED: '原生认证来源未就绪',
+                PROTOCOL_VERSION_UNSUPPORTED: '插件尚未适配此 Qoder 版本的元数据协议',
+                METHOD_NOT_FOUND: '插件尚未适配此 Qoder 版本的元数据请求',
+                DAEMON_COMMAND_FAILED: '原生 daemon 命令失败',
+              }
+              if (typeof value.response.code === 'string' && Object.hasOwn(reasons, value.response.code)) failureDetail = `（${reasons[value.response.code]}）`
+              fail(); item.reject(failure()); continue
+            }
+            if (item.type === (daemon ? 'shutdown' : 'end_session')) endAcknowledged = true
             item.resolve(value.response.response ?? {})
-          } else if (value.type === 'result' && value.terminal_reason === 'auth_required') {
+          } else if (!daemon && value.type === 'result' && value.terminal_reason === 'auth_required') {
             anonymous = true; for (const item of pending.values()) item.resolve(null); pending.clear()
-          } else if (value.type === 'control_request') throw failure()
+          } else if (value.type === 'control_request' || value.type === 'protocol_error') throw failure()
         }
       }
       if (stdout) { buffer += decoder.end(); if (buffer.trim()) throw failure() }
@@ -337,6 +398,7 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
       const terminatedHere = ownedTermination
       // Drain the final auth_required/end_session frame before classifying a natural exit.
       await Promise.allSettled(readers)
+      if (!initializedProtocol && !daemon && outcome.exitCode === 42 && !control.aborted) unsupported = true
       if (anonymous) {
         if (outcome.exitCode !== 41 && outcome.exitCode !== 0 || outcome.signal != null) fail()
         return
@@ -352,7 +414,28 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
       if (!endAcknowledged || control.aborted || outcome.exitCode !== 0 && !ownedSignalExit || outcome.signal != null && !ownedSignalExit) fail()
     }, fail)
     try {
+      if (daemon) {
+        const handshake = await request('initialize', { daemon_protocol_version: 2, sdk_version: '1.0.59',
+          capabilities: ['multi_session_v2', 'daemon_queries_v1'], auth })
+        if (handshake?.daemon_protocol_version !== 2 || !text(handshake.daemon_version) ||
+            !Array.isArray(handshake.capabilities) || !['multi_session_v2', 'daemon_queries_v1'].every(capability => handshake.capabilities.includes(capability))) {
+          failureDetail = '（插件尚未适配此 Qoder 版本的握手能力）'
+          throw failure()
+        }
+        initializedProtocol = true
+        try {
+          const result = await request('account_info')
+          if (!record(result?.account)) throw failure()
+          if (!text(result.account.userId)) return null
+          if (kind === 'account') return result.account
+          const models = await request('get_models', { fetchStrategy: 'live', uid: result.account.userId })
+          return { models: parseQoderModelState(models), account: {
+            userId: result.account.userId, email: result.account.email, organization: result.account.organization,
+          } }
+        } finally { await request('shutdown') }
+      }
       const initialized = await request('initialize', { supportsCatalogReadyInitialize: kind === 'models', skills: [] })
+      initializedProtocol = true
       if (anonymous) return null
       try {
         if (kind === 'models') return { models: parseQoderModelState(initialized),
@@ -372,7 +455,7 @@ async function queryQoderMetadata(backend: ProcessBackend, config: RuntimeConfig
           if (!(await child.waitForExit())) throw new ProcessCleanupUnconfirmedError()
         } catch { cleanupConfirmed = false; throw new ProcessCleanupUnconfirmedError() }
         const settled = await Promise.allSettled([child.done, completion, ...readers])
-        buffer = ''
+        buffer = ''; diagnosticTail = ''
         if (issue || control.aborted || settled.some((value) => value.status === 'rejected')) throw failure()
       } finally { child.stdin?.removeListener('error', inputError) }
     }
