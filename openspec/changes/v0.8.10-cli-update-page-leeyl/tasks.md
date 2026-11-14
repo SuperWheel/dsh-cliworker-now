@@ -200,10 +200,12 @@
   - 桌面：`node --import tsx .cache/gaps-desktop-live.ts` 沙箱内在 spctl 退出 1，未复制且清理完成；沙箱外原命令通过，ZCode 3.18.2 装到 `.cache/gaps-live/custom-apps/ZCode.app`（自选非默认位置）。下载 305,360,326 B、官方 SHA-512 通过，ditto 解包、codesign（Team 8A5X4JJ39T）、spctl、ditto 复制各退出 0，全部 waitForExit=true；插件读应用版本、验证实际 CLI 入口、写回隔离 manual 记录。downloads/mounts 均为空，目标只含 ZCode.app；证据 desktop-report.json、/tmp/gaps-desktop-live-outside.log。
   - 中间 Codex npm 0.169.0 安装命令退出 0，但附加插件 --version 读取超时，未作为本项成功证据；独立二进制 --version 读回 0.169.0。保留 isolated-report-first/second.json 与日志，不以安装退出码替代全部验收。
   - Windows 未执行：没有 Windows 环境，组合项 7.4 因 Windows 部分保持未勾选。隔离 HOME、npm 全局前缀/缓存、OMP 安装、custom-apps/ZCode.app、下载/挂载状态目录、签名检查解包目录及独立 WorkBuddy ZIP 已清理，9 个清理目标独立回读均不存在（cleanup-report.json，退出 0）；只保留被忽略的脱敏证据文件。另以沙箱外 ps 在内存中过滤本轮隔离路径，残留验收进程计数 0；没有打印其他进程参数。
-- [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
+- [x] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
   - （未执行：本次没有 Windows 真实环境验收且禁止真实更新；Windows argv 与目录选择器仅用模拟夹具验证。）
   - 2026-11-15 Windows 实机（200d97f 隔离包，详见双通道变更 9.17）：npm 全局更新 CodeBuddy Code 2.183.0→2.184.0 成功，共 3 个工件 86.4 MB；停滞 10 秒后从 13483712 B 处续传 1 次，页面显示「已自动续传 1 次」；`codebuddy --version` 2.184.0，downloads 目录无残留。npm 全局更新、停滞续传两项已满足。
-  - 未验证：预加载空闲判定与低优先级。34133b9 包 06:17:43 启动后，06:23 有一次后台检查（共享 omp-natives 06:23:32 被写入），只能说明后台检查跑过；没有核对空闲判定的时机，也没有核对子进程的优先级。所以本项保持未勾选。
+  - 先前缺口：34133b9 包 06:17:43 启动后 06:23 有一次后台检查，但没有核对空闲判定时机和子进程优先级。
+  - 2026-11-15 补测（34133b9 包，Windows 实机）：先从状态文件只删除 Kimi、OpenCode、Grok 三条版本缓存（其余不动；状态文件备份在 `%LOCALAPPDATA%\cliworker-now-remote\state-backup-20261115\`），以迫使后台预加载真实启动版本探测；Desktop 07:37:47.219 启动后无任务、无操作，用 40 ms 间隔的 Get-Process 轮询 5 分钟。第一个新子进程出现在 07:39:47.654（启动后 120.4 秒，晚于 60 秒空闲起点）；此后 `node`、`kimi`（+145.6 s）、`grok`（+158.4 s）、`reg` 及承载 `private-launch.mjs` 的 DeepSeek Harness（Electron 作 Node）子进程与其 conhost 全部为 BelowNormal，没有 Normal 优先级的新探测进程。结束时 CPU 负载 1%。另有一个 OfficeC2RClient BelowNormal 进程属 Office，与插件无关。
+  - 四项均已覆盖，勾选。未覆盖：CPU 高于 50% 时推迟的分支只在模拟测试中验证，实机未制造高负载。
 
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
   - （未执行：Phase A/B 文件归属仅 Host、指定共享协议、后端测试与任务证据；README / doc/design.md 的整体验收说明由后续整合阶段统一更新。）
