@@ -3,7 +3,7 @@ import { join, isAbsolute, win32 } from 'node:path'
 import type { ActiveCliId } from '../../shared/types.ts'
 import { type CliOperationErrorCode } from '../../shared/cli-management.ts'
 import type { ProcessBackend } from '../process.ts'
-import type { InstallationIdentity } from './identity.ts'
+import { ZCODE_PLUGIN_RUNTIME_NOTE, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, NATIVE_UPDATES, isDesktopCli } from './sources.ts'
 import { compatible, validUpdateVersion, updateAvailable, compareVersions } from './versions.ts'
 import { resolveNpmRuntime } from './npm.ts'
@@ -34,6 +34,7 @@ export function operationToken(cli: ActiveCliId, identity: InstallationIdentity,
 export function updateProblem(cli: ActiveCliId, identity: InstallationIdentity, platform = process.platform, arch = process.arch): string | undefined {
   if (['winget', 'scoop', 'nix', 'bun', 'pnpm'].includes(identity.source)) return `此安装由 ${identity.source} 管理，请使用原包管理器更新。`
   if (identity.source === 'unknown') return '没有识别出安装方式，请核实官方安装入口后重新检查。'
+  if (identity.source === 'plugin-runtime') return ZCODE_PLUGIN_RUNTIME_NOTE
   if (!['darwin', 'linux', 'win32'].includes(platform)) return '此操作系统尚无已核实的官方更新方法。'
   if ((cli === 'qoder' || cli === 'qodercn') && platform === 'win32' && arch === 'arm64') return 'Qoder Windows ARM64 尚未核实支持，不能自动更新。'
   const method = automaticMethod(cli, identity), script = NATIVE_UPDATES[cli]?.script

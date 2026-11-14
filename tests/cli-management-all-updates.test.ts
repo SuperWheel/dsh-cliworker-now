@@ -156,6 +156,46 @@ it('模拟：Hermes 只读 install-stamp，不把 pyproject 的占位版本当�
   expect(f.backend.spawn).not.toHaveBeenCalled()
   expect(NATIVE_UPDATES.hermes?.notice).toContain('迁移配置')
 })
+it('模拟：Windows Hermes 启动器在 bin，install-stamp 在同级 hermes-agent 检出目录', async () => {
+  // 2026-11-14 Windows 实机布局：%LOCALAPPDATA%\\hermes\\bin\\hermes.exe + hermes\\hermes-agent\\install-stamp.json
+  const f = fixture('hermes'), root = join(f.root, 'hermes'), entry = join(root, 'bin/hermes.exe')
+  mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, 'MZ 模拟启动器', { mode: 0o700 })
+  mkdirSync(join(root, 'hermes-agent'), { recursive: true })
+  writeFileSync(join(root, 'hermes-agent/install-stamp.json'), JSON.stringify({ baseVersion: '0.21.7', commit: 'b'.repeat(40) }))
+  const config = { ...f.config, hermesExecutable: entry }
+  const id = await identifyInstallation('hermes', f.backend, config, control(), true)
+  expect(id).toMatchObject({ manifestVersion: '0.21.7', channel: 'unknown' })
+  expect(await currentVersion('hermes', id!, f.backend, config, control(), true)).toBe('0.21.7')
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+  expect(classifyInstallation('hermes', 'C:/Users/admin/AppData/Local/hermes/bin/hermes.exe', undefined, 'C:\\Users\\admin'))
+    .toMatchObject({ source: 'self-update', updateRoot: 'C:/Users/admin/AppData/Local/hermes' })
+})
+it('模拟：Hermes 只在 bin 的上一级找同级检出，不向更高层乱找', async () => {
+  const f = fixture('hermes'), root = join(f.root, 'outer'), entry = join(root, 'tools/bin/hermes.exe')
+  mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, 'MZ 模拟', { mode: 0o700 })
+  mkdirSync(join(root, 'hermes-agent'), { recursive: true })
+  writeFileSync(join(root, 'hermes-agent/install-stamp.json'), JSON.stringify({ baseVersion: '9.9.9' }))
+  const id = await identifyInstallation('hermes', f.backend, { ...f.config, hermesExecutable: entry }, control(), true)
+  expect(id?.manifestVersion).toBeUndefined()
+})
+it('模拟：没有桌面应用对应时，ZCode 插件 runtime 从 INSTALL-MANIFEST 读版本并标为手动', async () => {
+  const f = fixture('zcode'), home = join(f.root, 'home'), previous = process.env.HOME
+  process.env.HOME = home
+  try {
+    const runtime = join(home, '.local/share/cliworker-now/runtimes/zcode'), entry = join(runtime, 'cli/zcode.cjs')
+    mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, '// 模拟')
+    writeFileSync(join(runtime, 'INSTALL-MANIFEST.json'), JSON.stringify({ version: '0.16.9', target: 'win32-x64', source: { origin: 'https://github.com/zai-org/ZCode' } }))
+    const id = await identifyInstallation('zcode', f.backend, { ...f.config, zcodeExecutable: entry }, control(), true)
+    expect(id).toMatchObject({ source: 'plugin-runtime', manifestVersion: '0.16.9' })
+    expect(await currentVersion('zcode', id!, f.backend, f.config, control(), true)).toBe('0.16.9')
+    expect(updateProblem('zcode', id!)).toContain('由 CLI Worker 按官方源码部署')
+    // 来源不对的清单不认
+    writeFileSync(join(runtime, 'INSTALL-MANIFEST.json'), JSON.stringify({ version: '0.16.9', source: { origin: 'https://example.invalid/fork' } }))
+    const other = await identifyInstallation('zcode', f.backend, { ...f.config, zcodeExecutable: entry }, control(), true)
+    expect(other?.source).toBe('unknown'); expect(other?.manifestVersion).toBeUndefined()
+    expect(f.backend.spawn).not.toHaveBeenCalled()
+  } finally { if (previous === undefined) delete process.env.HOME; else process.env.HOME = previous }
+})
 it('模拟：ZCode Info.plist 应用版本优先于内部 CLI 版本', async () => {
   const f = fixture('zcode'), root = join(f.root, 'ZCode.app'), entry = join(root, 'Contents/Resources/glm/zcode.cjs')
   mkdirSync(join(entry, '..'), { recursive: true }); writeFileSync(entry, '// 模拟')

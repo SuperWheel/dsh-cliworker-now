@@ -17,6 +17,8 @@ export const CLI_INSTALL_SOURCES = [
   'self-update',
   'official-installer',
   'desktop-app',
+  /** Runtime deployed by CLI Worker itself (ZCode full CLI); no official updater applies. */
+  'plugin-runtime',
   'winget',
   'scoop',
   'nix',

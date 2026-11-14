@@ -80,8 +80,11 @@ export async function resolveWorkBuddyInstallation(cli: WorkBuddyCliId, options:
       return { cli, appRoot, runtime, entry, cliVersion: pkg.version, productName: product.productName,
         endpoint: product.endpoint, configDir: join(home, product.dataFolderName), dataFolderName: product.dataFolderName }
     } catch (error) {
-      reason = error instanceof WorkBuddyUnavailableError ? error.reason
+      const next = error instanceof WorkBuddyUnavailableError ? error.reason
         : (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'not-installed' : 'installation-invalid'
+      // A discovered folder of the other site (CN vs international) is not this CLI's install;
+      // only an explicit path keeps the mismatch so the user learns the chosen folder is wrong.
+      if (manual || next !== 'variant-mismatch') reason = next
     }
   }
   throw new WorkBuddyUnavailableError(reason)

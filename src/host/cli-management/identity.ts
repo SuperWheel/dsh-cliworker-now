@@ -1,7 +1,7 @@
 import { access, readFile, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, isAbsolute } from 'node:path'
+import { basename, dirname, join, isAbsolute } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { ActiveCliId } from '../../shared/types.ts'
 import type { CliInstallSource } from '../../shared/cli-management.ts'
@@ -27,6 +27,9 @@ export interface InstallationIdentity {
   channel?: string
   notice?: string
 }
+/** Same origin as the deployed runtime's INSTALL-MANIFEST (design 2026-10-11): official source tree only. */
+export const ZCODE_RUNTIME_ORIGIN = 'https://github.com/zai-org/ZCode'
+export const ZCODE_PLUGIN_RUNTIME_NOTE = '此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。'
 export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 使用独立部署的完整 CLI runtime，不会随应用同步更新，需另行核验并部署配套 runtime。'
 /** Read-only association; a filename alone is not application identity. */
 export async function managedZCodeApplication(executable: string, appPath = ZCODE_DEFAULT_APP): Promise<string | undefined> {
@@ -76,7 +79,9 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
   const layouts: Partial<Record<ActiveCliId, string[]>> = {
     codex: ['.codex/packages/standalone/'],
     claude: ['.local/share/claude/versions/'], grok: ['.grok/bin/'], kimi: ['.kimi-code/'], mimo: ['.mimocode/bin/'],
-    traecn: ['.local/share/traecli/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'], hermes: ['.hermes/hermes-agent/'],
+    traecn: ['.local/share/traecli/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'],
+    // Windows official installer: %LOCALAPPDATA%\hermes\bin\hermes.exe + hermes-agent checkout (2026-11-14 Windows 实机).
+    hermes: ['.hermes/hermes-agent/', 'AppData/Local/hermes/'],
     opencode: ['.opencode/bin/'], codebuddy: ['.codebuddy/bin/'],
   }
   const layout = layouts[cli]?.find(part => p.startsWith(`${h}/${part}`))
@@ -120,12 +125,24 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   } else target = await realpath(resolveNativeEntry(target))
   const managedApp = cli === 'zcode' && entry?.mode !== 'manual' && !configured
     ? await managedZCodeApplication(executable) : undefined
+  // Without a mapped desktop app (Windows, or macOS without ZCode.app) the plugin-deployed runtime
+  // reports its own version from INSTALL-MANIFEST.json; never run it to ask.
+  let pluginRuntime = false
+  if (cli === 'zcode' && !managedApp && executable === managedZCodeEntry()) {
+    const manifest = await readManifest(join(dirname(dirname(executable)), 'INSTALL-MANIFEST.json'))
+    if (manifest?.source?.origin === ZCODE_RUNTIME_ORIGIN && typeof manifest.version === 'string') { manifestVersion = manifest.version; pluginRuntime = true }
+  }
   const appRoot = managedApp ?? /^(.*\.app)\/Contents\//.exec(target)?.[1]
   desktopRoot ??= appRoot
   // Whitelisted installation metadata only. Never invoke Hermes startup/check/fetch.
   if (cli === 'hermes' || cli === 'traecn') {
     for (let dir = dirname(target), depth = 0; depth < 7; dir = dirname(dir), depth++) {
-      const record = await readManifest(join(dir, cli === 'hermes' ? 'install-stamp.json' : 'trae-installation.json'))
+      // Windows keeps the launcher in <root>\\bin and the stamp in the sibling <root>\\hermes-agent checkout.
+      const names = cli === 'hermes'
+        ? ['install-stamp.json', ...(depth === 1 && /^bin$/i.test(basename(dirname(target))) ? [join('hermes-agent', 'install-stamp.json')] : [])]
+        : ['trae-installation.json']
+      let record: Record<string, any> | undefined
+      for (const name of names) if ((record = await readManifest(join(dir, name)))) break
       if (!record) continue
       if (cli === 'hermes' && typeof record.baseVersion === 'string') {
         manifestVersion = record.baseVersion
@@ -166,6 +183,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   }
   const identity = classifyInstallation(cli, target, packageName, homedir(), executable)
   if (managedApp) identity.source = 'desktop-app'
+  else if (pluginRuntime) identity.source = 'plugin-runtime'
   // A tapped formula must have a matching receipt; basename alone cannot prove the tap.
   if (identity.source === 'brew' && CLI_SOURCES[cli].brew?.tap) {
     const match = /^(.*\/(?:Cellar|Caskroom)\/[^/]+\/[^/]+)\//.exec(target)

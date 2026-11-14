@@ -40,7 +40,9 @@ describe('模拟 WorkBuddy 安装与版本隔离', () => {
   it.each(['https://www.workbuddy.ai', 'https://workbuddy.ai'])('模拟按 endpoint 而非 app 名识别国际版 %s', async endpoint => {
     const f = await fixture({ endpoint, folder: '.custom-global' })
     expect((await resolveWorkBuddyInstallation('workbuddy', f.options)).configDir).toBe(join(f.home, '.custom-global'))
-    await expect(resolveWorkBuddyInstallation('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'variant-mismatch' })
+    await expect(resolveWorkBuddyInstallation('workbuddycn', { ...f.options, path: f.appRoot })).rejects.toMatchObject({ reason: 'variant-mismatch' })
+    // 自动发现到另一站点的应用不算本 CLI 已安装
+    await expect(resolveWorkBuddyInstallation('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'not-installed' })
   })
   it.each(['../escape', '..', '.folder/child', '.folder\\child', 'workbuddy'])('模拟拒绝配置目录穿越 %s', async folder => {
     const f = await fixture({ folder })
@@ -79,7 +81,9 @@ describe('模拟 WorkBuddy GUI argv and per-action installation verification', (
     await writeFile(join(f.appRoot, 'Contents/Resources/app.asar.unpacked/cli/product.json'), JSON.stringify({
       productName: 'SIMULATED switched edition', endpoint: 'https://www.workbuddy.ai', dataFolderName: '.SIMULATED-global',
     }))
-    await expect(workbuddyDesktopCommand('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'variant-mismatch' })
+    // 自动发现的位置换成另一站点后视为本站点未安装；用户指定的路径仍明确报站点不符
+    await expect(workbuddyDesktopCommand('workbuddycn', f.options)).rejects.toMatchObject({ reason: 'not-installed' })
+    await expect(workbuddyDesktopCommand('workbuddycn', { ...f.options, manualPath: f.appRoot })).rejects.toMatchObject({ reason: 'variant-mismatch' })
   })
   it.each(['WorkBuddy.exe', 'WorkBuddy AI.exe'])('opens only the verified Windows GUI %s without CLI flags (unverified on Windows hardware)', async exe => {
     const f = await fixture({ platform: 'win32', exe })
@@ -128,7 +132,10 @@ describe('模拟 WorkBuddy Windows 自定义安装位置', () => {
   it('validates a registry-found folder with the same product.json site rules', async () => {
     const f = await fixture({ platform: 'win32', appName: 'workbuddy' })
     expect((await resolveWorkBuddyInstallation('workbuddycn', { platform: 'win32', home: f.home, candidates: [f.appRoot] })).runtime).toBe(f.runtime)
+    // 2026-11-14 Windows 实机：注册表只登记了国内版 D:\\Software\\workbuddy，国际版应显示未安装而不是检查失败
     await expect(resolveWorkBuddyInstallation('workbuddy', { platform: 'win32', home: f.home, candidates: [f.appRoot] }))
+      .rejects.toMatchObject({ reason: 'not-installed' })
+    await expect(resolveWorkBuddyInstallation('workbuddy', { platform: 'win32', home: f.home, manualPath: f.appRoot }))
       .rejects.toMatchObject({ reason: 'variant-mismatch' })
   })
 })

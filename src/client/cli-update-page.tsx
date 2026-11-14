@@ -146,6 +146,8 @@ function sourceLabel(entry: CliUpdateEntry, mirror: MirrorKind): string {
         return t('官方安装器')
       case 'desktop-app':
         return t('{cli} 桌面应用，下载官方安装包更新', { cli })
+      case 'plugin-runtime':
+        return t('CLI Worker 部署的完整 runtime')
       case 'winget':
         return t('通过 WinGet 安装')
       case 'scoop':
@@ -268,7 +270,13 @@ function describeEntry(entry: CliUpdateEntry, mirror: MirrorKind): Description {
     case 'failed':
       switch (entry.reason) {
         case 'UNKNOWN_VERSION':
-          return { tone: 'error', text: t('读不出当前版本。可以改路径，或重新安装到默认位置') + detail }
+          // The fixed sentence has no closing mark; the Host detail is its own sentence.
+          return {
+            tone: 'error',
+            text:
+              t('读不出当前版本。可以改路径，或重新安装到默认位置') +
+              (entry.reasonDetail ? `${uiLanguage() === 'en' ? '. ' : '。'}${hostText(entry.reasonDetail)}` : ''),
+          }
         case 'RELEASE_UNREACHABLE':
           return { tone: 'error', text: `${current} · ${t('连不上发布源')}${detail}` }
         case 'RELEASE_TIMEOUT':
