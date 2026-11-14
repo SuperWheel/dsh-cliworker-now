@@ -1,26 +1,32 @@
 # CLI 附件、Harness Skill 与 MCP 接入
 
-适用开发版本 v0.8.1，更新于 2026-10-18。下表描述当前代码的接入口，实际运行证据另见 `tasks.md`，不能用协议支持代替真实模型验收。
+适用 v0.8.9 之后的主线（`e03db09`），按源码核对于 2026-11-14；初版写于 v0.8.1（2026-10-18）。下表只描述当前代码的接入口，实际运行证据见各变更的 `tasks.md`，不能用协议支持代替真实模型验收。各 CLI 在分支、规划、引导、权限档位、用量与上下文上的完整边界（含上游最新能力对照）另由团队能力边界对照表维护，本页不重复。
 
 ## 1. 逐 CLI 接入
 
-桌面端普通文件统一采用原生草稿引用语义，把用户选定的真实路径交给 CLI。下表的内容块列描述 Host 已经准入附件时的转换；不能据此宣称 rc.2 子会话已接受浏览器普通文件上传回执。
+桌面端普通文件统一采用原生草稿引用语义，把用户选定的真实路径交给 CLI。下表的内容块列描述 Host 已经准入附件时的转换；不能据此宣称子会话已接受浏览器普通文件上传回执。
 
-| CLI | 文件输入 | 图片输入 | Harness Skill / MCP 工具桥 |
-| --- | --- | --- | --- |
-| Antigravity | 原生文本中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 本轮私有 `agy-tools` 工作区的 MCP + PreToolUse Hook；真实工具验收未完成 |
-| Codex | 文件路径提示 | app-server `localImage` | 临时 stdio MCP；Host 执行权限链保留 |
-| Claude Code | 文件路径提示 | stream-json 原生 base64 图片块 | 临时 `--mcp-config`，仅专属 server 准入 |
-| Kimi | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；只对结构化、精确命名的桥工具回复 `allow_once` |
-| 官方 MiMo Code | 原生 HTTP data URL file part | 同原生 file part | 本轮 `MIMOCODE_CONFIG_CONTENT` 中合并专属 MCP |
-| ZCode | 原生消息中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 执行尚未核验，2026-10-28 起不注入目录 |
-| Grok Build | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
-| OMP | RPC prompt 中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 当前安装版在 `--no-extensions` 下忽略显式扩展，保留限制 |
-| Pi | RPC prompt 中的文件路径 | RPC `images` 原生图片块 | 只加载本轮显式扩展并注册获准工具 |
-| Hermes | 原生 HTTP input 中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 当前隔离运行暂无经验证的临时工具注入入口 |
-| OpenCode | 原生 HTTP data URL file part | 同原生 file part | 本轮 `OPENCODE_CONFIG_CONTENT` 中合并专属 MCP |
-| Qoder | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
-| Qoder CN | 同品牌 ACP `resource_link` 与路径提示 | 同品牌 ACP 公示 image 能力时用图片块，否则图片路径 | 独立品牌绑定的 stdio MCP，精确准入；真实模型未验收 |
+| CLI | 原生通道 | 文件输入 | 图片输入 | Harness Skill / MCP 工具桥 |
+| --- | --- | --- | --- | --- |
+| Antigravity | ACP（`agy acp --stdio`，需 1.4.11+）；未确认时回退旧版 stream-json | ACP `resource_link` 与路径提示；回退时为文本路径 | ACP 公示 image 能力时用图片块，否则图片路径 | ACP `mcpServers` 注入 stdio MCP，执行已准入；只对 `mcp_dsh_worker_tools_<工具>` 等精确命名的桥工具回复 `allow_once`。回退时用本轮私有 `agy-tools` 工作区（MCP + PreToolUse Hook），见 [antigravity-harness-bridge.md](antigravity-harness-bridge.md) |
+| Codex | app-server | 文件路径提示 | app-server `localImage` | 临时 stdio MCP（`-c mcp_servers.dsh_worker_tools.*`），执行已准入；Host 执行权限链保留 |
+| Claude Code | stream-json | 文件路径提示 | stream-json 原生 base64 图片块 | 临时 `--mcp-config`，仅专属 server 经 `--allowedTools` 准入 |
+| Kimi | ACP | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；只对结构化、精确命名的桥工具回复 `allow_once` |
+| 官方 MiMo Code | 原生 HTTP | 原生 HTTP data URL file part | 同原生 file part | 本轮 `MIMOCODE_CONFIG_CONTENT` 中合并专属 MCP；已有同名服务时拒绝覆盖 |
+| ZCode | 自有 NDJSON（stdio） | 原生消息中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 不注入：工具桥执行尚未核验（2026-10-28 起） |
+| Grok Build | ACP | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
+| OMP | RPC | RPC prompt 中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 不注入：安装版在 `--no-extensions` 隔离模式下忽略显式扩展，尚无安全入口 |
+| Pi | RPC | RPC prompt 中的文件路径 | RPC `images` 原生图片块 | 取得获准工具名后只加载本轮显式扩展并注册这些工具 |
+| Hermes | 原生 HTTP | 原生 HTTP input 中的文件路径 | 图片路径，依赖 CLI 自身读取工具 | 不注入：当前隔离运行暂无经验证的临时工具注入入口 |
+| OpenCode | 原生 HTTP | 原生 HTTP data URL file part | 同原生 file part | 本轮 `OPENCODE_CONFIG_CONTENT` 中合并专属 MCP；已有同名服务时拒绝覆盖 |
+| Qoder | ACP | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；与 Kimi 相同的精确准入 |
+| Qoder CN | ACP（独立品牌绑定） | 同 Qoder | 同 Qoder | 独立品牌绑定的 stdio MCP，精确准入；真实模型未验收 |
+| CodeBuddy Code | ACP | ACP `resource_link` 与路径提示 | 安装版公示 `promptCapabilities.image: true`，用 ACP 图片块 | 只建立传输、不准入执行：会配置 stdio MCP，但 CodeBuddy 只公示 http/sse MCP，原生授权未核验，桥工具调用由 Host 拒绝 |
+| TRAE CN | ACP | ACP `resource_link` 与路径提示 | 按 `promptCapabilities.image` 判定；图片理解未实测 | 不注入：ACP 只公示 HTTP MCP，`_meta.trae.options.mcpServers` 有替换语义，注入可能覆盖用户 MCP，见 [traecn-protocol.md](traecn-protocol.md) |
+| WorkBuddy CN（试验性） | ACP（内置 CodeBuddy CLI） | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | 不注入：内置 CLI 只公开 http/sse MCP，未验证插件工具通道，见 [workbuddy-protocol.md](workbuddy-protocol.md) |
+| WorkBuddy（试验性） | 同 WorkBuddy CN | 同 WorkBuddy CN | 同 WorkBuddy CN | 同 WorkBuddy CN |
+
+「执行已准入」指 `nativeHarnessExecutionReady` 当前为真的 10 个 CLI：Codex、Claude Code、OpenCode、MiMo、Pi、Kimi、Grok、Qoder、Qoder CN、Antigravity。其他 CLI 即使能建立传输，桥工具执行也会被 Host 以「当前原生工具授权尚未核验」拒绝。来源：`src/host/native-harness-injection.mjs`、`src/host/native-attachments.mjs`、`src/host/native-acp.mjs`。
 
 2026-10-28 起工具桥只提供 CLI 原生未覆盖的 DSH 工具作为备选，见 [native-harness-tools.md](native-harness-tools.md)「原生工具优先」。
 
@@ -28,7 +34,7 @@
 
 ## 2. 附件链路
 
-CLI 子会话加号菜单增加“添加文件”和“添加图片”。macOS / Windows Desktop 的普通文件沿用原生桌面文件引用语义：通过宿主 preload 提供的 `__DSH_HOST_PATHS__.pathFor` 取得用户实际选择的路径，以公开 `SessionInput.insertReference` 和 source codec 写入原生草稿，发送时由原生输入机和 Inbox 接管；不新增一套上传队列。引用保留原始绝对路径，CLI 按自身权限读取。CLI 绑定通过可选 `childImageUploads` 显式启用随插件分发的原生图片选择控件，默认原生子会话不变；图片通过公开指令 adjudication 调用 Harness 原生 File action，上传、持久化及历史仍由原生 attachments 服务管理。当前 rc.2 子会话不接收普通文件上传回执，Web 端因此只开放图片，不把缺少真实路径的浏览器文件冒充桌面引用。
+CLI 子会话加号菜单增加“添加文件”和“添加图片”。macOS / Windows Desktop 的普通文件沿用原生桌面文件引用语义：通过宿主 preload 提供的 `__DSH_HOST_PATHS__.pathFor` 取得用户实际选择的路径，以公开 `SessionInput.insertReference` 和 source codec 写入原生草稿，发送时由原生输入机和 Inbox 接管；不新增一套上传队列。引用保留原始绝对路径，CLI 按自身权限读取。CLI 绑定通过可选 `childImageUploads` 显式启用随插件分发的原生图片选择控件，默认原生子会话不变；图片通过公开指令 adjudication 调用 Harness 原生 File action，上传、持久化及历史仍由原生 attachments 服务管理。子会话不接收普通文件上传回执，Web 端因此只开放图片，不把缺少真实路径的浏览器文件冒充桌面引用。
 
 对已经准入的原生附件块，Host 只消费本会话真实附件引用，通过 `imageHostPath/fileHostPath` 与当前 child scope 的 `fs.processPathFromHostPath` 得到执行路径，不接受浏览器提供的任意路径。后端无本机路径映射、附件失效或类型不支持时明确拒绝。
 
@@ -58,11 +64,13 @@ ACP 仅接受 Provider 结构化报告的工具名与本轮桥实时目录完全
 - [原生会话与界面](native-conversation-ui.md)
 - [实际最小验收记录](tasks.md)
 
-macOS / Windows 使用同一转换及去重模块；本轮桌面验收只在 Windows 进行。模拟 CLI、安装版元数据和真实模型调用分别记录，未运行的项目保留未验证。
+macOS / Windows 使用同一转换及去重模块；2026-10-18 那轮桌面验收只在 Windows 进行。模拟 CLI、安装版元数据和真实模型调用分别记录，未运行的项目保留未验证。
 
 
-## 5. 2026-10-18 最小验收
+## 5. 2026-10-18 最小验收（历史记录）
 
 Windows Qoder 1.1.73 在同一已选模型和原会话中完成文件 + PNG 续聊：两次 Harness MCP 桥文件读取、一份获准 Skill 目录和 office 正文均有完成事件；文件中的随机标识两次一致。最终客户端连续添加两个不同文件不覆盖，冷启动保留旧历史，验收草稿清除。其他 CLI 的本轮证据是源码/协议及关联回归，不等于真实模型逐个通过；第三方 MCP 服务端没有额外实测。
 
 macOS 关联初始 404/404、路由 141/141、最终客户端 30/30；Windows 对应 401/404（3 平台跳过）、140/141（1 平台跳过）、30/30。原生输入 120、侧栏 18 项另行通过，分组不相加。两端类型检查和隔离构建通过，实际桌面仅 Windows。具体安装、数据变化及未验证范围见 tasks.md 本阶段。
+
+此后新增或改道的接入（Antigravity 改走 ACP、CodeBuddy Code、TRAE CN、WorkBuddy CN／WorkBuddy）的验收见各自变更的 `openspec/archives/<变更>/tasks.md`；本页 2026-11-14 的修订只按源码核对，没有新的真实模型验收。
