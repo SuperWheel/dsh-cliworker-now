@@ -1,0 +1,55 @@
+# Tasks
+
+## 1. 差异核对与依赖升级 〔后端｜2h〕
+
+- [x] 1.1 核对 rc.3 是否真实发布并固定来源
+  - npm `@deepseek-ai/dsh@0.2.2-rc.3` 发布于 2026-11-13T08:05:45Z，dist-tag `next` = 0.2.2-rc.3，`latest` 仍为 0.2.2-rc.1。本机 `/Applications/DeepSeek Harness.app` 的 CFBundleShortVersionString 为 0.2.2-rc.3，自带 `runtime/cli/bin/dsh --version` 为 0.2.2-rc.3。
+  - 官方 tag `dsh-v0.2.2-rc.3` = `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`（从 GitHub 拉取到 rc.2 源码仓库），是 rc.2 的后代，`rc.2..rc.3` 共 6 个提交：`68f83cc992`（CI bubblewrap 缓存）、`bbad94f927`、`ac904e118e`（Windows 安装器重启状态 cwd）、`b8c33a1504`（实验性导入 DeepSeek 官网对话导出）、`4c1cf20cb1`（发版）、`38a6a5c965`（合并）。
+- [x] 1.2 rc.2 → rc.3 差异对插件的影响
+  - 源码：全仓 515 个文件；四包（ui-session、ui-conversation、ui-subagent、ui-chat）只有 `package.json` 版本号变化；ui-primitives 只新增 `upload-outline` 图标。
+  - 已安装 npm 包逐包 `diff -rq`（主仓库 rc.2 安装 vs 本 worktree rc.3 安装，排除 package.json、CHANGELOG、map、README 与 `.bin` 路径垫片），实际变化只有：
+    - `dsh-client-ui-primitives`：新增 `IconUploadOutlineRegular`／`IconUploadOutlineMedium`（`lib/index.js`、`types/icons/*.d.ts`）。
+    - `dsh-client-ui-workspace`：新增 `workspace.picker` 组件工厂（`SlotFactoryMap`）、`workspace.picker.directoryFlow` 孔位、`WorkspacePickerInput` 类型导出，`DirectoryFlowSlotName` 扩为三项（全部为新增）。
+    - `dsh-api-session-controller`：`lib/typert.host.js` 的 `RemoteErrorDetailsMap` 新增 `'deepseekChatImport/owner-only'`。
+    - `dsh`：仅 docs（capability-seams、config-catalog、persistence）。
+  - 源码另见 ui-sidebar 新增 `sidebar.session.action`（HOC）扩展点、目录选择器与 session-log-export 的内部改动、official-bundles 加入可选的 `dsh-deepseek-chat-import`；插件不依赖这些包。
+  - Gateway、Remote、主题 token、ui-slots/renderer、subagent、session、Cordis（仍 4.1.0）无变化。插件对 ui-workspace 只有 `import type {}` 的 SlotMap 合并，新增内容不影响；插件不使用新增扩展点，Host 与 Client 源码无需改动。
+- [x] 1.3 开发 SDK pin 升到 0.2.2-rc.3
+  - `package.json` 39 个 `@deepseek-ai/dsh*` 精确版本 0.2.2-rc.2 → 0.2.2-rc.3；cordis、schemastery、peer 范围与插件版本 0.8.9 不变。`pnpm-workspace.yaml` 的 339 条发布期限例外改为 rc.3，pnpm 安装时自动补入 1 条 `@deepseek-ai/dsh-deepseek-chat-import@0.2.2-rc.3`。
+  - `corepack pnpm install --ignore-scripts --config.confirmModulesPurge=false` 退出 0（27s）。锁文件 `packages:` 段非 DSH 包集合 544 项与改前逐项相同；DSH 系 351 → 352 项（新增 deepseek-chat-import）。
+  - `scripts/build-dependencies.mjs` 加入 `'0.2.2-rc.3': '.cache/cliworker-build-deps-022rc3'`。
+
+## 2. 重建随包四包 〔后端｜3h｜前置 1〕
+
+- [x] 2.1 （Codex gpt-6-astra high 实施，主会话复核）在 rc.3 tag 上重建四包
+  - 在本 worktree `.cache/dsh-host-source-022rc3` 建 detached worktree（HEAD = `38a6a5c9…`），3-way 应用 rc.2 的 48 文件补丁：0 冲突。导出补丁与 rc.2 逐字节相同（主会话 `cmp` 复核），SHA256 `f4e0b86507dc0d6282427aef46ed7a008779e8b491c9546f029eed4e040832b4`。
+  - 独立依赖 `.cache/dsh-host-build-deps-022rc3`（store `.cache/dsh-host-pnpm-store-022rc3`）`install --ignore-scripts` 后 `--frozen-lockfile` 复核通过（991 项供应链策略检查）。非 DSH 变化只有 zod：rc.2 锁同时有 4.6.6 与 4.6.7，rc.3 只保留固定的 4.6.6。依赖链接清单 864 行，0 新增、0 删除。
+  - `--prepare-links` 成功，`check-client-types` 四包均退出 0；构建与 `--verify` 通过 630 个文件；vendor 与无参数复核通过 4 包、217 个文件。主会话改 README（去掉绝对路径、修复表格）后重跑 `build-host-extension --target 0.2.2-rc.3 --verify`（630）与 `vendor-host-extensions`（217）均 verified。
+  - 主会话复核：`runtime-host` 四包 `package.json` 均为 0.2.2-rc.3；无 `useAnchoredPosition` 引用、无 `.map` 与 `src`；`client.js` 差异仅在压缩行内（构建产物随版本变化）。Codex 审计报告 202 个继承 Host/声明文件与官方 npm rc.3 逐字节一致，ui-chat 鲸鱼图片 21,631 字节保留。
+  - rc.2 目标 `--verify` 仍通过 630 个文件；旧 vendor 在独立夹具内通过。
+  - 构建脚本 `scripts/build-host-extension.mjs`、`scripts/vendor-host-extensions.mjs` 加入 rc.3 目标（vendor 默认 rc.3）；测试 `tests/build-dependencies.test.ts`、`tests/host-runtime-package.test.ts`、`tests/clean.test.ts` 改为 rc.3，未支持示例移到 rc.4：3 文件 37 项通过。
+  - 过程中 2 次 Git 写元数据与 2 次隔离安装因沙箱权限／DNS 失败，相同命令重试成功，详见 `host-extensions/dsh-0.2.2-rc.3/README.md`。
+  - （未执行：上游四包 Vitest。）
+
+## 3. 插件验证与文档 〔后端｜2h｜前置 2〕
+
+- [x] 3.1 类型检查
+  - 新 worktree 初次 `corepack pnpm typecheck`：Host 通过，Client 报 12 条错误，根因是 worktree 尚无 `lib/`，插件自引用的 `dsh-cliworker-now/remote` 类型不存在（与 rc.3 无关）。在 worktree 内 `corepack pnpm build` 生成 `lib/` 后，`corepack pnpm typecheck` 通过：「Host/Client typecheck passed against DSH 0.2.2-rc.3」；四包重建后再次通过。
+- [x] 3.2 全量回归（沙箱外，`--maxWorkers=2`）
+  - 四包重建与测试更新后：313 个文件中 309 通过、4 跳过；6970 项中 6956 通过、14 跳过、0 失败（241.93s），无未处理拒绝。
+  - 基线（四包未重建时）：313 个文件中 307 通过、2 失败、4 跳过；6970 项中 6953 通过、3 失败、14 跳过。失败 2 项为 `host-runtime-package` 预期的版本不一致；另 1 项 `native-bridge-time-limit`「stops a silent CLI on the idle window…」报 pid 文件 ENOENT（模拟 CLI 未及写入），单独连跑 3 次均 4/4 通过，判定为满载偶发。
+- [x] 3.3 隔离预览包
+  - `corepack pnpm build:preview` 退出 0，预览包内四个 runtime-host 均为 0.2.2-rc.3。在 `.cache/preview-package` `pnpm pack` 得到 1142 个文件的 tgz，SHA256 `d17ec2b5ac7d150acfce3e43cc2e8655249462af96cd17e8e1bfd2b202e4ffb4`（tgz 放在会话临时目录，未入库）。
+- [x] 3.4 文档
+  - README 中英文宿主版本行改为 0.2.2-rc.3，验证范围指向本变更；`doc/design.md` 新增 2026-11-14 一节；`doc/native-conversation-host-extension.md` 开头加 rc.3 说明；`runtime-host/README.md` 由 vendor 脚本更新为 rc.3；`host-extensions/dsh-0.2.2-rc.3/README.md` 记录重建过程。AGENTS.md 只有历史发布描述，未改。
+
+## 4. 实机验收 〔测试｜1h｜前置 3〕
+
+- [x] 4.1 隔离 DSH_HOME 端到端（rc.3 宿主）
+  - 用 Desktop 0.2.2-rc.3 自带的 `runtime/cli/bin/dsh`，临时 `DSH_HOME`（会话临时目录）执行 `dsh plugin --profile web add --save-exact <预览 tgz>` 退出 0，再 `dsh --profile web --no-open --host 127.0.0.1 --port 0` 启动。`--dump-config` 显示 `cliworker-ui-session/conversation/subagent/chat` 四行均指向该 profile 内插件的 `runtime-host/*/lib/index.js`。
+  - 内置浏览器直连：主界面（侧栏、空白会话输入栏）正常；右侧栏「CLI Worker」面板打开显示筛选与空状态；齿轮打开「CLI Worker 设置」，通用页与 17 项 CLI 导航正常；「更新 CLI」页列出 Antigravity、Codex、Claude Code、Kimi、MiMo、ZCode 等版本状态；插件页「已安装插件」显示 dsh-cliworker-now 已启用。全程无白屏，控制台 0 条消息；Host 日志只有启动地址一行，无插件报错。
+  - 只做查看，未点击任何更新、登录或派遣；后台预加载为只读探测。结束后停止 Host，`ps` 确认无残留进程；启动日志中的 token 未写入任何文件或记录。
+- [ ] 4.2 正式 Mac Desktop 加载验收
+  - （未执行：Desktop profile 的 node_modules 软链指向主仓库，需主会话合并本分支并在主仓库正式构建后再验收；已向主会话报告。）
+- [ ] 4.3 其余未覆盖项
+  - （未执行：Windows 适配与界面验收、真实模型／CLI 派遣、续聊、审批、停止、运行中动画与 Stop、上游四包 Vitest——均不在本次授权或环境范围内。）

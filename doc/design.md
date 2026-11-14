@@ -1366,6 +1366,14 @@ OpenSpec 变更 `upgrade-host-022rc2`；开发 SDK 与随包四个原生界面�
 - 换段修复：旧段 CLI Worker 分组为空，是 Worker 已由 v0.8.9 换段归入新段的预期行为；旧内部 Harness 子会话混入旧段 DSH 列表则是该换段路径的遗漏，非 rc.2 回归。复用已有 `retiredSessionIds`，排除当前及 retired 内部会话，并精确排除标签为 `worker/<已知 Worker ID>` 的条目（含其他父段与已归档 Worker）；未知 ID 或相似标签仍显示。列表、命名、单条读取与操作共用判断，不改用户会话或已误分配的名称文件。
 - 验证边界：变更任务记录了四包源码类型检查、插件 typecheck、构建与清单校验通过；适配后全量回归 6222 项通过、14 项跳过，换段修复后记录为 6227 项通过、14 项跳过、0 失败。Mac Desktop 0.2.2-rc.2 经内置浏览器直连 Host Web UI 核对，输入栏、统计药丸、Worker 列表与对话、续聊输入框、设置页及回答下方用量弹层正常，旧段不再显示内部会话，未再出现定位 hook 与 slot 崩溃。上游四包 Vitest、输入栏上下文用量弹层、运行中动画与 Stop、Windows 及真实模型／CLI 派遣未验证；详细记录见 `openspec/archives/upgrade-host-022rc2/tasks.md`。
 
+## 2026-11-14 随包原生界面升级到 Harness 0.2.2-rc.3（未发布）
+
+OpenSpec 变更 `v0.8.10-dsh-rc3-adapt-leeyl`；开发 SDK 与随包四个原生界面包同步升级，插件版本号不变。
+
+- 差异：官方 rc.2 → rc.3（tag `dsh-v0.2.2-rc.3` = `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`）只有 6 个提交：CI bubblewrap 缓存、Windows 安装器重启状态 cwd 修复、实验性「导入 DeepSeek 官网对话导出」与发版。随包四包只有 `package.json` 版本号变化；已安装 npm 包逐一比对，公开声明与运行代码的变化只有新增：ui-primitives 新增 `IconUploadOutline*` 图标，ui-workspace 新增 `workspace.picker` 组件工厂与 `workspace.picker.directoryFlow` 孔位，ui-sidebar 新增 `sidebar.session.action` HOC 扩展点，session-controller 的远程错误码表新增 `deepseekChatImport/owner-only`。Gateway、Remote、主题 token、Cordis（仍 4.1.0）无变化；插件不使用这些新增扩展点，Host 与 Client 源码无需改动。
+- 四包与依赖：rc.2 的 48 文件补丁无冲突应用，导出补丁与 rc.2 逐字节相同；独立构建与校验 630 个文件，vendor 后 `runtime-host/` 为 4 包、217 个文件，均为 0.2.2-rc.3，202 个继承的 Host/声明文件与官方 npm 包逐字节一致。开发 SDK 39 个 pin 升到 rc.3，workspace 例外同步并由 pnpm 补入新实验包 `dsh-deepseek-chat-import`；第三方依赖无变化。构建依赖选择、宿主扩展构建与 vendor 脚本加入 rc.3 目标，vendor 默认 rc.3，旧目标保留。说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`。
+- 验证边界：插件 typecheck、全量回归与隔离预览构建通过，并在临时 `DSH_HOME` 下用 Desktop 0.2.2-rc.3 自带的 dsh 启动 web profile，确认四包由插件提供、页面与 CLI Worker 面板、设置弹窗及「更新 CLI」页无白屏且控制台无报错。正式 Mac Desktop、Windows、上游四包 Vitest 与真实模型／CLI 派遣未验证；详细记录见 `openspec/changes/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md`。
+
 ## configured 账号摘要保留具体原因（2026-10-30，未发布）
 
 OpenSpec：`fix-configured-account-status`。设置导航与账号摘要复用 Host 的安全摘要，configured 不再统一覆盖成「已配置」；空摘要保留旧回退，长原因自然换行，仍使用灰色待确认状态。MiMo 检查登录、Pi/OMP/OpenCode 缺少有效凭据、Hermes 等待续期等原因一并保留。

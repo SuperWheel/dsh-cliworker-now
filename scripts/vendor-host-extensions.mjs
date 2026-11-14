@@ -6,12 +6,13 @@ import { digest, hostRuntimeDirectory, hostRuntimePackages, normalizeHostClient,
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const targets = {
+  '0.2.2-rc.3': '38a6a5c965aa99ab525161efb7cc5cf1fe62fced',
   '0.2.2-rc.1': '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db',
   '0.2.2-rc.2': 'ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c',
 }
 const args = process.argv.slice(2)
 const targetFlag = args.indexOf('--target')
-const targetVersion = targetFlag < 0 ? '0.2.2-rc.2' : args[targetFlag + 1]
+const targetVersion = targetFlag < 0 ? '0.2.2-rc.3' : args[targetFlag + 1]
 if (!Object.hasOwn(targets, targetVersion)) throw new Error('Unsupported pinned runtime target')
 if (targetFlag >= 0) args.splice(targetFlag, 2)
 if (args.length === 0) {
