@@ -48,6 +48,13 @@
 - 用户决定接受这种情况。只在规划模式、且选型或其映射是 Haiku 时，把初始化 `models` 中唯一 `value: "sonnet"` 行的 `resolvedModel` 加入可接受集合；不写死模型 ID，不放宽非规划模式，`observedModel` 与保存的选择不变。
 - 备选：完全放开规划模式的回复模型校验。不采用，因为那会失去对配置错位的发现能力。
 
+### 6. 规划服务不可见时读 `plan` 投影，读不出即拒绝
+
+- 根因（2026-11-14 Mac Desktop 探针）：rc.3 的 dsh-web-app 设 `plan-mode disabled: true`，预设包在每个 Agent 的 `planning` 组内以 `isolate: { planMode: true }` 挂载 `@deepseek-ai/dsh-plan-mode`。Cordis 按隔离键查找，插件上下文与 `agent.ctx` 的 `get('planMode')` 都是 undefined，而同一会话的 `plan` 投影 `active: true`。原实现把读不到当作未规划。
+- 做法：`readHostPlanActive` 先用服务（旧宿主与测试环境）；取不到时读进程级 `sessionProjections.stateOf(session, 'plan')`。返回 undefined 表示宿主未注册规划投影，视为未规划；返回值不是带布尔 `active` 的对象时按规划处理，拒绝执行而不是绕过边界。`assertExecution` 与 `permissionState` 共用此判断。
+- 备选：在插件里挂一份 `plan-mode` 或调用宿主内部 API。不采用：会产生第二份规划状态，或依赖未公开的预设结构。`stateOf` 已标注弃用（首次调用告警一次），后续 DSH 提供替代接口时再迁移。
+- 影响：规划中「主 Agent 传 `read_only` 派遣」也会被拒绝，与 `worker-dispatch` 规格一致；Worker 子会话的 `planMode.set` 在 rc.3 无作用，作为跟进项。
+
 ## Risks / Trade-offs
 
 - Claude Code 后续版本若改变 `ExitPlanMode` 的请求形状（例如方案不在 `input.plan`），会回到原失败判定，不会误判成功。

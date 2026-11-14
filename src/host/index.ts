@@ -39,6 +39,7 @@ import {
 import { nativeHarnessToolCapability, nativeHarnessExecutionReady } from './native-harness-injection.mjs'
 import { createNativeHarnessExecutor } from './native-harness-executor.ts'
 import { readNativeColdSessionState } from './native-cold-session-state.ts'
+import { readHostPlanActive } from './host-plan-state.ts'
 import { installHarnessModelGuard, withinCliTool, publishSiblingOutsideTool } from './harness-model-guard.ts'
 import { readHarnessImage, resolveHarnessAttachments } from './harness-attachments.ts'
 import { nativeCliCapabilities, nativeCliMcpServers } from './cli-native-capabilities.mjs'
@@ -847,7 +848,7 @@ export class CliWorkerService extends TypertRemoteService {
    */
   private assertExecution(agent: Agent, dispatch = false): void {
     if (agent.session.header.origin === 'subagent') throw new Error('MVP 只支持主对话下的直接 CLI 子 Agent')
-    if (agent.ctx.get('planMode')?.get(agent).active)
+    if (this.hostPlanActive(agent))
       throw new Error('请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界')
     if (!dispatch && agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode === 'read-only')
       throw new Error('Harness 当前为只读权限；此操作会写入项目或账号状态，请先明确切换项目权限')
@@ -880,11 +881,16 @@ export class CliWorkerService extends TypertRemoteService {
     const receipt = workerPermissionReceipt(cliOf(worker.preference), worker.mode, worker.level, this.permissionState(parent))
     return { permission: { level: receipt.level, name: receipt.name, source: receipt.source }, permissionSummary: receipt.summary }
   }
+  /** Whether the parent conversation is in DSH plan mode; see {@link readHostPlanActive}. */
+  private hostPlanActive(agent: Agent): boolean {
+    // Only consulted when the parent cannot see the plan service; synthetic hosts may omit `get`.
+    return readHostPlanActive(agent, () => this.ctx?.get?.('sessionProjections'))
+  }
   /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
   private permissionState(agent: Agent): PermissionState {
     const approval = agent.ctx.get('approval')
     return {
-      planMode: !!agent.ctx.get('planMode')?.get(agent).active,
+      planMode: this.hostPlanActive(agent),
       sandbox: agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode,
       // Without an approval service nothing can be asked; DSH fails closed.
       approval: approval ? (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') : 'never',

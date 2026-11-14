@@ -105,9 +105,25 @@
   - 证据：沙箱外全量 `corepack pnpm vitest run`：305 个文件（301 通过、4 跳过），6771 项（6757 通过、14 跳过），0 失败，用时 87.87 秒，退出码 0
   - 证据：`corepack pnpm build:preview` 退出码 0；包内 `lib/index.js` 中 `CLAUDE_CONFIG_DIR` 只出现在默认目录读取、禁止项正则与注释，settings 构造不再写入；未运行 `pnpm build`
 
+## 8. 宿主规划边界修复 〔后端｜3h〕
+- [x] 8.1 定位根因：rc.3 Desktop 的规划服务隔离在各 Agent 预设内，插件读不到
+  - 证据：Mac Desktop 临时探针（已删除）记录主对话 `session-aa1c2138` 在 `/plan` 下，插件上下文与 `agent.ctx` 的 `get('planMode')` 均为 undefined，同一会话 `sessionProjections.stateOf(session,'plan')` 返回 `active: true`
+  - 证据：dsh-web-app 包设 `plan-mode disabled: true`；预设包以 `planning` 组 `isolate: { planMode: true }` 挂载 `@deepseek-ai/dsh-plan-mode`
+- [x] 8.2 新增 `src/host/host-plan-state.ts` 的 `readHostPlanActive`：先读服务，取不到时读 `plan` 投影；投影读不出布尔状态时按规划处理；`index.ts` 的 `assertExecution` 与 `permissionState` 改用它
+  - 证据：`src/host/host-plan-state.ts`；`src/host/index.ts` 的 `hostPlanActive`（插件上下文缺 `get` 的合成宿主按未注册投影处理）
+- [x] 8.3 模拟测试 `tests/host-plan-state.test.ts` 10 项：服务优先且不读投影、投影 active 真／假、未注册投影视为未规划、5 种读不出的值均拒绝、隔离服务时派遣被拒且 `permissionState.planMode` 为真、退出规划后放行
+  - 证据：`corepack pnpm typecheck` 通过（against DSH 0.2.2-rc.3）
+  - 证据：全量 `corepack pnpm vitest run`：314 个文件（310 通过、4 跳过），7027 项（7013 通过、14 跳过），0 失败
+  - 证据：`corepack pnpm build:preview` 与 `corepack pnpm build` 退出码 0
+- [x] 8.4 Mac Desktop 实测（重启后加载正式构建，真实 DeepSeek 主 Agent）
+  - 证据：会话 `session-aa1c2138` 处于 `/plan`，要求不加 `read_only` 派遣 Claude Code 写 `plan-test/probe4.txt`：`cliworker_start` 返回「Error: 请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」（会话记录可查），未新增 Worker，文件不存在
+  - 证据：同会话执行 `/plan off`（会话记录 `command/run` name `plan` args ` off`）后重发：Worker `2add724d`（claude-6，Haiku／low）终态 completed，`mode: accept-edits`，回执「本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）」；`plan-test/probe4.txt` 内容为 `hello`
+- [ ] 8.5 Windows Desktop 同类实测（未执行：本次只在 Mac 复测）
+
 ## 跟进
 
 - 非规划模式下 Claude Code 自行进入规划后的 `ExitPlanMode`，仍按不支持的交互判失败；是否改为转交 DSH 审批（批准即开始执行），待用户决定。
 - agy stream 后备路径（规划模式、旧版）是否同样会截断后台子 Agent，仍未覆盖。
-- 2026-11-14 实测发现规划边界疑似失效：主对话 `session-aa1c2138` 已 `/plan`（投影缓存 `plan.val.active: true`），按 `worker-dispatch`／`worker-permission-levels` 规格应拒绝派遣，但 `cliworker_start` 成功；主 Agent 未传 `read_only` 时 Worker `3c7fbc3e` 以 `accept-edits`、本轮权限「自动审批」运行（只因任务要求未写文件）。插件经 `agent.ctx.get('planMode')?.get(agent).active` 读取宿主规划状态（`index.ts` 第 850、887 行），实测等于未读到；`planMode` 不在 `CliWorkerService.inject` 中。同日 Mac `d08a4b24`、Windows `1a5479f8` 能以规划模式运行，是因为主 Agent 传了 `read_only`。待排查是否为 rc.3 起的回归并修复。
-- 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。用户同日决定接受，已按 2.6／3.5 修复；真实 Haiku 规划派遣尚未复测（需正式构建并重启 Desktop）。
+- 2026-11-14 实测发现规划边界疑似失效：主对话 `session-aa1c2138` 已 `/plan`（投影缓存 `plan.val.active: true`），按 `worker-dispatch`／`worker-permission-levels` 规格应拒绝派遣，但 `cliworker_start` 成功；主 Agent 未传 `read_only` 时 Worker `3c7fbc3e` 以 `accept-edits`、本轮权限「自动审批」运行（只因任务要求未写文件）。插件经 `agent.ctx.get('planMode')?.get(agent).active` 读取宿主规划状态（`index.ts` 第 850、887 行），实测等于未读到；`planMode` 不在 `CliWorkerService.inject` 中。同日 Mac `d08a4b24`、Windows `1a5479f8` 能以规划模式运行，是因为主 Agent 传了 `read_only`。待排查是否为 rc.3 起的回归并修复。已查明为 rc.3 Desktop 把规划服务隔离在 Agent 预设内，按第 8 项修复并在 Mac 实测。
+- Worker 子会话的 `child.ctx.get('planMode')?.set(...)`（`index.ts` 两处）在 rc.3 同样取不到服务，不会更新子会话的 DSH 规划投影；Worker 仍按 `worker.mode` 以 CLI 原生规划运行，影响限于子会话的 DSH 规划状态显示，待确认后再处理。
+- 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。用户同日决定接受，已按 2.6／3.5 修复；真实 Haiku 规划派遣已复测（见 5.1）。
