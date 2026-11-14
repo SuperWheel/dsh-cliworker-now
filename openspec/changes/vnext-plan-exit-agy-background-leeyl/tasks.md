@@ -96,7 +96,8 @@
 - [x] 7.4 模拟回归测试
   - 证据：`tests/claude-own-route.test.ts` 新增「模拟 Claude 2.1.311：插件官方登录后，同一插件的状态查询能确认已登录」2 项（Host 未设置／已设置 `CLAUDE_CONFIG_DIR`）。夹具按核对结果模拟带哈希后缀的条目、2.1.311 状态 JSON 新字段与 null 的 `orgId`。同一用例用旧参数对照：登录后状态为「Claude 官方账号未登录」，复现了用户现象
   - 证据：更新 `tests/claude-own-route.test.ts` 3 处、`tests/accounts.test.ts` 2 处旧断言，改为断言 settings 与启动环境中都不含 `CLAUDE_CONFIG_DIR`；`corepack pnpm vitest run tests/claude-own-route.test.ts tests/accounts.test.ts` 共 185 项通过
-- [ ] 7.5 真实登录验收：用户在 Mac Desktop 插件中重新执行「官方登录 / 切换账号」，确认登录窗口显示已登录、设置页显示官方账号并加载模型与强度（未执行：真实登录须用户亲自操作；用户当前凭据在旧版写入的带后缀条目中，修复后需再登录一次）
+- [x] 7.5 真实登录验收：用户在 Mac Desktop 插件中重新执行「官方登录 / 切换账号」，确认登录窗口显示已登录、设置页显示官方账号并加载模型与强度
+  - 证据：用户 2026-11-14 在 Mac Desktop 插件中亲自重新执行官方登录并确认「没有问题」（用户陈述，本会话未另行读取凭据或登录状态）
 - [ ] 7.6 Windows 与凭据文件（`.credentials.json`）存放方式下的同类核对（未执行：本机为 macOS 钥匙串，Windows 未测）
 - [x] 7.7 文档：`doc/usage-details.md` 与英文版在「Claude Code 与 CC Switch」中说明默认存放位置及升级后可能需要重新登录；`doc/design.md` 本次章节补充
   - 证据：见两文件对应段落
