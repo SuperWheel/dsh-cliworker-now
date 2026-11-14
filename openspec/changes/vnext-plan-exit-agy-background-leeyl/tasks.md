@@ -118,7 +118,10 @@
 - [x] 8.4 Mac Desktop 实测（重启后加载正式构建，真实 DeepSeek 主 Agent）
   - 证据：会话 `session-aa1c2138` 处于 `/plan`，要求不加 `read_only` 派遣 Claude Code 写 `plan-test/probe4.txt`：`cliworker_start` 返回「Error: 请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」（会话记录可查），未新增 Worker，文件不存在
   - 证据：同会话执行 `/plan off`（会话记录 `command/run` name `plan` args ` off`）后重发：Worker `2add724d`（claude-6，Haiku／low）终态 completed，`mode: accept-edits`，回执「本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）」；`plan-test/probe4.txt` 内容为 `hello`
-- [ ] 8.5 Windows Desktop 同类实测（未执行：本次只在 Mac 复测）
+- [x] 8.5 Windows Desktop 同类实测（正式 Desktop 0.2.2-rc.3，插件 `00d42d2`，主对话 DeepSeek-V4.1-Flash）
+  - 证据：部署按 `doc/local/windows-remote-testing.md` §13：安装前 `activeWorkers=0` 等空闲门禁通过；经应用菜单正常退出，进程计数 0；原生安装器退出码 0，1145／1145 个文件 SHA-256 与包清单一致（lib 921 个），`lib/index.js` 哈希 `3dfa65a5eccb…`；交互会话启动后 5 个进程，stderr 0 字节，无 431。安全投影位于本地忽略目录 `.test-data/windows-remote/desktop-audit/rc3-00d42d2-20261114/`
+  - 证据：新会话 `/plan on` 后，主 Agent 依规划约束拒绝调用写入派遣（未调用工具）；改为要求 `read_only=true` 只读派遣时，`cliworker_start` 返回「Error: 请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」。修复前同一用法（Worker `1a5479f8`）在规划中可派遣，现被拒绝，符合规格
+  - 证据：`/plan off` 后要求不加 `read_only` 派遣：插件弹出选型卡，沿用已存设定 deepseek-flash；Worker `6a1934ae`（claude-1）终态 completed，`mode: accept-edits`，回执「本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）」；`plan-test/win-probe.txt` 内容为 `hello`
 
 ## 跟进
 
