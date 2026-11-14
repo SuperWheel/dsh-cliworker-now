@@ -99,8 +99,13 @@ export class CliManagementService {
     if (this.projects.has(project)) return
     this.projects.add(project)
     if (this.deps.preloadConnection) {
-      this.preloader.enqueue(BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'account', signal) })), CLI_IDS.length * 2)
-      this.preloader.enqueue(BACKGROUND_CATALOG_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'catalog', signal) })))
+      // Settings opens far more often than the update page: right after the path pass has recorded
+      // identities, run each CLI's account and catalog back to back so whole rows become ready early.
+      const items = CLI_IDS.flatMap(cli => [
+        ...(BACKGROUND_ACCOUNT_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'account', signal) }] : []),
+        ...(BACKGROUND_CATALOG_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'catalog', signal) }] : []),
+      ])
+      this.preloader.enqueue(items, CLI_IDS.length)
     }
   }
   private async preloadConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {

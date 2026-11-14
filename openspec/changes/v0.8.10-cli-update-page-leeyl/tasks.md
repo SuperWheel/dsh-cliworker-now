@@ -389,3 +389,8 @@
   - `corepack pnpm build:preview` 通过，仅 `.cache/preview-package`；新工作树缺 Remote 类型，按 12.3 的做法把隔离包 lib 复制为被忽略的 `lib/` 后 `corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）。`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过，仅既有的主任务数量提示。
   - 真实只读探测（不建会话、不发 prompt、不登录或退出、保留宿主代理变量、不输出邮箱与凭据）：`corepack pnpm exec tsx .cache/qoder-catalog/live.ts`（修复前文案，复用 H-live.ts）退出 0，Qoder 1.1.89 两个元数据进程 argv 含 `--sdk`、退出码均 0，原生 16 个模型、启用 0、停用 16；`corepack pnpm exec tsx .cache/qoder-catalog/live-after.ts`（真实 `discoverQoderModels` 经 `SettingsConnectionCache` 读取）退出 0：Qoder 快照为 `loading=false`、`error`=新文案（16 个）；Qoder CN 1.1.89 原生 13 个、启用 1，快照得到 1 个模型且带强度；两个进程退出码均 0、范围退出确认，私有目录残留 0，`~/.qoder*` 1,181 项前后新增 0、mtime/大小/模式变化 0。证据在 `.cache/qoder-catalog/`（不入 Git）。
   - 未执行：正式 `pnpm build` 与 Desktop 实机复看新文案；Windows；英文界面实机；国际版账号有启用模型时的真实目录与强度（账号当前 0 启用，仍由 v0.8.10-qoder-sdk-daemon-leeyl 的 3.1 跟踪）；全量 vitest。
+
+- [x] 12.9 连接预加载提前：路径检查之后即逐 CLI 连续执行账号与目录，先于版本与发布检查
+  - 实机发现（2026-11-14 Mac Desktop，构建 7642cd9）：冷启动并打开会话后约 4 分钟打开设置，首屏仅 Codex 为绿，其余仍在查询。原因是连接项排在 17 项路径检查、17 项版本检查之后，目录项更排在 17 项发布检查之后；每项另有约 2 秒 CPU 采样与 2 秒间隔，全程约 6–7 分钟，期间 CPU 超过 50% 还会顺延 30 秒。
+  - 修改 `src/host/cli-management/service.ts` 的 `context()`：连接项插在路径检查（已登记执行入口身份）之后，按 CLI 顺序把账号与目录相邻排列；空闲门槛、串行和打断清理不变。
+  - `tests/settings-connection-preload.test.ts` 新增「连接项紧接路径检查」模拟用例；旧顺序下该用例失败（expected 17 to be less than 0），新顺序 19 passed。`tests/cli-management.test.ts`、`cli-management-remotes`、`cli-management-admission` 与之合计 107 passed；typecheck 通过。

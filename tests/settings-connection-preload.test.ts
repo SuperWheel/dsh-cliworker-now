@@ -144,3 +144,22 @@ it('模拟：后台固定已记录入口，缺失不发现路径，取消不能�
   await expect(backgroundConnectionConfig('codex', f.config as any, controller.signal)).rejects.toThrow()
   expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
 })
+
+it('模拟：连接项紧接路径检查、先于版本与发布检查，同一 CLI 账号与目录相邻', async () => {
+  vi.useFakeTimers(); const f = fixture()
+  const order: string[] = []
+  const versions = vi.fn(async (cli: ActiveCliId) => { order.push(`version:${cli}`); return '1.0.0' })
+  ;(f.management as any).deps.version = versions
+  f.preload.mockImplementation(async (cli: ActiveCliId, _project: string, kind: string) => { order.push(`${kind}:${cli}`) })
+  f.management.context(f.root)
+  await vi.advanceTimersByTimeAsync(550_000)
+  const firstVersion = order.findIndex(item => item.startsWith('version:'))
+  const connection = order.filter(item => !item.startsWith('version:'))
+  expect(connection.length).toBeGreaterThan(0)
+  expect(order.findIndex(item => !item.startsWith('version:'))).toBeLessThan(firstVersion === -1 ? Infinity : firstVersion)
+  expect(order.slice(0, connection.length)).toEqual(connection)
+  for (const cli of included) {
+    const index = order.indexOf(`account:${cli}`)
+    expect(order[index + 1]).toBe(`catalog:${cli}`)
+  }
+})
