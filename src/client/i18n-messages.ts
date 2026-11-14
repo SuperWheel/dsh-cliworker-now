@@ -1239,6 +1239,7 @@ export const en = {
   '第 {current} 步，共 {total} 步': 'Step {current} of {total}',
   '{cli} 更新进度': '{cli} update progress',
   '{cli} 安装进度': '{cli} install progress',
+  '下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留': 'A stalled download resumes where it stopped; after 30 seconds without new data, or if it stays too slow, the plugin switches to another source and keeps what was already downloaded',
   '官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载': 'Official updates do not resume; after 30 seconds without new data the official update stops and the plugin downloads instead',
   '拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次': 'If a fetch is too slow, only the current segment is fetched again, up to 3 times per segment; if a tool download stalls, the official update runs again, up to 3 times',
   '{reason}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。': '{reason}. The official Hermes update was stopped; the plugin now fetches the code in version segments, then hands back to the official update to finish installing. Downloaded content is kept.',

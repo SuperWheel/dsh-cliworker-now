@@ -807,6 +807,16 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(hints(row)).toEqual(['官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'])
   })
 
+  it('plugin-owned official downloads say they resume and show the resume count', async () => {
+    const f = await setup(running({
+      channel: 'official', readable: true, byteProgress: true, byteProgressState: 'known-total', fileCount: 2,
+      downloadedBytes: 160 * 1024 ** 2, totalBytes: 178 * 1024 ** 2, resumeCount: 2, sourceHost: 'registry.npmjs.org',
+    }))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 2 次'])
+    expect(hints(row)).toEqual(['下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留'])
+  })
+
   it('draws no bar when the total size is unknown', async () => {
     const f = await setup(running({
       channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'unknown-total',

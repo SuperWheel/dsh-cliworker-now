@@ -452,6 +452,10 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
   // Hermes has no replaceable package: slow fetch → plugin prefetches in segments; stalled deps → stop and rerun (决定 8).
   const hermes = operation.cli === 'hermes'
   const hermesRule = t('拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待')
+  // A plugin-owned download from the official source (npm, desktop packages) resumes in place;
+  // only a CLI's own updater cannot be resumed and is stopped instead.
+  const ownedRule = t('下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留')
+  const officialRule = (fallback: string) => hermes ? hermesRule : progress.sourceHost ? ownedRule : fallback
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
     <Tooltip label={hermes ? t('拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次') : t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
@@ -469,7 +473,8 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
   )
   // Official runs never resume, so their count would always read 0.
   // Hermes never resumes bytes (git has no Range); only bounded reruns are shown.
-  const side = retries ?? (official || hermes ? null : resumes)
+  // Only a CLI's own updater has no resume count; the plugin's downloader resumes on either channel.
+  const side = retries ?? ((official && !progress.sourceHost) || hermes ? null : resumes)
 
   const switched = progress.channel === 'takeover' ? switchReason(progress.reason) : undefined
   const callout = switched && (
@@ -522,7 +527,7 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     const percent = Math.min(100, Math.round((downloaded / total) * 100))
     const parts = [t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()]
     if (progress.fileCount !== undefined && progress.fileCount > 1) parts.unshift(t('{count} 个文件', { count: progress.fileCount }))
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
     body = (
       <div className="cwn-update-progress">
         <div
@@ -570,7 +575,7 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
     )
   } else if (downloaded !== undefined) {
     // No denominator: never a percentage, only what has really arrived.
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
     body = <div className="cwn-update-progress">{meta([receivedText(downloaded), ...transferParts()].join(' · '), side)}</div>
   } else if (state === 'none' || progress.channel || stageText) {
     // Phase only: the CLI's own stage line, no bar. The row already shows 「已用时」.
