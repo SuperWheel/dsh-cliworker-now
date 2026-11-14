@@ -87,7 +87,7 @@ export async function downloadCliArtifact(options: {
   const reporting = setInterval(report, 1000)
   let remove = false
   try {
-    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe) : undefined
+    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects, options.lengthProbe, options.redirectHosts) : undefined
     const refresh = async () => {
       if (!options.refreshSources || ++refreshes > 3) throw new CliOperationError('NETWORK', '预签名地址失效，重新取清单后仍不可用')
       const urls = await options.refreshSources(global)

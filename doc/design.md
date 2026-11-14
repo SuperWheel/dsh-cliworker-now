@@ -1586,3 +1586,24 @@ Windows Claude、Antigravity、OMP、TRAE CN，以及已开放的 Unix OMP/OpenC
 迁移兼容例外：MiMo 继续「单成员解压后交官方 --binary」，不改为直接覆盖；OpenCode 保留既有 HTTPS 长度与归档 CRC 检查，没有凭空补造发布者摘要，描述以 archiveCrc 明确标记；官方安装脚本继续由内置 HTTPS 地址取回。新描述没有摘要且未声明这一既有归档例外时拒绝下载。共享 `CliDownloadProgress` 新增可选 channel、stage、elapsedSeconds、byteProgress、fileCount/completedFiles 和 reason，`cliDownloadProgressSchema` 在双通道进度发布处校验，旧字段和前端兼容。本轮不改 client/、版本号或 Desktop 链接；没有真实更新/账号/模型/平台验收。
 
 2026-11-14 决定 7 的基础协议补充：`currentStep/totalSteps/stepName` 必须成组提供，表示实际步骤或包的序号（允许尚未开始时 0/M），独立于字节百分比；`byteProgressState` 为 `none`、`unknown-total` 或 `known-total`。未知总量仍携带真实 downloadedBytes，但不得携带 totalBytes；schema 拒绝步骤越界、缺项及状态矛盾。下载器与官方探针发布明确的字节状态，多文件下载同时发布文件步骤。工件 `bytes: 'RANGE'` 用匿名 GET `Range: bytes=0-0` 探测，严格核对 206 的 `Content-Range: bytes 0-0/N`、长度、强 ETag/MD5、2 GB 上限，读取响应头后取消响应体；后续续传和换源保留同一身份检查。122 个 SHA-512 小文件、两次续传及合计通过模拟测试；所有文件长度未确认前合计总量保持未知。Hermes 回执六步、Pi 官方包计数和 Grok/Pi 新接管描述仍属于任务 4，本轮只提供协议和通用下载能力。
+
+
+### 2026-11-14 CLI 更新双通道（主任务 4，未发布）
+
+在主任务 1–3 的工件描述与编排上增加 `artifacts/native.ts`、`codex.ts`、`grok.ts`、`pi.ts`，仅准入官方默认布局。`platform.ts` 供发布查询与下载共用 Qoder 选择规则：Windows build <17763 选 legacy，否则选满足 min_windows_build 的非 legacy；Linux x64 缺少任一要求的 CPU 标志则选 baseline；musl 与 Windows arm64 不接管。Qoder/Codex 在 macOS Rosetta 下选择 arm64。Kimi 使用锁版清单的 zstd SHA-256 与解码后 SHA-256，宿主没有 zstd 时使用同清单裸二进制；版本读取、更新和临时文件冒烟都带 KIMI_CODE_NO_AUTO_UPDATE=1。冒烟输出全等目标版本才替换，不将指针回退的「already up to date」当作失败。
+
+`transaction.ts` 在目标同目录预备文件，再以 rename 发布；Windows 先将旧入口改名为 .old，再替换，失败回滚。Qoder 写版本文件、relink（无符号链接权限时复制）、version.txt 与官方安装标记；存活 PID 的 update.lock 还须命令行属于 qodercli/qoderclicn，无法确认则拒绝接管。MiMo 新增 Linux tar.gz 和 Windows zip，仅处理 .mimocode/bin 默认原生布局。Antigravity Unix 只取归档根 antigravity，musl 清单键带 _musl；Claude 写 versions/<v> 并原子更新既有 versions 链接，拒绝普通启动器，Linux musl 使用独立平台键。
+
+TRAE CN Unix 组成官方离线包，Linux 包含 bubblewrap，执行参数数组 sh install_v2.sh offline-install；子进程私有 TMPDIR，PATH 只追加 ~/.local/bin，防止官方写 shell 配置。Windows/Unix 均保留旧自动更新标记，并恢复更新前已存在的 auto_update 布尔值。只读脚本和 traex 字符串证实存在 trae-installation.json、TraeInstallation 与 auto_update 字段，但未能据此确认自动更新器读取哪份策略文件；这里是保守保留已有策略，不宣称读取路径已核实。
+
+Codex release.json 锁定 SHA-256，releases.openai.com/GitHub 双源，白名单允许 GitHub 的 release-assets 跳转。`archive.ts` 流式检查 tar 成员、PAX/GNU 长名、相对符号链接及执行权限；拒绝越界、重复、链接穿透、硬链接、设备及 sparse 元数据。ZIP 核对中央目录、路径、长度和 CRC，拒绝链接、加密与 ZIP64。完整包解压到 releases/.staging.<版本-目标>.<pid>.<随机值>，核对官方 release_dir_is_complete 所需文件、权限和版本后改名，再以 --release <v> 执行官方脚本。已有目标 release 目录拒绝覆盖；官方脚本负责 current、启动器、历史与旧 release 清理。脚本子进程固定默认 CODEX_HOME/安装目录和非 daemon 模式，不移除代理变量，PATH 包含 ~/.local/bin。
+
+Grok Unix 写 downloads/grok-<v>-<平台> 后更新 bin/grok、bin/agent 相对链接；Windows 事务替换两个 exe 和完整 grove 三件。MinGit 已有版本目录则跳过，否则校验 ZIP SHA-256 后在相邻 .staging 解压改名。四项准入为官方布局、无 Cursor active/pending 接管、[cli] installer=internal、目标不被版本策略排除。主件/伴随件均核对 HTTPS 官方双源长度和 x-goog-hash MD5；目标版本冒烟和平台签名是前置条件（macOS codesign 严格验证及 TeamIdentifier 5Y6N3AJ54S；Windows Authenticode Valid 且 CN=X.AI LLC）。成功后删除旧 models_cache.json。Linux 没有这两种平台签名工具，仅使用已声明的长度、MD5 和版本检查。
+
+Pi 仅准入 ~/.pi/agent/install 托管标记。锁版 lock 与发布清单补齐 8 个 @earendil-works 包的 SHA-512，122 个锁文件条目逐一校验并用 RANGE 获取长度（调研样本实际为 121 个唯一 URL，重复 URL 须摘要一致，环回映射复用首份）；数量、版本或摘要结构漂移即拒绝。真实 npm 的微型离线原型确认 registry.npmjs.org resolved 被配置的 registry（包括随机路径前缀）替换，所以采用设计 (a)，无需回退手写 npm 缓存。只监听 127.0.0.1 随机端口与随机令牌，精确映射已校验文件，只允许 GET/HEAD，无目录列表、写入或公网转发；文件替换会被拒绝。保留宿主代理，官方 pi update --self 的 npm_config_registry 指向环回，使用私有缓存，所有退出路径关闭服务。官方及接管安装阶段只数本次 staging/update-*/node_modules 中真实 package.json，不用解压大小推算网络百分比。按版本的 Pi 发布清单端点仍是基于调研的路径推断，未联网核对。
+
+`hermes-watch.ts` 单独管理官方六步 plan/snapshot/apply/deps/build/restart；优先读取运行中回执并显示最新日志/状态阶段，Git tmp_pack 增长仅作为 unknown-total 字节。20 分钟期限随日志/回执/私有状态活动续期，5 分钟无活动即停止；失败显示 stop_class 并自动重跑一次官方 --yes，退出码 2 不重跑。版本仍只读安装记录，检出目录不由插件清理；Windows fetch 探针按已识别的安装根定位 hermes-agent。
+
+官方探针中 Kimi 使用 bin/.staging/kimi-*.part；Qoder/CN 和 Codex 硬时限为 300 秒并允许 OFFICIAL_DEADLINE 提前判定；Codex macOS 通过 getconf DARWIN_USER_TEMP_DIR 找本次新建 tmp.*，Linux 使用私有 TMPDIR。Antigravity/Claude Unix 暂存路径没有实机核实，明确 phaseOnly；Grok 官方同样只显示阶段并受总预算控制。其余路径、私有 TMPDIR/TEMP 效果、跨平台占用/签名/安装器行为仅有脚本或模拟证据，没有真实 CLI 更新。TRAE 策略消费路径、Pi 锁版发布端点与完整官方交接也未实机验证。
+
+共享协议向后兼容新增 officialFailedAt（非负有限 epoch 毫秒），仅允许 reason=OFFICIAL_RECENT_FAILURE 时出现。服务直接接管时读取 channel-memory.failedAt，并在后续接管进度中保留，供前端展示失败发生在 N 天前；旧无此字段的进度继续通过校验。本轮后端不修改 src/client/、版本号、Desktop 链接，不提交或推送；模拟与构建证据记在对应变更 tasks.md 的 4.x。

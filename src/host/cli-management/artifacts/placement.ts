@@ -1,3 +1,4 @@
+import { extractZip } from './archive.ts'
 import { constants } from 'node:fs'
 import { chmod, copyFile, lstat, mkdir, realpath, rename, rm, unlink, symlink, readlink } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -58,7 +59,7 @@ export async function placeBinary(source: string, target: string, versionFile: s
 }
 
 /** Check every existing ancestor: a symlinked parent must not redirect writes outside the allowlist. */
-async function guardTarget(path: string, description: ArtifactDescription) {
+export async function guardTarget(path: string, description: ArtifactDescription) {
   const matches = (p: string) => description.platform === 'win32' ? same(p, path) : p === path
   if (!description.allowedTargets.some(matches)) invalid('放置目标不在白名单')
   let parent = dirname(path)
@@ -74,7 +75,8 @@ export async function extractMember(directory: string, archive: string, format: 
   if (!/^[A-Za-z0-9_-]+(?:\.exe)?$/.test(member)) invalid('归档成员必须是唯一根目录 CLI 文件')
   const path = privatePath(directory, member), source = privatePath(directory, archive)
   try {
-    await run(format === 'tar.gz' ? ['/usr/bin/tar', '-xzf', source, '-C', directory, member] : ['/usr/bin/unzip', '-q', source, member, '-d', directory], signal)
+    if (format === 'zip' && process.platform === 'win32') await extractZip(source, directory, signal, member)
+    else await run(format === 'tar.gz' ? ['/usr/bin/tar', '-xzf', source, '-C', directory, member] : ['/usr/bin/unzip', '-q', source, member, '-d', directory], signal)
   } catch (error) { if (error instanceof CliOperationError && error.code === 'EXIT_CODE') invalid('官方归档结构或解压校验不通过'); throw error }
   signal.throwIfAborted()
   const info = await lstat(path)
@@ -85,6 +87,8 @@ export async function placeArtifact(description: ArtifactDescription, directory:
   signal.throwIfAborted()
   const p = description.placement
   if (p.kind === 'none') throw new CliOperationError('PREREQUISITE_MISSING', '此描述仅支持官方阶段显示')
+  if (p.kind === 'native-binary' || p.kind === 'release-package' || p.kind === 'registry') throw new Error('Special placement requires bundle context')
+  await description.before?.(signal)
   for (const target of description.allowedTargets) await guardTarget(target, description)
   if (p.kind !== 'official-local') {
     await guardTarget(p.target, description)

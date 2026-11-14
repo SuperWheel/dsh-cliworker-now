@@ -44,8 +44,8 @@ it.each(['curl: (28) timeout\n', 'Download stalled\n', 'failure\n'])('模拟：�
   expect(f.backend.spawn).toHaveBeenCalledOnce(); expect(await f.memory.get(f.key)).toBeTruthy(); expect(readFileSync(f.target, 'utf8')).toBe(data)
 })
 it('模拟：近期记忆直接接管；接管自身失败清除记录，下次恢复官方优先', async () => {
-  const f = fixture(); await f.memory.set(f.key, 'OFFICIAL_STALLED')
-  expect(await f.start()).toMatchObject({ phase: 'succeeded', outputTail: expect.stringContaining('7 天内') }); expect(f.backend.spawn).not.toHaveBeenCalled()
+  const f = fixture(), failedAt = Date.now() - 2 * 86400000; await f.memory.set(f.key, 'OFFICIAL_STALLED', failedAt)
+  expect(await f.start()).toMatchObject({ phase: 'succeeded', outputTail: expect.stringContaining('7 天内'), progress: { reason: 'OFFICIAL_RECENT_FAILURE', officialFailedAt: failedAt } }); expect(f.backend.spawn).not.toHaveBeenCalled()
   writeFileSync(f.target, 'old')
   f.artifactFetch.mockImplementation(async (_url, init) => new Response(init?.method === 'HEAD' ? null : 'x'.repeat(Buffer.byteLength(data)), { headers: { 'content-length': String(Buffer.byteLength(data)), etag: '"simulated"' } }))
   expect(await f.start()).toMatchObject({ phase: 'failed', error: { code: 'INTEGRITY_MISMATCH' } }); expect(await f.memory.get(f.key)).toBeUndefined()

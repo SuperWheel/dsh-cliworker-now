@@ -37,7 +37,7 @@ export class ArtifactSources {
   private identity?: Identity
   private current?: Identity
   private resolved = new Map<number, string>()
-  constructor(private urls: readonly string[], private fetcher: typeof hostFetch, private signal: AbortSignal, private maxBytes: number, private requireMd5 = false, private redirects: Record<string, string> = {}, private lengthProbe: 'HEAD' | 'RANGE' = 'HEAD') {
+  constructor(private urls: readonly string[], private fetcher: typeof hostFetch, private signal: AbortSignal, private maxBytes: number, private requireMd5 = false, private redirects: Record<string, string> = {}, private lengthProbe: 'HEAD' | 'RANGE' = 'HEAD', private redirectHosts: readonly string[] = []) {
     if (!urls.length || urls.length > 8 || new Set(urls).size !== urls.length || urls.some(url => customRegistryProblem(url) || new URL(url).port)) throw new CliOperationError('NETWORK', '下载源列表必须是无凭据的 HTTPS 地址')
   }
   replaceUrls(urls: string[]) {
@@ -55,16 +55,18 @@ export class ArtifactSources {
     try {
       let url = this.urls[index]!
       const request = async (value: string) => {
-        const response = await bounded(this.fetcher(value, { method: this.lengthProbe === 'RANGE' ? 'GET' : 'HEAD', signal, credentials: 'omit', redirect: this.redirects[value] ? 'manual' : 'error', headers: { 'Accept-Encoding': 'identity', Range: this.lengthProbe === 'RANGE' ? 'bytes=0-0' : 'bytes=0-' } }), signal)
+        const response = await bounded(this.fetcher(value, { method: this.lengthProbe === 'RANGE' ? 'GET' : 'HEAD', signal, credentials: 'omit', redirect: this.redirects[value] || this.redirectHosts.length ? 'manual' : 'error', headers: { 'Accept-Encoding': 'identity', Range: this.lengthProbe === 'RANGE' ? 'bytes=0-0' : 'bytes=0-' } }), signal)
         // Metadata only: cancel even an ignored Range response without consuming its body.
         await bounded(response.body?.cancel() ?? Promise.resolve(), signal)
         return response
       }
       let response = await request(url)
-      if ([301, 302, 307, 308].includes(response.status) && this.redirects[url]) {
-        const target = this.redirects[url]!
-        if (response.headers.get('location') !== target || customRegistryProblem(target)) mismatch()
-        url = target; response = await request(url)
+      for (let redirects = 0; [301, 302, 303, 307, 308].includes(response.status); redirects++) {
+        const location = response.headers.get('location'), pinned = this.redirects[url]
+        if (!location) mismatch()
+        const target = new URL(location!, url)
+        if (redirects >= 3 || target.protocol !== 'https:' || target.username || target.password || target.port || target.hash || (pinned ? target.href !== pinned : !this.redirectHosts.includes(target.hostname))) mismatch()
+        url = target.href; response = await request(url)
       }
       if (response.status === 403) throw new PresignedExpiredError()
       if (response.status !== 200 && response.status !== 206) throw new CliOperationError('NETWORK', `下载源 ${this.lengthProbe} 探测失败（HTTP ${response.status}）`)

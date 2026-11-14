@@ -39,7 +39,7 @@ function fixture(cli: ActiveCliId) {
   const f = serviceFixture([cli]); fixtures.push(f); f.identities.set(cli, identity(cli))
   f.metadataFetch.mockImplementation(async url => {
     for (const [id, feed] of Object.entries(NATIVE_RELEASES)) {
-      const address = feed.url.replace('{platform}', 'darwin').replace('{arch}', 'arm64')
+      const address = feed.url.replace('{platform}', 'darwin').replace('{arch}', 'arm64').replace('{musl}', '')
       if (String(url) === address) { const value = sample(id as ActiveCliId); return typeof value === 'string' ? new Response(value) : json(value) }
     }
     if (String(url).endsWith('/dist-tags')) return json({ latest: '1.2.3' })
@@ -55,7 +55,7 @@ it.each(Object.keys(NATIVE_RELEASES) as ActiveCliId[])('模拟：%s 官方原生
   const fetcher = vi.fn(async () => { const value = sample(cli); return typeof value === 'string' ? new Response(value) : json(value) })
   expect(await new ReleaseClient(fetcher, 'darwin', 'arm64').query(cli, 'https://registry.npmjs.org/', control(), 'self-update')).toMatchObject({ latest: '1.2.3', versions: ['1.2.3'] })
   expect(fetcher).toHaveBeenCalledTimes(1)
-  expect(fetcher).toHaveBeenCalledWith(NATIVE_RELEASES[cli]!.url.replace('{platform}', 'darwin').replace('{arch}', 'arm64'), expect.objectContaining({ method: 'GET', credentials: 'omit', redirect: 'error' }))
+  expect(fetcher).toHaveBeenCalledWith(NATIVE_RELEASES[cli]!.url.replace('{platform}', 'darwin').replace('{arch}', 'arm64').replace('{musl}', ''), expect.objectContaining({ method: 'GET', credentials: 'omit', redirect: 'error' }))
 })
 it.each(Object.keys(NATIVE_RELEASES) as ActiveCliId[])('模拟：%s 错误格式不当作最新版', async cli => {
   await expect(new ReleaseClient(async () => json({ version: 'not-a-version' }), 'darwin', 'arm64').native(cli, control())).rejects.toThrow()

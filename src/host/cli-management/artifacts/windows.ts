@@ -10,7 +10,7 @@ import { bounded, validVersion } from '../versions.ts'
 import { CliOperationError } from '../planner.ts'
 import { NATIVE_RELEASES, OFFICIAL_SIGNED_ARTIFACT_HOSTS, WINDOWS_LOCAL_SOURCES } from '../sources.ts'
 import type { ArtifactDescription, ArtifactFile } from './types.ts'
-import { replaceFile } from './placement.ts'
+import { replaceFile, guardTarget } from './placement.ts'
 import { officialProbe } from './probes.ts'
 import { toFile, type LegacyDownloadData } from './legacy.ts'
 type AddFile = (data: LegacyDownloadData, destination: string) => Promise<void>
@@ -54,7 +54,7 @@ export function validateOmpArtifact(value: unknown, version: string, platform: s
     integrity: integrity(file.sha256, 'sha256'), expectedBytes: size(file.size), officialSignedArtifact: true }
 }
 
-async function optionalHeadLength(url: string, options: LocalArtifactOptions, signal: AbortSignal): Promise<number | undefined> {
+export async function optionalHeadLength(url: string, options: LocalArtifactOptions, signal: AbortSignal): Promise<number | undefined> {
   const control = AbortSignal.any([signal, AbortSignal.timeout(8000)])
   try {
     const response = await bounded((options.fetcher ?? hostFetch)(url, { method: 'HEAD', signal: control, credentials: 'omit', redirect: 'error', headers: { 'Accept-Encoding': 'identity' } }), control)
@@ -88,7 +88,7 @@ export async function describeWindowsUpdate(options: LocalArtifactOptions, direc
     const url = `${base}/${platform}/claude.exe`
     await addFile({ url, sources: options.allowSourceSwitch === false ? undefined : [url, `${WINDOWS_LOCAL_SOURCES.claudeFallback}/${version}/${platform}/claude.exe`], integrity: integrity(artifact.checksum, 'sha256'), expectedBytes: size(artifact.size) }, binary)
   } else if (cli === 'antigravity') {
-    const url = NATIVE_RELEASES.antigravity!.url.replace('{platform}', 'windows').replace('{arch}', arch === 'x64' ? 'amd64' : 'arm64')
+    const url = NATIVE_RELEASES.antigravity!.url.replace('{platform}', 'windows').replace('{arch}', arch === 'x64' ? 'amd64' : 'arm64').replace('{musl}', '')
     const manifest = object(await options.releases.json(url, signal))
     if (manifest.version !== version) invalid('Antigravity 官方清单版本与目标不符，请重新检查更新')
     const artifact = officialUrl(manifest.url, 'storage.googleapis.com', '/antigravity-public/antigravity-cli/')
@@ -107,16 +107,17 @@ export async function describeWindowsUpdate(options: LocalArtifactOptions, direc
   const target = entry(cli, home, local)!
   const versionFile = cli === 'claude' ? join(home, '.local', 'share', 'claude', 'versions', version) : undefined
   return {
-    manifest: { urls: [cli === 'claude' ? `${WINDOWS_LOCAL_SOURCES.claude}/${version}/manifest.json` : cli === 'omp' ? `${WINDOWS_LOCAL_SOURCES.omp}/${version}/windows-${arch === 'x64' ? 'x86_64' : 'arm64'}` : NATIVE_RELEASES.antigravity!.url.replace('{platform}', 'windows').replace('{arch}', arch === 'x64' ? 'amd64' : 'arm64')], version, versionField: cli === 'omp' ? 'build.version' : 'version', platformKey: cli === 'claude' ? `win32-${arch}` : cli === 'omp' ? `windows-${arch === 'x64' ? 'x86_64' : 'arm64'}` : `windows_${arch === 'x64' ? 'amd64' : 'arm64'}` },
+    manifest: { urls: [cli === 'claude' ? `${WINDOWS_LOCAL_SOURCES.claude}/${version}/manifest.json` : cli === 'omp' ? `${WINDOWS_LOCAL_SOURCES.omp}/${version}/windows-${arch === 'x64' ? 'x86_64' : 'arm64'}` : NATIVE_RELEASES.antigravity!.url.replace('{platform}', 'windows').replace('{arch}', arch === 'x64' ? 'amd64' : 'arm64').replace('{musl}', '')], version, versionField: cli === 'omp' ? 'build.version' : 'version', platformKey: cli === 'claude' ? `win32-${arch}` : cli === 'omp' ? `windows-${arch === 'x64' ? 'x86_64' : 'arm64'}` : `windows_${arch === 'x64' ? 'amd64' : 'arm64'}` },
     files, extras: [], platform: 'win32', allowedTargets: [target, ...(versionFile ? [versionFile] : [])],
     placement: versionFile ? { kind: 'versioned-link', file: binary, target, versionFile } : { kind: 'replace-binary', file: binary, target },
     officialProbe: officialProbe(options, files.reduce((n, f) => n + (typeof f.bytes === 'number' ? f.bytes : 0), 0) || undefined),
   }
 }
-async function describeTrae(options: LocalArtifactOptions, directory: string, signal: AbortSignal, home: string, local?: string): Promise<ArtifactDescription> {
+export async function describeTrae(options: LocalArtifactOptions, directory: string, signal: AbortSignal, home: string, local?: string): Promise<ArtifactDescription> {
   const { version } = options, channel = options.identity!.channel!, releaseChannel = options.identity!.releaseChannel ?? (channel === 'tob-alpha' ? 'alpha' : 'stable')
-  const platform = (options.arch ?? process.arch) === 'x64' ? 'windows-x86_64' : 'windows-aarch64'
-  const packageTarget = platform === 'windows-x86_64' ? 'x86_64-pc-windows-msvc' : 'aarch64-pc-windows-msvc'
+  const hostPlatform = options.platform ?? process.platform, win = hostPlatform === 'win32', cpu = (options.arch ?? process.arch) === 'x64' ? 'x86_64' : 'aarch64'
+  const platform = `${win ? 'windows' : hostPlatform === 'darwin' ? 'macos' : 'linux'}-${cpu}`
+  const packageTarget = `${cpu}-${win ? 'pc-windows-msvc' : hostPlatform === 'darwin' ? 'apple-darwin' : 'unknown-linux-musl'}`
   const base = WINDOWS_LOCAL_SOURCES.trae, prefix = new URL(base).pathname
   const manifest = object(await options.releases.json(`${base}/v2/releases/${version}/manifest.json`, signal))
   const versionPattern = channel === 'tob' ? /^\d+\.\d+\.\d+-tob(?:\.[1-9]\d*)?$/ : channel === 'tob-alpha' ? /^\d+\.\d+\.\d+-tob-alpha\.[1-9]\d*$/ : releaseChannel === 'alpha' ? /^\d+\.\d+\.\d+-alpha\.[1-9]\d*$/ : /^\d+\.\d+\.\d+$/
@@ -128,7 +129,7 @@ async function describeTrae(options: LocalArtifactOptions, directory: string, si
     return matches.length === 1 ? matches[0]! : invalid('TRAE 官方清单必须恰有一个目标平台工件')
   }
   const artifact = select(manifest.artifacts), sidecars = artifact.sidecars
-  if (!Array.isArray(sidecars) || sidecars.length !== 1 || object(sidecars[0]).name !== 'code_mode_host' || object(sidecars[0]).filename !== `traex-code-mode-host-${platform}.exe.gz`) invalid('TRAE 离线包缺少唯一 code mode host')
+  if (!Array.isArray(sidecars) || sidecars.length !== 1 || object(sidecars[0]).name !== 'code_mode_host' || object(sidecars[0]).filename !== `traex-code-mode-host-${platform}${win ? '.exe' : ''}.gz`) invalid('TRAE 离线包缺少唯一 code mode host')
   const helpers = artifact.windows_sandbox_helpers === undefined ? [] : artifact.windows_sandbox_helpers
   if (!Array.isArray(helpers)) invalid('TRAE Windows 沙箱辅助件列表无效')
   if (artifact.windows_sandbox_helpers !== undefined) {
@@ -139,19 +140,22 @@ async function describeTrae(options: LocalArtifactOptions, directory: string, si
     }
   }
   const dependency = object(await options.releases.json(`${base}/v2/deps/ripgrep/latest.json`, signal)), rg = select(dependency.artifacts)
-  if (rg.filename !== `rg-${platform}.zip` || typeof rg.archive_path !== 'string' || !/^[0-9A-Za-z._/-]+\/rg\.exe$/.test(rg.archive_path) || rg.archive_path.startsWith('/') || rg.archive_path.includes('..')) invalid('TRAE ripgrep 归档路径无效')
-  const records = [artifact, ...(sidecars as unknown[]).map(object), ...(helpers as unknown[]).map(object), rg]
+  if (rg.filename !== `rg-${platform}.${win ? 'zip' : 'tar.gz'}` || typeof rg.archive_path !== 'string' || !(win ? /^[0-9A-Za-z._/-]+\/rg\.exe$/ : /^[0-9A-Za-z._/-]+\/rg$/).test(rg.archive_path) || rg.archive_path.startsWith('/') || rg.archive_path.includes('..')) invalid('TRAE ripgrep 归档路径无效')
+  const bwrapManifest = hostPlatform === 'linux' ? object(await options.releases.json(`${base}/v2/deps/bubblewrap/latest.json`, signal)) : undefined
+  const bwrap = bwrapManifest ? select(bwrapManifest.artifacts) : undefined
+  if (bwrap && (bwrap.filename !== `bwrap-${platform}.tar.gz` || typeof bwrap.archive_path !== 'string' || !/^[0-9A-Za-z._/-]+\/bwrap$/.test(bwrap.archive_path) || bwrap.archive_path.includes('..'))) invalid('TRAE bubblewrap 归档路径无效')
+  const records = [artifact, ...(sidecars as unknown[]).map(object), ...(helpers as unknown[]).map(object), rg, ...(bwrap ? [bwrap] : [])]
   // Validate the complete bundle before the first large transfer; reject collisions and budget overflow.
   const destinations = new Set<string>()
   let total = 0
   const downloads = records.map(record => {
-    const dependency = record === rg, folder = dependency ? 'dependencies/ripgrep' : 'artifacts'
-    if (!filename(record.filename) || record.compression !== (dependency ? 'zip' : 'gzip')) invalid('TRAE 工件文件名或压缩格式无效')
+    const dependency = record === rg || record === bwrap, dependencyName = record === bwrap ? 'bubblewrap' : 'ripgrep', folder = dependency ? `dependencies/${dependencyName}` : 'artifacts'
+    if (!filename(record.filename) || record.compression !== (dependency ? win ? 'zip' : 'tar.gz' : 'gzip')) invalid('TRAE 工件文件名或压缩格式无效')
     const relative = `${folder}/${record.filename}`, key = relative.toLowerCase()
     if (destinations.has(key)) invalid('TRAE 工件路径重复')
     destinations.add(key)
     const expectedBytes = size(record.size); total += expectedBytes
-    const data = { url: officialUrl(record.url, 'lf-cdn.trae.com.cn', `${prefix}/v2/${dependency ? 'deps/ripgrep/' : 'releases/'}`), integrity: integrity(record.sha256, 'sha256'), expectedBytes }
+    const data = { url: officialUrl(record.url, 'lf-cdn.trae.com.cn', `${prefix}/v2/${dependency ? `deps/${dependencyName}/` : 'releases/'}`), integrity: integrity(record.sha256, 'sha256'), expectedBytes }
     return { record, relative, data }
   })
   if (total > DOWNLOAD_MAX_BYTES) invalid('官方离线工件合计超过 2 GB 私有缓存上限')
@@ -160,20 +164,23 @@ async function describeTrae(options: LocalArtifactOptions, directory: string, si
   const manifestJson = JSON.stringify({ ...manifest, artifacts: [artifact], offline_channel: channel, release_channel: releaseChannel })
   const metadataBytes = Buffer.byteLength(dependencyJson) + Buffer.byteLength(manifestJson)
   if (total + metadataBytes > DOWNLOAD_MAX_BYTES) invalid('官方离线工件合计超过 2 GB 私有缓存上限')
-  const script = join(directory, 'install_v2.ps1')
-  const state = join(localData(home, local), 'TraeCLI'), marker = join(state, 'auto-update-version')
-  const argv = ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, 'offline-install', directory]
+  const scriptName = win ? 'install_v2.ps1' : 'install_v2.sh', script = join(directory, scriptName)
+  const state = win ? join(localData(home, local), 'TraeCLI') : join(home, '.local/share/traecli'), marker = join(state, 'auto-update-version')
+  const argv = win ? ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, 'offline-install', directory] : ['/bin/sh', script, 'offline-install', directory]
   return { manifest: { urls: [`${base}/v2/releases/${version}/manifest.json`, `${base}/v2/deps/ripgrep/latest.json`], version, versionField: 'version', platformKey: platform },
     files: downloads.map(item => toFile(item.data, item.relative)),
-    extras: [{ dest: 'dependencies/ripgrep/manifest.json', content: dependencyJson }, { dest: 'offline-manifest.json', content: manifestJson }, { dest: 'install_v2.ps1', script: `${base}/install_v2.ps1` }],
-    platform: 'win32', allowedTargets: [marker], officialProbe: officialProbe(options, total),
+    extras: [{ dest: 'dependencies/ripgrep/manifest.json', content: dependencyJson }, { dest: 'offline-manifest.json', content: manifestJson }, { dest: scriptName, script: `${base}/${scriptName}` }, ...(bwrapManifest ? [{ dest: 'dependencies/bubblewrap/manifest.json', content: JSON.stringify({ ...bwrapManifest, artifacts: [bwrap] }) }] : [])],
+    platform: hostPlatform, allowedTargets: [marker], officialProbe: officialProbe(options, total),
     placement: { kind: 'official-local', argv,
     env: { TRAECLI_VERSION: version, TRAECLI_CHANNEL: channel, TRAECLI_RELEASE_CHANNEL: releaseChannel,
-      TRAECLI_STATE_DIR: state, TRAECLI_INSTALL_DIR: join(localData(home, local), 'Programs/TraeCLI/bin'), TRAEX_RELEASES_DIR: join(state, 'releases'),
-      TRAECLI_INSTALL_ASSUME_YES: '1', TRAECLI_INSTALL_SKIP_USER_PATH: '1' } },
+      TRAECLI_STATE_DIR: state, TRAECLI_INSTALL_DIR: win ? join(localData(home, local), 'Programs/TraeCLI/bin') : join(home, '.local/bin'), TRAEX_RELEASES_DIR: join(state, 'releases'),
+      TRAECLI_INSTALL_ASSUME_YES: '1', TRAECLI_INSTALL_SKIP_USER_PATH: '1', ...(win ? {} : { TMPDIR: directory, PATH: [process.env.PATH ?? '', join(home, '.local/bin')].join(':') }) } },
     after: async control => {
 
       control.throwIfAborted()
+      let previousAutoUpdate: boolean | undefined
+      const oldPolicy = join(state, 'current/trae-installation.json')
+      try { const info = await lstat(oldPolicy); if (info.isFile() && !info.isSymbolicLink() && info.size < 4096) { const policy = JSON.parse(await readFile(oldPolicy, 'utf8')); if (typeof policy.auto_update === 'boolean') previousAutoUpdate = policy.auto_update } } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
       let existed = false
       try {
         const info = await lstat(marker)
@@ -181,12 +188,26 @@ async function describeTrae(options: LocalArtifactOptions, directory: string, si
         await readFile(marker, 'utf8'); existed = true
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
       return async control => { // Failure/cancellation never rewrites the marker.
+      if (previousAutoUpdate !== undefined) {
+        const selected = await realpath(join(state, 'current'))
+        if (!same(dirname(selected), join(state, 'releases')) || !basename(selected).startsWith(`${version}-`)) invalid('TRAE 策略目标超出 release 白名单')
+        for (const name of ['trae-installation.json', 'bin/trae-installation.json']) {
+          const policyPath = join(selected, name), info = await lstat(policyPath).catch(() => undefined)
+          if (!info) continue
+          if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.size > 4096) invalid('TRAE 策略文件不安全')
+          await guardTarget(policyPath, { allowedTargets: [policyPath], platform: hostPlatform } as ArtifactDescription)
+          const policy = JSON.parse(await readFile(policyPath, 'utf8'))
+          if (typeof policy.auto_update !== 'boolean') invalid('TRAE 策略字段无效')
+          const source = join(directory, 'restored-policy.json'); await writeFile(source, JSON.stringify({ ...policy, auto_update: previousAutoUpdate }) + '\n', { mode: 0o600 })
+          await replaceFile(source, policyPath, control, hostPlatform)
+        }
+      }
       if (existed) {
         // The official installer may append a UUID when an immutable generation already exists.
         const selected = await realpath(join(state, 'current')), release = basename(selected), expected = `${version}-${packageTarget}`
         if (!same(dirname(selected), join(state, 'releases')) || release !== expected && !(release.startsWith(`${expected}.`) && /^[a-f0-9]{32}$/i.test(release.slice(expected.length + 1)))) invalid('TRAE 安装后的 release 目录与目标不符')
         const source = join(directory, 'auto-update-version')
-        await writeFile(source, release, { mode: 0o600 }); await replaceFile(source, marker, control, 'win32')
+        await writeFile(source, release, { mode: 0o600 }); await replaceFile(source, marker, control, hostPlatform)
       } else await rm(marker, { force: true })
       }
     } }

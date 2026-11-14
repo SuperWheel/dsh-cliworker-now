@@ -1,3 +1,4 @@
+import { isMusl, qoderPlatform, selectQoderFile } from './artifacts/platform.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
 import { homedir } from 'node:os'
@@ -172,7 +173,7 @@ export class ReleaseClient {
     if (!feed) throw new ReleaseError('NO_RELEASE_SOURCE')
     const os = this.platform === 'win32' ? 'windows' : this.platform, cpu = this.arch === 'x64' ? 'amd64' : this.arch
     if (!['darwin', 'linux', 'windows'].includes(os) || !['arm64', 'amd64'].includes(cpu) || os === 'windows' && cpu === 'arm64' && (cli === 'qoder' || cli === 'qodercn')) throw new ReleaseError('NO_RELEASE_SOURCE')
-    let url = feed.url.replace('{platform}', os).replace('{arch}', cpu)
+    let url = feed.url.replace('{platform}', os).replace('{arch}', cpu).replace('{musl}', isMusl(this.platform) ? '_musl' : '')
     let version: unknown
     const sha = (value: unknown, size: number) => typeof value === 'string' && new RegExp(`^[a-fA-F0-9]{${size}}$`).test(value)
     const https = (value: unknown) => typeof value === 'string' && !customRegistryProblem(value)
@@ -208,7 +209,7 @@ export class ReleaseClient {
             if (data.draft !== false || data.prerelease !== false || typeof data.tag_name !== 'string' || !data.tag_name.startsWith('v')) throw new Error('Not a stable release')
             version = data.tag_name.slice(1); break
           case 'qoder': {
-            const file = Array.isArray(data.files) && data.files.find((f: any) => f?.os === os && f.arch === cpu)
+            const file = selectQoderFile(data.files, await qoderPlatform(this.platform, this.arch))
             if (!file) throw new ReleaseError('NO_RELEASE_SOURCE')
             if (!sha(file.sha256, 64) || !https(file.url)) throw new Error('Invalid artifact')
             version = data.latest; break

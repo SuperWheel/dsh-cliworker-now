@@ -1,7 +1,9 @@
+import { codexInstallerEnv } from './artifacts/codex.ts'
+import { runHermesUpdate } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
 import { rename, unlink } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { nativeLaunchArgv } from '../native-launch.mjs'
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
@@ -436,9 +438,9 @@ export class CliManagementService {
           const scriptFile = artifact.replace(/\.part$/, '.sh')
           await rename(artifact, scriptFile); artifact = scriptFile
         }
-        const dualChannel = interruptionRecoveryChannel(plan.method === 'self-update' && canPrepareLocalUpdate(cli, plan.identity)) === 'takeover'
+        const dualChannel = interruptionRecoveryChannel((plan.method === 'self-update' || plan.method === 'official-script') && canPrepareLocalUpdate(cli, plan.identity)) === 'takeover'
         const localOptions = { cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, beforeVersion: plan.beforeVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output,
-          progress: (value: import('../../shared/cli-management.ts').CliDownloadProgress) => { op.progress = cliDownloadProgressSchema.parse({ ...value, reason: value.reason ?? (value.channel === 'takeover' ? op.progress?.reason : undefined) }); this.changed() } }
+          progress: (value: import('../../shared/cli-management.ts').CliDownloadProgress) => { op.progress = cliDownloadProgressSchema.parse({ ...value, reason: value.reason ?? (value.channel === 'takeover' ? op.progress?.reason : undefined), officialFailedAt: value.channel === 'takeover' && (value.reason ?? op.progress?.reason) === 'OFFICIAL_RECENT_FAILURE' ? value.officialFailedAt ?? op.progress?.officialFailedAt : undefined }); this.changed() } }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
         const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
@@ -490,6 +492,11 @@ export class CliManagementService {
             } })
           if (plan.identity.notice) op.outputTail = outputTail(op.outputTail + '\n' + plan.identity.notice)
           verified = await verify(signal)
+        } else if (cli === 'hermes' && plan.method === 'self-update') {
+          op.command = argv!; op.phase = 'installing'; this.changed()
+          const home = effectiveHermesHome(this.deps.config)
+          await runHermesUpdate({ root: this.deps.root, home, checkout: plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent'), argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress })
+          verified = await verify(signal)
         } else if (dualChannel) {
           const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity)
           const remembered = await memory.get(key)
@@ -506,9 +513,9 @@ export class CliManagementService {
               op.command = argv!; op.phase = 'installing'; this.changed()
               watch.start()
               try {
-                const env = { ...NATIVE_UPDATES[cli]?.env, ...watch.env }
+                const env = { ...NATIVE_UPDATES[cli]?.env, ...(cli === 'codex' ? codexInstallerEnv() : {}), ...watch.env }
                 // Keep the Host environment, including proxies; only augment the child PATH.
-                if (cli === 'mimo') env.PATH = [dirname(plan.identity.executable), process.env.PATH ?? ''].join(process.platform === 'win32' ? ';' : ':')
+                if (['mimo', 'traecn', 'codex'].includes(cli)) env.PATH = [process.env.PATH ?? '', cli === 'mimo' ? dirname(plan.identity.executable) : join(homedir(), '.local/bin')].join(process.platform === 'win32' ? ';' : ':')
                 await executeCliOperation(this.deps.backend, { ...this.deps.config, graceMs: Math.min(5000, this.deps.config.graceMs) }, argv!, AbortSignal.any([signal, watch.controller.signal]), output, 10 * 60_000, env, watch)
               } catch (error) {
                 if (error instanceof ProcessCleanupUnconfirmedError) { cleanupConfirmed = false; throw error }
@@ -517,7 +524,7 @@ export class CliManagementService {
                 officialError = error
               } finally { await watch.stop() }
               signal.throwIfAborted()
-              if (watch.lockConflict && await officialLockState(probe.lockFile) !== 'stale') {
+              if (watch.lockConflict && await officialLockState(probe.lockFile, probe.lockCommandPattern) !== 'stale') {
                 await memory.set(key, undefined)
                 throw new CliOperationError('UPDATE_LOCKED', '官方更新锁仍有效或无法确认归属，请等待另一个更新结束')
               }
@@ -527,7 +534,8 @@ export class CliManagementService {
                 if (!(error instanceof CliOperationError) || !['VERSION_UNCHANGED', 'VERSION_MISMATCH'].includes(error.code)) throw error
                 // A version that advanced but mismatches a pin is not a download failure.
                 if (op.afterVersion && updateAvailable(plan.beforeVersion, op.afterVersion)) throw error
-                if (!officialError && !watch.reason && !watch.lockConflict) throw error
+                // Kimi stages first; a zero exit can still leave an unapplied swap.
+                if (cli !== 'kimi' && !officialError && !watch.reason && !watch.lockConflict) throw error
                 failure = watch.reason ?? (watch.lockConflict ? 'OFFICIAL_STALLED' : officialError instanceof CliOperationError && officialError.code === 'INSTALL_TIMEOUT' ? 'OFFICIAL_BUDGET' : 'OFFICIAL_EXIT')
               }
               if (officialResult) {
@@ -545,7 +553,7 @@ export class CliManagementService {
           if (officialResult) verified = officialResult
           else {
             if (failure) await memory.set(key, failure)
-            op.progress = { readable: false, byteProgress: false, resumeCount: 0, channel: 'takeover', reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : failure,
+            op.progress = { readable: false, byteProgress: false, resumeCount: 0, channel: 'takeover', reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : failure, officialFailedAt: remembered?.failedAt,
               stage: remembered ? '官方渠道近期在本机失败（7 天内），直接接管' : '官方进程已退出，切换插件接管' }
             output(op.progress.stage! + '\n')
             try {

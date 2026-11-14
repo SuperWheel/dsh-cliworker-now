@@ -1,3 +1,6 @@
+import { observedPackages } from './artifacts/observations.ts'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { lstat, readdir, rmdir, unlink, open, mkdtemp, chmod } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -52,6 +55,8 @@ export class OfficialWatch extends InterruptionEvidence {
   private present = new Map<string, Owned>()
   private ownedDirs = new Map<string, Owned>()
   private lengths = new Map<string, number | undefined>()
+  private packageBaseline = new Set<string>()
+  private packageCount = 0
   private logs = new Map<string, string>()
   private timer?: ReturnType<typeof setInterval>
   private polling: Promise<void> = Promise.resolve()
@@ -68,7 +73,7 @@ export class OfficialWatch extends InterruptionEvidence {
   alreadyLatest = false
   lockConflict = false
   reason?: CliChannelReason
-  constructor(readonly probe: OfficialProbe, private progress: (value: CliDownloadProgress) => void) { super() }
+  constructor(readonly probe: OfficialProbe, private progress: (value: CliDownloadProgress) => void) { super(); this.phaseOnly = probe.phaseOnly ?? false }
   static async prepare(probe: OfficialProbe, root: string, progress: (value: CliDownloadProgress) => void) {
     const watch = new OfficialWatch({ ...probe }, progress)
     if (probe.privateTemp) {
@@ -78,6 +83,7 @@ export class OfficialWatch extends InterruptionEvidence {
       if (probe.privateTemp === 'TEMP') watch.env.TMP = watch.probe.directory
     }
     try {
+      if (probe.packageDirectory) watch.packageBaseline = new Set(await readdir(probe.packageDirectory).catch(() => []))
       const entries = await watch.scan()
       watch.baseline = new Set(entries.map(e => e.relative))
       if (watch.probe.directory) watch.rootIdentity = await lstat(watch.probe.directory).catch(() => undefined)
@@ -151,6 +157,7 @@ export class OfficialWatch extends InterruptionEvidence {
   }
   async poll(now = Date.now()) {
     await this.collect()
+    if (this.probe.packageDirectory) this.packageCount = await observedPackages(this.probe.packageDirectory, this.startedAt, this.packageBaseline)
     for (const path of this.probe.stageFiles ?? []) {
       const stage = await this.readStage(path)
       if (stage !== undefined && stage !== this.logs.get(path)) { this.logs.set(path, stage); this.push(stage + '\n') }
@@ -169,7 +176,7 @@ export class OfficialWatch extends InterruptionEvidence {
     // Disappearing incomplete staging is a restart. Finished staging may be moved during installation.
     if (bytes === undefined && !this.disabled && !this.phaseOnly && this.lastTotal > 0 && this.probe.totalBytes && this.lastTotal < this.probe.totalBytes) bytes = 0
     if (this.lockConflict && !this.controller.signal.aborted) {
-      const lock = await officialLockState(this.probe.lockFile)
+      const lock = await officialLockState(this.probe.lockFile, this.probe.lockCommandPattern)
       if (lock !== 'stale') this.controller.abort(new CliOperationError('UPDATE_LOCKED', '官方更新锁仍有效或无法确认归属'))
       else if (now - this.startedAt >= 30_000) this.fail('OFFICIAL_STALLED')
     }
@@ -181,6 +188,7 @@ export class OfficialWatch extends InterruptionEvidence {
     this.progress({ channel: 'official', stage: this.stage, readable: bytes !== undefined, byteProgress: bytes !== undefined,
       byteProgressState: bytes === undefined ? 'none' : this.probe.totalBytes === undefined ? 'unknown-total' : 'known-total',
       elapsedSeconds: Math.max(0, (now - this.startedAt) / 1000), resumeCount: 0,
+      ...(this.probe.packageCount ? { currentStep: Math.min(this.packageCount, this.probe.packageCount), totalSteps: this.probe.packageCount, stepName: `第 ${this.packageCount}/${this.probe.packageCount} 个包` } : {}),
       ...(bytes === undefined ? {} : { downloadedBytes: bytes, totalBytes: this.probe.totalBytes, bytesPerSecond: now > this.lastAt ? Math.max(0, bytes - this.lastTotal) / ((now - this.lastAt) / 1000) : 0, fileCount: this.present.size }), reason: this.reason })
     this.lastAt = now; this.lastTotal = bytes ?? 0
   }
@@ -214,7 +222,7 @@ export class OfficialWatch extends InterruptionEvidence {
 }
 
 /** A stale PID is evidence; an unreadable/unknown lock is never permission to overwrite. */
-export async function officialLockState(path?: string): Promise<'active' | 'stale' | 'unknown'> {
+export async function officialLockState(path?: string, commandPattern?: RegExp, readCommand?: (pid: number) => Promise<string>): Promise<'active' | 'stale' | 'unknown'> {
   if (!path) return 'unknown'
   const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => undefined)
   if (!handle) return 'unknown'
@@ -224,7 +232,17 @@ export async function officialLockState(path?: string): Promise<'active' | 'stal
     const buffer = Buffer.alloc(4096), { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
     const value = JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')) as { pid?: number }
     if (!Number.isSafeInteger(value.pid) || value.pid! <= 0) return 'unknown'
-    try { process.kill(value.pid!, 0); return 'active' }
-    catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'stale' : 'active' }
+    try {
+      process.kill(value.pid!, 0)
+      if (commandPattern) {
+        if (readCommand) return commandPattern.test(await readCommand(value.pid!)) ? 'active' : 'stale'
+        const result = process.platform === 'win32'
+          ? await promisify(execFile)('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '[Console]::Write((Get-CimInstance Win32_Process -Filter ("ProcessId=" + $env:CLIWORKER_LOCK_PID)).CommandLine)'], { timeout: 5000, maxBuffer: 65536, env: { ...process.env, CLIWORKER_LOCK_PID: String(value.pid) } })
+          : await promisify(execFile)('/bin/ps', ['-p', String(value.pid), '-o', 'command='], { timeout: 5000, maxBuffer: 65536 })
+        return commandPattern.test(result.stdout) ? 'active' : 'stale'
+      }
+      return 'active'
+    }
+    catch (error) { return (error as NodeJS.ErrnoException).code === 'ESRCH' ? 'stale' : 'unknown' }
   } catch { return 'unknown' } finally { await handle.close() }
 }

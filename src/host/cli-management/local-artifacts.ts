@@ -1,3 +1,4 @@
+import { nativeLayout, describeNativeUpdate } from './artifacts/native.ts'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ActiveCliId } from '../../shared/types.ts'
@@ -31,10 +32,9 @@ const invalid = (message: string): never => { throw new CliOperationError('INTEG
 /** Select only layouts the official installer will update in place. Other owners
  * retain their original updater. All remote addresses below are built in. */
 export function canPrepareLocalUpdate(cli: ActiveCliId, identity: InstallationIdentity | undefined, platform = process.platform, arch: string = process.arch, home = homedir(), localAppData = process.env.LOCALAPPDATA): boolean {
+  if (nativeLayout(cli, identity, platform, arch, home)) return true
   if (platform === 'win32') return canPrepareWindowsUpdate(cli, identity, arch, home, localAppData)
   if (!['darwin', 'linux'].includes(platform) || !['arm64', 'x64'].includes(arch)) return false
-  // MiMo approval covers the official macOS zip; Linux keeps its native updater.
-  if (cli === 'mimo' && platform !== 'darwin') return false
   if (cli !== 'mimo' && cli !== 'opencode' && cli !== 'omp' || !identity || identity.source !== 'self-update') return false
   const expected = join(home, LOCAL_INSTALLERS[cli].entry)
   return identity.executable === expected || identity.fingerprint.realpath === expected
@@ -43,15 +43,16 @@ export function canPrepareLocalUpdate(cli: ActiveCliId, identity: InstallationId
 export async function describeLocalUpdate(options: LocalArtifactOptions, directory: string) {
   const platform = options.platform ?? process.platform
   if (!canPrepareLocalUpdate(options.cli, options.identity, platform, options.arch, options.home, options.localAppData)) throw new CliOperationError('PREREQUISITE_MISSING', '此安装布局没有已核实的本地工件入口')
+  if (nativeLayout(options.cli, options.identity, platform, options.arch ?? process.arch, options.home)) return describeNativeUpdate(options, directory)
   return platform === 'win32' ? describeWindowsUpdate(options, directory) : describeUnixUpdate(options, directory)
 }
 export async function prepareLocalUpdate(options: LocalArtifactOptions): Promise<LocalArtifactInstall> {
   if (options.beforeVersion && !updateAvailable(options.beforeVersion, options.version)) throw new CliOperationError('PLAN_EXPIRED', '接管目标版本必须高于已装版本')
   const platform = options.platform ?? process.platform
   if (!canPrepareLocalUpdate(options.cli, options.identity, platform, options.arch, options.home, options.localAppData)) throw new CliOperationError('PREREQUISITE_MISSING', '此安装布局没有已核实的本地工件入口')
-  if (platform === 'win32') return prepareWindowsUpdate(options)
-  const result = await prepareArtifactBundle(options, (directory, signal) => describeUnixUpdate({ ...options, signal }, directory))
+  if (platform === 'win32' && !nativeLayout(options.cli, options.identity, platform, options.arch ?? process.arch, options.home)) return prepareWindowsUpdate(options)
+  const result = await prepareArtifactBundle(options, (directory, signal) => describeLocalUpdate({ ...options, signal }, directory))
   if (options.cli === 'mimo') options.output('MiMo 已校验官方长度、content-md5 与 zip 结构（解压 CRC）；MD5 来自同源响应，不代表独立签名验证。\n')
-  options.output(`已接管 ${options.cli} 官方工件下载；安装由官方 --binary 入口执行。\n`)
+  options.output(`已接管 ${options.cli} 官方工件下载；按该 CLI 的官方布局完成安装。\n`)
   return result
 }

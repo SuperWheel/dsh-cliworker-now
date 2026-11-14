@@ -134,6 +134,8 @@ export interface CliDownloadProgress {
   fileCount?: number
   completedFiles?: number
   reason?: CliChannelReason
+  /** Epoch milliseconds; only meaningful for OFFICIAL_RECENT_FAILURE. */
+  officialFailedAt?: number
   downloadedBytes?: number
   totalBytes?: number
   bytesPerSecond?: number
@@ -158,8 +160,9 @@ export const cliDownloadProgressSchema = z.object({
   downloadedBytes: nonnegative.optional(), totalBytes: nonnegative.optional(), bytesPerSecond: nonnegative.optional(),
   resumeCount: nonnegative.int(), retryCount: nonnegative.int().optional(), sourceHost: z.string().max(253).optional(),
   stalledSeconds: nonnegative.optional(), fileCount: nonnegative.int().optional(), completedFiles: nonnegative.int().optional(),
-  reason: z.enum(CLI_CHANNEL_REASONS).optional(),
+  reason: z.enum(CLI_CHANNEL_REASONS).optional(), officialFailedAt: nonnegative.optional(),
 }).superRefine((p, ctx) => {
+  if (p.officialFailedAt !== undefined && p.reason !== 'OFFICIAL_RECENT_FAILURE') ctx.addIssue({ code: 'custom', message: '官方失败时间只允许用于近期官方失败原因' })
   if (p.byteProgress !== undefined && p.byteProgress !== p.readable) ctx.addIssue({ code: 'custom', message: '字节进度标记与可读性不一致' })
   if (p.byteProgress === false && [p.downloadedBytes, p.totalBytes, p.bytesPerSecond].some(v => v !== undefined)) ctx.addIssue({ code: 'custom', message: '阶段进度不能携带字节值' })
   if (p.fileCount !== undefined && p.completedFiles !== undefined && p.completedFiles > p.fileCount) ctx.addIssue({ code: 'custom', message: '已完成文件数超过合计' })

@@ -49,21 +49,54 @@
   - 边界：未修改 client/、版本号或 Desktop 链接；前端标签/多文件版式、真实账号/模型/平台验收仍属于主任务 4–7。本轮不归档、不提交、不推送。
 
 ## 4. 新增接管描述 〔后端｜14h｜前置 2,3〕
-- [ ] 4.1 Kimi 三平台 (b)：版本清单 sha256、双源、冒烟等于目标、不降级
-- [ ] 4.2 Qoder、Qoder CN (c)：按官方规则选条目（Windows build、legacy、Linux CPU 标志）、relink、version.txt、尊重有效 update.lock；musl 与 Windows arm64 不开放
-- [ ] 4.3 MiMo Linux（扩展名 `.tar.gz`）与 Windows (d)+(b)
-- [ ] 4.4 Antigravity macOS/Linux (d)、Claude 原生 macOS/Linux (c)
-- [ ] 4.5 TRAE CN macOS/Linux (a)：私有 TMPDIR、PATH 含 `~/.local/bin`、Linux bubblewrap；核实并处理 `trae-installation.json` 的 `auto_update`（Windows 同步）
-- [ ] 4.6 Codex 独立安装 macOS/Linux (c)：逐成员校验解压、预置 release 目录后由官方脚本收尾
-- [ ] 4.7 Hermes 阶段进度条（回执 6 步「第 N/6 步」、日志阶段行、fetch 已接收字节、已用时间）、20 分钟活动续期、失败读 stop_class 后自动重跑一次
-- [ ] 4.8 Grok 接管：Unix (c) 加 Windows (b)＋grove＋MinGit；md5＋长度＋冒烟＋平台签名；四项前提；删过期 models_cache.json
-- [ ] 4.9 Pi 托管布局接管：122 个 tarball sha512 校验、环回 registry 交官方 `pi update --self`（不行则退回私有缓存＋`npm ci --offline`）；官方阶段显示包计数
+- [x] 4.1 Kimi 三平台 (b)：版本清单 sha256、双源、冒烟等于目标、不降级
+  - 实施：`artifacts/native.ts` 锁版 manifest，cdn.kimi.com / cdn.kimi.ai 双源，zstd 与解压后 SHA-256；无 zstd 解码器时用同清单裸二进制 SHA-256。目标同目录临时件 --version 全等目标后原子发布，Windows 先将旧 exe 改名 .old；所有版本探测、官方更新及冒烟均带 KIMI_CODE_NO_AUTO_UPDATE=1。官方探针只读 bin/.staging/kimi-*.part，区分压缩/裸件总量；已有版本更高及官方 already up to date 不降级、不记失败。
+  - 模拟验证（本轮 4.1–4.9 共用最终回归）：`corepack pnpm exec vitest run tests/cli-management* tests/settings-connection-cache.test.ts`，原文 `Test Files 30 passed (30)`、`Tests 843 passed (843)`。新增 task4-native 三平台清单/冒烟、版本不符保留旧入口、较低目标不下载及冒烟进程退出未确认时保留暂存断言；既有双通道已是最新用例保留。
+  - 追加协议：`officialFailedAt` 为可选非负有限 epoch 毫秒，仅允许 reason=OFFICIAL_RECENT_FAILURE；service 从 channel-memory.failedAt 填入并跨接管进度保留。schema 拒绝负值、NaN/Infinity、其他原因，服务模拟核对记忆时间；未改 src/client/。
+  - 边界：没有执行真实 Kimi 或其他 CLI 更新；Windows 占用/原子替换与暂存路径仅脚本、调研及模拟证据。
+- [x] 4.2 Qoder、Qoder CN (c)：按官方规则选条目（Windows build、legacy、Linux CPU 标志）、relink、version.txt、尊重有效 update.lock；musl 与 Windows arm64 不开放
+  - 实施：`platform.ts` 共用选择器供 versions.ts 与锁版描述使用，Windows build≥17763 排除 legacy 且检查 min_windows_build，Linux CPU 标志选 baseline，macOS Rosetta 选 arm64。版本文件同目录 tmp+rename、相对链接（权限不足复制）、Windows 旧入口 .old、version.txt 和 curl-bash 标记同步；有效锁同时要求 PID 存活及 qodercli/qoderclicn 命令行，无法核实则拒绝。官方私有 TMPDIR/TEMP 探针匹配 <bin>-update-<uuid>，硬时限 300 秒。
+  - 模拟验证：4.1 所列完整命令 `30 passed (30)` / `843 passed (843)`；新增 legacy 排在首项、min build 不符、缺任一 CPU 标志、musl/arm64 拒绝、两品牌放置/标记/版本文件、锁 PID 命令行与无法读取、Rosetta 用例。
+  - 边界：未实跑官方 updater；私有临时目录效果、Linux/Windows 归档真实结构、Windows 符号链接权限与占用行为待实机核实，不增加未经验证第二源。
+- [x] 4.3 MiMo Linux（扩展名 `.tar.gz`）与 Windows (d)+(b)
+  - 实施：放开官方 Linux 原生布局，按平台生成 .tar.gz / windows-x64-baseline.zip 等工件；FDS 双源长度/MD5 后安全提取唯一根 mimo/mimo.exe，再同目录事务替换；Windows 仅 .mimocode/bin/mimo.exe，npm 仍走 npm。macOS 既有 --binary 官方交接保留。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；扩展名、baseline、npm 排除、Linux 能力判断、ZIP 路径/CRC 与原有 macOS 更新回归通过。
+  - 边界：本轮没有真实 Linux/Windows 包下载或更新；归档只用微型模拟夹具。
+- [x] 4.4 Antigravity macOS/Linux (d)、Claude 原生 macOS/Linux (c)
+  - 实施：Antigravity tar.gz 仅取 antigravity，SHA-512，修正 NATIVE_RELEASES 模板及 _musl；Claude 锁版清单 SHA-256、Linux -musl 键，写 versions/<v> 后更新原有版本链接，普通启动器拒绝。两者 Unix 官方探针明确 phaseOnly，只显示阶段。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；新增阶段描述、平台摘要、根成员、普通 Claude 启动器拒绝；已有版本链接/回滚测试保留。
+  - 未验证：两者 Unix 暂存路径和字节含义仍是调研推断，未启用字节探针；musl/跨平台未实机更新。
+- [x] 4.5 TRAE CN macOS/Linux (a)：私有 TMPDIR、PATH 含 `~/.local/bin`、Linux bubblewrap；核实并处理 `trae-installation.json` 的 `auto_update`（Windows 同步）
+  - 实施：统一离线包描述扩至 Unix，参数数组 sh install_v2.sh offline-install，私有 TMPDIR，PATH 只追加 ~/.local/bin；Linux 包含 bubblewrap 并使用 unknown-linux-musl release 目标。Windows/Unix 均恢复更新前可读取的 auto_update 布尔值与自动更新标记，未存在/无法读取时不猜默认值。
+  - 只读核实：官方 install_v2.sh / ps1 的离线安装写 false 已由脚本证实；本机 traex 二进制字符串见 trae-installation.json、TraeInstallation、auto_update 和 local CLI installation policy changed，但不能单凭字符串确认后台自动更新读取哪份文件。消费路径明确未核实，采取保留已有布尔值的保守处理，未运行 traex 更新或读凭据。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；三平台包依赖、私有 TMPDIR/PATH、旧 true 经官方 false 后恢复及标记；原 Windows 用例继续通过。真实策略生效、Linux bubblewrap 和 shell 配置不写入行为待实机验证。
+- [x] 4.6 Codex 独立安装 macOS/Linux (c)：逐成员校验解压、预置 release 目录后由官方脚本收尾
+  - 实施：release.json 的 SHA-256、releases.openai.com/GitHub 双源及 release-assets 白名单；流式安全 tar（含 PAX/GNU 长名），逐成员校验路径/链接/特殊类型，按官方设置执行权限，核对 package metadata、codex、host、rg、可选 execServer、Linux bwrap 和目标版本；.staging 完成后 rename，再运行官方脚本 --release <v>。脚本固定默认 CODEX_HOME/安装目录及非 daemon 模式，PATH 追加默认 bin，保留代理。macOS getconf 临时目录、Linux 私有 TMPDIR，硬时限 300 秒；retrying from GitHub Releases 沿用不可用判定。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；摘要/双源、300 秒/getconf、环境边界、完整目录后脚本交接、tar 越界/重复/设备/硬链接/链接穿透/PAX/GNU 与 ZIP CRC 拒绝、Rosetta 通过。
+  - 偏离与边界：已有同名目标 release 目录拒绝覆盖，避免破坏其他进程产物；.staging 名追加随机后缀以隔离并发。未额外 GET SHA256SUMS（release.json 摘要已提供）；官方跳过下载的条件据脚本核对，未下载真实整包或实跑收尾。
+- [x] 4.7 Hermes 阶段进度条（回执 6 步「第 N/6 步」、日志阶段行、fetch 已接收字节、已用时间）、20 分钟活动续期、失败读 stop_class 后自动重跑一次
+  - 实施：`hermes-watch.ts` 仅官方 (e)，读 HERMES_HOME/logs/update.log、运行中 update_receipts 六阶段与私有 HERMES_UPDATE_STATUS_FILE；按已识别安装根找 .git/objects/pack/tmp_pack_*，仅新件给 unknown-total 已收字节。20 分钟期限随日志/回执/状态活动续期，连续 5 分钟无变化停止；失败输出 stop_class 并自动重跑 --yes 一次，退出码 2 不重跑。仍不执行 hermes --version，不清理检出目录。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；真实夹具阶段 3/6→5/6、fetch 4 字节无 totalBytes、旧日志排除/活动续期/5 分钟停止、退出 1 重跑和退出 2 不重跑、检出 keep 文件保留。
+  - 边界：所有进程、日志与回执均为明确命名的模拟夹具；HERMES_UPDATE_STATUS_FILE 注入效果、Windows 检出/ZIP 回退及实际服务重启未实跑。fetch 仅有可观察的 Git pack 才显示字节。
+- [x] 4.8 Grok 接管：Unix (c) 加 Windows (b)＋grove＋MinGit；md5＋长度＋冒烟＋平台签名；四项前提；删过期 models_cache.json
+  - 实施：四项归属/策略检查通过才下载，x.ai/cli 与 GCS 双源、长度和响应 MD5；Unix downloads 版本文件+两个相对链接，Windows 两 exe+完整 grove 三件事务替换；MinGit 版本目录存在跳过，否则 ZIP SHA-256 后相邻 .staging 解压改名。发布前版本冒烟、macOS codesign 严格验证及 TeamIdentifier、Windows 参数数组 PowerShell Authenticode Valid 且 CN=X.AI LLC；完成后删过期模型缓存，官方仅阶段/总预算。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；Cursor/installer/上下限/required/布局逐项拒绝、Unix 双链接与缓存删除、Windows grove 完整性/MinGit 跳过、macOS 错误团队拒绝、Windows 错误主体/状态拒绝及参数数组、多目标取消/越界/父链接拒绝通过。
+  - 边界：未实跑任何真实签名工具、Grok 或 MinGit 安装；Linux 无上述平台签名机制，仅长度/MD5/版本。官方更新器内部及暂存行为仍按只读字符串推断；已完成的独立 MinGit 版本目录在后续主件失败时可保留，不删除其他版本。
+- [x] 4.9 Pi 托管布局接管：122 个 tarball sha512 校验、环回 registry 交官方 `pi update --self`（不行则退回私有缓存＋`npm ci --offline`）；官方阶段显示包计数
+  - 实施前最小原型：`corepack pnpm exec vitest run tests/cli-management-pi-registry-prototype.test.ts`，原文 `Test Files 1 passed (1)`、`Tests 1 passed (1)`；真实 npm + 微型模拟包、私有 cache/config、随机令牌环回，确认 resolved=registry.npmjs.org 被 npm_config_registry（含路径前缀）替换。无公网请求，保留宿主代理；因此采用 (a)，不改为手写 npm 缓存。
+  - 实施：锁版 lock/发布清单匹配版本并补齐 8 个缺失 SHA-512，122 条目逐件 RANGE+摘要校验。本地只读官方样本实际为 121 个唯一 URL，重复条目须摘要一致，registry 复用首份映射；条目数量漂移拒绝。服务只监听 127.0.0.1、随机端口/令牌，只读精确映射，拒绝路径穿越、未登记请求、写方法和文件替换。官方 pi update --self 保留代理、私有 npm cache；成功/失败/取消均关闭。官方与交接安装阶段数本次 staging 的真实 package.json，npm 全局布局排除。
+  - 模拟验证：4.1 完整命令 `30 passed (30)` / `843 passed (843)`；122 条目/8 个摘要补齐/重复 URL 摘要不一致拒绝、环回安全、成功/失败/取消关闭、代理保留、包计数（包括归档保留旧 mtime）均通过。环回监听在沙箱报 EPERM 后使用已授权的沙箱外测试权限，无真实 CLI 更新。
+  - 未验证：按版本的 `pi.dev/api/installer/releases/<v>` 发布清单端点是调研推断（本地只有 /latest 样本）；本轮未 GET 公网或运行真实 Pi updater，官方锁定/暂存/冒烟/指针切换仍待实机核实。
+  - 4.x 最终公共验证（2026-11-14）：完整模拟回归 `Test Files 30 passed (30)`、`Tests 843 passed (843)`、`Duration 19.02s`；`corepack pnpm typecheck` 原文 `Host/Client typecheck passed against DSH 0.2.2-rc.3: /Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now/node_modules`；`corepack pnpm build:preview` 原文 `Isolated package ready: /Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now/.cache/preview-package`；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict --no-interactive` 原文 `Change 'v0.8.10-cli-update-dual-channel-leeyl' is valid`；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 退出 0。README 与 doc/design.md 已同步；仅局部补丁更新本文件 4.x，未勾选其他任务、未归档、未改版本号/客户端、未提交/推送。
 
 ## 5. 「更新 CLI」页进度显示 〔前端｜6h｜前置 3〕
 - [ ] 5.1 通道标签、多文件合计、阶段文字与已用时间、直接接管原因；长主机名截断悬停显示（13.5 发现）
 
 ## 6. 验收与文档 〔测试｜10h｜前置 4,5〕
-- [ ] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步
+- [x] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步
+  - 前端进度行（画板 16、17，用户 2026-11-14 确认后实现）：本地提交 be99f86；`doc/settings-ui-design.md` 增加「进度来源」规范；前端 4 个测试文件 94 项通过。
+  - Codex 审查（gpt-6-astra high）发现 5 项，主会话修 4 项：Pi 不再覆盖 `PI_INSTALLER_API_BASE`（本机 Pi 1.5.2 源码核实官方默认基址含 `/releases`，原覆盖会让元数据地址错误）；tar 符号链接改为逐段解析整条链接链，拒绝 `dir/a -> ../other` 再 `../../outside` 这类词法规范化看不出的越界与循环；Grok 在 Windows 的签名校验加进程级 `-ExecutionPolicy Bypass`；MinGit 解压与改名放进同一个清理范围。第 5 项（npm 访问环回 registry 会经宿主代理）按用户「所有都走代理，按照默认走」保持不变，Clash 下能否完成留待 6.2 实机验证。
+  - 修复后复测：`corepack pnpm typecheck` 通过；`vitest run tests/cli-management* tests/settings-connection-cache.test.ts tests/cli-update-page.test.tsx tests/client-i18n.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts`：34 个文件、939 项通过；`build:preview` 通过；pmspec 严格校验通过；`git diff --check` 通过。新增模拟用例：链式越界、链接循环、Pi 不覆盖基址、PowerShell 执行策略参数。
 - [ ] 6.2 Windows 实机：Kimi、MiMo、Grok（官方阶段）、Qoder、Qoder CN、Hermes 的官方或接管更新；断流时切换与残留清理；失败记忆生效
 - [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
 - [ ] 6.4 13.5 遗留：接管下载期间取消

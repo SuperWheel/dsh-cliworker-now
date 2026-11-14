@@ -59,7 +59,7 @@ export async function describeUnixUpdate(options: LocalArtifactOptions, director
   let file
   if (cli === 'mimo') {
     const spec = LOCAL_INSTALLERS.mimo
-    const sources = (options.allowSourceSwitch === false ? spec.sources.slice(0, 1) : spec.sources).map(base => `${base}v${version}/${spec.archive}-${target}.zip`)
+    const sources = (options.allowSourceSwitch === false ? spec.sources.slice(0, 1) : spec.sources).map(base => `${base}v${version}/${spec.archive}-${target}${platform === 'linux' ? '.tar.gz' : '.zip'}`)
     for (const value of sources) {
       const address = new URL(value)
       if (address.protocol !== 'https:' || !(spec.policy.hosts as readonly string[]).includes(address.hostname) || !address.pathname.startsWith(spec.policy.pathPrefix) || address.username || address.password || address.port || address.search || address.hash) invalid('MiMo 下载源不在内置 host/路径白名单')

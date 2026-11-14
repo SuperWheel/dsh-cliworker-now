@@ -64,9 +64,9 @@ it.each(['darwin', 'linux', 'win32'] as const)('模拟：TRAE %s 不接管下载
   await expect(prepareLocalUpdate({ ...options(f, 'traecn'), platform })).rejects.toMatchObject({ code: 'PREREQUISITE_MISSING' })
   expect(f.artifactFetch).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
 })
-it('模拟：MiMo 仅接管已核实 macOS zip，Linux 留原生更新器', () => {
+it('模拟：MiMo macOS zip 保持原入口，Linux 新增 tar.gz 接管', () => {
   expect(canPrepareLocalUpdate('mimo', identity('mimo'), 'darwin')).toBe(true)
-  expect(canPrepareLocalUpdate('mimo', identity('mimo'), 'linux')).toBe(false)
+  expect(canPrepareLocalUpdate('mimo', identity('mimo'), 'linux')).toBe(true)
 })
 it('模拟：OMP 官方摘要工件通过 PI_BUILD_URL 本地清单交给原脚本，禁止源码安装', async () => {
   const f = fixture(), sha256 = createHash('sha256').update('模拟').digest('hex')

@@ -48,7 +48,7 @@ export const CLI_SOURCES: Record<ActiveCliId, CliSource> = {
 export const MIMO_SOURCE_POLICY = { hosts: ['cnbj1.fds.api.xiaomi.com', 'mimocode.cnbj1.mi-fds.com'], pathPrefix: '/mimocode/mimocode/releases/' } as const
 export const MIMO_RELEASE_SOURCES = MIMO_SOURCE_POLICY.hosts.map(host => `https://${host}${MIMO_SOURCE_POLICY.pathPrefix}`)
 export const NATIVE_RELEASES: Partial<Record<ActiveCliId, { kind: 'antigravity' | 'codex' | 'kimi' | 'text' | 'pi' | 'hermes' | 'qoder' | 'trae'; url: string; fallbackUrls?: readonly string[] }>> = {
-  antigravity: { kind: 'antigravity', url: 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{platform}_{arch}.json' },
+  antigravity: { kind: 'antigravity', url: 'https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/manifests/{platform}_{arch}{musl}.json' },
   codex: { kind: 'codex', url: 'https://releases.openai.com/codex/channels/latest' },
   kimi: { kind: 'kimi', url: 'https://cdn.kimi.com/kimi-code/latest.json' },
   mimo: { kind: 'text', url: `${MIMO_RELEASE_SOURCES[0]}latest`, fallbackUrls: [`${MIMO_RELEASE_SOURCES[1]}latest`] },
