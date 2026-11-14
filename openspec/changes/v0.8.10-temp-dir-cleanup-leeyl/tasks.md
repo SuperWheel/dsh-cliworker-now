@@ -23,5 +23,7 @@
   - `corepack pnpm exec vitest run tests/temporary-cleanup.test.ts tests/extended-catalog-cleanup.test.ts tests/windows-account-terminal.test.ts`：3 文件，25 通过。最后补充锁定清扫重试场景后重跑 `tests/extended-catalog-cleanup.test.ts`：7 通过。以上分批去重共覆盖 9 文件、345 通过、1 平台跳过，均为合成进程/文件夹测试。
   - `corepack pnpm typecheck`：Host/Client 对 DSH 0.2.2-rc.3 通过。`corepack pnpm build:preview`：最终隔离包 `.cache/preview-package` 构建通过；ESM 辅助模块在包顶层和 types/host 均能 import。仅既有 Client ESM/CJS 打包建议，无构建错误。
   - `OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-temp-dir-cleanup-leeyl --strict` 与 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。没有提交、推送、版本变更或正式 Desktop build；原有未跟踪 PRD/video 文件保持不动。
-- [ ] 3.2 Windows 实机复验 native 复用、锁定清理及磁盘占用
-  - （未执行：由用户在 Windows 实机执行；本次只做本机自动测试，不安装 Desktop、不调用真实模型。）
+- [x] 3.2 Windows 实机复验 native 复用、锁定清理及磁盘占用
+  - 2026-11-15 Windows：隔离包 `rc3-859bcee-20261115` 安装 1259/1259 一致，退出时无活动任务。安装前基线 catalog 残留 grok 82、hermes 17、opencode 14、pi 30、zcode 4，Temp `cliworker-*` 4 个，C 盘 4.64 GB；Desktop 重启后数秒内全部为 0，C 盘 5.07 GB。
+  - OMP 共享 native：`<state>/omp-natives/18.20.0`（05:45 首次探测解包一次，131988480 B）与 `18.20.2`（05:51 更新后，132542976 B）各一份；探测不再在 Temp 留 `cliworker-omp-identity-*`。05:55 Qoder/Qoder CN 元数据探测目录在探测结束后已删除。
+  - 未覆盖：Defender 锁住文件的真实场景未刻意复现；Temp 下 Bun 单文件程序每次启动解出的 `.<16 位十六进制>-00000000.dll`（每个 1144200 B）累计 235 个、256 MB（最早 11-12，当日 96 个），来自未改 TEMP 的 CLI 探测，本变更未处理，另行跟进。

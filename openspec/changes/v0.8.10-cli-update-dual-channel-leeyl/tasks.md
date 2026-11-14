@@ -321,3 +321,4 @@
 - [x] 10.12 Codex 审查（b9973f4..8511875，0 个 P0/P1、2 个 P2）修复
   - P2-1：收尾清理的版本探针或进程枚举抛出 `ProcessCleanupUnconfirmedError` 时，原先保留维护锁却仍显示 `succeeded`；现与 catch 分支一致，置 `cleanup-unconfirmed`／`CLEANUP_UNCONFIRMED`。新增服务级模拟测试（npm reify 残留触发进程枚举、退出未确认），撤掉修复时该测试失败、加回后通过。
   - P2-2：macOS ZCode 的 `cwn-*` 临时目录在 `/tmp`（`nativeTemporaryRoot`），原清扫只扫 `os.tmpdir()`；现额外扫描 ZCode 临时根，仅限 `cwn-` 前缀，并在 POSIX 上只回收当前用户 uid 的目录（共享 /tmp 有其他用户条目）。新增模拟测试。
+  - 2026-11-15 Windows 部分实机证据（859bcee）：页面更新 OMP 18.20.0→18.20.2 走官方 `omp update`，约 30 秒完成，输出末行「更新清理：已删除 0 项，释放 0 B。」；插件 downloads 为空、npm 缓存 0 MB。OMP 不在残留规则表内，安装目录仍有上次更新留下的 `omp.exe.1794693071300.27728.0.bak`（251502592 B，11-14 16:42），待补规则。npm、Grok、Qoder、Claude、TRAE、Hermes 规则尚无真实更新覆盖，10.6 保持未勾选。
