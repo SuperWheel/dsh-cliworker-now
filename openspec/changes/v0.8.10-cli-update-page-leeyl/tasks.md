@@ -350,6 +350,7 @@
   - 当前 CLI 的状态接口回答账号仍在读取时，另经队列补一次 `accountStatus`（Host 端并入正在进行的读取，不另起进程），用于显示快照不包含的清理暂停状态。
   - 测试（均为模拟）：新增 `tests/settings-connection-view.test.ts` 14 项；`tests/settings-dialog.test.tsx` 新增「settings connection snapshots from the Host (simulated)」10 项，并按新契约更新 4 处旧断言（读取中转圈、绿点需 verification）；`tests/accounts-window.test.tsx` 新增 2 项。`corepack pnpm typecheck` 通过（Host/Client against DSH 0.2.2-rc.3）；`corepack pnpm vitest run` 指定 10 文件（含 settings-connection-cache 10、cli-settings 166、settings-dialog 282、settings-connection-view 14、accounts-window 6 等）653 passed / 0 failed；扩大到 22 个客户端相关文件 925 passed / 0 failed。`corepack pnpm build:preview` 通过（仅 .cache/preview-package，Remote 类型含 settingsConnectionStatus/watchSettingsConnections）；`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` valid。
   - 未执行：真实 Host/CLI/账号/模型、Desktop 与 Windows 实机验证；未改 src/host/**、src/shared/**。
+  - 主会话合并（3535b18）后补 Host 缺口：`settingsConnectionStatus` 对处于清理暂停的 CLI 直接返回 `account.value`=隔离状态（cleanupBlocked、无动作）且两槽 loading=false，不再排账号读取，避免当前 CLI 账号一直转圈。`tests/cli-management-admission.test.ts` 新增模拟用例；`corepack pnpm vitest run tests/cli-management-admission.test.ts tests/cli-management-remotes.test.ts tests/settings-connection-cache.test.ts` 28 passed，typecheck 通过。
 
   - 前端精确接入契约（12.5）：
     - 打开设置先读取 `cliSettings`：保留 `settingsCache.host/project/revisions/preferences` 校验，新增可选 `settingsCache.connections` 为 `SettingsConnectionSnapshot`。只有 host/project 匹配才能复用；新字段缺失时走旧 Host 路径。

@@ -116,3 +116,13 @@ it.each(['accountStatus', 'refreshAccountStatus'] as const)('模拟 P5：%s 优�
     expect(status).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
   } finally { release() }
 })
+it('模拟：清理隔离期间 settingsConnectionStatus 直接返回隔离状态，不排账号读取', async () => {
+  const f = fixture()
+  f.runtime.blockCatalogOnCleanup('codex', new ProcessCleanupUnconfirmedError())
+  const status = vi.spyOn(f.accounts, 'status')
+  const snapshot = JSON.parse(await f.service.settingsConnectionStatus('parent', 'codex', control()))
+  expect(snapshot.account).toMatchObject({ loading: false, value: { cli: 'codex', cleanupBlocked: true, state: 'unavailable', actions: [] } })
+  expect(snapshot.catalog.loading).toBe(false)
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(status).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
+})

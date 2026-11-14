@@ -2478,7 +2478,14 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       const project = this.project(await this.parent(parentSessionId))
-      signal.throwIfAborted(); this.runtime.assertCliEnabled(id)
+      signal.throwIfAborted()
+      // A cleanup pause is this CLI's displayed state; report it without scheduling reads that would only return it.
+      const held = this.cleanupHeldStatus(id)
+      if (held) {
+        const status = this.connectionCache().status(project, id)
+        return JSON.stringify({ ...status, account: { loading: false, value: held }, catalog: { ...status.catalog, loading: false } })
+      }
+      this.runtime.assertCliEnabled(id)
       this.cliManagement?.context(project)
       // Host-owned refresh outlives this quick snapshot request; close/invalidation cancels it.
       const account = !this.connectionCache().fresh(project, id, 'account')
