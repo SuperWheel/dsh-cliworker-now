@@ -1599,6 +1599,7 @@ export class AccountManager {
         if (session.completionGuide) this.emit(session, { guide: session.completionGuide })
         session.state = state
         this.emit(session, { status: state, message, cleanupConfirmed: true })
+        if (this.unsafeTerminals.get(session.cli) === session.parent) this.unsafeTerminals.delete(session.cli)
         this.setReserved(session.cli, false)
         session.expiry = setTimeout(() => {
           session.frames.length = 0
@@ -1613,6 +1614,10 @@ export class AccountManager {
         }
       } catch {
         session.state = 'failed'
+        // The reservation still owns an unconfirmed terminal range. Account
+        // refreshes must report that hold instead of offering unusable actions.
+        this.unsafeTerminals.set(session.cli, session.parent)
+        for (const callback of this.activityListeners) callback(session.cli)
         this.emit(session, { status: 'failed', message: '账号终端清理失败，请重试关闭' })
         session.cleanup = undefined
         throw new Error('账号终端尚未确认完全退出')

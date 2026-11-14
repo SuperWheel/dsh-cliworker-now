@@ -1209,7 +1209,7 @@ describe('user-operated account terminals (synthetic PTY)', () => {
     for await (const frame of f.manager.watch('p', id, f.signal)) before.push(frame)
     expect(before.at(-1)).toMatchObject({ status: 'failed' })
     expect(before.at(-1)?.cleanupConfirmed).not.toBe(true)
-    expect(() => f.manager.start('p', 'codex', 'login', f.cwd, f.signal)).toThrow('已有账号终端')
+    expect(() => f.manager.start('p', 'codex', 'login', f.cwd, f.signal)).toThrow('已暂停此 CLI')
     await f.manager.stop('p', id)
     const after = []
     for await (const frame of f.manager.watch('p', id, f.signal)) after.push(frame)
@@ -1268,7 +1268,7 @@ describe('user-operated account terminals (synthetic PTY)', () => {
     allocated.resolve(f.terminal)
     await expect(opening).rejects.toThrow('清理失败')
     expect(f.manager.isBusy('codex')).toBe(true)
-    expect(() => f.manager.start('p', 'codex', 'login', f.cwd, f.signal)).toThrow('已有账号终端')
+    expect(() => f.manager.start('p', 'codex', 'login', f.cwd, f.signal)).toThrow('已暂停此 CLI')
     await f.manager.close()
     expect(f.terminal.terminate).toHaveBeenCalledTimes(2)
   })
