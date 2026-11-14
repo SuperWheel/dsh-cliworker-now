@@ -121,7 +121,7 @@ Windows 上已验收的四项，也从「接管优先」改为这一流程。在
 - 写入只发生在白名单目录内，统一先写同目录临时文件，再 rename。
 - 不改 shell 配置和 PATH。调用官方脚本时，要保证子进程 PATH 含 `~/.local/bin`，避免脚本自行追加 PATH。
 - 保留宿主的代理环境变量。
-- macOS 上不删除仍被映射的 `.bak`（OMP，涉及 TCC 归属）。
+- macOS OMP 放置阶段保留 `.bak`（涉及 TCC 归属），仅在更新托管范围退出且成功版本核验后按决定 10 的精确规则收尾回收。
 - 官方 TRAE 离线安装会把 `trae-installation.json` 的 `auto_update` 写成 false。traex 的自动更新读的是标记、这个策略文件，还是两者都读，需要核实。如果读策略文件，接管后应恢复成更新前的值。
 
 ### 决定 6：前端
@@ -241,7 +241,7 @@ npm cache add 与 install 显式使用同一下载目录内的 --cache，保持�
 
 | CLI | 规则与已知路径 | 当前证据与保留边界 |
 | --- | --- | --- |
-| OMP | Windows `~/AppData/Local/omp/<entry>.<digits>.<digits>.<digits>.bak` | 仅已知自更新入口、最终成功且新鲜探针严格等于目标；普通单链接文件，失败全部保留；POSIX 命名无证据不扩展 |
+| OMP | Windows `~/AppData/Local/omp/omp.exe`、macOS `~/.local/bin/omp` 同目录的 `<entry>.<digits>.<digits>.<digits>.bak` | 仅已知自更新入口、最终成功且新鲜探针严格等于目标；入口和候选均为普通单链接文件，Windows 忽略大小写、macOS 大小写敏感；失败全部保留，`omp.lock` 不删，Linux 无证据不扩展 |
 | Grok | `~/.grok/downloads/grok-<version或平台>`、`bin/grok[.exe].old` | 仓库 native 放置布局及用户磁盘证据；当前入口位于该根且版本探针成功才删。失败不删 `.old` |
 | Qoder / Qoder CN | `~/.qoder[或.qoder-cn]/bin/qodercli[或qoderclicn]/<bin>-<version>[.exe]` | `version.txt` 与可运行探针一致，保留当前版本；仅普通文件 |
 | Qoder natives | 系统临时根下 `qodercli-natives-v<version>-<当前用户名>` | 用户提供的 Windows 路径证据；必须有已核验 Qoder 当前版本，仅真实目录，不推断 CN 前缀 |
@@ -265,7 +265,11 @@ facts.json 必须是有界普通文件、packages 为非空对象、每个记录
 
 ### OMP native backup follow-up（2026-11-15）
 
-Windows 859bcee 实机官方 OMP 更新后留下 `omp.exe.1794693071300.27728.0.bak`（251502592 B）。仓库未包含 OMP 自更新备份命名源码，故仅采用该三段数字后缀；不猜测 POSIX 格式。安装身份必须为已知 Windows OMP 自更新入口，成功后的既有版本探针严格等于本次目标，才清理同安装目录、入口 basename 匹配（Windows 忽略大小写）的普通单链接备份。当前入口、链接/junction、硬链接、外部/不匹配名称与失败操作全部保留；复用操作最终化与中文字节摘要，不改通道记忆或 Hermes 规则。
+Windows 859bcee 实机官方 OMP 更新后留下 `omp.exe.1794693071300.27728.0.bak`（251502592 B）。新增主会话 2026-11-15 macOS DSH Desktop 实测证据：官方 `/Users/leeyl/.local/bin/omp update` 从 18.20.0 更新到 18.20.2，输出补丁下载、sha256 核验及安装成功；同目录留下 `omp.1794698897770.88878.0.bak`（旧版普通文件，223369360 B），新入口 `omp` 为普通文件（224277648 B），另有零字节 `omp.lock`。旧规则仅限 Windows，因此清理摘要为 0 项、0 B；这是扩展规则的命名证据，不是新规则的真实回收验收。
+
+安装身份必须为 `self-update`，realpath 匹配 Windows 已知入口或 macOS `<home>/.local/bin/omp`；`identity.ts` 的精确路径表已把后者识别为自更新，无须修改分类。入口须为普通单链接非符号链接文件，父链沿用 `cleanupPathSafe`。托管更新范围确认退出且最终成功后，移除 manifestVersion shortcut 并调用既有新鲜 `--version` 探针，严格等于本次目标才清理同安装目录、入口 basename 转义后匹配 `^<basename>\.\d+\.\d+\.\d+\.bak$` 的普通单链接备份。Windows 保持忽略大小写，macOS 大小写敏感；候选继续通过 `cleanupPathSafe`。Linux 尚无命名证据，保持禁用并在代码注明。
+
+当前入口、`omp.lock`、链接/junction、硬链接、匹配名称的目录、外部/不匹配名称，以及失败、版本不符或退出未确认时的全部备份均保留。复用操作最终化与中文字节摘要，不改通道记忆或 Hermes 规则。macOS 新规则仅以临时目录和模拟版本探针测试，本轮不访问真实 `~/.local/bin`，真实回收仍待用户复验。
 
 ### 调研 7.3：OpenCode Windows 与 CodeBuddy 原生更新（2026-11-15，只读）
 

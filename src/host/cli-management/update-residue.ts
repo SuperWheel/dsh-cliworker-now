@@ -22,7 +22,7 @@ async function entries(root: string) {
 }
 /** Enumerate only evidenced names. Candidate links/junctions are always excluded. */
 export async function nativeResidueCandidates(cli: ActiveCliId, location: ResidueLocation = {}): Promise<Candidate[]> {
-  const home = location.home ?? homedir(), temp = location.temp ?? tmpdir(), win = (location.platform ?? process.platform) === 'win32'
+  const home = location.home ?? homedir(), temp = location.temp ?? tmpdir(), platform = location.platform ?? process.platform, win = platform === 'win32'
   const result: Candidate[] = []
   const scan = async (boundary: string, directory: string, pattern: RegExp, label: string, backup = false, kind: 'file' | 'directory' | 'either' = 'either') => {
     if (!await cleanupPathSafe(boundary, join(directory, '_candidate'))) return
@@ -35,9 +35,9 @@ export async function nativeResidueCandidates(cli: ActiveCliId, location: Residu
       result.push({ path, root: boundary, label, version: match[1], backup })
     }
   }
-  if (cli === 'omp' && win) {
-    const root = join(home,'AppData/Local/omp')
-    await scan(root,root,/^omp\.exe\.\d+\.\d+\.\d+\.bak$/i,'OMP 原生备份',true,'file')
+  if (cli === 'omp' && (win || platform === 'darwin')) {
+    const root = join(home,win ? 'AppData/Local/omp' : '.local/bin')
+    await scan(root,root,win ? /^omp\.exe\.\d+\.\d+\.\d+\.bak$/i : /^omp\.\d+\.\d+\.\d+\.bak$/,'OMP 原生备份',true,'file')
   } else if (cli === 'grok') {
     const root = join(home, '.grok')
     await scan(root, join(root,'downloads'), new RegExp(`^grok(?:-(${version}))?(?:-(?:macos|windows|linux)-(?:aarch64|x86_64))?(?:\\.exe)?$`), 'Grok 下载副本')
@@ -59,12 +59,13 @@ export async function nativeResidueCandidates(cli: ActiveCliId, location: Residu
 }
 export interface NativeCleanupProof { identity: InstallationIdentity; version: string; runnable: boolean; targetVersion?: string }
 
-/** Only the observed Windows self-updater naming is evidenced; no POSIX pattern is assumed. */
+/** Windows and macOS self-update layouts are evidenced; Linux naming is unverified and stays disabled. */
 async function ompCurrentEntry(identity: InstallationIdentity, location: ResidueLocation): Promise<string | undefined> {
-  if ((location.platform ?? process.platform) !== 'win32' || identity.source !== 'self-update') return
+  const platform = location.platform ?? process.platform, win = platform === 'win32'
+  if ((!win && platform !== 'darwin') || identity.source !== 'self-update') return
   const home = location.home ?? homedir(), current = identity.fingerprint.realpath
-  const expected = join(home,'AppData/Local/omp/omp.exe')
-  if (current.toLowerCase() !== expected.toLowerCase() || !await cleanupPathSafe(home,current)) return
+  const expected = join(home,win ? 'AppData/Local/omp/omp.exe' : '.local/bin/omp')
+  if ((win ? current.toLowerCase() !== expected.toLowerCase() : current !== expected) || !await cleanupPathSafe(home,current)) return
   const stat = await info(current)
   return stat?.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 ? current : undefined
 }
@@ -75,7 +76,7 @@ async function cleanOmpResidues(success: boolean, proof: NativeCleanupProof | un
   }
   const current = await ompCurrentEntry(proof.identity,location)
   if (!current) { cleanupNote('OMP 当前入口未核验，保留原生备份'); return }
-  const root = dirname(current), pattern = new RegExp(`^${escape(basename(current))}\\.\\d+\\.\\d+\\.\\d+\\.bak$`, 'i')
+  const root = dirname(current), pattern = new RegExp(`^${escape(basename(current))}\\.\\d+\\.\\d+\\.\\d+\\.bak$`, (location.platform ?? process.platform) === 'win32' ? 'i' : '')
   for (const name of await entries(root)) {
     if (!pattern.test(name)) continue
     const path = join(root,name), stat = await info(path)

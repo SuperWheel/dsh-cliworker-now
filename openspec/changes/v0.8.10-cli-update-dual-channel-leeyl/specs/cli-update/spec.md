@@ -251,7 +251,7 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 - **THEN** Host SHALL 仅对本次清理判锁 stale，并继续已获授权的残留清理；MUST NOT 以锁年龄或进程名字代替路径证据，不终止被枚举进程、不运行 Hermes 命令、不修改锁文件；Windows 路径大小写与分隔符 SHALL 归一化，home 名称前缀相似的外部目录不算内部
 
 ### Requirement: OMP 成功更新后的原生备份回收
-Host SHALL 仅在托管范围退出、OMP 更新成功且既有版本探针严格等于目标版本后，回收已知 Windows OMP 安装目录内匹配 `<入口 basename>.<数字>.<数字>.<数字>.bak` 的普通单链接文件；MUST 保留当前入口、链接/junction、硬链接和其他名称，不扩展无证据的 POSIX 规则。
+Host SHALL 仅在托管范围退出、OMP 更新成功且新鲜版本探针严格等于目标版本后，回收已知 Windows OMP 安装目录或 macOS `<home>/.local/bin/omp` 同目录内匹配 `<入口 basename>.<数字>.<数字>.<数字>.bak` 的普通单链接文件。身份 MUST 为 `self-update`，realpath 匹配已知入口；入口 MUST 为普通单链接非符号链接文件，入口父链与候选 MUST 通过既有路径安全检查。Windows 匹配 SHALL 忽略大小写，macOS SHALL 大小写敏感；MUST 保留当前入口、`omp.lock`、链接/junction、硬链接、匹配名称的目录和其他名称，不扩展无证据的 Linux 规则。
 
 #### Scenario: 已核验成功与精确备份
 - **WHEN** 当前 OMP 入口已识别且更新后探针版本等于目标
@@ -260,3 +260,11 @@ Host SHALL 仅在托管范围退出、OMP 更新成功且既有版本探针严�
 #### Scenario: 失败或版本未核验
 - **WHEN** 更新失败、退出未确认、当前入口未知或版本不等于目标
 - **THEN** 保留全部 OMP 原生备份，不改变原操作结果
+
+#### Scenario: macOS 已知官方布局与备份
+- **WHEN** macOS 官方入口 `<home>/.local/bin/omp` 满足身份、文件和路径安全检查，更新已成功且新鲜探针等于目标
+- **THEN** Host SHALL 回收同目录 `omp.1794698897770.88878.0.bak` 等精确匹配文件，保留 `omp.lock`、`omp.1.2.bak`、`other.1.2.3.bak`、大小写不符名称、目录和链接
+
+#### Scenario: Linux 无命名证据
+- **WHEN** Linux 使用同样的入口路径和备份名称，即使更新成功且版本匹配
+- **THEN** Host MUST 保留全部 OMP 原生备份，不启用 macOS 清理规则
