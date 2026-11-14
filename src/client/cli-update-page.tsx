@@ -15,6 +15,8 @@ import {
   NPMMIRROR_REGISTRY,
   OFFICIAL_NPM_REGISTRY,
   cliUpdateGroupLabel,
+  type CliChannelReason,
+  type CliDownloadProgress,
   type CliInstallDirectoryCheck,
   type CliUpdateEntry,
   type CliUpdateGroup,
@@ -324,9 +326,10 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
   const version = result.afterVersion ?? result.targetVersion ?? ''
   switch (result.phase) {
     case 'succeeded':
-      return result.intent === 'install'
-        ? { tone: 'ok', text: t('已安装 {version}，登录后即可派遣', { version }) }
-        : { tone: 'ok', text: t('已更新到 {version}', { version }) }
+      if (result.intent === 'install') return { tone: 'ok', text: t('已安装 {version}，登录后即可派遣', { version }) }
+      // The official updater said it is current; nothing was replaced, so do not claim an update.
+      if (result.progress?.reason === 'ALREADY_LATEST') return { tone: 'ok', text: t('已是最新 {version}', { version }) }
+      return { tone: 'ok', text: t('已更新到 {version}', { version }) }
     case 'cancelled':
       return { tone: 'warn', text: t('已取消。已写入的文件不会回滚，建议重新检查') }
     case 'cleanup-unconfirmed':
@@ -338,6 +341,12 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
       return { tone: 'error', text, stall: result.error?.code === 'STALL_LIMIT' }
     }
   }
+}
+
+/** One extra line under a finished row, only for facts the Host reported. */
+function resultNote(result: CliUpdateOperation): string | undefined {
+  if (result.progress?.reason === 'ALREADY_LATEST') return t('官方报告已是最新，未改由插件下载，也不降级')
+  return undefined
 }
 
 /** Disabled controls explain themselves on hover; an enabled control has no tooltip. */
@@ -394,44 +403,122 @@ function Elapsed({ since }: { since: number }) {
   return <> {t('已用时 {time}', { time: clock })}</>
 }
 
+/** `officialFailedAt` (epoch ms) arrives with `OFFICIAL_RECENT_FAILURE` from newer Hosts; older ones omit it. */
+type ShownProgress = CliDownloadProgress & { officialFailedAt?: unknown }
+const DAY_MS = 86_400_000
+/** Up to this many steps get one segment each; longer runs use a continuous bar. */
+const SEGMENT_LIMIT = 12
+/** Host notes for the switch itself; the callout or the recent-failure hint already says this. */
+const TRANSITION_STAGES: ReadonlySet<string> = new Set(['官方进程已退出，切换插件接管', '官方渠道近期在本机失败（7 天内），直接接管'])
+
+/** Why the official channel was abandoned during this run (not the remembered 7-day failure). */
+function switchReason(reason: CliChannelReason | undefined): string | undefined {
+  switch (reason) {
+    case 'OFFICIAL_STALLED':
+      return t('官方下载 30 秒没有新数据')
+    case 'OFFICIAL_SLOW':
+      return t('官方下载速度过低')
+    case 'OFFICIAL_DEADLINE':
+      return t('官方下载预计超过官方时限')
+    case 'OFFICIAL_RESTARTED':
+      return t('官方下载从头重来')
+    case 'OFFICIAL_INTERRUPTED':
+      return t('官方下载中断')
+    case 'OFFICIAL_EXIT':
+      return t('官方更新失败退出')
+    case 'OFFICIAL_BUDGET':
+      return t('官方更新超过时间预算')
+    default:
+      return undefined
+  }
+}
+
+/** 「官方更新 N 天前在这台电脑上失败…」; without a usable timestamp the wording stays unspecific. */
+export function recentFailureText(failedAt: unknown, now = Date.now()): string {
+  if (typeof failedAt !== 'number' || !Number.isFinite(failedAt) || failedAt <= 0)
+    return t('官方更新近期在这台电脑上失败，7 天内直接由插件下载')
+  const days = Math.floor((now - failedAt) / DAY_MS)
+  return days <= 0
+    ? t('官方更新今天在这台电脑上失败，7 天内直接由插件下载')
+    : t('官方更新 {count} 天前在这台电脑上失败，7 天内直接由插件下载', { count: days })
+}
+
 function Progress({ operation }: { operation: CliUpdateOperation }) {
   const t = useT()
-  const progress = operation.progress
+  const progress = operation.progress as ShownProgress | undefined
   if (!progress) return null
+  const name = CLI_LABELS[operation.cli]
+  const official = progress.channel === 'official'
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
     <Tooltip label={t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
-      <span tabIndex={0}>{t('已自动重试 {count} 次', { count: progress.retryCount })}</span>
+      <span className="cwn-update-meta-side" tabIndex={0}>
+        {t('已自动重试 {count} 次', { count: progress.retryCount })}
+      </span>
     </Tooltip>
   ) : null
-  if (!progress.readable)
-    return (
-      <div className="cwn-update-progress">
-        <div className="cwn-update-progress-meta">
-          <span>{t('正在执行，下载进度无法读取')}</span>
-          {retries}
-        </div>
-      </div>
-    )
-  const downloaded = progress.downloadedBytes
-  const total = progress.totalBytes && progress.totalBytes > 0 ? progress.totalBytes : undefined
-  const percent = total !== undefined && downloaded !== undefined ? Math.min(100, Math.round((downloaded / total) * 100)) : undefined
-  const parts: string[] = []
-  if (downloaded !== undefined)
-    parts.push(
-      total !== undefined
-        ? t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) })
-        : t('已下载 {done}', { done: formatBytes(downloaded) }),
-    )
-  if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(formatRate(progress.bytesPerSecond))
-  // Automatic source switching (PRD 5.6 3c): name the host this download currently comes from.
-  if (progress.sourceHost) parts.push(t('来自 {host}', { host: progress.sourceHost }))
+  const resumes = (
+    <Tooltip label={t('下载中断、10 秒没有增长或明显过慢时，自动从中断处继续，最多 200 次')} side="top" align="end" portal>
+      <span className="cwn-update-meta-side" tabIndex={0}>
+        {t('已自动续传 {count} 次', { count: progress.resumeCount })}
+      </span>
+    </Tooltip>
+  )
+  // Official runs never resume, so their count would always read 0.
+  const side = retries ?? (official ? null : resumes)
+
+  const switched = progress.channel === 'takeover' ? switchReason(progress.reason) : undefined
+  const callout = switched && (
+    <div className="cwn-update-callout" role="note">
+      {t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
+        reason: switched,
+        cli: name,
+      })}
+    </div>
+  )
+  /** `clip`: untrusted CLI text kept to one line with the full text on hover. */
+  const hints: { text: string; clip?: boolean }[] = []
+  const hint = (text: string, clip?: boolean) => hints.push({ text, clip })
+  if (progress.reason === 'OFFICIAL_RECENT_FAILURE') hint(recentFailureText(progress.officialFailedAt))
+
+  const downloaded = progress.readable ? progress.downloadedBytes : undefined
+  const state = progress.byteProgressState
+  const total =
+    downloaded !== undefined && state !== 'unknown-total' && progress.totalBytes && progress.totalBytes > 0 ? progress.totalBytes : undefined
+  const steps =
+    progress.currentStep !== undefined && progress.totalSteps && progress.totalSteps > 0 && progress.stepName
+      ? { current: Math.min(progress.currentStep, progress.totalSteps), total: progress.totalSteps, name: progress.stepName }
+      : undefined
   const stalled = progress.stalledSeconds !== undefined && progress.stalledSeconds > 0
-  if (stalled) parts.push(t('{count} 秒没有新数据', { count: Math.round(progress.stalledSeconds!) }))
-  const name = CLI_LABELS[operation.cli]
-  return (
-    <div className="cwn-update-progress">
-      {percent !== undefined && (
+  const transferParts = (): string[] => {
+    const parts: string[] = []
+    if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) parts.push(formatRate(progress.bytesPerSecond))
+    // Automatic source switching (PRD 5.6 3c): name the host this download currently comes from, last so it can be cut.
+    if (progress.sourceHost) parts.push(t('来自 {host}', { host: progress.sourceHost }))
+    if (stalled) parts.push(t('{count} 秒没有新数据', { count: Math.round(progress.stalledSeconds!) }))
+    return parts
+  }
+  const receivedText = (bytes: number) =>
+    state === 'unknown-total' ? t('已接收 {done}，总大小未知', { done: formatBytes(bytes) }) : t('已下载 {done}', { done: formatBytes(bytes) })
+  const meta = (text: string, withSide: ReactNode) => (
+    <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
+      <span className="cwn-update-meta-main" title={text}>
+        {text}
+      </span>
+      {withSide}
+    </div>
+  )
+  const stageText = progress.stage?.trim() && !TRANSITION_STAGES.has(progress.stage.trim()) ? hostText(progress.stage.trim()) : undefined
+
+  let body: ReactNode
+  if (downloaded !== undefined && total !== undefined) {
+    // Sums across every file of this run; the bar never restarts per file.
+    const percent = Math.min(100, Math.round((downloaded / total) * 100))
+    const parts = [t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()]
+    if (progress.fileCount !== undefined && progress.fileCount > 1) parts.unshift(t('{count} 个文件', { count: progress.fileCount }))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    body = (
+      <div className="cwn-update-progress">
         <div
           className="cwn-update-bar"
           role="progressbar"
@@ -442,16 +529,60 @@ function Progress({ operation }: { operation: CliUpdateOperation }) {
         >
           <span style={{ width: `${percent}%` }} />
         </div>
-      )}
-      <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
-        <span>{parts.join(' · ')}</span>
-        {retries ?? (
-          <Tooltip label={t('下载中断、10 秒没有增长或明显过慢时，自动从中断处继续，最多 200 次')} side="top" align="end" portal>
-            <span tabIndex={0}>{t('已自动续传 {count} 次', { count: progress.resumeCount })}</span>
-          </Tooltip>
-        )}
+        {meta(parts.join(' · '), side)}
       </div>
-    </div>
+    )
+  } else if (steps) {
+    const parts = [t('第 {current}/{total} 步：{name}', { current: steps.current, total: steps.total, name: hostText(steps.name) })]
+    if (downloaded !== undefined) parts.push(receivedText(downloaded), ...transferParts())
+    const aria = {
+      role: 'progressbar',
+      'aria-label': operation.intent === 'install' ? t('{cli} 安装进度', { cli: name }) : t('{cli} 更新进度', { cli: name }),
+      'aria-valuemin': 0,
+      'aria-valuemax': steps.total,
+      'aria-valuenow': steps.current,
+      'aria-valuetext': t('第 {current} 步，共 {total} 步', { current: steps.current, total: steps.total }),
+    }
+    // The official CLI's own last line explains the step; Host notes for plugin downloads would only repeat it.
+    if (official && stageText && stageText !== steps.name) hint(stageText, true)
+    body = (
+      <div className="cwn-update-progress">
+        {steps.total <= SEGMENT_LIMIT ? (
+          <div className="cwn-update-seg" {...aria} style={{ gridTemplateColumns: `repeat(${steps.total}, minmax(0, 1fr))` }}>
+            {Array.from({ length: steps.total }, (_, index) => (
+              <span key={index} data-step={index + 1 < steps.current ? 'done' : index + 1 === steps.current ? 'now' : undefined} />
+            ))}
+          </div>
+        ) : (
+          <div className="cwn-update-bar" {...aria}>
+            <span style={{ width: `${(steps.current / steps.total) * 100}%` }} />
+          </div>
+        )}
+        {meta(parts.join(' · '), downloaded !== undefined ? side : retries)}
+      </div>
+    )
+  } else if (downloaded !== undefined) {
+    // No denominator: never a percentage, only what has really arrived.
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'))
+    body = <div className="cwn-update-progress">{meta([receivedText(downloaded), ...transferParts()].join(' · '), side)}</div>
+  } else if (state === 'none' || progress.channel || stageText) {
+    // Phase only: the CLI's own stage line, no bar. The row already shows 「已用时」.
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
+    body = stageText || retries ? <div className="cwn-update-progress">{meta(stageText ?? '', retries)}</div> : null
+  } else {
+    body = <div className="cwn-update-progress">{meta(t('正在执行，下载进度无法读取'), retries)}</div>
+  }
+
+  return (
+    <>
+      {callout}
+      {body}
+      {hints.map((item) => (
+        <span key={item.text} className="cwn-update-hint" data-clip={item.clip || undefined} title={item.clip ? item.text : undefined}>
+          {item.text}
+        </span>
+      ))}
+    </>
   )
 }
 
@@ -1010,6 +1141,21 @@ export function CliUpdatePane({
       )
     }
     if (queue.includes(cli)) return null
+    const note = result && result.phase !== 'cancelled' ? resultNote(result) : undefined
+    const details = rowDetails(cli, entry, result, note)
+    // With the output open the note sits inside that block; otherwise it gets its own indented line.
+    if (!note || (result && outputOpen(result))) return details
+    return (
+      <>
+        <div className="cwn-update-expand">
+          <span className="cwn-update-hint">{note}</span>
+        </div>
+        {details}
+      </>
+    )
+  }
+
+  function rowDetails(cli: ActiveCliId, entry: CliUpdateEntry | undefined, result: CliUpdateOperation | undefined, note: string | undefined): ReactNode {
     const notice = expanded[cli] === 'confirm' ? noticeOf(entry) : undefined
     const confirm = notice && (
       <div className="cwn-update-bubble" data-column role="group" aria-label={t('确认更新 {cli}', { cli: CLI_LABELS[cli] })}>
@@ -1036,6 +1182,7 @@ export function CliUpdatePane({
       return (
         <>
           <div className="cwn-update-expand">
+            {note && <span className="cwn-update-hint">{note}</span>}
             <CommandBlock operation={result} />
             <OutputLog text={result.outputTail} label={t('{cli} 命令输出', { cli: CLI_LABELS[cli] })} />
           </div>
@@ -1177,6 +1324,11 @@ export function CliUpdatePane({
                     </>
                   )}
                 </span>
+                {active?.progress?.channel && (
+                  <span className="cwn-update-chan" data-channel={active.progress.channel}>
+                    {active.progress.channel === 'takeover' ? t('插件接管') : t('官方')}
+                  </span>
+                )}
               </span>
               {error && (
                 <p className="cwn-update-row-error" role="alert">

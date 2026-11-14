@@ -1,11 +1,11 @@
 import { createElement } from 'react'
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CliUpdatePane, formatRate } from '../src/client/cli-update-page.tsx'
+import { CliUpdatePane, formatRate, recentFailureText } from '../src/client/cli-update-page.tsx'
 import type { CliUpdateData } from '../src/client/cli-update-data.ts'
 import { setLanguagePreference } from '../src/client/i18n.ts'
 import type { API } from '../src/client/workers.ts'
-import type { CliUpdateEntry, CliUpdateOperation, CliUpdateSnapshot } from '../src/shared/cli-management.ts'
+import type { CliDownloadProgress, CliUpdateEntry, CliUpdateOperation, CliUpdateSnapshot } from '../src/shared/cli-management.ts'
 import { CLI_IDS, CLI_LABELS } from '../src/shared/types.ts'
 
 // 模拟：所有快照、Host 方法与下载设置都是测试夹具；不探测、不下载、不安装任何真实 CLI。
@@ -662,5 +662,237 @@ describe('模拟「更新 CLI」页面', () => {
     expect(
       f.rowOf('codex').findAll((node) => node.props['data-tip'] === '当前 Host 版本不支持此操作，请更新 CLI Worker 插件'),
     ).toHaveLength(1)
+  })
+})
+
+describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶段', () => {
+  // 模拟：以下进度全部是夹具，字段组合与 Host 的 cliDownloadProgressSchema 一致；没有真实下载。
+  const running = (progress: CliDownloadProgress & { officialFailedAt?: number }, patch: Partial<CliUpdateOperation> = {}) =>
+    data({
+      snapshot: snapshot({
+        operation: {
+          id: 'SIMULATED-op', intent: 'update', cli: 'codex', phase: 'downloading', startedAt: 1,
+          targetVersion: '0.130.0', outputTail: '', progress, ...patch,
+        },
+      }),
+    })
+  const byClass = (scope: ReactTestInstance, name: string) =>
+    scope.findAll((node) => typeof node.type === 'string' && String(node.props.className ?? '').split(' ').includes(name))
+  const bars = (scope: ReactTestInstance) => scope.findAll((node) => typeof node.type === 'string' && node.props.role === 'progressbar')
+  const hints = (scope: ReactTestInstance) => byClass(scope, 'cwn-update-hint').map(textOf)
+  /** Class names of host elements in document order (component instances such as <Progress> are skipped). */
+  const classOrder = (scope: ReactTestInstance) =>
+    scope.findAll((node) => typeof node.type === 'string').map((node) => String(node.props.className ?? '').split(' ')[0])
+
+  it('labels the channel after the description and leaves rows without a channel untouched', async () => {
+    const f = await setup(running({ channel: 'official', readable: true, byteProgress: true, byteProgressState: 'known-total', downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0 }))
+    const tag = () => byClass(f.rowOf('codex'), 'cwn-update-chan')
+    expect(tag().map(textOf)).toEqual(['官方'])
+    expect(tag()[0]!.props['data-channel']).toBe('official')
+    // The tag sits in the description line, after the phase text.
+    expect(byClass(f.rowOf('codex'), 'cwn-update-desc')[0]!.findAll((node) => node === tag()[0])).toHaveLength(1)
+
+    await f.update(running({ channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'known-total', downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0 }))
+    expect(tag().map(textOf)).toEqual(['插件接管'])
+    expect(tag()[0]!.props['data-channel']).toBe('takeover')
+
+    // npm and other existing paths carry no channel: no tag at all.
+    await f.update(running({ readable: true, downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0 }))
+    expect(tag()).toHaveLength(0)
+  })
+
+  it.each([
+    ['OFFICIAL_STALLED', '官方下载 30 秒没有新数据'],
+    ['OFFICIAL_SLOW', '官方下载速度过低'],
+    ['OFFICIAL_DEADLINE', '官方下载预计超过官方时限'],
+    ['OFFICIAL_RESTARTED', '官方下载从头重来'],
+    ['OFFICIAL_INTERRUPTED', '官方下载中断'],
+    ['OFFICIAL_EXIT', '官方更新失败退出'],
+    ['OFFICIAL_BUDGET', '官方更新超过时间预算'],
+  ] as const)('explains a switch to the plugin download caused by %s', async (reason, cause) => {
+    const f = await setup(running({ channel: 'takeover', reason, readable: false, byteProgress: false, resumeCount: 0, stage: '官方进程已退出，切换插件接管' }))
+    const row = f.rowOf('codex')
+    const callouts = byClass(row, 'cwn-update-callout')
+    expect(callouts.map(textOf)).toEqual([
+      `${cause}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 Codex 会直接由插件下载。`,
+    ])
+    // The Host's own transition note would only repeat the callout; nothing pretends to be progress.
+    expect(textOf(row)).not.toContain('官方进程已退出')
+    expect(bars(row)).toHaveLength(0)
+    expect(textOf(row)).not.toContain('下载进度无法读取')
+  })
+
+  it('keeps the switch callout above the plugin progress once bytes arrive', async () => {
+    const f = await setup(running({
+      channel: 'takeover', reason: 'OFFICIAL_STALLED', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 146 * 1024 ** 2, totalBytes: 240 * 1024 ** 2, resumeCount: 2, sourceHost: 'simulated.r2.example',
+    }))
+    const expand = byClass(f.rowOf('codex'), 'cwn-update-expand')[0]!
+    const order = classOrder(expand)
+    expect(order.indexOf('cwn-update-callout')).toBeLessThan(order.indexOf('cwn-update-progress'))
+    expect(byClass(expand, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 2 次'])
+  })
+
+  it('shows no callout for an official run or for the remembered recent failure', async () => {
+    const f = await setup(running({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '执行官方更新命令' }))
+    expect(byClass(f.rowOf('codex'), 'cwn-update-callout')).toHaveLength(0)
+    await f.update(running({ channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', readable: false, byteProgress: false, resumeCount: 0, stage: '官方渠道近期在本机失败（7 天内），直接接管' }))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-callout')).toHaveLength(0)
+    expect(hints(row)).toEqual(['官方更新近期在这台电脑上失败，7 天内直接由插件下载'])
+    expect(textOf(row)).not.toContain('官方渠道近期在本机失败')
+  })
+
+  it('counts the days since the remembered official failure when the Host sends officialFailedAt', async () => {
+    const now = 1_800_000_000_000
+    expect(recentFailureText(now - 2.5 * 86_400_000, now)).toBe('官方更新 2 天前在这台电脑上失败，7 天内直接由插件下载')
+    expect(recentFailureText(now - 3 * 3_600_000, now)).toBe('官方更新今天在这台电脑上失败，7 天内直接由插件下载')
+    // A clock that moved backwards still reads as today, never a negative day count.
+    expect(recentFailureText(now + 60_000, now)).toBe('官方更新今天在这台电脑上失败，7 天内直接由插件下载')
+    expect(recentFailureText(undefined, now)).toBe('官方更新近期在这台电脑上失败，7 天内直接由插件下载')
+    expect(recentFailureText('yesterday', now)).toBe('官方更新近期在这台电脑上失败，7 天内直接由插件下载')
+
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now)
+    try {
+      const f = await setup(running({
+        channel: 'takeover', reason: 'OFFICIAL_RECENT_FAILURE', officialFailedAt: now - 2 * 86_400_000 - 1000,
+        readable: true, byteProgress: true, byteProgressState: 'known-total', fileCount: 3, completedFiles: 1,
+        currentStep: 2, totalSteps: 3, stepName: 'SIMULATED/bin.tar.gz',
+        downloadedBytes: 120 * 1024 ** 2, totalBytes: 194 * 1024 ** 2, bytesPerSecond: 2.1 * 1024 ** 2, resumeCount: 4, sourceHost: 'lf-cdn.simulated.example',
+      }))
+      const row = f.rowOf('codex')
+      // Progress first, then the hint underneath.
+      const expand = byClass(row, 'cwn-update-expand')[0]!
+      const order = classOrder(expand)
+      expect(order.indexOf('cwn-update-progress')).toBeLessThan(order.indexOf('cwn-update-hint'))
+      expect(hints(row)).toEqual(['官方更新 2 天前在这台电脑上失败，7 天内直接由插件下载'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prefixes the file count for a multi-file total, ends with the source host and keeps the side count apart', async () => {
+    const f = await setup(running({
+      channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'known-total', fileCount: 3, completedFiles: 1,
+      currentStep: 2, totalSteps: 3, stepName: 'SIMULATED/bin.tar.gz',
+      downloadedBytes: 120 * 1024 ** 2, totalBytes: 194 * 1024 ** 2, bytesPerSecond: 2.1 * 1024 ** 2, resumeCount: 4, sourceHost: 'lf-cdn.simulated.example',
+    }))
+    const row = f.rowOf('codex')
+    const main = byClass(row, 'cwn-update-meta-main')
+    expect(main.map(textOf)).toEqual(['3 个文件 · 已下载 120 MB / 194 MB · 2.1 MB/s · 来自 lf-cdn.simulated.example'])
+    expect(main[0]!.props.title).toBe(textOf(main[0]!))
+    expect(byClass(row, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 4 次'])
+    // One byte bar for the sum of every file; no per-file step bar alongside it.
+    const bar = bars(row)
+    expect(bar).toHaveLength(1)
+    expect(bar[0]!.props).toMatchObject({ 'aria-valuemax': 100, 'aria-valuenow': 62 })
+    expect(textOf(row)).not.toContain('第 2/3 步')
+
+    await f.update(running({
+      channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'known-total', fileCount: 1,
+      downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0,
+    }))
+    expect(byClass(f.rowOf('codex'), 'cwn-update-meta-main').map(textOf)).toEqual(['已下载 1.0 KB / 4.0 KB'])
+  })
+
+  it('tells official byte progress apart: no resume count and the 30-second switch rule', async () => {
+    const f = await setup(running({
+      channel: 'official', readable: true, byteProgress: true, byteProgressState: 'known-total',
+      downloadedBytes: 156 * 1024 ** 2, totalBytes: 372 * 1024 ** 2, bytesPerSecond: 1.2 * 1024 ** 2, resumeCount: 0,
+    }))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['已下载 156 MB / 372 MB · 1.2 MB/s'])
+    expect(byClass(row, 'cwn-update-meta-side')).toHaveLength(0)
+    expect(hints(row)).toEqual(['官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'])
+  })
+
+  it('draws no bar when the total size is unknown', async () => {
+    const f = await setup(running({
+      channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'unknown-total',
+      downloadedBytes: 12.4 * 1024 ** 2, resumeCount: 1,
+    }))
+    const row = f.rowOf('codex')
+    expect(bars(row)).toHaveLength(0)
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['已接收 12.4 MB，总大小未知'])
+    expect(textOf(row)).not.toContain('%')
+  })
+
+  it('draws one segment per step up to 12 steps with done, current and pending states', async () => {
+    const f = await setup(running({
+      channel: 'official', readable: true, byteProgress: true, byteProgressState: 'unknown-total',
+      currentStep: 3, totalSteps: 6, stepName: '拉取代码', downloadedBytes: 12.4 * 1024 ** 2, resumeCount: 0,
+      stage: '→ Pulling updates...',
+    }))
+    const row = f.rowOf('codex')
+    const [seg, ...others] = bars(row)
+    expect(others).toHaveLength(0)
+    expect(seg!.props.className).toBe('cwn-update-seg')
+    expect(seg!.props).toMatchObject({
+      'aria-valuemin': 0, 'aria-valuemax': 6, 'aria-valuenow': 3, 'aria-valuetext': '第 3 步，共 6 步', 'aria-label': 'Codex 更新进度',
+    })
+    expect(seg!.props.style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1fr))')
+    expect(seg!.findAllByType('span').map((span) => span.props['data-step'] ?? 'pending')).toEqual(['done', 'done', 'now', 'pending', 'pending', 'pending'])
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['第 3/6 步：拉取代码 · 已接收 12.4 MB，总大小未知'])
+    // The official CLI's own line stays one line, with the full text on hover.
+    const stage = byClass(row, 'cwn-update-hint').find((node) => node.props['data-clip'])
+    expect(stage && textOf(stage)).toBe('→ Pulling updates...')
+    expect(stage!.props.title).toBe('→ Pulling updates...')
+  })
+
+  it('switches to a continuous bar above 12 steps without naming any CLI in the wording', async () => {
+    const f = await setup(running(
+      { channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', currentStep: 48, totalSteps: 122, stepName: '安装依赖包', resumeCount: 0 },
+      { phase: 'installing', intent: 'install' },
+    ))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-seg')).toHaveLength(0)
+    const [bar] = bars(row)
+    expect(bar!.props.className).toBe('cwn-update-bar')
+    expect(bar!.props).toMatchObject({ 'aria-valuemin': 0, 'aria-valuemax': 122, 'aria-valuenow': 48, 'aria-valuetext': '第 48 步，共 122 步', 'aria-label': 'Codex 安装进度' })
+    expect(parseFloat(bar!.findByType('span').props.style.width)).toBeCloseTo((48 / 122) * 100, 5)
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['第 48/122 步：安装依赖包'])
+    expect(byClass(row, 'cwn-update-meta-side')).toHaveLength(0)
+  })
+
+  it('shows only the stage line for phase-only official progress, as plain text', async () => {
+    const hostile = '<b>Downloading update...</b>'
+    const f = await setup(running({ channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', stage: hostile, elapsedSeconds: 35, resumeCount: 0 }))
+    const row = f.rowOf('codex')
+    expect(bars(row)).toHaveLength(0)
+    const main = byClass(row, 'cwn-update-meta-main')
+    expect(main.map(textOf)).toEqual([hostile])
+    expect(main[0]!.props.title).toBe(hostile)
+    expect(row.findAll((node) => node.type === 'b')).toHaveLength(0)
+    expect(hints(row)).toEqual(['官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'])
+    expect(textOf(row)).not.toContain('已自动续传')
+    expect(textOf(row)).not.toContain('下载进度无法读取')
+  })
+
+  it('reports an official "already latest" result without claiming an update', async () => {
+    const result: CliUpdateOperation = {
+      id: 'SIMULATED-latest', intent: 'update', cli: 'kimi', phase: 'succeeded', startedAt: 1, finishedAt: 2,
+      beforeVersion: '1.6.0', targetVersion: '1.7.0', afterVersion: '1.6.0', outputTail: '官方命令报告已是最新，未切换接管。',
+      progress: { channel: 'official', readable: false, byteProgress: false, resumeCount: 0, stage: '已是最新', reason: 'ALREADY_LATEST' },
+    }
+    const f = await setup(data({ snapshot: snapshot({ results: [result] }) }))
+    const row = f.rowOf('kimi')
+    expect(textOf(byClass(row, 'cwn-update-desc')[0]!)).toBe('已是最新 1.6.0')
+    expect(textOf(row)).not.toContain('已更新到')
+    expect(hints(row)).toEqual(['官方报告已是最新，未改由插件下载，也不降级'])
+    // Opening the output keeps the note once, inside the same block.
+    await act(async () => f.button('查看输出', row)!.props.onClick())
+    expect(hints(f.rowOf('kimi'))).toEqual(['官方报告已是最新，未改由插件下载，也不降级'])
+    expect(textOf(f.rowOf('kimi'))).toContain('官方命令报告已是最新')
+  })
+
+  it('renders the new progress wording in English', async () => {
+    const f = await setup(running({ channel: 'takeover', reason: 'OFFICIAL_SLOW', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 2048, resumeCount: 0 }))
+    setLanguagePreference('en')
+    await f.update(running({ channel: 'takeover', reason: 'OFFICIAL_SLOW', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 2048, resumeCount: 0 }))
+    const row = f.rowOf('codex')
+    expect(byClass(row, 'cwn-update-chan').map(textOf)).toEqual(['Plugin takeover'])
+    expect(textOf(byClass(row, 'cwn-update-callout')[0]!)).toMatch(/^The official download was too slow\. .* Codex updates on this computer/)
+    expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['Received 2.0 KB, total size unknown'])
   })
 })

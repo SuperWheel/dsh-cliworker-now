@@ -61,8 +61,18 @@ export const cliUpdateStyles = `
 .cwn-update-progress{display:flex;flex-direction:column;gap:6px}
 .cwn-update-bar{height:4px;border-radius:2px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}
 .cwn-update-bar>span{display:block;height:100%;border-radius:2px;background:var(--dsw-alias-state-business-primary);transition:width 180ms ease}
-.cwn-update-progress-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
+.cwn-update-progress-meta{display:flex;justify-content:space-between;flex-wrap:nowrap;gap:12px;min-width:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
 .cwn-update-progress-meta[data-tone=warn]{color:var(--dsw-alias-state-warn-label)}
+.cwn-update-meta-main{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwn-update-meta-side{flex-shrink:0;white-space:nowrap}
+.cwn-update-seg{display:grid;gap:3px;height:4px}
+.cwn-update-seg>span{border-radius:2px;background:var(--dsw-alias-interactive-bg-hover)}
+.cwn-update-seg>span[data-step=done]{background:var(--dsw-alias-state-business-primary)}
+.cwn-update-seg>span[data-step=now]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent)}
+.cwn-update-callout{padding:10px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.cwn-update-hint[data-clip]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
+.cwn-update-chan{display:inline-flex;align-items:center;flex-shrink:0;height:20px;margin:-1px 0;padding:0 6px;border-radius:6px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);white-space:nowrap}
+.cwn-update-chan[data-channel=takeover]{color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent)}
 .cwn-update-log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
 .cwn-update-log{margin:0;height:150px;overflow:auto;overscroll-behavior:contain;padding:10px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);font-family:var(--cwn-update-mono);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
 .cwn-update-line{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding:16px 0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-feedback-line);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere}
