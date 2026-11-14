@@ -2,6 +2,7 @@ import { SettingsConnectionCache } from './settings-connection-cache.ts'
 import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-management/sources.ts'
 import { backgroundConnectionConfig } from './settings-connection-background.ts'
 import { CliMaintenance, CliBusyError, MaintenanceError } from './cli-management/maintenance.ts'
+import { CustomProviders, type CustomProviderSource } from './custom-provider.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -318,6 +319,7 @@ export class CliWorkerService extends TypertRemoteService {
   private accounts: AccountManager
   private cliManagement: CliManagementService
   private accountParents = new Map<string, () => Promise<void>>()
+  private customProviders?: CustomProviders
   private options: RuntimeConfig
   private backend: ProcessBackend
   private pending = new Map<string, number>()
@@ -764,6 +766,7 @@ export class CliWorkerService extends TypertRemoteService {
     ctx.effect(
       () => () => {
         this.disposed.abort()
+        this.customProviders?.close()
         this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
@@ -2157,10 +2160,12 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
   private invalidateSettingsDisplay(cli: CliId) {
-    if (cli !== 'harness') { this.cliManagement?.cache.invalidateAccount(cli); this.connections?.invalidate(cli) }
+    if (cli !== 'harness') this.connections?.invalidate(cli)
     this.settingsCatalogs?.invalidate(cli)
     const revisions = (this.settingsSourceRevisions ??= new Map())
     revisions.set(cli, (revisions.get(cli) ?? 0) + 1)
+    // Disk-cache failure must not preserve an in-memory account/catalog from before the mutation.
+    if (cli !== 'harness') this.cliManagement?.cache.invalidateAccount(cli)
   }
   /** @param parentSessionId - Active parent. @param cli - Explicit CLI. @param signal - Read lifetime. @returns Project/CLI running-message preference and native capability. */
   @Remote('runningMessageSettings')
@@ -2808,6 +2813,76 @@ export class CliWorkerService extends TypertRemoteService {
     }
   }
 
+  private trackAccountParent(parent: Agent) {
+    if (this.accountParents.has(parent.id)) return
+    const dispose = parent.ctx.effect(
+      () => () => {
+        this.accountParents.delete(parent.id)
+        this.customProviders?.closeParent(parent.id)
+        return this.accounts.closeParent(parent.id)
+      },
+      'cliworker:account-parent',
+    )
+    this.accountParents.set(parent.id, dispose)
+  }
+  private customProviderSource(parent: string, cli: CliId): CustomProviderSource {
+    return { parent, cli, entry: this.options.cliExecutablePaths?.read(cli), revision: this.options.cliExecutablePaths?.revision(cli) ?? 0 }
+  }
+  private customProviderManager() {
+    return this.customProviders ??= new CustomProviders({ hermesHome: this.options.hermesHome })
+  }
+  /** @returns JSON form, or literal null for an unverified CLI/native configuration source. */
+  @Remote('customProviderForm')
+  async customProviderForm(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
+    let release: (() => void) | undefined, releaseAccount: (() => void) | undefined
+    try {
+      const id = validate.enum(CLI_IDS).parse(cli)
+      const parent = await this.parent(parentSessionId)
+      const control = AbortSignal.any([signal, this.disposed.signal])
+      control.throwIfAborted()
+      release = this.options.cliMaintenance?.using(id)
+      this.runtime.assertCliEnabled(id)
+      this.runtime.assertAccountIdle(id)
+      releaseAccount = this.accounts.reserveCustomProvider(id)
+      this.trackAccountParent(parent)
+      // Unsupported CLIs must not touch their entry stores (notably retired Harness).
+      if (!['pi', 'opencode', 'hermes'].includes(id)) return 'null'
+      return JSON.stringify(this.customProviderManager().form(this.customProviderSource(parent.id, id)))
+    } catch (error) { throw failure(error) }
+    finally { releaseAccount?.(); release?.() }
+  }
+  /** Write-only secret input. Never log valuesJson or put it into account/catalog snapshots. */
+  @Remote('saveCustomProvider')
+  async saveCustomProvider(parentSessionId: string, cli: string, token: string, valuesJson: string, signal: AbortSignal): Promise<string> {
+    let release: (() => void) | undefined, releaseAccount: (() => void) | undefined
+    try {
+      const id = validate.enum(CLI_IDS).parse(cli)
+      const parent = await this.parent(parentSessionId)
+      const control = AbortSignal.any([signal, this.disposed.signal])
+      control.throwIfAborted()
+      this.assertExecution(parent)
+      release = this.options.cliMaintenance?.using(id)
+      this.runtime.assertCliEnabled(id)
+      this.runtime.assertAccountIdle(id)
+      releaseAccount = this.accounts.reserveCustomProvider(id)
+      this.trackAccountParent(parent)
+      if (!['pi', 'opencode', 'hermes'].includes(id)) return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
+      const source = this.customProviderSource(parent.id, id)
+      const result = this.customProviderManager().save(source, token, valuesJson, () => {
+        control.throwIfAborted()
+        this.runtime.assertCliEnabled(id)
+        this.runtime.assertAccountIdle(id)
+        if (JSON.stringify(this.customProviderSource(parent.id, id)) !== JSON.stringify(source)) throw new Error('CLI 入口已变化')
+      })
+      if (result.ok) {
+        try { this.invalidateSettingsDisplay(id) }
+        catch { result.notice = '原生配置已保存；显示缓存持久化失败，请刷新账号与模型目录' }
+      }
+      return JSON.stringify(result)
+    } catch (error) { throw failure(error) }
+    finally { releaseAccount?.(); release?.() }
+  }
+
   private async startAccount(
     parentSessionId: string,
     cli: string,
@@ -2824,16 +2899,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.assertExecution(parent)
       this.runtime.assertCliEnabled(id)
       this.runtime.assertAccountIdle(id)
-      if (!this.accountParents.has(parent.id)) {
-        const dispose = parent.ctx.effect(
-          () => () => {
-            this.accountParents.delete(parent.id)
-            return this.accounts.closeParent(parent.id)
-          },
-          'cliworker:account-parent',
-        )
-        this.accountParents.set(parent.id, dispose)
-      }
+      this.trackAccountParent(parent)
       this.invalidateSettingsDisplay(id)
       return JSON.stringify(
         await this.accounts.start(parent.id, id, operation, this.project(parent), signal, source, provider, login),

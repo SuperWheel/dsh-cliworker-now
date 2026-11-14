@@ -401,6 +401,16 @@ export class AccountManager {
   }
 
   hasActiveQuery(cli: CliId): boolean { return [...this.statusQueries.values()].some(query => query.cli === cli && !query.settled) }
+  /** Synchronous reservation shared by native terminals, desktop accounts and form writes. */
+  reserveCustomProvider(cli: CliId): () => void {
+    validateCli(cli)
+    this.controller.signal.throwIfAborted()
+    if (this.isBusy(cli)) throw new Error('此 CLI 已有账号操作或清理暂停，请结束后重试')
+    if (this.hasActiveQuery(cli)) throw new Error('此 CLI 的账号状态仍在读取，请稍后再试')
+    this.setReserved(cli, true)
+    let released = false
+    return () => { if (!released) { released = true; this.setReserved(cli, false) } }
+  }
   isBusy(cli: CliId): boolean {
     validateCli(cli)
     return this.reserved.has(cli) || this.unsafeQueries.has(cli) || this.unsafeTerminals.has(cli)
