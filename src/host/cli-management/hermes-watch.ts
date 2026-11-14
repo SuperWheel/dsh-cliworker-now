@@ -126,10 +126,15 @@ export class HermesWatch {
       )) this.completed = true
       const stages = Array.isArray(r.stages) ? r.stages : []
       const last = stages.filter((s: any) => HERMES_STEPS.includes(s?.name) || s?.name === 'fetch').at(-1)
-      if (last && HERMES_STEPS.includes(last.name)) this.step = HERMES_STEPS.indexOf(last.name) + 1
       // Native stage marks are END marks. Do not leave a child in its parent's completed apply.
       const next: Record<string, HermesStage> = { plan: 'snapshot', snapshot: 'fetch', fetch: 'apply', apply: 'deps', deps: 'build', build: 'restart', restart: 'restart' }
-      const stage = hermesStage(r.stage ?? r.current_stage) ?? (last ? ['success', 'skipped'].includes(last.outcome) ? next[last.name] : hermesStage(last.name) : undefined)
+      const receiptStage = last ? ['success', 'skipped'].includes(last.outcome) ? next[last.name] : hermesStage(last.name) : undefined
+      // Fetch belongs to the apply step in the six-step display. Only receipts
+      // set this number; newer status/log/output text cannot move it backwards.
+      const stepIndex = HERMES_STEPS.findIndex(name => name === (receiptStage === 'fetch' ? 'apply' : receiptStage))
+      if (r.outcome === 'success') this.step = HERMES_STEPS.length
+      else if (stepIndex >= 0) this.step = stepIndex + 1
+      const stage = hermesStage(r.stage ?? r.current_stage) ?? receiptStage
       this.setStage(stage, latest.at, 'receipt', now)
       this.stopClass = typeof r.stop_class === 'string' && /^[a-z][a-z0-9_]{0,100}$/.test(r.stop_class) ? r.stop_class : undefined
       this.exitCode = Number.isInteger(r.exit_code) ? r.exit_code : undefined

@@ -172,6 +172,7 @@ Windows 上已验收的四项，也从「接管优先」改为这一流程。在
 
 Hermes 没有可替换的发布包，所以接管的含义是：插件预取并校验内容，再让 `hermes update --yes` 用这些内容自己完成安装。插件不替 Hermes 改检出、依赖、配置或服务。
 
+- **六步编号按结束标记推算（8.12）。** 步序为 plan、snapshot、apply、deps、build、restart。运行中回执的最后阶段为 success/skipped 时显示下一步，最多第 6 步；failed/running 时仍显示该阶段。fetch 不另占一步：snapshot 完成后进入 fetch，步数显示第 3 步 apply；fetch 完成后仍显示 apply。整体 outcome=success 固定显示第 6 步 restart。步数只由回执设置，状态文件、日志及输出片段的阶段文字不会使其倒退；判慢阶段仍沿用既有多来源观察。
 - **判慢按阶段。** 阶段取自状态文件、`update.log` 和最新修改的回执；0.21.7 在 apply 之后会把剩余工作交给新树的子进程，子进程另开回执，所以以最新回执为准，并核对其中的 pid 是否存活。
   - fetch：只识别代码拉取，Fetching release history 等元数据查询不归入 fetch；沿用 `tmp_pack_*` 增长量；首字节前宽限 60 秒，之后 30 秒无增长、或 60 秒均速低于 100 KB/s 判慢。
   - deps 中的工具下载（只有 tools 阶段名不够，必须有下载文字或本次活动分片）：`<Hermes 根>/cache/partials/*.part` 30 秒无增长判慢。

@@ -77,6 +77,69 @@ it('模拟：按 mtime 跟随存活子回执，跳过死父 running 回执；app
   await watch.poll(now + 400)
   expect(watch.currentStage).toBe('deps'); expect(watch.receiptPidAlive).toBe(true); expect(watch.expectedSha).toBe(sha(3))
 })
+it('模拟：重放 Windows 0.23.0→0.23.1 回执时间线，结束标记显示下一步，构建期间保持第 5 步', async () => {
+  const { root, checkout } = await fixture(), progress = vi.fn()
+  const at = (time: string) => Date.parse(`2026-11-14T${time}Z`)
+  const watch = new HermesWatch(root, checkout, join(root, 'status.json'), at('13:46:37'), p => { cliDownloadProgressSchema.parse(p); progress(p) })
+  const stages: { name: string; outcome: string; ended_at: string }[] = []
+  // Times/outcomes from the reported real receipt; files and execution are simulated.
+  for (const [name, outcome, time, currentStep, stepName] of [
+    ['plan', 'success', '13:46:38', 2, 'snapshot'],
+    ['snapshot', 'skipped', '13:46:38', 3, 'apply'],
+    ['apply', 'success', '13:47:00', 4, 'deps'],
+    ['deps', 'success', '13:47:54', 5, 'build'],
+    ['build', 'success', '13:52:06', 6, 'restart'],
+    ['restart', 'success', '13:52:13', 6, 'restart'],
+  ] as const) {
+    stages.push({ name, outcome, ended_at: `2026-11-14T${time}Z` })
+    await put(join(root, 'logs/update_receipts/latest.json'), { pid: process.pid, outcome: 'running', stages }, at(time))
+    await watch.poll(at(time))
+    expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep, totalSteps: 6, stepName })
+    if (name === 'deps') {
+      await watch.poll(at('13:52:05'))
+      expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 5, totalSteps: 6, stepName: 'build' })
+      expect(watch.controller.signal.aborted).toBe(false)
+    }
+  }
+  await put(join(root, 'logs/update_receipts/latest.json'), { pid: process.pid, outcome: 'success', stages }, at('13:52:14'))
+  await watch.poll(at('13:52:14'))
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 6, totalSteps: 6, stepName: 'restart' })
+})
+it.each(['running', 'failed'])('模拟：%s 阶段不提前下一步，fetch 映射到 apply', async outcome => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, progress = vi.fn()
+  const watch = new HermesWatch(root, checkout, join(root, 'status.json'), now, progress)
+  for (const [index, name] of ['plan', 'snapshot', 'fetch', 'apply', 'deps', 'build', 'restart'].entries()) {
+    await put(join(root, 'logs/update_receipts/latest.json'), { pid: process.pid, outcome, stages: [{ name, outcome }] }, now + index)
+    await watch.poll(now + index)
+    expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: [1, 2, 3, 3, 4, 5, 6][index], totalSteps: 6, stepName: name === 'fetch' ? 'apply' : name })
+  }
+})
+it.each(['success', 'skipped'])('模拟：fetch %s 结束标记显示第 3 步 apply', async outcome => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, progress = vi.fn()
+  const watch = new HermesWatch(root, checkout, join(root, 'status.json'), now, progress)
+  await put(join(root, 'logs/update_receipts/latest.json'), { pid: process.pid, outcome: 'running', stages: [{ name: 'fetch', outcome }] }, now + 1)
+  await watch.poll(now + 1)
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 3, totalSteps: 6, stepName: 'apply' })
+})
+it.each([{ stages: [] }, { stages: [{ name: 'plan', outcome: 'success' }] }])('模拟：整体成功即使阶段记录不全也显示最后一步：%j', async ({ stages }) => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, progress = vi.fn()
+  const watch = new HermesWatch(root, checkout, join(root, 'status.json'), now, progress)
+  await put(join(root, 'logs/update_receipts/latest.json'), { outcome: 'success', stages }, now + 1)
+  await watch.poll(now + 1)
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 6, totalSteps: 6, stepName: 'restart' })
+})
+it.each(['status', 'log', 'output'])('模拟：较新的 %s 旧阶段文本不使回执步数倒退', async source => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, progress = vi.fn(), status = join(root, 'status.json')
+  const watch = new HermesWatch(root, checkout, status, now, progress)
+  await put(join(root, 'logs/update_receipts/latest.json'), { pid: process.pid, outcome: 'running', stages: [{ name: 'deps', outcome: 'success' }] }, now + 1)
+  await watch.poll(now + 1)
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 5, stepName: 'build' })
+  if (source === 'status') await put(status, { stage: 'deps', message: 'Installing dependencies' }, now + 2)
+  else if (source === 'log') await put(join(root, 'logs/update.log'), '→ Installing dependencies\n', now + 2)
+  else watch.output('Installing dependencies\n', now + 2)
+  await watch.poll(now + 3)
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ currentStep: 5, totalSteps: 6, stepName: 'build' })
+})
 it('模拟：状态与新日志能识别 fetch、uv、pnpm，旧 fetch 行不盖过新 apply 回执', async () => {
   const { watch, root, now, status } = await observer('fetch')
   await put(join(root, 'logs/update.log'), '→ Fetching updates...\n', now + 1); await watch.poll(now + 1)

@@ -167,6 +167,14 @@
   - 验证边界：上述回归是模拟；本轮真实执行仅为临时小项目 uv/镜像实验。没有真实 Hermes、Windows、账号、模型或 Desktop UI 验收；8.5、8.10 保持待办，不归档、不提交、不推送、不变更版本。
 - [ ] 8.10 Python 下载镜像接管的跨 generation 恢复路径（未执行：8.8 的同 venv 方案无法支持官方重跑，新环境缓存与 find-links 替代实验均失败；不得交付未经验证的接管）
   - 待验证可沿用官方锁定 URL 身份的缓存预置或原生支持的环境复用，再实现下载源映射、Hermes 自有 uv/venv 解析和 takeover 进度。不修改 src/client；建议前端将 Hermes 规则改为「拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待」，重试提示改为「拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次」。
+- [x] 8.11 Windows 实机：0.23.0→0.23.1 官方更新全程不误停、页面以回读版本结束
+  - 2026-11-14 插件本地提交 eb6c87f 隔离包（1241 文件哈希全部一致）装入 Windows DSH 0.2.2-rc.3。Hermes 先用其官方 `scripts/install.ps1 -Commit 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19 -NonInteractive` 回退到 v0.23.0：首次在远程会话中未设代理，`npm ci` ECONNRESET，安装记录停在 0.23.1；按 WinINET 系统代理 127.0.0.1:7897 设 HTTP(S)_PROXY 重跑后完成，`install-stamp.json` 为 0.23.0。
+  - 页面检查更新显示 `0.23.0 → 0.23.1 · Hermes Agent 自带更新`；点「更新」→「继续更新」。Hermes 回执 `update_20261114_134637_27620`：plan/apply/deps/build/restart 均 success（snapshot skipped），13:46:37→13:52:14，outcome success；build 段约 4 分钟（Node 依赖、TUI、Web UI）未被停掉，输出无「依赖停滞」「重跑」或错误；`update.log` 有 `✓ Update complete! (v0.23.0 → v0.23.1)`。检出 HEAD 3b421578…、安装记录 displayVersion 0.23.1；页面行显示「已更新到 0.23.1」，渠道全程「官方」。
+  - 代理实测：只读网络记录每 3 秒采样 Hermes 根目录及 git/node/npm/uv 进程，记录到 `uv.exe -> 127.0.0.1:7897 Established`（21:47:37–21:47:52）；git、npm 连接未被采样到（代码已在本地、Node 依赖多半命中缓存），不作为其代理证据。
+  - 发现：步数条比回执慢一步（deps 完成后整个 build 期仍显示「第 4/6 步 · deps」，restart 期显示「第 5/6 步 · build」），见 8.12。第二次检查后悬停「上次检查」仍为 21:45，未确认是否刷新。拉取过慢的分段预取未触发（新对象已在本地），仍属 8.5。CU 子 agent 报告，主会话复核回执、安装记录与网络记录。
+- [x] 8.12 Hermes 步数按回执「结束标记」推算当前步：最近完成阶段的下一步才是当前步，整体成功后为第 6 步完成
+  - 2026-11-14：复用原生 next 映射推算六步编号，success/skipped 推进，failed/running 保留该阶段，fetch 映射 apply，restart 封顶第 6 步，整体 success 固定第 6 步。状态文件、日志与输出片段不写步数；新增 10 项模拟用例，按 8.11 实机提供的 13:46:38→13:52:13 阶段时间线逐点断言 currentStep/stepName（包括构建期间第 5 步与整体成功第 6 步），并覆盖 fetch、失败/运行中、缺省阶段列表及较新旧阶段文本不使步数倒退。README、doc/design.md、决定 8 和增量规格同步。
+  - 验证：`corepack pnpm typecheck` 通过（Host/Client against DSH 0.2.2-rc.3）；`corepack pnpm exec vitest run tests/cli-management-hermes-takeover.test.ts tests/cli-management-hermes-version.test.ts tests/cli-management-all-updates.test.ts tests/cli-update-page.test.tsx`：4 文件、247/247 通过；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict` 通过；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。仅模拟回归，未执行真实 Hermes/Windows 更新、账号或模型调用；未修改 src/client、未更新 Desktop、未提交/推送/归档或变更版本。
 
 ## 7. 待决定与后续调研 〔产品｜2h〕
 - [x] 7.1 Grok 接管校验强度

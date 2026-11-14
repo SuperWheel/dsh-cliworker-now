@@ -106,6 +106,10 @@ Host MUST NOT 伪造百分比；暂存文件不能确定属于本次运行时 MU
 - **WHEN** 用户更新 Hermes
 - **THEN** 进度条按回执的 6 个阶段显示「第 N/6 步」，并显示日志中的真实阶段行和已用时间；fetch 阶段另显示已接收字节，不显示字节百分比。官方失败时读回执给出原因，自动重跑一次（退出码 2 除外），仍失败则提示用户
 
+#### Scenario: Hermes 回执阶段结束后的当前步
+- **WHEN** 运行中回执的最后阶段记录 outcome 为 success 或 skipped
+- **THEN** Host SHALL 显示 plan、snapshot、apply、deps、build、restart 序列中的下一步，最多第 6 步；snapshot 完成后的 fetch 与 fetch 完成后的 apply 均显示第 3 步 apply。阶段为 failed/running 时保留该阶段对应步数（fetch 对应 apply）；整体 outcome=success 时固定显示第 6 步 restart。状态文件、日志及输出片段 MUST NOT 使显示步数落后于回执推算的当前步
+
 #### Scenario: Hermes 拉取过慢由插件接管
 - **WHEN** Hermes 处于 fetch 阶段，首字节宽限后 30 秒无增长或 60 秒均速低于 100 KB/s
 - **THEN** 插件停止 Hermes 并确认进程树退出，用 git 按稳定标签分段预取，校验目标标签解出的提交等于计划目标 sha 后，重新执行 `hermes update --yes` 完成安装；插件 MUST NOT 写引用、改工作区或索引，MUST NOT 使用没有摘要的源码 zip；进度只显示「第 k/N 段」与已接收字节
