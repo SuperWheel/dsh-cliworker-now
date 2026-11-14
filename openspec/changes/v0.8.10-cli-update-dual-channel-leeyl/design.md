@@ -266,3 +266,19 @@ facts.json 必须是有界普通文件、packages 为非空对象、每个记录
 ### OMP native backup follow-up（2026-11-15）
 
 Windows 859bcee 实机官方 OMP 更新后留下 `omp.exe.1794693071300.27728.0.bak`（251502592 B）。仓库未包含 OMP 自更新备份命名源码，故仅采用该三段数字后缀；不猜测 POSIX 格式。安装身份必须为已知 Windows OMP 自更新入口，成功后的既有版本探针严格等于本次目标，才清理同安装目录、入口 basename 匹配（Windows 忽略大小写）的普通单链接备份。当前入口、链接/junction、硬链接、外部/不匹配名称与失败操作全部保留；复用操作最终化与中文字节摘要，不改通道记忆或 Hermes 规则。
+
+### 调研 7.3：OpenCode Windows 与 CodeBuddy 原生更新（2026-11-15，只读）
+
+依据：opencode-ai 1.19.5 的 `installation/index.ts`、`postinstall.mjs` 与 `https://opencode.ai/install`；CodeBuddy 官方安装文档、install.sh/ps1、COS `releases/latest` 与 `download/2.184.0/checksums.txt`、2.184.0 npm 包内 `dist/codebuddy.js`。脚本只按文本读取，未执行任何安装或更新；以下 Windows 行为均为静态结论，未实机验证。
+
+- OpenCode：Windows 上 npm 布局已经能接管（必需组 `opencode-windows-<arch>` 或 `-baseline` 二选一），不需要改。`~/.opencode/bin` 脚本布局在 Windows 上目前只跑官方 `opencode upgrade`，只显示阶段文字，原因是 `canPrepareWindowsUpdate` 只认四个 CLI。官方脚本会把 `opencode-windows-x64[-baseline].zip` 下载到 `${TMPDIR:-/tmp}/opencode_install_$$/`，不做任何校验。GitHub Release API 给每个资产带了 `digest: sha256`，可以支撑接管：下载 zip，按 sha256 和 size 校验，只解出 `opencode.exe`，用同目录临时文件改名替换，冒烟 `--version`。限制：只接 1.x（官方已有 `upgrade --major` 换装 V2）；需复刻 AVX2/baseline 判定；arm64 不接管；MSYS 下 `/tmp` 是否映射到私有 TMPDIR 要先实机核实，核实前只显示阶段。
+- CodeBuddy 原生（官方标 Beta）：安装脚本从 COS 下载 `codebuddy-code_<OS>_<arch>[_musl].{tar.gz|zip}`，按 `checksums.txt` 的 sha256 校验后执行 `codebuddy install`。原生 `codebuddy update` 把归档解到 `versions/<v>/`（Unix 在 `~/.local/share/codebuddy`，Windows 在 `%LOCALAPPDATA%\codebuddy\Data`），再用同目录临时文件改名替换入口；Windows 先把旧文件改名为 `.old`，保留最近 5 个版本。官方自更新本身不校验 sha256，Windows 还把整个 zip 缓冲在内存里，期间磁盘上看不到下载字节。插件接管（COS 归档，按 checksums.txt sha256 加 HEAD 长度校验，单源续传，放到 `versions/<v>` 后替换入口 realpath）比官方自更新更安全；运行时要带 `DISABLE_AUTOUPDATER=1`，配了企业自定义更新源时不接管。
+- 发现：`identity.ts` 里 CodeBuddy 原生布局写成 `.codebuddy/bin/`，与官方实际落点（`~/.local/bin/codebuddy` 指向 `~/.local/share/codebuddy/versions/<v>`，Windows 为 `%LOCALAPPDATA%\codebuddy\bin\codebuddy.exe`）不符，原生安装很可能被识别为 unknown。未实机验证，列为后续修正。
+
+建议新增规则行（本变更不实现，另起任务）：
+
+| CLI | 平台 | 官方进度探针 | 接管工件与校验 | 放置 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| OpenCode | Windows x64（`~/.opencode/bin` 脚本布局） | 私有 TMPDIR 下 `opencode_install_*/opencode-windows-x64[-baseline].zip`，总量取 Release 资产 size；路径核实前只显示阶段 | GitHub Release zip，API `digest` sha256 加 size，只限 1.x | (b) 只解出 `opencode.exe`，冒烟 `--version` | 有条件新增（需 bash；arm64 不接管） |
+| CodeBuddy 原生 | macOS、Linux（含 musl） | `versions/<v>/codebuddy` 已写字节，无总量 | COS 归档，`checksums.txt` sha256 加 HEAD 长度，单源续传 | (c) 写 `versions/<v>`，同目录改名替换入口 realpath，冒烟 `--version` | 新增；先修正原生布局识别 |
+| CodeBuddy 原生 | Windows x64 | 只显示阶段与已用时间（官方在内存缓冲） | 同上，`_Windows_x86_64.zip` | (c) 加 (b)，占用时旧文件改名 `.old` | 有条件新增（需实机） |

@@ -183,7 +183,9 @@
   - 2026-11-14 用户定「grok接管」：md5＋长度＋冒烟＋平台签名，见设计决定 7
 - [x] 7.2 Pi 与 Hermes 方案
   - 2026-11-14 用户定「pi用插件，hermes按照推荐（但也要有进度条）」：Pi 本版接管；Hermes 不接管、显示阶段进度条，见设计决定 7
-- [ ] 7.3 OpenCode Windows、CodeBuddy 原生更新的进度与接管调研
+- [x] 7.3 OpenCode Windows、CodeBuddy 原生更新的进度与接管调研
+  - 2026-11-15 调研完成（Fable，只读；主会话复核结论并写入 design.md「调研 7.3」）：OpenCode Windows 的 npm 布局已有接管；`~/.opencode/bin` 脚本布局可用 GitHub Release zip 的 API sha256 加 size 接管（只接 1.x，arm64 不接管，MSYS 临时路径待实机核实）。CodeBuddy 原生更新可按 COS `checksums.txt` sha256 加 HEAD 长度接管，比官方自更新（不校验）更安全；Windows 官方在内存缓冲，只能显示阶段。发现 `identity.ts` 的 CodeBuddy 原生布局与官方落点不符（未实机验证）。建议规则行见 design.md；实现不在本变更范围，另起任务。
+  - 依据：npm registry 的 opencode-ai、opencode-windows-x64、@tencent-ai/codebuddy-code latest 元数据；GitHub `anomalyco/opencode` v1.19.5 Release API 与源码；opencode.ai/install；codebuddy.cn 安装文档与 install.sh/ps1；COS releases/latest、2.184.0 checksums.txt 与三个归档的 HEAD。脚本只读不执行，没有实机更新。
 
 ## 9. npm 平台组件下载与安装核验 〔后端｜12h｜前置 1〕
 - [x] 9.1 隔离 Mac 真实 npm 实验：平台 tarball 预置缓存、普通依赖及 npm alias 命中验证
