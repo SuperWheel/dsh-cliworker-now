@@ -241,7 +241,7 @@ const leadingNames = [...names]
   .map(({ name }) => ({
     name,
     expression: new RegExp(
-      `^${escapeRegex(name).replace(/ /gu, '\\s+')}($|(?=[\\s\\p{Script=Han},，。;；!?！？]))`,
+      `^${escapeRegex(name).replace(/ /gu, '\\s+')}($|(?=[\\s\\p{Script=Han},，。;；:：!?！？]))`,
       'iu',
     ),
   }))
@@ -264,7 +264,9 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
       // Plugin/tool invocation is routing guidance, not a CLI selector. In
       // particular, a later "参数 cli" must not turn cliworker_start into one.
       if (/^(?:cli\s+worker(?:\s+now)?\b|cliworker_(?:start|resolve)\b)/iu.test(request)) continue
-      const versioned = request.replace(
+      // "Claude Code（CLI Worker）在…" names the CLI and annotates the plugin entry; the annotation is not a selector.
+      const named = request.replace(/\s*[（(]\s*cli\s*worker(?:\s+now)?\s*[)）]/giu, ' ').trim()
+      const versioned = named.replace(
         /^qoder\s+cli\s+(cn|中国版|国内版|国际版|international)(?=$|[\s\p{Script=Han}])/iu,
         (_, version: string) =>
           /^(?:国际版|international)$/iu.test(version) ? 'qoder国际版 cli' : 'qodercn cli',
@@ -294,9 +296,9 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
         resolutions.push(...selectors)
         continue
       }
-      const known = leadingNames.find(({ expression }) => expression.test(request))
+      const known = leadingNames.find(({ expression }) => expression.test(named))
       if (!known || ['glm', 'zhipu', '智谱'].includes(known.name)) continue
-      const suffix = request.slice(request.match(known.expression)![0].length)
+      const suffix = named.slice(named.match(known.expression)![0].length)
       if (isDiscussion(suffix)) continue
       resolutions.push(resolveCliName(known.name))
     }

@@ -57,5 +57,5 @@
   - 2026-11-14 Windows 基础部署与启动验收：官方 win-x64 nightly 清单的 rc.3 安装包大小与 SHA-512 均匹配，安装器退出 0，安装后 FileVersion 为 0.2.2-rc.3；安装前确认活动 Worker、账号进程与 Desktop 下 CLI 子进程均为 0。按用户授权只清空 pip Cache，C 盘空间达到 2.5 GiB 门槛后才安装。
   - 将 main `e03db09` 的现有正式构建冻结打包，通过原生 `dsh plugin --profile desktop add --save-exact` 安装；修改前备份 profile 配置及旧插件。独立读回 1142/1142 文件 SHA-256 一致，lib 文件数 918/918，Host SHA-256 为 `d6734ad59b097895ce4894278245f19f79ea36c7f2f7095d1dcc5186b0318ab0`。安装后的汇总脚本因 PowerShell 保留变量名报错，随后独立只读校验通过，未重复安装。
   - 用四个指定验收参数在用户交互会话启动 Desktop，窗口可响应，原生 UI Automation 确认「CLI Worker Now」面板可见；Host stdout 出现 `dsh web:`，无错误或 431，stderr 为空。日志保留 Windows 用户私有 ACL，仅回传端口与安全投影，未取回 token。安全证据位于本地忽略目录 `.test-data/windows-remote/desktop-audit/rc3-e03db09-20261114/`；Desktop 保持运行，未派遣模型任务。
-  - Windows 真实派遣受阻：经 SSH 隧道进入 Windows Desktop Web UI 后，主对话只有 zai-coding-cn 的 GLM 系列可选；GLM-5.3 强度「默认」返回 400（始终思考模型），改为 Low 后返回 429「余额不足或无可用资源包」，主 Agent 未能派遣 Worker。需用户在 Windows DSH 登录 DeepSeek 账号或为 GLM 充值后再测。
-  - （未执行：Windows 真实派遣、完整界面与权限验收、审批、停止、运行中动画与 Stop、上游四包 Vitest。真实派遣与续聊已在 4.2 用 Antigravity 覆盖一次。）
+  - Windows 真实派遣受阻：经 SSH 隧道进入 Windows Desktop Web UI 后，主对话只有 zai-coding-cn 的 GLM 系列可选；GLM-5.3 强度「默认」返回 400（始终思考模型），改为 Low 后返回 429「余额不足或无可用资源包」，主 Agent 未能派遣 Worker。用户随后在 Windows DSH 登录 DeepSeek，改用 DeepSeek-V4.1-Flash 后真实派遣 Antigravity（后台子 Agent、5 次审批）与 Claude Code 规划模式均通过，证据见 vnext-plan-exit-agy-background 5.1／5.2。
+  - （未执行：Windows 完整界面与权限验收、审批、停止、运行中动画与 Stop、上游四包 Vitest。真实派遣与续聊已在 4.2 用 Antigravity 覆盖一次。）

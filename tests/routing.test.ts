@@ -115,6 +115,11 @@ describe('explicit requests from this human step', () => {
     ['请调用一次 CLI Worker 派遣工具，使用 Grok', 'grok'],
     ['调用 2 次 codex cli 检查代码', 'codex'],
     ['使用两个 agy cli 并行检查代码', 'antigravity'],
+    // 2026-11-14 Windows 实测：「名称（CLI Worker）」是插件入口标注，不能让识别落成未知。
+    ['请派遣 Claude Code（CLI Worker）在规划模式下为工作区写一个最小方案。模型用 Sonnet。', 'claude'],
+    ['请派遣 Antigravity（CLI Worker）：生成一张水彩小狗插画', 'antigravity'],
+    ['请用 Codex (CLI Worker Now) 检查代码', 'codex'],
+    ['调用 agy：生成图片', 'antigravity'],
   ])('%s routes to %s without choosing a model', (text, cli) => {
     expect(invocationResolution([user(text)])).toMatchObject({ status: 'resolved', cli })
   })

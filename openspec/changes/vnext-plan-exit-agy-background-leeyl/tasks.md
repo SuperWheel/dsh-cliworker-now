@@ -22,6 +22,9 @@
 - [x] 2.4 实测发现：Claude Code 2.1.311 对插件 `deny + interrupt` 以退出码 1 结束，原实现仍判「Claude 原生进程非零退出」；改为仅在规划收尾（已认作规划完成且终态为 `success`/`error_during_execution`）时接受退出码 1
   - 证据：`native-claude.mjs` 记 `planEnded`，退出码 1 时调用 `peer.acceptExitCode(1)`；`native-transport.mjs` 增加运行器确认的 `acceptedExitCode`，健康检查不再把这一个退出码记为失败，其他退出码与信号照旧
   - 证据：2.1.311 的 `ExitPlanMode` 工具入参为空 `{}`，方案由 CLI 从规划文件注入到授权请求的 `input.plan`（二进制 schema 注释「injected by normalizeToolInput from disk」）；现实现读取的正是授权请求的 `input.plan`，无需改动
+- [x] 2.5 Windows 实测发现：「请派遣 Claude Code（CLI Worker）在规划模式下…」被名称识别判为未知，插件注入「无法确定 CLI」提示，主 Agent 只返回候选列表、未派遣；`Antigravity（CLI Worker）：…` 同样判为未知（主模型未理会提示才派遣成功）
+  - 原因：`routing.ts` 的显式匹配把「（CLI」前的「Claude Code（」当作名称；名称后接全角冒号也不被前导匹配接受
+  - 修复：识别前去掉紧跟名称的「（CLI Worker）／(CLI Worker Now)」插件入口标注；前导名称后允许 `:`／`：`
 
 ## 3. 模拟回归测试 〔测试｜2h｜前置 2〕
 - [x] 3.1 `tests/native-primary-runners.test.ts` 新增「模拟 Claude Code 规划模式以 ExitPlanMode 收尾」7 项
@@ -36,6 +39,8 @@
 - [x] 3.3 `tests/native-primary-runners.test.ts` 新增 2.1.311 真实帧模拟 2 项
   - 「工具入参为空、方案由规划文件注入、中断后进程退出码 1」：SUCCESS、正文为方案；「退出码 7」仍为 ERROR「Claude 原生进程非零退出」
   - `corepack pnpm vitest run tests/native-primary-runners.test.ts`：165 项通过；连同 `native-transport*` 共 188 项通过（加退出码 7 用例前）
+- [x] 3.4 `tests/routing.test.ts` 新增 4 项名称识别：`Claude Code（CLI Worker）`、`Antigravity（CLI Worker）：`、`Codex (CLI Worker Now)`、`agy：`
+  - 修复前本机复现 4 种写法均为 `{"status":"unknown"}`；修复后 `corepack pnpm vitest run` 识别相关 7 个文件 176 项通过，`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）
 
 ## 4. 自动检查 〔测试｜1h｜前置 3〕
 - [x] 4.1 `corepack pnpm typecheck`
@@ -57,11 +62,13 @@
   - 修复前（main `a9b4a86` 构建）Worker `9896f603` 续聊：Claude 未写规划文件时 `ExitPlanMode` 入参与注入方案均为空，按空方案判失败；写规划文件后插件已认作规划完成（诊断「已提交规划方案」、正文为方案），但进程退出码 1 致 ERROR「Claude 原生进程非零退出」→ 修复见 2.4
   - 修复后正式构建并重启 Desktop：续聊（同一 Worker `9896f603`，原生会话恢复）01:32:24 诊断「已提交规划方案」、01:32:25 result SUCCESS、notice 为 `PLAN_NOTICE`、正文为压缩方案；新派遣 Worker `d08a4b24`（Sonnet／Low）01:41:20 同样 SUCCESS、正文为 greet.sh 方案；两次工作区均无 hello.py、test_hello.py、greet.sh，无审批帧
   - 另见跟进：选 Haiku 时规划轮被判「原生回复模型与明确选型不一致」
-- [ ] 5.2 真实 agy 生图：主回合较长（含审批）与正常两种情形，核对跟进次数、终态与实际文件
+  - 2026-11-14 Windows（正式 Desktop 0.2.2-rc.3，插件 `e03db09`，主对话 DeepSeek-V4.1-Flash，`/plan` 开启）：首条「请派遣 Claude Code（CLI Worker）…」因 2.5 的识别问题未派遣；改写为「请用 Claude Code …」后沿用已存设定 deepseek-flash，Worker `1a5479f8` 本轮权限「规划模式」，`ExitPlanMode` 后诊断「已提交规划方案」、result SUCCESS、终态 completed、正文为方案；工作区无 `plan-test` 目录。Windows Claude Code 未用官方账号，续聊未在 Windows 复测
+- [x] 5.2 真实 agy 生图：主回合较长（含审批）与正常两种情形，核对跟进次数、终态与实际文件
   - 2026-11-14 正常情形已通过（用户授权真实调用；正式 Mac Desktop 0.2.2-rc.3，main `930de2e` 正式构建）：Worker `caa8273b`，Antigravity 1.5.8，Gemini 3.8 Flash／Low，自动审批（agy 报告有终端沙箱）
   - 首轮派遣 agy 自行用 Pillow 绘制 `cat.png`，未用子 Agent，不覆盖本修复；终态 completed，文件 1024×1024 RGBA PNG、18,854 字节
   - 续聊要求用自带生图：01:08:38 `invoke_subagent`（image-generator），01:08:41 诊断「15 秒后第 1 次跟进」，01:08:56 自动跟进 1 次，01:09:22 result SUCCESS、终态 completed；事件中无待核实（UNCERTAIN）。`dog.png` 实际存在：1024×1024 RGB PNG、1,515,167 字节，由子 Agent 产物 `blue_watercolor_dog_*.jpg`（782,443 字节）经 Pillow 转码保存
-  - 未执行：主回合较长（含审批）情形，本次 agy 档位为自动审批，未改用户档位；Windows 无沙箱路径未测（2026-11-14 Windows 已升级 rc.3 并部署 e03db09，但主对话仅有 GLM 且返回 429 余额不足，未能派遣；见 v0.8.10-dsh-rc3-adapt 4.3）
+  - 2026-11-14 主回合较长（含审批）情形在 Windows 通过（用户在 Windows DSH 登录 DeepSeek 后实测；正式 Desktop 0.2.2-rc.3，插件 `e03db09`）：Worker `c2395796`，Gemini 3.8 Flash／Low，自动审批档；agy 报告无终端沙箱，原生请求逐条经 DSH 审批。02:09:09 `invoke_subagent` 后台启动，随后 5 次 PowerShell／Python 命令逐条授权（允许一次），主回合持续到 02:12:56；02:13:01 诊断「子 Agent 仍在后台运行，15 秒后第 1 次跟进」，02:13:16 自动跟进 1 次，02:13:20 result SUCCESS、终态 completed，无 UNCERTAIN
+  - 产物：agy 把子 Agent 的 JPEG（783,228 字节）以 `win-dog.png` 名保存；主 Agent 核对发现格式不符后转码为真 PNG。Windows 读回 IHDR 1024×1024、1,976,115 字节
 - [ ] 5.3 向报告用户索取 Worker 的 `events.jsonl`，确认其误报属于哪种原因（未执行：需用户联系报告者）
 
 ## 6. 文档同步 〔产品｜1h｜前置 2〕
