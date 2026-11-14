@@ -27,3 +27,19 @@
   - 2026-11-15 Windows：隔离包 `rc3-859bcee-20261115` 安装 1259/1259 一致，退出时无活动任务。安装前基线 catalog 残留 grok 82、hermes 17、opencode 14、pi 30、zcode 4，Temp `cliworker-*` 4 个，C 盘 4.64 GB；Desktop 重启后数秒内全部为 0，C 盘 5.07 GB。
   - OMP 共享 native：`<state>/omp-natives/18.20.0`（05:45 首次探测解包一次，131988480 B）与 `18.20.2`（05:51 更新后，132542976 B）各一份；探测不再在 Temp 留 `cliworker-omp-identity-*`。05:55 Qoder/Qoder CN 元数据探测目录在探测结束后已删除。
   - 未覆盖：Defender 锁住文件的真实场景未刻意复现；Temp 下 Bun 单文件程序每次启动解出的 `.<16 位十六进制>-00000000.dll`（每个 1144200 B）累计 235 个、256 MB（最早 11-12，当日 96 个），来自未改 TEMP 的 CLI 探测，本变更未处理，另行跟进。
+
+## 4. Windows 短时进程私有 TEMP 〔后端｜4h｜前置 2〕
+
+- [x] 4.1 为短时探测、目录、账号、元数据和版本查询统一注入私有 TMP/TEMP，并接入退出清理与过期清扫
+  - 复用 owner marker 和 temporary-tree 删除辅助器；进程范围未确认退出保留。Worker 和官方更新不使用新入口；不扫描共享 Temp 的 DLL 名称。
+  - spawnProbe 统一接入 captureCatalogMetadata/captureReadOnly 与源码检索出的直接短时 backend.spawn（Antigravity models、通用账号状态、Codex account/models、Claude OAuth catalog、TRAE metadata、Qoder/CN、ZCode help、Grok/Hermes 有界续期）。WorkBuddy native IO 元数据路径复用同一环境工厂；无新定时器/进程观察器。Worker managed-agent/runtime、交互终端及官方更新 executor 未接入。
+  - prepareProbeTemporaryEnvironment 创建 0700 的 cliworker-probe- 和 .cliworker-owner-PID；只覆盖 TMP/TEMP，保留代理和其他键。waitForExit true 才释放，done 不授权；false/throw 保留标记，启动失败释放。前缀纳入既有一小时/当前 uid/活 owner 排除清扫，不扫描共享 DLL 文件。
+- [x] 4.2 补充模拟 Windows 环境/退出边界回归，执行指定检查并同步文档
+  - probe-process 新增 7 项、workbuddy-probe-temporary 新增 3 项合成测试；核对 Windows TEMP/TMP 与代理、DLL/owner 生命周期、成功/失败/启动失败/退出未确认、POSIX 原环境、Worker 和官方更新不注入。temporary-cleanup 原混合清扫测试增加旧 probe 目录回收和旧共享 DLL 保留。
+  - 首轮关联回归发现异步准备导致 POSIX 立即取消发生在 spawn 之前，已保留非 Windows 同步启动时序；Codex models、Claude OAuth、TRAE 的既有取消回归随后 85/85 通过。WorkBuddy 在沙箱内 ready-listen-failed，沙箱外原测试 39/39 通过。
+  - 扩大沙箱回归 53 文件：1730 通过、1 平台跳过、6 失败，失败来自 Pi 环回 listen EPERM（及下游断言）与 native-process /bin/ps EPERM；未改测试以绕过环境。
+  - 最终沙箱外命令：`corepack pnpm exec vitest run tests/cli-management* tests/cli-update-page.test.tsx tests/temporary-cleanup.test.ts tests/probe-process.test.ts tests/workbuddy-probe-temporary.test.ts tests/adapters.test.ts tests/extended-catalog-cleanup.test.ts tests/pi-omp-identity.test.ts tests/native-login-providers.test.ts tests/qoder-accounts.test.ts tests/qodercn-accounts.test.ts tests/codex-account.test.ts tests/codex-models.test.ts tests/traecn-accounts.test.ts tests/zcode-grok-accounts.test.ts tests/claude-native-oauth.test.ts tests/grok-renewal.test.ts tests/hermes-renewal.test.ts tests/accounts.test.ts tests/core.test.ts tests/native-process.test.ts tests/native-workbuddy.test.ts`：55 文件、1782 通过、1 平台跳过，25.82 秒。
+  - `corepack pnpm typecheck` exit 0（DSH 0.2.2-rc.3）；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-temp-dir-cleanup-leeyl --strict`、同命令校验 `v0.8.10-cli-update-dual-channel-leeyl` 及 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 均 exit 0。双通道仅主任务 9/10 子项过多的建议警告。
+  - README/doc/design 与两个变更的 design/spec/tasks 已同步；doc/design 顺手纠正旧通道记忆描述为「残留清理不删除 channel-memory.json，接管失败/取消仍按既有逻辑清除」，实现不变。没有正式构建、Desktop 部署、真实 CLI 更新、提交、版本变更或真实临时文件删除。历史共享 Bun DLL 不归插件所有，用户可确认无占用后手动删除。
+- [ ] 4.3 Windows/Mac 实机复验 OMP 备份回收及短时探测临时目录与 Bun DLL 增长
+  - 未执行：由用户复验。本轮只做合成夹具与静态检查，不删除真实安装或共享 Temp 文件。

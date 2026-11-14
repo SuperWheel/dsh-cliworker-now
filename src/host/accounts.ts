@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { readCodebuddyAccount } from './codebuddy-account.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { WorkBuddyDesktopAccounts, desktopActions, workbuddyDesktopFailure } from './workbuddy-desktop.ts'
@@ -673,7 +674,7 @@ export class AccountManager {
       let child: ReturnType<ProcessBackend['spawn']>
       try {
         control.throwIfAborted()
-        child = this.backend.spawn({
+        child = await spawnProbe(this.backend, {
           argv: launch.argv,
           env: launch.env,
           cwd,

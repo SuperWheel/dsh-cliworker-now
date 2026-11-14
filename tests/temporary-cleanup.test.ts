@@ -41,7 +41,7 @@ it('sweeps only old owned real directories, skips live owners, links, young and 
   const root = await fixture(), state = join(root,'state'), temp = join(root,'tmp')
   await mkdir(temp)
   const removed = [await old(join(temp,'cliworker-omp-identity-old')),await old(join(temp,'cliworker-login-options-old')),
-    await old(join(temp,'cliworker-qodercn-metadata-old')),await old(join(temp,'cwn-old')),await old(join(temp,'dshwb-old')),
+    await old(join(temp,'cliworker-probe-old')),await old(join(temp,'cliworker-qodercn-metadata-old')),await old(join(temp,'cwn-old')),await old(join(temp,'dshwb-old')),
     await old(join(state,'catalog','omp','query-old'))]
   const foreign = await old(join(temp,'foreign-old')), unlisted = await old(join(temp,'cliworker-user-project'))
   const target = await old(join(root,'target')); await writeFile(join(target,'keep'),'untouched')
@@ -49,10 +49,11 @@ it('sweeps only old owned real directories, skips live owners, links, young and 
   await symlink(target,join(state,'catalog','linked-cli'),process.platform === 'win32' ? 'junction' : 'dir')
   const young = join(temp,'cliworker-login-options-young'); await mkdir(young)
   const active = await old(join(temp,'cwn-active')); markTemporaryTreeActive(active); await utimes(active,new Date(0),new Date(0))
+  const sharedDll = join(temp,'.1234567890abcdef-00000000.dll'); await writeFile(sharedDll,'foreign DLL'); await utimes(sharedDll,new Date(0),new Date(0))
   const file = join(temp,'cwn-file'); await writeFile(file,'keep'); await utimes(file,new Date(0),new Date(0))
   await sweepTemporaryTrees(state,{temporaryRoot:temp})
   for (const path of removed) await expect(stat(path)).rejects.toMatchObject({code:'ENOENT'})
-  for (const path of [foreign,unlisted,target,linked,young,active,file]) expect(await stat(path)).toBeDefined()
+  for (const path of [foreign,unlisted,target,linked,young,active,file,sharedDll]) expect(await stat(path)).toBeDefined()
   expect(await readdir(target)).toEqual(['keep'])
 })
 

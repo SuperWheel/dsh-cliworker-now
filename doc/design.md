@@ -1657,7 +1657,7 @@ Windows Codex 0.169.0 实机证明 npm 可在平台包下载超时后跳过 opti
 
 变更 `v0.8.10-temp-dir-cleanup-leeyl`：catalog 的 query-* 在进程范围确认退出后，无论查询成功或拒绝都尽力删除；identity、login-options、Qoder metadata 同用递归删除重试（6 次、150 ms 递增间隔），最终磁盘错误不覆盖查询结果。ProcessCleanupUnconfirmedError 保留临时树和原有 CLI 保护。
 
-Host 启动异步清扫，目录查询创建前合并并节流为每状态根十分钟一次；卸载中止扫描并等待在途工作。只处理 `<state>/catalog/*/query-*` 和系统临时目录内源码确认的 mkdtemp 前缀（identity、login-options、Qoder/Qoder CN metadata、OMP approval、Hermes statistics、native-read、CodeBuddy catalog、cwn-、dshwb-），至少一小时未修改、lstat 确认真实目录，排除链接与仍存活的所有者标记；旧版无标记残留使用年龄门槛，锁定目录留待后续重试。
+Host 启动异步清扫，目录查询创建前合并并节流为每状态根十分钟一次；卸载中止扫描并等待在途工作。只处理 `<state>/catalog/*/query-*` 和系统临时目录内源码确认的 mkdtemp 前缀（probe、identity、login-options、Qoder/Qoder CN metadata、OMP approval、Hermes statistics、native-read、CodeBuddy catalog、cwn-、dshwb-），至少一小时未修改、lstat 确认真实目录，排除链接与仍存活的所有者标记；旧版无标记残留使用年龄门槛，锁定目录留待后续重试。
 
 OMP 身份、目录、登录选项与权限帮助探测使用 `<state>/omp-natives/`（0700），通过 PI_NATIVES_DIR 共用按版本解包的原生模块；按数值版本保留最新三个真实版本目录，年轻或锁定目录延后回收。Pi 1.5.2 安装包未发现相同变量，不套用。正式 Worker 原生 HOME 与运行环境不改；仅其权限帮助子探测使用此缓存。代理变量（含大小写变体）保持。Windows 实际复用和 Defender 占用回收仍由用户实机验收。
 
@@ -1666,6 +1666,15 @@ OMP 身份、目录、登录选项与权限帮助探测使用 `<state>/omp-nativ
 
 `update-cleanup.ts` 用操作级异步上下文登记路径，下载尚未返回即失败也能回收 partial；每个队列项独立上下文，维护锁在最终清理后释放。成功、失败、取消均清理，未确认进程退出保留；回滚失败的最后备份不加入可删列表。删除复用 `temporary-tree.mjs` 的有界重试，可传 original-fs 绕过 Electron ASAR；磁盘错误和输出回调错误不改原结果。统计真实删除的逻辑字节，不等同文件系统空闲空间变化；输出尾部为原始文字，一行中文摘要不走 t()/hostText。
 
-npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不修改代理环境，结束删除私有缓存。已存在的下载通道记忆不因本轮失败而清除（成功恢复官方后仍按既有规则失效），跨操作不保留 partial。reify 只匹配本包和目标公开清单声明的 bin、八位字母数字后缀；候选存在时才枚举进程，任何 npm 进程或无法核实都跳过，删除每项前重查。
+npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不修改代理环境，结束删除私有缓存。残留清理不删除 channel-memory.json；接管失败或取消仍按既有规则清除通道记忆，跨操作不保留 partial。reify 只匹配本包和目标公开清单声明的 bin、八位字母数字后缀；候选存在时才枚举进程，任何 npm 进程或无法核实都跳过，删除每项前重查。
 
 `update-residue.ts` 对 Grok downloads/.old、Qoder/Qoder CN version.txt/版本文件、Claude versions、TRAE releases/current 和当前用户名 Qoder temp natives 使用精确规则。运行前记录候选路径，失败只删新增未使用副本并保留备份；所有候选 lstat，不跟随链接或 junction，仅为读取 TRAE 当前指向解析 current。Hermes 使用本次整体成功且匹配目标的回执，加现有安装记录/HEAD 精确稳定标签与 verifyUpdatedVersion 验证（严格等于目标），不执行 --version；仅最终成功且托管范围退出后回收 bin/*.deleteme 普通文件与 tools 中未被任何 facts.json packages.*.entry 引用的完整 name-version-platform-arch 目录。facts 必须为有界普通文件、packages 为非空对象且所有 entry 都是实际目录，否则包括 .deleteme 在内全部保留。home/.hermes-update-in-progress* 及 tools/.install.lock 的 PID-bearing 记录用既有 pidAlive 三态证据复核；可读的无 PID/零字节/未知格式锁改用 captureReadOnly 进程枚举，按可执行路径位于本次 home/checkout 判定占用。Windows 读 CIM ExecutablePath（含 bin、installs venv 与 tools runtime），macOS 读完整 ps comm，Linux 读 ps PID 对应 /proc/exe；完整快照无匹配才对本次清理判 stale。外部同名进程不算占用，路径缺失/不可读、枚举失败或发现内部进程均跳过并说明；不以年龄代替证据，不改锁文件、不运行 Hermes、不终止目标进程、不改代理。删除前重读锁和 facts，引用变化即停止；不删锁/facts/dot entries，不沿链接。失败/取消/未验证不删 Hermes 原生副本，未知 TRAE lease 仍保留。只读检查更新不删除，以免绕开维护锁与实时运行证据。真实 Mac/Windows 验收继续未勾选。
+
+
+### 2026-11-15 Windows OMP 备份与 Bun 探测残留
+
+双通道主任务 10 新增 OMP Windows 规则：已知 `%USERPROFILE%/AppData/Local/omp/omp.exe` 自更新身份、最终成功且新鲜版本探针严格等于目标后，才删除同目录 `<入口 basename>.<数字>.<数字>.<数字>.bak` 普通单链接文件（大小写不敏感）。命名仅据用户实机 `omp.exe.1794693071300.27728.0.bak`；仓库未提供 POSIX 同类证据，不扩展。失败、链接/junction、硬链接、不匹配名称及当前入口保留，计入既有中文项数/字节摘要。
+
+临时目录变更主任务 4：`spawnProbe` 为 Windows 短时 CLI 创建 `cliworker-probe-`、0700 与活 Host owner marker，覆盖 captureCatalogMetadata/captureReadOnly、Antigravity models、Codex account/models、Claude OAuth catalog、TRAE metadata、Qoder account/catalog、ZCode help、通用账号状态及 Grok/Hermes 有界续期子进程。只改 TMP/TEMP（去除这两个键的大小写重复），代理原样保留；普通 done 不授权删除，只在宿主 waitForExit 返回 true 后复用共享删除辅助器，false/抛错保留。WorkBuddy 元数据使用同一环境工厂，在 native stopChildren 已确认后释放；原生私有助手若覆盖 TEMP，仍指向其已有隔离目录。原 Worker/交互终端/官方更新入口不接入新辅助器。
+
+`cliworker-probe-` 纳入既有一小时/当前 uid/活 Host 排除规则，磁盘删除失败交后续 sweep。Bun 系统 Temp 历史 `.<16 hex>-00000000.dll` 没有插件所有权，不添加文件级 sweep；用户可在无占用时手动清理旧文件。新的 Windows DLL 落点与实际占用回收须实机复验。

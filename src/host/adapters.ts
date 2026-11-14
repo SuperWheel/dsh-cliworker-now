@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { discoverCodebuddyModels } from './codebuddy-account.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { isWorkBuddyCli, workbuddyVariant } from './workbuddy-variant.ts'
@@ -119,7 +120,7 @@ export async function captureCatalogMetadata(
 ) {
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(15000)])
-  const process = backend.spawn({
+  const process = await spawnProbe(backend, {
     argv,
     cwd,
     env,

@@ -322,3 +322,11 @@
   - P2-1：收尾清理的版本探针或进程枚举抛出 `ProcessCleanupUnconfirmedError` 时，原先保留维护锁却仍显示 `succeeded`；现与 catch 分支一致，置 `cleanup-unconfirmed`／`CLEANUP_UNCONFIRMED`。新增服务级模拟测试（npm reify 残留触发进程枚举、退出未确认），撤掉修复时该测试失败、加回后通过。
   - P2-2：macOS ZCode 的 `cwn-*` 临时目录在 `/tmp`（`nativeTemporaryRoot`），原清扫只扫 `os.tmpdir()`；现额外扫描 ZCode 临时根，仅限 `cwn-` 前缀，并在 POSIX 上只回收当前用户 uid 的目录（共享 /tmp 有其他用户条目）。新增模拟测试。
   - 2026-11-15 Windows 部分实机证据（859bcee）：页面更新 OMP 18.20.0→18.20.2 走官方 `omp update`，约 30 秒完成，输出末行「更新清理：已删除 0 项，释放 0 B。」；插件 downloads 为空、npm 缓存 0 MB。OMP 不在残留规则表内，安装目录仍有上次更新留下的 `omp.exe.1794693071300.27728.0.bak`（251502592 B，11-14 16:42），待补规则。npm、Grok、Qoder、Claude、TRAE、Hermes 规则尚无真实更新覆盖，10.6 保持未勾选。
+
+- [x] 10.13 OMP 已验证成功更新后回收精确命名的原生备份，并完成模拟回归与文档核对
+  - 范围：仅已识别 Windows OMP 安装根内 `<入口 basename>.<数字>.<数字>.<数字>.bak` 普通单链接文件；成功且新鲜版本探针严格等于目标才回收，失败全部保留。POSIX 未找到同类命名证据，不扩展规则。真实复验仍留在 10.6。
+  - 已读 8511875、859bcee 的源码差异，保留 Hermes 锁宿主名筛选、最终化 quarantine → cleanup-unconfirmed 及 macOS /tmp owner uid 清扫；源码只新增 OMP 候选枚举/目标版本 gate，不改 channel-memory 行为。
+  - update-residue 候选枚举与最终化均接入 OMP；服务传入 plan.targetVersion，强制新鲜命令版本证据（移除 manifestVersion shortcut），版本严格相等才删。Windows basename 大小写不敏感；已知安装根逐层 lstat，候选普通文件且 nlink=1。POSIX 没有命名证据，不执行此规则。
+  - cli-management-update-cleanup 新增 13 项合成回归，包含真实最终化路径成功/失败/版本不符/退出未确认、manifest 不能替代探针、精确名称与字节摘要、当前入口/外部名称/目录/链接/硬链接保护。最终化候选枚举遗漏在收尾审查中修正，新增测试已覆盖。
+  - 最终指定 CLI-management 全组与相关探测回归合并运行：55 文件、1782 通过、1 平台跳过（25.82 秒，沙箱外）；完整命令见临时目录变更任务 4.2。corepack pnpm typecheck 通过（DSH 0.2.2-rc.3）。两个变更 pmspec --strict 与 git diff --check 均通过；主任务 9/10 子项超过 12 的建议警告保留，以保持历史任务证据。
+  - README/doc/design 与本变更规则表、设计和 delta spec 已同步；未运行真实 OMP 更新、未删除真实安装备份，10.6 继续未勾选。无提交、无版本变更。

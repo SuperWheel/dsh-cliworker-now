@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { chmod, lstat, mkdir, open, realpath } from 'node:fs/promises'
 import { homedir, platform, userInfo } from 'node:os'
 import { constants } from 'node:fs'
@@ -344,7 +345,7 @@ async function zcodeHelp(
 ): Promise<string> {
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(5_000)])
-  const child = backend.spawn({
+  const child = await spawnProbe(backend, {
     argv: [...entryArgv(executable), '--help'],
     cwd,
     env: { ELECTRON_RUN_AS_NODE: '1' },

@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { EFFORTS, type ModelChoice } from '../shared/types.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
@@ -36,7 +37,7 @@ export async function readCodexNativeModels(
 ): Promise<ModelChoice[]> {
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-  const child = backend.spawn({
+  const child = await spawnProbe(backend, {
     argv: [executable, 'app-server', '--stdio'],
     cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },

@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { removeTemporaryTree, markTemporaryTreeActive } from './temporary-tree.mjs'
 import { qoderVariant, type QoderCliId } from './qoder-variant.ts'
 import { constants } from 'node:fs'
@@ -317,7 +318,7 @@ async function queryQoderMetadataAttempt(backend: ProcessBackend, config: Runtim
     await writeFile(payload, JSON.stringify(auth), { flag: 'wx', mode: 0o600 })
     const control = signal, daemon = protocol === 'daemon'
     control.throwIfAborted()
-    const child = backend.spawn({
+    const child = await spawnProbe(backend, {
       argv: nativeLaunchArgv(daemon ? [executable, '--sdk'] : [executable, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
         '--no-session-persistence', '--tools', '', '--disable-builtin-skills', '--permission-mode', 'default',
         '--strict-mcp-config', '--mcp-config', '{"mcpServers":{}}', '--settings',

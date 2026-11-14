@@ -36,3 +36,18 @@ OMP 元数据与权限帮助探测 SHALL 使用状态目录内 0700 的 omp-nati
 #### Scenario: 多版本缓存
 - **WHEN** 缓存存在超过三个版本目录
 - **THEN** 回收最新三个以外且至少一小时未修改的真实版本目录，不跟随链接
+
+### Requirement: Windows 短时 CLI 查询使用私有临时目录
+Host SHALL 为 Windows 短时 CLI 探测、账号、元数据、目录及版本查询设置每次独立的 TMP/TEMP；目录 SHALL 使用插件前缀与 owner marker，并在托管进程范围确认退出后尽力删除。MUST 保持代理环境和 argv 数组，MUST NOT 改变正式 Worker 与官方更新的运行环境。
+
+#### Scenario: 查询结束或启动失败
+- **WHEN** Windows 短时查询成功、失败或启动失败，且不存在未确认退出的进程范围
+- **THEN** 回收本次私有目录及其中 Bun DLL，磁盘删除失败不覆盖查询结果
+
+#### Scenario: 未确认退出与历史 DLL
+- **WHEN** 进程范围退出未确认，或系统 Temp 存在共享名称的历史 Bun DLL
+- **THEN** 保留该次目录与 owner marker，由既有安全清扫延后处理；不扫描或删除共享 Temp 的历史 DLL
+
+#### Scenario: Worker 与官方更新
+- **WHEN** 启动正式 Worker 或官方更新
+- **THEN** 不应用短时查询的 TEMP 入口，沿用各自既有环境与清理

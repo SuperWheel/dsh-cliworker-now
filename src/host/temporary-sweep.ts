@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { TEMPORARY_TREE_MAX_AGE_MS, realDirectory, removeTemporaryTree, temporaryTreeHasLiveOwner, pruneOmpNativesDirectory } from './temporary-tree.mjs'
 
 // Exact mkdtemp families in src/host; do not sweep arbitrary cliworker-* projects.
-const temporaryPrefixes = ['cliworker-omp-identity-', 'cliworker-login-options-',
+const temporaryPrefixes = ['cliworker-probe-', 'cliworker-omp-identity-', 'cliworker-login-options-',
   'cliworker-qoder-metadata-', 'cliworker-qodercn-metadata-', 'cliworker-omp-approval-',
   'cliworker-hermes-statistics-', 'cliworker-native-read-', 'cliworker-codebuddy-catalog-',
   'cwn-', 'dshwb-']

@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { createHash } from 'node:crypto'
 import { lstat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -146,7 +147,7 @@ async function capture(
   // persist its new refresh token. Killing it on UI cancellation could spend the
   // old single-use grant without saving the replacement (especially Windows Job).
   const deadline = AbortSignal.timeout(8000)
-  const child = input.backend.spawn({
+  const child = await spawnProbe(input.backend, {
     argv: [process.execPath, fileURLToPath(new URL('./private-launch.mjs', import.meta.url)), ...argv],
     cwd: home,
     env: {

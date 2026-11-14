@@ -249,3 +249,14 @@ Host SHALL 以同一 Node/npm 和缓存预置已校验平台 tgz，再以 prefer
 #### Scenario: 无 PID 锁与安装路径进程
 - **WHEN** 成功更新的托管范围已退出，零字节或未知格式的无 PID 普通锁仍在，但完整进程枚举没有可执行路径位于本次 Hermes home 或 checkout 内的进程（只有安装根外的同名 hermes 进程也属无匹配）
 - **THEN** Host SHALL 仅对本次清理判锁 stale，并继续已获授权的残留清理；MUST NOT 以锁年龄或进程名字代替路径证据，不终止被枚举进程、不运行 Hermes 命令、不修改锁文件；Windows 路径大小写与分隔符 SHALL 归一化，home 名称前缀相似的外部目录不算内部
+
+### Requirement: OMP 成功更新后的原生备份回收
+Host SHALL 仅在托管范围退出、OMP 更新成功且既有版本探针严格等于目标版本后，回收已知 Windows OMP 安装目录内匹配 `<入口 basename>.<数字>.<数字>.<数字>.bak` 的普通单链接文件；MUST 保留当前入口、链接/junction、硬链接和其他名称，不扩展无证据的 POSIX 规则。
+
+#### Scenario: 已核验成功与精确备份
+- **WHEN** 当前 OMP 入口已识别且更新后探针版本等于目标
+- **THEN** 删除同目录精确匹配的备份，保留当前入口并计入既有中文清理摘要
+
+#### Scenario: 失败或版本未核验
+- **WHEN** 更新失败、退出未确认、当前入口未知或版本不等于目标
+- **THEN** 保留全部 OMP 原生备份，不改变原操作结果

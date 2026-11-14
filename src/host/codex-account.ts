@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { accountEmail, type AccountIdentity } from './account-identity.ts'
@@ -38,7 +39,7 @@ export async function readCodexAccount(
 ): Promise<AccountIdentity | undefined> {
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(4_000)])
-  const child = backend.spawn({
+  const child = await spawnProbe(backend, {
     argv: [executable, 'app-server', '--stdio'],
     cwd,
     stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },

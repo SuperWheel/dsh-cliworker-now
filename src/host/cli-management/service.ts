@@ -443,7 +443,7 @@ export class CliManagementService {
         }
         const plan = await this.planCliOperation(cli, 'update', preparation, selected)
         if (plan.token !== token) throw new CliOperationError('PLAN_EXPIRED', '安装路径、版本、下载源或目标已变化，请重新检查更新')
-        await registerNativeResidueCleanup({ ...this.deps, cli, success: () => op.phase === 'succeeded' })
+        await registerNativeResidueCleanup({ ...this.deps, cli, targetVersion: plan.targetVersion, success: () => op.phase === 'succeeded' })
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
         let npmRuntime: [string, string] | undefined
         if (plan.method === 'npm') {

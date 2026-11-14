@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { open } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -107,7 +108,7 @@ async function run(input: GrokRenewalInput) {
   // Once Grok starts rotating, UI cancellation must not cut it between the IdP
   // reply and its locked write: only this bounded deadline stops the command.
   const deadline = AbortSignal.timeout(input.timeoutMs ?? 30_000)
-  const child = input.backend.spawn({
+  const child = await spawnProbe(input.backend, {
     argv: [process.execPath, fileURLToPath(new URL('./private-launch.mjs', import.meta.url)), input.executable, 'models'],
     cwd: input.cwd,
     env: { ...input.env, GROK_AUTH_PATH: grokNativeAuthPath(input.home), ELECTRON_RUN_AS_NODE: '1' },

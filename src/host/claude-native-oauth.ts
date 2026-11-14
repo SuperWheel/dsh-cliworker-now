@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { EFFORTS, type ModelChoice } from '../shared/types.ts'
 import { accountEmail } from './account-identity.ts'
@@ -184,7 +185,7 @@ export async function discoverClaudeNativeOAuth(
   }
   if (!record(overlay)) throw new ClaudeNativeOAuthError()
   const control = AbortSignal.any([signal, AbortSignal.timeout(15_000)])
-  const child = backend.spawn({
+  const child = await spawnProbe(backend, {
     argv: [
       executable,
       '--settings',

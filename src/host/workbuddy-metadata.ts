@@ -1,3 +1,4 @@
+import { prepareProbeTemporaryEnvironment } from './temporary-tree.mjs'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { probeWorkBuddyMetadata } from './native-workbuddy.mjs'
@@ -31,12 +32,16 @@ export async function readWorkBuddyMetadata(
   const read = async () => {
     const install = await resolveWorkBuddyInstallation(cli, { manualPath: executable })
     signal.throwIfAborted()
+    const temporary = await prepareProbeTemporaryEnvironment(process.env)
+    let cleanupConfirmed = true
     const result = await probeWorkBuddyMetadata({ cli, argv: [install.runtime, install.entry], project,
-      env: process.env, signal, timeoutMs: 20_000 }).catch(error => {
-        if (error instanceof Error && error.message === 'Native process exit is unconfirmed')
+      env: temporary.env, signal, timeoutMs: 20_000 }).catch(error => {
+        if (error instanceof Error && error.message === 'Native process exit is unconfirmed') {
+          cleanupConfirmed = false
           throw new ProcessCleanupUnconfirmedError({ cause: error })
+        }
         throw error
-      })
+      }).finally(async () => { if (cleanupConfirmed) await temporary.release() })
     signal.throwIfAborted()
     // This is an installation/site binding, not a claim of principal identity.
     // WorkBuddy exposes no verified account ID; each admission probes login afresh.

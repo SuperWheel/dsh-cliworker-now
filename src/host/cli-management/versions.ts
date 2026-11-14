@@ -1,3 +1,4 @@
+import { spawnProbe } from '../probe-process.ts'
 import { isMusl, qoderPlatform, selectQoderFile } from './artifacts/platform.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
@@ -65,7 +66,7 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
   try {
     const helper = ['./private-launch.mjs', '../private-launch.mjs'].map(p => fileURLToPath(new URL(p, import.meta.url))).find(existsSync)
     if (background && !helper) throw new Error('Background metadata launcher missing')
-    child = backend.spawn({ argv: background ? [process.execPath, helper!, '--cliworker-low-priority', ...argv] : argv, cwd: homedir(), env: background ? { ...env, ELECTRON_RUN_AS_NODE: '1' } : env, signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
+    child = await spawnProbe(backend, { argv: background ? [process.execPath, helper!, '--cliworker-low-priority', ...argv] : argv, cwd: homedir(), env: background ? { ...env, ELECTRON_RUN_AS_NODE: '1' } : env, signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
     void child.done.catch(() => undefined)
     control.addEventListener('abort', abort, { once: true })
     if (control.aborted) abort()

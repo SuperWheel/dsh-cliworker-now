@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import type { CliMaintenance } from './cli-management/maintenance.ts'
 import { StringDecoder } from 'node:string_decoder'
 import type {
@@ -201,7 +202,7 @@ export async function discoverModels(
   const executable = await backend.resolveExecutable(config.executable)
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-  const process = backend.spawn({
+  const process = await spawnProbe(backend, {
     argv: [executable, 'models'],
     cwd,
     env: agyBackgroundEnvironment('antigravity'),

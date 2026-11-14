@@ -1,7 +1,7 @@
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { pidAlive } from './hermes-observation.ts'
 import { safeObservation } from './artifacts/observations.ts'
-import { join, resolve, sep, posix, win32 } from 'node:path'
+import { basename, dirname, join, resolve, sep, posix, win32 } from 'node:path'
 import { physicalFs } from './physical-fs.ts'
 import { captureReadOnly, currentVersion, validVersion } from './versions.ts'
 import { identifyInstallation, type InstallationIdentity } from './identity.ts'
@@ -35,7 +35,10 @@ export async function nativeResidueCandidates(cli: ActiveCliId, location: Residu
       result.push({ path, root: boundary, label, version: match[1], backup })
     }
   }
-  if (cli === 'grok') {
+  if (cli === 'omp' && win) {
+    const root = join(home,'AppData/Local/omp')
+    await scan(root,root,/^omp\.exe\.\d+\.\d+\.\d+\.bak$/i,'OMP 原生备份',true,'file')
+  } else if (cli === 'grok') {
     const root = join(home, '.grok')
     await scan(root, join(root,'downloads'), new RegExp(`^grok(?:-(${version}))?(?:-(?:macos|windows|linux)-(?:aarch64|x86_64))?(?:\\.exe)?$`), 'Grok 下载副本')
     await scan(root,join(root,'bin'),/^grok(?:\.exe)?\.old$/, 'Grok 备份',true,'file')
@@ -54,7 +57,32 @@ export async function nativeResidueCandidates(cli: ActiveCliId, location: Residu
   }
   return result
 }
-export interface NativeCleanupProof { identity: InstallationIdentity; version: string; runnable: boolean }
+export interface NativeCleanupProof { identity: InstallationIdentity; version: string; runnable: boolean; targetVersion?: string }
+
+/** Only the observed Windows self-updater naming is evidenced; no POSIX pattern is assumed. */
+async function ompCurrentEntry(identity: InstallationIdentity, location: ResidueLocation): Promise<string | undefined> {
+  if ((location.platform ?? process.platform) !== 'win32' || identity.source !== 'self-update') return
+  const home = location.home ?? homedir(), current = identity.fingerprint.realpath
+  const expected = join(home,'AppData/Local/omp/omp.exe')
+  if (current.toLowerCase() !== expected.toLowerCase() || !await cleanupPathSafe(home,current)) return
+  const stat = await info(current)
+  return stat?.isFile() && !stat.isSymbolicLink() && stat.nlink === 1 ? current : undefined
+}
+async function cleanOmpResidues(success: boolean, proof: NativeCleanupProof | undefined, location: ResidueLocation) {
+  if (!success) return
+  if (!proof?.runnable || !validVersion(proof.targetVersion) || proof.version !== proof.targetVersion) {
+    cleanupNote('OMP 目标版本未核验，保留原生备份'); return
+  }
+  const current = await ompCurrentEntry(proof.identity,location)
+  if (!current) { cleanupNote('OMP 当前入口未核验，保留原生备份'); return }
+  const root = dirname(current), pattern = new RegExp(`^${escape(basename(current))}\\.\\d+\\.\\d+\\.\\d+\\.bak$`, 'i')
+  for (const name of await entries(root)) {
+    if (!pattern.test(name)) continue
+    const path = join(root,name), stat = await info(path)
+    if (!stat?.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || !await cleanupPathSafe(root,path)) continue
+    await removeUpdateTemporary(path,'OMP 原生备份')
+  }
+}
 /** Current records must match the actual fresh probe; the manifest alone is not proof. */
 async function currentNativePath(cli: ActiveCliId, proof: NativeCleanupProof, location: ResidueLocation): Promise<string | undefined> {
   if (!proof.runnable || !validVersion(proof.version)) return
@@ -86,6 +114,7 @@ async function currentNativePath(cli: ActiveCliId, proof: NativeCleanupProof, lo
   return current
 }
 export async function cleanNativeResidues(cli: ActiveCliId, before: Set<string>, success: boolean, proof: NativeCleanupProof | undefined, location: ResidueLocation = {}) {
+  if (cli === 'omp') return cleanOmpResidues(success,proof,location)
   if (cli === 'hermes') return // Hermes requires the update receipt and post-update verification, never a command probe.
   if (!proof) { cleanupNote('当前入口未核验，保留原生副本'); return }
   const current = await currentNativePath(cli,proof,location)
@@ -126,28 +155,30 @@ export async function cleanNpmResidues(options: { prefix: string; packageName: s
     await scan(join(root,win ? '' : 'bin'),new RegExp(`^\\.${escape(bin)}(?:\\.cmd|\\.ps1)?-[A-Za-z0-9]{8}$`),false)
 }
 
-async function currentIdentityInKnownRoot(cli: ActiveCliId, identity: InstallationIdentity) {
-  const home = homedir(), path = identity.fingerprint.realpath
+async function currentIdentityInKnownRoot(cli: ActiveCliId, identity: InstallationIdentity, location: ResidueLocation = {}) {
+  if (cli === 'omp') return !!await ompCurrentEntry(identity,location)
+  const home = location.home ?? homedir(), path = identity.fingerprint.realpath
   const roots = cli === 'grok' ? [join(home,'.grok')] : cli === 'qoder' ? [join(home,'.qoder')] : cli === 'qodercn' ? [join(home,'.qoder-cn')] : cli === 'claude' ? [join(home,'.local/share/claude'),join(home,'.local/bin/claude.exe')] : cli === 'traecn' ? [join(home,'.local/share/traecli'),join(home,'AppData/Local/TraeCLI')] : [join(home,'.hermes'),join(home,'AppData/Local/hermes')]
   return roots.some(root => path === root || path.startsWith(root + sep))
 }
-export async function registerNativeResidueCleanup(options: { cli: ActiveCliId; backend: ProcessBackend; config: RuntimeConfig; success(): boolean; identify?: typeof identifyInstallation; version?: typeof currentVersion }) {
-  if (!['grok','qoder','qodercn','claude','traecn'].includes(options.cli)) return
+export async function registerNativeResidueCleanup(options: { cli: ActiveCliId; backend: ProcessBackend; config: RuntimeConfig; success(): boolean; targetVersion?: string; identify?: typeof identifyInstallation; version?: typeof currentVersion; location?: ResidueLocation }) {
+  if (!['omp','grok','qoder','qodercn','claude','traecn'].includes(options.cli)) return
   let before: Set<string>
-  try { before = new Set((await nativeResidueCandidates(options.cli)).map(item => item.path)) } catch { return }
+  try { before = new Set((await nativeResidueCandidates(options.cli,options.location)).map(item => item.path)) } catch { return }
   afterUpdateCleanup(async () => {
-    if (!(await nativeResidueCandidates(options.cli)).length) return
+    if (options.cli === 'omp' && !options.success()) return
+    if (!(await nativeResidueCandidates(options.cli,options.location)).length) return
     const signal = AbortSignal.timeout(15_000)
     let proof: NativeCleanupProof | undefined
     try {
       const identity = await (options.identify ?? identifyInstallation)(options.cli,options.backend,options.config,signal)
-      const known = identity && await currentIdentityInKnownRoot(options.cli, identity)
+      const known = identity && await currentIdentityInKnownRoot(options.cli, identity, options.location)
       if (known && identity && identity.source !== 'npm') {
         const value = await (options.version ?? currentVersion)(options.cli,{...identity,manifestVersion:undefined},options.backend,options.config,signal,false,5000)
-        if (value) proof = {identity,version:value,runnable:true}
+        if (value) proof = {identity,version:value,runnable:true,targetVersion:options.targetVersion}
       }
     } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) throw error }
-    await cleanNativeResidues(options.cli,before,options.success(),proof)
+    await cleanNativeResidues(options.cli,before,options.success(),proof,options.location)
   })
 }
 

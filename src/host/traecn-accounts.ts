@@ -1,3 +1,4 @@
+import { spawnProbe } from './probe-process.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
 import { homedir } from 'node:os'
@@ -23,7 +24,7 @@ export async function captureTraecnMetadata(backend: ProcessBackend, config: Run
   signal: AbortSignal, timeoutMs: number): Promise<{ output: string; exitCode: number | null }> {
   const control = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
   control.throwIfAborted()
-  const child = backend.spawn({ argv, cwd, env: traecnEnvironment(), signal: control, graceMs: config.graceMs,
+  const child = await spawnProbe(backend, { argv, cwd, env: traecnEnvironment(), signal: control, graceMs: config.graceMs,
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
   void child.done.catch(() => undefined)
   let bytes = 0, finished = false

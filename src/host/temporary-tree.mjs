@@ -1,6 +1,6 @@
-import { chmod, lstat, mkdir, readdir, realpath, rm, rmdir } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readdir, realpath, rm, rmdir } from 'node:fs/promises'
 import { mkdirSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export const TEMPORARY_TREE_MAX_AGE_MS = 60 * 60 * 1000
@@ -20,6 +20,19 @@ export async function removeTemporaryTree(path, remove = rm) {
 // Unconfirmed cleanup retains it until that Host exits; no credentials are read.
 export function markTemporaryTreeActive(path) {
   mkdirSync(join(path, `.cliworker-owner-${process.pid}`), { mode: 0o700 })
+}
+
+/** Short-lived CLI queries only; the caller must confirm its whole range exited before release. */
+export async function prepareProbeTemporaryEnvironment(env, platform = process.platform) {
+  if (platform !== 'win32') return { env, release: async () => {} }
+  const root = await mkdtemp(join(tmpdir(), 'cliworker-probe-'))
+  try {
+    await chmod(root, 0o700)
+    markTemporaryTreeActive(root)
+    // Windows environment keys are case-insensitive. Replace only TMP/TEMP variants.
+    const rest = Object.fromEntries(Object.entries(env ?? {}).filter(([key]) => !/^(tmp|temp)$/i.test(key)))
+    return { env: { ...rest, TMP: root, TEMP: root }, release: async () => { await removeTemporaryTree(root) } }
+  } catch (error) { await removeTemporaryTree(root); throw error }
 }
 
 export async function temporaryTreeHasLiveOwner(path) {

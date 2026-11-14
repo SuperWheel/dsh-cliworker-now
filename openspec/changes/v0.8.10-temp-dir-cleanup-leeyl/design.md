@@ -27,3 +27,9 @@
 ## Open Questions
 
 Windows native addon 实际复用、磁盘占用稳定及 Defender 锁释放尚待用户复验；Pi 没有已确认的同等变量，不注入。
+
+### Windows probe TEMP（2026-11-15）
+
+用户 Windows 859bcee 实机发现 235 个 `.<16 hex>-00000000.dll` 共约 256 MB；official-watch.ts 已确认 Bun DLL 落入官方更新私有 TEMP 后随范围退出回收。新增短时进程公共启动辅助器，为每次 Windows 启动创建 0700 的 `cliworker-probe-`，TMP/TEMP 指向该目录，其他环境（含代理）原样传递。captureCatalogMetadata/captureReadOnly 及直接托管的账号、目录、帮助查询统一使用，避免仅修 capture 而遗漏 Qoder/Codex 协议查询。返回句柄沿用宿主生命周期，只在 waitForExit 返回 true 后尽力删除；false/抛错保留 owner marker，创建或 spawn 失败也清理。WorkBuddy 的进程内 native IO 探测复用同一临时环境工厂，在 stopChildren 确认后释放。正式 Worker 与官方更新执行器不接入；已有隔离子助手继续使用其自有受控 TEMP。
+
+新前缀纳入一小时/owner uid/活 Host 标记的既有清扫。共享 Temp 内旧 DLL 没有插件所有权，绝不按 DLL 文件名扫描；用户可在确认无占用后自行手动清理历史文件。不引入后台等待器或环境代理重写。

@@ -241,6 +241,7 @@ npm cache add 与 install 显式使用同一下载目录内的 --cache，保持�
 
 | CLI | 规则与已知路径 | 当前证据与保留边界 |
 | --- | --- | --- |
+| OMP | Windows `~/AppData/Local/omp/<entry>.<digits>.<digits>.<digits>.bak` | 仅已知自更新入口、最终成功且新鲜探针严格等于目标；普通单链接文件，失败全部保留；POSIX 命名无证据不扩展 |
 | Grok | `~/.grok/downloads/grok-<version或平台>`、`bin/grok[.exe].old` | 仓库 native 放置布局及用户磁盘证据；当前入口位于该根且版本探针成功才删。失败不删 `.old` |
 | Qoder / Qoder CN | `~/.qoder[或.qoder-cn]/bin/qodercli[或qoderclicn]/<bin>-<version>[.exe]` | `version.txt` 与可运行探针一致，保留当前版本；仅普通文件 |
 | Qoder natives | 系统临时根下 `qodercli-natives-v<version>-<当前用户名>` | 用户提供的 Windows 路径证据；必须有已核验 Qoder 当前版本，仅真实目录，不推断 CN 前缀 |
@@ -261,3 +262,7 @@ facts.json 必须是有界普通文件、packages 为非空对象、每个记录
 ### Hermes lock process evidence（2026-11-15）
 
 用户决定覆盖前述无 PID/零字节锁直接跳过的规则。托管更新范围退出后，无 PID 的可读普通锁文件改用现有 captureReadOnly 托管枚举：Windows CIM ExecutablePath；macOS ps 的完整 comm；Linux 同一 ps PID 快照加 /proc/<pid>/exe。只核对可执行路径位于本次 Hermes home 或 checkout 的进程（含 bin、installs venv、tools runtime）。完整枚举无匹配才对本次清理视为 stale，不删除/改写锁；同名但根外不算占用，路径不能只做字符串前缀。不可读 executable、未知输出、枚举失败均 unknown；PID-bearing 锁仍复用 pidAlive 三态，符号链接/不安全锁不走 fallback。删除每项前重新检查，不按年龄，不运行 Hermes，不终止目标进程，不改代理环境。
+
+### OMP native backup follow-up（2026-11-15）
+
+Windows 859bcee 实机官方 OMP 更新后留下 `omp.exe.1794693071300.27728.0.bak`（251502592 B）。仓库未包含 OMP 自更新备份命名源码，故仅采用该三段数字后缀；不猜测 POSIX 格式。安装身份必须为已知 Windows OMP 自更新入口，成功后的既有版本探针严格等于本次目标，才清理同安装目录、入口 basename 匹配（Windows 忽略大小写）的普通单链接备份。当前入口、链接/junction、硬链接、外部/不匹配名称与失败操作全部保留；复用操作最终化与中文字节摘要，不改通道记忆或 Hermes 规则。

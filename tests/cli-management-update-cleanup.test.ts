@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, lstat, readdir, realpath, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, lstat, readdir, realpath, rm, symlink, link } from 'node:fs/promises'
 import { dirname, join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
-import { nativeResidueCandidates, cleanNativeResidues, cleanNpmResidues, npmPrefixIdle, type NativeCleanupProof } from '../src/host/cli-management/update-residue.ts'
+import { registerNativeResidueCleanup, nativeResidueCandidates, cleanNativeResidues, cleanNpmResidues, npmPrefixIdle, type NativeCleanupProof } from '../src/host/cli-management/update-residue.ts'
 import { withUpdateCleanup, trackUpdateTemporary, updateCleanupIo, afterUpdateCleanup, finishUpdateCleanup } from '../src/host/cli-management/update-cleanup.ts'
 import { ProcessCleanupUnconfirmedError, DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 import type { ActiveCliId } from '../src/shared/types.ts'
@@ -151,4 +151,59 @@ it.each(['darwin','win32'] as const)('npm %s process inventory fails closed and 
   expect(denied.waitForExit).toHaveBeenCalled()
   spawn.mockReturnValue(handle('',0,false))
   await expect(npmPrefixIdle(backend,DEFAULT_CONFIG,platform)).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+})
+
+
+describe('OMP observed Windows backup naming (synthetic)', () => {
+  async function omp() {
+    const home = await root(), current = await put(join(home,'AppData/Local/omp/omp.EXE'))
+    const backup = await put(join(dirname(current),'omp.exe.1794693071300.27728.0.bak'))
+    const proof: NativeCleanupProof = {runnable:true,version:'18.20.2',targetVersion:'18.20.2',identity:{executable:current,fingerprint:{realpath:current,size:4,mtimeMs:1},source:'self-update'}}
+    return {home,current,backup,proof,location:{home,platform:'win32' as const}}
+  }
+  it('verified success removes only regular single-link exact backups and reports bytes', async () => {
+    const f = await omp(), directory = dirname(f.current), output = vi.fn()
+    const foreign = await put(join(directory,'other.exe.1.2.3.bak')), malformed = await put(join(directory,'omp.exe.1.2.bak'))
+    const linked = join(directory,'omp.exe.1.2.3.bak'); await symlink(f.current,linked)
+    const hard = join(directory,'omp.exe.2.3.4.bak'); await link(foreign,hard)
+    const folder = join(directory,'omp.exe.3.4.5.bak'); await mkdir(folder)
+    await withUpdateCleanup(output,()=>cleanNativeResidues('omp',new Set(),true,f.proof,f.location))
+    expect(await exists(f.backup)).toBe(false)
+    for (const path of [f.current,foreign,malformed,linked,hard,folder]) expect(await exists(path)).toBe(true)
+    expect(output.mock.calls[0]![0]).toContain('OMP 原生备份 1 项，释放 4 B')
+  })
+  it.each(['failed','not-runnable','wrong-version','no-target','no-proof','unknown-source','posix'] as const)('%s keeps all OMP files', async condition => {
+    const f = await omp()
+    if (condition === 'not-runnable') f.proof.runnable = false
+    if (condition === 'wrong-version') f.proof.version = '18.20.0'
+    if (condition === 'no-target') delete f.proof.targetVersion
+    if (condition === 'unknown-source') f.proof.identity.source = 'unknown'
+    await cleanNativeResidues('omp',new Set(),condition !== 'failed',condition === 'no-proof' ? undefined : f.proof,{...f.location,platform:condition === 'posix' ? 'darwin' : 'win32'})
+    expect(await exists(f.backup)).toBe(true); expect(await exists(f.current)).toBe(true)
+  })
+  it.each(['success','failure','mismatch','unconfirmed'] as const)('operation finalizer %s uses fresh version evidence before OMP removal', async outcome => {
+    const f = await omp(), output = vi.fn(), version = vi.fn(async () => {
+      if (outcome === 'unconfirmed') throw new ProcessCleanupUnconfirmedError()
+      return outcome === 'mismatch' ? '18.20.0' : '18.20.2'
+    })
+    await withUpdateCleanup(output,async () => {
+      await registerNativeResidueCleanup({cli:'omp',backend:{} as ProcessBackend,config:DEFAULT_CONFIG,
+        success:()=>outcome !== 'failure',targetVersion:'18.20.2',location:f.location,
+        identify:async()=>({...f.proof.identity,manifestVersion:'18.20.2'}),version})
+      expect(await exists(f.backup)).toBe(true)
+      expect(version).not.toHaveBeenCalled()
+    })
+    expect(await exists(f.backup)).toBe(outcome !== 'success')
+    expect(await exists(f.current)).toBe(true)
+    if (outcome === 'failure') expect(version).not.toHaveBeenCalled()
+    else expect(version.mock.calls[0]?.[1]).toMatchObject({manifestVersion:undefined})
+    if (outcome === 'unconfirmed') expect(output.mock.calls[0]![0]).toContain('进程退出未确认')
+  })
+  it('an install directory junction is not followed', async () => {
+    const f = await omp(), directory = dirname(f.current), external = join(f.home,'external')
+    const {rename} = await import('node:fs/promises')
+    await rename(directory,external); await symlink(external,directory,process.platform === 'win32' ? 'junction' : 'dir')
+    await cleanNativeResidues('omp',new Set(),true,f.proof,f.location)
+    expect(await exists(join(external,basename(f.backup)))).toBe(true)
+  })
 })
