@@ -103,10 +103,12 @@ function claudeTurn(){
  if(scenario.startsWith('plan-exit')){
   // 模拟 Claude Code 规划模式收尾：ExitPlanMode 带完整方案，并要求用户交互（2026-11-11 用户日志的帧形状）。
   const plan=scenario==='plan-exit-empty'?' ':'模拟方案：\\n1. 读取配置\\n2. 修改解析器';
-  send({type:'assistant',session_id:id,message:{id:'planmsg',content:[{type:'text',text:'方案已整理好。'}]}});
+  send({type:'assistant',session_id:id,message:{...(scenario.startsWith('plan-exit-haiku')?{model:'claude-sonnet-synthetic'}:{}),id:'planmsg',content:[{type:'text',text:'方案已整理好。'}]}});
   // 模拟 Claude Code 2.1.311 真实帧（2026-11-14 Mac Desktop 实测）：工具入参为空，方案由 CLI 从规划文件注入到授权请求，中断后进程退出码 1。
   const real=scenario.startsWith('plan-exit-real');
-  send({type:'assistant',session_id:id,message:{id:'plantool',content:[{type:'tool_use',id:'plan-tool',name:'ExitPlanMode',input:real?{}:{plan}}]}});
+  // 模拟 Haiku 规划回合由 Sonnet 回复（2026-11-14 Mac 实测 Worker 4a976b54 的帧形状）。
+  const haiku=scenario.startsWith('plan-exit-haiku')?{model:'claude-sonnet-synthetic'}:{};
+  send({type:'assistant',session_id:id,message:{...haiku,id:'plantool',content:[{type:'tool_use',id:'plan-tool',name:'ExitPlanMode',input:real?{}:{plan}}]}});
   send({type:'control_request',request_id:'synthetic-plan',request:{subtype:'can_use_tool',tool_name:'ExitPlanMode',input:real?{plan,planFilePath:'/synthetic/plans/plan.md'}:{plan},...(scenario==='plan-exit-no-id'?{}:{tool_use_id:'plan-tool'}),requires_user_interaction:true}});return;
  }
  if(scenario==='deny'){send({type:'control_request',request_id:'synthetic-permission',request:{subtype:'can_use_tool',tool_name:'Bash',input:{command:'synthetic'}}});return;}
@@ -237,6 +239,7 @@ lines.on('line',line=>{
    const selected=process.argv[process.argv.indexOf('--model')+1];
    const models=['claude-proxy','claude-unknown-alias'].includes(scenario)?[{value:'unrelated-alias',resolvedModel:'unrelated-model'}]:[{value:selected,resolvedModel:scenario==='claude-alias'?'synthetic-resolved-model':selected,supportsEffort:true,supportedEffortLevels:scenario==='unsupported-effort'?['high']:['low']}];
    if(scenario==='ambiguous-alias')models.push({value:selected,resolvedModel:'other-model'});
+   if(scenario==='plan-exit-haiku')models.push({value:'sonnet',resolvedModel:'claude-sonnet-synthetic'});
    const actual=scenario==='level-missing'?undefined:scenario==='level-wide'?'bypassPermissions':scenario.startsWith('level-fallback')&&permissionMode==='auto'?'acceptEdits':scenario.startsWith('level-default')&&['auto','manual'].includes(permissionMode)?'default':permissionMode;
    if(scenario.endsWith('-hook'))send({type:'system',subtype:'hook_response',session_id:id});
    send({type:'control_response',response:{subtype:scenario==='init-rejected'||scenario.startsWith('level-rejected')&&permissionMode==='auto'?'error':'success',request_id:value.request_id,response:{models,current_permission_mode:actual}}});
@@ -282,6 +285,7 @@ function setup(cli: 'codex' | 'claude' | 'antigravity', scenario = 'success', re
   if (cli === 'codex') config.argv = [executable, 'exec', ...(resume ? ['resume', config.conversationId] : []), '--json', '--skip-git-repo-check', '--model', 'synthetic-model', '-c', 'sandbox_mode="workspace-write"', '-c', 'approval_policy="never"', task]
   else if (cli === 'claude') {
     if (['claude-proxy', 'claude-unknown-alias'].includes(scenario)) config.preference.effort = 'default'
+    if (scenario.startsWith('plan-exit-haiku')) config.preference.model = 'haiku'
     if (scenario === 'claude-proxy') config.claudeModelCandidates = [{ value: 'synthetic-model', resolvedModel: 'synthetic-resolved-model' }]
     config.argv = [executable, '--settings', join(directory, 'private-settings.json'), '--print', '--verbose', '--output-format', 'stream-json', '--model', 'synthetic-model', ...(config.preference.effort === 'default' ? [] : ['--effort', 'low']), '--permission-mode', 'acceptEdits', ...(resume ? ['--resume', config.conversationId] : []), task]
   }
@@ -945,6 +949,18 @@ describe('native primary runners (synthetic protocol processes, no real accounts
       expect(tool.event.state).toBe('COMPLETED')
       expect(tool.event.toolCall.name).toBe('ExitPlanMode')
       expect(f.frames.some((frame) => frame.event?.kind === 'diagnostic' && frame.event.text.includes('已提交规划方案'))).toBe(true)
+    })
+    it('选 Haiku 时规划回合由 Sonnet 回复：只认本进程 sonnet 映射，方案正常收尾', async () => {
+      const f = await runLevel('claude', 'plan-exit-haiku', 'workspace-write', 'plan', true)
+      expect(f.launches[0]).toContain('haiku')
+      expect(f.result).toMatchObject({ type: 'result', status: 'SUCCESS', response: plan })
+      expect(f.result.error).toBeUndefined()
+    })
+    it('Haiku 规划回合缺少唯一 sonnet 映射、或不在规划模式时，Sonnet 回复仍判模型不一致', async () => {
+      const missing = await runLevel('claude', 'plan-exit-haiku-no-sonnet', 'workspace-write', 'plan', true)
+      expect(missing.result).toMatchObject({ status: 'ERROR', error: 'Claude stream-json: 原生回复模型与明确选型不一致' })
+      const normal = await runLevel('claude', 'plan-exit-haiku', 'workspace-write', 'accept-edits', true)
+      expect(normal.result).toMatchObject({ status: 'ERROR', error: 'Claude stream-json: 原生回复模型与明确选型不一致' })
     })
     it('规划收尾后只接受原生中断对应的退出码 1，其他非零退出仍判失败', async () => {
       const f = await runLevel('claude', 'plan-exit-real-exit7', 'workspace-write', 'plan', true)

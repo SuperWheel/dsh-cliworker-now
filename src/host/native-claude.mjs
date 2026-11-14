@@ -24,7 +24,14 @@ function modelEvidence(config, initialized) {
   if (config.preference.effort !== 'default' && !rows.some((row) =>
     row.supportsEffort === true && Array.isArray(row.supportedEffortLevels) && row.supportedEffortLevels.includes(config.preference.effort)))
     throw fail('原生初始化未确认所选思考强度')
-  return new Set([selected, ...canonical])
+  const accepted = new Set([selected, ...canonical])
+  // Claude Code answers Haiku's plan-mode turns with Sonnet ("haiku in plan mode", like opusplan;
+  // 2.1.311, 2026-11-14). Accept only this process's own `sonnet` mapping, and only in plan mode.
+  if (config.mode === 'plan' && [selected, ...canonical].some((model) => /haiku/iu.test(model))) {
+    const sonnet = initialized.models.filter((row) => object(row) && row.value === 'sonnet' && string(row.resolvedModel))
+    if (sonnet.length === 1) accepted.add(sonnet[0].resolvedModel)
+  }
+  return accepted
 }
 
 /** Shown with a plan-mode result: the plan was produced, nothing was executed. */

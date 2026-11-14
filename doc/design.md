@@ -1534,4 +1534,5 @@ ZCode/WorkBuddy CN/WorkBuddy 官方现有 feed 与匿名包 HEAD 未提供第二
 - Antigravity 后台子 Agent：等待上限原从主回合开始时起算，主回合与审批耗时会占满上限，导致不发跟进就判待核实；现改为只累计跟进前的等待间隔（10 分钟），整轮仍受任务总时限约束，跟进轮请求超时取任务剩余时间。agy 子 Agent 状态只有 ALIVE／KILLED，已汇报的子 Agent 仍是 ALIVE；跟进提示改为以结果消息或产物为完成依据。用户猜测的「结果直接回到主对话」没有对应通道：agy 子 Agent 只向 agy 父会话汇报，主 Agent 是在 Worker 判待核实后自行核对了文件。
 - Claude 官方登录不认（2026-11-14 用户 Mac Desktop 实机，Claude Code 2.1.311）：插件在所有 Claude 子进程的 `--settings` env 中设置 `CLAUDE_CONFIG_DIR=~/.claude`。2.1.311 一旦设置该变量，就改用带目录哈希后缀的钥匙串条目和 `<dir>/.claude.json`；插件发起的登录写入了带后缀条目，同样参数下的 `auth status` 却读不带后缀的条目，登录窗口因此「未能确认」，设置页显示未登录、模型为空。现在不再经 settings 设置该变量，Host 自己设置时由子进程在启动时继承，与用户终端读写同一处。旧版插件登录写入带后缀条目的用户需要重新登录一次；插件不读取、不迁移钥匙串。
 - 名称识别（2026-11-14 Windows 实测发现）：「请派遣 Claude Code（CLI Worker）…」中的「（CLI Worker）」是插件入口标注，原显式匹配把「Claude Code（」当名称而判未知，注入「无法确定 CLI」后主 Agent 不派遣；现识别前去掉紧跟名称的该标注，前导名称后也接受半角／全角冒号。
+- Haiku 规划回合（2026-11-14 用户决定）：Claude Code 选 Haiku 时规划回合由 Sonnet 回答；插件只在规划模式下接受同一进程初始化返回的唯一 `sonnet` 映射，其余情况仍判模型不一致。
 - 只有模拟验证；真实 Claude Code 规划收尾、真实 agy 生图（需用户授权模型调用）与 Claude 官方真实登录（需用户亲自操作）均未验收。

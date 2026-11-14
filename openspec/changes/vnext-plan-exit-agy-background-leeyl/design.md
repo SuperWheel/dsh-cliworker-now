@@ -42,6 +42,12 @@
 - API／代理路由的私有 settings 同样去掉该值，理由相同。
 - 代价：此前经旧版插件登录、凭据写在带后缀条目里的用户，升级后会显示未登录，需要重新登录一次。插件不读取、不搬移钥匙串，保持凭据边界。
 
+### 5. Haiku 规划回合接受本进程的 Sonnet 映射
+
+- 2026-11-14 Mac 实测（Worker `4a976b54`）：选 Haiku 进入规划时，`system/init` 报 `claude-haiku-5-5`，主回复的 `message_start` 为 `claude-sonnet-5-5`，与官方「haiku in plan mode」说明一致；原实现按「原生回复模型与明确选型不一致」中止。
+- 用户决定接受这种情况。只在规划模式、且选型或其映射是 Haiku 时，把初始化 `models` 中唯一 `value: "sonnet"` 行的 `resolvedModel` 加入可接受集合；不写死模型 ID，不放宽非规划模式，`observedModel` 与保存的选择不变。
+- 备选：完全放开规划模式的回复模型校验。不采用，因为那会失去对配置错位的发现能力。
+
 ## Risks / Trade-offs
 
 - Claude Code 后续版本若改变 `ExitPlanMode` 的请求形状（例如方案不在 `input.plan`），会回到原失败判定，不会误判成功。

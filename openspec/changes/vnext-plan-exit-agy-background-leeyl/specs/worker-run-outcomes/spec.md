@@ -21,3 +21,14 @@ Claude Code 以原生规划模式运行（DSH 规划模式或 Worker 规划开�
 #### Scenario: 非规划模式或其他交互请求
 - **WHEN** 非规划模式的 Claude Code 发出 `ExitPlanMode`，或规划模式下发出其他需要用户交互的请求
 - **THEN** 插件拒绝并中断，结果仍为失败
+
+### Requirement: Claude Code 选 Haiku 时规划回合的模型映射
+Claude Code 选 Haiku 且以原生规划模式运行时，CLI 会以 Sonnet 回答规划回合（官方「haiku in plan mode」行为，类似 opusplan）。此时插件 SHALL 把同一进程初始化返回的唯一 `sonnet` 别名映射（`resolvedModel`）视为与选型一致的主回复模型。初始化未返回唯一 `sonnet` 映射、或不在规划模式时，Sonnet 回复 MUST 仍判「原生回复模型与明确选型不一致」。插件 MUST NOT 据此接受其他模型，也 MUST NOT 改写用户保存的模型选择。
+
+#### Scenario: Haiku 规划回合由 Sonnet 回复
+- **WHEN** 选 Haiku 的 Claude Code Worker 在规划模式下，初始化报告 Haiku，主回复消息的模型为本进程 `sonnet` 别名对应的模型
+- **THEN** 插件不判模型不一致，方案按规划收尾规则作为结果，终态成功
+
+#### Scenario: 缺少映射或非规划模式
+- **WHEN** 初始化未返回唯一 `sonnet` 映射，或 Worker 不在规划模式而主回复为 Sonnet
+- **THEN** 插件判「原生回复模型与明确选型不一致」并中止本轮

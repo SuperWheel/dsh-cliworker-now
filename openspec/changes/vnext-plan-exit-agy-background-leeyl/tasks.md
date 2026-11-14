@@ -25,6 +25,8 @@
 - [x] 2.5 Windows 实测发现：「请派遣 Claude Code（CLI Worker）在规划模式下…」被名称识别判为未知，插件注入「无法确定 CLI」提示，主 Agent 只返回候选列表、未派遣；`Antigravity（CLI Worker）：…` 同样判为未知（主模型未理会提示才派遣成功）
   - 原因：`routing.ts` 的显式匹配把「（CLI」前的「Claude Code（」当作名称；名称后接全角冒号也不被前导匹配接受
   - 修复：识别前去掉紧跟名称的「（CLI Worker）／(CLI Worker Now)」插件入口标注；前导名称后允许 `:`／`：`
+- [x] 2.6 用户 2026-11-14 决定接受 Haiku＋规划模式改用 Sonnet：`native-claude.mjs` 的 `modelEvidence` 在规划模式且选型为 Haiku 时，把初始化返回的唯一 `sonnet` 映射加入可接受的主回复模型
+  - 非规划模式、缺少唯一 `sonnet` 映射时仍判「原生回复模型与明确选型不一致」；不写死模型 ID，不改保存的选择
 
 ## 3. 模拟回归测试 〔测试｜2h｜前置 2〕
 - [x] 3.1 `tests/native-primary-runners.test.ts` 新增「模拟 Claude Code 规划模式以 ExitPlanMode 收尾」7 项
@@ -41,6 +43,8 @@
   - `corepack pnpm vitest run tests/native-primary-runners.test.ts`：165 项通过；连同 `native-transport*` 共 188 项通过（加退出码 7 用例前）
 - [x] 3.4 `tests/routing.test.ts` 新增 4 项名称识别：`Claude Code（CLI Worker）`、`Antigravity（CLI Worker）：`、`Codex (CLI Worker Now)`、`agy：`
   - 修复前本机复现 4 种写法均为 `{"status":"unknown"}`；修复后 `corepack pnpm vitest run` 识别相关 7 个文件 176 项通过，`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）
+- [x] 3.5 `tests/native-primary-runners.test.ts` 新增 Haiku 规划模拟 2 项：有唯一 `sonnet` 映射时 SUCCESS、正文为方案；缺映射或非规划模式仍判模型不一致
+  - 撤掉源码修复后「Haiku 规划回合由 Sonnet 回复」用例失败，恢复后通过；`native-primary-runners` 167 项通过；`tests/*claude*` 与 `tests/native-*` 共 52 个文件 1178 项通过、3 项跳过；`corepack pnpm typecheck` 通过
 
 ## 4. 自动检查 〔测试｜1h｜前置 3〕
 - [x] 4.1 `corepack pnpm typecheck`
@@ -103,4 +107,4 @@
 
 - 非规划模式下 Claude Code 自行进入规划后的 `ExitPlanMode`，仍按不支持的交互判失败；是否改为转交 DSH 审批（批准即开始执行），待用户决定。
 - agy stream 后备路径（规划模式、旧版）是否同样会截断后台子 Agent，仍未覆盖。
-- 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。需要把 Haiku＋规划模式的这一替换列为可接受映射，待用户确认后另行修复。
+- 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。用户同日决定接受，已按 2.6／3.5 修复；真实 Haiku 规划派遣尚未复测（需正式构建并重启 Desktop）。
