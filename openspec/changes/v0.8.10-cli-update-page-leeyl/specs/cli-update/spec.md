@@ -377,3 +377,15 @@ Host SHALL 为 npm 主 tarball 提供官方 registry 与 npmmirror 的多源列�
 #### Scenario: 操作启动后修改下载源
 - **WHEN** 操作已启动，用户在异步准备期间从 custom 改为官方源或反向修改
 - **THEN** 当前操作 SHALL 使用启动时锁定的 registry 与自动换源策略，修改仅影响下一次操作
+
+
+### Requirement: 桌面首次安装来源与版本复核
+macOS 桌面首次安装 SHALL 复用官方桌面发布读取器及共享发布请求预算；URL、摘要、应用名、包内入口和开发者 Team ID MUST 来自 Host 核实的来源。ZIP SHALL 在私有目录解包，DMG SHALL 只读挂载；签名与 Gatekeeper 核对通过后才复制。应用版本 MUST 与计划目标一致才写入原 CLI 路径记录。Windows 首次安装的发布者与实际落点未核实时 SHALL 仅提供官方说明。
+
+#### Scenario: 官方摘要与当前桌面包不一致
+- **WHEN** 桌面包两次完整下载均与官方摘要不符
+- **THEN** Host SHALL 报 INTEGRITY_MISMATCH、删除片段，不执行解包或安装、不写路径，MUST NOT 用本机实际摘要替换官方摘要
+
+#### Scenario: 解包或版本复核失败
+- **WHEN** ZIP 解包、签名、复制或目标应用版本复核失败
+- **THEN** Host SHALL 保留旧路径记录，清理已确认退出的私有暂存；进程范围清理无法确认时保留隔离，不提前删除其使用中的解包目录

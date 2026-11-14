@@ -21,6 +21,15 @@ function fixture() {
   cleanup.push(async () => { controller.abort(); await management.close(); rmSync(root, { recursive: true, force: true }) })
   return { root, management, service, identify, spawn, status, control: controller.signal }
 }
+it('模拟：Agent 工具清单只开放 Worker 操作，不投影任何 CLI 安装、更新或设置 Remote', () => {
+  const tools: { name: string }[] = []
+  const receiver = { ctx: { effect: (setup: () => unknown) => setup(), tools: { register: (tool: { name: string }) => { tools.push(tool); return () => {} } } } }
+  ;(CliWorkerService.prototype as any).registerTools.call(receiver)
+  expect(tools.map(tool => tool.name)).toEqual([
+    'cliworker_resolve', 'cliworker_start', 'cliworker_status', 'cliworker_followup',
+    'cliworker_stop', 'cliworker_merge', 'cliworker_discard',
+  ])
+})
 it('snapshot and watch validate the parent and never run discovery', async () => {
   const f = fixture(); const snapshot = JSON.parse(await f.service.cliUpdateSnapshot('parent', f.control))
   expect(snapshot.entries).toHaveLength(17)

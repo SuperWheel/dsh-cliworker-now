@@ -63,3 +63,28 @@ it('模拟：不存在的目标目录在父目录可写时可用', async () => {
   const directory = root()
   expect((await checkInstallDirectory('zcode', join(directory, 'new'), control())).problem).toBeUndefined()
 })
+it.each(['success', 'signature', 'extract', 'occupied'] as const)('模拟：官方 zip 首次安装 %s；不挂载，签名失败不复制，清理私有目录', async mode => {
+  const directory = root(), target = join(directory, 'target'), zip = { ...source, archive: 'zip' as const }
+  if (mode === 'occupied') mkdirSync(join(target, source.appName), { recursive: true })
+  const run = vi.fn(async (argv: string[]) => {
+    if (argv[1] === '-x') {
+      mkdirSync(join(argv[4]!, source.appName))
+      if (mode === 'extract') throw new Error('模拟解包失败')
+    } else if (argv[0] === '/usr/bin/codesign' && mode === 'signature') throw new Error('模拟签名失败')
+    else if (argv[0] === '/usr/bin/ditto') mkdirSync(argv[2]!)
+  })
+  const task = installDesktop({ source: zip, root: directory, directory: target, file: '/模拟/package.zip', platform: 'darwin', signal: control(), run, awaiting: vi.fn() })
+  if (mode === 'success') await expect(task).resolves.toBe(join(target, source.appName))
+  else await expect(task).rejects.toThrow()
+  expect(run.mock.calls.some(([argv]) => argv[0] === '/usr/bin/hdiutil')).toBe(false)
+  expect(readdirSync(join(directory, 'cli-management/mounts'))).toEqual([])
+  if (mode === 'signature' || mode === 'extract') expect(run.mock.calls.filter(([argv]) => argv[0] === '/usr/bin/ditto')).toHaveLength(1)
+  if (mode === 'success' || mode === 'occupied') expect(readdirSync(target)).toEqual([source.appName])
+})
+it('模拟：ZIP 解包进程退出未确认时保留隔离目录，不删仍可能使用的工件', async () => {
+  const directory = root(), isolation = new ProcessCleanupUnconfirmedError()
+  await expect(installDesktop({ source: { ...source, archive: 'zip' }, root: directory, directory: join(directory, 'target'), file: '/模拟/package.zip', platform: 'darwin', signal: control(), awaiting: vi.fn(), run: async argv => {
+    if (argv[1] === '-x') { mkdirSync(join(argv[4]!, source.appName)); throw isolation }
+  } })).rejects.toBe(isolation)
+  expect(readdirSync(join(directory, 'cli-management/mounts'))).toHaveLength(1)
+})

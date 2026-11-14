@@ -8,6 +8,7 @@ import { CliInstaller, installFs, nodeSatisfies } from '../src/host/cli-manageme
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
 import { installationSource } from '../src/host/cli-management/sources.ts'
 import * as sources from '../src/host/cli-management/sources.ts'
+import * as desktopRelease from '../src/host/cli-management/desktop-update.ts'
 import { windowsCliCandidates } from '../src/host/windows-cli-installation.ts'
 import { homedir } from 'node:os'
 import { ProcessCleanupUnconfirmedError } from '../src/host/process.ts'
@@ -143,10 +144,10 @@ it.each(['default', 'env'] as const)('模拟审查 6：目录 Remote 保护账�
 })
 
 it('模拟：17 CLI 安装方法严格按平台与来源证据选择', () => {
-  expect(CLI_IDS.map(cli => installationSource(cli, 'darwin').method)).toEqual(['manual', 'npm', 'manual', 'script', 'manual', 'manual', 'manual', 'manual', 'npm', 'manual', 'manual', 'manual', 'manual', 'npm', 'script', 'manual', 'manual'])
+  expect(CLI_IDS.map(cli => installationSource(cli, 'darwin').method)).toEqual(['manual', 'npm', 'manual', 'script', 'manual', 'desktop', 'manual', 'manual', 'npm', 'manual', 'manual', 'manual', 'manual', 'npm', 'script', 'desktop', 'desktop'])
   expect(installationSource('mimo', 'win32').method).toBe('npm'); expect(installationSource('opencode', 'win32').method).toBe('npm')
   expect(installationSource('qoder', 'win32').script?.url).toBe('https://qoder.com/install.ps1')
-  for (const cli of ['zcode', 'workbuddycn', 'workbuddy'] as const) expect(installationSource(cli).reason).toContain('尚未核实')
+  for (const cli of ['zcode', 'workbuddycn', 'workbuddy'] as const) expect(installationSource(cli, 'win32').reason).toContain('尚未核实')
 })
 it('模拟：未安装条目提供安装 offer 与 token；成功后路径写回原存储', async () => {
   const f = fixture()
@@ -246,15 +247,49 @@ it('模拟：Kimi Windows 需要 Git Bash，不能把 WSL bash 当成满足条�
   expect(allowed.problem).toBeUndefined(); expect(allowed.source.script?.interpreter).toEqual(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File'])
   expect(allowed.gitBash).toBe(join(git, 'usr/bin/bash.exe'))
 })
-it('模拟：未核实的桌面来源只给说明，不发布自动安装能力', async () => {
+it('模拟：Windows 首次安装签名和实际落点未核实，保持零下载和进程', async () => {
   const f = fixture()
+  const installer = new CliInstaller({ ...(f.service as any).deps, platform: 'win32' })
   for (const cli of ['zcode', 'workbuddycn', 'workbuddy'] as const) {
-    const plan = await prepare(f, cli)
+    const plan = await installer.prepare(cli, 'https://registry.npmjs.org/', '', control())
     expect(plan.offer.method).toBe('manual'); expect(plan.problem).toBe('PREREQUISITE_MISSING')
-    f.service.start(cli, 'install', plan.token, '', `manual-${cli}`)
-    expect((await finished(f.service)).results.find(r => r.cli === cli)?.error?.code).toBe('PREREQUISITE_MISSING')
+    await expect(installer.execute(plan, {} as any, control(), () => {}, async () => {})).rejects.toMatchObject({ code: 'PREREQUISITE_MISSING' })
   }
   expect(f.artifactFetch).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+it.each(['zcode', 'workbuddycn', 'workbuddy'] as const)('模拟：%s 首次安装使用官方发布读取器、摘要、固定签名与自选路径', async cli => {
+  const f = fixture(), version = cli === 'zcode' ? '3.18.2' : '5.9.4.42593613'
+  const feed = vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version, url: 'https://official.invalid/mock.zip', sha256: 'a'.repeat(64) })
+  const directory = join(f.root, 'custom-apps'), plan = await f.installer.prepare(cli, 'https://registry.npmjs.org/', directory, control())
+  expect(feed).toHaveBeenCalledWith(cli, {}, expect.any(AbortSignal), expect.objectContaining({ platform: 'darwin' }))
+  expect(plan).toMatchObject({ directory, target: version, offer: { method: 'desktop', selectableLocation: true }, source: { desktop: { archive: 'zip', teamId: sources.DESKTOP_INSTALL_SOURCES[cli].teamId, integrity: `sha256-${Buffer.from('a'.repeat(64), 'hex').toString('base64')}` } } })
+  feed.mockResolvedValue({ version, url: 'https://official.invalid/replaced.zip', sha256: 'b'.repeat(64) })
+  expect((await f.installer.prepare(cli, 'https://registry.npmjs.org/', directory, control())).token).not.toBe(plan.token)
+  expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.artifactFetch).not.toHaveBeenCalled()
+})
+it.each(['3.18.2', '3.18.1'] as const)('模拟：桌面安装后应用版本 %s；只在匹配官方目标时写路径', async appVersion => {
+  const f = fixture(), directory = join(f.root, 'desktop-target'), version = '3.18.2'
+  vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version, url: 'https://official.invalid/mock.zip', sha512: sri('模拟').slice(7) })
+  vi.mocked(f.backend.spawn).mockImplementation(({ argv }) => {
+    if (argv[1] === '-x') mkdirSync(join(argv[4]!, 'ZCode.app'))
+    else if (argv[0] === '/usr/bin/ditto') mkdirSync(argv[2]!)
+    return exited()
+  })
+  f.identify.mockImplementation(async (_cli, _backend, config) => config.cliExecutablePaths ? undefined : ({ ...syntheticIdentity('zcode', appVersion), executable: config.zcodeExecutable!, source: 'desktop-app', fingerprint: { realpath: config.zcodeExecutable!, size: 1, mtimeMs: 1, appVersion } }))
+  f.version.mockResolvedValue(appVersion)
+  const plan = await f.installer.prepare('zcode', 'https://registry.npmjs.org/', directory, control()), op = { outputTail: '' } as any
+  const task = f.installer.execute(plan, op, control(), () => {}, async () => {})
+  if (appVersion === version) {
+    await expect(task).resolves.toMatchObject({ version }); expect(f.config.cliExecutablePaths.read('zcode')?.path).toBe(join(directory, 'ZCode.app/Contents/Resources/glm/zcode.cjs'))
+  } else { await expect(task).rejects.toMatchObject({ code: 'VERSION_MISMATCH' }); expect(f.config.cliExecutablePaths.read('zcode')).toBeUndefined() }
+  expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
+})
+it('模拟：桌面官方工件摘要不符时，两次下载均拒绝，零安装进程、不写路径', async () => {
+  const f = fixture()
+  vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version: '5.9.4.42593613', url: 'https://official.invalid/mock.zip', sha256: 'a'.repeat(64) })
+  const plan = await f.installer.prepare('workbuddy', 'https://registry.npmjs.org/', join(f.root, 'target'), control())
+  await expect(f.installer.execute(plan, { outputTail: '' } as any, control(), () => {}, async () => {})).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
+  expect(f.artifactFetch).toHaveBeenCalledTimes(2); expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.config.cliExecutablePaths.read('workbuddy')).toBeUndefined()
 })
 it('模拟：安装与更新共用锁，重复请求幂等，取消等待整个进程退出', async () => {
   const f = fixture(), plan = await prepare(f), child = childFixture()

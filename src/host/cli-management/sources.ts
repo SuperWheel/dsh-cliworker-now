@@ -85,7 +85,7 @@ for (const [cli, update] of Object.entries(NATIVE_UPDATES)) {
 export const isDesktopCli = (cli: ActiveCliId): cli is 'zcode' | 'workbuddycn' | 'workbuddy' => ['zcode', 'workbuddycn', 'workbuddy'].includes(cli)
 export function installOffer(cli: ActiveCliId): CliInstallOffer {
   const s = CLI_SOURCES[cli]
-  return { method: s.install, defaultLocation: s.defaultLocation, selectableLocation: ['zcode', 'workbuddycn', 'workbuddy'].includes(cli), guideUrl: s.guideUrl, scriptUrl: s.scriptUrl, experimental: s.experimental,
+  return { method: isDesktopCli(cli) ? installationSource(cli).method : s.install, defaultLocation: s.defaultLocation, selectableLocation: ['zcode', 'workbuddycn', 'workbuddy'].includes(cli), guideUrl: s.guideUrl, scriptUrl: s.scriptUrl, experimental: s.experimental,
     prerequisites: s.prerequisites.map(p => ({ ...p, satisfied: false })) }
 }
 
@@ -95,9 +95,18 @@ export const BACKGROUND_ACCOUNT_CLIS: readonly ActiveCliId[] = ['mimo', 'codebud
 /** Audited official --binary/offline-install interfaces; never client supplied. */
 export const OFFICIAL_SIGNED_ARTIFACT_HOSTS = ['release-assets.githubusercontent.com', 'd4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com'] as const
 export const LOCAL_INSTALLERS = {
-  omp: { script: 'https://omp.sh/install', base: 'https://build.stencil.so', entry: '.local/bin/omp' },
+  // omp.sh/install responds 302; downloads deliberately reject redirects.
+  omp: { script: 'https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh', base: 'https://build.stencil.so', entry: '.local/bin/omp' },
   opencode: { script: 'https://opencode.ai/install', base: 'https://github.com/anomalyco/opencode/releases/download', archive: 'opencode', entry: '.opencode/bin/opencode' },
   mimo: { script: 'https://mimo.xiaomi.com/install', base: MIMO_RELEASE_SOURCES[0]!.slice(0, -1), sources: MIMO_RELEASE_SOURCES, policy: MIMO_SOURCE_POLICY, archive: 'mimocode', entry: '.mimocode/bin/mimo' },
+} as const
+
+/** Official feeds read anonymously by readDesktopRelease. macOS signatures are
+ * pinned independently of release metadata; no guessed Windows installer flags. */
+export const DESKTOP_INSTALL_SOURCES = {
+  zcode: { feed: 'https://zcode.z.ai/api/v1/releases/electron/manifest?platform={platform}-{arch}&channel=1', appName: 'ZCode.app', relativeEntry: 'Contents/Resources/glm/zcode.cjs', teamId: '8A5X4JJ39T' },
+  workbuddycn: { feed: 'https://www.workbuddy.cn/v2/update?platform=workbuddy-{platform}-{arch}&version=0.0.0', appName: 'WorkBuddy.app', relativeEntry: 'Contents/Resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs', teamId: 'FN2V63AD2J' },
+  workbuddy: { feed: 'https://www.workbuddy.ai/v2/update?platform=workbuddy-{platform}-{arch}&version=0.0.0', appName: 'WorkBuddy AI.app', relativeEntry: 'Contents/Resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs', teamId: 'FN2V63AD2J' },
 } as const
 
 export interface InstallSource {
@@ -105,14 +114,17 @@ export interface InstallSource {
   command: string
   nodeMinimum?: string
   script?: { url: string; interpreter: readonly string[]; relativeEntry: string }
-  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; version: string; commonDirectories?: readonly string[] }
+  desktopFeed?: keyof typeof DESKTOP_INSTALL_SOURCES
+  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; version: string; archive?: 'zip' | 'dmg'; commonDirectories?: readonly string[] }
   reason?: string
 }
 /** PRD 5.3 evidence only. Missing feeds/flags/runtime guarantees are not inferred. */
 export function installationSource(cli: ActiveCliId, platform = process.platform): InstallSource {
   const command = ({ antigravity: 'agy', qoder: 'qodercli', qodercn: 'qoderclicn', traecn: 'traecli' } as Partial<Record<ActiveCliId, string>>)[cli] ?? cli
   const manual = (reason: string): InstallSource => ({ method: 'manual', command, reason })
-  if (['zcode', 'workbuddycn', 'workbuddy'].includes(cli)) return manual('官方安装包地址、摘要或长度及开发者身份尚未核实，请按官方说明安装')
+  if (isDesktopCli(cli)) return platform === 'darwin'
+    ? { method: 'desktop', command, desktopFeed: cli }
+    : manual(platform === 'win32' ? 'Windows 首次安装的发布者签名与向导实际安装位置尚未核实，请按官方说明安装' : '此平台的桌面首次安装尚未核实，请按官方说明安装')
   if (cli === 'antigravity') return manual('脚本的运行时前置条件与首次安装流程尚未核实')
   if (cli === 'omp' || cli === 'hermes') return manual('安装脚本可能代装运行时，尚无已核实的禁止代装参数；请按官方说明安装')
   if (cli === 'grok') return manual('官方脚本首次安装流程尚待核实，请按官方说明安装')

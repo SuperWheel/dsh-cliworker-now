@@ -7,7 +7,8 @@ import type { ActiveCliId } from '../../shared/types.ts'
 import { OFFICIAL_NPM_REGISTRY, type CliInstallOffer, type CliUpdateOperation } from '../../shared/cli-management.ts'
 import { type ProcessBackend, type RuntimeConfig, ProcessCleanupUnconfirmedError } from '../process.ts'
 import { identifyInstallation, type InstallationIdentity } from './identity.ts'
-import { CLI_SOURCES, installationSource, type InstallSource } from './sources.ts'
+import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, type InstallSource } from './sources.ts'
+import { readDesktopRelease } from './desktop-update.ts'
 import { captureReadOnly, compareVersions, compatible, currentVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
 import { resolveNpmRuntime } from './npm.ts'
 import { CliOperationError } from './planner.ts'
@@ -105,6 +106,14 @@ export class CliInstaller {
       if (this.platform === 'win32' && arch === 'arm64' && (cli === 'qoder' || cli === 'qodercn')) prerequisite('Windows 架构', '非 ARM64', arch, false)
     } else {
       plan.directory ||= this.platform === 'darwin' ? '/Applications' : ''
+      if (source.desktopFeed) {
+        const descriptor = DESKTOP_INSTALL_SOURCES[source.desktopFeed]
+        const release = await readDesktopRelease(source.desktopFeed, {}, signal, { platform: this.platform, arch: this.deps.arch,
+          fetcher: (url, init) => this.deps.releases.response(String(url), init?.signal ?? signal) })
+        const integrity = release.sha512 ? `sha512-${release.sha512}` : release.sha256 ? `sha256-${Buffer.from(release.sha256, 'hex').toString('base64')}` : undefined
+        if (!integrity) throw new CliOperationError('INTEGRITY_MISMATCH', '官方桌面安装包没有摘要')
+        source.desktop = { ...descriptor, archive: 'zip', url: release.url, integrity, bytes: release.size, version: release.version }
+      }
       plan.target = source.desktop?.version
       if (!source.desktop || !plan.directory) prerequisite('官方安装包', '已核实地址、摘要/长度、开发者与位置', undefined, false)
     }
@@ -129,7 +138,7 @@ export class CliInstaller {
         } else if (source.method === 'script') { url = source.script!.url; op.outputTail = outputTail(`官方安装脚本：${url}\n仅验证 HTTPS 传输，官方未提供独立摘要。\n`) }
         else { url = source.desktop!.url; integrity = source.desktop!.integrity; expectedBytes = source.desktop!.bytes }
         file = await downloadCliArtifact({ root: this.deps.root, output, url, sources, sourceRedirects, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
-        const extension = source.method === 'npm' ? '.tgz' : source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : '.dmg'
+        const extension = source.method === 'npm' ? '.tgz' : source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : source.desktop?.archive === 'zip' ? '.zip' : '.dmg'
         const renamed = file.replace(/\.part$/, extension); await rename(file, renamed); file = renamed
       }
       await recheck(); signal.throwIfAborted(); op.phase = 'installing'; changed()
@@ -173,6 +182,7 @@ export class CliInstaller {
         if (exitError) throw exitError
         if (!validVersion(version) || !compatible(cli, version)) throw new CliOperationError('VERSION_MISMATCH', '安装命令已完成，但无法确认已适配的 CLI 版本，请检查路径')
         if (source.method === 'npm' && version !== plan.target) throw new CliOperationError('VERSION_MISMATCH', '安装后的版本与目标不一致')
+        if (source.method === 'desktop' && (identity.fingerprint.appVersion ?? (cli === 'zcode' ? version : undefined)) !== plan.target) throw new CliOperationError('VERSION_MISMATCH', '安装后的应用版本与官方目标不一致')
         control.throwIfAborted()
         const store = this.deps.config.cliExecutablePaths!
         if (store.revision(cli) !== plan.pathRevision) throw new CliOperationError('PLAN_EXPIRED', '安装期间路径设置已变化，未覆盖新设置')

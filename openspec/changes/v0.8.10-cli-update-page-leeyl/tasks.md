@@ -3,8 +3,9 @@
   - 共享文件只放类型、常量与 `customRegistryProblem()`（前后端共用的自定义地址校验）；zod schema 放在 Host（`cache.ts`、`versions.ts`），客户端对 Host 返回值做基本形状校验。typecheck 通过（2026-11-13）。
 - [x] 1.2 新增 `src/host/cli-management/sources.ts`：17 个 CLI 的包名、发布源、自带更新命令、默认安装位置、前置条件、兼容范围、版本读取方式与后台可用标记（按 PRD 5.3 表，待核实项不开放自动方法）
   - Phase A：`sources.ts` 明列 17 个 CLI、npm / 已核实的 brew 名称、官方说明、更新 argv（仅描述）、安装位置、前置条件、兼容范围与后台标记；未核实方法保留 manual。`corepack pnpm vitest run tests/cli-management.test.ts tests/cli-management-remotes.test.ts tests/general-settings.test.ts tests/cli-settings.test.ts tests/accounts.test.ts`：5 文件、400 项通过（2026-11-13；CLI / HTTP 均为模拟夹具）。
-- [ ] 1.3 来源核实：Gateway 能否区分设置页与 Agent 调用（PRD 第九节第 15 条）
-  - （未执行：Phase B 简报未包含 Gateway 调用来源鉴别；本阶段仅注册指定 Remote，不新增 Agent 工具，尚无来源鉴别验收证据。）
+- [x] 1.3 来源核实：Gateway 能否区分设置页与 Agent 调用（PRD 第九节第 15 条）
+  - 2026-11-14 核对锁定 SDK 0.2.2-rc.3 源码：`node_modules/@deepseek-ai/dsh-typert-protocol/src/types.ts:454–478,498–512` 只提供连接主体 principal、Peer 和方法参数，没有可信的设置页点击/Agent 来源；`dsh-api-gateway/src/index.ts:798–855` 根据 Peer 授权并把 invocation 绑定到 Context，未注入 UI 来源；`dsh-typert-protocol/src/principal.ts:16–18` 将 owner 与受信进程内调用同视为无非 owner 主体。不能用 owner、parentSessionId 或客户端字符串冒充用户点击。
+  - 替代保护已核对：`src/host/index.ts:1676–1941` 只向 Agent 注册 7 个 Worker 工具；安装/更新/取消/下载设置只在 `index.ts:2365–2437` 的设置 Remote 注册。新增 `tests/cli-management-remotes.test.ts` 实际执行 registerTools 并核对完整工具清单，防止误投影；5 项模拟通过（/tmp/gaps-remotes.log）。本勾选表示来源核实和替代边界已完成，不表示 Gateway 能证明“用户点击”；同机受信代码仍可直接调用 Remote。
 
 ## 2. 版本检查、安装来源识别与缓存 〔后端｜10h｜前置 1〕
 - [x] 2.1 安装来源识别：真实路径、npm 前缀与包名、Homebrew 元数据、官方布局、桌面托管、手动类管理器
@@ -111,7 +112,16 @@
 - [ ] 5.2 桌面应用安装：ZCode、WorkBuddy CN、WorkBuddy 的位置校验（权限、空间、非空目录）；macOS DMG 复制流程；Windows 打开官方安装程序；装后写入路径记录
   - 已实现通用桌面执行器 `desktop.ts` 并以模拟描述符验证：macOS attach 只读/no browse、codesign Team ID requirement + spctl、ditto 暂存复制后移动、attach/签名/复制失败均 detach 并清理；detach 未确认沿用清理隔离。Windows 进入 awaiting-user、只传安装程序路径，不猜静默或位置参数；等待整个进程范围退出、支持取消。装后查所选/描述符已核实的常见位置，再按通用流程验证并写原路径存储。
   - 位置校验允许目标不存在但父目录可写，拒绝系统/项目/已知工作区/插件状态/账号数据目录及其重叠路径，拒绝另一版 WorkBuddy 的安装目录；复用权限/空间/非空目录检查。
-  - （未执行：三个桌面 CLI 的官方安装包 URL、摘要或长度及开发者身份仍未核实，本次禁止联网与真实安装；来源表保持 manual，未接通实际自动安装，因此本项不勾选。Windows Authenticode 和实际向导选择位置的发现尚无真实验收；模拟 Team ID 不代表真实发布者。）
+  - 2026-11-14 补齐 macOS：sources 固定三个官方 feed、应用名、CLI 相对入口与 Team ID；CliInstaller 通过共享发布预算读取清单，把 SHA-512/SHA-256、版本、工件地址纳入 token；ZIP 解包、codesign + spctl、应用版本核对成功后写回原路径记录，DMG 继续只读挂载/卸载。ZIP 成功、解包/签名/目标占用失败、摘要失败零启动、版本不符不写路径均有模拟回归。官方 URL、摘要与签名依据见本变更 design.md「2026-11-14 首次安装来源与实机复核」。
+  - 本次实时 GET：ZCode 3.18.2 / SHA-512 / 305,360,326 B；WorkBuddy CN 5.9.3.42398134 / SHA-256；国际版 WorkBuddy 5.9.4.42593613 / SHA-256。国际版包的独立签名检查为 Team FN2V63AD2J、bundle com.workbuddy.workbuddy-ai，codesign 验证通过；但其 ZIP 与 feed SHA-256 不一致（官方 6502dc77…、实际 75492626…），插件完整重下仍拒绝，不用签名结果绕过摘要。CN 本轮只读清单，没有真实安装。
+  - ZCode macOS 插件安装实测通过，详见 7.4。Windows 未执行；首次安装的 Authenticode、向导实际位置发现仍无充分证据，保持仅说明，所以组合项 5.2 保持未勾选。
+  - 本轮交付检查：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；最终指定 5 文件单 worker 回归 `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-remotes.test.ts tests/cli-management-local-artifacts.test.ts tests/cli-management-download.test.ts --maxWorkers=1`：93/93 通过，25.80 秒，退出 0（/tmp/gaps-owned-delivery.log）。覆盖官方源/签名绑定、token 变化、应用版本核对、摘要失败零执行、ZIP 清理/隔离、Agent 工具清单、OMP 最终脚本地址。
+  - `corepack pnpm vitest run tests/cli-management`：20 文件 604 passed / 1 failed（605 项），退出 1（/tmp/gaps-related-final.log）。唯一失败是既有 acceptance-fixes 的 Pi 1.5.2 Worker 拒绝断言，当前分支已支持该版本；本轮未修改对应源码/测试，交主会话整合。此前默认并发指定 5 文件一轮 91 passed / 1 timeout（92 项），单 worker 复跑 92/92，再补 ZIP 清理隔离后最终 93/93；不改超时或跳过用例。
+  - 沙箱外默认并发 `corepack pnpm vitest run`：314 文件 296 passed / 14 failed / 4 skipped；7,056 项 6,992 passed / 50 failed / 14 skipped，570.22 秒，退出 1（/tmp/gaps-full.log）。该长轮期间补过本轮代码/用例，保留为中间结果；固定最终源码的 2 worker 全量另行记录，不据聚焦通过宣称全量通过。
+  - 固定最终源码沙箱外全量 `corepack pnpm vitest run --maxWorkers=2`：314 文件 307 passed / 3 failed / 4 skipped；7,057 项 7,037 passed / 6 failed / 14 skipped，423.01 秒，退出 1（/tmp/gaps-full-delivery.log）。失败为本轮未改的 build-dependencies 2 项（根目录 lib/typert.remote-client.js、lib/types/host/index.js 尚未生成）、acceptance-fixes 1 项（Pi 1.5.2 旧拒绝断言）、native-bridge-time-limit 3 项（pid ENOENT、idle/total 断言、审批 hold 超时）。上述失败文件及 Pi/build/原生桥相关实现与 f510f75 无 diff；不改阈值、不隐藏失败。构建入口通过复制 preview 的被忽略 lib 产物补齐后另行聚焦复核，不运行正式 build。
+  - 补齐被忽略 lib 后沙箱外 `corepack pnpm vitest run tests/build-dependencies.test.ts tests/native-bridge-time-limit.test.ts --maxWorkers=1`：2 文件 19/19 通过，10.53 秒，退出 0（/tmp/gaps-full-failures-recheck.log）。不以聚焦复跑覆盖全量失败；原生桥满载计时稳定性仍有风险，Pi 1.5.2 旧断言留主会话协调。最终本变更 53/61 完成；1.3、11.6 已补勾，5.2/7.4 的 Windows 部分、其他界面/预加载/整体验收由各责任方保留，未归档。
+  - 初始依赖安装 `corepack pnpm install --frozen-lockfile --prefer-offline` 成功。初次 typecheck 因本工作树尚无生成的 `lib/typert.remote-client.d.ts` 失败；先隔离 build:preview，再仅复制该生成声明到被忽略的 lib 后复核通过，没有修改 Client 或正式 build。
+  - `corepack pnpm build:preview` 通过，仅 `.cache/preview-package`，最终 4 个 Host 文件与 preview 源码逐字节一致；最终版本规划路径另做只读 GET，ZCode target/url/integrity 与真实安装报告一致、零子进程（/tmp/gaps-final-plan.log）。未正式 build 或更新 Desktop。三个变更的 `corepack pnpm spec validate <change> --strict` 均通过（/tmp/gaps-{spec,qoder-spec,workbuddy-spec}-delivery.log）；本变更只提示主任务数，WorkBuddy 为既有旧格式警告。指定 Git diff --check 通过。
 - [x] 5.3 单元测试：安装方式选择、前置条件不满足、位置校验、装后路径写入、重新安装改用新路径
   - 新增 `cli-management-install.test.ts`、`cli-management-desktop.test.ts`，23 项均标「模拟」；Node/npm、脚本、HTTP、hdiutil、codesign、spctl、ditto、Windows 安装器均为替身。旧阶段 B 的两项「安装尚未支持」断言更新为「缺少路径存储则拒绝」。
   - `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts`：2 文件 23 项通过，退出码 0。
@@ -182,7 +192,10 @@
     - 页面：下载来源 host、重试/续传计数实时显示；OMP 开发期提示已删除；区块标题整行可展开收起。
     - （未执行：Antigravity 无可用新版、WorkBuddy CN 已是最新、Pi 由用户手动更新到 1.5.2，三者本轮未走插件更新；人为限速仍只有 2026-11-13 的 npm 中转那一次，插件接管下载的慢速换源只有模拟测试。）
 - [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
-  - （未执行：Phase C 已实现首次安装和模拟回归，但本次明确禁止真实安装；三个桌面源仍未核实。）
+  - 2026-11-14 macOS 已执行：隔离 HOME `.cache/gaps-live/isolated-home`，npm prefix 指向该 HOME 下 npm；`GAPS_SKIP_OMP=1 node .cache/gaps-isolated-launch.mjs` 调用真实 CliInstaller.prepare/execute、ReleaseClient、下载器、nativeProcessBackend + LocalSubprocessRuntime。npm Pi 1.5.2 安装到 `<隔离 HOME>/npm/bin/pi`，主包 7,899,382 B，官方 sha512 校验；npm 命令退出 0，插件核对版本并写回隔离路径存储，独立插件 captureReadOnly --version 返回 1.5.2、退出 0；事件含 downloading → installing → verifying-installation。证据 `.cache/gaps-live/npm-pi-report.json`、/tmp/gaps-npm-pi-live.log。没有 prompt、账号或模型调用。
+  - 桌面：`node --import tsx .cache/gaps-desktop-live.ts` 沙箱内在 spctl 退出 1，未复制且清理完成；沙箱外原命令通过，ZCode 3.18.2 装到 `.cache/gaps-live/custom-apps/ZCode.app`（自选非默认位置）。下载 305,360,326 B、官方 SHA-512 通过，ditto 解包、codesign（Team 8A5X4JJ39T）、spctl、ditto 复制各退出 0，全部 waitForExit=true；插件读应用版本、验证实际 CLI 入口、写回隔离 manual 记录。downloads/mounts 均为空，目标只含 ZCode.app；证据 desktop-report.json、/tmp/gaps-desktop-live-outside.log。
+  - 中间 Codex npm 0.169.0 安装命令退出 0，但附加插件 --version 读取超时，未作为本项成功证据；独立二进制 --version 读回 0.169.0。保留 isolated-report-first/second.json 与日志，不以安装退出码替代全部验收。
+  - Windows 未执行：没有 Windows 环境，组合项 7.4 因 Windows 部分保持未勾选。隔离 HOME、npm 全局前缀/缓存、OMP 安装、custom-apps/ZCode.app、下载/挂载状态目录、签名检查解包目录及独立 WorkBuddy ZIP 已清理，9 个清理目标独立回读均不存在（cleanup-report.json，退出 0）；只保留被忽略的脱敏证据文件。另以沙箱外 ps 在内存中过滤本轮隔离路径，残留验收进程计数 0；没有打印其他进程参数。
 - [ ] 7.5 Windows：npm 全局更新一次、停滞续传一次、预加载空闲判定与低优先级
   - （未执行：本次没有 Windows 真实环境验收且禁止真实更新；Windows argv 与目录选择器仅用模拟夹具验证。）
 - [ ] 7.6 README、`doc/design.md` 同步新页面与预加载说明
@@ -302,11 +315,11 @@
   - README 中英、doc/design.md 与本变更规格/设计同步。未改 src/client/**、doc/settings-ui-design.md、PRD 或任务 C 其他文件；Client 顶层及设置设计文档哈希 70/70 与任务开始时一致；未提交 Git。真实 CLI/安装器、模型/账号、Desktop、Windows/Linux 实机验证均未执行；不归档。
   - 主会话桌面更新追加信息核对（23:50:12）：只读确认 `desktop-update.ts` 已使用单个 `-R=anchor …` 参数，清理失败保留原 CliOperationError 码并附 errno/路径；没有覆盖该文件及其测试。补跑 `corepack pnpm vitest run tests/cli-management-desktop-update.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-interruption.test.ts`：**3 文件、244 项通过**（桌面 106 + 全部更新 94 + 中断 44），0 failed/0 skipped，1.08 秒，退出码 0；日志 `/tmp/task-d-desktop-followup.log`。
   - 用户补充签名失败后 `cli-management/desktop-update-XXXX` 约 366 MB 残留，原因未明。本轮仅记录用户实机证据，未定位实际目录、未删除；保留原错误码的修改不等于清理失败根因已解决。任务 D 的 downloads/local-* 清理不扩展到桌面暂存目录。
-- [ ] 11.6 MiMo 与 OMP 本地交接真实验收（任务 D 续已授权实施，实机复测留主会话）
-  - 任务 D 续已批准并实施 MiMo macOS 默认原生 zip/--binary 接管；本项仅剩实机验收，仍未执行。OMP PI_BUILD_URL 本地交接也需实机复测；用户提供原生 omp update 16.4.4→18.20.0 成功不能替代交接验证。
-  - 2026-11-14 主会话：MiMo 接管实机通过（0.1.15 → 0.1.17，来自 cnbj1.fds.api.xiaomi.com，content-md5 校验，证据见 7.3）。（未执行：OMP PI_BUILD_URL 交接——本机 OMP 已是 18.20.0，没有可更新版本可测。）
-
-  - 最终 OpenSpec 共 52 子任务：41 完成、11 未完成（含 MiMo 11.6 及此前真实验收缺口）；本轮不归档。工作区结束时另见 desktop-update.ts 及其测试的并行修改，本轮未触碰；上述全量数字仅对应实际记录的测试运行。
+- [x] 11.6 MiMo 与 OMP 本地交接真实验收
+  - MiMo 由主会话在 2026-11-14 已验收 0.1.15 → 0.1.17（官方 FDS / content-md5），详见 7.3；本轮没有重复调用 MiMo。
+  - 2026-11-14 OMP：`GAPS_SKIP_NPM=1 node .cache/gaps-isolated-launch.mjs`（沙箱外）在隔离 HOME 以插件真实 `prepareLocalUpdate` → `executeCliOperation` → `identifyInstallation/currentVersion` 链路先装 18.19.0，再更到官方 latest 18.20.0。同一入口 `<隔离 HOME>/.local/bin/omp`、self-update 身份不变；两次官方工件按 build service 的 size/SHA-256 核对后，官方脚本参数数组 `[/bin/sh, 私有install.sh, --binary, --ref, v目标]`，进程局部 `PI_BUILD_URL=file://私有目录`、`PI_INSTALL_DIR=<隔离 HOME>/.local/bin`。两次安装与两次装后 --version 共 4 个进程全退出 0、waitForExit 全 true；明确输出两次“已接管 OMP 官方工件下载”。证据 `.cache/gaps-live/omp-report.json`、/tmp/gaps-omp-live-corrected.log。
+  - 本次修复发现的脚本入口：omp.sh/install 302 至官方 raw.githubusercontent.com，下载器拒绝跳转；sources 已改成核实的最终官方地址，并加模拟回归。不执行 --source、不代装 Bun；官方脚本提示用户 PATH 中仍有现有 OMP，但未执行/替换该用户安装，也未改 PATH。
+  - 中间脚本错误保留：首次 GET 在旧脚本入口失败；后续验收脚本把 local.env 误放入 timeoutMs 参数而立即报 INSTALL_TIMEOUT，修正为 undefined, local.env 后完成上条真实验收。不是生产安装超时，未修改生产超时阈值。18.19.0 / 18.20.0 交接目录均在成功后由 local.cleanup 删除；历史失败的 0 B part 随最终隔离目录统一清理。没有真实模型、账号或 Desktop 调用。
 
 - [x] 11.7 修复实机验收发现的桌面应用暂存清理、Codex 安装脚本跳转与笼统报错
   - 桌面应用（`desktop-update.ts`、首次安装 `desktop.ts`）的文件操作改走新增的 `src/host/cli-management/physical-fs.ts`（Electron 下取 `original-fs`，普通 Node 不变），避免 `app.asar` 被当作目录导致 `ENOTEMPTY` 回滚；`desktop.ts` 的 codesign 要求同样改成单个 `-R=…` 参数。
