@@ -2,6 +2,8 @@ import { createElement, forwardRef, useEffect } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setLanguagePreference } from '../src/client/i18n.ts'
+import { CliWorkerService } from '../src/host/index.ts'
+import { SettingsConnectionCache } from '../src/host/settings-connection-cache.ts'
 import { SettingsDialog } from '../src/client/settings-dialog.tsx'
 import type { API } from '../src/client/workers.ts'
 import type { AccountStatus } from '../src/shared/accounts.ts'
@@ -3504,6 +3506,36 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     // Afterwards both slots are read again: the fresh account, then the forced catalog.
     expect(t.refreshAccountStatus).toHaveBeenCalledTimes(2)
     expect(t.refreshCatalogForCli.mock.calls.map((call) => call[1])).toEqual(['codex'])
+  })
+
+  it.each(['codex', 'codebuddy'] as const)('模拟：%s 使用真实 Host 缓存刷新与订阅后打开账号操作', async cli => {
+    const root = process.cwd(), cache = new SettingsConnectionCache(), control = new AbortController()
+    const account = { cli, installed: true, state: 'unconfigured' as const, summary: '模拟未登录', actions: accountActions }
+    const read = vi.fn(async () => account)
+    const host = Object.assign(Object.create(CliWorkerService.prototype), {
+      connections: cache, disposed: control, options: {},
+      parent: async () => ({ session: { header: { cwd: root } } }),
+      runtime: { assertCliEnabled() {}, catalogCleanupMessage() {}, storage: {
+        cliSettings: () => ({ enabled: Object.fromEntries(CLI_IDS.map(id => [id, id === cli])) }), preference() {},
+      } }, accounts: { status: read },
+    }) as CliWorkerService
+    await cache.read(root, cli, 'account', control.signal, async () => account)
+    await cache.read(root, cli, 'catalog', control.signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
+    const wrap = (method: 'cliSettings' | 'settingsConnectionStatus' | 'refreshAccountStatus' | 'accountStatus') =>
+      vi.fn(async (...args: any[]) => ({ ok: true, value: await (host[method] as any)(...args) }))
+    try {
+      const refreshAccountStatus = wrap('refreshAccountStatus')
+      const t = await setup({ cliSettings: wrap('cliSettings'), settingsConnectionStatus: wrap('settingsConnectionStatus'),
+        refreshAccountStatus, accountStatus: wrap('accountStatus'),
+        watchSettingsConnections: (parent: string, signal: AbortSignal) => host.watchSettingsConnections(parent, signal),
+      }, undefined, cli)
+      await settle()
+      expect(read).not.toHaveBeenCalled()
+      await t.click(cli === 'codebuddy' ? '登录账号' : '登录 / 切换账号')
+      expect(refreshAccountStatus).toHaveBeenCalledTimes(1)
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(terminal.started).toHaveBeenCalledWith(cli, 'login')
+    } finally { control.abort(); await cache.close() }
   })
 
   it('does not open an action the fresh read no longer offers', async () => {
