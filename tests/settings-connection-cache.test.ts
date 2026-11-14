@@ -144,3 +144,13 @@ it('模拟：跨项目同 CLI 排队，Host 关闭等待首项清理且不启动
   expect(closed).toBe(true); expect(models).not.toHaveBeenCalled()
   expect(cache.status('/b', 'zcode').catalog.value).toBeUndefined()
 })
+
+it.each(['account', 'catalog'] as const)('模拟：维护期 %s 被拒时清除旧错误、不缓存红点，释放后可重新读取', async kind => {
+  const cache = fixture(), { MaintenanceError } = await import('../src/host/cli-management/maintenance.ts')
+  await expect(cache.read('/a', 'zcode', kind, signal(), async () => { throw new Error('模拟旧错误') })).rejects.toThrow('模拟旧错误')
+  expect(cache.status('/a', 'zcode')[kind].error).toBe('模拟旧错误')
+  await expect(cache.read('/a', 'zcode', kind, signal(), async () => { throw new MaintenanceError('zcode') }, true)).rejects.toMatchObject({ code: 'MAINTENANCE' })
+  expect(cache.status('/a', 'zcode')[kind]).toMatchObject({ value: undefined, error: undefined, loading: false, cache: undefined })
+  await cache.read('/a', 'zcode', kind, signal(), async () => kind === 'account' ? account : catalog)
+  expect(cache.status('/a', 'zcode')[kind].value).toBeDefined()
+})

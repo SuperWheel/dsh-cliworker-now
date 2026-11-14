@@ -411,8 +411,19 @@
   - Mac Desktop 复验（构建 44740eb，2026-11-14 13:20 冷启动、打开会话后不开设置等待约 3.5 分钟，负载约 3–5）：首次打开设置首屏 Antigravity、Codex、Claude Code、Kimi、MiMo、ZCode、Grok Build 已为绿点，OMP、Pi、Hermes 仍在后台队列中加载；调整前（构建 7642cd9，同样条件约 4 分钟）首屏只有 Antigravity、Codex 为绿。负载 25（10 核）时 CPU 门槛使后台顺延，属既定行为。
 
 ## 13. Windows 接管下载与维护期状态（任务 W） 〔后端｜12h｜前置 11〕
-- [ ] 13.1 Claude Code、Antigravity、OMP 在 Windows 由插件下载、按官方摘要校验后按官方脚本位置放置（决定 13）
-- [ ] 13.2 TRAE CN 在 Windows 组官方离线包交 offline-install，并恢复更新前存在的自动更新标记
-- [ ] 13.3 维护期读取被拒不记红点，更新结束（含失败、取消）作废连接显示（决定 14）
-- [ ] 13.4 模拟回归、类型检查、相关测试、隔离构建与严格校验
+- [x] 13.1 Claude Code、Antigravity、OMP 在 Windows 由插件下载、按官方摘要校验后按官方脚本位置放置（决定 13）
+  - 实施：新增 windows-artifacts.ts；仅 self-update 官方默认布局，Windows 路径不区分大小写，覆盖 x64/arm64。Claude SHA-256+size 后原子写 versions/<目标> 与启动器；Antigravity SHA-512（可用时核对 HEAD 长度）后同目录替换；OMP 复用构建版本/平台/CPU/名称/源地址/摘要/长度校验后替换。不执行原生 install、PATH 或 Bash 配置；FILE_LOCKED 保留旧 exe、清理临时文件，Claude 回滚本次版本文件并保护先前同名文件。
+  - 模拟证据：cli-management-local-artifacts-windows 的三项 x64/arm64 放置、错误清单、一次干净重下、EBUSY/EPERM/EACCES、Claude 同版本回滚、Range/If-Range、多源身份不一致拒绝、自定义源禁止换源、服务精确版本/身份复核与下载后计划变化拒绝。接管进度直接传入 op.progress；安装单独 10 分钟预算。
+  - 官方来源只读核对：匿名 GET Claude 2.1.325、Antigravity 1.5.9、OMP 18.20.0 的 Windows 清单；Claude 主站/GCS HEAD 均 200、372461728 B、相同 ETag 63c63d3679b0aebc2ba5886abd0f464d，已启用内置双源且仍运行时验证。未下载大型二进制；真实更新属于 13.5。
+- [x] 13.2 TRAE CN 在 Windows 组官方离线包交 offline-install，并恢复更新前存在的自动更新标记
+  - 实施：按官方 Export-OfflineBundle 组主工件、唯一 code_mode_host、清单存在时的两项 windows_sandbox_helpers、筛选目标平台的 ripgrep；逐项 SHA-256+size、受限源、文件名/归档路径、压缩格式、去重和 2 GB 合计/流式剩余预算校验。相对 URL、offline_channel/release_channel、两份 manifest 与 CDN install_v2.ps1 存入 0700/0600 私有目录，argv 数组调用 offline-install。
+  - 模拟证据：x64/arm64 包结构、清单缺省/完整 helpers、错误来源/平台/摘要/大小/依赖路径、重复平台、预算溢出；标记原有/原无/失败/取消、正常与 UUID release 名；服务级进程 argv/env、维护锁、更新后真实身份与精确版本核对。标记在脚本成功后写回 current 实际指向的新 release；安装失败不由插件改写；原有非 public 发布源限制仍保持。
+  - 只读证据：trae.ps1 StateDir/ReleaseName/Export-OfflineBundle 已核对；匿名 GET TRAE 0.215.0 与 ripgrep 15.1.0 清单（当前 0.215.0 未提供 helpers 字段）。环境仅设置固定版本/通道/默认目录、ASSUME_YES、SKIP_USER_PATH，不设置 TRAECLI_INSTALL_AUTO_UPDATE、不剥离代理；Unix TRAE 原生更新不变。
+- [x] 13.3 维护期读取被拒不记红点，更新结束（含失败、取消）作废连接显示（决定 14）
+  - 实施：SettingsConnectionCache 遇 code=MAINTENANCE 清除 value/checkedAt/旧 error，直接调用方仍收到维护拒绝；launch finally 在非隔离路径释放维护锁后统一 invalidateModels，移除成功分支重复调用。
+  - 模拟证据：settings-connection-cache 两槽旧错误清除及释放后重读；cli-management-admission success/failure/cancel 均断言释放锁后恰好一次作废；phase-b 保留取消必须等待整个进程树退出、cleanup-unconfirmed 不释放锁也不作废的断言。
+- [x] 13.4 模拟回归、类型检查、相关测试、隔离构建与严格校验
+  - 最终检查：corepack pnpm typecheck 退出 0；corepack pnpm vitest run tests/cli-management tests/settings-connection-cache.test.ts tests/cli-management-admission.test.ts：22 文件、710 passed、0 failed、0 skipped（3.52 秒，/tmp/task-w-related-final.log），包含新增 Windows 文件 71 项。新增夹具和用例标注“模拟”，不执行本机 CLI 或真实安装器。
+  - 构建/规格：corepack pnpm build:preview 退出 0，隔离包 .cache/preview-package（/tmp/task-w-preview.log）；corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict 退出 0，仅现有“主任务超过 10 个”建议警告。git diff --check 通过。README 双语、doc/design.md 与本变更决定 13/14 已同步。
+  - 调试记录：首次 typecheck 因 sidecars 的 unknown 类型收窄报错，修正后通过；服务级 TRAE 初次夹具遗漏 binary_version、且 ReleaseClient 在模拟 Windows 前初始化，导致计划缺失，完善模拟清单与初始化顺序后全过。真实 Windows、Clash 下载/续传、占用与取消仍由 13.5 单列；没有正式构建、Desktop 链接更新、版本修改、提交或推送。
 - [ ] 13.5 Windows 实机：四项真实更新经代理完成、进度条与续传次数、取消与残留、红点不复现

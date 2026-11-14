@@ -119,7 +119,7 @@ describe('模拟：受控更新计划与服务', () => {
       return { done: Promise.resolve({ exitCode: 0 }), stdout: Readable.from([]), stderr: Readable.from([]), waitForExit: vi.fn(async () => true), terminate: vi.fn() } as any
     })
     f.service.start('codex', 'update', f.service.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, '', 'req')
-    expect((await finished(f.service)).results[0]?.error?.code).toBe({ unchanged: 'VERSION_UNCHANGED', mismatch: 'VERSION_MISMATCH', identity: 'IDENTITY_CHANGED' }[mode]); expect(f.invalidateModels).not.toHaveBeenCalled()
+    expect((await finished(f.service)).results[0]?.error?.code).toBe({ unchanged: 'VERSION_UNCHANGED', mismatch: 'VERSION_MISMATCH', identity: 'IDENTITY_CHANGED' }[mode]); expect(f.invalidateModels).toHaveBeenCalledExactlyOnceWith('codex')
   })
   it.each([true, false])('取消等整个进程树退出：确认=%s', async confirmed => {
     const f = fixture(), child = childFixture(); await checked(f.service); vi.mocked(f.backend.spawn).mockReturnValue(child.child as any)
@@ -131,6 +131,8 @@ describe('模拟：受控更新计划与服务', () => {
     child.finish(); child.exit(confirmed)
     const result = (await finished(f.service)).results[0]!
     expect(result.phase).toBe(confirmed ? 'cancelled' : 'cleanup-unconfirmed')
+    // 模拟：取消已确认退出才在释放维护锁后作废；隔离清理不发布可用状态。
+    expect(f.invalidateModels).toHaveBeenCalledTimes(confirmed ? 1 : 0)
     if (!confirmed) { expect(f.cleanup).toHaveBeenCalled(); expect(() => f.config.cliMaintenance.assertAvailable('codex')).toThrow('MAINTENANCE') }
     else expect(() => f.config.cliMaintenance.assertAvailable('codex')).not.toThrow()
   })

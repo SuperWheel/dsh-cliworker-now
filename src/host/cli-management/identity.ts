@@ -25,6 +25,7 @@ export interface InstallationIdentity {
   appPath?: string
   updateRoot?: string
   channel?: string
+  releaseChannel?: string
   notice?: string
 }
 /** Same origin as the deployed runtime's INSTALL-MANIFEST (design 2026-10-11): official source tree only. */
@@ -120,7 +121,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
       target = await realpath(shim[1] ?? shim[2]!)
     }
   }
-  let manifestVersion: string | undefined, appVersion: string | undefined, channel: string | undefined, metadataToken: string | undefined
+  let manifestVersion: string | undefined, appVersion: string | undefined, channel: string | undefined, releaseChannel: string | undefined, metadataToken: string | undefined
   if (cli === 'workbuddy' || cli === 'workbuddycn') {
     const app = await resolveWorkBuddyInstallation(cli, { manualPath: executable })
     desktopRoot = app.appRoot
@@ -158,6 +159,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
         metadataToken = createHash('sha256').update(JSON.stringify([record.baseVersion, record.commit, channel])).digest('hex')
       } else if (cli === 'traecn' && ['public', 'tob', 'tob-alpha', 'internal'].includes(record.channel)) {
         channel = record.channel
+        releaseChannel = typeof record.release_channel === 'string' ? record.release_channel : undefined
         metadataToken = createHash('sha256').update(JSON.stringify([channel, record.release_channel])).digest('hex')
       }
       break
@@ -199,7 +201,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     if (receipt?.source?.tap?.toLowerCase() !== CLI_SOURCES[cli].brew!.tap!.toLowerCase()) identity.source = 'unknown'
   }
   signal.throwIfAborted()
-  return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel,
+  return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel, releaseChannel,
     ...(managedApp ? { notice: ZCODE_RUNTIME_NOTICE } : {}),
     fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}), ...(metadataToken ? { metadataToken } : {}) } }
 }

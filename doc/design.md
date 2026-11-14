@@ -1510,7 +1510,7 @@ Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道�
 
 Host 下载器在连接中断、提前 EOF 或 10 秒无增长时按 Range 恢复；已确认支持 Range 时，10 秒窗口平均低于 100 KB/s 也重连。所有恢复共用 200 次，次数耗尽仍有字节增长就保持连接，真正停住才失败；下载总上限 2 小时。HTTP/证书/Range 协议异常及缓存超限立即失败；完整文件长度/摘要不符则删除片段后干净重下一次，仍不符报“下载的文件校验不通过”，不占 200 次且不重置 2 小时。未知 Range 能力、服务器忽略 Range 后不主动按慢速重连。
 
-外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新先由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 撤销会关闭自动更新的 offline-install 接管，更新回原生 update --channel --version 加中断证据重跑，首次安装回既有官方脚本。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
+外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新先由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 的 macOS/Linux 更新保留原生 update --channel --version 加中断证据重跑；2026-11-14 任务 W 在 Windows 官方默认布局恢复离线接管，以更新前存在的自动更新标记为依据，在官方 offline-install 成功后原子恢复为实际新 release 目录名，首次安装不变。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
 
 ## 2026-11-14 macOS 系统代理（任务 F，未发布）
 
@@ -1560,3 +1560,12 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 `customProviderForm` / `saveCustomProvider` 复用账号准入、维护租约和账号窗口 reservation；token 绑定父会话、CLI 已记录入口/revision 和目标，10 分钟到期，父会话/Host 关闭清理。Pi 原生 models.json + auth.json、OpenCode v1 原生 opencode.json(c) + auth.json、Hermes config.yaml + .env 分别按已核实格式写入；API Key 不进入模型配置、返回值、日志、事件或设置缓存。输入和名称冲突返回逐字段问题，暂存后 rename，失败回滚，成功调用统一 invalidateSettingsDisplay。原文件内容在提交前比较，JSONC 注释与 YAML 其他节点保留。
 
 OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/changes/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
+
+
+### 2026-11-14 Windows 官方默认安装的下载接管（任务 W）
+
+Windows x64/arm64 的 Claude Code、Antigravity、OMP、TRAE CN 在 self-update 身份及默认布局精确匹配后复用插件下载器，保留 10 秒停滞续传、低速恢复、200 次／2 小时与真实进度。Claude/OMP/TRAE 使用同源 SHA-256，Antigravity 使用同源 SHA-512；不称为独立签名。Claude 主站与官方 GCS 源须运行时 HEAD 长度／ETag 一致方可续传换源；自定义下载设置仍关闭自动换源。
+
+下载准备不写安装目录；服务在实际放置前重新核对计划。Claude 原子写 versions/<目标> 后替换 .local/bin/claude.exe，失败回滚本次版本写入；Antigravity/OMP 只写同目录临时文件并 rename，不执行 PATH／Bash 配置。锁定错误 EBUSY/EPERM/EACCES 统一 FILE_LOCKED，原 exe 保持不动。TRAE 按官方 Export-OfflineBundle 结构装配主件、sidecar、存在时的两项沙箱辅助件与筛选后的 ripgrep，交内置 CDN 下载的官方 PowerShell offline-install，跳过用户 PATH 修改并保留自动更新标记状态。安装单独计时 10 分钟；完成仍调用 sameInstallation 与 verifyUpdatedVersion 精确核对目标。
+
+维护期 MAINTENANCE 拒绝不缓存为连接错误；更新成功、失败、取消在释放锁后统一作废连接显示，进程清理隔离状态仍保留锁。实现与验收边界见变更 design 决定 13/14 及 tasks 13；本轮仅模拟与匿名清单/HEAD 核对，Windows 实机验收单列。

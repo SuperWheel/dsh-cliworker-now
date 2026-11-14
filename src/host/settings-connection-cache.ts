@@ -75,7 +75,7 @@ export class SettingsConnectionCache {
       if (!control.aborted && revision === this.revision(cli)) {
         current.value = undefined; current.checkedAt = undefined
         // The snapshot replaces what the dialog shows; a generic text here would hide why the read failed.
-        current.error = failureReason(error)
+        current.error = (error as { code?: string } | null)?.code === 'MAINTENANCE' ? undefined : failureReason(error)
       }
       throw error
     }).finally(() => {

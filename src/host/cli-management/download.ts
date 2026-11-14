@@ -58,9 +58,13 @@ export async function downloadCliArtifact(options: {
   output?(value: string): void
   /** Only for signed official artifact hosts checked by local-artifacts. */
   officialSignedArtifact?: boolean
+  /** Remaining allowance when assembling a multi-file private bundle. */
+  maxBytes?: number
   fetcher?: typeof hostFetch
 }): Promise<string> {
   const address = new URL(options.url)
+  const maxBytes = options.maxBytes ?? DOWNLOAD_MAX_BYTES
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > DOWNLOAD_MAX_BYTES || options.expectedBytes !== undefined && options.expectedBytes > maxBytes) throw new CliOperationError('INTEGRITY_MISMATCH', '下载文件超过私有缓存剩余空间上限')
   const githubAsset = options.officialSignedArtifact && address.protocol === 'https:' && (OFFICIAL_SIGNED_ARTIFACT_HOSTS as readonly string[]).includes(address.hostname) && !address.username && !address.password && !address.hash && !address.port
   if (!githubAsset && customRegistryProblem(options.url)) throw new CliOperationError('NETWORK', '下载地址必须为不含凭据的 HTTPS 地址')
   const integrity = options.integrity ? parseIntegrity(options.integrity) : undefined
@@ -81,7 +85,7 @@ export async function downloadCliArtifact(options: {
   const reporting = setInterval(report, 1000)
   let remove = false
   try {
-    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, DOWNLOAD_MAX_BYTES, options.requireContentMd5, options.sourceRedirects) : undefined
+    const sources = options.sources ? new ArtifactSources(options.sources, options.fetcher ?? hostFetch, global, maxBytes, options.requireContentMd5, options.sourceRedirects) : undefined
     if (sources) {
       await sources.select()
       sourceHost = new URL(sources.url).host
@@ -121,7 +125,7 @@ export async function downloadCliArtifact(options: {
             const length = response.headers.get('content-length')
             if (length !== null && (!/^\d+$/.test(length) || Number(length) !== responseEnd - bytes)) throw new CliOperationError('NETWORK', 'Content-Range 与响应长度不符')
           }
-          if (total !== undefined && (!Number.isSafeInteger(total) || total > DOWNLOAD_MAX_BYTES)) throw new CliOperationError('NETWORK', '下载文件超过私有缓存 2 GB 上限')
+          if (total !== undefined && (!Number.isSafeInteger(total) || total > maxBytes)) throw new CliOperationError('NETWORK', '下载文件超过私有缓存 2 GB 上限或剩余空间上限')
           if (!reader) throw new CliOperationError('NETWORK', '下载响应没有文件内容')
           // Never deliberately interrupt a slow connection that would restart at
           // zero. A 206 or explicit Accept-Ranges proves the server's capability;
@@ -140,7 +144,7 @@ export async function downloadCliArtifact(options: {
             const chunk = await bounded(reader.read(), control)
             if (chunk.done) break
             if (!chunk.value.byteLength) continue
-            if (bytes + chunk.value.byteLength > DOWNLOAD_MAX_BYTES || total !== undefined && bytes + chunk.value.byteLength > total || responseEnd !== undefined && bytes + chunk.value.byteLength > responseEnd) throw new CliOperationError('NETWORK', '下载长度超出声明或缓存上限')
+            if (bytes + chunk.value.byteLength > maxBytes || total !== undefined && bytes + chunk.value.byteLength > total || responseEnd !== undefined && bytes + chunk.value.byteLength > responseEnd) throw new CliOperationError('NETWORK', '下载长度超出声明或缓存上限')
             let written = 0
             while (written < chunk.value.length) { const result = await handle.write(chunk.value, written, chunk.value.length - written, bytes + written); if (!result.bytesWritten) throw new Error('Download write made no progress'); written += result.bytesWritten }
             bytes += written; heartbeat(); report()

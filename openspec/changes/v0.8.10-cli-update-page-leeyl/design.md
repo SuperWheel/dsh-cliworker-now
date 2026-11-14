@@ -397,6 +397,19 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 - 替换失败（exe 被其他进程占用）：保留原文件、删除临时文件、报告「文件被占用」，不半途改动。
 - 撤销：本决定替代任务 D 续 9.1「TRAE 不使用 offline-install」以及 spec 中对应场景；macOS/Linux TRAE 与其他 CLI 维持原归属，本轮只改 Windows 四项（TRAE Unix 待另核其标记逻辑）。
 
+实施补充（任务 W，2026-11-14）：
+
+- `windows-artifacts.ts` 接管 Windows self-update 默认入口，支持 x64/arm64；下载准备与安装回调分离，服务重新核对计划后才写安装目录，安装预算单独 10 分钟。所有工件进度沿原 `prepareLocalUpdate → op.progress` 回调发送。Unix 的更新入口不变，OMP 共用构建清单校验函数。
+- Claude 的 GCS 备用源已加入内置源表：匿名 HEAD 实测 2.1.325 win32-x64 两源均为 200、Accept-Ranges bytes、372461728 B、ETag `"63c63d3679b0aebc2ba5886abd0f464d"`。运行时仍逐次校验 HEAD 身份，使用目标源 If-Range；自定义地址模式禁用自动换源。只请求 HEAD，没有下载该二进制。
+- 三项直接放置使用唯一临时文件和同目录 rename，不先删除旧 exe。Claude 启动器失败则删除本次新版本文件；若同名版本文件原先存在，先保留并在失败时恢复。Antigravity 不执行 `agy install`；Host 写出的文件没有 Zone.Identifier，无需 Unblock-File。
+- TRAE 官方 `Export-OfflineBundle` 要求恰一项 code_mode_host；windows_sandbox_helpers 字段存在时必须包含两项已知辅助件。匿名 GET 的 0.215.0 当前清单无 helpers 字段，按脚本允许缺省，模拟覆盖缺省及完整两项。ripgrep 清单仅保留目标平台；全部 URL 改为相对路径，先校验所有记录／重名／总预算再下载。私有 JSON、工件、脚本合计与每次下载剩余预算受 2 GB 限制。
+- TRAE 脚本来自内置 lf-cdn 地址，argv 为 PowerShell `-NoProfile -NonInteractive -ExecutionPolicy Bypass -File <script> offline-install <bundle>`。固定版本、原通道、release_channel、默认 StateDir/InstallDir；设 `TRAECLI_INSTALL_ASSUME_YES=1` 和 `TRAECLI_INSTALL_SKIP_USER_PATH=1`，不设置 `TRAECLI_INSTALL_AUTO_UPDATE`，不删除代理环境。原有非 public 通道的发布源计划限制仍保留。
+- StateDir 默认是 `%LOCALAPPDATA%/TraeCLI`，标记为其中的 auto-update-version。脚本成功后仅对原先存在的标记写回新 release；脚本第 1989–1995 行允许已有不可变 release 加 UUID 后缀，因此读取 `current` 的实际目标，要求其位于同一 releases 根且名为 `<版本>-<packageTarget>` 或其 32 位十六进制后缀形式。失败／取消不由插件改写标记。
+- 匿名 GET 核对了 Claude 2.1.325 两平台、Antigravity 1.5.9 windows_amd64、OMP 18.20.0 windows-x86_64、TRAE 0.215.0 与 ripgrep 15.1.0 清单字段；没有下载大型工件或执行真实安装器。
+
 ### 决定 14：维护期账号读取不记为错误；维护结束统一作废连接显示
 
 11.9 取消 OMP 后侧栏红点根因：更新持有维护锁时，账号状态读取被 `MaintenanceError` 拒绝，`SettingsConnectionCache.read` 把它存为 `entry.error`；更新只在成功路径调用 `invalidateModels`，失败/取消后不作废，红点保留到用户点开该 CLI。修复：缓存遇到 `MAINTENANCE` 不写 error（保持无值、不转红）；`launch` 的 finally 在释放维护锁后（非隔离情形）对该 CLI 调用一次 `invalidateModels`。
+
+
+实施：SettingsConnectionCache 对 code=MAINTENANCE 清空旧 error/value/checkedAt，仍向直接调用方抛出维护拒绝；成功、失败和取消统一在 launch finally 释放租约后调用一次 invalidateModels，移除成功分支的重复调用。cleanup-unconfirmed 隔离分支不释放租约、不发布可用状态。模拟测试覆盖旧错误被清除、两种缓存槽、释放时序及取消/失败/成功各一次作废。

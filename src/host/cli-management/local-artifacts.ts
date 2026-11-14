@@ -10,24 +10,31 @@ import { hostFetch } from '../host-fetch.mjs'
 import { downloadCliArtifact, DOWNLOAD_MAX_BYTES, DOWNLOAD_TIMEOUT_MS, prepareDownloads } from './download.ts'
 import { executeCliOperation } from './executor.ts'
 import { bounded, ReleaseClient, validVersion } from './versions.ts'
-import { LOCAL_INSTALLERS, OFFICIAL_SIGNED_ARTIFACT_HOSTS } from './sources.ts'
+import { LOCAL_INSTALLERS } from './sources.ts'
 import { CliOperationError } from './planner.ts'
+import { canPrepareWindowsUpdate, prepareWindowsUpdate, validateOmpArtifact } from './windows-artifacts.ts'
 
 type DownloadOptions = Parameters<typeof downloadCliArtifact>[0]
-interface Options {
+export interface LocalArtifactOptions {
   cli: ActiveCliId; version: string; identity?: InstallationIdentity; root: string
   backend: ProcessBackend; config: RuntimeConfig; releases: ReleaseClient; signal: AbortSignal
   fetcher?: typeof hostFetch; output(value: string): void; progress: DownloadOptions['progress']
   platform?: NodeJS.Platform; arch?: string; allowSourceSwitch?: boolean
+  home?: string; localAppData?: string
 }
-export interface LocalArtifactInstall { targetVersion: string; argv: string[]; env?: Record<string, string>; cleanup(): Promise<void> }
+type Options = LocalArtifactOptions
+export interface LocalArtifactInstall {
+  targetVersion: string; argv: string[]; env?: Record<string, string>; cleanup(): Promise<void>
+  /** Host placement or an official offline installer, after the service's admission recheck. */
+  install?(signal: AbortSignal, run: (argv: string[], signal: AbortSignal) => Promise<void>): Promise<void>
+}
 const invalid = (message: string): never => { throw new CliOperationError('INTEGRITY_MISMATCH', message) }
-const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : invalid('官方离线清单格式无效')
-const token = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9._+-]+$/.test(value) && !value.includes('..')
+
 
 /** Select only layouts the official installer will update in place. Other owners
  * retain their original updater. All remote addresses below are built in. */
-export function canPrepareLocalUpdate(cli: ActiveCliId, identity: InstallationIdentity | undefined, platform = process.platform, arch: string = process.arch): boolean {
+export function canPrepareLocalUpdate(cli: ActiveCliId, identity: InstallationIdentity | undefined, platform = process.platform, arch: string = process.arch, home = homedir(), localAppData = process.env.LOCALAPPDATA): boolean {
+  if (platform === 'win32') return canPrepareWindowsUpdate(cli, identity, arch, home, localAppData)
   if (!['darwin', 'linux'].includes(platform) || !['arm64', 'x64'].includes(arch)) return false
   // MiMo approval covers the official macOS zip; Linux keeps its native updater.
   if (cli === 'mimo' && platform !== 'darwin') return false
@@ -56,7 +63,8 @@ async function artifactHead(url: string, options: Options): Promise<{ url: strin
 
 export async function prepareLocalUpdate(options: Options): Promise<LocalArtifactInstall> {
   const { cli } = options, platform = options.platform ?? process.platform, arch = options.arch ?? process.arch
-  if (!canPrepareLocalUpdate(cli, options.identity, platform, arch)) throw new CliOperationError('PREREQUISITE_MISSING', '此安装布局没有已核实的本地工件入口')
+  if (!canPrepareLocalUpdate(cli, options.identity, platform, arch, options.home, options.localAppData)) throw new CliOperationError('PREREQUISITE_MISSING', '此安装布局没有已核实的本地工件入口')
+  if (platform === 'win32') return prepareWindowsUpdate(options)
   const descriptor = LOCAL_INSTALLERS[cli as keyof typeof LOCAL_INSTALLERS]
   const directory = await mkdtemp(join(await prepareDownloads(options.root), 'local-'))
   const cleanup = () => rm(directory, { recursive: true, force: true })
@@ -78,12 +86,9 @@ export async function prepareLocalUpdate(options: Options): Promise<LocalArtifac
       const musl = platform === 'linux' && !(process.report.getReport() as { header?: { glibcVersionRuntime?: string } }).header?.glibcVersionRuntime
       const target = `${platform === 'darwin' ? 'macos' : musl ? 'linux-musl' : 'linux'}-${arch === 'x64' ? 'x86_64' : arch}`
       const key = `api/products/omp/versions/${options.version}/${target}`
-      const metadata = object(await options.releases.json(`${LOCAL_INSTALLERS.omp.base}/${key}`, signal)), build = object(metadata.build), file = object(metadata.file)
-      if (build.version !== options.version || !token(file.name) || file.platform !== target.slice(0, target.lastIndexOf('-')) || file.arch !== (arch === 'x64' ? 'x86_64' : arch) || typeof file.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(file.sha256) || !Number.isSafeInteger(file.size) || (file.size as number) <= 0 || typeof metadata.download !== 'string') invalid('OMP 官方构建身份、摘要或长度不符')
-      const address = new URL(metadata.download as string)
-      if (address.protocol !== 'https:' || address.hostname !== OFFICIAL_SIGNED_ARTIFACT_HOSTS[1] || !address.pathname.startsWith('/ompcast/builds/omp/') || address.username || address.password || address.port || address.hash) invalid('OMP 官方工件地址不在已核实构建源内')
-      const binary = join(directory, 'omp')
-      await download({ url: address.href, officialSignedArtifact: true, integrity: `sha256-${Buffer.from(file.sha256 as string, 'hex').toString('base64')}`, expectedBytes: file.size as number }, binary)
+      const metadata = validateOmpArtifact(await options.releases.json(`${LOCAL_INSTALLERS.omp.base}/${key}`, signal), options.version, target.slice(0, target.lastIndexOf('-')), arch === 'x64' ? 'x86_64' : arch)
+      const { build, file } = metadata, binary = join(directory, 'omp')
+      await download(metadata, binary)
       const metadataPath = join(directory, key)
       await mkdir(join(directory, `api/products/omp/versions/${options.version}`), { recursive: true, mode: 0o700 })
       // Preserve the official schema; only its download pointer is made local.

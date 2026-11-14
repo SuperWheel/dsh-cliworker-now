@@ -126,3 +126,22 @@ it('模拟：清理隔离期间 settingsConnectionStatus 直接返回隔离状�
   await new Promise(resolve => setTimeout(resolve, 20))
   expect(status).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
 })
+
+it.each(['success', 'failure', 'cancel'] as const)('模拟：更新 %s 在维护锁释放后恰好作废一次连接显示', async outcome => {
+  const f = fixture(); await checked(f.management); f.invalidateModels.mockClear()
+  f.invalidateModels.mockImplementation(cli => expect(() => f.config.cliMaintenance.assertAvailable(cli)).not.toThrow())
+  const child = childFixture(); vi.mocked(f.backend.spawn).mockReturnValue(child.child as any)
+  const op = f.management.start('codex', 'update', f.management.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, '', `模拟${outcome}`).operation!
+  await until(() => vi.mocked(f.backend.spawn).mock.calls.length > 0)
+  if (outcome === 'cancel') {
+    f.management.cancel(op.id); await until(() => child.child.waitForExit.mock.calls.length > 0)
+    expect(f.invalidateModels).not.toHaveBeenCalled(); child.finish(); child.exit(true)
+  } else {
+    if (outcome === 'success') f.identities.get('codex')!.manifestVersion = '1.2.3'
+    child.finish(outcome === 'failure' ? 1 : 0); await until(() => child.child.waitForExit.mock.calls.length > 0)
+    expect(f.invalidateModels).not.toHaveBeenCalled(); child.exit(true)
+  }
+  const result = (await finished(f.management)).results[0]!
+  expect(result.phase).toBe(outcome === 'success' ? 'succeeded' : outcome === 'cancel' ? 'cancelled' : 'failed')
+  expect(f.invalidateModels).toHaveBeenCalledExactlyOnceWith('codex')
+})

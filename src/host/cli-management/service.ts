@@ -213,7 +213,7 @@ export class CliManagementService {
       const appVersion = identity.fingerprint.appVersion
       const group = !version ? 'failed' : manual ? 'manual' : old.group === 'checking' || old.group === 'notInstalled' || old.group === 'manual' ? 'checking' : old.group
       this.publish(cli, { installed: true, source: identity.source, currentVersion: version, planToken: fingerprintToken(identity.fingerprint), checkedAt: Date.now(), stage: undefined, group,
-        appVersion, channel: identity.channel, notice: identity.notice ?? piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice,
+        appVersion, channel: identity.channel, notice: identity.notice ?? piNotice(cli, version) ?? (canPrepareLocalUpdate(cli, identity) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice),
         reasonDetail: !version ? CLI_SOURCES[cli].versionNote : undefined,
         reason: !version ? 'UNKNOWN_VERSION' : identity.source === 'unknown' ? 'UNKNOWN_INSTALLATION' : manual ? 'UNSUPPORTED_MANAGER' : undefined,
         manual: manual ? { note: problem!, guideUrl: CLI_SOURCES[cli].guideUrl } : undefined,
@@ -256,7 +256,7 @@ export class CliManagementService {
       const next = latestCompatible(cli, release.versions, before)
       const incompatible = !compatible(cli, release.latest)
       this.publish(cli, { planToken: operationToken(cli, identity, next, registry, before, desktop), latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
-        notice: identity.notice ?? piNotice(cli, next ?? row.currentVersion) ?? NATIVE_UPDATES[cli]?.notice, manual: undefined,
+        notice: identity.notice ?? piNotice(cli, next ?? row.currentVersion) ?? (canPrepareLocalUpdate(cli, identity) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice), manual: undefined,
         group: !incompatible && next && updateAvailable(before, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
     } catch (error) {
       signal.throwIfAborted()
@@ -407,7 +407,7 @@ export class CliManagementService {
             }
           }
           const result = await this.installer!.execute(plan, op, signal, () => this.changed(), recheck)
-          this.identities.set(cli, result.identity); this.cache.invalidateVersion(cli); this.cache.rememberVersion(cli, result.identity.fingerprint, result.version); this.deps.invalidateModels?.(cli)
+          this.identities.set(cli, result.identity); this.cache.invalidateVersion(cli); this.cache.rememberVersion(cli, result.identity.fingerprint, result.version)
           this.publish(cli, { installed: true, source: result.identity.source, currentVersion: result.version, group: plan.source.method === 'npm' ? 'latest' : 'manual', reason: undefined, reasonDetail: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true)
           op.phase = 'succeeded'; return
         }
@@ -433,11 +433,11 @@ export class CliManagementService {
           await rename(artifact, scriptFile); artifact = scriptFile
         }
         if (plan.method === 'self-update' && canPrepareLocalUpdate(cli, plan.identity)) {
-          op.phase = 'downloading'; this.changed()
+          op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
           local = await prepareLocalUpdate({ cli, allowSourceSwitch: selected.automaticSources, version: plan.targetVersion, identity: plan.identity, root: this.deps.root, backend: this.deps.backend, config: this.deps.config, releases: this.releases, signal, fetcher: this.deps.artifactFetch, output, progress: value => { op.progress = value; this.changed() } })
         }
         const admission = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
-        const argv = plan.method === 'desktop' ? undefined : nativeLaunchArgv(local?.argv ?? await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
+        const argv = plan.method === 'desktop' || local?.install ? undefined : nativeLaunchArgv(local?.argv ?? await bounded(operationArgv(plan, this.deps.backend, artifact), admission))
         // Recheck after metadata/manager resolution, immediately before spawning.
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
@@ -476,6 +476,17 @@ export class CliManagementService {
             } })
           if (plan.identity.notice) op.outputTail = outputTail(op.outputTail + '\n' + plan.identity.notice)
           verified = await verify(signal)
+        } else if (local?.install) {
+          op.phase = 'installing'; this.changed()
+          const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 10 * 60_000)
+          try {
+            await local.install(AbortSignal.any([signal, deadline.signal]), run)
+            if (deadline.signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
+          } catch (error) {
+            if (deadline.signal.aborted && !signal.aborted && !(error instanceof ProcessCleanupUnconfirmedError)) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
+            throw error
+          } finally { clearTimeout(timer) }
+          verified = await verify(signal)
         } else verified = await withInterruptionRecovery(signal, async (control, evidence) => {
           let exitError: unknown
           try { await run(argv!, control, evidence) }
@@ -493,13 +504,13 @@ export class CliManagementService {
           output(`\n── 下载中断；已自动重试 ${count} 次 ──\n`)
         })
         const { after, cliVersion, version } = verified
-        this.cache.invalidateVersion(cli); this.deps.invalidateModels?.(cli)
+        this.cache.invalidateVersion(cli)
         this.identities.set(cli, after)
         this.cache.rememberVersion(cli, after.fingerprint, cliVersion)
         const row = this.entry(cli), next = row.latestCompatibleVersion
         const incompatible = !!row.latestVersion && !compatible(cli, row.latestVersion)
         const updatable = !incompatible && !!next && updateAvailable(version, next)
-        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: after.notice ?? piNotice(cli, version) ?? NATIVE_UPDATES[cli]?.notice, group: updatable ? 'updatable' : 'latest',
+        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: after.notice ?? piNotice(cli, version) ?? (canPrepareLocalUpdate(cli, after) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice), group: updatable ? 'updatable' : 'latest',
           reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined, reasonDetail: undefined, manual: undefined, stage: undefined, checkedAt: Date.now(),
           planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
         op.phase = 'succeeded'
@@ -520,7 +531,7 @@ export class CliManagementService {
         if (!quarantine) await Promise.all(desktopArtifacts.map(file => unlink(file).catch(() => undefined)))
         op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
         this.operationController = undefined; this.operationRun = undefined
-        if (!quarantine) release()
+        if (!quarantine) { release(); this.deps.invalidateModels?.(cli) }
         else { this.state.queue = []; this.queued.clear() }
         this.changed(); this.preloader.changed()
         if (!this.lifetime.signal.aborted && !quarantine) this.nextQueued()

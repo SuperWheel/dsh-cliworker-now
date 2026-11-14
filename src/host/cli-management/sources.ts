@@ -61,23 +61,24 @@ export const NATIVE_RELEASES: Partial<Record<ActiveCliId, { kind: 'antigravity' 
 }
 export interface NativeUpdate {
   argv: readonly string[]; pinsVersion: boolean; env?: Record<string, string>; notice?: string
+  windowsNotice?: string
   script?: { url: string; interpreter: string; platforms: readonly string[] }
 }
 export const NATIVE_UPDATES: Partial<Record<ActiveCliId, NativeUpdate>> = {
-  antigravity: { argv: ['update'], pinsVersion: false, notice: '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。' },
+  antigravity: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源清单 sha512 校验后替换；同源摘要不等于独立签名。', notice: '官方更新命令的确认行为尚未实机核实；关闭 stdin，超时或版本未前进会报告失败。' },
   codex: { argv: ['--release', '%VERSION%'], pinsVersion: true, env: { CODEX_NON_INTERACTIVE: '1' }, script: { url: 'https://releases.openai.com/codex/install.sh', interpreter: '/bin/sh', platforms: ['darwin', 'linux'] } },
-  claude: { argv: ['update'], pinsVersion: false },
+  claude: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源清单 sha256 与长度校验后替换版本文件及启动器。' },
   kimi: { argv: ['update', '-y'], pinsVersion: false, env: { KIMI_CODE_NO_AUTO_UPDATE: '1' } },
   mimo: { argv: ['upgrade', '%VERSION%', '--method', 'curl'], pinsVersion: true },
   grok: { argv: ['update', '--version', '%VERSION%'], pinsVersion: true },
-  omp: { argv: ['update'], pinsVersion: false },
+  omp: { argv: ['update'], pinsVersion: false, windowsNotice: 'Windows 官方默认布局由插件下载，按同源构建清单 sha256 与长度校验后替换。' },
   pi: { argv: ['update', '--self'], pinsVersion: false },
   hermes: { argv: ['update', '--yes'], pinsVersion: false, notice: 'Hermes 更新会迁移配置、更新依赖并可能重启服务。查询源为 stable，当前安装可能为 canary/自定义通道；不切换原通道，执行后以重新探测版本为准。' },
   opencode: { argv: ['upgrade'], pinsVersion: false },
   qoder: { argv: ['update'], pinsVersion: false },
   qodercn: { argv: ['update'], pinsVersion: false },
   codebuddy: { argv: ['update'], pinsVersion: false },
-  traecn: { argv: ['update', '--channel', '%CHANNEL%', '--version', '%VERSION%'], pinsVersion: true },
+  traecn: { argv: ['update', '--channel', '%CHANNEL%', '--version', '%VERSION%'], pinsVersion: true, windowsNotice: 'Windows 官方默认布局由插件下载并校验完整离线包，交官方 offline-install；保留自动更新标记的启用状态。' },
 }
 for (const [cli, update] of Object.entries(NATIVE_UPDATES)) {
   if (!update.script) CLI_SOURCES[cli as ActiveCliId].update = update.argv
@@ -94,6 +95,13 @@ export const BACKGROUND_ACCOUNT_CLIS: readonly ActiveCliId[] = ['codex', 'claude
 
 /** Audited official --binary/offline-install interfaces; never client supplied. */
 export const OFFICIAL_SIGNED_ARTIFACT_HOSTS = ['release-assets.githubusercontent.com', 'd4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com'] as const
+/** Task W: fixed official Windows sources; no caller-selected URLs. */
+export const WINDOWS_LOCAL_SOURCES = {
+  claude: 'https://downloads.claude.ai/claude-code-releases',
+  claudeFallback: 'https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases',
+  omp: 'https://build.stencil.so/api/products/omp/versions',
+  trae: 'https://lf-cdn.trae.com.cn/obj/trae-com-cn/trae-cli',
+} as const
 export const LOCAL_INSTALLERS = {
   // omp.sh/install responds 302; downloads deliberately reject redirects.
   omp: { script: 'https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh', base: 'https://build.stencil.so', entry: '.local/bin/omp' },
