@@ -180,6 +180,21 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
       expect(find(items, `.cache/${name}`)).toMatchObject({ action: 'keep', reason: 'current DSH 0.2.2-rc.2 target' })
   })
 
+  it('keeps rc.3 SDK, source, build, store and typecheck caches while pruning aged rc.2 targets', () => {
+    const root = repository('0.2.2-rc.3')
+    const current = ['cliworker-build-deps-022rc3', 'dsh-host-source-022rc3', 'dsh-host-build-deps-022rc3', 'dsh-host-pnpm-store-022rc3', 'dsh-host-typecheck-022rc3']
+    const previous = ['cliworker-build-deps-022rc2', 'dsh-host-source-022rc2', 'dsh-host-build-deps-022rc2', 'dsh-host-pnpm-store-022rc2', 'dsh-host-typecheck-022rc2']
+    for (const name of [...current, ...previous]) file(root, `.cache/${name}/data.bin`)
+    age(join(root, '.cache'), 30)
+    expect(removed(plan(root).items)).toEqual([])
+    for (const name of previous)
+      expect(find(plan(root).items, `.cache/${name}`).reason).toBe('old DSH target (022rc2) (pass --older-than to prune)')
+    const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
+    expect(removed(items)).toEqual(previous.map(name => `.cache/${name}`).sort())
+    for (const name of current)
+      expect(find(items, `.cache/${name}`)).toMatchObject({ action: 'keep', reason: 'current DSH 0.2.2-rc.3 target' })
+  })
+
   it('keeps the three newest formal release groups and every verification.json', () => {
     const root = repository()
     for (const version of ['0.6.9', '0.7.10', '0.7.7', '0.7.8', '0.8.1']) {
