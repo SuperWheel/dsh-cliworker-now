@@ -45,6 +45,8 @@
   - 修复前本机复现 4 种写法均为 `{"status":"unknown"}`；修复后 `corepack pnpm vitest run` 识别相关 7 个文件 176 项通过，`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）
 - [x] 3.5 `tests/native-primary-runners.test.ts` 新增 Haiku 规划模拟 2 项：有唯一 `sonnet` 映射时 SUCCESS、正文为方案；缺映射或非规划模式仍判模型不一致
   - 撤掉源码修复后「Haiku 规划回合由 Sonnet 回复」用例失败，恢复后通过；`native-primary-runners` 167 项通过；`tests/*claude*` 与 `tests/native-*` 共 52 个文件 1178 项通过、3 项跳过；`corepack pnpm typecheck` 通过
+  - 真实复测（2026-11-14，用户授权；main `76063b9` 经 `build:preview` 与正式构建，重启 Mac Desktop 0.2.2-rc.3）：Worker `de33d052`（Haiku／Low，`read_only` 派遣，本轮权限「规划模式」）session 报 `claude-haiku-5-5`、两次 `message_start` 为 `claude-sonnet-5-5`；`ExitPlanMode` 后诊断「已提交规划方案」，result SUCCESS、附规划说明，终态 completed；工作区无 `plan-test`
+  - 同一主对话首条「请派遣 Claude Code（CLI Worker）…模型用 Haiku」直接进入选型卡（2.5 的识别修复在 Mac 真实生效）
 
 ## 4. 自动检查 〔测试｜1h｜前置 3〕
 - [x] 4.1 `corepack pnpm typecheck`
@@ -107,4 +109,5 @@
 
 - 非规划模式下 Claude Code 自行进入规划后的 `ExitPlanMode`，仍按不支持的交互判失败；是否改为转交 DSH 审批（批准即开始执行），待用户决定。
 - agy stream 后备路径（规划模式、旧版）是否同样会截断后台子 Agent，仍未覆盖。
+- 2026-11-14 实测发现规划边界疑似失效：主对话 `session-aa1c2138` 已 `/plan`（投影缓存 `plan.val.active: true`），按 `worker-dispatch`／`worker-permission-levels` 规格应拒绝派遣，但 `cliworker_start` 成功；主 Agent 未传 `read_only` 时 Worker `3c7fbc3e` 以 `accept-edits`、本轮权限「自动审批」运行（只因任务要求未写文件）。插件经 `agent.ctx.get('planMode')?.get(agent).active` 读取宿主规划状态（`index.ts` 第 850、887 行），实测等于未读到；`planMode` 不在 `CliWorkerService.inject` 中。同日 Mac `d08a4b24`、Windows `1a5479f8` 能以规划模式运行，是因为主 Agent 传了 `read_only`。待排查是否为 rc.3 起的回归并修复。
 - 2026-11-14 实测：Claude Code 选 Haiku 时规划模式回合实际用 `claude-sonnet-5-5`（官方说明「haiku in plan mode」时 API 模型与设定不同，类似 opusplan），插件判「Claude stream-json: 原生回复模型与明确选型不一致」并中止（Worker `4a976b54` 两轮复现，均在 `ExitPlanMode` 之前）。用户同日决定接受，已按 2.6／3.5 修复；真实 Haiku 规划派遣尚未复测（需正式构建并重启 Desktop）。
