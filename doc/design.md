@@ -1481,7 +1481,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 ## 2026-11-13 v0.8.10：CLI 首次安装后端（未发布）
 
-首次安装复用更新的 Host 计划入口、维护锁、下载器、执行器和清理隔离。npm 按当前可写全局前缀安装经过官方 sha512 核对的本地主包；官方脚本仅取 Host 内置地址，下载为私有文件后通过固定解释器执行。未核实的来源保持仅说明；阶段 C 审查后，Claude 全平台及 MiMo macOS/Linux 因缺少可靠原生版本读法退回仅说明，MiMo Windows npm 保留。Qoder/CN Windows 入口复用既有 exe 候选；Git Bash 按文件布局核实，不依赖安装目录名。账号目录保护复用实际路径工具及环境变量；桌面清理错误不能覆盖进程隔离错误。成功必须经过装后身份与版本检查，再写入现有 CLI 路径存储；重新安装不删除旧文件。桌面执行器已有模拟的挂载、签名要求、暂存复制、卸载及 Windows 等待流程，但三个桌面来源缺少已核实的包地址/摘要/开发者身份，尚未开放自动安装。详见 [变更设计](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务证据](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)；模拟测试不代表真实安装验收。
+首次安装复用更新的 Host 计划入口、维护锁、下载器、执行器和清理隔离。npm 按当前可写全局前缀安装经过官方 sha512 核对的本地主包；官方脚本仅取 Host 内置地址，下载为私有文件后通过固定解释器执行。未核实的来源保持仅说明；阶段 C 审查后，Claude 全平台及 MiMo macOS/Linux 因缺少可靠原生版本读法退回仅说明，MiMo Windows npm 保留。Qoder/CN Windows 入口复用既有 exe 候选；Git Bash 按文件布局核实，不依赖安装目录名。账号目录保护复用实际路径工具及环境变量；桌面清理错误不能覆盖进程隔离错误。成功必须经过装后身份与版本检查，再写入现有 CLI 路径存储；重新安装不删除旧文件。2026-11-14 核实并接通三个桌面 CLI 的 macOS 首次安装来源：复用官方 feed 的 ZIP、摘要与固定 Team ID，解包后校验 codesign/spctl，经暂存复制、应用版本核对后写回路径；DMG 仍走只读挂载与卸载。ZCode 3.18.2 与 Pi npm 1.5.2 已在隔离位置真实验收；国际版 WorkBuddy 当前 ZIP 与 feed SHA-256 不一致而拒绝安装。Windows 首次安装的 Authenticode 与向导实际落点仍未核实，维持仅说明。详见 [变更设计](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务证据](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)；模拟测试不代表真实安装验收。
 
 ## 2026-11-10 v0.8.9：TRAE 询问档与 DS Bot 换段重绑（未发布）
 

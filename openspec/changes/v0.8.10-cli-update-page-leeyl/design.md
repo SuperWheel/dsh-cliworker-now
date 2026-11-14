@@ -88,7 +88,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 关于来源：
 
 - `parent(parentSessionId)` 只是上下文校验，不证明是用户点击。
-- 实施时先核实 Gateway 能否区分来源（PRD 第九节第 15 条）。核实前写操作只注册在设置页使用的 Remote 上，不进入工具清单；同时在 tasks 里保留「来源核实」项。
+- 2026-11-14 已核对 SDK 0.2.2-rc.3：RemoteInvocation 只含 request、service、peer、signal/uplink；Peer principal 标记连接主体，不标记设置页点击与 Agent。Gateway 将同一 Peer 绑定到调用 Context，不能据此证明 UI 来源。保留设置页 Remote，Agent 工具清单只含 7 个 Worker 操作并有注册回归；不声称防止同机受信代码直接调用 Remote。源码行号与实际验证见 tasks 1.3。
 
 ### 决定 3：维护锁与现有忙闲共用一个同步准入
 
@@ -169,7 +169,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 - **首次安装来源边界（阶段 C）**：`installationSource` 以 PRD 5.3 的平台差异选择方法。Codex、Pi、CodeBuddy 用 npm；MiMo/OpenCode 的 Windows 用 npm；Pi 添加 `--ignore-scripts`；PRD 5.3.1 起 Pi 取最新版并提供未适配通知，OpenCode 仍只取 V1。npm 通过已核实的 Node/npm 读取 Node 版本及 `npm prefix -g`，校验目标包 engines 和最低版本，前缀不可写不提权。安装与更新共用 Host 计划入口、全局操作生命周期、维护锁、下载器和执行器。
 - **脚本版本与摘要**：Kimi、TRAE CN（Mac/Linux）、Qoder/CN（Windows）只用 sources 内置脚本 URL 与解释器。脚本以文件执行，不传远端命令文本；没有官方独立摘要时仅依赖无重定向的 HTTPS 传输及 HTTP 长度，不称为已验证发布签名。目标选择器为 `official-current`，不编造精确版本或未证实的锁版本参数；执行后仍须读取有效且适配的版本，否则失败并保留旧路径设置。原生二进制没有已核实版本读法时不会据退出码宣告成功。阶段 C 审查确认 Claude 全平台及 MiMo Mac/Linux 没有足够证据实现原生版本读取，改回 manual；不根据目录名称猜版本、不新增未证实无副作用的 --version。MiMo Windows npm 不受影响。Antigravity/Grok 的前置条件或版本读法、OMP/Hermes 的禁止代装运行时参数、Qoder/CN 的 macOS 入口及 OpenCode macOS 锁 V1 参数仍待核实，保持仅说明。
-- **桌面安装不先开放**：ZCode、WorkBuddy CN、WorkBuddy 没有已核实的安装包 URL、摘要/长度及开发者身份，因此生产来源表仍为 manual。通用执行器仅以模拟描述符验证：macOS 只读挂载、codesign Team ID 要求与 spctl、暂存复制后移动、失败清理暂存和 detach；detach 未确认进入清理隔离，不删除仍可能挂载的目录。Windows 仅启动官方安装程序并等进程范围退出，不传猜测的静默/位置参数；未实现真实 Authenticode 验收。页面位置是建议值，未来已核实来源可提供常见目录用于装后查找。
+- **阶段 C 的桌面安装边界（2026-11-14 已由末节接通 macOS）**：ZCode、WorkBuddy CN、WorkBuddy 没有已核实的安装包 URL、摘要/长度及开发者身份，因此生产来源表仍为 manual。通用执行器仅以模拟描述符验证：macOS 只读挂载、codesign Team ID 要求与 spctl、暂存复制后移动、失败清理暂存和 detach；detach 未确认进入清理隔离，不删除仍可能挂载的目录。Windows 仅启动官方安装程序并等进程范围退出，不传猜测的静默/位置参数；未实现真实 Authenticode 验收。页面位置是建议值，未来已核实来源可提供常见目录用于装后查找。
 - **位置与旧路径**：纯 CLI 不接受客户端自选位置。桌面位置可不存在，但父目录须可写且空间充足，拒绝与已知项目/工作区、插件状态、账号数据及另一版 WorkBuddy 安装目录重叠。路径变更前核对路径存储 revision，只有装后身份与版本验证成功才调用现有 `CliExecutablePathStore.setManual`；失败不重置旧记录，也不删除旧安装文件。
 
 - **npm 依赖解析边界**：官方 sha512 绑定的是目标版本主包 tarball；其依赖及生命周期脚本仍由 npm 按所选 registry 和 npm 原生规则处理。本实现不声称已独立验算所有传递依赖，也不伪造其下载字节进度。
@@ -180,7 +180,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 - **2.8 发布源与前台版本修复**：npm 最新版本先读 `/-/package/<编码包名>/dist-tags`，保持 512 KiB / 8 秒；仅兼容受限且 latest 不兼容时拉 packument，单请求上限 32 MiB（用户实测最大 OpenCode 为 14.7 MB，预留有界增长空间），流式计数。缓存结构不变，版本列表只存 latest 和最高兼容正式/预发布候选，该轮旧缓存仍有效（第 8 节策略升级后重建）；integrity/artifact 精确版本接口和镜像回退不变。清单缺版本时前台以实际入口运行 `--version`，5 秒、stdin ignore、去 ANSI、首个完整合法 SemVer，退出进程树后才返回。版本/无版本结果按指纹复用，后台跳过不阻止首次前台读取。Codex standalone 仅按完整路径前缀归官方安装器，第 8 节已开放锁版官方脚本更新；Claude cask 可经版本查询生成 brew upgrade --cask claude-code。此轮不重新开放阶段 C 暂停的首次安装脚本。
 - **缓存落后于真实情况**：版本靠文件指纹发现变化；账号状态最多落后 10 分钟。
 - **Windows**：npm.cmd、进程树终止、文件占用、提权窗口不可见、空闲判定和低优先级需单独验收；不走需要管理员权限的位置。
-- **Gateway 无法区分调用来源**：在核实前，写操作只在设置页的 Remote 使用，不提供给 Agent 工具。
+- **Gateway 来源核实已完成**：无法区分可信 UI 点击与 Agent，写操作保留设置 Remote，不提供 Agent 工具；不把 owner 连接当作点击证据。
 - **工作量大**：按阶段交付。第一阶段为只读检查、缓存、预加载与页面；第二阶段为 npm、brew、自带命令更新与停滞续传；第三阶段为首次安装（脚本与桌面）。未完成的阶段在 tasks 里保持未勾选。
 
 ## Migration Plan
@@ -190,7 +190,7 @@ Host 新增 `CliManagementService`，由 `CliWorkerService` 持有并在 `ctx.ef
 
 ## Open Questions
 
-- Gateway 能否提供可靠的调用来源（第九节第 15 条）。
+- Gateway 缺少可信 UI 来源标记（2026-11-14 已核实），现行保护是设置 Remote 与 Agent 工具不互相投影。
 - 各 CLI 的 `--version` 是否有副作用、自带更新命令是否只读可检查（Grok `update --check`、TRAE `update check`）。
 - 三个桌面安装器的静默与目录参数。
 
@@ -328,3 +328,13 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 | WorkBuddy | `net/workbuddy-latest-darwin-arm64-direct/body` 的 5.9.4.42593613；download.codebuddy.ai 返回 **200 / 478,466,147 B**，ETag `6b5d8abc5ade49edeb9e41867c8acfd8-457`，x-cos-meta-md5 `0d931f9ebea458d7ff2976c329d10ba1`，无 Location。feed 有 SHA256。 | 未获取第二官方同对象域名；不将 CN 地址当镜像。 |
 
 以上为当前已知官方 feed 指向对象的响应证据，不是全网不存在镜像的证明。本轮不猜测 OSS/COS 内部桶域名、不下载桌面包，不改 desktop-update.ts。
+
+
+## 2026-11-14 首次安装来源与实机复核
+
+- macOS 首次安装复用 `readDesktopRelease`，通过现有 ReleaseClient 的 3 并发、8 秒与 512 KiB 预算读取匿名清单；`sources.ts` 固定应用名、包内 CLI、Team ID，客户端不能传 URL、摘要或签名主体。计划 token 包含本次 release 描述符，执行前重新核对；下载摘要失败不执行解包或安装。ZIP 在 0700 私有目录用系统 ditto 解包，codesign --deep --strict 的 Apple anchor / Team ID 及 spctl 通过后复制，应用版本必须等于清单目标才写回路径。DMG 的只读挂载与卸载继续保留。
+- [ZCode 官方安装页](https://zcode.z.ai/en/docs/install) 与 `https://zcode.z.ai/api/v1/releases/electron/manifest?platform=darwin-aarch64&channel=1`：本次版本 3.18.2，`cdn-zcode.z.ai/zcode/electron/releases/3.18.2/macos-arm64/ZCode-3.18.2-mac-arm64.zip`，305,360,326 B，官方 SHA-512 `KD7Z6GjYQWAX2tvgIE35XA4iLU5jn41tx5Wz2ZJEs+ivWu56cQY3yqsusuh88MvgCrtOykRjfhOyHhA1S2Q2gA==`；固定 Team `8A5X4JJ39T`。隔离安装通过。
+- [WorkBuddy CN 官方安装页](https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide) 与 `https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0`：5.9.3.42398134，download.codebuddy.cn 的 `/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-d4692421.zip`；清单 SHA-256 `55d73c63e44be58e31411254d10ad141faef9fd9eaf3cab67685d81f88e14835`。Team `FN2V63AD2J` 沿用既有本机签名依据，本次未重新下载 CN 包，不把清单读取当作该包真实安装验收。
+- [WorkBuddy 官方安装页](https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide) 与 `https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0`：5.9.4.42593613，download.codebuddy.ai 的 `/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.zip`。清单 SHA-256 为 `6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6`；插件两次下载均不符而删除片段。独立 curl 下载 478,466,147 B 的 SHA-256 为 `754926260c0ab867b5fe1050ab5cc01724a1330451617c8f339c679ff3bbc542`；保留拒绝，不替换官方摘要、不绕过完整性检查。仅解包检查签名：`com.workbuddy.workbuddy-ai`、Developer ID Application Tencent Technology (Shanghai) Company Limited、Team `FN2V63AD2J`，codesign --verify --deep --strict 通过，存在 stapled notarization ticket。此签名检查不是插件安装成功证据，也未打开应用、读账号或登录。
+- Windows 仍只提供官方说明：当前没有 Windows 实机、没有已核实的首次安装 Authenticode 与向导实际落点，不猜静默参数或把用户建议位置当成实际位置。任务 5.2、7.4 因 Windows 部分保留未勾选。
+- OMP 的 `https://omp.sh/install` 本次 HEAD 为 302，目标是 `https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh`；因下载器拒绝跳转，将本地交接脚本固定为该官方目标。GET 构建 API 已确认 18.19.0 / 18.20.0 可用；16.4.4 的 HEAD 404 不用于推断 GET 不可用。真实交接及脚本调用的最终结果见任务 11.6。

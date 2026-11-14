@@ -7,7 +7,7 @@ import { ProcessCleanupUnconfirmedError } from '../process.ts'
 const { chmod, mkdir, mkdtemp, rm, lstat, rename } = physicalFs().promises
 export const desktopFs = { rm }
 
-/** Only Host-verified descriptors enter here. Production sources currently have no verified desktop feeds. */
+/** Only Host-verified official feeds and pinned publisher identities enter here. */
 export async function installDesktop(options: {
   source: NonNullable<InstallSource['desktop']>; root: string; file: string; directory: string; platform: string; signal: AbortSignal
   run(argv: string[], signal: AbortSignal): Promise<void>; awaiting(): void
@@ -28,9 +28,13 @@ export async function installDesktop(options: {
   let stage: string | undefined
   let operationError: unknown
   try {
-    // Mark before attach: a failed command may still have mounted the image.
-    attached = true
-    await run(['/usr/bin/hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, options.file], signal)
+    if (source.archive === 'zip') {
+      await run(['/usr/bin/ditto', '-x', '-k', options.file, mount], signal)
+    } else {
+      // Mark before attach: a failed command may still have mounted the image.
+      attached = true
+      await run(['/usr/bin/hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint', mount, options.file], signal)
+    }
     const app = join(mount, source.appName)
     const info = await lstat(app)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new CliOperationError('IDENTITY_CHANGED', '安装镜像没有预期的应用目录')
@@ -49,6 +53,7 @@ export async function installDesktop(options: {
   finally {
     let isolation = operationError instanceof ProcessCleanupUnconfirmedError ? operationError : undefined
     const cleanupErrors: unknown[] = []
+    if (source.archive === 'zip') confirmed = !(operationError instanceof ProcessCleanupUnconfirmedError)
     if (attached) {
       try { await run(['/usr/bin/hdiutil', 'detach', mount], AbortSignal.timeout(30_000)); confirmed = true }
       catch (cause) { isolation = cause instanceof ProcessCleanupUnconfirmedError ? cause : new ProcessCleanupUnconfirmedError({ cause }) }

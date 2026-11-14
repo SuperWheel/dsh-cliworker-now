@@ -38,7 +38,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
       if (info.isDirectory() && !info.isSymbolicLink() && now - info.mtimeMs > DOWNLOAD_RETENTION_MS) await rm(path, { recursive: true, force: true })
       continue
     }
-    if (!/^[a-f0-9-]{36}\.(?:part|tgz|sh|ps1|dmg|exe)$/.test(name)) continue
+    if (!/^[a-f0-9-]{36}\.(?:part|tgz|sh|ps1|dmg|zip|exe)$/.test(name)) continue
     const path = join(directory, name), info = await lstat(path)
     if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) continue
     if (now - info.mtimeMs > DOWNLOAD_RETENTION_MS) await unlink(path)

@@ -26,6 +26,8 @@
   - 尚未完成：国际版新旧入口的“可用模型目录”实机成功验收；当前原生返回全部停用，不能证明可用模型查询成功，不放宽过滤、不更改账号、不移除代理。该项保持不勾选，变更不归档。
   - 2026-11-14 主会话 Desktop 实机（`corepack pnpm build` 后从终端启动 DSH Desktop 0.2.2-rc.3，保留宿主代理变量，内置浏览器直连 Host Web UI）：「CLI 连接」Qoder CN 显示「已登录」、默认模型 Qwen3.8-Flash、强度「默认」，此前的「原生账号查询暂不可用」「原生模型目录暂不可用」消失；Qoder 显示「已登录」，模型区为「Qoder 未公开可用的结构化模型目录」，与上面原生目录全部停用一致。主会话复核：`corepack pnpm typecheck` 通过；`tests/qoder-accounts.test.ts tests/qodercn-accounts.test.ts tests/authorized-catalog.test.ts tests/windows-accounts.test.ts` 4 文件 199 项通过。
   - 国际版可用模型为 0 在 1.1.73 旧入口同样出现，属账号/服务端返回，不是本次协议改动所致；待账号有可用模型后再补这一项。
+  - 2026-11-14 11:30 复查：复用原 H-live.ts（仅改相对 import 与证据落点，命令 `corepack pnpm exec tsx .cache/gaps-qoder-live.ts`），退出 0。Qoder 1.1.89 / 1.1.73 仍各 16 个原生模型、启用 0、停用 16、13 个声明强度；账号已识别、Free，插件仍拒绝空可用目录。Qoder CN 1.1.89 为 13 个原生模型、1 个启用，插件返回 1 个带强度模型。本次 6 个元数据进程：3 个退出 0，3 个 Host SIGKILL 收尾，waitForExit 全 true；私有目录残留 0。用户目录 1,161 项前后无新增、缺失或 mtime/大小/模式变化；没有 session/new 或 prompt，没有清除代理。证据 `.cache/gaps-live/H-live-detail-result.json`、/tmp/gaps-qoder-live.log。国际版可用目录仍无法验收，3.1 保持未勾选。
+
 - [x] 3.2 两版 1.1.89 ACP initialize 冒烟，记录回执与退出，不建会话不发 prompt
   - `corepack pnpm exec tsx .cache/cli-update-research/H-acp.ts` 退出 0；两版均使用 `workerArguments(..., nativeTransport=true, access=read-only)` 的 ACP/permission-mode/model 参数数组，模型 ID 来自该版原生返回（国际版无启用模型，只验证 initialize，不提交选型/会话/模型任务）。配置与 cwd 均为私有目录。
   - 各发送 1 个 initialize，协议版本均为 1、品牌身份均匹配；session/new 与 prompt 均 0。两进程经 Host SIGKILL 收尾，waitForExit 均 true，私有目录删除均确认。用户目录 1,155 项无变动；证据 `.cache/cli-update-research/H-acp-result.json`。

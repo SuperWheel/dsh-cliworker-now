@@ -73,6 +73,7 @@ it('模拟：OMP 官方摘要工件通过 PI_BUILD_URL 本地清单交给原脚�
   f.metadataFetch.mockResolvedValue(new Response(JSON.stringify({ build: { version: '1.2.3' }, file: { platform: 'macos', arch: 'arm64', name: 'omp-darwin-arm64', sha256, size: 6 }, download: 'https://d4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com/ompcast/builds/omp/fixture/omp?signature=fixture' })))
   f.artifactFetch.mockImplementation(async () => new Response('模拟'))
   const local = await prepareLocalUpdate({ ...options(f, 'mimo'), cli: 'omp', identity: id })
+  expect(f.artifactFetch).toHaveBeenCalledWith('https://raw.githubusercontent.com/can1357/oh-my-pi/main/scripts/install.sh', expect.objectContaining({ redirect: 'error', credentials: 'omit' }))
   const directory = dirname(local.argv[1]!), metadata = JSON.parse(readFileSync(join(directory, 'api/products/omp/versions/1.2.3/macos-arm64'), 'utf8'))
   expect(local.argv).toEqual(['/bin/sh', join(directory, 'install.sh'), '--binary', '--ref', 'v1.2.3'])
   expect(local.env?.PI_BUILD_URL).toBe(new URL(`file://${directory}`).href)
