@@ -557,6 +557,7 @@
   - 2026-11-15 主会话 Windows 实机只读复核（不更新、不启动 ZCode）：把 `pe-version.ts` 用 esbuild 编成单文件，经 `ELECTRON_RUN_AS_NODE=1` 的 DSH Electron 运行。初版读 `C:\Program Files\ZCode\ZCode.exe` 返回 undefined，WorkBuddy.exe 与 DeepSeek Harness.exe 正常；逐项打印字符串表发现失败在「值内含 NUL」：`SquirrelAwareVersion` wValueLength=3（6 字节，值 "1" 带两个结尾 NUL），`OriginalFilename` 为空串。改为与 VerQueryValue 一致、按第一个 NUL 截断（结构与越界检查不变），新增模拟用例「多余结尾 NUL」；`node_modules/.bin/vitest run tests/cli-management-zcode-windows.test.ts` 30/30 通过。重跑实机：ZCode.exe → productVersion 3.14.5.7961、productName ZCode；WorkBuddy.exe → 5.9.3.0 / WorkBuddy。
 - [ ] 17.3 Windows 实机更新验收
   - 待主会话实机验收。
+  - 2026-11-15 13:2x 部分（只读）：Windows 安装 `53451ae` 隔离包（1271/1271 文件比对一致，包 SHA-256 e9a2a772…），经「应用→退出」菜单重启 Desktop 0.2.2-rc.3；Codex CU 只读打开「更新 CLI」，检查完成「1 个可更新」：ZCode 在「可更新」分区，行文「应用 3.14.5 → 3.18.2 · ZCode 桌面应用，下载官方安装包更新」，按钮「更新」（修复前为插件 runtime 不能更新）。未点击更新；真实下载、UAC、官方向导与更新后读回 3.18.2 仍待执行，需用户在 Windows 前完成 UAC。
 
 ## 18. Windows 国际版 WorkBuddy 安装 〔后端｜3h｜前置 5〕
 
@@ -573,3 +574,4 @@
   - 只读调研补充：内嵌 app-64.7z 仅用系统 tar 读取产品 JSON 到内存；SignerInfo issuer+serial 精确匹配两版腾讯证书。新 TypeScript CRC 对两份完整 EXE 再算，与系统 liblzma/COS 均一致。全部下载、内嵌归档、证书及 NSIS 中间文件随 0700 临时目录删除，另一个 Python 进程回读确认目录及两个 EXE 均不存在；证据 JSON 记录回读时间。本 change 仍含实机及其他原有未完项，不归档。
 - [ ] 18.4 Windows 实机安装验收
   - 待主会话实机验收；真实签名信任链、向导目录、国内版共存、磁盘空间及安装后页面回读均未执行。
+  - 2026-11-15 13:2x 部分（只读，同一 `53451ae` 包）：国际版 WorkBuddy 在「未安装」分区，检查完成后行文「桌面应用（试验性） · 可选安装位置」，「安装」按钮可用（检查前曾短暂显示「这台电脑上没有找到」与禁用的安装按钮）；WorkBuddy CN 仍为「已是最新」、应用 5.9.3 · CLI 2.165.0。另在 Windows 只读核对国内版 WorkBuddy.exe 与卸载程序 `Get-AuthenticodeSignature`：Status=Valid，Subject 以 `CN=Tencent Technology (Shenzhen) Company Limited, O=Tencent Technology (Shenzhen) Company Limited` 开头，与代码固定发布者匹配。未点击安装。
