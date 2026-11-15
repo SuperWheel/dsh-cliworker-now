@@ -1,3 +1,4 @@
+import { WORKBUDDY_COS_POLICY, readWorkBuddyCos } from './workbuddy-windows.ts'
 import { withUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
 import { registerNativeResidueCleanup, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
@@ -66,7 +67,7 @@ export class CliInstaller {
     catch (error) { if (error instanceof ProcessCleanupUnconfirmedError || signal.aborted) throw error; if (['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes((error as NodeJS.ErrnoException).code ?? '') || (error as { reason?: string }).reason === 'not-installed') return; throw error }
   }
   async prepare(cli: ActiveCliId, registry: string, directory: string, signal: AbortSignal, automaticSources = true): Promise<InstallPlan> {
-    const source = installationSource(cli, this.platform), store = this.deps.config.cliExecutablePaths!
+    const source = installationSource(cli, this.platform, this.deps.arch), store = this.deps.config.cliExecutablePaths!
     if (directory && source.method !== 'desktop' && source.method !== 'manual') throw new CliOperationError('LOCATION_INVALID', '纯 CLI 只使用官方默认安装位置')
     let before: InstallationIdentity | undefined, unusableBefore: InstallPlan['unusableBefore']
     try { before = await this.inspect(cli, signal) }
@@ -110,14 +111,19 @@ export class CliInstaller {
       const arch = this.deps.arch ?? process.arch
       if (this.platform === 'win32' && arch === 'arm64' && (cli === 'qoder' || cli === 'qodercn')) prerequisite('Windows 架构', '非 ARM64', arch, false)
     } else {
-      plan.directory ||= this.platform === 'darwin' ? '/Applications' : ''
+      plan.directory ||= this.platform === 'darwin' ? '/Applications' : cli === 'workbuddy' && process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Programs', 'WorkBuddyAI') : ''
       if (source.desktopFeed) {
         const descriptor = DESKTOP_INSTALL_SOURCES[source.desktopFeed]
         const release = await readDesktopRelease(source.desktopFeed, {}, signal, { platform: this.platform, arch: this.deps.arch,
           fetcher: (url, init) => this.deps.releases.response(String(url), init?.signal ?? signal) })
         const integrity = release.sha512 ? `sha512-${release.sha512}` : release.sha256 ? `sha256-${Buffer.from(release.sha256, 'hex').toString('base64')}` : undefined
-        if (!integrity) throw new CliOperationError('INTEGRITY_MISMATCH', '官方桌面安装包没有摘要')
-        source.desktop = { ...descriptor, archive: source.desktopFeed === 'workbuddy' && this.platform === 'darwin' ? 'dmg' : 'zip', url: release.url, integrity, bytes: release.size, version: release.version }
+        if (!integrity && release.integrityPolicy !== WORKBUDDY_COS_POLICY) throw new CliOperationError('INTEGRITY_MISMATCH', '官方桌面安装包没有摘要')
+        source.desktop = { ...descriptor, archive: source.desktopFeed === 'workbuddy' && this.platform === 'darwin' ? 'dmg' : 'zip', url: release.url, integrity, bytes: release.size, version: release.version, integrityPolicy: release.integrityPolicy }
+      }
+      if (cli === 'workbuddy' && this.platform === 'win32' && source.desktop) {
+        source.desktop.windowsWorkBuddy = true
+        source.desktop.relativeEntry = 'resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs'
+        source.desktop.commonDirectories = process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Programs', 'WorkBuddyAI')] : []
       }
       plan.target = source.desktop?.version
       if (!source.desktop || !plan.directory) prerequisite('官方安装包', '已核实地址、摘要/长度、开发者与位置', undefined, false)
@@ -150,7 +156,9 @@ export class CliInstaller {
         let url: string, integrity: string | undefined, expectedBytes: number | undefined
         if (source.method === 'script') { url = source.script!.url; op.outputTail = outputTail(`官方安装脚本：${url}\n仅验证 HTTPS 传输，官方未提供独立摘要。\n`) }
         else { url = source.desktop!.url; integrity = source.desktop!.integrity; expectedBytes = source.desktop!.bytes }
-        file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
+        const cos = source.desktop?.integrityPolicy === WORKBUDDY_COS_POLICY ? await readWorkBuddyCos(url, source.desktop.version, expectedBytes, signal, this.deps.fetcher) : undefined
+        expectedBytes = cos?.size ?? expectedBytes
+        file = await downloadCliArtifact({ cos, root: this.deps.root, output, url, integrity, expectedBytes, officialScript: source.method === 'script', signal, fetcher: this.deps.fetcher, progress: value => { op.progress = value; changed() } })
         const extension = source.method === 'script' ? this.platform === 'win32' ? '.ps1' : '.sh' : this.platform === 'win32' ? '.exe' : source.desktop?.archive === 'zip' ? '.zip' : '.dmg'
         const renamed = file.replace(/\.part$/, extension); await rename(file, renamed); file = trackUpdateTemporary(renamed)
       }
@@ -159,7 +167,7 @@ export class CliInstaller {
       return await withInterruptionRecovery(signal, async (control, evidence) => {
         let exitError: unknown
         const run = async (argv: string[], processSignal = control) => {
-          op.command = argv; op.phase = 'installing'; changed()
+          op.command = argv; if (op.phase !== 'awaiting-user') op.phase = 'installing'; changed()
           try { await executeCliOperation(this.deps.backend, this.deps.config, argv, processSignal, output, undefined, undefined, evidence) }
           catch (error) { if (source.method === 'desktop' || !(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
         }
@@ -175,7 +183,7 @@ export class CliInstaller {
           if (JSON.stringify(installationSource(cli, this.platform).script) !== JSON.stringify(source.script)) throw new CliOperationError('PLAN_EXPIRED', '官方脚本定义已变化')
           await run([...source.script!.interpreter, packageFile]); candidate = join(homedir(), source.script!.relativeEntry)
         } else {
-          const app = await installDesktop({ source: source.desktop!, root: this.deps.root, directory: plan.directory, platform: this.platform, file: packageFile, signal: control, run, awaiting: () => { op.phase = 'awaiting-user'; changed() } })
+          const app = await installDesktop({ source: source.desktop!, root: this.deps.root, directory: plan.directory, platform: this.platform, file: packageFile, signal: control, run, capture: (argv, signal) => captureReadOnly(this.deps.backend, this.deps.config, argv, signal), awaiting: () => { op.phase = 'awaiting-user'; changed() } })
           candidate = join(app, source.desktop!.relativeEntry)
         }
         op.phase = 'verifying-installation'; changed()
@@ -207,11 +215,13 @@ export class CliInstaller {
         if (source.method === 'npm' && version !== plan.target) throw new CliOperationError('VERSION_MISMATCH', '安装后的版本与目标不一致')
         if (source.method === 'desktop') {
           const appVersion = identity.fingerprint.appVersion ?? (cli === 'zcode' ? version : undefined)
-          // International 5.9.4 DMG has only a three-component bundle version.
+          // Audited international 5.9.4 DMG/Windows product has only a three-component app version.
           // The exact four-component release is bound by the verified feed digest.
+          // Windows additionally passed the pinned Authenticode publisher check.
           // Never collapse a discovered four-component build or alter CN semantics.
-          const shortInternationalVersion = cli === 'workbuddy' && this.platform === 'darwin' &&
-            source.desktopFeed === 'workbuddy' && source.desktop?.archive === 'dmg' && source.desktop.integrity?.startsWith('sha256-') &&
+          const shortInternationalVersion = cli === 'workbuddy' && source.desktopFeed === 'workbuddy' &&
+            (this.platform === 'darwin' && source.desktop?.archive === 'dmg' && source.desktop.integrity?.startsWith('sha256-') ||
+              this.platform === 'win32' && source.desktop?.windowsWorkBuddy && (source.desktop.integrity?.startsWith('sha256-') || source.desktop.integrityPolicy === WORKBUDDY_COS_POLICY)) &&
             !!appVersion && /^\d+\.\d+\.\d+$/.test(appVersion) && !!plan.target && /^\d+\.\d+\.\d+\.\d+$/.test(plan.target) &&
             appVersion === desktopVersion(cli, plan.target)
           if (appVersion !== plan.target && !shortInternationalVersion) throw new CliOperationError('VERSION_MISMATCH', '安装后的应用版本与官方目标不一致')

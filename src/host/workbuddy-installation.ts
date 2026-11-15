@@ -71,7 +71,7 @@ export async function resolveWorkBuddyInstallation(cli: WorkBuddyCliId, options:
         if (platform === 'darwin') runtime = join(appRoot, 'Contents', 'MacOS', 'Electron')
         else {
           const names = (await readdir(appRoot)).filter(name => /\.exe$/i.test(name) && !/unins|uninstall|crash|update/i.test(name))
-          const preferred = ['WorkBuddy.exe', 'WorkBuddy AI.exe'].find(name => names.includes(name))
+          const preferred = (cli === 'workbuddy' ? ['WorkBuddyAI.exe', 'WorkBuddy AI.exe', 'WorkBuddy.exe'] : ['WorkBuddy.exe', 'WorkBuddy AI.exe']).find(name => names.includes(name))
           if (!preferred && names.length !== 1) throw new WorkBuddyUnavailableError('runtime-ambiguous')
           runtime = join(appRoot, preferred ?? names[0]!)
         }
@@ -152,7 +152,7 @@ export function workbuddyWindowsRegistryCandidates(raw: string): string[] {
     if (root) candidates.push(root)
     const icon = plainWindowsPath(typeof (record as { icon?: unknown }).icon === 'string'
       ? ((record as { icon: string }).icon).replace(/,\s*-?\d+\s*$/, '') : undefined)
-    if (icon && /^WorkBuddy(?: AI)?\.exe$/i.test(win32.basename(icon))) candidates.push(icon)
+    if (icon && /^WorkBuddy(?: ?AI)?\.exe$/i.test(win32.basename(icon))) candidates.push(icon)
   }
   return [...new Map(candidates.map(path => [path.toLowerCase(), path])).values()]
 }

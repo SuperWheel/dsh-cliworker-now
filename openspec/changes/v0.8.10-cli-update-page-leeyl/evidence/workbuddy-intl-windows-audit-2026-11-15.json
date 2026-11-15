@@ -1,0 +1,675 @@
+{
+  "intl": {
+    "feed": {
+      "version": "5.9.4.42593613",
+      "url": "https://download.codebuddy.ai/workbuddy/saas/win32-x64-user/WorkBuddy-win32-x64-user-5.9.4.42593613-fa0a0901.exe",
+      "productVersion": "5.9.4.42593613",
+      "sha256hash": "",
+      "timestamp": 1793316813,
+      "hash": "",
+      "name": "",
+      "supportsFastUpdate": false
+    },
+    "bytes": 507036736,
+    "sha256": "6ff4be433d664ad14c88210b5b82ebb3674d7047aab8ae52459006c587be2ee0",
+    "md5": "6700207e26ac033442e12c186754e218",
+    "crc64xz": "10177316869881057802",
+    "headers": {
+      "last-modified": "Thu, 29 Oct 2026 15:55:47 GMT",
+      "etag": "\"c3f400eaf5c7b5077205592503cea065-484\"",
+      "server": "tencent-cos",
+      "x-cos-hash-crc64ecma": "10177316869881057802",
+      "x-cos-meta-md5": "6700207e26ac033442e12c186754e218",
+      "content-length": "507036736"
+    },
+    "peCertificateTable": {
+      "offset": 507026216,
+      "size": 10520,
+      "revision": 512,
+      "type": 2
+    },
+    "certificates": "subject=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Assured ID Root CA\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert SHA256 RSA4096 Timestamp Responder 2026 1\nissuer=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1\n\nsubject=/jurisdictionCountryName=CN/jurisdictionStateOrProvinceName=Guangdong Province/jurisdictionLocalityName=Shenzhen/businessCategory=Private Organization/serialNumber=9144030071526726XG/C=CN/ST=Guangdong Province/L=Shenzhen/O=Tencent Technology (Shenzhen) Company Limited/CN=Tencent Technology (Shenzhen) Company Limited\nissuer=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1\n\n",
+    "bundledProduct": {
+      "genieVersion": "5.9.4",
+      "productName": "WorkBuddy AI",
+      "dataFolderName": ".workbuddy-ai",
+      "endpoint": "https://www.workbuddy.ai"
+    },
+    "implementationCrc64xz": "10177316869881057802",
+    "signerInfoMatchedCertificate": "subject= /jurisdictionCountryName=CN/jurisdictionStateOrProvinceName=Guangdong Province/jurisdictionLocalityName=Shenzhen/businessCategory=Private Organization/serialNumber=9144030071526726XG/C=CN/ST=Guangdong Province/L=Shenzhen/O=Tencent Technology (Shenzhen) Company Limited/CN=Tencent Technology (Shenzhen) Company Limited\nserial=0634E23D7F72BEB913CA2B29C29770E6\n"
+  },
+  "cn": {
+    "feed": {
+      "version": "5.9.3.42398134",
+      "url": "https://download.codebuddy.cn/workbuddy/saas/win32-x64-user/WorkBuddy-win32-x64-user-5.9.3.42398134-d4692421.exe",
+      "productVersion": "5.9.3.42398134",
+      "sha256hash": "b5edb52bd6c5b6c7296cf2fff697b019c86d11992a8a814c3010d611896852f9",
+      "timestamp": 1793121334,
+      "hash": "",
+      "name": "",
+      "supportsFastUpdate": false
+    },
+    "bytes": 450174440,
+    "sha256": "b5edb52bd6c5b6c7296cf2fff697b019c86d11992a8a814c3010d611896852f9",
+    "md5": "1faa9f762c7aafc0a378b09659046dcf",
+    "crc64xz": "1038290105151614475",
+    "headers": {
+      "last-modified": "Tue, 27 Oct 2026 09:34:00 GMT",
+      "etag": "\"8b51fc23160aa1ea9bc0b29b8fb3b760-430\"",
+      "server": "tencent-cos",
+      "x-cos-hash-crc64ecma": "1038290105151614475",
+      "x-cos-meta-md5": "1faa9f762c7aafc0a378b09659046dcf",
+      "content-length": "450174440"
+    },
+    "peCertificateTable": {
+      "offset": 450163920,
+      "size": 10520,
+      "revision": 512,
+      "type": 2
+    },
+    "certificates": "subject=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Assured ID Root CA\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1\nissuer=/C=US/O=DigiCert Inc/OU=www.digicert.com/CN=DigiCert Trusted Root G4\n\nsubject=/C=US/O=DigiCert, Inc./CN=DigiCert SHA256 RSA4096 Timestamp Responder 2026 1\nissuer=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 TimeStamping RSA4096 SHA256 2025 CA1\n\nsubject=/jurisdictionCountryName=CN/jurisdictionStateOrProvinceName=Guangdong Province/jurisdictionLocalityName=Shenzhen/businessCategory=Private Organization/serialNumber=9144030071526726XG/C=CN/ST=Guangdong Province/L=Shenzhen/O=Tencent Technology (Shenzhen) Company Limited/CN=Tencent Technology (Shenzhen) Company Limited\nissuer=/C=US/O=DigiCert, Inc./CN=DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1\n\n",
+    "implementationCrc64xz": "1038290105151614475",
+    "signerInfoMatchedCertificate": "subject= /jurisdictionCountryName=CN/jurisdictionStateOrProvinceName=Guangdong Province/jurisdictionLocalityName=Shenzhen/businessCategory=Private Organization/serialNumber=9144030071526726XG/C=CN/ST=Guangdong Province/L=Shenzhen/O=Tencent Technology (Shenzhen) Company Limited/CN=Tencent Technology (Shenzhen) Company Limited\nserial=0EC3880864ADEB96CAFC6AABAFDA1F94\n"
+  },
+  "nsis": {
+    "intl": {
+      "headerBytes": 681996,
+      "guids": [
+        "18AF0EC6-B33B-4BED-831D-E4E9BFE54B68",
+        "5CD7AEE2-2219-4A67-B85D-6C9CE15660CB",
+        "7EBB3647-91AA-4E4C-997F-772694B654EB",
+        "8ED48934-F2D2-44C7-899E-EA74E641D69C",
+        "C02C88CB-5DAE-4330-AEC1-572CFD048A59"
+      ],
+      "selectedStrings": [
+        "Software\\C02C88CB-5DAE-4330-AEC1-572CFD048A59",
+        "\u0003肕\\WorkBuddyAI",
+        "%USERPROFILE%\\.workbuddy-ai\\pending-telemetry",
+        "\u0003肀\\WorkBuddyAI",
+        "CurrentUser",
+        "\u0002⌜\\Programs",
+        "%USERPROFILE%\\.workbuddy-ai\\logs\\installer.log",
+        "%USERPROFILE%\\.workbuddy-ai\\logs",
+        "%TEMP%\\workbuddy-update-x64-workbuddy-ai",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{C02C88CB-5DAE-4330-AEC1-572CFD048A59}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{18AF0EC6-B33B-4BED-831D-E4E9BFE54B68}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{8ED48934-F2D2-44C7-899E-EA74E641D69C}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{7EBB3647-91AA-4E4C-997F-772694B654EB}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\C02C88CB-5DAE-4330-AEC1-572CFD048A59",
+        "\u0003肕\\WorkBuddyAI.exe",
+        "Uninstall WorkBuddyAI.exe",
+        "\u0003肕\\Uninstall WorkBuddyAI.exe",
+        "SOFTWARE\\Classes\\workbuddy-ai.doc",
+        "SOFTWARE\\workbuddy-ai\\Capabilities\\FileAssociations",
+        "SOFTWARE\\Classes\\workbuddy-ai.docx",
+        "SOFTWARE\\Classes\\workbuddy-ai.dot",
+        "SOFTWARE\\Classes\\workbuddy-ai.dotx",
+        "SOFTWARE\\Classes\\workbuddy-ai.wps",
+        "SOFTWARE\\Classes\\workbuddy-ai.wpt",
+        "SOFTWARE\\Classes\\workbuddy-ai.docm",
+        "SOFTWARE\\Classes\\workbuddy-ai.dotm",
+        "SOFTWARE\\Classes\\workbuddy-ai.csv",
+        "SOFTWARE\\Classes\\workbuddy-ai.xls",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlsx",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlt",
+        "SOFTWARE\\Classes\\workbuddy-ai.xltx",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlsm",
+        "SOFTWARE\\Classes\\workbuddy-ai.xltm",
+        "SOFTWARE\\Classes\\workbuddy-ai.pptx",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppt",
+        "SOFTWARE\\Classes\\workbuddy-ai.pps",
+        "SOFTWARE\\Classes\\workbuddy-ai.pot",
+        "SOFTWARE\\Classes\\workbuddy-ai.pptm",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppsx",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppsm",
+        "SOFTWARE\\Classes\\workbuddy-ai.potx",
+        "SOFTWARE\\Classes\\workbuddy-ai.potm",
+        "SOFTWARE\\Classes\\workbuddy-ai.pdf",
+        "SOFTWARE\\Classes\\workbuddy-ai.md",
+        "SOFTWARE\\Classes\\workbuddy-ai.markdown",
+        "SOFTWARE\\workbuddy-ai\\Capabilities",
+        "Software\\Classes\\Applications\\WorkBuddyAI.exe",
+        "SOFTWARE\\Classes\\Applications\\WorkBuddyAI.exe\\SupportedTypes",
+        "\"\u0003肕\\WorkBuddyAI.exe\" \"%1\"",
+        "SOFTWARE\\Classes\\Applications\\WorkBuddyAI.exe",
+        "\"\u0003肕\\WorkBuddyAI.exe\",0",
+        "SOFTWARE\\Classes\\Applications\\WorkBuddyAI.exe\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.doc\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.docx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.dot\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.dotx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.wps\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.wpt\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.docm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.dotm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.csv\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xls\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlsx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlt\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xltx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xlsm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.xltm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.pptx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppt\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.pps\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.pot\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.pptm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppsx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.ppsm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.potx\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.potm\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.pdf\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.md\\shell\\open\\command",
+        "SOFTWARE\\Classes\\workbuddy-ai.markdown\\shell\\open\\command",
+        "Writing DownloadChannel=\u0003肍 (source=\u0003肌) to SHELL_CONTEXT\\Software\\workbuddy-ai",
+        "Software\\Classes\\Directory\\shell\\workbuddy-ai",
+        "Software\\Classes\\Directory\\shell\\workbuddy-ai\\command",
+        "\"\u0003肕\\WorkBuddyAI.exe\" \"%V\"",
+        "Software\\Classes\\Directory\\Background\\shell\\workbuddy-ai",
+        "Software\\Classes\\Directory\\Background\\shell\\workbuddy-ai\\command",
+        "[\u0003肵] INFO extraction sentinel OK: \u0003肕\\WorkBuddyAI.exe present\r\n",
+        "%USERPROFILE%\\.workbuddy-ai\\logs\\register.log",
+        "[\u0003肵] INFO [DeepLink] register protocol=workbuddy-ai exe=\u0003肕\\WorkBuddyAI.exe\r\n",
+        "SOFTWARE\\Classes\\workbuddy-ai",
+        "SOFTWARE\\Classes\\workbuddy-ai\\DefaultIcon",
+        "SOFTWARE\\Classes\\workbuddy-ai\\shell\\open\\command",
+        "\"\u0003肕\\WorkBuddyAI.exe\""
+      ],
+      "defaultDirectoryInstructions": [
+        {
+          "index": 561,
+          "opcode": 25,
+          "operands": [
+            81,
+            162,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "1"
+          }
+        },
+        {
+          "index": 562,
+          "opcode": 25,
+          "operands": [
+            80,
+            2688,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "CurrentUser"
+          }
+        },
+        {
+          "index": 563,
+          "opcode": 13,
+          "operands": [
+            1,
+            80,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 564,
+          "opcode": 52,
+          "operands": [
+            83,
+            -2147483647,
+            82,
+            128,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "registryKey": "Software\\C02C88CB-5DAE-4330-AEC1-572CFD048A59"
+          }
+        },
+        {
+          "index": 565,
+          "opcode": 26,
+          "operands": [
+            2700,
+            0,
+            569,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "left": "\u0003胓",
+            "right": ""
+          }
+        },
+        {
+          "index": 566,
+          "opcode": 25,
+          "operands": [
+            21,
+            2700,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "\u0003胓"
+          }
+        },
+        {
+          "index": 567,
+          "opcode": 2,
+          "operands": [
+            593,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 568,
+          "opcode": 25,
+          "operands": [
+            0,
+            2703,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "\u0002⌜\\Programs"
+          }
+        },
+        {
+          "index": 569,
+          "opcode": 31,
+          "operands": [
+            1406,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "pushValue": "\u0003肁"
+          }
+        },
+        {
+          "index": 570,
+          "opcode": 31,
+          "operands": [
+            1409,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "pushValue": "\u0003肂"
+          }
+        },
+        {
+          "index": 571,
+          "opcode": 25,
+          "operands": [
+            2,
+            80,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "0"
+          }
+        },
+        {
+          "index": 572,
+          "opcode": 5,
+          "operands": [
+            16224,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 573,
+          "opcode": 20,
+          "operands": [
+            33554601,
+            602,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "outputName": "\u0003肚\\System.dll"
+          }
+        },
+        {
+          "index": 574,
+          "opcode": 13,
+          "operands": [
+            13,
+            0,
+            1,
+            -1,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 575,
+          "opcode": 31,
+          "operands": [
+            2715,
+            0,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "pushValue": "SHELL32::SHGetKnownFolderPath(g \"{5CD7AEE2-2219-4A67-B85D-6C9CE15660CB}\", i 0x00008000, p 0, *p .r2)i.r1"
+          }
+        },
+        {
+          "index": 576,
+          "opcode": 44,
+          "operands": [
+            602,
+            646,
+            0,
+            0,
+            1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "dll": "\u0003肚\\System.dll",
+            "function": "Call"
+          }
+        },
+        {
+          "index": 577,
+          "opcode": 26,
+          "operands": [
+            1406,
+            80,
+            0,
+            584,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "left": "\u0003肁",
+            "right": "0"
+          }
+        },
+        {
+          "index": 578,
+          "opcode": 5,
+          "operands": [
+            16224,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 579,
+          "opcode": 20,
+          "operands": [
+            33554601,
+            602,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "outputName": "\u0003肚\\System.dll"
+          }
+        },
+        {
+          "index": 580,
+          "opcode": 13,
+          "operands": [
+            13,
+            0,
+            1,
+            -1,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 581,
+          "opcode": 31,
+          "operands": [
+            2820,
+            0,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "pushValue": "KERNEL32::lstrcpynW(w .r0, p r2, i 8192)p"
+          }
+        },
+        {
+          "index": 582,
+          "opcode": 44,
+          "operands": [
+            602,
+            646,
+            0,
+            0,
+            1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "dll": "\u0003肚\\System.dll",
+            "function": "Call"
+          }
+        },
+        {
+          "index": 583,
+          "opcode": 26,
+          "operands": [
+            1409,
+            80,
+            590,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "left": "\u0003肂",
+            "right": "0"
+          }
+        },
+        {
+          "index": 584,
+          "opcode": 5,
+          "operands": [
+            16224,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 585,
+          "opcode": 20,
+          "operands": [
+            33554601,
+            602,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "outputName": "\u0003肚\\System.dll"
+          }
+        },
+        {
+          "index": 586,
+          "opcode": 13,
+          "operands": [
+            13,
+            0,
+            1,
+            -1,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 587,
+          "opcode": 31,
+          "operands": [
+            2862,
+            0,
+            0,
+            -1,
+            -1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "pushValue": "OLE32::CoTaskMemFree(p r2)"
+          }
+        },
+        {
+          "index": 588,
+          "opcode": 44,
+          "operands": [
+            602,
+            646,
+            0,
+            0,
+            1,
+            -37
+          ],
+          "decodedStringOperands": {
+            "dll": "\u0003肚\\System.dll",
+            "function": "Call"
+          }
+        },
+        {
+          "index": 589,
+          "opcode": 31,
+          "operands": [
+            2,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 590,
+          "opcode": 31,
+          "operands": [
+            1,
+            1,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {}
+        },
+        {
+          "index": 591,
+          "opcode": 25,
+          "operands": [
+            21,
+            2586,
+            0,
+            0,
+            0,
+            0
+          ],
+          "decodedStringOperands": {
+            "value": "\u0003肀\\WorkBuddyAI"
+          }
+        }
+      ]
+    },
+    "cn": {
+      "headerBytes": 677846,
+      "guids": [
+        "5CD7AEE2-2219-4A67-B85D-6C9CE15660CB",
+        "61A882F2-969F-45BF-A652-FA5C6B03DE22",
+        "B7353D0F-D01C-4EC3-96A9-5CEA88358454",
+        "BFD312E9-1019-4F57-9F44-F86246833B50",
+        "E5979B74-105C-46B5-AED6-599C029B689D"
+      ],
+      "selectedStrings": [
+        "Software\\BFD312E9-1019-4F57-9F44-F86246833B50",
+        "CurrentUser",
+        "\u0002⌜\\Programs",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{BFD312E9-1019-4F57-9F44-F86246833B50}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{61A882F2-969F-45BF-A652-FA5C6B03DE22}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{B7353D0F-D01C-4EC3-96A9-5CEA88358454}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{E5979B74-105C-46B5-AED6-599C029B689D}}_is1",
+        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\BFD312E9-1019-4F57-9F44-F86246833B50",
+        "Uninstall WorkBuddy.exe",
+        "\u0003肕\\Uninstall WorkBuddy.exe"
+      ]
+    }
+  },
+  "audit": {
+    "date": "2026-11-15",
+    "method": "Anonymous curl GET; inherited proxy environment retained; no binary execution, installation or mount. CRC-64/XZ via system liblzma lzma_crc64, known vector checked. PE security directory PKCS#7 extracted and openssl pkcs7 -print_certs -noout read only. NSIS compressed header inflated with zlib raw DEFLATE; instruction/string table decoded.",
+    "crcVector": "123456789 -> 995dc9bbdf1939fa",
+    "signatureTrust": "Not verified on macOS; Windows Get-AuthenticodeSignature Valid required at runtime.",
+    "defaultLocation": "%LOCALAPPDATA%\\Programs\\WorkBuddyAI (current-user branch); SHGetKnownFolderPath UserProgramFiles can override base; custom and all-users branches exist.",
+    "conflictConclusion": "Static NSIS header: international uninstall key C02C88CB-5DAE-4330-AEC1-572CFD048A59; CN BFD312E9-1019-4F57-9F44-F86246833B50 absent from international header. International legacy Inno keys are separate. No identified automatic uninstall/overwrite of existing D:\\Software\\workbuddy; actual Windows coexistence not verified. Never select CN folder in wizard.",
+    "sources": [
+      "https://raw.githubusercontent.com/kichik/nsis/master/Source/exehead/fileform.h",
+      "https://raw.githubusercontent.com/kichik/nsis/master/Source/exehead/util.c"
+    ],
+    "downloadDirectoryMode": "0o700",
+    "cleanup": {
+      "removed": true,
+      "independentProcessReadback": true,
+      "directoryExists": false,
+      "downloadedExecutablesRemaining": 0,
+      "timestampUtc": "2026-11-15T05:03:32.321091+00:00"
+    }
+  }
+}

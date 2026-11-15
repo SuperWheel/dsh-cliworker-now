@@ -14,5 +14,5 @@ export function workbuddyVariant(cli: WorkBuddyCliId) {
         windowsDirectoryNames: ['WorkBuddy', 'WorkBuddy AI'], transport: 'workbuddycn-acp-v1' }
     : { cli, label: 'WorkBuddy', endpointHosts: ['www.workbuddy.ai', 'workbuddy.ai'],
         dataFolderName: '.workbuddy-ai', macAppNames: ['WorkBuddy AI.app', 'WorkBuddy.app'],
-        windowsDirectoryNames: ['WorkBuddy AI', 'WorkBuddy'], transport: 'workbuddy-acp-v1' }
+        windowsDirectoryNames: ['WorkBuddyAI', 'WorkBuddy AI', 'WorkBuddy'], transport: 'workbuddy-acp-v1' }
 }

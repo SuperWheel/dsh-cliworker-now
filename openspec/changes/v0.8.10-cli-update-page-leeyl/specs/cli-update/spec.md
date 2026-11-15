@@ -474,7 +474,7 @@ Host SHALL 按 Host 生命周期、项目和 CLI 隔离连接展示缓存，账�
 
 
 ### Requirement: 国际版 WorkBuddy macOS 官方 DMG 工件选择
-Host SHALL 仅对国际版 WorkBuddy 的 darwin feed，将已核实 HTTPS 主机 `download.codebuddy.ai` 下同版本同架构的 `/workbuddy/saas/darwin-{arch}/WorkBuddy-darwin-{arch}-{version}-{8位hex}.zip` 末尾替换为 `.dmg`，保持主机与路径其余部分不变。原 URL MUST 无凭据、端口、查询、片段及编码/规范化歧义，架构 MUST 与请求一致。首次安装和更新 SHALL 严格用 feed 的 `sha256hash` 校验 DMG，不替换摘要、不回退 ZIP。DMG SHALL 复用只读挂载、固定 Team ID `FN2V63AD2J` 与签名 identifier `com.workbuddy.workbuddy-ai`、spctl、ditto 和确认卸载流程；更新 SHALL 保留应用忙闲检查、替换回滚与装后应用版本核对。CN 的 ZIP、ZCode 和 Windows 行为 MUST 保持不变。
+Host SHALL 仅对国际版 WorkBuddy 的 darwin feed，将已核实 HTTPS 主机 `download.codebuddy.ai` 下同版本同架构的 `/workbuddy/saas/darwin-{arch}/WorkBuddy-darwin-{arch}-{version}-{8位hex}.zip` 末尾替换为 `.dmg`，保持主机与路径其余部分不变。原 URL MUST 无凭据、端口、查询、片段及编码/规范化歧义，架构 MUST 与请求一致。首次安装和更新 SHALL 严格用 feed 的 `sha256hash` 校验 DMG，不替换摘要、不回退 ZIP。DMG SHALL 复用只读挂载、固定 Team ID `FN2V63AD2J` 与签名 identifier `com.workbuddy.workbuddy-ai`、spctl、ditto 和确认卸载流程；更新 SHALL 保留应用忙闲检查、替换回滚与装后应用版本核对。CN ZIP/ZCode MUST 不变；Windows 见专门规则。
 
 #### Scenario: 国际版 macOS 首次安装或更新
 - **WHEN** arm64 或 x64 官方 feed 返回匹配版本与架构的已核实 ZIP 地址及有效 SHA-256
@@ -507,3 +507,21 @@ Host SHALL 将当前 home 与官方 XDG_DATA_HOME/LOCALAPPDATA 布局下精确�
 #### Scenario: 更新后入口或实体变化
 - **WHEN** 更新完成后重新读取身份
 - **THEN** 同一安装 SHALL 要求来源、通道和更新根一致，realpath 符合该根精确布局，所选入口保持相同或变化前后均为该根精确入口；允许原位替换或同根版本迁移，跨根/跨来源/其他文件 MUST 拒绝；之后 SHALL 单独核实实际版本前进，版本探针禁自动升级，原生残留不由插件清理
+
+
+### Requirement: Windows 国际版 WorkBuddy 受限安装与无摘要发布
+Host SHALL 仅开放国际版 workbuddy + win32 + x64 桌面首次安装；其他未核实 Windows 桌面首次安装 SHALL 保持 manual。首次安装与已有安装更新 SHALL 共用发布验证，只在国际版 Windows feed 的 sha256hash 明确为空字符串时采用 COS 替代；缺失或非法摘要 MUST 拒绝。有 SHA-256 时 SHALL 使用原摘要，摘要失败 MUST NOT 降级。下载 URL SHALL 为严格同版本同架构的 HTTPS download.codebuddy.ai/workbuddy/saas/win32-{arch}-user/WorkBuddy-win32-{arch}-user-{version}-{8位hex}.exe，MUST 拒绝其他主机、路径、后缀、凭据、端口、查询、片段及规范化歧义。
+
+#### Scenario: 无摘要但四重核验通过
+- **WHEN** 国际版 Windows feed 摘要为空，官方同 URL HEAD 返回有效 content-length、x-cos-meta-md5、x-cos-hash-crc64ecma
+- **THEN** Host SHALL 在私有缓存下载并核对完整文件长度（也等于 feed size，若有）、MD5、CRC-64/XZ；运行前 SHALL 用固定 PowerShell 参数读取 Get-AuthenticodeSignature -LiteralPath，要求 Status=Valid 且 Subject 的 CN/O 精确等于 Tencent Technology (Shenzhen) Company Limited
+- **AND** HEAD SHALL 使用 redirect:error；签名 MUST NOT 绕过摘要不符；仅全通过后进入 awaiting-user，仅以 exe 路径启动官方向导，不附加静默/位置参数，不主动提权
+
+#### Scenario: 任何完整性或签名核验失败
+- **WHEN** 长度、MD5、CRC64、签名状态或发布者任意不符，或官方元数据/URL 不合法
+- **THEN** Host MUST NOT 运行安装程序，SHALL 删除失败下载/执行副本；取消 SHALL 阻止后续执行，已启动进程的停止仍须确认整个进程范围退出，否则保留隔离状态
+
+#### Scenario: 安装后核对实际站点与版本
+- **WHEN** 官方安装程序整个进程范围退出
+- **THEN** Host SHALL 在页面选择的位置与已核实默认候选 LOCALAPPDATA/Programs/WorkBuddyAI 查找 WorkBuddyAI.exe 和 resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs，通过现有 resolveWorkBuddyInstallation 核对国际站点、包名、入口及版本后才写路径
+- **AND** 国内版、错误版本、取消或进程退出未确认 MUST NOT 写入；实际三段 5.9.4 可匹配已完成完整性与签名核验的四段发布前三段，实际四段版本 MUST 完全相等，MUST NOT 把 feed build 伪装成本地版本

@@ -468,3 +468,21 @@ CodeBuddy 对照：当前插件支持的是 **CodeBuddy Code CLI**，并非 Code
 **安装方式分类确有缺口。** `identity.ts` 只含 `.codebuddy/bin/`，既没有 Unix 官方稳定入口/版本实体，也没有 Windows 官方目录。对当前源码中 `classifyInstallation` 与 `automaticMethod` 的原样摘录执行隔离模拟：官方 Unix 稳定入口、两种研究中的版本实体形状、Windows 官方入口均得到 `unknown` / 无自动更新方法；npm 对照仍为 `npm`。这影响原生安装的“更新方式识别”，不是账号身份或登录站点布局；npm/brew 的独立分支不受这一缺失规则影响。
 
 此前只读审计按用户允许的“修或给结论”交付明确缺陷结论，当时**未修复 CodeBuddy 原生更新支持**；现由上方决定 17 实施修复，以下保留当时的证据边界。后续修正应一起验证真实路径归属、稳定更新根、自动路径随版本迁移（`cli-auto-entry.ts` 当前也没有 CodeBuddy 原生规则）与更新后 `sameInstallation`，并补模拟回归及平台证据；不能仅泛化目录前缀就宣布支持。未检查本机 CodeBuddy 账号或执行其 CLI。
+
+
+### 决定 19：Windows 国际版 WorkBuddy 首次安装与无摘要 feed
+
+2026-11-15 匿名 GET 两版官方 `win32-x64-user` feed 与 EXE，保留宿主代理环境。下载置于 TMPDIR 新建 0700 私有目录，只读计算和解压 NSIS 头，不执行、不安装、不挂载；证据见 `evidence/workbuddy-intl-windows-audit-2026-11-15.json`。
+
+- 国际版 5.9.4.42593613：**507,036,736 B**；feed sha256hash 空；实算 SHA-256 `6ff4be433d664ad14c88210b5b82ebb3674d7047aab8ae52459006c587be2ee0`，仅作本次审计记录，不替代后续版本的 feed。整文件 MD5 `6700207e26ac033442e12c186754e218`、CRC-64/XZ 十进制 `10177316869881057802` 均匹配 COS 响应头；分片 ETag 不作为 MD5。
+- 国内版 5.9.3.42398134：**450,174,440 B**；SHA-256 `b5edb52bd6c5b6c7296cf2fff697b019c86d11992a8a814c3010d611896852f9` 匹配 feed，MD5 `1faa9f762c7aafc0a378b09659046dcf`、CRC64 `1038290105151614475` 匹配 COS 头。同源参照证明本次对象的头值对应完整文件，不代表独立签名或未来对象必然可信。CRC 使用系统 liblzma 的 XZ 参数，已核对 `123456789 → 995dc9bbdf1939fa`。
+- 两包 PE 安全目录 PKCS#7 均含签名证书主体 `Tencent Technology (Shenzhen) Company Limited`（CN 与 O，C=CN、ST=Guangdong Province、L=Shenzhen、serialNumber=9144030071526726XG）。Mac 未装 osslsigncode，使用只读安全目录提取与 openssl 证书解析；**未完成 Authenticode 信任链/吊销验证**，运行时必须在 Windows 验证。
+- NSIS 头 raw DEFLATE 解出国际版 681,996 B、国内版 677,846 B。国际版安装/卸载键 GUID **C02C88CB-5DAE-4330-AEC1-572CFD048A59**，国内版 **BFD312E9-1019-4F57-9F44-F86246833B50**。国际版头没有国内版 GUID，其四个旧 Inno 卸载键也与国内版不同；程序/卸载器为 `WorkBuddyAI.exe` / `Uninstall WorkBuddyAI.exe`。CurrentUser 分支先读国际版自己的 InstallLocation，否则采用 UserProgramFiles（回退 LOCALAPPDATA/Programs）再拼 **WorkBuddyAI**；存在用户自选和 all-users 分支，不能把 `-user` 文件名当作强制 per-user。默认候选 `%LOCALAPPDATA%\Programs\WorkBuddyAI`，不猜测带空格的目录名。
+- 冲突结论：静态安装指令与键标识未发现会自动卸载或覆盖现有 `D:\Software\workbuddy` 国内版；没有实机安装，完整共存行为仍未核实。用户不可把国际版向导目标选为国内版目录。安装器实际默认位置/系统重定向/自选目录与磁盘空间仍须主会话实机验收。现有 C 盘约 5.6 GB、D 盘约 313 GB 是用户提供的只读信息，本轮未重新读取 Windows。
+
+实施仅开放 `workbuddy + win32 + x64` 首次安装。CN 与 ZCode 保留 manual（未完成各自首次安装签名及位置/共存验收），ARM64 未有实物证据。共享首次安装与更新的发布检查：只对国际版 Windows 的**明确空字符串** SHA-256 采用 COS 路径；缺失、非法摘要不得降级，有 SHA-256 时仍按 SHA-256 校验，不允许失败后回退。严格 URL 为 HTTPS download.codebuddy.ai、无凭据/端口/查询/片段/编码歧义，版本/架构与 feed 一致，路径匹配 `/workbuddy/saas/win32-(x64|arm64)-user/WorkBuddy-win32-\1-user-<version>-[a-f0-9]{8}.exe`。
+
+替代路径下载前同 URL HEAD（redirect:error），四项缺一不可：完整长度等于 COS content-length 且等于 feed size（若有）；完整 MD5 等于 x-cos-meta-md5；CRC-64/XZ 等于 x-cos-hash-crc64ecma；运行前固定 argv PowerShell Get-AuthenticodeSignature -LiteralPath 返回 Valid 且 CN/O 精确等于固定腾讯发布者。摘要不符不得靠签名放行。失败删除执行副本；进程范围退出未确认沿用原隔离清理规则。安装只传 exe 路径、不加静默或位置参数、不主动提权；保持 awaiting-user，进程范围退出后以实际站点/入口/版本核对并写路径记录。
+
+
+补充实物证据：按 NSIS File 指令只读取出内嵌 app-64.7z，再用系统 bsdtar 仅把 `resources/app.asar.unpacked/cli/product.json` 输出到内存；没有落地安装树、没有执行 DLL/脚本。genieVersion=`5.9.4`、productName=`WorkBuddy AI`、dataFolderName=`.workbuddy-ai`、endpoint=`https://www.workbuddy.ai`。因此 Windows 国际版装后允许经上述完整工件和签名核验绑定的三段应用版本匹配四段 feed 前三段，仍拒绝错误三段或错误四段 build，指纹保留真实版本。两包 SignerInfo 的 issuer+serial 与证书精确匹配：国际版序列号 `0634E23D7F72BEB913CA2B29C29770E6`、国内版 `0EC3880864ADEB96CAFC6AABAFDA1F94`，均为上述腾讯主体；不把证书解析当作 Windows Valid。新 TypeScript CRC 实现对两份完整 EXE 再算，结果均同时匹配系统 liblzma 与 COS 头。

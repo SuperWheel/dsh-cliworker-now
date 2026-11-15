@@ -1707,3 +1707,6 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 ## 2026-11-15：CodeBuddy Code 原生来源与路径迁移
 
 官方原生默认根为 Unix `~/.local/share/codebuddy`、Windows `%LOCALAPPDATA%/codebuddy`；精确匹配版本实体与稳定入口，移除旧 `.codebuddy/bin/` 猜测规则，npm/brew 保持原渠道。自动记录迁往同根稳定入口，手动与部署路径不改；更新使用已有 argv `[入口, 'update']`，同一安装验证涵盖原位 realpath 替换、同根版本变化、来源和通道约束，实际版本以禁自动升级的探针核实，不能从版本目录名推断。CodeBuddy 原生旧版本/备份不加入插件回收。官方脚本、2.184.0 发布包源码与 Mac/Windows npm 只读证据、模拟和真实验收边界见[决定 17](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。
+
+
+Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见 [决定 19](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md#决定-19windows-国际版-workbuddy-首次安装与无摘要-feed)。Host 共用 COS HEAD、完整长度/MD5/CRC-64/XZ 校验与固定腾讯 Authenticode 发布者核验；安装保留向导等待和进程范围退出确认。默认发现增加 WorkBuddyAI，与国内版通过产品站点区分，实际三段版本不伪造 build。CN/ZCode/ARM64 首次安装仍 manual；Windows 实机验收未完成。

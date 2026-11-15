@@ -1,3 +1,4 @@
+import { verifyWorkBuddyWindowsSignature } from './workbuddy-windows.ts'
 import { trackUpdateTemporary, retainUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { physicalFs } from './physical-fs.ts'
 import { join, basename } from 'node:path'
@@ -20,16 +21,23 @@ export function desktopSignatureRequirement(source: { teamId: string; bundleId?:
 export async function installDesktop(options: {
   source: NonNullable<InstallSource['desktop']>; root: string; file: string; directory: string; platform: string; signal: AbortSignal
   run(argv: string[], signal: AbortSignal): Promise<void>; awaiting(): void
+  capture?(argv: string[], signal: AbortSignal): Promise<string>
 }): Promise<string> {
   const { source, run, signal } = options
-  const requirement = desktopSignatureRequirement(source)
   if (!/^[A-Z0-9]{10}$/.test(source.teamId) || basename(source.appName) !== source.appName || !source.appName.endsWith('.app')) throw new CliOperationError('PREREQUISITE_MISSING', '桌面应用身份尚未核实')
   if (options.platform === 'win32') {
-    options.awaiting()
+    signal.throwIfAborted()
+    if (source.windowsWorkBuddy) {
+      if (!options.capture) throw new CliOperationError('INTEGRITY_MISMATCH', '缺少 Windows 签名核验器')
+      await verifyWorkBuddyWindowsSignature(options.file, signal, options.capture)
+    }
+    options.awaiting(); signal.throwIfAborted()
     await run([options.file], signal) // No unverified silent/directory arguments.
+    signal.throwIfAborted()
     return options.directory
   }
   if (options.platform !== 'darwin') throw new CliOperationError('PREREQUISITE_MISSING', '此平台不支持桌面安装')
+  const requirement = desktopSignatureRequirement(source)
   const parent = join(options.root, 'cli-management', 'mounts')
   await mkdir(parent, { recursive: true, mode: 0o700 }); await chmod(parent, 0o700)
   if ((await lstat(parent)).isSymbolicLink()) throw new CliOperationError('LOCATION_INVALID', '挂载缓存不是实际目录')
