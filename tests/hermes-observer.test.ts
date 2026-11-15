@@ -168,6 +168,7 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
       expect(observed).toHaveLength(1)
       expect(observed[0].context.breakdown).toEqual({ messageTokens: 12, ...labels })
       expect(records.at(-1).context).toBeUndefined()
+      expect(f.capture.confirmedRuntime()).toBeUndefined()
     } finally { await f.capture.close() }
   })
   it('does not call the aggregator-only MOA observations a complete run total', async () => {
@@ -179,13 +180,19 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
       expect(accounting[0].context).toBeUndefined()
       expect(accounting[1]).toMatchObject({ coverageComplete: true, usageComplete: false })
       expect(accounting[1].usage).toBeUndefined()
+      expect(f.capture.confirmedRuntime()).toBeUndefined()
     } finally { await f.capture.close() }
   })
-  it.each(['foreign', 'sequence', 'duplicate', 'missing-post', 'partial', 'missing-end', 'interrupted-end', 'nonce'])('does not elevate %s observations to complete run accounting', async (mode) => {
+  it.each(['foreign', 'foreign-model', 'foreign-provider', 'sequence', 'duplicate', 'missing-post', 'partial', 'missing-end', 'interrupted-end', 'nonce'])('模拟 does not elevate %s observations to complete run accounting', async (mode) => {
     const f = await fixture(), records: any[] = []
     try {
       f.put(start)
       if (mode === 'foreign') f.put({ ...end, session_id: 'foreign' })
+      else if (mode === 'foreign-model' || mode === 'foreign-provider') {
+        f.put(end)
+        f.put({ ...start, api_request_id: 'different-request', [mode === 'foreign-model' ? 'model' : 'provider']: 'different' })
+        f.put(turnEnd)
+      }
       else if (mode === 'sequence') f.put({ ...end, seq: 99 })
       else if (mode === 'duplicate') { f.put(end); f.put(end) }
       else if (mode === 'partial') appendFileSync(f.path, '{"v":')
@@ -195,6 +202,7 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
       await f.capture.finish((value: any) => records.push(value))
       expect(records.at(-1)).toMatchObject({ usageComplete: false, coverageComplete: false })
       expect(records.at(-1).usage).toBeUndefined()
+      expect(f.capture.confirmedRuntime()).toBeUndefined()
     } finally { await f.capture.close() }
   })
   it.skipIf(process.platform === 'win32')('rejects permissive observation-file modes', async () => {
@@ -208,7 +216,8 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
       expect(records.at(-1).usageComplete).toBe(false)
     } finally { await f.capture.close() }
   })
-  it.skipIf(process.platform === 'win32')('never queries a model or discovers external plugins while using public hook registration and disposal', () => {
+  it.skipIf(process.platform === 'win32').each(['synthetic', 'different-provider'])(
+    '模拟 public hooks retain same-session provider %s without loading accounts or models', (provider) => {
     const base = root(), python = join(base, 'hermes_cli')
     mkdirSync(python)
     writeFileSync(join(python, '__init__.py'), '')
@@ -222,9 +231,9 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
       model: start.model, provider: start.provider }), { mode: 0o600 })
     const script = `import sys,runpy,json,os\nsys.path.insert(0,sys.argv[1])\nmodule=runpy.run_path(sys.argv[2])\ndispose=module['install_observer']()\nfrom hermes_cli.plugins import callbacks\nassert set(callbacks)=={'pre_api_request','post_api_request','api_request_error','on_session_end'}\npayload=json.loads(sys.argv[3]);callbacks['pre_api_request'](**payload)\npayload.update(json.loads(sys.argv[4]));callbacks['post_api_request'](**payload)\ndispose();assert not callbacks\nassert os.environ['HERMES_SAFE_MODE']=='1'\n`
     execFileSync('/usr/bin/python3', ['-B', '-I', '-c', script, base,
-      resolve('src/host/hermes-observer.py'), JSON.stringify({ ...start, platform: 'api_server',
+      resolve('src/host/hermes-observer.py'), JSON.stringify({ ...start, provider, platform: 'api_server',
         request: { authorization: 'SYNTHETIC_SECRET', body: { tools: [] } }, system_prompt: 'SYNTHETIC_SECRET',
-        request_messages: [{ role: 'system', content: 'SYNTHETIC_SECRET' }, { role: 'user', content: 'SYNTHETIC_USER_PRIVATE' }] }), JSON.stringify(end)],
+        request_messages: [{ role: 'system', content: 'SYNTHETIC_SECRET' }, { role: 'user', content: 'SYNTHETIC_USER_PRIVATE' }] }), JSON.stringify({ ...end, provider })],
     { env: { HOME: base, HERMES_HOME: base, HERMES_SAFE_MODE: '1',
       CLIWORKER_HERMES_OBSERVER_DIR: directory, CLIWORKER_HERMES_OBSERVER_NONCE: nonce } })
     const contents = readFileSync(join(directory, 'events.jsonl'), 'utf8')
@@ -233,5 +242,6 @@ describe('Hermes own-process observer (offline synthetic lifecycle only)', () =>
     expect(JSON.parse(contents.split('\n')[1]).context_breakdown).toEqual({ systemTokens: 16, messageTokens: 22,
       toolTokens: 0, estimated: true, basis: 'hermes-native-request-estimate' })
     expect(contents.split('\n').filter(Boolean).map((value) => JSON.parse(value).phase)).toEqual(['ready', 'request', 'response'])
+    expect(JSON.parse(contents.split('\n')[2]).provider).toBe(provider)
   })
 })

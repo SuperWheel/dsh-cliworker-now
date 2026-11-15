@@ -128,7 +128,7 @@ def install_observer():
             if len(encoded) <= 128 * 1024:
                 os.write(fd, encoded)
 
-    def identity(payload, terminal=False):
+    def identity(payload):
         # This file is written once, before the sole /v1/runs submission. A hook
         # cannot claim another session merely by running in this Python process.
         path = root / "identity.json"
@@ -138,10 +138,10 @@ def install_observer():
             if not stat.S_ISREG(meta.st_mode) or meta.st_nlink != 1 or meta.st_size > 4096:
                 return False
             binding = json.load(stream)
+        # Keep same-session model/provider changes on the rail. Silently dropping
+        # them could make partial matching requests look like a complete turn.
         return (binding.get("nonce") == nonce and payload.get("platform") == "api_server"
-                and payload.get("session_id") == binding.get("sessionId")
-                and (terminal or payload.get("provider") == binding.get("provider"))
-                and payload.get("model") == binding.get("model"))
+                and payload.get("session_id") == binding.get("sessionId"))
 
     def observe(_event_phase, **payload):
         try:
@@ -194,7 +194,7 @@ def install_observer():
 
     def turn_end(**payload):
         try:
-            if identity(payload, terminal=True):
+            if identity(payload):
                 write({"phase": "turn_end", **{key: payload.get(key) for key in
                       ("session_id", "task_id", "turn_id", "model", "completed", "failed", "interrupted")}})
         except Exception:

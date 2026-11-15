@@ -13,21 +13,26 @@ it.each([
   ['workspace-write', 'smart', '0'],
   ['danger-full-access', 'off', '1'],
   [undefined, 'smart', '0'],
-])('writes explicit native approvals for %s without changing the source home', async (access, mode, yolo) => {
+])('模拟 pins Worker cwd and native approvals for %s without changing the source home or proxy', async (access, mode, yolo) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'hermes-permissions-SIMULATED-')))
   roots.push(root)
   const source = join(root, 'source')
   await mkdir(source, { mode: 0o700 })
-  const original = 'auth:\n  adopt_external_logins: false\nmodel:\n  provider: openrouter\napprovals:\n  mode: manual\n'
+  const original = 'auth:\n  adopt_external_logins: false\nmodel:\n  provider: openrouter\napprovals:\n  mode: manual\nterminal:\n  cwd: /synthetic/wrong-workspace\n'
   await writeFile(join(source, 'config.yaml'), original, { mode: 0o600 })
   await writeFile(join(source, 'auth.json'), JSON.stringify({ providers: {}, credential_pool: {} }), { mode: 0o600 })
   await writeFile(join(source, '.env'), '', { mode: 0o600 })
-  const prepared = await prepareHermesHttpHome({ mode: 'accept-edits', access, project: root,
-    stateDirectory: join(root, 'state'), env: { HERMES_HOME: source, HERMES_YOLO_MODE: 'inherited-unsafe' } },
+  const project = join(root, 'CLI Worker Demo'); await mkdir(project)
+  const proxy = { HTTPS_PROXY: 'http://127.0.0.1:12345', ALL_PROXY: 'socks5://127.0.0.1:12346', NO_PROXY: 'localhost,127.0.0.1' }
+  const prepared = await prepareHermesHttpHome({ mode: 'accept-edits', access, project,
+    stateDirectory: join(root, 'state'), env: { HERMES_HOME: source, HERMES_YOLO_MODE: 'inherited-unsafe',
+      TERMINAL_CWD: root, MESSAGING_CWD: root, ...proxy } },
   'openrouter', 'synthetic-model', 'synthetic-gateway-key', 12345)
   try {
     expect(parse(await readFile(join(prepared.home, 'config.yaml'), 'utf8')).approvals).toEqual({ mode })
     expect(prepared.env.HERMES_YOLO_MODE).toBe(yolo)
+    expect(parse(await readFile(join(prepared.home, 'config.yaml'), 'utf8')).terminal).toEqual({ backend: 'local', cwd: project })
+    expect(prepared.env).toMatchObject({ TERMINAL_CWD: project, MESSAGING_CWD: project, ...proxy })
     expect(await readFile(join(source, 'config.yaml'), 'utf8')).toBe(original)
   } finally { await prepared.cleanup() }
 })

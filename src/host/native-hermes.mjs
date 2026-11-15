@@ -324,7 +324,11 @@ export async function runNativeHermes(config, io) {
     io.signal?.throwIfAborted()
     // Do not retry after an ambiguous acceptance, even with the same input.
     const accepted = await request('/v1/runs', 'POST', {
-      input: await nativeAttachmentInput('text', config.prompt, config.attachments, io.signal),
+      // Native memory can describe a different repository. Give every turn,
+      // including resumes, the same explicit workspace as the tool config.
+      input: await nativeAttachmentInput('text',
+        `当前 Worker 项目工作目录：${JSON.stringify(config.project)}。本任务的相对路径以此目录为准。\n\n${config.prompt}`,
+        config.attachments, io.signal),
       session_id: sessionID,
       ...selection,
       model_options,
@@ -478,8 +482,17 @@ export async function runNativeHermes(config, io) {
       io.event({ kind: 'diagnostic', text: 'Hermes 本轮结束时仍有未消费的引导；CLI 已接收不代表模型已执行，请核对后明确处理。' })
     if (terminal.event !== `run.${final.status}` || final.status !== 'completed')
       throw new Error('Hermes 原生任务未成功完成')
-    if (final.runtime?.provider !== selection.provider || final.runtime?.model !== selection.model)
+    // Newer Hermes canonical /v1/runs can leave runtime empty even though its
+    // public request hooks report the served pair. Complete those missing IDs
+    // only from the fully covered, bound turn; nonempty conflicts always fail.
+    await observer?.finish((record) => io.native(record))
+    const observed = observer?.confirmedRuntime()
+    const runtime = final.runtime ?? {}
+    const missing = (value) => value === undefined || value === null || value === ''
+    if (['provider', 'model'].some((key) => !missing(runtime[key]) && runtime[key] !== selection[key]))
       throw new Error('Hermes 实际执行模型与明确选型不一致')
+    if (['provider', 'model'].some((key) => missing(runtime[key]) && observed?.[key] !== selection[key]))
+      throw new Error('Hermes 未报告可核实的实际执行模型，无法确认明确选型')
     if (typeof final.output !== 'string') throw new Error('Hermes 运行结果缺失')
     if ([...activeTools.values()].some((queue) => queue.length)) throw new Error('Hermes 工具缺少完成事件')
     if (!assistantSegmentOpen && final.output) assistant(final.output)
@@ -502,8 +515,7 @@ export async function runNativeHermes(config, io) {
       try {
         if (observer) {
           try {
-            const available = await observer.read((record) => io.native(record))
-            await observer.finish((record) => io.native(record))
+            const available = await observer.finish((record) => io.native(record))
             if (!available) io.native({ type: 'cliworker.hermes_observer_status', state: 'unavailable',
               reason: 'official-public-observer-unavailable', ...(sessionID ? { sessionId: sessionID } : {}),
               ...(runID ? { nativeRunId: runID } : {}) })

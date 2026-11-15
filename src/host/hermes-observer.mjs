@@ -104,6 +104,7 @@ export async function prepareHermesObserver(stateDirectory, selection) {
     await polling.promise
   }
   const totals = { input: 0, output: 0, total: 0 }
+  let runtimeConfirmed = false
   const result = {
     env: { CLIWORKER_HERMES_OBSERVER_DIR: directory, CLIWORKER_HERMES_OBSERVER_NONCE: nonce },
     async bind(session) {
@@ -144,7 +145,8 @@ export async function prepareHermesObserver(stateDirectory, selection) {
     },
     async finish(emit) {
       await stopPolling()
-      if (closing || closed || finished) return
+      if (closing || closed) return false
+      if (finished) return ready && valid
       return serialize(async () => {
         if (closed || finished) return
         await readRecords(emit)
@@ -153,13 +155,19 @@ export async function prepareHermesObserver(stateDirectory, selection) {
         if (!nativeRunId || !sessionId) return
         const coverageComplete = valid && ready && turnEnded && !pending && starts.size === 0 && requestCount > 0
           && requestCount === responseCount + errorCount
+        // Every request/response and the successful turn end passed the exact
+        // session/model/provider gates below. Never infer identity from a
+        // requested model, an isolated response, or incomplete observation.
+        runtimeConfirmed = coverageComplete && !combinedRequests && errorCount === 0 && responseCount > 0
         const usageComplete = coverageComplete && !combinedRequests && errorCount === 0 && responseCount === validResponses
           && Object.values(totals).every(count)
         emit({ type: 'cliworker.hermes_observer_summary', source: 'hermes.observer.summary',
           nativeRunId, sessionId, requestCount, responseCount, errorCount, coverageComplete, usageComplete,
           usageBasis: 'cli-normalized', ...(usageComplete ? { usage: { ...totals } } : {}) })
+        return ready && valid
       })
     },
+    confirmedRuntime() { return runtimeConfirmed ? { ...selection } : undefined },
     close() {
       if (closePromise) return closePromise
       closing = true
