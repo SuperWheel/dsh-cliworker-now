@@ -67,6 +67,11 @@ Pi 更新 SHALL 取官方 latest，MUST NOT 用适配集合限制目标；适配
 - **WHEN** 桌面发布读取器确认此平台的官方工件没有摘要
 - **THEN** 显示具体手动原因，MUST NOT 下载执行未校验安装程序
 
+#### Scenario: Windows WorkBuddy 应用包封装于 ASAR
+- **WHEN** WorkBuddy 已通过安装根、内置 CLI 包和站点核对，且 resources/app/package.json 没有有效应用版本
+- **THEN** Host SHALL 只读使用同安装的内置 CLI product.json 中通过应用版本格式校验的 genieVersion；MUST NOT 将 agent-cli 的 package.version 作为应用版本，MUST NOT 启动桌面应用
+- **AND** genieVersion 无效或缺失时 SHALL 继续标记应用版本不可核实；版本变化 SHALL 进入现有安装指纹，另一站点的元数据 MUST NOT 被接受
+
 ### Requirement: 「更新 CLI」设置页入口与分区
 设置窗口 SHALL 在左侧导航「智能体设置」之后、「CLI 连接」之前提供「更新 CLI」入口，图标为原生 `IconDownloadOutlineRegular`。有可更新的 CLI 时，入口右侧 SHALL 显示数量徽标，数量来自缓存，不必先进入该页；有更新或安装进行中时，徽标 SHALL 换成转圈；数量为 0 时 MUST NOT 显示徽标。页面 SHALL 依次显示「检查中」「检查失败」「可更新」「需要手动更新」「已是最新」「未安装」「下载设置」分区，没有内容的分区 MUST NOT 显示。每个分区标题行最右侧 SHALL 有同一个折叠按钮，「未安装」默认收起，其余默认展开，收起状态按分区记在本机。页头 SHALL 只有标题、副标题、「检查更新」和页内唯一的 primary 按钮「全部更新」，MUST NOT 显示状态行。
 

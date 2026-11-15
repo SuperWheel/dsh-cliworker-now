@@ -29,6 +29,14 @@
 
 ## Decisions
 
+### 决定 15：Windows WorkBuddy 从已核实产品元数据补齐应用版本（2026-11-15）
+
+- 实机 CN 安装根 `D:\Software\workbuddy` 的 exe FileVersion=5.9.3、ProductVersion=5.9.3.0，HKLM 卸载项 DisplayName=WorkBuddy 5.9.3、DisplayVersion=5.9.3、InstallLocation 为空、DisplayIcon 指向该 exe。插件自动路径记录指向同目录 `resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs`，根和站点识别没有失败。
+- 根因：`resources/app/package.json` 不存在，应用包位于 `resources/app.asar`；旧 identity 只尝试前者，Windows 又没有 macOS 的 Info.plist 回退，导致 appVersion 缺失。只读独立核对 ASAR 内 package.version=5.9.3，已有 unpacked CLI product.json 的 genieVersion=5.9.3，内置 agent-cli package.version=2.165.0，证明不是版本正则拒绝或安装损坏。
+- 复用 `resolveWorkBuddyInstallation` 已有的有界 product.json 读取及包名、endpoint 站点、runtime/entry 核对，返回可选 appVersion（genieVersion）。仅 Windows 且既有 app/package.json 版本无效/缺失时，identity 接受通过 `validAppVersion` 的该字段；不把 CLI 版本代作应用版本，不放宽版本正则。macOS 保留 Info.plist 优先级，ZCode 保留独立 runtime / bundle 映射。
+- 不新增进程、注册表轮询、ASAR 解析器或持久化格式；后台与前台均只读安装文件，版本进入现有指纹，更新后重读。无有效字段仍保留不可核实提示，跨站点仍拒绝。回退撤回此可选字段及消费即可，无数据迁移。
+- 验收边界：Windows 实机仅只读取证；两版 Windows、macOS 及服务 204 分组由模拟测试覆盖。本轮不更新 Desktop、不启动 WorkBuddy、不测试真实更新或真实派遣；国际版实机元数据尚未核验。
+
 ### 决定 F：macOS 与 Windows 共用系统代理注入（2026-11-14）
 
 - 用户决定 macOS 与 Windows 一致。`system-proxy.ts` 提取共享来源接口、15 秒按需缓存、环境优先级、NO_PROXY 合并及 Host 查找；Windows 保留原导出兼容。`macos-system-proxy.ts` 以参数数组 `['/usr/sbin/scutil', '--proxy']` 读取，只解析根 dictionary，不执行 PAC、读取凭据或更改系统/launchd。

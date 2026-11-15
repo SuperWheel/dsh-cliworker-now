@@ -472,3 +472,20 @@
   - 模拟回归：新增 6 项服务级 Windows Claude 接管测试，实际执行 currentVersion/captureReadOnly，使用模拟进程和假计时器覆盖 9032 ms、20000 ms 成功，45000 ms 探测超时、60000 ms 总预算超时，用户取消与清理未确认；断言进程范围退出前不发布终态、已写 exe 和版本文件保留、只启动一次版本命令。现有普通版本读取 5 秒超时回归继续通过。
   - 验证：corepack pnpm typecheck 退出 0；corepack pnpm exec vitest run tests/cli-management* tests/settings-connection-cache.test.ts 为 22 文件、728 passed、0 failed、0 skipped（4.05 秒）。此前定向测试 2 文件、119 项通过；本次没有测试失败。README、doc/design.md 和本变更增量规格同步更新后预算与超时行为。
   - Windows 实机依据为主会话核查（2026-11-14）：Claude takeover 写入 claude.exe 372461728 B 和 versions/2.1.325，claude --version 为 2.1.325，无残留，但操作以 UNKNOWN 失败。同机新写入 372 MB 副本首次 --version 用时 9032 ms、第二次 623 ms，首次 Defender 扫描超过 captureReadOnly 原 5000 ms 上限。本次为模拟验证，修复后的 Windows 实机复测仍保留在 13.5，没有执行真实 CLI、正式构建、Desktop 更新、版本修改、提交或推送。
+
+
+## 14. Windows WorkBuddy 应用版本发现修复 〔后端｜2h｜前置 13〕
+
+- [x] 14.1 只读核对 Windows 安装、路径记录与根因
+  - 2026-11-15 SSH 只读：`D:\Software\workbuddy\WorkBuddy.exe` FileVersion=5.9.3、ProductVersion=5.9.3.0；HKLM Uninstall 的 DisplayName=WorkBuddy 5.9.3、DisplayVersion=5.9.3、InstallLocation=null、DisplayIcon=`D:\Software\workbuddy\WorkBuddy.exe,0`、Publisher=Tencent Technology (Shenzhen) Company Limited。HKCU 和 WOW6432Node 查询未返回 WorkBuddy 项。
+  - `%USERPROFILE%\.dsh\cliworker-now\cli-executable-paths\win32-<host>.json` 中 workbuddycn 为 auto、revision=1，entry 指向上述根内 `resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs`；国际版没有入口。仅提取非账号字段。
+  - `resources/app/package.json` 缺失，app.asar 存在，归档内 package.version=5.9.3；unpacked CLI package.version=2.165.0，product.genieVersion=5.9.3、productName=WorkBuddy、endpoint=https://www.workbuddy.cn、dataFolderName=.workbuddy。旧实现不读取此应用版本；validAppVersion 已接受 5.9.3 与 5.9.3.0，安装未损坏。
+  - PowerShell 5.1 ConvertFrom-Json 无法解析该公开产品 JSON（错误意外展开了厂商静态元数据），随后改用 Node 标准输入 JSON.parse 并只输出白名单字段成功；未读取账号文件。所有远程脚本均低于上传阈值，只通过 EncodedCommand/标准输入运行，没有写文件、安装、删除、退出或重启 Desktop，也没有启动 WorkBuddy。
+- [x] 14.2 修复只读版本回退并同步设计与规格
+  - 安装发现器返回可选 appVersion；identity 仅 Windows 缺有效应用包版本时使用经格式校验的 genieVersion。保留站点隔离、CLI 版本、macOS 与 ZCode 现有行为；README、doc/design、本 change design/spec 同步。
+- [x] 14.3 完成模拟回归、类型检查与隔离构建
+  - `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/cli-management-workbuddy-identity.test.ts tests/workbuddy-installation.test.ts tests/cli-management-desktop-update.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-acceptance-fixes.test.ts`：5 文件、282 passed、0 failed，含新增 14 个模拟用例。覆盖两版 Windows 的身份到服务 204 分组、缺失/非法应用版本、四段版本及指纹变化、既有 package 优先、跨站点拒绝、macOS Info.plist 优先级，并回归 ZCode。
+  - 首轮同命令 272 passed、10 failed：新夹具误把 service.local 的 pathOnly 设为 true，未进入版本阶段；修正夹具为 false 后全过，未调整生产服务逻辑。
+  - `corepack pnpm typecheck` 最终退出 0，Host/Client 通过（DSH 0.2.2-rc.3）。首次失败因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明；先执行 `corepack pnpm build:preview`（退出 0），再仅把 preview 的 `lib/typert.remote-client.d.ts` 复制到本 worktree 忽略的 lib 目录后复验通过。没有正式构建或更新 Desktop 链接。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive` 通过，仅提示主任务超过 10 个；`git diff --check` 通过。保留本 change 原有未完成项及 14.4，不归档。
+- [ ] 14.4 修复包的 Windows Desktop 页面回读（未执行：本次只授权 Windows 只读检查，不部署、不重启 Desktop；真实更新、派遣及国际版实机同样没有执行）

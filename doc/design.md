@@ -1686,3 +1686,7 @@ npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不�
 - 展开区：下载进度（跨文件合计字节、速度、来源主机、续传次数、官方/插件接管标签、阶段文字与已用时）、命令与输出、结果状态与「更新清理」摘要；手动方法气泡给出命令与官方说明；可选位置的桌面应用先展开安装位置气泡，确认后才开始安装。
 - 后台版本检查：「启动后在后台检查 CLI」默认开启，回退即关闭该开关。`preload.ts` 在 Host 启动 60 秒后进入空闲判定（无任务、账号窗口、更新，CPU 两次采样忙碌比例低于 50%），按路径 → 版本 → 账号 → 最新版本 → 模型目录逐项执行；版本探测经 `private-launch.mjs --cliworker-low-priority`，Windows 为 BELOW_NORMAL；`backgroundSafe: false`（Codex、Qoder 两版）只在前台读取；版本按指纹缓存，命中时不启动进程。忙碌时中断当前项并等待清理，30 秒后重试；页面「检查更新」把剩余项转为前台并共用结果。
 - 实机：2026-11-15 Windows（34133b9 包）启动后 120 秒出现首个后台探测进程，全部为 BelowNormal；Mac Desktop 上页面检查、OMP 官方更新与备份回收、展开区与安装位置气泡通过。详细证据见 `openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md` 与双通道变更。
+
+### 2026-11-15 Windows WorkBuddy 应用版本发现修复
+
+Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从已核对包名、站点和入口的 unpacked CLI `product.json.genieVersion` 补齐应用版本，仅接受现有应用版本格式。内置 CLI 版本保持独立，macOS Info.plist 优先级及 ZCode 规则不变；不新增进程或持久化字段。Windows CN 实机只读证据、模拟验证和未验证边界见 [更新 CLI 变更决定 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。

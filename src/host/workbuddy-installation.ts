@@ -17,6 +17,8 @@ export interface WorkBuddyInstallation {
   runtime: string
   entry: string
   cliVersion: string
+  /** Desktop version from bundled product.json, independent of the agent-cli package version. */
+  appVersion?: string
   productName: string
   endpoint: string
   configDir: string
@@ -78,6 +80,7 @@ export async function resolveWorkBuddyInstallation(cli: WorkBuddyCliId, options:
       if (typeof pkg.version !== 'string' || !pkg.version || typeof product.productName !== 'string' || !product.productName)
         throw new WorkBuddyUnavailableError('metadata-invalid')
       return { cli, appRoot, runtime, entry, cliVersion: pkg.version, productName: product.productName,
+        appVersion: typeof product.genieVersion === 'string' ? product.genieVersion : undefined,
         endpoint: product.endpoint, configDir: join(home, product.dataFolderName), dataFolderName: product.dataFolderName }
     } catch (error) {
       const next = error instanceof WorkBuddyUnavailableError ? error.reason

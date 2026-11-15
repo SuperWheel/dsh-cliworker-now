@@ -14,6 +14,7 @@ import { CLI_SOURCES, ZCODE_DEFAULT_APP } from './sources.ts'
 import { managedZCodeEntry } from '../zcode-adapter.ts'
 import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
 import { hermesCheckoutVersion } from './hermes-version.ts'
+import { validAppVersion } from './versions.ts'
 
 export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
@@ -129,6 +130,9 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     target = await realpath(app.entry); manifestVersion = app.cliVersion
     const pkg = await readManifest(join(app.appRoot, process.platform === 'darwin' ? 'Contents/Resources/app/package.json' : 'resources/app/package.json'))
     appVersion = typeof pkg?.version === 'string' ? pkg.version : undefined
+    // Windows ships app/package.json inside app.asar. The already site-verified
+    // unpacked CLI product.json also records the desktop version as genieVersion.
+    if (process.platform === 'win32' && !validAppVersion(appVersion) && validAppVersion(app.appVersion)) appVersion = app.appVersion
   } else if (cli === 'pi') {
     const pi = inspectPiInstallation(executable, { allowUnsupported: true }); target = pi.executable; manifestVersion = pi.version
   } else target = await realpath(resolveNativeEntry(target))
