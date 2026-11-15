@@ -38,6 +38,17 @@
 - 若未来 feed 修正为 ZIP 摘要，现行 DMG 下载会严格校验失败并停止；不得自动尝试 ZIP、替换摘要或降低校验。应重新核对官网、feed 和工件配对，明确修订此选择规则及对应模拟回归后再切换。撤回本修复则恢复原 ZIP 严格拒绝行为，不迁移用户数据。
 - 本次仅做模拟回归、类型与规格检查、隔离构建；真实安装、更新、挂载、签名系统执行、登录和 Desktop 验收保留待验证。
 
+### 决定 17：CodeBuddy Code 官方原生来源与稳定入口（2026-11-15）
+
+- 本决定修复文末「CodeBuddy 原生布局问题的结论」所列缺口。匿名读取 [install.sh](https://www.codebuddy.cn/cli/install.sh)、[install.ps1](https://www.codebuddy.cn/cli/install.ps1) 与[安装文档](https://www.codebuddy.cn/docs/cli/installation)，脚本均下载 COS 二进制、以 checksums.txt 的 SHA-256 校验，再委托 `codebuddy install`；脚本文本不单独证明最终布局。
+- 为重新核实布局，匿名下载官方 npm `@tencent-ai/codebuddy-code@2.184.0`，校验 registry dist.integrity（SHA-512）相符后只读 `dist/codebuddy.js` 的 InstallEnv、PathUtils、InstallService。Unix（含 macOS）使用 Linux paths：`${XDG_DATA_HOME:-~/.local/share}/codebuddy/versions/<semver>/codebuddy`，稳定入口为数据根上两层的 `bin/codebuddy`（默认 `~/.local/bin/codebuddy`）；Windows 为 `${LOCALAPPDATA:-~/AppData/Local}/codebuddy/Data/versions/<semver>/codebuddy.exe` 和同根 `bin/codebuddy.exe`。安装先尝试 symlink，再 hardlink，最后 copy；没有证据支持 `versions/<v>` 本身就是文件或 `.codebuddy/bin` 布局。
+- 官方自更新命令为 `[所选入口, 'update']`，不锁目标版本。2.184.0 源码先解包到新版本目录，再以 `.codebuddy-update-<uuid>` 同目录临时文件替换当前 invoked entry 的 realpath；Windows 先将旧文件改名 `.old`，失败回滚。故稳定入口不变，甚至 realpath 的旧版本目录名也可能不变，不能从目录名推断当前版本。官方自行保留最近五个版本并保护当前执行版本。
+- 新增纯路径模块共用于 identity、auto-entry 和 planner：仅 CodeBuddy ID、当前 home/环境定义的完整根、精确二进制名称与一层 SemVer 版本目录可识别为 `self-update`，npm/brew 仍先按各自证据分类；撤去没有证据的 `.codebuddy/bin/` 前缀。WorkBuddy 内置 codebuddy-lite、其他 CLI、备份/临时文件、跨根和相似名称不获得 CodeBuddy 原生更新资格。
+- 自动记录旧版本实体时前台优先重找同根稳定入口；首次 PATH 直接返回版本实体时也保存稳定入口，并核对其 realpath 仍属同根。手动路径与部署配置保留原选择；后台遇到旧 auto 版本实体暂不探测，不做 PATH 迁移。更新后 `sameInstallation` 同时核对来源、通道、更新根、真实入口及所选路径（不变的手动别名可保留，变化时须为同根精确入口），接受同根版本迁移及链接/复制形状，随后仍须新鲜版本前进验证；版本探针设置 `DISABLE_AUTOUPDATER=1`，保留继承代理。
+- 复用 `sources.ts` 已有 `NATIVE_UPDATES.codebuddy.argv=['update']` 与 planner/executor 生命周期，不新增下载接管、原生安装入口、进度推断或残留删除；`update-residue.ts` 不纳入 CodeBuddy，旧版本与 `.old` 由官方处理。OMP 的精确入口和 Kimi 禁后台自动升级模式作为对照，不扩大它们的规则。
+- 只读实测：Mac `/opt/homebrew/bin/codebuddy` → `/opt/homebrew/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy`，版本和包清单均 2.184.0；Windows `~\AppData\Roaming\npm\codebuddy.ps1/.cmd`，CLI 与包清单均 2.184.0，`%LOCALAPPDATA%\codebuddy` 不存在。两机均为 npm，不把这些结果写成原生更新实测。未安装、更新、删除或操作账号；Linux 与三平台原生更新仅模拟验证。
+- 回退：撤回此精确路径规则及入口迁移；无持久化格式变更，已保存稳定路径仍是普通 auto 记录。本 change 其他未完成验收保持可见，不因本子任务完成而归档。
+
 ### 决定 15：Windows WorkBuddy 从已核实产品元数据补齐应用版本（2026-11-15）
 
 - 实机 CN 安装根 `D:\Software\workbuddy` 的 exe FileVersion=5.9.3、ProductVersion=5.9.3.0，HKLM 卸载项 DisplayName=WorkBuddy 5.9.3、DisplayVersion=5.9.3、InstallLocation 为空、DisplayIcon 指向该 exe。插件自动路径记录指向同目录 `resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs`，根和站点识别没有失败。
@@ -449,4 +460,4 @@ CodeBuddy 对照：当前插件支持的是 **CodeBuddy Code CLI**，并非 Code
 
 **安装方式分类确有缺口。** `identity.ts` 只含 `.codebuddy/bin/`，既没有 Unix 官方稳定入口/版本实体，也没有 Windows 官方目录。对当前源码中 `classifyInstallation` 与 `automaticMethod` 的原样摘录执行隔离模拟：官方 Unix 稳定入口、两种研究中的版本实体形状、Windows 官方入口均得到 `unknown` / 无自动更新方法；npm 对照仍为 `npm`。这影响原生安装的“更新方式识别”，不是账号身份或登录站点布局；npm/brew 的独立分支不受这一缺失规则影响。
 
-本轮按用户允许的“修或给结论”交付明确缺陷结论，**未修复 CodeBuddy 原生更新支持**。后续修正应一起验证真实路径归属、稳定更新根、自动路径随版本迁移（`cli-auto-entry.ts` 当前也没有 CodeBuddy 原生规则）与更新后 `sameInstallation`，并补模拟回归及平台证据；不能仅泛化目录前缀就宣布支持。未检查本机 CodeBuddy 账号或执行其 CLI。
+此前只读审计按用户允许的“修或给结论”交付明确缺陷结论，当时**未修复 CodeBuddy 原生更新支持**；现由上方决定 17 实施修复，以下保留当时的证据边界。后续修正应一起验证真实路径归属、稳定更新根、自动路径随版本迁移（`cli-auto-entry.ts` 当前也没有 CodeBuddy 原生规则）与更新后 `sameInstallation`，并补模拟回归及平台证据；不能仅泛化目录前缀就宣布支持。未检查本机 CodeBuddy 账号或执行其 CLI。

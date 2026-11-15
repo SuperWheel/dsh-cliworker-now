@@ -482,3 +482,18 @@ Host SHALL 仅对国际版 WorkBuddy 的 darwin feed，将已核实 HTTPS 主机
 #### Scenario: DMG 更新卸载未确认
 - **WHEN** 国际版 DMG 更新期间挂载失败、取消或签名失败
 - **THEN** Host 仍尝试卸载；卸载未确认 SHALL 进入清理隔离并保留相关目录，MUST NOT 替换旧应用或报告成功
+
+### Requirement: CodeBuddy 官方原生安装与稳定入口
+Host SHALL 将当前 home 与官方 XDG_DATA_HOME/LOCALAPPDATA 布局下精确的 CodeBuddy Code 原生入口识别为 self-update，使用参数数组 `[入口, 'update']`；npm 与已核实 Homebrew 安装 SHALL 继续使用原包管理器。Host MUST NOT 将 WorkBuddy 内置 codebuddy-lite、其他 CLI、相似目录、备份文件或未核实的 `.codebuddy/bin` 前缀识别为 CodeBuddy 原生安装。
+
+#### Scenario: Unix 与 Windows 官方布局
+- **WHEN** 真实入口位于 Unix 数据根 `codebuddy/versions/<semver>/codebuddy` 或对应稳定 `bin/codebuddy`，或 Windows `%LOCALAPPDATA%/codebuddy/Data/versions/<semver>/codebuddy.exe` 或同根 `bin/codebuddy.exe`
+- **THEN** Host SHALL 识别为原生自更新并记录不含版本的 updateRoot；Windows 比较忽略大小写，Unix 保持大小写敏感，MUST NOT 从版本目录名推断实际版本
+
+#### Scenario: 自动记录随版本迁移
+- **WHEN** 自动记录或首次发现指向原生版本实体
+- **THEN** 前台 SHALL 优先核对并记录同根稳定入口，后台 SHALL 暂缓旧 auto 实体的探测；手动路径与部署配置 MUST NOT 被迁移，稳定入口越界或不可用 MUST NOT 被静默采信
+
+#### Scenario: 更新后入口或实体变化
+- **WHEN** 更新完成后重新读取身份
+- **THEN** 同一安装 SHALL 要求来源、通道和更新根一致，realpath 符合该根精确布局，所选入口保持相同或变化前后均为该根精确入口；允许原位替换或同根版本迁移，跨根/跨来源/其他文件 MUST 拒绝；之后 SHALL 单独核实实际版本前进，版本探针禁自动升级，原生残留不由插件清理

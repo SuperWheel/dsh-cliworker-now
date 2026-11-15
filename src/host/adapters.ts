@@ -25,6 +25,7 @@ import { BridgeProtocol } from './bridge-protocol.ts'
 import { verifyPiOmpExecutable } from './pi-omp-identity.ts'
 import { inspectPiInstallation } from './pi-installation.mjs'
 import { isVersionedAutoEntry } from './cli-auto-entry.ts'
+import { codebuddyNativeLayout } from './codebuddy-native-layout.ts'
 import {
   findWindowsCodexAppx,
   hasWindowsHermesInstallDirectory,
@@ -39,7 +40,7 @@ import {
 import { findWindowsPathCommand } from './windows-cli-path.ts'
 import { findWindowsDesktopCli, windowsOpenCodeDesktopCli } from './windows-desktop-cli-installation.ts'
 import { resolveModel } from '../shared/models.ts'
-import { existsSync, statSync, lstatSync, accessSync, constants } from 'node:fs'
+import { existsSync, statSync, lstatSync, realpathSync, accessSync, constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
@@ -445,6 +446,17 @@ function configWithExecutable(cli: CliId, config: RuntimeConfig, path: string): 
   return { ...config, [cli === 'antigravity' ? 'executable' : `${cli}Executable`]: path }
 }
 
+function stableCodebuddyExecutable(path: string): string {
+  const native = codebuddyNativeLayout(path)
+  if (!native?.versioned) return path
+  const target = codebuddyNativeLayout(realpathSync(native.stableEntry))
+  const fold = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value
+  if (!target || fold(target.root) !== fold(native.root)) throw new Error('CodeBuddy 原生稳定入口已改变，请重新检查安装路径')
+  accessSync(native.stableEntry, constants.R_OK)
+  if (!statSync(native.stableEntry).isFile()) throw new Error('CodeBuddy 原生稳定入口不是文件')
+  return native.stableEntry
+}
+
 /** Reuse a verified location; discovery never overwrites a later manual choice. */
 export async function resolveCliExecutable(
   cli: CliId,
@@ -458,6 +470,8 @@ export async function resolveCliExecutable(
   if (!store || cli === 'harness') return resolveUncachedCliExecutable(cli, backend, config, signal, false, undefined, options.management)
   let entry = store.read(cli)
   const deployment = configuredCliExecutable(cli, config)
+  const nativeEntry = cli === 'codebuddy' && entry?.mode === 'auto' && !deployment && codebuddyNativeLayout(entry.path)?.versioned
+    ? stableCodebuddyExecutable(entry.path) : undefined
   if (entry?.mode === 'auto' && !deployment) {
     let present: boolean
     try {
@@ -474,7 +488,7 @@ export async function resolveCliExecutable(
   }
   const revision = store.revision(cli)
   const migrate = entry?.mode === 'auto' && !deployment && isVersionedAutoEntry(cli, entry.path)
-  const selected = entry?.mode === 'manual' ? entry.path : deployment || migrate ? undefined : entry?.path
+  const selected = entry?.mode === 'manual' ? entry.path : nativeEntry ?? (deployment || migrate ? undefined : entry?.path)
   let discovered: string | undefined
   const result = await resolveUncachedCliExecutable(
     cli,
@@ -649,6 +663,9 @@ async function resolveUncachedCliExecutable(
     }
   }
   signal.throwIfAborted()
+  if (cli === 'codebuddy' && (!explicit || automaticSelection)) {
+    resolved = stableCodebuddyExecutable(resolved)
+  }
   if (process.platform === 'win32' && (cli === 'qoder' || cli === 'qodercn')) {
     rejectWindowsQoderCrossVariant(resolved, cli)
     if (!explicit || automaticSelection) resolved = windowsQoderCliEntry(resolved, cli)

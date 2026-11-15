@@ -1,0 +1,93 @@
+{
+  "date": "2026-11-15",
+  "scope": "只读官方文本与发布包源码；两机仅路径和版本；未安装、更新、删除或操作账号",
+  "officialSources": [
+    {
+      "url": "https://www.codebuddy.cn/cli/install.sh",
+      "bytes": 4542,
+      "sha256": "e0cb8fcbd2a874724fbf0b16bf5161c66c31bd4a57412efeea90e4d7bb2a956f"
+    },
+    {
+      "url": "https://www.codebuddy.cn/cli/install.ps1",
+      "bytes": 2653,
+      "sha256": "19ad1de63c91f2f85328ca39dd76f2aa601de7ab04ec3cce2ca07816cc7326ff"
+    },
+    {
+      "url": "https://registry.npmjs.org/@tencent-ai/codebuddy-code/-/codebuddy-code-2.184.0.tgz",
+      "bytes": 68667419,
+      "sha256": "882f681ad6327ebbb837b5a53f73bf4ea47eed42c598f536815fe71aa19dc9b7"
+    },
+    {
+      "url": "https://www.codebuddy.cn/docs/cli/installation",
+      "evidence": "official stable bin paths; native beta; codebuddy update; DISABLE_AUTOUPDATER=1"
+    }
+  ],
+  "layout": {
+    "unix": {
+      "data": "${XDG_DATA_HOME:-~/.local/share}/codebuddy",
+      "versions": "<data>/versions/<semver>/codebuddy",
+      "entry": "<data>/../../bin/codebuddy"
+    },
+    "windows": {
+      "root": "${LOCALAPPDATA:-~/AppData/Local}/codebuddy",
+      "versions": "<root>/Data/versions/<semver>/codebuddy.exe",
+      "entry": "<root>/bin/codebuddy.exe"
+    },
+    "initialEntry": "symlink -> hardlink -> copy fallback (linkOrCopyFile)",
+    "updateArgv": [
+      "<selected entry>",
+      "update"
+    ],
+    "updateBehavior": "downloadAndExtract into versiondir/<version>, replaceCurrentNativeBinary copies into a temporary sibling of realpath(invoked), then renames; Windows first renames previous binary to .old and rolls back on failure; update need not change version directory name",
+    "cleanup": "official pruneOldVersions retains five newest versions and executing version; plugin does not add native residue cleanup"
+  },
+  "readonlyMachines": {
+    "macos": {
+      "entry": "/opt/homebrew/bin/codebuddy",
+      "realpath": "/opt/homebrew/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy",
+      "version": "2.184.0",
+      "packageName": "@tencent-ai/codebuddy-code",
+      "packageVersion": "2.184.0",
+      "installation": "npm"
+    },
+    "windows": {
+      "entries": [
+        "~/AppData/Roaming/npm/codebuddy.ps1",
+        "~/AppData/Roaming/npm/codebuddy.cmd",
+        "~/AppData/Roaming/npm/codebuddy"
+      ],
+      "version": "2.184.0",
+      "packageName": "@tencent-ai/codebuddy-code",
+      "packageVersion": "2.184.0",
+      "nativeRootExists": false,
+      "installation": "npm",
+      "transport": "user-provided remote.py; PowerShell stdin; 100s timeout"
+    }
+  },
+  "notVerified": [
+    "real native update on macOS, Linux or Windows",
+    "Linux machine layout",
+    "Desktop UI and account/model operations",
+    "custom environment roots on real machines"
+  ],
+  "officialPackage": {
+    "name": "@tencent-ai/codebuddy-code",
+    "version": "2.184.0",
+    "distIntegrity": "sha512-2bvK8cO3zvRnOwyA28Na0sES99CBqlWoQGhndB2sdmBUv0WgAX9J2IRRqN6GsqHm9MKjcIAAWcS8WCCRW7ZAig==",
+    "integrityVerified": true,
+    "readOnlyMember": "package/dist/codebuddy.js",
+    "memberSha256": "a2a1ed21a22ac1d48e8e38c56708c61f01c89442c135db25ffe0cd9a06fa0904",
+    "symbols": [
+      "InstallEnv.versiondir",
+      "InstallEnv.bindir",
+      "PathUtils.getLinuxPaths",
+      "PathUtils.getWin32Paths",
+      "InstallService.install",
+      "InstallService.downloadAndExtract",
+      "InstallService.replaceCurrentNativeBinary",
+      "InstallService.installBins",
+      "linkOrCopyFile",
+      "InstallService.pruneOldVersions"
+    ]
+  }
+}

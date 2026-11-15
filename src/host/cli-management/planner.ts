@@ -8,6 +8,7 @@ import { CLI_SOURCES, NATIVE_UPDATES, isDesktopCli } from './sources.ts'
 import { compatible, validUpdateVersion, updateAvailable, compareVersions } from './versions.ts'
 import { resolveNpmRuntime } from './npm.ts'
 import type { DesktopRelease } from './desktop-update.ts'
+import { codebuddyEntryAtRoot } from '../codebuddy-native-layout.ts'
 
 export class CliOperationError extends Error {
   constructor(readonly code: CliOperationErrorCode, message: string) { super(`${code}：${message}`) }
@@ -85,6 +86,13 @@ export function verifyUpdatedVersion(plan: CliOperationPlan, version: string | u
 const foldPath = (value: string) => /^[A-Za-z]:[\\/]/.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value
 const samePath = (a: string | undefined, b: string | undefined) => a === b || a !== undefined && b !== undefined && foldPath(a) === foldPath(b)
 export function sameInstallation(before: InstallationIdentity, after: InstallationIdentity, cli?: ActiveCliId): boolean {
+  if (cli === 'codebuddy' && (before.source === 'self-update' || after.source === 'self-update')) {
+    if (before.source !== after.source || !before.updateRoot || !samePath(before.updateRoot, after.updateRoot) || before.channel !== after.channel) return false
+    // Stable links, hard links/copies, and version entities all belong to this root.
+    // A user-selected alias may stay unchanged; moving entries must use the layout.
+    const entriesMatch = samePath(before.executable, after.executable) || [before, after].every(id => !!codebuddyEntryAtRoot(id.executable, before.updateRoot!))
+    return entriesMatch && [before, after].every(id => !!codebuddyEntryAtRoot(id.fingerprint.realpath, before.updateRoot!))
+  }
   if (before.source === after.source && samePath(before.executable, after.executable) && before.updateRoot && samePath(before.updateRoot, after.updateRoot) && before.channel === after.channel) return true
   if (before.source === 'brew' && after.source === 'brew' && before.prefix && before.prefix === after.prefix && before.executable === after.executable && cli) {
     const spec = CLI_SOURCES[cli].brew

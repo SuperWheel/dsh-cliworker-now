@@ -100,7 +100,7 @@ export async function currentVersion(cli: ActiveCliId, identity: InstallationIde
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
   if (spec.version !== 'kimi' && spec.version !== 'command') return
-  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : undefined, timeoutMs)
+  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : undefined, timeoutMs)
   if (cli === 'traecn') {
     const channel = /\binstallation:\s*(public|tob|tob-alpha|internal)\b/.exec(stripVTControlCharacters(raw))?.[1]
     if (channel) identity.channel = channel

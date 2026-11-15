@@ -504,3 +504,17 @@
   - `corepack pnpm typecheck`：最终退出 0，Host/Client against DSH 0.2.2-rc.3 通过。首次因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明失败；按授权先 `corepack pnpm build:preview`（退出 0），将 `.cache/preview-package/lib/typert.remote-client.d.ts` 复制到本 worktree 被忽略的 `lib/` 后复验通过。最终源码再次 `corepack pnpm build:preview` 退出 0，产物仅 `.cache/preview-package`，没有正式构建或 Desktop 链接更新。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 退出 0（valid；仅既有主任务超过 10 个的组织建议）；指定 Git 的 `diff --check` 通过。本 change 的其他缺口和 15.3 保留，未归档。
 - [ ] 15.3 真实 macOS 首次安装与更新验收（未执行：本次明确禁止真实安装及登录；不以模拟证明系统签名、挂载或 Desktop 成功）
+
+## 16. CodeBuddy 官方原生更新识别 〔后端｜4h｜前置 2〕
+
+- [x] 16.1 匿名核实官方脚本、发布包源码与两机只读路径版本
+  - 2026-11-15：install.sh/ps1 仅文本读取；官方 npm 2.184.0 tarball SHA-512 与 dist.integrity 相符，只读 InstallEnv/InstallService/PathUtils；Mac 与 Windows 均 npm 2.184.0，Windows 原生根不存在。详细路径、来源哈希及布局见决定 17 和 `codebuddy-native-layout-audit-2026-11-15.json`。
+- [x] 16.2 修复精确来源分类、稳定自动入口和更新后同一安装判断并补模拟回归
+  - 新增 `codebuddy-native-layout.ts` 精确布局规则，共用于 identity、auto-entry、planner；adapters 优先保留同根稳定入口，版本探针设置 DISABLE_AUTOUPDATER=1。npm/brew、手动路径与 WorkBuddy 工件逻辑保持原渠道。
+  - `tests/cli-management-codebuddy-native.test.ts` 46 项模拟覆盖三平台、SemVer/近似路径拒绝、npm 链接、旧版本已删/仍在、手动与部署路径、并发手动修改、服务原位更新/重链接及残留不清理。通用 all-updates 的 CodeBuddy 夹具改为真实形状的模拟原生根。
+- [x] 16.3 同步双语 README、设计与规格并执行类型检查、相关测试和严格校验
+  - README.md、README.en.md、doc/design.md、本 change design/specs 已同步；官方源码与两机只读证据另存脱敏 JSON。
+  - `corepack pnpm typecheck` 通过；初次缺少 remote 声明，按要求先 `corepack pnpm build:preview` 成功，再复制 285 个生成声明到被忽略的 lib/，后续 Host/Client 类型检查通过。
+  - `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/cli-management-codebuddy-native.test.ts tests/cli-management-source-layouts.test.ts tests/cli-management-acceptance-fixes.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-review.test.ts tests/cli-management-update-cleanup.test.ts tests/cli-management-workbuddy-identity.test.ts tests/cli-executable-management.test.ts tests/adapters.test.ts`：9 文件、388 项通过。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过，仅已有主任务超过 10 个的组织建议；`git diff --check` 通过。首次任务工时标记格式失败已修正；首次关联测试的旧 CodeBuddy 夹具缺 updateRoot 失败已修正，并完整重跑通过。
+- [ ] 16.4 三平台真实原生更新验收（未执行：本次明确禁止真实更新；Mac/Windows 只有 npm 安装，Linux 无实机）

@@ -1701,3 +1701,7 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 首次安装复用 `desktop.ts` 的只读挂载/签名/Gatekeeper/ditto/卸载流程；更新器复用同一流程准备暂存副本，卸载确认后再沿用原有替换、回滚、忙闲检查及装后版本核对。国际版固定 Apple anchor、Team `FN2V63AD2J` 和签名 identifier `com.workbuddy.workbuddy-ai`，不从旧应用推断可信团队。下载摘要失败不执行挂载、解包或安装，卸载未确认保留清理隔离，不替换旧应用。命令继续用参数数组并保留宿主代理，不引入账号读取或数据迁移。
 
 未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。本次仅模拟回归及静态/隔离构建检查，没有真实安装、更新、签名系统执行、挂载、登录或 Desktop 验收。
+
+## 2026-11-15：CodeBuddy Code 原生来源与路径迁移
+
+官方原生默认根为 Unix `~/.local/share/codebuddy`、Windows `%LOCALAPPDATA%/codebuddy`；精确匹配版本实体与稳定入口，移除旧 `.codebuddy/bin/` 猜测规则，npm/brew 保持原渠道。自动记录迁往同根稳定入口，手动与部署路径不改；更新使用已有 argv `[入口, 'update']`，同一安装验证涵盖原位 realpath 替换、同根版本变化、来源和通道约束，实际版本以禁自动升级的探针核实，不能从版本目录名推断。CodeBuddy 原生旧版本/备份不加入插件回收。官方脚本、2.184.0 发布包源码与 Mac/Windows npm 只读证据、模拟和真实验收边界见[决定 17](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。

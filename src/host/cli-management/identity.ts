@@ -15,6 +15,7 @@ import { managedZCodeEntry } from '../zcode-adapter.ts'
 import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
 import { hermesCheckoutVersion } from './hermes-version.ts'
 import { validAppVersion } from './versions.ts'
+import { codebuddyNativeLayout } from '../codebuddy-native-layout.ts'
 
 export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
@@ -76,6 +77,10 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
     }
   }
   const h = home.replace(/\\/g, '/')
+  if (cli === 'codebuddy') {
+    const native = codebuddyNativeLayout(path, home)
+    return native ? { source: 'self-update', updateRoot: native.root } : { source: 'unknown' }
+  }
   if (isQoderDispatcher(cli, p, home)) return { source: 'self-update' }
   if (cli === 'grok' && selectedPath?.replace(/\\/g, '/') === `${h}/.grok/bin/grok` && p.startsWith(`${h}/.grok/downloads/`)) return { source: 'self-update', updateRoot: `${h}/.grok` }
   // Windows entries (2026-11-14 实机): official install.ps1 targets; NTFS is case-insensitive (agy.EXE from PATHEXT).
@@ -92,7 +97,7 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
     traecn: ['.local/share/traecli/', 'AppData/Local/TraeCLI/'], qoder: ['.qoder/bin/'], qodercn: ['.qoder-cn/bin/'], pi: ['.pi/agent/'],
     // Windows official installer: %LOCALAPPDATA%\hermes\bin\hermes.exe + hermes-agent checkout (2026-11-14 Windows 实机).
     hermes: ['.hermes/hermes-agent/', 'AppData/Local/hermes/'],
-    opencode: ['.opencode/bin/'], codebuddy: ['.codebuddy/bin/'],
+    opencode: ['.opencode/bin/'],
   }
   const layout = layouts[cli]?.find(part => p.startsWith(`${h}/${part}`))
   if (layout) return { source: spec.update ? 'self-update' : 'official-installer', updateRoot: `${h}/${layout.slice(0, -1)}` }

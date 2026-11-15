@@ -23,6 +23,7 @@ const fixtures: ReturnType<typeof serviceFixture>[] = []
 const json = (value: unknown) => new Response(JSON.stringify(value))
 const exited = () => ({ stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), terminate: vi.fn(), waitForExit: vi.fn(async () => true) })
 const identity = (cli: ActiveCliId): InstallationIdentity => ({ ...syntheticIdentity(cli), source: isDesktopCli(cli) ? 'desktop-app' : cli === 'codex' ? 'official-installer' : 'self-update', channel: cli === 'traecn' ? 'public' : cli === 'hermes' ? 'canary' : undefined,
+  ...(cli === 'codebuddy' ? { executable: '/模拟/.local/bin/codebuddy', updateRoot: '/模拟/.local/share/codebuddy', fingerprint: { realpath: '/模拟/.local/share/codebuddy/versions/1.0.0/codebuddy', size: 10, mtimeMs: 1 } } : {}),
   ...(isDesktopCli(cli) ? { appPath: `/模拟/${cli}.app`, fingerprint: { realpath: `/模拟/${cli}.app/Contents/cli`, size: 10, mtimeMs: 1, appVersion: '1.0.0' } } : {}) })
 function sample(cli: ActiveCliId): unknown {
   const artifact = { url: 'https://example.invalid/模拟.tgz', sha256: 'a'.repeat(64) }
