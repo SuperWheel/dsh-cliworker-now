@@ -115,6 +115,7 @@
   - 2026-11-14 补齐 macOS：sources 固定三个官方 feed、应用名、CLI 相对入口与 Team ID；CliInstaller 通过共享发布预算读取清单，把 SHA-512/SHA-256、版本、工件地址纳入 token；ZIP 解包、codesign + spctl、应用版本核对成功后写回原路径记录，DMG 继续只读挂载/卸载。ZIP 成功、解包/签名/目标占用失败、摘要失败零启动、版本不符不写路径均有模拟回归。官方 URL、摘要与签名依据见本变更 design.md「2026-11-14 首次安装来源与实机复核」。
   - 本次实时 GET：ZCode 3.18.2 / SHA-512 / 305,360,326 B；WorkBuddy CN 5.9.3.42398134 / SHA-256；国际版 WorkBuddy 5.9.4.42593613 / SHA-256。国际版包的独立签名检查为 Team FN2V63AD2J、bundle com.workbuddy.workbuddy-ai，codesign 验证通过；但其 ZIP 与 feed SHA-256 不一致（官方 6502dc77…、实际 75492626…），插件完整重下仍拒绝，不用签名结果绕过摘要。CN 本轮只读清单，没有真实安装。
   - ZCode macOS 插件安装实测通过，详见 7.4。Windows 未执行；首次安装的 Authenticode、向导实际位置发现仍无充分证据，保持仅说明，所以组合项 5.2 保持未勾选。
+  - 2026-11-15 Windows：打开官方安装程序已实测（国际版 WorkBuddy 向导可见、Authenticode Valid、装到 D 盘，见 18.4）；「装后写入路径记录」当场因向导追加子目录失败，8bf4942 修复后尚未重装复验，5.2 仍不勾选。
   - 本轮交付检查：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；最终指定 5 文件单 worker 回归 `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-remotes.test.ts tests/cli-management-local-artifacts.test.ts tests/cli-management-download.test.ts --maxWorkers=1`：93/93 通过，25.80 秒，退出 0（/tmp/gaps-owned-delivery.log）。覆盖官方源/签名绑定、token 变化、应用版本核对、摘要失败零执行、ZIP 清理/隔离、Agent 工具清单、OMP 最终脚本地址。
   - `corepack pnpm vitest run tests/cli-management`：20 文件 604 passed / 1 failed（605 项），退出 1（/tmp/gaps-related-final.log）。唯一失败是既有 acceptance-fixes 的 Pi 1.5.2 Worker 拒绝断言，当前分支已支持该版本；本轮未修改对应源码/测试，交主会话整合。此前默认并发指定 5 文件一轮 91 passed / 1 timeout（92 项），单 worker 复跑 92/92，再补 ZIP 清理隔离后最终 93/93；不改超时或跳过用例。
   - 沙箱外默认并发 `corepack pnpm vitest run`：314 文件 296 passed / 14 failed / 4 skipped；7,056 项 6,992 passed / 50 failed / 14 skipped，570.22 秒，退出 1（/tmp/gaps-full.log）。该长轮期间补过本轮代码/用例，保留为中间结果；固定最终源码的 2 worker 全量另行记录，不据聚焦通过宣称全量通过。
@@ -197,7 +198,8 @@
     - 桌面应用（ZCode）：首轮 codesign `-R` 参数格式错误；修为单个 `-R=…` 后第二轮签名通过，但 Host 在 Electron 下用补丁版 fs 删除暂存目录，把 `Contents/Resources/app.asar` 当目录处理而 `ENOTEMPTY`，触发回滚：新应用移到 `/Applications/.cliworker-update-*/failed.app`、旧 3.17.2 恢复，暂存残留 366 MB（即 11.5 记录的「原因未明」残留）。改用 `original-fs`（见 11.7）、清掉两处插件残留目录后重测 3.17.2 → 3.18.2：确认框说明 Worker runtime 不随应用更新；从 cdn-zcode.z.ai 下载 291 MB（最高 15.6 MB/s），ditto 解包、两次 codesign（Team 8A5X4JJ39T）与 spctl 通过后替换，约 30 秒成功；`/Applications/ZCode.app` 3.18.2，`codesign --verify --deep --strict` 与 `spctl --assess` 通过，`/Applications` 与 `cli-management` 下无暂存残留。
     - 页面：下载来源 host、重试/续传计数实时显示；OMP 开发期提示已删除；区块标题整行可展开收起。
     - （未执行：Antigravity 无可用新版、WorkBuddy CN 已是最新、Pi 由用户手动更新到 1.5.2，三者本轮未走插件更新；人为限速仍只有 2026-11-13 的 npm 中转那一次，插件接管下载的慢速换源只有模拟测试。）
-- [ ] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
+- [x] 7.4 安装真实验收：macOS 隔离 HOME 装一个 npm 类 CLI 和一个桌面应用（自选位置）；Windows 装一个桌面应用到非系统盘；不覆盖现有安装
+  - 2026-11-15 Windows 已执行：国际版 WorkBuddy 5.9.4 经插件装到 D 盘 `D:\Software\WorkBuddy guoji\WorkBuddyAI`，国内版主程序哈希与卸载项未变（不覆盖现有安装）。插件当场的装后核对报错及其修复、未重装复验的部分见 18.4，下方旧的「Windows 未执行」记录保留为当时状态。
   - 2026-11-14 macOS 已执行：隔离 HOME `.cache/gaps-live/isolated-home`，npm prefix 指向该 HOME 下 npm；`GAPS_SKIP_OMP=1 node .cache/gaps-isolated-launch.mjs` 调用真实 CliInstaller.prepare/execute、ReleaseClient、下载器、nativeProcessBackend + LocalSubprocessRuntime。npm Pi 1.5.2 安装到 `<隔离 HOME>/npm/bin/pi`，主包 7,899,382 B，官方 sha512 校验；npm 命令退出 0，插件核对版本并写回隔离路径存储，独立插件 captureReadOnly --version 返回 1.5.2、退出 0；事件含 downloading → installing → verifying-installation。证据 `.cache/gaps-live/npm-pi-report.json`、/tmp/gaps-npm-pi-live.log。没有 prompt、账号或模型调用。
   - 桌面：`node --import tsx .cache/gaps-desktop-live.ts` 沙箱内在 spctl 退出 1，未复制且清理完成；沙箱外原命令通过，ZCode 3.18.2 装到 `.cache/gaps-live/custom-apps/ZCode.app`（自选非默认位置）。下载 305,360,326 B、官方 SHA-512 通过，ditto 解包、codesign（Team 8A5X4JJ39T）、spctl、ditto 复制各退出 0，全部 waitForExit=true；插件读应用版本、验证实际 CLI 入口、写回隔离 manual 记录。downloads/mounts 均为空，目标只含 ZCode.app；证据 desktop-report.json、/tmp/gaps-desktop-live-outside.log。
   - 中间 Codex npm 0.169.0 安装命令退出 0，但附加插件 --version 读取超时，未作为本项成功证据；独立二进制 --version 读回 0.169.0。保留 isolated-report-first/second.json 与日志，不以安装退出码替代全部验收。
@@ -555,8 +557,10 @@
   - 环境/调试记录：原 `corepack pnpm typecheck` 和 spec 命令因共享 node_modules 链接触发 ERR_PNPM_UNSAFE_MODULES_DIR；只用命令级 verify-deps-before-run=false 关闭自动依赖重装检查，未修改依赖/锁文件。新 worktree 首次类型检查缺 remote 生成声明；隔离构建后复制 286 个生成 .d.ts 到本 worktree 忽略的 lib/，再验证通过。Vitest 首次 .vite-temp 写入被沙箱拒绝，经工具授权提升后执行；新测试最初路径夹具错误（29 failed）、随后复用已消费 Response（28 passed / 1 failed），均只修正模拟夹具后通过。
   - `corepack pnpm --config.verify-deps-before-run=false spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive`：valid、退出 0，仅已有主任务超过 10 个建议；首次因扩写旧 requirement 超过 500 字警告失败，已精简总述并保留独立 Windows requirement/scenarios。指定 Git `diff --check` 通过。17.3 与其他原有实机缺口保持未勾选，不归档。
   - 2026-11-15 主会话 Windows 实机只读复核（不更新、不启动 ZCode）：把 `pe-version.ts` 用 esbuild 编成单文件，经 `ELECTRON_RUN_AS_NODE=1` 的 DSH Electron 运行。初版读 `C:\Program Files\ZCode\ZCode.exe` 返回 undefined，WorkBuddy.exe 与 DeepSeek Harness.exe 正常；逐项打印字符串表发现失败在「值内含 NUL」：`SquirrelAwareVersion` wValueLength=3（6 字节，值 "1" 带两个结尾 NUL），`OriginalFilename` 为空串。改为与 VerQueryValue 一致、按第一个 NUL 截断（结构与越界检查不变），新增模拟用例「多余结尾 NUL」；`node_modules/.bin/vitest run tests/cli-management-zcode-windows.test.ts` 30/30 通过。重跑实机：ZCode.exe → productVersion 3.14.5.7961、productName ZCode；WorkBuddy.exe → 5.9.3.0 / WorkBuddy。
-- [ ] 17.3 Windows 实机更新验收
-  - 待主会话实机验收。
+- [x] 17.3 Windows 实机更新验收
+  - 2026-11-15 15:40–15:49 主会话实机执行，用户在 Windows 前完成 UAC 与官方向导。安装包 `rc3-7a9f964`（7a9f964 之前的运行中途发现向导窗口被隐藏，见 19.1）。插件下载官方 EXE 并核对 SHA-512/大小后进入等待用户；每 26 秒的只读轮询记录：15:40:26 起安装程序进程存在、ZCode.exe 3.14.5.7961，15:45–15:47 原 EXE 被替换期间不存在，15:47:46 起读到 3.18.2.10443，15:49:03 安装程序进程退出。
+  - 装后核对：`Get-AuthenticodeSignature` Valid；卸载项版本 3.18.2；`resources\glm\zcode.cjs` 存在；插件 downloads 目录为空。页面行内显示「已更新到 3.18.2」，重启 Desktop 后 ZCode 在「已是最新」，应用 3.18.2。
+  - 官方安装程序自己在 `%LOCALAPPDATA%\@zcodedesktop-updater\installer.exe` 留下 227 MB 副本（15:40:22，electron-builder 为自身后续更新保留），不属于插件下载目录，插件未删除。
   - 2026-11-15 13:2x 部分（只读）：Windows 安装 `53451ae` 隔离包（1271/1271 文件比对一致，包 SHA-256 e9a2a772…），经「应用→退出」菜单重启 Desktop 0.2.2-rc.3；Codex CU 只读打开「更新 CLI」，检查完成「1 个可更新」：ZCode 在「可更新」分区，行文「应用 3.14.5 → 3.18.2 · ZCode 桌面应用，下载官方安装包更新」，按钮「更新」（修复前为插件 runtime 不能更新）。未点击更新；真实下载、UAC、官方向导与更新后读回 3.18.2 仍待执行，需用户在 Windows 前完成 UAC。
 
 ## 18. Windows 国际版 WorkBuddy 安装 〔后端｜3h｜前置 5〕
@@ -575,3 +579,17 @@
 - [ ] 18.4 Windows 实机安装验收
   - 待主会话实机验收；真实签名信任链、向导目录、国内版共存、磁盘空间及安装后页面回读均未执行。
   - 2026-11-15 13:2x 部分（只读，同一 `53451ae` 包）：国际版 WorkBuddy 在「未安装」分区，检查完成后行文「桌面应用（试验性） · 可选安装位置」，「安装」按钮可用（检查前曾短暂显示「这台电脑上没有找到」与禁用的安装按钮）；WorkBuddy CN 仍为「已是最新」、应用 5.9.3 · CLI 2.165.0。另在 Windows 只读核对国内版 WorkBuddy.exe 与卸载程序 `Get-AuthenticodeSignature`：Status=Valid，Subject 以 `CN=Tencent Technology (Shenzhen) Company Limited, O=Tencent Technology (Shenzhen) Company Limited` 开头，与代码固定发布者匹配。未点击安装。
+  - 2026-11-15 15:5x 主会话实机安装（包 `rc3-7a9f964`，用户操作向导）：COS 长度/MD5/CRC-64 与运行前 Authenticode 全部通过后，官方向导窗口可见弹出（7a9f964 修复已生效）。用户选择 `D:\Software\WorkBuddy guoji`，向导自动追加子目录，实际装到 `D:\Software\WorkBuddy guoji\WorkBuddyAI`，卸载项 C02C88CB…；向导默认位置为 `C:\Program Files\WorkBuddyAI`（all-users）。国内版共存：`D:\Software\workbuddy` 主程序 SHA-256 BBF504… 与装前相同，卸载项 BFD312E9… 仍为 5.9.3。
+  - 装后插件当场报 `VERSION_MISMATCH`，未写路径记录。根因是候选只看所选目录本身与 LOCALAPPDATA，没看向导追加的 WorkBuddyAI 子目录和 Program Files 默认位置（8bf4942 修复，见 19.1）。部署 `rc3-8bf4942` 并重启 Desktop 后，页面「已是最新」17 项，WorkBuddy 行为「应用 5.9.4 · CLI 2.165.0」（由注册表发现给出）。
+  - 未完成：修复后的「装后在追加子目录找到入口并写路径记录」尚未在真实重装中走一遍，本项保持未勾选。官方安装程序另在 `%LOCALAPPDATA%\@genieworkbuddy-desktop-updater\installer.exe` 留下 484 MB 副本（15:56:55）。
+
+## 19. Windows 桌面安装程序窗口、向导落点与结果刷新 〔后端｜3h｜前置 17,18〕
+
+- [x] 19.1 安装程序窗口可见且等待用户时不限时；国际版 WorkBuddy 发现向导追加子目录与 Program Files 默认位置；完整检查清除上次操作结果
+  - 7a9f964：Windows 隐藏中继原对所有子进程强制 `windowsHide: true`，官方安装程序因此以隐藏窗口启动（17.3 运行中途发现，当次用 ShowWindow 手动显示）。改为 Host 内部标记 `VISIBLE_WINDOW` 从 `executeCliOperation` 经 `nativeProcessBackend.spawn`（交给 SDK 前剥离）传到中继启动 JSON，只对 Windows 桌面安装程序关闭 windowsHide；普通 CLI 仍隐藏。按用户 2026-11-15 要求「从弹出安装窗口开始就要停止计时」，Windows 桌面安装程序不设时限（不挂计时器），控制台命令保留 10 分钟，超时文案改用实际分钟数。
+  - 8bf4942：国际版 WorkBuddy 向导在所选目录名不是 WorkBuddyAI 时自动追加该子目录，默认是 `%ProgramFiles%\WorkBuddyAI`；候选增加「所选目录\WorkBuddyAI」、默认位置改为 Program Files，并保留 `%LOCALAPPDATA%\Programs\WorkBuddyAI`。页面完整检查 `check('all')` 清空上次操作结果，打开页面时的 `check('missing')` 仍保留。
+- [x] 19.2 完成模拟测试与类型检查
+  - `node_modules/.bin/vitest run --configLoader native tests/windows-visible-installer.test.ts tests/cli-management-workbuddy-windows.test.ts tests/cli-management-dual-channel.test.ts tests/cli-management-zcode-windows.test.ts`：4 文件 96/96 通过，1.47 秒，退出 0（$TMPDIR/win-installer-tests.log）。新文件 6 项覆盖标记进入中继 JSON 且不传给 SDK、普通 CLI 仍隐藏、代理包装后保留、windowsHide 只对安装程序为 false、安装程序 3 小时不被终止、普通命令 10 分钟超时；WorkBuddy 新增「向导追加子目录」模式；dual-channel 新增 missing 保留 / all 清空结果。
+- [ ] 19.3 实机复验
+  - 已实测：7a9f964 下国际版 WorkBuddy 向导窗口可见弹出（18.4）。8bf4942 部署后页面正确显示应用 5.9.4，但来自注册表发现，非装后路径写入。
+  - 未执行：在真实重装中确认装后在追加子目录找到入口并写路径记录；完整检查清空旧错误（当次重启已清空状态，未覆盖此路径）；安装程序结束页勾选「运行 X」时启动的应用是否在插件进程范围内被一并结束，待用户决定处理方式。

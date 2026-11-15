@@ -539,5 +539,23 @@ Host SHALL 仅开放国际版 workbuddy + win32 + x64 桌面首次安装；其�
 
 #### Scenario: 安装后核对实际站点与版本
 - **WHEN** 官方安装程序整个进程范围退出
-- **THEN** Host SHALL 在页面选择的位置与已核实默认候选 LOCALAPPDATA/Programs/WorkBuddyAI 查找 WorkBuddyAI.exe 和 resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs，通过现有 resolveWorkBuddyInstallation 核对国际站点、包名、入口及版本后才写路径
+- **THEN** Host SHALL 依次在页面选择的位置、所选目录名不是 WorkBuddyAI 时向导追加的「所选目录\WorkBuddyAI」、ProgramFiles/WorkBuddyAI 与 LOCALAPPDATA/Programs/WorkBuddyAI 查找 WorkBuddyAI.exe 和 resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs，通过现有 resolveWorkBuddyInstallation 核对国际站点、包名、入口及版本后才写路径
 - **AND** 国内版、错误版本、取消或进程退出未确认 MUST NOT 写入；实际三段 5.9.4 可匹配已完成完整性与签名核验的四段发布前三段，实际四段版本 MUST 完全相等，MUST NOT 把 feed build 伪装成本地版本
+
+### Requirement: Windows 官方安装程序窗口可见且等待用户时不限时
+Host SHALL 仅对 Windows 桌面方式的首次安装与更新，以 Host 内部标记让隐藏中继以可见窗口启动官方安装程序；该标记 MUST NOT 进入 SDK 规格或来自 Client。Worker、CLI 命令、npm 与脚本安装 SHALL 保持隐藏窗口。官方安装程序等待 UAC 与向导期间 MUST NOT 因时限被终止，控制台安装命令 SHALL 保留 10 分钟时限；取消仍 SHALL 确认整个进程范围退出。
+
+#### Scenario: 官方安装程序等待用户超过 10 分钟
+- **WHEN** Windows ZCode 更新或国际版 WorkBuddy 首次安装启动官方安装程序，用户 3 小时内未完成向导
+- **THEN** 安装程序窗口 SHALL 可见，Host MUST NOT 终止它，仍显示等待用户
+
+#### Scenario: 普通 CLI 与控制台安装
+- **WHEN** Host 启动 Worker、CLI 命令或 npm 安装
+- **THEN** 中继 SHALL 以隐藏窗口启动，控制台安装超过 10 分钟 SHALL 以 INSTALL_TIMEOUT 结束
+
+### Requirement: 完整检查清除上次操作结果
+用户触发的全部检查 SHALL 清空页面保存的上次操作结果；打开页面时只检查缺失项的检查 SHALL 保留这些结果。
+
+#### Scenario: 旧错误在重新检查后消失
+- **WHEN** 某 CLI 上次安装显示 VERSION_MISMATCH，用户点「检查更新」
+- **THEN** 检查开始后该错误 SHALL 不再显示，行按新检查结果分组

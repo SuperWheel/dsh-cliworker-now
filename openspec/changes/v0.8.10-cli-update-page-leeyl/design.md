@@ -495,3 +495,11 @@ CodeBuddy 对照：当前插件支持的是 **CodeBuddy Code CLI**，并非 Code
 
 
 补充实物证据：按 NSIS File 指令只读取出内嵌 app-64.7z，再用系统 bsdtar 仅把 `resources/app.asar.unpacked/cli/product.json` 输出到内存；没有落地安装树、没有执行 DLL/脚本。genieVersion=`5.9.4`、productName=`WorkBuddy AI`、dataFolderName=`.workbuddy-ai`、endpoint=`https://www.workbuddy.ai`。因此 Windows 国际版装后允许经上述完整工件和签名核验绑定的三段应用版本匹配四段 feed 前三段，仍拒绝错误三段或错误四段 build，指纹保留真实版本。两包 SignerInfo 的 issuer+serial 与证书精确匹配：国际版序列号 `0634E23D7F72BEB913CA2B29C29770E6`、国内版 `0EC3880864ADEB96CAFC6AABAFDA1F94`，均为上述腾讯主体；不把证书解析当作 Windows Valid。新 TypeScript CRC 实现对两份完整 EXE 再算，结果均同时匹配系统 liblzma 与 COS 头。
+
+### 决定 20：Windows 官方安装程序可见、不限时，向导落点与结果刷新（2026-11-15 实机后）
+
+- 窗口：Windows 隐藏中继原对所有子进程设 `windowsHide: true`，实机 ZCode 更新时向导与 UAC 前的窗口不可见。改为 Host 内部 Symbol 标记 `VISIBLE_WINDOW`，只由 `plan.method === 'desktop'` 且平台为 win32 的更新/首次安装设置，经 `nativeProcessBackend.spawn` 剥离后写入中继启动 JSON 的 `visibleWindow`，中继启动目标时 `windowsHide: false`。Worker、CLI 命令、npm 与脚本安装仍隐藏；标记不进入 SDK 规格、不经用户输入或 Client 传入。
+- 时限：用户 2026-11-15 要求「这个安装上限计时应该从弹出安装窗口开始就要停止」。官方安装程序启动即进入 awaiting-user，等待 UAC 与向导，插件无法判断用户何时操作完，因此 Windows 桌面安装程序不设时限（`DESKTOP_INSTALLER_TIMEOUT_MS = Infinity`，不挂计时器，避免 setTimeout 把 Infinity 当 1 ms）。用户仍可在页面取消；取消仍须确认整个进程范围退出。控制台安装命令保留 10 分钟。
+- 向导落点：实机国际版 WorkBuddy 5.9.4 向导默认 `C:\Program Files\WorkBuddyAI`（all-users）；用户选 `D:\Software\WorkBuddy guoji` 时向导追加子目录，实际为 `…\WorkBuddy guoji\WorkBuddyAI`。插件不向安装程序传目录，因此装后候选依次为所选目录、所选目录名不是 WorkBuddyAI 时的「所选目录\WorkBuddyAI」、`%ProgramFiles%\WorkBuddyAI`、`%LOCALAPPDATA%\Programs\WorkBuddyAI`，仍逐一用 resolveWorkBuddyInstallation 核对国际站点与版本，国内版目录不会被当作国际版。
+- 结果刷新：页面上次操作结果（如 VERSION_MISMATCH）原先一直保留到下次同一 CLI 操作。改为用户点「检查更新」触发的 `check('all')` 清空全部结果，打开页面时的 `check('missing')` 保留，避免刚完成的「已更新到 X」在打开页面时消失。
+- 未决：安装程序结束页的「运行 X」复选框启动的应用属于插件进程范围；安装程序退出后插件确认范围退出时可能结束该应用。SDK 没有分离子进程的选项，当前建议用户取消勾选，处理方式待用户决定。官方安装程序在 `%LOCALAPPDATA%\<产品>-updater\installer.exe` 自留安装包副本（ZCode 227 MB、WorkBuddy 484 MB），供其自带更新器做差分更新，不在插件下载目录内，插件不删除。

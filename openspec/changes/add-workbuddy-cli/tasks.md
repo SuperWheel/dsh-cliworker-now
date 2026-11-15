@@ -104,6 +104,7 @@
     - 拒绝审批：原生 `stopReason: cancelled`；本轮按 `deniedCancelEndsTurn` 结束，结果为 SUCCESS，附说明“因拒绝审批而结束：被拒操作未执行，可续聊继续”；被拒工具标为 FAILED，`denied.txt` 不存在。
     - 14 个证据文件的密钥扫描 0 处命中。
 - [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
+  - 2026-11-15 Windows：国际版 5.9.4 经插件装到 `D:\Software\WorkBuddy guoji\WorkBuddyAI`，国内版未受影响；8bf4942 重启后「更新 CLI」页把它列在「已是最新」，应用 5.9.4 · CLI 2.165.0（安装发现已有实机证据）。连接页的未登录状态显示未检查，登录需用户亲自操作，7.3 保持未勾选。详见 `../v0.8.10-cli-update-page-leeyl/tasks.md` 18.4。
   - 2026-11-15 11:52–11:54 CST（`main` / `cb0d6e5`）：国际版 arm64 经真实插件隔离 DMG 首次安装，408,500,901 B 与 feed SHA-256 一致，只读挂载、固定 Team FN2V63AD2J / bundle com.workbuddy.workbuddy-ai 的 codesign、spctl、ditto、卸载均退出 0；装后入口核对报 `VERSION_MISMATCH`，实际版本与路径写回未通过，隔离 HOME/custom-apps/下载/挂载/tmp 均已删除并独立回读，无本次挂载/残留进程，只保留 `.cache/workbuddy-dmg-{acceptance-report,cleanup-readback}.json` 与日志，详见 `../v0.8.10-cli-update-page-leeyl/tasks.md` 15.3；本次未装到正常位置、未启动或登录，插件安装后的发现与未登录显示仍无实机证据，7.3 保持未勾选。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：国际版 WorkBuddy AI 在 Mac 与 Windows 均未安装，连接页显示暂不可用；这是另一个应用而非同一 CLI 的其他账号，不适用登录规则，保持未勾选。
   - 2026-11-14：已实时核实国际版官方安装页与 v2/update feed，5.9.4.42593613。插件下载当前 ZIP 两次均因 SHA-256 与 feed 不符而拒绝并删除片段；独立 curl 下载同一官方对象也不符。仅在隔离解包目录核对 codesign：bundle com.workbuddy.workbuddy-ai、Team FN2V63AD2J、Apple Developer ID 签名有效。没有把该解包检查算作安装，没有调用账号读取或建立会话；“发现与未登录状态显示”仍无插件安装后的实机证据。登录需用户亲自操作，本轮未执行；7.3 保持未勾选。来源与摘要详见 `../v0.8.10-cli-update-page-leeyl/design.md`。
