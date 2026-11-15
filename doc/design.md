@@ -1732,3 +1732,16 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 共享 Harness 回执边界将工具失败对象的 message/text/content/error 提取为纯文本，未知对象输出有界 JSON（4096 字符、深度/节点上限）。成功回执不变；原始 CLI 事件不改写。结构化取消原因在退出回执等待时转换为 AbortError，避免 DSH 工具管线把 `{ kind: 'user' }` 转成 `[object Object]`，保留取消分类与清理屏障。legacy 工具结果投影使用相同文本规则。
 
 关联模拟测试、安装源码证据与 Desktop 待验收项见 [Worker 目录与工具错误变更](../openspec/changes/v0.8.10-worker-cwd-tool-errors-leeyl/tasks.md)。本次未构建、未更新 lib、未调用真实模型。
+
+### ZCode 自定义 API Key（vnext-zcode-custom-key-leeyl，2026-11-15，未发布）
+
+订阅过期后用自有 API Key 使用 ZCode CLI 0.17.1。四处改动：
+
+- `zcode-schema-probe.ts` 静态读取已安装入口，判定工作流字段的位置：`preferences` 放在运行偏好答复里，`session` 放在 session/create 与 resume 参数里（0.17.1），`none` 两处都不放（0.16.9 或未知）。Host 经 `CLIWORKER_ZCODE_WORKFLOW_SURFACE` 告知桥接，桥接在启动 CLI 前删除该变量。
+- `standard-personal` api-key 服务商的目录：404/405 时列出声明的模型，标注未核实、费用未知；401/403 计为认证失败并隐藏。只在 api-key 路由上，按 AI SDK 的顺序镜像可核对的自定义请求头。标签显示安全的 providerName。
+- `zcode-custom-provider.ts` 提供「其他服务商」表单。只写插件账号目录的 `provider_config.json`，复用 `commitNativeFiles` 与 `cliworker-created-providers.json` 归属记录，在全局、插件与内置三处查重。
+- 账号行：插件创建的条目可删除，全局条目只读。订阅失效但有自有密钥时状态为 configured。
+
+`CustomProviderForm.presets` 新增内置模板预填（可选字段）。
+
+决定、放弃的方案与风险见 [变更设计](../openspec/changes/vnext-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。

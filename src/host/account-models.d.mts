@@ -19,6 +19,8 @@ export interface AccountModelInput {
   /** Mirror a native route that explicitly sends both Anthropic auth headers. */
   anthropicAuth?: 'api-key-and-bearer' | 'bearer'
   customModelIds?: string[]
+  /** The native route's own request headers, merged over the auth headers (validated by the caller). */
+  extraHeaders?: Record<string, string>
   verifiedModelIds?: string[]
 }
 export function probeAccountModels(

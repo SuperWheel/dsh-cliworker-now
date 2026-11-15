@@ -1,4 +1,4 @@
-import { parseZcodeDeniedTools, consumeZcodeWorkflowMode } from './cli-native-capabilities.mjs'
+import { parseZcodeDeniedTools, consumeZcodeWorkflowMode, consumeZcodeWorkflowSurface, zcodeRuntimePreferences, zcodeSessionWorkflow } from './cli-native-capabilities.mjs'
 import { summarizeNativeRecord } from './native-transport.mjs'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
@@ -192,6 +192,9 @@ export async function runNativeZcode(config, io) {
   const account = nativeAccount(config, model)
   const memory = nativeMemory(config)
   const workflow = consumeZcodeWorkflowMode(config)
+  // 0.17.1's strict reply schema rejects the workflow keys; the Host read the installed schema.
+  const surface = consumeZcodeWorkflowSurface(config)
+  const preferences = zcodeRuntimePreferences({ memory, workflow, surface })
   let mode = config.mode === 'plan' ? 'plan' : config.access === 'read-only' ? 'build' : config.access === 'danger-full-access' ? 'yolo' : 'edit'
   const denyIndex = config.argv.indexOf('--disallowedTools')
   const toolDenylist = denyIndex >= 0 ? parseZcodeDeniedTools(config.argv[denyIndex + 1]) : []
@@ -268,13 +271,7 @@ export async function runNativeZcode(config, io) {
     if (message.id !== undefined) {
       let result
       if (message.method === 'session/requestRuntimePreferences')
-        result = {
-          nativeSearchEnhancementsEnabled: false,
-          memoryEnabled: memory,
-          dynamicWorkflowEnabled: workflow !== 'disabled',
-          dynamicWorkflowMode: workflow,
-          askUserQuestionAutoResolutionEnabled: false,
-        }
+        result = preferences
       else if (message.method === 'interaction/requestPermission') {
         const deny = () => {
           if (active && message.params?.sessionId === sessionId) {
@@ -493,15 +490,7 @@ export async function runNativeZcode(config, io) {
         await peer.send({
           id: message.id,
           ...(message.method === 'session/requestRuntimePreferences'
-            ? {
-                result: {
-                  nativeSearchEnhancementsEnabled: false,
-                  memoryEnabled: memory,
-                  dynamicWorkflowEnabled: workflow !== 'disabled',
-                  dynamicWorkflowMode: workflow,
-                  askUserQuestionAutoResolutionEnabled: false,
-                },
-              }
+            ? { result: preferences }
             : { error: { code: -32601, message: 'Client not initialized' } }),
         })
     }
@@ -517,7 +506,7 @@ export async function runNativeZcode(config, io) {
       )
         throw new Error('ZCode 原生账号状态未被确认')
     }
-    const common = { mcpServers: nativeHarnessMcpServers({ ...config, cli: 'zcode' }), toolDenylist, offPeakToolEnabled: false, dynamicWorkflowEnabled: false }
+    const common = { mcpServers: nativeHarnessMcpServers({ ...config, cli: 'zcode' }), toolDenylist, offPeakToolEnabled: false, ...zcodeSessionWorkflow({ workflow, surface }) }
     let snapshot = config.conversationId
       ? await peer.request(
           'session/resume',
@@ -647,6 +636,7 @@ export async function forkNativeZcode(config, io) {
   // A branch operation sends no model task; only strip the variable.
   nativeMemory(config)
   consumeZcodeWorkflowMode(config)
+  consumeZcodeWorkflowSurface(config)
   const peer = await io.openStdio(zcodeAppServerArgv(config), { env: config.env, cwd: config.project })
   const unsubscribe = peer.onMessage((message) => {
     if (message.id !== undefined && message.method)

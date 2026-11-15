@@ -141,6 +141,34 @@ export function consumeZcodeWorkflowMode(config) {
   return zcodeWorkflowMode({ dynamicWorkflowMode: value })
 }
 /**
+ * Where the installed CLI accepts the workflow choice (zcode-schema-probe.ts). Unknown
+ * omits it everywhere: every known reply schema is strict, and omission always validates.
+ */
+export function consumeZcodeWorkflowSurface(config) {
+  const env = config.env ?? process.env
+  const value = env.CLIWORKER_ZCODE_WORKFLOW_SURFACE
+  delete env.CLIWORKER_ZCODE_WORKFLOW_SURFACE
+  delete process.env.CLIWORKER_ZCODE_WORKFLOW_SURFACE
+  return ['preferences', 'session'].includes(value) ? value : 'none'
+}
+/** The runtime-preferences reply the installed schema accepts. */
+export function zcodeRuntimePreferences({ memory, workflow, surface }) {
+  return {
+    nativeSearchEnhancementsEnabled: false,
+    memoryEnabled: memory,
+    ...(surface === 'preferences'
+      ? { dynamicWorkflowEnabled: workflow !== 'disabled', dynamicWorkflowMode: workflow }
+      : {}),
+    askUserQuestionAutoResolutionEnabled: false,
+  }
+}
+/** session/create and session/resume workflow fields; only `session` carries the user's mode. */
+export function zcodeSessionWorkflow({ workflow, surface }) {
+  return surface === 'session' && workflow !== 'disabled'
+    ? { dynamicWorkflowEnabled: true, dynamicWorkflowMode: workflow }
+    : { dynamicWorkflowEnabled: false }
+}
+/**
  * Whether the user's own Grok starts with memory (grok 1.0.62 priority order):
  * requirements.toml, then GROK_MEMORY, then config.toml. Memory is off by
  * default; a managed remote setting is not visible here and counts as unset.

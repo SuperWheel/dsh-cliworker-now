@@ -706,7 +706,11 @@ it.each(['residual-binding', 'personal-api', 'manual-api-binding', 'empty'] as c
       ? { state: 'configured', verification: 'local', summary: 'ZCode 账号绑定未确认，请重新登录' }
       : remaining === 'empty'
         ? { state: 'unconfigured', verification: 'local', summary: '尚未配置 ZCode API' }
-        : { state: 'configured', authMethod: 'api', verification: 'local', summary: '已配置 ZCode API' })
+        : remaining === 'personal-api'
+          // vnext-zcode-custom-key: the API-key provider is listed by name and location only; no receipt, so read-only.
+          ? { state: 'configured', authMethod: 'api', verification: 'local', summary: '已配置 ZCode API',
+            logins: [{ providerLabel: '自定义服务商', authMethod: 'api', source: 'plugin' }] }
+          : { state: 'configured', authMethod: 'api', verification: 'local', summary: '已配置 ZCode API' })
     expect(JSON.stringify(status)).not.toMatch(/SYNTHETIC|synthetic-current-user/)
     expect([readFileSync(credentials, 'utf8'), readFileSync(personal, 'utf8')]).toEqual(before)
     // Only the mocked native help probe was spawned; no login/logout/model process.

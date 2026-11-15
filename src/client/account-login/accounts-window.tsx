@@ -166,7 +166,8 @@ export function AccountsWindow({
         controller.signal.throwIfAborted()
         if (!current?.id) { setConfirming(undefined); return }
         const entry = parseAccountLoginId(current.id)?.entry
-        if ((cli === 'pi' || cli === 'omp') && (entry === 'native.config' || entry === 'plugin.config')) {
+        if (((cli === 'pi' || cli === 'omp') && (entry === 'native.config' || entry === 'plugin.config')) ||
+          (cli === 'zcode' && entry === 'plugin.config')) {
           const remove = api.cliworker?.deleteAccountConfiguration
           if (!remove) throw new Error(t('当前插件 Host 不支持此账号操作，请更新插件后重试'))
           try {
@@ -200,8 +201,11 @@ export function AccountsWindow({
     })
   }
   // Unaddressable/environment-only rows stay read-only; file-backed rows have Host handles.
+  // ZCode API-key providers without a handle belong to ZCode Desktop's own configuration.
   const configOnly = (login: AccountLogin) =>
-    !login.id && !login.source && !whole && (cli === 'pi' || cli === 'omp')
+    !login.id && !whole && ((!login.source && (cli === 'pi' || cli === 'omp')) || (cli === 'zcode' && login.authMethod === 'api'))
+  // Plugin-created ZCode providers are deleted directly, like native config rows; nothing signs in again.
+  const deletes = (login: AccountLogin) => !!login.nativeConfiguration || (cli === 'zcode' && !!login.managedConfiguration)
   const card = ({ login, index }: { login: AccountLogin; index: number }) => {
     const removable = !!login.id || GUIDED_ACCOUNT_CLIS.has(cli)
     const title = whole ? t('当前账号') : hostText(login.providerLabel)
@@ -209,7 +213,7 @@ export function AccountsWindow({
       login.authMethod === 'api' ? 'API Key' : t('账号登录'),
       credentialNumber(login) ? t('凭据 #{id}', { id: credentialNumber(login)! }) : undefined,
       login.authMethod === 'oauth' ? login.accountLabel : undefined,
-      configOnly(login) ? t('在原配置中管理') : undefined,
+      configOnly(login) ? (cli === 'zcode' ? t('在 ZCode 桌面端管理') : t('在原配置中管理')) : undefined,
     ].filter(Boolean)
     return (
       <li
@@ -229,7 +233,7 @@ export function AccountsWindow({
             !configOnly(login) &&
             (removable ? (
               <Button variant="ghost" size="md" disabled={preparing} onClick={() => setConfirming(index)}>
-                {login.nativeConfiguration ? t('删除') : t('退出')}
+                {deletes(login) ? t('删除') : t('退出')}
               </Button>
             ) : (
               !native && (
@@ -240,9 +244,11 @@ export function AccountsWindow({
             ))}
         </div>
         {confirming === index && (
-          <div className="cwn-accounts-confirm" role="group" aria-label={login.nativeConfiguration ? t('确认删除') : t('确认退出')}>
+          <div className="cwn-accounts-confirm" role="group" aria-label={deletes(login) ? t('确认删除') : t('确认退出')}>
             <span>
-              {login.nativeConfiguration
+              {cli === 'zcode' && login.managedConfiguration
+                ? t('将删除插件目录中此服务商的配置和 API Key，ZCode 桌面端的配置不受影响。')
+                : login.nativeConfiguration
                 ? t('将从 {file} 删除该服务商，直接运行 {cli} 时也不再可用。', { file: cli === 'omp' ? '~/.omp/agent/models.yml' : '~/.pi/agent/models.json', cli: name })
                 : login.managedConfiguration
                 ? t('退出后会删除此服务商的配置和凭据，其他配置保留。')
@@ -255,7 +261,7 @@ export function AccountsWindow({
                 {t('取消')}
               </Button>
               <Button variant="primary" size="md" disabled={preparing} onClick={() => signOut(login)}>
-                {login.nativeConfiguration ? t('确认删除') : t('确认退出')}
+                {deletes(login) ? t('确认删除') : t('确认退出')}
               </Button>
             </div>
           </div>
@@ -386,9 +392,10 @@ function AddAccount({
   const list = providers ?? []
   const [chosen, setChosen] = useState(list[0]?.id ?? NATIVE)
   const [replace, setReplace] = useState<string>()
-  // ZCode has only its two providers; other CLIs keep their own full picker.
-  const other = cli !== 'zcode'
   const readForm = api.cliworker?.customProviderForm
+  // ZCode signs in to its two providers in the terminal; its own API-key providers need the Host form
+  // (no native terminal configures them), so older Hosts keep only the two providers.
+  const other = cli !== 'zcode' || !!readForm
   const [read, setRead] = useState<FormRead>(() =>
     other && readForm ? { state: 'loading' } : { state: 'ready', form: null },
   )
@@ -429,7 +436,7 @@ function AddAccount({
       note: item.signedIn ? t('已登录') : undefined,
       signedIn: item.signedIn,
     })),
-    ...(other
+    ...(other && (cli !== 'zcode' || form)
       ? [
           form
             ? {

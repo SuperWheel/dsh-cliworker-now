@@ -1,4 +1,4 @@
-import { parseZcodeDeniedTools, consumeZcodeWorkflowMode } from './cli-native-capabilities.mjs'
+import { parseZcodeDeniedTools, consumeZcodeWorkflowMode, consumeZcodeWorkflowSurface, zcodeRuntimePreferences } from './cli-native-capabilities.mjs'
 // ZCode ignores configured defaults on --resume. Apply the selected native model
 // through metadata RPC, close the server completely, then run the original argv.
 // The Host owns the surrounding Seatbelt and process range; never detach or shell.
@@ -9,6 +9,7 @@ import { dirname, isAbsolute, resolve } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 
 const workflow = consumeZcodeWorkflowMode({ env: process.env })
+const surface = consumeZcodeWorkflowSurface({ env: process.env })
 process.umask(0o077)
 const controller = new AbortController()
 let active,
@@ -226,15 +227,7 @@ async function selectSession(request) {
             JSON.stringify({
               id: frame.id,
               ...(frame.method === 'session/requestRuntimePreferences'
-                ? {
-                    result: {
-                      nativeSearchEnhancementsEnabled: false,
-                      memoryEnabled: false,
-                      dynamicWorkflowEnabled: workflow !== 'disabled',
-                      dynamicWorkflowMode: workflow,
-                      askUserQuestionAutoResolutionEnabled: false,
-                    },
-                  }
+                ? { result: zcodeRuntimePreferences({ memory: false, workflow, surface }) }
                 : {
                     error: {
                       code: -32601,
