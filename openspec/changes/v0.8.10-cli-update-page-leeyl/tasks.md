@@ -232,6 +232,8 @@
   - 中间失败如实保留：首轮旧关联测试 6 文件 **10 failed | 193 passed (203)**，原因是旧 Pi 白名单/旧手动方法预期及夹具仍只提供 npm 源，已按新 PRD 更新；加入新测试后同组 6 文件 **1 failed | 273 passed (274)**，唯一失败为断言把 error.code 当 message，修正后上述关联与全量全过。未以这些失败运行作为完成证据。
 - [ ] 8.6 新增自动更新路径的真实平台验收
   - （未执行：本任务禁止联网、真实 CLI、安装脚本、npm/brew/安装器；模拟不能替代真实版本、路径、事件与退出状态验收。Windows 平台与前端新字段展示留主会话整合验收。）
+  - 2026-11-15 汇总已有真实证据（逐项见各处记录）：OMP 自带更新——Windows 官方与接管各两次（13.5、11.9）、Mac 官方两次（本变更 6.4、临时目录变更 4.3）；Antigravity、Claude Code、TRAE CN 的 Windows 自带更新（13.5）；CodeBuddy npm 全局更新与停滞续传（7.5，Windows）；Pi npm 1.5.2 与 ZCode 3.18.2 的 macOS 隔离安装（7.4）；WorkBuddy CN 官方 feed 无更新时显示最新（Mac 页面检查）。
+  - 仍无真实证据：Kimi、MiMo、Grok、Qoder/Qoder CN、Hermes、OpenCode 自带更新与 Codex 锁版脚本的真实更新（检查时均无新版本，或需回退旧版并下载）；ZCode、WorkBuddy 两版的桌面应用真实更新。本项保持未勾选，待这些 CLI 发布新版本后在页面上补测。
 
 ## 9. 任务 D 续与多源恢复 〔后端｜4h｜前置 8〕
 
