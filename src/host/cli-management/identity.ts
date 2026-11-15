@@ -1,4 +1,4 @@
-import { access, readFile, realpath, stat } from 'node:fs/promises'
+import { access, lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, isAbsolute } from 'node:path'
@@ -16,6 +16,7 @@ import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
 import { hermesCheckoutVersion } from './hermes-version.ts'
 import { validAppVersion } from './versions.ts'
 import { codebuddyNativeLayout } from '../codebuddy-native-layout.ts'
+import { readPeVersion } from './pe-version.ts'
 
 export interface Fingerprint { realpath: string; size: number; mtimeMs: number; appVersion?: string; manifestVersion?: string; metadataToken?: string }
 export interface InstallationIdentity {
@@ -36,9 +37,31 @@ export const ZCODE_RUNTIME_MANIFEST_LIMIT = 4 * 1024 * 1024
 export const ZCODE_RUNTIME_ORIGIN = 'https://github.com/zai-org/ZCode'
 export const ZCODE_PLUGIN_RUNTIME_NOTE = '此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。'
 export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 使用独立部署的完整 CLI runtime，不会随应用同步更新，需另行核验并部署配套 runtime。'
+const isManagedZCodeEntry = (executable: string) => process.platform === 'win32'
+  ? executable.replace(/\\/g, '/').toLowerCase() === managedZCodeEntry().replace(/\\/g, '/').toLowerCase()
+  : executable === managedZCodeEntry()
 /** Read-only association; a filename alone is not application identity. */
 export async function managedZCodeApplication(executable: string, appPath = ZCODE_DEFAULT_APP): Promise<string | undefined> {
-  if (process.platform !== 'darwin' || executable !== managedZCodeEntry()) return
+  if (!isManagedZCodeEntry(executable)) return
+  if (process.platform === 'win32') {
+    // Only evidenced defaults. No registry, PATH discovery, or process probes in background checks.
+    const candidates = [process.env.ProgramFiles && join(process.env.ProgramFiles, 'ZCode'),
+      process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs', 'ZCode')]
+    for (const root of candidates) {
+      if (!root || !isAbsolute(root)) continue
+      try {
+        // lstat rejects directory symlinks and Windows junctions, as well as linked executables.
+        if (!(await lstat(root)).isDirectory()) continue
+        const exe = join(root, 'ZCode.exe')
+        if (!(await lstat(exe)).isFile()) continue
+        const version = await readPeVersion(exe)
+        if (version?.productName !== 'ZCode' || !(await stat(join(root, 'resources', 'glm', 'zcode.cjs'))).isFile()) continue
+        return root
+      } catch { /* Missing/unrecognized applications are not mapped. */ }
+    }
+    return
+  }
+  if (process.platform !== 'darwin') return
   try {
     const file = join(appPath, 'Contents/Info.plist'), info = await stat(file)
     if (!info.isFile() || info.size > 128 * 1024) return
@@ -143,10 +166,10 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   } else target = await realpath(resolveNativeEntry(target))
   const managedApp = cli === 'zcode' && entry?.mode !== 'manual' && !configured
     ? await managedZCodeApplication(executable) : undefined
-  // Without a mapped desktop app (Windows, or macOS without ZCode.app) the plugin-deployed runtime
+  // Without a verified desktop app the plugin-deployed runtime
   // reports its own version from INSTALL-MANIFEST.json; never run it to ask.
   let pluginRuntime = false
-  if (cli === 'zcode' && !managedApp && executable === managedZCodeEntry()) {
+  if (cli === 'zcode' && !managedApp && isManagedZCodeEntry(executable)) {
     // Lists every bundled npm package with integrity: 633 KB (macOS) / 723 KB (Windows) on 2026-11-14.
     const manifest = await readManifest(join(dirname(dirname(executable)), 'INSTALL-MANIFEST.json'), ZCODE_RUNTIME_MANIFEST_LIMIT)
     if (manifest?.source?.origin === ZCODE_RUNTIME_ORIGIN && typeof manifest.version === 'string') { manifestVersion = manifest.version; pluginRuntime = true }
@@ -177,7 +200,10 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
       break
     }
   }
-  if (appRoot) {
+  if (managedApp && process.platform === 'win32') {
+    const version = await readPeVersion(join(managedApp, 'ZCode.exe'))
+    if (version?.productName === 'ZCode') appVersion = version.productVersion.split('.').slice(0, 3).join('.')
+  } else if (appRoot) {
     try {
       const file = join(appRoot, 'Contents/Info.plist'), info = await stat(file)
       if (info.isFile() && info.size < 128 * 1024) {

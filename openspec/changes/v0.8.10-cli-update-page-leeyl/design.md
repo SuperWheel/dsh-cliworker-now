@@ -468,3 +468,13 @@ CodeBuddy 对照：当前插件支持的是 **CodeBuddy Code CLI**，并非 Code
 **安装方式分类确有缺口。** `identity.ts` 只含 `.codebuddy/bin/`，既没有 Unix 官方稳定入口/版本实体，也没有 Windows 官方目录。对当前源码中 `classifyInstallation` 与 `automaticMethod` 的原样摘录执行隔离模拟：官方 Unix 稳定入口、两种研究中的版本实体形状、Windows 官方入口均得到 `unknown` / 无自动更新方法；npm 对照仍为 `npm`。这影响原生安装的“更新方式识别”，不是账号身份或登录站点布局；npm/brew 的独立分支不受这一缺失规则影响。
 
 此前只读审计按用户允许的“修或给结论”交付明确缺陷结论，当时**未修复 CodeBuddy 原生更新支持**；现由上方决定 17 实施修复，以下保留当时的证据边界。后续修正应一起验证真实路径归属、稳定更新根、自动路径随版本迁移（`cli-auto-entry.ts` 当前也没有 CodeBuddy 原生规则）与更新后 `sameInstallation`，并补模拟回归及平台证据；不能仅泛化目录前缀就宣布支持。未检查本机 CodeBuddy 账号或执行其 CLI。
+
+
+### 决定 18：Windows ZCode 运行时关联桌面应用
+
+- 原因：2026-11-15 主会话 Windows 实机确认 Worker 使用插件部署的完整 runtime 0.16.9，原 managedZCodeApplication 仅支持 macOS，导致已有桌面应用仍归入 plugin-runtime。此次只补自动固定 runtime 的桌面关联，manual 与显式 executable 不关联。
+- 候选仅为 `%ProgramFiles%\ZCode`（实机所有用户安装 `C:\Program Files\ZCode`，桌面版本 3.14.5）与 `%LOCALAPPDATA%\Programs\ZCode`（electron-builder 当前用户默认位置），依次检查；Windows 路径比较忽略大小写。后台不读注册表、不启动任何进程。候选根须为实际目录，拒绝链接/junction；ZCode.exe 须为普通文件，PE StringFileInfo.ProductName 必须精确为 ZCode，并要求 resources/glm/zcode.cjs 为文件。
+- 新增纯 Node 有界 PE 读取：按位置读 DOS、PE/可选头、节表、.rsrc 资源目录 RT_VERSION=16 和 VS_VERSIONINFO；总读取上限 256 KiB、版本资源上限 65535 B、节数上限 96、单目录条目上限 256、版本块上限 512。畸形、截断、越界或缺失资源返回 undefined，关闭文件句柄，不整读 222 MB EXE。结构依据 [Microsoft PE 格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) 与 [VS_VERSIONINFO](https://learn.microsoft.com/en-us/windows/win32/menurc/vs-versioninfo)。同时提取字符串 ProductName/ProductVersion 与 VS_FIXEDFILEINFO ProductVersion，应用比较只取固定 ProductVersion 前三段：3.14.5.7961 → 3.14.5。
+- 关联后 source=desktop-app、appPath=应用根、fingerprint.appVersion=应用版本，沿用 ZCODE_RUNTIME_NOTICE。runtime 文件继续作为 executable 与文件指纹；EXE 替换的 size/mtime 不影响同一安装判断，应用版本变化使计划 token 作废，更新后 verify 重新读 PE 并核对 3.18.2。同一安装仍要求应用根相同，Windows 盘符路径大小写不敏感。macOS 保持原 Info.plist/bundle 关联与版本读取。
+- 沿用 Windows readDesktopRelease/checkedRelease/runDesktopUpdate：官方 cdn-zcode.z.ai、/zcode/electron/releases/ 前缀与 .exe 已放行，下载验证 SHA-512/大小后创建执行副本，进入 awaiting-user 并等待整个进程范围退出；只传安装程序路径，不新增参数。所有用户安装由官方程序请求 UAC，插件不提权、不静默、不猜安装位置参数，保留宿主代理。未找到可核实桌面应用时保留原 plugin-runtime 提示。
+- 验证边界：本轮仅模拟 PE、目录、HTTP 与安装进程；Windows 实机更新及 UAC/向导操作待主会话验收。独立 Worker runtime 不随桌面更新。

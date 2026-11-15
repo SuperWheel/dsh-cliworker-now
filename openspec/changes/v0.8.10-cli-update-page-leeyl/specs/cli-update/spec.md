@@ -107,7 +107,7 @@ Pi 更新 SHALL 取官方 latest，MUST NOT 用适配集合限制目标；适配
 - **THEN** 其他行照常完成；OpenCode 写「查询超时」，随重排进入「检查失败」
 
 ### Requirement: 版本检查与兼容范围
-Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口执行已核实的 `--version`：参数数组、stdin ignore、5 秒超时、确认进程范围退出、去 ANSI 后取首个完整合法 SemVer。Kimi MUST 带 `KIMI_CODE_NO_AUTO_UPDATE=1`。后台仅对 sources 标为无文件改动的 CLI 开放，按指纹复用结果；Codex、Qoder/CN 仅前台。Hermes 前后台均不执行版本命令，改读 install-stamp.json 的 baseVersion；缺少可信记录时显示版本未知。ZCode SHALL 读 Info.plist 应用版本，WorkBuddy SHALL 保留 CLI 版本并另读应用版本用于更新比较。普通 CLI 版本 SHALL 按 SemVer 比较；正式版不提示升级到预发布版。OpenCode V1 之外的版本 SHALL 显示「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮；Pi 更新不受 Worker 适配集合限制。
+Host SHALL 优先读清单；前台清单缺版本时，用实际调用的入口执行已核实的 `--version`：参数数组、stdin ignore、5 秒超时、确认进程范围退出、去 ANSI 后取首个完整合法 SemVer。Kimi MUST 带 `KIMI_CODE_NO_AUTO_UPDATE=1`。后台仅对 sources 标为无文件改动的 CLI 开放，按指纹复用结果；Codex、Qoder/CN 仅前台。Hermes 前后台均不执行版本命令，改读 install-stamp.json 的 baseVersion；缺少可信记录时显示版本未知。ZCode SHALL 读取已核实的桌面应用版本，WorkBuddy SHALL 保留 CLI 版本并另读应用版本用于更新比较。普通 CLI 版本 SHALL 按 SemVer 比较；正式版不提示升级到预发布版。OpenCode V1 之外的版本 SHALL 显示「有新版本 X，插件尚未适配」，MUST NOT 提供更新按钮；Pi 更新不受 Worker 适配集合限制。
 
 #### Scenario: 前后台版本命令权限不同
 - **WHEN** 前台或后台检查缺少清单版本的 Codex、Qoder/CN 或 Hermes
@@ -507,3 +507,20 @@ Host SHALL 将当前 home 与官方 XDG_DATA_HOME/LOCALAPPDATA 布局下精确�
 #### Scenario: 更新后入口或实体变化
 - **WHEN** 更新完成后重新读取身份
 - **THEN** 同一安装 SHALL 要求来源、通道和更新根一致，realpath 符合该根精确布局，所选入口保持相同或变化前后均为该根精确入口；允许原位替换或同根版本迁移，跨根/跨来源/其他文件 MUST 拒绝；之后 SHALL 单独核实实际版本前进，版本探针禁自动升级，原生残留不由插件清理
+
+
+### Requirement: Windows ZCode 固定 runtime 的桌面关联
+Host SHALL 仅为非 manual、未显式配置 executable 的插件固定 ZCode runtime 检查 `%ProgramFiles%\ZCode` 和 `%LOCALAPPDATA%\Programs\ZCode`，依次选择有效安装；MUST NOT 读注册表或启动进程。候选根 MUST 是实际目录而非链接/junction，ZCode.exe MUST 是普通文件，其 PE StringFileInfo.ProductName MUST 精确为 ZCode，并存在 resources/glm/zcode.cjs 文件。PE 读取 MUST 有偏移/长度与总量上限，异常返回无版本；应用版本 SHALL 取 VS_FIXEDFILEINFO ProductVersion 前三段。
+
+#### Scenario: Windows 已安装所有用户版 ZCode
+- **WHEN** 固定 runtime 对应的 ProgramFiles ZCode 满足目录、EXE 产品名与内置 CLI 核对，固定版本为 3.14.5.7961
+- **THEN** Host SHALL 关联为 desktop-app，appPath 为应用根、appVersion 为 3.14.5，保留独立 runtime 未随桌面更新的 notice，并允许现有 Windows 桌面更新器生成计划
+
+#### Scenario: 仅当前用户目录有效或两个目录均无可核实应用
+- **WHEN** ProgramFiles 候选缺失或身份不符
+- **THEN** Host SHALL 检查 LOCALAPPDATA 默认候选；两者均无效时 SHALL 保留可信 INSTALL-MANIFEST 的 plugin-runtime 版本和原手动提示，MUST NOT 猜应用版本
+
+#### Scenario: 官方安装程序替换 EXE
+- **WHEN** 用户发起更新，校验官方工件后安装程序把同根 ZCode.exe 替换为固定版本 3.18.2.9000
+- **THEN** Host SHALL 等整个进程范围退出后重新读取 appVersion=3.18.2，并用原 runtime 路径与同一应用根核对安装身份；EXE 大小/mtime 变化 MUST NOT 导致 IDENTITY_CHANGED，应用根变化 MUST 拒绝，Windows 路径大小写变化 SHALL 视为同一路径
+- **AND** 计划 token SHALL 绑定实际应用版本；插件 MUST NOT 提权或添加静默参数，UAC 与向导由官方安装程序处理

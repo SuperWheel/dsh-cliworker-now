@@ -1707,3 +1707,8 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 ## 2026-11-15：CodeBuddy Code 原生来源与路径迁移
 
 官方原生默认根为 Unix `~/.local/share/codebuddy`、Windows `%LOCALAPPDATA%/codebuddy`；精确匹配版本实体与稳定入口，移除旧 `.codebuddy/bin/` 猜测规则，npm/brew 保持原渠道。自动记录迁往同根稳定入口，手动与部署路径不改；更新使用已有 argv `[入口, 'update']`，同一安装验证涵盖原位 realpath 替换、同根版本变化、来源和通道约束，实际版本以禁自动升级的探针核实，不能从版本目录名推断。CodeBuddy 原生旧版本/备份不加入插件回收。官方脚本、2.184.0 发布包源码与 Mac/Windows npm 只读证据、模拟和真实验收边界见[决定 17](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。
+
+
+### Windows ZCode 桌面更新关联（2026-11-15）
+
+固定自动 runtime 在 Windows 只读关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode`：实际目录、普通 ZCode.exe、PE ProductName=ZCode 与 resources/glm/zcode.cjs 共同确认身份；有界读取固定 ProductVersion 前三段作为应用版本。更新继续走官方安装程序/UAC，不提权、不静默，独立 Worker runtime 不随桌面更新。manual 路径和 macOS 行为保留；没有可核实应用时仍显示原 runtime 手动更新原因。实现与模拟验收见 [决定 18](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 和任务 17，Windows 实机更新待主会话验收。
