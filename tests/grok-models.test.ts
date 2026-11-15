@@ -45,7 +45,41 @@ afterEach(() => {
   vi.unstubAllEnvs()
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
-describe('Grok own Build models (synthetic metadata only)', () => {
+describe('Grok own Build models (模拟 metadata only)', () => {
+  it.each([
+    'grok 1.0.0 (3cd0d0cbcebe)',
+    'grok 1.0.77 (50ca579fa996)',
+    'grok 1.0.77 (50ca579fa996) [stable]',
+  ].flatMap(version => ['camelCase', 'snake_case'].map(shape => ({ version, shape }))))(
+    '模拟: verified build $version accepts account-only dynamic models in $shape',
+    async ({ version, shape }) => {
+      const f = fixture()
+      const fields = shape === 'snake_case'
+        ? { supports_reasoning_effort: true, reasoning_efforts: [{ id: 'xhigh' }, { id: 'low' }] }
+        : { supportsReasoningEffort: true, reasoningEfforts: ['xhigh', 'low'] }
+      const models = await discoverGrok('/synthetic/grok', async argv =>
+        argv.includes('--version') ? version + '\n' : JSON.stringify(native), f.home, {
+        home: f.home,
+        fetch: allowed(async () => Response.json({ data: [
+          { model: 'grok-dynamic-fixture', name: '模拟动态模型', ...fields },
+          { model: 'grok-hidden-fixture', hidden: true, ...fields },
+        ] })),
+      })
+      expect(models).toEqual([{ id: 'grok-dynamic-fixture', label: '模拟动态模型', efforts: ['xhigh', 'low'] }])
+    },
+  )
+  it.each(['grok 1.0.77 (unknown-build)', 'grok 1.0.78 (future-build)'])(
+    '模拟: unverified build %s still requires the native model intersection', async version => {
+      const f = fixture()
+      await expect(discoverGrok('/synthetic/grok', async argv =>
+        argv.includes('--version') ? version : JSON.stringify(native), f.home, {
+        home: f.home,
+        fetch: allowed(async () => Response.json({ data: [
+          { model: 'grok-dynamic-fixture', supports_reasoning_effort: false },
+        ] })),
+      })).rejects.toThrow('当前 CLI 未支持账号模型')
+    },
+  )
   it('requests only the official read-only endpoint and intersects exact IDs with native effort', async () => {
     const f = fixture()
     const request = vi.fn(async (url, init) => {

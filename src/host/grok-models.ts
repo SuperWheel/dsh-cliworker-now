@@ -224,9 +224,9 @@ export function grokAccountModels(
 export function grokAccountModelIds(payload: unknown, forbidden: string[] = []): Set<string> {
   return new Set(grokAccountModels(payload, forbidden).keys())
 }
-/** Installed grok 1.0.0 (3cd0d0cbcebe) consumes these dynamic /models fields.
+/** Installed grok 1.0.0 (3cd0d0cbcebe) and 1.0.77 (50ca579fa996) consume these dynamic /models fields.
  * Verified against its actual ACP response using an isolated loopback fixture;
- * the built-in grok-4.5 fallback is not a limit on dynamic model IDs or xhigh.
+ * the built-in grok-4.5/4.6 fallback is not a limit on dynamic model IDs or xhigh.
  */
 export function grokDynamicNativeModels(payload: unknown, forbidden: string[] = []): ModelChoice[] {
   const scoped = grokAccountModels(payload, forbidden)

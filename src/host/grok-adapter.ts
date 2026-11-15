@@ -29,6 +29,14 @@ export interface GrokInput {
 }
 const record = (x: unknown): x is Record<string, unknown> =>
   typeof x === 'object' && x !== null && !Array.isArray(x)
+// These installed builds were checked with an isolated /models fixture and ACP
+// initialize: their offline built-ins are fallback models, not a capability cap.
+// Keep unknown builds on the native intersection until their schema is verified.
+const dynamicCatalogBuilds = new Set([
+  'grok 1.0.0 (3cd0d0cbcebe)',
+  'grok 1.0.77 (50ca579fa996)',
+  'grok 1.0.77 (50ca579fa996) [stable]',
+])
 const baseConfig = `[cli]\nauto_update = false\nuse_leader = false\n[features]\nsupport_permission = true\nweb_fetch = ${GROK_NATIVE_WEB}\ntelemetry = false\nfeedback = false\ncodebase_indexing = false\n[telemetry]\ntrace_upload = false\nmixpanel_enabled = false\n[session]\nload_envrc = false\n[shell_environment_policy]\ninherit = "core"\nignore_default_excludes = false\n`
 // `grok agent stdio` ignores the global --permission-mode/--deny flags, and its
 // config ignores permission_mode = "dontAsk", so a read-only run denies edits
@@ -237,7 +245,7 @@ export async function discoverGrok(
   const renewal = options.renewal
   return discoverGrokAccountModels(models, {
     ...options,
-    nativeDynamicSchema: version.trim() === 'grok 1.0.0 (3cd0d0cbcebe)',
+    nativeDynamicSchema: dynamicCatalogBuilds.has(version.trim()),
     ...(renewal
       ? {
           renew: async (signal: AbortSignal) => {
