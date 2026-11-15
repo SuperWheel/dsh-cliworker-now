@@ -1,0 +1,542 @@
+{
+  "purpose": "匿名只读官方 feed/工件配对复核；下载物不执行、不挂载、不解包、不安装，计算后删除。",
+  "baseline": "e096dd4498f82b2a25131f18fd5199f996c9fe39",
+  "transport": "curl -q --proto =https；argv 数组；继承宿主代理环境；不传账号、Cookie 或 Authorization；不跟随跳转。",
+  "tempDirectoryMode": "0700",
+  "fileMode": "0600 (umask 077)",
+  "curlTemplate": [
+    "curl",
+    "-q",
+    "--silent",
+    "--show-error",
+    "--fail",
+    "--proto",
+    "=https",
+    "--connect-timeout",
+    "20",
+    "--max-time",
+    "600",
+    "--dump-header",
+    "<private TMPDIR>/headers",
+    "--output",
+    "<private TMPDIR>/body",
+    "--write-out",
+    "%{http_code}\\n%{url_effective}\\n%{size_download}\\n%{num_redirects}",
+    "<official URL>"
+  ],
+  "requests": [
+    {
+      "label": "ai-arm64",
+      "url": "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.354794+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0",
+        "329",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 329",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 329,
+      "sha256Hex": "30a42fcb9c4d304138a7fce021621f9187da0dad26d28ea8ec5093e8c456335b",
+      "sha256Base64": "MKQvy5xNMEE4p/zgIWIfkYfaDa0m0o6o7FCT6MRWM1s=",
+      "sha512Hex": "aa66d63b3c7be3a8ed6d041b150a6a67a4dac32695d49e26cd8df4c3123e3a309bbccc789d2d65593a0ba702f4ee79d7f0e12823e2bfa86396e7cf19c7fa7c88",
+      "sha512Base64": "qmbWOzx746jtbQQbFQpqZ6TawyaV1J4mzY30wxI+OjCbvMx4nS1lWToLpwL07nnX8OEoI+K/qGOW588Zx/p8iA==",
+      "md5Hex": "4a398dcd189d8c4c7af8de8ab77f4b90",
+      "md5Base64": "SjmNzRidjEx6+N6Kt39LkA==",
+      "json": {
+        "version": "5.9.4.42593613",
+        "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.zip",
+        "productVersion": "5.9.4.42593613",
+        "sha256hash": "6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6",
+        "timestamp": 1793316813,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "ai-x64",
+      "url": "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-x64&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.327172+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-x64&version=0.0.0",
+        "325",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 325",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 325,
+      "sha256Hex": "e78fc6479b6974e88a27a71989343d63353919838b0bd830dd73080d0e489694",
+      "sha256Base64": "54/GR5tpdOiKJ6cZiTQ9YzU5GYOLC9gw3XMIDQ5IlpQ=",
+      "sha512Hex": "e5131f318afbcf1bee2ac22d19b84ec653ced9422da8402fabbf46dedfbca10a127a2f0f60de1a77602e516958e8205a734ed5d90de35401b16146f9f36b78a7",
+      "sha512Base64": "5RMfMYr7zxvuKsItGbhOxlPO2UItqEAvq79G3t+8oQoSei8PYN4ad2AuUWlY6CBac07V2Q3jVAGxYUb582t4pw==",
+      "md5Hex": "d411a234eaab209597df899868bd92cb",
+      "md5Base64": "1BGiNOqrIJWX34mYaL2Syw==",
+      "json": {
+        "version": "5.9.4.42593613",
+        "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.4.42593613-fa0a0901.zip",
+        "productVersion": "5.9.4.42593613",
+        "sha256hash": "435e3990168b5dbe1eed9ebd5e141f93085a29510bc2dd60ffd0bd63a219f0b2",
+        "timestamp": 1793316813,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "ai-universal",
+      "url": "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-universal&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.355789+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-universal&version=0.0.0",
+        "273",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 273",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 273,
+      "sha256Hex": "17d604f22d9fab11d73235fd56f00709870fd84bf0b0525d70221e33b04b38e7",
+      "sha256Base64": "F9YE8i2fqxHXMjX9VvAHCYcP2EvwsFJdcCIeM7BLOOc=",
+      "sha512Hex": "0103744ad40f14b8acd6880af56d9cfa4e1232ff2b22a09de55741705fd1c866ecfd0a454e7faf344ca27b4a033438e8a2f7bf360ee5ab6a0cc113584b8b8e1e",
+      "sha512Base64": "AQN0StQPFLis1ogK9W2c+k4SMv8rIqCd5VdBcF/RyGbs/QpFTn+vNEyie0oDNDjoove/Ng7lq2oMwRNYS4uOHg==",
+      "md5Hex": "f984cd1cc7071dbebab47cff939ad6dd",
+      "md5Base64": "+YTNHMcHHb66tHz/k5rW3Q==",
+      "json": {
+        "version": "5.9.4.42593613",
+        "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-universal/WorkBuddy-darwin-universal-5.9.4.42593613-fa0a0901.zip",
+        "productVersion": "5.9.4.42593613",
+        "sha256hash": "",
+        "timestamp": 1793316813,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "cn-arm64",
+      "url": "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.354918+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0",
+        "329",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 329",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 329,
+      "sha256Hex": "5eb47e2135840aae2d7dd2e089b7f56af624dc606e5bcfde308ec65d520f5d63",
+      "sha256Base64": "XrR+ITWECq4tfdLgibf1avYk3GBuW8/eMI7GXVIPXWM=",
+      "sha512Hex": "b8a50ec9f70a6ae517fa23fa661b0652aca8c9ce61c11a2ca8ddacfcd0858d56cb400ca5d285c758d27b834fd9cc848474fb1b46ff28612bb380f2141cddc87a",
+      "sha512Base64": "uKUOyfcKauUX+iP6ZhsGUqyoyc5hwRosqN2s/NCFjVbLQAyl0oXHWNJ7g0/ZzISEdPsbRv8oYSuzgPIUHN3Ieg==",
+      "md5Hex": "02ddc9d5b052a2bda066bf5396d2a3c3",
+      "md5Base64": "At3J1bBSor2gZr9TltKjww==",
+      "json": {
+        "version": "5.9.3.42398134",
+        "url": "https://download.codebuddy.cn/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-d4692421.zip",
+        "productVersion": "5.9.3.42398134",
+        "sha256hash": "55d73c63e44be58e31411254d10ad141faef9fd9eaf3cab67685d81f88e14835",
+        "timestamp": 1793121334,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "cn-x64",
+      "url": "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-x64&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.717823+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-x64&version=0.0.0",
+        "325",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 325",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 325,
+      "sha256Hex": "e6a5664d18830b665e3ef8736de0bee8c6620ba3be80eb307ee38b6395949b67",
+      "sha256Base64": "5qVmTRiDC2ZePvhzbeC+6MZiC6O+gOswfuOLY5WUm2c=",
+      "sha512Hex": "c2b4fed73c1201e79c13dbeb29a397a31607d7f35c02ed6f6da23550ef0f3d657296dfb6715486df84712602d628a77ab9c3681fcfe5c094ee11fd39d31e6185",
+      "sha512Base64": "wrT+1zwSAeecE9vrKaOXoxYH1/NcAu1vbaI1UO8PPWVylt+2cVSG34RxJgLWKKd6ucNoH8/lwJTuEf050x5hhQ==",
+      "md5Hex": "659fb5247b0860675b0bec6cf1b31dc2",
+      "md5Base64": "ZZ+1JHsIYGdbC+xs8bMdwg==",
+      "json": {
+        "version": "5.9.3.42398134",
+        "url": "https://download.codebuddy.cn/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.3.42398134-d4692421.zip",
+        "productVersion": "5.9.3.42398134",
+        "sha256hash": "e093e214cb77b01d821451ee19b67b0e0b2bdb63f87dcea3aacbccb21bdfc686",
+        "timestamp": 1793121334,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "cn-universal",
+      "url": "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-universal&version=0.0.0",
+      "utc": "2026-11-15T03:29:16.744446+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://www.workbuddy.cn/v2/update?platform=workbuddy-darwin-universal&version=0.0.0",
+        "273",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "content-type: application/json; charset=utf-8",
+        "server: APISIX/3.9.1",
+        "content-length: 273",
+        "date: Sun, 15 Nov 2026 03:29:16 GMT"
+      ],
+      "bytes": 273,
+      "sha256Hex": "72862d94ee7cd98eed02c74a80f96eab46a80944c22d1bfcf9775d0c3800275c",
+      "sha256Base64": "coYtlO582Y7tAsdKgPluq0aoCUTCLRv8+XddDDgAJ1w=",
+      "sha512Hex": "be0870a29311200d5bb62df36c36d4001489a30b1a7811fb01901ad4fa1571da1684d4a258c58031694ce8cf623fe45592c45c14ea915bbe95e472bfe973f306",
+      "sha512Base64": "vghwopMRIA1bti3zbDbUABSJowsaeBH7AZAa1PoVcdoWhNSiWMWAMWlM6M9iP+RVksRcFOqRW76V5HK/6XPzBg==",
+      "md5Hex": "de5814d62ff1a88d4c82bb2382311d42",
+      "md5Base64": "3lgU1i/xqI1MgrsjgjEdQg==",
+      "json": {
+        "version": "5.9.3.42398134",
+        "url": "https://download.codebuddy.cn/workbuddy/saas/darwin-universal/WorkBuddy-darwin-universal-5.9.3.42398134-d4692421.zip",
+        "productVersion": "5.9.3.42398134",
+        "sha256hash": "",
+        "timestamp": 1793121334,
+        "hash": "",
+        "name": "",
+        "supportsFastUpdate": false
+      }
+    },
+    {
+      "label": "codebuddy-npm",
+      "url": "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest",
+      "utc": "2026-11-15T03:29:17.501476+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://registry.npmjs.org/@tencent-ai/codebuddy-code/latest",
+        "3315",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "date: Sun, 15 Nov 2026 03:29:17 GMT",
+        "content-type: application/json",
+        "content-length: 3315",
+        "server: cloudflare"
+      ],
+      "bytes": 3315,
+      "sha256Hex": "290ce3bd558d4fe12096b8b8d266cce1d4f98fdc573c0d462b7cd771c74facb9",
+      "sha256Base64": "KQzjvVWNT+Eglri40mbM4dT5j9xXPA1GK3zXccdPrLk=",
+      "sha512Hex": "1c915f18a7cad9eb334aec5528a6a2f26c0a7d03376d9fefd80f313e4256a8eb6e5b376b17ed000a3b4124a1875e7c5889e6f61354c9c877475c6c82c8f4dbd1",
+      "sha512Base64": "HJFfGKfK2eszSuxVKKai8mwKfQM3bZ/v2A8xPkJWqOtuWzdrF+0ACjtBJKGHXnxYieb2E1TJyHdHXGyCyPTb0Q==",
+      "md5Hex": "48c0a3541bc9f56a05b512f6295c37eb",
+      "md5Base64": "SMCjVBvJ9WoFtRL2KVw36w==",
+      "json": {
+        "name": "@tencent-ai/codebuddy-code",
+        "version": "2.184.0",
+        "dist": {
+          "tarball": "https://registry.npmjs.org/@tencent-ai/codebuddy-code/-/codebuddy-code-2.184.0.tgz",
+          "integrity": "sha512-2bvK8cO3zvRnOwyA28Na0sES99CBqlWoQGhndB2sdmBUv0WgAX9J2IRRqN6GsqHm9MKjcIAAWcS8WCCRW7ZAig==",
+          "shasum": "2b84bcded3bd4c3e6a4adca6d8c892434cf818cb"
+        }
+      }
+    },
+    {
+      "label": "ai-arm64-zip",
+      "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.zip",
+      "utc": "2026-11-15T03:30:10.351811+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://download.codebuddy.ai/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.zip",
+        "478466147",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "last-modified: Thu, 29 Oct 2026 16:26:43 GMT",
+        "etag: \"6b5d8abc5ade49edeb9e41867c8acfd8-457\"",
+        "content-type: application/zip",
+        "date: Thu, 29 Oct 2026 18:21:54 GMT",
+        "server: tencent-cos",
+        "x-cos-hash-crc64ecma: 9542034733590062198",
+        "x-cos-meta-md5: 0d931f9ebea458d7ff2976c329d10ba1",
+        "content-length: 478466147",
+        "accept-ranges: bytes"
+      ],
+      "bytes": 478466147,
+      "sha256Hex": "754926260c0ab867b5fe1050ab5cc01724a1330451617c8f339c679ff3bbc542",
+      "sha256Base64": "dUkmJgwKuGe1/hBQq1zAFyShMwRRYXyPM5xnn/O7xUI=",
+      "sha512Hex": "7c9917f18b7667f2873c4e3eb13bf2533d17f3e25481d372fbb588500b6d747b7d9cb155c44a5ec48a327aa040a7c2fd364fab84c280cfee2422c9c0ef1fa758",
+      "sha512Base64": "fJkX8Yt2Z/KHPE4+sTvyUz0X8+JUgdNy+7WIUAttdHt9nLFVxEpexIoyeqBAp8L9Nk+rhMKAz+4kIsnA7x+nWA==",
+      "md5Hex": "0d931f9ebea458d7ff2976c329d10ba1",
+      "md5Base64": "DZMfnr6kWNf/KXbDKdELoQ=="
+    },
+    {
+      "label": "cn-arm64-zip",
+      "url": "https://download.codebuddy.cn/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-d4692421.zip",
+      "utc": "2026-11-15T03:30:07.338690+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://download.codebuddy.cn/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-d4692421.zip",
+        "447126372",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "last-modified: Tue, 27 Oct 2026 09:35:51 GMT",
+        "etag: \"80ea3a42a97094e485de2c88ae205048-427\"",
+        "content-type: application/zip",
+        "server: tencent-cos",
+        "x-cos-hash-crc64ecma: 11712762114801524781",
+        "x-cos-meta-md5: ecded5aedfef7d276a14d14c0e276bf0",
+        "content-length: 447126372",
+        "accept-ranges: bytes",
+        "date: Sun, 15 Nov 2026 03:29:17 GMT"
+      ],
+      "bytes": 447126372,
+      "sha256Hex": "55d73c63e44be58e31411254d10ad141faef9fd9eaf3cab67685d81f88e14835",
+      "sha256Base64": "Vdc8Y+RL5Y4xQRJU0QrRQfrvn9nq88q2doXYH4jhSDU=",
+      "sha512Hex": "cb4f6ec6c8fa60dfc6f1fd33b86ffc4447e36e10cf9adb214660dbee7100a255be67596915221f60cd5886d3109f9d7d3d11c19fa053eb2cb4937f216d47295d",
+      "sha512Base64": "y09uxsj6YN/G8f0zuG/8REfjbhDPmtshRmDb7nEAolW+Z1lpFSIfYM1YhtMQn519PRHBn6BT6yy0k38hbUcpXQ==",
+      "md5Hex": "ecded5aedfef7d276a14d14c0e276bf0",
+      "md5Base64": "7N7Vrt/vfSdqFNFMDidr8A=="
+    },
+    {
+      "label": "ai-arm64-dmg",
+      "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.dmg",
+      "utc": "2026-11-15T03:32:47.974104+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://download.codebuddy.ai/workbuddy/saas/darwin-arm64/WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.dmg",
+        "408500901",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "last-modified: Thu, 29 Oct 2026 16:26:43 GMT",
+        "etag: \"efd3bfba5c3a079e8d9b5c7c712c89bf-390\"",
+        "content-type: application/x-apple-diskimage",
+        "date: Thu, 29 Oct 2026 18:38:02 GMT",
+        "server: tencent-cos",
+        "x-cos-hash-crc64ecma: 13446135127115777753",
+        "x-cos-meta-md5: 71fe51547319d879e393855b860b5d7f",
+        "content-length: 408500901",
+        "accept-ranges: bytes"
+      ],
+      "bytes": 408500901,
+      "sha256Hex": "6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6",
+      "sha256Base64": "ZQLcd6DZMdxbbEkN6iC1lmurDFxk/qZZOOyxXkpfvqY=",
+      "sha512Hex": "2f54b3c89a91ec3c93883763926299294ef31255fb2adbb57c8b6fc9af90a6b41c5ae75c964457c2fd661f3f1f640770b58f71c923a6d96263660a5624964874",
+      "sha512Base64": "L1SzyJqR7DyTiDdjkmKZKU7zElX7Ktu1fItvya+QprQcWudclkRXwv1mHz8fZAdwtY9xySOm2WJjZgpWJJZIdA==",
+      "md5Hex": "71fe51547319d879e393855b860b5d7f",
+      "md5Base64": "cf5RVHMZ2Hnjk4Vbhgtdfw=="
+    },
+    {
+      "label": "ai-x64-zip",
+      "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.4.42593613-fa0a0901.zip",
+      "utc": "2026-11-15T03:32:51.980851+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://download.codebuddy.ai/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.4.42593613-fa0a0901.zip",
+        "504460931",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "last-modified: Thu, 29 Oct 2026 17:17:02 GMT",
+        "etag: \"1d18374e3586d1dcdab17e19f347e0bd-482\"",
+        "content-type: application/zip",
+        "date: Thu, 29 Oct 2026 18:22:21 GMT",
+        "server: tencent-cos",
+        "x-cos-hash-crc64ecma: 10433743900419056428",
+        "x-cos-meta-md5: 239553e76a1f0580a1a43c553c1bdee9",
+        "content-length: 504460931",
+        "accept-ranges: bytes"
+      ],
+      "bytes": 504460931,
+      "sha256Hex": "57935f9578fed1ddf0ab0219a328d96f69494a45369e88aabf1f650242084e87",
+      "sha256Base64": "V5NflXj+0d3wqwIZoyjZb2lJSkU2noiqvx9lAkIIToc=",
+      "sha512Hex": "2501bd42c4d9c071f328831c67b183a2e1200ee962ce6144c88efa7d8a7b9abbf1570f4e23056f58fa54982f397258bfa5a6e85d35d2dd251630521d5a476d0d",
+      "sha512Base64": "JQG9QsTZwHHzKIMcZ7GDouEgDulizmFEyI76fYp7mrvxVw9OIwVvWPpUmC85cli/paboXTXS3SUWMFIdWkdtDQ==",
+      "md5Hex": "239553e76a1f0580a1a43c553c1bdee9",
+      "md5Base64": "I5VT52ofBYChpDxVPBve6Q=="
+    },
+    {
+      "label": "codebuddy-checksums",
+      "url": "https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/download/2.184.0/checksums.txt",
+      "utc": "2026-11-15T03:30:57.336328+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://acc-1258344699.cos.accelerate.myqcloud.com/@tencent-ai/codebuddy-code/releases/download/2.184.0/checksums.txt",
+        "2097",
+        "0"
+      ],
+      "headers": [
+        "HTTP/1.1 200 OK",
+        "Content-Type: text/plain",
+        "Content-Length: 2097",
+        "Accept-Ranges: bytes",
+        "Date: Sun, 15 Nov 2026 03:30:57 GMT",
+        "ETag: \"da495549399d6318fe1353731fa49ce1\"",
+        "Last-Modified: Fri, 13 Nov 2026 05:36:08 GMT",
+        "Server: tencent-cos",
+        "x-cos-hash-crc64ecma: 915268591531154856"
+      ],
+      "bytes": 2097,
+      "sha256Hex": "eb396aec7d53ea660379f011b58b3926ebd0f883118e3eaac851a0397ffc3fec",
+      "sha256Base64": "6zlq7H1T6mYDefARtYs5JuvQ+IMRjj6qyFGgOX/8P+w=",
+      "sha512Hex": "3139edf67e1ffc0f765b875f46d19ddf3b1ceae7586f023eb374e2446d4a4ed64a056865cbc7311e38e13ca10d2bcccdbedec438cfc812efa25aec8ad18a0bad",
+      "sha512Base64": "MTnt9n4f/A92W4dfRtGd3zsc6udYbwI+s3TiRG1KTtZKBWhly8cxHjjhPKENK8zNvt7EOM/IEu+iWuyK0YoLrQ==",
+      "md5Hex": "da495549399d6318fe1353731fa49ce1",
+      "md5Base64": "2klVSTmdYxj+E1NzH6Sc4Q=="
+    },
+    {
+      "label": "ai-x64-dmg",
+      "url": "https://download.codebuddy.ai/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.4.42593613-fa0a0901.dmg",
+      "utc": "2026-11-15T03:34:01.036547+00:00",
+      "exitCode": 0,
+      "transfer": [
+        "200",
+        "https://download.codebuddy.ai/workbuddy/saas/darwin-x64/WorkBuddy-darwin-x64-5.9.4.42593613-fa0a0901.dmg",
+        "439693678",
+        "0"
+      ],
+      "headers": [
+        "HTTP/2 200 ",
+        "last-modified: Thu, 29 Oct 2026 17:17:02 GMT",
+        "etag: \"46b85e9800a2e5dd2873fb301b409950-420\"",
+        "content-type: application/x-apple-diskimage",
+        "date: Thu, 29 Oct 2026 18:37:25 GMT",
+        "server: tencent-cos",
+        "x-cos-hash-crc64ecma: 489398784848486980",
+        "x-cos-meta-md5: 3b8c6c21591acbccd8a5d20bfbad7dd6",
+        "content-length: 439693678",
+        "accept-ranges: bytes"
+      ],
+      "bytes": 439693678,
+      "sha256Hex": "435e3990168b5dbe1eed9ebd5e141f93085a29510bc2dd60ffd0bd63a219f0b2",
+      "sha256Base64": "Q145kBaLXb4e7Z69XhQfkwhaKVELwt1g/9C9Y6IZ8LI=",
+      "sha512Hex": "788367d84e27b2e4e7a6a9660d79543167e0fb4614976db9fd60f7e55638b47e2e2a5c4a9a5535719772d6bc0c8af1d88ac1924401f7a0e524345884cdb43c3d",
+      "sha512Base64": "eINn2E4nsuTnpqlmDXlUMWfg+0YUl225/WD35VY4tH4uKlxKmlU1cZdy1rwMivHYisGSRAH3oOUkNFiEzbQ8PQ==",
+      "md5Hex": "3b8c6c21591acbccd8a5d20bfbad7dd6",
+      "md5Base64": "O4xsIVkay8zYpdIL+6191g=="
+    }
+  ],
+  "cleanup": {
+    "main": true,
+    "alternatives": true,
+    "extra": true,
+    "x64Dmg": true
+  },
+  "officialTextSources": [
+    {
+      "url": "https://download.codebuddy.ai/web/workbuddy/05fd33c3609bc9cf5ae1fc387a142a2ad0fab64e/assets/invite-BP67xNKo.js",
+      "sha256": "5968800cf7f19124e8428683fa70ce4dda5f21beb66ffe7732fe0aff1f6efa66",
+      "bytes": 14769,
+      "handling": "仅按文本读取，未执行；原始脚本文本不入库。"
+    },
+    {
+      "url": "https://www.codebuddy.cn/cli/install.sh",
+      "sha256": "e0cb8fcbd2a874724fbf0b16bf5161c66c31bd4a57412efeea90e4d7bb2a956f",
+      "bytes": 4542,
+      "handling": "仅按文本读取，未执行；原始脚本文本不入库。"
+    },
+    {
+      "url": "https://www.codebuddy.cn/cli/install.ps1",
+      "sha256": "19ad1de63c91f2f85328ca39dd76f2aa601de7ab04ec3cce2ca07816cc7326ff",
+      "bytes": 2653,
+      "handling": "仅按文本读取，未执行；原始脚本文本不入库。"
+    }
+  ],
+  "limits": [
+    "没有真实 CLI、账号、模型、Windows 或安装验证。",
+    "未获取 blockmap URL/摘要，不凭文件名猜测并下载。",
+    "不清空代理、不绕过 CDN；HTTP 头不能证明源站完整历史。",
+    "既有 11-14 codesign 结果为历史证据，本轮未重做。"
+  ],
+  "comparison": {
+    "ai-arm64": {
+      "zipMatchesFeed": false,
+      "dmgMatchesFeed": true
+    },
+    "ai-x64": {
+      "zipMatchesFeed": false,
+      "dmgMatchesFeed": true
+    },
+    "cn-arm64": {
+      "zipMatchesFeed": true
+    }
+  },
+  "codebuddyClassificationSimulation": {
+    "kind": "模拟；未执行 CLI/安装器，未访问用户账号目录",
+    "method": "Node 22 stripTypeScriptTypes + vm 执行当前 sources.ts 的 base/CLI_SOURCES、identity.ts 的 isQoderDispatcher/classifyInstallation、planner.ts 的 automaticMethod 原样摘录；homedir 和无关桌面判定替身。",
+    "cases": [
+      {
+        "path": "/模拟/home/.local/bin/codebuddy",
+        "source": "unknown",
+        "automaticMethod": null
+      },
+      {
+        "path": "/模拟/home/.local/share/codebuddy/versions/2.184.0",
+        "source": "unknown",
+        "automaticMethod": null
+      },
+      {
+        "path": "/模拟/home/.local/share/codebuddy/versions/2.184.0/codebuddy",
+        "source": "unknown",
+        "automaticMethod": null
+      },
+      {
+        "path": "C:/Users/模拟/AppData/Local/codebuddy/bin/codebuddy.exe",
+        "source": "unknown",
+        "automaticMethod": null
+      },
+      {
+        "path": "/模拟/npm/lib/node_modules/@tencent-ai/codebuddy-code/bin/codebuddy",
+        "packageName": "@tencent-ai/codebuddy-code",
+        "source": "npm",
+        "automaticMethod": "npm"
+      }
+    ]
+  }
+}

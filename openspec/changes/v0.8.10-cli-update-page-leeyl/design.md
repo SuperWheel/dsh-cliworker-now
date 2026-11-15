@@ -421,3 +421,23 @@ Kimi 仅有安装脚本/metadata CDN 跳转证据，OpenCode 只有 GitHub 到�
 
 
 实施：SettingsConnectionCache 对 code=MAINTENANCE 清空旧 error/value/checkedAt，仍向直接调用方抛出维护拒绝；成功、失败和取消统一在 launch finally 释放租约后调用一次 invalidateModels，移除成功分支的重复调用。cleanup-unconfirmed 隔离分支不释放租约、不发布可用状态。模拟测试覆盖旧错误被清除、两种缓存槽、释放时序及取消/失败/成功各一次作废。
+
+## 2026-11-15 WorkBuddy 国际版摘要复核（只读）
+
+本轮从指定基线 `e096dd4` 核对 `desktop-update.ts`、`install.ts`、`service.ts` 与 `download.ts`：WorkBuddy/CN 读取单对象 JSON 的 `sha256hash`，要求 64 位 hex；首次安装和更新都将 hex 转成 SHA-256 SRI base64，再按下载字节计算并比较。ZCode 才使用 YAML `files[].sha512` base64。这里没有算法或编码混用。
+
+**已定位国际版 feed 的 URL/摘要配对不一致：arm64 与 x64 的 `url` 都是 ZIP，各自 `sha256hash` 却精确等于同版本、同架构 DMG 的 SHA-256。** 官网首页引用的 `invite-BP67xNKo.js` 的下载函数明确对 darwin 地址执行 `.replace(".zip", ".dmg")`；本轮只读脚本文本，不执行。按这一公开映射下载 DMG 复算后确认对应关系。CN arm64 ZIP 则直接匹配 CN feed，同一家族也不能统一把 ZIP 改为 DMG。完整 URL、6 个 feed 响应、下载摘要与响应头见 [复核证据](workbuddy-feed-audit-2026-11-15.json)，关键数值同时写在 [WorkBuddy 任务 7.3](../add-workbuddy-cli/tasks.md)。
+
+- SHA-256 字段不是 SHA-512 或 base64；实算 SHA-512（hex/base64）另列证据，没有匹配。两架构分别请求，各自 URL 路径包含对应架构，没有从列表挑错文件；universal 返回空摘要，不可作为后备。响应无 `files`、DMG 或 blockmap 摘要条目，`hash`/`name` 为空，`supportsFastUpdate=false`。
+- 所有成功对象均为 HTTP 200、0 次跳转；实际字节数等于 Content-Length，MD5 等于 `x-cos-meta-md5`。国际版 arm64 ZIP 与 11-14 记录的长度、ETag 和 SHA-256 一致。没有 Content-Encoding/Location；原始地址经 `new URL(url).href` 不变。证据支持“发布元数据配对问题”，不支持“插件解码或截断”，也不能仅凭头部证明 CDN 源站从未错配；未做绕过代理、缓存清除或源站直连。
+- 本轮保持严格校验与产品代码不变：拒绝 ZIP 的错误摘要，不用本次实算值替换 feed，不改用 MD5，不把扩展名替换冒充 URL 规范化。官网的 DMG 下载映射可作为今后独立 DMG 安装/更新路径的依据，但当前 `readDesktopRelease` 与 `runDesktopUpdate` 明确约定 ZIP（解包、签名、替换和清理）；不能仅改 URL 后把 DMG 交给 ZIP 解包。是否扩展独立 DMG 流程另行实施，本轮不安装、不挂载、不解包、不打开应用。
+
+CodeBuddy 对照：当前插件支持的是 **CodeBuddy Code CLI**，并非 CodeBuddy IDE 桌面更新 feed。`sources.ts` 指向 `@tencent-ai/codebuddy-code`，`versions.ts` 读取 npm `dist.integrity`（本轮 2.184.0 是 `sha512-…`，完整值见证据）；官方 `/cli/install.sh` 与 `/cli/install.ps1` 则按 COS `checksums.txt` 的文件名取 SHA-256 hex。这两种格式均与 WorkBuddy 的 JSON `sha256hash` 分开处理，不能因同品牌把 npm SHA-512 规则套给 WorkBuddy。
+
+### CodeBuddy 原生布局问题的结论
+
+找到了相关记录，但仓库中日期为 [双通道设计“调研 7.3”的 2026-11-15](../v0.8.10-cli-update-dual-channel-leeyl/design.md)，不是 11-14。官方[安装指南](https://www.codebuddy.cn/docs/cli/installation) 本轮仍指定 Unix `~/.local/bin` 与 Windows `%USERPROFILE%\AppData\Local\codebuddy\bin`；本轮读到的安装脚本把最终放置委托给 `codebuddy install`，因此脚本文本本身不证明版本实体的最终形状，`versions/<v>` 细节沿用上述既有只读研究，未重新安装验证。
+
+**安装方式分类确有缺口。** `identity.ts` 只含 `.codebuddy/bin/`，既没有 Unix 官方稳定入口/版本实体，也没有 Windows 官方目录。对当前源码中 `classifyInstallation` 与 `automaticMethod` 的原样摘录执行隔离模拟：官方 Unix 稳定入口、两种研究中的版本实体形状、Windows 官方入口均得到 `unknown` / 无自动更新方法；npm 对照仍为 `npm`。这影响原生安装的“更新方式识别”，不是账号身份或登录站点布局；npm/brew 的独立分支不受这一缺失规则影响。
+
+本轮按用户允许的“修或给结论”交付明确缺陷结论，**未修复 CodeBuddy 原生更新支持**。后续修正应一起验证真实路径归属、稳定更新根、自动路径随版本迁移（`cli-auto-entry.ts` 当前也没有 CodeBuddy 原生规则）与更新后 `sameInstallation`，并补模拟回归及平台证据；不能仅泛化目录前缀就宣布支持。未检查本机 CodeBuddy 账号或执行其 CLI。
