@@ -10,6 +10,7 @@ import { CliMaintenance } from '../src/host/cli-management/maintenance.ts'
 import { CliManagementCache } from '../src/host/cli-management/cache.ts'
 import { SettingsConnectionCache } from '../src/host/settings-connection-cache.ts'
 import { CustomProviders } from '../src/host/custom-provider.ts'
+import { prepareHermesAccountHome } from '../src/host/hermes-account-context.ts'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 
@@ -159,4 +160,27 @@ it('模拟：Host 实际创建表单管理器时传入运行配置的 stateDirec
   expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/auth.json'), 'utf8'))['custom-synthetic']).toEqual({ type: 'api_key', key: f.values.apiKey })
   expect(existsSync(join(f.root, '.pi'))).toBe(false)
   ;(f.service as any).customProviders.close()
+})
+
+it.each(['hermes', 'opencode'] as const)('模拟：%s Remote 的真实管理器使用账号持久来源并显示实际路径', async cli => {
+  const f = fixture()
+  vi.spyOn(os, 'homedir').mockReturnValue(f.root)
+  const host = f.service as any
+  host.customProviders = undefined
+  host.options.hermesHome = join(f.root, 'global-hermes')
+  const state = host.options.stateDirectory
+  const own = cli === 'hermes' ? prepareHermesAccountHome(host.options) : join(state, 'accounts/opencode')
+  const config = cli === 'hermes' ? join(own, 'config.yaml') : join(own, 'config/opencode/opencode.json')
+  const auth = cli === 'hermes' ? join(own, '.env') : join(own, 'data/opencode/auth.json')
+  const form = await f.form(cli)
+  expect(form.target).toBe(`${config} + ${auth}`)
+  const values = { ...f.values, api: cli === 'hermes' ? 'chat_completions' : '@ai-sdk/openai-compatible' }
+  const result = JSON.parse(await f.service.saveCustomProvider('parent', cli, form.token, JSON.stringify(values), f.controller.signal))
+  expect(result).toMatchObject({ ok: true, cli })
+  expect(readFileSync(config, 'utf8')).toContain('custom-synthetic')
+  expect(readFileSync(auth, 'utf8')).toContain(values.apiKey)
+  expect(existsSync(join(f.root, 'global-hermes'))).toBe(false)
+  expect(existsSync(join(f.root, '.config/opencode'))).toBe(false)
+  expect(existsSync(join(f.root, '.local/share/opencode'))).toBe(false)
+  host.customProviders.close()
 })

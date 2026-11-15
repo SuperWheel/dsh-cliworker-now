@@ -33,6 +33,28 @@ Pi 新增服务商 SHALL 写入与账号登录一致的 `<stateDirectory>/accoun
 - **WHEN** 打开表单后目标来源改变，或写入目录/文件为不安全链接、账号锁被占用
 - **THEN** Host SHALL 拒绝保存，MUST NOT 回落到全局目录写入；双文件失败回滚与凭据保护 SHALL 保持有效
 
+### Requirement: Hermes 表单跟随 Worker 生效 HOME
+Hermes 表单 SHALL 与 Worker 使用同一生效 HOME 选择器，target SHALL 显示实际 config.yaml 和 .env 路径。原生 HOME 与插件 HOME MUST 按来源 marker 单选，MUST NOT 合并或修改未生效来源。Host SHALL 在保存及提交阶段核对来源变化，保留同 HOME 的重名/变量冲突检查、dotenv 子集一致性、providers 新建、0600 和回滚约束；HERMES_PROFILE 非空时 SHALL 回退原生终端。
+
+#### Scenario: 插件来源已选中
+- **WHEN** marker 选择插件 HOME，包括其中原生账号文件尚不存在或已删除的情况
+- **THEN** 表单 SHALL 写入该私有 HOME；Worker 运行准备 SHALL 读取该 HOME 中的配置和凭据，MUST NOT 回落全局目录
+
+#### Scenario: 来源变更或不安全
+- **WHEN** 表单打开后 marker 改变，或 marker/账号路径损坏或为不安全链接
+- **THEN** Host SHALL 拒绝旧表单或回滚正在提交的写入，MUST NOT 自动修改新来源
+
+### Requirement: OpenCode 表单写入优先账号来源
+OpenCode 表单 SHALL 写入 Worker 最后合并的插件持久配置目录及账号登录共用的插件凭据目录，target SHALL 展示实际路径。Host SHALL 检查全局 XDG config.json、opencode.json、opencode.jsonc、auth.json 与插件目标中的已有服务商 ID/名称冲突，MUST NOT 遮蔽已有账号或修改全局文件。凭据 MUST NOT 出现在模型配置、票据或展示缓存中。
+
+#### Scenario: 新服务商可被 Worker 读取
+- **WHEN** 用户提交无冲突的 OpenCode 服务商
+- **THEN** 插件持久配置与凭据 SHALL 进入 Worker 按原有合并顺序生成的配置/账号快照，全局原文 MUST 不变
+
+#### Scenario: 来源或格式不确定
+- **WHEN** 全局来源 XDG 路径改变、插件 json/jsonc 同时存在、配置为未核实版本或目标为不安全链接
+- **THEN** Host SHALL 拒绝保存或回退原生终端，MUST NOT 猜测写入来源
+
 ### Requirement: 通用服务商表单模板
 Client SHALL 以单一表单模板渲染 Host 表单描述，样式、间距与控件遵循 doc/settings-ui-design.md 和现有登录窗口；同类菜单 SHALL 复用该模板而不是各自实现。
 

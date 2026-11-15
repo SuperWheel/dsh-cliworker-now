@@ -1,13 +1,15 @@
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, rmdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, join, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseDocument, isMap } from 'yaml'
 import type { CustomProviderField, CustomProviderForm, CustomProviderIssue, CustomProviderResult } from '../shared/custom-provider.ts'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { isLoginProvider } from './account-guide/providers.ts'
 import { parseHermesOwnEnvironment } from './hermes-env.ts'
 import { piOmpAccountDirectory } from './pi-omp-native.ts'
+import { effectiveHermesHome } from './hermes-account-context.ts'
+import { openCodeAuthDirectory } from './opencode-adapter.ts'
 import { commitNativeFiles, nativeJson, NativeRollbackError, readNativeFile } from './custom-provider-files.ts'
 
 type Supported = 'pi' | 'opencode' | 'hermes'
@@ -28,7 +30,7 @@ export interface CustomProviderSource {
   entry: unknown
   revision: number
 }
-interface Targets { config: string; auth: string; display: string }
+interface Targets { config: string; auth: string; display: string; conflicts?: { configs: string[]; auth: string } }
 interface Ticket { source: string; targets: string; expires: number; parent: string }
 
 /** No secrets are held in tickets or persisted by this service. */
@@ -39,12 +41,14 @@ export class CustomProviders {
   close() { this.tickets.clear() }
   private now() { return this.options.now?.() ?? Date.now() }
   private source(source: CustomProviderSource) { return JSON.stringify(source) }
+  private stateDirectory() {
+    return resolve(this.options.stateDirectory ?? join((this.options.env ?? process.env).DSH_HOME ?? join(this.options.home ?? homedir(), '.dsh'), 'cliworker-now'))
+  }
   private targets(cli: CliId): Targets | undefined {
     const home = this.options.home ?? homedir(), env = this.options.env ?? process.env
     if (cli === 'pi') {
       // Account login writes here; discovery and worker snapshots merge this source after the global one.
-      const root = this.options.stateDirectory ?? join(env.DSH_HOME ?? join(home, '.dsh'), 'cliworker-now')
-      const agent = piOmpAccountDirectory('pi', resolve(root))
+      const agent = piOmpAccountDirectory('pi', this.stateDirectory())
       if (env.PI_CODING_AGENT_DIR && ![resolve(home, '.pi', 'agent'), agent].includes(resolve(env.PI_CODING_AGENT_DIR))) return undefined
       return { config: join(agent, 'models.json'), auth: join(agent, 'auth.json'), display: `${join(agent, 'models.json')} + ${join(agent, 'auth.json')}` }
     }
@@ -52,18 +56,26 @@ export class CustomProviders {
       if (env.OPENCODE_CONFIG || env.OPENCODE_CONFIG_DIR || env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_AUTH_CONTENT) return undefined
       const configRoot = env.XDG_CONFIG_HOME || join(home, '.config'), dataRoot = env.XDG_DATA_HOME || join(home, '.local', 'share')
       if (!isAbsolute(configRoot) || !isAbsolute(dataRoot)) return undefined
-      const config = join(configRoot, 'opencode', 'opencode.json'), jsonc = config + 'c'
+      const data = openCodeAuthDirectory(this.stateDirectory())
+      const config = join(dirname(data), 'config', 'opencode', 'opencode.json'), jsonc = config + 'c'
       const primary = readNativeFile(config), commented = readNativeFile(jsonc)
       // Do not silently choose between two overlays with potentially conflicting provider definitions.
       if (primary.text !== undefined && commented.text !== undefined) return undefined
-      return { config: commented.text === undefined ? config : jsonc, auth: join(dataRoot, 'opencode', 'auth.json'),
-        display: 'XDG_CONFIG_HOME/opencode/opencode.json(c) + XDG_DATA_HOME/opencode/auth.json' }
+      const selected = commented.text === undefined ? config : jsonc, auth = join(data, 'opencode', 'auth.json')
+      return { config: selected, auth, display: `${selected} + ${auth}`,
+        // Bind read-only overlay sources too: an XDG change invalidates the open form.
+        conflicts: { configs: ['config.json', 'opencode.json', 'opencode.jsonc'].map(name => join(configRoot, 'opencode', name)), auth: join(dataRoot, 'opencode', 'auth.json') } }
     }
     if (cli === 'hermes') {
       if (env.HERMES_PROFILE) return undefined
-      const root = this.options.hermesHome || env.HERMES_HOME || (process.platform === 'win32' ? join(env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'hermes') : join(home, '.hermes'))
-      if (!isAbsolute(root)) return undefined
-      return { config: join(root, 'config.yaml'), auth: join(root, '.env'), display: 'Hermes HOME/config.yaml + .env' }
+      const native = this.options.hermesHome?.trim() || env.HERMES_HOME?.trim() || (process.platform === 'win32' ? join(env.LOCALAPPDATA?.trim() || join(home, 'AppData', 'Local'), 'hermes') : join(home, '.hermes'))
+      const stateDirectory = this.stateDirectory()
+      // Preserve no-link checks before the runtime selector canonicalizes any ancestors.
+      readNativeFile(join(stateDirectory, 'accounts', 'hermes-source.json'))
+      const root = effectiveHermesHome({ stateDirectory, hermesHome: native })
+      if (root !== join(stateDirectory, 'accounts', 'hermes')) readNativeFile(join(native, 'config.yaml'))
+      const config = join(root, 'config.yaml'), auth = join(root, '.env')
+      return { config, auth, display: `${config} + ${auth}` }
     }
     return undefined
   }
@@ -177,6 +189,17 @@ export class CustomProviders {
             unlock = () => { rmdirSync(`${auth.path}.lock`) }
           }
         } else {
+          // Worker merges global config.json/json/jsonc first, then plugin configuration/auth.
+          // Reject collisions across every consumed global overlay instead of shadowing them.
+          for (const path of targets.conflicts!.configs) {
+            const global = nativeJson(readNativeFile(path).text).value
+            if (Object.hasOwn(global, 'providers')) return failed('检测到另一版原生配置，请在原生终端中配置')
+            const providers = global.provider ?? {}
+            if (!object(providers)) throw new Error('Invalid providers')
+            if (Object.entries(providers).some(([key, value]) => key.toLowerCase() === id || object(value) && typeof value.name === 'string' && value.name.toLowerCase() === label.toLowerCase())) return failed('服务商 ID 或名称已存在，请使用其他名称', 'providerId')
+          }
+          const globalAuth = nativeJson(readNativeFile(targets.conflicts!.auth, true).text).value
+          if (Object.keys(globalAuth).some(key => key.toLowerCase() === id)) return failed('服务商 ID 或名称已存在，请使用其他名称', 'providerId')
           configText = doc.add(['provider', id], { name: label, npm: api, options: { baseURL: url }, models: Object.fromEntries((models as string[]).map(id => [id, { name: id }])) })
           authText = credentials.add([id], { type: 'api', key: secret })
         }
@@ -184,6 +207,7 @@ export class CustomProviders {
       commitNativeFiles([{ file: auth, text: authText }, { file: config, text: configText }], () => {
         assertCurrent()
         if (ticket.expires <= this.now()) throw new Error('Expired')
+        if (JSON.stringify(this.targets(source.cli)) !== ticket.targets) throw new Error('Changed account source')
       })
       this.tickets.delete(token)
       return { ok: true, cli, providerId: id, providerLabel: label, notice: '已保存原生配置；密钥有效性与模型可用性尚未验证' }

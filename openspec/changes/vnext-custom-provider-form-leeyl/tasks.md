@@ -74,3 +74,13 @@
   - `corepack pnpm typecheck` 最终通过，Host/Client 对 DSH 0.2.2-rc.3。前两次因新 worktree 缺少 `lib/typert.remote-client.d.ts` 失败；`corepack pnpm build:preview` 成功后，复制本次 `.cache/preview-package/lib` 到被忽略的工作树 `lib/`，再跑原命令通过；没有改构建脚本或执行正式 build。
   - `corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict --no-interactive` 与 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。原变更 3.2 的 Desktop/Windows 等验收未完成，保持待办、不归档。
   - worktree 实际初始 HEAD 为 6c6db88，干净状态下快进到任务指定的 e096dd4 后实施；依赖按锁文件安装，未改版本号与锁文件。全部账号文件测试均使用临时 HOME 合成数据，没有读取真实凭据或 `.env`，没有访问真实 `~/.pi`，没有启动真实 CLI、调用模型或推送。
+
+## 5. Hermes 与 OpenCode 表单账号目录修复 〔后端｜3h｜前置 4〕
+- [x] 5.1 接入 Hermes 生效 HOME 选择器、OpenCode 私有来源及全局冲突保护，同步设计、规格与 README
+  - 2026-11-15：Hermes 表单复用 effectiveHermesHome，展示实际路径，来源切换在保存及事务提交时拒绝/回滚；原生/私有 HOME 单选，因此不扫描未生效来源。OpenCode 使用账号登录共用的私有 data 与优先合并的私有 config，对全局 config.json/json/jsonc/auth 做冲突检查，票据绑定 XDG 检查路径。README 中英文、doc/design.md、增量 design/spec 已同步。
+- [x] 5.2 临时 HOME 验证 Worker 启动配置读回、来源切换、重名和安全回归，完成类型检查及严格校验
+  - 3.2 保持未勾选；真实 Desktop 验收交主会话执行。
+  - 2026-11-15：`KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/custom-provider.test.ts tests/custom-provider-remotes.test.ts tests/hermes-accounts.test.ts tests/harness-opencode-accounts.test.ts tests/hermes-integration.test.ts tests/opencode-adapter.test.ts`：6 文件、146/146 通过，0 失败（本轮新增 23 项表单/Remote 模拟测试）。
+  - 临时 HOME 下实际调用 prepareOpenCode，读回 Worker config 与 auth 快照；Hermes 调用 prepareHermes（仅模拟 executable 身份验证/命令组装，不启动 CLI），再经 assertHermesOwnAccounts 读回启动 HOME 的 providers/key_env 合成数据。覆盖 marker 新选中、账号删除不回落、旧票据、提交中途来源变化回滚、不安全 marker/祖先链接、独立 HOME 同名隔离、变量名冲突、OpenCode 合并顺序/全局各层冲突与 XDG 切换；现有 dotenv 子集、providers 新建、0600、锁与回滚回归继续通过。
+  - `corepack pnpm typecheck`、`corepack pnpm build:preview`、`corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict`、`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 均通过。构建仅更新隔离预览包，没有正式 build、Desktop 更新或推送。
+  - 未访问真实账号目录或凭据，未启动真实 CLI/模型；Hermes 自定义服务商 HTTP 执行仍受原有白名单限制，启动准备读回不作为该通路或远端服务可用性证据。3.2 保持待办、不归档。

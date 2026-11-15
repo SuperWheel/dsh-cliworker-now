@@ -2,24 +2,40 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'node:fs'
 import { tmpdir } from 'node:os'
+import * as os from 'node:os'
 import { dirname, join } from 'node:path'
 import { parse as yaml } from 'yaml'
 import { CustomProviders, type CustomProviderSource } from '../src/host/custom-provider.ts'
 import { snapshotPiOmpNative } from '../src/host/pi-omp-native.ts'
+import { effectiveHermesHome, prepareHermesAccountHome } from '../src/host/hermes-account-context.ts'
+import { assertHermesOwnAccounts } from '../src/host/hermes-models.ts'
+import { prepareHermes } from '../src/host/hermes-adapter.ts'
+import { openCodeAuthDirectory, prepareOpenCode } from '../src/host/opencode-adapter.ts'
+import { readOpenCodeProfile } from '../src/host/opencode-native.ts'
 import { nativeJson } from '../src/host/custom-provider-files.ts'
 
 vi.mock('node:fs', async load => ({ ...await load<typeof import('node:fs')>() }))
+vi.mock('node:os', async load => ({ ...await load<typeof import('node:os')>() }))
+// Synthetic executable identity only: launch preparation never starts a process.
+vi.mock('../src/host/hermes-installation.ts', () => ({
+  verifyHermesExecutable: async () => undefined,
+  hermesNativeCommand: async (executable: string, args: string[]) => [executable, ...args],
+  hermesCommandInstallationHome: () => undefined,
+}))
 const roots: string[] = []
 afterEach(() => { vi.restoreAllMocks(); for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true }) })
 const secret = 'synthetic-provider-credential-4x9'
 const write = (file: string, text: string) => { fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 }); fs.writeFileSync(file, text, { mode: 0o600 }) }
-function fixture(cli: 'pi' | 'opencode' | 'hermes', existing = true) {
+function fixture(cli: 'pi' | 'opencode' | 'hermes', existing = true, privateHermes = true) {
   const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'custom-provider-synthetic-'))); roots.push(home)
+  vi.spyOn(os, 'homedir').mockReturnValue(home)
   const stateDirectory = join(home, 'plugin-state')
+  if (cli === 'hermes' && privateHermes) write(join(stateDirectory, 'accounts/hermes-source.json'), '{"version":1,"source":"plugin-native"}\n')
+  const hermesHome = privateHermes ? join(stateDirectory, 'accounts/hermes') : join(home, '.hermes')
   const manager = new CustomProviders({ home, env: {}, stateDirectory })
   const source: CustomProviderSource = { cli, parent: 'parent', entry: { mode: 'auto', path: `/synthetic/${cli}` }, revision: 3 }
-  const config = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/models.json') : cli === 'hermes' ? join(home, '.hermes/config.yaml') : join(home, '.config/opencode/opencode.json')
-  const auth = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/auth.json') : cli === 'hermes' ? join(home, '.hermes/.env') : join(home, '.local/share/opencode/auth.json')
+  const config = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/models.json') : cli === 'hermes' ? join(hermesHome, 'config.yaml') : join(stateDirectory, 'accounts/opencode/config/opencode/opencode.json')
+  const auth = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/auth.json') : cli === 'hermes' ? join(hermesHome, '.env') : join(stateDirectory, 'accounts/opencode/data/opencode/auth.json')
   const configBefore = cli === 'hermes' ? '# keep this comment\nmodel: old-model\nproviders:\n  old:\n    api: https://old.invalid/v1\n    models: { old-model: {} }\n' : '{\r\n\t"untouched": { "spacing" : 42 },\r\n\t"' + (cli === 'pi' ? 'providers' : 'provider') + '": {"old": {"name":"Old"}}\r\n}\r\n'
   const authBefore = cli === 'hermes' ? '# keep original env\nOLD_KEY=synthetic-old\n' : '{ "old": {"type":"oauth","access":"synthetic-old","refresh":"synthetic-refresh","expires":9999999999999} }\n'
   if (existing) { write(config, configBefore); write(auth, authBefore) }
@@ -284,4 +300,143 @@ it('模拟：Pi 仅接受默认或已知插件 agent 环境路径，不跟随任
     const manager = new CustomProviders({ home: f.home, env: { PI_CODING_AGENT_DIR: agent }, stateDirectory: f.stateDirectory })
     expect(manager.form(f.source)!.target).toBe(`${f.config} + ${f.auth}`)
   }
+})
+
+it.each([true, false])('模拟：Hermes 私有来源=%s，保存后 Worker 启动准备与账号读取使用同一 HOME', async privateHome => {
+  const f = fixture('hermes', true, privateHome)
+  write(f.config, 'auth:\n  adopt_external_logins: false\n' + f.configBefore)
+  const inactive = privateHome ? join(f.home, '.hermes') : join(f.stateDirectory, 'accounts/hermes')
+  const inactiveConfig = 'providers:\n  custom-demo:\n    api: https://inactive.invalid/v1\n'
+  const inactiveEnv = 'INACTIVE_KEY=synthetic-inactive\n'
+  write(join(inactive, 'config.yaml'), inactiveConfig); write(join(inactive, '.env'), inactiveEnv)
+  expect(f.form.target).toBe(`${f.config} + ${f.auth}`)
+  expect(f.save()).toMatchObject({ ok: true })
+  const selected = effectiveHermesHome({ stateDirectory: f.stateDirectory, hermesHome: join(f.home, '.hermes') })
+  const launch = await prepareHermes({ executable: '/synthetic/hermes', project: f.home,
+    preference: { model: JSON.stringify(['custom-demo', 'model-a']), effort: 'default' },
+    prompt: 'synthetic, never executed', mode: 'accept-edits', stateDirectory: join(f.home, 'worker'), hermesHome: selected })
+  expect(launch.env.HERMES_HOME).toBe(dirname(f.config))
+  const material = await assertHermesOwnAccounts(launch.env.HERMES_HOME!)
+  expect(material.config.providers['custom-demo']).toMatchObject({ api: f.input.baseUrl, api_mode: 'chat_completions', models: { 'model-a': {}, 'model-b': {} } })
+  expect(material.env[material.config.providers['custom-demo'].key_env]).toBe(secret)
+  expect(fs.statSync(f.auth).mode & 0o777).toBe(0o600)
+  expect(fs.readFileSync(join(inactive, 'config.yaml'), 'utf8')).toBe(inactiveConfig)
+  expect(fs.readFileSync(join(inactive, '.env'), 'utf8')).toBe(inactiveEnv)
+})
+it('模拟：Hermes 打开表单后登录切换私有 HOME，旧票据失效且新表单跟随来源', () => {
+  const f = fixture('hermes', true, false)
+  const own = prepareHermesAccountHome({ stateDirectory: f.stateDirectory, hermesHome: dirname(f.config) })
+  expect(f.save()).toMatchObject({ ok: false }); f.unchanged()
+  const form = f.manager.form(f.source)!
+  expect(form.target).toBe(`${join(own, 'config.yaml')} + ${join(own, '.env')}`)
+  expect(f.manager.save(f.source, form.token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: true })
+  expect(yaml(fs.readFileSync(join(own, 'config.yaml'), 'utf8')).providers['custom-demo'].key_env).toBeDefined()
+  f.unchanged()
+})
+it('模拟：Hermes 私有来源 marker 不因账号文件删除而回落全局', () => {
+  const f = fixture('hermes', false)
+  const global = join(f.home, '.hermes/config.yaml'); write(global, 'synthetic-global: true\n')
+  expect(f.save()).toMatchObject({ ok: true })
+  expect(fs.existsSync(f.auth)).toBe(true)
+  expect(fs.readFileSync(global, 'utf8')).toBe('synthetic-global: true\n')
+})
+it.each(['invalid', 'symlink', 'ancestor'])('模拟：Hermes 来源记录 %s 拒绝表单，不回落全局', kind => {
+  const f = fixture('hermes'), marker = join(f.stateDirectory, 'accounts/hermes-source.json')
+  if (kind === 'invalid') write(marker, '{"version":99}')
+  else if (kind === 'symlink') { fs.renameSync(marker, marker + '.target'); fs.symlinkSync(marker + '.target', marker) }
+  else { fs.renameSync(f.stateDirectory, f.stateDirectory + '-target'); fs.symlinkSync(f.stateDirectory + '-target', f.stateDirectory, 'dir') }
+  expect(f.manager.form(f.source)).toBeNull()
+  expect(f.save()).toMatchObject({ ok: false })
+  expect(fs.existsSync(join(f.home, '.hermes'))).toBe(false)
+})
+it('模拟：Hermes 选中全局 HOME 的祖先链接拒绝，不能被 canonicalize 绕过', () => {
+  const f = fixture('hermes', true, false), real = join(f.home, 'actual')
+  fs.mkdirSync(real); fs.renameSync(dirname(f.config), join(real, 'hermes'))
+  fs.symlinkSync(real, join(f.home, 'link'), 'dir')
+  const manager = new CustomProviders({ home: f.home, env: {}, stateDirectory: f.stateDirectory, hermesHome: join(f.home, 'link/hermes') })
+  expect(manager.form(f.source)).toBeNull()
+})
+it('模拟：Hermes 原生配置 HOME 与环境选择一致，未选择私有来源时尊重显式配置', () => {
+  const f = fixture('hermes', false, false)
+  const configured = join(f.home, 'configured'), ambient = join(f.home, 'ambient')
+  const manager = new CustomProviders({ home: f.home, stateDirectory: f.stateDirectory, hermesHome: configured, env: { HERMES_HOME: ambient } })
+  expect(manager.form(f.source)!.target).toBe(`${join(configured, 'config.yaml')} + ${join(configured, '.env')}`)
+  const fromEnv = new CustomProviders({ home: f.home, stateDirectory: f.stateDirectory, env: { HERMES_HOME: ambient } })
+  expect(fromEnv.form(f.source)!.target).toBe(`${join(ambient, 'config.yaml')} + ${join(ambient, '.env')}`)
+})
+it('模拟：Hermes 提交中来源变化时回滚已写凭据', () => {
+  const f = fixture('hermes'); let calls = 0
+  expect(f.save(f.input, () => {
+    if (++calls === 3) fs.unlinkSync(join(f.stateDirectory, 'accounts/hermes-source.json'))
+  })).toMatchObject({ ok: false })
+  f.unchanged(); expect(fs.existsSync(join(f.home, '.hermes'))).toBe(false)
+})
+it('模拟：Hermes 私有 HOME 重名和凭据变量名冲突不覆盖旧数据', () => {
+  const f = fixture('hermes')
+  write(f.config, 'custom_providers:\n  - name: custom-demo\n')
+  expect(f.save()).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  write(f.config, f.configBefore)
+  expect(f.save()).toMatchObject({ ok: true })
+  const variable = yaml(fs.readFileSync(f.config, 'utf8')).providers['custom-demo'].key_env
+  write(f.config, f.configBefore)
+  const before = fs.readFileSync(f.auth, 'utf8'), token = f.manager.form(f.source)!.token
+  expect(f.manager.save(f.source, token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  expect(fs.readFileSync(f.auth, 'utf8')).toBe(before)
+  expect(fs.readFileSync(f.config, 'utf8')).toBe(f.configBefore)
+  expect(before).toContain(variable)
+})
+it.each([true, false])('模拟：OpenCode 已有私有来源=%s，保存结果进入 Worker 原生配置及凭据快照', async existing => {
+  const f = fixture('opencode', existing), globalConfig = join(f.home, '.config/opencode/opencode.json'), globalAuth = join(f.home, '.local/share/opencode/auth.json')
+  const configBefore = JSON.stringify({ provider: { 'global-demo': { name: 'Global', options: { baseURL: 'https://global.invalid/v1' }, models: { 'global-model': {} } } } })
+  const authBefore = JSON.stringify({ 'global-demo': { type: 'api', key: 'synthetic-global' } })
+  write(globalConfig, configBefore); write(globalAuth, authBefore)
+  expect(f.form.target).toBe(`${f.config} + ${f.auth}`)
+  expect(f.save()).toMatchObject({ ok: true })
+  const launch = await prepareOpenCode({ executable: '/synthetic/opencode', project: f.home,
+    preference: { model: 'custom-demo/model-a', effort: 'default' }, prompt: 'synthetic, never executed', mode: 'accept-edits',
+    stateDirectory: join(f.home, 'worker'), authDirectory: openCodeAuthDirectory(f.stateDirectory), nativeHome: f.home })
+  expect(JSON.parse(fs.readFileSync(launch.env.OPENCODE_CONFIG!, 'utf8')).provider['custom-demo']).toMatchObject({ options: { baseURL: f.input.baseUrl }, models: { 'model-a': { name: 'model-a' } } })
+  expect(JSON.parse(fs.readFileSync(join(launch.env.XDG_DATA_HOME!, 'opencode/auth.json'), 'utf8'))['custom-demo']).toEqual({ type: 'api', key: secret })
+  expect(fs.readFileSync(globalConfig, 'utf8')).toBe(configBefore); expect(fs.readFileSync(globalAuth, 'utf8')).toBe(authBefore)
+})
+it.each(['config.json', 'opencode.json', 'opencode.jsonc', 'auth.json'])('模拟：OpenCode 全局 %s 服务商冲突拒绝私有遮蔽', name => {
+  const f = fixture('opencode'), path = join(f.home, name === 'auth.json' ? '.local/share/opencode' : '.config/opencode', name)
+  const before = JSON.stringify(name === 'auth.json' ? { 'custom-demo': { type: 'api', key: 'synthetic-global' } } : { provider: { 'custom-demo': { options: { baseURL: 'https://global.invalid/v1' } } } })
+  write(path, before)
+  expect(f.save()).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  f.unchanged(); expect(fs.readFileSync(path, 'utf8')).toBe(before)
+})
+it('模拟：OpenCode 全局名称冲突同样拒绝；XDG 改变使票据失效', () => {
+  const f = fixture('opencode'), env = { XDG_CONFIG_HOME: join(f.home, 'xdg-config'), XDG_DATA_HOME: join(f.home, 'xdg-data') }
+  const manager = new CustomProviders({ home: f.home, stateDirectory: f.stateDirectory, env })
+  const global = join(env.XDG_CONFIG_HOME, 'opencode/opencode.jsonc')
+  write(global, '{// synthetic\n"provider":{"another":{"name":"Demo provider"}}}')
+  const first = manager.form(f.source)!
+  expect(manager.save(f.source, first.token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  f.unchanged()
+  env.XDG_CONFIG_HOME = join(f.home, 'other-xdg')
+  expect(manager.save(f.source, first.token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: false, issues: [{ message: expect.stringContaining('来源已变化') }] })
+  f.unchanged()
+})
+it.each(['global-config', 'private-auth'])('模拟：OpenCode %s 文件链接拒绝写入', kind => {
+  const f = fixture('opencode'), target = join(f.home, 'linked.json')
+  const path = kind === 'private-auth' ? f.auth : join(f.home, '.config/opencode/opencode.json')
+  write(target, '{}')
+  if (fs.existsSync(path)) fs.unlinkSync(path)
+  fs.mkdirSync(dirname(path), { recursive: true }); fs.symlinkSync(target, path)
+  expect(f.save()).toMatchObject({ ok: false })
+  expect(fs.readFileSync(target, 'utf8')).toBe('{}')
+  expect(fs.readFileSync(f.config, 'utf8')).toBe(f.configBefore)
+})
+it('模拟：OpenCode 读取顺序为全局各配置后私有各配置，私有 auth 覆盖全局 auth', async () => {
+  const f = fixture('opencode', false), global = join(f.home, '.config/opencode'), own = dirname(f.config)
+  for (const [root, name, tag] of [[global, 'config.json', 'legacy'], [global, 'opencode.json', 'global-json'], [global, 'opencode.jsonc', 'global-jsonc'], [own, 'opencode.json', 'plugin-json'], [own, 'opencode.jsonc', 'plugin-jsonc']]) {
+    write(join(root!, name!), JSON.stringify({ provider: { same: { name: tag, options: { baseURL: `https://${tag}.invalid/v1` } } } }))
+  }
+  write(join(f.home, '.local/share/opencode/auth.json'), JSON.stringify({ same: { type: 'api', key: 'synthetic-global' } }))
+  write(f.auth, JSON.stringify({ same: { type: 'api', key: 'synthetic-plugin' } }))
+  const profile = await readOpenCodeProfile(openCodeAuthDirectory(f.stateDirectory), { nativeHome: f.home })
+  expect(profile.providers.same.name).toBe('plugin-jsonc')
+  expect(profile.auth.same).toEqual({ type: 'api', key: 'synthetic-plugin' })
+  expect(f.manager.form(f.source)).toBeNull() // Never choose between two writable private overlays.
 })
