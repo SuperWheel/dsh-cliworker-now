@@ -94,3 +94,7 @@
 - [x] 6.2 核查下拉框与派遣卡只显示模型 ID
   - 证据：设置目录缓存 `settings-catalogs/44bd599b….json` 中，Host 标签为「deepseek-v4-flash（deepseek · 本机配置，未核实）」，目录提示为「当前账号可用模型；2 个自定义服务商未提供模型目录，所列模型来自本机配置，可用性与费用未核实」。说明 `/models` 返回 404/405、未核实，Host 标注已按设计生成。
   - 只显示 ID 是因为 Client 的 `displayModelName`（`src/shared/model-presentation.ts`）按既有规格「简化名称与模型去重」去掉 provider 前缀与全部括号附注，所有 CLI 都这样处理。本次不改这个共享展示层；是否在菜单中保留「未核实」标注需要用户决定，属于后续事项。
+- [x] 6.3 按用户要求去掉「未核实」字样（2026-11-16）
+  - 证据：用户原话「不要“未核实”这三个字」。`zcode-adapter.ts` 的标签改为「（名称 · 本机配置）」，目录提示改为「N 个自定义服务商未提供模型目录，所列模型来自本机配置」，cost 仍为 unknown。README、README.en、doc/design.md、proposal、design 与 cli-model-discovery 增量规格同步改写，规格写明标签与提示 MUST NOT 出现该字样。
+  - `tests/zcode-adapter.test.ts` 的 404/405 用例断言新标签与提示，且整个结果不含「未核实」。zcode-adapter、zcode-account-models、account-models 共 91 passed。
+  - 已持久保存的设置目录缓存（如 `settings-catalogs/44bd599b….json`）在下次刷新目录前仍显示旧文案。

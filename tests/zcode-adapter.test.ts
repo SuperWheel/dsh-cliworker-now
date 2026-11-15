@@ -1,3 +1,4 @@
+import { catalogNoticeOf } from '../src/host/catalog-notice.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   mkdtempSync,
@@ -781,9 +782,12 @@ describe('ZCode own API-key providers without a subscription (synthetic catalog 
   it.each([404, 405])('lists declared models as unverified with unknown cost when the catalog returns %i', async (code) => {
     const { models } = await discover([provider(uuid, 'DeepSeek')], () => code)
     expect(models.map(({ id, label, cost }) => ({ id, label, cost }))).toEqual([
-      { id: `${uuid}/own-pro`, label: 'own-pro（DeepSeek · 本机配置，未核实）', cost: 'unknown' },
-      { id: `${uuid}/own flash`, label: 'own flash（DeepSeek · 本机配置，未核实）', cost: 'unknown' },
+      { id: `${uuid}/own-pro`, label: 'own-pro（DeepSeek · 本机配置）', cost: 'unknown' },
+      { id: `${uuid}/own flash`, label: 'own flash（DeepSeek · 本机配置）', cost: 'unknown' },
     ])
+    // 2026-11-16 user decision: labels and the catalog notice never say 「未核实」.
+    expect(catalogNoticeOf(models)).toBe('当前账号可用模型；1 个自定义服务商未提供模型目录，所列模型来自本机配置')
+    expect(JSON.stringify(models)).not.toContain('未核实')
     expect(JSON.stringify(models)).not.toContain('SYNTHETIC_KEY')
   })
 

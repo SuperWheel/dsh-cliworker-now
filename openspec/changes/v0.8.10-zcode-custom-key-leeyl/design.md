@@ -31,7 +31,7 @@
 
 ### 决定 2：404/405 的配置候选只开放给用户自有 api-key 服务商
 - 最终决定：
-  - 仅当分组为 `standard-personal`、`access.type` 为 `api-key`、目录状态为 unknown 且 `catalogUnavailable`（404/405）时，列出 `personalModelIds`。标签为「（名称 · 本机配置，未核实）」，cost 为 unknown。
+  - 仅当分组为 `standard-personal`、`access.type` 为 `api-key`、目录状态为 unknown 且 `catalogUnavailable`（404/405）时，列出 `personalModelIds`。标签为「（名称 · 本机配置）」（2026-11-16 用户要求去掉「未核实」），cost 为 unknown。
   - 401/403 计为 rejected 并隐藏。
   - 其他失败沿用原隐藏规则。
 - 放弃的方案：放宽到所有分组。原因：账号绑定路由（zhipu-account 等）必须以订阅为证据，Coding Plan 密钥也属于订阅权益。
@@ -79,5 +79,5 @@
 
 ## Risks / Trade-offs
 - 静态判定依赖打包后的标识形状。未来版本改名时会落到 `none`（安全，只是工作流设置不生效）。合成片段与本机两个版本的测试锁定当前形状。
-- 404/405 候选可能实际不可用，标签和目录提示已明确「未核实」、费用未知。
+- 404/405 候选可能实际不可用：标签只标「本机配置」，目录提示说明模型来自本机配置，费用记为未知（cost unknown）；按用户要求不使用「未核实」字样。
 - 真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）未执行，需要模型调用授权。

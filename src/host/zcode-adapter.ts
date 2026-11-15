@@ -944,7 +944,7 @@ export async function discoverZCode(
           (entries[0]!.providerConfig.personalModelIds ?? []).includes(modelId),
         )
         const listed = declared.flatMap(({ modelId, providerLabel, choice }) => {
-          const next = { ...choice, label: `${modelId}（${providerLabel} · 本机配置，未核实）`, cost: 'unknown' as const }
+          const next = { ...choice, label: `${modelId}（${providerLabel} · 本机配置）`, cost: 'unknown' as const }
           return leaks(next) ? [] : [next]
         })
         if (listed.length) unverified++
@@ -972,7 +972,7 @@ export async function discoverZCode(
   options.signal?.throwIfAborted()
   const models = results.flat()
   const notes = [
-    unverified ? `${unverified} 个自定义服务商未提供模型目录，所列模型来自本机配置，可用性与费用未核实` : '',
+    unverified ? `${unverified} 个自定义服务商未提供模型目录，所列模型来自本机配置` : '',
     rejected ? `已跳过 ${rejected} 个认证失败的服务商` : '',
     skippedHeaders ? `已跳过 ${skippedHeaders} 个请求头无法核对的服务商` : '',
   ].filter(Boolean)

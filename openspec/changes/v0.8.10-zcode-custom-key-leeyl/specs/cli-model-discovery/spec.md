@@ -3,11 +3,11 @@
 ## ADDED Requirements
 
 ### Requirement: ZCode 用户自有 API Key 服务商模型
-ZCode 个人配置中 `standard-personal` 分组、`api-key` 访问方式的用户自有服务商 SHALL 用自身 Base URL、API Key 与可核对的请求头只读查询 `/models` 并按目录筛选，不依赖 BigModel／Z.AI 订阅。目录返回 404/405 时 SHALL 仅列出配置中声明的模型并标注未核实、费用未知；401/403 MUST 隐藏该服务商的模型；其他失败与其他分组 MUST NOT 使用配置候选。模型标签 SHALL 显示安全的服务商名称，选项 ID 保持 `<providerId>/<modelId>`。
+ZCode 个人配置中 `standard-personal` 分组、`api-key` 访问方式的用户自有服务商 SHALL 用自身 Base URL、API Key 与可核对的请求头只读查询 `/models` 并按目录筛选，不依赖 BigModel／Z.AI 订阅。目录返回 404/405 时 SHALL 仅列出配置中声明的模型并标注「本机配置」、费用未知，标签与目录提示 MUST NOT 出现「未核实」字样；401/403 MUST 隐藏该服务商的模型；其他失败与其他分组 MUST NOT 使用配置候选。模型标签 SHALL 显示安全的服务商名称，选项 ID 保持 `<providerId>/<modelId>`。
 
 #### Scenario: 订阅过期后目录未实现
 - **WHEN** ZCode 订阅已过期，用户自有 api-key 服务商的 `/models` 返回 404 或 405
-- **THEN** 显示该服务商在配置中声明的模型，标签含服务商名称与「本机配置，未核实」，目录提示说明可用性与费用未核实；不描述为账号权益或已调用成功
+- **THEN** 显示该服务商在配置中声明的模型，标签含服务商名称与「本机配置」，目录提示说明这些模型来自本机配置；不描述为账号权益或已调用成功
 
 #### Scenario: 自有密钥被拒绝
 - **WHEN** 该服务商的 `/models` 返回 401 或 403

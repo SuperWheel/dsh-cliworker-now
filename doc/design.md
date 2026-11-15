@@ -1738,7 +1738,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 订阅过期后用自有 API Key 使用 ZCode CLI 0.17.1。四处改动：
 
 - `zcode-schema-probe.ts` 静态读取已安装入口，判定工作流字段的位置：`preferences` 放在运行偏好答复里，`session` 放在 session/create 与 resume 参数里（0.17.1），`none` 两处都不放（0.16.9 或未知）。Host 经 `CLIWORKER_ZCODE_WORKFLOW_SURFACE` 告知桥接，桥接在启动 CLI 前删除该变量。
-- `standard-personal` api-key 服务商的目录：404/405 时列出声明的模型，标注未核实、费用未知；401/403 计为认证失败并隐藏。只在 api-key 路由上，按 AI SDK 的顺序镜像可核对的自定义请求头。标签显示安全的 providerName。
+- `standard-personal` api-key 服务商的目录：404/405 时列出声明的模型，标注「本机配置」、费用未知（2026-11-16 用户要求标签与提示不出现「未核实」）；401/403 计为认证失败并隐藏。只在 api-key 路由上，按 AI SDK 的顺序镜像可核对的自定义请求头。标签显示安全的 providerName。
 - `zcode-custom-provider.ts` 提供「其他服务商」表单。只写插件账号目录的 `provider_config.json`，复用 `commitNativeFiles` 与 `cliworker-created-providers.json` 归属记录，在全局、插件与内置三处查重。
 - 账号行：插件创建的条目可删除，全局条目只读。订阅失效但有自有密钥时状态为 configured。
 
