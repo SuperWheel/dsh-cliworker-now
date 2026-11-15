@@ -119,8 +119,9 @@ function parseVersion(bytes: Buffer): PeVersion {
       if (table.valueSize || !/^[a-f\d]{8}$/i.test(table.key)) invalid()
       for (const item of children(table)) {
         if (item.type !== 1 || item.valueSize < 2 || bytes.readUInt16LE(item.value + item.valueSize - 2) !== 0 || item.children < item.end) invalid()
-        const value = bytes.toString('utf16le', item.value, item.value + item.valueSize - 2)
-        if (value.includes('\0')) invalid()
+        // Like VerQueryValue, a string ends at its first NUL. Electron's rcedit pads some values
+        // with an extra terminator (ZCode 3.14.5 SquirrelAwareVersion: 6 bytes for "1").
+        const value = bytes.toString('utf16le', item.value, item.value + item.valueSize - 2).split('\0')[0]!
         const field = item.key === 'ProductName' ? 'productName' : item.key === 'ProductVersion' ? 'stringProductVersion' : undefined
         if (field) {
           if (result[field] !== undefined && result[field] !== value) invalid()

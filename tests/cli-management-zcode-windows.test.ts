@@ -27,7 +27,7 @@ function block(key: string, value: Buffer, type = 1, children: Buffer[] = []) {
   return result
 }
 /** Minimal simulated PE32/PE32+ with one .rsrc section and RT_VERSION/name/language directories. */
-function pe(productName = 'ZCode', version = '3.14.5.7961', plus = true) {
+function pe(productName = 'ZCode', version = '3.14.5.7961', plus = true, extra: Buffer[] = []) {
   const parts = version.split('.').map(Number), fixed = Buffer.alloc(52)
   fixed.writeUInt32LE(0xfeef04bd); fixed.writeUInt32LE(0x10000, 4)
   fixed.writeUInt32LE(0x00010002, 8); fixed.writeUInt32LE(0x00030004, 12) // FileVersion deliberately differs.
@@ -35,6 +35,7 @@ function pe(productName = 'ZCode', version = '3.14.5.7961', plus = true) {
   const strings = block('StringFileInfo', Buffer.alloc(0), 1, [block('040904b0', Buffer.alloc(0), 1, [
     block('ProductName', Buffer.from(productName + '\0', 'utf16le')),
     block('ProductVersion', Buffer.from('3.14.5-string\0', 'utf16le')),
+    ...extra,
   ])])
   const versionInfo = block('VS_VERSION_INFO', fixed, 0, [strings]), bytes = Buffer.alloc(0x400 + versionInfo.length)
   bytes.write('MZ'); bytes.writeUInt32LE(0x80, 60); bytes.write('PE\0\0', 0x80)
@@ -97,6 +98,13 @@ const malformed: [string, (bytes: Buffer) => Buffer][] = [
 it.each(malformed)('模拟：%s 返回 undefined', async (_name, corrupt) => {
   const f = fixture(), path = f.file(join(f.root, 'fixture.exe'), corrupt(pe()))
   await expect(readPeVersion(path)).resolves.toBeUndefined()
+})
+it('模拟：字符串值带多余结尾 NUL 时按第一个 NUL 截断（ZCode 3.14.5 实机 SquirrelAwareVersion 为 6 字节的 "1"）', async () => {
+  const f = fixture(), path = f.file(join(f.root, 'padded.exe'), pe('ZCode', '3.14.5.7961', true, [
+    block('OriginalFilename', Buffer.from('\0', 'utf16le')),
+    block('SquirrelAwareVersion', Buffer.from('1\0\0', 'utf16le')),
+  ]))
+  await expect(readPeVersion(path)).resolves.toMatchObject({ productVersion: '3.14.5.7961', productName: 'ZCode' })
 })
 it('模拟：缺失文件和目录返回 undefined，200 MB 稀疏文件仍只读取 PE 资源', async () => {
   const f = fixture()
