@@ -33,6 +33,17 @@ export interface CustomProviderField {
   maxLength?: number
 }
 
+/**
+ * A built-in template that fills public fields (never `secret`) when chosen, e.g. ZCode's own
+ * provider templates. Values use the field's text form; a `list` value holds one entry per line.
+ * Choosing one only edits the form: Host still validates the submitted values, not the preset.
+ */
+export interface CustomProviderPreset {
+  id: string
+  label: string
+  values: Record<string, string>
+}
+
 /** Form description for one CLI. Absent (Host returns `null`) means the CLI keeps the native terminal. */
 export interface CustomProviderForm {
   cli: CliId
@@ -41,6 +52,8 @@ export interface CustomProviderForm {
   /** One-sentence lead under the title. */
   description?: string
   fields: CustomProviderField[]
+  /** Optional templates for prefilling; older clients ignore them. */
+  presets?: CustomProviderPreset[]
   /** Where the CLI keeps this configuration, as a safe display string (e.g. `~/.pi/agent/models.json`). */
   target?: string
   /** True when the native terminal can still be offered as an alternative. */

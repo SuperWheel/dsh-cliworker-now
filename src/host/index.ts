@@ -2842,7 +2842,8 @@ export class CliWorkerService extends TypertRemoteService {
     return { parent, cli, entry: this.options.cliExecutablePaths?.read(cli), revision: this.options.cliExecutablePaths?.revision(cli) ?? 0 }
   }
   private customProviderManager() {
-    return this.customProviders ??= new CustomProviders({ stateDirectory: this.options.stateDirectory, hermesHome: this.options.hermesHome })
+    return this.customProviders ??= new CustomProviders({ stateDirectory: this.options.stateDirectory, hermesHome: this.options.hermesHome,
+      zcodeAuthDirectory: this.options.zcodeAuthDirectory, zcodeBuiltinConfig: this.options.zcodeBuiltinConfig })
   }
   /** @returns JSON form, or literal null for an unverified CLI/native configuration source. */
   @Remote('customProviderForm')
@@ -2859,7 +2860,7 @@ export class CliWorkerService extends TypertRemoteService {
       // window starts at the same moment; only saving takes the account reservation.
       this.trackAccountParent(parent)
       // Unsupported CLIs must not touch their entry stores (notably retired Harness).
-      if (!['pi', 'opencode', 'hermes'].includes(id)) return 'null'
+      if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id)) return 'null'
       return JSON.stringify(this.customProviderManager().form(this.customProviderSource(parent.id, id)))
     } catch (error) { throw failure(error) }
     finally { releaseAccount?.(); release?.() }
@@ -2881,7 +2882,7 @@ export class CliWorkerService extends TypertRemoteService {
       await this.accounts.settleQueries(id, AbortSignal.any([control, AbortSignal.timeout(30_000)]))
       releaseAccount = this.accounts.reserveCustomProvider(id)
       this.trackAccountParent(parent)
-      if (!['pi', 'opencode', 'hermes'].includes(id)) return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
+      if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id)) return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
       const source = this.customProviderSource(parent.id, id)
       const result = this.customProviderManager().save(source, token, valuesJson, () => {
         control.throwIfAborted()
@@ -2903,7 +2904,7 @@ export class CliWorkerService extends TypertRemoteService {
   async deleteAccountConfiguration(parentSessionId: string, cli: string, login: string, signal: AbortSignal): Promise<string> {
     let release: (() => void) | undefined
     try {
-      const id = validate.enum(['pi', 'omp']).parse(cli)
+      const id = validate.enum(['pi', 'omp', 'zcode']).parse(cli)
       const selected = validate.string().min(1).max(512).parse(login)
       const parent = await this.parent(parentSessionId)
       const control = AbortSignal.any([signal, this.disposed.signal])

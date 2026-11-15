@@ -12,9 +12,12 @@ import { piOmpAccountDirectory } from './pi-omp-native.ts'
 import { effectiveHermesHome } from './hermes-account-context.ts'
 import { openCodeAuthDirectory } from './opencode-adapter.ts'
 import { commitNativeFiles, nativeJson, NativeRollbackError, readNativeFile } from './custom-provider-files.ts'
+import { readZCodeBuiltin, zcodeAuthDirectory } from './zcode-adapter.ts'
+import { saveZCodeProvider, ZCODE_API_TYPES, zcodeProviderFields, zcodeProviderPresets, zcodeProviderTarget } from './zcode-custom-provider.ts'
 
-type Supported = 'pi' | 'opencode' | 'hermes'
-const APIs: Record<Supported, [string, string][]> = {
+type Supported = 'pi' | 'opencode' | 'hermes' | 'zcode'
+const APIs: Record<Supported, readonly (readonly [string, string])[]> = {
+  zcode: ZCODE_API_TYPES,
   pi: [['openai-completions', 'OpenAI Chat Completions'], ['openai-responses', 'OpenAI Responses'], ['anthropic-messages', 'Anthropic Messages'], ['google-generative-ai', 'Google Generative AI']],
   opencode: [['@ai-sdk/openai-compatible', 'OpenAI 兼容'], ['@ai-sdk/openai', 'OpenAI'], ['@ai-sdk/anthropic', 'Anthropic']],
   hermes: [['chat_completions', 'OpenAI Chat Completions'], ['codex_responses', 'OpenAI Responses'], ['anthropic_messages', 'Anthropic Messages']],
@@ -34,10 +37,13 @@ export interface CustomProviderSource {
 interface Targets { config: string; auth: string; display: string; conflicts?: { configs: string[]; auth: string } }
 interface Ticket { source: string; targets: string; expires: number; parent: string }
 
+const entryPath = (entry: unknown): string | undefined =>
+  object(entry) && typeof entry.path === 'string' && entry.path ? entry.path : undefined
+
 /** No secrets are held in tickets or persisted by this service. */
 export class CustomProviders {
   private tickets = new Map<string, Ticket>()
-  constructor(private options: { home?: string; env?: NodeJS.ProcessEnv; stateDirectory?: string; hermesHome?: string; now?: () => number } = {}) {}
+  constructor(private options: { home?: string; env?: NodeJS.ProcessEnv; stateDirectory?: string; hermesHome?: string; zcodeAuthDirectory?: string; zcodeBuiltinConfig?: string; now?: () => number } = {}) {}
   closeParent(parent: string) { for (const [key, ticket] of this.tickets) if (ticket.parent === parent) this.tickets.delete(key) }
   close() { this.tickets.clear() }
   private now() { return this.options.now?.() ?? Date.now() }
@@ -67,6 +73,11 @@ export class CustomProviders {
         // Bind read-only overlay sources too: an XDG change invalidates the open form.
         conflicts: { configs: ['config.json', 'opencode.json', 'opencode.jsonc'].map(name => join(configRoot, 'opencode', name)), auth: join(dataRoot, 'opencode', 'auth.json') } }
     }
+    if (cli === 'zcode') {
+      // Worker discovery and execution merge this plugin file after the global one; never write the global file.
+      const target = this.zcodeTarget()
+      return { config: target.file, auth: target.file, display: target.file }
+    }
     if (cli === 'hermes') {
       if (env.HERMES_PROFILE) return undefined
       const native = this.options.hermesHome?.trim() || env.HERMES_HOME?.trim() || (process.platform === 'win32' ? join(env.LOCALAPPDATA?.trim() || join(home, 'AppData', 'Local'), 'hermes') : join(home, '.hermes'))
@@ -80,12 +91,28 @@ export class CustomProviders {
     }
     return undefined
   }
+  private zcodeTarget() {
+    return zcodeProviderTarget(zcodeAuthDirectory(this.options.zcodeAuthDirectory, this.stateDirectory()), this.options.home)
+  }
+  private ticket(source: CustomProviderSource, targets: Targets) {
+    const now = this.now()
+    for (const [key, ticket] of this.tickets) if (ticket.expires <= now) this.tickets.delete(key)
+    while (this.tickets.size >= 256) this.tickets.delete(this.tickets.keys().next().value!)
+    const token = randomUUID()
+    this.tickets.set(token, { source: this.source(source), targets: JSON.stringify(targets), expires: now + 10 * 60_000, parent: source.parent })
+    return token
+  }
   form(source: CustomProviderSource): CustomProviderForm | null {
     if (!Object.hasOwn(APIs, source.cli) || !source.entry) return null
     let targets: Targets | undefined
     try { targets = this.targets(source.cli) } catch { return null }
     if (!targets) return null
     const cli = source.cli as Supported
+    if (cli === 'zcode') {
+      const presets = zcodeProviderPresets(entryPath(source.entry), this.options.zcodeBuiltinConfig)
+      return { cli, title: '添加其他服务商', description: '用你自己的 API Key 配置服务商，只保存到 CLI Worker 的 ZCode 账号目录，不修改 ZCode 桌面端配置；不验证密钥或调用模型。',
+        fields: zcodeProviderFields(), ...(presets.length ? { presets } : {}), target: targets.display, nativeFallback: false, token: this.ticket(source, targets) }
+    }
     const fields: CustomProviderField[] = [
       { id: 'providerId', label: '服务商 ID', kind: 'text', required: true, pattern: '^[a-z][a-z0-9_-]{0,63}$', maxLength: 64, help: '小写字母开头，可含数字、下划线和短横线；不可覆盖已有服务商。' },
       ...(cli === 'hermes' ? [] : [{ id: 'providerLabel', label: '服务商名称', kind: 'text', maxLength: 80 } as CustomProviderField]),
@@ -94,11 +121,7 @@ export class CustomProviders {
       { id: 'apiKey', label: 'API Key', kind: 'secret', required: true, maxLength: 8192 },
       { id: 'models', label: '模型 ID', kind: 'list', required: true, help: '每行一个准确模型 ID；不请求服务商或推测模型能力。' },
     ]
-    const now = this.now()
-    for (const [key, ticket] of this.tickets) if (ticket.expires <= now) this.tickets.delete(key)
-    while (this.tickets.size >= 256) this.tickets.delete(this.tickets.keys().next().value!)
-    const token = randomUUID()
-    this.tickets.set(token, { source: this.source(source), targets: JSON.stringify(targets), expires: now + 10 * 60_000, parent: source.parent })
+    const token = this.ticket(source, targets)
     return { cli, title: '添加其他服务商', description: `保存到 ${CLI_LABELS[cli]} 原生配置，不验证密钥或调用模型。`, fields, target: targets.display, nativeFallback: true, token }
   }
   save(source: CustomProviderSource, token: string, valuesJson: string, assertCurrent: () => void): CustomProviderResult {
@@ -115,6 +138,18 @@ export class CustomProviders {
       let input: unknown
       try { input = JSON.parse(typeof valuesJson === 'string' && valuesJson.length <= 64 * 1024 ? valuesJson : 'null') }
       catch { return failed('表单内容无效，请重新填写') }
+      if (cli === 'zcode') {
+        if (!object(input)) return failed('表单内容无效，请重新填写')
+        let builtin: unknown
+        try { builtin = readZCodeBuiltin(entryPath(source.entry) ?? '', this.options.zcodeBuiltinConfig) } catch { builtin = undefined }
+        const result = saveZCodeProvider(this.zcodeTarget(), input, builtin, () => {
+          assertCurrent()
+          if (ticket.expires <= this.now()) throw new Error('Expired')
+          if (JSON.stringify(this.targets(source.cli)) !== ticket.targets) throw new Error('Changed account source')
+        })
+        if (result.ok) this.tickets.delete(token)
+        return result
+      }
       if (!object(input) || Object.keys(input).some(key => !['providerId', 'providerLabel', 'baseUrl', 'api', 'apiKey', 'models'].includes(key))) return failed('表单内容无效，请重新填写')
       const issues: CustomProviderIssue[] = []
       const issue = (field: string, message: string) => { issues.push({ field, message }) }

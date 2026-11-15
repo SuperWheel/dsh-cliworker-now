@@ -9,8 +9,10 @@ import { stripVTControlCharacters } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import type { AccountAction, ZCodeLoginProvider } from '../shared/accounts.ts'
 import { accountEmail, localTokenExpired, type AccountIdentity } from './account-identity.ts'
+import type { AccountLogin } from '../shared/accounts.ts'
 import type { ProcessBackend, RuntimeConfig } from './process.ts'
 import { readZCodePersonalIdentity, zcodeAuthDirectory, zcodeEnvironment } from './zcode-adapter.ts'
+import { zcodeProviderLogins, zcodeProviderTarget } from './zcode-custom-provider.ts'
 import { assertGrokNativeEnvironment, selectGrokOwnAccount } from './grok-models.ts'
 import { grokRenewalRejected } from './grok-renewal.ts'
 
@@ -206,6 +208,33 @@ export function projectGrokIdentity(raw: unknown, now = Date.now(), activeOnly =
   }
 }
 
+/**
+ * ZCode keeps the BigModel / Z.AI login and the user's own API-key providers side by side. When any
+ * API-key provider exists the account window lists each one; the login (if any) keeps its own row.
+ * An expired login does not hide working keys: the state becomes `configured` and the summary says both.
+ */
+export function withZCodeProviderRows(identity: AccountIdentity, rows: AccountLogin[]): AccountIdentity {
+  if (!rows.length || identity.state === 'unknown' || identity.state === 'unavailable') return identity
+  if (identity.state === 'authenticated')
+    return { ...identity, logins: [{ providerLabel: 'BigModel / Z.AI', authMethod: identity.authMethod ?? 'oauth',
+      ...(identity.accountLabel ? { accountLabel: identity.accountLabel } : {}), source: 'plugin' }, ...rows] }
+  return {
+    state: 'configured',
+    authMethod: 'api',
+    verification: 'local',
+    summary: identity.state === 'unauthenticated' ? `已配置 ZCode API；${identity.summary}` : '已配置 ZCode API',
+    logins: rows,
+  }
+}
+function zcodeRows(config: RuntimeConfig, home: string, nativeHome?: string): AccountLogin[] {
+  try {
+    return zcodeProviderLogins(zcodeProviderTarget(zcodeAuthDirectory(config.zcodeAuthDirectory, storageRoot(config, home)), nativeHome))
+  } catch {
+    // The identity read reports an unreadable personal configuration on its own.
+    return []
+  }
+}
+
 /** Bounded, no-follow local read; never returns credentials or native parse errors. */
 export async function zcodeGrokAccountStatus(
   cli: ZCodeGrokCli,
@@ -296,20 +325,21 @@ export async function zcodeGrokAccountStatus(
             (options.credentialSecret ?? process.env.ZCODE_CREDENTIAL_SECRET?.trim()) ||
               `zcode-credential-fallback:${platform()}:${homedir()}:${username}`,
           )
-    return cli === 'zcode' && identity.state === 'unconfigured'
+    if (cli !== 'zcode') return identity
+    return withZCodeProviderRows(identity.state === 'unconfigured'
       ? readZCodePersonalIdentity(
           zcodeAuthDirectory(config.zcodeAuthDirectory, storageRoot(config, home)),
           options.home ? { nativeHome: home } : {},
         )
-      : identity
+      : identity, zcodeRows(config, home, options.home))
   } catch (error) {
     signal.throwIfAborted()
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? cli === 'zcode'
-        ? readZCodePersonalIdentity(
+        ? withZCodeProviderRows(readZCodePersonalIdentity(
             zcodeAuthDirectory(config.zcodeAuthDirectory, storageRoot(config, home)),
             options.home ? { nativeHome: home } : {},
-          )
+          ), zcodeRows(config, home, options.home))
         : { state: 'unconfigured', verification: 'local', summary: '尚未登录' }
       : cli === 'grok'
         ? grokReadFailure(error)

@@ -173,6 +173,17 @@ export async function probeAccountModels(input, options = {}) {
       if (input.anthropicAuth !== 'bearer') headers['x-api-key'] = token
       headers['anthropic-version'] = '2023-06-01'
     }
+    // A native route's own request headers apply last, as the AI SDK factories merge
+    // them over their auth headers. Callers validate names and values first.
+    if (input.extraHeaders) {
+      if (codex || oauth) return unknown()
+      for (const [name, value] of Object.entries(input.extraHeaders)) {
+        if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(name) || typeof value !== 'string' || value.length > 8192 || /[\x00-\x1f\x7f]/.test(value))
+          return unknown()
+        for (const key of Object.keys(headers)) if (key.toLowerCase() === name.toLowerCase()) delete headers[key]
+        headers[name] = value
+      }
+    }
     if (codex) {
       let accountId = credential.accountId
       if (!accountId) {

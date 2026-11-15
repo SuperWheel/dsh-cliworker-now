@@ -24,7 +24,9 @@ import type { AccountIdentity } from './account-identity.ts'
 import { probeAccountModels } from './account-models.mjs'
 import { readZCodeAccountApiKeys, readZCodeAccountBindings } from './zcode-account-models.ts'
 import { ZcodeResponseTracker } from './zcode-response.mjs'
+import { withCatalogNotice } from './catalog-notice.ts'
 import { shareNativeMemory, unshareNativeMemory, parseZcodeDeniedTools, zcodeWorkflowMode } from './cli-native-capabilities.mjs'
+import { zcodeWorkflowSurface, ZCODE_WORKFLOW_SURFACE_ENVIRONMENT } from './zcode-schema-probe.ts'
 
 // Keep only the bundled browser REPL closure (DSH permissions); native delegation
 // and skills follow native configuration, independently of the plugin task tree.
@@ -251,7 +253,11 @@ export async function prepareZCode(input: ZCodeInput) {
   const nativeTools = zcodeNativeTools(input)
   Object.assign(env, {
     ZCODE_DYNAMIC_WORKFLOW_MODE: nativeTools.workflow,
-    ...((input.nativeTransport || input.conversationId) ? { CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE: nativeTools.workflow } : {}),
+    ...((input.nativeTransport || input.conversationId) ? {
+      CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE: nativeTools.workflow,
+      // The bridge answers runtime preferences; the installed reply schema decides the workflow fields.
+      [ZCODE_WORKFLOW_SURFACE_ENVIRONMENT]: zcodeWorkflowSurface(input.executable),
+    } : {}),
   })
   const memoryPath = join(env.ZCODE_STORAGE_DIR, 'cli', 'memories')
   if (memory) await shareNativeMemory(memoryPath, join(zcodeNativeStorage(input), 'cli', 'memories'))
@@ -296,7 +302,7 @@ export async function prepareZCode(input: ZCodeInput) {
   return { argv, env }
 }
 
-interface PersonalDocument {
+export interface PersonalDocument {
   schemaVersion: 1
   config: {
     providerConfigRules: { providerRules: Record<string, any>[] }
@@ -368,7 +374,7 @@ function providerRules(value: unknown, personal = false): Record<string, any>[] 
     return rule
   })
 }
-function parsePersonal(value: unknown): PersonalDocument {
+export function parsePersonal(value: unknown): PersonalDocument {
   if (!record(value) || value.schemaVersion !== 1 || !record(value.config))
     throw new Error('Unsupported ZCode personal config schema')
   const config = value.config,
@@ -496,6 +502,22 @@ function personalPaths(authDirectory?: string, options: ZCodeDiscoveryOptions = 
   if (!paths.has(pluginPath)) paths.set(pluginPath, true)
   return paths
 }
+/**
+ * Each personal source on its own, in merge order: the native (global or explicit) file, then the
+ * plugin account file. For account rows and conflict checks; execution uses the merged overlay.
+ */
+export function readZCodePersonalSources(authDirectory?: string, options: ZCodeDiscoveryOptions = {}) {
+  const plugin = resolve(join(authDirectory ?? zcodeAuthDirectory(), '.zcode/v2/provider_config.json'))
+  return [...personalPaths(authDirectory, options)].map(([path, optional]) => {
+    const raw = readZCodeConfig(path, optional, true)
+    return { path, source: path === plugin ? 'plugin' as const : 'native' as const,
+      document: raw === undefined ? undefined : parsePersonal(raw) }
+  })
+}
+/** The builtin catalog beside a ZCode entry; read-only program metadata. */
+export function readZCodeBuiltin(executable: string, builtinConfig?: string): unknown {
+  return readZCodeConfig(builtinPath(executable, builtinConfig), false)
+}
 function readZCodePersonal(authDirectory?: string, options: ZCodeDiscoveryOptions = {}): PersonalDocument {
   const documents: PersonalDocument[] = []
   for (const [path, optional] of personalPaths(authDirectory, options)) {
@@ -618,10 +640,28 @@ function clearManualModel(config: Record<string, any>): Record<string, any> {
   }
   return next
 }
+/** Native display names (Desktop-created providers use opaque UUID IDs). A duplicate or unsafe
+ * name falls back to the ID so two routes never look identical; the choice ID never changes. */
+export function safeZCodeProviderName(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const name = value.trim()
+  return name && name.length <= 80 && !/[\p{C}<>]/u.test(name) ? name : undefined
+}
+function providerLabels(providers: Map<string, Record<string, any>>): Map<string, string> {
+  const named = [...providers].flatMap(([id, rule]) => {
+    const name = safeZCodeProviderName(rule.providerName)
+    return name ? [[id, name] as const] : []
+  })
+  const counts = new Map<string, number>()
+  for (const [, name] of named) counts.set(name.toLowerCase(), (counts.get(name.toLowerCase()) ?? 0) + 1)
+  return new Map(named.filter(([, name]) => counts.get(name.toLowerCase()) === 1))
+}
 interface ResolvedZCodeModel {
   choice: ModelChoice
   providerId: string
   modelId: string
+  /** Display name: the native providerName when it is safe and unique, else the provider ID. */
+  providerLabel: string
   nativeReasoningDefault?: string
   /** Private effective native routing; never returned as a public model choice. */
   providerConfig: Record<string, any>
@@ -667,6 +707,7 @@ function resolveZCodeModels(value: unknown, personal: PersonalDocument): Resolve
     }
   }
   const choices = new Map<string, ResolvedZCodeModel>()
+  const labels = providerLabels(providers)
   const providerIds = nativeOrder(
     base.map((rule) => rule.providerId),
     personal.config.providerConfigRules.providerRules.map((rule) => rule.providerId),
@@ -749,9 +790,10 @@ function resolveZCodeModels(value: unknown, personal: PersonalDocument): Resolve
         modelId,
         nativeReasoningDefault: Array.isArray(values) ? values.at(-1) : undefined,
         providerConfig: config,
+        providerLabel: labels.get(providerId) ?? providerId,
         choice: {
           id,
-          label: `${modelId}（${providerId} · 本机目录）`,
+          label: `${modelId}（${labels.get(providerId) ?? providerId} · 本机目录）`,
           efforts: [...new Set(mapped.length ? mapped : ['default' as Effort])],
         },
       })
@@ -839,6 +881,7 @@ export async function discoverZCode(
     options,
   )
   const groups = new Map<string, ResolvedZCodeModel[]>()
+  let skippedHeaders = 0
   for (const entry of candidates) {
     const { access, api } = entry.providerConfig
     // Native OAuth login binds a concrete Worker API key to the current account.
@@ -851,18 +894,25 @@ export async function discoverZCode(
           ? access.apiKey
           : undefined
     if (!nonempty(apiKey)) continue
-    // Custom headers may alter both credential and scope. Until this query can
-    // mirror the native route exactly, keep that route out of the public list.
-    if (record(api.headers) && Object.keys(api.headers).length) continue
+    // On the user's own API-key routes, custom headers enter the read-only query exactly as
+    // the native factory sends them (merged over its auth headers). Account-bound routes get
+    // their auth from the app-server client, and a header the query cannot mirror keeps the route out.
+    const headers = zcodeRouteHeaders(api.headers)
+    if (!headers || (Object.keys(headers).length && access?.type !== 'api-key')) {
+      if (!groups.has(entry.providerId)) skippedHeaders++
+      continue
+    }
     const group = groups.get(entry.providerId) ?? []
     group.push(entry)
     groups.set(entry.providerId, group)
   }
+  let unverified = 0, rejected = 0
   const results = await Promise.all(
     [...groups.values()].map(async (entries) => {
       const { access, api } = entries[0]!.providerConfig
       const secret =
         access.type === 'zhipu-account' ? bound.get(entries[0]!.providerId)! : (access.apiKey as string)
+      const headers = zcodeRouteHeaders(api.headers)
       const scope = await probeAccountModels(
         {
           provider: entries[0]!.providerId,
@@ -872,10 +922,34 @@ export async function discoverZCode(
           // Native createAnthropic adds x-api-key, while ZCode's factory also
           // supplies withAnthropicAuthorizationHeader for the same bound key.
           ...(api.type === 'anthropic-messages' ? { anthropicAuth: 'api-key-and-bearer' as const } : {}),
+          ...(headers && Object.keys(headers).length ? { extraHeaders: headers } : {}),
           verifiedModelIds: [],
         },
         { ...options.probeOptions, signal: options.signal ?? options.probeOptions?.signal },
       )
+      const secrets = [secret, ...Object.values(headers ?? {}).filter((value) => value.length >= 8)]
+      const leaks = (choice: ModelChoice) =>
+        secrets.some((value) => choice.id.includes(value) || choice.label.includes(value))
+      if (scope.state === 'denied') rejected++
+      // A user's own API-key provider whose service has no model list (404/405): its
+      // declared models stay selectable, marked unverified and of unknown cost. A
+      // rejection (401/403), network failure or invalid response never takes this path.
+      if (
+        scope.state === 'unknown' &&
+        scope.catalogUnavailable === true &&
+        access.type === 'api-key' &&
+        entries[0]!.providerConfig.group === 'standard-personal'
+      ) {
+        const declared = entries.filter(({ modelId }) =>
+          (entries[0]!.providerConfig.personalModelIds ?? []).includes(modelId),
+        )
+        const listed = declared.flatMap(({ modelId, providerLabel, choice }) => {
+          const next = { ...choice, label: `${modelId}（${providerLabel} · 本机配置，未核实）`, cost: 'unknown' as const }
+          return leaks(next) ? [] : [next]
+        })
+        if (listed.length) unverified++
+        return listed
+      }
       if (scope.state !== 'supported') return []
       const officialAliases = usesOfficialGlmAliases(entries[0]!)
       return entries.flatMap(({ modelId, choice }) => {
@@ -884,7 +958,7 @@ export async function discoverZCode(
             entry.id === modelId ||
             (officialAliases && officialGlmIds.get(entry.id.toLowerCase()) === modelId),
         )
-        if (!supported || choice.id.includes(secret) || choice.label.includes(secret)) return []
+        if (!supported || leaks(choice)) return []
         return [
           {
             ...choice,
@@ -896,7 +970,37 @@ export async function discoverZCode(
     }),
   )
   options.signal?.throwIfAborted()
-  return results.flat()
+  const models = results.flat()
+  const notes = [
+    unverified ? `${unverified} 个自定义服务商未提供模型目录，所列模型来自本机配置，可用性与费用未核实` : '',
+    rejected ? `已跳过 ${rejected} 个认证失败的服务商` : '',
+    skippedHeaders ? `已跳过 ${skippedHeaders} 个请求头无法核对的服务商` : '',
+  ].filter(Boolean)
+  return notes.length
+    ? withCatalogNotice(models, models.length ? `当前账号可用模型；${notes.join('；')}` : `ZCode 暂无可确认模型：${notes.join('；')}`)
+    : models
+}
+/** Plain string headers a read-only query can send exactly as the native factory does. */
+export function zcodeRouteHeaders(value: unknown): Record<string, string> | undefined {
+  if (value === undefined || value === null) return {}
+  if (!record(value)) return undefined
+  const entries = Object.entries(value)
+  if (entries.length > 32) return undefined
+  const seen = new Set<string>()
+  for (const [name, header] of entries) {
+    const lower = name.toLowerCase()
+    if (
+      !/^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/.test(name) ||
+      seen.has(lower) ||
+      ['host', 'content-length', 'connection', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'keep-alive', 'proxy-authorization', 'proxy-connection'].includes(lower) ||
+      typeof header !== 'string' ||
+      header.length > 8192 ||
+      /[\x00-\x1f\x7f]/.test(header)
+    )
+      return undefined
+    seen.add(lower)
+  }
+  return Object.fromEntries(entries) as Record<string, string>
 }
 
 export class ZCodeProtocol {

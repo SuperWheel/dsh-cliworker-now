@@ -18,14 +18,14 @@ const out=x=>process.stdout.write(JSON.stringify(x)+'\n'), log=x=>appendFileSync
 const scenario=process.env.SCENARIO, sessionId=scenario.startsWith('context-')?'sess_context-fixture':'zcode-fixture', project=process.env.PROJECT;
 const state={session:{sessionId,workspace:{workspacePath:project}},settings:{model:{current:{providerId:'chosen',modelId:'model'},available:[{ref:{providerId:'chosen',modelId:'model'},reasoning:{defaultLevel:'high',levels:[{value:'high'},{value:'low'}]}}]},mode:{current:'edit'}},runtime:{pendingRequestIds:[]},projection:{status:'idle',pendingPermissions:[],activeToolCalls:[]}};
 let inputId, awaiting, stopped=false;
-log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT,leakedMemoryEnvironment:process.env.CLIWORKER_ZCODE_NATIVE_MEMORY!==undefined});
+log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT,leakedMemoryEnvironment:process.env.CLIWORKER_ZCODE_NATIVE_MEMORY!==undefined,leakedSurfaceEnvironment:process.env.CLIWORKER_ZCODE_WORKFLOW_SURFACE!==undefined});
 if(process.argv.indexOf('app-server')>process.argv.indexOf('--disallowedTools'))process.exit(22);
 const reply=(q,result)=>out({id:q.id,result});
 const event=(type,payload,extra={})=>out({method:'session/event',params:{sessionId,turnId:'turn-fixture',type,payload,...extra}});
 const finish=()=>{event('turn.completed',{inputId,resultType:stopped?'cancelled':'success',response:scenario==='tool-boundary'||scenario==='model-usage'?'AFTER':'HELLO',usage:scenario==='model-usage'?{inputTokens:99999,outputTokens:1}:undefined});out({method:'state.updated',params:{sessionId,reason:'prompt_completed'}});};
 createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
- if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
+ if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);const allowed=process.env.REPLY_SCHEMA==='legacy'?['nativeSearchEnhancementsEnabled','memoryEnabled','dynamicWorkflowEnabled','dynamicWorkflowMode','askUserQuestionAutoResolutionEnabled']:['additionalDirectories','nativeSearchEnhancementsEnabled','toolSearchMode','subagentRuntimeConfigEnabled','appControlEnabled','memoryEnabled','askUserQuestionAutoResolutionEnabled','integratedTerminalShell','modelContextBudgetStrategy'];if(process.env.REPLY_SCHEMA&&Object.keys(q.result??{}).some(key=>!allowed.includes(key)))process.exit(24);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
  if(q.jsonrpc!==undefined)process.exit(20);
  if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1}});
  if(q.method==='provider/updateAccountConfig')return reply(q,{receivedRevision:q.params.revision,providerCount:1,status:'received'});
@@ -126,7 +126,8 @@ createInterface({input:process.stdin}).on('line',line=>{
 `
 
 async function fixture(scenario = 'success', continuation = false,
-  host: { access?: string; mode?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {}) {
+  host: { access?: string; mode?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {},
+  extraEnv: Record<string, string> = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-native-zcode-fixture-')))
   roots.push(root)
   const script = join(root, 'agent.mjs'),
@@ -195,6 +196,7 @@ async function fixture(scenario = 'success', continuation = false,
       ROLLOUT_FILE: join(rollout, 'model-io-sess_context-fixture.jsonl'),
       ...(scenario === 'account-env' ? { CLIWORKER_ZCODE_NATIVE_ACCOUNT: JSON.stringify(account) } : {}),
       ...(scenario.startsWith('memory-') ? { CLIWORKER_ZCODE_NATIVE_MEMORY: scenario === 'memory-on' ? '1' : '0' } : {}),
+      ...extraEnv,
     },
     ...(scenario.startsWith('account-') && scenario !== 'account-env' ? { zcodeNativeAccount: account } : {}),
     timeoutMs: 600,
@@ -234,16 +236,51 @@ async function fixture(scenario = 'success', continuation = false,
 }
 
 describe('Native ZCode app-server (simulated native processes)', () => {
-  it.each(['disabled', 'onDemand', 'alwaysOn'])('sends native workflow mode %s and identical deny lists on create/resume', async mode => {
+  it.each(['disabled', 'onDemand', 'alwaysOn'])('sends native workflow mode %s in the legacy preferences reply and identical deny lists on create/resume', async mode => {
     for (const continuation of [false, true]) {
-      const { records, result } = await fixture(`workflow-${mode}`, continuation)
+      const { records, result } = await fixture(`workflow-${mode}`, continuation, {},
+        { CLIWORKER_ZCODE_WORKFLOW_SURFACE: 'preferences', REPLY_SCHEMA: 'legacy' })
       expect(result.status).toBe('SUCCESS')
+      expect(records[0].leakedSurfaceEnvironment).toBe(false)
       expect(records.find(record => record.id === 'preferences')?.result).toMatchObject({
         dynamicWorkflowEnabled: mode !== 'disabled', dynamicWorkflowMode: mode,
       })
       const create = records.find(record => record.method === (continuation ? 'session/resume' : 'session/create'))
       expect(create.params.toolDenylist).toEqual(['Task', 'AskUserQuestion'])
+      expect(create.params).toMatchObject({ dynamicWorkflowEnabled: false })
+      expect(create.params).not.toHaveProperty('dynamicWorkflowMode')
     }
+  })
+
+  // 模拟 0.17.1：严格回复 schema 不含工作流字段，会话创建/恢复接受它们。
+  it.each(['disabled', 'onDemand', 'alwaysOn'])('keeps the 0.17.1 strict preferences reply valid and moves workflow mode %s to create/resume', async mode => {
+    for (const continuation of [false, true]) {
+      const { records, result } = await fixture(`workflow-${mode}`, continuation, {},
+        { CLIWORKER_ZCODE_WORKFLOW_SURFACE: 'session', REPLY_SCHEMA: '0.17.1' })
+      expect(result.status).toBe('SUCCESS')
+      const preferences = records.find(record => record.id === 'preferences')?.result
+      expect(preferences).not.toHaveProperty('dynamicWorkflowEnabled')
+      expect(preferences).not.toHaveProperty('dynamicWorkflowMode')
+      const create = records.find(record => record.method === (continuation ? 'session/resume' : 'session/create'))
+      expect(create.params.dynamicWorkflowEnabled).toBe(mode !== 'disabled')
+      if (mode === 'disabled') expect(create.params).not.toHaveProperty('dynamicWorkflowMode')
+      else expect(create.params.dynamicWorkflowMode).toBe(mode)
+    }
+  })
+
+  it('omits workflow fields everywhere when the installed schema is unknown, and a strict schema then accepts the reply', async () => {
+    const { records, result } = await fixture('workflow-onDemand', false, {}, { REPLY_SCHEMA: '0.17.1' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.find(record => record.id === 'preferences')?.result).toEqual({
+      nativeSearchEnhancementsEnabled: false, memoryEnabled: false, askUserQuestionAutoResolutionEnabled: false,
+    })
+    expect(records.find(record => record.method === 'session/create').params).toMatchObject({ dynamicWorkflowEnabled: false })
+  })
+
+  it('fails the dispatch when a legacy reply reaches the strict 0.17.1 schema (the regression being fixed)', async () => {
+    const { result } = await fixture('workflow-onDemand', false, {},
+      { CLIWORKER_ZCODE_WORKFLOW_SURFACE: 'preferences', REPLY_SCHEMA: '0.17.1' })
+    expect(result.status).not.toBe('SUCCESS')
   })
 
   it.each(['memory-on', 'memory-off'])('answers the desktop memory switch the adapter read (%s) without handing the variable to the CLI', async scenario => {

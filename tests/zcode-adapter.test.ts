@@ -425,17 +425,23 @@ describe('ZCode adapter (explicitly synthetic fixtures)', () => {
     const capture = vi.fn(async () => {
       throw new Error('must not spawn')
     })
+    const requests: { url: string; headers: Record<string, string> }[] = []
     const models = await discoverZCode(f.input.executable, capture, f.state, f.input.authDirectory, f.path, {
       nativeHome: f.input.nativeHome,
       probeOptions: {
-        fetch: async () => new Response(JSON.stringify({ data: [{ id: 'custom/model-v1' }] })),
+        fetch: async (url: any, init: any) => {
+          requests.push({ url: String(url), headers: init.headers })
+          return new Response(JSON.stringify({ data: [{ id: 'custom/model-v1' }] }))
+        },
       },
     })
+    // The route's own custom header is mirrored in the read-only query, after the auth headers.
+    expect(requests).toEqual([{ url: 'https://example.test/override/models', headers: expect.objectContaining({ 'X-Synthetic': 'SYNTHETIC_SECRET' }) }])
     expect(
       models.some(
         (model) => model.id === 'personal:external/custom/model-v1' && model.efforts?.includes('high'),
       ),
-    ).toBe(false)
+    ).toBe(true)
     expect(JSON.stringify(models)).not.toContain('SYNTHETIC_SECRET')
     expect(capture).not.toHaveBeenCalled()
     const launch = await prepareZCode({
@@ -737,4 +743,83 @@ it('uses native workflow modes, keeping the user-disabled switch over the offere
   const enabled = await prepareZCode({ ...f.input, nativeTransport: true })
   expect(enabled.argv[enabled.argv.indexOf('--disallowedTools') + 1]).toBe('mcp__node_repl__js')
   expect(enabled.env.CLIWORKER_ZCODE_NATIVE_WORKFLOW_MODE).toBe('onDemand')
+})
+
+// 模拟：用户自有 API Key 服务商（订阅过期后的自定义 Key），目录端点状态码由合成 fetch 给出。
+describe('ZCode own API-key providers without a subscription (synthetic catalog responses)', () => {
+  const provider = (id: string, name: string, extra: Record<string, any> = {}) => ({
+    providerId: id,
+    providerName: name,
+    config: {
+      group: 'standard-personal',
+      access: { type: 'api-key', apiKey: `SYNTHETIC_KEY_${id.slice(0, 4)}` },
+      api: { type: 'anthropic-messages', baseUrl: `https://${id.slice(0, 4)}.example.test/anthropic` },
+      personalModelIds: ['own-pro', 'own flash'],
+      modelOrder: ['own-pro', 'own flash'],
+      ...extra,
+    },
+  })
+  async function discover(rules: any[], status: (url: string) => number, plugin = false) {
+    const f = setup(), own = personal()
+    own.config.providerConfigRules.providerRules.push(...rules)
+    savePersonal(plugin ? f.input.authDirectory : f.input.nativeHome, own)
+    const seen: { url: string; headers: Record<string, string> }[] = []
+    const models = await discoverZCode(f.input.executable, async () => { throw new Error('must not spawn') }, f.state, f.input.authDirectory, f.path, {
+      nativeHome: f.input.nativeHome,
+      probeOptions: {
+        fetch: async (url: any, init: any) => {
+          seen.push({ url: String(url), headers: init.headers })
+          const code = status(String(url))
+          return code === 200 ? new Response(JSON.stringify({ data: [{ id: 'own-pro' }] })) : new Response('', { status: code })
+        },
+      },
+    })
+    return { models, seen }
+  }
+  const uuid = '728d7cfe-2c87-44a8-91bf-d26f24c76a87', other = '6acb1f91-fadb-4783-94dd-14c763c59c87'
+
+  it.each([404, 405])('lists declared models as unverified with unknown cost when the catalog returns %i', async (code) => {
+    const { models } = await discover([provider(uuid, 'DeepSeek')], () => code)
+    expect(models.map(({ id, label, cost }) => ({ id, label, cost }))).toEqual([
+      { id: `${uuid}/own-pro`, label: 'own-pro（DeepSeek · 本机配置，未核实）', cost: 'unknown' },
+      { id: `${uuid}/own flash`, label: 'own flash（DeepSeek · 本机配置，未核实）', cost: 'unknown' },
+    ])
+    expect(JSON.stringify(models)).not.toContain('SYNTHETIC_KEY')
+  })
+
+  it.each([401, 403])('keeps a rejected key (%i) out of the catalog', async (code) => {
+    const { models } = await discover([provider(uuid, 'DeepSeek')], () => code)
+    expect(models).toEqual([])
+  })
+
+  it('keeps network and server errors, other groups and coding-plan keys out on 404', async () => {
+    expect((await discover([provider(uuid, 'DeepSeek')], () => 500)).models).toEqual([])
+    expect((await discover([provider(uuid, 'Grouped', { group: 'other' })], () => 404)).models).toEqual([])
+    expect((await discover([provider(uuid, 'Plan', { access: { type: 'zhipu-coding-plan-api-key', apiKey: 'SYNTHETIC_PLAN' } })], () => 404)).models).toEqual([])
+  })
+
+  it('shows the native provider name instead of the UUID and keeps the catalog filter when the list exists', async () => {
+    const { models } = await discover([provider(uuid, 'DeepSeek'), provider(other, 'Kimi')], () => 200, true)
+    expect(models.map(({ id, label }) => ({ id, label }))).toEqual([
+      { id: `${uuid}/own-pro`, label: 'own-pro（DeepSeek · 本机目录）' },
+      { id: `${other}/own-pro`, label: 'own-pro（Kimi · 本机目录）' },
+    ])
+  })
+
+  it('falls back to the provider ID when names collide or are unsafe', async () => {
+    const { models } = await discover([provider(uuid, 'Same'), provider(other, 'same')], () => 200)
+    expect(models.map((model) => model.label)).toEqual([`own-pro（${uuid} · 本机目录）`, `own-pro（${other} · 本机目录）`])
+    const unsafe = await discover([provider(uuid, '<b>x</b>')], () => 200)
+    expect(unsafe.models[0]!.label).toBe(`own-pro（${uuid} · 本机目录）`)
+  })
+
+  it('mirrors valid custom headers over the auth headers and skips a route whose headers it cannot mirror', async () => {
+    const { models, seen } = await discover([provider(uuid, 'Proxy', { api: { type: 'anthropic-messages', baseUrl: 'https://proxy.example.test', headers: { 'x-api-key': 'SYNTHETIC_HEADER_KEY', 'X-Team': 'blue' } } })], () => 200)
+    expect(seen[0]!.headers['x-api-key']).toBe('SYNTHETIC_HEADER_KEY')
+    expect(seen[0]!.headers['X-Team']).toBe('blue')
+    expect(models.map((model) => model.id)).toEqual([`${uuid}/own-pro`])
+    const bad = await discover([provider(uuid, 'Bad', { api: { type: 'anthropic-messages', baseUrl: 'https://proxy.example.test', headers: { Host: 'evil.test' } } })], () => 200)
+    expect(bad.seen).toEqual([])
+    expect(bad.models).toEqual([])
+  })
 })

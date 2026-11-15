@@ -37,3 +37,6 @@ export function grokNativeSubagents(options?: { env?: Record<string, string | un
 export function parseZcodeDeniedTools(value: unknown): string[]
 export function zcodeWorkflowMode(setting: unknown, env?: Record<string, string | undefined>): 'disabled' | 'onDemand' | 'alwaysOn'
 export function consumeZcodeWorkflowMode(config: { env?: Record<string, string | undefined> }): 'disabled' | 'onDemand' | 'alwaysOn'
+export function consumeZcodeWorkflowSurface(config: { env?: Record<string, string | undefined> }): 'preferences' | 'session' | 'none'
+export function zcodeRuntimePreferences(options: { memory: boolean; workflow: 'disabled' | 'onDemand' | 'alwaysOn'; surface: 'preferences' | 'session' | 'none' }): Record<string, unknown>
+export function zcodeSessionWorkflow(options: { workflow: 'disabled' | 'onDemand' | 'alwaysOn'; surface: 'preferences' | 'session' | 'none' }): { dynamicWorkflowEnabled: boolean; dynamicWorkflowMode?: 'onDemand' | 'alwaysOn' }

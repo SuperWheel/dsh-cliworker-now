@@ -11,6 +11,7 @@ import type {
   CustomProviderField,
   CustomProviderForm,
   CustomProviderIssue,
+  CustomProviderPreset,
   CustomProviderValues,
 } from '../../shared/custom-provider.ts'
 import { t, useT } from '../i18n.ts'
@@ -27,7 +28,7 @@ import { Result } from './login-window.tsx'
  */
 
 /** What the template renders: a Host `CustomProviderForm`, or any menu that describes itself the same way. */
-export type ProviderFormSpec = Pick<CustomProviderForm, 'title' | 'description' | 'fields' | 'target'>
+export type ProviderFormSpec = Pick<CustomProviderForm, 'title' | 'description' | 'fields' | 'target' | 'presets'>
 
 /** The owner's answer to one submit; a thrown error is shown as a whole-form issue. */
 export type ProviderFormOutcome =
@@ -56,6 +57,25 @@ export function validProviderForm(form: unknown): form is CustomProviderForm {
     )
   )
 }
+
+/** Well-formed templates only; a malformed one is dropped rather than rejecting the whole form. */
+const usablePresets = (form: ProviderFormSpec): CustomProviderPreset[] =>
+  (Array.isArray(form.presets) ? form.presets : []).filter(
+    (preset) =>
+      !!preset &&
+      typeof preset.id === 'string' &&
+      typeof preset.label === 'string' &&
+      !!preset.values &&
+      typeof preset.values === 'object',
+  )
+
+/** The public fields a template may fill: never a secret, never a field the form does not have. */
+const presetValues = (fields: CustomProviderField[], preset: CustomProviderPreset) =>
+  Object.fromEntries(
+    Object.entries(preset.values).filter(
+      ([id, value]) => typeof value === 'string' && fields.some((field) => field.id === id && field.kind !== 'secret'),
+    ),
+  )
 
 const initialValues = (fields: CustomProviderField[]) =>
   Object.fromEntries(fields.map((field) => [field.id, field.kind === 'secret' ? '' : (field.defaultValue ?? '')]))
@@ -274,6 +294,8 @@ export function ProviderForm({
   useT()
   const base = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(form.fields))
+  const presets = usablePresets(form)
+  const [preset, setPreset] = useState('')
   const [issues, setIssues] = useState<CustomProviderIssue[]>([])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<{ title: string; detail?: string }>()
@@ -321,6 +343,7 @@ export function ProviderForm({
     if (outcome.ok) {
       // Nothing typed outlives a successful save.
       setValues(initialValues(form.fields))
+      setPreset('')
       setSaved({ title: outcome.title, ...(outcome.detail ? { detail: outcome.detail } : {}) })
       return
     }
@@ -366,6 +389,30 @@ export function ProviderForm({
         </p>
       )}
       <div className="cwn-provider-fields">
+        {presets.length > 0 && (
+          <Field
+            field={{
+              id: 'preset',
+              label: t('从内置模板预填'),
+              kind: 'select',
+              placeholder: t('不使用模板'),
+              help: t('选择后填入名称、接口类型、Base URL 和模型 ID，可再修改；API Key 仍需自己填写。'),
+              options: presets.map((item) => ({ value: item.id, label: item.label })),
+            }}
+            id={`cwn-provider-${base}-preset`}
+            value={preset}
+            disabled={saving}
+            focusRef={() => undefined}
+            onChange={(next) => {
+              setPreset(next)
+              const chosen = presets.find((item) => item.id === next)
+              if (!chosen) return
+              const filled = presetValues(form.fields, chosen)
+              setValues((old) => ({ ...old, ...filled }))
+              setIssues((old) => old.filter((issue) => !issue.field || !Object.hasOwn(filled, issue.field)))
+            }}
+          />
+        )}
         {form.fields.map((field) => (
           <Field
             key={field.id}

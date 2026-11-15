@@ -31,6 +31,15 @@ export function managedProviderReceiptChange(directory: string, provider: string
     providers: { ...current.providers, [provider]: fingerprint(config, auth) } }, null, 2) + '\n' }
 }
 
+/** The receipt without `provider`, for the SAME atomic commit that removes the provider. */
+export function managedProviderReceiptRemoval(directory: string, provider: string) {
+  const current = receipt(directory)
+  if (!Object.hasOwn(current.providers, provider)) throw invalid()
+  const remaining = { ...current.providers }
+  delete remaining[provider]
+  return { file: current.file, text: JSON.stringify({ version: 1, providers: remaining }, null, 2) + '\n' }
+}
+
 /** Safe metadata only. A missing/changed receipt never grants deletion. */
 export function managedPiOmpProviders(directory: string, models: Record<string, any>, auth: Record<string, any>): Set<string> {
   try {

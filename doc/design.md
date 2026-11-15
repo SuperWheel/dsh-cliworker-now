@@ -1723,3 +1723,16 @@ Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见
 OMP 18.20.2 的 `models --json`（含 refresh）只给模型摘要，不含 baseUrl/api。`pi-native-catalog.mjs` 的 builtinAPI 补齐其原生 DeepSeek 地址 `https://api.deepseek.com` 和 `DEEPSEEK_API_KEY`，避免账号范围分组前丢弃候选。SDK/model/provider 自定义路由仍优先，按当前账号 `/models` 与原生候选取交集，强度仅采用原生报告。Pi 1.5.2 SDK 的 DeepSeek 候选已带路由，保存的 API 登录不受 OMP 摘要缺地址问题影响；共享默认表同时补齐环境凭据识别。
 
 Mac 隔离真实 OMP 插件账号副本：1 条 deepseek/api_key；修复前原生候选 4 个、账号 HTTP 请求 0 次、最终 0 个，修复后请求 HTTP 200，交集 2 个（deepseek-flash、deepseek-v4-pro），强度均 low/high/max。Pi 为安装 SDK + 模拟凭据/列表核对。真实推理调用 0 次，未验证 Mac/Windows Desktop UI，未更新 Desktop 安装。详细证据见本次 OpenSpec 任务记录。
+
+### ZCode 自定义 API Key（vnext-zcode-custom-key-leeyl，2026-11-15，未发布）
+
+订阅过期后用自有 API Key 使用 ZCode CLI 0.17.1。四处改动：
+
+- `zcode-schema-probe.ts` 静态读取已安装入口，判定工作流字段的位置：`preferences` 放在运行偏好答复里，`session` 放在 session/create 与 resume 参数里（0.17.1），`none` 两处都不放（0.16.9 或未知）。Host 经 `CLIWORKER_ZCODE_WORKFLOW_SURFACE` 告知桥接，桥接在启动 CLI 前删除该变量。
+- `standard-personal` api-key 服务商的目录：404/405 时列出声明的模型，标注未核实、费用未知；401/403 计为认证失败并隐藏。只在 api-key 路由上，按 AI SDK 的顺序镜像可核对的自定义请求头。标签显示安全的 providerName。
+- `zcode-custom-provider.ts` 提供「其他服务商」表单。只写插件账号目录的 `provider_config.json`，复用 `commitNativeFiles` 与 `cliworker-created-providers.json` 归属记录，在全局、插件与内置三处查重。
+- 账号行：插件创建的条目可删除，全局条目只读。订阅失效但有自有密钥时状态为 configured。
+
+`CustomProviderForm.presets` 新增内置模板预填（可选字段）。
+
+决定、放弃的方案与风险见 [变更设计](../openspec/changes/vnext-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。

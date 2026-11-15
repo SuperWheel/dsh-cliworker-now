@@ -74,6 +74,8 @@ import {
   zcodeGrokInstruction,
   ZCodeAccountCapabilityError,
 } from './zcode-grok-accounts.ts'
+import { zcodeAuthDirectory } from './zcode-adapter.ts'
+import { deleteZCodeManagedProvider, zcodeProviderTarget } from './zcode-custom-provider.ts'
 import { readPiOmpAccount, readOpenCodeAccount, prepareOpenCodeAccount } from './harness-opencode-accounts.ts'
 import {
   prepareHermesAccount,
@@ -874,8 +876,8 @@ export class AccountManager {
   ): Promise<AccountConfigurationDeleteResult> {
     validateCli(cli)
     const target = parseAccountLoginId(login)
-    if ((cli !== 'pi' && cli !== 'omp') || target?.cli !== cli ||
-      !['native.config', 'plugin.config'].includes(target.entry ?? '')) throw new Error('不支持删除该服务商配置')
+    if ((cli !== 'pi' && cli !== 'omp' && cli !== 'zcode') || target?.cli !== cli ||
+      !(cli === 'zcode' ? ['plugin.config'] : ['native.config', 'plugin.config']).includes(target.entry ?? '')) throw new Error('不支持删除该服务商配置')
     if (!parent || parent.length > 512) throw new Error('无效的父会话')
     this.controller.signal.throwIfAborted()
     signal.throwIfAborted()
@@ -898,7 +900,9 @@ export class AccountManager {
         if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
         const assertCurrent = () => control.throwIfAborted()
         const stateDirectory = this.config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
-        if (target.entry === 'native.config')
+        if (cli === 'zcode')
+          deleteZCodeManagedProvider(zcodeProviderTarget(zcodeAuthDirectory(this.config.zcodeAuthDirectory, stateDirectory)), login, assertCurrent)
+        else if (target.entry === 'native.config')
           deletePiOmpNativeConfigProvider(cli, stateDirectory, login, assertCurrent)
         else deletePiOmpManagedProvider(cli, stateDirectory, login, assertCurrent)
         // Both helpers commit and read back synchronously while this reservation is held.
