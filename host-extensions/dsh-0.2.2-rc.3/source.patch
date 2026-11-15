@@ -624,10 +624,10 @@ index 0000000000000000000000000000000000000000..a8cadb9bc0b0e9ba140b254b537e6440
 +}
 diff --git a/packages/client/ui-chat/src/client/contract/external-turn-answer.ts b/packages/client/ui-chat/src/client/contract/external-turn-answer.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..9673e2681db9024c666e95d5de34e61664f00487
+index 0000000000000000000000000000000000000000..e267bdc15d2563313e2f7710640f4bc65c338b50
 --- /dev/null
 +++ b/packages/client/ui-chat/src/client/contract/external-turn-answer.ts
-@@ -0,0 +1,173 @@
+@@ -0,0 +1,180 @@
 +import type { GroupKey, NodeReference, RenderEntry } from '@deepseek-ai/dsh-client-ui-conversation/client'
 +import type { ChatNode, FinalAssistantChatData } from './chat-nodes.ts'
 +import type { ChatSnapshot, ChatTurnProcessPresentation } from './snapshot.ts'
@@ -787,11 +787,18 @@ index 0000000000000000000000000000000000000000..9673e2681db9024c666e95d5de34e616
 +      if (!node.data.blocks.some(block => block.kind === 'reasoning' && block.text.trim() !== '')) return false
 +      return reference.groupPart === 'reasoning' || onlyReasoningOrEmpty(node.data.blocks)
 +    }
++    // The resolver accepted these empty notices after the answer; a process
++    // group that pairs them with this Turn's later reasoning moves as one unit.
++    const notice = (reference: NodeReference): boolean => {
++      const node = snapshot.nodes.get(reference.key) as ChatNode | undefined
++      return node !== undefined && turnOf(node) === turn && continuation(node)
++    }
 +    const answerIndex = ordered.indexOf(answer)
 +    const moved = ordered.slice(answerIndex + 1).filter(entry => {
 +      if (entry.kind === 'node') return reasoning(entry)
 +      const members = membersOf(entry.key)
-+      return members !== undefined && members.length > 0 && members.every(reasoning)
++      return members !== undefined && members.some(reasoning)
++        && members.every(member => reasoning(member) || notice(member))
 +    })
 +    if (moved.length === 0) continue
 +    const moving = new Set(moved)
@@ -1386,7 +1393,7 @@ index 4d22cff80e63581828d0b4d2a535b5d6cfe5e114..681f7ba51a3fd0830bef499402936ce8
 +  'message.turnUsage.orchestrationCacheRead': 'Orchestration cached input',
  } satisfies Record<keyof typeof en, string>
 diff --git a/packages/client/ui-chat/tests/chat-view.client.spec.tsx b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
-index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2add26036 100644
+index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..75298c1516a3f18a666f2013c990633f97641c05 100644
 --- a/packages/client/ui-chat/tests/chat-view.client.spec.tsx
 +++ b/packages/client/ui-chat/tests/chat-view.client.spec.tsx
 @@ -1,5 +1,6 @@
@@ -1404,7 +1411,7 @@ index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2
      setOutline: (value: unknown) => { outlineValue = value },
      chatScroll, forkAt, toolOwners, fenceCalls,
      setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
-@@ -4891,6 +4893,124 @@ describe('ChatView', () => {
+@@ -4891,6 +4893,129 @@ describe('ChatView', () => {
        .map(element => element.closest<HTMLElement>('[data-chat-node-key]')?.dataset.chatNodeKey)
      expect(rows).toEqual(['fixture:steering:3'])
    })
@@ -1440,6 +1447,9 @@ index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2
 +    const grouped = installGroupedSnapshot(new ChatSnapshotBuilder(), new ProcessState(), groups, snapshot)
 +    const h = makeHarness({}, {}, grouped)
 +    h.setGrouped(groups)
++    // Under the default 'all' every reply stays outside the fold, so the proof's
++    // visibility effect is observable only when collapsed Turns keep the final answer.
++    h.setFoldedReplies('final')
 +    let supplied: unknown
 +    const original = h.props.useProjection
 +    const useProjection = ((key: string) => key === 'externalTurnAnswer' ? supplied : original(key as never)) as typeof original
@@ -1448,6 +1458,7 @@ index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2
 +    const answer = view.getByText('Synthetic hello')
 +    expect(answer.closest('[data-chat-node-key]')?.hasAttribute('hidden')).toBe(true)
 +    supplied = { '1': recoveryProof }
++    h.setProjection(useProjection)
 +    view.rerender(<h.ChatView {...h.props} useProjection={useProjection} />)
 +    expect(view.getByText('Synthetic hello').closest('[data-chat-node-key]')?.hasAttribute('hidden')).toBe(false)
 +    const controller = view.container.querySelector('[data-turn-process="1"]') as HTMLButtonElement
@@ -1465,6 +1476,7 @@ index 4cd6d1bb241bdea49cb61f7be0d7970e51ab6714..7497acf3fa38617e93fdc6f4c2df56f2
 +    expect(reasoningGroup.compareDocumentPosition(answerSeat) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 +    expect(view.getByText('Synthetic preserved reasoning')).toBeTruthy()
 +    supplied = { '1': { ...recoveryProof, turnEndSeq: 99 } }
++    h.setProjection(useProjection)
 +    view.rerender(<h.ChatView {...h.props} useProjection={useProjection} />)
 +    expect(view.getByText('Synthetic hello').closest('[data-chat-node-key]')?.hasAttribute('hidden')).toBe(true)
 +  })
@@ -1716,10 +1728,10 @@ index 0000000000000000000000000000000000000000..db9d9d55e21df55cd4534634f5eeda41
 +}
 diff --git a/packages/client/ui-chat/tests/external-turn-answer.client.spec.ts b/packages/client/ui-chat/tests/external-turn-answer.client.spec.ts
 new file mode 100644
-index 0000000000000000000000000000000000000000..e050af76d7343ba336ec4736ca4266dd242ee442
+index 0000000000000000000000000000000000000000..6695fcae53aabbdbc6ef902e4a5f305c8ef58f15
 --- /dev/null
 +++ b/packages/client/ui-chat/tests/external-turn-answer.client.spec.ts
-@@ -0,0 +1,94 @@
+@@ -0,0 +1,108 @@
 +import { expect, it } from 'vitest'
 +import { externalTurnAnswerEntries, externalTurnProcessPresentation, resolveExternalTurnAnswer, resolveExternalTurnAnswers } from '../src/client/contract/external-turn-answer.ts'
 +import { proof, recoveryEntries, recoverySnapshot } from './external-turn-answer-fixture.ts'
@@ -1813,6 +1825,20 @@ index 0000000000000000000000000000000000000000..e050af76d7343ba336ec4736ca4266dd
 +  const entries = [{ kind: 'node', key: answer, groupPart: 'response' }, { kind: 'group', key: 'unknown-group' }] as any
 +  expect(externalTurnAnswerEntries(entries, snapshot, resolved)).toBe(entries)
 +  expect(externalTurnAnswerEntries(entries, snapshot, resolved, () => [{ kind: 'node', key: answer, groupPart: 'response' } as any])).toBe(entries)
++})
++it('moves a later group of empty continuation notices with reasoning, but not notices alone', () => {
++  const snapshot = recoverySnapshot()
++  const resolved = resolveExternalTurnAnswers(snapshot, { '1': proof })
++  const answer = { kind: 'node', key: resolved.get(1)!.answerNodeKey, groupPart: 'response' } as any
++  const keyOf = (predicate: (node: any) => boolean) => snapshot.nodes.values().find(predicate)!.key
++  const notice = { kind: 'node', key: keyOf(node => node.kind === 'context' && node.data.source.kind === 'cliworker-continuation') } as any
++  const reason = { kind: 'node', key: keyOf(node => node.kind === 'assistant-step' && node.data.step === 2), groupPart: 'reasoning' } as any
++  const mixed = { kind: 'group', key: 'mixed' } as any
++  const notices = { kind: 'group', key: 'notices' } as any
++  const members = (key: string) => key === 'mixed' ? [notice, reason, notice] : key === 'notices' ? [notice] : undefined
++  expect(externalTurnAnswerEntries([answer, mixed], snapshot, resolved, members as any)).toEqual([mixed, answer])
++  const onlyNotices = [answer, notices]
++  expect(externalTurnAnswerEntries(onlyNotices, snapshot, resolved, members as any)).toBe(onlyNotices)
 +})
 diff --git a/packages/client/ui-chat/tests/external-turn-usage.client.spec.tsx b/packages/client/ui-chat/tests/external-turn-usage.client.spec.tsx
 new file mode 100644
@@ -3039,7 +3065,7 @@ index 86271de69f610f74d40b2d3845efd4c2b6629e59..01c9ccc38eda52f2688f439ecba159db
 +
  })
 diff --git a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
-index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..302cb3f9ec8c305c17e3a639a709446457e50f82 100644
+index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..b0d7714ef900f70a5f777e5c98a9cc42cdf2922b 100644
 --- a/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
 +++ b/packages/client/ui-conversation/tests/input-bar.client.spec.tsx
 @@ -98,6 +98,9 @@ interface BenchOptions {
@@ -3100,7 +3126,7 @@ index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..302cb3f9ec8c305c17e3a639a7094464
 +    act(() => { b.shell.setDraft('follow up') })
 +    expect(b.view.queryByRole('button', { name: '停止生成' })).toBeNull()
 +    fireEvent.click(b.view.getByRole('button', { name: '排队发送' }))
-+    expect(b.sink).toHaveBeenCalledWith('follow up', [], 'queue', expect.any(AbortSignal))
++    expect(b.sink).toHaveBeenCalledWith('follow up', [], 'queue', expect.any(AbortSignal), expect.any(Function))
 +    await vi.waitFor(() => { expect(b.view.getAllByRole('button', { name: '停止生成' })).toHaveLength(1) })
 +    act(() => { b.session.update(draft => { draft.running = false }) })
 +    expect(b.view.queryByRole('button', { name: '停止生成' })).toBeNull()
@@ -3117,7 +3143,7 @@ index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..302cb3f9ec8c305c17e3a639a7094464
 +    expect(b.view.queryByRole('button', { name: '停止生成' })).toBeNull()
 +    expect(b.shell.state.getSnapshot().draft).toBe('retained')
 +    fireEvent.click(b.view.getByRole('button', { name: '排队发送' }))
-+    expect(b.sink).toHaveBeenCalledWith('retained', [], 'queue', expect.any(AbortSignal))
++    expect(b.sink).toHaveBeenCalledWith('retained', [], 'queue', expect.any(AbortSignal), expect.any(Function))
 +    await vi.waitFor(() => { expect(b.view.getAllByRole('button', { name: '停止生成' })).toHaveLength(1) })
 +    fireEvent.click(b.view.getByRole('button', { name: '停止生成' }))
 +    expect(b.stop).toHaveBeenCalledOnce()
@@ -3131,7 +3157,7 @@ index 630ad9e2cd9baaf25ffaa5c2d338b55309335a4c..302cb3f9ec8c305c17e3a639a7094464
 +    const b = bench({ running: true, subagent, draft: 'steer child', busyEnter: 'steer', composerPresentation: 'main' })
 +    expect(b.view.queryByRole('button', { name: '停止生成' })).toBeNull()
 +    fireEvent.click(b.view.getByRole('button', { name: '插话发送' }))
-+    expect(b.sink).toHaveBeenCalledWith('steer child', [], 'steer', expect.any(AbortSignal))
++    expect(b.sink).toHaveBeenCalledWith('steer child', [], 'steer', expect.any(AbortSignal), expect.any(Function))
 +    expect(b.session.getSnapshot().subagent).toEqual(subagent)
 +  })
 +

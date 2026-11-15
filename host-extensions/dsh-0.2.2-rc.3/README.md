@@ -4,7 +4,18 @@
 
 ## 补丁迁移
 
-三方应用 rc.2 的 48 文件补丁，无冲突，无人工合并。导出补丁与 rc.2 逐字节相同，SHA256 `f4e0b86507dc0d6282427aef46ed7a008779e8b491c9546f029eed4e040832b4`。保留官方 rc.3 行为、版本及 ui-primitives 新图标，插件扩展沿用 rc.2；没有新增语言词条。rc.2 对 CSS anchor、occurrence、file intake 和子会话输入的合并决定继续保留，详见 [rc.2 记录](../dsh-0.2.2-rc.2/README.md)。
+三方应用 rc.2 的 48 文件补丁，无冲突，无人工合并。首次导出补丁与 rc.2 逐字节相同（SHA256 `f4e0b86507dc0d6282427aef46ed7a008779e8b491c9546f029eed4e040832b4`）；2026-11-15 按上游四包 Vitest 结果修正后，当前补丁仍为 48 个文件，SHA256 `e96e40bea9924a54d1058adfdaf16fb9a95864659aec19b12c6dcc480f279439`，见下节。保留官方 rc.3 行为、版本及 ui-primitives 新图标，插件扩展沿用 rc.2；没有新增语言词条。rc.2 对 CSS anchor、occurrence、file intake 和子会话输入的合并决定继续保留，详见 [rc.2 记录](../dsh-0.2.2-rc.2/README.md)。
+
+## 2026-11-15 上游四包 Vitest 修正
+
+上游四包 Vitest（Node 24.22.1，上游根配置仅排除会清除代理的 `scripts/test-proxy-environment.ts`）：原始 rc.3 基线 122 个文件、2081 项全过；补丁树修正前 128 个文件、2216 项中 5 项失败，均为补丁自带用例。四包源码与 rc.2 补丁树除 `package.json` 版本外逐字节相同，这 5 项在 rc.2 上同样存在。
+
+- ui-conversation `input-bar.client.spec.tsx` 3 项：上游提交 sink 第 5 个参数为受理回调 `accept`（`hub.ts`，上游同文件用例均断言 `expect.any(Function)`），补丁用例只写了 4 个参数。实现正确，回调已传递；用例按上游契约补上第 5 个参数，主按钮位置、父会话不可用时保留输入、忙时 Enter/点击投递方式的断言不变。
+- ui-chat `chat-view.client.spec.tsx`「uses one optional proven answer…」：上游新增「收起后显示的回复」设置且默认「全部回复」，答案在默认档本来就不折叠，「无证明时答案隐藏」只在「仅最终回答」档成立；另外 `ChatFlow` 为 memo，夹具的 `useProjection` 是普通函数，重渲染前须像同文件 externalRequest 用例那样重新 `setProjection`（产品中的 `useProjection` 为订阅式钩子，无此问题）。用例显式设为「仅最终回答」并在重渲染前重新发布投影。
+- ui-chat 同用例与「keeps both historical inline and later reasoning…」的顺序断言：实现缺陷。上游把空的 `cliworker-continuation` 提示与答案之后的推理合成同一个过程分组，`externalTurnAnswerEntries` 只移动成员全为推理的分组，于是该分组停在答案下方；展开过程时后续推理显示在最终答案之后。修正为：成员均为本轮推理或解析器已接受的空续接提示、且至少含一条推理的分组整体移到答案之前；只有提示的分组不动。新增对应单元用例。
+- 修正后：补丁树 128 个文件、2217 项全过；基线不变（122 个文件、2081 项）。去掉实现修正只保留用例修改时，上述两个顺序用例与新单元用例共 3 项失败。
+
+本次在插件工作树内用 `git clone --no-checkout --shared` 从 rc.1 源码仓库克隆、检出 tag、三方应用旧补丁、复制修正文件后导出；构建依赖用 `install --ignore-scripts --frozen-lockfile --offline`（store 为 rc.3 store 的 APFS 克隆副本）。CSS Modules 类名哈希随源码绝对路径变化，因此 ui-conversation、ui-subagent 的 `client.js` 仅类名前缀不同（逐词比对：其余 0 处差异）；ui-chat 除类名前缀外只有上述分组判断的改动；ui-session 字节不变。
 
 ## 隔离依赖与重建
 
@@ -67,12 +78,14 @@ node artifacts/dsh-host-rebuild-022rc3/audit.mjs
 - 审计基线覆盖 1,042 个受保护文件：根 package.json / pnpm 配置和锁、预先修改的 build-dependencies.mjs、src、OpenSpec、rc.2 extension 均与操作前 SHA256 相同；不覆盖其他协作者后续独立更改。没有根目录 install。
 - 详细审计见 `artifacts/dsh-host-rebuild-022rc3/audit.json`，非 DSH 锁差异见 `non-dsh-lock-changes.json`，安装、类型检查、构建、测试日志同目录。
 
+2026-11-15 修正后重建的 runtime Client（首次 rc.3 构建值依次为 `bc224903…`、`5af53750…`、`cb5de299…`、`4a53af0f…`）：
+
 | runtime Client | SHA256 |
 | --- | --- |
 | ui-session | `bc2249038f76e2dbe1504fa4de047143a6aecec9ba8bc2fe8eef9b12f0e45ffc` |
-| ui-conversation | `5af537507ba81e8a6a000f7f49b62e5c4800dc8341dd0c87a92b0f991c0be563` |
-| ui-subagent | `cb5de29974f026bc37d2878254ad9e79d877c6f1b3ff5c0ebffbd375a3aa1af3` |
-| ui-chat | `4a53af0fac1dc9eb35d1262cf6aa2c0a2db58194a74c6a2e7d9db3889328cfe3` |
+| ui-conversation | `0a7d58d3355e22fdc6542abc21f8cf86b31a1303b00ff291bdb1c4e62f304513` |
+| ui-subagent | `14cf867beb8a06c2cd6f8f30d819311b1ce23e0cc41058000423b3b15d391fcc` |
+| ui-chat | `43dc16f15b564913118b4471572ff922298252a60026ceaddd6ec7c6e48c6b2e` |
 
 ## 失败、重试与非致命警告
 
@@ -87,4 +100,4 @@ node artifacts/dsh-host-rebuild-022rc3/audit.mjs
 
 ## 未执行与边界
 
-未执行上游四包 Vitest、根项目全量测试/typecheck、整体 preview/build、Desktop 安装/启动/退出和界面验收、真实 CLI/账号/模型调用、Windows 验证；不把源码类型检查、模拟回归或静态文件审计视为这些验收。本次只运行指定的三个根项目测试文件。未触及 `~/.dsh`、用户配置和凭据；未提交、推送或修改插件 Git 分支。主仓库 checkout 与 rc.2 缓存未修改，只有 DSH 共享 Git 元数据为新工作树创建/应用补丁而写入。
+首次重建时未执行上游四包 Vitest（2026-11-15 已补跑并修正，见上文）、根项目全量测试/typecheck、整体 preview/build、Desktop 安装/启动/退出和界面验收、真实 CLI/账号/模型调用、Windows 验证；不把源码类型检查、模拟回归或静态文件审计视为这些验收。本次只运行指定的三个根项目测试文件。未触及 `~/.dsh`、用户配置和凭据；未提交、推送或修改插件 Git 分支。主仓库 checkout 与 rc.2 缓存未修改，只有 DSH 共享 Git 元数据为新工作树创建/应用补丁而写入。
