@@ -76,6 +76,10 @@
     - 停止：`sleep 120` 被 ZCode 原生判为无需审批，没有出卡；运行约 33 秒时停止，约 5 秒后显示「已停止」，worker.json 为 interrupted/user。
     - 产物 `rc0810/zcode-mac3.txt` 由主会话 `od -c` 回读，内容为 `zcode mac3 ok` 和 `followup ok` 两行，共 26 字节。全局 `~/.zcode/v2/provider_config.json` 的修改时间仍是 2026-09-19，本次未改动。
     - 本次只走了 app-server 派遣，headless 派遣未执行。
+  - 2026-11-16 v0.9.0（a1df350 正式构建，含 08dcef5 去掉「未核实」）Mac Desktop 增量复查：
+    - 插件信息页显示 v0.9.0。
+    - ZCode 设置的模型下拉依次为 GLM-5.3、GLM-5.3-Flash、deepseek-v4-pro、deepseek-v4-flash、mimo-v2.5-pro；页面与下拉均无「未核实」。
+    - 派遣卡显示「deepseek-v4-flash（deepseek · 本机配置） · None」；不调用工具的派遣回复 `zcode ok`，用时 7 秒。
   - 2026-11-16 Windows：账号窗口列出 ZCode 桌面端的 deepseek 服务商（标「在 ZCode 桌面端管理」），「添加账号」中有「其他服务商」；模型下拉只有 BigModel 套餐的 GLM-5.3 与 GLM-5.3-Flash。
     - 只读结构诊断：该服务商 baseUrl 为官网控制台 `https://platform.deepseek.com/`，模型 ID 为 `deepseek v4pro`，模型规则中没有启用标记。插件按原生规则跳过未启用的模型，属预期行为。
     - 诊断没有输出密钥，没有发网络请求。Windows 自有 Key 派遣未执行：需要用户在 ZCode 桌面端或插件「其他服务商」中配置可用的服务商后再测。
