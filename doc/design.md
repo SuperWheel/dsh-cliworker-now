@@ -1564,6 +1564,8 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/changes/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
 
 
+2026-11-15 账号窗口修复（`openspec/changes/vnext-account-window-fixes-leeyl/`）：表单写入的服务商同时记录归属回执，账号窗口据此显示「退出」；用户决定原生模型配置文件（Pi models.json、OMP models.yml）中的服务商也可删除（行 id `native.config`）。删除前备份原文件到 `<stateDirectory>/account-config-backups/<cli>/<时间>-<uuid>/`（0600），YAML 按语法节点位置删除单个服务商、不重新序列化，JSON 只删该属性；原子替换并保留文件权限，拒绝符号链接、硬链接与重复键/别名等无法安全编辑的结构，失败回滚，独立回读确认后才报成功；插件快照副本仅在内容与原生条目一致时同步删除。环境变量来源保持只读。账号终端启动前等待同一 CLI 的旧账号查询与模型目录读取通道收尾，终端占用期间拦截新的目录读取；登录前基线在终端启动前读取，成功状态在进程清理与缓存作废之后发布。
+
 ### 2026-11-14 Windows 官方默认安装的下载接管（任务 W）
 
 更新完成后的 verify 独立使用 60 秒总预算，并向 currentVersion → captureReadOnly 传入 45 秒版本命令预算；常规／后台检查和首次安装路径不扩张预算。captureReadOnly 以 ReadOnlyTimeoutError 标记自身超时并先完成进程范围清理，verify 将探测或总预算超时映射为 VERIFY_TIMEOUT，提示已替换但首次启动超时、稍后重查。用户取消保留 cancelled，ProcessCleanupUnconfirmedError 保留隔离状态，均不被超时错误覆盖；超时不会触发重新安装或回滚。共享错误码增加 VERIFY_TIMEOUT，现有前端按 Host message 显示，无需修改 client/。任务 13.7 记录用户提供的 Defender 首次扫描证据与模拟回归；修复后的 Windows 实机验证另列。

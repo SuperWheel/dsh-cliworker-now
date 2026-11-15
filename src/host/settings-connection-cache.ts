@@ -43,6 +43,17 @@ export class SettingsConnectionCache {
     }
     this.changed()
   }
+  /** Wait for this CLI's complete account/catalog lane, including queued projects.
+   * The caller must first invalidate it and block new catalog admission. Deliberately
+   * not abortable: a cancelled terminal start still owns its reservation until cleanup.
+   * Loaders keep unconfirmed process cleanup quarantined in the owning Host. */
+  async settle(cli: ActiveCliId): Promise<void> {
+    for (;;) {
+      const pending = this.cliReads.get(cli)
+      if (!pending) return
+      await pending.catch(() => undefined)
+    }
+  }
   async read<K extends Kind>(project: string, cli: ActiveCliId, kind: K, signal: AbortSignal,
     load: (signal: AbortSignal) => Promise<Values[K]>, force = false): Promise<Values[K]> {
     signal.throwIfAborted(); this.lifetime.signal.throwIfAborted()

@@ -1,3 +1,4 @@
+import { managedProviderReceiptChange } from './custom-provider-managed.ts'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, rmdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -204,7 +205,9 @@ export class CustomProviders {
           authText = credentials.add([id], { type: 'api', key: secret })
         }
       }
-      commitNativeFiles([{ file: auth, text: authText }, { file: config, text: configText }], () => {
+      const ownership = cli === 'pi' ? [managedProviderReceiptChange(dirname(config.path), id,
+        (nativeJson(configText).value.providers as Record<string, unknown>)[id], nativeJson(authText).value[id])] : []
+      commitNativeFiles([{ file: auth, text: authText }, { file: config, text: configText }, ...ownership], () => {
         assertCurrent()
         if (ticket.expires <= this.now()) throw new Error('Expired')
         if (JSON.stringify(this.targets(source.cli)) !== ticket.targets) throw new Error('Changed account source')

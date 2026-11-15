@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, IconPlusOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { AccountLogin, AccountProvider, AccountSource, AccountStatus } from '../../shared/accounts.ts'
+import type { AccountConfigurationDeleteResult, AccountLogin, AccountProvider, AccountSource, AccountStatus } from '../../shared/accounts.ts'
 import { GUIDED_ACCOUNT_CLIS, parseAccountLoginId } from '../../shared/account-links.ts'
 import type { CustomProviderForm, CustomProviderResult } from '../../shared/custom-provider.ts'
 import { CLI_LABELS, type CliId } from '../../shared/types.ts'
@@ -10,6 +10,11 @@ import { AccountTerminal, type AccountCloseControl } from '../account-terminal.t
 import { t, useT } from '../i18n.ts'
 import { hostText, operationMessage } from '../operation-error.ts'
 import { value, type API } from '../workers.ts'
+
+/** Optional while an older Host/client declaration is still installed. */
+type AccountsAPI = API & { cliworker: {
+  deleteAccountConfiguration?: (parent: string, cli: string, login: string, signal: AbortSignal) => ReturnType<NonNullable<API['cliworker']['saveCustomProvider']>>
+} }
 
 /** The account window's own choice for a native picker. */
 const NATIVE = '__native__'
@@ -37,6 +42,10 @@ const loginText = (login: AccountLogin) => {
   return id ? `${text} · ${t('凭据 #{id}', { id })}` : text
 }
 
+const removalTitle = (login: AccountLogin) => login.nativeConfiguration
+  ? t('删除 {provider}', { provider: hostText(login.providerLabel) })
+  : t('退出 {account}', { account: loginText(login) })
+
 /**
  * The 「账号」 window of a CLI that keeps several logins (2026-10-26 decision):
  * every login with its own 退出, and 添加账号 with a 「登录到」 provider picker.
@@ -52,7 +61,7 @@ export function AccountsWindow({
   prepare,
   onProviderSaved,
 }: {
-  api: API
+  api: AccountsAPI
   sessionId: string
   cli: CliId
   status?: AccountStatus
@@ -80,11 +89,15 @@ export function AccountsWindow({
   const [adding, setAdding] = useState(false)
   const [confirming, setConfirming] = useState<number>()
   const [preparing, setPreparing] = useState(false)
+  const [removalMessage, setRemovalMessage] = useState<{ error: boolean; text: string }>()
+  const removal = useRef<AbortController | undefined>(undefined)
+  useEffect(() => () => removal.current?.abort(), [])
   const closingAll = useRef(false)
   const terminalClose: AccountCloseControl = useRef<(() => Promise<boolean>) | undefined>(undefined)
   // The dialog's close button ends a running window first, then the whole dialog.
   useEffect(() => {
     const request = async () => {
+      if (removal.current) return false
       if (!terminalClose.current) {
         onClose()
         return true
@@ -141,25 +154,41 @@ export function AccountsWindow({
       />
     )
 
-  const signOut = (login: AccountLogin) => {
-    if (login.id && prepare) {
-      if (preparing) return
+  const signOut = async (login: AccountLogin) => {
+    if (preparing || removal.current) return
+    if (login.id) {
       setPreparing(true)
-      return prepare()
-        .then((fresh) => {
-          const current = fresh?.logins?.find((item) => item.id === login.id)
+      setRemovalMessage(undefined)
+      const controller = new AbortController()
+      removal.current = controller
+      try {
+        const current = prepare ? (await prepare())?.logins?.find(item => item.id === login.id) : login
+        controller.signal.throwIfAborted()
+        if (!current?.id) { setConfirming(undefined); return }
+        const entry = parseAccountLoginId(current.id)?.entry
+        if ((cli === 'pi' || cli === 'omp') && (entry === 'native.config' || entry === 'plugin.config')) {
+          const remove = api.cliworker?.deleteAccountConfiguration
+          if (!remove) throw new Error(t('当前插件 Host 不支持此账号操作，请更新插件后重试'))
+          try {
+            const result = JSON.parse(value(await remove(sessionId, cli, current.id, controller.signal))) as AccountConfigurationDeleteResult
+            if (result?.ok !== true) throw new Error(t('删除失败，请刷新后重试'))
+            setRemovalMessage({ error: false, text: result.notice ? hostText(result.notice) : t('已删除该服务商配置。') })
+            setConfirming(undefined)
+          } finally { onRefresh() }
+        } else {
           setConfirming(undefined)
-          if (current?.id)
-            setRequest({ action: 'logout', login: current.id, title: t('退出 {account}', { account: loginText(current) }) })
-        })
-        .finally(() => setPreparing(false))
+          setRequest({ action: 'logout', login: current.id, title: removalTitle(current) })
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          const message = operationMessage(error)
+          const conflict = /^配置文件已被其他程序修改，未回滚；备份保留在 (.+)$/su.exec(message)
+          setRemovalMessage({ error: true, text: conflict
+            ? t('配置文件已被其他程序修改，未回滚；备份保留在 {path}', { path: conflict[1]! }) : message })
+        }
+      } finally { removal.current = undefined; setPreparing(false) }
+      return
     }
-    if (login.id)
-      return setRequest({
-        action: 'logout',
-        login: login.id,
-        title: t('退出 {account}', { account: loginText(login) }),
-      })
     if (GUIDED_ACCOUNT_CLIS.has(cli))
       return setRequest({ action: 'logout', title: t('退出 {cli}', { cli: name }) })
     // No single-login removal for this row: the CLI's own menu, in the row's own location.
@@ -170,7 +199,7 @@ export function AccountsWindow({
       title: t('在原生终端中退出 {cli}', { cli: name }),
     })
   }
-  // A key from an environment variable or a config file is not a stored login: nothing to sign out here.
+  // Unaddressable/environment-only rows stay read-only; file-backed rows have Host handles.
   const configOnly = (login: AccountLogin) =>
     !login.id && !login.source && !whole && (cli === 'pi' || cli === 'omp')
   const card = ({ login, index }: { login: AccountLogin; index: number }) => {
@@ -199,8 +228,8 @@ export function AccountsWindow({
           {confirming !== index &&
             !configOnly(login) &&
             (removable ? (
-              <Button variant="ghost" size="md" onClick={() => setConfirming(index)}>
-                {t('退出')}
+              <Button variant="ghost" size="md" disabled={preparing} onClick={() => setConfirming(index)}>
+                {login.nativeConfiguration ? t('删除') : t('退出')}
               </Button>
             ) : (
               !native && (
@@ -211,18 +240,22 @@ export function AccountsWindow({
             ))}
         </div>
         {confirming === index && (
-          <div className="cwn-accounts-confirm" role="group" aria-label={t('确认退出')}>
+          <div className="cwn-accounts-confirm" role="group" aria-label={login.nativeConfiguration ? t('确认删除') : t('确认退出')}>
             <span>
-              {cli === 'zcode' && !login.id
+              {login.nativeConfiguration
+                ? t('将从 {file} 删除该服务商，直接运行 {cli} 时也不再可用。', { file: cli === 'omp' ? '~/.omp/agent/models.yml' : '~/.pi/agent/models.json', cli: name })
+                : login.managedConfiguration
+                ? t('退出后会删除此服务商的配置和凭据，其他配置保留。')
+                : cli === 'zcode' && !login.id
                 ? t('BigModel 和 Z.AI 的登录会一起退出。')
                 : t('退出后会删除这条凭据，其他账号保留。')}
             </span>
             <div className="cwn-login-actions">
-              <Button variant="ghost" size="md" onClick={() => setConfirming(undefined)}>
+              <Button variant="ghost" size="md" disabled={preparing} onClick={() => setConfirming(undefined)}>
                 {t('取消')}
               </Button>
               <Button variant="primary" size="md" disabled={preparing} onClick={() => signOut(login)}>
-                {t('确认退出')}
+                {login.nativeConfiguration ? t('确认删除') : t('确认退出')}
               </Button>
             </div>
           </div>
@@ -251,6 +284,7 @@ export function AccountsWindow({
 
   return (
     <div className="cwn-accounts-window">
+      {removalMessage && <p className="cwn-login-callout" data-tone={removalMessage.error ? 'warning' : 'success'} role={removalMessage.error ? 'alert' : 'status'}>{removalMessage.text}</p>}
       {rows.length ? (
         grouped ? (
           groups.map((group) => {
@@ -305,6 +339,7 @@ export function AccountsWindow({
         <Button
           variant="outline"
           size="md"
+          disabled={preparing}
           onClick={() =>
             providers?.length
               ? setAdding(true)

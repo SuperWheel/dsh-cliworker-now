@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 export interface NativeFile { path: string; text: string | undefined; mode: number }
 const missing = (error: unknown) => (error as NodeJS.ErrnoException).code === 'ENOENT'
 
-/** Do not follow user-controlled links when handling credentials. No paths/errors leave this module. */
+/** Do not follow user-controlled links when handling credentials. Raw filesystem errors never reach the client. */
 function ancestors(path: string) {
   const absolute = resolve(path)
   const root = parse(absolute).root
@@ -43,10 +43,11 @@ export function readNativeFile(path: string, secret = false): NativeFile {
 export class NativeRollbackError extends Error {}
 
 /** Synchronous commit: no await can release the Host reservation between the two renames. */
-export function commitNativeFiles(changes: { file: NativeFile; text: string }[], assertCurrent: () => void) {
-  const staged: { file: NativeFile; next: string; backup?: string; committed: boolean }[] = []
+export function commitNativeFiles(changes: { file: NativeFile; text: string }[], assertCurrent: () => void, verify?: () => void) {
+  const staged: { file: NativeFile; next: string; text: string; backup?: string; committed: boolean }[] = []
   const directories: string[] = []
   let retainBackups = false
+  const conflicts: string[] = []
   const prepareDirectory = (path: string) => {
     ancestors(path)
     if (fs.existsSync(path)) return
@@ -63,7 +64,7 @@ export function commitNativeFiles(changes: { file: NativeFile; text: string }[],
     for (const { file, text } of changes) {
       prepareDirectory(dirname(file.path))
       const next = `${file.path}.${randomUUID()}.tmp`
-      const item = { file, next, backup: file.text === undefined ? undefined : `${file.path}.${randomUUID()}.bak`, committed: false }
+      const item = { file, next, text, backup: file.text === undefined ? undefined : `${file.path}.${randomUUID()}.bak`, committed: false }
       staged.push(item)
       stage(next, text, file.mode)
       // Backups may contain credentials even when the native configuration has broad permissions.
@@ -77,16 +78,25 @@ export function commitNativeFiles(changes: { file: NativeFile; text: string }[],
       fs.renameSync(item.next, item.file.path)
       item.committed = true
     }
+    verify?.()
   } catch (error) {
     for (const item of [...staged].reverse()) {
       if (!item.committed) continue
       try {
+        // A different process may save between replacement and verification. Never
+        // restore over its bytes, including in the plugin snapshot or a new file.
+        if (readNativeFile(item.file.path).text !== item.text) {
+          retainBackups = true
+          conflicts.push(item.backup ?? item.file.path)
+          continue
+        }
         if (item.backup) {
           fs.renameSync(item.backup, item.file.path)
           fs.chmodSync(item.file.path, item.file.mode)
         } else fs.unlinkSync(item.file.path)
       } catch { retainBackups = true }
     }
+    if (conflicts.length) throw new NativeRollbackError(`配置文件已被其他程序修改，未回滚；备份保留在 ${conflicts.join('、')}`)
     if (retainBackups) throw new NativeRollbackError('原生配置回滚未完成，请检查原生配置目录中的私有备份')
     throw error
   } finally {
@@ -98,9 +108,9 @@ export function commitNativeFiles(changes: { file: NativeFile; text: string }[],
   }
 }
 
-interface JsonNode { value: unknown; end: number; children?: Map<string, JsonNode>; lastEnd?: number; trailing?: boolean }
+interface JsonNode { keyStart?: number; comma?: number; value: unknown; end: number; children?: Map<string, JsonNode>; lastEnd?: number; trailing?: boolean }
 
-/** Small JSONC structural reader, used only for additive edits; retains every existing byte. */
+/** Small JSONC structural reader; edits only the selected property and its separator. */
 export function nativeJson(text = '{}') {
   let position = 0
   const whitespace = () => {
@@ -135,17 +145,19 @@ export function nativeJson(text = '{}') {
       whitespace()
       while (text[position] !== close) {
         let key = ''
+        const keyStart = position
         if (object) {
           if (text[position] !== '"') throw new Error('Invalid JSON')
           key = string(); whitespace()
           if (children.has(key) || text[position++] !== ':') throw new Error('Invalid JSON')
         }
         const node = read(depth + 1)
+        node.keyStart = keyStart
         if (object) children.set(key, node); else list.push(node.value)
         lastEnd = position
         whitespace()
         trailing = text[position] === ','
-        if (trailing) { position++; whitespace() }
+        if (trailing) { node.comma = position; position++; whitespace() }
         else if (text[position] !== close) throw new Error('Invalid JSON')
       }
       position++
@@ -162,6 +174,21 @@ export function nativeJson(text = '{}') {
   if (position !== text.length || !root.children) throw new Error('Invalid JSON object')
   return {
     value: root.value as Record<string, unknown>,
+    remove(path: string[]): string {
+      let parent = root
+      for (const key of path.slice(0, -1)) {
+        const child = parent.children?.get(key)
+        if (!child?.children) throw new Error('Missing object')
+        parent = child
+      }
+      const children = [...(parent.children?.entries() ?? [])]
+      const index = children.findIndex(([key]) => key === path.at(-1))
+      if (index < 0) throw new Error('Missing field')
+      const node = children[index]![1], previous = children[index - 1]?.[1]
+      const start = node.comma === undefined && previous ? previous.comma! : node.keyStart!
+      const end = node.comma === undefined ? node.end : node.comma + 1
+      return text.slice(0, start) + text.slice(end)
+    },
     add(path: string[], value: unknown): string {
       let node = root
       for (let i = 0; i < path.length - 1; i++) {

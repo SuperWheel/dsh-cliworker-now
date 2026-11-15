@@ -148,6 +148,8 @@ WorkBuddy CN 与 WorkBuddy 各有独立连接页，沿用现有标题、副标�
 
 账号行左右内容保留现有间距并按可用宽度换行；摘要按内容宽度参与换行且不超过容器，状态文字允许收缩与自然换行。管理说明不附加顶部 margin，并允许长英文换行；正常宽度下登录站点与短说明同排，窄列下正常增高，避免文字重叠。
 
+按服务商列出多条已登录凭据的账号摘要（Kimi、Pi、OMP 等，`data-provider-logins`）与右侧「账号」「账号终端」按钮始终同排，任何窗口宽度都不换行；摘要占剩余宽度，超出部分以「…」截断，悬停显示完整凭据列表（2026-11-15 用户要求）。其他状态摘要仍按上一段换行，不截断原因。
+
 ## 登录窗口按钮规范（所有 CLI 统一，2026-11-08）
 
 插件绘制的登录 / 退出 / 账号 / 桌面管理窗口（`login-window.tsx`、`accounts-window.tsx`、`provider-form.tsx`、`login-method-picker.tsx`、`workbuddy-desktop-window.tsx`、`account-terminal.tsx`）只用两档原生 Button 尺寸，新接入 CLI 不得另设尺寸、改写按钮高度或字号：

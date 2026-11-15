@@ -184,3 +184,41 @@ it.each(['hermes', 'opencode'] as const)('模拟：%s Remote 的真实管理器�
   expect(existsSync(join(f.root, '.local/share/opencode'))).toBe(false)
   host.customProviders.close()
 })
+
+it('模拟：direct managed-provider deletion returns readback acknowledgment and invalidates caches without terminal support', async () => {
+  const f = fixture(), form = await f.form()
+  expect(JSON.parse(await f.save(form.token))).toMatchObject({ ok: true })
+  const changes: boolean[] = []
+  const unsubscribe = f.accounts.subscribeActivity(cli => { if (cli === 'pi') changes.push(f.accounts.isBusy(cli)) })
+  const result = JSON.parse(await f.service.deleteAccountConfiguration('parent', 'pi', 'pi:custom-synthetic:plugin.config', f.controller.signal))
+  expect(result).toEqual({ ok: true })
+  expect(changes).toEqual([true, false]); expect(f.accounts.isBusy('pi')).toBe(false)
+  expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/models.json'), 'utf8')).providers['custom-synthetic']).toBeUndefined()
+  expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/auth.json'), 'utf8'))['custom-synthetic']).toBeUndefined()
+  expect(f.catalogs.invalidate).toHaveBeenCalledWith('pi'); expect(f.backend.spawn).not.toHaveBeenCalled()
+  unsubscribe()
+})
+it('模拟：direct deletion enforces execution, active worker and maintenance admission before any write', async () => {
+  const f = fixture(), form = await f.form(); await f.save(form.token)
+  const remove = () => f.service.deleteAccountConfiguration('parent', 'pi', 'pi:custom-synthetic:plugin.config', f.controller.signal)
+  ;(f.service as any).assertExecution.mockImplementationOnce(() => { throw new Error('plan mode') })
+  await expect(remove()).rejects.toThrow('plan mode')
+  f.runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('worker running') })
+  await expect(remove()).rejects.toThrow('worker running')
+  const release = f.maintenance.begin('pi', () => ({ workers: 0, accounts: false }))
+  await expect(remove()).rejects.toThrow('MAINTENANCE'); release()
+  expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/models.json'), 'utf8')).providers['custom-synthetic']).toBeDefined()
+  expect(f.accounts.isBusy('pi')).toBe(false)
+})
+it('模拟：cache persistence failure after direct deletion does not misreport a completed mutation', async () => {
+  const f = fixture(), form = await f.form(); await f.save(form.token)
+  const invalidate = (f.service as any).invalidateSettingsDisplay.bind(f.service)
+  let calls = 0
+  vi.spyOn(f.service as any, 'invalidateSettingsDisplay').mockImplementation((cli: any) => {
+    invalidate(cli)
+    if (++calls === 2) throw new Error('simulated cache persistence failure')
+  })
+  const result = JSON.parse(await f.service.deleteAccountConfiguration('parent', 'pi', 'pi:custom-synthetic:plugin.config', f.controller.signal))
+  expect(result).toMatchObject({ ok: true, notice: expect.stringContaining('配置已删除') })
+  expect(f.accounts.isBusy('pi')).toBe(false)
+})

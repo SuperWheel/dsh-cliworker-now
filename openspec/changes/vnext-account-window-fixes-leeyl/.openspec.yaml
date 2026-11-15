@@ -1,0 +1,8 @@
+pm:
+  title: 账号登录与退出体验修复
+  version: next
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-15

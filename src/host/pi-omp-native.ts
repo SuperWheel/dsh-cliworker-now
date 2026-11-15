@@ -1,3 +1,5 @@
+import { sameProviderConfiguration, piOmpNativeConfigProviderExists } from './custom-provider-native.ts'
+import { managedPiOmpProviders, piOmpManagedProviderExists } from './custom-provider-managed.ts'
 import { constants } from 'node:fs'
 import { lstat, open, mkdir, writeFile, rename, rm, mkdtemp, realpath, readlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -404,10 +406,19 @@ export async function listPiOmpAccountSources(
   signal: AbortSignal,
   options: { nativeHome?: string } = {},
 ) {
-  return (await readPiOmpLogoutSources(cli, stateDirectory, signal, options)).map(({ id, label }) => ({
-    id,
-    label,
-  }))
+  try {
+    return (await readPiOmpLogoutSources(cli, stateDirectory, signal, options)).map(({ id, label }) => ({ id, label }))
+  } catch (error) {
+    if (cli !== 'pi') throw error
+    // Preserve the provider picker even if unrelated model/env configuration is
+    // invalid. This fallback grants no configuration deletion or model access.
+    const sources = []
+    for (const id of ['native', 'plugin'] as const) {
+      const source = await readPiAuthSource(id, stateDirectory, signal, options)
+      if (source.stored) sources.push({ id, label: source.label })
+    }
+    return sources
+  }
 }
 /** The `disabled_cause` OMP's /logout writes when it soft-deletes a credential (OMP 16.4.4). */
 const OMP_SIGNED_OUT = 'deleted by user'
@@ -418,19 +429,53 @@ const OMP_SIGNED_OUT = 'deleted by user'
  */
 const ownsProvider = (row: { disabled_cause?: unknown }) => row.disabled_cause !== OMP_SIGNED_OUT
 
+/** Account source discovery is independent of model files, caches and .env. */
+async function readPiAuthSource(
+  id: AccountSource, stateDirectory: string | undefined, signal: AbortSignal,
+  options: { nativeHome?: string }, provider?: string,
+) {
+  signal.throwIfAborted()
+  const directory = id === 'native' ? join(options.nativeHome ?? homedir(), '.pi', 'agent')
+    : piOmpAccountDirectory('pi', stateDirectory)
+  const auth = parseObject(await readOptional(join(directory, 'auth.json')))
+  signal.throwIfAborted()
+  return { id, directory, exists: provider !== undefined && Object.hasOwn(auth, provider),
+    label: id === 'native' ? '原生目录' : '插件目录', stored: Object.keys(auth).length > 0,
+    env: {} as Record<string, string>, config: {} as Record<string, any>, brokerConfigured: false }
+}
+
+/** Resolve only the selected Pi store; targeted operations never inspect another source. */
+export async function selectedPiAuthSource(
+  login: string, stateDirectory: string | undefined, signal: AbortSignal,
+  options: { nativeHome?: string } = {},
+) {
+  const target = parseAccountLoginId(login)
+  if (target?.cli !== 'pi' || !['native', 'plugin'].includes(target.entry ?? ''))
+    throw new Error('不支持单独退出该账号')
+  return readPiAuthSource(target.entry as AccountSource, stateDirectory, signal, options, target.provider)
+}
+
 /** Sign-out evidence must not confuse an invalid/blocked credential with a removed one. */
 export async function piOmpStoredLoginExists(
   cli: PiOmpCli, login: string, stateDirectory: string | undefined, signal: AbortSignal,
   options: { nativeHome?: string } = {},
 ): Promise<boolean> {
   const target = parseAccountLoginId(login)
+  if (target?.cli === cli && target.entry === 'native.config') {
+    signal.throwIfAborted()
+    return piOmpNativeConfigProviderExists(cli, stateDirectory ?? defaultRoot(), login, options.nativeHome)
+  }
+  if (target?.cli === cli && target.entry === 'plugin.config') {
+    signal.throwIfAborted()
+    return piOmpManagedProviderExists(cli, stateDirectory ?? defaultRoot(), login)
+  }
   const match = target?.entry?.match(cli === 'pi' ? /^(native|plugin)$/ : /^(native|plugin)\.([1-9]\d*)$/)
   if (target?.cli !== cli || !match) throw new Error('不支持单独退出该账号')
+  if (cli === 'pi') return (await selectedPiAuthSource(login, stateDirectory, signal, options)).exists
   return withSources(cli, { accountRoot: stateDirectory, signal, ...options }, async sources => {
     const selected = sources[match[1] === 'native' ? 0 : 1]
     if (!selected) throw new Error('账号来源已变化，请刷新后重试')
-    return cli === 'pi' ? Object.hasOwn(selected.auth, target.provider)
-      : selected.credentials.some(row => row.provider === target.provider &&
+    return selected.credentials.some(row => row.provider === target.provider &&
           String(row.native_rowid) === match[2] && ownsProvider(row))
   })
 }
@@ -773,6 +818,8 @@ export async function inspectPiOmpNativeAccount(
       signal.throwIfAborted()
       const { auth, providers, env, credentialProviders, expired } = mergeSources(sources)
       const logins: AccountLogin[] = []
+      const plugin = sources[1]
+      const managed = plugin ? managedPiOmpProviders(plugin.sourceId, plugin.models, plugin.auth) : new Set<string>()
       const ownValue = (value: unknown, referenceOnly = false) =>
         typeof value === 'string' &&
         (referenceOnly
@@ -782,8 +829,8 @@ export async function inspectPiOmpNativeAccount(
           : value
       /** A stored credential: `pi:<provider>:<source>`, `omp:<provider>:<source>.<row id>`. */
       type Stored = { source: AccountSource; entry: string }
-      const add = (provider: string, method: 'api' | 'oauth', stored?: Stored, email?: unknown) => {
-        const config = providers[provider]
+      const add = (provider: string, method: 'api' | 'oauth', stored?: Stored, email?: unknown, nativeConfig?: Record<string, any>) => {
+        const config = nativeConfig ?? providers[provider]
         const accountLabel = accountEmail(email)
         const login = {
           ...providerLogin(provider, method, {
@@ -793,8 +840,11 @@ export async function inspectPiOmpNativeAccount(
           // Two logins of one provider are told apart by the account each belongs to.
           ...(accountLabel ? { accountLabel } : {}),
         }
-        const id = stored && accountLoginId(cli, provider, stored.entry)
-        logins.push(stored ? { ...login, ...(id ? { id } : {}), source: stored.source } : login)
+        const owned = managed.has(provider) && (!stored || cli === 'pi' && stored.source === 'plugin')
+        const id = owned ? accountLoginId(cli, provider, 'plugin.config') : stored && accountLoginId(cli, provider, stored.entry)
+        if (id && logins.some(row => row.id === id)) return
+        logins.push(nativeConfig ? (id ? { ...login, id, source: 'native', nativeConfiguration: true } : login) : owned ? { ...login, id, source: 'plugin', managedConfiguration: true }
+          : stored ? { ...login, ...(id ? { id } : {}), source: stored.source } : login)
       }
       let invalidOAuth = false
       const inspect = (
@@ -829,8 +879,13 @@ export async function inspectPiOmpNativeAccount(
               entry: `${source}.${row.native_rowid}`,
             })
       }
+      const nativeProviders = sources[0]?.models.providers ?? {}
+      for (const [provider, value] of Object.entries(nativeProviders) as [string, Record<string, any>][]) {
+        if (usableNativeApiKey(ownValue(value.apiKey, true)))
+          add(provider, 'api', { source: 'native', entry: 'native.config' }, undefined, value)
+      }
       for (const [provider, value] of Object.entries(providers) as [string, Record<string, any>][]) {
-        if (usableNativeApiKey(ownValue(value.apiKey, true))) add(provider, 'api')
+        if (!sameProviderConfiguration(value, nativeProviders[provider]) && usableNativeApiKey(ownValue(value.apiKey, true))) add(provider, 'api')
       }
       for (const [provider, variable] of Object.entries(knownProviderEnvironment))
         if (usableNativeApiKey(env[variable])) add(provider, 'api')

@@ -1366,6 +1366,15 @@ export const en = {
   '保存': 'Save',
   '正在保存…': 'Saving…',
   // custom-provider-form:end
+  '退出后会删除此服务商的配置和凭据，其他配置保留。': 'Signing out removes this provider configuration and credential. Other configurations are kept.',
+  '删除 {provider}': 'Delete {provider}',
+  '将从 {file} 删除该服务商，直接运行 {cli} 时也不再可用。': 'Remove this provider from {file}. It will also be unavailable when running {cli} directly.',
+  '已删除该服务商配置。': 'Provider configuration deleted.',
+  '请在账号窗口中删除此服务商配置': 'Delete this provider configuration in the account window.',
+  '不支持删除该服务商配置': 'This provider configuration cannot be deleted.',
+  '删除失败，请刷新后重试': 'Could not delete. Refresh and try again.',
+  '配置已删除；显示缓存持久化失败，请刷新账号与模型目录': 'Configuration deleted; the display cache could not be saved. Refresh the account and model catalog.',
+  '配置文件已被其他程序修改，未回滚；备份保留在 {path}': 'Another program changed the configuration. It was not rolled back; the backup is kept at {path}',
   // @end
 } as const satisfies Record<string, string>
 

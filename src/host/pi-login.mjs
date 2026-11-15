@@ -18,17 +18,17 @@ try {
   if (action === 'logout' && provider) {
     const authPath = process.argv[4]
     if (!authPath || !isAbsolute(authPath)) throw new Error('Missing selected auth storage')
-    // A targeted logout needs only Pi's credential API. Loading a session/UI here
-    // couples sign-out to unrelated model selection, resources and terminal setup.
-    const { ModelRuntime } = await import(pathToFileURL(join(dist, 'core/model-runtime.js')).href)
-    const runtime = await ModelRuntime.create({ authPath, modelsPath: null,
-      refreshOnCreate: false, allowModelNetwork: false })
+    // Pi 1.5.2 ModelRuntime.logout also recomposes models/checks availability.
+    // Sign-out needs only the native, locked credential store: unrelated model
+    // errors or environment auth must not prevent removing this exact credential.
+    const { AuthStorage } = await import(pathToFileURL(join(dist, 'core/auth-storage.js')).href)
+    const storage = AuthStorage.create(authPath)
     const signal = AbortSignal.timeout(15_000)
-    const before = await runtime.listCredentials({ signal })
+    const before = await storage.list({ signal })
     if (!before.some(item => item.providerId === provider)) throw new Error('Credential no longer stored')
-    await runtime.logout(provider, { signal })
-    // Native readback, not the SDK call's return or a terminal success string.
-    if ((await runtime.listCredentials({ signal })).some(item => item.providerId === provider))
+    await storage.delete(provider, { signal })
+    // Fresh native instance, not success text or the mutation's cached state.
+    if ((await AuthStorage.create(authPath).list({ signal })).some(item => item.providerId === provider))
       throw new Error('Native logout was not confirmed')
     process.stdout.write('已移除该服务商的凭据。\n')
     process.exit(0)
@@ -61,17 +61,14 @@ try {
       const services = await createAgentSessionServices({
         cwd,
         agentDir,
-        ...(action === 'logout'
-          ? {
-              modelRuntime: await ModelRuntime.create({
-                authPath: process.argv[4],
-                modelsPath: null,
-                modelsStorePath: join(agentDir, 'models-store.json'),
-                refreshOnCreate: false,
-                allowModelNetwork: false,
-              }),
-            }
-          : {}),
+        // An account window is independent of the model catalog. Only the chosen
+        // source's credentials enter this runtime; no model file or cached catalog.
+        modelRuntime: await ModelRuntime.create({
+          authPath: action === 'logout' ? process.argv[4] : join(agentDir, 'auth.json'),
+          modelsPath: null,
+          refreshOnCreate: false,
+          allowModelNetwork: false,
+        }),
         resourceLoaderOptions: {
           noExtensions: true,
           noSkills: true,

@@ -2531,9 +2531,19 @@ export class CliWorkerService extends TypertRemoteService {
     return this.connectionCache().read(project, cli, 'account', AbortSignal.any([signal, this.disposed.signal]),
       control => this.accounts.status(cli, project, control, { background }), refresh)
   }
-  private loadSettingsCatalog(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+  private async loadSettingsCatalog(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+    const assertAccountIdle = () => {
+      if (this.accounts?.isBusy?.(cli)) throw new Error('请先关闭账号终端')
+    }
+    // The terminal's reservation is also the catalog admission gate. It is
+    // released by AccountManager only after terminal/range/runtime cleanup.
+    assertAccountIdle()
     return this.connectionCache().read(project, cli, 'catalog', AbortSignal.any([signal, this.disposed.signal]), async control => {
+      // A read may have queued before the terminal took the CLI.
+      assertAccountIdle()
       const config = background ? await backgroundConnectionConfig(cli, this.options, control) : this.options
+      control.throwIfAborted()
+      assertAccountIdle()
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       return this.settingsCatalogs.get({
         cli, project, signal: control, refresh: true,
@@ -2888,6 +2898,42 @@ export class CliWorkerService extends TypertRemoteService {
     finally { releaseAccount?.(); release?.() }
   }
 
+  /** Direct config deletion: no CLI executable or terminal is required. */
+  @Remote('deleteAccountConfiguration')
+  async deleteAccountConfiguration(parentSessionId: string, cli: string, login: string, signal: AbortSignal): Promise<string> {
+    let release: (() => void) | undefined
+    try {
+      const id = validate.enum(['pi', 'omp']).parse(cli)
+      const selected = validate.string().min(1).max(512).parse(login)
+      const parent = await this.parent(parentSessionId)
+      const control = AbortSignal.any([signal, this.disposed.signal])
+      control.throwIfAborted()
+      this.assertExecution(parent)
+      release = this.options.cliMaintenance?.using(id)
+      this.runtime.assertCliEnabled(id)
+      this.runtime.assertAccountIdle(id)
+      this.trackAccountParent(parent)
+      // Invalidate readers before waiting for their process cleanup under the account lease.
+      this.invalidateSettingsDisplay(id)
+      try {
+        const result = await this.accounts.deleteConfiguration(parent.id, id, selected, control, async () => {
+          await this.connections?.settle(id)
+          control.throwIfAborted()
+          this.runtime.assertCliEnabled(id)
+          this.runtime.assertAccountIdle(id)
+        })
+        try { this.invalidateSettingsDisplay(id) }
+        catch { result.notice = '配置已删除；显示缓存持久化失败，请刷新账号与模型目录' }
+        return JSON.stringify(result)
+      } catch (error) {
+        // A conflict can leave a partial transaction/external edit. Never retain an old snapshot.
+        try { this.invalidateSettingsDisplay(id) } catch { /* In-memory invalidation runs first. */ }
+        throw error
+      }
+    } catch (error) { throw failure(error) }
+    finally { release?.() }
+  }
+
   private async startAccount(
     parentSessionId: string,
     cli: string,
@@ -2907,7 +2953,12 @@ export class CliWorkerService extends TypertRemoteService {
       this.trackAccountParent(parent)
       this.invalidateSettingsDisplay(id)
       return JSON.stringify(
-        await this.accounts.start(parent.id, id, operation, this.project(parent), signal, source, provider, login),
+        await this.accounts.start(parent.id, id, operation, this.project(parent), signal, source, provider, login, async () => {
+          // AccountManager has synchronously reserved the CLI. Invalidation
+          // cancels reads but their process ranges can still be cleaning up.
+          await this.connections?.settle(id)
+          this.runtime.assertAccountIdle(id)
+        }),
       )
     } catch (error) {
       throw failure(error)

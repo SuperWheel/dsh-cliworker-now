@@ -1,20 +1,25 @@
 import { lstat, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readPiOmpLogoutSources, safePiOmpAncestors } from './pi-omp-native.ts'
+import { readPiOmpLogoutSources, safePiOmpAncestors, selectedPiAuthSource } from './pi-omp-native.ts'
 import { projectDirectory } from './process.ts'
 import { parseAccountLoginId } from '../shared/account-links.ts'
 import { ompConfigurationEnvironment } from './pi-omp-environment.mjs'
 import type { PiOmpAccountTerminalInput, PiOmpAccountTerminalLaunch } from './pi-omp-accounts.ts'
 
-/** No snapshot, migration or credential deletion here: only native user-operated menus. */
+/** Native user-operated credential logout. Configuration deletion uses a direct Host operation. */
 export async function preparePiOmpLogout(
   input: PiOmpAccountTerminalInput,
 ): Promise<PiOmpAccountTerminalLaunch> {
   const { cli, signal } = input
   signal?.throwIfAborted()
   projectDirectory(input.project)
-  const sources = await readPiOmpLogoutSources(
+  const managed = input.login ? parseAccountLoginId(input.login) : undefined
+  if (managed?.cli === cli && ['plugin.config', 'native.config'].includes(managed.entry ?? ''))
+    throw new Error('请在账号窗口中删除此服务商配置')
+  const sources = cli === 'pi' && input.login
+    ? [await selectedPiAuthSource(input.login, input.stateDirectory, signal ?? new AbortController().signal, { nativeHome: input.nativeHome })]
+    : await readPiOmpLogoutSources(
     cli,
     input.stateDirectory,
     signal ?? new AbortController().signal,

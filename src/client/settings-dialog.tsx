@@ -984,6 +984,21 @@ function CliSettings({
       .then((fresh) => (controller.signal.aborted ? undefined : fresh))
       .finally(() => windowReads.current.delete(controller))
   }
+  // Each opening of an account window; a read begun for an earlier opening never lands in a later one.
+  const windowGeneration = useRef(0)
+  const endWindowReads = () => {
+    windowGeneration.current += 1
+    for (const read of windowReads.current) read.abort()
+  }
+  // After a login, a sign-out, a return to the list or a saved provider, the open window shows a
+  // fresh read with its handles at once; a display-only snapshot would keep the old logins listed.
+  const refreshWindow = () => {
+    if (!freshBeforeAction || !onPrepareAccount) return onRefreshAccount(true)
+    const generation = windowGeneration.current
+    void prepareInWindow().then((fresh) => {
+      if (fresh && generation === windowGeneration.current) setOpStatus(fresh)
+    })
+  }
   useEffect(() => {
     if ((action || accountsOpen) && account?.data && actionsKnown(account)) setOpStatus(account.data)
   }, [account, action, accountsOpen])
@@ -1156,14 +1171,17 @@ function CliSettings({
       forceCatalogRefresh.current = true
       refreshModels((n) => n + 1)
     }
-    onRefreshAccount(true)
+    if (accountsOpen) refreshWindow()
+    else onRefreshAccount(true)
   }
   const closeAccounts = () => {
+    endWindowReads()
     setAccountsOpen(false)
     setOpStatus(undefined)
     onRefreshAccount(true)
   }
   const closeAccount = () => {
+    endWindowReads()
     setAction(undefined)
     setAccountSource(undefined)
     setOpStatus(undefined)
@@ -1417,7 +1435,7 @@ function CliSettings({
               cli={cli}
               status={operationAccount}
               closeControl={accountClose}
-              onRefresh={() => onRefreshAccount(true)}
+              onRefresh={refreshWindow}
               onClose={closeAccounts}
               prepare={freshBeforeAction && onPrepareAccount ? prepareInWindow : undefined}
               onProviderSaved={providerSaved}

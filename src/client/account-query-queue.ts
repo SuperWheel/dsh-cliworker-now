@@ -26,7 +26,7 @@ export class AccountQueryQueue<Key extends string> {
 
   /** Runs `then` once no read for `key` is queued or running; a later call for the same key replaces it. */
   whenIdle(key: Key, then: () => void): void {
-    if (!this.has(key)) {
+    if (!this.waiting.has(key) && !this.running.has(key)) {
       this.settled.delete(key)
       then()
       return
@@ -69,7 +69,7 @@ export class AccountQueryQueue<Key extends string> {
         .finally(() => {
           if (this.running.get(key) === current) this.running.delete(key)
           const then = this.settled.get(key)
-          if (then && !this.has(key)) {
+          if (then && !this.waiting.has(key) && !this.running.has(key)) {
             this.settled.delete(key)
             then()
           }

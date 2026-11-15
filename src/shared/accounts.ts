@@ -1,5 +1,8 @@
 import type { CliId } from './types.ts'
 
+/** Acknowledged only after config readback; no account terminal is created. */
+export interface AccountConfigurationDeleteResult { ok: true; notice?: string }
+
 export type AccountAction = 'login' | 'logout' | 'manage'
 export type AccountSource = 'native' | 'plugin'
 /** Explicit ZCode native login provider; unrelated to logout storage sources. */
@@ -35,6 +38,10 @@ export interface AccountLogin {
   source?: AccountSource
   /** Logins that the native CLI only removes together share a group. */
   group?: string
+  /** Exact plugin-created provider configuration, backed by a Host ownership receipt. */
+  managedConfiguration?: boolean
+  /** Provider entry in the native models file; deletion also affects direct CLI use. */
+  nativeConfiguration?: boolean
 }
 export interface AccountStatus {
   cache?: import('./settings-connection.ts').ConnectionCacheInfo

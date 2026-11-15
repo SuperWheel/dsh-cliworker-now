@@ -1,3 +1,5 @@
+import { deletePiOmpNativeConfigProvider } from './custom-provider-native.ts'
+import { deletePiOmpManagedProvider } from './custom-provider-managed.ts'
 import { spawnProbe } from './probe-process.ts'
 import { readCodebuddyAccount } from './codebuddy-account.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -45,6 +47,7 @@ import {
 } from './process.ts'
 import { CLI_IDS, type CliId } from '../shared/types.ts'
 import type {
+  AccountConfigurationDeleteResult,
   AccountAction,
   AccountGuide,
   AccountFrame,
@@ -478,6 +481,11 @@ export class AccountManager {
       return this.cleanupHold(cli) ?? this.desktop.current(cli) ?? {
         cli, installed: true, state: 'unknown', summary: '正在确认当前登录状态…', actions: desktopActions(),
       }
+    // A display refresh must not start a second reader of a store being mutated
+    // by its terminal. Guide evidence uses readStatus directly inside this owner.
+    if (this.reserved.has(cli)) return this.cleanupHold(cli) ?? {
+      cli, installed: true, state: 'unknown', summary: '此 CLI 已有账号终端，请先关闭后重试', actions: [],
+    }
     const directory = projectDirectory(cwd)
     const key = JSON.stringify([cli, directory])
     let query = this.statusQueries.get(key)
@@ -589,16 +597,16 @@ export class AccountManager {
           })
       }
       if (isExtendedCli(cli)) {
-        const identity = await abortable(
+        const identity = await (
           cli === 'zcode' || cli === 'grok'
             ? zcodeGrokAccountStatus(cli, this.config, control)
             : cli === 'opencode'
               ? readOpenCodeAccount(this.config, control)
               : cli === 'hermes'
                 ? readHermesAccount(this.config, control)
-                : readPiOmpAccount(cli, this.config, control),
-          control,
+                : readPiOmpAccount(cli, this.config, control)
         )
+        control.throwIfAborted()
         const sources =
           cli === 'pi' || cli === 'omp'
             ? await listPiOmpAccountSources(cli, this.config.stateDirectory, control)
@@ -630,7 +638,8 @@ export class AccountManager {
         }
       }
       if (cli === 'antigravity') {
-        const identity = await abortable(this.identity(cli, control), control)
+        const identity = await this.identity(cli, control)
+        control.throwIfAborted()
         return {
           cli,
           installed,
@@ -854,6 +863,49 @@ export class AccountManager {
     return !!configured && configured !== (cli === 'traecn' ? 'traecli' : cli)
   }
 
+  /** Configuration deletion owns the same per-CLI lane, without a terminal allocation. */
+  deleteConfiguration(
+    parent: string, cli: CliId, login: string, signal: AbortSignal,
+    settleConnections?: () => Promise<void>,
+  ): Promise<AccountConfigurationDeleteResult> {
+    validateCli(cli)
+    const target = parseAccountLoginId(login)
+    if ((cli !== 'pi' && cli !== 'omp') || target?.cli !== cli ||
+      !['native.config', 'plugin.config'].includes(target.entry ?? '')) throw new Error('不支持删除该服务商配置')
+    if (!parent || parent.length > 512) throw new Error('无效的父会话')
+    this.controller.signal.throwIfAborted()
+    signal.throwIfAborted()
+    if (this.isBusy(cli)) throw new Error('此 CLI 已有账号操作或清理暂停，请结束后重试')
+    this.setReserved(cli, true)
+    for (const query of this.statusQueries.values()) if (query.cli === cli) query.controller.abort()
+    let scope = this.parents.get(parent)
+    if (!scope) {
+      scope = { controller: new AbortController(), pending: new Set() }
+      this.parents.set(parent, scope)
+    }
+    const control = AbortSignal.any([signal, scope.controller.signal, this.controller.signal])
+    const operation = this.track((async (): Promise<AccountConfigurationDeleteResult> => {
+      try {
+        // Aborting readers requests cleanup; keep the lease until cleanup actually settles.
+        await Promise.allSettled([...this.statusQueries.values()]
+          .filter(query => query.cli === cli && !query.settled).map(query => query.operation))
+        await settleConnections?.()
+        control.throwIfAborted()
+        if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
+        const assertCurrent = () => control.throwIfAborted()
+        const stateDirectory = this.config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
+        if (target.entry === 'native.config')
+          deletePiOmpNativeConfigProvider(cli, stateDirectory, login, assertCurrent)
+        else deletePiOmpManagedProvider(cli, stateDirectory, login, assertCurrent)
+        // Both helpers commit and read back synchronously while this reservation is held.
+        return { ok: true }
+      } finally { this.setReserved(cli, false) }
+    })())
+    scope.pending.add(operation)
+    void operation.finally(() => scope.pending.delete(operation)).catch(() => undefined)
+    return operation
+  }
+
   start(
     parent: string,
     cli: CliId,
@@ -863,6 +915,8 @@ export class AccountManager {
     source?: AccountSource,
     provider?: string,
     login?: string,
+    /** Host metadata cleanup barrier, called only after this CLI is reserved. */
+    settleConnections?: () => Promise<void>,
   ): Promise<{ id: string; instruction: string; size: { cols: number; rows: number } }> {
     this.config.cliMaintenance?.assertAvailable(cli)
     validateCli(cli)
@@ -901,10 +955,13 @@ export class AccountManager {
           : cli === 'hermes'
             ? entry !== undefined
             : cli === 'pi'
-              ? entry === 'native' || entry === 'plugin'
-              : cli === 'omp' && !!entry && /^(?:native|plugin)\.[1-9][0-9]{0,15}$/.test(entry)))
+              ? entry === 'native' || entry === 'plugin' || entry === 'plugin.config' || entry === 'native.config'
+              : cli === 'omp' && !!entry &&
+                (entry === 'plugin.config' || entry === 'native.config' || /^(?:native|plugin)\.[1-9][0-9]{0,15}$/.test(entry))))
     )
       throw new Error('不支持单独退出该账号')
+    if ((cli === 'pi' || cli === 'omp') && (entry === 'native.config' || entry === 'plugin.config'))
+      throw new Error('请在账号窗口中删除此服务商配置')
     if (!parent || parent.length > 512) throw new Error('无效的父会话')
     this.controller.signal.throwIfAborted()
     signal.throwIfAborted()
@@ -924,7 +981,7 @@ export class AccountManager {
       this.parents.set(parent, scope)
     }
     const operation = this.track(
-      this.startSession(parent, cli, action, directory, signal, scope, source, provider, login),
+      this.startSession(parent, cli, action, directory, signal, scope, source, provider, login, settleConnections),
     )
     scope.pending.add(operation)
     void operation.finally(() => scope.pending.delete(operation)).catch(() => undefined)
@@ -941,6 +998,7 @@ export class AccountManager {
     source?: AccountSource,
     provider?: string,
     login?: string,
+    settleConnections?: () => Promise<void>,
   ) {
     const timeout = new AbortController()
     const timer = setTimeout(() => timeout.abort(), STARTUP_TIMEOUT)
@@ -958,6 +1016,16 @@ export class AccountManager {
     let nativeProviders: NativeLoginProvider[] | undefined
     let instruction = instructionFor(cli, action)
     try {
+      // start() has reserved this CLI and cancelled its old readers. Abort is
+      // only a request: keep ownership until those readers release their resources,
+      // even if this startup is cancelled while they are cleaning up.
+      await Promise.allSettled([...this.statusQueries.values()]
+        .filter(query => query.cli === cli && !query.settled).map(query => query.operation))
+      // Catalog processes have a separate Host lane. Cancellation must not
+      // release our reservation before that lane confirms its cleanup either.
+      await settleConnections?.()
+      startup.throwIfAborted()
+      if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
       const executable = await resolveCliExecutable(cli, this.backend, this.config, startup)
       if (provider && (cli === 'pi' || cli === 'omp')) {
         nativeProviders = await this.nativeLoginProviders.read(cli, executable, startup)
@@ -1103,9 +1171,11 @@ export class AccountManager {
         login,
         stores: provider ? providerStores(cli, provider, nativeProviders) : undefined,
       })
-      // These flows require a signed-out baseline captured before native startup can mutate it.
-      const before = guide && (cli === 'codebuddy' || cli === 'traecn')
-        ? await this.readStatus(cli, cwd, startup) : undefined
+      // Capture every guided login's baseline before a fast native process can
+      // store credentials. A post-spawn read can mistake the new login for an old one.
+      // Targeted Pi/OMP logout uses its exact stored-row evidence below instead.
+      const before = guide && cli !== 'antigravity' && !(action === 'logout' && login && (cli === 'pi' || cli === 'omp'))
+        ? await this.readStatus(cli, cwd, startup, { renew: cli !== 'hermes' }) : undefined
       if (before?.cleanupBlocked) throw new ProcessCleanupUnconfirmedError()
       startup.throwIfAborted()
       allocation = spawnAccountTerminal(this.backend, {
@@ -1412,10 +1482,10 @@ export class AccountManager {
     if (change === 'login') await session.afterLogin?.(signal).catch(() => undefined)
     signal.throwIfAborted()
     const events = session.guide!.confirmed(change)
-    if (change === 'logout' && session.logoutLogin) {
-      session.completionGuide = events.find((event): event is { guide: AccountGuide } => 'guide' in event)?.guide
-      await this.finish(session, 'closed', '账号终端已关闭')
-    } else this.guided(session, events)
+    // The result button permits another account operation. Publish it only when
+    // terminal cleanup, reservation release and Host cache invalidation are done.
+    session.completionGuide = events.find((event): event is { guide: AccountGuide } => 'guide' in event)?.guide
+    await this.finish(session, 'closed', '账号终端已关闭')
   }
 
   /** The CLI ended its own login/logout: read the account before reporting the window closed. */
@@ -1621,11 +1691,13 @@ export class AccountManager {
         await session.terminal.terminate()
         await session.output
         await session.release?.()
+        if (this.unsafeTerminals.get(session.cli) === session.parent) this.unsafeTerminals.delete(session.cli)
+        // Activity subscribers invalidate account/catalog snapshots synchronously.
+        // A closed frame must never race that invalidation on the other stream.
+        this.setReserved(session.cli, false)
         if (session.completionGuide) this.emit(session, { guide: session.completionGuide })
         session.state = state
         this.emit(session, { status: state, message, cleanupConfirmed: true })
-        if (this.unsafeTerminals.get(session.cli) === session.parent) this.unsafeTerminals.delete(session.cli)
-        this.setReserved(session.cli, false)
         session.expiry = setTimeout(() => {
           session.frames.length = 0
           this.sessions.delete(session.id)

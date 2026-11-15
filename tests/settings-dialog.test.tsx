@@ -3094,6 +3094,31 @@ it('模拟：a saved other provider re-reads the account and forces the model ca
   expect(t.text()).toContain('已添加 Simulated')
   expect(terminal.started).not.toHaveBeenCalled()
 })
+it('模拟：the open account window lists a new login right after its terminal finishes, even while a catalog read is in flight', async () => {
+  // Simulated Host reads: the display snapshot still has the old list; only the fresh read has the new login.
+  const providers = [{ id: 'deepseek', label: 'DeepSeek' }, { id: 'zai', label: 'Z.AI' }]
+  const before = [{ providerLabel: 'DeepSeek', authMethod: 'api' as const, id: 'omp:deepseek:plugin.1', source: 'plugin' as const }]
+  const after = [...before, { providerLabel: 'Z.AI', authMethod: 'api' as const, id: 'omp:zai:plugin.2', source: 'plugin' as const }]
+  let loggedIn = false
+  const accountStatus = pickedStatus('omp', before, providers)
+  const fresh = pickedStatus('omp', after, providers)
+  const refreshAccountStatus = vi.fn(async (parent: string, cli: CliId) => (loggedIn ? fresh(parent, cli) : accountStatus(parent, cli)))
+  // OMP's model directory read stays in flight (a slow catalog), holding the per-CLI read queue.
+  const hang = (_session: string, cli: CliId, signal?: AbortSignal) =>
+    cli === 'omp' ? new Promise<never>((_resolve, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')))) : Promise.resolve(catalog(cli))
+  const t = await setup({ accountStatus, refreshAccountStatus, catalogForCli: vi.fn(hang), refreshCatalogForCli: vi.fn(hang) })
+  await t.click('OMP 设置')
+  await t.click('账号')
+  expect(t.r.root.findAllByProps({ className: 'cwn-accounts-card' }).length).toBe(1)
+  await t.click('添加账号')
+  await t.click('Z.AI')
+  await t.click('继续')
+  expect(terminal.started).toHaveBeenLastCalledWith('omp', 'login', { provider: 'zai' })
+  loggedIn = true
+  await t.click('完成模拟账号操作')
+  await t.click('关闭模拟账号操作')
+  await vi.waitFor(() => expect(t.r.root.findAllByProps({ className: 'cwn-accounts-card' }).length).toBe(2))
+})
 it('names each OMP account of one provider by its email when replacing one', async () => {
   const providers = [{ id: 'openai-codex', label: 'OpenAI', signedIn: true, multi: true }]
   const logins = [

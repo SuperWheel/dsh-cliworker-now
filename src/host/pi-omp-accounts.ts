@@ -114,7 +114,11 @@ export async function preparePiOmpAccountTerminal(
     const accounts = await privateDirectory(join(root, 'accounts'))
     const account = await privateDirectory(join(accounts, cli))
     const agent = await privateDirectory(join(account, 'agent'))
-    const native = await snapshotPiOmpNative(cli, agent, { accountRoot: root, nativeHome: input.nativeHome })
+    // Opening a Pi login must not import/validate unrelated models or copy global
+    // credentials into a second authoritative source. Pi writes its chosen login here.
+    const native = cli === 'pi' && input.action === 'login'
+      ? { env: {} }
+      : await snapshotPiOmpNative(cli, agent, { accountRoot: root, nativeHome: input.nativeHome })
     const temporary = await privateDirectory(join(runtime, 'tmp'))
     const nativeArgs = ['--no-session', '--no-tools', '--no-extensions', '--no-skills']
     const env: Record<string, string> = {
