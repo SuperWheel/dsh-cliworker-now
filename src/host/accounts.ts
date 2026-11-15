@@ -1598,6 +1598,7 @@ export class AccountManager {
     const guide = session.guide!
     let before: AccountEvidence | undefined
     let after: AccountEvidence | undefined
+    let unreadableAfterExit = 0
     try {
       before = await session.before
       while (Date.now() < until) {
@@ -1612,6 +1613,9 @@ export class AccountManager {
         // Targeted logins may still be flushing storage. Unavailable/unknown
         // is a failed read, not a usable observation that ends confirmation.
         if (exited && !guide.targetsLogin && after && after.state !== 'unavailable' && after.state !== 'unknown') break
+        // A finished process that keeps reading as unavailable/unknown will not
+        // change any more; retry a few transient reads, not the whole budget.
+        if (exited && !guide.targetsLogin && ++unreadableAfterExit >= 3) break
       }
     } catch (error) {
       // Closing the window aborts the poll; an unconfirmed read ends it as unconfirmed.

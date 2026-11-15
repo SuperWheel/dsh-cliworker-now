@@ -141,7 +141,7 @@ it('模拟：父会话释放作废 token；新父会话无法重用旧 token', a
 })
 it('模拟：未核实 CLI 表单统一为 null；非法 CLI 和无效 parent 拒绝', async () => {
   const f = fixture()
-  for (const cli of CLI_IDS.filter(id => !['pi', 'hermes', 'opencode'].includes(id))) expect(await f.form(cli)).toBeNull()
+  for (const cli of CLI_IDS.filter(id => !['pi', 'hermes', 'opencode', 'zcode'].includes(id))) expect(await f.form(cli)).toBeNull()
   await expect(f.form('invalid')).rejects.toThrow()
   ;(f.service as any).parent.mockRejectedValueOnce(new Error('missing parent'))
   await expect(f.form()).rejects.toThrow('missing parent')
