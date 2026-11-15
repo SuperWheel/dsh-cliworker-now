@@ -50,7 +50,7 @@
 ## 5. 文档与验收 〔测试｜2h｜前置 2,3,4〕
 - [x] 5.1 同步 README、README.en、doc/design.md、doc/settings-ui-design.md
   - README / README.en 新增「订阅过期后使用自己的 API Key」段；doc/design.md 新增本变更小节；settings-ui-design 的账号窗口段和「服务商表单模板」补充 ZCode 行、删除确认与内置模板参数。`git diff --check` 无输出。
-- [ ] 5.2 隔离构建、类型检查与关联回归（整组并行仍有偶发失败未排除，暂不勾选）
+- [x] 5.2 隔离构建、类型检查与关联回归
   - `corepack pnpm build:preview`：exit 0，隔离包在 `.cache/preview-package`，其中 Host 与 Client 的 tsc 均通过。
   - `corepack pnpm typecheck`：工作树没有 `lib/`，首次因缺 `dsh-cliworker-now/remote` 声明失败（exit 1，与改动无关）。把预览包生成的 `typert.remote-client.*` 临时复制到被忽略的 `lib/` 后通过（exit 0，「Host/Client typecheck passed against DSH 0.2.2-rc.3」），随后删除 `lib/`。
   - 单独运行全部通过：zcode-custom-provider 11、zcode-account-window 6、zcode-grok-accounts 50、native-zcode 55。表单与账号窗口相关的 10 个文件 225 passed（provider-form、accounts-window、accounts-window-managed、client-i18n、custom-provider、custom-provider-managed、native-config-provider-delete、pi/omp-account-window、zcode-account-window）。
@@ -63,7 +63,22 @@
   - 排查：native-zcode 单独运行时，本分支和 HEAD 的账号用例耗时都约 75–117ms，远低于用例的 600ms 时限。在 10 核全部占满（`yes` ×10）的压力下，本分支 55/55、HEAD 50/50 各跑 2 次也全部通过。
   - 结论：失败像是多个 vitest 并行进程下 600ms 时限导致的偶发超时，但没有完全排除本分支整组负载更高的可能，需要主会话在合并后的统一回归中复核。
   - 未执行：沙箱外全量 vitest、Windows 平台检查。
+  - 2026-11-16 主会话合并后统一回归（main 1cf49d0）：
+    - Mac 全量 vitest 第一次在系统负载约 30 时跑出 11 个文件 36 项失败，都是超时类。这 11 个文件单独重跑 663/663 全部通过（`.test-data/release-v0.8.10/mac-failed7-rerun.log`）。
+    - 随后全量重跑：354 个文件通过、4 个跳过；8265 项通过、14 项跳过（`mac-full-vitest-8.log`）。
+    - typecheck 与 `pnpm spec:check`（39 项）通过。
+    - Windows 远程回归 run `f3083a3d` 全部通过，包括预览、安装、类型检查、Windows 测试和包内 Host 加载。
+    - 偶发失败判为高负载下的超时。
 - [ ] 5.3 真实 Desktop 验收：订阅过期 + 自有 API Key，分别走 headless 与 app-server 派遣
+  - 2026-11-16 Mac Desktop（1cf49d0 正式构建，Codex CU 操作）：新对话、CLI Worker Demo 项目，派遣 ZCode deepseek-v4-flash、最低强度、「仅工作区编辑」档。Worker `c2b77970`，transport `zcode-app-v1`，observedModel 为 `<自定义服务商 UUID>/deepseek-v4-flash`。
+    - 首轮：主页面只出 1 张「CLI 授权」卡（Bash 高风险命令），点「允许一次」后不再出现；命令执行，exitCode 0，没有出现「DSH 未批准此授权」。
+    - 续聊：Worker 窗口底部出现 1 张审批卡，允许一次后执行，exitCode 0。
+    - 停止：`sleep 120` 被 ZCode 原生判为无需审批，没有出卡；运行约 33 秒时停止，约 5 秒后显示「已停止」，worker.json 为 interrupted/user。
+    - 产物 `rc0810/zcode-mac3.txt` 由主会话 `od -c` 回读，内容为 `zcode mac3 ok` 和 `followup ok` 两行，共 26 字节。全局 `~/.zcode/v2/provider_config.json` 的修改时间仍是 2026-09-19，本次未改动。
+    - 本次只走了 app-server 派遣，headless 派遣未执行。
+  - 2026-11-16 Windows：账号窗口列出 ZCode 桌面端的 deepseek 服务商（标「在 ZCode 桌面端管理」），「添加账号」中有「其他服务商」；模型下拉只有 BigModel 套餐的 GLM-5.3 与 GLM-5.3-Flash。
+    - 只读结构诊断：该服务商 baseUrl 为官网控制台 `https://platform.deepseek.com/`，模型 ID 为 `deepseek v4pro`，模型规则中没有启用标记。插件按原生规则跳过未启用的模型，属预期行为。
+    - 诊断没有输出密钥，没有发网络请求。Windows 自有 Key 派遣未执行：需要用户在 ZCode 桌面端或插件「其他服务商」中配置可用的服务商后再测。
   - 未执行：需要用户另行授权真实模型调用。本次没有登录、没有调用模型，也没有运行真实 ZCode CLI。
   - 验收时应检查：0.17.1 不再因答复字段失败；目录 404/405 时出现未核实候选；Worker 实际使用所选自有服务商（事件、退出状态与产物）；全局 `~/.zcode/v2/provider_config.json` 未被修改。
 
@@ -75,6 +90,7 @@
   - `tests/native-zcode.test.ts`（模拟）新增「re-announces」两项（allow-once 与 deny）：模拟 CLI 以 server-3/4/5 重发、在答复后再发 server-9。断言只有 1 张审批卡，server-5 与 server-9 得到相同决定且不含 permissionUpdates。临时换回修复前的桥接代码时这两项失败（2 failed），恢复后通过。
   - `pnpm_config_verify_deps_before_run=false`：native-zcode、zcode-resume、zcode-schema-probe、native-approval-relay、worker-permissions、zcode-adapter 共 6 个文件 231 passed；typecheck 借用主检出 `lib/typert.remote-client.*` 后 exit 0（随后删除临时 `lib/`）。
   - 未执行：真实 Desktop 复测，需由主会话在合并后重新运行。
+  - 2026-11-16 主会话在 Mac Desktop 复测通过，证据见 5.3。
 - [x] 6.2 核查下拉框与派遣卡只显示模型 ID
   - 证据：设置目录缓存 `settings-catalogs/44bd599b….json` 中，Host 标签为「deepseek-v4-flash（deepseek · 本机配置，未核实）」，目录提示为「当前账号可用模型；2 个自定义服务商未提供模型目录，所列模型来自本机配置，可用性与费用未核实」。说明 `/models` 返回 404/405、未核实，Host 标注已按设计生成。
   - 只显示 ID 是因为 Client 的 `displayModelName`（`src/shared/model-presentation.ts`）按既有规格「简化名称与模型去重」去掉 provider 前缀与全部括号附注，所有 CLI 都这样处理。本次不改这个共享展示层；是否在菜单中保留「未核实」标注需要用户决定，属于后续事项。

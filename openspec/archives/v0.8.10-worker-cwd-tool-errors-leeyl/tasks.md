@@ -14,6 +14,14 @@
   - 完整 3 文件首轮：184 通过、1 跳过。最终新增 legacy 回归和加强取消身份断言后复跑相关 2 文件：50 通过、1 跳过。最终分别为 pi-omp-adapter 135/135，harness-conversation-stream 40 通过/1 跳过，tool-error-text 10/10，总计 185 通过、1 跳过。跳过项为缺少可选官方 turn-process 源码，不是本次回归。
   - corepack pnpm typecheck 两次通过（最终修改后复查 Host/Client，对 DSH 0.2.2-rc.3）。README、doc/design 已同步；变更严格校验与 git diff --check 通过。
   - Grok 按协调决定不改：既有 raw.jsonl 的 caa18f90 run 第 55 行与 c13d43cd run 第 38 行均返回 HTTP 402 personal-team-blocked:spending-limit。没有读取凭据值，没有真实模型调用，没有构建、更新 lib 或提交。
-- [ ] 1.4 主会话统一构建后执行 Desktop 复验
+- [x] 1.4 主会话统一构建后执行 Desktop 复验
+  - 2026-11-15 Mac Desktop（含本修复的正式构建，Codex CU 操作）：项目 `.test-data/CLI Worker Demo` 位于 cliworker-now Git 仓库内且被 gitignore，是本次要验证的嵌套场景。
+    - OMP Worker `5217eba0`（deepseek/deepseek-flash）与 Pi Worker `e1f6f57b`（deepseek/deepseek-flash）都走了首轮写文件、续聊追加和 `sleep 120` 停止三步。
+    - 两者的相对路径 `rc0810/…` 均落在 Worker 项目：主会话回读 `omp-mac2.txt` 为 `omp mac2 ok`+`followup ok`，`pi-mac2.txt` 为 `pi mac2 ok`+`followup ok`；仓库根下没有 `rc0810/`。
+    - 停止后工具事件为 FAILED，文本为 OMP/Pi 原生的「Command aborted」，没有出现 `[object Object]`；worker.json 均为 interrupted/user。
+  - 2026-11-16 Windows Desktop 0.2.2-rc.3（1e4cfa5 候选包经原生安装器安装，Codex Windows CU 操作），项目 `C:\Users\admin\cw081f1\live-codex`（不在 Git 仓库内）。
+    - OMP `6a8d72d2`、Pi `fe00e687`、Claude Code `ecb5d869` 各走首轮写文件、续聊追加、`sleep` 停止三步；停止后工具卡与详情均为「Error: 用户已停止任务」，没有 `[object Object]`。
+    - 主会话经 SSH 回读三个产物，都在 Worker 项目的 `rc0810/` 下，内容为 `<cli> win2 ok`+`followup ok`。
+    - Windows 项目不在 Git 仓库内，没有覆盖嵌套仓库场景；嵌套场景只在 Mac 上验证。Windows Claude 原始事件的根因仍按 1.4 原记录，未直接证实。
   - 未执行：本次禁止构建和真实模型调用。需在嵌套项目重新验证 OMP/Pi 首轮、续聊的绝对写入路径和 Bash cwd；验证失败卡、停止卡、取消状态与退出清理。Windows Claude 原事件未获取，本次只通过共享路径模拟取消验证，不宣称 Windows 实机根因已直接证实。
   - 提示不是文件系统权限隔离；原生 CLI 仍可按用户明确指令跨目录。旧会话本身记录了错误目录或模型再次显式越界的情况需实机观察。保留本变更未归档。

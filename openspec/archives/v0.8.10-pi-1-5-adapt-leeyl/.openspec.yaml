@@ -1,8 +1,10 @@
 pm:
   title: 适配 Pi Coding Agent 1.5.2
-  version: next
+  version: 0.8.10
   creator: leeyl
   creator_name: Leeyl
-  previous_names: []
+  previous_names:
+    - vnext-pi-1-5-adapt-leeyl
+  archived: 2026-11-16
 schema: pmspec
 created: 2026-11-13

@@ -46,7 +46,11 @@
   - 包括真实生成、工具执行、审批往返、续聊、在线账号范围、计费和实际请求上下文统计。
   - 2026-11-14 Mac Desktop 0.2.2-rc.3（main 合并 1.5.2 适配后正式构建）：设置页 Pi 由「执行入口身份不匹配」恢复为绿点，账号「智谱 GLM Coding（中国）· API 服务」，模型 GLM-5.3、强度 Low。用户要求修复后派遣 Pi 写 `pi-test/hello152.txt`：Worker `d4464291`（pi-1，zai-coding-cn/glm-5.3，Low）原生模型已确认后失败。Pi 原生会话中每次助手回复 `stopReason: error`，`errorMessage` 为 `429` 加 `code 1309`「GLM Coding Plan 套餐已到期，暂无法使用」，Pi 自动重试后放弃，文件未生成。属账号订阅状态，不是 1.5.2 接口问题；需用户续订或为 Pi 配置其他可用提供商后再验收
   - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
-- [ ] 3.5 Windows 原生执行复验（未执行：本次修复后 Windows 实机复验待进行）
+- [x] 3.5 Windows 原生执行复验
+  - 2026-11-16 Windows Desktop 0.2.2-rc.3（1e4cfa5 候选包经原生安装器安装，含第 5 节修复；Codex Windows CU 操作）：Pi Worker `fe00e687`，deepseek/deepseek-flash、Low，项目 `C:\Users\admin\cw081f1\live-codex`。
+    - 首轮写文件与续聊追加均完成；主会话经 SSH 回读 `rc0810/pi-win2.txt`，内容为 `pi win2 ok`+`followup ok`。说明 bash 已找到，没有再报 `No bash shell found`。
+    - `Start-Sleep` 命令经「允许一次」运行后停止，约 10 秒显示「已停止」，工具卡为「Error: 用户已停止任务」。
+    - 之后新派遣 MiMo `49b611a2` 正常完成，没有出现「已暂停派遣」；`~/.dsh/cliworker-now/cleanup-blocked.json` 不存在。说明正常结束后不再误判清理失败。
   - 1.5.2 包中无全新 Windows 安装器 launcher 模板，该模板是否变化待核实；已验证的旧模板升级指针路径保持支持，未知模板拒绝。
 
 ## 4. 实机发现：模型失败原因透传 〔后端｜2h｜前置 3〕

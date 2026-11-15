@@ -11,8 +11,11 @@
   - 获准沙箱外精确重跑该取消测试：1 通过、132 跳过（977ms）。其余 6 文件独立复跑：97/97 通过（1.78s），包含新增 8 项「模拟」兼容回归。
   - `corepack pnpm typecheck`：Host/Client 对 DSH 0.2.2-rc.3 通过。变更严格规格校验及限定范围 git diff --check 通过。
   - 修复后的真实 discoverGrok 返回 grok-4.7，efforts=xhigh/high/medium/low。没有真实任务/续期请求，没有构建或提交。
-- [ ] 1.4 主会话统一构建后 Desktop 复验及公共文档同步
-  - 未执行：本次明确禁止构建；README/doc/design 为共享文件，不在本次编辑范围。需主会话汇总同步，不以只读目录成功替代派遣验收。
+- [x] 1.4 主会话统一构建后 Desktop 复验及公共文档同步
+  - 子会话当时未执行：那次明确禁止构建，README/doc/design 是共享文件，不在其编辑范围。不以只读目录成功替代派遣验收。
+  - 2026-11-15 Mac Desktop（含 622ccad 的正式构建，Codex CU 操作）：设置页与派遣选择器读到账号目录 grok-4.7，没有再出现「当前 CLI 未支持账号模型」。派遣 Worker `319958c5`，偏好 grok-4.7/low，observedModel 为 grok-4.7，请求已到达 xAI 服务端。
+  - 服务端返回 `402 Payment Required: personal-team-blocked:spending-limit`，Worker 为 failed，因此没有产物。这是账号额度问题；用户 2026-11-15 说明账号已过期、暂不修。真实生成、续聊与停止均未验证；Windows 未测。
+  - 本修复只扩展已验证构建表，不改用户可见行为与安装方式，README 与 doc/design 不需修改；变更说明写入 v0.8.10 发布正文。
 
 ## 2. OMP 与 Codex 关联排查 〔测试｜2h〕
 
