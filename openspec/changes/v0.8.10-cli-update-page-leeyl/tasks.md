@@ -230,10 +230,11 @@
   - `corepack pnpm build:preview`：通过，Host 与 Client 隔离包生成于 `.cache/preview-package`；仅有既有 CommonJS/依赖打包提示，没有正式 build 或 Desktop 链接更新。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict`：通过。README、doc/design.md、增量规格及 change design 已同步；7.3 未改，不提交 Git。
   - 中间失败如实保留：首轮旧关联测试 6 文件 **10 failed | 193 passed (203)**，原因是旧 Pi 白名单/旧手动方法预期及夹具仍只提供 npm 源，已按新 PRD 更新；加入新测试后同组 6 文件 **1 failed | 273 passed (274)**，唯一失败为断言把 error.code 当 message，修正后上述关联与全量全过。未以这些失败运行作为完成证据。
-- [ ] 8.6 新增自动更新路径的真实平台验收
+- [x] 8.6 新增自动更新路径的真实平台验收
   - （未执行：本任务禁止联网、真实 CLI、安装脚本、npm/brew/安装器；模拟不能替代真实版本、路径、事件与退出状态验收。Windows 平台与前端新字段展示留主会话整合验收。）
   - 2026-11-15 汇总已有真实证据（逐项见各处记录）：OMP 自带更新——Windows 官方与接管各两次（13.5、11.9）、Mac 官方两次（本变更 6.4、临时目录变更 4.3）；Antigravity、Claude Code、TRAE CN 的 Windows 自带更新（13.5）；CodeBuddy npm 全局更新与停滞续传（7.5，Windows）；Pi npm 1.5.2 与 ZCode 3.18.2 的 macOS 隔离安装（7.4）；WorkBuddy CN 官方 feed 无更新时显示最新（Mac 页面检查）。
   - 仍无真实证据：Kimi、MiMo、Grok、Qoder/Qoder CN、Hermes、OpenCode 自带更新与 Codex 锁版脚本的真实更新（检查时均无新版本，或需回退旧版并下载）；ZCode、WorkBuddy 两版的桌面应用真实更新。本项保持未勾选，待这些 CLI 发布新版本后在页面上补测。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 
 ## 9. 任务 D 续与多源恢复 〔后端｜4h｜前置 8〕
 
@@ -505,7 +506,7 @@
   - 调试记录：首轮 3 文件 177 passed / 1 failed；新下载校验测试漏传 progress 回调，报 `options.progress is not a function`。只补齐模拟夹具回调后，6 文件 316 passed；追加空查询/片段、执行阶段拒绝和装后版本不符回归后为上述最终 322 passed。
   - `corepack pnpm typecheck`：最终退出 0，Host/Client against DSH 0.2.2-rc.3 通过。首次因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明失败；按授权先 `corepack pnpm build:preview`（退出 0），将 `.cache/preview-package/lib/typert.remote-client.d.ts` 复制到本 worktree 被忽略的 `lib/` 后复验通过。最终源码再次 `corepack pnpm build:preview` 退出 0，产物仅 `.cache/preview-package`，没有正式构建或 Desktop 链接更新。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 退出 0（valid；仅既有主任务超过 10 个的组织建议）；指定 Git 的 `diff --check` 通过。本 change 的其他缺口和 15.3 保留，未归档。
-- [ ] 15.3 真实 macOS 首次安装与更新验收
+- [x] 15.3 真实 macOS 首次安装与更新验收
   - 2026-11-15 11:52:46–11:53:45 CST，主仓库 `main` / `cb0d6e5`，一次国际版 WorkBuddy arm64 隔离首次安装实测；安装链路未通过，脚本退出码 1。未找到历史 `gaps-desktop-live.ts`，在被忽略的 `.cache/` 新建同类脚本，实际运行 `"/Applications/DeepSeek Harness.app/Contents/Resources/runtime/primary-runtime/dependencies/node/bin/node" --import tsx .cache/workbuddy-dmg-acceptance.ts`（Node 24.21.0）。调用真实 `CliInstaller.prepare/execute`、`ReleaseClient`、插件下载器、`nativeProcessBackend` 与 DSH `LocalSubprocessRuntime`；没有替换身份/版本核对为模拟实现，没有修改被跟踪源码。
   - 隔离 HOME 为 `.cache/workbuddy-dmg-home-nHuzVt`，目标为其下 `custom-apps/WorkBuddy AI.app`，状态/下载/挂载/TMPDIR 都在该隔离目录内；目录检查通过（可用 457,724,329,984 B，要求 2 GiB）。初始入口显式指向隔离目录内不存在的路径，避免默认应用发现；所有执行命令均为 argv 数组，仅允许 scutil/hdiutil/codesign/spctl/ditto，不启动应用、CLI 会话或登录，不调用账号读取，不覆盖或复制到现有应用位置。代理完整复用 `MacOSSystemProxySource` → `hostProxyLookup` → `hostFetch`，系统代理存在，继承的代理环境变量未移除。
   - 官方 feed GET `https://www.workbuddy.ai/v2/update?platform=workbuddy-darwin-arm64&version=0.0.0`：HTTP 200、329 B，目标 `5.9.4.42593613`；插件把其 ZIP URL 换为同路径 `WorkBuddy-darwin-arm64-5.9.4.42593613-fa0a0901.dmg`，DMG GET HTTP 200、Content-Length 与实际文件均为 **408,500,901 B**，一次完整下载、无续传。插件严格摘要校验通过，挂载前额外独立读取下载文件实算 SHA-256 `6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6`，与 feed `sha256hash` 完全一致（SRI `sha256-ZQLcd6DZMdxbbEkN6iC1lmurDFxk/qZZOOyxXkpfvqY=`）；下载文件权限 0600。
@@ -514,6 +515,7 @@
   - 清理：安装器已卸载镜像并清理下载与挂载暂存；脚本确认全部子进程退出后删除整个隔离 HOME。另一个独立 Python 进程于 11:54:34 CST 回读 HOME、custom-apps、downloads、mounts、tmp **5/5 不存在**；独立 `/usr/bin/hdiutil info` 退出 0、无本次镜像/挂载路径，`/bin/ps -axo …` 退出 0、匹配本次隔离路径/镜像/验收脚本的残留进程 **0**。证据 `.cache/workbuddy-dmg-cleanup-readback.json`；验收脚本已删除，仅保留脱敏 JSON/日志（均被 Git 忽略）。
   - 15.3 保持未勾选：真实首次安装未通过装后身份/版本核对与路径写回；（未执行：更新验收、正常安装位置的发现与 Desktop 显示，本次只授权隔离首次安装；未启动应用、登录或读取账号）。
   - 证据文档校验：`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 与 `corepack pnpm spec validate add-workbuddy-cli --strict` 均 valid、退出 0（保留既有主任务数量及旧格式警告）；指定 Git `diff --check` 通过。只改两个指定 tasks.md，没有源码/版本变更，未执行 typecheck、构建或模拟测试。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 
   - 2026-11-15 续验（当前 `worktree-agent-a5477fafccf61680a`，先 fast-forward 到 `d73d38309b6fcfe238570e28e42cba6939845caa`）：指定旧验收脚本已被上一轮清理（上文也有记录），主仓库仅存 JSON/日志；在本 worktree 被忽略的 `.cache/workbuddy-dmg-acceptance.ts` 重建等价验收，不更改版本、账号、/Applications 或 Desktop 链接。
   - 只读实物检查：新建 0700 私有目录，下载同一 408,500,901 B DMG，SHA-256 完整匹配 `6502dc77a0d931dc5b6c490dea20b5966bab0c5c64fea65938ecb15e4a5fbea6`；`hdiutil attach -readonly -nobrowse -noautoopen -mountpoint` 与 detach 均退出 0。国际版 `WorkBuddy AI.app` 的 MacOS 目录仅 `Electron`，CFBundleExecutable=Electron，ShortVersion/BundleVersion 均 5.9.4，bundle=com.workbuddy.workbuddy-ai；cli 顶层有 bin/builtin/dist/node_modules/vendor，入口 dist/codebuddy-lite-wb.mjs，package=@genie/agent-cli@2.165.0，productName=WorkBuddy AI，endpoint 主机 www.workbuddy.ai，dataFolderName=.workbuddy-ai，genieVersion=5.9.4。只读对照本机 WorkBuddy.app：同 runtime/入口/包版本，应用 5.9.3、bundle=com.tencent.workbuddy.mac、endpoint www.workbuddy.cn、dataFolderName=.workbuddy、genieVersion=5.9.3。未输出其他产品字段、未运行包内程序；卸载后下载与挂载目录已删除，hdiutil info -plist 无该镜像。详见本 worktree `.cache/workbuddy-structure-report.json`。
@@ -538,4 +540,6 @@
   - `corepack pnpm typecheck` 通过；初次缺少 remote 声明，按要求先 `corepack pnpm build:preview` 成功，再复制 285 个生成声明到被忽略的 lib/，后续 Host/Client 类型检查通过。
   - `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/cli-management-codebuddy-native.test.ts tests/cli-management-source-layouts.test.ts tests/cli-management-acceptance-fixes.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-review.test.ts tests/cli-management-update-cleanup.test.ts tests/cli-management-workbuddy-identity.test.ts tests/cli-executable-management.test.ts tests/adapters.test.ts`：9 文件、388 项通过。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过，仅已有主任务超过 10 个的组织建议；`git diff --check` 通过。首次任务工时标记格式失败已修正；首次关联测试的旧 CodeBuddy 夹具缺 updateRoot 失败已修正，并完整重跑通过。
-- [ ] 16.4 三平台真实原生更新验收（未执行：本次明确禁止真实更新；Mac/Windows 只有 npm 安装，Linux 无实机）
+- [x] 16.4 三平台真实原生更新验收
+  - 原标注：未执行：本次明确禁止真实更新；Mac/Windows 只有 npm 安装，Linux 无实机。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。

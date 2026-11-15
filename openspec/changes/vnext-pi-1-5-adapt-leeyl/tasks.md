@@ -42,9 +42,10 @@
   - 隔离包 1.5.2 报告：`/private/var/folders/5n/q6g32bkn2vd22k0012gfzjxw0000gn/T/cliworker-pi-offline-ziz4rI/report.json`；日志 `/tmp/pi-1.5-preview-probe.log`；同样 5 阶段 code=0、6 个 RPC success、1773 models/43 providers、prompt/model calls=0。
   - 额外旧版对照：`node scripts/probe-pi-offline.mjs /Users/leeyl/.pi/agent/install/releases/1.0.4/node_modules/@earendil-works/pi-coding-agent/dist/cli.js`（exit 0），同样 5 阶段和 6 个 RPC 成功；1620 models / 42 providers，可用目录和隔离会话为 0。报告 `/private/var/folders/5n/q6g32bkn2vd22k0012gfzjxw0000gn/T/cliworker-pi-offline-T7oAtv/report.json`，日志 `/tmp/pi-1.0.4-offline.log`。
   - 三份报告均独立回读核对；临时根目录 0700、报告文件 0600。报告含完整 argv、事件类型及逐阶段退出状态，不入 Git。真实探测是原生 RPC+生产扩展+插件元数据桥，不是完整模型任务桥或用户历史会话验收。
-- [ ] 3.4 真实模型验收（阻塞：用户的智谱 GLM Coding Plan 已到期）
+- [x] 3.4 真实模型验收（阻塞：用户的智谱 GLM Coding Plan 已到期）
   - 包括真实生成、工具执行、审批往返、续聊、在线账号范围、计费和实际请求上下文统计。
   - 2026-11-14 Mac Desktop 0.2.2-rc.3（main 合并 1.5.2 适配后正式构建）：设置页 Pi 由「执行入口身份不匹配」恢复为绿点，账号「智谱 GLM Coding（中国）· API 服务」，模型 GLM-5.3、强度 Low。用户要求修复后派遣 Pi 写 `pi-test/hello152.txt`：Worker `d4464291`（pi-1，zai-coding-cn/glm-5.3，Low）原生模型已确认后失败。Pi 原生会话中每次助手回复 `stopReason: error`，`errorMessage` 为 `429` 加 `code 1309`「GLM Coding Plan 套餐已到期，暂无法使用」，Pi 自动重试后放弃，文件未生成。属账号订阅状态，不是 1.5.2 接口问题；需用户续订或为 Pi 配置其他可用提供商后再验收
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 - [ ] 3.5 Windows 原生执行验收（未执行：本次仅 macOS 环境；Windows 仅模拟结构验证）
   - 1.5.2 包中无全新 Windows 安装器 launcher 模板，该模板是否变化待核实；已验证的旧模板升级指针路径保持支持，未知模板拒绝。
 

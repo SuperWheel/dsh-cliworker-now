@@ -16,7 +16,7 @@
 
 ## 3. 实机只读兼容与交付校验 〔测试｜2h｜前置 2〕
 
-- [ ] 3.1 用插件路径验证两版 1.1.89 与 Qoder 1.1.73 元数据，记录脱敏数量、强度、账号和用户目录 mtime 比对
+- [x] 3.1 用插件路径验证两版 1.1.89 与 Qoder 1.1.73 元数据，记录脱敏数量、强度、账号和用户目录 mtime 比对
   - 已执行真实只读查询：`corepack pnpm exec tsx .cache/cli-update-research/H-live.ts` 两次（首次操作级快照 3 个进程，第二次独立账号/模型 6 个进程）；ACP 脚本为取得原生已报告模型 ID 另查 2 次。共 11 个元数据进程，全部范围退出确认，私有目录残留 0；其中 9 个退出码 0，2 个由 Host 收尾至 SIGKILL。
   - Qoder 1.1.89：账号已识别，Free；原生模型 16，启用 0、停用 16，其中 13 个声明强度；插件按既有规则拒绝空可用目录。
   - Qoder CN 1.1.89：账号已识别，Free；原生模型 13，启用 1、停用 12，其中 11 个声明强度；插件返回 1 个可用模型，该模型有强度。
@@ -27,6 +27,7 @@
   - 2026-11-14 主会话 Desktop 实机（`corepack pnpm build` 后从终端启动 DSH Desktop 0.2.2-rc.3，保留宿主代理变量，内置浏览器直连 Host Web UI）：「CLI 连接」Qoder CN 显示「已登录」、默认模型 Qwen3.8-Flash、强度「默认」，此前的「原生账号查询暂不可用」「原生模型目录暂不可用」消失；Qoder 显示「已登录」，模型区为「Qoder 未公开可用的结构化模型目录」，与上面原生目录全部停用一致。主会话复核：`corepack pnpm typecheck` 通过；`tests/qoder-accounts.test.ts tests/qodercn-accounts.test.ts tests/authorized-catalog.test.ts tests/windows-accounts.test.ts` 4 文件 199 项通过。
   - 国际版可用模型为 0 在 1.1.73 旧入口同样出现，属账号/服务端返回，不是本次协议改动所致；待账号有可用模型后再补这一项。
   - 2026-11-14 11:30 复查：复用原 H-live.ts（仅改相对 import 与证据落点，命令 `corepack pnpm exec tsx .cache/gaps-qoder-live.ts`），退出 0。Qoder 1.1.89 / 1.1.73 仍各 16 个原生模型、启用 0、停用 16、13 个声明强度；账号已识别、Free，插件仍拒绝空可用目录。Qoder CN 1.1.89 为 13 个原生模型、1 个启用，插件返回 1 个带强度模型。本次 6 个元数据进程：3 个退出 0，3 个 Host SIGKILL 收尾，waitForExit 全 true；私有目录残留 0。用户目录 1,161 项前后无新增、缺失或 mtime/大小/模式变化；没有 session/new 或 prompt，没有清除代理。证据 `.cache/gaps-live/H-live-detail-result.json`、/tmp/gaps-qoder-live.log。国际版可用目录仍无法验收，3.1 保持未勾选。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 
   - 2026-11-15 本轮复核（macOS，基线 `e096dd4`）：工作树初始实际为 `6c6db88` 且无修改，先 `git merge --ff-only e096dd4` 对齐指定基线。检查 `qoder-variant.ts`、`qoder-accounts.ts`：国际版与 CN 分别绑定 `.qoder` / `.qoder-cn`、`QODER_` / `QODERCN_`、`global` / `cn`；1.1.89 使用 SDK 1.0.59 的私有 stdio daemon，1.1.73 使用 SDK 1.0.53 worker，不复用全局 daemon 或另一品牌端点。模型来自 `daemon.get_models.models`（`fetchStrategy: live`、原生账号 uid）或旧 `initialize.models`，仅 `isEnabled === false` 被过滤，本次未发现插件读取缺陷，未改产品代码或放宽过滤。
   - 本轮命令：`corepack pnpm --config.verify-deps-before-run=false exec tsx .cache/qoder-zero-models/probe.ts`，退出 0。脚本复用既有 H-live.ts，直接调用当前工作树的 `queryQoderAccountInfo` / `discoverQoderModels`；观察解析前原生 stdout，仅投影模型 ID、启用布尔值、强度、字段名和脱敏账号摘要。stdin 白名单仅允许 initialize/account_info/get_models/shutdown/end_session；会话创建、prompt、登录、退出账号、切换账号均 0。探测脚本不自行读取凭据文件内容，认证仍由插件既有路径和原生 CLI 完成；不保存原始响应、邮箱、uid、token、cookie 或机器标识。

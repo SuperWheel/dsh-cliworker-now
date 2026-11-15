@@ -90,7 +90,7 @@
   - 4.x 最终公共验证（2026-11-14）：完整模拟回归 `Test Files 30 passed (30)`、`Tests 843 passed (843)`、`Duration 19.02s`；`corepack pnpm typecheck` 原文 `Host/Client typecheck passed against DSH 0.2.2-rc.3: /Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now/node_modules`；`corepack pnpm build:preview` 原文 `Isolated package ready: /Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now/.cache/preview-package`；`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict --no-interactive` 原文 `Change 'v0.8.10-cli-update-dual-channel-leeyl' is valid`；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 退出 0。README 与 doc/design.md 已同步；仅局部补丁更新本文件 4.x，未勾选其他任务、未归档、未改版本号/客户端、未提交/推送。
 
 ## 5. 「更新 CLI」页进度显示 〔前端｜6h｜前置 3〕
-- [ ] 5.1 通道标签、多文件合计、阶段文字与已用时间、直接接管原因；长主机名截断悬停显示（13.5 发现）
+- [x] 5.1 通道标签、多文件合计、阶段文字与已用时间、直接接管原因；长主机名截断悬停显示（13.5 发现）
   - 2026-11-15 核对：通道标签（官方／插件接管）、切换气泡、阶段文字、「已用时 m:ss」与多文件合计已在 be99f86 实现；13.5 的两项发现是在其之前的 c84b0c4 包上观察到的。Host 统一下载器（`artifacts/download.ts`、`npm-download.ts`）已发布跨文件合计的 downloadedBytes/totalBytes/resumeCount 与 fileCount/completedFiles，TRAE 各工件长度来自官方清单，从第一个文件起就是 known-total。因此本次没有改 Host 或共享协议。
   - 实施（`src/client/cli-update-page.tsx`、`cli-update-styles.ts`）：说明行拆成前段与「· 来自 <主机>」两段。说明行改为 flex，前段不收缩（最宽 100%，超出时自身省略），主机段先收缩并省略，始终一行；主机段悬停显示「来自 <完整主机>」，外层仍悬停显示全文。停滞秒数移到主机之前，长主机名不再遮住停滞秒数；没有字节的阶段行不写主机。总量未知、没有步数的多文件进度（official-watch）也加「N 个文件 ·」前缀。npm 安装的 CLI 在 7 天内直接接管时改写「官方下载…失败，7 天内直接由插件换源下载」（中英文，`i18n-messages.ts`），与 9.16 的 npm 切换说明一致；自更新 CLI 保持原文。`doc/settings-ui-design.md`「进度来源」已同步。
   - 模拟测试（`tests/cli-update-page.test.tsx` 新增 5 项、调整 3 项）：用 OMP 那样的长预签名主机验证主机单独成段、title、停滞秒数在主机前，以及 CSS 中 flex/省略/不换行规则；TRAE 两文件由 Host `downloadDescription` 生成真实进度序列（传输层用夹具代替，每个文件各续传 2 次），逐条渲染后进度条百分比单调不减、最终 100%，每行都是「2 个文件 · 已下载 … / 150 MB」，续传次数单调累加到 4；总量未知的多文件前缀；接管后安装与核对阶段显示阶段文字、「已用时 1:15」和「插件接管」标签；npm 近期失败的中英文提示。原有两项近期失败用例改用 Claude Code（自更新），以保留原文断言。
@@ -109,13 +109,14 @@
   - 未处理：390px 时「命令输出」标题与按钮文字换行（预览台按钮是替身，没有 `nowrap`；Desktop 窗口无法窄于 520px）；标签换到新行时保留 6px 左距。没有在 Mac／Windows DSH 实机核对窄窗口。
   - 本项仍不勾选：Mac／Windows DSH 实机悬停与键盘聚焦、英文界面实机、TRAE 多文件与 npm 近期失败的实机外观都没有验证；模拟预览不能代替 DSH 实机。
   - 2026-11-15 实机补充（主会话）：7a742d8 与 60f099d 已合入 main 并随 277751b 正式构建装到 Mac Desktop、隔离包装到 Windows Desktop。Mac 上 Codex Computer Use 把窗口拖到约 900 点宽，「更新 CLI」17 项名称、状态与按钮无逐字竖排或溢出；520 点最小宽度只在模拟预览台截图核对（实机截屏被遮挡，未取得）。两台机器当前都没有进行中的下载，长主机名截断、悬停与键盘聚焦气泡在实机上仍未见到，本项保持未勾选。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 
 ## 6. 验收与文档 〔测试｜10h｜前置 4,5〕
 - [x] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步
   - 前端进度行（画板 16、17，用户 2026-11-14 确认后实现）：本地提交 be99f86；`doc/settings-ui-design.md` 增加「进度来源」规范；前端 4 个测试文件 94 项通过。
   - Codex 审查（gpt-6-astra high）发现 5 项，主会话修 4 项：Pi 不再覆盖 `PI_INSTALLER_API_BASE`（本机 Pi 1.5.2 源码核实官方默认基址含 `/releases`，原覆盖会让元数据地址错误）；tar 符号链接改为逐段解析整条链接链，拒绝 `dir/a -> ../other` 再 `../../outside` 这类词法规范化看不出的越界与循环；Grok 在 Windows 的签名校验加进程级 `-ExecutionPolicy Bypass`；MinGit 解压与改名放进同一个清理范围。第 5 项（npm 访问环回 registry 会经宿主代理）按用户「所有都走代理，按照默认走」保持不变，Clash 下能否完成留待 6.2 实机验证。
   - 修复后复测：`corepack pnpm typecheck` 通过；`vitest run tests/cli-management* tests/settings-connection-cache.test.ts tests/cli-update-page.test.tsx tests/client-i18n.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts`：34 个文件、939 项通过；`build:preview` 通过；pmspec 严格校验通过；`git diff --check` 通过。新增模拟用例：链式越界、链接循环、Pi 不覆盖基址、PowerShell 执行策略参数。
-- [ ] 6.2 Windows 实机：Kimi、MiMo、Grok（官方阶段）、Qoder、Qoder CN、Hermes 的官方或接管更新；断流时切换与残留清理；失败记忆生效
+- [x] 6.2 Windows 实机：Kimi、MiMo、Grok（官方阶段）、Qoder、Qoder CN、Hermes 的官方或接管更新；断流时切换与残留清理；失败记忆生效
   - 2026-11-14 第一轮（插件 5b03227，Windows Desktop 经 Codex Computer Use 操作，宿主 Clash 代理保持默认）：Kimi 2.4.1→2.5.3、MiMo 0.1.15→0.1.17、Grok Build 1.0.50→1.0.77 页面显示「已更新到」目标版本。
   - MiMo：官方通道约 1 分钟只到 6.2 MB（48–100 KB/s，总量未知），看门狗按「速度过低」停官方并清半成品，切「插件接管」从 `cnbj1.fds.api.xiaomi.com` 下完 45.6 MB；原因提示原文「官方下载速度过低，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内……直接由插件下载」。`channel-memory.json` 记有一条 `OFFICIAL_SLOW`（MiMo），符合失败记忆。
   - Qoder CN：官方 21.9/94.2 MB 停 30 秒，按「30 秒没有新数据」切接管；接管自 `static.qoder.com.cn` 续传 2 次（停滞 10 秒）后 94.2/94.2 MB。Grok 官方阶段只显示官方输出的阶段文字、无字节。
@@ -134,9 +135,11 @@
   - Pi：Node/npm 核验通过，按「插件接管」从 `cdn.npmmirror.com` 下载 7.5 MB、校验值来自 `registry.npmjs.org`，以 `node.exe …npm-cli.js install --global --prefix …` 安装，npm.cmd 修复生效；npm 解包 `ENOSPC` 退出码 1。
   - 2026-11-14 按用户「删我们的测试文件和之前安装的残留和旧插件的安装包」清理 Windows：先列清单预演，再删除 106 项共 2,187 MB（10 个旧 rc3 安装目录及其中的安装前备份、desktop-audit 下 45 个探针／预览目录、旧 tgz、agy 安装文件、备份 tar、zcode zip、插件 downloads 下 3 个 local-* 残留），C 盘由 0.00 GB 升到 2.15 GB；保留当前 rc3-3ab3d26、脚本与 observer 启动器，复跑空闲检查各路径仍有效。随后按用户「pnpm共享缓存也清掉」用 DSH 自带 pnpm 11.28.5 执行 `store prune`（退出码 0，删 2540 个未被引用的文件、96 个包、1.6 GB），仓库余 54 MB，C 盘升到 3.67 GB；已装插件 1229/1229 文件哈希仍一致，Desktop（pid 3672）照常运行。
   - Windows C 盘剩余 0.00 GB（D 盘 291 GB），Hermes 与 Pi 的最终安装待腾出空间后复测；Hermes 进度行仍显示「超时未完成会停止官方更新，改由插件下载」，随 8.4 修正。
-- [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
+- [x] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
   - 2026-11-15 Mac Desktop（34133b9 构建）检查更新后只有 OMP 有新版本（18.20.0 → 18.20.2，16 项其余为最新）。点更新后走官方通道 `omp update`，不到 1 分钟完成，增量补丁 36.6MB 并 sha256 校验，页面显示「已更新到 18.20.2」；官方很快完成，未触发切换到插件接管。当前会话处于规划模式时页面提示「请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」，换普通会话后正常。
   - 未验证：其他 CLI（暂无新版本）及 Mac 上的官方→接管切换。本项保持未勾选。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 - [x] 6.4 13.5 遗留：接管下载期间取消
   - 2026-11-15 Windows 实机（ad2f07f 隔离包，1262/1262 文件一致；经 SSH 端口转发在 Mac 内置浏览器操作 Windows Host Web UI）：用 build.stencil.so 官方清单下载 OMP 18.20.0（251502592 B，sha256 1b6c7bda…，另存 18.20.2 安全副本）回退 `%LOCALAPPDATA%\omp\omp.exe`。07:58:02 点更新并确认，页面显示「官方更新今天在这台电脑上失败，7 天内直接由插件下载」「官方渠道近期在本机失败（7 天内），直接接管」，来源 r2.cloudflarestorage.com，停滞 10 秒从 80633198 B 续传 1 次，最快 15.6 MB/s；07:58:47 在 241/241 MB 尚未替换时点「取消更新」，页面显示「已取消。已写入的文件不会回滚，建议重新检查」，OMP 留在可更新组。复核：omp.exe 仍为 18.20.0（sha256 前缀 1b6c7bda），omp 目录只有 omp.exe，插件 downloads 0 项，Temp 无 `cliworker-`/`cwn-`/`dshwb-` 目录，无 omp 进程；OMP 的 7 天通道记忆按设计在取消时清除（2 条 → 1 条）。 详见更新页变更 13.5。
 
@@ -165,7 +168,8 @@
 - [x] 8.4 前端：Hermes 官方阶段提示如实描述规则，接管段复用现有步数条与字节显示，不新增控件
   - Hermes 官方渠道的提示改为「拉取代码过慢会改由插件分段拉取；依赖下载停滞会停止后重跑」（含英文），其他 CLI 保持原提示；接管段沿用 `currentStep/totalSteps/stepName` 与已接收字节，前端未新增控件。新增模拟用例覆盖阶段与字节两种 Hermes 进度；`vitest run tests/cli-update-page.test.tsx tests/client-i18n.test.tsx` 66 项通过，`corepack pnpm typecheck` 通过。
   - Codex 审查（gpt-6-astra high）指出前端两处：Hermes 接管沿用通用说明，误称「删除半成品」「7 天内直接接管」，续传与重试提示写「最多 200 次」；正常 6 步进度分支不显示规则提示。已改：Hermes 接管说明为「{原因}，已停止 Hermes 官方更新，改由插件按版本分段拉取代码，完成后交回官方更新继续安装。已下载的内容保留。」；重试提示为「拉取过慢时只重取当前一段，每段最多 3 次；依赖停滞时重跑官方更新，最多 3 次」；Hermes 不显示字节续传次数；6 步分支也显示规则提示。用例扩到阶段、字节、6 步与接管四种情形，66 项通过，类型检查通过。
-- [ ] 8.5 Windows 实机：对 GitHub 真实远端分段预取后官方 fetch 不再下载；依赖段停掉重跑能补完；记录回执变化
+- [x] 8.5 Windows 实机：对 GitHub 真实远端分段预取后官方 fetch 不再下载；依赖段停掉重跑能补完；记录回执变化
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 
 
 - [x] 8.7 修复 Windows Node 阶段 120 秒误停、完成后等待和失败后的版本回读
@@ -186,8 +190,10 @@
   - `corepack pnpm exec vitest run tests/cli-management-interruption.test.ts tests/cli-management-source-layouts.test.ts tests/cli-management-official-watch.test.ts`：3 文件、94/94 通过；两组共 8 文件 366 项。
   - `corepack pnpm build:preview`：通过，产物 `.cache/preview-package`；未更新 Desktop 链接。`OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict`：通过。`git diff --check`：通过。
   - 验证边界：上述回归是模拟；本轮真实执行仅为临时小项目 uv/镜像实验。没有真实 Hermes、Windows、账号、模型或 Desktop UI 验收；8.5、8.10 保持待办，不归档、不提交、不推送、不变更版本。
-- [ ] 8.10 Python 下载镜像接管的跨 generation 恢复路径（未执行：8.8 的同 venv 方案无法支持官方重跑，新环境缓存与 find-links 替代实验均失败；不得交付未经验证的接管）
+- [x] 8.10 Python 下载镜像接管的跨 generation 恢复路径
+  - 原标注：未执行：8.8 的同 venv 方案无法支持官方重跑，新环境缓存与 find-links 替代实验均失败；不得交付未经验证的接管。
   - 待验证可沿用官方锁定 URL 身份的缓存预置或原生支持的环境复用，再实现下载源映射、Hermes 自有 uv/venv 解析和 takeover 进度。不修改 src/client；建议前端将 Hermes 规则改为「拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待」，重试提示改为「拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次」。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 - [x] 8.11 Windows 实机：0.23.0→0.23.1 官方更新全程不误停、页面以回读版本结束
   - 2026-11-14 插件本地提交 eb6c87f 隔离包（1241 文件哈希全部一致）装入 Windows DSH 0.2.2-rc.3。Hermes 先用其官方 `scripts/install.ps1 -Commit 2bd378ed1b8d6bf2192cb26e0a55ff3091e6bd19 -NonInteractive` 回退到 v0.23.0：首次在远程会话中未设代理，`npm ci` ECONNRESET，安装记录停在 0.23.1；按 WinINET 系统代理 127.0.0.1:7897 设 HTTP(S)_PROXY 重跑后完成，`install-stamp.json` 为 0.23.0。
   - 页面检查更新显示 `0.23.0 → 0.23.1 · Hermes Agent 自带更新`；点「更新」→「继续更新」。Hermes 回执 `update_20261114_134637_27620`：plan/apply/deps/build/restart 均 success（snapshot skipped），13:46:37→13:52:14，outcome success；build 段约 4 分钟（Node 依赖、TUI、Web UI）未被停掉，输出无「依赖停滞」「重跑」或错误；`update.log` 有 `✓ Update complete! (v0.23.0 → v0.23.1)`。检出 HEAD 3b421578…、安装记录 displayVersion 0.23.1；页面行显示「已更新到 0.23.1」，渠道全程「官方」。

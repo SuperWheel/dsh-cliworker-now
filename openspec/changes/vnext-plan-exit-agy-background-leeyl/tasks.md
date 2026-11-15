@@ -98,10 +98,12 @@
   - 证据：更新 `tests/claude-own-route.test.ts` 3 处、`tests/accounts.test.ts` 2 处旧断言，改为断言 settings 与启动环境中都不含 `CLAUDE_CONFIG_DIR`；`corepack pnpm vitest run tests/claude-own-route.test.ts tests/accounts.test.ts` 共 185 项通过
 - [x] 7.5 真实登录验收：用户在 Mac Desktop 插件中重新执行「官方登录 / 切换账号」，确认登录窗口显示已登录、设置页显示官方账号并加载模型与强度
   - 证据：用户 2026-11-14 在 Mac Desktop 插件中亲自重新执行官方登录并确认「没有问题」（用户陈述，本会话未另行读取凭据或登录状态）
-- [ ] 7.6 Windows 与凭据文件（`.credentials.json`）存放方式下的同类核对（未执行：本机为 macOS 钥匙串，Windows 未测）
+- [x] 7.6 Windows 与凭据文件（`.credentials.json`）存放方式下的同类核对
+  - 原标注：未执行：本机为 macOS 钥匙串，Windows 未测。
   - 2026-11-15 Windows 只读核对（不读取凭据内容）：Claude Code 2.1.325；`%USERPROFILE%\.claude\.credentials.json` 不存在，进程环境未设置 CLAUDE_CONFIG_DIR；`claude auth status --json` 退出 0，只取字段：loggedIn=true、authMethod=oauth_token、apiProvider=firstParty。设置页显示「Claude 自身配置 API 登录」。即这台 Windows 用令牌方式登录，没有使用凭据文件存放方式。
   - 阻塞：要核对凭据文件方式，需要在 Windows 插件中执行一次 Claude 官方登录（会写入用户凭据并改变当前登录方式），需用户亲自操作。本项保持未勾选。
   - 2026-11-15 用户决定：Windows 上 Claude 的这项核对不执行（原话「Windows上claude用环境令牌登录不测」）。凭据文件存放方式在 Windows 上仍未实测，本项保持未勾选，不视为通过。
+  - 2026-11-15 用户确认此项按现状验收并勾选；上面记录的未执行真实验证照旧保留，不当作已实测。
 - [x] 7.7 文档：`doc/usage-details.md` 与英文版在「Claude Code 与 CC Switch」中说明默认存放位置及升级后可能需要重新登录；`doc/design.md` 本次章节补充
   - 证据：见两文件对应段落
 - [x] 7.8 加入第 3 项修复后的自动检查
