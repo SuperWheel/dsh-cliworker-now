@@ -71,6 +71,12 @@
   - Client 在表单顶部用同一 `NativeChoice` 渲染「从内置模板预填」，只写入非秘密且表单存在的字段，选择本身不提交。
 - 影响：`CustomProviderForm.presets` 为可选字段，旧 Client 会忽略。
 
+### 决定 7：按 requestId 合并 0.17.1 重发的授权请求（2026-11-16 复测问题）
+- 背景：Mac 真实 Desktop 复测（Worker 8db3254a…，0.17.1，自有 Key 的 deepseek-v4-flash，「仅工作区编辑」）中，同一 Bash 命令的授权请求出现 17 次（server-3…server-19，requestId 均为同一个 `perm_…`），主页面审批卡反复重建，用户的选择不生效。
+- 根因（已安装 0.17.1 源码静态核对）：`requestPermission` 用 `withInteractionRequestRecovery` 给 `requestClient` 设 `reannounceIntervalMs=1000`，等待期间以新 `server-N` id 重发同一请求，间隔翻倍、上限 10 秒。所有 id 都登记在同一个待决请求的 `requestKeys` 中，答复任一 id 即可结束等待。答复 schema `V4` 仍是 `{decision, reason?, modifiedInput?, permissionUpdates?}` 严格对象，插件的答复本身被接受，并不是答复格式的问题。
+- 最终决定：`native-zcode.mjs` 按 `requestId` 记录待决授权。重发只更新最新 id，不再调用 `io.approval`。决定后回复最新 id；迟到的重发直接用已记录的结果答复。没有 requestId 的旧版请求保持逐条处理。
+- 放弃的方案：只答复第一个 id。原因：任一 id 都有效，但回复最新 id 不依赖 ZCode 是否清理旧 id，行为更稳。
+
 ## Risks / Trade-offs
 - 静态判定依赖打包后的标识形状。未来版本改名时会落到 `none`（安全，只是工作流设置不生效）。合成片段与本机两个版本的测试锁定当前形状。
 - 404/405 候选可能实际不可用，标签和目录提示已明确「未核实」、费用未知。

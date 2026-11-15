@@ -16,3 +16,14 @@
 #### Scenario: 无法判定
 - **WHEN** 入口不是可读的脚本文件或 schema 形状未知
 - **THEN** 两处都不发送工作流字段，ZCode 使用自身默认值，派遣不因字段被拒绝而失败
+
+### Requirement: ZCode 重发的授权请求只转交一次
+ZCode 在等待客户端答复期间以新的 JSON-RPC id、相同的 `requestId` 重发 `interaction/requestPermission` 时，插件 SHALL 只向 DSH 发起一次授权，重发 MUST NOT 生成新的审批卡或拒绝记录。用户决定后 SHALL 以同一答复回复该请求；决定之后才到达的重发 SHALL 立即得到相同答复。没有 `requestId` 的旧版请求按原方式逐条处理。
+
+#### Scenario: 0.17.1 等待期间重发
+- **WHEN** 同一 `requestId` 的授权请求在用户决定前被重发多次
+- **THEN** DSH 只显示一张审批卡，用户的选择对该请求生效，不出现多余的「拒绝（任务停止）」
+
+#### Scenario: 决定后迟到的重发
+- **WHEN** 答复已发出后又收到同一 `requestId` 的重发
+- **THEN** 插件立即以相同决定答复，不再询问用户

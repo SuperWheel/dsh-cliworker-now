@@ -245,7 +245,11 @@ export async function runNativeZcode(config, io) {
     // Calls whose own result frame already reported the failure the batch counts again.
     failedTools = new Set(),
     early = [],
-    toolOutcomes = createToolOutcomes()
+    toolOutcomes = createToolOutcomes(),
+    // ZCode 0.17.1 re-announces a pending permission under a new JSON-RPC id with the same
+    // requestId (1 s, doubling to 10 s); every id resolves the same pending request.
+    // One DSH approval per requestId, one reply; a late re-announce gets the same answer.
+    permissions = new Map()
   const failure = (message) => {
     failed ??= message
   }
@@ -283,13 +287,27 @@ export async function runNativeZcode(config, io) {
         }
         if (!(active && message.params?.sessionId === sessionId)) result = deny()
         else {
+          const key = nonempty(message.params.requestId) ? message.params.requestId : undefined
+          const pending = key === undefined ? undefined : permissions.get(key)
+          if (pending) {
+            // A re-announce of a request already shown: no second approval card.
+            if (pending.result) return peer.send({ id: message.id, result: pending.result })
+            pending.latest = message.id
+            return
+          }
+          const entry = { latest: message.id, result: undefined }
+          if (key !== undefined) permissions.set(key, entry)
           // The Host decides without blocking this reader. The reverse reply has
           // no confirmed session scope, and permissionUpdates would persist a
           // project rule, so only a plain allow is sent.
           void io.approval(zcodeApprovalRequest(message.params)).then((answer) => {
-            if (answer.decision === 'deny') return peer.send({ id: message.id, result: deny() })
-            io.event({ kind: 'diagnostic', text: 'ZCode 额外权限请求已批准' })
-            return peer.send({ id: message.id, result: { decision: 'allow' } })
+            if (answer.decision === 'deny') entry.result = deny()
+            else {
+              io.event({ kind: 'diagnostic', text: 'ZCode 额外权限请求已批准' })
+              entry.result = { decision: 'allow' }
+            }
+            // Any id of the request resolves it; the newest is the one ZCode re-sent last.
+            return peer.send({ id: entry.latest, result: entry.result })
           }).catch(() => failure('ZCode 授权回复未送达'))
           return
         }

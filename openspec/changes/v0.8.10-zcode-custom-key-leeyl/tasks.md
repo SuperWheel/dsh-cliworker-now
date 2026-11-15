@@ -66,3 +66,15 @@
 - [ ] 5.3 真实 Desktop 验收：订阅过期 + 自有 API Key，分别走 headless 与 app-server 派遣
   - 未执行：需要用户另行授权真实模型调用。本次没有登录、没有调用模型，也没有运行真实 ZCode CLI。
   - 验收时应检查：0.17.1 不再因答复字段失败；目录 404/405 时出现未核实候选；Worker 实际使用所选自有服务商（事件、退出状态与产物）；全局 `~/.zcode/v2/provider_config.json` 未被修改。
+
+## 6. 复测问题修复 〔后端｜2h｜前置 5〕
+- [x] 6.1 0.17.1 授权请求重发导致审批循环：按 requestId 合并，补模拟测试
+  - 证据：复测原始流 `~/.dsh/cliworker-now/8db3254a-….de56417b-….raw.jsonl` 中 17 条 `interaction/requestPermission`（server-3…server-19），requestId 均相同；插件对应生成 approval-1…approval-17。
+  - 0.17.1 源码：`kLt` 设置 `reannounceIntervalMs: tMc`（tMc=1e3），`requestClient` 按间隔翻倍重发，上限 `KBc=1e4`；`resolveClientRequest` 按任一已登记 id 结束同一请求。答复 schema `V4` 未变。
+  - 修改 `src/host/native-zcode.mjs`（按 requestId 合并；回复最新 id；迟到的重发用同一结果答复）；增量规格 cli-native-features 新增「ZCode 重发的授权请求只转交一次」；design 决定 7。
+  - `tests/native-zcode.test.ts`（模拟）新增「re-announces」两项（allow-once 与 deny）：模拟 CLI 以 server-3/4/5 重发、在答复后再发 server-9。断言只有 1 张审批卡，server-5 与 server-9 得到相同决定且不含 permissionUpdates。临时换回修复前的桥接代码时这两项失败（2 failed），恢复后通过。
+  - `pnpm_config_verify_deps_before_run=false`：native-zcode、zcode-resume、zcode-schema-probe、native-approval-relay、worker-permissions、zcode-adapter 共 6 个文件 231 passed；typecheck 借用主检出 `lib/typert.remote-client.*` 后 exit 0（随后删除临时 `lib/`）。
+  - 未执行：真实 Desktop 复测，需由主会话在合并后重新运行。
+- [x] 6.2 核查下拉框与派遣卡只显示模型 ID
+  - 证据：设置目录缓存 `settings-catalogs/44bd599b….json` 中，Host 标签为「deepseek-v4-flash（deepseek · 本机配置，未核实）」，目录提示为「当前账号可用模型；2 个自定义服务商未提供模型目录，所列模型来自本机配置，可用性与费用未核实」。说明 `/models` 返回 404/405、未核实，Host 标注已按设计生成。
+  - 只显示 ID 是因为 Client 的 `displayModelName`（`src/shared/model-presentation.ts`）按既有规格「简化名称与模型去重」去掉 provider 前缀与全部括号附注，所有 CLI 都这样处理。本次不改这个共享展示层；是否在菜单中保留「未核实」标注需要用户决定，属于后续事项。

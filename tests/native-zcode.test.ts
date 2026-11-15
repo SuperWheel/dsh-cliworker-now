@@ -22,10 +22,13 @@ log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER
 if(process.argv.indexOf('app-server')>process.argv.indexOf('--disallowedTools'))process.exit(22);
 const reply=(q,result)=>out({id:q.id,result});
 const event=(type,payload,extra={})=>out({method:'session/event',params:{sessionId,turnId:'turn-fixture',type,payload,...extra}});
+// 0.17.1 shape: a pending permission is re-announced under new server-N ids with the same requestId.
+const announce=id=>out({id,method:'interaction/requestPermission',params:{sessionId,requestId:'perm-fixture',toolCallId:'denied-tool',toolName:'Bash',reason:'High risk tools require explicit approval',riskLevel:'high',input:{command:'synthetic --flag'},options:[]}});
+let answered=0;
 const finish=()=>{event('turn.completed',{inputId,resultType:stopped?'cancelled':'success',response:scenario==='tool-boundary'||scenario==='model-usage'?'AFTER':'HELLO',usage:scenario==='model-usage'?{inputTokens:99999,outputTokens:1}:undefined});out({method:'state.updated',params:{sessionId,reason:'prompt_completed'}});};
 createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
- if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);const allowed=process.env.REPLY_SCHEMA==='legacy'?['nativeSearchEnhancementsEnabled','memoryEnabled','dynamicWorkflowEnabled','dynamicWorkflowMode','askUserQuestionAutoResolutionEnabled']:['additionalDirectories','nativeSearchEnhancementsEnabled','toolSearchMode','subagentRuntimeConfigEnabled','appControlEnabled','memoryEnabled','askUserQuestionAutoResolutionEnabled','integratedTerminalShell','modelContextBudgetStrategy'];if(process.env.REPLY_SCHEMA&&Object.keys(q.result??{}).some(key=>!allowed.includes(key)))process.exit(24);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();return;}
+ if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);const allowed=process.env.REPLY_SCHEMA==='legacy'?['nativeSearchEnhancementsEnabled','memoryEnabled','dynamicWorkflowEnabled','dynamicWorkflowMode','askUserQuestionAutoResolutionEnabled']:['additionalDirectories','nativeSearchEnhancementsEnabled','toolSearchMode','subagentRuntimeConfigEnabled','appControlEnabled','memoryEnabled','askUserQuestionAutoResolutionEnabled','integratedTerminalShell','modelContextBudgetStrategy'];if(process.env.REPLY_SCHEMA&&Object.keys(q.result??{}).some(key=>!allowed.includes(key)))process.exit(24);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();else if(String(q.id).startsWith('server-')){answered++;if(q.id!=='server-9'){if(answered===1)announce('server-9');return;}event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});}else event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:0,errorCount:1});finish();}return;}
  if(q.jsonrpc!==undefined)process.exit(20);
  if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1}});
  if(q.method==='provider/updateAccountConfig')return reply(q,{receivedRevision:q.params.revision,providerCount:1,status:'received'});
@@ -104,6 +107,7 @@ createInterface({input:process.stdin}).on('line',line=>{
   if(scenario==='changed-model'){event('session.updated',{providerId:'wrong',modelId:'wrong'});return;}
   event('model.streaming',{kind:'text_delta',delta:'HELLO'},{eventId:'delta-one'});
   if(scenario==='cancel')return;
+  if(scenario==='reannounce'){event('tool.updated',{toolCallId:'denied-tool',toolName:'Bash',kind:'scheduled'});announce('server-3');setTimeout(()=>announce('server-4'),20);setTimeout(()=>announce('server-5'),40);return;}
   if(scenario.startsWith('permission')){event('tool.updated',{toolCallId:'denied-tool',toolName:'Bash',kind:'scheduled'});return out({id:'permission',method:'interaction/requestPermission',params:{sessionId,toolCallId:'denied-tool',toolName:'Bash',reason:'Run synthetic command',riskLevel:'medium',input:{command:'synthetic --flag'},options:[]}});}
   if(['tool-failure','tool-recovered','batch-failure'].includes(scenario)){
    // Simulated order: a write fails, the batch closes it, and the CLI may carry on.
@@ -126,7 +130,7 @@ createInterface({input:process.stdin}).on('line',line=>{
 `
 
 async function fixture(scenario = 'success', continuation = false,
-  host: { access?: string; mode?: string; decision?: 'allow-once' | 'allow-session' | 'deny' } = {},
+  host: { access?: string; mode?: string; decision?: 'allow-once' | 'allow-session' | 'deny'; delay?: number } = {},
   extraEnv: Record<string, string> = {}) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-native-zcode-fixture-')))
   roots.push(root)
@@ -215,7 +219,7 @@ async function fixture(scenario = 'success', continuation = false,
       const frame = JSON.parse(line)
       frames.push(frame)
       if (host.decision && frame.type === 'approval')
-        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: host.decision, source: 'user' }), frame.id), 5)
+        setTimeout(() => void io.answerApproval(JSON.stringify({ decision: host.decision, source: 'user' }), frame.id), host.delay ?? 5)
       if (scenario === 'cancel' && frame.type === 'event' && frame.event.kind === 'assistant')
         controller.abort(new Error('Simulated stop'))
     },
@@ -400,6 +404,19 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     expect(answer).not.toHaveProperty('permissionUpdates')
     expect(result.status).toBe(status)
   })
+  it.each(['allow-once', 'deny'] as const)(
+    'shows one approval for a permission ZCode 0.17.1 re-announces under new ids, and answers each id the same: %s',
+    async (decision) => {
+      // Simulated: server-3 is re-sent as server-4 and server-5 while DSH waits; server-9 arrives after the answer.
+      const { result, records, frames } = await fixture('reannounce', false, { decision, access: 'read-only', delay: 120 })
+      expect(frames.filter((frame) => frame.type === 'approval')).toHaveLength(1)
+      const replies = records.filter((record) => String(record.id).startsWith('server-') && record.result)
+      const expected = decision === 'deny' ? 'deny' : 'allow'
+      expect(replies.map((record) => [record.id, record.result.decision])).toEqual([['server-5', expected], ['server-9', expected]])
+      expect(replies.every((record) => !('permissionUpdates' in record.result))).toBe(true)
+      expect(result.status).toBe('SUCCESS')
+    },
+  )
   it.each([
     ['read-only', 'build'],
     ['workspace-write', 'edit'],
