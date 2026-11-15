@@ -6,7 +6,7 @@ import { verifyNpmPlatforms } from './npm-platform.ts'
 import { createHash } from 'node:crypto'
 import { access, lstat, realpath, rename } from 'node:fs/promises'
 import { constants } from 'node:fs'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, win32 } from 'node:path'
 import { homedir } from 'node:os'
 import type { ActiveCliId } from '../../shared/types.ts'
 import { OFFICIAL_NPM_REGISTRY, type CliInstallOffer, type CliUpdateOperation } from '../../shared/cli-management.ts'
@@ -54,6 +54,10 @@ export async function writablePrefix(path: string): Promise<void> {
     try { const info = await installFs.lstat(parent); if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('invalid prefix'); await installFs.access(parent, constants.W_OK | constants.X_OK); return }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT' && dirname(parent) !== parent) { parent = dirname(parent); continue }; throw new CliOperationError('PERMISSION_DENIED', 'npm 全局目录不可写，不会提权；请按官方说明配置可写前缀') }
   }
+}
+/** International WorkBuddy's Windows wizard defaults, most likely first. */
+function workbuddyWindowsDirectories(env: NodeJS.ProcessEnv = process.env): string[] {
+  return [env.ProgramFiles && join(env.ProgramFiles, 'WorkBuddyAI'), env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Programs', 'WorkBuddyAI')].filter((path): path is string => !!path)
 }
 export class CliInstaller {
   constructor(private deps: {
@@ -111,7 +115,8 @@ export class CliInstaller {
       const arch = this.deps.arch ?? process.arch
       if (this.platform === 'win32' && arch === 'arm64' && (cli === 'qoder' || cli === 'qodercn')) prerequisite('Windows 架构', '非 ARM64', arch, false)
     } else {
-      plan.directory ||= this.platform === 'darwin' ? '/Applications' : cli === 'workbuddy' && process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Programs', 'WorkBuddyAI') : ''
+      // The official Windows wizard's own default (observed 5.9.4, 2026-11-15): per-machine Program Files.
+      plan.directory ||= this.platform === 'darwin' ? '/Applications' : cli === 'workbuddy' ? workbuddyWindowsDirectories()[0] ?? '' : ''
       if (source.desktopFeed) {
         const descriptor = DESKTOP_INSTALL_SOURCES[source.desktopFeed]
         const release = await readDesktopRelease(source.desktopFeed, {}, signal, { platform: this.platform, arch: this.deps.arch,
@@ -123,7 +128,7 @@ export class CliInstaller {
       if (cli === 'workbuddy' && this.platform === 'win32' && source.desktop) {
         source.desktop.windowsWorkBuddy = true
         source.desktop.relativeEntry = 'resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs'
-        source.desktop.commonDirectories = process.env.LOCALAPPDATA ? [join(process.env.LOCALAPPDATA, 'Programs', 'WorkBuddyAI')] : []
+        source.desktop.commonDirectories = workbuddyWindowsDirectories()
       }
       plan.target = source.desktop?.version
       if (!source.desktop || !plan.directory) prerequisite('官方安装包', '已核实地址、摘要/长度、开发者与位置', undefined, false)
@@ -193,7 +198,11 @@ export class CliInstaller {
         let identity: InstallationIdentity | undefined
         let workbuddyReason: string | undefined
         let config = this.deps.config
-        const candidates = [candidate, ...(source.desktop?.commonDirectories ?? []).map(path => join(path, source.desktop!.relativeEntry))]
+        // A folder picked in the NSIS wizard gets the default leaf appended unless it already ends
+        // with it (D:\Software\X → D:\Software\X\WorkBuddyAI); check that exact child too.
+        const appended = cli === 'workbuddy' && this.platform === 'win32' && win32.basename(plan.directory).toLowerCase() !== 'workbuddyai'
+          ? [join(plan.directory, 'WorkBuddyAI', source.desktop!.relativeEntry)] : []
+        const candidates = [candidate, ...appended, ...(source.desktop?.commonDirectories ?? []).map(path => join(path, source.desktop!.relativeEntry))]
         for (const path of candidates) {
           try {
             // International WorkBuddy's mjs is a readable 0644 input to its own runtime,

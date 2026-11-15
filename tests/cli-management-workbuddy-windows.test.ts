@@ -128,11 +128,13 @@ it('awaits installer process scope; unconfirmed scope retains execution copy', a
   expect(await readFile(blocked.run.mock.calls[0]![0][0]!)).toEqual(body)
 })
 
-it.each(['default', 'selected', 'sha256', 'cn', 'wrong-version', 'wrong-build', 'signature-failure', 'cancel', 'scope-unconfirmed'] as const)('first install real identity resolver and path record: %s', async mode => {
+it.each(['default', 'selected', 'appended', 'sha256', 'cn', 'wrong-version', 'wrong-build', 'signature-failure', 'cancel', 'scope-unconfirmed'] as const)('first install real identity resolver and path record: %s', async mode => {
   vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
   const f = serviceFixture(['workbuddy']); closes.push(() => f.close()); f.identities.clear()
-  vi.stubEnv('LOCALAPPDATA', f.root)
-  const app = mode === 'selected' ? join(f.root, 'chosen app') : join(f.root, 'Programs/WorkBuddyAI')
+  vi.stubEnv('LOCALAPPDATA', f.root); vi.stubEnv('ProgramFiles', join(f.root, 'Program Files'))
+  // 'appended': the real 5.9.4 wizard adds its WorkBuddyAI leaf to a picked folder (Windows, 2026-11-15).
+  const selected = join(f.root, 'chosen app')
+  const app = mode === 'selected' ? selected : mode === 'appended' ? join(selected, 'WorkBuddyAI') : join(f.root, 'Program Files/WorkBuddyAI')
   const config = { ...f.config, cliExecutablePaths: new CliExecutablePathStore(f.root, { platform: 'darwin' }) } // fixture files use POSIX paths on this Mac
   const metadataFetch = feed(mode === 'sha256' ? { sha256hash: sha256 } : {}); f.releases.response = async () => metadataFetch()
   const file = (path: string, text: string) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, text) }
@@ -153,7 +155,7 @@ it.each(['default', 'selected', 'sha256', 'cn', 'wrong-version', 'wrong-build', 
   })
   const installer = new CliInstaller({ root: f.root, backend: f.backend, config, releases: f.releases, platform: 'win32', arch: 'x64', fetcher: artifactFetcher,
     identify: async (cli, backend, selected, signal) => selected.cliExecutablePaths ? undefined : identifyInstallation(cli, backend, selected, signal), version: currentVersion })
-  const plan = await installer.prepare('workbuddy', 'https://registry.npmjs.org/', mode === 'selected' ? app : join(f.root, 'page-selection-unused'), signal())
+  const plan = await installer.prepare('workbuddy', 'https://registry.npmjs.org/', mode === 'selected' || mode === 'appended' ? selected : join(f.root, 'page-selection-unused'), signal())
   const pending = installer.execute(plan, op, controller.signal, () => {}, async () => {})
   if (['cn', 'wrong-version', 'wrong-build', 'signature-failure', 'cancel', 'scope-unconfirmed'].includes(mode)) {
     await expect(pending).rejects.toThrow(); expect(config.cliExecutablePaths.read('workbuddy')).toBeUndefined()

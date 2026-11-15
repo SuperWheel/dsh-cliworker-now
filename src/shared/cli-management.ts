@@ -244,7 +244,7 @@ export interface CliUpdateSnapshot {
   operation?: CliUpdateOperation
   /** CLIs waiting in the "update all" queue, in order. */
   queue: ActiveCliId[]
-  /** Last finished operation per CLI, shown until the next regroup or a new check. */
+  /** Last finished operation per CLI, shown until the user's next full check (`check('all')`). */
   results: CliUpdateOperation[]
 }
 

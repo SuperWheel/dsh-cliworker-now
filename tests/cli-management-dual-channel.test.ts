@@ -98,3 +98,10 @@ it('模拟：取消记忆直达的接管下载时清除记录，不放置未完�
   const pending = f.start(); await requested; f.service.cancel(f.service.snapshot().operation!.id)
   expect(await pending).toMatchObject({ phase: 'cancelled' }); expect(await f.memory.get(f.key)).toBeUndefined(); expect(readFileSync(f.target, 'utf8')).toBe('old')
 })
+it('模拟：上次操作结果在打开页面的补缺检查后保留，用户点「检查更新」后清除', async () => {
+  const f = fixture(); vi.mocked(f.backend.spawn).mockImplementation(() => child('You are already on the latest version.\n') as any)
+  expect((await f.start()).phase).toBe('succeeded')
+  await checked(f.service, 'missing')
+  expect(f.service.snapshot().results).toHaveLength(1)
+  expect((await checked(f.service, 'all')).results).toEqual([])
+})

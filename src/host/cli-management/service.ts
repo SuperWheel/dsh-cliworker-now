@@ -153,6 +153,9 @@ export class CliManagementService {
   check(scope: 'missing' | 'all'): CliUpdateSnapshot {
     this.assertHealthy()
     if (this.running || this.state.operation || this.state.queue.length) return this.snapshot()
+    // Last results are shown until the user's next full check; the page's own
+    // open-time 'missing' pass keeps them so a fresh outcome is not lost on reopen.
+    if (scope === 'all') this.state.results = []
     this.state.activity = 'checking'; this.changed()
     const controller = new AbortController(); this.foregroundController = controller
     const unfinished = new Set<ActiveCliId>(CLI_IDS)
