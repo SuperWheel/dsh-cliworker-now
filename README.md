@@ -73,7 +73,7 @@ WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面�
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.3；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
-- **验证范围**：本次升级（0.2.2-rc.3）已在隔离 DSH_HOME 的 rc.3 宿主上核对插件加载与主要界面；Mac 正式 Desktop、Windows 与真实模型／CLI 派遣未验证，具体边界见 [升级验证记录](openspec/archives/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md)；0.2.2-rc.2 的记录见 [rc.2 升级验证](openspec/archives/upgrade-host-022rc2/tasks.md)。每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。
+- **验证范围**：本次升级（0.2.2-rc.3）已在隔离 DSH_HOME 的 rc.3 宿主上核对插件加载与主要界面；2026-11-15 至 11-16 又在 Mac 与 Windows 正式 Desktop 0.2.2-rc.3 上完成多个 CLI 的真实派遣、续聊与停止（范围见 v0.8.10 Release 的验证段），具体边界见 [升级验证记录](openspec/archives/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md)；0.2.2-rc.2 的记录见 [rc.2 升级验证](openspec/archives/upgrade-host-022rc2/tasks.md)。每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。
 
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
 
@@ -215,7 +215,7 @@ Pi/OMP 的“当前项目”以 Worker 所选目录为准，即使它是 Git 仓
 
 设置页保留账号检查的具体结果：绑定未确认时显示「请重新登录」，等待续期或需检查登录时显示对应原因。ZCode 退出 OAuth 后若仍有 API Key，会显示「已配置 ZCode API」；没有账号或 API 配置时显示「未登录」。灰点表示尚未确认登录，账号窗口没有账号行也不代表 API 配置已删除。
 
-**ZCode 订阅过期后使用自己的 API Key（v0.8.10-zcode-custom-key-leeyl）**：在 ZCode「账号 → 添加账号 → 其他服务商」填写名称、接口类型（Anthropic Messages / OpenAI Chat Completions / OpenAI Responses）、Base URL、API Key 和模型 ID，可从 ZCode 内置模板预填。配置只保存到插件账号目录 `<DSH_HOME>/cliworker-now/accounts/zcode/.zcode/v2/provider_config.json`（0600，原子写入，失败回滚），不修改 ZCode 桌面端的 `~/.zcode/v2/provider_config.json`；名称不能与桌面端、插件或内置服务商重名。账号窗口列出两处的 API Key 服务商：插件添加的可直接删除，桌面端的只读。模型目录用该服务商自己的密钥查询 `/models`：返回 404/405 时列出你填写的模型并标注「本机配置，未核实」、费用未知；401/403 时隐藏；配置的自定义请求头会一并附带。模型名显示服务商名称而不是 UUID。ZCode 0.17.1 起运行偏好答复不再接受工作流字段，插件按已安装版本把工作流设置改放在会话创建与恢复参数中。真实订阅过期后的 Desktop 派遣尚未验收。
+**ZCode 订阅过期后使用自己的 API Key（v0.8.10-zcode-custom-key-leeyl）**：在 ZCode「账号 → 添加账号 → 其他服务商」填写名称、接口类型（Anthropic Messages / OpenAI Chat Completions / OpenAI Responses）、Base URL、API Key 和模型 ID，可从 ZCode 内置模板预填。配置只保存到插件账号目录 `<DSH_HOME>/cliworker-now/accounts/zcode/.zcode/v2/provider_config.json`（0600，原子写入，失败回滚），不修改 ZCode 桌面端的 `~/.zcode/v2/provider_config.json`；名称不能与桌面端、插件或内置服务商重名。账号窗口列出两处的 API Key 服务商：插件添加的可直接删除，桌面端的只读。模型目录用该服务商自己的密钥查询 `/models`：返回 404/405 时列出你填写的模型并标注「本机配置，未核实」、费用未知；401/403 时隐藏；配置的自定义请求头会一并附带。模型名显示服务商名称而不是 UUID。ZCode 0.17.1 起运行偏好答复不再接受工作流字段，插件按已安装版本把工作流设置改放在会话创建与恢复参数中。2026-11-16 在 macOS Desktop 上用自有 DeepSeek Key 完成派遣、续聊与停止；0.17.1 重复发出的同一授权请求只弹一次审批卡。Windows 与 headless 派遣尚未验收。
 
 Pi 和 OMP 的「登录到」选项从当前安装的原生注册表读取，包含各自支持的智谱 BigModel Coding（中国）与 Z.AI（国际）；读取失败时可进入原生终端选择。两者的国内 provider ID 不相同，不能互换。OMP 账号行及替换选项显示原生凭据编号，便于区分同一服务商的新旧 key。退出只移除选中的来源和凭据，原生记录确认移除且账号进程清理完成后才报成功；「替换」先保存新凭据，再退出选中的旧凭据，失败时保留结果供重试。环境变量中的 key 仍在原配置中管理。Pi／OMP 原生模型配置文件（如 `~/.omp/agent/models.yml`）中的服务商可在账号窗口「删除」：确认后只移除这一个服务商，先把原文件备份到插件状态目录的 `account-config-backups/`，保留其余内容与格式，直接运行该 CLI 时也不再可用；插件「其他服务商」表单添加的服务商同样可删除。同一服务商有多条凭据时，被服务商拒绝认证的凭据不再让模型目录变空：设置页会按其余凭据显示模型，并提示已跳过几条认证失败的凭据；全部被拒绝时提示账号认证失败，而不是「暂无可用模型」。OpenCode 同样会说明认证失败。
 
