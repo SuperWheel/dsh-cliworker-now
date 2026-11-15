@@ -323,3 +323,39 @@ it('重排播报：中英文各一句，不逐行播报', () => {
   expect(regroupAnnouncement(finished)).toBe('Check finished: 3 can be updated, 1 failed to check')
   expect(regroupAnnouncement(groups({ manual: ['zcode'] }))).toBe('Check finished: 1 need a manual update')
 })
+
+// 模拟：只检查页面 CSS 规则文本，不渲染任何真实 CLI 行。
+// DSH Desktop 0.2.2-rc.3 的最小窗口宽 520px：设置弹窗 min(800px,90vw)=468px，Modal 正文左右各 24px 余 420px，
+// ≤640px 时导航列 clamp(112px,30vw,184px)=156px、列间距 16px，更新页只剩约 248px。
+it('keeps narrow update rows readable: buttons and the channel tag move before the status text gets thinner than 10 characters', async () => {
+  const { cliUpdateStyles: css } = await import('../src/client/cli-update-styles.ts')
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return new RegExp(`(?:^|\\n|\\})${escaped}\\{([^}]*)\\}`).exec(css)?.[1] ?? ''
+  }
+  // 10 characters at the 12px description size.
+  expect(rule('.cwn-update-page')).toContain('--cwn-update-text-min:120px')
+  // The row wraps: the main column claims icon + text minimum before the buttons get a place beside it.
+  expect(rule('.cwn-update-row')).toContain('flex-wrap:wrap')
+  expect(rule('.cwn-update-row')).toContain('row-gap:8px')
+  expect(rule('.cwn-update-row-main')).toContain('flex:1 1 calc(44px + var(--cwn-update-text-min))')
+  // Buttons that wrapped stay at the right edge.
+  expect(rule('.cwn-update-actions')).toContain('margin-left:auto')
+  expect(rule('.cwn-update-actions')).toContain('flex-shrink:0')
+  // The tag flows inline after the text (one 18px line box) instead of squeezing it as a flex sibling.
+  const chan = rule('.cwn-update-chan')
+  expect(chan).toContain('display:inline-flex')
+  expect(chan).toContain('vertical-align:top')
+  expect(chan).toContain('margin:-1px 0 -1px 6px')
+  expect(chan).toContain('white-space:nowrap')
+  expect(chan).not.toContain('flex-shrink')
+  // Progress line: the description keeps at least the same minimum; the resume count moves under it, right-aligned.
+  expect(rule('.cwn-update-progress-meta')).toContain('flex-wrap:wrap')
+  expect(rule('.cwn-update-meta-main')).toContain('flex:1 1 var(--cwn-update-text-min)')
+  expect(rule('.cwn-update-meta-main')).toContain('white-space:nowrap')
+  expect(rule('.cwn-update-meta-side')).toContain('margin-left:auto')
+  // The ≤640px block narrows only the column gap; the 8px row gap stays.
+  const narrow = /@media\(max-width:640px\)\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? ''
+  expect(narrow).toContain('.cwn-update-row{column-gap:12px}')
+  expect(narrow).not.toMatch(/\.cwn-update-row\{gap:/)
+})

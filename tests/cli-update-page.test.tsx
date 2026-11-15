@@ -695,6 +695,11 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(tag()[0]!.props['data-channel']).toBe('official')
     // The tag sits in the description line, after the phase text.
     expect(byClass(f.rowOf('codex'), 'cwn-update-desc')[0]!.findAll((node) => node === tag()[0])).toHaveLength(1)
+    // Inline at the end of the status text (not a flex sibling), so a narrow row wraps it like a word.
+    const status = tag()[0]!.parent!
+    expect(status.type).toBe('span')
+    expect(status.parent!.props.className).toBe('cwn-update-desc')
+    expect(textOf(status).endsWith('官方')).toBe(true)
 
     await f.update(running({ channel: 'takeover', readable: true, byteProgress: true, byteProgressState: 'known-total', downloadedBytes: 1024, totalBytes: 4096, resumeCount: 0 }))
     expect(tag().map(textOf)).toEqual(['插件接管'])
@@ -851,7 +856,8 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(cliUpdateStyles).toContain('.cwn-update-meta-main[data-host]:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}')
     expect(cliUpdateStyles).toContain('.cwn-update-meta-lead{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
     expect(cliUpdateStyles).toContain('.cwn-update-meta-host{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}')
-    expect(cliUpdateStyles).toMatch(/\.cwn-update-progress-meta\{[^}]*flex-wrap:nowrap/)
+    // The description itself never wraps; only the resume count may move under it on a narrow pane.
+    expect(cliUpdateStyles).toMatch(/\.cwn-update-meta-main\{[^}]*white-space:nowrap/)
 
     // Lines without bytes never name a host.
     await f.update(running({ channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '准备官方本地安装入口', sourceHost: host }, { cli: 'omp', phase: 'installing' }))

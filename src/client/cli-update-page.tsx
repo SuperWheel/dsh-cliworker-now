@@ -1370,12 +1370,13 @@ export function CliUpdatePane({
                       </button>
                     </>
                   )}
+                  {/* Inline after the text so a narrow row wraps the tag like a word instead of squeezing the text. */}
+                  {active?.progress?.channel && (
+                    <span className="cwn-update-chan" data-channel={active.progress.channel}>
+                      {active.progress.channel === 'takeover' ? t('插件接管') : t('官方')}
+                    </span>
+                  )}
                 </span>
-                {active?.progress?.channel && (
-                  <span className="cwn-update-chan" data-channel={active.progress.channel}>
-                    {active.progress.channel === 'takeover' ? t('插件接管') : t('官方')}
-                  </span>
-                )}
               </span>
               {error && (
                 <p className="cwn-update-row-error" role="alert">

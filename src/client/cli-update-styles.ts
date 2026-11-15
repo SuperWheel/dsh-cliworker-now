@@ -4,7 +4,7 @@
  * 0.5px separators, md/sm native Buttons only. Section, heading and row text reuse settingsStyles.
  */
 export const cliUpdateStyles = `
-.cwn-update-page{--cwn-update-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.cwn-update-page{--cwn-update-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--cwn-update-text-min:120px}
 .cwn-update-page .cwn-copy{margin-top:0}
 .cwn-update-page .cwn-cli-identity>.cwn-settings-cli-name,.cwn-update-page .cwn-cli-identity>.cwn-settings-cli-name>div{min-width:0}
 .cwn-update-tools{display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;max-width:60%}
@@ -18,8 +18,8 @@ export const cliUpdateStyles = `
 .cwn-update-fold[aria-expanded=false] svg{transform:rotate(-90deg)}
 .cwn-update-item{padding:var(--cwn-settings-row-padding) 0}
 .cwn-update-item+.cwn-update-item{border-top:var(--cwn-settings-border)}
-.cwn-update-row{display:flex;align-items:center;justify-content:space-between;gap:var(--cwn-settings-column-gap)}
-.cwn-update-row-main{display:flex;align-items:flex-start;gap:12px;min-width:0;flex:1}
+.cwn-update-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;row-gap:8px;column-gap:var(--cwn-settings-column-gap)}
+.cwn-update-row-main{display:flex;align-items:flex-start;gap:12px;min-width:0;flex:1 1 calc(44px + var(--cwn-update-text-min))}
 .cwn-update-row-main>.cwn-brand{flex-shrink:0;margin-top:6px;border-radius:8px;overflow:hidden}
 .cwn-update-text{display:flex;flex-direction:column;gap:var(--cwn-settings-description-gap);min-width:0}
 .cwn-update-name{font-size:var(--cwn-settings-label-size);line-height:var(--cwn-settings-label-line);font-weight:var(--cwn-settings-label-weight);color:var(--dsw-alias-label-primary)}
@@ -35,7 +35,7 @@ export const cliUpdateStyles = `
 .cwn-update-desc .cwn-update-link:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
 .cwn-update-notice{font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere;white-space:normal}
 .cwn-update-row-error{margin:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-feedback-line);color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
-.cwn-update-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--cwn-settings-action-gap);flex-shrink:0;max-width:100%}
+.cwn-update-actions{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:var(--cwn-settings-action-gap);flex-shrink:0;max-width:100%;margin-left:auto}
 .cwn-update-actions button{white-space:nowrap}
 .cwn-update-expand{display:flex;flex-direction:column;gap:8px;margin:12px 0 0 44px;min-width:0}
 .cwn-update-bubble{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0 0 44px;padding:10px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);min-width:0}
@@ -61,21 +61,21 @@ export const cliUpdateStyles = `
 .cwn-update-progress{display:flex;flex-direction:column;gap:6px}
 .cwn-update-bar{height:4px;border-radius:2px;background:var(--dsw-alias-interactive-bg-hover);overflow:hidden}
 .cwn-update-bar>span{display:block;height:100%;border-radius:2px;background:var(--dsw-alias-state-business-primary);transition:width 180ms ease}
-.cwn-update-progress-meta{display:flex;justify-content:space-between;flex-wrap:nowrap;gap:12px;min-width:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
+.cwn-update-progress-meta{display:flex;justify-content:space-between;flex-wrap:wrap;row-gap:2px;column-gap:12px;min-width:0;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
 .cwn-update-progress-meta[data-tone=warn]{color:var(--dsw-alias-state-warn-label)}
-.cwn-update-meta-main{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cwn-update-meta-main{flex:1 1 var(--cwn-update-text-min);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cwn-update-meta-main[data-host]{display:flex;border-radius:2px}
 .cwn-update-meta-main[data-host]:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}
 .cwn-update-meta-lead{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cwn-update-meta-host{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}
-.cwn-update-meta-side{flex-shrink:0;white-space:nowrap}
+.cwn-update-meta-side{flex-shrink:0;margin-left:auto;white-space:nowrap}
 .cwn-update-seg{display:grid;gap:3px;height:4px}
 .cwn-update-seg>span{border-radius:2px;background:var(--dsw-alias-interactive-bg-hover)}
 .cwn-update-seg>span[data-step=done]{background:var(--dsw-alias-state-business-primary)}
 .cwn-update-seg>span[data-step=now]{background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 45%,transparent)}
 .cwn-update-callout{padding:10px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .cwn-update-hint[data-clip]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;overflow-wrap:normal}
-.cwn-update-chan{display:inline-flex;align-items:center;flex-shrink:0;height:20px;margin:-1px 0;padding:0 6px;border-radius:6px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);white-space:nowrap}
+.cwn-update-chan{display:inline-flex;align-items:center;vertical-align:top;height:20px;margin:-1px 0 -1px 6px;padding:0 6px;border-radius:6px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);white-space:nowrap}
 .cwn-update-chan[data-channel=takeover]{color:var(--dsw-alias-state-business-primary);background:color-mix(in srgb,var(--dsw-alias-state-business-primary) 10%,transparent)}
 .cwn-update-log-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:var(--cwn-settings-description-size);line-height:var(--cwn-settings-description-line);color:var(--dsw-alias-label-tertiary)}
 .cwn-update-log{margin:0;height:150px;overflow:auto;overscroll-behavior:contain;padding:10px 12px;border-radius:12px;background:var(--dsw-alias-interactive-bg-hover);font-family:var(--cwn-update-mono);font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -85,7 +85,7 @@ export const cliUpdateStyles = `
 @media(max-width:640px){
 .cwn-update-check{width:var(--cwn-settings-control-height)!important;padding:0!important}
 .cwn-update-check .cwn-update-check-label{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-.cwn-update-row{gap:12px}
+.cwn-update-row{column-gap:12px}
 }
 @media(prefers-reduced-motion:reduce){.cwn-update-fold svg,.cwn-update-bar>span{transition:none}}
 `
