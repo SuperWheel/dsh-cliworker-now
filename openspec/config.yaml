@@ -49,7 +49,9 @@ operations:
     guidance:
       - 按用户已有授权执行；不因流程重复索取许可。缺少必要选型或高影响授权时保留待办，继续独立工作。
       - 保存现有未提交修改；验证实现与规格一致，发现方案变化时同步 change 产物。
+      - 每勾完一批子任务并提交后，用 pm-board-spec 技能把本变更的进度同步到产品面板（tasks/sync 先预演）；没装该技能或没有面板授权时，在汇报里提醒用户。
   archive:
     guidance:
       - 归档前核对完整任务和实际证据，执行 pnpm spec:check；不以格式校验替代业务验收。归档用 pnpm spec archive，目标为 openspec/archives/<变更名>/。
+      - 归档后用 pm-board-spec 再同步一次（archived），让面板任务的交付物链接指向归档路径。
       - 未完事项保持可见；只合并本 change 的增量规格，保留历史文档和既有会话数据。
