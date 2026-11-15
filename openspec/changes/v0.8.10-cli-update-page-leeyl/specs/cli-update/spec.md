@@ -405,7 +405,17 @@ Host SHALL 为 npm 主 tarball 提供官方 registry 与 npmmirror 的多源列�
 
 
 ### Requirement: 桌面首次安装来源与版本复核
-macOS 桌面首次安装 SHALL 复用官方桌面发布读取器及共享发布请求预算；URL、摘要、应用名、包内入口和开发者 Team ID MUST 来自 Host 核实的来源。ZIP SHALL 在私有目录解包，DMG SHALL 只读挂载；签名与 Gatekeeper 核对通过后才复制。应用版本 MUST 与计划目标一致才写入原 CLI 路径记录。Windows 首次安装的发布者与实际落点未核实时 SHALL 仅提供官方说明。
+macOS 桌面首次安装 SHALL 复用官方桌面发布读取器及共享发布请求预算；URL、摘要、应用名、包内入口和开发者 Team ID MUST 来自 Host 核实的来源。ZIP SHALL 在私有目录解包，DMG SHALL 只读挂载；签名与 Gatekeeper 核对通过后才复制。应用版本 MUST 与计划目标一致才写入原 CLI 路径记录；仅国际版 WorkBuddy 官方 macOS DMG 在 feed SHA-256 核对通过且装后仅提供三段应用版本时，SHALL 按目标前三段比较，四段装后版本仍 MUST 完整相等，指纹 MUST 保留实际读取的版本。Windows 首次安装的发布者与实际落点未核实时 SHALL 仅提供官方说明。
+
+#### Scenario: 国际版包内脚本没有执行位
+- **WHEN** 国际版 WorkBuddy 安装后的包内 mjs 可读但无执行位
+- **THEN** Host SHALL 交由安装身份读取器核对包名、站点、runtime 与入口，不以可执行文件查找拒绝 mjs，不启动包内程序或为其增加执行位
+- **AND** 身份核对失败产生 WorkBuddyUnavailableError 时，VERSION_MISMATCH SHALL 保留其固定 reason 原因码，不暴露原始产品 JSON 或任意底层错误文本
+
+#### Scenario: 国际版只有三段装后应用版本
+- **WHEN** 官方 DMG 的 feed SHA-256 已核对，目标为 5.9.4.42593613，装后应用版本为 5.9.4、CLI 版本为 2.165.0
+- **THEN** Host SHALL 接受应用短版本与目标前三段一致，保留真实应用/CLI 版本并写回核实的入口，不将 feed build 冒充装后读取值
+- **AND** 装后应用版本为 5.9.3 或 5.9.4.42593612 时 MUST 拒绝并保留旧路径记录；CN、ZCode 和 Windows 不适用此三段匹配规则
 
 #### Scenario: 官方摘要与当前桌面包不一致
 - **WHEN** 桌面包两次完整下载均与官方摘要不符

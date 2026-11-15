@@ -13,6 +13,6 @@ export function workbuddyVariant(cli: WorkBuddyCliId) {
         dataFolderName: '.workbuddy', macAppNames: ['WorkBuddy.app', 'WorkBuddy AI.app'],
         windowsDirectoryNames: ['WorkBuddy', 'WorkBuddy AI'], transport: 'workbuddycn-acp-v1' }
     : { cli, label: 'WorkBuddy', endpointHosts: ['www.workbuddy.ai', 'workbuddy.ai'],
-        dataFolderName: '.workbuddy', macAppNames: ['WorkBuddy AI.app', 'WorkBuddy.app'],
+        dataFolderName: '.workbuddy-ai', macAppNames: ['WorkBuddy AI.app', 'WorkBuddy.app'],
         windowsDirectoryNames: ['WorkBuddy AI', 'WorkBuddy'], transport: 'workbuddy-acp-v1' }
 }

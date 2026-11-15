@@ -38,6 +38,13 @@
 - 若未来 feed 修正为 ZIP 摘要，现行 DMG 下载会严格校验失败并停止；不得自动尝试 ZIP、替换摘要或降低校验。应重新核对官网、feed 和工件配对，明确修订此选择规则及对应模拟回归后再切换。撤回本修复则恢复原 ZIP 严格拒绝行为，不迁移用户数据。
 - 本次仅做模拟回归、类型与规格检查、隔离构建；真实安装、更新、挂载、签名系统执行、登录和 Desktop 验收保留待验证。
 
+#### 2026-11-15 装后识别修复（15.3 续验）
+
+- 只读核对指定 SHA-256 的 arm64 DMG：`WorkBuddy AI.app`、`Contents/MacOS/Electron`、`cli/dist/codebuddy-lite-wb.mjs`、包名 `@genie/agent-cli` / `2.165.0`、endpoint 主机 `www.workbuddy.ai` 均符合既有 resolver；产品配置目录为 `.workbuddy-ai`，修正国际版 variant 的该提示值。实际运行仍读取产品元数据，CN 定义、endpoint 白名单和 sources 的应用名/入口无需变更。
+- 根因实证：官方 mjs 权限为 0644，安装器先调用可执行文件查找（X_OK），因此尚未进入身份读取器就被拒绝；直接调用 `resolveWorkBuddyInstallation` 成功。国际版装后核对直接把包内路径交给现有 identity/resolver，仍验证包名、站点、runtime、entry 与可读权限，不添加执行位、不启动包内程序、不回退 PATH。身份读取抛出的 `WorkBuddyUnavailableError.reason` 作为固定原因码附在 VERSION_MISMATCH 后，不拼接原始异常或产品 JSON。
+- 第二处实物差异：Info.plist 的短版本与 build 均为 `5.9.4`，product.genieVersion 也为 `5.9.4`；feed 目标是 `5.9.4.42593613`。仅国际版 macOS 官方 DMG 首次安装、且 feed SHA-256 已校验时，允许三段装后应用版本等于四段目标的前三段。精确工件由 feed 摘要绑定，安装元数据本身不提供四段 build，不能声称独立读出了该 build；若装后提供四段版本则必须完整相等，短版本不符仍失败。保留真实 appVersion，不把 feed 目标写入指纹；CN/ZCode/Windows 版本规则不变。
+- 未修改更新器流程；真实首次安装与清理结果、未验更新与 Desktop 的边界以 tasks.md 15.3 后续记录为准。回退仅撤回上述安装核对及提示值，无数据迁移。
+
 ### 决定 17：CodeBuddy Code 官方原生来源与稳定入口（2026-11-15）
 
 - 本决定修复文末「CodeBuddy 原生布局问题的结论」所列缺口。匿名读取 [install.sh](https://www.codebuddy.cn/cli/install.sh)、[install.ps1](https://www.codebuddy.cn/cli/install.ps1) 与[安装文档](https://www.codebuddy.cn/docs/cli/installation)，脚本均下载 COS 二进制、以 checksums.txt 的 SHA-256 校验，再委托 `codebuddy install`；脚本文本不单独证明最终布局。

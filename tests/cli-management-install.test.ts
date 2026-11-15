@@ -1,7 +1,7 @@
 /** 模拟：首次安装全过程。所有 CLI、Node/npm、官方脚本、HTTP 与安装器均为夹具。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { CliManagementService } from '../src/host/cli-management/service.ts'
@@ -48,6 +48,46 @@ function fixture() {
   return { ...f, config, prefix, service, installer, nodeVersion(value: string) { nodeVersion = value }, installed(value: boolean) { installed = value } }
 }
 const prepare = (f: ReturnType<typeof fixture>, cli: any = 'codex') => f.installer.prepare(cli, 'https://registry.npmjs.org/', '', control())
+
+it.each([
+  ['5.9.4', '@genie/agent-cli', 'www.workbuddy.ai', undefined],
+  ['5.9.3', '@genie/agent-cli', 'www.workbuddy.ai', '应用版本'],
+  ['5.9.4.42593612', '@genie/agent-cli', 'www.workbuddy.ai', '应用版本'],
+  ['5.9.4', '@other/package', 'www.workbuddy.ai', 'package-mismatch'],
+  ['5.9.4', '@genie/agent-cli', 'www.workbuddy.cn', 'variant-mismatch'],
+] as const)('模拟国际版实物元数据：应用 %s、包 %s、站点 %s，使用真实身份读取器', async (appVersion, pkg, host, failure) => {
+  const f = fixture(), target = '5.9.4.42593613'
+  const descriptor = sources.DESKTOP_INSTALL_SOURCES.workbuddy
+  const url = `https://download.codebuddy.ai/workbuddy/saas/darwin-${process.arch}/WorkBuddy-darwin-${process.arch}-${target}-fa0a0901.zip`
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ version: target, url, sha256hash: createHash('sha256').update('模拟').digest('hex') })))
+  f.identify.mockImplementation(async (cli, backend, config, signal) => config.cliExecutablePaths ? undefined : identifyInstallation(cli, backend, config, signal))
+  f.version.mockImplementation(currentVersion as any)
+  vi.mocked(f.backend.resolveExecutable).mockImplementation(async path => { accessSync(path, constants.X_OK); return path })
+  vi.mocked(f.backend.spawn).mockImplementation(({ argv }) => {
+    if (argv[1] === 'attach') mkdirSync(join(argv[argv.indexOf('-mountpoint') + 1]!, descriptor.appName))
+    if (argv[0] === '/usr/bin/ditto') {
+      const app = argv[2]!, cli = join(app, 'Contents/Resources/app.asar.unpacked/cli')
+      const file = (path: string, value: string) => { mkdirSync(join(path, '..'), { recursive: true }); writeFileSync(path, value, { mode: 0o644 }) }
+      file(join(app, 'Contents/MacOS/Electron'), '模拟，不执行')
+      file(join(app, descriptor.relativeEntry), '// 模拟官方无执行位入口')
+      file(join(cli, 'package.json'), JSON.stringify({ name: pkg, version: '2.165.0' }))
+      file(join(cli, 'product.json'), JSON.stringify({ productName: 'WorkBuddy AI', endpoint: `https://${host}`, dataFolderName: '.workbuddy-ai', genieVersion: '5.9.4' }))
+      file(join(app, 'Contents/Info.plist'), `<plist><key>CFBundleShortVersionString</key><string>${appVersion}</string><key>CFBundleVersion</key><string>${appVersion}</string></plist>`)
+    }
+    return exited()
+  })
+  const directory = join(f.root, 'desktop-target'), plan = await f.installer.prepare('workbuddy', 'https://registry.npmjs.org/', directory, control())
+  const task = f.installer.execute(plan, { outputTail: '' } as any, control(), () => {}, async () => {})
+  if (failure) {
+    await expect(task).rejects.toMatchObject({ code: 'VERSION_MISMATCH', message: expect.stringContaining(failure) })
+    expect(f.config.cliExecutablePaths.read('workbuddy')).toBeUndefined()
+  } else {
+    await expect(task).resolves.toMatchObject({ version: '2.165.0', identity: { fingerprint: { appVersion: '5.9.4' } } })
+    expect(f.config.cliExecutablePaths.read('workbuddy')?.path).toBe(join(directory, descriptor.appName, descriptor.relativeEntry))
+  }
+  expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
+  expect(readdirSync(join(f.root, 'cli-management/mounts'))).toEqual([])
+})
 
 it('模拟 2.8：Hermes 版本未知的原因不被重新安装说明覆盖', async () => {
   const f = fixture(); f.identities.set('hermes', { ...syntheticIdentity('hermes'), manifestVersion: undefined })

@@ -13,7 +13,7 @@ import { type ProcessBackend, type RuntimeConfig, ProcessCleanupUnconfirmedError
 import { identifyInstallation, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, type InstallSource } from './sources.ts'
 import { readDesktopRelease } from './desktop-update.ts'
-import { captureReadOnly, compareVersions, compatible, currentVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
+import { captureReadOnly, compareVersions, compatible, currentVersion, desktopVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
 import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { CliOperationError } from './planner.ts'
 import { downloadCliArtifact } from './download.ts'
@@ -21,6 +21,7 @@ import { executeCliOperation, outputTail } from './executor.ts'
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
 import { findGitBash } from '../windows-git-bash.ts'
+import { WorkBuddyUnavailableError } from '../workbuddy-installation.ts'
 
 export interface InstallPlan {
   cli: ActiveCliId; source: InstallSource; target?: string; directory: string; registry: string
@@ -180,17 +181,23 @@ export class CliInstaller {
         op.phase = 'verifying-installation'; changed()
         // Override only this verification's path. Do not reset the user's old record before success.
         let identity: InstallationIdentity | undefined
+        let workbuddyReason: string | undefined
         let config = this.deps.config
         const candidates = [candidate, ...(source.desktop?.commonDirectories ?? []).map(path => join(path, source.desktop!.relativeEntry))]
         for (const path of candidates) {
           try {
-            const resolved = await this.deps.backend.resolveExecutable(path)
+            // International WorkBuddy's mjs is a readable 0644 input to its own runtime,
+            // not an executable for PATH/X_OK lookup. Identity verifies the bundle.
+            const resolved = cli === 'workbuddy' ? path : await this.deps.backend.resolveExecutable(path)
             config = { ...this.deps.config, cliExecutablePaths: undefined, [cli === 'antigravity' ? 'executable' : `${cli}Executable`]: resolved }
             identity = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, config, control)
             if (identity) break
-          } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError || control.aborted) throw error }
+          } catch (error) {
+            if (error instanceof ProcessCleanupUnconfirmedError || control.aborted) throw error
+            if (error instanceof WorkBuddyUnavailableError) workbuddyReason ??= error.reason
+          }
         }
-        if (!identity) throw exitError ?? new CliOperationError('VERSION_MISMATCH', `安装命令已完成，但在 ${candidate} 找不到 ${cli}`)
+        if (!identity) throw exitError ?? new CliOperationError('VERSION_MISMATCH', `安装命令已完成，但在 ${candidate} 找不到 ${cli}${workbuddyReason ? `（WorkBuddy 原因：${workbuddyReason}）` : ''}`)
         if (source.method === 'npm' && identity.source !== 'npm') throw new CliOperationError('IDENTITY_CHANGED', 'npm 安装后的实际归属不符')
         if (source.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.deps.releases, plan.registry, control, npmDownload!.host, npmDownload!.components, this.deps.root)
         const version = await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, config, control, false, 45_000, source.method === 'npm')
@@ -198,7 +205,17 @@ export class CliInstaller {
         if (exitError) throw exitError
         if (!validVersion(version) || !compatible(cli, version)) throw new CliOperationError('VERSION_MISMATCH', '安装命令已完成，但无法确认已适配的 CLI 版本，请检查路径')
         if (source.method === 'npm' && version !== plan.target) throw new CliOperationError('VERSION_MISMATCH', '安装后的版本与目标不一致')
-        if (source.method === 'desktop' && (identity.fingerprint.appVersion ?? (cli === 'zcode' ? version : undefined)) !== plan.target) throw new CliOperationError('VERSION_MISMATCH', '安装后的应用版本与官方目标不一致')
+        if (source.method === 'desktop') {
+          const appVersion = identity.fingerprint.appVersion ?? (cli === 'zcode' ? version : undefined)
+          // International 5.9.4 DMG has only a three-component bundle version.
+          // The exact four-component release is bound by the verified feed digest.
+          // Never collapse a discovered four-component build or alter CN semantics.
+          const shortInternationalVersion = cli === 'workbuddy' && this.platform === 'darwin' &&
+            source.desktopFeed === 'workbuddy' && source.desktop?.archive === 'dmg' && source.desktop.integrity?.startsWith('sha256-') &&
+            !!appVersion && /^\d+\.\d+\.\d+$/.test(appVersion) && !!plan.target && /^\d+\.\d+\.\d+\.\d+$/.test(plan.target) &&
+            appVersion === desktopVersion(cli, plan.target)
+          if (appVersion !== plan.target && !shortInternationalVersion) throw new CliOperationError('VERSION_MISMATCH', '安装后的应用版本与官方目标不一致')
+        }
         control.throwIfAborted()
         const store = this.deps.config.cliExecutablePaths!
         if (store.revision(cli) !== plan.pathRevision) throw new CliOperationError('PLAN_EXPIRED', '安装期间路径设置已变化，未覆盖新设置')

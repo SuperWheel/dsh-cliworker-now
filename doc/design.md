@@ -1700,7 +1700,9 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 
 首次安装复用 `desktop.ts` 的只读挂载/签名/Gatekeeper/ditto/卸载流程；更新器复用同一流程准备暂存副本，卸载确认后再沿用原有替换、回滚、忙闲检查及装后版本核对。国际版固定 Apple anchor、Team `FN2V63AD2J` 和签名 identifier `com.workbuddy.workbuddy-ai`，不从旧应用推断可信团队。下载摘要失败不执行挂载、解包或安装，卸载未确认保留清理隔离，不替换旧应用。命令继续用参数数组并保留宿主代理，不引入账号读取或数据迁移。
 
-未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。本次仅模拟回归及静态/隔离构建检查，没有真实安装、更新、签名系统执行、挂载、登录或 Desktop 验收。
+15.3 实物续验发现入口是无执行位的 0644 mjs，而既有 resolver 能正确识别它。国际版首次安装改为直接用身份读取器验证包内入口，跳过 X_OK 可执行文件查找；失败保留 WorkBuddy 固定 reason 原因码。应用名、Electron runtime、endpoint 白名单及包名无需放宽，国际版配置目录提示修正为 `.workbuddy-ai`。该 DMG 的 Info.plist 与 product 只提供 `5.9.4`：仅对国际版 macOS 官方 DMG 且 feed SHA-256 校验成功时，允许三段实际版本匹配四段 feed 目标的前三段；若实际提供四段 build 则完整比较，CN/ZCode/Windows 不变。精确工件由摘要绑定，不伪造四段装后版本；指纹仍记录实际 `5.9.4`，CLI 为 `2.165.0`。
+
+未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。初始实现仅有模拟回归及静态/隔离构建检查；15.3 后续已完成 arm64 隔离首次安装、挂载/签名/Gatekeeper/复制/卸载、装后身份版本与路径写回核对。真实更新、正常位置发现和 Desktop 显示仍未验收，未启动应用或登录。
 
 ## 2026-11-15：CodeBuddy Code 原生来源与路径迁移
 

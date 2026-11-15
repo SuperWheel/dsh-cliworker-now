@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { findWorkBuddyWindowsCandidates, resetWorkBuddyWindowsCandidateCache, resolveWorkBuddyInstallation, workbuddyWindowsRegistryCandidates, WorkBuddyUnavailableError, WORKBUDDY_WINDOWS_INSTALL_QUERY } from '../src/host/workbuddy-installation.ts'
@@ -36,6 +36,17 @@ describe('模拟 WorkBuddy 安装与版本隔离', () => {
     expect(await resolveWorkBuddyInstallation('workbuddycn', f.options)).toMatchObject({ cli: 'workbuddycn', runtime: f.runtime, entry: f.entry, configDir: join(f.home, '.workbuddy-test'), cliVersion: '2.165.0' })
     for (const path of [f.appRoot, f.runtime, f.entry])
       expect((await resolveWorkBuddyInstallation('workbuddycn', { ...f.options, path })).appRoot).toBe(f.appRoot)
+  })
+  it('模拟国际版 5.9.4 DMG 实物结构：0644 mjs 可由包内 runtime 读取，无需执行位', async () => {
+    const f = await fixture({ appName: 'WorkBuddy AI.app', endpoint: 'https://www.workbuddy.ai', folder: '.workbuddy-ai' })
+    await writeFile(f.entry, '// 模拟官方只读脚本', { mode: 0o644 })
+    await chmod(f.entry, 0o644)
+    for (const path of [f.appRoot, f.runtime, f.entry]) {
+      expect(await resolveWorkBuddyInstallation('workbuddy', { ...f.options, manualPath: path })).toMatchObject({
+        runtime: f.runtime, entry: f.entry, cliVersion: '2.165.0', dataFolderName: '.workbuddy-ai', configDir: join(f.home, '.workbuddy-ai'),
+      })
+      await expect(resolveWorkBuddyInstallation('workbuddycn', { ...f.options, manualPath: path })).rejects.toMatchObject({ reason: 'variant-mismatch' })
+    }
   })
   it.each(['https://www.workbuddy.ai', 'https://workbuddy.ai'])('模拟按 endpoint 而非 app 名识别国际版 %s', async endpoint => {
     const f = await fixture({ endpoint, folder: '.custom-global' })
