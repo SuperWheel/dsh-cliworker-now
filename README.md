@@ -94,6 +94,8 @@ Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高
 
 源码中的「更新 CLI」页已接入首次安装后端：按 Host 核实的安装方式生成计划，npm 主包及本机平台组件校验后装入当前全局前缀，官方脚本先保存到私有目录再执行。安装期间目标 CLI 暂停派遣与账号操作；只有重新探测得到有效版本才写入原有 CLI 路径设置。来源未核实的方式仍提供官方说明。Claude 全平台及 MiMo macOS/Linux 的首次安装脚本暂保持仅说明（MiMo Windows 仍用 npm）；本轮已补齐现有安装的版本检查，未重新开放首次安装脚本。macOS 桌面首次安装复用 ZCode / WorkBuddy 两版的官方更新清单，校验 SHA-512 / SHA-256 与固定开发者签名后，将应用放到所选目录并核对应用版本、写回 CLI 路径；也支持原有 DMG 流程。Windows 首次安装的发布者与向导落点尚待核实，保留官方说明。2026-11-14 隔离安装 Pi npm 版 1.5.2、ZCode 3.18.2 通过；国际版 WorkBuddy 的 macOS 首次安装与更新按官网规则选择同路径 DMG，并严格使用 feed 的 SHA-256；固定核对 Team `FN2V63AD2J`、bundle `com.workbuddy.workbuddy-ai` 与 Gatekeeper，只读挂载、确认卸载后完成更新替换。CN 仍用 ZIP。2026-11-15 国际版 arm64 隔离首次安装已通过摘要、签名、装后身份/版本与路径写回核对；包内 0644 mjs 按可读脚本识别，保留实际应用版本 `5.9.4` / CLI `2.165.0`，四段 feed 发布号由工件摘要绑定。真实更新与 Desktop 显示尚未验收；若 feed 将来改为 ZIP 摘要，会校验失败并停止，须重新核实并修订规则后切换，不自动降级。进度及边界见 [本次任务记录](openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。
 
+Windows 的 ZCode 固定自动 runtime 可关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode` 中经 PE 产品名和内置 CLI 核实的桌面应用，显示应用版本并使用官方安装程序更新。向导与 UAC 由安装程序处理，插件不提权或静默安装。独立 Worker runtime 不随桌面更新；没有可核实桌面应用时仍显示原 runtime 手动更新原因。本轮为模拟验证，Windows 实机更新待验收。
+
 已识别的官方安装现在可通过原包管理器、自带更新命令或官方安装器更新；ZCode 与 WorkBuddy 两版接入桌面发布源与专用更新器。版本查询只读官方 GET，后台不执行 check/update 子命令，更新仍需前台用户发起。外部包管理器、未识别安装和没有可用平台工件的情况显示具体手动原因。不能锁版的命令会核对实际版本是否前进；Hermes 更新可能迁移配置、更新依赖及重启服务，原通道保持不变。Pi 更新不再受适配集合限制，未适配版本会提示 Pi Worker 需等待插件适配。
 
 Qoder/CN 保留官方分发入口；主目录中若存在名为 `update` 的路径，Host 会拒绝启动更新并说明原因，避免被分发到 IDE。Grok 官方 bin 入口链接到 downloads 实体时，以官方 stable 文本查询目标并执行带版本参数的自带更新。WorkBuddy 的 CLI 版本与应用版本分开读取，官方 feed 返回无更新时显示「已是最新」。Windows 的 ASAR 安装可从已核实的内置产品元数据读取应用版本，无需启动桌面应用。上述自动更新新增路径均只有模拟回归证据，真实更新验收另列于任务记录。

@@ -539,3 +539,16 @@
   - `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/cli-management-codebuddy-native.test.ts tests/cli-management-source-layouts.test.ts tests/cli-management-acceptance-fixes.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-review.test.ts tests/cli-management-update-cleanup.test.ts tests/cli-management-workbuddy-identity.test.ts tests/cli-executable-management.test.ts tests/adapters.test.ts`：9 文件、388 项通过。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 通过，仅已有主任务超过 10 个的组织建议；`git diff --check` 通过。首次任务工时标记格式失败已修正；首次关联测试的旧 CodeBuddy 夹具缺 updateRoot 失败已修正，并完整重跑通过。
 - [ ] 16.4 三平台真实原生更新验收（未执行：本次明确禁止真实更新；Mac/Windows 只有 npm 安装，Linux 无实机）
+
+
+## 17. Windows ZCode 桌面更新关联 〔后端｜2h｜前置 8〕
+
+- [x] 17.1 实现 Windows 固定 runtime 关联、PE 版本读取与更新后身份核对，同步设计和说明
+  - identity 新增两处有证据的默认目录与 ProductName/内置 CLI 核对，pe-version 使用有界位置读取，planner 保留同根应用更新并拒绝应用根变化。macOS、manual、官方 EXE 下载/校验/执行链路保留；双语 README、doc/design、本 change 决定 18 与增量规格已同步。
+- [x] 17.2 完成模拟测试、类型检查、隔离构建和严格规格校验
+  - `node_modules/.bin/vitest run tests/cli-management-zcode-windows.test.ts`：29/29 通过；`node_modules/.bin/vitest run tests/cli-management`（Vitest 文件名前缀匹配，等价覆盖 tests/cli-management*，包含新测试与 macOS 既有回归）：37 文件、1256/1256 通过，0 failed，18.65 秒。手工模拟 PE32/PE32+、ProductName/StringFileInfo 与固定版本区分、缺资源/截断/越界/超限/循环、222866328 B 稀疏文件、两默认目录、链接/junction、产品名/内置 CLI、manual/显式路径、版本与计划 token、应用根与大小写均覆盖；服务测试复用实际 feed/下载/更新器/verify，只有 HTTP、安装进程与文件产物是模拟，确认仅一个 EXE 参数、等待进程范围退出并独立回读 3.18.2。
+  - `corepack pnpm --config.verify-deps-before-run=false typecheck`：退出 0，Host/Client against DSH 0.2.2-rc.3 通过；`corepack pnpm --config.verify-deps-before-run=false build:preview`：退出 0，隔离包位于本 worktree .cache/preview-package。无正式 build 或 Desktop 链接更新。
+  - 环境/调试记录：原 `corepack pnpm typecheck` 和 spec 命令因共享 node_modules 链接触发 ERR_PNPM_UNSAFE_MODULES_DIR；只用命令级 verify-deps-before-run=false 关闭自动依赖重装检查，未修改依赖/锁文件。新 worktree 首次类型检查缺 remote 生成声明；隔离构建后复制 286 个生成 .d.ts 到本 worktree 忽略的 lib/，再验证通过。Vitest 首次 .vite-temp 写入被沙箱拒绝，经工具授权提升后执行；新测试最初路径夹具错误（29 failed）、随后复用已消费 Response（28 passed / 1 failed），均只修正模拟夹具后通过。
+  - `corepack pnpm --config.verify-deps-before-run=false spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive`：valid、退出 0，仅已有主任务超过 10 个建议；首次因扩写旧 requirement 超过 500 字警告失败，已精简总述并保留独立 Windows requirement/scenarios。指定 Git `diff --check` 通过。17.3 与其他原有实机缺口保持未勾选，不归档。
+- [ ] 17.3 Windows 实机更新验收
+  - 待主会话实机验收。

@@ -86,6 +86,9 @@ export function verifyUpdatedVersion(plan: CliOperationPlan, version: string | u
 const foldPath = (value: string) => /^[A-Za-z]:[\\/]/.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value
 const samePath = (a: string | undefined, b: string | undefined) => a === b || a !== undefined && b !== undefined && foldPath(a) === foldPath(b)
 export function sameInstallation(before: InstallationIdentity, after: InstallationIdentity, cli?: ActiveCliId): boolean {
+  // A managed ZCode runtime stays in place while its associated app is replaced.
+  // The app root must stay the same, but its EXE size/mtime and version may change.
+  if (cli === 'zcode' && (before.source === 'desktop-app' || after.source === 'desktop-app') && !samePath(before.appPath, after.appPath)) return false
   if (cli === 'codebuddy' && (before.source === 'self-update' || after.source === 'self-update')) {
     if (before.source !== after.source || !before.updateRoot || !samePath(before.updateRoot, after.updateRoot) || before.channel !== after.channel) return false
     // Stable links, hard links/copies, and version entities all belong to this root.
