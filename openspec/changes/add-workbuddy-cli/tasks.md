@@ -103,7 +103,8 @@
     - 强度 `high`：原生 `thought_level` 当前值确认为 high，读写完成，`output.json` 正确。
     - 拒绝审批：原生 `stopReason: cancelled`；本轮按 `deniedCancelEndsTurn` 结束，结果为 SUCCESS，附说明“因拒绝审批而结束：被拒操作未执行，可续聊继续”；被拒工具标为 FAILED，`denied.txt` 不存在。
     - 14 个证据文件的密钥扫描 0 处命中。
-- [ ] 7.3 国际版 WorkBuddy AI（本机未安装）
+- [x] 7.3 国际版 WorkBuddy AI（本机未安装）
+  - 2026-11-15 约 17:30 CST Windows 实机（DSH Desktop，部署 `0f36f1c`，Codex Computer Use gpt-6.1-sol 只读操作，未点刷新、管理、更新或登录）：经插件安装的国际版 5.9.4 已被发现。连接页「WorkBuddy」显示「请在桌面端检查登录状态。」与「请打开 WorkBuddy 桌面端登录后重试」、试验性说明「依赖 WorkBuddy 桌面端非公开接口」，按钮「刷新状态」「在桌面端管理」，模型、思考强度与高级设置禁用；对照「WorkBuddy CN」显示「已登录（www.workbuddy.cn）」。该文案来自 `src/host/workbuddy-desktop.ts`：插件打开桌面端网关后 `session/new` 返回登录类错误（`CLI_OWN_ACCOUNT_REQUIRED`），按设计报「状态未知、请在桌面端检查」，不把通用 401/403 当成已退出。「更新 CLI」页同一应用在「已是最新」，应用 5.9.4 · CLI 2.165.0。发现与未登录显示有实机证据，7.3 勾选；国际版的真实登录与派遣需用户亲自登录，本轮未执行。
   - 2026-11-15 Windows：国际版 5.9.4 经插件装到 `D:\Software\WorkBuddy guoji\WorkBuddyAI`，国内版未受影响；8bf4942 重启后「更新 CLI」页把它列在「已是最新」，应用 5.9.4 · CLI 2.165.0（安装发现已有实机证据）。连接页的未登录状态显示未检查，登录需用户亲自操作，7.3 保持未勾选。详见 `../v0.8.10-cli-update-page-leeyl/tasks.md` 18.4。
   - 2026-11-15 11:52–11:54 CST（`main` / `cb0d6e5`）：国际版 arm64 经真实插件隔离 DMG 首次安装，408,500,901 B 与 feed SHA-256 一致，只读挂载、固定 Team FN2V63AD2J / bundle com.workbuddy.workbuddy-ai 的 codesign、spctl、ditto、卸载均退出 0；装后入口核对报 `VERSION_MISMATCH`，实际版本与路径写回未通过，隔离 HOME/custom-apps/下载/挂载/tmp 均已删除并独立回读，无本次挂载/残留进程，只保留 `.cache/workbuddy-dmg-{acceptance-report,cleanup-readback}.json` 与日志，详见 `../v0.8.10-cli-update-page-leeyl/tasks.md` 15.3；本次未装到正常位置、未启动或登录，插件安装后的发现与未登录显示仍无实机证据，7.3 保持未勾选。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：国际版 WorkBuddy AI 在 Mac 与 Windows 均未安装，连接页显示暂不可用；这是另一个应用而非同一 CLI 的其他账号，不适用登录规则，保持未勾选。

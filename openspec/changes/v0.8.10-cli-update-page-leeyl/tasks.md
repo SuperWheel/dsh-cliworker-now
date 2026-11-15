@@ -597,4 +597,7 @@
 - [x] 19.3 实机复验
   - 已实测：7a9f964 下国际版 WorkBuddy 向导窗口可见弹出（18.4）。8bf4942 部署后页面正确显示应用 5.9.4，但来自注册表发现，非装后路径写入。
   - 2026-11-15 17:09 重装复验：装后在追加子目录找到入口并写路径记录（18.4）。结束页勾选「运行」：WorkBuddyAI.exe 父进程为 explorer.exe（electron-builder 经外壳启动），插件判定完成时未结束它，PID 40668 自 17:09:34 起持续存在、未被重开；「随范围结束后重新打开」补救路径未被触发，只有模拟覆盖。
-  - 未执行：完整检查清空旧错误的实机路径；修正后的装后分组（已是最新）的实机安装复验。
+  - 2026-11-15 用户决定：结束页不勾「运行」的重装不再复验（勾选「运行」的情形已实测完成判定）。因此未执行：修正后装后分组（已是最新）的实机安装复验；完整检查清空上次操作结果的实机路径（需先有一次真实操作结果）。两者仅有模拟覆盖（`tests/cli-management-install.test.ts`、`tests/cli-management-dual-channel.test.ts`）。
+  - 2026-11-15 补救路径的 Windows 原语实测（交互会话，`$TMPDIR/jobreopen.ps1`）：建立设有 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的测试 Job，Job 内隐藏 powershell 子进程执行 `explorer.exe C:\Windows\System32\charmap.exe`；charmap 父进程为 `explorer.exe#42340`、不在测试 Job 内、有可见窗口；关闭 Job 句柄后 Job 内子进程被结束、charmap 仍存活。即 `reopenOutsideJob` 的外壳交接能把应用启动到 Job 之外。
+  - 2026-11-15 快照命令实机：把 `listRunningApps` 生成的精确 argv（Mac 上经 tsx 调用同一函数导出）放进 `snap.mjs`，在 Windows 用 DSH 自带 Electron（`ELECTRON_RUN_AS_NODE=1`）经 `child_process.spawn` 运行，环境继承宿主并设 `CLIWORKER_APP_IMAGE=charmap.exe`；先启动 charmap（PID 45312）。输出退出码 0、stderr 空、stdout `{"pid":45312,"created":"134392083448441510","path":"C:\\WINDOWS\\system32\\charmap.exe"}`，单个进程时 PowerShell 5 输出单对象（解析代码已同时接受对象与数组）。测试进程与临时脚本已删除。
+  - 仍未实机：安装程序真实结束页启动的应用留在插件 Job 内、被结束后重开的完整链路（electron-builder 结束页经外壳启动，正常不会出现）。
