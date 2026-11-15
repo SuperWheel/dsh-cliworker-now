@@ -1,4 +1,5 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { toolErrorText } from './tool-error-text.ts'
 import { ToolCallRecovery } from '@deepseek-ai/dsh-session'
 import {
   ToolCallId,
@@ -488,11 +489,13 @@ export class HarnessConversationStream {
                     type: 'text',
                     // A cut preview names itself, so the main agent never mistakes it for the whole output.
                     text:
-                      (output === undefined
-                        ? (current.detail ?? current.text)
-                        : typeof output === 'string'
-                          ? output
-                          : json(output)) + (current.truncated ? `\n\n[${truncationNote(current)}]` : ''),
+                      (failedTool(current.state)
+                        ? toolErrorText(output ?? current.detail ?? current.text)
+                        : output === undefined
+                          ? (current.detail ?? current.text)
+                          : typeof output === 'string'
+                            ? output
+                            : json(output)) + (current.truncated ? `\n\n[${truncationNote(current)}]` : ''),
                   },
                 ],
               }),

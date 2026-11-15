@@ -14,6 +14,22 @@ export const windowsProgramDirectories = () => Object.fromEntries(WINDOWS_PROGRA
 
 export const OMP_APPROVAL_UNAVAILABLE = 'OMP 原生询问模式不可用，已拒绝启动；请检查安装版本'
 
+/** OMP 18's startup-cwd accepts --cwd; Pi 1.5 uses the spawned process cwd.
+ * Git metadata/context may describe an ancestor repository. Name the actual
+ * Worker project explicitly without replacing either CLI's native prompt.
+ */
+export function piOmpWorkspace(cli, project) {
+  return {
+    argv: cli === 'omp' ? ['--cwd', project] : [],
+    env: { PWD: project },
+    guidance: `Worker project directory: ${JSON.stringify(project)}.\n` +
+      'For this task, "current project" and "project root" mean this Worker directory. ' +
+      'Resolve relative file paths and use this directory as the default tool working directory, including an explicit bash cwd. ' +
+      'An enclosing Git repository or inherited project instructions do not change the Worker project directory. ' +
+      'Work outside it only when explicitly requested by the user.',
+  }
+}
+
 /** Help is installation evidence only; never expose the account snapshot to this probe. */
 export async function probeOmpApprovalModes(executable, signal, nativesDirectory) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'cliworker-omp-approval-')))

@@ -1723,3 +1723,12 @@ Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见
 OMP 18.20.2 的 `models --json`（含 refresh）只给模型摘要，不含 baseUrl/api。`pi-native-catalog.mjs` 的 builtinAPI 补齐其原生 DeepSeek 地址 `https://api.deepseek.com` 和 `DEEPSEEK_API_KEY`，避免账号范围分组前丢弃候选。SDK/model/provider 自定义路由仍优先，按当前账号 `/models` 与原生候选取交集，强度仅采用原生报告。Pi 1.5.2 SDK 的 DeepSeek 候选已带路由，保存的 API 登录不受 OMP 摘要缺地址问题影响；共享默认表同时补齐环境凭据识别。
 
 Mac 隔离真实 OMP 插件账号副本：1 条 deepseek/api_key；修复前原生候选 4 个、账号 HTTP 请求 0 次、最终 0 个，修复后请求 HTTP 200，交集 2 个（deepseek-flash、deepseek-v4-pro），强度均 low/high/max。Pi 为安装 SDK + 模拟凭据/列表核对。真实推理调用 0 次，未验证 Mac/Windows Desktop UI，未更新 Desktop 安装。详细证据见本次 OpenSpec 任务记录。
+
+
+## Worker 项目目录与工具错误文本（2026-11-15）
+
+OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用参数 cwd 或 session.cwd，系统提示使用运行时 cwd。Mac 失败事件中 Bash 的仓库根来自模型显式填写，read 的相对路径仍以 Worker 子目录为基准；没有发现自动改到 Git 根的证据。桥接在原有 spawn cwd 之外加入 OMP `--cwd`，Pi/OMP 均设置 PWD 并追加 Worker 项目范围说明。Pi 1.5.2 使用 process.cwd()/session cwd，不借用 OMP 参数。提示不替代原生权限；旧会话记录的目录变化和模型跨目录行为需真实复验。
+
+共享 Harness 回执边界将工具失败对象的 message/text/content/error 提取为纯文本，未知对象输出有界 JSON（4096 字符、深度/节点上限）。成功回执不变；原始 CLI 事件不改写。结构化取消原因在退出回执等待时转换为 AbortError，避免 DSH 工具管线把 `{ kind: 'user' }` 转成 `[object Object]`，保留取消分类与清理屏障。legacy 工具结果投影使用相同文本规则。
+
+关联模拟测试、安装源码证据与 Desktop 待验收项见 [Worker 目录与工具错误变更](../openspec/changes/v0.8.10-worker-cwd-tool-errors-leeyl/tasks.md)。本次未构建、未更新 lib、未调用真实模型。

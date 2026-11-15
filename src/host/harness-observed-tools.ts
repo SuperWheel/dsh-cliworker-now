@@ -2,6 +2,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId, type ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolRunContext, ToolExecutionToken } from '@deepseek-ai/dsh-tools'
 import { truncationNote, type TimelineItem } from '../shared/types.ts'
+import { toolErrorText, toolReceiptError } from './tool-error-text.ts'
 import type {
   HarnessConversationDependencies,
   HarnessConversationRecord,
@@ -101,7 +102,7 @@ export class HarnessObservedTools {
       return await this.readReceipt(exec)
     } catch (error) {
       if (exec.signal.aborted) await this.source.stop()
-      throw error
+      throw toolReceiptError(error, exec.signal)
     }
   }
 
@@ -135,12 +136,12 @@ export class HarnessObservedTools {
       await this.source.changed(exec.signal)
     }
     const output = row.toolCall?.output ?? row.detail ?? row.text
-    const text = typeof output === 'string' ? output : json(output)
     if (!terminal(row.state) || failed(row.state)) {
-      const error = new Error(terminal(row.state) ? text : 'CLI 工具结果未确认，未重新执行。')
+      const error = new Error(terminal(row.state) ? toolErrorText(output) : 'CLI 工具结果未确认，未重新执行。')
       Object.assign(error, { code: terminal(row.state) ? 'CLI_TOOL_FAILED' : 'TOOL_OUTCOME_UNKNOWN' })
       throw error
     }
+    const text = typeof output === 'string' ? output : json(output)
     if (this.source.completed() && !this.source.hasFollowing()) {
       await this.source.inputsSettled()
       exec.signal.throwIfAborted()

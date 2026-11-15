@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, writeFile, rename, realpath, unlink, rmdir, lstat, open, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
-import { WINDOWS_PROGRAM_DIRECTORY_KEYS, ompConfigurationEnvironment, ompPermissionSettings, probeOmpApprovalModes, OMP_APPROVAL_UNAVAILABLE } from './pi-omp-environment.mjs'
+import { WINDOWS_PROGRAM_DIRECTORY_KEYS, ompConfigurationEnvironment, ompPermissionSettings, probeOmpApprovalModes, OMP_APPROVAL_UNAVAILABLE, piOmpWorkspace } from './pi-omp-environment.mjs'
 import { readFile } from 'node:fs/promises'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { ownsOwnAccountLease, OWN_ACCOUNT_BUSY } from './own-account-lease.mjs'
@@ -488,8 +488,11 @@ try {
     }
     const tools = [...piOmpNativeTools(config.cli, config.mode, config.access, permissionGate !== false), ...harnessExtension.tools]
     // Pi's addendum keeps its native preamble; the note names the extension tools Pi sees.
-    const guidance = nativeFirstGuidance(harnessExtension.tools)
+    const workspace = piOmpWorkspace(config.cli, config.project)
+    Object.assign(env, workspace.env)
+    const guidance = [nativeFirstGuidance(harnessExtension.tools), workspace.guidance].filter(Boolean).join('\n\n')
     const nativeArgs = [
+      ...workspace.argv,
       '--mode',
       'rpc',
       ...isolated,

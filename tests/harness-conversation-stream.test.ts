@@ -637,6 +637,12 @@ it('cancels a known-response tool waiter only after the CLI cleanup and releases
     f.agent.session.header,
   )
   expect(cold.log.filter((event) => event.type === 'turn/end').at(-1)?.data.reason.kind).toBe('aborted')
+  // 模拟：Harness cancels with a structured { kind: 'user' } reason.
+  expect(JSON.stringify(cold.log.filter((event) => event.type === 'tool/result'))).not.toContain('[object Object]')
+  expect(cold.log.find((event) => event.type === 'tool/result')?.data).toMatchObject({
+    message: { isError: true, content: [{ type: 'text', text: 'Error: 用户已停止任务' }] },
+    error: { name: 'AbortError', code: 'ABORTED' },
+  })
 })
 
 it('records a normal Worker Stop as native cancellation only after the cleanup outcome, preserving observed text', async () => {
@@ -1162,4 +1168,35 @@ it('shows the command of a command-only CLI tool as its call arguments, live and
     .toEqual([JSON.stringify({ command: 'printf passive' })])
   expect(live.realTool).not.toHaveBeenCalled()
   expect(passive.realTool).not.toHaveBeenCalled()
+})
+
+// 模拟：OMP and Claude tool receipts, no native CLI or model request.
+it.each([
+  [{ content: [{ type: 'text', text: "Path 'rc0810/omp-mac.txt' not found" }], details: {} }, "Path 'rc0810/omp-mac.txt' not found"],
+  [[{ type: 'text', text: 'Command aborted' }], 'Command aborted'],
+])('模拟 structured tool failure renders its text %j', async (output, expected) => {
+  const f = await fixture({ sourceEvents: [
+    { kind: 'user', text: '模拟 input' },
+    { kind: 'tool', text: 'synthetic_cli_tool', state: 'FAILED',
+      toolCall: { callId: 'failed', name: 'synthetic_cli_tool', input: {}, output },
+      response: { id: 'failed-response', blockId: 'tool', index: 0, complete: true } },
+  ] })
+  await f.begin()
+  await f.finish('completed')
+  const result = f.agent.session.log.find((event) => event.type === 'tool/result')
+  expect(result?.data.message).toMatchObject({ isError: true, content: [{ type: 'text', text: `Error: ${expected}` }] })
+  expect(f.realTool).not.toHaveBeenCalled()
+})
+
+it('模拟 legacy tool failure uses the same readable text boundary', async () => {
+  const f = await fixture({ sourceEvents: [
+    { kind: 'user', text: '模拟 input' },
+    { kind: 'tool', text: 'read', step: 0, state: 'FAILED',
+      toolCall: { callId: 'legacy-failed', name: 'read', input: {}, output: { content: [{ type: 'text', text: '模拟 missing file' }] } } },
+  ] })
+  await f.begin()
+  await f.finish('completed')
+  expect(f.agent.session.log.find((event) => event.type === 'tool/result')?.data.message)
+    .toMatchObject({ isError: true, content: [{ type: 'text', text: '模拟 missing file' }] })
+  expect(f.realTool).not.toHaveBeenCalled()
 })

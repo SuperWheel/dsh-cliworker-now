@@ -181,6 +181,7 @@ if(resumed){const flag=cli==='pi'?'--session':'--resume';path=process.argv[proce
 writeFileSync(path,'SIMULATED SESSION\\n',{mode:0o600});
 writeFileSync(join(agent,'observed-program-files.json'),JSON.stringify(Object.fromEntries(['ProgramFiles','ProgramFiles(x86)','ProgramW6432'].map(key=>[key,process.env[key]]))));
 writeFileSync(join(agent,'observed-argv.json'),JSON.stringify(process.argv.slice(2)),{mode:0o600});
+writeFileSync(join(agent,'observed-workspace.json'),JSON.stringify({cwd:process.cwd(),pwd:process.env.PWD}));
 let model=${JSON.stringify(model)},thinkingLevel=scenario==='no-reasoning'?'off':'low',streaming=false,steers=[],steerIds=[];
 writeFileSync(join(agent,'observed-auth.json'),JSON.stringify({cnPresent:!!process.env.ZAI_CODING_CN_API_KEY,nativeFixture:process.env.ZHIPU_API_KEY==='SYNTHETIC_NATIVE_PROVIDER_ENV',unexpectedNativeKey:!!process.env.ZHIPU_API_KEY&&process.env.ZHIPU_API_KEY!=='SYNTHETIC_NATIVE_PROVIDER_ENV'&&process.env.ZHIPU_API_KEY!==${JSON.stringify(fixtureKey)}}),{mode:0o600});
 const state=()=>({sessionId:scenario==='identity'&&resumed?'changed':nativeSessionId,sessionFile:path,model:scenario==='wrong-model'?{...model,id:'changed-native-model'}:model,thinkingLevel,isStreaming:streaming,pendingMessageCount:0});
@@ -315,6 +316,35 @@ async function prepareConfirmed(input: PiOmpInput) {
   )
 }
 describe('Pi/OMP bridge with simulated native RPC processes', () => {
+  it.each(['pi', 'omp'] as const)('模拟 %s pins an ignored nested Worker project, including resume', async cli => {
+    const { root, input } = await fixture(cli)
+    const repository = join(root, 'repository')
+    const project = join(repository, '.test-data', 'CLI Worker Demo')
+    await mkdir(project, { recursive: true })
+    const git = process.platform === 'darwin' ? '/Library/Developer/CommandLineTools/usr/bin/git' : 'git'
+    await exec(git, ['init', repository])
+    await writeFile(join(repository, '.gitignore'), '.test-data/\n')
+    expect((await exec(git, ['-C', repository, 'check-ignore', project])).stdout.trim()).toBe(project)
+    const run = { ...input, project }
+    for (const conversationId of [undefined, 'fixture-id']) {
+      const prepared = await prepareConfirmed({ ...run, ...(conversationId ? { conversationId } : {}) })
+      const request = JSON.parse(await readFile(prepared.argv[2]!, 'utf8'))
+      await exec(prepared.argv[0]!, prepared.argv.slice(1), {
+        cwd: repository, env: fixtureEnvironment(input.nativeHome, prepared.env), timeout: 10000,
+      })
+      const agent = join(request.stateDirectory, 'agent')
+      const observed = JSON.parse(await readFile(join(agent, 'observed-workspace.json'), 'utf8'))
+      const actualProject = await realpath(project)
+      expect(observed).toEqual({ cwd: actualProject, pwd: actualProject })
+      const argv = JSON.parse(await readFile(join(agent, 'observed-argv.json'), 'utf8'))
+      if (cli === 'omp') expect(argv.slice(argv.indexOf('--cwd'), argv.indexOf('--cwd') + 2)).toEqual(['--cwd', actualProject])
+      else expect(argv).not.toContain('--cwd')
+      const guidance = argv[argv.indexOf('--append-system-prompt') + 1]
+      expect(guidance).toContain(JSON.stringify(actualProject))
+      expect(guidance).toContain('including an explicit bash cwd')
+      expect(guidance).toContain('An enclosing Git repository')
+    }
+  })
   it.each(['pi', 'omp'] as const)('模拟 %s bridge preserves Windows Git Bash discovery directories', async cli => {
     const { input } = await fixture(cli)
     const prepared = await prepareConfirmed(input)
