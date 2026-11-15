@@ -12,7 +12,7 @@
 - 新增 `workbuddycn`（WorkBuddy）与 `workbuddy`（WorkBuddy AI），位于 Qoder CN 之后；独立路径、默认选型、目录、会话与 ACP transport。复用已存在的 WorkBuddy 安装解析、引导与 runner，未修改这些核心模块。
 - Host 发现只读核对应用包；原生桥请求携带 `[runtime, entry]`，不通过 PATH 或 CodeBuddy 回退。元数据目录与账号验证在一次授权范围内共用一次握手，范围外不缓存；来源绑定只表示经重新登录验证的应用／站点，不声称能识别未公开的账号主体或检测同站点账号切换。
 - 原生规划与三档权限、附件、原生工具类别已注册；不启用 DSH 工具桥、分支、steer、积分或 token 推导。账号页只给桌面端指引；连接页显示试验性说明；Worker 卡片不显示（2026-11-08 用户要求删除）。
-- 接口、生命周期及未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)、`openspec/changes/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
+- 接口、生命周期及未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)、`openspec/archives/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
 
 
 ## v0.8.3（未发布）：市场安装的宿主 peer 范围（2026-10-24）
@@ -1374,7 +1374,7 @@ OpenSpec 变更 `v0.8.10-dsh-rc3-adapt-leeyl`；开发 SDK 与随包四个原生
 
 - 差异：官方 rc.2 → rc.3（tag `dsh-v0.2.2-rc.3` = `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`）只有 6 个提交：CI bubblewrap 缓存、Windows 安装器重启状态 cwd 修复、实验性「导入 DeepSeek 官网对话导出」与发版。随包四包只有 `package.json` 版本号变化；已安装 npm 包逐一比对，公开声明与运行代码的变化只有新增：ui-primitives 新增 `IconUploadOutline*` 图标，ui-workspace 新增 `workspace.picker` 组件工厂与 `workspace.picker.directoryFlow` 孔位，ui-sidebar 新增 `sidebar.session.action` HOC 扩展点，session-controller 的远程错误码表新增 `deepseekChatImport/owner-only`。Gateway、Remote、主题 token、Cordis（仍 4.1.0）无变化；插件不使用这些新增扩展点，Host 与 Client 源码无需改动。
 - 四包与依赖：rc.2 的 48 文件补丁无冲突应用，导出补丁与 rc.2 逐字节相同；独立构建与校验 630 个文件，vendor 后 `runtime-host/` 为 4 包、217 个文件，均为 0.2.2-rc.3，202 个继承的 Host/声明文件与官方 npm 包逐字节一致。开发 SDK 39 个 pin 升到 rc.3，workspace 例外同步并由 pnpm 补入新实验包 `dsh-deepseek-chat-import`；第三方依赖无变化。构建依赖选择、宿主扩展构建与 vendor 脚本加入 rc.3 目标，vendor 默认 rc.3，旧目标保留。说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`。
-- 验证边界：插件 typecheck、全量回归与隔离预览构建通过，并在临时 `DSH_HOME` 下用 Desktop 0.2.2-rc.3 自带的 dsh 启动 web profile，确认四包由插件提供、页面与 CLI Worker 面板、设置弹窗及「更新 CLI」页无白屏且控制台无报错。正式 Mac Desktop、Windows、上游四包 Vitest 与真实模型／CLI 派遣未验证；详细记录见 `openspec/changes/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md`。
+- 验证边界：插件 typecheck、全量回归与隔离预览构建通过，并在临时 `DSH_HOME` 下用 Desktop 0.2.2-rc.3 自带的 dsh 启动 web profile，确认四包由插件提供、页面与 CLI Worker 面板、设置弹窗及「更新 CLI」页无白屏且控制台无报错。正式 Mac Desktop、Windows、上游四包 Vitest 与真实模型／CLI 派遣未验证；详细记录见 `openspec/archives/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md`。
 
 ## configured 账号摘要保留具体原因（2026-10-30，未发布）
 
@@ -1483,7 +1483,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 
 ## 2026-11-13 v0.8.10：CLI 首次安装后端（未发布）
 
-首次安装复用更新的 Host 计划入口、维护锁、下载器、执行器和清理隔离。npm 按当前可写全局前缀安装经过官方 sha512 核对的本地主包；官方脚本仅取 Host 内置地址，下载为私有文件后通过固定解释器执行。未核实的来源保持仅说明；阶段 C 审查后，Claude 全平台及 MiMo macOS/Linux 因缺少可靠原生版本读法退回仅说明，MiMo Windows npm 保留。Qoder/CN Windows 入口复用既有 exe 候选；Git Bash 按文件布局核实，不依赖安装目录名。账号目录保护复用实际路径工具及环境变量；桌面清理错误不能覆盖进程隔离错误。成功必须经过装后身份与版本检查，再写入现有 CLI 路径存储；重新安装不删除旧文件。2026-11-14 核实并接通三个桌面 CLI 的 macOS 首次安装来源：复用官方 feed 的 ZIP、摘要与固定 Team ID，解包后校验 codesign/spctl，经暂存复制、应用版本核对后写回路径；DMG 仍走只读挂载与卸载。ZCode 3.18.2 与 Pi npm 1.5.2 已在隔离位置真实验收；国际版 WorkBuddy 当前 ZIP 与 feed SHA-256 不一致而拒绝安装。Windows 首次安装的 Authenticode 与向导实际落点仍未核实，维持仅说明。详见 [变更设计](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务证据](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)；模拟测试不代表真实安装验收。
+首次安装复用更新的 Host 计划入口、维护锁、下载器、执行器和清理隔离。npm 按当前可写全局前缀安装经过官方 sha512 核对的本地主包；官方脚本仅取 Host 内置地址，下载为私有文件后通过固定解释器执行。未核实的来源保持仅说明；阶段 C 审查后，Claude 全平台及 MiMo macOS/Linux 因缺少可靠原生版本读法退回仅说明，MiMo Windows npm 保留。Qoder/CN Windows 入口复用既有 exe 候选；Git Bash 按文件布局核实，不依赖安装目录名。账号目录保护复用实际路径工具及环境变量；桌面清理错误不能覆盖进程隔离错误。成功必须经过装后身份与版本检查，再写入现有 CLI 路径存储；重新安装不删除旧文件。2026-11-14 核实并接通三个桌面 CLI 的 macOS 首次安装来源：复用官方 feed 的 ZIP、摘要与固定 Team ID，解包后校验 codesign/spctl，经暂存复制、应用版本核对后写回路径；DMG 仍走只读挂载与卸载。ZCode 3.18.2 与 Pi npm 1.5.2 已在隔离位置真实验收；国际版 WorkBuddy 当前 ZIP 与 feed SHA-256 不一致而拒绝安装。Windows 首次安装的 Authenticode 与向导实际落点仍未核实，维持仅说明。详见 [变更设计](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务证据](../openspec/archives/v0.8.10-cli-update-page-leeyl/tasks.md)；模拟测试不代表真实安装验收。
 
 ## 2026-11-10 v0.8.9：TRAE 询问档与 DS Bot 换段重绑（未发布）
 
@@ -1510,7 +1510,7 @@ Hermes 只读 install-stamp.json 的 baseVersion，commit 纳入指纹；通道�
 
 Host 下载器在连接中断、提前 EOF 或 10 秒无增长时按 Range 恢复；已确认支持 Range 时，10 秒窗口平均低于 100 KB/s 也重连。所有恢复共用 200 次，次数耗尽仍有字节增长就保持连接，真正停住才失败；下载总上限 2 小时。HTTP/证书/Range 协议异常及缓存超限立即失败；完整文件长度/摘要不符则删除片段后干净重下一次，仍不符报“下载的文件校验不通过”，不占 200 次且不重置 2 小时。未知 Range 能力、服务器忽略 Range 后不主动按慢速重连。
 
-没有已核实且布局匹配的接管描述时，外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新现采用官方优先；切换接管时由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 的 macOS/Linux 更新保留原生 update --channel --version 加中断证据重跑；2026-11-14 任务 W 在 Windows 官方默认布局恢复离线接管，以更新前存在的自动更新标记为依据，在官方 offline-install 成功后原子恢复为实际新 release 目录名，首次安装不变。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
+没有已核实且布局匹配的接管描述时，外部命令只在原始输出含中断证据、版本未前进/非零退出且进程树退出确认后重跑同一 argv，输出“已自动重试 N 次”，使用可选 `progress.retryCount`；无输出或慢速不是重跑条件。OpenCode V1、OMP 的已核实 Unix 默认原生更新，以及 MiMo macOS 默认原生更新现采用官方优先；切换接管时由插件下载并校验工件，再交官方本地入口安装。MiMo 校验官方 HEAD 长度、content-md5（hex/base64）与 zip 根成员解压结构/CRC，同源 MD5 不代表独立签名；安装脚本从 sources 内置地址下载到私有目录，参数数组 --binary 交接，保留维护锁和身份/目标版本复核，下载预算先于安装阶段计时。MiMo Linux/Windows、自定义布局仍按原归属；首次安装范围不扩张。TRAE CN 的 macOS/Linux 更新保留原生 update --channel --version 加中断证据重跑；2026-11-14 任务 W 在 Windows 官方默认布局恢复离线接管，以更新前存在的自动更新标记为依据，在官方 offline-install 成功后原子恢复为实际新 release 目录名，首次安装不变。多源是下载器通用 sources 列表能力，已用于 npm 主 tarball 与 MiMo；MiMo：首选 cnbj1.fds.api.xiaomi.com，备用 mimocode.cnbj1.mi-fds.com，路径前缀 /mimocode/mimocode/releases/。每次换源 HEAD 与初始成功源的长度、ETag/content-md5 一致后才 GET，Range/If-Range 续传并复核响应；中断、慢速和停滞轮换共用 200 次/2 小时。最新版本 API 域名失败回落原域名。逐项来源和风险见 `openspec/archives/v0.8.10-cli-update-page-leeyl/design.md` 的任务 D 审计。
 
 ## 2026-11-14 macOS 系统代理（任务 F，未发布）
 
@@ -1546,11 +1546,11 @@ Worker 安装识别使用 `pi-installation.mjs` 的明确版本表：1.0.2、1.0
 
 桥接补认 Pi 1.1.0 起新增的 `agent_settled.aborted=true`，即使助手消息正常且进程退出 0 也不能报告成功；1.0.4 缺字段保留既有判断。1.5.2 的成本总额可为服务商账单，现有 token 投影不读取成本字段，不将 reasoning 重复相加。原生登录 shell 子命令虽已增加，插件仍使用核实过的 UI/SDK，不更换交互协议。
 
-Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。
+Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。2026-11-15 Windows 修复：正常管道结束先有界等待直接进程退出，随后有界确认范围自然退出，超时才终止；隐藏窗口 native 回执不等于 Job runner 退出。停止/超时仍立即终止，真实清理失败仍隔离。Pi/OMP 子进程保留 ProgramFiles、ProgramFiles(x86)、ProgramW6432，支持 PATH 仅有 Git/cmd 的原生 bash 查找；Host 代理环境不变。修复后 Windows 实机复验待进行。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。
 
 ## 2026-11-14：设置页连接状态纳入静默预加载（Host 与共享协议）
 
-新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。2026-11-14 用户决定扩大到「除原生会话外全部」：Codex、Claude Code、Kimi、MiMo、Grok、OMP、Pi、Hermes、OpenCode、ZCode 的账号和目录，以及 CodeBuddy 账号。允许打开设置时已有的原生服务初始化、令牌续期和插件运行配置写入；共用前台加载路径、分槽缓存与同一 CLI 串行读取队列。Antigravity（钥匙串授权）、Qoder 两版/TRAE CN（原生会话）、WorkBuddy 两版（bootstrap 密钥）、CodeBuddy 目录（session/new）仍保留前台。后台不发 prompt、不调用真实模型、不弹终端/窗口、不升级，Kimi 保留禁升级变量，宿主代理环境保持。逐 CLI 函数及命令见 `openspec/changes/v0.8.10-cli-update-page-leeyl/design.md` 决定 12。
+新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。2026-11-14 用户决定扩大到「除原生会话外全部」：Codex、Claude Code、Kimi、MiMo、Grok、OMP、Pi、Hermes、OpenCode、ZCode 的账号和目录，以及 CodeBuddy 账号。允许打开设置时已有的原生服务初始化、令牌续期和插件运行配置写入；共用前台加载路径、分槽缓存与同一 CLI 串行读取队列。Antigravity（钥匙串授权）、Qoder 两版/TRAE CN（原生会话）、WorkBuddy 两版（bootstrap 密钥）、CodeBuddy 目录（session/new）仍保留前台。后台不发 prompt、不调用真实模型、不弹终端/窗口、不升级，Kimi 保留禁升级变量，宿主代理环境保持。逐 CLI 函数及命令见 `openspec/archives/v0.8.10-cli-update-page-leeyl/design.md` 决定 12。
 
 主会话解析登记项目并加入原 60 秒/CPU 空闲/逐项队列；任务或账号窗口打断后等清理并在 30 秒空闲后重试。设置首屏 `cliSettings.settingsCache.connections` 直接带结果，新 `settingsConnectionStatus` 返回缓存并补查缺失/过期槽，`watchSettingsConnections` 推送状态。旧账号/模型接口共用缓存，显式刷新强制读取；账号动作与执行选型仍实时核验。账号切换、登录/退出、启用状态、入口或更新后同时作废两槽，晚到结果不得回填。过期或未核实 authenticated 映射 unknown，缓存不持久化、不恢复跨 Host 绿色登录态。前端接入独立交付，不能把 Host 测试当作 UI 已完成。
 
@@ -1561,10 +1561,10 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 
 2026-11-15 修正：Pi 表单写入与账号登录一致的 `<stateDirectory>/accounts/pi/agent/models.json` 与 `auth.json`，显示实际路径；不修改全局 `~/.pi/agent`。Worker 使用全局与插件来源合并后的快照，同 provider 的插件来源优先，因此同时拒绝两处已有 ID/名称冲突。缺省 stateDirectory 跟随 DSH_HOME；未核实的 agent 覆盖仍回退。同日后续修复：Hermes 表单复用 `effectiveHermesHome` 单选生效 HOME，显示实际路径并在提交前复核来源，保留 providers 新建和 dotenv/回滚保护；未生效 HOME 不合并、不写入。OpenCode 表单改写 `accounts/opencode/config/opencode/opencode.json(c)` 与账号登录共用的 `accounts/opencode/data/opencode/auth.json`，对全局三种配置和凭据执行重名检查。两者的模拟运行准备读回及 Hermes HTTP 自定义服务商既有白名单限制见变更 design.md；不代表实机执行通过。
 
-OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/changes/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
+OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/archives/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
 
 
-2026-11-15 账号窗口修复（`openspec/changes/vnext-account-window-fixes-leeyl/`）：表单写入的服务商同时记录归属回执，账号窗口据此显示「退出」；用户决定原生模型配置文件（Pi models.json、OMP models.yml）中的服务商也可删除（行 id `native.config`）。删除前备份原文件到 `<stateDirectory>/account-config-backups/<cli>/<时间>-<uuid>/`（0600），YAML 按语法节点位置删除单个服务商、不重新序列化，JSON 只删该属性；原子替换并保留文件权限，拒绝符号链接、硬链接与重复键/别名等无法安全编辑的结构，失败回滚，独立回读确认后才报成功；插件快照副本仅在内容与原生条目一致时同步删除。环境变量来源保持只读。账号终端启动前等待同一 CLI 的旧账号查询与模型目录读取通道收尾，终端占用期间拦截新的目录读取；登录前基线在终端启动前读取，成功状态在进程清理与缓存作废之后发布。
+2026-11-15 账号窗口修复（`openspec/archives/vnext-account-window-fixes-leeyl/`）：表单写入的服务商同时记录归属回执，账号窗口据此显示「退出」；用户决定原生模型配置文件（Pi models.json、OMP models.yml）中的服务商也可删除（行 id `native.config`）。删除前备份原文件到 `<stateDirectory>/account-config-backups/<cli>/<时间>-<uuid>/`（0600），YAML 按语法节点位置删除单个服务商、不重新序列化，JSON 只删该属性；原子替换并保留文件权限，拒绝符号链接、硬链接与重复键/别名等无法安全编辑的结构，失败回滚，独立回读确认后才报成功；插件快照副本仅在内容与原生条目一致时同步删除。环境变量来源保持只读。账号终端启动前等待同一 CLI 的旧账号查询与模型目录读取通道收尾，终端占用期间拦截新的目录读取；登录前基线在终端启动前读取，成功状态在进程清理与缓存作废之后发布。
 
 ### 2026-11-14 Windows 官方默认安装的下载接管（任务 W）
 
@@ -1689,11 +1689,11 @@ npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不�
 - 分区与重排：可更新、需要手动更新、检查失败、已是最新、未安装五组，归类与重排规则在 `cli-update-layout.ts`；展开或进行中的行不随重排移动，导航徽标显示可更新数量，有操作时显示转圈。
 - 展开区：下载进度（跨文件合计字节、速度、来源主机、续传次数、官方/插件接管标签、阶段文字与已用时）、命令与输出、结果状态与「更新清理」摘要；手动方法气泡给出命令与官方说明；可选位置的桌面应用先展开安装位置气泡，确认后才开始安装。
 - 后台版本检查：「启动后在后台检查 CLI」默认开启，回退即关闭该开关。`preload.ts` 在 Host 启动 60 秒后进入空闲判定（无任务、账号窗口、更新，CPU 两次采样忙碌比例低于 50%），按路径 → 版本 → 账号 → 最新版本 → 模型目录逐项执行；版本探测经 `private-launch.mjs --cliworker-low-priority`，Windows 为 BELOW_NORMAL；`backgroundSafe: false`（Codex、Qoder 两版）只在前台读取；版本按指纹缓存，命中时不启动进程。忙碌时中断当前项并等待清理，30 秒后重试；页面「检查更新」把剩余项转为前台并共用结果。
-- 实机：2026-11-15 Windows（34133b9 包）启动后 120 秒出现首个后台探测进程，全部为 BelowNormal；Mac Desktop 上页面检查、OMP 官方更新与备份回收、展开区与安装位置气泡通过。详细证据见 `openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md` 与双通道变更。
+- 实机：2026-11-15 Windows（34133b9 包）启动后 120 秒出现首个后台探测进程，全部为 BelowNormal；Mac Desktop 上页面检查、OMP 官方更新与备份回收、展开区与安装位置气泡通过。详细证据见 `openspec/archives/v0.8.10-cli-update-page-leeyl/tasks.md` 与双通道变更。
 
 ### 2026-11-15 Windows WorkBuddy 应用版本发现修复
 
-Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从已核对包名、站点和入口的 unpacked CLI `product.json.genieVersion` 补齐应用版本，仅接受现有应用版本格式。内置 CLI 版本保持独立，macOS Info.plist 优先级及 ZCode 规则不变；不新增进程或持久化字段。Windows CN 实机只读证据、模拟验证和未验证边界见 [更新 CLI 变更决定 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。
+Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从已核对包名、站点和入口的 unpacked CLI `product.json.genieVersion` 补齐应用版本，仅接受现有应用版本格式。内置 CLI 版本保持独立，macOS Info.plist 优先级及 ZCode 规则不变；不新增进程或持久化字段。Windows CN 实机只读证据、模拟验证和未验证边界见 [更新 CLI 变更决定 15](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md)。
 
 
 ### 2026-11-15 国际版 WorkBuddy macOS DMG 工件选择
@@ -1704,18 +1704,18 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 
 15.3 实物续验发现入口是无执行位的 0644 mjs，而既有 resolver 能正确识别它。国际版首次安装改为直接用身份读取器验证包内入口，跳过 X_OK 可执行文件查找；失败保留 WorkBuddy 固定 reason 原因码。应用名、Electron runtime、endpoint 白名单及包名无需放宽，国际版配置目录提示修正为 `.workbuddy-ai`。该 DMG 的 Info.plist 与 product 只提供 `5.9.4`：仅对国际版 macOS 官方 DMG 且 feed SHA-256 校验成功时，允许三段实际版本匹配四段 feed 目标的前三段；若实际提供四段 build 则完整比较，CN/ZCode/Windows 不变。精确工件由摘要绑定，不伪造四段装后版本；指纹仍记录实际 `5.9.4`，CLI 为 `2.165.0`。
 
-未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。初始实现仅有模拟回归及静态/隔离构建检查；15.3 后续已完成 arm64 隔离首次安装、挂载/签名/Gatekeeper/复制/卸载、装后身份版本与路径写回核对。真实更新、正常位置发现和 Desktop 显示仍未验收，未启动应用或登录。
+未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/archives/v0.8.10-cli-update-page-leeyl/tasks.md)。初始实现仅有模拟回归及静态/隔离构建检查；15.3 后续已完成 arm64 隔离首次安装、挂载/签名/Gatekeeper/复制/卸载、装后身份版本与路径写回核对。真实更新、正常位置发现和 Desktop 显示仍未验收，未启动应用或登录。
 
 ## 2026-11-15：CodeBuddy Code 原生来源与路径迁移
 
-官方原生默认根为 Unix `~/.local/share/codebuddy`、Windows `%LOCALAPPDATA%/codebuddy`；精确匹配版本实体与稳定入口，移除旧 `.codebuddy/bin/` 猜测规则，npm/brew 保持原渠道。自动记录迁往同根稳定入口，手动与部署路径不改；更新使用已有 argv `[入口, 'update']`，同一安装验证涵盖原位 realpath 替换、同根版本变化、来源和通道约束，实际版本以禁自动升级的探针核实，不能从版本目录名推断。CodeBuddy 原生旧版本/备份不加入插件回收。官方脚本、2.184.0 发布包源码与 Mac/Windows npm 只读证据、模拟和真实验收边界见[决定 17](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。
+官方原生默认根为 Unix `~/.local/share/codebuddy`、Windows `%LOCALAPPDATA%/codebuddy`；精确匹配版本实体与稳定入口，移除旧 `.codebuddy/bin/` 猜测规则，npm/brew 保持原渠道。自动记录迁往同根稳定入口，手动与部署路径不改；更新使用已有 argv `[入口, 'update']`，同一安装验证涵盖原位 realpath 替换、同根版本变化、来源和通道约束，实际版本以禁自动升级的探针核实，不能从版本目录名推断。CodeBuddy 原生旧版本/备份不加入插件回收。官方脚本、2.184.0 发布包源码与 Mac/Windows npm 只读证据、模拟和真实验收边界见[决定 17](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md)。
 
 
 ### Windows ZCode 桌面更新关联（2026-11-15）
 
-固定自动 runtime 在 Windows 只读关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode`：实际目录、普通 ZCode.exe、PE ProductName=ZCode 与 resources/glm/zcode.cjs 共同确认身份；有界读取固定 ProductVersion 前三段作为应用版本。更新继续走官方安装程序/UAC，不提权、不静默，独立 Worker runtime 不随桌面更新。manual 路径和 macOS 行为保留；没有可核实应用时仍显示原 runtime 手动更新原因。实现与模拟验收见 [决定 18](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 和任务 17，Windows 实机更新待主会话验收。
+固定自动 runtime 在 Windows 只读关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode`：实际目录、普通 ZCode.exe、PE ProductName=ZCode 与 resources/glm/zcode.cjs 共同确认身份；有界读取固定 ProductVersion 前三段作为应用版本。更新继续走官方安装程序/UAC，不提权、不静默，独立 Worker runtime 不随桌面更新。manual 路径和 macOS 行为保留；没有可核实应用时仍显示原 runtime 手动更新原因。实现与模拟验收见 [决定 18](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md) 和任务 17，Windows 实机更新待主会话验收。
 
-Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见 [决定 19](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md#决定-19windows-国际版-workbuddy-首次安装与无摘要-feed)。Host 共用 COS HEAD、完整长度/MD5/CRC-64/XZ 校验与固定腾讯 Authenticode 发布者核验；安装保留向导等待和进程范围退出确认。默认发现增加 WorkBuddyAI，与国内版通过产品站点区分，实际三段版本不伪造 build。CN/ZCode/ARM64 首次安装仍 manual。2026-11-15 实机后补充见 [决定 20](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)：Windows 桌面安装程序经 Host 内部标记以可见窗口启动、等待用户期间不限时；国际版 WorkBuddy 装后候选加入向导追加的 WorkBuddyAI 子目录与 Program Files 默认位置；完整检查清空上次操作结果。ZCode Windows 更新与国际版 D 盘安装已实机执行，重装复验已确认在追加子目录写入路径。安装程序自身退出即判定装完，结束页「运行」启动的应用若被一并结束则经外壳重新打开；首次安装签名核验时限 120 秒。
+Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见 [决定 19](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md#决定-19windows-国际版-workbuddy-首次安装与无摘要-feed)。Host 共用 COS HEAD、完整长度/MD5/CRC-64/XZ 校验与固定腾讯 Authenticode 发布者核验；安装保留向导等待和进程范围退出确认。默认发现增加 WorkBuddyAI，与国内版通过产品站点区分，实际三段版本不伪造 build。CN/ZCode/ARM64 首次安装仍 manual。2026-11-15 实机后补充见 [决定 20](../openspec/archives/v0.8.10-cli-update-page-leeyl/design.md)：Windows 桌面安装程序经 Host 内部标记以可见窗口启动、等待用户期间不限时；国际版 WorkBuddy 装后候选加入向导追加的 WorkBuddyAI 子目录与 Program Files 默认位置；完整检查清空上次操作结果。ZCode Windows 更新与国际版 D 盘安装已实机执行，重装复验已确认在追加子目录写入路径。安装程序自身退出即判定装完，结束页「运行」启动的应用若被一并结束则经外壳重新打开；首次安装签名核验时限 120 秒。
 
 
 ## OMP DeepSeek API 模型目录（2026-11-15）

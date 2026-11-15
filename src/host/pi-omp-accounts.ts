@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { snapshotPiOmpNative, safePiOmpAncestors } from './pi-omp-native.ts'
 import type { AccountAction, AccountSource } from '../shared/accounts.ts'
 import { preparePiOmpLogout } from './pi-omp-logout.ts'
-import { ompConfigurationEnvironment } from './pi-omp-environment.mjs'
+import { ompConfigurationEnvironment, windowsProgramDirectories } from './pi-omp-environment.mjs'
 import type { PiOmpCli } from './pi-omp-adapter.ts'
 import { projectDirectory, type RuntimeConfig } from './process.ts'
 
@@ -122,6 +122,7 @@ export async function preparePiOmpAccountTerminal(
     const temporary = await privateDirectory(join(runtime, 'tmp'))
     const nativeArgs = ['--no-session', '--no-tools', '--no-extensions', '--no-skills']
     const env: Record<string, string> = {
+      ...windowsProgramDirectories(),
       ...native.env,
       PI_CODING_AGENT_DIR: agent,
       TMPDIR: temporary,

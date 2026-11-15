@@ -7,6 +7,11 @@ import { promisify } from 'node:util'
 import { nativeLaunchArgv } from './native-launch.mjs'
 
 const capture = promisify(execFile)
+// Native Pi/OMP shell discovery needs these installation roots even when PATH only has Git/cmd.
+export const WINDOWS_PROGRAM_DIRECTORY_KEYS = ['ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432']
+export const windowsProgramDirectories = () => Object.fromEntries(WINDOWS_PROGRAM_DIRECTORY_KEYS
+  .flatMap(key => process.env[key] ? [[key, process.env[key]]] : []))
+
 export const OMP_APPROVAL_UNAVAILABLE = 'OMP 原生询问模式不可用，已拒绝启动；请检查安装版本'
 
 /** Help is installation evidence only; never expose the account snapshot to this probe. */
@@ -15,7 +20,7 @@ export async function probeOmpApprovalModes(executable, signal, nativesDirectory
   markTemporaryTreeActive(root)
   try {
     await mkdir(join(root, 'agent'), { mode: 0o700 })
-    const env = Object.fromEntries(['PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'ComSpec', 'PATHEXT', ...Object.keys(process.env).filter(key => /^(?:https?|all|no)_proxy$/i.test(key))]
+    const env = Object.fromEntries([...WINDOWS_PROGRAM_DIRECTORY_KEYS, 'PATH', 'SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'ComSpec', 'PATHEXT', ...Object.keys(process.env).filter(key => /^(?:https?|all|no)_proxy$/i.test(key))]
       .flatMap(key => process.env[key] ? [[key, process.env[key]]] : []))
     Object.assign(env, { PI_NATIVES_DIR: nativesDirectory ?? await prepareOmpNativesDirectory(), HOME: root, USERPROFILE: root, PI_CODING_AGENT_DIR: join(root, 'agent'),
       PI_CONFIG_DIR: 'config', OMP_PROFILE: '', PI_PROFILE: '', TMPDIR: root, TMP: root, TEMP: root,

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -91,6 +91,109 @@ afterEach(async () => {
 })
 
 describe('metadata preparation cleanup admission, isolated synthetic fixtures', () => {
+  // 模拟 Windows Job: natural exit has begun, but runner IPC is still closing.
+  it('模拟 Windows natural completion avoids EPIPE and keeps dispatch admission open', async () => {
+    const { runtime, backend, storage, submit } = setup()
+    launch.mockResolvedValue(safeLaunch())
+    const original = backend.spawn
+    const terminate = vi.fn()
+    backend.spawn = vi.fn((spec) => {
+      const child = original(spec)
+      let poisoned = false
+      child.terminate = () => { terminate(); poisoned = true }
+      child.waitForExit = vi.fn(async () => {
+        await new Promise(resolve => setTimeout(resolve, 30))
+        if (poisoned) throw new Error('write EPIPE')
+        return true
+      })
+      return child
+    })
+    expect((await submit().done).status).toBe('completed')
+    expect(terminate).not.toHaveBeenCalled()
+    expect(existsSync(join(storage.directory, 'cleanup-blocked.json'))).toBe(false)
+    expect(() => runtime.assertAccountIdle('pi')).not.toThrow()
+    expect((await submit('模拟 next run').done).status).toBe('completed')
+  })
+
+  it('模拟 delayed natural exit receives a bounded grace before cleanup', async () => {
+    const { backend, submit } = setup()
+    launch.mockResolvedValue(safeLaunch())
+    const original = backend.spawn
+    const terminate = vi.fn()
+    backend.spawn = vi.fn((spec) => {
+      const child = original(spec)
+      child.done = new Promise(resolve => setTimeout(() => resolve({ exitCode: 0, signal: null }), 30))
+      child.terminate = terminate
+      return child
+    })
+    expect((await submit().done).status).toBe('completed')
+    expect(terminate).not.toHaveBeenCalled()
+  })
+
+  it('模拟 completed pipes with a lingering process terminate after bounded natural exit grace', async () => {
+    const { backend, submit } = setup()
+    launch.mockResolvedValue(safeLaunch())
+    const original = backend.spawn
+    const terminate = vi.fn()
+    let started = 0, terminated = 0
+    backend.spawn = vi.fn((spec) => {
+      const child = original(spec)
+      const exit = deferred<{ exitCode: number; signal: null }>()
+      child.done = exit.promise
+      child.terminate = () => { terminate(); terminated = Date.now(); exit.resolve({ exitCode: 0, signal: null }) }
+      spec.signal?.addEventListener('abort', child.terminate, { once: true })
+      started = Date.now()
+      return child
+    })
+    expect((await submit().done).status).toBe('completed')
+    expect(terminate).toHaveBeenCalledTimes(1)
+    expect(terminated - started).toBeGreaterThanOrEqual(2900)
+    expect(terminated - started).toBeLessThan(4500)
+  }, 7000)
+
+  it('模拟 stop during natural exit grace terminates immediately and waits for range exit', async () => {
+    const { runtime, backend, submit } = setup()
+    launch.mockResolvedValue(safeLaunch())
+    const original = backend.spawn
+    const terminate = vi.fn()
+    const range = deferred<boolean>()
+    backend.spawn = vi.fn((spec) => {
+      const child = original(spec)
+      const exit = deferred<{ exitCode: number; signal: null }>()
+      child.done = exit.promise
+      child.terminate = () => { terminate(); exit.resolve({ exitCode: 0, signal: null }) }
+      // 模拟 the native backend's abort listener (all real backends own cancellation).
+      spec.signal?.addEventListener('abort', child.terminate, { once: true })
+      child.waitForExit = vi.fn(() => range.promise)
+      return child
+    })
+    const first = submit()
+    await vi.waitFor(() => expect(backend.spawn).toHaveBeenCalledTimes(1))
+    const stopping = runtime.stop('synthetic-parent', first.worker.id)
+    expect(terminate).toHaveBeenCalled()
+    let settled = false
+    void stopping.then(() => { settled = true })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    expect(settled).toBe(false)
+    range.resolve(true)
+    expect((await stopping).status).toBe('interrupted')
+  })
+
+  it('模拟 genuine range EPIPE still persists global quarantine and blocks subsequent dispatch', async () => {
+    const { runtime, backend, storage, submit } = setup()
+    launch.mockResolvedValue(safeLaunch())
+    const original = backend.spawn
+    backend.spawn = vi.fn(spec => {
+      const child = original(spec)
+      child.waitForExit = vi.fn(async () => { throw new Error('write EPIPE') })
+      return child
+    })
+    expect(await submit().done).toMatchObject({ status: 'failed', error: expect.stringContaining('write EPIPE') })
+    expect(existsSync(join(storage.directory, 'cleanup-blocked.json'))).toBe(true)
+    expect(() => submit('模拟 blocked next run')).toThrow('无法确认')
+    expect(() => runtime.assertAccountIdle('pi')).toThrow('无法确认')
+  })
+
   it('cancellation during Host account activation waits for activation and releases without spawning', async () => {
     const { runtime, backend, submit } = setup()
     const activated = deferred<void>()

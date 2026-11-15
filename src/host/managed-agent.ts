@@ -124,3 +124,49 @@ export async function spawnManagedAgent(
     },
   }
 }
+
+/** Allow the direct process to finish before signalling its still-closing Windows runner. */
+export const AGENT_EXIT_GRACE_MS = 3000
+export async function waitForNaturalAgentExit(
+  handle: SubprocessHandle,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (signal.aborted) return false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let abort = () => {}
+  try {
+    return await Promise.race([
+      handle.done.then(() => true, () => false),
+      new Promise<boolean>((resolve) => {
+        abort = () => resolve(false)
+        signal.addEventListener('abort', abort, { once: true })
+        timer = setTimeout(() => resolve(false), AGENT_EXIT_GRACE_MS)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+    signal.removeEventListener('abort', abort)
+  }
+}
+
+/** Direct exit is not range exit: the hidden Windows relay and descendants may remain. */
+export async function cleanupManagedAgent(
+  handle: SubprocessHandle,
+  completed: boolean,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (completed && !signal.aborted) {
+    // The terminal-backed macOS handle owns its mandatory cleanup inside waitForExit.
+    const grace = new AbortController()
+    const timer = setTimeout(() => grace.abort(), AGENT_EXIT_GRACE_MS)
+    try {
+      if (await handle.waitForExit(AbortSignal.any([signal, grace.signal]))) return true
+    } catch (error) {
+      // Still attempt containment, but never erase a genuine range observation failure.
+      handle.terminate()
+      throw error
+    } finally { clearTimeout(timer) }
+  }
+  handle.terminate()
+  return handle.waitForExit()
+}

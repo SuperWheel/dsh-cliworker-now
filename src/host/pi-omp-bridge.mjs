@@ -11,7 +11,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdir, writeFile, rename, realpath, unlink, rmdir, lstat, open, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path'
-import { ompConfigurationEnvironment, ompPermissionSettings, probeOmpApprovalModes, OMP_APPROVAL_UNAVAILABLE } from './pi-omp-environment.mjs'
+import { WINDOWS_PROGRAM_DIRECTORY_KEYS, ompConfigurationEnvironment, ompPermissionSettings, probeOmpApprovalModes, OMP_APPROVAL_UNAVAILABLE } from './pi-omp-environment.mjs'
 import { readFile } from 'node:fs/promises'
 import { nativeLaunchArgv } from './native-launch.mjs'
 import { ownsOwnAccountLease, OWN_ACCOUNT_BUSY } from './own-account-lease.mjs'
@@ -246,6 +246,7 @@ try {
   if (!config.discover) await privateDirectory(join(config.stateDirectory, 'sessions'))
   const env = Object.fromEntries(
     [
+      ...WINDOWS_PROGRAM_DIRECTORY_KEYS,
       'PATH',
       'BUN_INSTALL',
       'HOME',

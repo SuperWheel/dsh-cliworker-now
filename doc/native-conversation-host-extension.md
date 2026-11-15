@@ -1,6 +1,6 @@
 # 原生子对话与主对话体验的宿主接口缺口
 
-2026-11-14 当前源码候选迁移至 **0.2.2-rc.3**，公开 tag `dsh-v0.2.2-rc.3` 固定于 `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`。rc.2 → rc.3 四包源码只有版本号变化，rc.2 的 48 文件补丁无冲突应用并原样导出，重建四包后纳入 `runtime-host/`；说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`，验证边界见 `openspec/changes/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md`。下文 rc.2 记录保留为历史。
+2026-11-14 当前源码候选迁移至 **0.2.2-rc.3**，公开 tag `dsh-v0.2.2-rc.3` 固定于 `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`。rc.2 → rc.3 四包源码只有版本号变化，rc.2 的 48 文件补丁无冲突应用并原样导出，重建四包后纳入 `runtime-host/`；说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`，验证边界见 `openspec/archives/v0.8.10-dsh-rc3-adapt-leeyl/tasks.md`。下文 rc.2 记录保留为历史。
 
 2026-11-12 源码候选迁移至 **0.2.2-rc.2**，公开 tag `dsh-v0.2.2-rc.2` 固定于 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`。rc.1 的 48 文件补丁在新基线上有 10 个文件冲突，人工合并后重建四个原生界面包并纳入 `runtime-host/`；保留官方 CSS anchor、Retry、文件接收与子会话直接输入行为，移除对已删除 `useAnchoredPosition` 的引用。新输入及合并说明见 `host-extensions/dsh-0.2.2-rc.2/README.md`；Mac Desktop 0.2.2-rc.2 已做部分界面核对，Windows 与真实模型／CLI 派遣未验证，详细边界见 `openspec/archives/upgrade-host-022rc2/tasks.md`。下文 rc.1 及更早版本记录保留为历史。
 

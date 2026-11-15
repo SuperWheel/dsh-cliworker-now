@@ -23,6 +23,7 @@ const exec = promisify(execFile)
 const roots: string[] = []
 const fixtureKey = 'SYNTHETIC_ACCOUNT_KEY_NOT_A_CREDENTIAL'
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 async function fixture(cli: 'pi' | 'omp') {
@@ -380,4 +381,13 @@ writeFileSync(${JSON.stringify(join(agent, 'synthetic-auth.json'))}, '{}');`
   }
   expect(await readFile(join(agent, 'synthetic-auth.json'), 'utf8')).toBe('{}')
   await expect(stat(launch.cwd)).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it.each(['pi', 'omp'] as const)('模拟 %s account terminal retains native Windows installation directories', async cli => {
+  const { input } = await fixture(cli)
+  const directories = { ProgramFiles: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)', ProgramW6432: 'C:\\Program Files' }
+  for (const [key, value] of Object.entries(directories)) vi.stubEnv(key, value)
+  const launch = await preparePiOmpAccountTerminal({ ...input, action: 'login' })
+  try { expect(launch.env).toMatchObject(directories) }
+  finally { await launch.cleanup() }
 })

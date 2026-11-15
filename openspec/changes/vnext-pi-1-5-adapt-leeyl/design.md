@@ -1,7 +1,7 @@
 # Design
 
 ## Context
-见 proposal.md。本次仅操作 pi-1.5.2-adapt worktree。证据来自本机 1.0.4 和 1.5.2 的已安装 npm 包，不读真实认证与会话。pmspec 拒绝 topic 中的点号，实际变更名使用 vnext-pi-1-5-adapt-leeyl。
+见 proposal.md。初始适配在 pi-1.5.2-adapt worktree 完成；2026-11-15 Windows 收尾与 bash 修复续在 main 实施，不提交。证据来自本机 1.0.4 和 1.5.2 的已安装 npm 包，不读真实认证与会话。pmspec 拒绝 topic 中的点号，实际变更名使用 vnext-pi-1-5-adapt-leeyl。
 
 ## Goals / Non-Goals
 支持精确版本、共用原生协议和保守失败处理；不扩大账号、模型或外部执行授权，不调整 Client。
@@ -22,6 +22,19 @@
 - 最终决定：单独无模型探测脚本，拒绝 prompt，使用空认证、空会话及离线配置；插件元数据桥与原生 RPC 分别验证，记录事件和退出码。
 - 放弃的方案：沿用历史 probe-pi.mjs 的可选真实调用路径 —— 原因：该脚本含历史凭据读取和模型调用，不符合本次边界。
 - 影响：模型目录仅验证本地结构与无凭据投影，不证明账号可用性；登录只查接口与文本。
+
+### 决定 4：正常完成先等待自然退出，退出回执不替代范围清理
+- 最终决定：协议管道正常结束后给 `handle.done` 最多 3000ms；仍未退出才 terminate。finally 中直接进程已完成且未取消时，给 `waitForExit` 最多 3000ms 证明整个范围退出；超时才 terminate，并继续等待范围退出。停止/超时/abort 不享受自然退出宽限；等待中取消也立即结束宽限。真实范围错误不按 EPIPE 文本豁免，继续持久化 quarantine。
+- 根因：Windows `spawnManagedAgent` 走 backend.spawn；nativeProcessBackend 在 Electron 下可通过 `spawnWindowsHidden` 包装。该包装器的 done 使用私有 native exit 回执，可以先于 inner.done/Job runner 退出。故 runtime 已 await 外层 done，并不保证 WindowsJobOwner.directResultType 已设置；finally 的无条件 terminate 可能命中 runner IPC 关闭窗口。本地 rc.3 `windows-job.ts:95-109` 的 EPIPE 会拒绝范围清理；这与现场 SUCCESS 后 17ms 的 failed 相符，确切 IPC 回调时序没有现场追踪。
+- 相同模式：forkNative 也重复终止，复用相同等待/清理。adapters.ts 的 captureCatalogMetadata 和 accounts.ts 状态查询已先等待范围自然退出，保持现有实现。账号交互终端的 terminate 是原生终端范围清理契约，不改为只等待 done；macOS managed terminal 的 waitForExit 仍执行必需的终端清理。
+- 放弃的方案：忽略 EPIPE 或仅凭 done 放行 —— 原因：不能掩盖真实基础设施错误，也不能漏掉仍存活的 runner/后代。
+- 生命周期：宽限定时器/abort listener 在结束时清理；不改变清理隔离文件、私有资源保留与停止成功条件。
+
+### 决定 5：保留原生 Windows 程序安装目录
+- 最终决定：共享三个环境键 ProgramFiles、ProgramFiles(x86)、ProgramW6432；Pi/OMP bridge allow-list 和 OMP approval help probe 保留它们，账号登录/退出 launch env 显式传递相同键。仅处理子进程环境，不写 Host process.env，不新增代理变量或修改代理规则。
+- 根因：Pi 1.5.2 dist/utils/shell.js:85-103 先查 ProgramFiles 和 ProgramFiles(x86) 下的 Git/bin/bash.exe；bridge 的原白名单移除了它们，PATH 只有 Git/cmd 时无法发现 bash。ProgramW6432 一并保留原生 Windows 安装目录语义。
+- 账号终端原先通常从 DSH scrubbedParentEnv 继承非敏感键，未发现相同的强制白名单丢失；显式传递这三个键使登录、退出和桥保持一致。未扩大凭据、profile 或其他环境白名单。
+- 回退：回退本次 Host 源码即可，无持久化迁移、不自动解除已有 cleanup-blocked，也不更新 Desktop。
 
 ## 1.0.4 → 1.5.2 源码核对
 证据根目录（本机只读包，不是用户认证目录）：

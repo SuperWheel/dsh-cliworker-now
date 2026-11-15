@@ -51,7 +51,7 @@ describe('Windows 桌面安装程序窗口（模拟）', () => {
   })
   it('代理包装后标记仍保留到 Windows 中继', () => {
     const f = relay()
-    const proxy = { current: () => ({ http: 'http://127.0.0.1:7890' }), fresh: async () => undefined } as never
+    const proxy = { current: () => ({ url: 'http://127.0.0.1:7890', bypass: [] }), fresh: async () => undefined } as never
     nativeProcessBackend(f.backend, 'win32', { electron: true, systemProxy: proxy }).spawn({ ...installer, [VISIBLE_WINDOW]: true } as SubprocessSpawnSpec)
     expect(bootstrapOptions(f.backend).options.visibleWindow).toBe(true)
   })

@@ -179,6 +179,7 @@ mkdirSync(join(agent,'sessions'),{recursive:true});
 let path=join(agent,'sessions','fixture.jsonl'),nativeSessionId='fixture-id';const resumed=process.argv.includes(cli==='pi'?'--session':'--resume');
 if(resumed){const flag=cli==='pi'?'--session':'--resume';path=process.argv[process.argv.indexOf(flag)+1];if(path.endsWith('fixture-fork.jsonl'))nativeSessionId='fixture-fork-id';if(!existsSync(path))process.exit(2);}
 writeFileSync(path,'SIMULATED SESSION\\n',{mode:0o600});
+writeFileSync(join(agent,'observed-program-files.json'),JSON.stringify(Object.fromEntries(['ProgramFiles','ProgramFiles(x86)','ProgramW6432'].map(key=>[key,process.env[key]]))));
 writeFileSync(join(agent,'observed-argv.json'),JSON.stringify(process.argv.slice(2)),{mode:0o600});
 let model=${JSON.stringify(model)},thinkingLevel=scenario==='no-reasoning'?'off':'low',streaming=false,steers=[],steerIds=[];
 writeFileSync(join(agent,'observed-auth.json'),JSON.stringify({cnPresent:!!process.env.ZAI_CODING_CN_API_KEY,nativeFixture:process.env.ZHIPU_API_KEY==='SYNTHETIC_NATIVE_PROVIDER_ENV',unexpectedNativeKey:!!process.env.ZHIPU_API_KEY&&process.env.ZHIPU_API_KEY!=='SYNTHETIC_NATIVE_PROVIDER_ENV'&&process.env.ZHIPU_API_KEY!==${JSON.stringify(fixtureKey)}}),{mode:0o600});
@@ -314,6 +315,18 @@ async function prepareConfirmed(input: PiOmpInput) {
   )
 }
 describe('Pi/OMP bridge with simulated native RPC processes', () => {
+  it.each(['pi', 'omp'] as const)('模拟 %s bridge preserves Windows Git Bash discovery directories', async cli => {
+    const { input } = await fixture(cli)
+    const prepared = await prepareConfirmed(input)
+    const request = JSON.parse(await readFile(prepared.argv.at(-1)!, 'utf8'))
+    const directories = { ProgramFiles: 'C:\\Program Files', 'ProgramFiles(x86)': 'C:\\Program Files (x86)', ProgramW6432: 'C:\\Program Files' }
+    try {
+      await exec(prepared.argv[0]!, prepared.argv.slice(1), {
+        env: fixtureEnvironment(input.nativeHome, { ...prepared.env, ...directories }), timeout: 10000,
+      })
+      expect(JSON.parse(await readFile(join(request.stateDirectory, 'agent/observed-program-files.json'), 'utf8'))).toEqual(directories)
+    } finally { await prepared.cleanup() }
+  })
   it.each(['pi', 'omp'] as const)('%s forwards Host budgets into the private bridge request', async cli => {
     // SIMULATED provider metadata, no external network.
     const { input } = await fixture(cli)

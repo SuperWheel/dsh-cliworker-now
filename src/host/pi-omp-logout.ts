@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { readPiOmpLogoutSources, safePiOmpAncestors, selectedPiAuthSource } from './pi-omp-native.ts'
 import { projectDirectory } from './process.ts'
 import { parseAccountLoginId } from '../shared/account-links.ts'
-import { ompConfigurationEnvironment } from './pi-omp-environment.mjs'
+import { ompConfigurationEnvironment, windowsProgramDirectories } from './pi-omp-environment.mjs'
 import type { PiOmpAccountTerminalInput, PiOmpAccountTerminalLaunch } from './pi-omp-accounts.ts'
 
 /** Native user-operated credential logout. Configuration deletion uses a direct Host operation. */
@@ -74,6 +74,7 @@ export async function preparePiOmpLogout(
     for (const path of [agent, temporary, join(runtime, 'sessions'), join(runtime, 'logs')])
       await mkdir(path, { mode: 0o700 })
     const env: Record<string, string> = {
+      ...windowsProgramDirectories(),
       ...source.env,
       PI_CODING_AGENT_DIR: agent,
       TMPDIR: temporary,

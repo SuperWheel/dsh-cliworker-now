@@ -46,7 +46,7 @@ import {
   workerTitleSchema,
 } from './roles.ts'
 import { protocolFor, resolveCliExecutable, workerArguments, captureCatalogMetadata } from './adapters.ts'
-import { spawnManagedAgent } from './managed-agent.ts'
+import { spawnManagedAgent, waitForNaturalAgentExit, cleanupManagedAgent } from './managed-agent.ts'
 import { prepareNativeWorker, transportFor, usesNativeBridge } from './native-worker.ts'
 import { BridgeProtocol } from './bridge-protocol.ts'
 import { mkdirSync } from 'node:fs'
@@ -1482,6 +1482,7 @@ export class WorkerRuntime {
       let handle: SubprocessHandle | undefined
       let createdId: string | undefined
       let cleanupUnconfirmed = false
+      let completed = false
       let readers: Promise<void>[] = []
       try {
         const path = launch.argv.at(-1)!
@@ -1505,13 +1506,15 @@ export class WorkerRuntime {
         }
         readers = [consume(handle.stdout, true), consume(handle.stderr, false)]
         await Promise.all(readers)
+        if (!await waitForNaturalAgentExit(handle, ownSignal)) handle.terminate()
         const result = await handle.done
+        completed = true
         if (result.exitCode !== 0) throw new Error('原生分支元数据操作失败')
         ownSignal.throwIfAborted()
       } catch (error) { problem = error }
       finally {
         if (handle) {
-          try { handle.terminate(); if (!await handle.waitForExit()) throw new ProcessCleanupUnconfirmedError() }
+          try { if (!await cleanupManagedAgent(handle, completed, ownSignal)) throw new ProcessCleanupUnconfirmedError() }
           catch (error) {
             cleanupUnconfirmed = true
             this.blockCatalogOnCleanup(cli, new ProcessCleanupUnconfirmedError())
@@ -2399,6 +2402,7 @@ export class WorkerRuntime {
     const isolated = directory !== worker.project
     const prompt = isolated ? isolationPromptNotice(directory, worker.project) + task.prompt : task.prompt
     let handle: SubprocessHandle | undefined
+    let completed = false
     let readers: Promise<void>[] = []
     let harnessLease: { connection?: NativeHarnessConnection; close(): Promise<void> } | undefined
     let stderr = ''
@@ -2807,7 +2811,9 @@ export class WorkerRuntime {
       }
       readers = [capture(handle.stdout, false), capture(handle.stderr, true)]
       await Promise.all(readers)
+      if (!await waitForNaturalAgentExit(handle, controller.signal)) handle.terminate()
       const outcome = await handle.done
+      completed = true
       controller.signal.throwIfAborted()
       protocol.end()
       // A bridge that ended on its own timer stops the turn like the Host timer does.
@@ -2891,9 +2897,8 @@ export class WorkerRuntime {
       task.nativeStop = undefined
       task.steeringController.abort(new Error('当前运行已结束，引导通路已关闭'))
       if (handle) {
-        handle.terminate()
         try {
-          if (!(await handle.waitForExit())) throw new Error('CLI cleanup did not reach quiescence')
+          if (!(await cleanupManagedAgent(handle, completed, controller.signal))) throw new Error('CLI cleanup did not reach quiescence')
           quiescent = true
         } catch (error) {
           failure = error

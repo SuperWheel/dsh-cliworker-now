@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ProcessBackend } from '../src/host/process.ts'
+import { cleanupManagedAgent } from '../src/host/managed-agent.ts'
 import { nativeProcessBackend } from '../src/host/native-process.ts'
 import { needsWindowsHiddenLaunch, spawnWindowsHidden } from '../src/host/windows-hidden-process.ts'
 
@@ -35,6 +36,31 @@ function fixture(control = true) {
 }
 
 describe('Windows GUI bootstrap (synthetic SDK receipts; no account access)', () => {
+  it('模拟 hidden native exit precedes Job runner exit without triggering terminate IPC EPIPE', async () => {
+    const f = fixture()
+    let poisoned = false
+    f.inner.terminate.mockImplementation(() => { poisoned = true })
+    let rangeExit!: () => void
+    const range = new Promise<void>(resolve => { rangeExit = resolve })
+    f.inner.waitForExit.mockImplementation(async () => {
+      await range
+      if (poisoned) throw new Error('write EPIPE')
+      return true
+    })
+    const handle = spawnWindowsHidden(f.backend, spec)
+    f.inner.control!.end(JSON.stringify({ kind: 'exit', exitCode: 0, signal: null }))
+    expect((await handle.done).exitCode).toBe(0)
+    let settled = false
+    const cleanup = cleanupManagedAgent(handle, true, new AbortController().signal).then(value => { settled = true; return value })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(settled).toBe(false)
+    expect(f.inner.terminate).not.toHaveBeenCalled()
+    f.finish({ exitCode: 0, signal: null })
+    rangeExit()
+    expect(await cleanup).toBe(true)
+    expect(f.inner.terminate).not.toHaveBeenCalled()
+  })
+
   it('wraps only Windows Electron native targets, keeping existing GUI helpers and other platforms direct', () => {
     expect(needsWindowsHiddenLaunch(['synthetic.exe'], 'win32', true)).toBe(true)
     expect(needsWindowsHiddenLaunch([process.execPath.toUpperCase().replaceAll('/', '\\')], 'win32', true)).toBe(false)

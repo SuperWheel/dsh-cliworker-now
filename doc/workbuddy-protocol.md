@@ -1,6 +1,6 @@
 # WorkBuddy 内置 CLI 接入（试验性）
 
-试验性：依赖 WorkBuddy 桌面端非公开接口。实现决策以 [OpenSpec design](../openspec/changes/add-workbuddy-cli/design.md) 为准。注册接线复用已有核心模块，不改其他 CLI 的协议。
+试验性：依赖 WorkBuddy 桌面端非公开接口。实现决策以 [OpenSpec design](../openspec/archives/add-workbuddy-cli/design.md) 为准。注册接线复用已有核心模块，不改其他 CLI 的协议。
 
 | 项目 | 国内版 | 国际版 |
 | --- | --- | --- |
@@ -50,4 +50,4 @@ skills、子 Agent 与记忆继续由原生设置决定，未新增扫描目录�
 
 ## 证据边界
 
-本机安装版与元数据历史调研见本变更 proposal／tasks；本次注册接线测试使用明确标注的模拟程序与探测结果，没有登录、密钥读取或真实模型调用。国际版应用身份、Windows 实机、真实任务／审批／恢复／停止、Desktop 明暗主题及图标仍待实际验收。隔离构建和类型检查不等于这些真实行为已通过。命令与结果见 [tasks.md](../openspec/changes/add-workbuddy-cli/tasks.md)。
+本机安装版与元数据历史调研见本变更 proposal／tasks；本次注册接线测试使用明确标注的模拟程序与探测结果，没有登录、密钥读取或真实模型调用。国际版应用身份、Windows 实机、真实任务／审批／恢复／停止、Desktop 明暗主题及图标仍待实际验收。隔离构建和类型检查不等于这些真实行为已通过。命令与结果见 [tasks.md](../openspec/archives/add-workbuddy-cli/tasks.md)。
