@@ -97,6 +97,8 @@
   - 验证：`corepack pnpm typecheck`：`Host/Client typecheck passed against DSH 0.2.2-rc.3`。`corepack pnpm exec vitest run tests/cli-update-page.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts tests/client-i18n.test.tsx`：`Test Files 4 passed (4)`、`Tests 102 passed (102)`。指定完整命令加 `tests/cli-management*` 以 `--maxWorkers=2` 运行：`Test Files 38 passed (38)`、`Tests 1215 passed (1215)`。同一命令按默认并发跑了 2 次、`--maxWorkers=4` 跑了 1 次，各有 1–2 项 Host 用例 15 秒超时（hermes-residue 的 service integration、npm-platform 的 stall 接管），机器负载 10–14；这些文件单独重跑全部通过（51/51、57/57），本次也没有改 Host。为生成 `lib/typert.remote-client.d.ts` 跑过一次 `corepack pnpm build:preview`，输出 `Isolated package ready`。
   - 布局核对：在本机浏览器用页面 CSS 渲染一份模拟说明行，宽度分别为 560/420/300/200px。每种宽度都只有一行（高 18px），没有横向溢出，续传次数和说明行同在一行；主机段先省略，窄到 300px 以下时前段也省略。这只是静态 CSS 检查，没有在 DSH 中运行。
   - 未验证：Windows／Mac DSH 实机外观（OMP 长主机、TRAE 多文件合计、npm 近期失败提示）、英文界面实机，以及真实 7 天失败记忆下的直接接管；没有正式构建，没有更新 Desktop 链接。
+  - 2026-11-15 Windows 实机（ad2f07f 包，含 72bac7d）：真实 7 天失败记忆下 OMP 直接接管，页面显示直接接管原因「官方更新今天在这台电脑上失败，7 天内直接由插件下载」与「官方渠道近期在本机失败（7 天内），直接接管」；说明行 DOM 为前段「已下载 155 MB / 241 MB」与「· 来自 d4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com」两段，停滞时显示「2 秒没有新数据」在主机段之前。只读取了文本，未截图核对单行省略与悬停。
+  - 仍未验证：长主机单行省略的视觉效果、TRAE 多文件合计、npm 近期失败提示、Mac 与英文界面。本项保持未勾选。
 
 ## 6. 验收与文档 〔测试｜10h｜前置 4,5〕
 - [x] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步
@@ -125,7 +127,8 @@
 - [ ] 6.3 Mac 实机：有新版本的 CLI 逐个验收官方进度条与切换（待新版本发布）
   - 2026-11-15 Mac Desktop（34133b9 构建）检查更新后只有 OMP 有新版本（18.20.0 → 18.20.2，16 项其余为最新）。点更新后走官方通道 `omp update`，不到 1 分钟完成，增量补丁 36.6MB 并 sha256 校验，页面显示「已更新到 18.20.2」；官方很快完成，未触发切换到插件接管。当前会话处于规划模式时页面提示「请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界」，换普通会话后正常。
   - 未验证：其他 CLI（暂无新版本）及 Mac 上的官方→接管切换。本项保持未勾选。
-- [ ] 6.4 13.5 遗留：接管下载期间取消
+- [x] 6.4 13.5 遗留：接管下载期间取消
+  - 2026-11-15 Windows 实机（ad2f07f 隔离包，1262/1262 文件一致；经 SSH 端口转发在 Mac 内置浏览器操作 Windows Host Web UI）：用 build.stencil.so 官方清单下载 OMP 18.20.0（251502592 B，sha256 1b6c7bda…，另存 18.20.2 安全副本）回退 `%LOCALAPPDATA%\omp\omp.exe`。07:58:02 点更新并确认，页面显示「官方更新今天在这台电脑上失败，7 天内直接由插件下载」「官方渠道近期在本机失败（7 天内），直接接管」，来源 r2.cloudflarestorage.com，停滞 10 秒从 80633198 B 续传 1 次，最快 15.6 MB/s；07:58:47 在 241/241 MB 尚未替换时点「取消更新」，页面显示「已取消。已写入的文件不会回滚，建议重新检查」，OMP 留在可更新组。复核：omp.exe 仍为 18.20.0（sha256 前缀 1b6c7bda），omp 目录只有 omp.exe，插件 downloads 0 项，Temp 无 `cliworker-`/`cwn-`/`dshwb-` 目录，无 omp 进程；OMP 的 7 天通道记忆按设计在取消时清除（2 条 → 1 条）。 详见更新页变更 13.5。
 
 ## 8. Hermes 慢速接管 〔后端｜10h｜前置 4〕
 - [x] 8.1 按阶段判慢：以最新回执为准并核对 pid；fetch 用 tmp_pack（首字节宽限 60 秒、30 秒无增长、60 秒均速 <100 KB/s），工具下载用 `cache/partials/*.part`，uv/Node/build 无下载证据时不判慢；完成标记后等待退出（5/20 分钟规则见 8.7）
@@ -306,7 +309,8 @@
   - Windows 已覆盖（11-15）：① 859bcee 包上 OMP 官方更新成功，清理 0 项，证据见本节 c1e3845 记录；② 34133b9 包上 OMP 接管更新成功，输出「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」，复核 `.bak` 已删除，downloads 0 项，Temp 中插件目录 0 个，详见 10.13；③ Host 启动清扫回收旧插件临时目录，以及共享 omp-natives，见临时目录变更 3.2/4.3。
   - Mac（11-15，34133b9 构建）：OMP 官方更新 18.20.0 → 18.20.2 成功，输出「更新清理：已删除 0 项，释放 0 B。」；复核 `~/.local/bin` 留下 `omp.<毫秒>.<pid>.0.bak`（18.20.0）与 0 字节 `omp.lock`，即 OMP 备份规则当时只覆盖 Windows，macOS 扩展另行实现。
   - Mac 修复后（7044b0b，11-15 07:45）：OMP 回退到 18.20.0 后经页面官方更新到 18.20.2，输出「更新清理：已删除 OMP 原生备份 1 项，释放 223369360 B。」，`~/.local/bin` 只剩 `omp` 与 `omp.lock`，详见临时目录变更 4.3。
-  - 仍未覆盖：更新失败或取消后的清理；npm 私有缓存与本包 reify 残留（CodeBuddy 实测在 200d97f 包上，早于残留回收）；Grok、Qoder/CN、Claude、TRAE、Hermes 规则的真实更新；本项保持未勾选。
+  - Windows 取消与成功（ad2f07f，11-15 07:58/08:00）：接管下载中取消后 downloads 0 项、Temp 无插件目录、旧版 omp.exe 完好；随后官方更新成功并删除 OMP 原生备份 1 项（251502592 B），详见更新页 13.5。
+  - 仍未覆盖：更新失败后的清理；npm 私有缓存与本包 reify 残留（CodeBuddy 实测在 200d97f 包上，早于残留回收）；Grok、Qoder/CN、Claude、TRAE、Hermes 规则的真实更新；本项保持未勾选。
 
 - [x] 10.7 接入 Hermes 更新后回执与版本证据，校验 facts/锁后清理原生残留
   - HermesWatch 暴露本次最新的目标匹配整体 success，runHermesUpdate 仅在托管范围退出后返回该证据；service 经过既有 identify/currentVersion/verifyUpdatedVersion 且严格等于 target 才登记最终清理，最终失败/取消仍不删。无需新增版本命令，hermes-version.ts 的 install-stamp/HEAD 稳定标签链保持原样。

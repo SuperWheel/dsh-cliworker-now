@@ -152,10 +152,12 @@
   - 复用 `BrandIcon`；按钮只用 md/sm；禁用原因走 Tooltip。更新 / 安装按钮调用的 Host 方法在阶段 B/C 实现前不存在，页面按可选方法处理。
 - [x] 6.3 加载与重排：缓存直显、缺的进「检查中」、最多两次重排、展开与进行中的行不动、滚动锚点、30 秒上限、整页错误与重试、`aria-busy` 与播报
   - 纯函数 `cli-update-layout.ts`（14 项测试）；30 秒截止在 Host 的 check。整页错误只在没有可显示快照时出现，已有结果时改为分区上方的错误行加「重试」（新增测试覆盖）。
-- [ ] 6.4 展开区：下载进度与续传次数、命令与输出、结果状态、手动方法气泡、安装位置气泡
+- [x] 6.4 展开区：下载进度与续传次数、命令与输出、结果状态、手动方法气泡、安装位置气泡
   - 界面已按快照字段实现并用模拟快照测试（`readable=false` 显示「下载进度无法读取」）。Phase B/C 已提供操作、安装位置与首次安装后端；（未执行：本次禁止修改 src/client/**、构建和真实更新/安装，尚未进行界面与实际操作快照的可视核对；桌面安装来源仍待核实。）
   - 2026-11-15 Mac Desktop（34133b9 正式构建，07:25 部署，经内置浏览器打开 Host Web UI）：OMP 18.20.0 → 18.20.2 经官方 `omp update` 完成，展开区显示命令行 `/Users/leeyl/.local/bin/omp update`、「命令输出」「复制输出」及官方原文输出（补丁 36.6MB、sha256 校验、Updated to 18.20.2），末行「更新清理：已删除 0 项，释放 0 B。」，结果状态「已更新到 18.20.2 · 查看输出」。WorkBuddy（未安装组）点「安装」只展开安装位置气泡、不开始安装：显示「安装位置」只读框 `/Applications`、文件夹按钮、「恢复默认位置」（默认位置时禁用）与「开始安装」，短暂显示「正在检查安装位置…」后无空间提示（默认位置不做空间检查，符合实现）；点「收起」复原。
-  - 未验证：手动方法气泡（Mac 当前没有处于「手动」组的 CLI，16 项均为最新）；浏览文件夹选择器与非默认位置的空间提示；Windows 展开区；72bac7d 的长主机名截断改动尚未部署到 Desktop。故本项保持未勾选。
+  - 2026-11-15 Windows（ad2f07f 包）：「需要手动更新」组 ZCode 点「查看方法」展开气泡：「此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。」与「官方说明」，按钮变为「收起」；WorkBuddy CN 气泡为「无法核实桌面应用目录或版本，请先修复原安装。」与「官方说明」。下载进度、续传次数、通道标签与取消结果见 13.5 的 OMP 接管记录。
+  - 发现：Windows 上 WorkBuddy CN 显示 2.165.0 但手动方法提示无法核实桌面应用目录或版本，原因未查。
+  - 五类展开内容均已在真实界面出现，勾选。未覆盖：浏览文件夹选择器与非默认位置的空间提示（选择器需在 Windows/Mac 桌面上手动操作）、英文界面。
 - [x] 6.5 下载设置：下载源下拉与自定义地址、检查连接
   - `cli-download-source.tsx` + `NativeChoice` 新增说明行 / 分隔线参数；8 项测试。
 - [x] 6.6 文案进 `client-localization` 词表；`doc/settings-ui-design.md` 同步新增参数
@@ -395,7 +397,7 @@
   - 最终关联命令：`corepack pnpm vitest run tests/settings-connection-cache.test.ts tests/cli-management.test.ts tests/cli-management-remotes.test.ts tests/cli-management-admission.test.ts tests/accounts.test.ts tests/settings-connection-preload.test.ts tests/native-login-providers.test.ts tests/pi-omp-adapter.test.ts`；沙箱外 **8 文件、400 passed、0 failed、0 skipped**，81.61 秒、退出 0，`/tmp/preload-related-final.log`。同命令沙箱内曾因 Pi/OMP 回环监听 EPERM 得到 7 文件通过/1 失败、271 项通过/129 失败，沙箱外复跑全部通过。
   - 最终全量：沙箱外单独运行 `corepack pnpm vitest run`，**317 文件（313 passed / 4 skipped），7133 项（7119 passed / 14 skipped），0 failed**，204.73 秒、退出 0；`/tmp/preload-full-final.log`。未调整超时、并发或跳过用例；运行前后 14 个本次源码/测试文件 SHA-256 全部一致（`/tmp/preload-source-hashes.json`）。
   - `corepack pnpm typecheck` 通过，Host/Client against DSH 0.2.2-rc.3（`/tmp/preload-typecheck-final.log`）；`corepack pnpm build:preview` 通过，仅 `.cache/preview-package`，8 个修改的 Host 文件与隔离源码逐字节一致（`/tmp/preload-preview-final.log`）。`corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` valid，仅保留原有主任务超过 10 个的建议（`/tmp/preload-spec-final.log`）；指定 Git `diff --check` 通过。
-- [ ] 12.7 修复账号终端无法打开
+- [x] 12.7 修复账号终端无法打开
   - 已确认并修复的共有 Host 缺陷：`AccountManager.finish` 清理失败时保留 reservation，却未登记 unsafeTerminals、未通知设置缓存失效；因此刷新仍提供登录动作，随后 accountStart 又以“已有账号终端”拒绝。Codex、CodeBuddy 的真实 AccountManager + 模拟 PTY 回归在修复前均失败（新增文件当时 8 passed / 2 failed），证明此状态不一致；尚不能将它认定为用户“所有 CLI 都打不开”的唯一现场根因，本子任务保留未勾选。
   - 改动文件：`src/host/accounts.ts` 在清理失败时登记终端暂停并通知活动订阅，在重试确认清理成功后移除该终端暂停再释放 reservation；没有绕过进程清理或允许重复启动。`tests/account-settings-start.test.ts` 新增 10 项模拟，`tests/settings-dialog.test.tsx` 新增 2 项真实 Host 缓存/订阅与页面点击的模拟，`tests/accounts.test.ts` 更新 2 项失败清理后的暂停诊断断言。未修改 `src/client/**`、版本号及 12.6。
   - 调用链核查：快照有意移除 actions 与逐条退出句柄；refreshAccountStatus 的强制分支等待已有缓存读取结束后重新调用 accounts.status，返回原始可操作结果，而非复用 displayOnly 快照。新增模拟覆盖 Codex（终端型）和 CodeBuddy（账号窗口型）的设置缓存命中→刷新→真实 AccountManager 启动模拟 PTY、后台读取并发、取消排队刷新、清理暂停与失败清理重试。页面模拟覆盖真实 Host watch 更新与点击；正常链路均通过，没有复现全部 CLI 共有的 actions 丢失、动作 ID 不匹配或启动参数错误。
@@ -405,6 +407,8 @@
   - 未执行的真实验证：真实登录/退出、真实模型调用均为 0；未安装本次预览包、未更新 Desktop 链接、未在 Desktop 点击登录终端、未做 Windows/Linux 实机验收。现有现场日志不足以闭环原始全 CLI 故障；本次提交只确认共有清理状态缺陷已修复及模拟链路通过，没有证据要求修改前端生产文件。
   - 严格校验：`corepack pnpm --config.verifyDepsBeforeRun=false spec validate v0.8.10-cli-update-page-leeyl --strict` valid、退出码 0，仅提示主任务超过 10 个；Git diff --check 通过，隔离包 `src/host/accounts.ts` 与本工作树源码逐字节一致。仅本地提交，不推送、不归档。
   - 主会话 Mac Desktop 实机（构建 e4857d1，2026-11-14 13:04）：Codex「账号终端」约 4 秒显示原生界面；Claude Code 账号终端在系统负载约 25 时约 15 秒后显示原生界面；关闭终端后账号状态重新读取。本机未复现「全部无法打开」，需用户提供失败的 CLI 与界面提示后再闭环，保持未勾选。
+  - 2026-11-15 Windows 实机（ad2f07f 包，经端口转发的 Host Web UI）：Codex「账号终端」6 秒内显示原生 Codex v0.169.0 界面，「关闭终端」后弹窗关闭；Claude Code「官方账号终端」显示原生 Accessing workspace 信任提示（未作答），「关闭终端」正常。关闭后无新增 codex/claude 进程（现存 4 个 codex.exe 属 11-14/06:44 启动的 Codex 桌面应用）。
+  - 修复已实现且 Mac、Windows 均能打开与关闭账号终端，勾选；原始「全部无法打开」现场未复现。
 - [x] 12.8 修复 Qoder 模型与强度目录
   - 现象（用户 2026-11-14，Mac Desktop 0.2.2-rc.3，main 0245b35 正式构建）：Qoder 显示已登录，但模型与思考强度目录取不到。
   - 根因分两层。账号侧：真实只读探测确认 Qoder 国际版 1.1.89 原生目录返回 16 个模型、启用 0、停用 16（13 个声明强度），账号已识别、Free；插件按既有规则不把停用模型列为可选，因此确实没有可选模型和强度，这部分不是插件缺陷，未放宽过滤。插件侧（d584398 引入）：`SettingsConnectionCache.read` 在读取失败时把槽内 `error` 一律写成「连接状态读取失败，请刷新重试」（原 src/host/settings-connection-cache.ts:64），设置页模型区在快照模式下只显示快照的 `error`（src/client/settings-dialog.tsx:1060），直读接口返回的真实原因随后也被快照覆盖；用户只看到通用失败、刷新无效，看不到是账号下模型全部停用。另外原文案「Qoder 未公开可用的结构化模型目录」（src/host/qoder-accounts.ts:600）把「账号下全部停用」说成了「没有目录」。
@@ -437,7 +441,7 @@
   - 最终检查：corepack pnpm typecheck 退出 0；corepack pnpm vitest run tests/cli-management tests/settings-connection-cache.test.ts tests/cli-management-admission.test.ts：22 文件、710 passed、0 failed、0 skipped（3.52 秒，/tmp/task-w-related-final.log），包含新增 Windows 文件 71 项。新增夹具和用例标注“模拟”，不执行本机 CLI 或真实安装器。
   - 构建/规格：corepack pnpm build:preview 退出 0，隔离包 .cache/preview-package（/tmp/task-w-preview.log）；corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict 退出 0，仅现有“主任务超过 10 个”建议警告。git diff --check 通过。README 双语、doc/design.md 与本变更决定 13/14 已同步。
   - 调试记录：首次 typecheck 因 sidecars 的 unknown 类型收窄报错，修正后通过；服务级 TRAE 初次夹具遗漏 binary_version、且 ReleaseClient 在模拟 Windows 前初始化，导致计划缺失，完善模拟清单与初始化顺序后全过。真实 Windows、Clash 下载/续传、占用与取消仍由 13.5 单列；没有正式构建、Desktop 链接更新、版本修改、提交或推送。
-- [ ] 13.5 Windows 实机：四项真实更新经代理完成、进度条与续传次数、取消与残留、红点不复现
+- [x] 13.5 Windows 实机：四项真实更新经代理完成、进度条与续传次数、取消与残留、红点不复现
   - 环境：Windows 11 实机，DSH 0.2.2-rc.3，经 Clash Verge 127.0.0.1:7897，保留宿主代理设置；先装 64b2a3b 包，13.6/13.7 修复后装 c84b0c4 包（1172/1172 文件一致，packageSha256 32644f71e5de…）。逐个经「更新 CLI」页点击更新与「继续更新」。
   - Antigravity 1.4.11 → 1.5.9（64b2a3b）：进度条显示「已下载 83.1 MB / 221 MB · 来自 storage.googleapis.com」，停滞 10 秒自动续传 2 次（24651583 B、183528098 B）后下载完成并替换 agy.exe（231726744 B），agy --version 为 1.5.9；当时校验误报 IDENTITY_CHANGED，即 13.6 的问题。装 c84b0c4 后检查归入「已是最新」，状态文件 latest 1.5.9。
   - Claude Code 2.1.296 → 2.1.325（64b2a3b）：进度条显示字节、速度、来源，停滞时显示「5 秒没有新数据」；在 downloads.claude.ai 与 storage.googleapis.com 间切换 3 次、续传 3 次后完成；claude.exe 与 versions/2.1.325 均为 372461728 B，claude --version 为 2.1.325，2.1.296 保留；当时以 UNKNOWN 误报失败，即 13.7 的问题。装 c84b0c4 后归入「已是最新」，状态文件 latest 2.1.325。
@@ -445,7 +449,10 @@
   - TRAE CN 0.213.1 → 0.215.0（c84b0c4）：主工件 141 MB 来自 lf-cdn.trae.com.cn，过慢重连 1 次（24.6 KB/s）、停滞续传 4 次；sidecar 过慢重连 1 次；再交官方 install_v2.ps1 offline-install，输出 Loading bundled TRAE CLI 0.215.0、ripgrep 15.1.0 后成功。traex --version 为 traecli 0.215.0 / installation: public；current 指向 releases/0.215.0-x86_64-pc-windows-msvc；更新前存在的 auto-update-version 从 0.213.1-x86_64-pc-windows-msvc 恢复为 0.215.0-x86_64-pc-windows-msvc；旧 release 由官方脚本清理。
   - 残留：每项完成后插件 cli-management 目录只剩状态文件（TRAE 后另有空 downloads 目录），无 .part、临时脚本或离线包；agy/omp/.local/bin 无 .download 临时文件。C 盘可用空间 1.96 → 1.51 → 1.39 → 1.40 GB（Claude 新版本比旧版本大约 112 MB，且旧版本保留）。
   - 未完成：接管下载期间的取消未实测。11.9 只证明接管前原生更新器的取消；本次四项均已更新到最新，没有可取消的更新，留到这四个 CLI 下次有新版本时补测，故本项保持未勾选。
-  - 发现但未修：OMP 来源主机名过长时在进度行下单独换行；TRAE 多文件下载时进度条与「已自动续传」按文件重置，不显示总进度。两者均为显示问题，留待前端处理。
+  - 发现但未修：OMP 来源主机名过长时在进度行下单独换行；TRAE 多文件下载时进度条与「已自动续传」按文件重置，不显示总进度。两者均为显示问题，留待前端处理。（已由 72bac7d 修改，见双通道 5.1。）
+  - 接管下载期间取消（补测）：2026-11-15 Windows 实机（ad2f07f 隔离包，1262/1262 文件一致；经 SSH 端口转发在 Mac 内置浏览器操作 Windows Host Web UI）：用 build.stencil.so 官方清单下载 OMP 18.20.0（251502592 B，sha256 1b6c7bda…，另存 18.20.2 安全副本）回退 `%LOCALAPPDATA%\omp\omp.exe`。07:58:02 点更新并确认，页面显示「官方更新今天在这台电脑上失败，7 天内直接由插件下载」「官方渠道近期在本机失败（7 天内），直接接管」，来源 r2.cloudflarestorage.com，停滞 10 秒从 80633198 B 续传 1 次，最快 15.6 MB/s；07:58:47 在 241/241 MB 尚未替换时点「取消更新」，页面显示「已取消。已写入的文件不会回滚，建议重新检查」，OMP 留在可更新组。复核：omp.exe 仍为 18.20.0（sha256 前缀 1b6c7bda），omp 目录只有 omp.exe，插件 downloads 0 项，Temp 无 `cliworker-`/`cwn-`/`dshwb-` 目录，无 omp 进程；OMP 的 7 天通道记忆按设计在取消时清除（2 条 → 1 条）。
+  - 取消后再次更新：08:00:23 点更新，通道记忆已清除，走官方 `omp update`，增量补丁 38.6MB 并 sha256 校验，约 20 秒「已更新到 18.20.2」，输出末行「更新清理：已删除 OMP 原生备份 1 项，释放 251502592 B。」；omp 目录只剩 omp.exe（sha256 前缀 6dbb8ac3，与回退前安全副本一致），downloads 0 项，回退用文件已删除，C 盘 4.81 GB。
+  - 四项真实更新、进度条与续传次数、取消与残留、红点不复现均已覆盖，勾选。未重跑：Antigravity、Claude Code 在 13.6/13.7 修复后的「直接成功」提示（两者已无新版本，修复后检查归入「已是最新」）；修复后的成功提示以 OMP 两次真实更新为代表。
   - 2026-11-15 OMP 复测（34133b9 包）：先把 OMP 用官方备份回退到 18.20.0，再在页面点更新。官方 `Downloading patch from 18.20.0 (38.6MB)` 约 6 分钟后超时，转下整包时插件接管（提示「官方更新超过时间预算……改由插件下载」），sha256 校验；停滞续传 4 次（159485587、173326300、181010396、196296650 B）。06:47:03 开始，06:59:13 显示「已更新到 18.20.2」。输出末行「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」。复核：omp 目录只剩 omp.exe，`--version` 18.20.2，downloads 0 项。本次未核对侧栏红点。
   - 仍未完成：接管下载期间的取消；Antigravity、Claude 修复后的成功提示复测。
 
