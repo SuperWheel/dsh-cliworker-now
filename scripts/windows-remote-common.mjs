@@ -72,6 +72,8 @@ export function validateSourcePath(value) {
   if (value.split('/').some((part) => part === '..' || part === '.' || part.startsWith('.') || /^(?:node_modules|credentials?|secrets?|auth|tokens?|private[-_]keys?|id_ed25519|id_rsa)(?:\.|$)/i.test(part) || /\.(?:pem|key|pfx|p12|log)$/i.test(part)))
     throw new Error(`Sensitive or excluded source path: ${value}`)
   if (SOURCE_ROOT_FILES.includes(value) || SOURCE_SCRIPTS.has(value)) return value
+  // Dev tools installed from a checked-in tarball (package.json `file:vendor/...`).
+  if (/^vendor\/[A-Za-z\d][A-Za-z\d._-]*\.tgz$/.test(value)) return value
   if (/^(?:src|tests)\/.+\.(?:ts|tsx|mts|mjs|cjs|js|json|py|cmd|ps1|txt)$/.test(value) || /^src\/client\/assets\/.+\.(?:png|svg)$/.test(value)) return value
   if (/^runtime-host\/(?:manifest\.json|README\.md|source\.patch|dsh-client-ui-(?:session|conversation|subagent|chat)\/(?:LICENSE|package\.json|lib\/.+\.(?:js|d\.ts))|dsh-client-ui-chat\/lib\/assets\/[^/]+\.png)$/.test(value)) return value
   throw new Error(`Source path is outside the allowlist: ${value}`)
@@ -103,6 +105,8 @@ export async function createSnapshot(root) {
     files.push({ path: relative, sha256: sha256(bytes), data: bytes.toString('base64') })
   }
   for (const file of [...SOURCE_ROOT_FILES, ...SOURCE_SCRIPTS, 'src', 'tests', RUNTIME_HOST]) await collect(file)
+  // Optional: only present when package.json depends on a vendored tarball.
+  if (await lstat(join(root, 'vendor')).then(() => true, (error) => { if (error.code === 'ENOENT') return false; throw error })) await collect('vendor')
   return { schema: 1, files }
 }
 
