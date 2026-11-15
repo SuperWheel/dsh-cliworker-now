@@ -22,6 +22,7 @@ import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
+import { listRunningApps, reopenStoppedApp, WINDOWS_APP_IMAGES, type RunningApp } from './windows-installer-apps.ts'
 import { interruptionRecoveryChannel, withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
 import { canPrepareLocalUpdate, prepareLocalUpdate, describeLocalUpdate, type LocalArtifactInstall } from './local-artifacts.ts'
 import { OfficialWatch, officialLockState } from './official-watch.ts'
@@ -476,14 +477,18 @@ export class CliManagementService {
         const fresh = await this.planCliOperation(cli, 'update', admission, selected)
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
         signal.throwIfAborted()
+        const stoppedDesktopApps: RunningApp[] = []
         const run = async (command: string[], control: AbortSignal, evidence?: InterruptionEvidence) => {
           op.command = nativeLaunchArgv(command); if (op.phase !== 'awaiting-user') op.phase = 'installing'
           if (plan.method === 'npm') op.progress = { readable: false, byteProgress: false, resumeCount: 0, retryCount: op.progress?.retryCount, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }
           op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
           // Windows desktop updates run the verified official installer, whose window the user must see.
           const installer = plan.method === 'desktop' && process.platform === 'win32'
-          await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined,
-            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence, undefined, undefined, installer)
+          const image = installer && isDesktopCli(cli) ? WINDOWS_APP_IMAGES[cli] : undefined
+          const result = await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined,
+            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence, undefined, undefined,
+            installer && { runningApps: image ? appSignal => listRunningApps(this.deps.backend, this.deps.config, image, appSignal) : undefined })
+          stoppedDesktopApps.push(...result.stoppedApps)
         }
         const verify = async (control: AbortSignal, evidence?: InterruptionEvidence, allowLatest = false) => {
           control.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()
@@ -526,6 +531,8 @@ export class CliManagementService {
             } })
           if (plan.identity.notice) op.outputTail = outputTail(op.outputTail + '\n' + plan.identity.notice)
           verified = await verify(signal)
+          await reopenStoppedApp({ backend: this.deps.backend, config: this.deps.config, image: WINDOWS_APP_IMAGES[cli], stopped: stoppedDesktopApps, appRoot: verified.after.appPath, signal,
+            note: text => { op.outputTail = outputTail(op.outputTail + text); this.changed() } })
         } else if (cli === 'hermes' && plan.method === 'self-update') {
           op.command = argv!; op.phase = 'installing'; this.changed()
           // The installation's own home (HERMES_HOME or native default), never the plugin's account home:

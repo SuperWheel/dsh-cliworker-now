@@ -12,13 +12,14 @@ import type { ActiveCliId } from '../../shared/types.ts'
 import { OFFICIAL_NPM_REGISTRY, type CliInstallOffer, type CliUpdateOperation } from '../../shared/cli-management.ts'
 import { type ProcessBackend, type RuntimeConfig, ProcessCleanupUnconfirmedError } from '../process.ts'
 import { identifyInstallation, type InstallationIdentity } from './identity.ts'
-import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, type InstallSource } from './sources.ts'
+import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, isDesktopCli, type InstallSource } from './sources.ts'
 import { readDesktopRelease } from './desktop-update.ts'
 import { captureReadOnly, compareVersions, compatible, currentVersion, desktopVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
 import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { CliOperationError } from './planner.ts'
 import { downloadCliArtifact } from './download.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
+import { listRunningApps, reopenStoppedApp, WINDOWS_APP_IMAGES, type RunningApp } from './windows-installer-apps.ts'
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
 import { findGitBash } from '../windows-git-bash.ts'
@@ -171,11 +172,16 @@ export class CliInstaller {
       const packageFile = file!
       return await withInterruptionRecovery(signal, async (control, evidence) => {
         let exitError: unknown
+        const stoppedDesktopApps: RunningApp[] = [], image = isDesktopCli(cli) ? WINDOWS_APP_IMAGES[cli] : undefined
         const run = async (argv: string[], processSignal = control) => {
           op.command = argv; if (op.phase !== 'awaiting-user') op.phase = 'installing'; changed()
           // Windows desktop installs run the verified official installer, whose window the user must see.
           const installer = source.method === 'desktop' && this.platform === 'win32'
-          try { await executeCliOperation(this.deps.backend, this.deps.config, argv, processSignal, output, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined, undefined, evidence, undefined, undefined, installer) }
+          try {
+            const result = await executeCliOperation(this.deps.backend, this.deps.config, argv, processSignal, output, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined, undefined, evidence, undefined, undefined,
+              installer && { runningApps: image ? appSignal => listRunningApps(this.deps.backend, this.deps.config, image, appSignal) : undefined })
+            stoppedDesktopApps.push(...result.stoppedApps)
+          }
           catch (error) { if (source.method === 'desktop' || !(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
         }
         let candidate: string
@@ -242,6 +248,7 @@ export class CliInstaller {
         if (store.revision(cli) !== plan.pathRevision) throw new CliOperationError('PLAN_EXPIRED', '安装期间路径设置已变化，未覆盖新设置')
         store.setManual(cli, identity.executable)
         op.afterVersion = version
+        if (image) await reopenStoppedApp({ backend: this.deps.backend, config: this.deps.config, image, stopped: stoppedDesktopApps, appRoot: identity.appPath, signal: control, note: text => { op.outputTail = outputTail(op.outputTail + text); changed() } })
         if (plan.oldPath && plan.oldPath !== identity.executable) op.outputTail = outputTail(op.outputTail + `\n已改用新位置；旧位置 ${plan.oldPath} 未删除。\n`)
         succeeded = true
         return { identity, version }

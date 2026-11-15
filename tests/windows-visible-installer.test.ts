@@ -1,11 +1,15 @@
 /** 模拟：Windows 官方桌面安装程序的窗口呈现与等待时限；不启动真实安装程序。 */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { VISIBLE_WINDOW, type ProcessBackend } from '../src/host/process.ts'
 import { nativeProcessBackend } from '../src/host/native-process.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation } from '../src/host/cli-management/executor.ts'
 import { childFixture, control, serviceFixture } from './cli-management-phase-b-fixture.ts'
+import { reopenStoppedApp, stoppedApps } from '../src/host/cli-management/windows-installer-apps.ts'
 
 const spawned = vi.hoisted(() => [] as { windowsHide?: boolean }[])
 vi.mock('node:child_process', async original => {
@@ -79,5 +83,102 @@ describe('桌面安装程序等待时限（模拟）', () => {
     await vi.advanceTimersByTimeAsync(10 * 60_000 + 1)
     await vi.waitFor(() => expect(child.child.waitForExit).toHaveBeenCalled()); child.exit(true)
     expect((await pending).code).toBe('INSTALL_TIMEOUT')
+  })
+})
+
+describe('安装程序结束页「运行」（模拟）', () => {
+  const app = (pid: number, path = 'D:\\模拟\\WorkBuddyAI\\WorkBuddyAI.exe') => ({ pid, created: `1330000000000000${pid}`, path })
+  /** Installer process whose own exit is separate from its pipes and from the whole range. */
+  function installerChild() {
+    const stdout = new PassThrough(), stderr = new PassThrough()
+    let exitInstaller!: () => void
+    const child = { stdout, stderr, done: new Promise<{ exitCode: number; signal: null }>(resolve => { exitInstaller = () => resolve({ exitCode: 0, signal: null }) }),
+      waitForExit: vi.fn(async (_signal?: AbortSignal) => true), terminate: vi.fn() }
+    return { child, exitInstaller: () => exitInstaller() }
+  }
+  const run = (f: ReturnType<typeof serviceFixture>, runningApps?: (signal: AbortSignal) => Promise<ReturnType<typeof app>[]>) =>
+    executeCliOperation(f.backend, f.config, ['C:\\模拟\\installer.exe'], control(), vi.fn(), DESKTOP_INSTALLER_TIMEOUT_MS, undefined, undefined, undefined, undefined, { runningApps })
+
+  it('未勾选：安装程序退出、进程范围清空，即判定完成且不结束任何应用', async () => {
+    const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    const runningApps = vi.fn(async () => [])
+    const pending = run(f, runningApps)
+    await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+    c.child.stdout.end(); c.child.stderr.end(); c.exitInstaller()
+    await expect(pending).resolves.toEqual({ stoppedApps: [] })
+    expect(c.child.terminate).not.toHaveBeenCalled(); expect(runningApps).not.toHaveBeenCalled()
+  })
+
+  it('勾选且应用在 Job 外但继承了输出管道：只等安装程序自身退出加短暂宽限，随后判定完成', async () => {
+    vi.useFakeTimers(); const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    let settled = false
+    const pending = run(f, vi.fn(async () => [])).then(value => { settled = true; return value })
+    await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+    c.exitInstaller() // pipes stay open
+    await vi.advanceTimersByTimeAsync(1000); expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(6000)
+    await expect(pending).resolves.toEqual({ stoppedApps: [] })
+    expect(c.child.terminate).not.toHaveBeenCalled()
+    expect(c.child.stdout.destroyed && c.child.stderr.destroyed).toBe(true)
+  })
+
+  it('勾选且应用留在 Job 内：结束进程范围后仍判定完成，并只报告随范围消失的应用', async () => {
+    const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    c.child.waitForExit.mockImplementationOnce(async () => false) // range still has the started app
+    const elsewhere = app(8, 'D:\\模拟\\其他\\WorkBuddyAI.exe')
+    const runningApps = vi.fn().mockResolvedValueOnce([app(7), elsewhere]).mockResolvedValueOnce([elsewhere])
+    const pending = run(f, runningApps)
+    await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+    c.child.stdout.end(); c.child.stderr.end(); c.exitInstaller()
+    await expect(pending).resolves.toEqual({ stoppedApps: [app(7)] })
+    expect(c.child.terminate).toHaveBeenCalledOnce(); expect(runningApps).toHaveBeenCalledTimes(2)
+  })
+
+  it('取消等待中的安装程序时不枚举应用，也不报告需要重新打开', async () => {
+    const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    c.child.terminate.mockImplementation(() => { c.child.stdout.end(); c.child.stderr.end(); c.exitInstaller() })
+    const abort = new AbortController(), runningApps = vi.fn(async () => [app(7)])
+    const pending = executeCliOperation(f.backend, f.config, ['C:\\模拟\\installer.exe'], abort.signal, vi.fn(), DESKTOP_INSTALLER_TIMEOUT_MS, undefined, undefined, undefined, undefined, { runningApps }).catch(error => error)
+    await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+    abort.abort()
+    expect(await pending).toBeInstanceOf(Error)
+    expect(runningApps).not.toHaveBeenCalled()
+  })
+})
+
+describe('重新打开被结束的应用（模拟）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cwn-reopen-'))
+  const exe = join(root, 'WorkBuddyAI.exe')
+  writeFileSync(exe, '模拟')
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+  // Windows paths compare case-insensitively; this host's temp path stands in for the app root.
+  const stopped = [{ pid: 7, created: '1', path: exe }]
+
+  it('只重新打开已核实安装目录里的主程序，经 explorer.exe 交给系统外壳并以可见方式启动', async () => {
+    const f = relay(); const note = vi.fn()
+    vi.mocked(f.backend.spawn).mockReturnValue({ ...f.inner, done: Promise.resolve({ exitCode: 1, signal: null }) } as any)
+    await reopenStoppedApp({ backend: f.backend, config: { graceMs: 500 } as never, image: 'WorkBuddyAI.exe', stopped, appRoot: root, signal: new AbortController().signal, note })
+    const spec = vi.mocked(f.backend.spawn).mock.calls[0]![0] as never as SubprocessSpawnSpec & Record<symbol, unknown>
+    expect(spec.argv).toEqual(['explorer.exe', exe]); expect(spec[VISIBLE_WINDOW]).toBe(true)
+    expect(note).toHaveBeenCalledWith(expect.stringContaining('已重新打开'))
+  })
+  it('路径不在已核实目录内或文件名不符时不启动，只提示手动打开', async () => {
+    const f = relay(); const note = vi.fn()
+    await reopenStoppedApp({ backend: f.backend, config: { graceMs: 500 } as never, image: 'WorkBuddyAI.exe', stopped, appRoot: join(root, '其他'), signal: new AbortController().signal, note })
+    await reopenStoppedApp({ backend: f.backend, config: { graceMs: 500 } as never, image: 'WorkBuddy.exe', stopped, appRoot: root, signal: new AbortController().signal, note })
+    expect(f.backend.spawn).not.toHaveBeenCalled()
+    expect(note).toHaveBeenCalledTimes(2); expect(note).toHaveBeenCalledWith(expect.stringContaining('请手动打开'))
+  })
+  it('没有被结束的应用时什么都不做', async () => {
+    const f = relay(); const note = vi.fn()
+    await reopenStoppedApp({ backend: f.backend, config: { graceMs: 500 } as never, image: 'WorkBuddyAI.exe', stopped: [], appRoot: root, signal: new AbortController().signal, note })
+    expect(f.backend.spawn).not.toHaveBeenCalled(); expect(note).not.toHaveBeenCalled()
+  })
+  it('按 PID 与创建时间比对，PID 复用不算同一进程', () => {
+    expect(stoppedApps([{ pid: 7, created: '1', path: exe }, { pid: 9, created: '2', path: exe }], [{ pid: 7, created: '5', path: exe }, { pid: 9, created: '2', path: exe }])).toEqual([{ pid: 7, created: '1', path: exe }])
   })
 })

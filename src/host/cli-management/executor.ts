@@ -11,6 +11,7 @@ export const DESKTOP_INSTALLER_TIMEOUT_MS = Number.POSITIVE_INFINITY
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { isQoderDispatcher } from './identity.ts'
+import { graceDelay as delay, stoppedApps, type RunningApp } from './windows-installer-apps.ts'
 import type { InterruptionEvidence } from './recovery.ts'
 
 /** Official dispatchers treat an existing first argument as an IDE path. */
@@ -56,8 +57,13 @@ class SafeOutput {
   }
   flush() { if (this.discarded) this.emit('[超长输出行已省略]\n'); else if (this.line) this.emit(redactOutput(this.line)); this.line = ''; this.discarded = false }
 }
+/** A shown Windows desktop installer. `runningApps` snapshots the app the finish page may start. */
+export type WindowsInstallerRun = { runningApps?: (signal: AbortSignal) => Promise<RunningApp[]> }
+export type CliOperationResult = { /** App processes ended with the installer's range (finish page「运行」inside the Job). */ stoppedApps: RunningApp[] }
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
-export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void, visibleWindow = false): Promise<void> {
+export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void, visibleWindow: boolean | WindowsInstallerRun = false): Promise<CliOperationResult> {
+  const installer = visibleWindow === false ? undefined : visibleWindow === true ? {} : visibleWindow
+  let stopped: RunningApp[] = []
   signal.throwIfAborted()
   // setTimeout clamps Infinity to 1 ms; an untimed installer must never arm it.
   const timer = new AbortController(), timeout = Number.isFinite(timeoutMs) ? setTimeout(() => timer.abort(), timeoutMs) : undefined
@@ -79,7 +85,12 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
       publish(decoder.end()); safe.flush()
     }
     readers = [read(child.stdout), read(child.stderr)]
-    const [outcome] = await bounded(Promise.all([child.done, ...readers]), control); finished = true
+    // The installer's own exit ends the install. An app started from its finish page may
+    // inherit the pipes and outlive it, so output gets a short grace instead of a wait.
+    const [outcome] = installer
+      ? [await bounded(child.done, control), await Promise.race([Promise.allSettled(readers), delay(METADATA_EXIT_GRACE_MS)])]
+      : await bounded(Promise.all([child.done, ...readers]), control)
+    finished = true
     if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', `安装阶段超过 ${Math.round(timeoutMs / 60_000)} 分钟，请检查输出后重试`)
     signal.throwIfAborted()
     if (outcome.exitCode !== 0) throw new CliOperationError('EXIT_CODE', `更新命令退出码 ${outcome.exitCode ?? '未知'}`)
@@ -91,11 +102,23 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
     if (child) {
       let exited = false
       try {
-        if (finished && !control.aborted) exited = await child.waitForExit(AbortSignal.timeout(METADATA_EXIT_GRACE_MS))
-        if (!exited) { child.terminate(); exited = await child.waitForExit() }
+        const settled = finished && !control.aborted
+        if (settled) exited = await child.waitForExit(AbortSignal.timeout(METADATA_EXIT_GRACE_MS))
+        if (!exited) {
+          // Something the finished installer started is still in the Host's kill-on-close Job.
+          // Record which app processes ending the range takes down, so the caller can reopen them.
+          const before = settled && installer?.runningApps ? await installer.runningApps(AbortSignal.timeout(20_000)).catch(() => []) : []
+          child.terminate(); exited = await child.waitForExit()
+          if (exited && before.length) {
+            const after = await installer!.runningApps!(AbortSignal.timeout(20_000)).catch(() => undefined)
+            if (after) stopped = stoppedApps(before, after)
+          }
+        }
       } catch (cause) { throw new ProcessCleanupUnconfirmedError({ cause }) }
       if (!exited) throw new ProcessCleanupUnconfirmedError()
-      await Promise.allSettled([child.done, ...readers])
+      if (installer) { await Promise.race([Promise.allSettled([child.done, ...readers]), delay(METADATA_EXIT_GRACE_MS)]); child.stdout?.destroy(); child.stderr?.destroy() }
+      else await Promise.allSettled([child.done, ...readers])
     }
   }
+  return { stoppedApps: stopped }
 }

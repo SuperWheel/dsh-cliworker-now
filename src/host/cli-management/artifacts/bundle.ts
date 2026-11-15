@@ -41,7 +41,7 @@ export async function prepareArtifactBundle(options: LocalArtifactOptions, descr
     await downloadDescription(description, { ...options, directory, signal }, reserved)
     const p = description.placement
     if (p.kind === 'official-local' && p.extract) await extractMember(directory, p.extract.archive, p.extract.format, p.extract.member, signal,
-      (argv, control) => executeCliOperation(options.backend, options.config, argv, control, options.output))
+      async (argv, control) => { await executeCliOperation(options.backend, options.config, argv, control, options.output) })
     return { targetVersion: description.manifest.version, argv: p.kind === 'official-local' ? p.argv : [], env: p.kind === 'official-local' || p.kind === 'release-package' ? p.env : undefined, cleanup,
       install: (control, run) => p.kind === 'registry' ? placePi(description, directory, control, options) : p.kind === 'native-binary' ? placeNative(description, directory, control, options, run) : p.kind === 'release-package' ? placeRelease(description, directory, control, options, run) : placeArtifact(description, directory, control, run) }
   } catch (error) {
