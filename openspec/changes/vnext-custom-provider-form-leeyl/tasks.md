@@ -60,5 +60,7 @@
   - OpenCode：写入 `~/.config/opencode/opencode.json` 新增 cwn-test（OpenAI 兼容、测试 Base URL、test-model），`~/.local/share/opencode/auth.json` 只含测试密钥、权限 600；已恢复，配置摘要与原文件一致，新建 auth.json 已删除。
   - Hermes：保存失败，页面提示「保存失败，原生配置未更改；请检查文件格式、权限或原生账号锁」；`config.yaml` 与 `.env` 摘要未变，config.yaml YAML 解析正常。原因未查明：核对 `.env` 能否被插件解析需读取用户凭据文件，未获授权，未执行。
   - 仍未验证：Hermes 写入、深色主题与英文界面、Windows。本项保持未勾选。
+  - 2026-11-15 Hermes 保存失败根因（经用户授权检查 `~/.hermes/.env` 格式，只输出键名、引号类型与长度，不输出值）：`.env` 11 个键均为普通 `KEY=value`，`parseHermesOwnEnvironment` 通过；`config.yaml` 无 YAML 错误或警告，但没有顶层 `providers`（Hermes 官方默认配置只有注释示例）。旧代码 `doc.set('providers', {})` 写入的是普通对象而非 YAML 节点，随后 `setIn` 抛出 `Expected YAML collection at providers`，被统一归为「保存失败」。原有测试夹具都自带 `providers` 映射或为空 HOME，漏掉该情形。
+  - 修复 e096dd4：`providers` 缺失或为空值时改用 `doc.createNode({})` 新建；新增模拟用例「没有顶层 providers」「providers 为空值」先失败后通过；`tests/custom-provider.test.ts` 与 `tests/custom-provider-remotes.test.ts` 52 项通过；`corepack pnpm typecheck` 通过。用真实 `config.yaml` 的私有临时副本（`.env` 换成合成内容，验后删除）运行真实 `CustomProviders.save`：返回 ok，除新增 `providers.diagprov` 外其他键 JSON 一致，注释行 2034→2034。真实 `~/.hermes` 未写入；Mac Desktop 上 Hermes 表单的实机复测待新构建后执行。
 - [x] 3.3 README、doc/design.md 同步
   - README.md、README.en.md、doc/design.md 同步 Host 支持范围、原生写入、回滚/凭据边界及前端独立验收状态；版本号未改，src/client/** 未改。
