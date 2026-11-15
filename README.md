@@ -83,7 +83,7 @@ Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高
 
 账号窗口中，TRAE CN 先选择个人／企业 SSO／企业 PAT；个人授权提供浏览器链接与回调网址输入，企业方式保留原生流程。已登录先显示账号卡，切换时自动运行 `logout`，确认退出和清理后才重新选择方式。CodeBuddy 先显示当前账号卡；文件夹信任由用户在窗口确认，空编辑器自动打开 `/login`，中国站/国际站提供浏览器引导，企业/iOA 保留原生。切换沿已核实路径自动 `/logout`，明确退出并完成清理后再登录；未知画面回退原生。详见 [授权前采集与未完成验收](openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)。
 
-「其他服务商」的 Host 表单接口支持 Pi、OpenCode（v1 配置）和 Hermes：按各自原生协议填写服务商 ID、Base URL、API 类型、API Key 与模型 ID，保存到原生配置和独立凭据位置，失败回滚并在成功后作废账号与模型目录缓存。OMP、Kimi、TRAE CN 暂保留原生终端。此阶段为 Host 实现，前端接入与 Desktop 验收另行记录；不联网验证密钥、不调用模型。原生版本证据、字段和边界见[变更设计](openspec/changes/vnext-custom-provider-form-leeyl/design.md)。
+「其他服务商」的 Host 表单接口支持 Pi、OpenCode（v1 配置）和 Hermes：按各自原生协议填写服务商 ID、Base URL、API 类型、API Key 与模型 ID，保存到原生配置和独立凭据位置，失败回滚并在成功后作废账号与模型目录缓存。Pi 保存到账号登录共用的 `<stateDirectory>/accounts/pi/agent`，表单显示实际路径；全局 `~/.pi/agent` 保持只读，已有服务商冲突会拒绝。OMP、Kimi、TRAE CN 暂保留原生终端。此阶段为 Host 实现，前端接入与 Desktop 验收另行记录；不联网验证密钥、不调用模型。原生版本证据、字段和边界见[变更设计](openspec/changes/vnext-custom-provider-form-leeyl/design.md)。
 
 
 ## 安装与更新

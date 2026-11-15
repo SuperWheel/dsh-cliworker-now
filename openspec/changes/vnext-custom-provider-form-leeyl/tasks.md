@@ -64,3 +64,13 @@
   - 修复 e096dd4：`providers` 缺失或为空值时改用 `doc.createNode({})` 新建；新增模拟用例「没有顶层 providers」「providers 为空值」先失败后通过；`tests/custom-provider.test.ts` 与 `tests/custom-provider-remotes.test.ts` 52 项通过；`corepack pnpm typecheck` 通过。用真实 `config.yaml` 的私有临时副本（`.env` 换成合成内容，验后删除）运行真实 `CustomProviders.save`：返回 ok，除新增 `providers.diagprov` 外其他键 JSON 一致，注释行 2034→2034。真实 `~/.hermes` 未写入；Mac Desktop 上 Hermes 表单的实机复测待新构建后执行。
 - [x] 3.3 README、doc/design.md 同步
   - README.md、README.en.md、doc/design.md 同步 Host 支持范围、原生写入、回滚/凭据边界及前端独立验收状态；版本号未改，src/client/** 未改。
+
+## 4. Pi 表单账号目录修复 〔后端｜2h｜前置 1〕
+- [x] 4.1 核对 Pi 账号与 Worker 来源，修正表单目标并同步设计、规格和 README
+  - 2026-11-15：已核对登录、provider 合并与 Worker 快照链路，修正目标和实际路径显示；新增全局重名保护。Hermes/OpenCode 的同类来源风险记录在 design.md，代码保持不变。
+- [x] 4.2 临时 HOME 模拟覆盖私有目录、Worker 快照可见性、全局冲突和安全约束，执行类型检查、关联回归及隔离构建
+  - 范围限制：不读取真实凭据、不更新 Desktop、不调用真实 CLI/模型；3.2 实机验收保持待办，变更不归档。
+  - 2026-11-15：`KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/custom-provider.test.ts tests/custom-provider-remotes.test.ts` 最终 2 文件、61/61 通过（新增 9 项）；覆盖 Host 实际创建管理器传递 stateDirectory、空/已有私有目录保存、真实 snapshotPiOmpNative 函数读回合成配置与密钥、全局原文不变、两来源名称冲突、DSH_HOME/显式目录优先、票据来源变化、私有目录符号链接。原有锁、文件链接、回滚及 Hermes 缺失 providers 回归保持通过。
+  - `corepack pnpm typecheck` 最终通过，Host/Client 对 DSH 0.2.2-rc.3。前两次因新 worktree 缺少 `lib/typert.remote-client.d.ts` 失败；`corepack pnpm build:preview` 成功后，复制本次 `.cache/preview-package/lib` 到被忽略的工作树 `lib/`，再跑原命令通过；没有改构建脚本或执行正式 build。
+  - `corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict --no-interactive` 与 `/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。原变更 3.2 的 Desktop/Windows 等验收未完成，保持待办、不归档。
+  - worktree 实际初始 HEAD 为 6c6db88，干净状态下快进到任务指定的 e096dd4 后实施；依赖按锁文件安装，未改版本号与锁文件。全部账号文件测试均使用临时 HOME 合成数据，没有读取真实凭据或 `.env`，没有访问真实 `~/.pi`，没有启动真实 CLI、调用模型或推送。

@@ -2832,7 +2832,7 @@ export class CliWorkerService extends TypertRemoteService {
     return { parent, cli, entry: this.options.cliExecutablePaths?.read(cli), revision: this.options.cliExecutablePaths?.revision(cli) ?? 0 }
   }
   private customProviderManager() {
-    return this.customProviders ??= new CustomProviders({ hermesHome: this.options.hermesHome })
+    return this.customProviders ??= new CustomProviders({ stateDirectory: this.options.stateDirectory, hermesHome: this.options.hermesHome })
   }
   /** @returns JSON form, or literal null for an unverified CLI/native configuration source. */
   @Remote('customProviderForm')

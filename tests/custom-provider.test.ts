@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parse as yaml } from 'yaml'
 import { CustomProviders, type CustomProviderSource } from '../src/host/custom-provider.ts'
+import { snapshotPiOmpNative } from '../src/host/pi-omp-native.ts'
 import { nativeJson } from '../src/host/custom-provider-files.ts'
 
 vi.mock('node:fs', async load => ({ ...await load<typeof import('node:fs')>() }))
@@ -14,10 +15,11 @@ const secret = 'synthetic-provider-credential-4x9'
 const write = (file: string, text: string) => { fs.mkdirSync(dirname(file), { recursive: true, mode: 0o700 }); fs.writeFileSync(file, text, { mode: 0o600 }) }
 function fixture(cli: 'pi' | 'opencode' | 'hermes', existing = true) {
   const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'custom-provider-synthetic-'))); roots.push(home)
-  const manager = new CustomProviders({ home, env: {} })
+  const stateDirectory = join(home, 'plugin-state')
+  const manager = new CustomProviders({ home, env: {}, stateDirectory })
   const source: CustomProviderSource = { cli, parent: 'parent', entry: { mode: 'auto', path: `/synthetic/${cli}` }, revision: 3 }
-  const config = cli === 'pi' ? join(home, '.pi/agent/models.json') : cli === 'hermes' ? join(home, '.hermes/config.yaml') : join(home, '.config/opencode/opencode.json')
-  const auth = cli === 'pi' ? join(home, '.pi/agent/auth.json') : cli === 'hermes' ? join(home, '.hermes/.env') : join(home, '.local/share/opencode/auth.json')
+  const config = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/models.json') : cli === 'hermes' ? join(home, '.hermes/config.yaml') : join(home, '.config/opencode/opencode.json')
+  const auth = cli === 'pi' ? join(stateDirectory, 'accounts/pi/agent/auth.json') : cli === 'hermes' ? join(home, '.hermes/.env') : join(home, '.local/share/opencode/auth.json')
   const configBefore = cli === 'hermes' ? '# keep this comment\nmodel: old-model\nproviders:\n  old:\n    api: https://old.invalid/v1\n    models: { old-model: {} }\n' : '{\r\n\t"untouched": { "spacing" : 42 },\r\n\t"' + (cli === 'pi' ? 'providers' : 'provider') + '": {"old": {"name":"Old"}}\r\n}\r\n'
   const authBefore = cli === 'hermes' ? '# keep original env\nOLD_KEY=synthetic-old\n' : '{ "old": {"type":"oauth","access":"synthetic-old","refresh":"synthetic-refresh","expires":9999999999999} }\n'
   if (existing) { write(config, configBefore); write(auth, authBefore) }
@@ -25,7 +27,7 @@ function fixture(cli: 'pi' | 'opencode' | 'hermes', existing = true) {
   const form = manager.form(source)!
   const save = (values: unknown = input, guard = () => {}) => manager.save(source, form.token, JSON.stringify(values), guard)
   const unchanged = () => { expect(fs.readFileSync(config, 'utf8')).toBe(configBefore); expect(fs.readFileSync(auth, 'utf8')).toBe(authBefore) }
-  return { home, manager, source, config, auth, input, form, save, unchanged, configBefore, authBefore }
+  return { home, stateDirectory, manager, source, config, auth, input, form, save, unchanged, configBefore, authBefore }
 }
 
 describe.each(['pi', 'opencode', 'hermes'] as const)('%s 原生文件（模拟）', cli => {
@@ -223,4 +225,63 @@ it('模拟：损坏 JSON、v2 OpenCode 配置和 Hermes 环境重定向均不写
   }
   const h = fixture('hermes'); write(h.auth, 'HERMES_HOME=/other\n')
   expect(h.save()).toMatchObject({ ok: false }); expect(fs.readFileSync(h.config, 'utf8')).toBe(h.configBefore)
+})
+
+it.each([true, false])('模拟：Pi 私有账号已存在=%s，表单目标与 Worker 快照一致，全局账号保持原样', async existing => {
+  const f = fixture('pi', existing), global = join(f.home, '.pi', 'agent')
+  const configBefore = JSON.stringify({ providers: { 'global-demo': { name: 'Global', baseUrl: 'https://global.invalid/v1', api: 'openai-completions', models: [{ id: 'global-model' }] } } })
+  const authBefore = JSON.stringify({ 'global-demo': { type: 'api_key', key: 'synthetic-global-key' } })
+  write(join(global, 'models.json'), configBefore); write(join(global, 'auth.json'), authBefore)
+  expect(f.form.target).toBe(`${f.config} + ${f.auth}`)
+  expect(f.save()).toMatchObject({ ok: true })
+  const worker = join(f.home, 'worker-agent'); fs.mkdirSync(worker, { mode: 0o700 })
+  const snapshot = await snapshotPiOmpNative('pi', worker, { accountRoot: f.stateDirectory, nativeHome: f.home })
+  expect(snapshot.directory).toBe(worker)
+  expect(snapshot.providers).toEqual(expect.arrayContaining(['global-demo', 'custom-demo']))
+  expect(JSON.parse(fs.readFileSync(join(worker, 'models.json'), 'utf8')).providers['custom-demo']).toMatchObject({ baseUrl: f.input.baseUrl, models: [{ id: 'model-a' }, { id: 'model-b' }] })
+  expect(JSON.parse(fs.readFileSync(join(worker, 'auth.json'), 'utf8'))['custom-demo']).toEqual({ type: 'api_key', key: secret })
+  expect(fs.readFileSync(join(global, 'models.json'), 'utf8')).toBe(configBefore)
+  expect(fs.readFileSync(join(global, 'auth.json'), 'utf8')).toBe(authBefore)
+  expect(JSON.stringify([...(f.manager as any).tickets.values()])).not.toContain(secret)
+})
+it.each(['id', 'name', 'auth'])('模拟：Pi 全局来源的 %s 冲突不能被私有目录遮蔽', kind => {
+  const f = fixture('pi'), global = join(f.home, '.pi', 'agent')
+  const file = join(global, kind === 'auth' ? 'auth.json' : 'models.json')
+  const before = JSON.stringify(kind === 'auth' ? { 'custom-demo': { type: 'api_key', key: 'synthetic-global-key' } } : { providers: { [kind === 'id' ? 'custom-demo' : 'another']: { name: kind === 'name' ? 'Demo provider' : 'Other' } } })
+  write(file, before)
+  expect(f.save()).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  f.unchanged(); expect(fs.readFileSync(file, 'utf8')).toBe(before)
+})
+it('模拟：Pi 默认插件目录遵循 DSH_HOME，显式 stateDirectory 优先，来源变化使票据失效', () => {
+  const f = fixture('pi', false), env = { DSH_HOME: join(f.home, 'dsh-one') }
+  const options = { home: f.home, env, stateDirectory: undefined as string | undefined }
+  const manager = new CustomProviders(options)
+  const first = manager.form(f.source)!
+  expect(first.target).toContain(join(env.DSH_HOME, 'cliworker-now/accounts/pi/agent/models.json'))
+  env.DSH_HOME = join(f.home, 'dsh-two')
+  expect(manager.save(f.source, first.token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: false })
+  expect(fs.existsSync(join(f.home, 'dsh-one'))).toBe(false)
+  expect(fs.existsSync(env.DSH_HOME)).toBe(false)
+  options.stateDirectory = f.stateDirectory
+  const second = manager.form(f.source)!
+  expect(second.target).toBe(`${f.config} + ${f.auth}`)
+  expect(JSON.stringify([...(manager as any).tickets.values()])).not.toContain(secret)
+  expect(manager.save(f.source, second.token, JSON.stringify(f.input), () => {})).toMatchObject({ ok: true })
+  expect(fs.existsSync(join(f.home, '.pi'))).toBe(false)
+  expect(new CustomProviders({ home: f.home, env: {} }).form(f.source)!.target).toContain(join(f.home, '.dsh/cliworker-now/accounts/pi/agent/models.json'))
+})
+it('模拟：Pi 私有账号目录符号链接拒绝写入且不回落全局目录', () => {
+  const f = fixture('pi'), agent = dirname(f.auth), redirected = join(f.home, 'redirected-agent')
+  fs.renameSync(agent, redirected); fs.symlinkSync(redirected, agent, 'dir')
+  expect(f.save()).toMatchObject({ ok: false })
+  expect(fs.readFileSync(join(redirected, 'auth.json'), 'utf8')).toBe(f.authBefore)
+  expect(fs.readFileSync(join(redirected, 'models.json'), 'utf8')).toBe(f.configBefore)
+  expect(fs.existsSync(join(f.home, '.pi'))).toBe(false)
+})
+it('模拟：Pi 仅接受默认或已知插件 agent 环境路径，不跟随任意覆盖', () => {
+  const f = fixture('pi')
+  for (const agent of [join(f.home, '.pi/agent'), dirname(f.auth)]) {
+    const manager = new CustomProviders({ home: f.home, env: { PI_CODING_AGENT_DIR: agent }, stateDirectory: f.stateDirectory })
+    expect(manager.form(f.source)!.target).toBe(`${f.config} + ${f.auth}`)
+  }
 })

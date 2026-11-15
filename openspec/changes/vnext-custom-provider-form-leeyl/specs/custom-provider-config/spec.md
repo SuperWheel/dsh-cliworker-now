@@ -22,6 +22,17 @@ Host SHALL 在写入前校验名称唯一性、URL 协议与必填字段，并�
 - **WHEN** 名称与已有服务商冲突，或 URL、必填项无效
 - **THEN** Host SHALL 拒绝写入并给出逐字段原因，原配置 MUST 保持不变
 
+### Requirement: Pi 表单使用插件生效账号来源
+Pi 新增服务商 SHALL 写入与账号登录一致的 `<stateDirectory>/accounts/pi/agent` 持久目录，使用原生 models.json 和 auth.json 格式，MUST NOT 写入 Worker 临时快照或修改全局 `~/.pi/agent`。表单 target SHALL 展示实际写入路径；Host SHALL 将目标绑定到票据，并在保存时重新核对。全局与插件来源的已有 ID/名称冲突 SHALL 被拒绝，MUST NOT 通过新增条目遮蔽已有账号。
+
+#### Scenario: 插件账号存在或首次添加
+- **WHEN** 用户在 Pi 表单添加未冲突的服务商，无论插件账号文件是否已存在
+- **THEN** Host SHALL 保存到插件持久账号目录，后续 Worker 账号快照 SHALL 能读取该服务商，全局原文 MUST 保持不变
+
+#### Scenario: 来源变化或目录不安全
+- **WHEN** 打开表单后目标来源改变，或写入目录/文件为不安全链接、账号锁被占用
+- **THEN** Host SHALL 拒绝保存，MUST NOT 回落到全局目录写入；双文件失败回滚与凭据保护 SHALL 保持有效
+
 ### Requirement: 通用服务商表单模板
 Client SHALL 以单一表单模板渲染 Host 表单描述，样式、间距与控件遵循 doc/settings-ui-design.md 和现有登录窗口；同类菜单 SHALL 复用该模板而不是各自实现。
 

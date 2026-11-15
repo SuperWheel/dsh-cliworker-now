@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import * as os from 'node:os'
 import { tmpdir } from 'node:os'
 import { CliWorkerService } from '../src/host/index.ts'
 import { AccountManager } from '../src/host/accounts.ts'
@@ -12,13 +13,15 @@ import { CustomProviders } from '../src/host/custom-provider.ts'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 
+vi.mock('node:os', async load => ({ ...await load<typeof import('node:os')>() }))
+
 const cleanup: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0)) await close() })
 function fixture() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'custom-provider-remote-synthetic-')))
   const controller = new AbortController(), maintenance = new CliMaintenance(), connections = new SettingsConnectionCache()
   const backend = { spawn: vi.fn(), resolveExecutable: vi.fn() }
-  const config = { ...DEFAULT_CONFIG, cliMaintenance: maintenance }
+  const config = { ...DEFAULT_CONFIG, cliMaintenance: maintenance, stateDirectory: join(root, 'state') }
   const accounts = new AccountManager(backend, config)
   const cache = new CliManagementCache(join(root, 'state'))
   let revision = 1, entry: unknown = { mode: 'auto', path: '/synthetic/pi' }
@@ -26,7 +29,7 @@ function fixture() {
   const parent = { id: 'parent', ctx: { effect: (setup: () => () => Promise<void>) => { const dispose = setup(); effects.push(dispose); return dispose } } }
   const runtime = { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn() }
   const catalogs = { invalidate: vi.fn() }
-  const manager = new CustomProviders({ home: root, env: {} })
+  const manager = new CustomProviders({ home: root, env: {}, stateDirectory: join(root, 'state') })
   const service = Object.assign(Object.create(CliWorkerService.prototype), {
     disposed: controller, accounts, accountParents: new Map(), customProviders: manager,
     options: { ...config, cliExecutablePaths: { read: () => entry, revision: () => revision } },
@@ -142,4 +145,18 @@ it('模拟：未核实 CLI 表单统一为 null；非法 CLI 和无效 parent �
   ;(f.service as any).parent.mockRejectedValueOnce(new Error('missing parent'))
   await expect(f.form()).rejects.toThrow('missing parent')
   expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+it('模拟：Host 实际创建表单管理器时传入运行配置的 stateDirectory', async () => {
+  const f = fixture()
+  vi.spyOn(os, 'homedir').mockReturnValue(f.root)
+  // Exercise production manager creation rather than the pre-injected synthetic manager.
+  ;(f.service as any).customProviders = undefined
+  const form = await f.form()
+  expect(form.target).toBe(`${join(f.root, 'state/accounts/pi/agent/models.json')} + ${join(f.root, 'state/accounts/pi/agent/auth.json')}`)
+  expect(existsSync(join(f.root, 'state/accounts/pi'))).toBe(false)
+  expect(JSON.parse(await f.save(form.token))).toMatchObject({ ok: true })
+  expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/auth.json'), 'utf8'))['custom-synthetic']).toEqual({ type: 'api_key', key: f.values.apiKey })
+  expect(existsSync(join(f.root, '.pi'))).toBe(false)
+  ;(f.service as any).customProviders.close()
 })

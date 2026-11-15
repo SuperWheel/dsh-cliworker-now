@@ -7,6 +7,7 @@ import type { CustomProviderField, CustomProviderForm, CustomProviderIssue, Cust
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { isLoginProvider } from './account-guide/providers.ts'
 import { parseHermesOwnEnvironment } from './hermes-env.ts'
+import { piOmpAccountDirectory } from './pi-omp-native.ts'
 import { commitNativeFiles, nativeJson, NativeRollbackError, readNativeFile } from './custom-provider-files.ts'
 
 type Supported = 'pi' | 'opencode' | 'hermes'
@@ -33,7 +34,7 @@ interface Ticket { source: string; targets: string; expires: number; parent: str
 /** No secrets are held in tickets or persisted by this service. */
 export class CustomProviders {
   private tickets = new Map<string, Ticket>()
-  constructor(private options: { home?: string; env?: NodeJS.ProcessEnv; hermesHome?: string; now?: () => number } = {}) {}
+  constructor(private options: { home?: string; env?: NodeJS.ProcessEnv; stateDirectory?: string; hermesHome?: string; now?: () => number } = {}) {}
   closeParent(parent: string) { for (const [key, ticket] of this.tickets) if (ticket.parent === parent) this.tickets.delete(key) }
   close() { this.tickets.clear() }
   private now() { return this.options.now?.() ?? Date.now() }
@@ -41,10 +42,11 @@ export class CustomProviders {
   private targets(cli: CliId): Targets | undefined {
     const home = this.options.home ?? homedir(), env = this.options.env ?? process.env
     if (cli === 'pi') {
-      const agent = join(home, '.pi', 'agent')
-      // Existing worker account discovery uses the default native directory, not arbitrary inherited profiles.
-      if (env.PI_CODING_AGENT_DIR && resolve(env.PI_CODING_AGENT_DIR) !== agent) return undefined
-      return { config: join(agent, 'models.json'), auth: join(agent, 'auth.json'), display: '~/.pi/agent/models.json + auth.json' }
+      // Account login writes here; discovery and worker snapshots merge this source after the global one.
+      const root = this.options.stateDirectory ?? join(env.DSH_HOME ?? join(home, '.dsh'), 'cliworker-now')
+      const agent = piOmpAccountDirectory('pi', resolve(root))
+      if (env.PI_CODING_AGENT_DIR && ![resolve(home, '.pi', 'agent'), agent].includes(resolve(env.PI_CODING_AGENT_DIR))) return undefined
+      return { config: join(agent, 'models.json'), auth: join(agent, 'auth.json'), display: `${join(agent, 'models.json')} + ${join(agent, 'auth.json')}` }
     }
     if (cli === 'opencode') {
       if (env.OPENCODE_CONFIG || env.OPENCODE_CONFIG_DIR || env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_AUTH_CONTENT) return undefined
@@ -159,6 +161,12 @@ export class CustomProviders {
         const collision = Object.entries(providers).some(([key, value]) => key.toLowerCase() === id || object(value) && typeof value.name === 'string' && value.name.toLowerCase() === label.toLowerCase())
         if (collision || Object.keys(credentials.value).some(key => key.toLowerCase() === id) || isLoginProvider(cli, id)) return failed('服务商 ID 或名称已存在，请使用其他名称', 'providerId')
         if (cli === 'pi') {
+          // Adding to the higher-priority plugin source must not shadow an existing global provider.
+          const global = join(this.options.home ?? homedir(), '.pi', 'agent')
+          const globalProviders = nativeJson(readNativeFile(join(global, 'models.json')).text).value.providers ?? {}
+          const globalAuth = nativeJson(readNativeFile(join(global, 'auth.json'), true).text).value
+          if (!object(globalProviders)) throw new Error('Invalid providers')
+          if (Object.entries(globalProviders).some(([key, value]) => key.toLowerCase() === id || object(value) && typeof value.name === 'string' && value.name.toLowerCase() === label.toLowerCase()) || Object.keys(globalAuth).some(key => key.toLowerCase() === id)) return failed('服务商 ID 或名称已存在，请使用其他名称', 'providerId')
           configText = doc.add(['providers', id], { name: label, baseUrl: url, api, models: (models as string[]).map(id => ({ id })) })
           // Pi treats leading ! as a command and $NAME as interpolation even in auth.json.
           const key = secret.replace(/[$!]/g, char => char === '$' ? '$$' : '$!')

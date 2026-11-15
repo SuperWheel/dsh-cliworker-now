@@ -1559,6 +1559,8 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 
 `customProviderForm` / `saveCustomProvider` 复用账号准入、维护租约和账号窗口 reservation；token 绑定父会话、CLI 已记录入口/revision 和目标，10 分钟到期，父会话/Host 关闭清理。Pi 原生 models.json + auth.json、OpenCode v1 原生 opencode.json(c) + auth.json、Hermes config.yaml + .env 分别按已核实格式写入；API Key 不进入模型配置、返回值、日志、事件或设置缓存。输入和名称冲突返回逐字段问题，暂存后 rename，失败回滚，成功调用统一 invalidateSettingsDisplay。原文件内容在提交前比较，JSONC 注释与 YAML 其他节点保留。
 
+2026-11-15 修正：Pi 表单写入与账号登录一致的 `<stateDirectory>/accounts/pi/agent/models.json` 与 `auth.json`，显示实际路径；不修改全局 `~/.pi/agent`。Worker 使用全局与插件来源合并后的快照，同 provider 的插件来源优先，因此同时拒绝两处已有 ID/名称冲突。缺省 stateDirectory 跟随 DSH_HOME；未核实的 agent 覆盖仍回退。Hermes 私有 HOME 选择器与表单尚未对齐、OpenCode 私有覆盖风险仅记录，未在本次 Pi 修复中改动。详见变更 design.md 的目录调查。
+
 OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/changes/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
 
 
