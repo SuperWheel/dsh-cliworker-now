@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawnNativeProcess } from './native-spawn.mjs'
 import { nativeLaunchArgv } from './native-launch.mjs'
-import { inspectPiInstallation } from './pi-installation.mjs'
+import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from './pi-installation.mjs'
 
 process.umask(0o077)
 const [cli, executable] = process.argv.slice(2)
@@ -19,7 +19,7 @@ try {
     TMPDIR: root, TMP: root, TEMP: root, PI_OFFLINE: '1', PI_TELEMETRY: '0', ELECTRON_RUN_AS_NODE: '1' })
   let providers
   if (cli === 'pi') {
-    const { dist } = inspectPiInstallation(executable)
+    const { dist } = await checkPiInstallationIntegrity(executable)
     const { ModelRuntime } = await import(pathToFileURL(join(dist, 'core/model-runtime.js')).href)
     const { AuthStorage } = await import(pathToFileURL(join(dist, 'core/auth-storage.js')).href)
     const runtime = await ModelRuntime.create({ credentials: AuthStorage.inMemory(), modelsPath: null,
@@ -68,8 +68,8 @@ try {
       .map(p => ({ id: p.id, name: p.name, ...(p.storeCredentialsAs ? { stores: p.storeCredentialsAs } : {}) }))
   } else throw new Error('Unsupported CLI')
   process.stdout.write(JSON.stringify({ providers }) + '\n')
-} catch {
+} catch (error) {
   // No raw native errors or credential-related metadata crosses this boundary.
-  process.stderr.write('无法读取原生登录选项，请在原生终端中选择服务商。\n')
+  process.stderr.write((piInstallationIntegrityMessage(error) ?? '无法读取原生登录选项，请在原生终端中选择服务商。') + '\n')
   process.exitCode = 1
 }

@@ -17,6 +17,7 @@ import { buildNativeHarnessInjection } from './native-harness-injection.mjs'
 import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 import type { NativeAccess, NativeApprovalDecision } from './native-approval-policy.ts'
+import { checkPiInstallationIntegrity } from './pi-installation.mjs'
 
 export type PiOmpCli = 'pi' | 'omp'
 export type PiOmpMetadataPhase = 'native-candidates' | 'account-scope'
@@ -260,6 +261,8 @@ export async function discoverPiOmp(
   options: PiOmpNativeOptions & { managedCredentials?: boolean } = {},
 ): Promise<ModelChoice[]> {
   if (cli !== 'pi' && cli !== 'omp') throw new Error('Unsupported Pi/OMP CLI')
+  // A truncated install names its missing dependency instead of the catalog's generic failure.
+  if (cli === 'pi') await checkPiInstallationIntegrity(executable, { signal: options.signal })
   const context = await contextFor({ cli, executable, stateDirectory, discover: true, ...options })
   const { models, authenticationDenied } = await confirmedCatalog(context, capture)
   return explainAuthenticationScope(models, authenticationDenied, CLI_LABELS[cli])

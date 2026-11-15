@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { DatabaseSync } from 'node:sqlite'
-import { accountSupportedChoices } from '../src/host/pi-native-catalog.mjs'
+import { accountSupportedChoices, snapshotNativeCandidates } from '../src/host/pi-native-catalog.mjs'
 // Explicitly simulated account metadata; no global home, OAuth, network or model call.
 const roots: string[] = []
 afterEach(async () => {
@@ -57,6 +57,135 @@ async function fixture(
 }
 const response = (payload: unknown) =>
   new Response(JSON.stringify(payload), { headers: { 'content-type': 'application/json' } })
+
+// Simulated DeepSeek account/listing; IDs and capability shapes mirror native metadata.
+const deepseekRows = [
+  { provider: 'deepseek', id: 'deepseek-flash', thinking: ['low', 'high', 'max'] },
+  { provider: 'deepseek', id: 'deepseek-v4-pro', thinking: ['low', 'high', 'max'] },
+]
+async function deepseekFixture(cli: 'pi' | 'omp', authenticated = true) {
+  const path = await fixture(
+    cli,
+    authenticated ? [{ type: 'api_key', source: 'login', key: 'SYNTHETIC_DEEPSEEK_LOGIN' }] : [],
+    { provider: 'deepseek' },
+  )
+  // Reproduce API login alone: no custom provider URL/model list to hide a missing default.
+  await writeFile(join(path, cli === 'pi' ? 'models.json' : 'models.yml'), '{"providers":{}}', {
+    mode: 0o600,
+  })
+  return path
+}
+it('simulated OMP DeepSeek login queries its native default route and intersects IDs with native efforts', async () => {
+  const path = await deepseekFixture('omp')
+  const fetcher = vi.fn(async (url: unknown, options: any) => {
+    expect(String(url)).toBe('https://api.deepseek.com/models')
+    expect(options.method).toBe('GET')
+    expect(options.headers.Authorization).toBe('Bearer SYNTHETIC_DEEPSEEK_LOGIN')
+    return response({ data: [{ id: 'deepseek-flash' }, { id: 'SIMULATED_REMOTE_ONLY' }] })
+  })
+  const choices = await accountSupportedChoices(
+    'omp',
+    path,
+    snapshotNativeCandidates(deepseekRows),
+    { DEEPSEEK_API_KEY: 'SYNTHETIC_OTHER_ENV_IDENTITY' },
+    { fetch: fetcher },
+  )
+  expect(fetcher).toHaveBeenCalledTimes(1)
+  expect(choices).toEqual([
+    {
+      id: 'deepseek/deepseek-flash',
+      label: 'deepseek-flash',
+      efforts: ['low', 'high', 'max'],
+      cost: 'unknown',
+    },
+  ])
+  expect(JSON.stringify(choices)).not.toContain('SYNTHETIC_')
+})
+it.each(['pi', 'omp'] as const)(
+  'simulated %s DeepSeek respects native model route and capability evidence',
+  async (cli) => {
+    const path = await deepseekFixture(cli)
+    const fetcher = vi.fn(async (url: unknown) => {
+      expect(String(url)).toBe('https://native-route.test/v1/models')
+      return response({ data: [{ id: 'deepseek-v4-pro' }] })
+    })
+    const choices = await accountSupportedChoices(
+      cli,
+      path,
+      snapshotNativeCandidates([
+        {
+          provider: 'deepseek',
+          id: 'deepseek-v4-pro',
+          baseUrl: 'https://native-route.test/v1',
+          api: 'openai-completions',
+          thinkingLevelMap: { high: 'high', max: 'max' },
+          thinking: ['low', 'high', 'max'],
+        },
+      ]),
+      {},
+      { fetch: fetcher },
+    )
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(choices[0]?.efforts).toEqual(cli === 'pi' ? ['high', 'max'] : ['low', 'high', 'max'])
+  },
+)
+it('simulated OMP DeepSeek custom provider route takes precedence over the builtin default', async () => {
+  const path = await fixture('omp', [{ type: 'api_key', source: 'login', key: 'SYNTHETIC_DEEPSEEK_LOGIN' }], {
+    provider: 'deepseek',
+    baseUrl: 'https://custom-route.test/v1',
+  })
+  const fetcher = vi.fn(async (url: unknown) => {
+    expect(String(url)).toBe('https://custom-route.test/v1/models')
+    return response({ data: [{ id: 'deepseek-flash' }] })
+  })
+  expect(await accountSupportedChoices('omp', path, deepseekRows, {}, { fetch: fetcher })).toHaveLength(1)
+})
+it.each(['denied', 'network', 'invalid'] as const)(
+  'simulated OMP DeepSeek %s listing never falls back to public candidates',
+  async (failure) => {
+    const path = await deepseekFixture('omp')
+    const report = { authenticationDenied: 0 }
+    const fetcher = vi.fn(async () => {
+      if (failure === 'network') throw new Error('SIMULATED_NETWORK_ERROR')
+      return failure === 'denied' ? new Response('{}', { status: 401 }) : response({ unexpected: [] })
+    })
+    expect(await accountSupportedChoices('omp', path, deepseekRows, {}, { fetch: fetcher, report })).toEqual(
+      [],
+    )
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(report.authenticationDenied).toBe(failure === 'denied' ? 1 : 0)
+  },
+)
+it.each(['pi', 'omp'] as const)(
+  'simulated %s DeepSeek default env key requires an actual credential',
+  async (cli) => {
+    const path = await deepseekFixture(cli, false)
+    const candidates =
+      cli === 'pi'
+        ? deepseekRows.map((model) => ({
+            ...model,
+            baseUrl: 'https://api.deepseek.com',
+            api: 'openai-completions',
+          }))
+        : deepseekRows
+    const fetcher = vi.fn(async (_url: unknown, options: any) => {
+      expect(options.headers.Authorization).toBe('Bearer SYNTHETIC_DEEPSEEK_ENV')
+      return response({ data: [{ id: 'deepseek-flash' }] })
+    })
+    expect(await accountSupportedChoices(cli, path, candidates, {}, { fetch: fetcher })).toEqual([])
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(
+      await accountSupportedChoices(
+        cli,
+        path,
+        candidates,
+        { DEEPSEEK_API_KEY: 'SYNTHETIC_DEEPSEEK_ENV' },
+        { fetch: fetcher },
+      ),
+    ).toHaveLength(1)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  },
+)
 const metadata = (scopes: Record<string, { ids: string[]; plan: string }>) =>
   vi.fn(async (url: unknown, options: any) => {
     const token = options.headers.Authorization.replace('Bearer ', '')

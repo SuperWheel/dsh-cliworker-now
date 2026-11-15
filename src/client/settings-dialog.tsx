@@ -1386,6 +1386,11 @@ function CliSettings({
             {!cleanupBlocked && !isWorkBuddy(cli) && accountAction('manage')}
           </div>
         </div>
+        {enabled === true && !settingsError && !account?.error && account?.data?.installationNotice && (
+          <p className="cwn-settings-notice cwn-settings-hint" role="status">
+            {hostText(account.data.installationNotice)}
+          </p>
+        )}
         {cleanupBlocked && release && (
           <div className="cwn-cleanup-release" role="group" aria-label={t('解除暂停')}>
             <div className="cwn-accounts-confirm">

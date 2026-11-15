@@ -50,6 +50,8 @@ export interface AccountStatus {
   /** unconfigured is absence; unauthenticated is known invalid/expired auth; unavailable is a read/config error. */
   state: 'authenticated' | 'unconfigured' | 'unauthenticated' | 'configured' | 'unknown' | 'unavailable'
   summary: string
+  /** Installation diagnostics are independent of successfully read account identities. */
+  installationNotice?: string
   /** Display-only identity; never a token, API key, or key prefix. */
   authMethod?: 'oauth' | 'api'
   accountLabel?: string

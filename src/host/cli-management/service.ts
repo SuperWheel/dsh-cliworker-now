@@ -2,6 +2,7 @@ import { withUpdateCleanup, finishUpdateCleanup, quarantineUpdateCleanup, remove
 import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
+import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from '../pi-installation.mjs'
 import { codexInstallerEnv } from './artifacts/codex.ts'
 import { runHermesUpdate } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
@@ -215,6 +216,7 @@ export class CliManagementService {
       if (previous && fingerprintToken(previous.fingerprint) !== fingerprintToken(identity.fingerprint)) this.deps.invalidateModels?.(cli)
       this.identities.set(cli, identity)
       if (pathOnly) return
+      if (cli === 'pi') await checkPiInstallationIntegrity(identity.executable, { allowUnsupported: true, signal: control })
       // A main-package fingerprint does not cover optional component removal.
       let npmUnavailable = false
       if (identity.source === 'npm') {
@@ -257,7 +259,7 @@ export class CliManagementService {
       const failedIdentity = this.identities.get(cli)
       this.cache.invalidateVersion(cli)
       this.identities.delete(cli)
-      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : error instanceof NpmInstallationError ? error.message : old.source === 'npm' || failedIdentity?.source === 'npm' ? 'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试' : undefined
+      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : piInstallationIntegrityMessage(error) ?? (timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : error instanceof NpmInstallationError ? error.message : old.source === 'npm' || failedIdentity?.source === 'npm' ? 'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试' : undefined)
       this.publish(cli, { source: failedIdentity?.source, installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: detail, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
     } finally { clearTimeout(timeout) }
   }
@@ -503,6 +505,7 @@ export class CliManagementService {
             const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
             verification.throwIfAborted()
             if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
+            if (cli === 'pi') await checkPiInstallationIntegrity(after.executable, { allowUnsupported: true, fresh: true, signal: verification })
             if (plan.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(after, this.releases, plan.registry, verification, npmDownload!.host, npmDownload!.components, this.deps.root)
             const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000, plan.method === 'npm')
             verification.throwIfAborted()
@@ -688,7 +691,7 @@ export class CliManagementService {
         } else {
           op.phase = 'failed'
           const code = error instanceof CliOperationError ? error.code : (error as { code?: string }).code === 'INTEGRITY_MISMATCH' ? 'INTEGRITY_MISMATCH' : 'UNKNOWN'
-          op.error = { code, message: error instanceof CliOperationError ? outputTail(error.message) : code === 'INTEGRITY_MISMATCH' ? '下载源校验值与官方源不符，未执行更新' : '更新失败，请检查网络、安装前缀与输出后重试', retryable: true }
+          op.error = { code, message: piInstallationIntegrityMessage(error) ?? (error instanceof CliOperationError ? outputTail(error.message) : code === 'INTEGRITY_MISMATCH' ? '下载源校验值与官方源不符，未执行更新' : '更新失败，请检查网络、安装前缀与输出后重试'), retryable: true }
         }
       } finally {
         // Files and channel-memory are best effort. Their failures must never

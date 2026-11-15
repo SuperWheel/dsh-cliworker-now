@@ -27,6 +27,9 @@ import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend, ty
 import type { CliId } from '../src/shared/types.ts'
 import type { AccountIdentitySource } from '../src/host/account-identity.ts'
 import * as zcodeAccounts from '../src/host/zcode-grok-accounts.ts'
+import * as nativeAccounts from '../src/host/harness-opencode-accounts.ts'
+import { NativeLoginProviders } from '../src/host/native-login-providers.ts'
+import { PiInstallationIntegrityError, PiInstallationCheckUnavailableError } from '../src/host/pi-installation.mjs'
 import { CODEX_APPX_QUERY, WindowsCliInstallationError, WindowsCliNotFoundError } from '../src/host/windows-cli-installation.ts'
 import { WINDOWS_PATH_QUERY } from '../src/host/windows-cli-path.ts'
 const claudeSettings = vi.hoisted(() => ({ managed: {} as Record<string, unknown> }))
@@ -91,6 +94,27 @@ vi.mock('../src/host/pi-omp-native.ts', async (load) => {
 // All subprocesses in this suite are synthetic. No real login/logout is run.
 const roots: string[] = []
 const managers: AccountManager[] = []
+it.each(['authenticated', 'configured'] as const)('模拟：Pi %s identity and login actions survive both unavailable and broken installation scans', async state => {
+  const f = fixture()
+  const login = { id: 'pi:simulated-provider:native.config', providerLabel: 'Simulated provider',
+    source: 'native' as const, authMethod: 'api' as const, nativeConfiguration: true }
+  const identity = { state, summary: 'Simulated saved identity', verification: 'local' as const, logins: [login] }
+  const read = vi.spyOn(nativeAccounts, 'readPiOmpAccount').mockResolvedValue(identity)
+  const discover = vi.spyOn(NativeLoginProviders.prototype, 'read')
+  try {
+    for (const error of [new PiInstallationCheckUnavailableError(), new PiInstallationIntegrityError('@earendil-works/pi-ai')]) {
+      discover.mockRejectedValueOnce(error)
+      const account = await f.manager.status('pi', f.cwd, f.signal)
+      expect(account).toMatchObject({ ...identity, installationNotice: error.message })
+      expect(account.actions.map(action => action.id)).toEqual(expect.arrayContaining(['login', 'manage']))
+    }
+    discover.mockResolvedValueOnce([])
+    const recovered = await f.manager.status('pi', f.cwd, f.signal)
+    expect(recovered).toMatchObject(identity)
+    expect(recovered).not.toHaveProperty('installationNotice')
+    expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
+  } finally { read.mockRestore(); discover.mockRestore() }
+})
 afterEach(async () => {
   await Promise.allSettled(managers.splice(0).map((manager) => manager.close()))
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })

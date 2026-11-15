@@ -1716,3 +1716,10 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 固定自动 runtime 在 Windows 只读关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode`：实际目录、普通 ZCode.exe、PE ProductName=ZCode 与 resources/glm/zcode.cjs 共同确认身份；有界读取固定 ProductVersion 前三段作为应用版本。更新继续走官方安装程序/UAC，不提权、不静默，独立 Worker runtime 不随桌面更新。manual 路径和 macOS 行为保留；没有可核实应用时仍显示原 runtime 手动更新原因。实现与模拟验收见 [决定 18](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 和任务 17，Windows 实机更新待主会话验收。
 
 Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见 [决定 19](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md#决定-19windows-国际版-workbuddy-首次安装与无摘要-feed)。Host 共用 COS HEAD、完整长度/MD5/CRC-64/XZ 校验与固定腾讯 Authenticode 发布者核验；安装保留向导等待和进程范围退出确认。默认发现增加 WorkBuddyAI，与国内版通过产品站点区分，实际三段版本不伪造 build。CN/ZCode/ARM64 首次安装仍 manual。2026-11-15 实机后补充见 [决定 20](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)：Windows 桌面安装程序经 Host 内部标记以可见窗口启动、等待用户期间不限时；国际版 WorkBuddy 装后候选加入向导追加的 WorkBuddyAI 子目录与 Program Files 默认位置；完整检查清空上次操作结果。ZCode Windows 更新与国际版 D 盘安装已实机执行，重装复验已确认在追加子目录写入路径。安装程序自身退出即判定装完，结束页「运行」启动的应用若被一并结束则经外壳重新打开；首次安装签名核验时限 120 秒。
+
+
+## OMP DeepSeek API 模型目录（2026-11-15）
+
+OMP 18.20.2 的 `models --json`（含 refresh）只给模型摘要，不含 baseUrl/api。`pi-native-catalog.mjs` 的 builtinAPI 补齐其原生 DeepSeek 地址 `https://api.deepseek.com` 和 `DEEPSEEK_API_KEY`，避免账号范围分组前丢弃候选。SDK/model/provider 自定义路由仍优先，按当前账号 `/models` 与原生候选取交集，强度仅采用原生报告。Pi 1.5.2 SDK 的 DeepSeek 候选已带路由，保存的 API 登录不受 OMP 摘要缺地址问题影响；共享默认表同时补齐环境凭据识别。
+
+Mac 隔离真实 OMP 插件账号副本：1 条 deepseek/api_key；修复前原生候选 4 个、账号 HTTP 请求 0 次、最终 0 个，修复后请求 HTTP 200，交集 2 个（deepseek-flash、deepseek-v4-pro），强度均 low/high/max。Pi 为安装 SDK + 模拟凭据/列表核对。真实推理调用 0 次，未验证 Mac/Windows Desktop UI，未更新 Desktop 安装。详细证据见本次 OpenSpec 任务记录。

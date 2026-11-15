@@ -1,7 +1,8 @@
 /** 模拟：首次安装全过程。所有 CLI、Node/npm、官方脚本、HTTP 与安装器均为夹具。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { accessSync, constants, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
+import { accessSync, constants, mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync, rmSync } from 'node:fs'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { CliManagementService } from '../src/host/cli-management/service.ts'
@@ -123,10 +124,11 @@ it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 
   const f = fixture(), old = join(f.root, 'broken-pi'); writeFileSync(old, '模拟损坏 Pi')
   f.config.cliExecutablePaths.setManual('pi', old)
   const mismatch = Object.assign(new Error('模拟 Pi 身份损坏'), { code: 'CLI_IDENTITY_MISMATCH' })
+  const pi = simulatedPiInstallation(f.root, '1.1.0')
   f.identify.mockImplementation(async (_cli, _backend, config, signal) => {
     if (config.cliExecutablePaths) return identifyInstallation('pi', f.backend, config, signal)
     if (mode === 'new-invalid') throw mismatch
-    return { ...syntheticIdentity('pi', '1.1.0'), executable: config.piExecutable! }
+    return { ...syntheticIdentity('pi', '1.1.0'), executable: pi.entry }
   })
   vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '1.1.0', versions: ['1.1.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
   f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.1.0', engines: { node: '>=22.19.0' }, dist: { tarball: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') } })))
@@ -143,7 +145,7 @@ it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 
   f.service.start('pi', 'install', plan.token, '', 'repair-pi')
   const result = (await finished(f.service)).results[0]!
   expect(result.phase).toBe(mode === 'success' ? 'succeeded' : 'failed')
-  expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(mode === 'success' ? join(f.prefix, 'bin/pi') : old)
+  expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(mode === 'success' ? pi.entry : old)
   expect(readFileSync(old, 'utf8')).toBe('模拟损坏 Pi')
 })
 
@@ -276,14 +278,27 @@ it('模拟：装完后插件无法自动更新的安装归入需要手动更新�
   expect(done.results[0]?.phase).toBe('succeeded')
   expect(done.entries.find(e => e.cli === 'kimi')).toMatchObject({ group: 'manual', manual: { note: expect.stringContaining('winget') } })
 })
-it('模拟：Pi 取最新版且带 ignore-scripts；Node 范围不可猜测', async () => {
+it.each(['healthy', 'missing-manifest', 'zero-entry'] as const)('模拟：Pi install version-only success requires integrity (%s); latest and ignore-scripts retained', async mode => {
   const f = fixture(); vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '9.0.0', versions: ['1.0.2', '9.0.0', '9.0.0'], registry: 'https://registry.npmjs.org/', checkedAt: Date.now() })
+  const pi = simulatedPiInstallation(f.root, '9.0.0')
+  if (mode === 'missing-manifest') rmSync(pi.aiManifest)
+  if (mode === 'zero-entry') writeFileSync(pi.aiEntry, '')
+  const identify = f.identify.getMockImplementation()!
+  f.identify.mockImplementation(async (...args) => {
+    const value = await identify(...args)
+    return value && { ...value, executable: pi.entry }
+  })
   f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '9.0.0', engines: { node: '>=22.19.0' }, dist: { tarball: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') } })))
   const plan = await prepare(f, 'pi'); expect(plan.target).toBe('9.0.0'); expect(plan.problem).toBeUndefined()
   vi.spyOn(f.releases, 'artifact').mockResolvedValue({ url: 'https://registry.npmjs.org/pi.tgz', integrity: sri('模拟') })
   f.version.mockResolvedValue('9.0.0')
   f.service.start('pi', 'install', plan.token, '', 'pi-install')
-  expect((await finished(f.service)).results[0]?.phase).toBe('succeeded')
+  const result = (await finished(f.service)).results[0]!
+  expect(result.phase).toBe(mode === 'healthy' ? 'succeeded' : 'failed')
+  if (mode !== 'healthy') {
+    expect(result.error?.message).toBe('Pi 安装不完整（缺少依赖 @earendil-works/pi-ai），请在「更新 CLI」中重新安装')
+    expect(f.config.cliExecutablePaths.read('pi')).toBeUndefined()
+  }
   expect(vi.mocked(f.backend.spawn).mock.calls.find(([s]) => s.argv.includes('install'))![0].argv).toContain('--ignore-scripts')
   expect(nodeSatisfies('22.19.0', '>=18.0.0 <23.0.0')).toBe(true)
   expect(nodeSatisfies('22.19.0', 'unknown')).toBe(false)

@@ -1375,6 +1375,9 @@ export const en = {
   '删除失败，请刷新后重试': 'Could not delete. Refresh and try again.',
   '配置已删除；显示缓存持久化失败，请刷新账号与模型目录': 'Configuration deleted; the display cache could not be saved. Refresh the account and model catalog.',
   '配置文件已被其他程序修改，未回滚；备份保留在 {path}': 'Another program changed the configuration. It was not rolled back; the backup is kept at {path}',
+  'Pi 安装不完整（原生模块缺失或损坏），请在「更新 CLI」中重新安装': 'Pi installation is incomplete (native modules are missing or damaged). Reinstall it in "Update CLIs".',
+  '暂时无法核验 Pi 安装完整性，请稍后重试': 'Could not verify the Pi installation right now. Try again later.',
+  'Pi 安装不完整（缺少依赖 {name}），请在「更新 CLI」中重新安装': 'Pi installation is incomplete (missing dependency {name}). Reinstall it in "Update CLIs".',
   // @end
 } as const satisfies Record<string, string>
 

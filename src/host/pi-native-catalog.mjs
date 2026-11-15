@@ -252,6 +252,9 @@ const builtinAPI = {
   openrouter: { key: 'OPENROUTER_API_KEY', url: 'https://openrouter.ai/api/v1' },
   groq: { key: 'GROQ_API_KEY', url: 'https://api.groq.com/openai/v1' },
   openai: { key: 'OPENAI_API_KEY', url: 'https://api.openai.com/v1' },
+  // OMP's models --json omits routing; mirror its native DeepSeek registry.
+  // Account /models still intersects the exact native candidates below.
+  deepseek: { key: 'DEEPSEEK_API_KEY', url: 'https://api.deepseek.com' },
   anthropic: { key: 'ANTHROPIC_API_KEY', url: 'https://api.anthropic.com/v1', api: 'anthropic-messages' },
   xai: { key: 'XAI_API_KEY', url: 'https://api.x.ai/v1' },
   'xai-oauth': { url: 'https://api.x.ai/v1' },

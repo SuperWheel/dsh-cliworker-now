@@ -14,6 +14,7 @@ import { readDesktopRelease, runDesktopUpdate, DesktopUnavailableError } from '.
 import { localCheckTimeoutMs, LOCAL_CHECK_TIMEOUT_DETAIL } from '../src/host/cli-management/service.ts'
 import { ChannelMemory } from '../src/host/cli-management/channel-memory.ts'
 import { serviceFixture, syntheticIdentity, checked, control, finished, sri } from './cli-management-phase-b-fixture.ts'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 
 vi.mock('../src/host/cli-management/desktop-update.ts', () => ({
   readDesktopRelease: vi.fn(), runDesktopUpdate: vi.fn(),
@@ -39,6 +40,10 @@ function sample(cli: ActiveCliId): unknown {
 }
 function fixture(cli: ActiveCliId) {
   const f = serviceFixture([cli]); fixtures.push(f); f.identities.set(cli, identity(cli))
+  if (cli === 'pi') {
+    const pi = simulatedPiInstallation(f.root, '1.0.0')
+    f.identities.set(cli, { ...identity(cli), executable: pi.entry, packageRoot: pi.pkg })
+  }
   // 模拟 Hermes 的日志/缓存必须完全隔离，不读取宿主真实更新回执与依赖缓存。
   if (cli === 'hermes') vi.stubEnv('HERMES_HOME', join(f.root, 'simulated-hermes-home'))
   f.metadataFetch.mockImplementation(async url => {
@@ -120,7 +125,7 @@ it.each(Object.keys(args) as ActiveCliId[])('模拟：%s 预加载只读 GET、�
   expect(f.backend.spawn).not.toHaveBeenCalled()
   const row = f.service.snapshot().entries.find(e => e.cli === cli)!
   expect(row.group).toBe('updatable')
-  vi.mocked(f.backend.spawn).mockImplementation(() => { f.identities.set(cli, { ...identity(cli), manifestVersion: '1.2.3' }); return exited() })
+  vi.mocked(f.backend.spawn).mockImplementation(() => { f.identities.set(cli, { ...f.identities.get(cli)!, manifestVersion: '1.2.3' }); return exited() })
   f.service.start(cli, 'update', row.planToken!, '', `模拟-${cli}`)
   const result = (await finished(f.service)).results.find(r => r.cli === cli)!
   expect(result).toMatchObject({ phase: 'succeeded', afterVersion: '1.2.3' })
@@ -149,6 +154,16 @@ it('模拟：Pi 更新目标取 latest，通知来自同一个支持集合，Wor
   writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: CLI_SOURCES.pi.npm, version: '9.0.0' }))
   expect(inspectPiInstallation(entry, { allowUnsupported: true }).version).toBe('9.0.0')
   expect(() => inspectPiInstallation(entry)).toThrow('Pi 安装身份或原生接口不匹配')
+})
+it('模拟：Pi update exits zero and version advances, but fresh integrity verification rejects a truncated dependency', async () => {
+  const f = fixture('pi'), row = (await checked(f.service)).entries.find(e => e.cli === 'pi')!
+  vi.mocked(f.backend.spawn).mockImplementation(() => {
+    f.identities.get('pi')!.manifestVersion = '1.2.3'
+    writeFileSync(join(f.identities.get('pi')!.packageRoot!, 'node_modules/@earendil-works/pi-ai/dist/index.js'), '')
+    return exited()
+  })
+  f.service.start('pi', 'update', row.planToken!, '', 'truncated-pi-update')
+  expect((await finished(f.service)).results[0]).toMatchObject({ phase: 'failed', error: { message: 'Pi 安装不完整（缺少依赖 @earendil-works/pi-ai），请在「更新 CLI」中重新安装' } })
 })
 it('模拟：Hermes 只读 install-stamp，不把 pyproject 的占位版本当真', async () => {
   const f = fixture('hermes'), root = join(f.root, 'checkout'), entry = join(root, '.hermes/bin/hermes')

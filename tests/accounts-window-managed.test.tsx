@@ -6,6 +6,29 @@ import { AccountsWindow } from '../src/client/account-login/accounts-window.tsx'
 vi.mock('../src/client/account-terminal.tsx', () => ({ AccountTerminal: (props: any) => createElement('simulated-terminal', props) }))
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({ Button: ({ children, ...props }: any) => createElement('button', props, children), IconPlusOutlineRegular: () => null }))
 const text = (node: any): string => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node?.props ? text(node.props.children) : ''
+it.each([
+  ['authenticated', 'Pi 安装不完整（缺少依赖 @earendil-works/pi-ai），请在「更新 CLI」中重新安装'],
+  ['configured', '暂时无法核验 Pi 安装完整性，请稍后重试'],
+] as const)('模拟 Pi %s: installation diagnostic preserves login row and native configuration deletion', async (state, installationNotice) => {
+  const login = { id: 'pi:simulated-provider:native.config', source: 'native' as const, nativeConfiguration: true,
+    providerLabel: 'Simulated retained provider', authMethod: 'api' as const }
+  const status = { cli: 'pi' as const, installed: true, state, summary: 'Simulated saved identity', installationNotice, actions: [], logins: [login] }
+  const remove = vi.fn(async () => ({ ok: true, value: JSON.stringify({ ok: true }) }))
+  const prepare = vi.fn(async () => status)
+  let renderer!: ReturnType<typeof create>
+  await act(async () => { renderer = create(createElement(AccountsWindow, { api: { cliworker: { deleteAccountConfiguration: remove } } as any,
+    cli: 'pi', status, sessionId: 'SIMULATED', closeControl: { current: undefined }, onRefresh: vi.fn(), onClose: vi.fn(), prepare })) })
+  try {
+    expect(renderer.root.findAllByType('li')).toHaveLength(1)
+    const rendered = JSON.stringify(renderer.toJSON())
+    expect(rendered).toContain(login.providerLabel)
+    expect(rendered).toContain(installationNotice)
+    expect(rendered).not.toContain('在原生终端中选择服务商并登录。')
+    await act(async () => renderer.root.findAllByType('button').find(button => text(button) === '删除')!.props.onClick())
+    await act(async () => renderer.root.findAllByType('button').find(button => text(button) === '确认删除')!.props.onClick())
+    expect(remove).toHaveBeenCalledWith('SIMULATED', 'pi', login.id, expect.any(AbortSignal))
+  } finally { await act(async () => renderer.unmount()) }
+})
 it.each(['pi', 'omp'] as const)('模拟 %s: receipt-backed config uses inline confirmation; external config has no delete action', async cli => {
   const managed = { id: `${cli}:custom-demo:plugin.config`, source: 'plugin' as const, providerLabel: 'Simulated managed', authMethod: 'api' as const, managedConfiguration: true }
   const status = { cli, installed: true, state: 'configured' as const, summary: '', actions: [], logins: [managed, { providerLabel: 'Simulated manual', authMethod: 'api' as const }] }

@@ -3,6 +3,7 @@ import { withUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trac
 import { registerNativeResidueCleanup, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms } from './npm-platform.ts'
+import { checkPiInstallationIntegrity } from '../pi-installation.mjs'
 import { createHash } from 'node:crypto'
 import { access, lstat, realpath, rename } from 'node:fs/promises'
 import { constants } from 'node:fs'
@@ -230,6 +231,7 @@ export class CliInstaller {
           }
         }
         if (!identity) throw exitError ?? new CliOperationError('VERSION_MISMATCH', `安装命令已完成，但在 ${candidate} 找不到 ${cli}${workbuddyReason ? `（WorkBuddy 原因：${workbuddyReason}）` : ''}`)
+        if (cli === 'pi') await checkPiInstallationIntegrity(identity.executable, { allowUnsupported: true, fresh: true, signal: control })
         if (source.method === 'npm' && identity.source !== 'npm') throw new CliOperationError('IDENTITY_CHANGED', 'npm 安装后的实际归属不符')
         if (source.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.deps.releases, plan.registry, control, npmDownload!.host, npmDownload!.components, this.deps.root)
         const version = await (this.deps.version ?? currentVersion)(cli, identity, this.deps.backend, config, control, false, 45_000, source.method === 'npm')

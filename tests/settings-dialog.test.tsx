@@ -1157,6 +1157,22 @@ it('shows truthful connection dots and distinguishes CLI availability from verif
     'antigravity 模拟状态待确认',
   )
 })
+it.each([
+  ['authenticated', 'Pi 安装不完整（缺少依赖 @earendil-works/pi-ai），请在「更新 CLI」中重新安装'],
+  ['configured', '暂时无法核验 Pi 安装完整性，请稍后重试'],
+] as const)('模拟：Pi connection page keeps %s identity alongside installation diagnostic', async (state, installationNotice) => {
+  const t = await setup({
+    accountStatus: vi.fn(async (_parent, cli: CliId) => status(cli, cli === 'pi' ? {
+      state, summary: 'Simulated saved identity', installationNotice, verification: 'local',
+      logins: [{ id: 'pi:simulated-provider:native.config', providerLabel: 'Simulated retained provider', authMethod: 'api', nativeConfiguration: true }],
+    } : {})),
+  }, undefined, 'pi')
+  const summary = accountSummary(t.r)
+  expect(summary.props['data-account-state']).toBe(state)
+  expect(t.r.root.findAllByProps({ role: 'status' }).some(node => visibleText(node).includes(installationNotice))).toBe(true)
+  expect(visibleText(summary)).toContain(state === 'authenticated' ? 'Simulated retained provider' : 'Simulated saved identity')
+  expect(t.button('Pi 设置').findByProps({ className: 'cwn-connection-dot' }).props['data-state']).not.toBe('failed')
+})
 it.each(['zcode', 'grok', 'omp', 'pi', 'hermes', 'opencode'] as const)(
   'keeps %s configured credentials neutral before and after its model directory loads',
   async (cli) => {

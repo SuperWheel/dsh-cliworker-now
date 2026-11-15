@@ -11,6 +11,7 @@ const hostPatterns: [RegExp, MessageKey, ...string[]][] = [
   [/^npm 安装需要修复：平台组件 (.+) 的声明缺失$/u, 'npm 安装需要修复：平台组件 {name} 的声明缺失', 'name'],
   [/^无法准备 npm 必需平台组件 (.+)$/u, '无法准备 npm 必需平台组件 {name}', 'name'],
   [/^已登录（([^（）]+)）$/u, '已登录（{site}）', 'site'],
+  [/^Pi 安装不完整（缺少依赖 (.+)），请在「更新 CLI」中重新安装$/u, 'Pi 安装不完整（缺少依赖 {name}），请在「更新 CLI」中重新安装', 'name'],
   [/^插件尚未适配 Pi (\S+)，更新后 Pi Worker 要等插件适配后才能使用$/u, '插件尚未适配 Pi {version}，更新后 Pi Worker 要等插件适配后才能使用', 'version'],
   [/^(WorkBuddy(?: CN)?) 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口$/u, '{cli} 原生账号模型目录；试验性：依赖 WorkBuddy 桌面端非公开接口', 'cli'],
   [/^任务超时：已达到总时限 (\d+ (?:小时|分钟|秒))$/u, '任务超时：已达到总时限 {duration}', 'duration'],

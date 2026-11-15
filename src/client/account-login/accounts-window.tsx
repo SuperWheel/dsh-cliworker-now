@@ -335,7 +335,13 @@ export function AccountsWindow({
         </div>
       )}
       <div className="cwn-accounts-foot">
-        {!providers?.length && <span className="cwn-login-hint">{t('在原生终端中选择服务商并登录。')}</span>}
+        {(status?.installationNotice || !providers?.length) && (
+          <span className="cwn-login-hint">
+            {status?.installationNotice
+              ? hostText(status.installationNotice)
+              : t('在原生终端中选择服务商并登录。')}
+          </span>
+        )}
         <Button
           variant="outline"
           size="md"

@@ -1,3 +1,4 @@
+import { piInstallationIntegrityMessage } from './pi-installation.mjs'
 import { deletePiOmpNativeConfigProvider } from './custom-provider-native.ts'
 import { deletePiOmpManagedProvider } from './custom-provider-managed.ts'
 import { spawnProbe } from './probe-process.ts'
@@ -613,11 +614,13 @@ export class AccountManager {
             : cli === 'hermes'
               ? await listHermesAccountSources(this.config, control)
               : undefined
+        let nativeNotice: string | undefined
         const native = (cli === 'pi' || cli === 'omp')
           ? await this.nativeLoginProviders.read(cli, executable, control).catch(error => {
               if (error instanceof ProcessCleanupUnconfirmedError) throw error
               signal.throwIfAborted()
               this.controller.signal.throwIfAborted()
+              if (cli === 'pi') nativeNotice = piInstallationIntegrityMessage(error)
               return []
             })
           : undefined
@@ -626,6 +629,7 @@ export class AccountManager {
           cli,
           installed,
           ...identity,
+          ...(nativeNotice ? { installationNotice: nativeNotice } : {}),
           actions: actionsFor(cli, this.config)
             .map((item) =>
               item.id === 'logout' && sources

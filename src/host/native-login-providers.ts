@@ -3,7 +3,7 @@ import { removeTemporaryTree, prepareOmpNativesDirectory, markTemporaryTreeActiv
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { inspectPiInstallation } from './pi-installation.mjs'
+import { checkPiInstallationIntegrity } from './pi-installation.mjs'
 import { captureCatalogMetadata } from './adapters.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { ACCOUNT_NAME } from '../shared/account-links.ts'
@@ -41,7 +41,7 @@ export class NativeLoginProviders {
 
   async read(cli: 'pi' | 'omp', executable: string, signal: AbortSignal): Promise<NativeLoginProvider[]> {
     signal.throwIfAborted()
-    const entry = cli === 'pi' ? inspectPiInstallation(executable).executable : await realpath(executable)
+    const entry = cli === 'pi' ? (await checkPiInstallationIntegrity(executable, { signal })).executable : await realpath(executable)
     const info = await stat(entry)
     const key = JSON.stringify([cli, entry, info.size, info.mtimeMs, info.ino])
     const cached = this.cache.get(key)

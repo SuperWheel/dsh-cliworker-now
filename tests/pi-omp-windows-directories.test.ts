@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rm, symlink } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverPiOmp, preparePiOmp, type PiOmpCli } from '../src/host/pi-omp-adapter.ts'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 
 const fault = vi.hoisted(() => ({ replaceDirectory: '', directoryOpAttempts: 0 }))
 vi.mock('node:fs/promises', async (load) => {
@@ -49,7 +50,7 @@ async function fixture() {
   const project = join(root, 'project'),
     state = join(root, 'state')
   await mkdir(project)
-  return { root, project, state }
+  return { root, project, state, pi: simulatedPiInstallation(root).entry }
 }
 const choices = [{ id: 'synthetic/model', label: 'Synthetic model', efforts: ['low', 'high'] }]
 function metadata() {
@@ -84,11 +85,11 @@ describe('Pi/OMP Windows catalog and worker directory preparation', () => {
       const f = await fixture(),
         capture = metadata()
       const options = { nativeHome: f.root, accountRoot: f.state }
-      expect(await discoverPiOmp(cli, 'synthetic-cli', capture, f.state, options)).toEqual(choices)
+      expect(await discoverPiOmp(cli, cli === 'pi' ? f.pi : 'synthetic-cli', capture, f.state, options)).toEqual(choices)
       const prepared = await preparePiOmp(
         {
           cli,
-          executable: 'synthetic-cli',
+          executable: cli === 'pi' ? f.pi : 'synthetic-cli',
           project: f.project,
           stateDirectory: f.state,
           preference: { model: 'synthetic/model', effort: 'low' },
@@ -114,7 +115,7 @@ describe('Pi/OMP Windows catalog and worker directory preparation', () => {
         capture = metadata()
       fault.replaceDirectory = f.state
       await expect(
-        discoverPiOmp(cli, 'synthetic-cli', capture, f.state, {
+        discoverPiOmp(cli, cli === 'pi' ? f.pi : 'synthetic-cli', capture, f.state, {
           nativeHome: f.root,
           accountRoot: f.state,
         }),
@@ -133,7 +134,7 @@ describe('Pi/OMP Windows catalog and worker directory preparation', () => {
       await mkdir(outside)
       await symlink(outside, f.state, 'junction')
       await expect(
-        discoverPiOmp(cli, 'synthetic-cli', capture, f.state, {
+        discoverPiOmp(cli, cli === 'pi' ? f.pi : 'synthetic-cli', capture, f.state, {
           nativeHome: f.root,
           accountRoot: f.state,
         }),
@@ -175,7 +176,7 @@ describe('Pi/OMP account-scope authentication counts (synthetic bridge replies)'
   it.each(['pi', 'omp'] as const)('%s reports an authentication failure when every credential is rejected', async (cli) => {
     const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
     const f = await fixture()
-    const models = await discoverPiOmp(cli, 'synthetic-cli', scoped([], 2), f.state, {
+    const models = await discoverPiOmp(cli, cli === 'pi' ? f.pi : 'synthetic-cli', scoped([], 2), f.state, {
       nativeHome: f.root,
       accountRoot: f.state,
     })
@@ -188,7 +189,7 @@ describe('Pi/OMP account-scope authentication counts (synthetic bridge replies)'
     const { catalogNoticeOf } = await import('../src/host/catalog-notice.ts')
     const f = await fixture()
     const options = { nativeHome: f.root, accountRoot: f.state }
-    expect(catalogNoticeOf(await discoverPiOmp('pi', 'synthetic-cli', scoped(choices, 0), f.state, options))).toBeUndefined()
-    await expect(discoverPiOmp('pi', 'synthetic-cli', scoped(choices, -1), f.state, options)).rejects.toThrow()
+    expect(catalogNoticeOf(await discoverPiOmp('pi', f.pi, scoped(choices, 0), f.state, options))).toBeUndefined()
+    await expect(discoverPiOmp('pi', f.pi, scoped(choices, -1), f.state, options)).rejects.toThrow()
   })
 })
