@@ -129,7 +129,8 @@ export class CustomProviders {
         const doc = parseDocument(config.text ?? '', { uniqueKeys: true })
         if (doc.errors.length || doc.warnings.length) throw new Error('Invalid YAML')
         const data: unknown = doc.toJS({ maxAliasCount: 0 }) ?? {}
-        if (!object(data) || data.providers !== undefined && !object(data.providers)) throw new Error('Invalid YAML')
+        // Hermes' stock config has no top-level providers, or only a commented example (null).
+        if (!object(data) || data.providers != null && !object(data.providers)) throw new Error('Invalid YAML')
         const providers = (data.providers ?? {}) as Record<string, unknown>
         const legacy = data.custom_providers
         if (legacy !== undefined && !Array.isArray(legacy)) throw new Error('Invalid YAML')
@@ -138,7 +139,8 @@ export class CustomProviders {
         const variable = `CLIWORKER_PROVIDER_${createHash('sha256').update(id).digest('hex').toUpperCase()}_API_KEY`
         if (Object.hasOwn(this.options.env ?? process.env, variable) || Object.hasOwn(oldEnvironment, variable)) return failed('服务商凭据名称已存在，请使用其他 ID', 'providerId')
         if (doc.contents && !isMap(doc.contents)) throw new Error('Invalid YAML')
-        if (!doc.has('providers')) doc.set('providers', {})
+        // A plain object stored via set() is not a YAML node, so setIn() could not descend into it.
+        if (data.providers == null) doc.set('providers', doc.createNode({}))
         doc.setIn(['providers', id], { api: url, key_env: variable, api_mode: api, models: Object.fromEntries((models as string[]).map(model => [model, {}])) })
         const indent = /(?:^|\n)( +)\S/.exec(config.text ?? '')?.[1].length ?? 2
         configText = doc.toString({ lineWidth: 0, indent })

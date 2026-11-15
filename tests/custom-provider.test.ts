@@ -157,6 +157,16 @@ it('模拟：Pi 原生账号锁拒绝覆盖，命令/环境插值字符按字面
   expect(f.save({ ...f.input, apiKey: '!danger${VALUE}' })).toMatchObject({ ok: true })
   expect((nativeJson(fs.readFileSync(f.auth, 'utf8')).value['custom-demo'] as any).key).toBe('$!danger$${VALUE}')
 })
+it.each([
+  ['没有顶层 providers', '# keep this comment\nmodel: old-model\nterminal:\n  timeout: 60\n'],
+  ['providers 为空值', '# keep this comment\nmodel: old-model\nproviders:\n  # my-proxy:\n  #   key_env: X\nterminal:\n  timeout: 60\n'],
+])('模拟：Hermes 官方配置%s时新建 providers 并保留其他字段', (_name, text) => {
+  const f = fixture('hermes'); write(f.config, text)
+  expect(f.save()).toMatchObject({ ok: true, providerId: 'custom-demo' })
+  const configText = fs.readFileSync(f.config, 'utf8')
+  expect(configText).toContain('# keep this comment')
+  expect(yaml(configText)).toMatchObject({ model: 'old-model', terminal: { timeout: 60 }, providers: { 'custom-demo': { api: f.input.baseUrl, api_mode: 'chat_completions', models: { 'model-a': {}, 'model-b': {} } } } })
+})
 it('模拟：Hermes 拒绝 dotenv 插值以及原生/Host 解析不一致的转义密钥', () => {
   const f = fixture('hermes')
   expect(f.save({ ...f.input, apiKey: '${OTHER_KEY}' })).toMatchObject({ ok: false }); f.unchanged()
