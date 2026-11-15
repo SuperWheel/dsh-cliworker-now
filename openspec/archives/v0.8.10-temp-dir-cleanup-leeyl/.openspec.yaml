@@ -1,9 +1,0 @@
-pm:
-  title: 插件临时目录回收
-  version: 0.8.10
-  creator: leeyl
-  creator_name: Leeyl
-  previous_names: []
-  archived: 2026-11-15
-schema: pmspec
-created: 2026-11-15

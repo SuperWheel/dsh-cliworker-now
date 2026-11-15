@@ -1,0 +1,10 @@
+pm:
+  title: Hermes 自动续期修复
+  version: 0.9.0
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names:
+    - v0.8.10-hermes-renewal-fix-leeyl
+  archived: 2026-11-15
+schema: pmspec
+created: 2026-11-14

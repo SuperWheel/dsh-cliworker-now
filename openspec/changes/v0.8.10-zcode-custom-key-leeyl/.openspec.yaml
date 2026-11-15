@@ -1,9 +1,0 @@
-pm:
-  title: ZCode 自定义 API Key
-  version: 0.8.10
-  creator: leeyl
-  creator_name: Leeyl
-  previous_names:
-    - v0.8.10-zcode-custom-key-leeyl
-schema: pmspec
-created: 2026-11-15

@@ -2,7 +2,7 @@ import { z } from 'zod'
 import type { ActiveCliId } from './types.ts'
 
 /**
- * Contract for the "Update CLI" settings page (openspec change v0-8-10-cli-update-page-leeyl).
+ * Contract for the "Update CLI" settings page (openspec change v0.9.0-cli-update-page-leeyl).
  * Plain data only: no executable commands, URLs chosen by the client, or secrets cross this boundary.
  * The Host validates every value it receives; the Client renders every string as untrusted text.
  */

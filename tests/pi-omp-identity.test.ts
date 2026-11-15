@@ -165,7 +165,8 @@ describe('distinct Pi and OMP entry identities', () => {
         expect(env.USERPROFILE).toBe(cwd)
         expect(env.PI_CONFIG_DIR).toBe('config')
       }
-      expect(env.PI_NATIVES_DIR).toBe(join(process.env.DSH_HOME!, 'cliworker-now', 'omp-natives'))
+      // The Host resolves the state directory first, which expands Windows 8.3 short names (RUNNER~1).
+      expect(env.PI_NATIVES_DIR).toBe(join(realpathSync.native(join(process.env.DSH_HOME!, 'cliworker-now')), 'omp-natives'))
       expect(env.OMP_PROFILE).toBe('')
       scratch = cwd
       expect(existsSync(cwd)).toBe(true)

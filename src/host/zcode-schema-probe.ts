@@ -2,7 +2,7 @@ import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } fro
 
 /**
  * Where the installed ZCode CLI accepts the client's dynamic workflow choice
- * (openspec/changes/v0.8.10-zcode-custom-key-leeyl).
+ * (openspec/changes/v0.9.0-zcode-custom-key-leeyl).
  *
  * - `preferences`: the strict `session/requestRuntimePreferences` result schema
  *   lists `dynamicWorkflowMode` (the build v0.8.7 was verified against).

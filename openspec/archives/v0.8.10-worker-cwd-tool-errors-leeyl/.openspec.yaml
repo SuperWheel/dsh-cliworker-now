@@ -1,9 +1,0 @@
-pm:
-  title: 修复 Worker 工作目录与工具错误文本
-  version: 0.8.10
-  creator: leeyl
-  creator_name: Leeyl
-  previous_names: []
-  archived: 2026-11-16
-schema: pmspec
-created: 2026-11-15

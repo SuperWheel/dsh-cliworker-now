@@ -387,7 +387,7 @@ export async function runNativeAcp(config, io, settings) {
       {
         protocolVersion: 1,
         clientCapabilities: settings.clientCapabilities ?? {},
-        clientInfo: { name: 'dsh-cliworker-now', version: '0.8.10' },
+        clientInfo: { name: 'dsh-cliworker-now', version: '0.9.0' },
       },
       { jsonrpc: true },
     )
@@ -535,7 +535,7 @@ export async function forkNativeAcp(config, io, argv) {
   })
   try {
     const initialized = await peer.request('initialize', { protocolVersion: 1,
-      clientCapabilities: {}, clientInfo: { name: 'dsh-cliworker-now', version: '0.8.10' } }, { jsonrpc: true })
+      clientCapabilities: {}, clientInfo: { name: 'dsh-cliworker-now', version: '0.9.0' } }, { jsonrpc: true })
     const capabilities = initialized?.agentCapabilities?.sessionCapabilities
     const operation = config.forkOperation === 'delete' ? 'delete' : 'fork'
     if (!capabilities || !Object.hasOwn(capabilities, operation))

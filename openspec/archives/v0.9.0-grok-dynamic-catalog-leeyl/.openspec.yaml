@@ -1,0 +1,10 @@
+pm:
+  title: 修复 Grok 新版动态账号模型目录
+  version: 0.9.0
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names:
+    - v0.8.10-grok-dynamic-catalog-leeyl
+  archived: 2026-11-16
+schema: pmspec
+created: 2026-11-15

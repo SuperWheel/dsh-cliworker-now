@@ -50,7 +50,7 @@
   - 最终验收：两轮均执行完整默认配置 `corepack pnpm vitest run`（子进程环境 `KIMI_CODE_NO_AUTO_UPDATE=1`，没有 maxWorkers/单文件过滤）；第一轮 172.79 秒，第二轮 196.51 秒。每轮均为 339 文件中 335 通过、0 失败、4 原有跳过；7761 项中 7747 通过、0 失败、14 原有跳过。
   - 两轮完整运行的 `$TMPDIR/cliworker-probe-*` 独立快照均为 24→24，新增 0、删除 0；同时记录 owner PID 与测试进程树，确认没有新增本轮归属残留。日志及前后快照在忽略目录 `.test-data/full-suite-stability/`：`stable-1.log`、`stable-2.log`、对应 `*-before.json` / `*-after.json` / `*-summary.json`；旧残留仍原样保留。
   - 最终两轮后 `corepack pnpm typecheck` 通过（Host/Client，DSH 0.2.2-rc.3）；`corepack pnpm build:preview` 通过，产物仅 `.cache/preview-package`。未运行正式 build、更新 Desktop、真实 CLI 更新、真实模型调用或推送。
-  - 最终严格校验：`corepack pnpm spec validate v0.8.10-hermes-renewal-fix-leeyl --strict` 与 `corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict` 均通过；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。
+  - 最终严格校验：`corepack pnpm spec validate v0.9.0-hermes-renewal-fix-leeyl --strict` 与 `corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict` 均通过；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。
 - [x] 3.2 Mac Desktop 实机：Pi 等已核实 CLI 的表单显示与写入（使用测试用服务商与测试密钥，不调用模型）
   - 2026-11-14 Mac Desktop（构建 44740eb）：Pi「添加账号」卡片显示「其他服务商（在本窗口中填写配置）」，继续后进入同窗口表单：服务商 ID*、服务商名称、Base URL*、API 协议*（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Google Generative AI）、API Key*（可显隐）、模型 ID*；底部「在原生终端中配置」「返回」「保存」。空表单保存逐字段显示必填错误；返回、关闭均正常。
   - 未执行：真实保存写入（会改动用户 Pi 配置，待用户提供测试服务商或授权）、OpenCode/Hermes 表单、深色主题与英文界面、Windows。

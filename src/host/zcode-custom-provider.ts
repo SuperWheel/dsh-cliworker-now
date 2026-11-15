@@ -15,7 +15,7 @@ import {
 } from './zcode-adapter.ts'
 
 /*
- * ZCode 「其他服务商」（openspec/changes/v0.8.10-zcode-custom-key-leeyl）：用户自己的 API Key 服务商，
+ * ZCode 「其他服务商」（openspec/changes/v0.9.0-zcode-custom-key-leeyl）：用户自己的 API Key 服务商，
  * 只写插件账号目录 `<zcodeAuthDirectory>/.zcode/v2/provider_config.json`，不改全局
  * `~/.zcode/v2/provider_config.json`。格式与 ZCode 桌面端「自定义服务商」写入的条目一致：
  * UUID providerId、providerName、group=standard-personal、access.type=api-key。
