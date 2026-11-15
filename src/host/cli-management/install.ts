@@ -116,7 +116,7 @@ export class CliInstaller {
           fetcher: (url, init) => this.deps.releases.response(String(url), init?.signal ?? signal) })
         const integrity = release.sha512 ? `sha512-${release.sha512}` : release.sha256 ? `sha256-${Buffer.from(release.sha256, 'hex').toString('base64')}` : undefined
         if (!integrity) throw new CliOperationError('INTEGRITY_MISMATCH', '官方桌面安装包没有摘要')
-        source.desktop = { ...descriptor, archive: 'zip', url: release.url, integrity, bytes: release.size, version: release.version }
+        source.desktop = { ...descriptor, archive: source.desktopFeed === 'workbuddy' && this.platform === 'darwin' ? 'dmg' : 'zip', url: release.url, integrity, bytes: release.size, version: release.version }
       }
       plan.target = source.desktop?.version
       if (!source.desktop || !plan.directory) prerequisite('官方安装包', '已核实地址、摘要/长度、开发者与位置', undefined, false)

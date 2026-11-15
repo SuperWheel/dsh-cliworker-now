@@ -1,4 +1,5 @@
 import { updateCleanupIo, withUpdateCleanup } from '../src/host/cli-management/update-cleanup.ts'
+import { downloadCliArtifact } from '../src/host/cli-management/download.ts'
 import { EventEmitter } from 'node:events'
 import { execFile } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, readdir, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises'
@@ -15,7 +16,7 @@ const roots: string[] = []
 const signal = () => new AbortController().signal
 const sha512 = Buffer.alloc(64, 1).toString('base64'), sha256 = 'a'.repeat(64)
 const zurl = 'https://cdn-zcode.z.ai/zcode/electron/releases/3.18.2/macos-arm64/ZCode.zip'
-const wburl = (cli: DesktopCli, platform = 'darwin') => `https://download.codebuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}/workbuddy/saas/${platform === 'darwin' ? 'darwin-arm64/WorkBuddy.zip' : 'win32-x64-user/WorkBuddy.exe'}`
+const wburl = (cli: DesktopCli, platform = 'darwin') => `https://download.codebuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}/workbuddy/saas/${platform === 'darwin' ? 'darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-fa0a0901.zip' : 'win32-x64-user/WorkBuddy.exe'}`
 const manifest = (file: Record<string, unknown> = {}, extra = '') => `version: 3.18.2\nfiles:\n  - ${Object.entries({ url: zurl, sha512, size: 123, ...file }).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n    ')}\n${extra}`
 const wb = (cli: DesktopCli, overrides: Record<string, unknown> = {}) => JSON.stringify({ version: '5.9.3.42398134', url: wburl(cli), sha256hash: sha256, ...overrides })
 function feed(body: string, init?: ResponseInit) {
@@ -42,8 +43,8 @@ describe('模拟：官方桌面更新 feed', () => {
   it.each(['workbuddycn', 'workbuddy'] as const)('%s 正常 JSON、四段版本号、当前版本与各自白名单', async cli => {
     const fetcher = feed(wb(cli))
     const result = await readDesktopRelease(cli, { appVersion: '5.9.2' }, signal(), { fetcher, platform: 'darwin', arch: 'arm64' })
-    expect(result).toMatchObject({ version: '5.9.3.42398134', url: wburl(cli), sha256 })
-    expect(result.teamId).toBe(cli === 'workbuddycn' ? 'FN2V63AD2J' : undefined)
+    expect(result).toMatchObject({ version: '5.9.3.42398134', url: cli === 'workbuddy' ? wburl(cli).replace(/\.zip$/, '.dmg') : wburl(cli), sha256 })
+    expect(result.teamId).toBe('FN2V63AD2J')
     expect(fetcher.mock.calls[0]).toEqual([`https://www.workbuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}/v2/update?platform=workbuddy-darwin-arm64&version=5.9.2`, expect.objectContaining({ credentials: 'omit', redirect: 'error' })])
   })
   it('WorkBuddy CN Windows 使用 user 后缀和缺省公开版本哨兵', async () => {
@@ -135,10 +136,14 @@ async function fixture(cli: DesktopCli = 'zcode', platform = 'darwin') {
   const controller = new AbortController()
   const release: DesktopRelease = cli === 'zcode'
     ? { version: '3.18.2', url: platform === 'darwin' ? zurl : zurl.replace('.zip', '.exe'), sha512, size: 123 }
-    : { version: '5.9.3.42398134', url: wburl(cli, platform), sha256 }
+    : { version: '5.9.3.42398134', url: cli === 'workbuddy' && platform === 'darwin' ? wburl(cli, platform).replace(/\.zip$/, '.dmg') : wburl(cli, platform), sha256 }
   const capture = vi.spyOn(desktopUpdateIo, 'capture').mockImplementation(async argv => argv[0] === '/bin/ps' ? '/sbin/launchd\n' : 'TeamIdentifier=TEST123456\n')
   const download = vi.fn(async () => join(root, platform === 'darwin' ? '模拟.zip' : '模拟.exe'))
   const run = vi.fn(async (argv: string[], _signal: AbortSignal) => {
+    if (argv[0] === '/usr/bin/hdiutil' && argv[1] === 'attach') {
+      const app = join(argv[argv.indexOf('-mountpoint') + 1]!, 'WorkBuddy AI.app')
+      await mkdir(app); await writeFile(join(app, 'version.txt'), 'new')
+    }
     if (argv[0] === '/usr/bin/ditto') {
       const app = argv[1] === '-x' ? join(argv[4]!, 'Original Name.app') : argv[2]!
       await mkdir(app, { recursive: true }); await writeFile(join(app, 'version.txt'), 'new')
@@ -148,7 +153,9 @@ async function fixture(cli: DesktopCli = 'zcode', platform = 'darwin') {
   const assertClean = async (expected = 'old') => {
     expect(await readFile(join(appPath, 'version.txt'), 'utf8')).toBe(expected)
     expect(await readdir(applications)).toEqual([basename(appPath)])
-    expect(await readdir(join(root, 'cli-management')).catch(() => [])).toEqual([])
+    const cache = await readdir(join(root, 'cli-management')).catch(() => [])
+    expect(cache.filter(name => name !== 'mounts')).toEqual([])
+    if (cache.includes('mounts')) expect(await readdir(join(root, 'cli-management/mounts'))).toEqual([])
   }
   return { options, controller, run, capture, download, assertClean, appPath, root, applications }
 }
@@ -160,9 +167,9 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     await f.assertClean('new')
     expect(f.download).toHaveBeenCalledWith(f.options.release.url, expect.objectContaining(cli === 'zcode' ? { sha512, size: 123 } : { sha256 }), f.controller.signal)
     const verifications = f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/bin/codesign' && argv.some((value) => value.startsWith('-R=')))
-    expect(verifications).toHaveLength(2)
-    for (const [argv] of verifications) expect(argv).toContain(`-R=anchor apple generic and certificate leaf[subject.OU] = "${cli === 'workbuddy' ? 'TEST123456' : cli === 'zcode' ? '8A5X4JJ39T' : 'FN2V63AD2J'}"`)
-    expect(f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/sbin/spctl')).toHaveLength(2)
+    expect(verifications).toHaveLength(cli === 'workbuddy' ? 3 : 2)
+    for (const [argv] of verifications) expect(argv).toContain(`-R=anchor apple generic and certificate leaf[subject.OU] = "${cli === 'zcode' ? '8A5X4JJ39T' : 'FN2V63AD2J'}"${cli === 'workbuddy' ? ' and identifier "com.workbuddy.workbuddy-ai"' : ''}`)
+    expect(f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/sbin/spctl')).toHaveLength(cli === 'workbuddy' ? 3 : 2)
     expect(f.capture.mock.calls.filter(([argv]) => argv[0] === '/bin/ps')).toHaveLength(2)
     expect(f.options.awaiting).not.toHaveBeenCalled()
   })
@@ -171,8 +178,8 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     ['zcode', 'FN2V63AD2J', false],
     ['workbuddycn', 'FN2V63AD2J', true],
     ['workbuddycn', '8A5X4JJ39T', false],
-    ['workbuddy', 'TEST123456', true],
-    ['workbuddy', 'FN2V63AD2J', false],
+    ['workbuddy', 'TEST123456', false],
+    ['workbuddy', 'FN2V63AD2J', true],
   ] as const)('%s 新包团队 %s 匹配结果=%s（模拟 codesign 要求检查）', async (cli, actualTeam, accepted) => {
     const f = await fixture(cli), originalRun = f.run.getMockImplementation()!
     // Even a supplied release.teamId cannot override the pinned/existing-app identity.
@@ -303,10 +310,16 @@ describe('模拟：macOS 桌面应用替换与恢复', () => {
     await expect(runDesktopUpdate(f.options)).rejects.toMatchObject({ code: where === 'extracted' ? 'IDENTITY_CHANGED' : 'LOCATION_INVALID' })
     expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
   })
-  it('国际版无法读取现有 TeamIdentifier 时拒绝下载', async () => {
-    const f = await fixture('workbuddy'); f.capture.mockResolvedValue('TeamIdentifier=not set')
-    await expect(runDesktopUpdate(f.options)).rejects.toThrow('开发者签名')
-    expect(f.download).not.toHaveBeenCalled(); await f.assertClean()
+  it('国际版固定 Team 与 bundle，不采用旧应用或 release.teamId 的替代身份', async () => {
+    const f = await fixture('workbuddy'); f.options.release.teamId = 'TEST123456'
+    await runDesktopUpdate(f.options)
+    expect(f.capture.mock.calls.every(([argv]) => argv[0] === '/bin/ps')).toBe(true)
+    const checks = f.run.mock.calls.filter(([argv]) => argv[0] === '/usr/bin/codesign')
+    for (const [argv] of checks) expect(argv).toContain('-R=anchor apple generic and certificate leaf[subject.OU] = "FN2V63AD2J" and identifier "com.workbuddy.workbuddy-ai"')
+    const attach = f.run.mock.calls.find(([argv]) => argv[1] === 'attach')![0]
+    expect(attach.slice(0, 5)).toEqual(['/usr/bin/hdiutil', 'attach', '-readonly', '-nobrowse', '-mountpoint'])
+    expect(f.run.mock.calls.some(([argv]) => argv[1] === '-x')).toBe(false)
+    await f.assertClean('new')
   })
 })
 
@@ -424,5 +437,83 @@ describe('模拟：只读输出探测适配器', () => {
     child.emit('close', null, 'SIGKILL')
     expect(await pending).toMatchObject({ message: '模拟探测超时' })
     expect(vi.getTimerCount()).toBe(0)
+  })
+})
+
+
+describe('模拟：WorkBuddy 国际版 DMG 工件与失败边界（不联网、不运行系统程序）', () => {
+  it.each(['arm64', 'x64'])('%s feed 只换扩展名，保持 feed SHA-256', async arch => {
+    const url = wburl('workbuddy').replaceAll('arm64', arch)
+    const result = await readDesktopRelease('workbuddy', {}, signal(), { platform: 'darwin', arch, fetcher: feed(wb('workbuddy', { url, sha256hash: sha256.toUpperCase() })) })
+    expect(result).toEqual({ version: '5.9.3.42398134', url: url.slice(0, -4) + '.dmg', sha256, teamId: 'FN2V63AD2J' })
+  })
+  it.each([
+    ['主机', wburl('workbuddy').replace('download.codebuddy.ai', 'download.codebuddy.ai.invalid')],
+    ['CN 主机', wburl('workbuddycn')],
+    ['非 zip', wburl('workbuddy').replace('.zip', '.dmg')],
+    ['大小写后缀', wburl('workbuddy').replace('.zip', '.ZIP')],
+    ['多余后缀', wburl('workbuddy') + '.exe'],
+    ['查询', wburl('workbuddy') + '?file=.zip'],
+    ['空查询', wburl('workbuddy') + '?'],
+    ['空片段', wburl('workbuddy') + '#'],
+    ['片段', wburl('workbuddy') + '#.zip'],
+    ['路径', wburl('workbuddy').replace('/saas/', '/other/')],
+    ['路径层级', wburl('workbuddy').replace('/saas/', '/saas/extra/')],
+    ['规范化', wburl('workbuddy').replace('/saas/', '/saas/../saas/')],
+    ['编码', wburl('workbuddy').replace('WorkBuddy-', '%57orkBuddy-')],
+    ['请求架构', wburl('workbuddy').replaceAll('arm64', 'x64')],
+    ['文件架构', wburl('workbuddy').replace('WorkBuddy-darwin-arm64', 'WorkBuddy-darwin-x64')],
+    ['版本', wburl('workbuddy').replace('5.9.3.42398134', '5.9.4.42593613')],
+    ['端口', wburl('workbuddy').replace('.ai/', '.ai:444/')],
+    ['明文协议', wburl('workbuddy').replace('https:', 'http:')],
+  ])('拒绝异常 %s', async (_kind, url) => {
+    await expect(readDesktopRelease('workbuddy', {}, signal(), { platform: 'darwin', arch: 'arm64', fetcher: feed(wb('workbuddy', { url })) })).rejects.toThrow('白名单')
+  })
+  it.each(['zip', 'foreign-dmg', 'wrong-version'])('执行阶段拒绝 %s 工件，不下载或启动系统命令', async kind => {
+    const f = await fixture('workbuddy')
+    f.options.release.url = kind === 'zip' ? wburl('workbuddy') : kind === 'foreign-dmg' ? f.options.release.url.replace('.ai/', '.cn/') : f.options.release.url.replace('5.9.3.42398134', '5.9.4.42593613')
+    await expect(runDesktopUpdate(f.options)).rejects.toThrow('白名单')
+    expect(f.download).not.toHaveBeenCalled(); expect(f.run).not.toHaveBeenCalled(); expect(f.capture).not.toHaveBeenCalled()
+    await f.assertClean()
+  })
+  it('CN 仍使用 ZIP，国际 Windows 仍使用 EXE', async () => {
+    await expect(readDesktopRelease('workbuddycn', {}, signal(), { platform: 'darwin', arch: 'arm64', fetcher: feed(wb('workbuddycn')) })).resolves.toMatchObject({ url: wburl('workbuddycn'), sha256 })
+    const url = wburl('workbuddy', 'win32')
+    await expect(readDesktopRelease('workbuddy', {}, signal(), { platform: 'win32', arch: 'x64', fetcher: feed(wb('workbuddy', { url })) })).resolves.toMatchObject({ url, sha256 })
+  })
+  it('真实下载校验器配模拟字节：DMG 摘要不符，零挂载/解包/签名/替换，不回退 ZIP', async () => {
+    const f = await fixture('workbuddy'), bytes = '模拟错误 DMG 内容'
+    const fetcher = vi.fn(async () => new Response(bytes, { headers: { 'content-length': String(Buffer.byteLength(bytes)) } }))
+    f.options.release = await readDesktopRelease('workbuddy', {}, signal(), { platform: 'darwin', arch: 'arm64', fetcher: feed(wb('workbuddy')) })
+    f.download.mockImplementation(async (...args: unknown[]) => {
+      const [url, expected, control] = args as [string, { sha256: string }, AbortSignal]
+      return downloadCliArtifact({ root: f.root, url, integrity: `sha256-${Buffer.from(expected.sha256, 'hex').toString('base64')}`, signal: control, fetcher, progress: () => {} })
+    })
+    await expect(runDesktopUpdate(f.options)).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    for (const [url] of fetcher.mock.calls as unknown as [string][]) expect(url).toBe(f.options.release.url)
+    expect(f.run).not.toHaveBeenCalled()
+    expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
+    expect(await readdir(join(f.root, 'cli-management/downloads'))).toEqual([])
+  })
+  it.each(['attach', 'signature', 'spctl', 'copy', 'cancel', 'detach'])('%s 失败保留旧应用，并尝试卸载；未确认卸载保留隔离', async step => {
+    const f = await fixture('workbuddy'), original = f.run.getMockImplementation()!
+    f.run.mockImplementation(async (argv, control) => {
+      if (step === 'attach' && argv[1] === 'attach') throw new Error('模拟挂载失败')
+      if (step === 'signature' && argv[0] === '/usr/bin/codesign') throw new Error('模拟 bundle 不符')
+      if (step === 'spctl' && argv[0] === '/usr/sbin/spctl') throw new Error('模拟 Gatekeeper 拒绝')
+      if (step === 'copy' && argv[0] === '/usr/bin/ditto') throw new Error('模拟复制失败')
+      if (step === 'detach' && argv[1] === 'detach') throw new Error('模拟卸载失败')
+      await original(argv, control)
+      if (step === 'cancel' && argv[1] === 'attach') f.controller.abort(new Error('模拟取消'))
+      control.throwIfAborted()
+    })
+    const task = runDesktopUpdate(f.options)
+    if (step === 'detach') await expect(task).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+    else await expect(task).rejects.toThrow('模拟')
+    expect(f.run.mock.calls.some(([argv]) => argv[1] === 'detach')).toBe(true)
+    expect(await readFile(join(f.appPath, 'version.txt'), 'utf8')).toBe('old')
+    if (step === 'detach') expect(await readdir(join(f.root, 'cli-management/mounts'))).toHaveLength(1)
+    else await f.assertClean()
   })
 })

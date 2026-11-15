@@ -1,5 +1,6 @@
 /** 模拟：首次安装全过程。所有 CLI、Node/npm、官方脚本、HTTP 与安装器均为夹具。 */
 import { afterEach, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -259,10 +260,10 @@ it('模拟：Windows 首次安装签名和实际落点未核实，保持零下�
 })
 it.each(['zcode', 'workbuddycn', 'workbuddy'] as const)('模拟：%s 首次安装使用官方发布读取器、摘要、固定签名与自选路径', async cli => {
   const f = fixture(), version = cli === 'zcode' ? '3.18.2' : '5.9.4.42593613'
-  const feed = vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version, url: 'https://official.invalid/mock.zip', sha256: 'a'.repeat(64) })
+  const feed = vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version, url: cli === 'workbuddy' ? 'https://official.invalid/mock.dmg' : 'https://official.invalid/mock.zip', sha256: 'a'.repeat(64) })
   const directory = join(f.root, 'custom-apps'), plan = await f.installer.prepare(cli, 'https://registry.npmjs.org/', directory, control())
   expect(feed).toHaveBeenCalledWith(cli, {}, expect.any(AbortSignal), expect.objectContaining({ platform: 'darwin' }))
-  expect(plan).toMatchObject({ directory, target: version, offer: { method: 'desktop', selectableLocation: true }, source: { desktop: { archive: 'zip', teamId: sources.DESKTOP_INSTALL_SOURCES[cli].teamId, integrity: `sha256-${Buffer.from('a'.repeat(64), 'hex').toString('base64')}` } } })
+  expect(plan).toMatchObject({ directory, target: version, offer: { method: 'desktop', selectableLocation: true }, source: { desktop: { archive: cli === 'workbuddy' ? 'dmg' : 'zip', teamId: sources.DESKTOP_INSTALL_SOURCES[cli].teamId, integrity: `sha256-${Buffer.from('a'.repeat(64), 'hex').toString('base64')}` } } })
   feed.mockResolvedValue({ version, url: 'https://official.invalid/replaced.zip', sha256: 'b'.repeat(64) })
   expect((await f.installer.prepare(cli, 'https://registry.npmjs.org/', directory, control())).token).not.toBe(plan.token)
   expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.artifactFetch).not.toHaveBeenCalled()
@@ -286,9 +287,11 @@ it.each(['3.18.2', '3.18.1'] as const)('模拟：桌面安装后应用版本 %s�
 })
 it('模拟：桌面官方工件摘要不符时，两次下载均拒绝，零安装进程、不写路径', async () => {
   const f = fixture()
-  vi.spyOn(desktopRelease, 'readDesktopRelease').mockResolvedValue({ version: '5.9.4.42593613', url: 'https://official.invalid/mock.zip', sha256: 'a'.repeat(64) })
+  const url = `https://download.codebuddy.ai/workbuddy/saas/darwin-${process.arch}/WorkBuddy-darwin-${process.arch}-5.9.4.42593613-fa0a0901.zip`
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ version: '5.9.4.42593613', url, sha256hash: 'a'.repeat(64) })))
   const plan = await f.installer.prepare('workbuddy', 'https://registry.npmjs.org/', join(f.root, 'target'), control())
   await expect(f.installer.execute(plan, { outputTail: '' } as any, control(), () => {}, async () => {})).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
+  expect(plan.source.desktop).toMatchObject({ archive: 'dmg', url: url.replace(/\.zip$/, '.dmg'), integrity: `sha256-${Buffer.from('a'.repeat(64), 'hex').toString('base64')}` })
   expect(f.artifactFetch).toHaveBeenCalledTimes(2); expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.config.cliExecutablePaths.read('workbuddy')).toBeUndefined()
 })
 it('模拟：安装与更新共用锁，重复请求幂等，取消等待整个进程退出', async () => {
@@ -301,4 +304,32 @@ it('模拟：安装与更新共用锁，重复请求幂等，取消等待整个�
   f.service.cancel(op.id); await until(() => child.child.waitForExit.mock.calls.length > 0)
   expect(f.service.snapshot().results).toEqual([]); child.finish(); child.exit(true)
   expect((await finished(f.service)).results[0]?.phase).toBe('cancelled'); expect(f.config.cliExecutablePaths.read('codex')).toBeUndefined()
+})
+
+
+it.each([['workbuddy', true], ['workbuddy', false], ['workbuddycn', true]] as const)('模拟：%s 完整 feed 到首次安装链路，DMG/ZIP 严格分流、版本匹配=%s', async (cli, matchesVersion) => {
+  const f = fixture(), version = '5.9.4.42593613', appName = sources.DESKTOP_INSTALL_SOURCES[cli].appName
+  const url = `https://download.codebuddy.${cli === 'workbuddy' ? 'ai' : 'cn'}/workbuddy/saas/darwin-${process.arch}/WorkBuddy-darwin-${process.arch}-${version}-fa0a0901.zip`
+  const hash = createHash('sha256').update('模拟').digest('hex')
+  f.metadataFetch.mockImplementation(async () => new Response(JSON.stringify({ version, url, sha256hash: hash })))
+  vi.mocked(f.backend.spawn).mockImplementation(({ argv }) => {
+    if (argv[1] === 'attach') mkdirSync(join(argv[argv.indexOf('-mountpoint') + 1]!, appName))
+    else if (argv[1] === '-x') mkdirSync(join(argv[4]!, appName))
+    else if (argv[0] === '/usr/bin/ditto') mkdirSync(argv[2]!)
+    return exited()
+  })
+  f.identify.mockImplementation(async (_cli, _backend, config) => config.cliExecutablePaths ? undefined : ({ ...syntheticIdentity(cli, '2.165.0'), executable: config[`${cli}Executable`]!, source: 'desktop-app', fingerprint: { realpath: config[`${cli}Executable`]!, size: 1, mtimeMs: 1, appVersion: matchesVersion ? version : '5.9.3.42398134' } }))
+  f.version.mockResolvedValue('2.165.0')
+  const directory = join(f.root, 'desktop-target'), plan = await f.installer.prepare(cli, 'https://registry.npmjs.org/', directory, control())
+  expect(plan.source.desktop).toMatchObject({ archive: cli === 'workbuddy' ? 'dmg' : 'zip', url: cli === 'workbuddy' ? url.replace(/\.zip$/, '.dmg') : url, integrity: `sha256-${Buffer.from(hash, 'hex').toString('base64')}` })
+  const task = f.installer.execute(plan, { outputTail: '' } as any, control(), () => {}, async () => {})
+  if (matchesVersion) await expect(task).resolves.toMatchObject({ version: '2.165.0' })
+  else await expect(task).rejects.toMatchObject({ code: 'VERSION_MISMATCH' })
+  const commands = vi.mocked(f.backend.spawn).mock.calls.map(([spec]) => spec.argv)
+  expect(commands.some(argv => argv[1] === 'attach')).toBe(cli === 'workbuddy')
+  expect(commands.some(argv => argv[1] === 'detach')).toBe(cli === 'workbuddy')
+  expect(commands.some(argv => argv[1] === '-x')).toBe(cli === 'workbuddycn')
+  if (cli === 'workbuddy') expect(commands.find(argv => argv[0] === '/usr/bin/codesign')).toContain('-R=anchor apple generic and certificate leaf[subject.OU] = "FN2V63AD2J" and identifier "com.workbuddy.workbuddy-ai"')
+  expect(f.config.cliExecutablePaths.read(cli)?.path).toBe(matchesVersion ? join(directory, appName, sources.DESKTOP_INSTALL_SOURCES[cli].relativeEntry) : undefined)
+  expect(readdirSync(join(f.root, 'cli-management/mounts'))).toEqual([])
 })

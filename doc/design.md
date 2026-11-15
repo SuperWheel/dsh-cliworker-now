@@ -1692,3 +1692,12 @@ npm cache add 与 install 显式使用同一个下载目录内 npm-cache，不�
 ### 2026-11-15 Windows WorkBuddy 应用版本发现修复
 
 Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从已核对包名、站点和入口的 unpacked CLI `product.json.genieVersion` 补齐应用版本，仅接受现有应用版本格式。内置 CLI 版本保持独立，macOS Info.plist 优先级及 ZCode 规则不变；不新增进程或持久化字段。Windows CN 实机只读证据、模拟验证和未验证边界见 [更新 CLI 变更决定 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md)。
+
+
+### 2026-11-15 国际版 WorkBuddy macOS DMG 工件选择
+
+既有匿名审计确认国际版 arm64/x64 feed 的 `sha256hash` 与同路径 DMG 一致、与 ZIP 不一致，官网前端也使用 ZIP → DMG 映射。依本次授权，Host 仅对 `workbuddy` + darwin 在读取清单时选取 DMG：精确限制 HTTPS `download.codebuddy.ai`、已核实同架构同版本文件路径及 `.zip` 末尾，拒绝查询/片段、凭据、端口、编码或规范化歧义。选择后执行入口只接受对应 DMG 路径，摘要始终取 feed，不用实算摘要覆盖；CN 继续 ZIP，ZCode 与 Windows 不变。
+
+首次安装复用 `desktop.ts` 的只读挂载/签名/Gatekeeper/ditto/卸载流程；更新器复用同一流程准备暂存副本，卸载确认后再沿用原有替换、回滚、忙闲检查及装后版本核对。国际版固定 Apple anchor、Team `FN2V63AD2J` 和签名 identifier `com.workbuddy.workbuddy-ai`，不从旧应用推断可信团队。下载摘要失败不执行挂载、解包或安装，卸载未确认保留清理隔离，不替换旧应用。命令继续用参数数组并保留宿主代理，不引入账号读取或数据迁移。
+
+未来若官方把 feed 改为 ZIP 摘要，此 DMG 规则应严格失败；重新核实官网、feed 与工件对应关系并修订规则/测试后才切回 ZIP，不能运行时试错回退。详见 [决定 16](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 与 [任务 15](../openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。本次仅模拟回归及静态/隔离构建检查，没有真实安装、更新、签名系统执行、挂载、登录或 Desktop 验收。

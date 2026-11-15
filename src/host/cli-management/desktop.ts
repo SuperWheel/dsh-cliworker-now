@@ -8,12 +8,21 @@ import { ProcessCleanupUnconfirmedError } from '../process.ts'
 const { chmod, mkdir, mkdtemp, lstat, rename } = physicalFs().promises
 export const desktopFs = { rm: (path: string, _options?: unknown) => removeUpdateTemporary(path) }
 
+/** Signature identities are Host-owned, never taken from the feed. */
+export function desktopSignatureRequirement(source: { teamId: string; bundleId?: string }): string {
+  if (!/^[A-Z0-9]{10}$/.test(source.teamId) || source.bundleId !== undefined && !/^[a-zA-Z0-9]+(?:[.-][a-zA-Z0-9]+)+$/.test(source.bundleId)) {
+    throw new CliOperationError('PREREQUISITE_MISSING', '桌面应用身份尚未核实')
+  }
+  return `-R=anchor apple generic and certificate leaf[subject.OU] = "${source.teamId}"${source.bundleId ? ` and identifier "${source.bundleId}"` : ''}`
+}
+
 /** Only Host-verified official feeds and pinned publisher identities enter here. */
 export async function installDesktop(options: {
   source: NonNullable<InstallSource['desktop']>; root: string; file: string; directory: string; platform: string; signal: AbortSignal
   run(argv: string[], signal: AbortSignal): Promise<void>; awaiting(): void
 }): Promise<string> {
   const { source, run, signal } = options
+  const requirement = desktopSignatureRequirement(source)
   if (!/^[A-Z0-9]{10}$/.test(source.teamId) || basename(source.appName) !== source.appName || !source.appName.endsWith('.app')) throw new CliOperationError('PREREQUISITE_MISSING', '桌面应用身份尚未核实')
   if (options.platform === 'win32') {
     options.awaiting()
@@ -39,7 +48,7 @@ export async function installDesktop(options: {
     const app = join(mount, source.appName)
     const info = await lstat(app)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new CliOperationError('IDENTITY_CHANGED', '安装镜像没有预期的应用目录')
-    await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `-R=anchor apple generic and certificate leaf[subject.OU] = "${source.teamId}"`, app], signal)
+    await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', requirement, app], signal)
     await run(['/usr/sbin/spctl', '--assess', '--type', 'execute', app], signal)
     await mkdir(options.directory, { recursive: true, mode: 0o700 })
     stage = trackUpdateTemporary(await mkdtemp(join(options.directory, '.cliworker-install-')))

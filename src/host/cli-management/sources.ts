@@ -114,7 +114,7 @@ export const LOCAL_INSTALLERS = {
 export const DESKTOP_INSTALL_SOURCES = {
   zcode: { feed: 'https://zcode.z.ai/api/v1/releases/electron/manifest?platform={platform}-{arch}&channel=1', appName: 'ZCode.app', relativeEntry: 'Contents/Resources/glm/zcode.cjs', teamId: '8A5X4JJ39T' },
   workbuddycn: { feed: 'https://www.workbuddy.cn/v2/update?platform=workbuddy-{platform}-{arch}&version=0.0.0', appName: 'WorkBuddy.app', relativeEntry: 'Contents/Resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs', teamId: 'FN2V63AD2J' },
-  workbuddy: { feed: 'https://www.workbuddy.ai/v2/update?platform=workbuddy-{platform}-{arch}&version=0.0.0', appName: 'WorkBuddy AI.app', relativeEntry: 'Contents/Resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs', teamId: 'FN2V63AD2J' },
+  workbuddy: { feed: 'https://www.workbuddy.ai/v2/update?platform=workbuddy-{platform}-{arch}&version=0.0.0', appName: 'WorkBuddy AI.app', bundleId: 'com.workbuddy.workbuddy-ai', relativeEntry: 'Contents/Resources/app.asar.unpacked/cli/dist/codebuddy-lite-wb.mjs', teamId: 'FN2V63AD2J' },
 } as const
 
 export interface InstallSource {
@@ -123,7 +123,7 @@ export interface InstallSource {
   nodeMinimum?: string
   script?: { url: string; interpreter: readonly string[]; relativeEntry: string }
   desktopFeed?: keyof typeof DESKTOP_INSTALL_SOURCES
-  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; version: string; archive?: 'zip' | 'dmg'; commonDirectories?: readonly string[] }
+  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; bundleId?: string; version: string; archive?: 'zip' | 'dmg'; commonDirectories?: readonly string[] }
   reason?: string
 }
 /** PRD 5.3 evidence only. Missing feeds/flags/runtime guarantees are not inferred. */

@@ -9,6 +9,8 @@ import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliOperationError } from './planner.ts'
 import { bounded } from './versions.ts'
+import { installDesktop, desktopSignatureRequirement } from './desktop.ts'
+import { DESKTOP_INSTALL_SOURCES } from './sources.ts'
 
 // App bundles contain app.asar; Electron's patched fs would treat it as a directory.
 const { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } = physicalFs().promises
@@ -36,13 +38,25 @@ function size(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > ARTIFACT_LIMIT) return unavailable('官方安装包大小必须为 1 B 至 1 GiB 的整数')
   return value
 }
-function artifactUrl(cli: DesktopCli, value: unknown, platform: string): string {
+function artifactUrl(cli: DesktopCli, value: unknown, platform: string, expectedVersion: string, feedArch?: string): string {
   if (typeof value !== 'string') return unavailable('官方更新源没有提供下载地址')
   let url: URL, path: string
   try { url = new URL(value); path = decodeURIComponent(url.pathname) }
   catch { return unavailable('官方更新源的下载地址无效') }
   const host = cli === 'zcode' ? 'cdn-zcode.z.ai' : cli === 'workbuddycn' ? 'download.codebuddy.cn' : 'download.codebuddy.ai'
   const prefix = cli === 'zcode' ? '/zcode/electron/releases/' : '/workbuddy/saas/'
+  // The international macOS feed hashes the same-name DMG, as does the website's
+  // download mapping. Validate the raw ZIP URL before replacing only its suffix.
+  // Execution revalidates the selected DMG; it never remaps arbitrary artifacts.
+  if (cli === 'workbuddy' && platform === 'darwin') {
+    const match = /^\/workbuddy\/saas\/darwin-(arm64|x64)\/WorkBuddy-darwin-\1-(\d+\.\d+\.\d+(?:\.\d+)?)-[a-f0-9]{8}\.(zip|dmg)$/.exec(url.pathname)
+    if (url.protocol !== 'https:' || url.hostname !== host || url.username || url.password || url.port || url.search || url.hash ||
+        value !== url.href || !value.endsWith(feedArch ? '.zip' : '.dmg') || path !== url.pathname || !match || match[2] !== expectedVersion ||
+        match[3] !== (feedArch ? 'zip' : 'dmg') || feedArch && match[1] !== feedArch) {
+      return unavailable('官方下载地址不在已核实的应用下载白名单内')
+    }
+    return feedArch ? value.slice(0, -4) + '.dmg' : value
+  }
   if (url.protocol !== 'https:' || url.hostname !== host || url.username || url.password || url.port || url.hash ||
       !path.startsWith(prefix) || path.split('/').some(part => part === '..' || part === '.') || path.includes('\\') ||
       !path.endsWith(platform === 'darwin' ? '.zip' : '.exe') || cli !== 'zcode' && platform === 'win32' && !/^\/workbuddy\/saas\/win32-(x64|arm64)-user\//.test(path)) {
@@ -50,8 +64,9 @@ function artifactUrl(cli: DesktopCli, value: unknown, platform: string): string 
   }
   return url.href
 }
-function checkedRelease(cli: DesktopCli, release: DesktopRelease, platform: string): DesktopRelease {
-  const result: DesktopRelease = { version: version(release.version), url: artifactUrl(cli, release.url, platform) }
+function checkedRelease(cli: DesktopCli, release: DesktopRelease, platform: string, feedArch?: string): DesktopRelease {
+  const target = version(release.version)
+  const result: DesktopRelease = { version: target, url: artifactUrl(cli, release.url, platform, target, feedArch) }
   if (cli === 'zcode') {
     const sha = release.sha512
     if (!sha) return unavailable('官方更新源没有提供校验值，暂不能自动更新')
@@ -64,6 +79,7 @@ function checkedRelease(cli: DesktopCli, release: DesktopRelease, platform: stri
     if (release.size !== undefined) result.size = size(release.size)
   }
   if (pinnedTeams[cli]) result.teamId = pinnedTeams[cli]
+  if (cli === 'workbuddy' && platform === 'darwin') result.teamId = DESKTOP_INSTALL_SOURCES.workbuddy.teamId
   return result
 }
 function parseManifest(text: string): Record<string, unknown> {
@@ -122,7 +138,7 @@ export async function readDesktopRelease(cli: DesktopCli, current: { appVersion?
       if (!file) return unavailable('官方更新清单没有此平台的安装包')
       return checkedRelease(cli, { ...record(file), version: data.version } as unknown as DesktopRelease, platform)
     }
-    return checkedRelease(cli, { version: data.version, url: data.url, sha256: data.sha256hash, size: data.size } as DesktopRelease, platform)
+    return checkedRelease(cli, { version: data.version, url: data.url, sha256: data.sha256hash, size: data.size } as DesktopRelease, platform, arch)
   } catch (error) {
     signal.throwIfAborted()
     if (deadline.signal.aborted) return unavailable('读取官方更新源超过 8 秒，请稍后重试')
@@ -211,14 +227,7 @@ export async function runDesktopUpdate(options: {
     const canonical = await realpath(appPath), parent = dirname(appPath)
     await desktopUpdateIo.access(parent, constants.W_OK | constants.X_OK)
     await ensureStopped(canonical)
-    let teamId = pinnedTeams[cli]
-    if (!teamId) {
-      await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', appPath], signal)
-      const signature = await desktopUpdateIo.capture(['/usr/bin/codesign', '-dv', '--verbose=2', appPath], signal)
-      const teams = [...signature.matchAll(/^TeamIdentifier=([A-Z0-9]{10})\r?$/gm)]
-      if (teams.length !== 1) return unavailable('无法确认现有应用的开发者签名，暂不能自动更新')
-      teamId = teams[0]![1]!
-    }
+    const teamId = cli === 'workbuddy' ? DESKTOP_INSTALL_SOURCES.workbuddy.teamId : pinnedTeams[cli]!
     const file = await download(); signal.throwIfAborted()
     const cache = join(options.root, 'cli-management')
     await mkdir(cache, { recursive: true, mode: 0o700 })
@@ -226,14 +235,20 @@ export async function runDesktopUpdate(options: {
     if (!cacheInfo.isDirectory() || cacheInfo.isSymbolicLink()) throw new CliOperationError('LOCATION_INVALID', '更新缓存不是实际目录')
     await chmod(cache, 0o700)
     stage = trackUpdateTemporary(await mkdtemp(join(cache, 'desktop-update-'))); await chmod(stage, 0o700)
-    await run(['/usr/bin/ditto', '-x', '-k', file, stage], signal); signal.throwIfAborted()
+    if (cli === 'workbuddy') {
+      // Reuse the installation DMG lifecycle, including detach on failure and
+      // cleanup isolation. The old app is untouched until staging has completed.
+      await installDesktop({ source: { ...DESKTOP_INSTALL_SOURCES.workbuddy, url: release.url, version: release.version, archive: 'dmg' },
+        root: options.root, file, directory: stage, platform, signal, run, awaiting: options.awaiting })
+    } else await run(['/usr/bin/ditto', '-x', '-k', file, stage], signal)
+    signal.throwIfAborted()
     const apps = (await readdir(stage)).filter(name => name.endsWith('.app'))
     if (apps.length !== 1) throw new CliOperationError('IDENTITY_CHANGED', '更新包必须包含唯一的应用目录')
     const extracted = join(stage, apps[0]!)
     const info = await lstat(extracted)
     if (!info.isDirectory() || info.isSymbolicLink()) throw new CliOperationError('IDENTITY_CHANGED', '更新包中的应用目录无效')
     const verify = async (app: string) => {
-      await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', `-R=anchor apple generic and certificate leaf[subject.OU] = "${teamId}"`, app], signal)
+      await run(['/usr/bin/codesign', '--verify', '--deep', '--strict', desktopSignatureRequirement({ teamId, ...(cli === 'workbuddy' ? { bundleId: DESKTOP_INSTALL_SOURCES.workbuddy.bundleId } : {}) }), app], signal)
       await run(['/usr/sbin/spctl', '--assess', '--type', 'execute', app], signal)
       signal.throwIfAborted()
     }

@@ -29,6 +29,15 @@
 
 ## Decisions
 
+### 决定 16：国际版 WorkBuddy macOS 使用官方同路径 DMG（2026-11-15）
+
+- 依据本变更 `workbuddy-feed-audit-2026-11-15.json` 与下文「2026-11-15 WorkBuddy 国际版摘要复核」：arm64 / x64 feed 的 SHA-256 分别与同名 DMG 实测一致（6502dc77… / 435e3990…），与 ZIP 均不一致；官网 `invite-BP67xNKo.js` 对 darwin URL 同样把 `.zip` 换成 `.dmg`。本次沿用入库证据，不重新联网下载或运行工件。
+- 仅 `workbuddy` + darwin 在读取 feed 时进行工件选择：要求 HTTPS、精确主机 `download.codebuddy.ai`、无认证/端口/查询/片段、未编码或规范化的已核实 `/workbuddy/saas/darwin-{arm64,x64}/WorkBuddy-darwin-{同架构}-{feed版本}-{8位hex}.zip` 路径；必须匹配请求架构和版本，只替换末尾扩展名。执行阶段单独验证生成的 DMG 地址，不再接受 ZIP 或任意外部 DMG 地址。保持 feed 的 `sha256hash` 为唯一摘要来源，不内置实算摘要或回退 MD5。
+- 首次安装选择既有 DMG 分支；更新器先复用 `installDesktop` 的只读挂载、签名、Gatekeeper、ditto 与卸载流程把新应用准备到私有暂存目录，再沿用原有同卷复制、目标身份复核、替换及回滚。国际版固定 Team ID `FN2V63AD2J` 和签名 identifier `com.workbuddy.workbuddy-ai`，暂存及待替换副本均核对；失败不能以旧应用 Team ID 放宽。版本继续按既有安装/更新后的应用版本核对，不以安装命令退出 0 判成功。卸载未确认保留清理隔离，摘要失败不启动挂载、解包、签名或安装命令。
+- CN 继续使用 ZIP 与 CN feed 摘要，ZCode 与 Windows 不变；下载和进程保留宿主默认代理。没有新增账号读取、后台安装、版本号或存储迁移。
+- 若未来 feed 修正为 ZIP 摘要，现行 DMG 下载会严格校验失败并停止；不得自动尝试 ZIP、替换摘要或降低校验。应重新核对官网、feed 和工件配对，明确修订此选择规则及对应模拟回归后再切换。撤回本修复则恢复原 ZIP 严格拒绝行为，不迁移用户数据。
+- 本次仅做模拟回归、类型与规格检查、隔离构建；真实安装、更新、挂载、签名系统执行、登录和 Desktop 验收保留待验证。
+
 ### 决定 15：Windows WorkBuddy 从已核实产品元数据补齐应用版本（2026-11-15）
 
 - 实机 CN 安装根 `D:\Software\workbuddy` 的 exe FileVersion=5.9.3、ProductVersion=5.9.3.0，HKLM 卸载项 DisplayName=WorkBuddy 5.9.3、DisplayVersion=5.9.3、InstallLocation 为空、DisplayIcon 指向该 exe。插件自动路径记录指向同目录 `resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs`，根和站点识别没有失败。

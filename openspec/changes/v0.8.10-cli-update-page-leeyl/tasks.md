@@ -489,3 +489,18 @@
   - `corepack pnpm typecheck` 最终退出 0，Host/Client 通过（DSH 0.2.2-rc.3）。首次失败因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明；先执行 `corepack pnpm build:preview`（退出 0），再仅把 preview 的 `lib/typert.remote-client.d.ts` 复制到本 worktree 忽略的 lib 目录后复验通过。没有正式构建或更新 Desktop 链接。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive` 通过，仅提示主任务超过 10 个；`git diff --check` 通过。保留本 change 原有未完成项及 14.4，不归档。
 - [ ] 14.4 修复包的 Windows Desktop 页面回读（未执行：本次只授权 Windows 只读检查，不部署、不重启 Desktop；真实更新、派遣及国际版实机同样没有执行）
+
+
+## 15. 国际版 WorkBuddy macOS DMG 安装与更新 〔后端｜4h｜前置 5,8〕
+
+- [x] 15.1 按已入库证据限定国际版 DMG 工件选择，复用挂载与签名流程并同步设计、规格和双语说明
+  - 基线：指定 worktree 从 `6c6db88` 通过 `git merge --ff-only bec435fb66ccbda7a1977b24ba2a3adfc4ded848` 快进。首次因共享 Git 元数据写入沙箱限制失败，获准提升后成功；安装锁文件依赖时同样因 ENOTFOUND 提升重试成功，无锁文件修改。
+  - 实施：`desktop-update.ts` 在 feed 读取阶段只对国际版 darwin 的官方同版本同架构 ZIP 地址选择同路径 DMG；执行阶段只接受受限 DMG。拒绝主机、后缀、路径、架构、版本、查询/片段及规范化歧义，严格保留 feed SHA-256；CN ZIP 与 Windows EXE 不变。
+  - `install.ts` 选择 DMG；更新器复用 `desktop.ts` 只读挂载、codesign/spctl、ditto、卸载并暂存，再走原替换/回滚；固定 Team FN2V63AD2J 与签名 identifier com.workbuddy.workbuddy-ai，装后版本核对保留。决定 16、增量规格、README 中英文与 doc/design 已同步，未来 feed 改为 ZIP 摘要时严格停止而非自动回退。
+  - 保持现有 Host 代理、argv 执行、维护锁与生命周期；没有更改版本号、用户账号、Desktop 链接或现有安装。
+- [x] 15.2 完成离线模拟回归、类型检查、隔离构建及严格规格校验，记录通过数
+  - 最终命令：`KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run tests/cli-management-desktop-update.test.ts tests/cli-management-desktop.test.ts tests/cli-management-install.test.ts tests/cli-management-all-updates.test.ts tests/cli-management-download.test.ts tests/cli-management-workbuddy-identity.test.ts`：**6 文件、322 passed、0 failed、0 skipped**（5.83 秒）。HTTP/工件字节/系统进程全为模拟，不联网、不真实下载；覆盖两架构映射、异常主机/后缀/路径/版本/架构/空查询与片段、执行阶段拒绝 ZIP、CN ZIP/Windows EXE 不变、完整 feed 到首次安装、装后版本不符不写路径、摘要错误两次严格拒绝且零安装命令、固定 Team/bundle、取消/挂载/签名/Gatekeeper/复制失败卸载与卸载未确认隔离。
+  - 调试记录：首轮 3 文件 177 passed / 1 failed；新下载校验测试漏传 progress 回调，报 `options.progress is not a function`。只补齐模拟夹具回调后，6 文件 316 passed；追加空查询/片段、执行阶段拒绝和装后版本不符回归后为上述最终 322 passed。
+  - `corepack pnpm typecheck`：最终退出 0，Host/Client against DSH 0.2.2-rc.3 通过。首次因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明失败；按授权先 `corepack pnpm build:preview`（退出 0），将 `.cache/preview-package/lib/typert.remote-client.d.ts` 复制到本 worktree 被忽略的 `lib/` 后复验通过。最终源码再次 `corepack pnpm build:preview` 退出 0，产物仅 `.cache/preview-package`，没有正式构建或 Desktop 链接更新。
+  - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict` 退出 0（valid；仅既有主任务超过 10 个的组织建议）；指定 Git 的 `diff --check` 通过。本 change 的其他缺口和 15.3 保留，未归档。
+- [ ] 15.3 真实 macOS 首次安装与更新验收（未执行：本次明确禁止真实安装及登录；不以模拟证明系统签名、挂载或 Desktop 成功）

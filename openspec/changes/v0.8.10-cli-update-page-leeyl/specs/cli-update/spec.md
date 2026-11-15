@@ -461,3 +461,24 @@ Host SHALL 按 Host 生命周期、项目和 CLI 隔离连接展示缓存，账�
 #### Scenario: 维护期读取被拒不显示为连接错误
 - **WHEN** 账号或目录读取因该 CLI 正在更新（MAINTENANCE）被拒
 - **THEN** 连接缓存 MUST NOT 把它记为读取错误（不显示红点）；更新以任何结果结束（成功、失败、取消）并释放维护锁后，Host SHALL 作废该 CLI 的连接显示缓存，让设置页重新读取
+
+
+### Requirement: 国际版 WorkBuddy macOS 官方 DMG 工件选择
+Host SHALL 仅对国际版 WorkBuddy 的 darwin feed，将已核实 HTTPS 主机 `download.codebuddy.ai` 下同版本同架构的 `/workbuddy/saas/darwin-{arch}/WorkBuddy-darwin-{arch}-{version}-{8位hex}.zip` 末尾替换为 `.dmg`，保持主机与路径其余部分不变。原 URL MUST 无凭据、端口、查询、片段及编码/规范化歧义，架构 MUST 与请求一致。首次安装和更新 SHALL 严格用 feed 的 `sha256hash` 校验 DMG，不替换摘要、不回退 ZIP。DMG SHALL 复用只读挂载、固定 Team ID `FN2V63AD2J` 与签名 identifier `com.workbuddy.workbuddy-ai`、spctl、ditto 和确认卸载流程；更新 SHALL 保留应用忙闲检查、替换回滚与装后应用版本核对。CN 的 ZIP、ZCode 和 Windows 行为 MUST 保持不变。
+
+#### Scenario: 国际版 macOS 首次安装或更新
+- **WHEN** arm64 或 x64 官方 feed 返回匹配版本与架构的已核实 ZIP 地址及有效 SHA-256
+- **THEN** Host 只下载同路径 DMG，并将 feed 摘要用于完整性校验；通过后才只读挂载、核对固定签名与 Gatekeeper、暂存复制和确认卸载
+- **AND** 安装/更新后应用版本未达到目标 MUST NOT 报告成功，首次安装 MUST NOT 写回路径
+
+#### Scenario: 来源异常或摘要变化
+- **WHEN** 主机、路径、架构、版本或 `.zip` 后缀不符，或下载 DMG 与 feed 摘要不一致（含未来 feed 改为 ZIP 摘要）
+- **THEN** Host 拒绝该来源或工件，不启动挂载/解包/签名/安装命令，不自动尝试 ZIP 或替换摘要
+
+#### Scenario: CN 保持 ZIP
+- **WHEN** WorkBuddy CN 的 darwin feed 返回 ZIP 与匹配摘要
+- **THEN** Host 使用原 ZIP 地址和摘要，继续既有解包流程，不应用国际版映射
+
+#### Scenario: DMG 更新卸载未确认
+- **WHEN** 国际版 DMG 更新期间挂载失败、取消或签名失败
+- **THEN** Host 仍尝试卸载；卸载未确认 SHALL 进入清理隔离并保留相关目录，MUST NOT 替换旧应用或报告成功
