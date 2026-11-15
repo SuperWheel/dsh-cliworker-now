@@ -7,5 +7,6 @@ pm:
   previous_names:
     - vnext-cli-update-page-leeyl
     - v0-8-10-cli-update-page-leeyl
+  archived: 2026-11-15
 schema: pmspec
 created: 2026-11-13

@@ -1,8 +1,9 @@
 pm:
-  title: 其他服务商图形化配置与通用表单模板
-  version: next
+  title: 适配 DeepSeek Harness 0.2.2-rc.3
+  version: 0.8.10
   creator: leeyl
   creator_name: Leeyl
   previous_names: []
+  archived: 2026-11-15
 schema: pmspec
 created: 2026-11-14

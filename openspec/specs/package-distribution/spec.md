@@ -127,6 +127,10 @@ Release SHALL 包含版本一致的完整预构建包和校验文件，npm和Rel
 - **WHEN** 在 Harness 0.2.2-rc.2 启用插件并打开含用量统计的会话
 - **THEN** 输入栏上下文用量与轮次统计面板正常渲染，`conversation.composer.bar` 与 `conversation.chat.node` 不因调用 ui-primitives 已移除的 `useAnchoredPosition` 崩溃
 
+#### Scenario: 0.2.2-rc.3 随包四包对齐
+- **WHEN** 在 Harness 0.2.2-rc.3 启用插件
+- **THEN** 随包四包版本为 0.2.2-rc.3，继承的 Host 与声明文件与官方 npm 包逐字节一致，插件页面、CLI Worker 面板与设置弹窗正常加载，控制台无插件相关报错
+
 #### Scenario: 宿主兼容与重复来源
 - **WHEN** 在声明支持的宿主启用或禁用插件
 - **THEN** 页面可启动，每个四包身份只有一个活跃来源，启用后原生设置仍可写回 canonical stock 行；不符合接口或来源约束时保留预检错误

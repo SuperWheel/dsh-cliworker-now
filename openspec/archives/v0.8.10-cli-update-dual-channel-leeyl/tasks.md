@@ -319,7 +319,8 @@
   - OPENSPEC_TELEMETRY=0 node_modules/.bin/pmspec validate v0.8.10-cli-update-dual-channel-leeyl --strict：exit 0，Change is valid；保留历史主任务 9 超过 12 子项的建议性警告。git diff --check：exit 0。
   - corepack pnpm build:preview：exit 0，隔离包 .cache/preview-package；未正式 build 或更新 Desktop。测试中的 Pi 既有原型会运行真实 npm 和本地微型包，不等于真实 CLI 更新验收；新增规则均为临时目录/模拟进程夹具。
   - 未提交、推送、归档或升级版本，未读凭据/.env，未改 src/client；既有未跟踪 PRD/video 保持不动。
-- [ ] 10.6 Windows/Mac 实机验证
+- [x] 10.6 Windows/Mac 实机验证
+  - 2026-11-15 用户决定下列「仍未覆盖」项不再验证、按现状验收并勾选；它们仍是未执行的真实验证，不当作已实测：更新失败后的清理、npm 私有缓存与本包 reify 残留、Grok/Qoder/Qoder CN/Claude/TRAE/Hermes 的真实更新清理。
   - （未执行：由用户后续验证；本轮不更新真实 CLI、不删除真实安装目录、不改变账号或代理。）
   - 待核对成功/失败/取消后的 downloads 和私有 npm-cache、输出清理汇总、全局 npm 缓存未增长、本包 reify 与真实原生旧副本；Hermes 新路径和零字节锁行为需实机复核，TRAE lease 格式仍未确认。
   - Windows 已覆盖（11-15）：① 859bcee 包上 OMP 官方更新成功，清理 0 项，证据见本节 c1e3845 记录；② 34133b9 包上 OMP 接管更新成功，输出「更新清理：已删除 插件临时文件 2 项、OMP 原生备份 1 项，释放 698127848 B」，复核 `.bak` 已删除，downloads 0 项，Temp 中插件目录 0 个，详见 10.13；③ Host 启动清扫回收旧插件临时目录，以及共享 omp-natives，见临时目录变更 3.2/4.3。
