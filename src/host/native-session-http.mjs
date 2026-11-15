@@ -442,6 +442,7 @@ export async function runNativeSessionHttp(original, io, cli) {
     }
   }
   try {
+    let mimoRequiresReceipt = false
     const doc = await request('/doc')
     const incompleteSchema =
       !object(doc.paths) ||
@@ -449,23 +450,24 @@ export async function runNativeSessionHttp(original, io, cli) {
       !Object.keys(doc.paths).some((path) => /\/session\/\{[^}]+\}\/prompt_async$/.test(path)) ||
       !Object.keys(doc.paths).some((path) => /\/session\/\{[^}]+\}\/abort$/.test(path))
     if (incompleteSchema) {
-      // MiMo 0.1.15 wraps subroutes in an error handler and omits their OpenAPI
-      // metadata. Its installed SDK and zero-prompt native route probe establish
-      // the wire subset; do not accept an arbitrary incomplete schema/version.
+      // MiMo 0.1.15 and 0.1.17 omit subroute OpenAPI metadata. Installed code
+      // and zero-prompt route probes establish these exact contracts; an unknown
+      // version or a different incomplete document still fails closed.
       const health = cli === 'mimo' ? await request('/global/health') : undefined
       const keys = object(doc.paths) ? Object.keys(doc.paths).sort() : []
       if (
         cli !== 'mimo' ||
         health?.healthy !== true ||
-        health.version !== '0.1.15' ||
+        !['0.1.15', '0.1.17'].includes(health.version) ||
         doc.info?.version !== '0.0.3' ||
         JSON.stringify(keys) !== JSON.stringify(['/auth/{providerID}', '/log'])
       )
         throw new Error('安装版缺少所需原生 HTTP 能力')
       if (!Array.isArray(await request(`/session${query}`))) throw new Error('MiMo 会话能力核验失败')
+      mimoRequiresReceipt = health.version === '0.1.17'
       io.event({
         kind: 'diagnostic',
-        text: 'MiMo 0.1.15 使用已核验的原生 HTTP 接口；该版 OpenAPI 漏列子路由。',
+        text: `MiMo ${health.version} 使用已核验的原生 HTTP 接口；该版 OpenAPI 漏列子路由。`,
       })
     }
     let catalog = await request(`/provider${query}`)
@@ -556,7 +558,14 @@ export async function runNativeSessionHttp(original, io, cli) {
       ...(guidance ? { system: guidance, ...(cli === 'mimo' ? { systemMode: 'append' } : {}) } : {}),
       parts: inputParts,
     })
-    if (accepted !== undefined) throw new Error('原生 HTTP 没有返回预期的任务受理回执')
+    // 0.1.15 returns 204 on admission; 0.1.17 returns 202 { receiptId } and
+    // reserves 204 for no admitted turn. A receipt is admission only: retain
+    // SSE completion and the current user/model/assistant readback below.
+    const durableReceipt = cli === 'mimo' && object(accepted) &&
+      Object.keys(accepted).length === 1 && string(accepted.receiptId) &&
+      !/\s/u.test(accepted.receiptId)
+    if (!durableReceipt && (mimoRequiresReceipt || accepted !== undefined))
+      throw new Error('原生 HTTP 没有返回预期的任务受理回执')
     await Promise.race([
       finished.promise,
       server.managed.done.then(() => {

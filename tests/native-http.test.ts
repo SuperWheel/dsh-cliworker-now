@@ -6,7 +6,7 @@ import { parse } from 'yaml'
 import { createServer } from 'node:http'
 import { extractTelemetry } from '../src/host/telemetry.ts'
 import { nativeTelemetryProjections } from '../src/client/harness-telemetry-data.ts'
-// Native protocols below are simulated by explicit local fixture processes.
+// 模拟：Native protocols below use explicit local fixture processes, never real models.
 import { createNativeIO } from '../src/host/native-transport.mjs'
 import { runNativeOpenCode } from '../src/host/native-opencode.mjs'
 import { serverConfiguration } from '../src/host/native-session-http.mjs'
@@ -47,8 +47,8 @@ const server=createServer(async(req,res)=>{
    ...(!hermes?{directory:new URL(req.url,'http://localhost').searchParams.get('directory'),args:process.argv.slice(2),permission:JSON.parse(process.env[name+'_PERMISSION']||'{}'),configPermission:JSON.parse(process.env[name+'_CONFIG_CONTENT']||'{}').permission,switches:{...switches},deleteEnv:process.env.MIMOCODE_AUTO_APPROVE_DELETE,bypassEnv:process.env.MIMOCODE_DANGEROUSLY_SKIP_PERMISSIONS}:{})})
  if(req.headers.authorization!==expected)return json(res,{error:'synthetic auth failure'},401)
  if(path==='/v1/capabilities')return json(res,{object:'hermes.api_server.capabilities',auth:{type:'bearer',required:true},features:{run_submission:true,run_status:true,run_events_sse:true,run_stop:true,run_steer:mode!=='steer-unsupported',run_approval_response:true,session_resources:true}})
- if(path==='/doc')return json(res,mode==='incomplete-spec'?{info:{version:'0.0.3'},paths:{'/auth/{providerID}':{},'/log':{}}}:{paths:{'/event':{},'/session/{sessionID}/prompt_async':{},'/session/{sessionID}/abort':{}}})
- if(path==='/global/health')return json(res,{healthy:true,version:'0.1.15'})
+ if(path==='/doc')return json(res,mode==='incomplete-spec'||process.env.CWN_FIXTURE_INCOMPLETE_DOC==='1'?{info:{version:'0.0.3'},paths:{'/auth/{providerID}':{},'/log':{},...(process.env.CWN_FIXTURE_DOC_DRIFT==='1'?{'/unexpected':{}}:{})}}:{paths:{'/event':{},'/session/{sessionID}/prompt_async':{},'/session/{sessionID}/abort':{}}})
+ if(path==='/global/health')return json(res,{healthy:process.env.CWN_FIXTURE_UNHEALTHY!=='1',version:process.env.CWN_FIXTURE_HTTP_VERSION||'0.1.15'})
  if(cli==='mimo'&&['/permission/skip-all','/permission/auto-approve-delete'].includes(path)){
    const name=path.split('/').at(-1),failure=process.env.CWN_FIXTURE_SWITCH_FAILURE
    if(failure==='missing'||(failure==='delete-missing'&&name==='auto-approve-delete'))return json(res,{error:'SIMULATED unsupported route'},404)
@@ -63,7 +63,7 @@ const server=createServer(async(req,res)=>{
    if(failure==='receipt'&&name==='skip-all'&&body.enabled)return json(res,false)
    return json(res,switches[name])
  }
- if(path==='/session'&&req.method==='GET')return json(res,[])
+ if(path==='/session'&&req.method==='GET')return json(res,process.env.CWN_FIXTURE_BAD_SESSION_LIST==='1'?{}:[])
  if(path==='/config'&&mode==='context-relay')return json(res,JSON.parse(process.env[name+'_CONFIG_CONTENT']||'{}'))
  if(path==='/provider'&&mode==='context-relay'){
    const config=JSON.parse(process.env[name+'_CONFIG_CONTENT']||'{}'),baseURL=config.provider?.synthetic?.options?.baseURL||process.env.CWN_FIXTURE_PROVIDER_BASE
@@ -84,7 +84,10 @@ const server=createServer(async(req,res)=>{
      const simulated=await fetch(baseURL+'/chat/completions',{method:'POST',headers:{'content-type':'application/json','x-session-affinity':sid,authorization:'Bearer SIMULATED-not-a-real-key'},body:JSON.stringify({model:'synthetic-api-model',messages:[{role:'system',content:'SIMULATED native system'},{role:'user',content:body.parts[0].text}],tools:[{type:'function',function:{name:'Read',parameters:{type:'object'}}}]})})
      await simulated.arrayBuffer()
    }
-   res.writeHead(204);res.end()
+   if(process.env.CWN_FIXTURE_RECEIPT==='none'){res.writeHead(204);res.end();return}
+   if(process.env.CWN_FIXTURE_RECEIPT){json(res,JSON.parse(process.env.CWN_FIXTURE_RECEIPT),202);return}
+   if(process.env.CWN_FIXTURE_HTTP_VERSION==='0.1.17')json(res,{receiptId:'receipt_SIMULATED'},202)
+   else {res.writeHead(204);res.end()}
    const start=info();if(mode==='wrong-model')start.modelID='other'
    const values=[{type:'message.updated',properties:{info:{...start,id:'msg_HISTORY',parentID:'msg_HISTORY_USER'}}},
     {type:'message.part.delta',properties:{sessionID:sid,messageID:'msg_HISTORY',partID:'prt_HISTORY',field:'text',delta:'不应显示的旧消息'}},
@@ -548,13 +551,61 @@ describe('OpenCode / MiMo native HTTP + SSE (simulated local native processes)',
       expectServerCloseReceipt(requests)
     })
   }
-  it('recognizes only the verified MiMo 0.1.15 incomplete OpenAPI contract', async () => {
+  it('recognizes the verified MiMo 0.1.15 incomplete OpenAPI contract and legacy 204 (模拟)', async () => {
     const { frames, requests } = await run('mimo', 'incomplete-spec')
     expect(frames.at(-1).status).toBe('SUCCESS')
     expect(requests.some((row: any) => row.path === '/global/health')).toBe(true)
     const other = await run('opencode', 'incomplete-spec')
     expect(other.frames.at(-1).status).toBe('ERROR')
     expect(other.requests.some((row: any) => row.path?.endsWith('prompt_async'))).toBe(false)
+  })
+
+  const mimo017 = { CWN_FIXTURE_HTTP_VERSION: '0.1.17', CWN_FIXTURE_INCOMPLETE_DOC: '1' }
+  it.each([false, true])('mimo: accepts 0.1.17 incomplete OpenAPI and 202 receipt, resume=%s (模拟)', async resume => {
+    const { frames, requests } = await run('mimo', 'success', resume, undefined, mimo017)
+    expect(frames.at(-1)).toMatchObject({ status: 'SUCCESS', response: '模拟正文' })
+    expect(frames.some(row => row.event?.text?.includes('MiMo 0.1.17'))).toBe(true)
+    expect(requests.filter((row: any) => row.path?.endsWith('/prompt_async'))).toHaveLength(1)
+    expect(requests.some((row: any) => row.path?.endsWith('/message'))).toBe(true)
+    expect(requests.some((row: any) => row.path === '/session' && row.method === 'POST')).toBe(!resume)
+    expectServerCloseReceipt(requests)
+  })
+
+  it.each([
+    { CWN_FIXTURE_HTTP_VERSION: '0.1.18' },
+    { CWN_FIXTURE_UNHEALTHY: '1' },
+    { CWN_FIXTURE_DOC_DRIFT: '1' },
+    { CWN_FIXTURE_BAD_SESSION_LIST: '1' },
+  ])('mimo: rejects unverified incomplete HTTP contracts before dispatch %j (模拟)', async mismatch => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { ...mimo017, ...mismatch })
+    expect(frames.at(-1).status).toBe('ERROR')
+    expect(requests.some((row: any) => row.path === '/session' && row.method === 'POST')).toBe(false)
+    expect(requests.some((row: any) => row.path?.endsWith('/prompt_async'))).toBe(false)
+    expectServerCloseReceipt(requests)
+  })
+
+  it.each(['none', '{}', 'null', '{"receiptId":""}', '{"receiptId":17}', '{"receiptId":" "}', '{"receiptId":"receipt_SIMULATED","unexpected":true}'])('mimo: rejects missing or invalid 0.1.17 admission receipt %s (模拟)', async receipt => {
+    const { frames, requests } = await run('mimo', 'success', false, undefined, { ...mimo017, CWN_FIXTURE_RECEIPT: receipt })
+    expect(frames.at(-1)).toMatchObject({ status: 'ERROR' })
+    expect(JSON.stringify(frames.at(-1))).toContain('任务受理回执')
+    expect(requests.filter((row: any) => row.path?.endsWith('/prompt_async'))).toHaveLength(1)
+    expect(requests.some((row: any) => row.path?.endsWith('/abort'))).toBe(true)
+    expectServerCloseReceipt(requests)
+  })
+
+  it.each(['wrong-model', 'partial-failure', 'cancel'])('mimo: a 202 receipt does not bypass terminal validation or cancellation on %s (模拟)', async mode => {
+    const { frames, requests } = await run('mimo', mode, false, undefined, mimo017)
+    expect(frames.at(-1).status).toBe('ERROR')
+    expect(requests.filter((row: any) => row.path?.endsWith('/prompt_async'))).toHaveLength(1)
+    if (mode !== 'wrong-model') expect(requests.some((row: any) => row.path?.endsWith('/abort'))).toBe(true)
+    expectServerCloseReceipt(requests)
+  })
+
+  it('opencode: does not accept a MiMo 202 receipt (模拟)', async () => {
+    const { frames, requests } = await run('opencode', 'success', false, undefined, { CWN_FIXTURE_HTTP_VERSION: '0.1.17' })
+    expect(frames.at(-1).status).toBe('ERROR')
+    expect(JSON.stringify(frames.at(-1))).toContain('任务受理回执')
+    expectServerCloseReceipt(requests)
   })
 
   it.each(['missing', 'enable-failed', 'receipt', 'readback'])('mimo: falls back to ask before session creation when native auto is %s', async failure => {
