@@ -22,7 +22,7 @@
   - `tests/zcode-adapter.test.ts` 新增 describe「ZCode own API-key providers without a subscription」：404/405 未核实；401/403、500、非 standard-personal 分组、Coding Plan 隐藏；显示名称，重名或不安全名称回退为 ID；请求头镜像，`Host` 头跳过路由。
   - zcode-adapter、zcode-account-models、account-models 三个文件共 91 passed。
 
-## 4. 账号窗口「其他服务商」 〔全栈｜5h｜前置 1〕
+## 4. 账号窗口「其他服务商」 〔后端｜5h｜前置 1〕
 - [x] 4.1 Host：表单、模板、写入、查重、回滚、账号行与删除
   - 新增 `src/host/zcode-custom-provider.ts`。`custom-provider.ts` 接入 zcode（只写 `<zcodeAuthDirectory>/.zcode/v2/provider_config.json`，票据 10 分钟有效）。`accounts.ts` 和 `index.ts` 允许删除 zcode 的 `plugin.config`。`zcode-grok-accounts.ts` 新增 `withZCodeProviderRows`。
   - 共享协议新增可选的 `CustomProviderForm.presets`；`managedProviderReceiptRemoval` 供删除时更新归属记录。
@@ -47,8 +47,9 @@
     - 有表单时显示「其他服务商」且无原生终端备选；旧 Host 和返回 null 时只列两家。
   - `tests/zcode-grok-accounts.test.ts` 的 personal-api 退出后用例：期望值改为包含只读 API 行（这是新行为），50 passed。
 
-## 5. 文档与验收 〔测试｜2h｜前置 2、3、4〕
+## 5. 文档与验收 〔测试｜2h｜前置 2,3,4〕
 - [x] 5.1 同步 README、README.en、doc/design.md、doc/settings-ui-design.md
+  - README / README.en 新增「订阅过期后使用自己的 API Key」段；doc/design.md 新增本变更小节；settings-ui-design 的账号窗口段和「服务商表单模板」补充 ZCode 行、删除确认与内置模板参数。`git diff --check` 无输出。
 - [ ] 5.2 隔离构建、类型检查与关联回归（整组并行仍有偶发失败未排除，暂不勾选）
   - `corepack pnpm build:preview`：exit 0，隔离包在 `.cache/preview-package`，其中 Host 与 Client 的 tsc 均通过。
   - `corepack pnpm typecheck`：工作树没有 `lib/`，首次因缺 `dsh-cliworker-now/remote` 声明失败（exit 1，与改动无关）。把预览包生成的 `typert.remote-client.*` 临时复制到被忽略的 `lib/` 后通过（exit 0，「Host/Client typecheck passed against DSH 0.2.2-rc.3」），随后删除 `lib/`。
