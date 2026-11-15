@@ -2,7 +2,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
 import { tmpdir } from 'node:os'
-import { AccountManager } from '../src/host/accounts.ts'
+import { AccountManager, AGY_GUIDE_TIMING } from '../src/host/accounts.ts'
+import { rememberLoginCredential } from '../src/host/account-guide/credential-evidence.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import { AccountQueryQueue } from '../src/client/account-query-queue.ts'
 import type { AccountStatus } from '../src/shared/accounts.ts'
@@ -34,10 +35,11 @@ function deferred<T = void>() {
 }
 const tick = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 const closers: (() => Promise<unknown>)[] = []
-afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); vi.restoreAllMocks() })
+const originalTiming = { ...AGY_GUIDE_TIMING }
+afterEach(async () => { for (const close of closers.splice(0).reverse()) await close(); vi.restoreAllMocks(); Object.assign(AGY_GUIDE_TIMING, originalTiming) })
 
 function fixture(cli: 'codex' | 'omp' | 'opencode' = 'codex') {
-  const output = new PassThrough(), done = deferred<{ exitCode: number; signal: null }>()
+  const output = new PassThrough(), done = deferred<{ exitCode: number | null; signal: null }>()
   const terminal = { pid: 123, output, done: done.promise,
     write: vi.fn(async () => {}), resize: vi.fn(async () => {}),
     inspectForeground: async () => undefined,
@@ -54,10 +56,62 @@ function fixture(cli: 'codex' | 'omp' | 'opencode' = 'codex') {
   const status: AccountStatus = { cli, installed: true, state: 'unconfigured', summary: '模拟', actions: [] }
   const read = vi.spyOn(manager as any, 'readStatus').mockResolvedValue(status)
   closers.push(() => manager.close())
-  return { manager, backend, terminal, read, status, signal: new AbortController().signal,
+  return { manager, backend, terminal, read, status, exit: (exitCode: number | null) => done.resolve({ exitCode, signal: null }), signal: new AbortController().signal,
     start: () => manager.start('parent', cli, 'login', tmpdir(), new AbortController().signal, undefined,
       cli === 'omp' || cli === 'opencode' ? 'deepseek' : undefined) }
 }
+
+function simulatedStoredStatus(status: AccountStatus, key: string): AccountStatus {
+  return { ...status, state: 'authenticated', logins: [rememberLoginCredential({
+    id: 'opencode:deepseek', providerLabel: 'DeepSeek', authMethod: 'api',
+  }, ['api', key])] }
+}
+
+it.each([0, 7, null])('模拟：OpenCode 同服务商替换在退出码 %s 时完成清理后发布成功', async code => {
+  Object.assign(AGY_GUIDE_TIMING, { pollMs: 2, loginConfirmMs: 100 })
+  const f = fixture('opencode')
+  f.read.mockResolvedValue(simulatedStoredStatus(f.status, 'SIMULATED-OLD'))
+  const started = await f.start(), session = (f.manager as any).sessions.get(started.id)
+  f.read.mockResolvedValue(simulatedStoredStatus(f.status, 'SIMULATED-NEW'))
+  f.exit(code)
+  await vi.waitFor(() => expect(session.state).toBe('closed'))
+  expect(session.frames.at(-2).guide).toMatchObject({ step: 'signedIn', template: 'result' })
+  expect(f.terminal.terminate).toHaveBeenCalledOnce()
+  expect(f.manager.isBusy('opencode')).toBe(false)
+})
+
+it.each(['throw', 'unavailable', 'stale'] as const)('模拟：退出后首次证据 %s，继续重试直到凭据替换可读', async failure => {
+  Object.assign(AGY_GUIDE_TIMING, { pollMs: 2, loginConfirmMs: 100 })
+  const f = fixture('opencode'), before = simulatedStoredStatus(f.status, 'SIMULATED-OLD')
+  f.read.mockResolvedValue(before)
+  const started = await f.start(), session = (f.manager as any).sessions.get(started.id)
+  const count = f.read.mock.calls.length
+  if (failure === 'throw') f.read.mockRejectedValueOnce(new Error('模拟锁定，不能将原始错误显示给用户'))
+  else f.read.mockResolvedValueOnce(failure === 'unavailable' ? { ...f.status, state: 'unavailable' } : before)
+  f.read.mockResolvedValue(simulatedStoredStatus(f.status, 'SIMULATED-NEW'))
+  f.exit(7)
+  await vi.waitFor(() => expect(session.state).toBe('closed'))
+  expect(f.read.mock.calls.length).toBeGreaterThanOrEqual(count + 2)
+  expect(session.frames.at(-2).guide.step).toBe('signedIn')
+})
+
+it.each(['unchanged', 'throw', 'unavailable', 'baseline-unavailable'] as const)('模拟：最终 %s 显示原因及退出码，不误报成功', async failure => {
+  Object.assign(AGY_GUIDE_TIMING, { pollMs: 2, loginConfirmMs: 35 })
+  const f = fixture('opencode')
+  f.read.mockResolvedValue(failure === 'baseline-unavailable' ? { ...f.status, state: 'unavailable' } : simulatedStoredStatus(f.status, 'SIMULATED-OLD'))
+  const started = await f.start(), session = (f.manager as any).sessions.get(started.id)
+  if (failure === 'throw') f.read.mockRejectedValue(new Error('模拟敏感诊断不应进入界面'))
+  else if (failure === 'unavailable') f.read.mockResolvedValue({ ...f.status, state: 'unavailable' })
+  else f.read.mockResolvedValue(simulatedStoredStatus(f.status, 'SIMULATED-OLD'))
+  f.exit(7)
+  await vi.waitFor(() => expect(session.state).toBe('failed'))
+  const result = session.frames.at(-2).guide
+  expect(result).toMatchObject({ step: 'unconfirmed', template: 'result', tone: 'warning' })
+  expect(result.text).toContain(failure === 'unchanged' ? '未检测到所选服务商的凭据变化' : '无法读取')
+  expect(result.text).toContain('退出码 7')
+  expect(JSON.stringify(session.frames)).not.toContain('模拟敏感诊断')
+  expect(session.frames.some((frame: any) => frame.guide?.step === 'signedIn')).toBe(false)
+})
 
 it.each(['codex', 'omp'] as const)('模拟：%s 启动中止旧查询后等待其清理，再分配终端', async cli => {
   const f = fixture(cli), cleanup = deferred()

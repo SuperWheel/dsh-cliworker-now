@@ -1,4 +1,5 @@
 import { constants } from 'node:fs'
+import { rememberLoginCredential } from './account-guide/credential-evidence.ts'
 import { lstat, mkdir, mkdtemp, open, realpath, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -76,12 +77,12 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
         const nous = projectHermesNousSource(raw, 0, { allowInactive: true })
         const entries = record(raw.credential_pool) ? raw.credential_pool.nous : undefined
         const pooled = Array.isArray(entries) && entries.length === 1 ? poolEntryLogin('nous', entries[0]) : undefined
-        logins.push({
+        logins.push(rememberLoginCredential({
           ...providerLogin('nous', 'oauth'),
           ...(nous.email ? { accountLabel: nous.email } : {}),
           // Nous is one identity per Hermes home, so its row signs out even before the pool holds it.
           id: pooled ?? accountLoginId('hermes', 'nous', 'oauth'),
-        })
+        }, ['oauth', state.access_token, state.refresh_token, state.agent_key]))
       } catch (error) {
         if (error instanceof Error && /过期/.test(error.message)) {
           expired = true
@@ -133,11 +134,11 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
     const email = tokenEmail(state.tokens.id_token)
     // `hermes auth remove <provider> <id>` removes one pooled entry; an unpooled login stays native.
     const pooled = Array.isArray(entries) && entries.length === 1 ? poolEntryLogin(id, entries[0]) : undefined
-    logins.push({
+    logins.push(rememberLoginCredential({
       ...providerLogin(id === 'xai-oauth' ? 'xai' : id, 'oauth'),
       ...(email ? { accountLabel: email } : {}),
       ...(pooled ? { id: pooled } : {}),
-    })
+    }, ['oauth', tokens.access_token, tokens.refresh_token]))
   }
   const pools = record(raw.credential_pool) ? raw.credential_pool : {}
   for (const [provider, entries] of Object.entries(pools)) {
@@ -156,7 +157,10 @@ export function projectHermesIdentity(raw: unknown): AccountIdentity | undefined
       )
         continue
       const handle = poolEntryLogin(provider, entry)
-      logins.push({ ...providerLogin(provider, 'api', { baseUrl: entry.base_url }), ...(handle ? { id: handle } : {}) })
+      logins.push(rememberLoginCredential(
+        { ...providerLogin(provider, 'api', { baseUrl: entry.base_url }), ...(handle ? { id: handle } : {}) },
+        ['api', entry.access_token ?? entry.runtime_api_key],
+      ))
     }
   }
   if (logins.length) {

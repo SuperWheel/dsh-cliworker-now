@@ -1,4 +1,5 @@
 import { sameProviderConfiguration, piOmpNativeConfigProviderExists } from './custom-provider-native.ts'
+import { rememberLoginCredential } from './account-guide/credential-evidence.ts'
 import { managedPiOmpProviders, piOmpManagedProviderExists } from './custom-provider-managed.ts'
 import { constants } from 'node:fs'
 import { lstat, open, mkdir, writeFile, rename, rm, mkdtemp, realpath, readlink } from 'node:fs/promises'
@@ -829,7 +830,7 @@ export async function inspectPiOmpNativeAccount(
           : value
       /** A stored credential: `pi:<provider>:<source>`, `omp:<provider>:<source>.<row id>`. */
       type Stored = { source: AccountSource; entry: string }
-      const add = (provider: string, method: 'api' | 'oauth', stored?: Stored, email?: unknown, nativeConfig?: Record<string, any>) => {
+      const add = (provider: string, method: 'api' | 'oauth', stored?: Stored, email?: unknown, nativeConfig?: Record<string, any>, credential?: readonly unknown[]) => {
         const config = nativeConfig ?? providers[provider]
         const accountLabel = accountEmail(email)
         const login = {
@@ -843,8 +844,9 @@ export async function inspectPiOmpNativeAccount(
         const owned = managed.has(provider) && (!stored || cli === 'pi' && stored.source === 'plugin')
         const id = owned ? accountLoginId(cli, provider, 'plugin.config') : stored && accountLoginId(cli, provider, stored.entry)
         if (id && logins.some(row => row.id === id)) return
-        logins.push(nativeConfig ? (id ? { ...login, id, source: 'native', nativeConfiguration: true } : login) : owned ? { ...login, id, source: 'plugin', managedConfiguration: true }
-          : stored ? { ...login, ...(id ? { id } : {}), source: stored.source } : login)
+        const row: AccountLogin = nativeConfig ? (id ? { ...login, id, source: 'native', nativeConfiguration: true } : login) : owned ? { ...login, id, source: 'plugin', managedConfiguration: true }
+          : stored ? { ...login, ...(id ? { id } : {}), source: stored.source } : login
+        logins.push(credential ? rememberLoginCredential(row, credential) : row)
       }
       let invalidOAuth = false
       const inspect = (
@@ -856,12 +858,13 @@ export async function inspectPiOmpNativeAccount(
       ) => {
         if (credentialState(type, value, disabled) !== 'configured') return
         if (type === 'api' || type === 'api_key') {
-          if (usableNativeApiKey(ownValue(value.key ?? value.apiKey))) add(provider, 'api', stored)
+          if (usableNativeApiKey(ownValue(value.key ?? value.apiKey)))
+            add(provider, 'api', stored, undefined, undefined, ['api', ownValue(value.key ?? value.apiKey)])
         } else if (
           usableNativeApiKey(value.access) &&
           (value.expires >= Date.now() || !options.activeOnly && usableNativeApiKey(value.refresh))
         )
-          add(provider, 'oauth', stored, value.email)
+          add(provider, 'oauth', stored, value.email, undefined, ['oauth', value.access, value.refresh])
         else invalidOAuth = true
       }
       // The credentials workers use: a later location overrides a provider of an earlier one.

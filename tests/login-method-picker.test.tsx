@@ -15,6 +15,25 @@ vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
 }))
 vi.mock('../src/client/icons.tsx', () => ({ BrandIcon: () => null }))
 afterEach(() => setLanguagePreference('zh'))
+it.each(['failed', 'closed'] as const)('模拟：OpenCode %s 结果页显示未确认原因并可重试', async phase => {
+  const reason = '未检测到所选服务商的凭据变化，未能确认登录（退出码 7）。请重试。'
+  const event = createAccountGuide('opencode', 'login', { provider: 'deepseek' })!
+    .unconfirmed('login', reason).find(event => 'guide' in event)!
+  if (!('guide' in event)) throw new Error('missing simulated guide')
+  const restart = vi.fn()
+  let renderer!: ReturnType<typeof create>
+  await act(async () => { renderer = create(createElement(LoginWindow, {
+    cli: 'opencode', action: 'login', phase, guide: event.guide, notice: '账号终端已结束',
+    onRespond: vi.fn(), onRestart: restart, onDone: vi.fn(),
+  })) })
+  try {
+    const rendered = JSON.stringify(renderer.toJSON())
+    expect(rendered).toContain(reason)
+    expect(rendered).not.toContain('登录窗口已结束')
+    await act(async () => renderer.root.findAllByType('button').find(button => button.children.includes('重试'))!.props.onClick())
+    expect(restart).toHaveBeenCalledOnce()
+  } finally { await act(async () => renderer.unmount()) }
+})
 it.each(['zh', 'en'] as const)('模拟：method choices and fixed flow copy render in %s', async language => {
   setLanguagePreference(language)
   const onStart = vi.fn(), onCancel = vi.fn()

@@ -1592,25 +1592,35 @@ export class AccountManager {
     const signal = session.guideControl!.signal
     const until = Date.now() + (change === 'login' ? AGY_GUIDE_TIMING.loginConfirmMs : AGY_GUIDE_TIMING.logoutConfirmMs)
     const guide = session.guide!
+    let before: AccountEvidence | undefined
+    let after: AccountEvidence | undefined
     try {
-      const before = await session.before
+      before = await session.before
       while (Date.now() < until) {
         await sleep(AGY_GUIDE_TIMING.pollMs, undefined, { signal })
-        const after = await this.readEvidence(session, signal)
+        after = await this.readEvidence(session, signal)
         signal.throwIfAborted()
         if (guide.proves(change, before, after, session.exitCode)) {
           // Nothing is left for the user to do in the native terminal.
           await this.proven(session, change, signal)
           return
         }
-        // A finished process will not change the account any more.
-        if (exited && after) break
+        // Targeted logins may still be flushing storage. Unavailable/unknown
+        // is a failed read, not a usable observation that ends confirmation.
+        if (exited && !guide.targetsLogin && after && after.state !== 'unavailable' && after.state !== 'unknown') break
       }
     } catch (error) {
       // Closing the window aborts the poll; an unconfirmed read ends it as unconfirmed.
       if (signal.aborted || !(error instanceof ProcessCleanupUnconfirmedError)) return
     }
-    this.guided(session, guide.unconfirmed(change))
+    const unreadable = (value: AccountEvidence | undefined) => !value || value.state === 'unavailable' || value.state === 'unknown'
+    const reason = exited && guide.targetsLogin
+      ? `${unreadable(after) ? '无法读取凭据，未能确认登录' : unreadable(before) ? '无法读取登录前的凭据，未能确认凭据变化' : '未检测到所选服务商的凭据变化，未能确认登录'}（${session.exitCode === undefined ? '未返回退出码' : `退出码 ${session.exitCode}`}）。请重试。`
+      : undefined
+    const events = guide.unconfirmed(change, reason)
+    // Like success, a final warning must not hide a subsequent cleanup failure.
+    if (reason) session.completionGuide = events.find((event): event is { guide: AccountGuide } => 'guide' in event)?.guide
+    else this.guided(session, events)
   }
 
   async resize(parent: string, id: string, cols: number, rows: number): Promise<void> {

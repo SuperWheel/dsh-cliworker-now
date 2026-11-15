@@ -1,4 +1,5 @@
 import { constants } from 'node:fs'
+import { rememberLoginCredential } from './account-guide/credential-evidence.ts'
 import { lstat, mkdir, open, rename, rm, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
@@ -437,13 +438,13 @@ export async function inspectOpenCodeProfile(
         // Keep the stable provider identity for login refresh/proof even when logout
         // must reject an ambiguous source. Removing the handle would hide a new login.
         const handle = accountLoginId('opencode', id)
-        logins.push({
+        logins.push(rememberLoginCredential({
           ...providerLogin(id, api ? 'api' : 'oauth', {
             baseUrl: config?.options?.baseURL,
             name: config?.name,
           }),
           ...(handle ? { id: handle } : {}),
-        })
+        }, api ? ['api', auth.key] : ['oauth', auth.access, auth.refresh]))
       }
     }
     if (logins.length) return authenticatedAccountLogins(logins)

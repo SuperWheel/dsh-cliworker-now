@@ -6,6 +6,7 @@ import type {
   AccountStatus,
 } from '../../shared/accounts.ts'
 import { allowedLink, parseAccountLoginId } from '../../shared/account-links.ts'
+import { loginCredentialChanged } from './credential-evidence.ts'
 
 /** What a guide asks the account manager to do. Keys only ever answer a user's choice. */
 export type GuideEvent =
@@ -27,6 +28,7 @@ export type AccountEvidence = Pick<AccountStatus, 'state'> & Partial<Pick<Accoun
 /** The account manager's view of one guided terminal. */
 export interface AccountGuideDriver {
   readonly size: { cols: number; rows: number }
+  readonly targetsLogin?: boolean
   output(text: string): GuideEvent[]
   resize?(cols: number, rows: number): void
   /** Raw keys typed in the visible native terminal. */
@@ -38,7 +40,7 @@ export interface AccountGuideDriver {
   /** The native process ended by itself. */
   exited(code: number | undefined): GuideEvent[]
   confirmed(change: AccountChange): GuideEvent[]
-  unconfirmed(change: AccountChange): GuideEvent[]
+  unconfirmed(change: AccountChange, reason?: string): GuideEvent[]
   /** After an automatic command, whether one more Enter cannot start something else. */
   retryEnter(): boolean
   proves(change: AccountChange, before: AccountEvidence | undefined, after: AccountEvidence | undefined, exitCode?: number): boolean
@@ -617,10 +619,15 @@ export class FlowGuide implements AccountGuideDriver {
     return this.end(change === 'login' ? this.texts.signedIn : this.texts.loggedOut)
   }
 
-  unconfirmed(change: AccountChange): GuideEvent[] {
+  get targetsLogin(): boolean {
+    return this.ctx.action === 'login' && !!this.ctx.provider && !!this.flow.targets
+  }
+
+  unconfirmed(change: AccountChange, reason?: string): GuideEvent[] {
     if (this.done) return []
     this.confirming = false
     this.typed = false
+    if (reason) return this.show({ step: 'unconfirmed', template: 'result', tone: 'warning', text: reason })
     if (change === 'logout') return this.show(this.texts.logoutUnconfirmed)
     // A pasted code or key may be retried in the same step; anything else starts over.
     const step = this.steps[this.index]
@@ -644,16 +651,21 @@ export class FlowGuide implements AccountGuideDriver {
     if (change === 'logout' && login)
       return !!after && after.state !== 'unavailable' && after.state !== 'unknown' && !after.logins?.some((item) => item.id === login)
     if (change === 'login' && provider && this.flow.targets) {
+      if (!after || after.state === 'unavailable' || after.state === 'unknown') return false
       const stored = this.ctx.stores ?? provider
       const held = (evidence: AccountEvidence | undefined) =>
-        new Set(
+        new Map(
           (evidence?.logins ?? []).flatMap((item) =>
-            item.id && parseAccountLoginId(item.id)?.provider === stored ? [item.id] : [],
+            item.id && parseAccountLoginId(item.id)?.provider === stored ? [[item.id, item] as const] : [],
           ),
         )
       const now = held(after),
         was = held(before)
-      return [...now].some((id) => !was.has(id)) || (now.size > 0 && exitCode === 0)
+      const baselineReadable = !!before && before.state !== 'unavailable' && before.state !== 'unknown'
+      return (baselineReadable && [...now].some(([id, row]) => {
+        const previous = was.get(id)
+        return !previous || loginCredentialChanged(previous, row)
+      })) || (now.size > 0 && exitCode === 0)
     }
     if (change === 'logout') return !!after && after.state !== 'authenticated'
     if (after?.state !== 'authenticated') return false

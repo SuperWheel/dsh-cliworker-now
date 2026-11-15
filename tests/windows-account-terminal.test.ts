@@ -69,7 +69,7 @@ function fixture(ready = true) {
     ended.resolve({ exitCode: 143, signal: null })
     ownerEnded.resolve({ exitCode: 0, signal: null })
   }
-  return { backend, spec, options, terminal, owner, closeJob, directory: () => directory }
+  return { backend, spec, options, terminal, owner, closeJob, ended, directory: () => directory }
 }
 it('waits for a Job receipt, exposes the bootstrap pid and preserves literal argv', async () => {
   const f = fixture()
@@ -208,6 +208,26 @@ it('reports native exit before the bootstrap exits, then disposes its still-live
   await vi.waitFor(() => expect(f.terminal.terminate).toHaveBeenCalledOnce())
   await f.closeJob()
   await closing
+})
+
+it.each([0, 7, null])('模拟：没有原生退出回执时保留 ConPTY 退出码 %s', async exitCode => {
+  const f = fixture()
+  const handle = await spawnAccountTerminal(f.backend, f.spec, f.options)
+  f.ended.resolve({ exitCode, signal: null })
+  await expect(handle.done).resolves.toEqual({ exitCode, signal: null })
+  await f.closeJob()
+  await handle.terminate()
+})
+
+it('模拟：原生退出回执暂不可读时重试，不凭空补退出码', async () => {
+  const f = fixture()
+  const handle = await spawnAccountTerminal(f.backend, f.spec, f.options)
+  await writeFile(join(f.directory(), 'exit'), '{')
+  await new Promise(resolve => setTimeout(resolve, 70))
+  await writeFile(join(f.directory(), 'exit'), JSON.stringify({ exitCode: 9 }))
+  await expect(handle.done).resolves.toEqual({ exitCode: 9, signal: null })
+  await f.closeJob()
+  await handle.terminate()
 })
 
 it('waits for adoption before disposing a cancelled bootstrap and never releases without the empty receipt', async () => {
