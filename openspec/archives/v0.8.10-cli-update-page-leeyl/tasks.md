@@ -601,3 +601,21 @@
   - 2026-11-15 补救路径的 Windows 原语实测（交互会话，`$TMPDIR/jobreopen.ps1`）：建立设有 `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` 的测试 Job，Job 内隐藏 powershell 子进程执行 `explorer.exe C:\Windows\System32\charmap.exe`；charmap 父进程为 `explorer.exe#42340`、不在测试 Job 内、有可见窗口；关闭 Job 句柄后 Job 内子进程被结束、charmap 仍存活。即 `reopenOutsideJob` 的外壳交接能把应用启动到 Job 之外。
   - 2026-11-15 快照命令实机：把 `listRunningApps` 生成的精确 argv（Mac 上经 tsx 调用同一函数导出）放进 `snap.mjs`，在 Windows 用 DSH 自带 Electron（`ELECTRON_RUN_AS_NODE=1`）经 `child_process.spawn` 运行，环境继承宿主并设 `CLIWORKER_APP_IMAGE=charmap.exe`；先启动 charmap（PID 45312）。输出退出码 0、stderr 空、stdout `{"pid":45312,"created":"134392083448441510","path":"C:\\WINDOWS\\system32\\charmap.exe"}`，单个进程时 PowerShell 5 输出单对象（解析代码已同时接受对象与数组）。测试进程与临时脚本已删除。
   - 仍未实机：安装程序真实结束页启动的应用留在插件 Job 内、被结束后重开的完整链路（electron-builder 结束页经外壳启动，正常不会出现）。
+
+
+## 跟进
+
+### 2026-11-15 v0.8.10 发布回归夹具修复
+
+- 范围：只修改五个测试文件，未改生产代码、版本或运行协议，未构建、部署、提交或推送。开始检出为 `fcb60f6`（`68e58aa` 后的 OpenSpec 文档提交）；验证期间并行工作追加 `82a14de`（仅 `scripts/windows-remote-common.mjs`），保留该变更。
+- `cli-management-npm-platform.test.ts` 三项清理故障、`cli-management.test.ts` 的不兼容版本提示及项目分槽预加载两项、`extended-catalog-cleanup.test.ts` 三项 Pi 目录生命周期：`da256e5` 新增安装完整性检查后，原先不存在的模拟 Pi 路径先被拒绝。改用现有 `simulatedPiInstallation` 写出完整模拟 npm 树，更新场景同步模拟安装后的 manifest；仍执行真实完整性检查，保留原有双 CLI 成功、锁释放、队列推进、目录保留/清除及账号源未变断言。
+- `cli-settings.test.ts` 四项账号目标转发：`e8752b1` 给 `accounts.start` 新增第九个清理协调回调；精确参数断言增加 `expect.any(Function)`，原 provider/login/source、操作和调用次数约束不变。
+- `core.test.ts` 三项 nonzero/missing/auth：`777fb33` 已明确允许自然退出后直接确认进程范围清理，无需再发 terminate。模拟句柄在 `waitForExit` 完成时登记 quiescence，失败用例必须已达到该状态；三项自然退出不 terminate，流解析 mismatch 仍 terminate，失败状态与错误断言不变。
+- 历史对照：从 `0f36f1c` 导出隔离源码、复用当前 `node_modules`，对原始六文件执行相同 Vitest 命令，**6 文件 / 347 项全部通过**（15.47 秒）。五个修改文件在 `0f36f1c..HEAD` 原本无差异；所列 15 项失败在该基线未复现。未运行 v0.8.9 的独立依赖环境，不据此声称旧版全量通过。
+- 修后六文件：`node_modules/.bin/vitest run --configLoader native tests/cli-management-npm-platform.test.ts tests/cli-management.test.ts tests/cli-settings.test.ts tests/core.test.ts tests/extended-catalog-cleanup.test.ts tests/native-agy-account-permissions.test.ts`：**6 文件 / 347 项通过**（16.17 秒，退出 0）。原日志 Antigravity 两项偶发失败本轮均通过，未修改该文件。
+- `env pnpm_config_verify_deps_before_run=false corepack pnpm typecheck`：退出 0，Host/Client 对 DSH 0.2.2-rc.3 类型检查通过。
+- 全量原命令 `node_modules/.bin/vitest run --configLoader native`：沙箱内 **20 failed / 328 passed / 4 skipped 文件，370 failed / 7760 passed / 14 skipped 测试，20 errors**（191.71 秒，退出 1）；单项 Pi bridge 复现 `listen EPERM: 127.0.0.1`。获准沙箱外重跑后：**3 failed / 345 passed / 4 skipped 文件，3 failed / 8127 passed / 14 skipped 测试，总计 352 文件 / 8144 项**（327.13 秒，退出 1）。未将沙箱内结果当作正常环境业务验收；两次全量有部分运行时段重叠。
+- 沙箱外新增三项失败逐项单独复测均通过，未修改其代码或放宽超时：`settings-dialog.test.tsx` 缓存十分钟过期用例首屏已为 unknown（仅留 40 ms 新鲜窗口），单项 **1 passed / 288 skipped**；`harness-service-integration.test.ts` 第五次派遣等待只见四次调用，独立文件 **1 passed**；`pi-omp-adapter.test.ts` resume hardlink 用例 15 秒超时，单项 **1 passed / 132 skipped**。记录为本轮偶发，完整套件本轮仍为退出 1，不把单项复测拼成一次全量全绿。
+- 日志均在忽略目录 `.test-data/release-v0.8.10/`：`mac-six-vitest-fixed.log`、`mac-six-vitest-0f36f1c.log`、`mac-typecheck-fixed.log`、`mac-full-vitest-fixed.log`、`mac-full-vitest-fixed-unsandboxed.log`、`mac-sandbox-pi-probe.log`、`mac-rerun-settings-expiry.log`、`mac-rerun-harness-service.log`、`mac-rerun-pi-hardlink.log`。保留原 `mac-full-vitest.log`。本轮孤立的 `tests/fixtures/detached-child.mjs` 进程经 PID/路径核实、确认无存活子进程后结束，退出已确认。
+- 验证边界：均为自动测试与模拟安装/账号/模型，不新增真实账号、模型或 Windows 验收；保留宿主代理环境，未读取用户凭据。
+- 最终静态检查：`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 退出 0。`corepack pnpm spec:check` 的脚本内嵌裸 `pnpm` 在当前 PATH 不可用（退出 1）；以等效 `env pnpm_config_verify_deps_before_run=false corepack pnpm spec validate --all --strict --no-interactive` 执行，**36 passed / 0 failed**（退出 0），未修改工具配置。

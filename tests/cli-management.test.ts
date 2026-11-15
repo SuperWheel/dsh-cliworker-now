@@ -11,6 +11,7 @@ import { CLI_SOURCES, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from '.
 import { classifyInstallation, identifyInstallation, fingerprintToken, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { compareVersions, compatible, currentVersion, latestCompatible, updateAvailable, ReleaseClient, captureReadOnly } from '../src/host/cli-management/versions.ts'
 import { CliManagementCache, ACCOUNT_TTL, RELEASE_TTL } from '../src/host/cli-management/cache.ts'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 import { CliManagementService } from '../src/host/cli-management/service.ts'
 import { CliPreloader, cpuBusy } from '../src/host/cli-management/preload.ts'
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
@@ -280,7 +281,8 @@ describe('Host page service and lifecycle', () => {
     expect(f.service.snapshot().activity).toBe('idle')
   })
   it('reports incompatible targets and unknown versions without claiming updates', async () => {
-    const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? identity : undefined), releases: new ReleaseClient(async url => new Response(JSON.stringify(String(url).endsWith('/dist-tags') ? { latest: '9.0.0' } : { versions: { '1.0.2': {}, '1.1.0': {}, '9.0.0': {} } }))) })
+    const pi = simulatedPiInstallation(temp())
+    const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? { ...identity, executable: pi.entry } : undefined), releases: new ReleaseClient(async url => new Response(JSON.stringify(String(url).endsWith('/dist-tags') ? { latest: '9.0.0' } : { versions: { '1.0.2': {}, '1.1.0': {}, '9.0.0': {} } }))) })
     const result = await checked(f.service); expect(result.entries.find(e => e.cli === 'pi')).toMatchObject({ group: 'updatable', notice: '插件尚未适配 Pi 9.0.0，更新后 Pi Worker 要等插件适配后才能使用', latestCompatibleVersion: '9.0.0' })
   })
   it('watch abort unsubscribes without launching a probe', async () => {
@@ -379,7 +381,8 @@ it('idle notifications cannot shorten the two-second CPU sampling window', async
 })
 
 it('模拟：后台连接工作按项目分开，只交给安全账号与目录回调，跳过关闭的 CLI', async () => {
-  const f = serviceFixture({ identify: vi.fn(async () => identity) })
+  const pi = simulatedPiInstallation(temp())
+  const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? { ...identity, executable: pi.entry } : identity) })
   const load = vi.fn(async () => {})
   ;(f.service as any).deps.preloadConnection = load
   ;(f.service as any).deps.cliEnabled = (cli: string) => cli !== 'mimo'

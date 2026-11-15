@@ -304,6 +304,7 @@ describe('profile-wide CLI enablement', () => {
         undefined,
         provider,
         undefined,
+        expect.any(Function),
       )
       f.storage.setCliEnabled('zcode', false)
       await expect(
@@ -320,7 +321,7 @@ describe('profile-wide CLI enablement', () => {
     ;(f.service as any).accountParents.set('parent', () => {})
     f.accounts.start.mockResolvedValue({ id: 'synthetic-account', instruction: 'Synthetic' })
     await f.service.accountStartWith('parent', cli, action, JSON.stringify(options), f.signal)
-    expect(f.accounts.start).toHaveBeenCalledExactlyOnceWith('parent', cli, action, f.project, f.signal, undefined, ...target)
+    expect(f.accounts.start).toHaveBeenCalledExactlyOnceWith('parent', cli, action, f.project, f.signal, undefined, ...target, expect.any(Function))
   })
   it.each(['null', '[]', '{"provider":1}', '{"provider":""}', '{"source":"native"}', '{"login":"x","extra":"y"}', 'not json'])(
     'rejects malformed account-window options %s before reading the parent',

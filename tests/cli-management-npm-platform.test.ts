@@ -9,6 +9,7 @@ import { currentVersion, ReleaseClient } from '../src/host/cli-management/versio
 import { ChannelMemory, channelMemoryKey, CHANNEL_MEMORY_TTL } from '../src/host/cli-management/channel-memory.ts'
 import { parseIntegrity } from '../src/host/cli-management/download.ts'
 import { cliDownloadProgressSchema, type CliDownloadProgress } from '../src/shared/cli-management.ts'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 import { serviceFixture, checked, finished, sri, control, syntheticIdentity } from './cli-management-phase-b-fixture.ts'
 const roots: ReturnType<typeof serviceFixture>[] = []
 afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); for (const f of roots.splice(0)) await f.close() })
@@ -370,10 +371,17 @@ it('模拟 Windows 手动证据：镜像低速后转官方源，保持偏移；�
 })
 it.each(['ENOSPC', 'EACCES', 'directory'])('模拟：通道记忆或目录清理 %s 不能阻塞结束、锁释放或队列推进', async code => {
   const f = serviceFixture(['codex', 'pi']); roots.push(f)
+  const pi = simulatedPiInstallation(f.root, '1.0.0')
+  const piIdentity = (version: string) => ({ ...syntheticIdentity('pi', version), executable: pi.entry, packageRoot: pi.pkg,
+    fingerprint: { ...syntheticIdentity('pi', version).fingerprint, realpath: pi.entry } })
+  f.identities.set('pi', piIdentity('1.0.0'))
   vi.mocked(f.backend.spawn).mockImplementation(spec => {
     if (spec.argv.includes('install')) {
       const cli = f.service.snapshot().operation!.cli
-      f.identities.set(cli, syntheticIdentity(cli, '1.2.3'))
+      if (cli === 'pi') {
+        simulatedPiInstallation(f.root, '1.2.3')
+        f.identities.set(cli, piIdentity('1.2.3'))
+      } else f.identities.set(cli, syntheticIdentity(cli, '1.2.3'))
     }
     return { stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0 }), waitForExit: async () => true, terminate() {} } as any
   })

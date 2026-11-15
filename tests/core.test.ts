@@ -55,6 +55,7 @@ class FakeBackend implements ProcessBackend {
     stderr: PassThrough
     end: (code?: number) => void
     terminated: boolean
+    quiescent: boolean
   }[] = []
   async resolveExecutable() {
     return '/fixture/agy'
@@ -71,6 +72,7 @@ class FakeBackend implements ProcessBackend {
       stdout,
       stderr,
       terminated: false,
+      quiescent: false,
       end: (exitCode = 0) => {
         stdout.end()
         stderr.end()
@@ -90,6 +92,7 @@ class FakeBackend implements ProcessBackend {
       terminate,
       waitForExit: async () => {
         await done
+        row.quiescent = true
         return true
       },
     } as SubprocessHandle
@@ -305,7 +308,9 @@ describe('scheduler, cancellation and session continuity', () => {
     const outcome = await a.done
     expect(outcome.status).toBe('failed')
     expect(outcome.error).toBeTruthy()
-    expect(call.terminated).toBe(true)
+    // A failed result still waits for range cleanup; already exited processes need no signal.
+    expect(call.quiescent).toBe(true)
+    expect(call.terminated).toBe(scenario === 'mismatch')
   })
   it('bounds runaway output and times out idle runs', async () => {
     const { runtime, backend, project } = setup({ maxRunBytes: 10, timeoutMs: 30 })

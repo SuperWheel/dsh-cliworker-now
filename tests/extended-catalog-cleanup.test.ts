@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile, utimes } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { simulatedPiInstallation } from './pi-installation-integrity-fixture.ts'
 import { sweepTemporaryTrees } from '../src/host/temporary-sweep.ts'
 import { extendedCatalog } from '../src/host/extended-adapters.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError } from '../src/host/process.ts'
@@ -35,7 +36,8 @@ async function fixture(cli: 'pi' | 'omp') {
   const original = JSON.stringify({ providers: { synthetic: { apiKey: 'synthetic-key-only', models: [] } } })
   await writeFile(source, original)
   const state = join(root, 'state')
-  return { state, source, original }
+  const executable = cli === 'pi' ? simulatedPiInstallation(root).entry : 'synthetic-cli'
+  return { state, source, original, executable }
 }
 const choices = [{ id: 'synthetic/model', label: 'Synthetic model', efforts: ['low', 'high'] }]
 
@@ -65,7 +67,7 @@ describe.each(['pi', 'omp'] as const)('%s successful catalog directory lifecycle
       await cleanup
       return JSON.stringify(choices)
     }
-    const result = extendedCatalog(cli, 'synthetic-cli', capture, f.state, DEFAULT_CONFIG)
+    const result = extendedCatalog(cli, f.executable, capture, f.state, DEFAULT_CONFIG)
     await vi.waitFor(() => expect(phases).toBe(2))
     expect(await readFile(nativeCache, 'utf8')).toBe('synthetic extracted native module')
     const sibling = join(dirname(query), 'query-other-owned-operation')
@@ -93,7 +95,7 @@ describe.each(['pi', 'omp'] as const)('%s successful catalog directory lifecycle
         await writeFile(ownedFile, 'synthetic still-owned state')
         throw failure
       }
-      const result = extendedCatalog(cli, 'synthetic-cli', capture, f.state, DEFAULT_CONFIG)
+      const result = extendedCatalog(cli, f.executable, capture, f.state, DEFAULT_CONFIG)
       if (kind === 'cleanup-unconfirmed') await expect(result).rejects.toBe(failure)
       else await expect(result).rejects.toThrow('无法读取 Pi/OMP 原生模型目录')
       if (kind === 'cleanup-unconfirmed') expect(await readFile(ownedFile, 'utf8')).toBe('synthetic still-owned state')
