@@ -1733,7 +1733,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 
 关联模拟测试、安装源码证据与 Desktop 待验收项见 [Worker 目录与工具错误变更](../openspec/changes/v0.8.10-worker-cwd-tool-errors-leeyl/tasks.md)。本次未构建、未更新 lib、未调用真实模型。
 
-### ZCode 自定义 API Key（vnext-zcode-custom-key-leeyl，2026-11-15，未发布）
+### ZCode 自定义 API Key（v0.8.10-zcode-custom-key-leeyl，2026-11-15，未发布）
 
 订阅过期后用自有 API Key 使用 ZCode CLI 0.17.1。四处改动：
 
@@ -1744,4 +1744,4 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 
 `CustomProviderForm.presets` 新增内置模板预填（可选字段）。
 
-决定、放弃的方案与风险见 [变更设计](../openspec/changes/vnext-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。
+决定、放弃的方案与风险见 [变更设计](../openspec/changes/v0.8.10-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。

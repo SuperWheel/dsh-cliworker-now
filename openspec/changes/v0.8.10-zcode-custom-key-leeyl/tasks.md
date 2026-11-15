@@ -2,9 +2,9 @@
 
 ## 1. 变更与规格 〔产品｜1h〕
 - [x] 1.1 创建变更，交付 proposal、三份增量规格、design 并严格校验
-  - `corepack pnpm spec new change --version next --topic zcode-custom-key --creator leeyl --creator-name Leeyl --title "ZCode 自定义 API Key"` 创建 `vnext-zcode-custom-key-leeyl`（全局没有 pnpm，用 corepack）。
+  - `corepack pnpm spec new change --version next --topic zcode-custom-key --creator leeyl --creator-name Leeyl --title "ZCode 自定义 API Key"` 创建 `v0.8.10-zcode-custom-key-leeyl`（全局没有 pnpm，用 corepack）。
   - 增量规格三份：cli-model-discovery（新增 1 条、修改「按账号与执行路由筛选」）、custom-provider-config（新增 3 条）、cli-native-features（新增 1 条）。
-  - `corepack pnpm spec validate vnext-zcode-custom-key-leeyl --strict`：首次因两条要求正文超过 500 字报警告（exit 1）；把细节移入场景后结果为 valid。
+  - `corepack pnpm spec validate v0.8.10-zcode-custom-key-leeyl --strict`：首次因两条要求正文超过 500 字报警告（exit 1）；把细节移入场景后结果为 valid。
 
 ## 2. ZCode 0.17.1 运行偏好兼容 〔后端｜3h｜前置 1〕
 - [x] 2.1 静态判定已安装入口的工作流字段位置，Host 经私有环境变量交给桥接，桥接在启动 CLI 前删除
