@@ -51,7 +51,7 @@
   - 两轮完整运行的 `$TMPDIR/cliworker-probe-*` 独立快照均为 24→24，新增 0、删除 0；同时记录 owner PID 与测试进程树，确认没有新增本轮归属残留。日志及前后快照在忽略目录 `.test-data/full-suite-stability/`：`stable-1.log`、`stable-2.log`、对应 `*-before.json` / `*-after.json` / `*-summary.json`；旧残留仍原样保留。
   - 最终两轮后 `corepack pnpm typecheck` 通过（Host/Client，DSH 0.2.2-rc.3）；`corepack pnpm build:preview` 通过，产物仅 `.cache/preview-package`。未运行正式 build、更新 Desktop、真实 CLI 更新、真实模型调用或推送。
   - 最终严格校验：`corepack pnpm spec validate v0.8.10-hermes-renewal-fix-leeyl --strict` 与 `corepack pnpm spec validate vnext-custom-provider-form-leeyl --strict` 均通过；`/Library/Developer/CommandLineTools/usr/bin/git diff --check` 通过。
-- [ ] 3.2 Mac Desktop 实机：Pi 等已核实 CLI 的表单显示与写入（使用测试用服务商与测试密钥，不调用模型）
+- [x] 3.2 Mac Desktop 实机：Pi 等已核实 CLI 的表单显示与写入（使用测试用服务商与测试密钥，不调用模型）
   - 2026-11-14 Mac Desktop（构建 44740eb）：Pi「添加账号」卡片显示「其他服务商（在本窗口中填写配置）」，继续后进入同窗口表单：服务商 ID*、服务商名称、Base URL*、API 协议*（OpenAI Chat Completions / OpenAI Responses / Anthropic Messages / Google Generative AI）、API Key*（可显隐）、模型 ID*；底部「在原生终端中配置」「返回」「保存」。空表单保存逐字段显示必填错误；返回、关闭均正常。
   - 未执行：真实保存写入（会改动用户 Pi 配置，待用户提供测试服务商或授权）、OpenCode/Hermes 表单、深色主题与英文界面、Windows。
   - （未执行：本次只做 Host 与临时 HOME 模拟验收；没有真实账号写入、模型调用、Desktop 或 Windows 验收。）
@@ -62,6 +62,10 @@
   - 仍未验证：Hermes 写入、深色主题与英文界面、Windows。本项保持未勾选。
   - 2026-11-15 Hermes 保存失败根因（经用户授权检查 `~/.hermes/.env` 格式，只输出键名、引号类型与长度，不输出值）：`.env` 11 个键均为普通 `KEY=value`，`parseHermesOwnEnvironment` 通过；`config.yaml` 无 YAML 错误或警告，但没有顶层 `providers`（Hermes 官方默认配置只有注释示例）。旧代码 `doc.set('providers', {})` 写入的是普通对象而非 YAML 节点，随后 `setIn` 抛出 `Expected YAML collection at providers`，被统一归为「保存失败」。原有测试夹具都自带 `providers` 映射或为空 HOME，漏掉该情形。
   - 修复 e096dd4：`providers` 缺失或为空值时改用 `doc.createNode({})` 新建；新增模拟用例「没有顶层 providers」「providers 为空值」先失败后通过；`tests/custom-provider.test.ts` 与 `tests/custom-provider-remotes.test.ts` 52 项通过；`corepack pnpm typecheck` 通过。用真实 `config.yaml` 的私有临时副本（`.env` 换成合成内容，验后删除）运行真实 `CustomProviders.save`：返回 ok，除新增 `providers.diagprov` 外其他键 JSON 一致，注释行 2034→2034。真实 `~/.hermes` 未写入；Mac Desktop 上 Hermes 表单的实机复测待新构建后执行。
+  - 2026-11-15 复测（主会话；HEAD 277751b 正式构建，含 e096dd4、4fdd3b4、23bccf8；Desktop 以无障碍与防节流参数重启，Codex Computer Use 操作真实窗口，只用粘贴输入）：Pi、Hermes Agent、OpenCode 依次「账号窗口 → 其他服务商（在本窗口中填写配置）」，填虚构服务商 `cwn-test`、名称「CWN 测试服务商（模拟）」、Base URL `https://api.example.invalid/v1`、第一项协议、测试密钥 `cwn-test-key-not-real-0001`、模型 `test-model`，三项均提示「已添加 …」与「已保存原生配置；密钥有效性与模型可用性尚未验证」。
+  - 表单显示的目标：Pi「保存到 ~/.dsh/cliworker-now/accounts/pi/agent/models.json + auth.json」；Hermes「…/accounts/hermes/config.yaml + .env」（本机 hermes-source 标记为 plugin-native）；OpenCode「…/accounts/opencode/config/opencode/opencode.json + …/data/opencode/auth.json」。与账号窗口和 Worker 实际来源一致。
+  - 主会话独立核对（只比较、不打印密钥）：三处私有文件均含 cwn-test 条目且密钥与测试值一致，原有凭据条目保留；Hermes 新建 `.env` 权限 600、只 1 行；全局 `~/.pi/agent`、`~/.hermes/config.yaml` 与 `.env`、`~/.config/opencode`、`~/.local/share/opencode` 共 6 个文件哈希前后不变。测试前私有文件备份在会话私有目录，测后按备份恢复并删除测试新建的 Hermes `.env` 与 OpenCode `config/`，11 个文件哈希与测试前一致，无 .tmp/.bak 残留，备份已删除。
+  - 未验证：深色主题与英文界面、Windows。
 - [x] 3.3 README、doc/design.md 同步
   - README.md、README.en.md、doc/design.md 同步 Host 支持范围、原生写入、回滚/凭据边界及前端独立验收状态；版本号未改，src/client/** 未改。
 
