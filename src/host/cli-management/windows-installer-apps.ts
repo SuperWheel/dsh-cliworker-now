@@ -50,13 +50,15 @@ export async function reopenablePath(stopped: RunningApp[], appRoot: string | un
 export async function reopenOutsideJob(backend: ProcessBackend, config: RuntimeConfig, path: string, signal: AbortSignal): Promise<void> {
   const child = backend.spawn({ argv: ['explorer.exe', path], cwd: win32.dirname(path), signal, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }, ...{ [VISIBLE_WINDOW]: true as const } })
   void child.done.catch(() => undefined); child.stdout?.resume(); child.stderr?.resume()
-  let exited = false
+  let exited = false, launch: unknown
   try {
-    await Promise.race([child.done.catch(() => undefined), graceDelay(15_000)])
+    // Exit code 1 is Explorer's normal hand-off; a spawn failure is not.
+    await Promise.race([child.done.then(() => undefined, error => { launch = error ?? new Error('explorer.exe 启动失败') }), graceDelay(15_000)])
     exited = await child.waitForExit(AbortSignal.timeout(5000))
     if (!exited) { child.terminate(); exited = await child.waitForExit() }
   } catch (cause) { throw new ProcessCleanupUnconfirmedError({ cause }) }
   if (!exited) throw new ProcessCleanupUnconfirmedError()
+  if (launch) throw launch
 }
 
 /** After a verified Windows desktop install/update: reopen the app the finish page had started

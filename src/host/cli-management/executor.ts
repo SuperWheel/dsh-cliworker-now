@@ -63,7 +63,7 @@ export type CliOperationResult = { /** App processes ended with the installer's 
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
 export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void, visibleWindow: boolean | WindowsInstallerRun = false): Promise<CliOperationResult> {
   const installer = visibleWindow === false ? undefined : visibleWindow === true ? {} : visibleWindow
-  let stopped: RunningApp[] = []
+  let stopped: RunningApp[] = [], snapshotCleanup: unknown
   signal.throwIfAborted()
   // setTimeout clamps Infinity to 1 ms; an untimed installer must never arm it.
   const timer = new AbortController(), timeout = Number.isFinite(timeoutMs) ? setTimeout(() => timer.abort(), timeoutMs) : undefined
@@ -85,11 +85,13 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
       publish(decoder.end()); safe.flush()
     }
     readers = [read(child.stdout), read(child.stderr)]
+    // Settle-handlers attach now: a reader may fail while the installer window is still open.
+    const drained = Promise.allSettled(readers)
     // The installer's own exit ends the install. An app started from its finish page may
     // inherit the pipes and outlive it, so output gets a short grace instead of a wait.
-    const [outcome] = installer
-      ? [await bounded(child.done, control), await Promise.race([Promise.allSettled(readers), delay(METADATA_EXIT_GRACE_MS)])]
-      : await bounded(Promise.all([child.done, ...readers]), control)
+    let outcome: Awaited<typeof child.done>
+    if (installer) { outcome = await bounded(child.done, control); await Promise.race([drained, delay(METADATA_EXIT_GRACE_MS)]) }
+    else [outcome] = await bounded(Promise.all([child.done, ...readers]), control)
     finished = true
     if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', `安装阶段超过 ${Math.round(timeoutMs / 60_000)} 分钟，请检查输出后重试`)
     signal.throwIfAborted()
@@ -107,15 +109,21 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
         if (!exited) {
           // Something the finished installer started is still in the Host's kill-on-close Job.
           // Record which app processes ending the range takes down, so the caller can reopen them.
-          const before = settled && installer?.runningApps ? await installer.runningApps(AbortSignal.timeout(20_000)).catch(() => []) : []
+          // A snapshot whose own process range is unconfirmed must still fail the operation.
+          const snapshot = async () => {
+            try { return await installer!.runningApps!(AbortSignal.timeout(20_000)) }
+            catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) snapshotCleanup ??= error; return undefined }
+          }
+          const before = settled && installer?.runningApps ? await snapshot() ?? [] : []
           child.terminate(); exited = await child.waitForExit()
           if (exited && before.length) {
-            const after = await installer!.runningApps!(AbortSignal.timeout(20_000)).catch(() => undefined)
+            const after = await snapshot()
             if (after) stopped = stoppedApps(before, after)
           }
         }
       } catch (cause) { throw new ProcessCleanupUnconfirmedError({ cause }) }
       if (!exited) throw new ProcessCleanupUnconfirmedError()
+      if (snapshotCleanup) throw snapshotCleanup
       if (installer) { await Promise.race([Promise.allSettled([child.done, ...readers]), delay(METADATA_EXIT_GRACE_MS)]); child.stdout?.destroy(); child.stderr?.destroy() }
       else await Promise.allSettled([child.done, ...readers])
     }

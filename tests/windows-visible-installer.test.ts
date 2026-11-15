@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { VISIBLE_WINDOW, type ProcessBackend } from '../src/host/process.ts'
+import { ProcessCleanupUnconfirmedError, VISIBLE_WINDOW, type ProcessBackend } from '../src/host/process.ts'
 import { nativeProcessBackend } from '../src/host/native-process.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation } from '../src/host/cli-management/executor.ts'
 import { childFixture, control, serviceFixture } from './cli-management-phase-b-fixture.ts'
@@ -137,6 +137,34 @@ describe('安装程序结束页「运行」（模拟）', () => {
     expect(c.child.terminate).toHaveBeenCalledOnce(); expect(runningApps).toHaveBeenCalledTimes(2)
   })
 
+  it('安装程序窗口还开着时输出流出错：不产生未处理的拒绝，安装程序退出后照常判定完成', async () => {
+    const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    const unhandled = vi.fn(); process.on('unhandledRejection', unhandled)
+    try {
+      const pending = run(f, vi.fn(async () => []))
+      await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+      c.child.stdout.destroy(new Error('模拟管道错误')); c.child.stderr.end()
+      await new Promise(resolve => setTimeout(resolve, 20))
+      c.exitInstaller()
+      await expect(pending).resolves.toEqual({ stoppedApps: [] })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally { process.off('unhandledRejection', unhandled) }
+  })
+
+  it('应用快照自身的进程范围未确认退出：安装程序照常清理，但操作以清理未确认失败', async () => {
+    const f = serviceFixture(); fixtures.push(f); const c = installerChild()
+    vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
+    c.child.waitForExit.mockImplementationOnce(async () => false)
+    const runningApps = vi.fn().mockRejectedValueOnce(new ProcessCleanupUnconfirmedError())
+    const pending = run(f, runningApps).catch(error => error)
+    await vi.waitFor(() => expect(f.backend.spawn).toHaveBeenCalledOnce())
+    c.child.stdout.end(); c.child.stderr.end(); c.exitInstaller()
+    expect(await pending).toBeInstanceOf(ProcessCleanupUnconfirmedError)
+    expect(c.child.terminate).toHaveBeenCalledOnce()
+  })
+
   it('取消等待中的安装程序时不枚举应用，也不报告需要重新打开', async () => {
     const f = serviceFixture(); fixtures.push(f); const c = installerChild()
     vi.mocked(f.backend.spawn).mockReturnValue(c.child as any)
@@ -165,6 +193,12 @@ describe('重新打开被结束的应用（模拟）', () => {
     const spec = vi.mocked(f.backend.spawn).mock.calls[0]![0] as never as SubprocessSpawnSpec & Record<symbol, unknown>
     expect(spec.argv).toEqual(['explorer.exe', exe]); expect(spec[VISIBLE_WINDOW]).toBe(true)
     expect(note).toHaveBeenCalledWith(expect.stringContaining('已重新打开'))
+  })
+  it('explorer.exe 启动失败时不声称已重新打开，改为提示手动打开', async () => {
+    const f = relay(); const note = vi.fn()
+    vi.mocked(f.backend.spawn).mockImplementation(() => ({ ...f.inner, done: Promise.reject(Object.assign(new Error('模拟'), { code: 'ENOENT' })) }) as any)
+    await reopenStoppedApp({ backend: f.backend, config: { graceMs: 500 } as never, image: 'WorkBuddyAI.exe', stopped, appRoot: root, signal: new AbortController().signal, note })
+    expect(note).toHaveBeenCalledOnce(); expect(note).toHaveBeenCalledWith(expect.stringContaining('请手动打开'))
   })
   it('路径不在已核实目录内或文件名不符时不启动，只提示手动打开', async () => {
     const f = relay(); const note = vi.fn()
