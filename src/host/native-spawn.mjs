@@ -4,8 +4,9 @@ import { spawn } from 'node:child_process'
  * Window presentation is per child: hiding a wrapper does not hide its children.
  * Node ignores windowsHide on POSIX, so both platforms use this one boundary.
  */
-export function spawnNativeProcess(executable, argv, options) {
-  return spawn(executable, argv, { ...options, windowsHide: true })
+export function spawnNativeProcess(executable, argv, options, presentation = {}) {
+  // Only a Host-verified GUI installer that needs the user (UAC/wizard) is shown.
+  return spawn(executable, argv, { ...options, windowsHide: presentation.visibleWindow !== true })
 }
 
 /** Relay ordinary background pipes as bytes with Node's stream backpressure.

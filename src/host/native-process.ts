@@ -1,7 +1,7 @@
 import { nativeLaunchArgv, resolveNativeEntry } from './native-launch.mjs'
 import { win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ProcessBackend } from './process.ts'
+import { VISIBLE_WINDOW, type ProcessBackend, type VisibleWindowSpec } from './process.ts'
 import { isCurrentWindowsRuntime, needsWindowsHiddenLaunch, spawnWindowsHidden } from './windows-hidden-process.ts'
 import { windowsCodexBackgroundLaunch } from './windows-codex-launch.ts'
 import { decidesProxy, proxyEnvironment, type SystemProxy, type SystemProxySource } from './system-proxy.ts'
@@ -62,7 +62,9 @@ function normalizedBackend(
     async resolveExecutable(name) {
       return resolveNativeEntry(await backend.resolveExecutable(resolveNativeEntry(name, platform)), platform)
     },
-    spawn(spec) {
+    spawn(requested) {
+      const visibleWindow = (requested as VisibleWindowSpec)[VISIBLE_WINDOW] === true
+      const { [VISIBLE_WINDOW]: _visible, ...spec } = requested as typeof requested & VisibleWindowSpec
       const normalized = normalize(spec, true)
       const electron = options.electron ?? !!process.versions.electron
       // Fold only our exact private-umask helper into the background relay.
@@ -72,7 +74,7 @@ function normalizedBackend(
           normalized.argv.length > 2 && normalized.argv[2] !== '--cliworker-low-priority' && win32.normalize(normalized.argv[1]!).toLowerCase() === win32.normalize(privateLauncher).toLowerCase())
         return spawnWindowsHidden(backend, { ...normalized, argv: nativeLaunchArgv(normalized.argv.slice(2), platform) }, { privateUmask: true })
       return needsWindowsHiddenLaunch(normalized.argv, platform, electron)
-        ? spawnWindowsHidden(backend, normalized)
+        ? spawnWindowsHidden(backend, normalized, visibleWindow ? { visibleWindow: true } : {})
         : backend.spawn(normalized)
     },
     ...(backend.spawnTerminal

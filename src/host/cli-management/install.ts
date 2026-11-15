@@ -18,7 +18,7 @@ import { captureReadOnly, compareVersions, compatible, currentVersion, desktopVe
 import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { CliOperationError } from './planner.ts'
 import { downloadCliArtifact } from './download.ts'
-import { executeCliOperation, outputTail } from './executor.ts'
+import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
 import { findGitBash } from '../windows-git-bash.ts'
@@ -168,7 +168,9 @@ export class CliInstaller {
         let exitError: unknown
         const run = async (argv: string[], processSignal = control) => {
           op.command = argv; if (op.phase !== 'awaiting-user') op.phase = 'installing'; changed()
-          try { await executeCliOperation(this.deps.backend, this.deps.config, argv, processSignal, output, undefined, undefined, evidence) }
+          // Windows desktop installs run the verified official installer, whose window the user must see.
+          const installer = source.method === 'desktop' && this.platform === 'win32'
+          try { await executeCliOperation(this.deps.backend, this.deps.config, argv, processSignal, output, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined, undefined, evidence, undefined, undefined, installer) }
           catch (error) { if (source.method === 'desktop' || !(error instanceof CliOperationError) || error.code !== 'EXIT_CODE') throw error; exitError = error }
         }
         let candidate: string

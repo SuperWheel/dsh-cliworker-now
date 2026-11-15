@@ -17,6 +17,10 @@ import type { NativeHarnessConnection } from './native-harness-tools.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
 import type { NativeAccess } from './native-approval-policy.ts'
 
+/** Host-only marker: a verified Windows GUI installer whose window the user must see
+ * (UAC, setup wizard). Never set from client input; stripped before the SDK spawn. */
+export const VISIBLE_WINDOW: unique symbol = Symbol('cliworker.visibleWindow')
+export type VisibleWindowSpec = { [VISIBLE_WINDOW]?: true }
 export interface ProcessBackend {
   resolveExecutable(name: string): Promise<string>
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle

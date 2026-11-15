@@ -4,7 +4,10 @@ import { homedir } from 'node:os'
 import { lstat, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProcessBackend, RuntimeConfig } from '../process.ts'
-import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS } from '../process.ts'
+import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS, VISIBLE_WINDOW } from '../process.ts'
+/** A shown Windows desktop installer waits for the user (UAC, wizard): once its window is up
+ * the Host stops timing and only the user's cancel ends it. Console installs keep their limit. */
+export const DESKTOP_INSTALLER_TIMEOUT_MS = Number.POSITIVE_INFINITY
 import { bounded } from './versions.ts'
 import { CliOperationError } from './planner.ts'
 import { isQoderDispatcher } from './identity.ts'
@@ -54,9 +57,10 @@ class SafeOutput {
   flush() { if (this.discarded) this.emit('[超长输出行已省略]\n'); else if (this.line) this.emit(redactOutput(this.line)); this.line = ''; this.discarded = false }
 }
 /** Backend owns the whole process range. Neither abort nor exit(0) alone is an exit receipt. */
-export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void): Promise<void> {
+export async function executeCliOperation(backend: ProcessBackend, config: RuntimeConfig, argv: string[], signal: AbortSignal, output: (value: string) => void, timeoutMs = 10 * 60_000, env?: Record<string, string>, evidence?: InterruptionEvidence, cwd = homedir(), activity?: (text: string) => void, visibleWindow = false): Promise<void> {
   signal.throwIfAborted()
-  const timer = new AbortController(), timeout = setTimeout(() => timer.abort(), timeoutMs)
+  // setTimeout clamps Infinity to 1 ms; an untimed installer must never arm it.
+  const timer = new AbortController(), timeout = Number.isFinite(timeoutMs) ? setTimeout(() => timer.abort(), timeoutMs) : undefined
   const control = AbortSignal.any([signal, timer.signal])
   let child: ReturnType<ProcessBackend['spawn']> | undefined
   let readers: Promise<void>[] = [], finished = false
@@ -64,7 +68,7 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
   try {
     if (argv[1] === 'update') await guardDispatcherUpdate(argv, cwd)
     control.throwIfAborted()
-    child = backend.spawn({ argv, cwd, ...(env ? { env } : {}), signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } })
+    child = backend.spawn({ argv, cwd, ...(env ? { env } : {}), signal: control, graceMs: config.graceMs, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' }, ...(visibleWindow ? { [VISIBLE_WINDOW]: true as const } : {}) })
     void child.done.catch(() => undefined)
     control.addEventListener('abort', abort, { once: true }); if (control.aborted) abort()
     const read = async (stream: ReturnType<ProcessBackend['spawn']>['stdout']) => {
@@ -76,11 +80,11 @@ export async function executeCliOperation(backend: ProcessBackend, config: Runti
     }
     readers = [read(child.stdout), read(child.stderr)]
     const [outcome] = await bounded(Promise.all([child.done, ...readers]), control); finished = true
-    if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
+    if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', `安装阶段超过 ${Math.round(timeoutMs / 60_000)} 分钟，请检查输出后重试`)
     signal.throwIfAborted()
     if (outcome.exitCode !== 0) throw new CliOperationError('EXIT_CODE', `更新命令退出码 ${outcome.exitCode ?? '未知'}`)
   } catch (error) {
-    if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', '安装阶段超过 10 分钟，请检查输出后重试')
+    if (timer.signal.aborted && !signal.aborted) throw new CliOperationError('INSTALL_TIMEOUT', `安装阶段超过 ${Math.round(timeoutMs / 60_000)} 分钟，请检查输出后重试`)
     throw error
   } finally {
     clearTimeout(timeout); control.removeEventListener('abort', abort)

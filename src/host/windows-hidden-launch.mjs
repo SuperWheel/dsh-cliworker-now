@@ -34,7 +34,8 @@ try {
   for (const key of Object.keys(env))
     if (key.toUpperCase() === 'ELECTRON_RUN_AS_NODE') delete env[key]
   if (restore.nodeEnv !== null) env.ELECTRON_RUN_AS_NODE = restore.nodeEnv
-  child = spawnNativeProcess(executable, argv, { env, stdio: ['pipe', 'pipe', 'pipe'], detached: false })
+  child = spawnNativeProcess(executable, argv, { env, stdio: ['pipe', 'pipe', 'pipe'], detached: false },
+    { visibleWindow: restore.visibleWindow === true })
   forwardNativeStdio(child)
   child.once('error', error => receipt({
     kind: 'spawn-error',

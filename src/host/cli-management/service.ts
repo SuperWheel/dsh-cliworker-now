@@ -21,7 +21,7 @@ import { bounded, captureReadOnly, currentVersion, ReadOnlyTimeoutError, Release
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
-import { executeCliOperation, outputTail } from './executor.ts'
+import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
 import { interruptionRecoveryChannel, withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
 import { canPrepareLocalUpdate, prepareLocalUpdate, describeLocalUpdate, type LocalArtifactInstall } from './local-artifacts.ts'
 import { OfficialWatch, officialLockState } from './official-watch.ts'
@@ -477,8 +477,10 @@ export class CliManagementService {
           op.command = nativeLaunchArgv(command); if (op.phase !== 'awaiting-user') op.phase = 'installing'
           if (plan.method === 'npm') op.progress = { readable: false, byteProgress: false, resumeCount: 0, retryCount: op.progress?.retryCount, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }
           op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
-          await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
-            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence)
+          // Windows desktop updates run the verified official installer, whose window the user must see.
+          const installer = plan.method === 'desktop' && process.platform === 'win32'
+          await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined,
+            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence, undefined, undefined, installer)
         }
         const verify = async (control: AbortSignal, evidence?: InterruptionEvidence, allowLatest = false) => {
           control.throwIfAborted(); op.phase = 'verifying-installation'; this.changed()

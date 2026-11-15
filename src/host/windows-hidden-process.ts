@@ -26,7 +26,7 @@ function nodeEnvironment(env?: NodeJS.ProcessEnv): string | null {
 /** Window presentation only: all byte streams, collection and process-range
  * ownership remain the SDK's. Native exit facts travel over a private channel,
  * never stdout/stderr and never the native CLI's credential/session protocol. */
-export function spawnWindowsHidden(backend: ProcessBackend, spec: SubprocessSpawnSpec, options: { privateUmask?: true } = {}): SubprocessHandle {
+export function spawnWindowsHidden(backend: ProcessBackend, spec: SubprocessSpawnSpec, options: { privateUmask?: true; visibleWindow?: true } = {}): SubprocessHandle {
   // Current plugin calls do not use this channel. Never silently take a future
   // consumer's control protocol or downgrade to an unhidden spawn.
   if (spec.stdio.control) throw new Error('Windows 后台 CLI 启动不能复用已占用的控制通道')
