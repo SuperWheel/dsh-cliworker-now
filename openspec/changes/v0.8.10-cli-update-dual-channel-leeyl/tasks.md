@@ -99,6 +99,11 @@
   - 未验证：Windows／Mac DSH 实机外观（OMP 长主机、TRAE 多文件合计、npm 近期失败提示）、英文界面实机，以及真实 7 天失败记忆下的直接接管；没有正式构建，没有更新 Desktop 链接。
   - 2026-11-15 Windows 实机（ad2f07f 包，含 72bac7d）：真实 7 天失败记忆下 OMP 直接接管，页面显示直接接管原因「官方更新今天在这台电脑上失败，7 天内直接由插件下载」与「官方渠道近期在本机失败（7 天内），直接接管」；说明行 DOM 为前段「已下载 155 MB / 241 MB」与「· 来自 d4c085d38fe197a3f20bbeb20222b8b3.r2.cloudflarestorage.com」两段，停滞时显示「2 秒没有新数据」在主机段之前。只读取了文本，未截图核对单行省略与悬停。
   - 仍未验证：长主机单行省略的视觉效果、TRAE 多文件合计、npm 近期失败提示、Mac 与英文界面。本项保持未勾选。
+  - 2026-11-15 键盘可读全名：原实现只用原生 `title`，键盘聚焦时看不到完整主机。带主机的说明行改为可聚焦（`tabIndex=0`）的 Harness `Tooltip` 锚点（`onlyWhenClipped`、portal、最宽 360px），只在内容被省略时，悬停或键盘聚焦都显示整行全文（含「来自 <完整主机>」）；该行不再带原生 `title`，避免出现两个气泡；聚焦框为 2px 强调色、外偏 2px。不带主机的说明行仍用 `title`，也不加 Tab 停留。`doc/settings-ui-design.md`「进度来源」已同步。
+  - 模拟测试：`tests/cli-update-page.test.tsx` 调整 3 项（Tooltip 夹具记录 `onlyWhenClipped`；长主机行断言 Tooltip 全文、`tabIndex=0`、无 `title`、聚焦样式；阶段行无 Tab 停留且保留 `title`）。`KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm exec vitest run tests/cli-update-page.test.tsx tests/cli-update-layout.test.ts tests/cli-update-data.test.ts tests/client-i18n.test.tsx`：`Test Files 4 passed (4)`、`Tests 102 passed (102)`。`corepack pnpm typecheck`：`Host/Client typecheck passed against DSH 0.2.2-rc.3`（新 worktree 先跑 `corepack pnpm build:preview`，把隔离包生成的 `lib/typert.remote-client.*` 复制到 `lib/`）。
+  - 模拟视觉核对（不是 DSH 实机）：在 `.cache/ui-preview-5.1/`（不入 Git）用 vite 渲染真实 `CliUpdatePane`、页面 CSS 与 DSH 0.2.2-rc.3 主题 CSS；Tooltip 用 Harness primitives 源码，按钮等其余控件用外观近似的替身。三个场景：OMP 7 天内直接接管＋长预签名主机＋停滞 6 秒、TRAE CN 两个文件合计、Codex（npm）近期失败。由本机隔离 headless Chrome（独立临时 profile）经 CDP 在 1280 与 390px 宽度下量取并截图：每条说明行高 18px、只有一行，续传次数同在一行，页面无横向滚动（scrollWidth = clientWidth）。1280px 时只省略主机段；390px 时主机段收缩到 0，前段也省略。鼠标悬停和 Tab 键聚焦都能显示完整整行 Tooltip（宽 360px，长主机在气泡内断行），聚焦框为 solid 2px。截图在 `$TMPDIR/cwn-5.1-shots.T2UeA8/`。
+  - 模拟核对发现（未改）：390px 时行内状态「正在下载 … 已用时 m:ss」被「插件接管」标签和「取消更新」按钮挤到约一个字宽，逐字竖排。说明行本身不受影响。这属于行布局（`.cwn-update-desc`／`.cwn-update-row` 窄屏规则），不在本项范围，需另行确认 Desktop 设置窗口能否窄到这个宽度。
+  - 本项仍不勾选：Mac／Windows DSH 实机悬停与键盘聚焦、英文界面实机、TRAE 多文件与 npm 近期失败的实机外观都没有验证；模拟预览不能代替 DSH 实机。
 
 ## 6. 验收与文档 〔测试｜10h｜前置 4,5〕
 - [x] 6.1 模拟回归、类型检查、隔离构建、严格校验；README、`doc/design.md` 同步

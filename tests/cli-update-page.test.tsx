@@ -12,8 +12,12 @@ import { CLI_IDS, CLI_LABELS } from '../src/shared/types.ts'
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Button: ({ children, variant, size, icon, ...props }: any) =>
     createElement('button', { ...props, 'data-variant': variant, 'data-size': size }, icon, children),
-  Tooltip: ({ children, label, disabled }: any) =>
-    createElement('span', { 'data-tip': disabled ? '' : typeof label === 'function' ? label() : label }, children),
+  Tooltip: ({ children, label, disabled, onlyWhenClipped }: any) =>
+    createElement(
+      'span',
+      { 'data-tip': disabled ? '' : typeof label === 'function' ? label() : label, 'data-tip-clipped': onlyWhenClipped || undefined },
+      children,
+    ),
   StateDot: ({ state }: any) => createElement('i', { 'data-state': state }),
   Input: (props: any) => createElement('input', props),
   IconChevronDownOutlineRegular: () => createElement('svg', { 'data-icon': 'chevron' }),
@@ -796,7 +800,8 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     const row = f.rowOf('codex')
     const main = byClass(row, 'cwn-update-meta-main')
     expect(main.map(textOf)).toEqual(['3 个文件 · 已下载 120 MB / 194 MB · 2.1 MB/s · 来自 lf-cdn.simulated.example'])
-    expect(main[0]!.props.title).toBe(textOf(main[0]!))
+    // The whole line (file count, sum, host) is the tooltip text when it gets cut.
+    expect(main[0]!.parent!.props['data-tip']).toBe(textOf(main[0]!))
     // The host sits in its own span at the very end so a long host is what gets cut.
     expect(byClass(main[0]!, 'cwn-update-meta-lead').map(textOf)).toEqual(['3 个文件 · 已下载 120 MB / 194 MB · 2.1 MB/s'])
     expect(byClass(main[0]!, 'cwn-update-meta-host').map(textOf)).toEqual([' · 来自 lf-cdn.simulated.example'])
@@ -826,17 +831,24 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(more).toHaveLength(0)
     expect(main!.props['data-host']).toBe(true)
     expect(textOf(main!)).toBe(`已下载 152 MB / 240 MB · 6 秒没有新数据 · 来自 ${host}`)
-    expect(main!.props.title).toBe(textOf(main!))
+    // Hover or keyboard focus shows the full line, full host included, through the Harness Tooltip
+    // (only while something is cut); no native title, which would add a second bubble.
+    const tip = main!.parent!
+    expect(tip.props['data-tip']).toBe(`已下载 152 MB / 240 MB · 6 秒没有新数据 · 来自 ${host}`)
+    expect(tip.props['data-tip-clipped']).toBe(true)
+    expect(main!.props.tabIndex).toBe(0)
+    expect(main!.props.title).toBeUndefined()
     const [hostSpan] = byClass(main!, 'cwn-update-meta-host')
     expect(textOf(hostSpan!)).toBe(` · 来自 ${host}`)
-    expect(hostSpan!.props.title).toBe(`来自 ${host}`)
+    expect(hostSpan!.props.title).toBeUndefined()
     // Same flex line as the resume count; nothing breaks onto a separate line.
     const meta = byClass(row, 'cwn-update-progress-meta')
     expect(meta).toHaveLength(1)
     expect(byClass(meta[0]!, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 3 次'])
     // The page CSS keeps the lead whole and truncates the host span with an ellipsis, never wrapping it.
     const { cliUpdateStyles } = await import('../src/client/cli-update-styles.ts')
-    expect(cliUpdateStyles).toContain('.cwn-update-meta-main[data-host]{display:flex}')
+    expect(cliUpdateStyles).toContain('.cwn-update-meta-main[data-host]{display:flex;border-radius:2px}')
+    expect(cliUpdateStyles).toContain('.cwn-update-meta-main[data-host]:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}')
     expect(cliUpdateStyles).toContain('.cwn-update-meta-lead{flex:0 0 auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}')
     expect(cliUpdateStyles).toContain('.cwn-update-meta-host{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre}')
     expect(cliUpdateStyles).toMatch(/\.cwn-update-progress-meta\{[^}]*flex-wrap:nowrap/)
@@ -845,6 +857,10 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     await f.update(running({ channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '准备官方本地安装入口', sourceHost: host }, { cli: 'omp', phase: 'installing' }))
     expect(byClass(f.rowOf('omp'), 'cwn-update-meta-main').map(textOf)).toEqual(['准备官方本地安装入口'])
     expect(byClass(f.rowOf('omp'), 'cwn-update-meta-host')).toHaveLength(0)
+    // A line without a host is not an extra tab stop and keeps its plain title.
+    const [stageLine] = byClass(f.rowOf('omp'), 'cwn-update-meta-main')
+    expect(stageLine!.props.tabIndex).toBeUndefined()
+    expect(stageLine!.props.title).toBe('准备官方本地安装入口')
   })
 
   it('keeps a multi-file total from the Host downloader: the bar and resume count never restart per file (13.5 TRAE)', async () => {

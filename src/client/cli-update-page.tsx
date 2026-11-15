@@ -527,24 +527,29 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
     progress.fileCount !== undefined && progress.fileCount > 1 ? [t('{count} 个文件', { count: progress.fileCount }), ...parts] : parts
   const receivedText = (bytes: number) =>
     state === 'unknown-total' ? t('已接收 {done}，总大小未知', { done: formatBytes(bytes) }) : t('已下载 {done}', { done: formatBytes(bytes) })
-  /** `host`: only lines that show transferred bytes name their source. */
+  /**
+   * `host`: only lines that show transferred bytes name their source. A host line is the cut one, so
+   * it is a focusable Harness Tooltip anchor that shows the full line (full host included) on hover
+   * or keyboard focus, only while something is cut; it carries no native `title`, which would add a
+   * second bubble. Other lines keep `title`.
+   */
   const meta = (parts: string[], withSide: ReactNode, host?: string) => {
     const lead = parts.join(' · ')
     const full = host ? (lead ? `${lead} · ${host}` : host) : lead
     return (
       <div className="cwn-update-progress-meta" data-tone={stalled ? 'warn' : undefined}>
-        <span className="cwn-update-meta-main" title={full} data-host={host ? true : undefined}>
-          {host ? (
-            <>
+        {host ? (
+          <Tooltip label={full} side="top" portal maxWidth={360} onlyWhenClipped>
+            <span className="cwn-update-meta-main" data-host tabIndex={0}>
               {lead && <span className="cwn-update-meta-lead">{lead}</span>}
-              <span className="cwn-update-meta-host" title={host}>
-                {lead ? ` · ${host}` : host}
-              </span>
-            </>
-          ) : (
-            lead
-          )}
-        </span>
+              <span className="cwn-update-meta-host">{lead ? ` · ${host}` : host}</span>
+            </span>
+          </Tooltip>
+        ) : (
+          <span className="cwn-update-meta-main" title={full}>
+            {lead}
+          </span>
+        )}
         {withSide}
       </div>
     )
