@@ -25,14 +25,16 @@
 ## 3. 账号行同排截断 〔前端｜1h〕
 - [x] 3.1 多条凭据摘要与「账号」「账号终端」按钮同排，超出以「…」截断，悬停显示全部
   - `src/client/styles.ts`：账号行含 `data-provider-logins` 摘要时不换行，摘要 `flex:1 1 0` 占剩余宽度，状态行不换行；凭据列表沿用 `.cwn-account-logins` 省略号截断与 `title` 全文。`doc/settings-ui-design.md` 写入规则。
-- [ ] 3.2 Desktop 实机目视（Mac 窄宽与常规宽度）
+- [x] 3.2 Desktop 实机目视（Mac 窄宽与常规宽度）
+  - 2026-11-15 用户在 Mac 与 Windows Desktop 复测 da256e5 部署（Mac 正式构建并重启；Windows 安装 1280/1280 文件哈希一致、`lib` 1056 个、Desktop 重启）后反馈全部通过。为用户口头结果，主会话未另截图核对。
 
 ## 4. 集成、审查与实机复验 〔测试｜4h｜前置 1,2,3〕
 - [x] 4.1 类型检查、关联测试、隔离构建
   - 2026-11-15 主会话复跑：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；`vitest run --configLoader native` 23 个关联文件（账号生命周期、删除竞态、原生配置删除、账号窗口、设置弹窗、账号终端、Pi/OMP、自定义服务商、Windows 账号终端等）930 通过、1 跳过；`git diff --check` 通过；Codex 报告 `build:preview` 退出 0。
 - [x] 4.2 Codex 审查并修复
   - codex-reviewer：0 个 P0/P1、2 个 P2。① 回读失败时无条件回滚会抹掉其他程序在写入窗口内的修改 → 回滚前比对文件仍为本事务写入内容，否则保留外部修改与备份并报「未回滚」（`src/host/custom-provider-files.ts`）。② 删除在终端准备阶段执行，终端启动失败时误报且重试失败 → 改为直接 Host 操作 `deleteAccountConfiguration`（`src/host/accounts.ts`、`src/host/index.ts`），不启动终端，持有账号预留、等待收尾、回读后才报成功；旧终端路径拒绝配置删除。新增 `tests/account-config-deletion-races.test.ts`（修复前 8 失败 1 通过）。
-- [ ] 4.3 Mac 与 Windows Desktop 实机复验四个问题
+- [x] 4.3 Mac 与 Windows Desktop 实机复验四个问题
+  - 2026-11-15 用户在 Mac 与 Windows Desktop 复测 da256e5 部署（Mac 正式构建并重启；Windows 安装 1280/1280 文件哈希一致、`lib` 1056 个、Desktop 重启）后反馈四个问题（OMP/OpenCode 登录后即时刷新、Pi 退出与图形登录、删除自建配置、账号行同排截断）全部通过。为用户口头结果，主会话未另截图核对。
 
 ## 5. 实机复验发现：OMP DeepSeek 模型为空、Windows Pi 安装残缺 〔后端｜4h｜前置 4〕
 - [x] 5.1 OMP 仅剩 DeepSeek API 凭据时模型与强度目录为空（Mac、Windows）
@@ -44,4 +46,5 @@
   - 插件识别（Codex gpt-6-astra high + 主会话补丁）：`src/host/pi-installation.mjs` 新增只读完整性检查（静态 ESM 导入图、package.json 与非空入口、按入口与 mtime 缓存），用于服务商发现、Pi 模型目录（`pi-omp-adapter.ts`）、账号状态（`AccountStatus.installationNotice` 给出缺失依赖名，不改登录状态、不隐藏已有凭据）、账号窗口提示与英文映射；安装与更新核验在版本命令通过后再查完整性，不完整即判失败、不写路径记录。新增 `tests/pi-installation-integrity.test.ts`（含 Windows 健康树形状）等，修复前 5 项断言失败。
   - 二次审查（codex-reviewer，0 个 P0/P1、4 个 P2，均已修复，Codex gpt-6-astra high）：① 完整性提示曾把账号置 unavailable、隐藏已有凭据 → 改为独立字段 `installationNotice`；② 零字节的普通相对模块被误判残缺 → 只要求包入口与启动入口非空；③ bundle 入口归一化后绕过检查 → 启动入口 `launchEntry` 一并校验并计入缓存指纹；④ `tests/pi-omp-windows-directories.test.ts` 依赖本机 Pi → 改用模拟安装。
   - 2026-11-15 主会话汇总复跑：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；`vitest run --configLoader native` 34 个关联文件（上述 23 个加完整性检查、原生登录服务商、安装与更新、Pi/OMP 适配器与目录等所有引用 `discoverPiOmp`、`pi-omp-adapter`、`pi-installation` 的测试）1340 通过、1 跳过；`git diff --check` 通过。
-- [ ] 5.3 部署后 Mac 与 Windows Desktop 实机复验 OMP DeepSeek 模型下拉与 Windows Pi 账号窗口、模型目录
+- [x] 5.3 部署后 Mac 与 Windows Desktop 实机复验 OMP DeepSeek 模型下拉与 Windows Pi 账号窗口、模型目录
+  - 2026-11-15 用户在 Mac 与 Windows Desktop 复测 da256e5 部署（Mac 正式构建并重启；Windows 安装 1280/1280 文件哈希一致、`lib` 1056 个、Desktop 重启）后反馈OMP 模型与强度下拉、Windows Pi 账号窗口与模型目录均正常。为用户口头结果，主会话未另截图核对。
