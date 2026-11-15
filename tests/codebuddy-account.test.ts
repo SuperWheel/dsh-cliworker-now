@@ -109,7 +109,9 @@ describe('CodeBuddy 账号与目录（模拟）', () => {
     expect(b.calls[0].argv.slice(0, 1)).toEqual([process.execPath])
     expect(b.calls[0].argv[1]).toMatch(/codebuddy-catalog\.mjs$/)
     expect(b.calls[0].argv.slice(2)).toEqual(['/simulated/codebuddy.mjs', b.calls[0].cwd])
-    expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1' })
+    // Windows probes also get a private TMP/TEMP (spawnProbe); other platforms pass only the update switch.
+    if (process.platform === 'win32') expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1', TMP: expect.any(String), TEMP: expect.any(String) })
+    else expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1' })
     // Windows has no POSIX directory modes; the private directory is still removed after exit.
     if (!(process.platform === 'win32')) expect(await Promise.all(b.directories)).toEqual([0o700])
     await expect(lstat(b.calls[0].cwd)).rejects.toMatchObject({ code: 'ENOENT' })
