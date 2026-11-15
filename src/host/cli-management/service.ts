@@ -474,7 +474,7 @@ export class CliManagementService {
         if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装身份已变化，请重新检查更新')
         signal.throwIfAborted()
         const run = async (command: string[], control: AbortSignal, evidence?: InterruptionEvidence) => {
-          op.command = nativeLaunchArgv(command); op.phase = 'installing'
+          op.command = nativeLaunchArgv(command); if (op.phase !== 'awaiting-user') op.phase = 'installing'
           if (plan.method === 'npm') op.progress = { readable: false, byteProgress: false, resumeCount: 0, retryCount: op.progress?.retryCount, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }
           op.progress ??= { readable: false, resumeCount: 0 }; this.changed()
           await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, undefined,
@@ -508,14 +508,14 @@ export class CliManagementService {
         let verified: Awaited<ReturnType<typeof verify>>
         if (plan.method === 'desktop' && isDesktopCli(cli)) {
           if (!plan.identity.appPath || !plan.desktopRelease) throw new CliOperationError('PREREQUISITE_MISSING', '缺少已核实的桌面路径或发布工件')
-          await runDesktopUpdate({ cli, appPath: plan.identity.appPath, release: plan.desktopRelease, root: this.deps.root, signal, run,
+          await runDesktopUpdate({ cli, appPath: plan.identity.appPath, release: plan.desktopRelease, root: this.deps.root, signal, run, fetcher: this.deps.artifactFetch,
             awaiting: () => { op.phase = 'awaiting-user'; this.changed() },
             download: async (url, expected, control) => {
               const algorithm = expected.sha512 ? 'sha512' : 'sha256', digest = expected.sha512 ?? expected.sha256
-              if (!digest) throw new CliOperationError('INTEGRITY_MISMATCH', '桌面工件缺少官方摘要')
-              const value = new RegExp(`^[a-fA-F0-9]{${algorithm === 'sha512' ? 128 : 64}}$`).test(digest) ? Buffer.from(digest, 'hex').toString('base64') : digest
+              if (!digest && !expected.cos) throw new CliOperationError('INTEGRITY_MISMATCH', '桌面工件缺少官方摘要')
+              const value = new RegExp(`^[a-fA-F0-9]{${algorithm === 'sha512' ? 128 : 64}}$`).test(digest ?? '') ? Buffer.from(digest!, 'hex').toString('base64') : digest
               op.phase = 'downloading'; op.progress = { readable: true, downloadedBytes: 0, resumeCount: 0 }; this.changed()
-              const file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity: `${algorithm}-${value}`, expectedBytes: expected.size, signal: control, fetcher: this.deps.artifactFetch,
+              const file = await downloadCliArtifact({ root: this.deps.root, output, url, integrity: value ? `${algorithm}-${value}` : undefined, cos: expected.cos, expectedBytes: expected.size, signal: control, fetcher: this.deps.artifactFetch,
                 progress: progress => { op.progress = progress; this.changed() } })
               desktopArtifacts.push(file); return file
             } })

@@ -41,7 +41,7 @@ export const CLI_SOURCES: Record<ActiveCliId, CliSource> = {
   codebuddy: { ...base, npm: '@tencent-ai/codebuddy-code', brew: { name: 'codebuddy-code', kind: 'formula', tap: 'Tencent-CodeBuddy/tap' }, update: ['update'], defaultLocation: 'npm 全局前缀 · 原生: ~/.local/bin/codebuddy · Windows: %LOCALAPPDATA%\\codebuddy\\bin\\codebuddy.exe', prerequisites: [{ name: 'Node.js（npm）', required: '≥ 18.20' }], guideUrl: 'https://www.codebuddy.cn/docs/cli/installation', install: 'npm' },
   traecn: { ...base, update: ['update'], defaultLocation: '~/.local/bin/traecli → ~/.local/share/traecli/current · Windows: 待验收', prerequisites: [{ name: '网络', required: 'trae.cn 可直连' }], guideUrl: 'https://docs.trae.cn/cli_command-line-parameters', scriptUrl: 'https://trae.cn/trae-cli/install_v2.sh' },
   workbuddycn: { ...base, version: 'workbuddy', defaultLocation: '/Applications/WorkBuddy.app · Windows: 待核实', prerequisites: [{ name: '系统', required: 'macOS ≥ 12 / Windows ≥ 10' }], guideUrl: 'https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide', experimental: true },
-  workbuddy: { ...base, version: 'workbuddy', defaultLocation: '/Applications/WorkBuddy AI.app · Windows: 待核实', prerequisites: [{ name: '系统', required: 'macOS ≥ 12 / Windows ≥ 10' }], guideUrl: 'https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide', experimental: true },
+  workbuddy: { ...base, version: 'workbuddy', defaultLocation: '/Applications/WorkBuddy AI.app · Windows x64: %LOCALAPPDATA%\\Programs\\WorkBuddyAI（向导可选其他目录）', prerequisites: [{ name: '系统', required: 'macOS ≥ 12 / Windows ≥ 10' }], guideUrl: 'https://www.workbuddy.ai/docs/workbuddy/From-Beginner-to-Expert-Guide/Installation-Mac-Guide', experimental: true },
 }
 /** Anonymous GET endpoints audited in .cache/cli-update-research/feeds.md §3.
  * Templates substitute only Host platform/CPU enums, never Client input. */
@@ -123,14 +123,14 @@ export interface InstallSource {
   nodeMinimum?: string
   script?: { url: string; interpreter: readonly string[]; relativeEntry: string }
   desktopFeed?: keyof typeof DESKTOP_INSTALL_SOURCES
-  desktop?: { url: string; integrity?: string; bytes?: number; appName: string; relativeEntry: string; teamId: string; bundleId?: string; version: string; archive?: 'zip' | 'dmg'; commonDirectories?: readonly string[] }
+  desktop?: { url: string; integrity?: string; bytes?: number; integrityPolicy?: 'workbuddy-windows-cos'; windowsWorkBuddy?: boolean; appName: string; relativeEntry: string; teamId: string; bundleId?: string; version: string; archive?: 'zip' | 'dmg'; commonDirectories?: readonly string[] }
   reason?: string
 }
 /** PRD 5.3 evidence only. Missing feeds/flags/runtime guarantees are not inferred. */
-export function installationSource(cli: ActiveCliId, platform = process.platform): InstallSource {
+export function installationSource(cli: ActiveCliId, platform = process.platform, arch: string = process.arch): InstallSource {
   const command = ({ antigravity: 'agy', qoder: 'qodercli', qodercn: 'qoderclicn', traecn: 'traecli' } as Partial<Record<ActiveCliId, string>>)[cli] ?? cli
   const manual = (reason: string): InstallSource => ({ method: 'manual', command, reason })
-  if (isDesktopCli(cli)) return platform === 'darwin'
+  if (isDesktopCli(cli)) return platform === 'darwin' || cli === 'workbuddy' && platform === 'win32' && arch === 'x64'
     ? { method: 'desktop', command, desktopFeed: cli }
     : manual(platform === 'win32' ? 'Windows 首次安装的发布者签名与向导实际安装位置尚未核实，请按官方说明安装' : '此平台的桌面首次安装尚未核实，请按官方说明安装')
   if (cli === 'antigravity') return manual('脚本的运行时前置条件与首次安装流程尚未核实')

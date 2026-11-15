@@ -557,3 +557,19 @@
   - 2026-11-15 主会话 Windows 实机只读复核（不更新、不启动 ZCode）：把 `pe-version.ts` 用 esbuild 编成单文件，经 `ELECTRON_RUN_AS_NODE=1` 的 DSH Electron 运行。初版读 `C:\Program Files\ZCode\ZCode.exe` 返回 undefined，WorkBuddy.exe 与 DeepSeek Harness.exe 正常；逐项打印字符串表发现失败在「值内含 NUL」：`SquirrelAwareVersion` wValueLength=3（6 字节，值 "1" 带两个结尾 NUL），`OriginalFilename` 为空串。改为与 VerQueryValue 一致、按第一个 NUL 截断（结构与越界检查不变），新增模拟用例「多余结尾 NUL」；`node_modules/.bin/vitest run tests/cli-management-zcode-windows.test.ts` 30/30 通过。重跑实机：ZCode.exe → productVersion 3.14.5.7961、productName ZCode；WorkBuddy.exe → 5.9.3.0 / WorkBuddy。
 - [ ] 17.3 Windows 实机更新验收
   - 待主会话实机验收。
+
+## 18. Windows 国际版 WorkBuddy 安装 〔后端｜3h｜前置 5〕
+
+- [x] 18.1 下载两版安装包完成完整性、签名主体及 NSIS 安装标识只读调研
+  - 证据：`evidence/workbuddy-intl-windows-audit-2026-11-15.json`；国际版 507036736 B、国内版 450174440 B，完整 MD5/CRC64 均匹配 COS 头，国内版 SHA-256 匹配 feed。国际版卸载键 C02C88CB-5DAE-4330-AEC1-572CFD048A59、CurrentUser 默认 WorkBuddyAI，与国内版键/目录不同。冲突结论及信任链未核实边界见决定 19。
+- [x] 18.2 实现受限 Windows 国际版首次安装、COS 与 Authenticode 校验，保持原摘要路径和身份核对
+  - 首次安装和更新共用严格 URL、COS HEAD/完整长度/MD5/CRC-64/XZ 与固定腾讯 Authenticode Valid。只开放国际版 x64；无空字符串之外的降级，SHA-256 不符不回退。发现补充 WorkBuddyAI 目录/程序名，保持等待向导、整个进程范围退出后才核对国际站点/版本写路径；实际三段应用版本保留。README 中英文、doc/design 及增量规格已同步。
+- [x] 18.3 完成模拟测试、类型检查、隔离构建及严格规格校验并同步双语说明
+  - `node_modules/.bin/vitest run --configLoader native tests/cli-management* tests/workbuddy-installation.test.ts`：38 文件、1297 项；沙箱内 1292 passed / 5 failed，失败均为两份 Pi 环回测试的 listen EPERM 或其连带断言。提升后仅重跑 `node_modules/.bin/vitest run --configLoader native tests/cli-management-pi-registry-prototype.test.ts tests/cli-management-task4-pi.test.ts`：2 文件、6/6 passed，覆盖全部 5 个失败项；没有修改 Pi 代码/断言规避环境限制。
+  - 追加首次安装 SHA-256 不走 COS、错误四段 build、签名失败清理、已启动安装取消用例后，`node_modules/.bin/vitest run --configLoader native tests/cli-management-workbuddy-windows.test.ts`：**45/45 passed**。该文件覆盖 CRC 标准向量/分块、严格 URL、HEAD/完整长度/MD5/CRC、签名状态/主体、摘要不降级、awaiting-user、进程范围等待/未确认隔离，以及真实身份读取器下默认/自选位置、跨站点拒绝与路径记录。全部 HTTP/进程为模拟，真实安装未执行。
+  - 首轮 3 文件 211 passed / 2 failed：新夹具用 POSIX 临时文件路径写 Windows 路径记录，修正夹具路径记录器为当前测试磁盘平台后通过；生产校验未放宽。直接 Vitest 命令最初因共享 node_modules/.vite-temp 写入 EPERM 未启动，改用 native 配置加载器避免写工作树外的共享依赖。
+  - `pnpm_config_verify_deps_before_run=false corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.3 通过；首次缺 remote 声明，先执行同环境前缀的 `corepack pnpm build:preview` 成功，仅把隔离包生成的声明复制到本工作树忽略的 lib 后复验。最终 `build:preview` 退出 0，仅生成本工作树 .cache/preview-package；无正式 build 或 Desktop 链接更新。pnpm 11 默认自动重装共享 node_modules 被自身安全检查拒绝，用单次环境设置关闭自动重装检查，未修改共享依赖、锁文件或代理变量。
+  - `pnpm_config_verify_deps_before_run=false corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive` 通过（仅既有主任务超过 10 个建议）；指定 Git `diff --check` 通过。首次严格校验因追加文字触发已有 DMG Requirement 超长警告，精简该句后通过，行为条款保留在 Windows 专门 Requirement。
+  - 只读调研补充：内嵌 app-64.7z 仅用系统 tar 读取产品 JSON 到内存；SignerInfo issuer+serial 精确匹配两版腾讯证书。新 TypeScript CRC 对两份完整 EXE 再算，与系统 liblzma/COS 均一致。全部下载、内嵌归档、证书及 NSIS 中间文件随 0700 临时目录删除，另一个 Python 进程回读确认目录及两个 EXE 均不存在；证据 JSON 记录回读时间。本 change 仍含实机及其他原有未完项，不归档。
+- [ ] 18.4 Windows 实机安装验收
+  - 待主会话实机验收；真实签名信任链、向导目录、国内版共存、磁盘空间及安装后页面回读均未执行。

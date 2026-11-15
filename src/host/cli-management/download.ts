@@ -1,3 +1,4 @@
+import { Crc64Xz, type WorkBuddyCosIntegrity } from './workbuddy-windows.ts'
 import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -54,6 +55,7 @@ export async function prepareDownloads(root: string, now = Date.now()): Promise<
 }
 /** Host-owned authenticated files; callers aggregate multi-file download progress. */
 export async function downloadCliArtifact(options: {
+  cos?: WorkBuddyCosIntegrity
   root: string; url: string; sources?: string[]; sourceRedirects?: Record<string, string>; lengthProbe?: 'HEAD' | 'RANGE'; requireContentMd5?: boolean; integrity?: string; expectedBytes?: number; officialScript?: boolean; signal: AbortSignal
   progress(value: CliDownloadProgress): void
   output?(value: string): void
@@ -239,6 +241,11 @@ export async function downloadCliArtifact(options: {
         for await (const chunk of createReadStream(file)) { global.throwIfAborted(); hash.update(chunk) }
         mismatch ||= hash.digest('hex') !== (sources?.md5 ?? headerMd5)
       }
+      if (options.cos) {
+        const md5 = createHash('md5'), crc = new Crc64Xz()
+        for await (const chunk of createReadStream(file)) { global.throwIfAborted(); md5.update(chunk); crc.update(chunk as Buffer) }
+        mismatch ||= bytes !== options.cos.size || md5.digest('hex') !== options.cos.md5 || crc.digest() !== options.cos.crc64
+      }
       if (!mismatch) { report(); return file }
       remove = true
       await handle.close(); await unlink(file)
@@ -251,6 +258,7 @@ export async function downloadCliArtifact(options: {
       report()
     }
   } catch (error) {
+    if (options.cos) remove = true
     if (options.signal.aborted) { remove = true; throw options.signal.reason }
     if (deadline.signal.aborted) throw new CliOperationError('DOWNLOAD_TIMEOUT', '下载总时长超过 2 小时')
     throw error

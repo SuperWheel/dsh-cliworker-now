@@ -1712,3 +1712,5 @@ Windows ASAR 安装没有 `resources/app/package.json` 时，CLI 管理身份从
 ### Windows ZCode 桌面更新关联（2026-11-15）
 
 固定自动 runtime 在 Windows 只读关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode`：实际目录、普通 ZCode.exe、PE ProductName=ZCode 与 resources/glm/zcode.cjs 共同确认身份；有界读取固定 ProductVersion 前三段作为应用版本。更新继续走官方安装程序/UAC，不提权、不静默，独立 Worker runtime 不随桌面更新。manual 路径和 macOS 行为保留；没有可核实应用时仍显示原 runtime 手动更新原因。实现与模拟验收见 [决定 18](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md) 和任务 17，Windows 实机更新待主会话验收。
+
+Windows x64 国际版 WorkBuddy 首次安装及空摘要 feed 的受限替代见 [决定 19](../openspec/changes/v0.8.10-cli-update-page-leeyl/design.md#决定-19windows-国际版-workbuddy-首次安装与无摘要-feed)。Host 共用 COS HEAD、完整长度/MD5/CRC-64/XZ 校验与固定腾讯 Authenticode 发布者核验；安装保留向导等待和进程范围退出确认。默认发现增加 WorkBuddyAI，与国内版通过产品站点区分，实际三段版本不伪造 build。CN/ZCode/ARM64 首次安装仍 manual；Windows 实机验收未完成。

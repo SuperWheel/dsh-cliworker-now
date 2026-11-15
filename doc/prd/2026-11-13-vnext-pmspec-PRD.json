@@ -1,0 +1,155 @@
+{
+  "background": "CLI Worker Now 用 OpenSpec 1.14.1 管理开发变更，再把任务同步到飞书产品面板。到 2026-11-13，二者配合有四个问题：\n1. 任务条目过多：tasks.md 每个复选框同步成面板上的一条任务。v0.8.7～v0.8.8 已同步的 7 个变更在面板上共 201 条任务，平均每个变更 28.7 条，看不出整体进度，也没有主任务进度。\n2. 变更无法归类：变更目录名不带版本和创建人，面板上只能靠人判断它属于哪个版本、由谁创建。\n3. 归档路径不稳定：旧归档在 openspec/changes/archive/<日期>-<名>/，目录名带日期，交付物链接只能手工拼写。\n4. 积压：41 个变更的任务已全部勾选却没有归档，主规格长期没有合并它们的增量；另有 69 个旧归档在旧位置。\n证据：用户 2026-11-13 的原始需求；面板快照（828 条任务，交付物链接全部为空，旧路径写在任务描述的「来源」行）；仓库 `pnpm spec list` 结果。",
+  "users": "1. 产品负责人（面板管理员）：在面板上按版本和需求查看开发进度，希望一个变更只占几条任务，并能直接看到每条主任务的完成百分比。\n2. 写代码的 Agent（Claude Code、Codex）：按规则新建变更、写两级任务、勾选时附证据、完成后归档，并把进度同步到面板。\n3. 面板其他成员：从任务的交付物链接直接打开 GitHub 上的 tasks.md，核对证据。\n典型场景：Agent 完成一个子任务后运行同步，面板上对应主任务的进度从 50% 变为 75%；变更归档后，任务描述的来源与交付物链接自动指向归档目录。",
+  "goal": "让面板上的任务条目和开发变更一一对应、数量可控，进度按子任务完成比例自动计算，归档路径稳定可点击，并清理积压。\n成功指标（面板选项中没有对应项，记为「其他」）：每个已同步变更在面板上的平均任务条数。\n- 基线 28.7：v0.8.7～v0.8.8 的 7 个变更按「一个复选框一条任务」同步，共 201 条。\n- 目标 8：按主任务同步后，这 7 个变更共 56 个主任务，平均 8.0 条；新变更按规则写 3～8 个主任务。\n- 首个按新规则同步的变更（本需求自身）有 16 个子任务，面板上为 5 条主任务。\n辅助指标：活动变更由 42 个降到只剩未完成的 1 个；严格校验活动项与已归档项全部通过。",
+  "successMetric": "其他",
+  "baseline": 28.7,
+  "target": 8,
+  "solution": "分叉 OpenSpec 1.14.1 为 pmspec（源码放在产品面板仓库），配套新技能 pm-board-spec，CLI Worker Now 改用 pmspec：\n1. 变更命名为「v<主>-<次>-<修订>-<主题>-<创建人>」（版本未定写 vnext），中文标题、版本、创建人飞书显示名写进 .openspec.yaml 的 pm 段。\n2. tasks.md 改为「主任务 + 子任务」两级：主任务对应面板一条任务，进度 = 子任务完成比例；证据写在子任务下。\n3. 校验防止虚勾：勾选却写着「未执行」会报错；旧命名的变更只作提示，可以原样归档。\n4. 归档到 openspec/archives/<变更名>/，旧归档整体迁移，仓库内链接同步改写。\n5. 面板同步接口支持主任务进度、已归档变更的来源路径，保留已有完成日期；面板提供无需登录的技能与 pmspec 下载。\n6. 清理 41 个积压变更，面板上已同步过的任务只改来源与链接，不整批重建。",
+  "items": [
+    {
+      "name": "两级任务与主任务进度",
+      "statement": "系统应当把 tasks.md 解析为主任务（## N. 名称，可带〔职能｜工时｜前置〕标记）和子任务（- [ ] N.M），每个主任务同步为面板上的一条任务，自报进度等于子任务完成比例；「跟进」分组不计入进度。",
+      "scenarios": [
+        {
+          "when": "某主任务有 4 个子任务，其中 3 个已勾选，运行任务同步",
+          "then": "面板上该主任务对应的任务自报进度为 75%，状态为进行中"
+        },
+        {
+          "when": "某主任务的子任务全部勾选后再次同步",
+          "then": "该任务变为已完成，完成日期取 tasks.md 最后一次修改内容的提交日期"
+        }
+      ]
+    },
+    {
+      "name": "变更命名与元数据",
+      "statement": "系统应当要求新变更名称符合「v<主>-<次>-<修订>-<主题>-<创建人>」或「vnext-<主题>-<创建人>」，并在 .openspec.yaml 的 pm 段记录中文标题、版本、创建人代号和飞书显示名。",
+      "scenarios": [
+        {
+          "when": "用 pmspec new change --version next --topic adopt-pmspec --creator leeyl 新建变更",
+          "then": "生成目录 vnext-adopt-pmspec-leeyl，pm 段带 title、version、creator、creator_name"
+        },
+        {
+          "when": "新建的变更名称不符合命名规则",
+          "then": "命令拒绝创建并提示正确格式"
+        }
+      ]
+    },
+    {
+      "name": "防止虚勾",
+      "statement": "系统应当在严格校验和归档时拒绝「已勾选但写着（未执行：…）」的子任务，以及缩进的复选框；缺少证据时默认只告警，项目开启 requireEvidence 后报错。",
+      "scenarios": [
+        {
+          "when": "pmspec 命名的变更中某个已勾选子任务带「（未执行：缺环境）」",
+          "then": "pmspec validate --strict 与 pmspec archive 报错，变更不能归档"
+        },
+        {
+          "when": "改用 pmspec 之前创建、名称不合规的旧变更有同样问题",
+          "then": "只作提示，可以原样归档；未勾选的缩进子任务仍阻止归档"
+        }
+      ]
+    },
+    {
+      "name": "归档位置与旧归档迁移",
+      "statement": "系统应当把完成的变更归档到 openspec/archives/<变更名>/，目录名不带日期，归档日期写进 pm.archived，并合并增量规格；提供 migrate archives 命令把旧位置的归档迁移过来，支持预演和名称冲突处理。",
+      "scenarios": [
+        {
+          "when": "运行 pmspec migrate archives --dry-run --json",
+          "then": "列出每个旧归档的新名称、归档日期与是否冲突，不移动任何文件"
+        },
+        {
+          "when": "在 git 仓库中正式迁移",
+          "then": "用 git mv 移动，旧归档目录清空后删除"
+        }
+      ]
+    },
+    {
+      "name": "面板同步与交付物链接",
+      "statement": "系统应当按外部键 openspec:<变更名>#<主任务编号> 幂等地新建或更新面板任务；已归档变更的任务描述来源指向 openspec/archives/<变更名>/tasks.md，交付物链接指向 GitHub 上的同一文件；面板上已完成且有完成日期的任务保留原日期。",
+      "scenarios": [
+        {
+          "when": "对已归档变更带 archived: true 预演同步",
+          "then": "预演结果中每条任务的来源行和交付物链接都指向 archives，且不写入任何记录"
+        },
+        {
+          "when": "面板上某任务已完成、完成日期为 11-07，再次同步",
+          "then": "完成日期保持 11-07 不变"
+        }
+      ]
+    },
+    {
+      "name": "公开下载技能与 pmspec",
+      "statement": "系统应当在面板提供无需登录的下载清单和白名单内的文件下载，每个文件附带 SHA-256，供其他项目安装 pm-board-spec 技能和 pmspec。",
+      "scenarios": [
+        {
+          "when": "未登录访问 /api/agent/downloads 并下载清单中的文件",
+          "then": "返回 200，响应头 X-Content-SHA256 与清单、实际文件的哈希一致"
+        },
+        {
+          "when": "请求不在清单中的文件或带 ../ 的路径",
+          "then": "返回 404"
+        }
+      ]
+    },
+    {
+      "name": "清理积压变更",
+      "statement": "系统应当支持把任务已全部完成的旧变更按首次提交顺序逐个归档并合并主规格；面板上已同步过的任务只改来源与链接，不整批重建。",
+      "scenarios": [
+        {
+          "when": "41 个已完成的积压变更按顺序归档",
+          "then": "活动变更只剩未完成的变更，严格校验活动项与已归档项全部通过"
+        },
+        {
+          "when": "改写面板上指向旧路径的任务",
+          "then": "只修改描述的来源行与交付物链接，任务名称、状态、完成日期不变，任务总数不变"
+        }
+      ]
+    },
+    {
+      "name": "设计决定与巡检",
+      "statement": "系统应当能把 design.md 中「### 决定 N：…」的最终决定、放弃的方案和影响转成面板决策日志的批量写入请求，并能比对仓库变更清单与面板快照，列出未同步、进度不一致、已完成未归档和仍指向旧归档路径的变更。",
+      "scenarios": [
+        {
+          "when": "对含 6 条决定的 design.md 运行 pmspec decisions <变更> --json",
+          "then": "输出 6 条结构化决定，可转为决策日志的批量请求体"
+        },
+        {
+          "when": "仓库有活动变更但面板上没有对应任务",
+          "then": "巡检脚本把它列入「未同步」（notSynced）"
+        }
+      ]
+    }
+  ],
+  "outOfScope": "1. 不改写 41 个旧变更的 tasks.md 正文，也不把它们改成两级格式。\n2. 从未同步过面板的 32 个已归档变更不在面板上补建任务：按主任务也要新建约 150 条，与减少条目的目标相反。\n3. 不把 specs/<能力域>/spec.md 平铺到变更根目录（用户 2026-11-13 决定保留子目录）。\n4. CLI Worker Now 不直接用面板下载地址安装 pmspec，继续用仓库 vendor/ 中的包。\n5. 不发布到公共 npm。",
+  "risks": "1. 跟随上游：pmspec 基于 OpenSpec 1.14.1，上游新版本需要手工合并，改动登记在分叉的 FORK.md。\n2. 面板依赖：同步与下载依赖妙搭面板在线（11-10 出现过 503），所以 CLI Worker Now 用 vendor 本地包安装，不受影响。\n3. 幂等重放：同一请求体再次预演会重放上一次结果，复核时须换新的幂等键。\n4. 网关超时：tasks/sync 写入可能返回 504 但实际已写成，须先复取快照再决定是否重试。\n5. 旧变更编号：旧 tasks.md 中「1b.」一类编号在 pmspec 1.14.1-pm.2 起才能正确识别。",
+  "rollout": "已于 2026-11-13 完成：\n1. 面板仓库发布三次（下载接口与主任务进度；归档来源与完成日期修复；pmspec 1.14.1-pm.2 下载包），线上下载清单与哈希已核对。\n2. CLI Worker Now 改用 pmspec 1.14.1-pm.2，迁移 69 个旧归档、归档 41 个积压变更，主规格 173 条需求逐条核对。\n3. 面板 244 条任务的来源与交付物链接改到 archives；本需求下 5 条主任务已同步并完成。\n4. 检查：pmspec 测试 6393 项、面板测试 1400 项通过，严格校验活动 31 项、已归档 111 项通过。\n未验证：决策日志同步与每周巡检尚未在面板上实际运行；其他项目尚未按下载地址安装。",
+  "ai": null,
+  "references": [
+    {
+      "title": "变更提案 vnext-adopt-pmspec-leeyl/proposal.md",
+      "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/archives/vnext-adopt-pmspec-leeyl/proposal.md"
+    },
+    {
+      "title": "设计与决定 vnext-adopt-pmspec-leeyl/design.md",
+      "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/archives/vnext-adopt-pmspec-leeyl/design.md"
+    },
+    {
+      "title": "任务与验收证据 vnext-adopt-pmspec-leeyl/tasks.md",
+      "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/archives/vnext-adopt-pmspec-leeyl/tasks.md"
+    },
+    {
+      "title": "开发流程规格 development-workflow",
+      "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/openspec/specs/development-workflow/spec.md"
+    },
+    {
+      "title": "pmspec 使用说明 doc/openspec.md",
+      "url": "https://github.com/SuperWheel/dsh-cliworker-now/blob/main/doc/openspec.md"
+    },
+    {
+      "title": "面板公开下载清单",
+      "url": "https://lcnk1jsaxw70.feishu.link/app/app_17h9zzjtp97/api/agent/downloads"
+    }
+  ],
+  "prototypeUrl": "",
+  "prototypes": []
+}

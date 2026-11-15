@@ -188,7 +188,7 @@ it('模拟：17 CLI 安装方法严格按平台与来源证据选择', () => {
   expect(CLI_IDS.map(cli => installationSource(cli, 'darwin').method)).toEqual(['manual', 'npm', 'manual', 'script', 'manual', 'desktop', 'manual', 'manual', 'npm', 'manual', 'manual', 'manual', 'manual', 'npm', 'script', 'desktop', 'desktop'])
   expect(installationSource('mimo', 'win32').method).toBe('npm'); expect(installationSource('opencode', 'win32').method).toBe('npm')
   expect(installationSource('qoder', 'win32').script?.url).toBe('https://qoder.com/install.ps1')
-  for (const cli of ['zcode', 'workbuddycn', 'workbuddy'] as const) expect(installationSource(cli, 'win32').reason).toContain('尚未核实')
+  for (const cli of ['zcode', 'workbuddycn'] as const) expect(installationSource(cli, 'win32').reason).toContain('尚未核实')
 })
 it('模拟：未安装条目提供安装 offer 与 token；成功后路径写回原存储', async () => {
   const f = fixture()
@@ -291,7 +291,7 @@ it('模拟：Kimi Windows 需要 Git Bash，不能把 WSL bash 当成满足条�
 it('模拟：Windows 首次安装签名和实际落点未核实，保持零下载和进程', async () => {
   const f = fixture()
   const installer = new CliInstaller({ ...(f.service as any).deps, platform: 'win32' })
-  for (const cli of ['zcode', 'workbuddycn', 'workbuddy'] as const) {
+  for (const cli of ['zcode', 'workbuddycn'] as const) {
     const plan = await installer.prepare(cli, 'https://registry.npmjs.org/', '', control())
     expect(plan.offer.method).toBe('manual'); expect(plan.problem).toBe('PREREQUISITE_MISSING')
     await expect(installer.execute(plan, {} as any, control(), () => {}, async () => {})).rejects.toMatchObject({ code: 'PREREQUISITE_MISSING' })

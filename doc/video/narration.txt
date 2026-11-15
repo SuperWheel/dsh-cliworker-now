@@ -1,0 +1,43 @@
+【01 开场】
+DeepSeek Harness 零点二点二 RC 一，带来了一个很特别的新功能：subagent_oar。
+它能把本机的 Codex 和 Claude Code 命令行，直接当成 DSH 的子 Agent 来用。
+下面实际测试它的效果。
+
+【02 落差】
+第一个测试很简单：让主 Agent 用 subagent_oar 调用 Codex，回复一句你好。
+主 Agent 调用 subagent_oar，获得一个子任务编号，然后进入等待。
+十几秒后，主对话收到结果：一句「你好」。
+但是，这期间 Codex 执行的命令和调用的工具，主对话里都没有显示。
+底部的用量只统计主 Agent 自身的消耗，Codex 的 token 用量和上下文占用同样无法查看。
+官方文档也说明，subagent_oar 只返回 Codex 的最后一段文字，推理和工具事件不会进入 DSH；每次调用都是一次性任务，无法继续追问。
+
+【03 CLI Worker】
+接下来用我们的插件 CLI Worker 完成同一个任务。
+派遣前，主对话弹出选择卡片，由用户选定模型、思考强度和角色预设。
+主 Agent 派出名为 codex-1 的 Worker。右侧 CLI Worker 窗口随即出现任务卡片，卡片上显示所用的模型和思考强度。
+点开卡片，可以看到 Codex 的完整会话，包括主 Agent 发出的任务和 Codex 的回复。
+底部统计栏显示 Codex 自身的轮次、步骤、token 用量、缓存命中率和上下文占用。
+输入区可以直接切换权限档位和模型。
+在侧栏输入框发送消息，即可继续对话，Codex 会保留之前的上下文。
+在主对话中按名字指定 codex-1，主 Agent 会调用同一个 Worker 继续执行，无需重新创建任务。
+除了 Codex，插件还支持 Claude Code、Antigravity、Kimi、Grok 等 13 种 CLI，每种 CLI 都通过自己的原生协议接入。
+在新版本中，DSH 原生子 Agent 也会显示在这个窗口。点开后是同样的会话视图，并且支持直接续聊。该功能不接管 DSH 原有的子 Agent 流程，DSH 原生入口照常可用。
+
+【04 高潮】
+你以为这就结束了？
+（停顿 0.8 秒）
+CLI Worker 接入的是各个 CLI 的原生会话。CLI 自带的工具和 skill 可以照常调用，DSH 独有的 MCP 和技能也可以作为备选提供给 CLI。
+下面让 Codex 参考这张 DeepSeek 蓝色大肥鱼人设图，完成一个复合任务。
+任务分为两步：先用 image gen 生成动作图并合成 GIF 动图，再用 Codex 的 Computer Use 把动图插入 Microsoft Word 文档。
+Worker 沿用项目已保存的 Codex 设定：模型 GPT 六点一 sol，思考强度 high。
+Codex 先查看人设图，再调用 image gen 生成眨眼和摆尾的动作素材。子会话实时显示每一次工具调用。
+image gen 输出的是一张包含多个动作的静态图。Codex 随后执行命令，把它切分成帧，合成为 7 帧循环 GIF。
+GIF 动图 blue-whale-loop 已保存到项目目录。
+接着，Codex 通过 Computer Use 操作 Word：新建文档，写入标题，用插入图片功能选中这个 GIF，再保存文档。
+子会话完整记录了思考过程、命令执行和失败重试。两个工具步骤失败后，Codex 自行完成了恢复。
+主 Agent 核对了实际文件：Word 文档内嵌的 GIF 与源文件完全一致，7 帧动画完整保留。子会话底部记录了本次任务共 55 步，用量 350 万 token。
+生成的 Word 文档可以直接在右侧边栏预览。
+
+【05 收尾】
+subagent_oar 适合只需要结果的一次性小任务。需要查看执行过程、随时续聊，或者使用 Codex 的 image gen 和 Computer Use 时，可以选择 CLI Worker。
+插件项目地址显示在屏幕上，也附在视频简介中。欢迎下载使用 dsh-cliworker-now。交流使用心得或反馈问题，可以扫码加入插件讨论群。

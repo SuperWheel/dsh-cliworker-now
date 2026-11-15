@@ -178,7 +178,8 @@ it('模拟：官方 Windows feed 到现有安装程序执行与 verify，等待�
   expect(row).toMatchObject({ group: 'updatable', appVersion: '3.14.5', notice: ZCODE_RUNTIME_NOTICE, manual: undefined })
   f.backend.spawn = vi.fn(command => {
     expect(command.argv).toHaveLength(1); expect(command.argv[0]).toMatch(/\.exe$/i)
-    expect(f.service.snapshot().operation?.phase).toBe('installing')
+    // The official wizard needs the user (and UAC), so the phase stays awaiting-user while it runs.
+    expect(f.service.snapshot().operation?.phase).toBe('awaiting-user')
     f.file(join(app, 'ZCode.exe'), Buffer.concat([pe('ZCode', '3.18.2.9000'), Buffer.alloc(16)]))
     return child.child
   })

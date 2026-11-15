@@ -1,3 +1,4 @@
+import { WORKBUDDY_COS_POLICY, readWorkBuddyCos, workbuddyWindowsUrl, verifyWorkBuddyWindowsSignature, type WorkBuddyCosIntegrity } from './workbuddy-windows.ts'
 import { trackUpdateTemporary, retainUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -16,7 +17,7 @@ import { DESKTOP_INSTALL_SOURCES } from './sources.ts'
 const { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } = physicalFs().promises
 
 export type DesktopCli = 'zcode' | 'workbuddycn' | 'workbuddy'
-export interface DesktopRelease { version: string; url: string; sha512?: string; sha256?: string; size?: number; teamId?: string }
+export interface DesktopRelease { version: string; url: string; sha512?: string; sha256?: string; size?: number; teamId?: string; integrityPolicy?: typeof WORKBUDDY_COS_POLICY }
 export class DesktopUnavailableError extends Error {
   constructor(readonly reason: string) { super(reason); this.name = 'DesktopUnavailableError' }
 }
@@ -44,6 +45,9 @@ function artifactUrl(cli: DesktopCli, value: unknown, platform: string, expected
   try { url = new URL(value); path = decodeURIComponent(url.pathname) }
   catch { return unavailable('官方更新源的下载地址无效') }
   const host = cli === 'zcode' ? 'cdn-zcode.z.ai' : cli === 'workbuddycn' ? 'download.codebuddy.cn' : 'download.codebuddy.ai'
+  if (cli === 'workbuddy' && platform === 'win32') {
+    try { return workbuddyWindowsUrl(value, expectedVersion, feedArch) } catch { return unavailable('官方下载地址不在已核实的应用下载白名单内') }
+  }
   const prefix = cli === 'zcode' ? '/zcode/electron/releases/' : '/workbuddy/saas/'
   // The international macOS feed hashes the same-name DMG, as does the website's
   // download mapping. Validate the raw ZIP URL before replacing only its suffix.
@@ -72,6 +76,9 @@ function checkedRelease(cli: DesktopCli, release: DesktopRelease, platform: stri
     if (!sha) return unavailable('官方更新源没有提供校验值，暂不能自动更新')
     if (!/^[A-Za-z0-9+/]{86}==$/.test(sha) || Buffer.from(sha, 'base64').toString('base64') !== sha) return unavailable('官方 SHA-512 校验值格式无效')
     result.sha512 = sha; result.size = size(release.size)
+  } else if (cli === 'workbuddy' && platform === 'win32' && (release.sha256 === '' || release.sha256 === undefined && release.integrityPolicy === WORKBUDDY_COS_POLICY)) {
+    result.integrityPolicy = WORKBUDDY_COS_POLICY
+    if (release.size !== undefined) result.size = size(release.size)
   } else {
     if (!release.sha256) return unavailable('官方更新源没有提供校验值，暂不能自动更新')
     if (!/^[a-f\d]{64}$/i.test(release.sha256)) return unavailable('官方 SHA-256 校验值格式无效')
@@ -174,8 +181,8 @@ export const desktopUpdateIo = {
 
 export async function runDesktopUpdate(options: {
   cli: DesktopCli; appPath: string; release: DesktopRelease; root: string; signal: AbortSignal
-  download(url: string, expected: { sha512?: string; sha256?: string; size?: number }, signal: AbortSignal): Promise<string>
-  run(argv: string[], signal: AbortSignal): Promise<void>; awaiting(): void; platform?: string
+  download(url: string, expected: { sha512?: string; sha256?: string; size?: number; cos?: WorkBuddyCosIntegrity }, signal: AbortSignal): Promise<string>
+  run(argv: string[], signal: AbortSignal): Promise<void>; awaiting(): void; platform?: string; fetcher?: typeof hostFetch
 }): Promise<{ appPath: string }> {
   const { cli, appPath, signal, run } = options, platform = options.platform ?? process.platform
   if (!['darwin', 'win32'].includes(platform)) return unavailable('此平台暂不支持桌面应用自动更新')
@@ -183,10 +190,11 @@ export async function runDesktopUpdate(options: {
   const release = checkedRelease(cli, options.release, platform)
   const download = () => options.download(release.url, { sha512: release.sha512, sha256: release.sha256, size: release.size }, signal)
   if (platform === 'win32') {
-    const file = await download(); signal.throwIfAborted()
+    const cos = release.integrityPolicy === WORKBUDDY_COS_POLICY ? await readWorkBuddyCos(release.url, release.version, release.size, signal, options.fetcher) : undefined
+    const file = cos ? await options.download(release.url, { size: cos.size, cos }, signal) : await download(); signal.throwIfAborted()
     let temporaryExe: string | undefined, operationError: unknown
     try {
-      if (!file.toLowerCase().endsWith('.exe')) {
+      if (cli === 'workbuddy' || !file.toLowerCase().endsWith('.exe')) {
         const parent = dirname(file), info = await lstat(parent), artifact = await lstat(file)
         if (!info.isDirectory() || info.isSymbolicLink() || !artifact.isFile() || artifact.isSymbolicLink()) throw new CliOperationError('LOCATION_INVALID', '安装包必须位于实际的私有下载目录中')
         await chmod(parent, 0o700)
@@ -197,6 +205,7 @@ export async function runDesktopUpdate(options: {
         await chmod(temporaryExe, 0o600)
       }
       signal.throwIfAborted()
+      if (cli === 'workbuddy') await verifyWorkBuddyWindowsSignature(temporaryExe ?? file, signal, desktopUpdateIo.capture)
       options.awaiting(); signal.throwIfAborted()
       await run([temporaryExe ?? file], signal); signal.throwIfAborted()
       return { appPath }

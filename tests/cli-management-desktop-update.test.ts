@@ -16,7 +16,7 @@ const roots: string[] = []
 const signal = () => new AbortController().signal
 const sha512 = Buffer.alloc(64, 1).toString('base64'), sha256 = 'a'.repeat(64)
 const zurl = 'https://cdn-zcode.z.ai/zcode/electron/releases/3.18.2/macos-arm64/ZCode.zip'
-const wburl = (cli: DesktopCli, platform = 'darwin') => `https://download.codebuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}/workbuddy/saas/${platform === 'darwin' ? 'darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-fa0a0901.zip' : 'win32-x64-user/WorkBuddy.exe'}`
+const wburl = (cli: DesktopCli, platform = 'darwin') => `https://download.codebuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}/workbuddy/saas/${platform === 'darwin' ? 'darwin-arm64/WorkBuddy-darwin-arm64-5.9.3.42398134-fa0a0901.zip' : 'win32-x64-user/WorkBuddy-win32-x64-user-5.9.3.42398134-fa0a0901.exe'}`
 const manifest = (file: Record<string, unknown> = {}, extra = '') => `version: 3.18.2\nfiles:\n  - ${Object.entries({ url: zurl, sha512, size: 123, ...file }).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n    ')}\n${extra}`
 const wb = (cli: DesktopCli, overrides: Record<string, unknown> = {}) => JSON.stringify({ version: '5.9.3.42398134', url: wburl(cli), sha256hash: sha256, ...overrides })
 function feed(body: string, init?: ResponseInit) {
@@ -52,9 +52,9 @@ describe('模拟：官方桌面更新 feed', () => {
     await expect(readDesktopRelease('workbuddycn', {}, signal(), { fetcher, platform: 'win32', arch: 'x64' })).resolves.toMatchObject({ sha256 })
     expect(fetcher.mock.calls[0]![0]).toBe('https://www.workbuddy.cn/v2/update?platform=workbuddy-win32-x64-user&version=0.0.0')
   })
-  it('WorkBuddy 国际 Windows 空摘要按官方缺口拒绝', async () => {
+  it('WorkBuddy 国际 Windows 空摘要仅标记受限 COS 校验路径', async () => {
     const fetcher = feed(wb('workbuddy', { url: wburl('workbuddy', 'win32'), sha256hash: '' }))
-    await expect(readDesktopRelease('workbuddy', {}, signal(), { fetcher, platform: 'win32', arch: 'x64' })).rejects.toMatchObject({ reason: '官方更新源没有提供校验值，暂不能自动更新' })
+    await expect(readDesktopRelease('workbuddy', {}, signal(), { fetcher, platform: 'win32', arch: 'x64' })).resolves.toMatchObject({ integrityPolicy: 'workbuddy-windows-cos' })
   })
   it.each(['linux', 'freebsd'])('拒绝平台 %s', async platform => {
     const fetcher = feed(manifest())
