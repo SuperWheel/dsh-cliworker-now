@@ -1,6 +1,6 @@
 import { hostFetch } from '../host-fetch.mjs'
 import { CliOperationError } from './planner.ts'
-import { bounded } from './versions.ts'
+import { bounded, ReadOnlyTimeoutError } from './versions.ts'
 
 export const WORKBUDDY_WINDOWS_PUBLISHER = 'Tencent Technology (Shenzhen) Company Limited'
 export const WORKBUDDY_COS_POLICY = 'workbuddy-windows-cos' as const
@@ -63,7 +63,13 @@ export async function verifyWorkBuddyWindowsSignature(file: string, signal: Abor
   // append it to -Command (whose trailing arguments are parsed as expressions).
   const path = Buffer.from(file, 'utf8').toString('base64')
   const script = `$ErrorActionPreference='Stop'; $p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${path}')); $s=Get-AuthenticodeSignature -LiteralPath $p; @{Status=[string]$s.Status; Subject=[string]$s.SignerCertificate.Subject} | ConvertTo-Json -Compress`
-  const output = await capture(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], signal)
+  let output: string
+  try { output = await capture(['powershell.exe', '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], signal) }
+  catch (error) {
+    // A timeout is not a network or prefix problem: say so instead of the generic failure.
+    if (error instanceof ReadOnlyTimeoutError && !signal.aborted) throw new CliOperationError('VERIFY_TIMEOUT', '核对安装包官方签名超时，未运行安装程序；请稍后重试')
+    throw error
+  }
   signal.throwIfAborted()
   let result: { Status?: unknown; Subject?: unknown }
   try { result = JSON.parse(output.replace(/^\uFEFF/, '').trim()) } catch { return invalid('无法核实安装包 Authenticode 签名') }

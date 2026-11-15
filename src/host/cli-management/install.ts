@@ -20,6 +20,8 @@ import { CliOperationError } from './planner.ts'
 import { downloadCliArtifact } from './download.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
 import { listRunningApps, reopenStoppedApp, WINDOWS_APP_IMAGES, type RunningApp } from './windows-installer-apps.ts'
+/** Authenticode over a ~500 MB installer; generous so a cold disk or a Defender scan cannot fail a valid package. */
+export const WINDOWS_SIGNATURE_TIMEOUT_MS = 120_000
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
 import { findGitBash } from '../windows-git-bash.ts'
@@ -196,7 +198,12 @@ export class CliInstaller {
           if (JSON.stringify(installationSource(cli, this.platform).script) !== JSON.stringify(source.script)) throw new CliOperationError('PLAN_EXPIRED', '官方脚本定义已变化')
           await run([...source.script!.interpreter, packageFile]); candidate = join(homedir(), source.script!.relativeEntry)
         } else {
-          const app = await installDesktop({ source: source.desktop!, root: this.deps.root, directory: plan.directory, platform: this.platform, file: packageFile, signal: control, run, capture: (argv, signal) => captureReadOnly(this.deps.backend, this.deps.config, argv, signal), awaiting: () => { op.phase = 'awaiting-user'; changed() } })
+          const app = await installDesktop({ source: source.desktop!, root: this.deps.root, directory: plan.directory, platform: this.platform, file: packageFile, signal: control, run, capture: (argv, signal) => {
+            // Get-AuthenticodeSignature hashes the whole ~500 MB installer; with PowerShell start-up
+            // and a busy disk this took longer than the 5 s probe default (2026-11-15 Windows).
+            op.progress = { readable: false, byteProgress: false, resumeCount: 0, stage: '正在核对安装包的官方签名' }; changed()
+            return captureReadOnly(this.deps.backend, this.deps.config, argv, signal, false, undefined, WINDOWS_SIGNATURE_TIMEOUT_MS)
+          }, awaiting: () => { op.phase = 'awaiting-user'; changed() } })
           candidate = join(app, source.desktop!.relativeEntry)
         }
         op.phase = 'verifying-installation'; changed()

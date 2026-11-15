@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { Crc64Xz, WORKBUDDY_WINDOWS_PUBLISHER, readWorkBuddyCos, verifyWorkBuddyWindowsSignature } from '../src/host/cli-management/workbuddy-windows.ts'
+import { ReadOnlyTimeoutError } from '../src/host/cli-management/versions.ts'
 import { desktopUpdateIo, readDesktopRelease, runDesktopUpdate } from '../src/host/cli-management/desktop-update.ts'
 import { downloadCliArtifact } from '../src/host/cli-management/download.ts'
 import { installationSource } from '../src/host/cli-management/sources.ts'
@@ -116,6 +117,12 @@ it('signature path is encoded data and cancellation prevents launch', async () =
   f.capture.mockImplementation(async () => { controller.abort(); return JSON.stringify(validSignature) })
   await expect(runDesktopUpdate({ ...f.options, signal: controller.signal })).rejects.toThrow()
   expect(f.run).not.toHaveBeenCalled()
+})
+it('signature check timeout reports VERIFY_TIMEOUT instead of the generic failure, and never launches', async () => {
+  const capture = vi.fn(async () => { throw new ReadOnlyTimeoutError() })
+  await expect(verifyWorkBuddyWindowsSignature('D:\\模拟\\installer.exe', signal(), capture)).rejects.toMatchObject({ code: 'VERIFY_TIMEOUT', message: expect.stringContaining('未运行安装程序') })
+  const f = await updateFixture(); f.capture.mockRejectedValue(new ReadOnlyTimeoutError())
+  await expect(runDesktopUpdate(f.options)).rejects.toMatchObject({ code: 'VERIFY_TIMEOUT' }); expect(f.run).not.toHaveBeenCalled()
 })
 it('awaits installer process scope; unconfirmed scope retains execution copy', async () => {
   const f = await updateFixture(); let finish!: () => void, done = false
