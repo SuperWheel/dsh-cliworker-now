@@ -488,7 +488,9 @@
   - 首轮同命令 272 passed、10 failed：新夹具误把 service.local 的 pathOnly 设为 true，未进入版本阶段；修正夹具为 false 后全过，未调整生产服务逻辑。
   - `corepack pnpm typecheck` 最终退出 0，Host/Client 通过（DSH 0.2.2-rc.3）。首次失败因新 worktree 缺 `dsh-cliworker-now/remote` 生成声明；先执行 `corepack pnpm build:preview`（退出 0），再仅把 preview 的 `lib/typert.remote-client.d.ts` 复制到本 worktree 忽略的 lib 目录后复验通过。没有正式构建或更新 Desktop 链接。
   - `corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive` 通过，仅提示主任务超过 10 个；`git diff --check` 通过。保留本 change 原有未完成项及 14.4，不归档。
-- [ ] 14.4 修复包的 Windows Desktop 页面回读（未执行：本次只授权 Windows 只读检查，不部署、不重启 Desktop；真实更新、派遣及国际版实机同样没有执行）
+- [x] 14.4 修复包的 Windows Desktop 页面回读（真实更新、派遣及国际版 Windows 实机仍未执行）
+  - 2026-11-15 Windows 实机（主会话）：HEAD 277751b（含 f1bab12 修复）`build:preview` 后 `npm pack`，1265 个文件逐一写入清单，包 SHA-256 前缀 edbefa85b10a8100，上传后远端哈希一致。部署前 activeWorkers 0；经 UIA「应用 → 退出」正常退出 Desktop（进程 0），原生 `dsh plugin --profile desktop add --save-exact` 安装退出 0，逐文件校验通过，Host SHA-256 `c3e1b9f7…`。交互会话带无障碍与防节流参数启动，窗口有响应，stderr 0 B，stdout 无 error/431。
+  - 经 SSH 端口转发在 Mac 内置浏览器打开 Windows Host Web UI，「CLI Worker 设置 → 更新 CLI」检查完成后 WorkBuddy CN 归入「已是最新」，显示「应用 5.9.3 · CLI 2.165.0 · WorkBuddy CN 桌面应用，下载官方安装包更新」，不再出现「无法核实桌面应用目录或版本」。同页「需要手动更新」只剩 ZCode（插件部署的 runtime 0.16.9），国际版 WorkBuddy 在「未安装」。
 
 
 ## 15. 国际版 WorkBuddy macOS DMG 安装与更新 〔后端｜4h｜前置 5,8〕
