@@ -442,7 +442,11 @@ export class CliManagementService {
           }
           const result = await this.installer!.execute(plan, op, signal, () => this.changed(), recheck)
           this.identities.set(cli, result.identity); this.cache.invalidateVersion(cli); this.cache.rememberVersion(cli, result.identity.fingerprint, result.version)
-          this.publish(cli, { installed: true, source: result.identity.source, currentVersion: result.version, group: plan.source.method === 'npm' ? 'latest' : 'manual', reason: undefined, reasonDetail: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true)
+          // Just installed from the verified official current release: up to date whenever the plugin
+          // can also update it; otherwise say why updates stay manual (never an unexplained 需要手动更新).
+          const problem = updateProblem(cli, result.identity), updatable = !problem && !!automaticMethod(cli, result.identity)
+          this.publish(cli, { installed: true, source: result.identity.source, currentVersion: result.version, appVersion: result.identity.fingerprint.appVersion, group: plan.source.method === 'npm' || updatable ? 'latest' : 'manual', reason: undefined, reasonDetail: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now(),
+            manual: plan.source.method === 'npm' || updatable ? undefined : { note: problem ?? '此安装渠道没有已核实的自动更新方法。', guideUrl: CLI_SOURCES[cli].guideUrl } }, true)
           op.phase = 'succeeded'; return
         }
         const plan = await this.planCliOperation(cli, 'update', preparation, selected)

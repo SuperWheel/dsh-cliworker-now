@@ -109,13 +109,13 @@
   - 脚本（5.4 审查后）：Kimi（Mac/Linux/Windows）、TRAE CN（Mac/Linux）、Qoder/Qoder CN（Windows）；只使用 sources 的内置 URL 和 `/bin/bash <私有文件>` 或 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <私有文件>`。Kimi Windows 区分 Git Bash 与 WSL bash。没有独立官方摘要的脚本只验证 HTTPS 传输/响应长度，不声称发布签名已验证；脚本目标为 official-current，不编造锁定版本参数。装后版本无法读取或不适配仍判失败，不写回旧路径。
   - 仅说明：Claude 全平台、MiMo Mac/Linux 的原生版本读法（5.4 审查后退回；MiMo Windows npm 保留），Antigravity/Grok 的前置条件或安全版本读法、OMP/Hermes 禁止代装运行时的参数、Qoder/CN 的 macOS 入口、OpenCode macOS 脚本锁 V1 参数、TRAE Windows 默认入口未核实。按本阶段简报保留 manual，不猜参数或下载源。
   - 成功后用现有 `CliExecutablePathStore.setManual` 改用验证的新入口，核对 revision 防覆盖并保留旧文件，更新身份/版本缓存与分组、失效模型目录。模拟覆盖首次安装、重装、路径写入、路径过期、找不到入口、不可写前缀、前置条件失败、脚本 argv、幂等/取消和并发拒绝，命令见 5.3。
-- [ ] 5.2 桌面应用安装：ZCode、WorkBuddy CN、WorkBuddy 的位置校验（权限、空间、非空目录）；macOS DMG 复制流程；Windows 打开官方安装程序；装后写入路径记录
+- [x] 5.2 桌面应用安装：ZCode、WorkBuddy CN、WorkBuddy 的位置校验（权限、空间、非空目录）；macOS DMG 复制流程；Windows 打开官方安装程序；装后写入路径记录
   - 已实现通用桌面执行器 `desktop.ts` 并以模拟描述符验证：macOS attach 只读/no browse、codesign Team ID requirement + spctl、ditto 暂存复制后移动、attach/签名/复制失败均 detach 并清理；detach 未确认沿用清理隔离。Windows 进入 awaiting-user、只传安装程序路径，不猜静默或位置参数；等待整个进程范围退出、支持取消。装后查所选/描述符已核实的常见位置，再按通用流程验证并写原路径存储。
   - 位置校验允许目标不存在但父目录可写，拒绝系统/项目/已知工作区/插件状态/账号数据目录及其重叠路径，拒绝另一版 WorkBuddy 的安装目录；复用权限/空间/非空目录检查。
   - 2026-11-14 补齐 macOS：sources 固定三个官方 feed、应用名、CLI 相对入口与 Team ID；CliInstaller 通过共享发布预算读取清单，把 SHA-512/SHA-256、版本、工件地址纳入 token；ZIP 解包、codesign + spctl、应用版本核对成功后写回原路径记录，DMG 继续只读挂载/卸载。ZIP 成功、解包/签名/目标占用失败、摘要失败零启动、版本不符不写路径均有模拟回归。官方 URL、摘要与签名依据见本变更 design.md「2026-11-14 首次安装来源与实机复核」。
   - 本次实时 GET：ZCode 3.18.2 / SHA-512 / 305,360,326 B；WorkBuddy CN 5.9.3.42398134 / SHA-256；国际版 WorkBuddy 5.9.4.42593613 / SHA-256。国际版包的独立签名检查为 Team FN2V63AD2J、bundle com.workbuddy.workbuddy-ai，codesign 验证通过；但其 ZIP 与 feed SHA-256 不一致（官方 6502dc77…、实际 75492626…），插件完整重下仍拒绝，不用签名结果绕过摘要。CN 本轮只读清单，没有真实安装。
   - ZCode macOS 插件安装实测通过，详见 7.4。Windows 未执行；首次安装的 Authenticode、向导实际位置发现仍无充分证据，保持仅说明，所以组合项 5.2 保持未勾选。
-  - 2026-11-15 Windows：打开官方安装程序已实测（国际版 WorkBuddy 向导可见、Authenticode Valid、装到 D 盘，见 18.4）；「装后写入路径记录」当场因向导追加子目录失败，8bf4942 修复后尚未重装复验，5.2 仍不勾选。
+  - 2026-11-15 Windows：打开官方安装程序已实测（国际版 WorkBuddy 向导可见、Authenticode Valid、装到 D 盘，见 18.4）；「装后写入路径记录」当场因向导追加子目录失败，8bf4942 修复后于 17:09 重装复验通过，路径记录写入追加子目录（见 18.4、19.3）。macOS DMG/ZIP 与位置校验此前已验，5.2 勾选。
   - 本轮交付检查：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；最终指定 5 文件单 worker 回归 `corepack pnpm vitest run tests/cli-management-install.test.ts tests/cli-management-desktop.test.ts tests/cli-management-remotes.test.ts tests/cli-management-local-artifacts.test.ts tests/cli-management-download.test.ts --maxWorkers=1`：93/93 通过，25.80 秒，退出 0（/tmp/gaps-owned-delivery.log）。覆盖官方源/签名绑定、token 变化、应用版本核对、摘要失败零执行、ZIP 清理/隔离、Agent 工具清单、OMP 最终脚本地址。
   - `corepack pnpm vitest run tests/cli-management`：20 文件 604 passed / 1 failed（605 项），退出 1（/tmp/gaps-related-final.log）。唯一失败是既有 acceptance-fixes 的 Pi 1.5.2 Worker 拒绝断言，当前分支已支持该版本；本轮未修改对应源码/测试，交主会话整合。此前默认并发指定 5 文件一轮 91 passed / 1 timeout（92 项），单 worker 复跑 92/92，再补 ZIP 清理隔离后最终 93/93；不改超时或跳过用例。
   - 沙箱外默认并发 `corepack pnpm vitest run`：314 文件 296 passed / 14 failed / 4 skipped；7,056 项 6,992 passed / 50 failed / 14 skipped，570.22 秒，退出 1（/tmp/gaps-full.log）。该长轮期间补过本轮代码/用例，保留为中间结果；固定最终源码的 2 worker 全量另行记录，不据聚焦通过宣称全量通过。
@@ -576,20 +576,25 @@
   - `pnpm_config_verify_deps_before_run=false corepack pnpm typecheck`：Host/Client against DSH 0.2.2-rc.3 通过；首次缺 remote 声明，先执行同环境前缀的 `corepack pnpm build:preview` 成功，仅把隔离包生成的声明复制到本工作树忽略的 lib 后复验。最终 `build:preview` 退出 0，仅生成本工作树 .cache/preview-package；无正式 build 或 Desktop 链接更新。pnpm 11 默认自动重装共享 node_modules 被自身安全检查拒绝，用单次环境设置关闭自动重装检查，未修改共享依赖、锁文件或代理变量。
   - `pnpm_config_verify_deps_before_run=false corepack pnpm spec validate v0.8.10-cli-update-page-leeyl --strict --no-interactive` 通过（仅既有主任务超过 10 个建议）；指定 Git `diff --check` 通过。首次严格校验因追加文字触发已有 DMG Requirement 超长警告，精简该句后通过，行为条款保留在 Windows 专门 Requirement。
   - 只读调研补充：内嵌 app-64.7z 仅用系统 tar 读取产品 JSON 到内存；SignerInfo issuer+serial 精确匹配两版腾讯证书。新 TypeScript CRC 对两份完整 EXE 再算，与系统 liblzma/COS 均一致。全部下载、内嵌归档、证书及 NSIS 中间文件随 0700 临时目录删除，另一个 Python 进程回读确认目录及两个 EXE 均不存在；证据 JSON 记录回读时间。本 change 仍含实机及其他原有未完项，不归档。
-- [ ] 18.4 Windows 实机安装验收
+- [x] 18.4 Windows 实机安装验收
   - 待主会话实机验收；真实签名信任链、向导目录、国内版共存、磁盘空间及安装后页面回读均未执行。
   - 2026-11-15 13:2x 部分（只读，同一 `53451ae` 包）：国际版 WorkBuddy 在「未安装」分区，检查完成后行文「桌面应用（试验性） · 可选安装位置」，「安装」按钮可用（检查前曾短暂显示「这台电脑上没有找到」与禁用的安装按钮）；WorkBuddy CN 仍为「已是最新」、应用 5.9.3 · CLI 2.165.0。另在 Windows 只读核对国内版 WorkBuddy.exe 与卸载程序 `Get-AuthenticodeSignature`：Status=Valid，Subject 以 `CN=Tencent Technology (Shenzhen) Company Limited, O=Tencent Technology (Shenzhen) Company Limited` 开头，与代码固定发布者匹配。未点击安装。
   - 2026-11-15 15:5x 主会话实机安装（包 `rc3-7a9f964`，用户操作向导）：COS 长度/MD5/CRC-64 与运行前 Authenticode 全部通过后，官方向导窗口可见弹出（7a9f964 修复已生效）。用户选择 `D:\Software\WorkBuddy guoji`，向导自动追加子目录，实际装到 `D:\Software\WorkBuddy guoji\WorkBuddyAI`，卸载项 C02C88CB…；向导默认位置为 `C:\Program Files\WorkBuddyAI`（all-users）。国内版共存：`D:\Software\workbuddy` 主程序 SHA-256 BBF504… 与装前相同，卸载项 BFD312E9… 仍为 5.9.3。
   - 装后插件当场报 `VERSION_MISMATCH`，未写路径记录。根因是候选只看所选目录本身与 LOCALAPPDATA，没看向导追加的 WorkBuddyAI 子目录和 Program Files 默认位置（8bf4942 修复，见 19.1）。部署 `rc3-8bf4942` 并重启 Desktop 后，页面「已是最新」17 项，WorkBuddy 行为「应用 5.9.4 · CLI 2.165.0」（由注册表发现给出）。
-  - 未完成：修复后的「装后在追加子目录找到入口并写路径记录」尚未在真实重装中走一遍，本项保持未勾选。官方安装程序另在 `%LOCALAPPDATA%\@genieworkbuddy-desktop-updater\installer.exe` 留下 484 MB 副本（15:56:55）。
+  - 未完成：修复后的「装后在追加子目录找到入口并写路径记录」尚未在真实重装中走一遍，本项保持未勾选。（17:09 已补，见下条）
+  - 2026-11-15 17:05–17:10 重装复验（包 `rc3-275eb8d`，用户先在 Windows 设置卸载国际版，再从插件页安装，向导选 `D:\Software\WorkBuddy guoji`、完成页保持勾选「运行 WorkBuddy AI」）：16:4x 第一次重装（`rc3-fd161ac`）下载完成后签名核验超出 5 秒探针时限，安装程序未启动，页面只显示通用失败文案（Codex CU 只读读取：输出 8 次停滞续传、清理释放 507,036,736 B），275eb8d 修复见 19.1。第二次：17:05:32 安装程序进程出现（父进程 DeepSeek Harness），17:09:27 卸载项 C02C88CB 5.9.4 出现，17:09:34 WorkBuddyAI.exe 由 explorer.exe 启动，17:09:47 插件写入路径记录 `D:\Software\WorkBuddy guoji\WorkBuddyAI\resources\app.asar.unpacked\cli\dist\codebuddy-lite-wb.mjs`（manual，revision 9），状态 appVersion 5.9.4、CLI 2.165.0；下载目录清空；国内版卸载项 BFD312E9 5.9.3 不变。Codex CU 只读确认 WorkBuddy AI 窗口在运行（进程路径同上）。页面当时把该行放在「需要手动更新」（安装成功后固定分组的既有逻辑），已在 19.1 修正，修正后的分组未再实机安装复验。官方安装程序另在 `%LOCALAPPDATA%\@genieworkbuddy-desktop-updater\installer.exe` 留下 484 MB 副本（15:56:55）。
 
 ## 19. Windows 桌面安装程序窗口、向导落点与结果刷新 〔后端｜3h｜前置 17,18〕
 
 - [x] 19.1 安装程序窗口可见且等待用户时不限时；国际版 WorkBuddy 发现向导追加子目录与 Program Files 默认位置；完整检查清除上次操作结果
   - 7a9f964：Windows 隐藏中继原对所有子进程强制 `windowsHide: true`，官方安装程序因此以隐藏窗口启动（17.3 运行中途发现，当次用 ShowWindow 手动显示）。改为 Host 内部标记 `VISIBLE_WINDOW` 从 `executeCliOperation` 经 `nativeProcessBackend.spawn`（交给 SDK 前剥离）传到中继启动 JSON，只对 Windows 桌面安装程序关闭 windowsHide；普通 CLI 仍隐藏。按用户 2026-11-15 要求「从弹出安装窗口开始就要停止计时」，Windows 桌面安装程序不设时限（不挂计时器），控制台命令保留 10 分钟，超时文案改用实际分钟数。
   - 8bf4942：国际版 WorkBuddy 向导在所选目录名不是 WorkBuddyAI 时自动追加该子目录，默认是 `%ProgramFiles%\WorkBuddyAI`；候选增加「所选目录\WorkBuddyAI」、默认位置改为 Program Files，并保留 `%LOCALAPPDATA%\Programs\WorkBuddyAI`。页面完整检查 `check('all')` 清空上次操作结果，打开页面时的 `check('missing')` 仍保留。
+  - 48c3b99 / fd161ac（用户 2026-11-15「不管是否勾选运行都能够正确识别已经更新完毕」）：安装程序自身退出即判定装完，输出管道只再等 3 秒；进程范围仍未清空时按主程序名快照、结束范围后对比，消失的应用在核对成功后经 explorer.exe 重新打开（`windows-installer-apps.ts`）。Codex 审查 3 项（读取器拒绝未处理、快照清理未确认被吞、Explorer 启动失败被当成功）均已修复。
+  - 275eb8d：首次安装签名核验时限 5 秒 → 120 秒并显示阶段文案，超时报 VERIFY_TIMEOUT 且不运行安装程序。随后：安装成功后的分组由固定「需要手动更新」改为按 updateProblem/automaticMethod 判定，可自动更新的归「已是最新」，否则写明原因。
 - [x] 19.2 完成模拟测试与类型检查
   - `node_modules/.bin/vitest run --configLoader native tests/windows-visible-installer.test.ts tests/cli-management-workbuddy-windows.test.ts tests/cli-management-dual-channel.test.ts tests/cli-management-zcode-windows.test.ts`：4 文件 96/96 通过，1.47 秒，退出 0（$TMPDIR/win-installer-tests.log）。新文件 6 项覆盖标记进入中继 JSON 且不传给 SDK、普通 CLI 仍隐藏、代理包装后保留、windowsHide 只对安装程序为 false、安装程序 3 小时不被终止、普通命令 10 分钟超时；WorkBuddy 新增「向导追加子目录」模式；dual-channel 新增 missing 保留 / all 清空结果。
-- [ ] 19.3 实机复验
+  - 追加（48c3b99 起）：`node_modules/.bin/vitest run --configLoader native tests/cli-management tests/windows-visible-installer.test.ts tests/workbuddy-installation.test.ts tests/cli-update-page.test.tsx`：41 文件 1403 项通过（分组修正前）；分组修正后同一命令 41 文件 1404 项通过，`tests/cli-management-install.test.ts` 39/39。新增：安装程序退出后管道仍被占用时 3 秒宽限完成、应用留在 Job 内时只报告消失的进程、取消时不枚举、读取器出错无未处理拒绝、快照清理未确认传播、explorer 启动失败提示手动打开、签名超时 VERIFY_TIMEOUT、装后可更新归已是最新/不可更新写明原因。`corepack pnpm typecheck` 通过；`build:preview` 退出 0。Windows 部署包 1274/1274 文件哈希一致。
+- [x] 19.3 实机复验
   - 已实测：7a9f964 下国际版 WorkBuddy 向导窗口可见弹出（18.4）。8bf4942 部署后页面正确显示应用 5.9.4，但来自注册表发现，非装后路径写入。
-  - 未执行：在真实重装中确认装后在追加子目录找到入口并写路径记录；完整检查清空旧错误（当次重启已清空状态，未覆盖此路径）；安装程序结束页勾选「运行 X」时启动的应用是否在插件进程范围内被一并结束，待用户决定处理方式。
+  - 2026-11-15 17:09 重装复验：装后在追加子目录找到入口并写路径记录（18.4）。结束页勾选「运行」：WorkBuddyAI.exe 父进程为 explorer.exe（electron-builder 经外壳启动），插件判定完成时未结束它，PID 40668 自 17:09:34 起持续存在、未被重开；「随范围结束后重新打开」补救路径未被触发，只有模拟覆盖。
+  - 未执行：完整检查清空旧错误的实机路径；修正后的装后分组（已是最新）的实机安装复验。

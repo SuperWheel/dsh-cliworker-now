@@ -94,11 +94,11 @@ Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高
 
 源码中的「更新 CLI」页已接入首次安装后端：按 Host 核实的安装方式生成计划，npm 主包及本机平台组件校验后装入当前全局前缀，官方脚本先保存到私有目录再执行。安装期间目标 CLI 暂停派遣与账号操作；只有重新探测得到有效版本才写入原有 CLI 路径设置。来源未核实的方式仍提供官方说明。Claude 全平台及 MiMo macOS/Linux 的首次安装脚本暂保持仅说明（MiMo Windows 仍用 npm）；本轮已补齐现有安装的版本检查，未重新开放首次安装脚本。macOS 桌面首次安装复用 ZCode / WorkBuddy 两版的官方更新清单，校验 SHA-512 / SHA-256 与固定开发者签名后，将应用放到所选目录并核对应用版本、写回 CLI 路径；也支持原有 DMG 流程。Windows x64 国际版首次安装见下文的 COS/签名核验说明；其他未核实组合保留官方说明。2026-11-14 隔离安装 Pi npm 版 1.5.2、ZCode 3.18.2 通过；国际版 WorkBuddy 的 macOS 首次安装与更新按官网规则选择同路径 DMG，并严格使用 feed 的 SHA-256；固定核对 Team `FN2V63AD2J`、bundle `com.workbuddy.workbuddy-ai` 与 Gatekeeper，只读挂载、确认卸载后完成更新替换。CN 仍用 ZIP。2026-11-15 国际版 arm64 隔离首次安装已通过摘要、签名、装后身份/版本与路径写回核对；包内 0644 mjs 按可读脚本识别，保留实际应用版本 `5.9.4` / CLI `2.165.0`，四段 feed 发布号由工件摘要绑定。真实更新与 Desktop 显示尚未验收；若 feed 将来改为 ZIP 摘要，会校验失败并停止，须重新核实并修订规则后切换，不自动降级。进度及边界见 [本次任务记录](openspec/changes/v0.8.10-cli-update-page-leeyl/tasks.md)。
 
-Windows x64 国际版 WorkBuddy 首次安装使用官方向导。空 SHA-256 feed 必须通过 COS 长度、MD5、CRC-64/XZ 和运行前腾讯 Authenticode Valid 四重核验；有 SHA-256 时保持原摘要校验。向导在所选目录名不是 WorkBuddyAI 时会自动追加该子目录，默认位置为 `%ProgramFiles%\WorkBuddyAI`；插件依次检查所选位置、追加的子目录、Program Files 与 `%LOCALAPPDATA%\Programs\WorkBuddyAI`，站点与实际版本核对通过才保存路径。向导内使用国际版独立目录，不选择已有国内版目录。CN、ZCode 与国际版 ARM64 首次安装仍为手动。2026-11-15 Windows 实机已装到 D 盘并与国内版共存、签名 Valid；修复追加子目录后的重装复验尚未执行。
+Windows x64 国际版 WorkBuddy 首次安装使用官方向导。空 SHA-256 feed 必须通过 COS 长度、MD5、CRC-64/XZ 和运行前腾讯 Authenticode Valid 四重核验；有 SHA-256 时保持原摘要校验。向导在所选目录名不是 WorkBuddyAI 时会自动追加该子目录，默认位置为 `%ProgramFiles%\WorkBuddyAI`；插件依次检查所选位置、追加的子目录、Program Files 与 `%LOCALAPPDATA%\Programs\WorkBuddyAI`，站点与实际版本核对通过才保存路径。向导内使用国际版独立目录，不选择已有国内版目录。CN、ZCode 与国际版 ARM64 首次安装仍为手动。2026-11-15 Windows 实机已装到 D 盘并与国内版共存、签名 Valid；重装复验确认插件在向导追加的子目录找到入口并写入路径记录。
 
 Windows 的 ZCode 固定自动 runtime 可关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode` 中经 PE 产品名和内置 CLI 核实的桌面应用，显示应用版本并使用官方安装程序更新。向导与 UAC 由安装程序处理，插件不提权或静默安装。独立 Worker runtime 不随桌面更新；没有可核实桌面应用时仍显示原 runtime 手动更新原因。2026-11-15 Windows 实机从 3.14.5 更新到 3.18.2 通过。
 
-Windows 官方桌面安装程序以可见窗口启动，等待 UAC 与向导期间不设时限，可在页面取消；控制台安装命令仍为 10 分钟。官方安装程序会在 `%LOCALAPPDATA%\<产品>-updater` 自留一份安装包供其自带更新使用，不属于插件下载目录。点「检查更新」会清除上次操作结果。
+Windows 官方桌面安装程序以可见窗口启动，等待 UAC 与向导期间不设时限，可在页面取消；控制台安装命令仍为 10 分钟。官方安装程序会在 `%LOCALAPPDATA%\<产品>-updater` 自留一份安装包供其自带更新使用，不属于插件下载目录。安装程序自身退出即视为装完；结束页勾选「运行」时，插件照常核对并写入路径，若应用被插件清理安装进程时一起结束，会自动重新打开。首次安装核对约 500 MB 安装包的签名最长等待 2 分钟。点「检查更新」会清除上次操作结果。
 
 已识别的官方安装现在可通过原包管理器、自带更新命令或官方安装器更新；ZCode 与 WorkBuddy 两版接入桌面发布源与专用更新器。版本查询只读官方 GET，后台不执行 check/update 子命令，更新仍需前台用户发起。外部包管理器、未识别安装和没有可用平台工件的情况显示具体手动原因。不能锁版的命令会核对实际版本是否前进；Hermes 更新可能迁移配置、更新依赖及重启服务，原通道保持不变。Pi 更新不再受适配集合限制，未适配版本会提示 Pi Worker 需等待插件适配。
 

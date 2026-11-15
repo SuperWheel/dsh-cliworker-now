@@ -559,3 +559,14 @@ Host SHALL 仅对 Windows 桌面方式的首次安装与更新，以 Host 内部
 #### Scenario: 旧错误在重新检查后消失
 - **WHEN** 某 CLI 上次安装显示 VERSION_MISMATCH，用户点「检查更新」
 - **THEN** 检查开始后该错误 SHALL 不再显示，行按新检查结果分组
+
+### Requirement: Windows 安装程序结束页启动应用时的完成判定
+Host SHALL 以官方安装程序自身退出作为安装结束，输出管道 MUST NOT 无限阻塞完成。进程范围随后仍有进程时，Host SHALL 记录随范围结束而消失的应用主程序进程，并在安装核对成功后经系统外壳重新打开已核实安装目录内的主程序；无法重新打开时 SHALL 提示手动打开。快照进程自身清理未确认 MUST 按清理未确认处理。
+
+#### Scenario: 结束页勾选运行
+- **WHEN** 官方安装程序退出时，其结束页启动的应用仍持有输出管道或留在插件 Job 内
+- **THEN** Host SHALL 继续核对安装并写入路径记录；被结束的应用 SHALL 经外壳重新打开，页面不报失败
+
+#### Scenario: 签名核验较慢
+- **WHEN** 首次安装核对约 500 MB 安装包的 Authenticode 签名耗时超过 5 秒
+- **THEN** Host SHALL 继续等待至 120 秒；超时 SHALL 报 VERIFY_TIMEOUT 并且 MUST NOT 运行安装程序
