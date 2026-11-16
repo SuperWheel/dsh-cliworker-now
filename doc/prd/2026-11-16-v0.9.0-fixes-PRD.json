@@ -1,0 +1,181 @@
+{
+  "requirement": {
+    "title": "v0.9.0 适配与修复合集（双通道下载、DSH rc.3、Grok、Hermes、Pi、ZCode 自有 Key 等 9 项）",
+    "source": "技术优化",
+    "type": "技术",
+    "expectDate": "2026-11-16"
+  },
+  "prd": {
+    "background": "1. v0.9.0 于 2026-11-16 发布。除「更新 CLI」页（REQ-0133）和 Qoder SDK daemon 适配（REQ-0134）外，还有 9 个 pmspec 变更随版本上线，此前没有登记到面板。\n2. 「更新 CLI」页上线后，自带更新器的 CLI 没有进度条；2026-11-14 Windows 经代理更新时，长下载在 18–153 MB 处断流后不再恢复，官方更新器也不续传，一直挂到插件 10 分钟的上限。\n3. 宿主与 CLI 升级后旧适配失效：DeepSeek Harness 0.2.2-rc.3 于 2026-11-13 发布，插件 SDK 仍锁 rc.2；Pi 升到 1.5.2，兼容名单只到 1.1.0；Grok 1.0.77 已登录，派遣前却报「当前 CLI 未支持账号模型」；Hermes 0.23.1 的共享状态写入新增必需参数，插件报「登录暂时无法续期」。\n4. 2026-11-15 用户提供 Windows 磁盘耗尽证据：catalog/query-*、OMP identity 与 Qoder CN metadata 临时目录持续遗留，OMP 每个隔离 HOME 约 128 MB。\n5. Mac 候选版验收发现：OMP 在嵌套 Worker 项目里把文件写到仓库根目录；工具错误显示为 [object Object]。\n6. 用户的 ZCode 订阅过期后无法改用自有 API Key：ZCode 0.17.1 的运行偏好校验让每次派遣失败，自有服务商的模型被全部隐藏，模型标签显示服务商 UUID。\n7. 2026-11-15 用户报告：Windows 上在 OpenCode 账号窗口替换 DeepSeek Key，前两次显示「登录窗口已结束」，Key 实际已保存。",
+    "users": "1. 经代理或国内网络更新 CLI 的用户：需要看到下载进度，断流后能自动续传。\n2. 跟随宿主与 CLI 新版本的用户：升级 DSH 0.2.2-rc.3、Pi 1.5.2、Grok 1.0.77、Hermes 0.23.1 后，Worker 仍能派遣、续期和读取模型。\n3. 长期运行 DSH 的 Windows 用户：插件临时目录不会持续占用 C 盘。\n4. 在嵌套项目里派遣写任务的用户：文件写在所选的项目目录。\n5. ZCode 订阅过期、想用自己 API Key 的用户。\n6. 在账号窗口替换同一服务商 Key 的用户。",
+    "goal": "1. 升级宿主或 CLI 后，Worker 的派遣、续期和模型目录保持可用。\n2. CLI 更新全部显示进度；官方渠道失败时改由插件接管下载并续传。\n3. 插件临时目录用完即删，并定期清扫过期目录。\n4. 替换 Key、填自有 Key 等账号操作的结果与实际状态一致。",
+    "successMetric": "其他",
+    "baseline": null,
+    "target": null,
+    "solution": "1. CLI 更新双通道：先走官方渠道，失败或停滞时改由插件统一下载器接管，支持续传和换源；某 CLI 在本机官方渠道失败后，7 天内直接走接管。\n2. 宿主与 CLI 适配：SDK 与原生界面包升到 0.2.2-rc.3；按本机两个版本的原生接口核对后，支持 Pi 1.5.2；Grok 动态目录按账号返回的模型判断，不再只认旧构建号；Hermes 续期改用新签名，并提前拒绝不兼容接口。\n3. 临时目录回收：删除失败时重试；失败路径也删除；新增过期清扫，删除异常不再掩盖任务结果。\n4. Worker 工作目录与错误文本：工具调用固定在所选项目目录，工具错误与停止原因统一转成可读文字。\n5. ZCode 自有 Key：修正运行偏好答复，允许自有服务商在 /models 不可用时显示模型，模型标签显示服务商名称，并提供不改桌面端配置的添加入口。\n6. 替换 Key 登录确认：按凭据是否变化确认登录，不再只认新登录 ID 或退出码 0。",
+    "items": [
+      {
+        "name": "CLI 更新双通道",
+        "statement": "系统应当在官方更新渠道失败或停滞时改由插件接管下载，显示进度并从已下载位置续传。",
+        "scenarios": [
+          {
+            "when": "官方更新器下载停滞超过阈值",
+            "then": "插件接管下载，保留已收字节续传，界面显示进度"
+          },
+          {
+            "when": "某 CLI 的官方渠道在本机失败后 7 天内再次更新",
+            "then": "直接走插件接管"
+          }
+        ]
+      },
+      {
+        "name": "适配 DSH 0.2.2-rc.3",
+        "statement": "系统应当在 DeepSeek Harness 0.2.2-rc.3 下正常加载插件、显示输入框并读取规划模式。",
+        "scenarios": [
+          {
+            "when": "在 DSH 0.2.2-rc.3 Desktop 打开 CLI Worker",
+            "then": "插件加载，输入框正常显示，派遣遵循规划模式"
+          }
+        ]
+      },
+      {
+        "name": "Grok 动态模型目录",
+        "statement": "系统应当按账号实际返回的模型显示 Grok 1.0.77 的模型目录。",
+        "scenarios": [
+          {
+            "when": "Grok 1.0.77 已登录且账号只返回 grok-4.7",
+            "then": "模型列表显示 grok-4.7，派遣不再报「当前 CLI 未支持账号模型」"
+          }
+        ]
+      },
+      {
+        "name": "Hermes 自动续期",
+        "statement": "系统应当用 Hermes 0.23.1 的新签名完成续期，并在接口不兼容时提前拒绝。",
+        "scenarios": [
+          {
+            "when": "Hermes 0.23.1 的登录需要续期",
+            "then": "续期成功，模型与强度正常加载"
+          },
+          {
+            "when": "Hermes 接口与插件不兼容",
+            "then": "兑换前提示不兼容，不写入状态"
+          }
+        ]
+      },
+      {
+        "name": "适配 Pi 1.5.2",
+        "statement": "系统应当在核对原生接口后支持 Pi 1.5.2，并在 Windows 上找到 Git Bash。",
+        "scenarios": [
+          {
+            "when": "本机 Pi 为 1.5.2",
+            "then": "安装检查通过，可正常派遣"
+          },
+          {
+            "when": "Windows 上 Pi 任务结束",
+            "then": "不再暂停后续派遣"
+          }
+        ]
+      },
+      {
+        "name": "临时目录回收",
+        "statement": "系统应当在任务成功或失败后删除插件临时目录，并定期清扫过期目录。",
+        "scenarios": [
+          {
+            "when": "模型目录查询失败",
+            "then": "本次查询的临时目录被删除"
+          },
+          {
+            "when": "存在超过保留期的遗留目录",
+            "then": "清扫时删除，不影响正在运行的任务"
+          }
+        ]
+      },
+      {
+        "name": "Worker 工作目录与错误文本",
+        "statement": "系统应当把 Worker 的工具调用限定在所选项目目录，并把工具错误显示为可读文字。",
+        "scenarios": [
+          {
+            "when": "在嵌套项目中派遣写任务",
+            "then": "文件写在所选项目目录，而不是仓库根目录"
+          },
+          {
+            "when": "工具返回对象类型的错误",
+            "then": "界面显示可读的错误文字，不显示 [object Object]"
+          }
+        ]
+      },
+      {
+        "name": "ZCode 自有 API Key",
+        "statement": "系统应当允许用户在订阅过期后用自己的 API Key 通过 CLI Worker 使用 ZCode。",
+        "scenarios": [
+          {
+            "when": "用户在账号窗口添加自有服务商与 Key",
+            "then": "模型列表显示该服务商的模型，标签显示服务商名称"
+          },
+          {
+            "when": "自有服务商的 /models 返回 404 或 405",
+            "then": "仍显示用户配置的模型，派遣成功"
+          }
+        ]
+      },
+      {
+        "name": "替换 Key 登录确认",
+        "statement": "系统应当在替换同一服务商的 Key 后，按凭据是否变化确认登录。",
+        "scenarios": [
+          {
+            "when": "用户替换同一服务商的 Key 且新 Key 已保存",
+            "then": "显示登录成功，不再显示「登录窗口已结束」"
+          }
+        ]
+      }
+    ],
+    "outOfScope": "- 新增 CLI 或新的设置页：不在本合集内。\n- 豆包等暂不接入的 CLI：见 v0.8.8 的决定。",
+    "risks": "1. ZCode 自有 Key 的 Windows 实机与无界面派遣尚未验证（变更 v0.9.0-zcode-custom-key-leeyl 任务 5.3）。\n2. Windows 上 OpenCode 替换 Key 的实机复测尚未完成（变更 v0.9.0-account-key-confirm-leeyl 任务 2.1）。\n3. 宿主与 CLI 版本更新频繁，适配需随新版本持续核对。",
+    "rollout": "1. 已随 v0.9.0 于 2026-11-16 发布到 GitHub Release 和 npm。\n2. 自动检查：GitHub CI 通过；Mac 与 Windows 已做增量实机检查。\n3. 待补：上述两项 Windows 实机验证完成后，在对应变更的 tasks.md 勾选并归档。",
+    "ai": null,
+    "references": [
+      {
+        "title": "pmspec 变更：CLI 更新双通道",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-cli-update-dual-channel-leeyl"
+      },
+      {
+        "title": "pmspec 变更：适配 DSH 0.2.2-rc.3",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl"
+      },
+      {
+        "title": "pmspec 变更：Grok 动态模型目录",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-grok-dynamic-catalog-leeyl"
+      },
+      {
+        "title": "pmspec 变更：Hermes 续期修复",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-hermes-renewal-fix-leeyl"
+      },
+      {
+        "title": "pmspec 变更：适配 Pi 1.5.2",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-pi-1-5-adapt-leeyl"
+      },
+      {
+        "title": "pmspec 变更：临时目录回收",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-temp-dir-cleanup-leeyl"
+      },
+      {
+        "title": "pmspec 变更：Worker 工作目录与工具错误",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-worker-cwd-tool-errors-leeyl"
+      },
+      {
+        "title": "pmspec 变更：ZCode 自有 API Key",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/changes/v0.9.0-zcode-custom-key-leeyl"
+      },
+      {
+        "title": "pmspec 变更：替换 Key 登录确认",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/changes/v0.9.0-account-key-confirm-leeyl"
+      },
+      {
+        "title": "GitHub Release v0.9.0",
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.9.0"
+      }
+    ],
+    "prototypeUrl": "",
+    "prototypes": []
+  }
+}
