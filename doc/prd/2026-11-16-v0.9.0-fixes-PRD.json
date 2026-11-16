@@ -130,8 +130,8 @@
       }
     ],
     "outOfScope": "- 新增 CLI 或新的设置页：不在本合集内。\n- 豆包等暂不接入的 CLI：见 v0.8.8 的决定。",
-    "risks": "1. ZCode 自有 Key 的 Windows 实机与无界面派遣尚未验证（变更 v0.9.0-zcode-custom-key-leeyl 任务 5.3）。\n2. Windows 上 OpenCode 替换 Key 的实机复测尚未完成（变更 v0.9.0-account-key-confirm-leeyl 任务 2.1）。\n3. 宿主与 CLI 版本更新频繁，适配需随新版本持续核对。",
-    "rollout": "1. 已随 v0.9.0 于 2026-11-16 发布到 GitHub Release 和 npm。\n2. 自动检查：GitHub CI 通过；Mac 与 Windows 已做增量实机检查。\n3. 待补：上述两项 Windows 实机验证完成后，在对应变更的 tasks.md 勾选并归档。",
+    "risks": "1. ZCode 自有 Key 的 Windows 实机与无界面派遣：2026-11-16 用户自测通过（变更 v0.9.0-zcode-custom-key-leeyl 任务 5.3）。\n2. Windows 上 OpenCode 替换 Key 的实机复测：2026-11-16 用户自测通过（变更 v0.9.0-account-key-confirm-leeyl 任务 2.1）。\n3. 宿主与 CLI 版本更新频繁，适配需随新版本持续核对。",
+    "rollout": "1. 已随 v0.9.0 于 2026-11-16 发布到 GitHub Release 和 npm。\n2. 自动检查：GitHub CI 通过；Mac 与 Windows 已做增量实机检查。\n3. 上述两项 Windows 实机验证已由用户于 2026-11-16 自测通过，两个变更已归档。",
     "ai": null,
     "references": [
       {
@@ -164,11 +164,11 @@
       },
       {
         "title": "pmspec 变更：ZCode 自有 API Key",
-        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/changes/v0.9.0-zcode-custom-key-leeyl"
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-zcode-custom-key-leeyl"
       },
       {
         "title": "pmspec 变更：替换 Key 登录确认",
-        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/changes/v0.9.0-account-key-confirm-leeyl"
+        "url": "https://github.com/SuperWheel/dsh-cliworker-now/tree/main/openspec/archives/v0.9.0-account-key-confirm-leeyl"
       },
       {
         "title": "GitHub Release v0.9.0",

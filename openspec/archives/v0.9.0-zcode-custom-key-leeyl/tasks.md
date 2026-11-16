@@ -69,7 +69,7 @@
     - typecheck 与 `pnpm spec:check`（39 项）通过。
     - Windows 远程回归 run `f3083a3d` 全部通过，包括预览、安装、类型检查、Windows 测试和包内 Host 加载。
     - 偶发失败判为高负载下的超时。
-- [ ] 5.3 真实 Desktop 验收：订阅过期 + 自有 API Key，分别走 headless 与 app-server 派遣
+- [x] 5.3 真实 Desktop 验收：订阅过期 + 自有 API Key，分别走 headless 与 app-server 派遣
   - 2026-11-16 Mac Desktop（1cf49d0 正式构建，Codex CU 操作）：新对话、CLI Worker Demo 项目，派遣 ZCode deepseek-v4-flash、最低强度、「仅工作区编辑」档。Worker `c2b77970`，transport `zcode-app-v1`，observedModel 为 `<自定义服务商 UUID>/deepseek-v4-flash`。
     - 首轮：主页面只出 1 张「CLI 授权」卡（Bash 高风险命令），点「允许一次」后不再出现；命令执行，exitCode 0，没有出现「DSH 未批准此授权」。
     - 续聊：Worker 窗口底部出现 1 张审批卡，允许一次后执行，exitCode 0。
@@ -83,7 +83,8 @@
   - 2026-11-16 Windows：账号窗口列出 ZCode 桌面端的 deepseek 服务商（标「在 ZCode 桌面端管理」），「添加账号」中有「其他服务商」；模型下拉只有 BigModel 套餐的 GLM-5.3 与 GLM-5.3-Flash。
     - 只读结构诊断：该服务商 baseUrl 为官网控制台 `https://platform.deepseek.com/`，模型 ID 为 `deepseek v4pro`，模型规则中没有启用标记。插件按原生规则跳过未启用的模型，属预期行为。
     - 诊断没有输出密钥，没有发网络请求。Windows 自有 Key 派遣未执行：需要用户在 ZCode 桌面端或插件「其他服务商」中配置可用的服务商后再测。
-  - 未执行：需要用户另行授权真实模型调用。本次没有登录、没有调用模型，也没有运行真实 ZCode CLI。
+  - 2026-11-16 用户在 Windows Desktop（v0.9.0）用自有 API Key 自行完成验收（含 headless 派遣），并告知通过。本会话没有复核 Worker 事件和产物，证据是用户的这次告知。
+  - 用户自测之前未执行：需要用户另行授权真实模型调用。本次没有登录、没有调用模型，也没有运行真实 ZCode CLI。
   - 验收时应检查：0.17.1 不再因答复字段失败；目录 404/405 时出现未核实候选；Worker 实际使用所选自有服务商（事件、退出状态与产物）；全局 `~/.zcode/v2/provider_config.json` 未被修改。
 
 ## 6. 复测问题修复 〔后端｜2h｜前置 5〕

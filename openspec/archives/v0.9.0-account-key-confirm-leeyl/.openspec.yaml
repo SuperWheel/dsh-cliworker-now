@@ -5,5 +5,6 @@ pm:
   creator_name: Leeyl
   previous_names:
     - v0.8.10-account-key-confirm-leeyl
+  archived: 2026-11-16
 schema: pmspec
 created: 2026-11-16

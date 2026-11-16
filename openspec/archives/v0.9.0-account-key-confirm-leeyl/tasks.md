@@ -10,6 +10,7 @@
 
 ## 2. 实机验收 〔测试｜1h｜前置 1〕
 
-- [ ] 2.1 Windows OpenCode 替换 DeepSeek Key 实机复测
-  - 未执行：输入 API Key 只能由用户操作。Windows Desktop 已于 2026-11-16 装上含本修复的 1cf49d0 包，待用户在 OpenCode 账号窗口重试。
+- [x] 2.1 Windows OpenCode 替换 DeepSeek Key 实机复测
+  - 2026-11-16 用户在 Windows Desktop（v0.9.0）自行完成 OpenCode 替换 DeepSeek Key 复测，并告知通过。本会话没有复核插件事件和日志，证据是用户的这次告知。
+  - 测试前的情况：输入 API Key 只能由用户操作。Windows Desktop 已于 2026-11-16 装上含本修复的 1cf49d0 包，待用户在 OpenCode 账号窗口重试。
   - Windows 上出现「登录窗口已结束」的直接触发条件（退出码或读取时机）没有现场日志证实；修复依据是代码路径分析。
