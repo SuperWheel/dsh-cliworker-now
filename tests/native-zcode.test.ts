@@ -17,7 +17,9 @@ import { createInterface } from 'node:readline';import { appendFileSync,readFile
 const out=x=>process.stdout.write(JSON.stringify(x)+'\n'), log=x=>appendFileSync(process.env.AUDIT,JSON.stringify(x.id==='headers'?{id:x.id,headersApplied:x.result?.headersApplied,headerAccepted:x.result?.requestAuth?.apiKey==='SYNTHETIC_ACCOUNT_KEY'}:x)+'\n',{mode:0o600});
 const scenario=process.env.SCENARIO, sessionId=scenario.startsWith('context-')?'sess_context-fixture':'zcode-fixture', project=process.env.PROJECT;
 const state={session:{sessionId,workspace:{workspacePath:project}},settings:{model:{current:{providerId:'chosen',modelId:'model'},available:[{ref:{providerId:'chosen',modelId:'model'},reasoning:{defaultLevel:'high',levels:[{value:'high'},{value:'low'}]}}]},mode:{current:'edit'}},runtime:{pendingRequestIds:[]},projection:{status:'idle',pendingPermissions:[],activeToolCalls:[]}};
-let inputId, awaiting, stopped=false, planEnabled=false, planSubscriptions=0;
+let inputId, awaiting, stopped=false, planEnabled=false, planSubscriptions=0, trailingFragment;
+if(scenario.startsWith('plan-resume-'))state.settings.mode.current=scenario.slice('plan-resume-'.length);
+const crc32=bytes=>{let c=0xffffffff;for(const byte of bytes){c^=byte;for(let i=0;i<8;i++)c=(c>>>1)^(c&1?0xedb88320:0);}return ((c^0xffffffff)>>>0).toString(16).padStart(8,'0');};
 log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT,leakedMemoryEnvironment:process.env.CLIWORKER_ZCODE_NATIVE_MEMORY!==undefined,leakedSurfaceEnvironment:process.env.CLIWORKER_ZCODE_WORKFLOW_SURFACE!==undefined});
 if(process.argv.indexOf('app-server')>process.argv.indexOf('--disallowedTools'))process.exit(22);
 const reply=(q,result)=>out({id:q.id,result});
@@ -41,7 +43,8 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(q.method==='session/setMode'){
    if((scenario==='no-edit'&&q.params.mode==='edit')||(scenario==='no-yolo'&&q.params.mode==='yolo')||scenario==='no-modes')return out({id:q.id,error:{code:-32602,message:'Synthetic unavailable mode'}});
    planEnabled=q.params.mode==='plan';
-   state.settings.mode.current=scenario==='wrong-mode'||(scenario==='wrong-edit'&&q.params.mode==='edit')?'yolo':q.params.mode==='plan'&&!scenario.startsWith('legacy-plan')?'build':q.params.mode;
+   state.settings.mode.current=scenario==='wrong-mode'||(scenario==='wrong-edit'&&q.params.mode==='edit')?'yolo':q.params.mode==='plan'&&!scenario.startsWith('legacy-plan')?state.settings.mode.current:q.params.mode;
+   if(scenario==='plan-normalize-failed')state.settings.mode.current='guarded';
    if(scenario==='legacy-plan-inactive')state.settings.mode.current='build';
    if(scenario==='plan-mode-spoof')state.settings.mode.current='plan';
    return reply(q,state);
@@ -52,16 +55,60 @@ createInterface({input:process.stdin}).on('line',line=>{
    if(scenario==='plan-unavailable')return out({id:q.id,error:{code:-32601,message:'Synthetic unavailable v4'}});
    const subscriptionId='plan-sub-'+(++planSubscriptions),topic=q.params.topic,logEpoch='plan-epoch';
    reply(q,{ack:{subscriptionId,mode:'snapshot',logEpoch}});
-   const config={provider:'chosen',model:'model',thought:'high',thoughtLevels:['high','low'],followupMode:'queue',mode:'build',planEnabled};
+   const config={provider:'chosen',model:'model',thought:'high',thoughtLevels:['high','low'],followupMode:'queue',mode:state.settings.mode.current,planEnabled};
    if(scenario==='plan-inactive'||(scenario==='plan-drift-final'&&inputId))config.planEnabled=false;
    if(scenario==='plan-missing')delete config.planEnabled;
+   if(scenario==='plan-mode-missing')delete config.mode;
+   if(scenario==='plan-permission-drift-final'&&inputId)config.mode='yolo';
    if(scenario==='plan-truthy')config.planEnabled='true';
    if(scenario==='plan-mode-spoof'){config.mode='plan';config.planEnabled=false;}
    const snapshot={sessionId:scenario==='plan-foreign'?'foreign':sessionId,logEpoch:scenario==='plan-stale'?'stale-epoch':logEpoch,config};
    const frame={topic,subscriptionId:scenario==='plan-crossed'?'stale-sub':subscriptionId,sentAt:Date.now(),fromSeq:0,toSeq:0,payload:{kind:'snapshot',snapshot}};
+   // 模拟 reserveFlush: online frames have a new logical ID and ordinal.
+   const online={wireVersion:3,kind:'complete',deliveryKind:'online',logicalFrameId:subscriptionId+'-lf-2',logicalFrameOrdinal:2,topic,subscriptionId,frame:{...frame,fromSeq:0,toSeq:1,payload:{kind:'deltas',deltas:[{op:'state.updated',patch:{backgroundWorks:[]}}]}}};
+   if(scenario.includes('online-config'))online.frame.payload.deltas=[{op:'state.updated',patch:{config:{...config,mode:scenario.includes('unsafe')?'yolo':'build',planEnabled:!scenario.includes('disabled')}}}];
+   if(scenario.startsWith('plan-online-snapshot'))online.frame.payload={kind:'snapshot',snapshot:{...snapshot,config:{...config,mode:scenario.includes('unsafe')?'guarded':'build'}}};
+   if((scenario==='plan-online'||scenario.startsWith('plan-online-config')||scenario.startsWith('plan-online-snapshot'))&&(!scenario.endsWith('-final')||inputId))trailingFragment=online;
+   if(scenario.startsWith('plan-wire-')&&(!scenario.endsWith('-final')||inputId)){
+     // 模拟 installed x6r/T6r wire format, including large resumed conversation rows.
+     const variant=scenario.slice('plan-wire-'.length).replace(/-final$/,'');
+     if(variant==='two'||variant==='four')snapshot.rows=Array.from({length:variant==='two'?30:60},()=>({text:'中'.repeat(10922)+'ab'}));
+     const logical=Buffer.from(JSON.stringify(frame)),chunkSize=variant==='two'||variant==='four'?512*1024:Math.ceil(logical.length/2);
+     const fragments=Array.from({length:Math.ceil(logical.length/chunkSize)},(_,fragmentIndex)=>({wireVersion:3,kind:'fragment',deliveryKind:'initial',logicalFrameId:subscriptionId+'-lf-1',logicalFrameOrdinal:1,topic,subscriptionId,fragmentIndex,fragmentCount:Math.ceil(logical.length/chunkSize),logicalBytes:logical.length,checksum:{algorithm:'crc32',value:crc32(logical)},dataBase64:logical.subarray(fragmentIndex*chunkSize,(fragmentIndex+1)*chunkSize).toString('base64')}));
+     log({simulatedSnapshotFragments:fragments.length,logicalBytes:logical.length});
+     if(variant==='missing')fragments.pop();
+     if(variant==='duplicate')fragments.splice(1,0,fragments[0]);
+     if(variant==='extra')trailingFragment={...fragments[0],fragmentIndex:fragments.length};
+     if(variant==='duplicate-final-fragment')trailingFragment={...fragments.at(-1)};
+     if(variant==='checksum')for(const f of fragments)f.checksum={algorithm:'crc32',value:'00000000'};
+     if(variant==='id')fragments[1].logicalFrameId='other-frame';
+     if(variant==='subscription')fragments[1].subscriptionId='other-subscription';
+     if(variant==='topic')fragments[1].topic='conversation/other';
+     if(variant==='ordinal')fragments[1].logicalFrameOrdinal=2;
+     if(variant==='oversized')for(const f of fragments)f.logicalBytes=16*1024*1024+1;
+     if(variant==='count')for(const f of fragments)f.fragmentCount=1025;
+     if(variant==='length')for(const f of fragments)f.logicalBytes=logical.length-1;
+     if(variant==='base64')fragments[0].dataBase64='!!!!';
+     if(variant==='metadata')fragments[1].fragmentCount++;
+     if(variant==='out-of-order')fragments.reverse();
+     if(variant==='online'||variant==='online-then-duplicate')trailingFragment=online;
+     if(variant==='duplicate-initial-online')trailingFragment={...fragments[0],deliveryKind:'online'};
+     if(variant==='online-then-duplicate')online.duplicateInitial=fragments[0];
+     if(variant==='online-fragmented'||variant==='online-fragmented-missing'||variant==='online-config-unsafe-fragmented'){
+       const payload=Buffer.from(JSON.stringify(online.frame)),middle=Math.ceil(payload.length/2);
+       trailingFragment=[0,1].map(fragmentIndex=>({...online,kind:'fragment',frame:undefined,fragmentIndex,fragmentCount:2,logicalBytes:payload.length,checksum:{algorithm:'crc32',value:crc32(payload)},dataBase64:payload.subarray(fragmentIndex*middle,(fragmentIndex+1)*middle).toString('base64')}));
+     }
+     if(variant==='online-fragmented-missing')trailingFragment.pop();
+     if(variant==='online-before')out({method:'v4/conversation/frame',params:online});
+     for(const [index,params] of fragments.entries()){
+       out({method:'v4/conversation/frame',params});
+       if(variant==='online-interleaved'&&index===0)out({method:'v4/conversation/frame',params:online});
+     }
+     return;
+   }
    return out({method:'v4/conversation/frame',params:{wireVersion:3,kind:scenario==='plan-fragment'?'fragment':'complete',deliveryKind:'initial',logicalFrameId:subscriptionId+'-lf-1',logicalFrameOrdinal:1,topic,subscriptionId,frame}});
  }
- if(q.method==='v4/conversation/unsubscribe')return reply(q,{});
+ if(q.method==='v4/conversation/unsubscribe'){if(trailingFragment){for(const params of Array.isArray(trailingFragment)?trailingFragment:[trailingFragment]){const {duplicateInitial,...wire}=params;out({method:'v4/conversation/frame',params:wire});if(duplicateInitial)out({method:'v4/conversation/frame',params:duplicateInitial});}trailingFragment=undefined;}return reply(q,{});}
  if(q.method==='session/read'){if(scenario==='mode-drift-final'&&inputId)state.settings.mode.current='yolo';if(scenario==='active-final'&&inputId)state.runtime.activeTurnId='still-active';return reply(q,state);}
  if(q.method==='session/subscribe')return reply(q,{sessionId,eventSeq:0,events:[]});
  if(q.method==='session/close')return reply(q,{closed:true});
@@ -257,7 +304,7 @@ async function fixture(scenario = 'success', continuation = false,
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line))
-  return { frames, records, result: frames.at(-1) }
+  return { frames, records, result: frames.at(-1), error }
 }
 
 describe('Native ZCode app-server (simulated native processes)', () => {
@@ -442,7 +489,7 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     ['read-only', 'build'],
     ['workspace-write', 'edit'],
     ['danger-full-access', 'yolo'],
-  ])('selects the native mode for the DSH tier %s → %s', async (access, mode) => {
+  ])('模拟：非 plan 保留原生权限档位 %s → %s', async (access, mode) => {
     const { result, records } = await fixture('success', false, { access })
     expect(result.status).toBe('SUCCESS')
     expect(records.find((record) => record.method === 'session/setMode')?.params.mode ?? 'edit').toBe(mode)
@@ -452,7 +499,7 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     const { result, records } = await fixture('success', false, { mode: 'plan', access })
     expect(result.status).toBe('SUCCESS')
     expect(records.find(row => row.method === 'session/create').params.mode).toBe('plan')
-    expect(records.find(row => row.method === 'session/setMode').params.mode).toBe('plan')
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['build', 'plan'])
     expect(records.filter(row => row.method === 'v4/conversation/subscribe')).toHaveLength(2)
     expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
     expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
@@ -463,20 +510,99 @@ describe('Native ZCode app-server (simulated native processes)', () => {
       expect(result.status).toBe('ERROR')
       expect(result.error).toContain('ZCode 原生权限模式无法确认，已拒绝启动')
       expect(records.some(row => row.method === 'session/send')).toBe(false)
-      expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['plan'])
+      expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['build', 'plan'])
       expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(scenario === 'plan-unavailable' ? 0 : 1)
     },
   )
   it('confirms independent plan on resume and rechecks it after completion without resending input', async () => {
     const resumed = await fixture('success', true, { mode: 'plan' })
     expect(resumed.result.status).toBe('SUCCESS')
-    expect(resumed.records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['plan'])
+    expect(resumed.records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['build', 'plan'])
     const drifted = await fixture('plan-drift-final', false, { mode: 'plan' })
     expect(drifted.result.status).toBe('ERROR')
     expect(drifted.records.filter(row => row.method === 'session/send')).toHaveLength(1)
     expect(drifted.records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
   })
-  it.each(['legacy-plan', 'legacy-plan-inactive'])('keeps strict mode confirmation without independentPlanState on %s', async scenario => {
+  it.each(['yolo', 'guarded'])('模拟：恢复 %s 后先归一为 build 再启用独立 plan', async previous => {
+    const { result, records } = await fixture(`plan-resume-${previous}`, true, { mode: 'plan' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['build', 'plan'])
+    expect(records.filter(row => row.method === 'v4/conversation/subscribe')).toHaveLength(2)
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+  })
+  it.each(['plan-normalize-failed', 'plan-mode-missing'])('模拟：权限模式未确认时拒绝发送输入 %s', async scenario => {
+    const { result, records } = await fixture(scenario, true, { mode: 'plan' })
+    expect(result.status).toBe('ERROR')
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['build', 'plan'])
+    expect(records.some(row => row.method === 'session/send')).toBe(false)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(1)
+  })
+  it('模拟：结束后 plan 仍开启但权限漂移时抛错，不重发输入', async () => {
+    const { result, records, error } = await fixture('plan-permission-drift-final', true, { mode: 'plan' })
+    expect(error).toBeInstanceOf(Error)
+    expect(result.status).toBe('ERROR')
+    expect(result.error).toContain('ZCode independent plan state was not confirmed')
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+  })
+  it.each([['two', 2], ['four', 4]] as const)('模拟：恢复大会话的 %s 分片快照通过首尾验证', async (variant, count) => {
+    const { result, records } = await fixture(`plan-wire-${variant}`, true, { mode: 'plan' })
+    expect(result.status).toBe('SUCCESS')
+    expect(records.filter(row => row.simulatedSnapshotFragments).map(row => row.simulatedSnapshotFragments)).toEqual([count, count])
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+  })
+  it('模拟：按 fragmentIndex 重组乱序分片', async () => {
+    const { result } = await fixture('plan-wire-out-of-order', true, { mode: 'plan' })
+    expect(result.status).toBe('SUCCESS')
+  })
+  it.each(['plan-online', 'plan-wire-online', 'plan-wire-online-fragmented', 'plan-online-config-safe', 'plan-online-snapshot-safe'])(
+    '模拟：初始快照完成后接受独立 online 帧，权限保持不变 %s', async scenario => {
+      const { result, records } = await fixture(scenario, true, { mode: 'plan' })
+      expect(result.status).toBe('SUCCESS')
+      expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+      expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+    },
+  )
+  it.each(['online-before', 'online-interleaved', 'online-then-duplicate', 'duplicate-initial-online', 'online-fragmented-missing'])(
+    '模拟：初始帧未完整前出现 online 或完成后重复初始分片仍拒绝 %s', async variant => {
+      const { result, records } = await fixture(`plan-wire-${variant}`, true, { mode: 'plan' })
+      expect(result.status).toBe('ERROR')
+      expect(records.some(row => row.method === 'session/send')).toBe(false)
+      expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(1)
+    },
+  )
+  it.each(['plan-online-config-unsafe', 'plan-online-config-disabled', 'plan-wire-online-config-unsafe-fragmented', 'plan-online-snapshot-unsafe'])(
+    '模拟：online 权限配置漂移不因初始快照已完整而忽略 %s', async scenario => {
+      const { result, records } = await fixture(scenario, true, { mode: 'plan' })
+      expect(result.status).toBe('ERROR')
+      expect(records.some(row => row.method === 'session/send')).toBe(false)
+    },
+  )
+  it('模拟：结束后 online 配置漂移仍抛错且不重发输入', async () => {
+    const { result, records, error } = await fixture('plan-online-config-unsafe-final', true, { mode: 'plan' })
+    expect(error).toBeInstanceOf(Error)
+    expect(result.status).toBe('ERROR')
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+  })
+  it.each(['missing', 'extra', 'duplicate', 'duplicate-final-fragment', 'checksum', 'id', 'subscription', 'topic',
+    'ordinal', 'oversized', 'count', 'length', 'base64', 'metadata'])(
+    '模拟：分片 %s 无法证明权限时拒绝输入并退订', async variant => {
+      const { result, records } = await fixture(`plan-wire-${variant}`, true, { mode: 'plan' })
+      expect(result.status).toBe('ERROR')
+      expect(records.some(row => row.method === 'session/send')).toBe(false)
+      expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(1)
+    },
+  )
+  it.each(['missing', 'checksum', 'extra'])('模拟：结束后分片 %s 不完整或损坏时抛错', async variant => {
+    const { result, records, error } = await fixture(`plan-wire-${variant}-final`, true, { mode: 'plan' })
+    expect(error).toBeInstanceOf(Error)
+    expect(result.status).toBe('ERROR')
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+  })
+  it.each(['legacy-plan', 'legacy-plan-inactive'])('模拟：旧版无 independentPlanState 保留严格 mode 检查 %s', async scenario => {
     const { result, records } = await fixture(scenario, false, { mode: 'plan' })
     expect(result.status).toBe(scenario === 'legacy-plan' ? 'SUCCESS' : 'ERROR')
     expect(records.some(row => row.method === 'v4/conversation/subscribe')).toBe(false)

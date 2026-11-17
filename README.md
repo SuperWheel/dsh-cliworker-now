@@ -232,6 +232,8 @@ Pi Coding Agent 明确支持 **1.0.2、1.0.4、1.1.0、1.5.2**，安装、登录
 | 反馈 | 赞、踩和反馈只记录在 Harness，不发给 CLI 或厂商 | 全部 CLI |
 | 分支 | 从完成的轮次创建 CLI 原生分支，在同一主会话下生成新的子会话 | 最新轮：Codex、Claude Code、Kimi（ACP）、MiMo、ZCode、Pi、OpenCode、Qoder、Qoder CN、TRAE CN；较早轮次仅 Codex |
 
+ZCode 支持独立规划状态的版本在进入规划前先将原生权限归一为 `build`，首轮与续聊均在发送输入前、结束后核对 `mode=build` 与 `planEnabled=true`。大会话快照支持有界分片重组与校验；无法确认状态时拒绝启动或报告本轮失败。
+
 TRAE CN 本期不接 DSH 工具桥（MCP 配置替换语义未核实），运行中引导仅有声明、未实测，消息按原生 Inbox 排队。TRAE 拒绝审批后以 `cancelled` 结束且用户未停止时，显示「因拒绝审批而结束」并可续聊；原生会话恢复失败直接报错，不新建会话。
 
 **DS Bot 长对话换段**（v0.8.9 起）：DS Bot 在上下文接近上限时会把对话换到新的会话并归档旧段。插件只读 DS Bot 的 `<DSH_HOME>/bot/state.json` 识别同一条段链，在新段调用插件时把旧段上空闲的 Worker 移到新段，原生 CLI 会话不变，可继续查看、续聊和打开会话；运行中的 Worker 结束后再移动。读不到或无法确认段链时，跨会话访问照旧拒绝。DS Bot 改了数据目录（插件配置 `home`）时不识别。

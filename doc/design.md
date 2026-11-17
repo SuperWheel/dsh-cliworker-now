@@ -1765,3 +1765,13 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 管理页调用只读发现，禁止发现期间 reset/remember；装后核实同一 owner/root/prefix/appPath、实际版本和完整性，再提交路径，失败保留 revision。Codex 官方脚本绑定 CODEX_HOME/CODEX_INSTALL_DIR；MiMo/OpenCode 脚本固定默认目录，无已确认目录参数，非默认根拒绝。Windows 安装向导保持可见，进程范围退出后读取卸载注册表并核实产品身份，先快照其他已注册副本，新增或改动其他目录时报实际新旧位置；未变化的既有副本不影响原位更新，不修改其记录。原有更新双通道、七天失败记忆、Grok/Pi/Hermes 接管保持。
 
 脚本证据为 2026-11-17 只读下载的 https://releases.openai.com/codex/install.sh、https://mimo.xiaomi.com/install、https://opencode.ai/install、https://pi.dev/install.sh 和 https://pi.dev/install.ps1；没有执行这些脚本。Windows 安装器目录开关未确认，依据 doc/prd/2026-11-13-cli-update-PRD.md 的证据边界使用落点复核，不猜测 /D= 或 /DIR=。验证仅模拟，不代表真实更新或安装成功。
+
+### ZCode 独立规划权限与快照分片（2026-11-17）
+
+安装版 `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs` 的 `resolveExecutionState`（`Yw`，第 92 行）在启用 plan 时保留原权限模式；`checkPlanMode` 对 yolo/guarded 下非只读、非破坏性的 MCP 工具继续交给原权限规则。桥接仅在 `independentPlanState === true` 且本轮为 plan 时先 `session/setMode(build)`，再 `session/setMode(plan)`。发送输入前及结束后的临时 v4 快照都必须证明 `snapshot.config.mode === 'build'` 和 `snapshot.config.planEnabled === true`，并核对 sessionId、topic、subscriptionId、logEpoch。配置来源为安装包第 15646 行的 `app.getMode()` 与 `app.runtime.getPlanEnabled()`；普通权限模式和旧版单一 mode 协议不改变。
+
+安装包 `RAi`（第 15639 行）调用 `T6r/x6r`（第 108 行）：逻辑 frame 是 UTF-8 JSON，wireVersion 为 3，分片携带 topic、subscriptionId、logicalFrameId、logicalFrameOrdinal、deliveryKind、从 0 开始的 fragmentIndex、fragmentCount、logicalBytes、checksum（algorithm 为 crc32、value 为 8 位小写十六进制）及 dataBase64。`jJ`（第 84 行）使用 IEEE CRC32；`Va` 同行限定逻辑帧 16 MiB、1024 片。仅临时规划快照订阅重组此格式；订阅前安装监听器，按索引组装，验证全部标识、长度、规范 Base64、CRC32 和 UTF-8 JSON，持续监听至退订回执以拒绝末尾重复或多余片。缺片、超时、损坏、身份不符或超限均拒绝确认；监听器和缓存在失败及成功路径清理，通用 NDJSON 传输不变。
+
+临时订阅退订前可能收到独立的后续逻辑帧。安装包第 15639 行 `reserveFlush` 使用 `deliveryKind=online`，`reserveFrame` 分配新的 logicalFrameId 与递增 logicalFrameOrdinal；初始帧由 `controlReservations` 保留，第 15649 行 NDJSON `handleMessage` 连续发送 response 与全部 initialWires 再 commit，随后才解除 inFlight，因此初始分片之间出现 online 帧仍拒绝。完整初始帧之后，online/recovery 帧单独重组，不当作初始帧的多余片；相同初始 logicalFrameId 的重复或多余片仍拒绝。第 15639 行 `onSessionModeChanged` 会生成 `state.updated.patch.config`，故不直接忽略后续权限信息：普通后台更新通过，后续 config 替换或 snapshot 仍须证明 build 与 planEnabled=true；后续分片损坏或未完成则拒绝。后续流另限累计 16 MiB 物理 JSON 与 1024 个物理帧，监听及缓存仍在退订后清理。本轮结束后仍重新获取独立快照。
+
+证据为安装包静态分析、提取纯函数的内存探针和标注「模拟」的协议回归。原编码器对 30×32 KiB 与 60×32 KiB 行分别生成 2 片和 4 片，重组及 CRC32 一致。没有执行真实 ZCode 模型任务、登录或退出，也没有 Windows 实机验收。

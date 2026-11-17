@@ -171,34 +171,153 @@ function selectedModel(config, snapshot, model) {
     throw new Error('ZCode selected reasoning level is not available')
   return { ...model, ...(level === undefined ? {} : { options: { reasoningLevel: level } }) }
 }
-// 0.16.9 / 0.17.1 keep permission mode and planning independent. Legacy
-// session/read omits planEnabled entirely; the v4 snapshot seeds config from
-// runtime.getPlanEnabled(). Read a fresh, session-bound snapshot for each check.
-async function confirmPlanState(peer, sessionId) {
-  const topic = `conversation/${sessionId}`, connectionId = randomUUID()
-  const { ack } = await peer.request('v4/conversation/subscribe', {
-    topic, connectionId, clientMode: 'desktop-continuous',
-  }, { jsonrpc: false })
-  if (!nonempty(ack?.subscriptionId)) throw new Error('ZCode plan subscription was not confirmed')
-  try {
-    if (ack.mode !== 'snapshot' || !nonempty(ack.logEpoch))
-      throw new Error('ZCode plan snapshot was not confirmed')
-    const message = await peer.waitFor(message => message.method === 'v4/conversation/frame' &&
-      message.params?.topic === topic && message.params?.subscriptionId === ack.subscriptionId)
-    const wire = message.params, frame = wire.frame, planSnapshot = frame?.payload?.snapshot
-    // Unknown/fragmented wire formats cannot prove planning is active: fail closed.
-    if (wire.wireVersion !== 3 || wire.kind !== 'complete' || wire.deliveryKind !== 'initial' ||
-      frame?.topic !== topic || frame.subscriptionId !== ack.subscriptionId ||
-      frame.payload?.kind !== 'snapshot' || planSnapshot?.sessionId !== sessionId ||
-      planSnapshot.logEpoch !== ack.logEpoch || planSnapshot.config?.planEnabled !== true)
-      throw new Error('ZCode independent plan state was not confirmed')
-  } finally {
-    await peer.request('v4/conversation/unsubscribe', {
-      topic, connectionId, subscriptionId: ack.subscriptionId,
-    }, { jsonrpc: false })
+// Installed 0.17.1 T6r/x6r: UTF-8 JSON logical frames, base64 fragments,
+// CRC32 (IEEE), bounded by Va at 16 MiB / 1024 fragments. Keep this local to
+// temporary plan snapshots; other native transports still receive physical lines.
+const PLAN_SNAPSHOT_BYTES = 16 * 1024 * 1024
+const PLAN_SNAPSHOT_FRAGMENTS = 1024
+function planSnapshotChecksum(bytes) {
+  let crc = 0xffffffff
+  for (const byte of bytes) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0)
   }
+  return ((crc ^ 0xffffffff) >>> 0).toString(16).padStart(8, '0')
 }
-async function confirmSelection(snapshot, model, mode, peer, capability) {
+// 0.16.9 / 0.17.1 keep permission mode and planning independent. Legacy
+// session/read omits planEnabled; v4 config carries both runtime values.
+async function confirmPlanState(peer, sessionId, timeoutMs) {
+  const topic = `conversation/${sessionId}`, connectionId = randomUUID()
+  let ack, identity, frame, initialIdentity, initialFrame, problem, bytes = 0, count = 0, timer, finish
+  let lastOrdinal = 0, laterWireBytes = 0, laterWireCount = 0
+  const parts = new Map()
+  const confirmConfig = config => {
+    if (config?.mode !== 'build' || config?.planEnabled !== true)
+      throw new Error('ZCode independent plan state was not confirmed')
+  }
+  const confirmLaterFrame = later => {
+    if (later.payload?.kind === 'snapshot') {
+      const snapshot = later.payload.snapshot
+      if (snapshot?.sessionId !== sessionId || snapshot.logEpoch !== initialFrame.payload?.snapshot?.logEpoch)
+        throw new Error()
+      confirmConfig(snapshot.config)
+    } else if (later.payload?.kind === 'deltas' && Array.isArray(later.payload.deltas)) {
+      // onSessionModeChanged emits state.updated with a full replacement config.
+      // Background rows/work updates do not change the captured plan evidence.
+      for (const delta of later.payload.deltas) {
+        if (!isRecord(delta)) throw new Error()
+        if (delta.op === 'state.updated' && Object.hasOwn(delta.patch ?? {}, 'config'))
+          confirmConfig(delta.patch.config)
+      }
+    } else throw new Error()
+  }
+  const ready = new Promise(resolve => { finish = resolve })
+  const reject = () => {
+    problem ??= new Error('ZCode independent plan snapshot assembly was not confirmed')
+    parts.clear()
+    finish()
+  }
+  // Attach before subscribe: the response and initial frames can share one read.
+  // Stay attached through unsubscribe: initial-frame duplicates remain errors.
+  // The publisher sends each reservation contiguously, then commits it before
+  // reserveFlush can emit a new online frame. Validate later config changes while
+  // keeping these distinct logical frames out of the initial snapshot assembly.
+  const detach = peer.onMessage(message => {
+    if (message.method !== 'v4/conversation/frame') return
+    const wire = message.params
+    if (wire?.topic !== topic && wire?.subscriptionId !== ack?.subscriptionId) return
+    if (problem) return
+    try {
+      if (initialFrame) {
+        if (wire.logicalFrameId === initialIdentity.logicalFrameId ||
+          !['online', 'recovery'].includes(wire.deliveryKind) ||
+          wire.subscriptionId !== initialIdentity.subscriptionId ||
+          wire.logicalFrameOrdinal <= lastOrdinal)
+          throw new Error()
+        laterWireBytes += Buffer.byteLength(JSON.stringify(wire))
+        if (++laterWireCount > PLAN_SNAPSHOT_FRAGMENTS || laterWireBytes > PLAN_SNAPSHOT_BYTES) throw new Error()
+      } else if (wire.deliveryKind !== 'initial') throw new Error()
+      if (wire.wireVersion !== 3 || wire.topic !== topic ||
+        !nonempty(wire.subscriptionId) || wire.subscriptionId.length > 256 ||
+        !nonempty(wire.logicalFrameId) || wire.logicalFrameId.length > 256 ||
+        !Number.isSafeInteger(wire.logicalFrameOrdinal) || wire.logicalFrameOrdinal < 1 || frame)
+        throw new Error()
+      if (!identity) identity = wire
+      if (wire.subscriptionId !== identity.subscriptionId || wire.logicalFrameId !== identity.logicalFrameId ||
+        wire.logicalFrameOrdinal !== identity.logicalFrameOrdinal || wire.deliveryKind !== identity.deliveryKind ||
+        wire.kind !== identity.kind)
+        throw new Error()
+      if (wire.kind === 'complete') {
+        if (!isRecord(wire.frame) || Buffer.byteLength(JSON.stringify(wire.frame)) > PLAN_SNAPSHOT_BYTES)
+          throw new Error()
+        frame = wire.frame
+      } else if (wire.kind === 'fragment') {
+        if (!Number.isSafeInteger(wire.fragmentCount) || wire.fragmentCount < 1 ||
+          wire.fragmentCount > PLAN_SNAPSHOT_FRAGMENTS ||
+          !Number.isSafeInteger(wire.logicalBytes) || wire.logicalBytes < 1 || wire.logicalBytes > PLAN_SNAPSHOT_BYTES ||
+          !Number.isSafeInteger(wire.fragmentIndex) || wire.fragmentIndex < 0 || wire.fragmentIndex >= wire.fragmentCount ||
+          wire.fragmentCount !== identity.fragmentCount || wire.logicalBytes !== identity.logicalBytes ||
+          wire.checksum?.algorithm !== 'crc32' || !/^[a-f0-9]{8}$/.test(wire.checksum?.value ?? '') ||
+          wire.checksum.value !== identity.checksum?.value || parts.has(wire.fragmentIndex) ||
+          typeof wire.dataBase64 !== 'string' || !wire.dataBase64.length || wire.dataBase64.length % 4 !== 0 ||
+          wire.dataBase64.length > 4 * Math.ceil(PLAN_SNAPSHOT_BYTES / 3) ||
+          !/^[A-Za-z0-9+/]*={0,2}$/.test(wire.dataBase64))
+          throw new Error()
+        const part = Buffer.from(wire.dataBase64, 'base64')
+        bytes += part.length
+        if (part.toString('base64') !== wire.dataBase64 || bytes > wire.logicalBytes) throw new Error()
+        parts.set(wire.fragmentIndex, part)
+        count++
+        if (count !== wire.fragmentCount) return
+        if (bytes !== wire.logicalBytes) throw new Error()
+        const joined = Buffer.concat(Array.from({ length: count }, (_, index) => parts.get(index)), bytes)
+        if (planSnapshotChecksum(joined) !== wire.checksum.value) throw new Error()
+        frame = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(joined))
+        if (!isRecord(frame)) throw new Error()
+        parts.clear()
+      } else throw new Error()
+      if (frame.topic !== topic || frame.subscriptionId !== identity.subscriptionId) throw new Error()
+      if (initialFrame) confirmLaterFrame(frame)
+      else {
+        initialIdentity = identity
+        initialFrame = frame
+      }
+      lastOrdinal = identity.logicalFrameOrdinal
+      identity = frame = undefined
+      bytes = count = 0
+      finish()
+    } catch { reject() }
+  })
+  try {
+    ;({ ack } = await peer.request('v4/conversation/subscribe', {
+      topic, connectionId, clientMode: 'desktop-continuous',
+    }, { jsonrpc: false }))
+    if (!nonempty(ack?.subscriptionId) || ack.mode !== 'snapshot' || !nonempty(ack.logEpoch))
+      throw new Error('ZCode plan snapshot was not confirmed')
+    timer = setTimeout(reject, Math.min(timeoutMs ?? 15000, 15000))
+    await Promise.race([ready, peer.done.then(() => { throw new Error('ZCode plan snapshot connection ended') })])
+  } finally {
+    clearTimeout(timer)
+    try {
+      if (nonempty(ack?.subscriptionId)) await peer.request('v4/conversation/unsubscribe', {
+        topic, connectionId, subscriptionId: ack.subscriptionId,
+      }, { jsonrpc: false })
+    } finally {
+      detach()
+      parts.clear()
+    }
+  }
+  if (problem) throw problem
+  // A partially received later frame could conceal a permission update.
+  if (identity) throw new Error('ZCode independent plan snapshot assembly was not confirmed')
+  const planSnapshot = initialFrame?.payload?.snapshot
+  if (initialIdentity?.subscriptionId !== ack.subscriptionId || initialFrame?.topic !== topic ||
+    initialFrame.subscriptionId !== ack.subscriptionId || initialFrame.payload?.kind !== 'snapshot' ||
+    planSnapshot?.sessionId !== sessionId || planSnapshot.logEpoch !== ack.logEpoch ||
+    planSnapshot.config?.mode !== 'build' || planSnapshot.config?.planEnabled !== true)
+    throw new Error('ZCode independent plan state was not confirmed')
+}
+async function confirmSelection(snapshot, model, mode, peer, capability, timeoutMs) {
   const observed = snapshot?.settings?.model?.current
   if (
     !matchingModel(observed, model) ||
@@ -206,7 +325,7 @@ async function confirmSelection(snapshot, model, mode, peer, capability) {
   )
     throw new Error('ZCode selected model or reasoning level was not confirmed')
   if (mode === 'plan' && capability.independentPlanState === true)
-    await confirmPlanState(peer, snapshot.session.sessionId)
+    await confirmPlanState(peer, snapshot.session.sessionId, timeoutMs)
   else if (snapshot?.settings?.mode?.current !== mode) throw new Error('ZCode permission mode was not confirmed')
 }
 
@@ -584,10 +703,14 @@ export async function runNativeZcode(config, io) {
     const modes = mode === 'yolo' ? ['yolo', 'edit', 'build'] : mode === 'edit' ? ['edit', 'build'] : [mode]
     for (const candidate of modes) {
       try {
+        // Enabling independent planning preserves the previous permission mode.
+        // Normalize even resumed yolo/guarded sessions before enabling the switch.
+        if (candidate === 'plan' && capability.independentPlanState === true)
+          await peer.request('session/setMode', { sessionId, mode: 'build' }, { jsonrpc: false })
         await peer.request('session/setMode', { sessionId, mode: candidate }, { jsonrpc: false })
         snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
         readIdentity(snapshot, sessionId, config.project)
-        await confirmSelection(snapshot, selection, candidate, peer, capability)
+        await confirmSelection(snapshot, selection, candidate, peer, capability, config.timeoutMs)
         if (candidate !== mode) io.event({ kind: 'diagnostic', text: candidate === 'build'
           ? 'ZCode 原生权限模式不可用，本轮按询问运行' : 'ZCode 原生完全权限不可用，本轮按仅工作区编辑运行' })
         mode = candidate
@@ -648,7 +771,7 @@ export async function runNativeZcode(config, io) {
     if (!terminal) failure('ZCode 缺少本轮终态')
     snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
     readIdentity(snapshot, sessionId, config.project)
-    await confirmSelection(snapshot, selection, mode, peer, capability)
+    await confirmSelection(snapshot, selection, mode, peer, capability, config.timeoutMs)
     if (
       snapshot.runtime?.activeTurnId ||
       snapshot.runtime?.pendingRequestIds?.length ||
