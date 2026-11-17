@@ -48,6 +48,7 @@ const helperNames = [
   'windows-console-manifest',
   'terminal-bridge',
   'zcode-resume',
+  'zcode-app-layout',
 ]
 const required = new Set([
   ...helperNames.map((name) => `lib/${name}.mjs`),
@@ -70,6 +71,10 @@ const required = new Set([
   'lib/types/host/windows-agy-account.ps1',
   'lib/windows-credential-read.ps1',
   'lib/types/host/windows-credential-read.ps1',
+  'lib/zcode-app-resolve.cjs',
+  'lib/types/host/zcode-app-resolve.cjs',
+  'lib/types/host/zcode-app-layout.mjs',
+  'lib/types/host/zcode-app-layout.d.mts',
   'lib/native-runtime-guard/index.mjs',
   'lib/native-runtime-guard/host-runtime.mjs',
   'lib/native-runtime-guard/package.json',

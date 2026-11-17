@@ -70,11 +70,13 @@ import { stat } from 'node:fs/promises'
 import { BACKGROUND_ACCOUNT_CLIS } from './cli-management/sources.ts'
 import {
   zcodeGrokAccountLaunch,
+  supportsZCodeTui,
   zcodeGrokAccountStatus,
   zcodeGrokInstruction,
   ZCodeAccountCapabilityError,
 } from './zcode-grok-accounts.ts'
 import { zcodeAuthDirectory } from './zcode-adapter.ts'
+import { zcodeRuntimeNotice } from './zcode-launch.ts'
 import { deleteZCodeManagedProvider, zcodeProviderTarget } from './zcode-custom-provider.ts'
 import { readPiOmpAccount, readOpenCodeAccount, prepareOpenCodeAccount } from './harness-opencode-accounts.ts'
 import {
@@ -627,12 +629,17 @@ export class AccountManager {
             })
           : undefined
         const providers = loginProviders(cli, identity.logins, native)
+        // ZCode: a fallback or pending-migration notice, and no account terminal
+        // when the installed entry cannot load its terminal UI.
+        if (cli === 'zcode') nativeNotice = zcodeRuntimeNotice(executable)
+        const terminalUi = cli !== 'zcode' || supportsZCodeTui(executable)
         return {
           cli,
           installed,
           ...identity,
           ...(nativeNotice ? { installationNotice: nativeNotice } : {}),
           actions: actionsFor(cli, this.config)
+            .filter((item) => item.id !== 'manage' || terminalUi)
             .map((item) =>
               item.id === 'logout' && sources
                 ? { ...item, sources }

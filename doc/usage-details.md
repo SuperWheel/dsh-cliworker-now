@@ -283,7 +283,7 @@ OMP、Pi、Hermes 和 OpenCode 的账号行按自身认证显示服务商及方�
 
 OMP、Pi、Hermes、OpenCode、Kimi 和 ZCode 在设置页只有「账号」（未登录时为「登录账号」）与「账号终端」两个按钮，「账号」窗口逐行列出已登录的服务商（见下文「登录窗口与账号窗口」）。Pi、OMP 的账号按「<CLI> 原生目录」（如 `~/.omp`，直接运行该 CLI 时也会使用）与「插件目录」（只在 CLI Worker 中使用）分组，每张卡片退出只操作它所在的目录，其他目录保留；只列任务实际使用的有效凭据（插件目录中同一服务商的凭据覆盖原生目录，已失效或续期失败的不列出），同一服务商的多个账号以邮箱区分。来自 `.env` 或模型配置的 API 行注明需在原配置中管理，没有退出按钮。Hermes 原生写入的停用来源会同步约束登录、模型和调用，不从保留的配置值恢复账号。
 
-Windows 的 ZCode 和 OpenCode 还会通过已知默认目录、当前用户及系统安装登记、已运行的对应程序位置，以及开始菜单和桌面快捷方式发现自定义安装目录，支持非系统盘、中文和空格路径。ZCode 核验 `resources/glm/zcode.cjs` 及配套 provider 文件；OpenCode 桌面安装采用实际存在的独立 `opencode-cli.exe`，桌面版本未附 CLI 时会明确提示。已有显式路径、ZCode 已部署运行时和正常 PATH 入口优先；多个不同可用安装需通过 `zcodeExecutable` / `opencodeExecutable` 指定。`DisplayIcon` 是安装注册表中的程序/图标文件路径，不要求桌面上存在图标或快捷方式。任意位置的便携目录若没有安装登记、快捷方式或 PATH，且程序未运行，仍需显式配置；发现安装位置不代表已登录或模型可用。
+Windows 的 ZCode 和 OpenCode 还会通过已知默认目录、当前用户及系统安装登记、已运行的对应程序位置，以及开始菜单和桌面快捷方式发现自定义安装目录，支持非系统盘、中文和空格路径。ZCode 核验 `resources/glm/zcode.cjs` 及配套 provider 文件；OpenCode 桌面安装采用实际存在的独立 `opencode-cli.exe`，桌面版本未附 CLI 时会明确提示。已有显式路径和正常 PATH 入口优先；ZCode 早期部署的独立运行时只在找不到桌面应用时使用；多个不同可用安装需通过 `zcodeExecutable` / `opencodeExecutable` 指定。`DisplayIcon` 是安装注册表中的程序/图标文件路径，不要求桌面上存在图标或快捷方式。任意位置的便携目录若没有安装登记、快捷方式或 PATH，且程序未运行，仍需显式配置；发现安装位置不代表已登录或模型可用。
 
 Desktop 中按磁盘实际文件识别安装，兼容 Electron 对 ASAR 归档的处理；OpenCode 的正常 npm CLI 不要求旁侧存在桌面归档。无需重装 CLI 或重新配置账号。
 

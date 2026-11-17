@@ -98,7 +98,7 @@ OMP 的 DeepSeek API 登录无需另写 `models.yml`；模型目录使用 OMP �
 
 Windows x64 国际版 WorkBuddy 首次安装使用官方向导。空 SHA-256 feed 必须通过 COS 长度、MD5、CRC-64/XZ 和运行前腾讯 Authenticode Valid 四重核验；有 SHA-256 时保持原摘要校验。向导在所选目录名不是 WorkBuddyAI 时会自动追加该子目录，默认位置为 `%ProgramFiles%\WorkBuddyAI`；插件依次检查所选位置、追加的子目录、Program Files 与 `%LOCALAPPDATA%\Programs\WorkBuddyAI`，站点与实际版本核对通过才保存路径。向导内使用国际版独立目录，不选择已有国内版目录。CN、ZCode 与国际版 ARM64 首次安装仍为手动。2026-11-15 Windows 实机已装到 D 盘并与国内版共存、签名 Valid；重装复验确认插件在向导追加的子目录找到入口并写入路径记录。
 
-Windows 的 ZCode 固定自动 runtime 可关联 `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode` 中经 PE 产品名和内置 CLI 核实的桌面应用，显示应用版本并使用官方安装程序更新。向导与 UAC 由安装程序处理，插件不提权或静默安装。独立 Worker runtime 不随桌面更新；没有可核实桌面应用时仍显示原 runtime 手动更新原因。2026-11-15 Windows 实机从 3.14.5 更新到 3.18.2 通过。
+ZCode Worker 直接运行桌面应用自带的 CLI（macOS `ZCode.app/Contents/Resources/glm/zcode.cjs`，Windows `%ProgramFiles%\ZCode` 或 `%LOCALAPPDATA%\Programs\ZCode` 下的 `resources\glm\zcode.cjs`），启动方式与 ZCode 桌面应用相同：用应用自己的 Electron 以 `ELECTRON_RUN_AS_NODE=1` 运行，并由插件补上应用包内的钥匙串与浏览器两个依赖。更新页显示「应用 3.18.2 · CLI 0.17.1」，更新桌面应用即更新 Worker 所用的 CLI；Windows 仍走官方安装程序，向导与 UAC 由安装程序处理，插件不提权或静默安装（2026-11-15 Windows 实机从 3.14.5 更新到 3.18.2 通过，早于本次改动）。应用自带环境未通过启动检查时，同一份 CLI 暂由 DSH 自带的 Node 运行并显示提示。插件早期部署的独立 runtime（`~/.local/share/cliworker-now/runtimes/zcode`）只在没有桌面应用时使用；指向它的自动路径记录会在桌面应用通过身份和启动检查后改为应用内入口，手动选择的路径不变，插件不删除该目录。桌面应用不附带终端界面，此时设置页不显示 ZCode 的「账号终端」，登录和退出不受影响。插件自己的 ZCode 账号目录在首次使用时生成文件密钥（`.zcode/v2/credential-secret`，0600），不读写 `~/.zcode`。本项 macOS 已做不调用模型的实机启动检查，Windows 仅有模拟测试。
 
 Windows 官方桌面安装程序以可见窗口启动，等待 UAC 与向导期间不设时限，可在页面取消；控制台安装命令仍为 10 分钟。官方安装程序会在 `%LOCALAPPDATA%\<产品>-updater` 自留一份安装包供其自带更新使用，不属于插件下载目录。安装程序自身退出即视为装完；结束页勾选「运行」时，插件照常核对并写入路径，若应用被插件清理安装进程时一起结束，会自动重新打开。首次安装核对约 500 MB 安装包的签名最长等待 2 分钟。点「检查更新」会清除上次操作结果。
 

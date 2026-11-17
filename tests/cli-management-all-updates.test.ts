@@ -227,7 +227,7 @@ it('模拟：没有桌面应用对应时，ZCode 插件 runtime 从 INSTALL-MANI
     const id = await identifyInstallation('zcode', f.backend, { ...f.config, zcodeExecutable: entry }, control(), true)
     expect(id).toMatchObject({ source: 'plugin-runtime', manifestVersion: '0.16.9' })
     expect(await currentVersion('zcode', id!, f.backend, f.config, control(), true)).toBe('0.16.9')
-    expect(updateProblem('zcode', id!)).toContain('由 CLI Worker 按官方源码部署')
+    expect(updateProblem('zcode', id!)).toContain('由 CLI Worker 早期版本按官方源码部署')
     // 来源不对的清单不认
     writeFileSync(join(runtime, 'INSTALL-MANIFEST.json'), JSON.stringify({ version: '0.16.9', source: { origin: 'https://example.invalid/fork' } }))
     const other = await identifyInstallation('zcode', f.backend, { ...f.config, zcodeExecutable: entry }, control(), true)

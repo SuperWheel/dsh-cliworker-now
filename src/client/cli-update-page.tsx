@@ -191,7 +191,7 @@ function versionText(entry: CliUpdateEntry, arrow: boolean): string {
   if (desktopApp(entry)) {
     const newer = arrow && !!target && (entry.group === 'updatable' || (entry.group === 'manual' && target !== appRelease(entry)))
     const app = t('应用 {version}', { version: newer ? `${entry.appVersion} → ${target}` : entry.appVersion! })
-    // ZCode reports the app version as its current version; only show a CLI version that differs.
+    // ZCode's row carries its bundled CLI's own version once read; until then it equals the app version and is not repeated.
     const cliVersion = entry.currentVersion && entry.currentVersion !== entry.appVersion ? ` · CLI ${entry.currentVersion}` : ''
     return `${app}${cliVersion}${channelPart(entry)}`
   }

@@ -37,3 +37,69 @@ Host SHALL 把安装判为不存在、存在但归属未核实、归属已核实
 #### Scenario: Windows 安装向导装到了别处
 - **WHEN** 可见的官方安装程序整个进程范围退出后，注册表或应用查找指向 X，而原 appPath 为 Y
 - **THEN** Host SHALL 报告「安装程序把新版本装到了 X，原安装 Y 未更新」，不改路径记录；窗口可见与退出确认规则不变
+
+### Requirement: ZCode Worker 运行桌面应用自带的 CLI
+Host SHALL 把 ZCode 的自动入口解析为桌面应用自带的 `glm/zcode.cjs`，并用该应用自己的可执行文件以 `ELECTRON_RUN_AS_NODE=1` 启动、预加载插件的解析钩子；插件早期部署的独立 runtime 只作为最后一个候选，MUST NOT 优先于已安装的应用，Host MUST NOT 删除它。Worker 参数、`app-server`、`login`、`logout` 的其余参数、工作目录与宿主代理变量 MUST 保持不变。
+
+#### Scenario: 自动入口的查找顺序
+- **WHEN** 没有显式配置和路径记录
+- **THEN** macOS 先取 `/Applications/ZCode.app`，再取 `~/Applications/ZCode.app`，Windows 取已核实安装目录下的 `resources\glm\zcode.cjs`；都没有时才使用独立 runtime
+
+#### Scenario: 应用自带入口的启动参数
+- **WHEN** Worker、账号登录或退出使用 `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`
+- **THEN** argv 以 `<应用>/Contents/MacOS/ZCode --require <插件>/zcode-app-resolve.cjs <入口>` 开头（Windows 为 `<安装目录>\ZCode.exe`），其后参数与此前相同；环境变量增加 `ELECTRON_RUN_AS_NODE=1` 与资源目录变量，服务商配置取同一安装的 `config/provider/zcode-builtin.json`
+
+#### Scenario: 应用运行环境没有通过启动检查
+- **WHEN** 以上述方式执行 `--version` 失败或没有输出版本号
+- **THEN** Host SHALL 改用宿主自带的 Node 运行同一入口，并在账号行与更新行显示提示；应用的可执行文件或入口变化后 SHALL 重新检查
+
+#### Scenario: 账号终端入口
+- **WHEN** 入口旁解析不到 `@zcode/tui`（桌面应用自带的 CLI）
+- **THEN** 账号状态不提供「账号终端」动作，设置页隐藏该入口；登录与退出仍可用。能解析到该包的完整 runtime 保留账号终端
+
+### Requirement: ZCode 解析钩子只补两个包
+预加载的解析钩子 MUST 只在正常解析失败后，把 `@napi-rs/keyring` 与 `playwright-core` 两个包名改从同一安装的 `app.asar` 解析；MUST NOT 改写其他导入，MUST NOT 下载或写入文件。资源目录未给出、`app.asar` 不存在或运行环境不支持同步解析钩子时，钩子 SHALL 不生效。
+
+#### Scenario: 其他包解析失败
+- **WHEN** 自带 CLI 导入 `@zcode/tui` 或其他不在名单内的包而解析失败
+- **THEN** 钩子保留 CLI 原本的错误，不做第二次解析
+
+#### Scenario: 名单内的包
+- **WHEN** 自带 CLI 导入 `@napi-rs/keyring` 或 `playwright-core`，按入口自身路径解析失败
+- **THEN** 钩子改从同一安装的 `app.asar/node_modules` 解析；仍失败时报告 CLI 原本的错误
+
+### Requirement: 插件 ZCode 账号目录使用文件密钥
+插件自己的 ZCode 账号目录尚未选定密钥来源时，Host SHALL 在该目录创建权限 0600、内容为 32 个随机字节 base64url 的 `credential-secret` 文件，由 ZCode 按其原生规则读取。Host MUST NOT 同时提供两个密钥来源，MUST NOT 改写已有文件，MUST NOT 触碰用户自己的 `~/.zcode`。
+
+#### Scenario: 尚未选定密钥来源
+- **WHEN** 账号目录已存在，没有 `credential-source` 标记和 v2 记录，且未设置 `ZCODE_CREDENTIAL_SECRET` 或 `ZCODE_CREDENTIAL_SECRET_FILE`
+- **THEN** Host 创建 `credential-secret`，不通过环境变量传递其内容
+
+#### Scenario: 已有密钥来源
+- **WHEN** 目录已固定到系统凭据库、已有 v2 记录、已设置任一变量或文件已存在
+- **THEN** Host 不创建也不改写任何文件，原样传递用户设置的那一个变量
+
+## MODIFIED Requirements
+
+### Requirement: 自动入口与独立 runtime 的更新一致性
+Host SHALL 保存自动发现的启动器或符号链接入口，每次使用时重新解析实体；旧 auto 记录命中已核实的托管版本目录时 SHALL 在前台重新发现入口，以 revision 比较写回，MUST NOT 修改 manual 记录。Pi 管理检查 SHALL 从入口重读 current-version，Worker MUST 保持原支持集合。指向插件早期独立 ZCode runtime 的 auto 记录 SHALL 在桌面应用的身份核对与 `--version` 启动检查都通过后，以同一 revision 比较改写为应用自带的入口；manual 记录与显式配置的 zcodeExecutable MUST 保持不变，检查未通过时 MUST 保留原记录并显示提示。
+
+#### Scenario: Pi 更新切换版本指针
+- **WHEN** Pi 自带更新将 current-version 从 1.0.4 改为 1.5.2，旧实体仍存在
+- **THEN** 更新后检查读出 1.5.2，旧版本缓存失效；Worker 拒绝未适配 1.5.2，不回退旧实体
+
+#### Scenario: ZCode 自动入口为应用自带的 CLI
+- **WHEN** 自动入口位于已核实的 ZCode 桌面应用内
+- **THEN** 更新对象为 desktop-app；检查行显示「应用 3.18.2 · CLI 0.17.1」，应用版本用于桌面更新，CLI 版本取自按启动方式执行的 `--version`，并随应用版本、入口大小与修改时间失效；不再显示独立 runtime 的说明
+
+#### Scenario: ZCode 自动记录仍为独立 runtime
+- **WHEN** auto 记录为插件早期的独立 ZCode runtime，且桌面应用的身份（macOS bundle id `dev.zcode.app`，Windows PE ProductName `ZCode` 与配套服务商文件）与启动检查均通过
+- **THEN** Host SHALL 把记录改写为应用自带的入口，revision 加一，独立 runtime 的文件保持原样
+
+#### Scenario: ZCode 自动入口为独立 runtime
+- **WHEN** auto 记录为独立 runtime，但没有桌面应用、身份不符或 `--version` 启动检查失败
+- **THEN** Host SHALL 保留原记录与 revision，继续以独立 runtime 运行；默认应用 bundle id 已核实时更新对象仍为 desktop-app 并读取应用版本，检查行及更新结果说明独立 runtime 未随桌面应用更新，并提示安装或修复 ZCode 桌面应用
+
+#### Scenario: ZCode 应用身份不符
+- **WHEN** 固定 runtime 对应的默认应用不存在或 bundle id 不符
+- **THEN** 不将该 runtime 映射到桌面应用，不猜测版本或来源

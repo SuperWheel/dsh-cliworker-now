@@ -14,6 +14,8 @@ import { ProcessCleanupUnconfirmedError, METADATA_EXIT_GRACE_MS, type ProcessBac
 import type { InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, NATIVE_RELEASES, isDesktopCli } from './sources.ts'
 import { isSupportedPiVersion } from '../pi-installation.mjs'
+import { zcodeAppLayout } from '../zcode-app-layout.mjs'
+import { recordZCodeAppRuntime, usesZCodeAppRuntime, zcodeLaunchEnvironment, zcodeLaunchPrefix } from '../zcode-launch.ts'
 
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/
 export function validVersion(value: unknown): value is string { return typeof value === 'string' && value.length < 128 && semver.test(value) }
@@ -96,7 +98,15 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
   }
 }
 export async function currentVersion(cli: ActiveCliId, identity: InstallationIdentity, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background = false, timeoutMs = 5000, verifyNpm = false): Promise<string | undefined> {
-  if (cli === 'zcode' && validAppVersion(identity.fingerprint.appVersion)) return identity.fingerprint.appVersion
+  if (cli === 'zcode') {
+    // The app version drives desktop updates and stays in `appVersion`; the row's
+    // own version is the bundled CLI's (「应用 3.18.2 · CLI 0.17.1」). An entry
+    // outside the app (the old private runtime) keeps reporting the app version.
+    const bundled = zcodeAppLayout(identity.executable)
+      ? await zcodeBundledVersion(identity.executable, backend, config, signal, background, timeoutMs) : undefined
+    if (bundled) return bundled
+    if (validAppVersion(identity.fingerprint.appVersion)) return identity.fingerprint.appVersion
+  }
   if (validVersion(identity.manifestVersion) && !(verifyNpm && identity.source === 'npm')) return identity.manifestVersion
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
@@ -107,6 +117,18 @@ export async function currentVersion(cli: ActiveCliId, identity: InstallationIde
     if (channel) identity.channel = channel
   }
   return firstVersion(raw)
+}
+/** `--version` under the recipe a Worker launches with; the Host's Node when the app's runtime does not answer. */
+async function zcodeBundledVersion(executable: string, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal, background: boolean, timeoutMs: number): Promise<string | undefined> {
+  const read = async (argv: string[], env: Record<string, string>) => {
+    try { return firstVersion(await captureReadOnly(backend, config, argv, signal, background, env, timeoutMs)) }
+    catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) throw error; signal.throwIfAborted(); return undefined }
+  }
+  const app = usesZCodeAppRuntime(executable)
+  const version = await read([...zcodeLaunchPrefix(executable), '--version'], zcodeLaunchEnvironment(executable))
+  if (app) recordZCodeAppRuntime(executable, version)
+  if (version || !app) return version
+  return read([...zcodeLaunchPrefix(executable), '--version'], zcodeLaunchEnvironment(executable))
 }
 /** Whole tokens only: never turn 01.2.3 or 1.2.3.4 into a guessed SemVer. */
 export function firstVersion(raw: string): string | undefined {

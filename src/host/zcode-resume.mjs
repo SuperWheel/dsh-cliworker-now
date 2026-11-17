@@ -3,6 +3,7 @@ import { parseZcodeDeniedTools, consumeZcodeWorkflowMode, consumeZcodeWorkflowSu
 // through metadata RPC, close the server completely, then run the original argv.
 // The Host owns the surrounding Seatbelt and process range; never detach or shell.
 import { spawnNativeProcess } from './native-spawn.mjs'
+import { zcodeEntryArgv } from './zcode-app-layout.mjs'
 import { constants } from 'node:fs'
 import { open, lstat, realpath, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, resolve } from 'node:path'
@@ -115,10 +116,12 @@ async function readRequest(path) {
     value.argv.some((arg) => typeof arg !== 'string')
   )
     throw new Error('Invalid resume request')
-  const prefix = /\.[cm]?js$/u.test(value.executable)
-    ? [process.execPath, value.executable]
-    : [value.executable]
-  if (prefix.some((arg, index) => value.argv[index] !== arg)) throw new Error('Native executable changed')
+  // Either recipe the Host can choose for this entry: the desktop app's own
+  // runtime with the plugin preload, or this Node after a failed launch probe.
+  const prefix = [zcodeEntryArgv(value.executable), zcodeEntryArgv(value.executable, { appRuntime: false })].find(
+    (candidate) => candidate.every((arg, index) => value.argv[index] === arg),
+  )
+  if (!prefix) throw new Error('Native executable changed')
   const flags = new Map()
   const args = value.argv.slice(prefix.length)
   if (args.length % 2) throw new Error('Invalid native argv')

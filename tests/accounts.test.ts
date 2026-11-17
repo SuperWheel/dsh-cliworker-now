@@ -1401,12 +1401,29 @@ describe('extended CLI account capabilities (synthetic credentials and PTYs)', (
       expect(account.installed).toBe(true)
       {
         expect(account.actions.map((item) => item.id)).toContain('login')
-        expect(account.actions.map((item) => item.id)).toContain('manage')
+        // 模拟：此夹具的 ZCode 入口旁解析不到 @zcode/tui（与桌面应用自带 CLI 相同），账号终端入口隐藏。
+        if (cli === 'zcode') expect(account.actions.map((item) => item.id)).toEqual(['login', 'logout'])
+        else expect(account.actions.map((item) => item.id)).toContain('manage')
       }
       expect(account.state).not.toBe('authenticated')
     }
     expect(f.backend.spawn).not.toHaveBeenCalled()
     expect(f.backend.spawnTerminal).not.toHaveBeenCalled()
+  })
+  it('模拟：a ZCode entry that can resolve @zcode/tui keeps the account terminal entry', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cwn-zcode-tui-'))
+    try {
+      const entry = join(root, 'cli/zcode.cjs')
+      mkdirSync(join(root, 'cli'), { recursive: true })
+      mkdirSync(join(root, 'node_modules/@zcode/tui'), { recursive: true })
+      writeFileSync(entry, '// 模拟完整 runtime 入口，不执行\n')
+      writeFileSync(join(root, 'node_modules/@zcode/tui/package.json'), '{"name":"@zcode/tui"}')
+      const f = fixture({ zcodeExecutable: entry })
+      const account = await f.manager.status('zcode', f.cwd, f.signal)
+      expect(account.actions.map((item) => item.id)).toEqual(['login', 'logout', 'manage'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it.each(['pi', 'omp', 'opencode'] as const)(

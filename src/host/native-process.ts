@@ -1,4 +1,5 @@
 import { nativeLaunchArgv, resolveNativeEntry } from './native-launch.mjs'
+import { isZCodeAppArgv } from './zcode-app-layout.mjs'
 import { win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { VISIBLE_WINDOW, type ProcessBackend, type VisibleWindowSpec } from './process.ts'
@@ -54,7 +55,9 @@ function normalizedBackend(
       ...spec,
       argv,
       ...(launch ? { env } : {}),
-      ...(argv[0] === process.execPath || (platform === 'win32' && isCurrentWindowsRuntime(argv[0]!))
+      // ZCode's own binary is an Electron app too: without Node mode it would open
+      // the desktop window instead of running its bundled CLI.
+      ...(argv[0] === process.execPath || (platform === 'win32' && isCurrentWindowsRuntime(argv[0]!)) || isZCodeAppArgv(argv)
         ? { env: { ...env, ELECTRON_RUN_AS_NODE: '1' } } : {}),
     }
   }

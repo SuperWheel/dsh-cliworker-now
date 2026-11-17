@@ -27,6 +27,7 @@ import { ZcodeResponseTracker } from './zcode-response.mjs'
 import { withCatalogNotice } from './catalog-notice.ts'
 import { shareNativeMemory, unshareNativeMemory, parseZcodeDeniedTools, zcodeWorkflowMode } from './cli-native-capabilities.mjs'
 import { zcodeWorkflowSurface, ZCODE_WORKFLOW_SURFACE_ENVIRONMENT } from './zcode-schema-probe.ts'
+import { ensureZCodeCredentialSecret, zcodeLaunchEnvironment, zcodeLaunchPrefix } from './zcode-launch.ts'
 
 // Keep only the bundled browser REPL closure (DSH permissions); native delegation
 // and skills follow native configuration, independently of the plugin task tree.
@@ -65,7 +66,11 @@ export function zcodeAuthDirectory(configured?: string, stateDirectory?: string)
   )
 }
 
-/** A complete, version-controlled CLI can be deployed here without relying on /tmp. */
+/**
+ * The private full runtime earlier plugin versions deployed. No longer preferred:
+ * Workers run the desktop app's own CLI. Kept as the last candidate and as the
+ * record that migrates once the app passes its checks; the plugin never deletes it.
+ */
 export function managedZCodeEntry(home = homedir()): string {
   return join(home, '.local/share/cliworker-now/runtimes/zcode/cli/zcode.cjs')
 }
@@ -104,7 +109,12 @@ export function zcodeEnvironment(executable: string, state: string, auth?: strin
   // Keep it exclusively in the selected ZCode child's environment.
   const credentialSecret = process.env.ZCODE_CREDENTIAL_SECRET
   const credentialSecretFile = process.env.ZCODE_CREDENTIAL_SECRET_FILE
+  // Only an explicitly named plugin account directory gets a file-held key; the
+  // helper leaves ~/.zcode, an OS-pinned directory and either variable alone.
+  if (auth !== undefined) ensureZCodeCredentialSecret(auth)
   return {
+    // The desktop app's own runtime and its preload; empty for every other entry.
+    ...zcodeLaunchEnvironment(executable),
     ...(credentialSecret ? { ZCODE_CREDENTIAL_SECRET: credentialSecret } : {}),
     ...(credentialSecretFile ? { ZCODE_CREDENTIAL_SECRET_FILE: credentialSecretFile } : {}),
     ZCODE_DATA_BASE_DIR: auth ?? zcodeAuthDirectory(),
@@ -276,7 +286,7 @@ export async function prepareZCode(input: ZCodeInput) {
     },
   })
   const argv = [
-    ...(/\.[cm]?js$/.test(input.executable) ? [process.execPath, input.executable] : [input.executable]),
+    ...zcodeLaunchPrefix(input.executable),
     '--cwd',
     input.project,
     '--mode',

@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
-import { executableFor, resolveCliExecutable } from '../src/host/adapters.ts'
+import { executableFor, resolveCliExecutable, zcodeDefaultEntry } from '../src/host/adapters.ts'
 import { findWindowsPathCommand } from '../src/host/windows-cli-path.ts'
 import { findWindowsCodexAppx } from '../src/host/windows-cli-installation.ts'
 import { managedZCodeEntry } from '../src/host/zcode-adapter.ts'
@@ -140,19 +140,25 @@ describe('Windows default executable fallback without changing other platforms',
     expect(desktop).not.toHaveBeenCalled()
   })
   it.each(['win32', 'darwin'] as const)(
-    'prefers a deployed managed ZCode runtime on %s while preserving explicit custom paths',
+    '模拟：prefers the desktop app\'s bundled ZCode CLI over the old private runtime on %s, preserving explicit custom paths',
     async (target) => {
       Object.defineProperty(process, 'platform', { ...platform, value: target })
       const managed = managedZCodeEntry(),
-        bundled = join(state.home, 'Local/Programs/ZCode/resources/glm/zcode.cjs')
+        bundled = target === 'win32'
+          ? join(state.home, 'Local/Programs/ZCode/resources/glm/zcode.cjs')
+          : join(state.home, 'Applications/ZCode.app/Contents/Resources/glm/zcode.cjs')
       for (const entry of [managed, bundled]) {
         mkdirSync(dirname(entry), { recursive: true })
         writeFileSync(entry, '// Synthetic installation entry; never executed.\n')
       }
-      const lookup = backend(async (entry) => entry)
-      expect(executableFor('zcode', DEFAULT_CONFIG)).toBe(managed)
-      expect(executableFor('zcode', { ...DEFAULT_CONFIG, zcodeExecutable: 'zcode' })).toBe(managed)
-      await expect(resolveCliExecutable('zcode', lookup, DEFAULT_CONFIG)).resolves.toBe(managed)
+      // The all-users macOS location is outside this fixture: when the machine
+      // running the test has it, it outranks the synthetic per-user copy.
+      const system = '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
+      const expected = target === 'darwin' && existsSync(system) ? system : bundled
+      const lookup: ProcessBackend = { resolveExecutable: vi.fn(async (entry: string) => entry), spawn: vi.fn(() => { throw new Error('模拟：探测进程不可用') }) }
+      expect(executableFor('zcode', DEFAULT_CONFIG)).toBe(expected)
+      expect(executableFor('zcode', { ...DEFAULT_CONFIG, zcodeExecutable: 'zcode' })).toBe(expected)
+      await expect(resolveCliExecutable('zcode', lookup, DEFAULT_CONFIG)).resolves.toBe(expected)
       expect(lookup.resolveExecutable).not.toHaveBeenCalled()
       const custom = join(state.home, 'custom/zcode.cjs')
       expect(executableFor('zcode', { ...DEFAULT_CONFIG, zcodeExecutable: custom })).toBe(custom)
@@ -171,6 +177,29 @@ describe('Windows default executable fallback without changing other platforms',
       ).rejects.toBe(missing)
     },
   )
+  it('模拟：resolution order is system app, user app, then the old private runtime as the last candidate', () => {
+    const home = state.home, legacy = managedZCodeEntry(home)
+    const system = join(home, 'SystemApps/ZCode.app/Contents/Resources/glm/zcode.cjs')
+    const user = join(home, 'Applications/ZCode.app/Contents/Resources/glm/zcode.cjs')
+    const roots = [join(home, 'SystemApps'), join(home, 'Applications')]
+    const order = (...present: string[]) => zcodeDefaultEntry(home, (path) => present.includes(path), roots)
+    expect(order(system, user, legacy)).toBe(system)
+    expect(order(user, legacy)).toBe(user)
+    expect(order(legacy)).toBe(legacy)
+    // Nothing installed: report the standard location as missing, never an invented one.
+    expect(order()).toBe(system)
+  })
+  it('模拟：uses the old private runtime on Windows only when no desktop installation is found', async () => {
+    const managed = managedZCodeEntry()
+    mkdirSync(dirname(managed), { recursive: true })
+    writeFileSync(managed, '// Synthetic private runtime; never executed.\n')
+    expect(executableFor('zcode', DEFAULT_CONFIG)).toBe('zcode')
+    desktop.mockResolvedValue(undefined)
+    await expect(
+      resolveCliExecutable('zcode', backend(async () => { throw new SubprocessExecutableNotFoundError('synthetic no PATH entry') }), DEFAULT_CONFIG),
+    ).resolves.toBe(managed)
+    expect(desktop).toHaveBeenCalledOnce()
+  })
   it('falls back to the Windows Desktop bundle or PATH only when managed ZCode is absent', async () => {
     const bundled = join(state.home, 'Local/Programs/ZCode/resources/glm/zcode.cjs')
     mkdirSync(dirname(bundled), { recursive: true })
@@ -197,7 +226,7 @@ describe('Windows default executable fallback without changing other platforms',
     ).rejects.toThrow('ZCode CLI 未找到')
     expect(desktop).toHaveBeenCalledOnce()
   })
-  it('rejects a broken managed ZCode installation instead of silently switching runtimes', async () => {
+  it('模拟：a broken old private runtime does not matter while the desktop app is installed, and is an error when it is the only candidate', async () => {
     const managed = managedZCodeEntry(),
       bundled = join(state.home, 'Local/Programs/ZCode/resources/glm/zcode.cjs')
     mkdirSync(managed, { recursive: true })
@@ -209,6 +238,11 @@ describe('Windows default executable fallback without changing other platforms',
         backend(async (entry) => entry),
         DEFAULT_CONFIG,
       ),
+    ).resolves.toBe(bundled)
+    rmSync(bundled)
+    desktop.mockResolvedValue(undefined)
+    await expect(
+      resolveCliExecutable('zcode', backend(async () => { throw new SubprocessExecutableNotFoundError('synthetic no PATH entry') }), DEFAULT_CONFIG),
     ).rejects.toThrow('CLI 脚本路径不是普通文件')
   })
   it('discovers the registered Codex CLI after the real SDK missing-executable error', async () => {

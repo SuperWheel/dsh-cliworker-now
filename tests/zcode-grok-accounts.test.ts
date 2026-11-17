@@ -81,6 +81,16 @@ function fixture(
   return { home, config, stateDirectory, backend, children, signal }
 }
 
+/** 模拟：完整 runtime 的目录形状（入口旁能解析 @zcode/tui）；文件内容为占位，不执行。 */
+function fullRuntime(home: string, name = 'zcode.cjs') {
+  const entry = join(home, 'full-runtime/cli', name)
+  mkdirSync(join(home, 'full-runtime/cli'), { recursive: true })
+  mkdirSync(join(home, 'full-runtime/node_modules/@zcode/tui'), { recursive: true })
+  writeFileSync(entry, '// 模拟 ZCode 入口\n')
+  writeFileSync(join(home, 'full-runtime/node_modules/@zcode/tui/package.json'), '{"name":"@zcode/tui"}')
+  return entry
+}
+
 describe('ZCode/Grok user-operated account helpers', () => {
   it.each(['login', 'logout', 'manage'] as const)(
     '模拟：passes the exact native cipher secret only to the ZCode %s environment',
@@ -91,7 +101,7 @@ describe('ZCode/Grok user-operated account helpers', () => {
       const launch = await zcodeGrokAccountLaunch(
         'zcode',
         action,
-        '/synthetic/zcode.cjs',
+        fullRuntime(f.home),
         f.config,
         f.backend,
         f.signal,
@@ -219,7 +229,7 @@ describe('ZCode/Grok user-operated account helpers', () => {
     const launch = await zcodeGrokAccountLaunch(
       'zcode',
       'manage',
-      '/synthetic/bundled.cjs',
+      fullRuntime(f.home, 'bundled.cjs'),
       f.config,
       f.backend,
       f.signal,
@@ -240,11 +250,12 @@ describe('ZCode/Grok user-operated account helpers', () => {
       const f = fixture(
         'zcode 0.16.9\n  login      Sign in with Z.AI OAuth for model access\n  logout  Remove credentials\n  tui  Open terminal\n  --no-browser  Print the OAuth URL without opening a browser\n',
       )
+      const entry = fullRuntime(f.home, 'bundled.cjs')
       for (const action of ['login', 'logout', 'manage'] as const) {
         const launch = await zcodeGrokAccountLaunch(
           'zcode',
           action,
-          '/synthetic/bundled.cjs',
+          entry,
           f.config,
           f.backend,
           f.signal,
@@ -254,7 +265,7 @@ describe('ZCode/Grok user-operated account helpers', () => {
         expect(launch.argv).toEqual(
           wrapped([
             process.execPath,
-            '/synthetic/bundled.cjs',
+            entry,
             action === 'manage' ? 'tui' : action,
             ...(manualBrowser ? ['--no-browser'] : []),
           ]),

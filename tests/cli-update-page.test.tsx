@@ -628,6 +628,21 @@ describe('模拟「更新 CLI」页面', () => {
     expect(textOf(f.rowOf('kimi'))).not.toContain('应用')
   })
 
+  it('模拟：ZCode 行在读到自带 CLI 版本后显示「应用 3.18.2 · CLI 0.17.1」，更新箭头仍在应用版本上', async () => {
+    const f = await setup(data({
+      snapshot: snapshot({
+        entries: [entry('zcode', { group: 'latest', source: 'desktop-app', appVersion: '3.18.2', currentVersion: '0.17.1' })],
+      }),
+    }))
+    expect(textOf(f.rowOf('zcode'))).toContain('应用 3.18.2 · CLI 0.17.1 · ZCode 桌面应用，下载官方安装包更新')
+    const g = await setup(data({
+      snapshot: snapshot({
+        entries: [entry('zcode', { group: 'updatable', source: 'desktop-app', appVersion: '3.18.2', currentVersion: '0.17.1', latestVersion: '3.19.0', latestCompatibleVersion: '3.19.0', planToken: 'SIMULATED-zcode' })],
+      }),
+    }))
+    expect(textOf(g.rowOf('zcode'))).toContain('应用 3.18.2 → 3.19.0 · CLI 0.17.1')
+  })
+
   it('names only a non-default installation channel', async () => {
     const f = await setup(data({
       snapshot: snapshot({

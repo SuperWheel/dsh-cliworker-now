@@ -181,6 +181,7 @@ for (const name of [
   'pi-installation',
   'account-models',
   'zcode-resume',
+  'zcode-app-layout',
   'pi-login',
   'grok-catalog',
   'codebuddy-catalog',
@@ -191,6 +192,13 @@ for (const name of [
   const source = `src/host/${name}.mjs`
   if (existsSync(source)) cpSync(source, `lib/${name}.mjs`)
 }
+// ZCode's desktop-bundled CLI is preloaded with this resolver, from the bundle
+// and from the unbundled modules alike (zcode-app-layout.mjs looks in both).
+cpSync('src/host/zcode-app-resolve.cjs', 'lib/zcode-app-resolve.cjs')
+mkdirSync('lib/types/host', { recursive: true })
+cpSync('src/host/zcode-app-resolve.cjs', 'lib/types/host/zcode-app-resolve.cjs')
+cpSync('src/host/zcode-app-layout.mjs', 'lib/types/host/zcode-app-layout.mjs')
+cpSync('src/host/zcode-app-layout.d.mts', 'lib/types/host/zcode-app-layout.d.mts')
 // WorkBuddy's bootstrap helper must remain beside its plain ESM runner.
 cpSync('src/host/workbuddy-key-helper.cjs', 'lib/workbuddy-key-helper.cjs')
 // Native metadata helpers are also imported by the emitted adapter declarations/runtime.

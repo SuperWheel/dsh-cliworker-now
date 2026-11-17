@@ -1383,7 +1383,10 @@ function CliSettings({
             ) : (
               accountAction('login')
             )}
-            {!cleanupBlocked && !isWorkBuddy(cli) && accountAction('manage')}
+            {/* ZCode's desktop-bundled CLI has no terminal UI: once the Host says so, the entry is hidden, not disabled. */}
+            {!cleanupBlocked && !isWorkBuddy(cli) &&
+              !(cli === 'zcode' && !!account?.data?.installed && !account.data.actions.some((item) => item.id === 'manage')) &&
+              accountAction('manage')}
           </div>
         </div>
         {enabled === true && !settingsError && !account?.error && account?.data?.installationNotice && (

@@ -18,6 +18,7 @@ import { discoverFirstPartySources, discoverMimoModels, readFirstPartyModelSourc
 import { nativeAgyAccountIdentity } from './agy-windows-account.ts'
 import { extendedCatalog, isExtendedCli } from './extended-adapters.ts'
 import { ZCodeProtocol, managedZCodeEntry } from './zcode-adapter.ts'
+import { probeZCodeAppRuntime, setZCodeMigrationNotice, verifiedZCodeApp, zcodeMigrationDeferred, ZCODE_MIGRATION_PENDING_NOTICE } from './zcode-launch.ts'
 import { HermesProtocol } from './hermes-adapter.ts'
 import { GrokProtocol } from './grok-adapter.ts'
 import { OpenCodeProtocol } from './opencode-adapter.ts'
@@ -84,19 +85,31 @@ function entryPresent(path: string): boolean {
     throw error
   }
 }
+/**
+ * ZCode's automatic entry on macOS/Linux: the desktop app's own CLI for all
+ * users, then this user's copy. The private runtime earlier plugin versions
+ * deployed is only the last candidate and never outranks an installed app.
+ */
+export function zcodeDefaultEntry(
+  home = homedir(),
+  present: (path: string) => boolean = entryPresent,
+  applications: readonly string[] = ['/Applications', join(home, 'Applications')],
+): string {
+  const apps = applications.map((root) => join(root, 'ZCode.app/Contents/Resources/glm/zcode.cjs'))
+  const legacy = managedZCodeEntry(home)
+  return apps.find(present) ?? (present(legacy) ? legacy : apps[0]!)
+}
 export const executableFor = (cli: CliId, config: RuntimeConfig): string => {
   if (cli === 'harness') throw new Error('Harness CLI 已移除，请新建 Hermes 任务')
   const configured = configuredCliExecutable(cli, config)
   if (configured) return configured
   if (isWorkBuddyCli(cli)) return cli
-  // A deployed standalone runtime is shared across platforms.
-  if (cli === 'zcode' && entryPresent(managedZCodeEntry())) return managedZCodeEntry()
   if (cli === 'traecn') return 'traecli'
   if (process.platform === 'win32')
     return presentWindowsCliCandidate(cli) ?? windowsCliCommands(cli)[0]!
   if (cli === 'codebuddy') return 'codebuddy'
   if (cli === 'antigravity') return config.executable
-  if (cli === 'zcode') return '/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs'
+  if (cli === 'zcode') return zcodeDefaultEntry()
   if (cli === 'grok') return join(homedir(), '.grok/bin/grok')
   if (cli === 'pi') {
     const native = join(homedir(), '.local/bin/pi')
@@ -488,7 +501,11 @@ export async function resolveCliExecutable(
   }
   const revision = store.revision(cli)
   const migrate = entry?.mode === 'auto' && !deployment && isVersionedAutoEntry(cli, entry.path)
-  const selected = entry?.mode === 'manual' ? entry.path : nativeEntry ?? (deployment || migrate ? undefined : entry?.path)
+  let selected = entry?.mode === 'manual' ? entry.path : nativeEntry ?? (deployment || migrate ? undefined : entry?.path)
+  // An automatic record of the old private runtime moves to the desktop app's
+  // own CLI once that app proves its identity and starts; otherwise it stays.
+  if (cli === 'zcode' && entry?.mode === 'auto' && !deployment && sameZCodeEntry(entry.path, managedZCodeEntry()))
+    selected = (await migratedZCodeEntry(backend, config, signal, options.management)) ?? entry.path
   let discovered: string | undefined
   const result = await resolveUncachedCliExecutable(
     cli,
@@ -509,7 +526,47 @@ export async function resolveCliExecutable(
   }
   if (!options.readOnly && entry?.mode !== 'manual' && !deployment && !store.remember(cli, discovered ?? result, revision))
     throw new Error('CLI 路径已更新，请刷新后重试')
+  if (cli === 'zcode') await probeZCodeRuntime(result, backend, config, signal)
   return result
+}
+
+const sameZCodeEntry = (left: string, right: string) =>
+  process.platform === 'win32' ? left.replace(/\\/g, '/').toLowerCase() === right.replace(/\\/g, '/').toLowerCase() : left === right
+/** One read-only `--version` per installed app build; decides app runtime or Host Node. */
+async function probeZCodeRuntime(executable: string, backend: ProcessBackend, config: RuntimeConfig, signal: AbortSignal) {
+  return probeZCodeAppRuntime(executable, (argv, env) =>
+    captureCatalogMetadata(backend, { ...config, maxRunBytes: Math.min(config.maxRunBytes, 65_536) }, argv, homedir(), signal, env), signal)
+}
+/**
+ * Where an automatic record of the old private runtime should point now.
+ * `undefined` keeps that record: no app, an app that is not ZCode, or one whose
+ * own runtime does not start. Manual records and configured paths never get here.
+ */
+async function migratedZCodeEntry(
+  backend: ProcessBackend,
+  config: RuntimeConfig,
+  signal: AbortSignal,
+  management = false,
+): Promise<string | undefined> {
+  if (zcodeMigrationDeferred()) return undefined
+  let candidate: string | undefined
+  try {
+    candidate = await resolveUncachedCliExecutable('zcode', backend, config, signal, true, undefined, management)
+  } catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
+    signal.throwIfAborted()
+  }
+  if (
+    candidate && !sameZCodeEntry(candidate, managedZCodeEntry()) &&
+    (await verifiedZCodeApp(candidate)) &&
+    (await probeZCodeRuntime(candidate, backend, config, signal))?.ok
+  ) {
+    setZCodeMigrationNotice(undefined)
+    return candidate
+  }
+  signal.throwIfAborted()
+  setZCodeMigrationNotice(ZCODE_MIGRATION_PENDING_NOTICE)
+  return undefined
 }
 
 async function resolveUncachedCliExecutable(
@@ -642,12 +699,17 @@ async function resolveUncachedCliExecutable(
           signal,
         )
         signal.throwIfAborted()
-        if (!entry) throw new WindowsCliNotFoundError(cli)
+        // No desktop installation anywhere: the private runtime earlier versions
+        // deployed is the last candidate, never preferred over an app.
+        const legacy = !entry && cli === 'zcode' && entryPresent(managedZCodeEntry()) ? managedZCodeEntry() : undefined
+        if (!entry && !legacy) throw new WindowsCliNotFoundError(cli)
         // The helper already checked the current, readable CJS file. Do not
         // ask PATH to rediscover it or interpret a Desktop executable as a task.
-        resolved = /\.[cm]?js$/i.test(entry)
-          ? entry
-          : await pathLookup(() => backend.resolveExecutable(entry))
+        const found = (entry ?? legacy)!
+        if (legacy && !statSync(legacy).isFile()) throw new Error('CLI 脚本路径不是普通文件')
+        resolved = /\.[cm]?js$/i.test(found)
+          ? found
+          : await pathLookup(() => backend.resolveExecutable(found))
       } else {
         if (process.platform !== 'win32' || cli !== 'codex' || executable !== cli || !absent) throw error
         // Appx metadata owns a child process. Unlike pure PATH lookup, cancellation

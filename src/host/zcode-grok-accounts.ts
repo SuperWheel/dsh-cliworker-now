@@ -14,6 +14,7 @@ import type { AccountLogin } from '../shared/accounts.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { readZCodePersonalIdentity, zcodeAuthDirectory, zcodeEnvironment } from './zcode-adapter.ts'
 import { zcodeProviderLogins, zcodeProviderTarget } from './zcode-custom-provider.ts'
+import { zcodeLaunchEnvironment, zcodeLaunchPrefix, zcodeTuiResolvable } from './zcode-launch.ts'
 import { assertGrokNativeEnvironment, selectGrokOwnAccount } from './grok-models.ts'
 import { grokRenewalRejected } from './grok-renewal.ts'
 
@@ -337,8 +338,20 @@ export async function zcodeGrokAccountStatus(
   }
 }
 
-const entryArgv = (executable: string) =>
-  /\.[cm]?js$/i.test(executable) ? [process.execPath, executable] : [executable]
+/** The desktop app's own runtime for its bundled entry, this Node for any other script. */
+const entryArgv = (executable: string) => zcodeLaunchPrefix(executable)
+
+export const ZCODE_TUI_UNAVAILABLE = 'ZCode 桌面应用自带的 CLI 不含终端界面，账号终端不可用；登录和退出仍可使用。'
+/**
+ * Whether this entry can open the native terminal UI. A script entry is decided
+ * by resolving `@zcode/tui` from it (the help text lists `tui` either way); a
+ * native build embeds the UI and is decided by its declared command.
+ */
+export function supportsZCodeTui(executable: string, help?: string): boolean {
+  const resolvable = zcodeTuiResolvable(executable)
+  if (resolvable !== undefined) return resolvable
+  return help === undefined || /^\s*tui\s+/m.test(stripVTControlCharacters(help))
+}
 
 /** The two installed 0.16.9 builds differ; version strings alone are not a capability check. */
 export function supportsBigModelLogin(help: string): boolean {
@@ -365,7 +378,7 @@ async function zcodeHelp(
   const child = await spawnProbe(backend, {
     argv: [...entryArgv(executable), '--help'],
     cwd,
-    env: { ELECTRON_RUN_AS_NODE: '1' },
+    env: { ...zcodeLaunchEnvironment(executable), ELECTRON_RUN_AS_NODE: '1' },
     stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
     graceMs: config.graceMs,
     signal: control,
@@ -457,8 +470,10 @@ export async function zcodeGrokAccountLaunch(
     throw new ZCodeAccountCapabilityError(
       '当前 ZCode CLI 不支持智谱 BigModel 授权，请更新为支持 login bigmodel 的官方完整 CLI 后重试；不会改用 Z.AI 登录。',
     )
-  if (action === 'manage' && !/^\s*tui\s+/m.test(plainHelp))
-    throw new ZCodeAccountCapabilityError('当前 ZCode 未声明原生终端界面，请检查 CLI 安装')
+  if (action === 'manage' && !supportsZCodeTui(executable, help))
+    throw new ZCodeAccountCapabilityError(
+      zcodeTuiResolvable(executable) === false ? ZCODE_TUI_UNAVAILABLE : '当前 ZCode 未声明原生终端界面，请检查 CLI 安装',
+    )
   if (action === 'logout' && !/^\s*logout\s+/m.test(plainHelp))
     throw new ZCodeAccountCapabilityError('当前 ZCode 未声明原生退出登录能力，请检查 CLI 安装')
   const auth = await privateDirectory(zcodeAuthDirectory(config.zcodeAuthDirectory, root))

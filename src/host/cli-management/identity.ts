@@ -12,6 +12,7 @@ import { inspectPiInstallation } from '../pi-installation.mjs'
 import { resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
 import { CLI_SOURCES, ZCODE_DEFAULT_APP } from './sources.ts'
 import { managedZCodeEntry } from '../zcode-adapter.ts'
+import { verifiedZCodeApp, zcodeRuntimeNotice } from '../zcode-launch.ts'
 import { isVersionedAutoEntry } from '../cli-auto-entry.ts'
 import { hermesCheckoutVersion } from './hermes-version.ts'
 import { validAppVersion } from './versions.ts'
@@ -36,8 +37,10 @@ export interface InstallationIdentity {
 /** Same origin as the deployed runtime's INSTALL-MANIFEST (design 2026-10-11): official source tree only. */
 export const ZCODE_RUNTIME_MANIFEST_LIMIT = 4 * 1024 * 1024
 export const ZCODE_RUNTIME_ORIGIN = 'https://github.com/zai-org/ZCode'
-export const ZCODE_PLUGIN_RUNTIME_NOTE = '此 ZCode 完整 runtime 由 CLI Worker 按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新；需另行核验并部署新版 runtime。'
-export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 使用独立部署的完整 CLI runtime，不会随应用同步更新，需另行核验并部署配套 runtime。'
+/** Only an installation still on the old private runtime carries these two texts.
+ * A Worker that runs the desktop app's own CLI updates with the app and has neither. */
+export const ZCODE_PLUGIN_RUNTIME_NOTE = '此 ZCode 完整 runtime 由 CLI Worker 早期版本按官方源码部署，不能用 ZCode 桌面安装包或 CLI 自带命令更新。安装 ZCode 桌面应用并通过检查后，Worker 会改用应用自带的 CLI 并随应用更新。'
+export const ZCODE_RUNTIME_NOTICE = '本次只更新 ZCode 桌面应用；Worker 仍在使用早期独立部署的 CLI runtime，不会随应用同步更新。应用通过身份和启动检查后，Worker 会改用应用自带的 CLI。'
 const isManagedZCodeEntry = (executable: string) => process.platform === 'win32'
   ? executable.replace(/\\/g, '/').toLowerCase() === managedZCodeEntry().replace(/\\/g, '/').toLowerCase()
   : executable === managedZCodeEntry()
@@ -187,7 +190,11 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     const manifest = await readManifest(join(dirname(dirname(executable)), 'INSTALL-MANIFEST.json'), ZCODE_RUNTIME_MANIFEST_LIMIT)
     if (manifest?.source?.origin === ZCODE_RUNTIME_ORIGIN && typeof manifest.version === 'string') { manifestVersion = manifest.version; pluginRuntime = true }
   }
-  const appRoot = managedApp ?? /^(.*\.app)\/Contents\//.exec(target)?.[1]
+  // The app's own bundled entry on Windows has no `.app` path to recognise; its
+  // ProductName and provider file identify it, whichever way the path was chosen.
+  const bundledApp = cli === 'zcode' && !managedApp && !pluginRuntime && process.platform === 'win32'
+    ? (await verifiedZCodeApp(executable))?.root : undefined
+  const appRoot = managedApp ?? bundledApp ?? /^(.*\.app)\/Contents\//.exec(target)?.[1]
   desktopRoot ??= appRoot
   // Whitelisted installation metadata only. Never invoke Hermes startup/check/fetch.
   if (cli === 'hermes' || cli === 'traecn') {
@@ -213,8 +220,8 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
       break
     }
   }
-  if (managedApp && process.platform === 'win32') {
-    const version = await readPeVersion(join(managedApp, 'ZCode.exe'))
+  if ((managedApp ?? bundledApp) && process.platform === 'win32') {
+    const version = await readPeVersion(join((managedApp ?? bundledApp)!, 'ZCode.exe'))
     if (version?.productName === 'ZCode') appVersion = version.productVersion.split('.').slice(0, 3).join('.')
   } else if (appRoot) {
     try {
@@ -243,7 +250,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     }
   }
   const identity = classifyInstallation(cli, target, packageName, homedir(), executable)
-  if (managedApp) identity.source = 'desktop-app'
+  if (managedApp || bundledApp) identity.source = 'desktop-app'
   else if (pluginRuntime) identity.source = 'plugin-runtime'
   // A tapped formula must have a matching receipt; basename alone cannot prove the tap.
   if (identity.source === 'brew' && CLI_SOURCES[cli].brew?.tap) {
@@ -263,7 +270,7 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     metadataToken = managedPi.fingerprint.metadataToken
   }
   return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel, releaseChannel,
-    ...(managedApp ? { notice: ZCODE_RUNTIME_NOTICE } : {}),
+    ...(managedApp ? { notice: ZCODE_RUNTIME_NOTICE } : cli === 'zcode' && zcodeRuntimeNotice(executable) ? { notice: zcodeRuntimeNotice(executable) } : {}),
     fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}), ...(metadataToken ? { metadataToken } : {}) } }
 }
 
