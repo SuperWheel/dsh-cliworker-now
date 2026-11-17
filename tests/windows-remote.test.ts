@@ -171,6 +171,8 @@ describe('Windows remote developer safety and evidence boundaries (synthetic fix
     const skips = [
       ['tests/cli-account-binding.test.ts', 'binds an Antigravity login that keeps only id_token_email, stable across case and rotation'],
       ['tests/os-credential-store.test.ts', '模拟：security 以十六进制输出的非 ASCII 登录文档同样可读'],
+      ['tests/zcode-app-runtime.test.ts', '模拟：权限不是仅本人可读写的密钥文件同样判为不可用'],
+      ['tests/zcode-app-runtime.test.ts', '模拟：启动检查、--help、登录、退出、账号终端、版本读取和基础环境都使用同一个 /tmp/cwn- 目录'],
     ]
     const withSkips = (entries: string[][]) => ({ ...tests, numPendingTests: entries.length, numTotalTests: tests.numTotalTests + entries.length,
       testResults: WINDOWS_TESTS.map((name: string) => ({ name: `C:/owned/source/${name}`,

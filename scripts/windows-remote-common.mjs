@@ -21,6 +21,7 @@ export const WINDOWS_TESTS = [
   'tests/pi-omp-native.test.ts', 'tests/zcode-account-models.test.ts', 'tests/first-party-account-context.test.ts',
   'tests/kimi-accounts.test.ts',
   'tests/os-credential-store.test.ts', 'tests/cli-account-binding.test.ts', 'tests/cli-management-in-place.test.ts',
+  'tests/zcode-app-runtime.test.ts', 'tests/native-zcode.test.ts',
 ]
 export const SOURCE_ROOT_FILES = [
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',

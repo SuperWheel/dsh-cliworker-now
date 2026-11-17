@@ -117,6 +117,8 @@ export function verifyRemoteReport(report, testBytes, state) {
     ['/tests/codebuddy-account.test.ts', 'keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout'],
     ['/tests/codebuddy-account.test.ts', 'checks macOS fallbacks only after missing PATH, preserves explicit failures'],
     ['/tests/traecn-integration.test.ts', 'uses only the local/bin/traecli fallback, never alternate aliases'],
+    ['/tests/zcode-app-runtime.test.ts', '模拟：权限不是仅本人可读写的密钥文件同样判为不可用'],
+    ['/tests/zcode-app-runtime.test.ts', '模拟：启动检查、--help、登录、退出、账号终端、版本读取和基础环境都使用同一个 /tmp/cwn- 目录'],
   ]
   if (skipped.length !== tests.numPendingTests || skipped.some((skip) => !allowedSkips.some(([file, title]) => skip.file.endsWith(file) && skip.title === title))) throw new Error('Unexpected skipped Windows test; inspect its evidence')
   return true

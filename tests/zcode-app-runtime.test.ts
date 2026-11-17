@@ -3,7 +3,7 @@
  * 不启动真实 ZCode、不读真实账号、不调用模型；真实核对见变更的验收记录。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -408,17 +408,24 @@ describe('模拟：旧独立 runtime 的自动记录迁移', () => {
 describe('模拟：账号入口', () => {
   const help = 'zcode 0.17.1\n  login [zai|bigmodel]  Sign in\n  logout  Remove credentials\n  tui  Open terminal\n'
   it('模拟：应用自带入口解析不到 @zcode/tui，账号终端不可用；登录、退出参数只多出启动前缀', async () => {
-    as('darwin')
-    const app = macApp(), { backend, calls } = fakeBackend(() => ({ stdout: help }))
+    // 此处读写真实临时文件：不能在 Windows 文件系统上模拟 POSIX mode 校验。
+    const app = platform.value === 'win32' ? windowsApp() : macApp(), { backend, calls } = fakeBackend(() => ({ stdout: help }))
     const config: RuntimeConfig = { ...DEFAULT_CONFIG, stateDirectory: join(state.home, 'state') }
-    const options = { home: state.home, platform: 'darwin' as const }
+    const options = { home: state.home, platform: platform.value as NodeJS.Platform }
     const signal = new AbortController().signal
     expect(zcodeTuiResolvable(app.entry)).toBe(false)
     const login = await zcodeGrokAccountLaunch('zcode', 'login', app.entry, config, backend, signal, { ...options, loginProvider: 'zai' })
     expect(login.argv).toEqual([process.execPath, launcher, app.electron, '--require', hook, app.entry, 'login', 'zai'])
     expect(login.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1', [ZCODE_APP_RESOURCES_ENVIRONMENT]: app.resources })
+    const secretPath = join(state.home, 'state/accounts/zcode/.zcode/v2/credential-secret')
+    const secret = readFileSync(secretPath, 'utf8')
+    expect(secret).toMatch(/^[A-Za-z0-9_-]{43}$/)
     const logout = await zcodeGrokAccountLaunch('zcode', 'logout', app.entry, config, backend, signal, options)
     expect(logout.argv.slice(2)).toEqual([app.electron, '--require', hook, app.entry, 'logout'])
+    // 第二次启动必须接受原密钥；Windows 的 mode 不能按 POSIX 权限解释。
+    expect(readFileSync(secretPath, 'utf8')).toBe(secret)
+    expect(lstatSync(secretPath).nlink).toBe(1)
+    expect(readdirSync(dirname(secretPath))).toEqual(['credential-secret'])
     await expect(zcodeGrokAccountLaunch('zcode', 'manage', app.entry, config, backend, signal, options)).rejects.toThrow(ZCODE_TUI_UNAVAILABLE)
     // 能力检查同样在应用运行环境下执行。
     expect(calls.every((call) => call.argv.join('\0') === [app.electron, '--require', hook, app.entry, '--help'].join('\0'))).toBe(true)
@@ -492,6 +499,39 @@ describe('模拟：插件账号目录的 credential-secret', () => {
     expect(readFileSync(secret(auth), 'utf8')).toBe(other)
     expect(leftovers(auth)).toEqual([])
   })
+  it('模拟：Windows 重读已发布密钥时接受非 POSIX mode 和硬链接，但拒绝无效文件且不覆盖', () => {
+    as('win32')
+    const auth = directory(), target = secret(auth)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('created')
+    const value = readFileSync(target, 'utf8')
+    expect(lstatSync(target).isFile()).toBe(true)
+    expect(lstatSync(target).nlink).toBe(1)
+    expect(leftovers(auth)).toEqual([])
+    chmodSync(target, 0o666)
+    expect(lstatSync(target).mode & 0o77).not.toBe(0)
+    // 同一有效文件若错误套用 POSIX 平台就会被拒绝，复现原 Windows 夹具故障。
+    as('darwin')
+    expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
+    as('win32')
+    expect(ensureZCodeCredentialSecret(auth)).toBe('present')
+    expect(readFileSync(target, 'utf8')).toBe(value)
+    const alias = join(auth, '模拟硬链接')
+    linkSync(target, alias)
+    expect(lstatSync(target).nlink).toBe(2)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('present')
+    expect(readFileSync(target, 'utf8')).toBe(value)
+    rmSync(alias)
+    for (const content of ['', 'x'.repeat(31), 'x'.repeat(4097)]) {
+      writeFileSync(target, content)
+      expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
+      expect(readFileSync(target, 'utf8')).toBe(content)
+      expect(leftovers(auth)).toEqual([])
+    }
+    rmSync(target)
+    mkdirSync(target)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
+    expect(lstatSync(target).isDirectory()).toBe(true)
+  })
   it('模拟：写入与发布之间中断时不留下空的或过短的密钥文件，下次重新创建', () => {
     const auth = directory()
     expect(ensureZCodeCredentialSecret(auth, { beforePublish: () => { throw new Error('模拟：进程在发布前中断') } })).toBe('skipped')
@@ -504,8 +544,7 @@ describe('模拟：插件账号目录的 credential-secret', () => {
     ['过短', 'x'.repeat(31)],
     ['过长', 'x'.repeat(4097)],
   ])('模拟：已有密钥文件%s时判为不可用：不覆盖，启动环境与账号入口给出明确错误', async (_name, content) => {
-    as('darwin')
-    const app = macApp(), auth = directory()
+    const app = platform.value === 'win32' ? windowsApp() : macApp(), auth = directory()
     file(secret(auth), content)
     chmodSync(secret(auth), 0o600)
     expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
@@ -514,7 +553,7 @@ describe('模拟：插件账号目录的 credential-secret', () => {
     expect(() => zcodeEnvironment(app.entry, join(state.home, 'state-invalid'), auth)).toThrow(secret(auth))
     const { backend } = fakeBackend(() => ({ stdout: 'zcode 0.17.1\n  login [zai|bigmodel]  Sign in\n  logout  Remove credentials\n' }))
     const config: RuntimeConfig = { ...DEFAULT_CONFIG, stateDirectory: join(state.home, 'state'), zcodeAuthDirectory: auth }
-    await expect(zcodeGrokAccountLaunch('zcode', 'login', app.entry, config, backend, new AbortController().signal, { home: state.home, platform: 'darwin', loginProvider: 'zai' }))
+    await expect(zcodeGrokAccountLaunch('zcode', 'login', app.entry, config, backend, new AbortController().signal, { home: state.home, platform: platform.value, loginProvider: 'zai' }))
       .rejects.toThrow(/密钥文件不可用.*credential-secret/)
     expect(readFileSync(secret(auth), 'utf8')).toBe(content)
   })
