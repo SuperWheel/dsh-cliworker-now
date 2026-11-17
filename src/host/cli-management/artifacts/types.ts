@@ -36,6 +36,8 @@ export interface OfficialProbe {
   /** OMP may download a patch instead of the full object. Never mix those units. */
   packageDirectory?: string
   packageCount?: number
+  /** File fingerprints indicate activity, never downloaded bytes. */
+  activityOnly?: boolean
   phaseOnly?: boolean
   phaseOnlyPattern?: RegExp
 }

@@ -8,6 +8,7 @@ import { ChannelMemory, channelMemoryKey, CHANNEL_MEMORY_TTL } from '../src/host
 import { serviceFixture, syntheticIdentity, checked, finished, childFixture } from './cli-management-phase-b-fixture.ts'
 const simulated = vi.hoisted(() => ({ home: '' }))
 vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => simulated.home || '/模拟/home' }))
+const originalArch = Object.getOwnPropertyDescriptor(process, 'arch')!
 const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform')!
 const fixtures: ReturnType<typeof serviceFixture>[] = []
 const data = '模拟new', targetVersion = '1.2.3', checksum = createHash('sha256').update(data).digest('hex')
@@ -25,7 +26,7 @@ function fixture() {
   const start = async () => { await checked(f.service); f.service.start('claude', 'update', f.service.snapshot().entries.find(e => e.cli === 'claude')!.planToken!, '', '模拟' + Math.random()); return (await finished(f.service)).results[0]! }
   return { ...f, memory, key, target, start }
 }
-afterEach(async () => { for (const f of fixtures.splice(0)) await f.close(); simulated.home = ''; Object.defineProperty(process, 'platform', originalPlatform); vi.unstubAllEnvs(); vi.useRealTimers() })
+afterEach(async () => { for (const f of fixtures.splice(0)) await f.close(); simulated.home = ''; Object.defineProperty(process, 'platform', originalPlatform); Object.defineProperty(process, 'arch', originalArch); vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers() })
 it.each([0, 1])('模拟：先跑官方，版本前进即按官方结果结束（退出码 %s），清除过期记忆', async code => {
   const f = fixture(); await f.memory.set(f.key, 'OFFICIAL_STALLED', Date.now() - CHANNEL_MEMORY_TTL - 1)
   vi.mocked(f.backend.spawn).mockImplementation(spec => { expect(spec.argv).toEqual([f.target, 'update']); writeFileSync(f.target, data); return child('Updated\n', code) as any })
@@ -104,4 +105,40 @@ it('模拟：上次操作结果在打开页面的补缺检查后保留，用户�
   await checked(f.service, 'missing')
   expect(f.service.snapshot().results).toHaveLength(1)
   expect((await checked(f.service, 'all')).results).toEqual([])
+})
+
+it.each([false, true])('模拟：Grok 官方仅一行输出后静默 15 秒成功，不写失败记忆（清单失败回退=%s）', async fallback => {
+  Object.defineProperty(process, 'platform', { ...originalPlatform, value: 'win32' })
+  Object.defineProperty(process, 'arch', { ...originalArch, value: 'x64' })
+  const f = serviceFixture(['grok']); fixtures.push(f); simulated.home = f.root
+  vi.stubEnv('LOCALAPPDATA', join(f.root, 'AppData/Local'))
+  const target = join(f.root, '.grok/bin/grok.exe'); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, 'old')
+  writeFileSync(join(f.root, '.grok/config.toml'), '[cli]\ninstaller = "internal"\n')
+  const id = { ...syntheticIdentity('grok'), source: 'self-update' as const, executable: target, fingerprint: { realpath: target, size: 3, mtimeMs: 1 } }
+  f.identities.set('grok', id)
+  f.version.mockImplementation(async () => readFileSync(target, 'utf8') === data ? '1.0.88' : '1.0.77')
+  f.metadataFetch.mockImplementation(async url => {
+    if (String(url).endsWith('/stable')) return new Response('1.0.88')
+    if (fallback) throw new Error('模拟清单失败')
+    return new Response(String(url).endsWith('.version') ? '2.53.0.windows.1' : 'a'.repeat(64))
+  })
+  const proc = childFixture(), memory = new ChannelMemory(f.root), key = channelMemoryKey('grok', id)
+  const writes = vi.spyOn(ChannelMemory.prototype, 'set')
+  let spawned!: () => void; const ready = new Promise<void>(resolve => { spawned = resolve })
+  vi.mocked(f.backend.spawn).mockImplementation(() => { spawned(); return proc.child as any })
+  await checked(f.service)
+  vi.useFakeTimers()
+  f.service.start('grok', 'update', f.service.snapshot().entries.find(e => e.cli === 'grok')!.planToken!, '', '模拟 Grok')
+  await ready
+  proc.child.stdout.write('Downloading Grok 1.0.88...\n')
+  await vi.advanceTimersByTimeAsync(15_000)
+  expect(proc.child.terminate).not.toHaveBeenCalled()
+  writeFileSync(target, data); proc.finish()
+  await vi.waitFor(() => expect(proc.child.waitForExit).toHaveBeenCalled()); proc.exit(true)
+  const result = (await finished(f.service)).results[0]!
+  expect(result).toMatchObject({ phase: 'succeeded', afterVersion: '1.0.88', progress: { channel: 'official', byteProgress: false } })
+  expect(f.backend.spawn).toHaveBeenCalledOnce()
+  expect(writes.mock.calls.every(([, reason]) => reason === undefined)).toBe(true)
+  expect(await memory.get(key)).toBeUndefined()
+  expect(readFileSync(memory.file, 'utf8')).toBe('{}')
 })

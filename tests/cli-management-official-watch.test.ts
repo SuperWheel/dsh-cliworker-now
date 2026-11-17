@@ -1,6 +1,6 @@
 /** 模拟：虚拟时钟策略与临时目录探针；不调用更新器。 */
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdtemp, realpath, mkdir, writeFile, appendFile, utimes, lstat, rm, symlink, readFile } from 'node:fs/promises'
+import { mkdtemp, realpath, mkdir, writeFile, appendFile, utimes, lstat, rm, symlink, link, rename, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { OfficialWatch, OfficialWatchdog, officialBudgetMs, officialLockState } from '../src/host/cli-management/official-watch.ts'
@@ -137,21 +137,98 @@ it('模拟：未完成暂存消失或换名从零重试触发接管，不累计�
   expect(watch.reason).toBe('OFFICIAL_RESTARTED'); expect(progress.mock.calls.at(-1)![0].downloadedBytes).toBe(1)
 })
 
-it('模拟：Grok 无字节时从分块 Downloading 开始计 10 秒，重复状态和日志噪声不续期', async () => {
+async function grokWatch(totalBytes?: number) {
   vi.useFakeTimers(); vi.setSystemTime(started)
-  const root = await fixture(), progress = vi.fn()
-  const watch = await OfficialWatch.prepare(officialProbe({ cli: 'grok', platform: 'darwin', version: '1.0.88', home: root }), root, progress)
-  watches.push(watch); watch.start()
-  await vi.advanceTimersByTimeAsync(40_000); await watch.poll()
-  expect(watch.reason).toBeUndefined() // checking/unknown is not downloading
-  watch.push('Down'); watch.push('loading Grok 1.0.88...')
-  await vi.advanceTimersByTimeAsync(9_999); watch.push('\rDownloading Grok 1.0.88...\n'); watch.push('waiting\n'); await watch.poll()
-  expect(watch.reason).toBeUndefined()
-  await vi.advanceTimersByTimeAsync(1); await watch.poll()
-  expect(watch.reason).toBe('OFFICIAL_STALLED')
-  expect(watch.controller.signal.reason).toMatchObject({ code: 'OFFICIAL_UNAVAILABLE' })
+  const root = await fixture(), directory = join(root, '.grok/downloads'), progress = vi.fn()
+  await mkdir(directory, { recursive: true })
+  const probe = officialProbe({ cli: 'grok', version: '1.0.88', platform: 'win32', arch: 'x64', home: root }, totalBytes)
+  const watch = await OfficialWatch.prepare(probe, root, progress); watches.push(watch); watch.start(); await watch.stop()
+  watch.push('Down'); watch.push('loading Grok 1.0.88...\n')
+  const path = join(directory, 'grok-1.0.88-windows-x86_64.abcdef.tmp.exe')
+  return { root, directory, path, watch, progress }
+}
+it('模拟：Grok 分块 Downloading 后没有文件，59 秒不接管，60 秒 OFFICIAL_SLOW', async () => {
+  const { watch, progress } = await grokWatch()
+  await watch.poll(started + 59_000); expect(watch.reason).toBeUndefined()
+  vi.setSystemTime(started + 59_000); watch.push('Downloading Grok 1.0.88...\nwaiting\n')
+  await watch.poll(started + 60_000); expect(watch.reason).toBe('OFFICIAL_SLOW')
   expect(progress.mock.calls.at(-1)![0]).toMatchObject({ readable: false, byteProgress: false })
   expect(progress.mock.calls.at(-1)![0]).not.toHaveProperty('downloadedBytes')
+})
+it('模拟：Grok 文件持续变化 30 秒不接管、不报告字节；活动后 10 秒不变则停滞', async () => {
+  const { watch, path, progress } = await grokWatch(100)
+  for (let second = 1; second <= 31; second++) {
+    await fresh(path, 'x'.repeat(second)); await watch.poll(started + second * 1000)
+    expect(watch.reason).toBeUndefined()
+  }
+  for (const [value] of progress.mock.calls) {
+    expect(value).toMatchObject({ readable: false, byteProgress: false, byteProgressState: 'none' })
+    expect(value).not.toHaveProperty('downloadedBytes'); expect(value).not.toHaveProperty('totalBytes')
+  }
+  await watch.poll(started + 40_999); expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 41_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Grok 主程序达到总长且指纹连续三次不变，收尾静默 100 秒继续、120 秒接管', async () => {
+  const { watch, path } = await grokWatch(100)
+  await fresh(path, 'x'.repeat(100)); await watch.poll(started + 1000)
+  for (const second of [2, 3, 4]) await watch.poll(started + second * 1000)
+  await watch.poll(started + 104_000); expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 123_999); expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 124_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Grok 稳定计数遇到 mtime 变化重新开始，收尾文件消失续期但不重开 10 秒', async () => {
+  const { watch, path } = await grokWatch(100)
+  await fresh(path, 'x'.repeat(100)); await watch.poll(started + 1000)
+  await watch.poll(started + 2000); await watch.poll(started + 3000)
+  await utimes(path, new Date(started + 4000), new Date(started + 4000)); await watch.poll(started + 4000)
+  await watch.poll(started + 5000); await watch.poll(started + 6000); await watch.poll(started + 7000)
+  await rm(path); await watch.poll(started + 8000)
+  await watch.poll(started + 127_999); expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 128_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Grok 缩小、inode 替换、同长 mtime 改变、消失和新名字均算活动，不判重启', async () => {
+  const { watch, path } = await grokWatch()
+  await fresh(path, '12345'); await watch.poll(started + 1000)
+  await fresh(path, '1'); await watch.poll(started + 9000)
+  const replacement = path + '.replacement'; await fresh(replacement, '1'); await rename(replacement, path); await watch.poll(started + 17000)
+  await utimes(path, new Date(started + 25000), new Date(started + 25000)); await watch.poll(started + 25000)
+  await rm(path); await watch.poll(started + 33000)
+  await fresh(path.replace('abcdef', 'ghijkl'), '12'); await watch.poll(started + 41000)
+  expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 50999); expect(watch.reason).toBeUndefined()
+  await watch.poll(started + 51000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Grok 接管后只清理本次普通临时文件，保留基线、旧 mtime、链接及 Unix 最终版本文件', async () => {
+  const root = await fixture(), directory = join(root, '.grok/downloads'); await mkdir(directory, { recursive: true })
+  const name = 'grok-1.0.88-macos-aarch64', baseline = join(directory, name + '.old.tmp.exe')
+  await fresh(baseline)
+  const watch = await OfficialWatch.prepare(officialProbe({ cli: 'grok', version: '1.0.88', platform: 'darwin', arch: 'arm64', home: root }), root, vi.fn())
+  watches.push(watch); watch.start(started)
+  const ours = join(directory, name + '.abcdef.tmp.exe'), compressed = join(directory, name + '.zst.tmp')
+  await fresh(ours); await fresh(compressed); await fresh(baseline, 'changed baseline')
+  const kept = [join(directory, name), join(directory, name + '.hard.tmp.exe'), join(directory, name + '.sym.tmp.exe'), join(directory, name + '.stale.tmp.exe'), join(directory, 'grok-1.0.87-macos-aarch64.abcdef.tmp.exe')]
+  await fresh(kept[0]!); await link(kept[0]!, kept[1]!); await symlink(kept[0]!, kept[2]!); await fresh(kept[3]!); await utimes(kept[3]!, new Date(0), new Date(0)); await fresh(kept[4]!)
+  await watch.poll(started + 1000); await watch.poll(started + 11000)
+  expect(watch.reason).toBe('OFFICIAL_STALLED')
+  // 模拟进程范围已退出，才允许调用 cleanup。
+  await watch.cleanup()
+  await expect(lstat(ours)).rejects.toThrow(); await expect(lstat(compressed)).rejects.toThrow()
+  for (const path of kept) expect(await lstat(path)).toBeDefined()
+  expect(await readFile(baseline, 'utf8')).toBe('changed baseline')
+})
+it('模拟：Grok 官方成功将临时文件移走后清理无错误，目标文件保留', async () => {
+  const { watch, path, directory } = await grokWatch()
+  await fresh(path); await watch.poll(started + 1000)
+  const target = join(directory, 'grok-1.0.88-windows-x86_64.exe'); await rename(path, target)
+  await expect(watch.cleanup()).resolves.toBeUndefined()
+  expect(await readFile(target, 'utf8')).toBe('abc')
+})
+it('模拟：Grok 回退探针限定版本平台，未知版本仍用阶段探针', () => {
+  for (const version of ['', 'unknown', '../1.0.88']) expect(officialProbe({ cli: 'grok', version })).toEqual({ kind: 'stage', phaseOnly: true })
+  const probe = officialProbe({ cli: 'grok', version: '1.0.88', platform: 'darwin', arch: 'arm64', home: '/模拟' }, 123)
+  expect(probe).toMatchObject({ kind: 'files', activityOnly: true, directory: '/模拟/.grok/downloads', totalBytes: 123 })
+  expect(probe.fileRule!.test('grok-1.0.88-macos-aarch64.abcdef.tmp.exe')).toBe(true)
+  for (const name of ['grok-1.0.88-macos-aarch64', 'grok-1x0x88-macos-aarch64.a.tmp', 'grok-1.0.88-linux-aarch64.a.tmp', 'grok-1.0.88-macos-aarch64/a.tmp']) expect(probe.fileRule!.test(name)).toBe(false)
 })
 it('模拟：没有可观察字节时新的下载状态续期，但相同状态不续期', async () => {
   vi.useFakeTimers(); vi.setSystemTime(started)

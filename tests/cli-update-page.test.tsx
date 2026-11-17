@@ -689,6 +689,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
   const running = (progress: CliDownloadProgress & { officialFailedAt?: number }, patch: Partial<CliUpdateOperation> = {}) =>
     data({
       snapshot: snapshot({
+        ...(patch.cli === 'grok' ? { entries: snapshot().entries.map(e => e.cli === 'grok' ? entry('grok', { group: 'updatable', installed: true, source: 'self-update', currentVersion: '1.0.77', latestVersion: '1.0.88' }) : e) } : {}),
         operation: {
           id: 'SIMULATED-op', intent: 'update', cli: 'codex', phase: 'downloading', startedAt: 1,
           targetVersion: '0.130.0', outputTail: '', progress, ...patch,
@@ -726,8 +727,8 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
   })
 
   it.each([
-    ['OFFICIAL_STALLED', '官方下载 10 秒没有新数据'],
-    ['OFFICIAL_SLOW', '官方下载速度过低'],
+    ['OFFICIAL_STALLED', '官方更新长时间没有可观察进展'],
+    ['OFFICIAL_SLOW', '官方下载等待过久或速度过低'],
     ['OFFICIAL_DEADLINE', '官方下载预计超过官方时限'],
     ['OFFICIAL_RESTARTED', '官方下载从头重来'],
     ['OFFICIAL_INTERRUPTED', '官方下载中断'],
@@ -739,12 +740,26 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     const row = f.rowOf('claude')
     const callouts = byClass(row, 'cwn-update-callout')
     expect(callouts.map(textOf)).toEqual([
-      `${cause}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 Claude Code 会直接由插件下载。`,
+      `${cause}，已停止官方更新，改由插件下载。之后 7 天内，这台电脑更新 Claude Code 会直接由插件下载。`,
     ])
     // The Host's own transition note would only repeat the callout; nothing pretends to be progress.
     expect(textOf(row)).not.toContain('官方进程已退出')
     expect(bars(row)).toHaveLength(0)
     expect(textOf(row)).not.toContain('下载进度无法读取')
+  })
+
+  it.each(['OFFICIAL_SLOW', 'OFFICIAL_STALLED'] as const)('模拟：Grok %s 原因不声称 10 秒或已删除半成品', async reason => {
+    const f = await setup(running({ channel: 'takeover', reason, readable: false, byteProgress: false, resumeCount: 0 }, { cli: 'grok' }))
+    const text = byClass(f.rowOf('grok'), 'cwn-update-callout').map(textOf).join('')
+    expect(text).toContain('已停止官方更新，改由插件下载')
+    expect(text).not.toContain('10 秒'); expect(text).not.toContain('删除')
+  })
+  it('模拟：Grok 官方阶段提示三段时限，不显示通用 10 秒规则', async () => {
+    const f = await setup(running({ channel: 'official', readable: false, byteProgress: false, resumeCount: 0, stage: 'Downloading Grok 1.0.88...' }, { cli: 'grok' }))
+    const text = textOf(f.rowOf('grok'))
+    expect(text).toContain('等待下载开始最多 60 秒')
+    expect(text).toContain('主程序写入稳定后无活动 120 秒')
+    expect(text).not.toContain('10 秒没有新数据')
   })
 
   it('says an npm takeover only switches sources and keeps the downloaded part', async () => {
@@ -755,7 +770,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     }))
     const callout = byClass(f.rowOf('codex'), 'cwn-update-callout').map(textOf)
     expect(callout).toEqual([
-      '官方下载速度过低，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 Codex 会直接由插件换源下载。',
+      '官方下载等待过久或速度过低，改由插件换源继续下载，已下载的部分保留。之后 7 天内，这台电脑更新 Codex 会直接由插件换源下载。',
     ])
     expect(callout.join('')).not.toContain('半成品')
   })
@@ -1124,7 +1139,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     await f.update(running({ channel: 'takeover', reason: 'OFFICIAL_SLOW', readable: true, byteProgress: true, byteProgressState: 'unknown-total', downloadedBytes: 2048, resumeCount: 0 }))
     const row = f.rowOf('codex')
     expect(byClass(row, 'cwn-update-chan').map(textOf)).toEqual(['Plugin takeover'])
-    expect(textOf(byClass(row, 'cwn-update-callout')[0]!)).toMatch(/^The official download was too slow\. .* Codex updates on this computer/)
+    expect(textOf(byClass(row, 'cwn-update-callout')[0]!)).toMatch(/^The official download waited too long or was too slow\. .* Codex updates on this computer/)
     expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['Received 2.0 KB, total size unknown'])
   })
 })

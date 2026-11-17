@@ -1,11 +1,18 @@
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { LocalArtifactOptions } from '../local-artifacts.ts'
+import { validVersion } from '../versions.ts'
 import type { OfficialProbe } from './types.ts'
 const escaped = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-export function officialProbe(options: Pick<LocalArtifactOptions, 'cli' | 'version' | 'platform' | 'home' | 'localAppData'>, totalBytes?: number): OfficialProbe {
+export function officialProbe(options: Pick<LocalArtifactOptions, 'cli' | 'version' | 'platform' | 'arch' | 'home' | 'localAppData'>, totalBytes?: number): OfficialProbe {
   const platform = options.platform ?? process.platform, home = options.home ?? homedir(), local = options.localAppData ?? process.env.LOCALAPPDATA ?? join(home, 'AppData/Local')
   const win = platform === 'win32'
+  if (options.cli === 'grok') {
+    const arch = options.arch ?? process.arch
+    if (!validVersion(options.version) || !['win32', 'darwin', 'linux'].includes(platform) || !['x64', 'arm64'].includes(arch)) return { kind: 'stage', phaseOnly: true }
+    const key = `${win ? 'windows' : platform === 'darwin' ? 'macos' : 'linux'}-${arch === 'x64' ? 'x86_64' : 'aarch64'}`
+    return { kind: 'files', directory: join(home, '.grok/downloads'), fileRule: new RegExp(`^grok-${escaped(options.version)}-${escaped(key)}[^/]*\\.tmp[^/]*$`), activityOnly: true, totalBytes }
+  }
   if (options.cli === 'pi') return { kind: 'stage', packageDirectory: join(home, '.pi/agent/install/staging'), packageCount: 122 }
   if (options.cli === 'kimi') return { kind: 'files', directory: join(home, '.kimi-code/bin/.staging'), fileRule: /^kimi-[^/]+\.part$/, lockFile: join(home, '.kimi/updates/install.lock') }
   if (options.cli === 'qoder' || options.cli === 'qodercn') {

@@ -5,6 +5,8 @@ import type { LocalArtifactOptions } from '../local-artifacts.ts'
 import type { ArtifactDescription, ArtifactFile } from './types.ts'
 import { compareVersions, validVersion } from '../versions.ts'
 import { nativeLayout, digest, invalidArtifact } from './native.ts'
+import { officialProbe } from './probes.ts'
+import { optionalHeadLength } from './windows.ts'
 import { CliOperationError } from '../planner.ts'
 const reject = (): never => { throw new CliOperationError('PREREQUISITE_MISSING', 'Grok 归属或版本策略不允许插件接管') }
 async function small(path: string) {
@@ -55,7 +57,7 @@ export async function describeGrok(o: LocalArtifactOptions): Promise<ArtifactDes
   }
   const cache = join(home, '.grok/models_cache.json')
   return { manifest: { urls: bases, version: o.version, versionField: 'versioned filename', platformKey: key }, files, extras, platform,
-    officialProbe: { kind: 'stage', phaseOnly: true }, allowedTargets: [...targets, ...(!win ? [versionFile] : []), ...companions.map(c => c.target), ...(mingit ? [mingit.target] : []), cache],
+    officialProbe: officialProbe(o, await optionalHeadLength(files[0]!.sources[0]!, o, o.signal)), allowedTargets: [...targets, ...(!win ? [versionFile] : []), ...companions.map(c => c.target), ...(mingit ? [mingit.target] : []), cache],
     placement: { kind: 'native-binary', file: 'grok' + ext, targets, ...(!win ? { versionFile } : {}), companions, mingit, signature: 'grok', smoke: { version: o.version, match: 'contains' } },
     before: () => checkGrokPolicy(o), after: async () => async () => { const info = await lstat(cache).catch(() => undefined); if (info?.isFile() && !info.isSymbolicLink() && info.nlink === 1) await unlink(cache) } }
 }

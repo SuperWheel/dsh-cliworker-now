@@ -97,8 +97,8 @@ Hermes 官方更新先提交代码，再做依赖与构建，后续步骤失败�
 
 - 非零退出且版本未前进；
 - 输出出现下载中断的特征文字；
-- 下载阶段连续 10 秒没有进展：能读到字节的看暂存文件增长；读不到字节的（如 Grok）看更新器输出的下载状态文字有没有变化；
-- 暂存文件大小回落；
+- 下载阶段连续 10 秒没有进展：能读到字节的看暂存文件增长；普通阶段探针看更新器输出的下载状态文字有没有变化；Grok 的 activityOnly 文件探针按下述分阶段规则处理；
+- 非 activityOnly 探针的暂存文件大小回落；
 - 60 秒窗口内平均速度低于 100 KB/s；
 - 按当前速度预计会撞上官方硬时限；
 - 进度不可观测时超出总预算。
@@ -117,9 +117,24 @@ Hermes 官方更新先提交代码，再做依赖与构建，后续步骤失败�
 - **WHEN** 官方命令成功，重新探测的版本到达或超过目标
 - **THEN** 只按官方结果报告，不启动接管，并清除该 CLI 在本机的官方失败记录
 
-#### Scenario: 看不到字节的官方下载
-- **WHEN** Grok 官方更新输出「Downloading Grok 1.0.88...」后 10 秒没有新的下载状态
-- **THEN** Host SHALL 判定官方渠道不可用并转插件接管；输出表明已进入解压或安装后，MUST NOT 再按 10 秒规则终止
+Grok 的官方探针 SHALL 只观察 `~/.grok/downloads` 中目标版本与平台键匹配的 `grok-<version>-<platform>*.tmp*` 新文件，以相对名称、size、mtimeMs、ino 指纹变化（出现、增长、修改、消失）作为活动；MUST NOT 将文件大小当成已下载字节或展示百分比。大小缩小、inode 改变和重试换名 MUST NOT 触发 OFFICIAL_RESTARTED。目标版本未知时 SHALL 回退阶段探针，MUST NOT 扩大文件匹配范围；清单失败但版本已知时 SHALL 保留同一文件探针。原有 officialBudgetMs 总预算 SHALL 保持不变。
+
+#### Scenario: Grok 管道输出只有 Downloading
+- **WHEN** Grok 输出 Downloading 后尚无任何本次文件活动
+- **THEN** Host SHALL 容忍 60 秒盲窗；59 秒不得接管，60 秒 SHALL 以 OFFICIAL_SLOW 触发接管
+
+#### Scenario: Grok 可观察文件仍在变化或已经停滞
+- **WHEN** 已观察到本次匹配文件活动
+- **THEN** 每次指纹变化 SHALL 刷新活动时间，连续 10 秒无变化 SHALL 以 OFFICIAL_STALLED 接管；持续变化 30 秒 MUST NOT 因无输出而接管，且 MUST NOT 显示下载字节
+
+#### Scenario: Grok 主程序写入完成后的静默收尾
+- **WHEN** 匹配临时文件的大小等于 HEAD 取得的原始主程序长度，且指纹连续 3 次轮询不变
+- **THEN** Host SHALL 调用 phase(false) 停止 10 秒时钟，改用 120 秒无活动时限；静默 100 秒不得接管，120 秒 SHALL 以 OFFICIAL_STALLED 接管；后续文件变化 SHALL 刷新无活动时间，不得把 grove 下载或签名检查当成主程序下载停滞
+
+#### Scenario: Grok 接管清理与成功移走暂存
+- **WHEN** 官方进程树已确认退出，需要清理本次 Grok 暂存
+- **THEN** Host SHALL 只删除不在启动基线、mtime 不早于启动时间、ino/dev 与观察身份一致、nlink 为 1 的普通匹配文件；MUST 保留基线文件、符号链接、硬链接及 Unix 最终版本文件；成功时临时文件已移走 SHALL 无错误地跳过，保留目标文件
+- **AND** 页面没有实际删除证据时 MUST NOT 声称已删除半成品，OFFICIAL_SLOW 和收尾超时 MUST NOT 显示「10 秒没有新数据」
 
 ### Requirement: 下载停滞检测与断点续传
 插件自己掌控的下载（npm 主包 tarball、官方安装脚本、桌面安装包）SHALL 每 5 秒检查一次已下载字节（响应正文开始之前仍按原连接时限等待）；没有增长时 SHALL 中断连接，用 HTTP Range 从已下载位置继续，最多 200 次，总时长上限 2 小时。服务器不支持 Range 时 SHALL 整包重下，并计入同一次数预算。下载完成后 SHALL 校验官方长度或摘要；不符时 SHALL 删除文件并干净重下一次，仍不符才判为失败，校验通过前 MUST NOT 安装。外部命令只有在能读到下载字节时才适用停滞规则，否则页面显示「下载进度无法读取」，安装阶段另设 10 分钟上限。续传 200 次仍失败与超过 2 小时 SHALL 分开提示。取消时 SHALL 删除临时文件；失败或重启后临时文件保留 24 小时，总量有上限，用户重试时接着用。

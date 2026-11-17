@@ -19,6 +19,7 @@ export class OfficialUnavailableError extends CliOperationError {
 export const officialBudgetMs = (bytes?: number) => Math.min(600_000, Math.max(180_000, bytes ? bytes / 200_000 * 1000 : 600_000))
 /** Applies only to observed downloading, never version checks or post-download work. */
 export const OFFICIAL_STALL_MS = 10_000
+export const OFFICIAL_POST_DOWNLOAD_MS = 120_000
 const missing = (e: unknown) => ['ENOENT', 'ENOTDIR'].includes((e as NodeJS.ErrnoException).code ?? '')
 const matches = (pattern: RegExp | undefined, value: string) => { if (!pattern) return false; pattern.lastIndex = 0; return pattern.test(value) }
 /** Grok's observed indicatif templates: {bytes} downloaded and {bytes}/{total_bytes} ({eta}). */
@@ -38,15 +39,25 @@ export class OfficialWatchdog {
   private lastGrowth: number
   private downloadStarted?: number
   private downloading = false
-  constructor(readonly startedAt: number, public totalBytes?: number, readonly hardTimeoutMs?: number) { this.lastGrowth = startedAt }
+  private fileActivitySeen = false
+  private postDownload = false
+  constructor(readonly startedAt: number, public totalBytes?: number, readonly hardTimeoutMs?: number, readonly activityOnly = false) { this.lastGrowth = startedAt }
   /** Explicit phase boundaries override lingering staging files. Unknown output does not end a download. */
   phase(downloading: boolean, now: number) {
     if (this.downloading === downloading) return
     this.downloading = downloading
+    if (this.activityOnly) this.postDownload = !downloading
     this.lastGrowth = now; this.lastBytes = undefined; this.samples = []; this.downloadStarted = undefined
   }
-  activity(now: number) { if (this.downloading) this.lastGrowth = now }
+  activity(now: number) {
+    if (this.activityOnly) {
+      this.fileActivitySeen = true
+      if (!this.downloading && !this.postDownload) this.phase(true, now)
+    }
+    if (this.downloading || this.activityOnly) this.lastGrowth = now
+  }
   check(now: number, bytes?: number): CliChannelReason | undefined {
+    if (this.activityOnly) bytes = undefined
     if (bytes !== undefined) {
       if (!this.downloading) this.phase(true, now)
       if (this.lastBytes !== undefined && bytes < this.lastBytes) return 'OFFICIAL_RESTARTED'
@@ -62,8 +73,10 @@ export class OfficialWatchdog {
         if (this.totalBytes && this.hardTimeoutMs && now - this.downloadStarted >= 30_000 && rate > 0 && now - this.startedAt + (this.totalBytes - bytes) / rate * 1000 >= this.hardTimeoutMs) return 'OFFICIAL_DEADLINE'
       } else this.phase(false, now)
     }
-    // Stage-only updaters (including Grok) arm this only on an explicit download marker.
-    if (this.downloading && now - this.lastGrowth >= OFFICIAL_STALL_MS) return 'OFFICIAL_STALLED'
+    if (this.activityOnly) {
+      if (this.downloading && now - this.lastGrowth >= (this.fileActivitySeen ? OFFICIAL_STALL_MS : 60_000)) return this.fileActivitySeen ? 'OFFICIAL_STALLED' : 'OFFICIAL_SLOW'
+      if (this.postDownload && now - this.lastGrowth >= OFFICIAL_POST_DOWNLOAD_MS) return 'OFFICIAL_STALLED'
+    } else if (this.downloading && now - this.lastGrowth >= OFFICIAL_STALL_MS) return 'OFFICIAL_STALLED'
     if (now - this.startedAt >= (bytes === undefined ? officialBudgetMs(this.totalBytes) : 600_000)) return 'OFFICIAL_BUDGET'
   }
 }
@@ -77,6 +90,7 @@ export class OfficialWatch extends InterruptionEvidence {
   private present = new Map<string, Owned>()
   private ownedDirs = new Map<string, Owned>()
   private lengths = new Map<string, number | undefined>()
+  private fingerprints = new Map<string, { value: string; stable: number }>()
   private packageBaseline = new Set<string>()
   private packageCount = 0
   private logs = new Map<string, string>()
@@ -118,7 +132,7 @@ export class OfficialWatch extends InterruptionEvidence {
   }
   start(now = Date.now()) {
     this.startedAt = now; this.lastAt = now
-    this.watchdog = new OfficialWatchdog(now, this.probe.totalBytes, this.probe.hardTimeoutMs)
+    this.watchdog = new OfficialWatchdog(now, this.probe.totalBytes, this.probe.hardTimeoutMs, this.probe.activityOnly)
     this.report(now)
     this.timer = setInterval(() => { this.polling = this.polling.then(() => this.poll()).catch(() => { this.disabled = true }) }, 1000)
   }
@@ -158,13 +172,12 @@ export class OfficialWatch extends InterruptionEvidence {
       this.downloadPhase = phase
       this.watchdog?.phase(phase, Date.now())
     }
-    // Grok 1.0.77's binary contains parallel-download preallocation; its logical file
-    // length cannot measure received bytes. With no trustworthy staging probe, use
-    // explicit download-status changes as observable activity (not network/IO claims).
+    // Legacy stage probes use download-status changes as observable activity.
+    // Activity-only file probes use disk fingerprints instead, even under pipes.
     // Numeric status must exceed its high-water mark; text/spinner changes alone
     // cannot renew a repeated or decreasing byte count. Keep it as activity only,
     // rather than treating a rounded display value as verified disk/network bytes.
-    if (phase) {
+    if (phase && !this.probe.activityOnly) {
       const textActivity = this.lastDownloadBytes === undefined && !pendingCounter && line !== this.lastDownloadOutput
       if (statusBytes === undefined ? textActivity : statusBytes > (this.lastDownloadBytes ?? 0)) this.watchdog?.activity(Date.now())
       if (statusBytes !== undefined) this.lastDownloadBytes = Math.max(this.lastDownloadBytes ?? 0, statusBytes)
@@ -217,14 +230,31 @@ export class OfficialWatch extends InterruptionEvidence {
       if (parts.some((_, index) => this.baseline.has(parts.slice(0, index + 1).join('/'))) || entry.stat.mtimeMs < this.startedAt) continue
       const entries = entry.stat.isDirectory() ? this.ownedDirs : this.owned
       const before = entries.get(entry.relative)
-      if (this.downloadPhase !== false && before && (before.stat.ino !== entry.stat.ino || before.stat.dev !== entry.stat.dev || entry.stat.size < before.stat.size) && !entry.stat.isDirectory()) this.fail('OFFICIAL_RESTARTED')
+      if (!this.probe.activityOnly && this.downloadPhase !== false && before && (before.stat.ino !== entry.stat.ino || before.stat.dev !== entry.stat.dev || entry.stat.size < before.stat.size) && !entry.stat.isDirectory()) this.fail('OFFICIAL_RESTARTED')
       entries.set(entry.relative, entry)
       if (entry.stat.isFile()) present.set(entry.relative, entry)
     }
     this.present = present
   }
+  private observeFileActivity(now: number) {
+    if (!this.probe.activityOnly || this.disabled) return
+    const next = new Map<string, { value: string; stable: number }>()
+    let changed = this.present.size !== this.fingerprints.size, complete = false
+    for (const entry of this.present.values()) {
+      const value = JSON.stringify([entry.relative, entry.stat.size, entry.stat.mtimeMs, entry.stat.ino])
+      const before = this.fingerprints.get(entry.relative)
+      const stable = before?.value === value ? before.stable + 1 : 0
+      if (before?.value !== value) changed = true
+      next.set(entry.relative, { value, stable })
+      if (this.probe.totalBytes && entry.stat.size === this.probe.totalBytes && /\.tmp[^/]*$/.test(entry.relative) && stable >= 3) complete = true
+    }
+    this.fingerprints = next
+    if (changed) this.watchdog?.activity(now)
+    if (complete) { this.downloadPhase = false; this.watchdog?.phase(false, now) }
+  }
   async poll(now = Date.now()) {
     await this.collect()
+    this.observeFileActivity(now)
     if (this.probe.packageDirectory) this.packageCount = await observedPackages(this.probe.packageDirectory, this.startedAt, this.packageBaseline)
     for (const path of this.probe.stageFiles ?? []) {
       const stage = await this.readStage(path)
@@ -240,9 +270,9 @@ export class OfficialWatch extends InterruptionEvidence {
       this.probe.totalBytes = lengths.length && lengths.every(n => n !== undefined) ? lengths.reduce<number>((sum, n) => sum + n!, 0) : undefined
       if (this.watchdog) this.watchdog.totalBytes = this.probe.totalBytes
     }
-    let bytes = this.downloadPhase !== false && !this.disabled && !this.phaseOnly && this.present.size ? [...this.present.values()].reduce((sum, e) => sum + e.stat.size, 0) : undefined
+    let bytes = this.downloadPhase !== false && !this.disabled && !this.phaseOnly && !this.probe.activityOnly && this.present.size ? [...this.present.values()].reduce((sum, e) => sum + e.stat.size, 0) : undefined
     // Disappearing incomplete staging is a restart. Finished staging may be moved during installation.
-    if (bytes === undefined && this.downloadPhase !== false && !this.disabled && !this.phaseOnly && this.lastTotal > 0 && this.probe.totalBytes && this.lastTotal < this.probe.totalBytes) bytes = 0
+    if (bytes === undefined && this.downloadPhase !== false && !this.disabled && !this.phaseOnly && !this.probe.activityOnly && this.lastTotal > 0 && this.probe.totalBytes && this.lastTotal < this.probe.totalBytes) bytes = 0
     if (this.lockConflict && !this.controller.signal.aborted) {
       const lock = await officialLockState(this.probe.lockFile, this.probe.lockCommandPattern)
       if (lock !== 'stale') this.controller.abort(new CliOperationError('UPDATE_LOCKED', '官方更新锁仍有效或无法确认归属'))

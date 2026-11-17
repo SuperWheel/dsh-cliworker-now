@@ -445,9 +445,9 @@ function switchReason(reason: CliChannelReason | undefined): string | undefined 
     case 'OFFICIAL_MANUAL':
       return t('已手动切换插件下载')
     case 'OFFICIAL_STALLED':
-      return t('官方下载 10 秒没有新数据')
+      return t('官方更新长时间没有可观察进展')
     case 'OFFICIAL_SLOW':
-      return t('官方下载速度过低')
+      return t('官方下载等待过久或速度过低')
     case 'OFFICIAL_DEADLINE':
       return t('官方下载预计超过官方时限')
     case 'OFFICIAL_RESTARTED':
@@ -491,7 +491,8 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
   // A plugin-owned download from the official source (npm, desktop packages) resumes in place;
   // only a CLI's own updater cannot be resumed and is stopped instead.
   const ownedRule = t('下载停滞会从断点续传；5 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留')
-  const officialRule = (fallback: string) => hermes ? hermesRule : progress.sourceHost ? ownedRule : fallback
+  const grokRule = t('Grok 官方更新按临时文件变化判断进展；等待下载开始最多 60 秒，文件无变化 10 秒、主程序写入稳定后无活动 120 秒会切换插件下载')
+  const officialRule = (fallback: string) => hermes ? hermesRule : progress.sourceHost ? ownedRule : operation.cli === 'grok' ? grokRule : fallback
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
     <Tooltip label={hermes ? t('拉取过慢时只重取当前一段，每段最多 3 次；工具下载停滞时重跑官方更新，最多 3 次') : t('下载中断时重新执行同一条命令，最多 200 次')} side="top" align="end" portal>
@@ -522,7 +523,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
               reason: switched,
               cli: name,
             })
-          : t('{reason}，已停止官方更新并删除它留下的半成品，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
+          : t('{reason}，已停止官方更新，改由插件下载。之后 7 天内，这台电脑更新 {cli} 会直接由插件下载。', {
               reason: switched,
               cli: name,
             })}
@@ -644,7 +645,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
     body = <div className="cwn-update-progress">{meta(filesPrefix([receivedText(downloaded), ...transferParts()]), side, hostPart)}</div>
   } else if (state === 'none' || progress.channel || stageText) {
     // Phase only: the CLI's own stage line, no bar. The row already shows 「已用时」.
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(hermes ? hermesRule : operation.cli === 'grok' ? grokRule : t('官方更新不显示下载字节；超时未完成会停止官方更新，改由插件下载'))
     body = stageText || retries ? <div className="cwn-update-progress">{meta(stageText ? [stageText] : [], retries)}</div> : null
   } else {
     body = <div className="cwn-update-progress">{meta([t('正在执行，下载进度无法读取')], retries)}</div>

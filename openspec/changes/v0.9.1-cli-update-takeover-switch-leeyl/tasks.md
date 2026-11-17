@@ -12,6 +12,16 @@
 - [x] 1.3 提供手动切换入口 `OfficialWatch.requestTakeover()`、`HermesWatch.requestTakeover()`，与自动判定走同一路径
   - `official-watch.ts:161`、`hermes-watch.ts:59`；新增 `tests/cli-management-official-switch.test.ts`。官方看门狗相关 5 个测试文件共 148 项通过。
 
+- [x] 1.4 Windows Grok 官方更新被误判停滞（管道下只有一行输出）与临时文件未清理
+  - 根因（用户提供的 2026-11-17 Windows 实测）：1.0.77→1.0.88 管道仅输出 Downloading；下载压缩件约 6.5 秒、解压约 0.6 秒后还有版本、Authenticode 与 grove 收尾，总静默约 15 秒。旧 stage/phaseOnly 10 秒规则误杀，owned 为空却声称删除半成品。
+  - 实现：`artifacts/grok.ts`、`artifacts/probes.ts`、`artifacts/types.ts` 和 `official-watch.ts` 增加限定版本平台的 activityOnly 文件探针、原始主程序 HEAD 长度、60/10/120 秒计时及稳定指纹判断；沿用进程退出后清理安全检查。`cli-update-page.tsx`、`i18n-messages.ts` 使用中性停止与超时说明；README、设计和 cli-update 增量同步。
+  - 模拟关联回归：`corepack pnpm exec vitest run tests/cli-management-official-watch.test.ts tests/cli-management-dual-channel.test.ts tests/cli-management-task4-native.test.ts tests/cli-management-official-switch.test.ts tests/cli-update-page.test.tsx`，5 个文件 174 项通过。
+  - 模拟用例：重写「Grok 分块 Downloading 后没有文件，59 秒不接管，60 秒 OFFICIAL_SLOW」；新增持续文件变化 30 秒且不报告字节、10 秒停滞、达到总长后 3 次稳定/100 秒继续/120 秒接管、mtime 重置稳定计数、缩小/inode/换名/消失活动、只清理本次普通临时文件并保留基线/旧 mtime/符号链接/硬链接/Unix 最终文件、成功移走后清理无错误、未知版本安全回退；双通道新增正常描述与清单失败回退各 1 项静默 15 秒成功且无失败记忆；原生工件测试补 HEAD 原始长度与不可读回退断言；页面新增 3 项 Grok 中性文案/三段时限渲染检查，已有中英文断言随事实文案更新。
+  - `corepack pnpm typecheck`、`corepack pnpm build:preview` 通过；隔离包 `.cache/preview-package`，未更新 Desktop 链接。`corepack pnpm spec validate --all --strict`：40 项通过。
+  - 全量沙箱首跑：341 个文件通过、20 个失败、4 个跳过；8442 项通过、389 项失败、15 项跳过，20 个错误；确认 `listen EPERM` 后按要求转沙箱外重跑。独立本地监听检查同样返回 EPERM；另单跑 `native-workbuddy.test.ts` 定位到 ready-listen-failed（39 项中 20 失败），未修改其实现或测试。
+  - `corepack pnpm exec vitest run` 沙箱外全量：360 个文件通过、1 个失败、4 个跳过；8830 项通过、1 项失败、15 项跳过。唯一失败为下载预算用例「持续有真实字节仍受两小时总预算约束」偶发失败，按要求只单独重跑 `tests/cli-management-download.test.ts` 一次，18 项全部通过。
+  - 未实机验证：Windows/macOS/Linux 真实 Grok 更新、签名/grove 收尾和真实进程清理仍待验证。本轮没有运行真实 grok update、登录/退出、模型调用、Desktop 重启，也未访问 Windows 测试机。
+
 ## 2. 插件下载器 5 秒与 Qoder 续传 〔后端｜3h〕
 
 - [x] 2.1 正文停滞检查与低速窗口由 10 秒改为 5 秒，阈值仍为 100 KB/s；低速窗口从首段正文开始计
