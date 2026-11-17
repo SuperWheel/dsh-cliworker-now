@@ -63,10 +63,10 @@ export async function readMacAgyCredential(
 }
 
 /**
- * agy's own load order: the keychain item first, then its token file when the item
- * is missing or the keychain cannot be read. agy 1.5.x writes the file after a
- * keychain timeout or write failure and then clears the keychain item; its
- * `/logout` removes both, so a remaining file is the login agy itself loads.
+ * A readable macOS keychain is authoritative, including a missing item after
+ * native logout. Older agy versions can leave a stale token file behind. Only
+ * an unreadable keychain permits file fallback; absence alone is not evidence
+ * that agy is actively using the file. Windows has its own fallback policy.
  */
 export async function readMacAgyLogin(
   backend: ProcessBackend,
@@ -76,8 +76,7 @@ export async function readMacAgyLogin(
 ): Promise<Record<string, unknown> | undefined> {
   let failure: MacAgyKeychainError | undefined
   try {
-    const credential = await readMacAgyCredential(backend, config, signal)
-    if (credential) return credential
+    return await readMacAgyCredential(backend, config, signal)
   } catch (error) {
     if (!(error instanceof MacAgyKeychainError)) throw error
     failure = error

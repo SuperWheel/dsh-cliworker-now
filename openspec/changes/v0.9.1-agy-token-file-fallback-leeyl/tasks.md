@@ -15,7 +15,7 @@
   - 证据：`src/host/account-identity.ts` 的 `readAgyTokenFile`；`tests/account-identity.test.ts` 原有项通过
 - [x] 2.2 `agy-windows-account.ts`：凭据管理器投影为 `unconfigured`／`unavailable` 时读令牌文件；新增 `projectAgyCredential`，主体摘要与帮助脚本同算法；无项且文件损坏时为 `unavailable`
   - 证据：`src/host/agy-windows-account.ts` 的 `readNativeWindowsAgyAccount`、`windowsAgyAccountFromFile`、`projectAgyCredential`；测试见 3.1
-- [x] 2.3 `agy-macos-account.ts`：新增 `readMacAgyLogin`，钥匙串无项或 `MacAgyKeychainError` 时读令牌文件；进程清理失败照常抛出；状态与绑定都改用它
+- [x] 2.3 `agy-macos-account.ts`：新增 `readMacAgyLogin`，初版在钥匙串无项或 `MacAgyKeychainError` 时读令牌文件（无项回退已由 5.2 修正）；进程清理失败照常抛出；状态与绑定都改用它
   - 证据：`src/host/agy-macos-account.ts` 的 `readMacAgyLogin`；测试见 3.2
 - [x] 2.4 `cli-account-binding.ts`：macOS 改用 `readMacAgyLogin`；Windows 来源标识保持 `windows-credential:gemini:antigravity`
   - 证据：`src/host/cli-account-binding.ts` Antigravity 分支；测试见 3.2 的绑定一致项
@@ -26,7 +26,7 @@
 - [x] 3.1 `tests/agy-windows-account.test.ts` 新增 6 项（合成凭据与临时 home）
   - 凭据管理器 `unconfigured`／`unavailable` 时读文件得已登录与邮箱、不含令牌；凭据管理器有登录或已过期时不看文件；两处皆无为未登录、文件损坏为 `unavailable`；文件主体摘要与帮助脚本一致、非 Google 签发不出摘要；仅文件登录时模型目录可用
   - 该文件改为模拟 `homedir`，不再读开发者真实 `~/.gemini`
-- [x] 3.2 `tests/agy-macos-account.test.ts`：旧断言「无项不读旧文件」改为新行为；新增无项／钥匙串不可读时读文件、钥匙串优先、同一登录在钥匙串与文件间绑定不变、文件损坏仍报钥匙串不可读
+- [x] 3.2 `tests/agy-macos-account.test.ts`：初版把旧断言「无项不读旧文件」改为回退（已由第 5 节修正）；新增无项／钥匙串不可读时读文件、钥匙串优先、同一登录在钥匙串与文件间绑定不变、文件损坏仍报钥匙串不可读
   - 证据：同 3.4 的相关测试运行
 - [x] 3.3 `tests/cli-account-binding.test.ts` 的 macOS mock 改为 `readMacAgyLogin`
   - 证据：同 3.4；`cli-account-binding.test.ts` 全部通过
@@ -39,7 +39,24 @@
 
 ## 4. 实机验证 〔测试｜1h｜前置 3〕
 - [ ] 4.1 Windows 上凭据管理器无项、仅令牌文件的真实 agy 登录：设置页显示已登录、模型可选（需要能复现 agy 回退到文件的环境，或报告者确认）
-- [ ] 4.2 「凭据库无项时 agy 自己也读文件」的真实确认（目前由程序文本推断，见 design 决策 1）
+- [ ] 4.2 「凭据库无项时 agy 自己也读文件」的真实确认（1.5.10 组合存储已有静态分支证据，但真实 CLI 调用路径与 macOS 仅文件登录尚待确认，见 design）
+
+## 5. macOS 退出回归修复 〔后端｜2h｜前置 2〕
+- [x] 5.1 核对只读状态、二进制存储分支与退出重读链路
+  - 根因：macOS 把钥匙串缺失与读取失败合并，旧文件恢复 authenticated，专用 `AgyAccountGuide.proves` 要求 unconfigured 而失败；绑定同用 `readMacAgyLogin`。`accounts.ts` 的识别、发命令后、轮询及终端退出重读均走同一 identity。
+  - 只读：钥匙串退出码 44；令牌文件存在、559 字节、mtime 2026-11-05 20:29:27 +08:00，仅取元数据；本机 agy 1.5.10。未读令牌内容、未用 security -w/-g；静态函数地址及二进制摘要见 design.md。
+  - 1.5.10 组合存储有文件读取及清除分支，可保留不含 token 的元数据；不等于真实 `/logout` 已验收，撤回此前「1.5.x 两处文件都删」推断。
+- [x] 5.2 修复状态及绑定共用读取，并同步规格与用户文档
+  - 改动：`src/host/agy-macos-account.ts` 仅 MacAgyKeychainError 回退文件，明确缺失直接返回；Windows 代码和测试保持原样，不增加凭据删除或时间戳。`README.md`、`doc/design.md`、本变更 proposal/design/specs/tasks 同步决策及识别限制。
+  - 测试改动：`tests/agy-macos-account.test.ts` 使用合成钥匙串、临时 HOME；`confirms native macOS logout with a missing keychain item and a %s stale file (simulated)` 两项同时核对状态、专用退出确认、绑定拒绝及文件原样保留；保留不可读回退、优先级、绑定一致，并增加模拟超时、取消及清理未确认测试。
+- [x] 5.3 运行关联测试、类型检查、完整 Vitest 与严格规格校验
+  - 关联测试：`corepack pnpm exec vitest run tests/agy-macos-account.test.ts tests/agy-windows-account.test.ts tests/cli-account-binding.test.ts tests/agy-account-guide.test.ts tests/accounts.test.ts tests/account-identity.test.ts tests/os-credential-store.test.ts`，7 文件 347 项通过。
+  - `corepack pnpm typecheck` 通过（DSH 0.2.2-rc.3）；`corepack pnpm spec validate --all --strict` 40/40 通过；`git diff --check` 通过。
+  - 最终 `corepack pnpm exec vitest run`：361 文件通过、4 文件跳过；8819 项通过、15 项跳过、0 失败（总计 8834，124.28 秒）；日志 `/tmp/agy-logout-vitest-full-unrestricted.log`。全部为自动测试，不代表真实账号或 Desktop 验收。
+  - 首次沙箱内全量：341 文件通过、20 失败、4 跳过；8430 项通过、389 失败、15 跳过，另 20 个错误。单独复现环回 registry `listen EPERM 127.0.0.1` 后获准在沙箱外重跑；日志 `/tmp/agy-logout-vitest-full.log`。诊断额外运行 `pi-omp-native.test.ts` 33/33 通过。
+  - 首次沙箱外全量正遇另一 agent 提交 `3b62780` 的 Grok 签名修改：8818 通过、1 失败、15 跳过（签名测试已读到新用例，但源码报错文本仍是旧版），日志 `/tmp/agy-logout-vitest-full-concurrent-edit.log`；当前 `cli-management-task4-native.test.ts` 单独 29/29 通过，随后完整复跑得到上述 0 失败结果。本次未编辑 Grok 文件。下载预算测试没有触发需重跑的失败。
+- [ ] 5.4 用户重新构建后在真实 Mac Desktop 复测退出及状态刷新
+  - （未执行：按任务约束不运行真实登录/退出、账号切换、模型，不重启或更新 Desktop；等待用户复测。）同时确认仅文件有效、钥匙串恢复可读的实际原生行为；本轮不宣称该情形已兼容。不归档隐藏该缺口。
 
 ## 跟进
 

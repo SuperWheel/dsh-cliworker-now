@@ -1,14 +1,14 @@
 ## MODIFIED Requirements
 
 ### Requirement: macOS Antigravity 账号读取系统钥匙串
-在 macOS 上，Host SHALL 按 agy 自身的读取顺序确定 Antigravity 登录状态与账号绑定：先读系统钥匙串中 service `gemini`、account `antigravity` 的条目（通过参数数组调用 `/usr/bin/security` 并在 Host 进程内解码）；条目不存在或钥匙串读取失败时，再读 `~/.gemini/jetski-standalone-oauth-token`。钥匙串条目存在时 MUST 以条目为准，不读文件。两处都没有登录时 MUST 视为未登录；钥匙串读取失败且文件不存在或无法解析时 MUST 报告无法读取，不判为已登录或未登录。凭据、令牌与条目原文 MUST NOT 写入日志、事件、持久化文件或界面。同一账号的绑定版本 MUST NOT 因登录在钥匙串与文件之间切换而改变。
+在 macOS 上，Host SHALL 区分钥匙串条目缺失与读取失败来确定 Antigravity 登录状态与账号绑定：先读系统钥匙串中 service `gemini`、account `antigravity` 的条目（通过参数数组调用 `/usr/bin/security` 并在 Host 进程内解码）；只有钥匙串读取失败时，才读 `~/.gemini/jetski-standalone-oauth-token`。钥匙串正常读取时 MUST 以结果为准，不读文件；明确条目不存在时 MUST 视为未登录，即使旧令牌文件仍在。钥匙串读取失败且文件不存在或无法解析时 MUST 报告无法读取，不判为已登录或未登录。凭据、令牌与条目原文 MUST NOT 写入日志、事件、持久化文件或界面。同一账号的绑定版本 MUST NOT 因登录在钥匙串与文件之间切换而改变。
 
 #### Scenario: 原生退出后
-- **WHEN** 用户在 agy 1.5.x 中 `/logout`，钥匙串条目与令牌文件均已删除
+- **WHEN** 用户在 agy 中 `/logout` 后，钥匙串读取明确返回条目不存在，旧令牌文件仍存在（包括有效或损坏内容）
 - **THEN** 设置页显示未登录；续聊拒绝启动并提示登录，原会话与绑定保留
 
 #### Scenario: agy 回退到令牌文件
-- **WHEN** agy 因钥匙串超时或写入失败把登录存入令牌文件，并清除了钥匙串条目
+- **WHEN** 本次钥匙串读取失败或超时，且存在可解析的 agy 登录令牌文件
 - **THEN** 设置页显示已登录及邮箱，模型目录与派遣可用，绑定与原钥匙串来源相同
 
 #### Scenario: 重新登录原账号

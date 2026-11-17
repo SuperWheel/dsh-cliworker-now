@@ -75,6 +75,8 @@ WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面�
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.3；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
 - **验证范围**：本次升级（0.2.2-rc.3）已在隔离 DSH_HOME 的 rc.3 宿主上核对插件加载与主要界面；2026-11-15 至 11-16 又在 Mac 与 Windows 正式 Desktop 0.2.2-rc.3 上完成多个 CLI 的真实派遣、续聊与停止（范围见 v0.8.10 Release 的验证段），具体边界见 [升级验证记录](openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md)；0.2.2-rc.2 的记录见 [rc.2 升级验证](openspec/archives/upgrade-host-022rc2/tasks.md)。每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。
 
+Antigravity 在 macOS 上以可读的钥匙串结果确认账号：条目不存在即未登录，避免原生退出后残留旧文件导致确认失败；钥匙串不可读或超时时仍可回退令牌文件。Windows 保留凭据管理器无项或不可读时的文件回退。插件不删除凭据；macOS 仅文件登录且钥匙串已恢复可读的识别边界见 [回退设计与验证记录](openspec/changes/v0.9.1-agy-token-file-fallback-leeyl/design.md)。
+
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
 
 Qoder / Qoder CN 的账号与模型目录只读查询按原生版本分流：高于 1.1.80 使用本次私有 SDK daemon，较旧版本保留 SDK worker；未知版本仅在明确协议不支持时切换一次。查询不发送 prompt，配置写入隔离到临时目录，确认结束与进程退出后清理；自定义模型保留，停用模型不可选。真实 Worker 继续使用 ACP。

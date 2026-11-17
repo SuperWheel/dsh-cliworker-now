@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
-import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
+import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 
 // Synthetic keychain output and home directory only; no real keychain, CLI or network.
 const state = vi.hoisted(() => ({ home: '' }))
@@ -20,6 +20,7 @@ import {
   readMacAgyLogin,
 } from '../src/host/agy-macos-account.ts'
 import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
+import { AgyAccountGuide, AGY_GUIDES } from '../src/host/agy-account-guide.ts'
 
 const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
 beforeEach(() => {
@@ -83,11 +84,29 @@ it('answers a missing item (exit 44) with no token file as signed out', async ()
   })
 })
 
-// agy 1.5.x moves the login to its token file after a keychain timeout or write
-// failure and clears the keychain item (issue #13); it then loads the file itself.
+it.each(['valid', 'malformed'])('confirms native macOS logout with a missing keychain item and a %s stale file (simulated)', async (kind) => {
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+  const path = join(state.home, '.gemini/jetski-standalone-oauth-token')
+  const content = kind === 'valid' ? JSON.stringify(keychainLogin('old@example.test')) : 'not-json-' + SECRET
+  writeFileSync(path, content)
+  const before = await macAgyAccountIdentity(security(JSON.stringify(keychainLogin('current@example.test'))), DEFAULT_CONFIG)(
+    'antigravity', signal(),
+  )
+  const signedOut = security('', 44)
+  const after = await macAgyAccountIdentity(signedOut, DEFAULT_CONFIG)('antigravity', signal())
+  expect(after).toMatchObject({ state: 'unconfigured', summary: '尚未登录 Antigravity' })
+  const guide = new AgyAccountGuide('logout')
+  expect(guide.proves('logout', before, after)).toBe(true)
+  expect(guide.confirmed('logout')).toContainEqual({ guide: AGY_GUIDES.loggedOut })
+  await expect(readCliAccountBinding('antigravity', signedOut, DEFAULT_CONFIG, state.home, signal()))
+    .rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  expect(readFileSync(path, 'utf8')).toBe(content)
+})
+
+// Simulated issue #13-style keychain failures retain file fallback on macOS.
 it.each([
-  ['a missing item', '', 44],
   ['an unreadable keychain', '', 51],
+  ['unparseable keychain output', 'not-json-' + SECRET, 0],
 ])('reads the token file agy fell back to on %s', async (_name, output, exitCode) => {
   writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(keychainLogin('Synthetic@Example.test')))
   const identity = await macAgyAccountIdentity(security(output, exitCode), DEFAULT_CONFIG)('antigravity', signal())
@@ -104,12 +123,31 @@ it('prefers the keychain item over a token file, as agy does', async () => {
   expect(identity).toMatchObject({ state: 'authenticated', accountLabel: 'keychain@example.test' })
 })
 
+it('uses the token file after a simulated keychain timeout', async () => {
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(keychainLogin('file@example.test')))
+  const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(AbortSignal.abort(new DOMException('SIMULATED timeout', 'TimeoutError')))
+  try {
+    const identity = await macAgyAccountIdentity(security(''), DEFAULT_CONFIG)('antigravity', signal())
+    expect(identity).toMatchObject({ state: 'authenticated', accountLabel: 'file@example.test' })
+  } finally { timeout.mockRestore() }
+})
+
+it('never falls back to a file after cancellation or unconfirmed keychain process cleanup (simulated)', async () => {
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(keychainLogin('file@example.test')))
+  const cancellation = new Error('SIMULATED cancellation')
+  await expect(readMacAgyLogin(security(''), DEFAULT_CONFIG, AbortSignal.abort(cancellation))).rejects.toBe(cancellation)
+  const backend = security('', 51)
+  const spawn = backend.spawn.getMockImplementation()!
+  backend.spawn.mockImplementation((spec) => ({ ...spawn(spec), waitForExit: vi.fn(async () => false) }))
+  await expect(readMacAgyLogin(backend, DEFAULT_CONFIG, signal())).rejects.toBeInstanceOf(ProcessCleanupUnconfirmedError)
+})
+
 it('keeps one binding when the same login moves between the keychain and the token file', async () => {
   Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
   const value = keychainLogin('synthetic@example.test')
   const fromKeychain = await readCliAccountBinding('antigravity', security(JSON.stringify(value)), DEFAULT_CONFIG, state.home, signal())
   writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(value))
-  const fromFile = await readCliAccountBinding('antigravity', security('', 44), DEFAULT_CONFIG, state.home, signal())
+  const fromFile = await readCliAccountBinding('antigravity', security('', 51), DEFAULT_CONFIG, state.home, signal())
   expect(fromFile).toBe(fromKeychain)
 })
 

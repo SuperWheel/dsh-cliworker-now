@@ -2,24 +2,27 @@
 
 ## Context
 
-agy 1.5.9 的令牌存储是组合存储（符号 `codeassistclient.(*compositeTokenStorage)`，含 `peekKeyringStoredToken`、`fallbackSaveTokenToFile`）。程序内相关文本：
+issue #13 是 Windows 上 agy 已登录、插件只读凭据管理器而未识别文件回退的问题。最初把同样的「无条目也回退」扩展到 macOS；用户随后报告基于 f485281 的 Mac Desktop 退出失败，Windows 同流程正常。原任务 2.3 的状态读取和任务 2.4 的绑定都复用了 `readMacAgyLogin`。
 
-- `Failed to load token from keyring, falling back to file: %v`、`Keyring LoadToken timed out after %v, falling back to file storage`
-- `Using file-based token storage because a keyring timeout was recorded within the last %v`（更新说明：超时后一小时内跳过钥匙串）
-- `Keyring %s failed (%v); using file-based token storage for writes for the rest of this process`
-- `Failed to clear stale keyring credential after file fallback: %v`
-- `failed to remove token from both keyring (%v) and file (%v)`（`/logout` 两处都删）
+### 2026-11-17 只读证据及边界
 
-文件路径为 `~/.gemini/jetski-standalone-oauth-token`（程序内常量 `jetski-standalone-oauth-token`），内容与钥匙串条目同为 `{auth_method, token, id_token_email, writer_id}`。
+- 本机 `/usr/bin/security find-generic-password -s gemini -a antigravity` 返回 44（条目不存在）；未用 `-w`/`-g`，输出被捕获且仅报告存在性。`~/.gemini/jetski-standalone-oauth-token` 存在，是普通文件，559 字节，mtime 为 2026-11-05 20:29:27 +08:00；只做 lstat，未读、复制或记录内容。
+- `~/.local/bin/agy --version` 返回 **1.5.10**，不是原任务记录的 1.5.9，也不能据此断言用户退出时运行的版本。二进制 SHA-256：`780ee763a9938a37b45c7f9d6ae31747d7c574358fd10c64d3a1cdc36faf2798`。
+- 静态字符串含 `Failed to load token from keyring, falling back to file: %v`、超时标记、回退后清理旧钥匙串条目及 `failed to remove token from both keyring (%v) and file (%v)`。**字符串不能单独证明 `/logout` 的实际调用路径或删除成功。**
+- 进一步从该二进制 Go pclntab 解析函数地址，再用 CommandLineTools 的 `llvm-objdump --disassemble --start-address=… --stop-address=…` 核对：`compositeTokenStorage.LoadStoredToken`（0x101c0ede0）中钥匙串未返回含 token 的状态会进入文件存储读取（0x101c0ee40）；组合存储确实支持仅文件登录，不能声称 agy 1.5.x 一律忽略残留文件。`compositeTokenStorage.RemoveToken`（0x101c0eac0）包含钥匙串清除及文件存储 RemoveToken 调用；`fileTokenStorage.RemoveToken`（0x101c3c010）可走 `os.Remove` 或 `UpdateStoredToken` 保留无 token 的元数据。故撤回原文「1.5.x /logout 两处都删文件」的笼统结论。未执行原生退出，未确认当前 CLI 的 `/logout` 实际采用此组合存储，也不把 1.5.10 静态分支扩张为所有 1.5.x 版本的行为。
+- 已确认的插件根因：`readMacAgyLogin` 把明确无钥匙串条目与读取失败合并，读取任何可解析的旧文件。合成有效文件可重现 `authenticated`，账号绑定也成功；修复后同一模拟场景为 `unconfigured` 并拒绝绑定。本机文件仅取元数据，不能断言其中仍有有效令牌。
+- 退出调用链：`accounts.ts` 的初始识别、发命令后的检查、退出轮询和终端退出后的重读都经 `readEvidence → evidence → this.identity → macAgyAccountIdentity → readMacAgyLogin`；设置页也用该 identity，绑定经 `cli-account-binding.ts` 同一读取函数。`createAccountGuide` 为 Antigravity 返回 `AgyAccountGuide`，其 `proves` 要求退出后 **unconfigured**，不是通用 `FlowGuide.proves` 的 `state !== authenticated`。本次保持两者不变。
 
 ## Decisions
 
-1. **按 agy 的读取顺序，而不是只认凭据库。** 「凭据库没有此项 → 读文件」是从「回退写文件后清除凭据库旧凭据」推断的：若 agy 在凭据库无项时不读文件，回退写入后的下一次启动就会丢失登录，清除凭据库也就没有意义。issue #13 的现象（凭据管理器无项、agy 仍为已登录）与此一致。没有反汇编确认分支，真实复现以报告者环境为准（见 tasks 4）。
-2. **凭据库读取失败也回退。** agy 在读取失败与超时时都回退文件。若文件不存在或损坏，保留原有「无法读取」结论，不判为未登录或已登录。
-3. **不改来源标识。** Windows 绑定沿用 `windows-credential:gemini:antigravity`，避免同一账号因 agy 换存放位置而被判为换号；也避免升级后已有 Windows 绑定全部变化。文件主体按帮助脚本相同算法（`sha256("google:" + sub)` 或小写邮箱）计算。
-4. **推翻 macOS「不回退文件」的旧决定。** 旧决定针对 agy 1.4.7 `/logout` 留下旧文件。1.5.x 两处都删；即使仍有 1.4.7 时期留下的旧文件，按决策 1 agy 1.5.x 自己也会加载它，插件显示应与 agy 一致。
-5. **不检查 agy 的钥匙串超时标记文件。** 超时标记生效期间 agy 直接用文件，凭据库里可能残留旧条目；该情况下 agy 已在回退后清除旧条目，残留窗口很短，暂不模拟标记逻辑。
+1. **macOS 区分明确缺失与读取失败。** 采用本次任务明确允许的保守修复：`readMacAgyCredential` 正常返回时直接采用结果，包括 undefined；仅 `MacAgyKeychainError`（拒绝访问、超时、损坏输出等）允许读文件。旧版退出留下文件不再使设置页或绑定恢复已登录。
+2. **保留真实读取失败时的回退。** 钥匙串不可读且文件可解析时继续投影账号和绑定；同一账号的来源仍为 `~/.gemini`，不因介质改变而改绑。文件缺失或损坏时保留不可读结论。取消和进程清理未确认仍原样上抛，不读文件掩盖失败。
+3. **Windows 完全保留现状。** 凭据管理器无项或不可读时都回退文件，来源保持 `windows-credential:gemini:antigravity`，保留原 issue #13 修复及原 Windows 测试。
+4. **不增加凭据写入或清理。** 不删除令牌文件，不写退出时间戳，不触碰钥匙串。没有可证实的活动文件来源或版本判据时，插件不扩大原生退出的副作用。仍用 `readAgyTokenFile` 的有界、拒绝链接、读后比对路径保护。
+5. **承认原生组合存储与保守策略的差异。** agy 1.5.10 的组合存储在钥匙串无 token 时可能读文件；若 macOS 曾因写失败/超时转存文件，随后钥匙串恢复可读且无条目，本策略会显示未登录。这是本次最小方案的已知限制，不能宣称完全复刻所有原生存储模式；应保留实机待办，在取得原生实际来源证据后再扩展。当前可验证的兼容范围是 Windows 文件回退，以及 macOS 当次钥匙串仍不可读/超时的文件回退。
 
 ## Risks
 
-- 若 agy 实际在凭据库无项时不读文件，插件会在「仅剩旧文件」时显示已登录而 agy 要求登录；派遣会由 agy 自身报未登录。可由报告者或 Windows 实机复测确认。
+- 用户重新构建后须在 Mac Desktop 复测退出、关闭后刷新和重新登录；本轮不运行真实登录/退出、账号切换或模型，不更新/重启 Desktop。
+- 仅文件且钥匙串已恢复可读的 macOS 原生登录待实机确认；不能把测试夹具视为该场景验收。保留任务 4.1、4.2、5.4，不归档隐藏缺口。
+- 回退本修复会重新允许旧文件把退出状态变回 authenticated；优先通过更强的原生活动来源证据解决上述限制，而非恢复无条件回退。
