@@ -21,6 +21,11 @@
   - 全量沙箱首跑：341 个文件通过、20 个失败、4 个跳过；8442 项通过、389 项失败、15 项跳过，20 个错误；确认 `listen EPERM` 后按要求转沙箱外重跑。独立本地监听检查同样返回 EPERM；另单跑 `native-workbuddy.test.ts` 定位到 ready-listen-failed（39 项中 20 失败），未修改其实现或测试。
   - `corepack pnpm exec vitest run` 沙箱外全量：360 个文件通过、1 个失败、4 个跳过；8830 项通过、1 项失败、15 项跳过。唯一失败为下载预算用例「持续有真实字节仍受两小时总预算约束」偶发失败，按要求只单独重跑 `tests/cli-management-download.test.ts` 一次，18 项全部通过。
   - 未实机验证：Windows/macOS/Linux 真实 Grok 更新、签名/grove 收尾和真实进程清理仍待验证。本轮没有运行真实 grok update、登录/退出、模型调用、Desktop 重启，也未访问 Windows 测试机。
+  - 2026-11-17 Windows 实机复测（9324e9a 隔离包，Codex CU 在「更新 CLI」页点 Grok「更新」）：23:10:33 开始，行内显示「官方」与三段时限说明，约 23:11:02 结束为「已更新到 1.0.88」，全程走官方通道、未切换插件下载；输出 `Downloading Grok 1.0.88... / Installed 1.0.88.` 和「更新清理：已删除 Grok 备份 1 项，释放 181617808 B」。
+    - 只读核对：`grok --version` 为 `grok 1.0.88 (2fe3608f7398)`；`~/.grok/bin` 的 agent.exe、grok.exe（186911376 B，23:10:43）与 grove、grove-credential、grove-fsmonitor（23:10:52–53）Authenticode 均为 Valid；`~/.grok/downloads` 只剩最终文件 `grok-1.0.88-windows-x86_64`，没有 `.tmp` 残留；`channel-memory.json` 只有 11-14 的旧记录 `ebeb8bed1c61 OFFICIAL_SLOW`，本次没有新增失败记忆。
+    - 500 毫秒采样（`grok-sampler-20261117.ps1`）：23:10:35 出现 `.tmp.exe` 与压缩件临时文件，压缩件 55413180 B 于 23:10:42 写完，23:10:43 主程序 186911376 B 写完并于 23:10:49 改名为最终文件，23:10:50–53 依次出现并写完三个 grove 临时文件，23:10:54 起只剩最终文件；临时文件全程持续变化，未触发 10 秒停滞。
+    - 两个旧版本留下的 Grok 临时文件经用户同意（「可以删除」）在复测前删除。
+    - 未实机验证：Windows 上手动「切换插件下载」与取消（本次官方路径一次成功，没有出现切换）；macOS 新构建的 Grok 官方路径只有模拟测试。
 
 ## 2. 插件下载器 5 秒与 Qoder 续传 〔后端｜3h〕
 
@@ -166,5 +171,8 @@
 - [ ] 4.3 Windows 回归与实机（等 Windows 连上）
   - 2026-11-17 晚 Windows 隔离回归 37e3d6c3（aca5b85，config-d.json）：1032 项中 1024 项通过、0 失败、8 项跳过。
   - Windows Desktop 已部署同一源码的隔离包（1322 个文件与清单一致，Host `lib/index.js` 与 Mac 正式构建相同，SHA-256 `e1d5f40e…`），实机更新测试进行中。
+  - 2026-11-17 Windows 隔离回归 792092c3（9324e9a，config-d.json，22:58–23:04）：70 个文件、1032 项中 1024 项通过、0 失败、8 项跳过；源码快照与预览包一致，远端与本地清理均确认，无模型调用。
+  - Windows 实机：Hermes 0.23.1 → 0.23.2 重装成功、无 EPERM（见 3.12）；Grok 1.0.77 → 1.0.88 官方更新成功、无误判、无临时文件残留（见 1.4）；agy 凭据文件回退通过（用户确认，见 v0.9.1-agy-token-file-fallback-leeyl 4.1/4.2）。
+  - 未实机验证：Windows 上 Grok、Qoder 的手动「切换插件下载」与取消；Hermes 黄色「未完成」与「重试」只有模拟测试。
 - [x] 4.4 同步 README、`doc/usage-details.md` 与设计文档中的时限和按钮说明
   - README.md 下载续传段与双通道段、README.en.md 对应段落、`doc/design.md`「2026-11-17 更快切换插件下载与手动切换」。`doc/usage-details.md` 没有涉及这些时限的内容，未改。
