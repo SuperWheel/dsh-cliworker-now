@@ -108,7 +108,13 @@
     - Mac：ZCode.app 3.18.2 的 Electron 44.7.0 / Node 24.21.0 下，`--version` 输出 0.17.1；keyring 与 playwright-core 可以导入；无轮次的 app-server 握手通过，进程正常退出。
     - Windows（build 22631）：同一启动方式输出 0.17.1，两个模块可以解析，`@zcode/tui` 按预期找不到。直接启动和经插件隐藏中继启动的握手都通过；抽查的进程没有窗口（MainWindowHandle=0）；D: 盘 134 字符的临时路径可用，Windows 走命名管道。
   - 旧登录核实（断网，在副本上）：6 条 `enc:v1` 在生成 credential-secret 后全部可读，改写成 `enc:v2:env` 后明文与登录投影都不变。前提是 HOME 与用户名不变，插件的环境满足这一点。真实目录前后哈希一致。
-  - 未执行：真实 Worker 轮次（需要模型调用授权）、真实登录与退出、Desktop 内运行、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
+  - Mac Desktop 实机（2026-11-17，提交 3e648be 正式构建，Codex 界面只读检查，未派遣、未登录或退出、未调用模型）：
+    - 打开 ZCode 设置后，路径记录由 revision 1 的独立 runtime 改写为 revision 2 的 `/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs`，高级设置显示同一路径。
+    - ZCode 状态「已配置 ZCode API」，模型目录加载（约 40 项）；「账号终端」在读取完成后隐藏；没有错误提示。
+    - 「更新 CLI」页 ZCode 行显示「应用 3.18.2 · CLI 0.17.1」，归入「已是最新」。
+    - 其余 16 个 CLI 的状态与模型读取正常，或是账号自身原因：Kimi 需要续期，Qoder 账号下 17 个模型全部停用，WorkBuddy CN 提示原默认模型不可用，WorkBuddy 未安装。
+    - `credential-secret` 尚未生成：按设计只在 Worker 或登录、退出启动 ZCode 时创建，读模型目录不会启动 ZCode。
+  - 未执行：真实 Worker 轮次（需要模型调用授权，也是真实生成密钥文件、核对旧登录仍可用的环节）、真实登录与退出、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
 - [ ] 4.3 迁移成功后，经用户确认删除旧的私有运行时
 - [x] 4.4 修复 ZCode 规划模式 Worker 一律被拒
   - 实机核实时发现：0.16.9 与 0.17.1 都声明 `independentPlanState`，`plan` 只把独立布尔值 `planEnabled` 设为 true，权限模式仍为 build。旧版的 `session/read` 不含这个布尔值，要从 v4 `conversation/subscribe` 快照的 `config.planEnabled` 读取。证据位置：bundled zcode.cjs 字节 15507235、1084166、15306798、15468179；0.16.9 的第 601975、43256、594695、600933 行。
