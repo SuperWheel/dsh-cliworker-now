@@ -24,8 +24,9 @@ export class HermesWatch {
   /** Injected in tests; the Host passes nothing. */
   platform: NodeJS.Platform = process.platform
   /** Dependency/build activity roots. Windows cannot rename a directory while any handle inside it is open,
-   * and Hermes 0.23.2 renames the checkout's node_modules aside before reinstalling; a per-second recursive
-   * walk of it could hold such handles (2026-11-17 Windows 实测：Node 依赖 6.5 分钟后 EPERM rename node_modules).
+   * and Hermes (node-deps.mjs since 0.23.1, upstream #151577) renames the checkout's node_modules aside once,
+   * without retry, before reinstalling; a per-second recursive walk of it holds such handles most of the time
+   * (2026-11-17 Windows 实测：Node 依赖开始约 1 秒即 EPERM rename node_modules；33k 项遍历一轮 1–4 秒).
    * There the checkout trees are not walked at all; Hermes' own caches, output, log and receipts still count. */
   private workRoots(activity: boolean) {
     const checkout = this.platform === 'win32' ? [] : ['node_modules', 'web/node_modules', 'ui-tui/node_modules'].map(p => join(this.checkout, p))

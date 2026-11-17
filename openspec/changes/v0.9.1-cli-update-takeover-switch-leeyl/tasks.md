@@ -97,8 +97,8 @@
 - [x] 3.11 Windows Hermes 更新后误报「版本仍为 0.23.1」，Node 依赖阶段慢且改名失败
   - 2026-11-17 Windows Desktop（c919720 隔离包）Codex CU 实测：20:47 点 Hermes「更新」，约 9.5 分钟后该行报 `VERSION_UNCHANGED`「命令已完成，但版本仍是 0.23.1」，侧栏圆点变红。用户同时反馈安装很慢。
   - 只读核对：
-    - 回执 `latest.json` 为 `success`，`post_update` 为 0.23.2、`ae2a81cc…`。阶段时间：apply 20:48:30，即取码加切换 39 秒；deps 20:50:37，Python 依赖约 2 分钟，其间有一次 `IncompleteRead` 重试；build 20:57:10 失败，Node 依赖约 6.5 分钟；20:57:18 结束。
-    - `update.log`：`node-deps.mjs` 的 `moveAside` 把 `hermes-agent\node_modules` 改名到 `.cache\node-deps-previous` 时报 `EPERM`；释放说明刷新 30 秒超时；最后一行是「✓ Update complete! (v0.23.1 → v0.23.2)」。11-14 两次更新的 Node 依赖都成功，今天是第一次出现改名失败。
+    - 回执 `latest.json` 为 `success`，`post_update` 为 0.23.2、`ae2a81cc…`。阶段时间：apply 20:48:30，即取码加切换 39 秒；deps 20:50:37，Python 依赖约 2 分钟，其间有一次 `IncompleteRead` 重试；build 段 20:57:10 标记失败、20:57:18 结束。更正（Fable 复核 `.cache` 时间与回执 `followups[0].at`）：Node 依赖并非跑了 6.5 分钟，20:53:05–20:53:44 是 Hermes 下载新 Git 工具链，20:53:59 `node-deps.mjs` 第一次改名即 EPERM，20:54:00 记 followup `build`，其后为 Hermes 自身 ACL 修复与收尾。
+    - `update.log`：`node-deps.mjs` 的 `moveAside` 把 `hermes-agent\node_modules` 改名到 `.cache\node-deps-previous` 时报 `EPERM`；释放说明刷新 30 秒超时；最后一行是「✓ Update complete! (v0.23.1 → v0.23.2)」。11-14 两次更新的 Node 依赖都成功，今天是第一次出现改名失败。挪开逻辑来自上游 #151577，`3b421578..ae2a81cc` 间 `node-deps.mjs` 无改动，不是 0.23.2 新增；pnpm 未启动，`node_modules` 仍为 11-14 那份。根因已证实为改名瞬间树内有打开句柄（libuv 单次 `MoveFileExW`，`ERROR_ACCESS_DENIED → EPERM`）；持有者推测为插件每秒遍历（33,289 项，一轮 1–4 秒）或腾讯电脑管家，无法事后取证。
     - `hermes --version` 为 v0.23.2，HEAD 是 `ae2a81cc…`，`git describe` 为 v0.23.2。
     - `install-stamp.json` 没有改写，仍是 0.23.1 和 `3b421578…`。`refs/tags/v0.23.2` 指向注释标签对象 `28f57ed8…`，该对象在包内，不是松散对象。
   - 版本误报原因：`hermes-version.ts` 只解码松散标签对象，读不出版本时回落到 install-stamp 的 0.23.1。修复：标签无法证明时，读 Hermes 自己的 `logs/update_receipts/latest.json`。只有 `outcome` 为 success、`post_update.source` 为 git、`post_update.sha` 等于当前 HEAD、版本为稳定三段号时才采用。
