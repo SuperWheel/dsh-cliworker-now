@@ -41,7 +41,7 @@ import { captureCatalogMetadata, configuredCliExecutable, executableFor, resolve
 import {
   cleanupCauseText,
   METADATA_EXIT_GRACE_MS,
-  projectDirectory,
+  processDirectory,
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
   type RuntimeConfig,
@@ -491,7 +491,7 @@ export class AccountManager {
     if (this.reserved.has(cli)) return this.cleanupHold(cli) ?? {
       cli, installed: true, state: 'unknown', summary: '此 CLI 已有账号终端，请先关闭后重试', actions: [],
     }
-    const directory = projectDirectory(cwd)
+    const directory = processDirectory(cwd)
     const key = JSON.stringify([cli, directory])
     let query = this.statusQueries.get(key)
     if (query && [...query.subscribers].every((reader) => reader.signal.aborted)) query.controller.abort()
@@ -987,7 +987,7 @@ export class AccountManager {
     if (this.unsafeTerminals.has(cli)) throw new Error('账号终端未能确认完全退出，已暂停此 CLI；确认没有残留进程后可在设置中解除暂停')
     if (this.unsafeQueries.has(cli)) throw new ProcessCleanupUnconfirmedError()
     if (this.reserved.has(cli)) throw new Error('此 CLI 已有账号终端，请先关闭后重试')
-    const directory = projectDirectory(cwd)
+    const directory = processDirectory(cwd)
     this.setReserved(cli, true)
     for (const query of this.statusQueries.values()) if (query.cli === cli) query.controller.abort()
     let scope = this.parents.get(parent)

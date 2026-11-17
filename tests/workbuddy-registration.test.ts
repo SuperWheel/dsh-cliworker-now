@@ -265,7 +265,9 @@ describe('模拟 WorkBuddy desktop Gateway and AccountManager integration', () =
     } } }
     const service: any = Object.create(CliWorkerService.prototype)
     Object.assign(service, { accounts: manager, accountParents: new Map(), disposed: new AbortController(),
-      parent: vi.fn(async () => parent), project: () => f.root, assertExecution: vi.fn(),
+      // 模拟：主对话没有项目；桌面账号窗口属于整机，不解析会话目录。
+      parent: vi.fn(async () => parent), options: { stateDirectory: f.root }, assertExecution: vi.fn(),
+      project: () => { throw new Error('模拟：账号窗口不得解析会话目录') },
       runtime: { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn() } })
     await expect(service.accountDesktopStart(parent.id, 'codebuddy', signal())).rejects.toThrow()
     service.runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('SIMULATED active worker') })

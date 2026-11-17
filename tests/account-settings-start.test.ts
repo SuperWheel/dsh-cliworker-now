@@ -47,7 +47,7 @@ async function fixture(cli: 'codex' | 'codebuddy') {
   const off = accounts.subscribeActivity(id => (host as any).invalidateSettingsDisplay(id))
   const cache = (host as any).connectionCache()
   cleanups.push(async () => { disposed.abort(); off(); await accounts.close(); await runtime.close(); await cache.close(); rmSync(root, { recursive: true, force: true }) })
-  await cache.read(root, cli, 'catalog', signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
+  await cache.read(cli, 'catalog', signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
   return { host, accounts, cache, root, signal, backend, terminal, pause: () => runtime.blockCatalogOnCleanup(cli, new ProcessCleanupUnconfirmedError()) }
 }
 it.each(['codex', 'codebuddy'] as const)('模拟：%s 设置快照命中后刷新取得动作，真实 AccountManager 启动并回收模拟 PTY', async cli => {
@@ -68,7 +68,7 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 设置快照命中后刷�
   expect(f.accounts.isBusy(cli)).toBe(true)
   await expect(f.host.accountStart('simulation-parent', cli, 'login', f.signal)).rejects.toThrow('已有账号终端')
   expect(f.backend.spawnTerminal).toHaveBeenCalledTimes(1)
-  expect(f.cache.status(f.root, cli).account.value).toBeUndefined()
+  expect(f.cache.status(cli).account.value).toBeUndefined()
   const stream = f.host.accountWatch('simulation-parent', started.id, f.signal)
   expect(JSON.parse((await stream.next()).value!).status).toBe('running')
   await stream.return(undefined)
@@ -82,7 +82,7 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 强制刷新等待已有�
   let finish!: () => void
   const reading = cli === 'codex' ? vi.mocked(readCodexAccount) : vi.mocked(readCodebuddyAccount)
   reading.mockImplementationOnce(async () => { await new Promise<void>(resolve => { finish = resolve }); return identity })
-  const background = f.cache.read(f.root, cli, 'account', f.signal, (control: AbortSignal) => f.accounts.status(cli, f.root, control))
+  const background = f.cache.read(cli, 'account', f.signal, (control: AbortSignal) => f.accounts.status(cli, f.root, control))
   await vi.waitFor(() => expect(reading).toHaveBeenCalledTimes(1))
   const refreshed = f.host.refreshAccountStatus('simulation-parent', cli, f.signal)
   await Promise.resolve(); expect(reading).toHaveBeenCalledTimes(1)
@@ -90,7 +90,7 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 强制刷新等待已有�
   const fresh = JSON.parse(await refreshed)
   expect(reading).toHaveBeenCalledTimes(2)
   expect(fresh.actions.some((action: any) => action.id === 'login')).toBe(true)
-  expect(f.cache.snapshot(f.root).entries.find((entry: any) => entry.cli === cli).account.value.actions).toEqual([])
+  expect(f.cache.snapshot().entries.find((entry: any) => entry.cli === cli).account.value.actions).toEqual([])
 })
 it.each(['codex', 'codebuddy'] as const)('模拟：%s 清理暂停时刷新和快速状态均明确无动作，不能伪装成功登录', async cli => {
   const f = await fixture(cli)
@@ -110,7 +110,7 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 排队刷新被取消后�
   let finish!: () => void
   const reading = cli === 'codex' ? vi.mocked(readCodexAccount) : vi.mocked(readCodebuddyAccount)
   reading.mockImplementationOnce(async () => { await new Promise<void>(resolve => { finish = resolve }); return identity })
-  const old = f.cache.read(f.root, cli, 'account', f.signal, (control: AbortSignal) => f.accounts.status(cli, f.root, control))
+  const old = f.cache.read(cli, 'account', f.signal, (control: AbortSignal) => f.accounts.status(cli, f.root, control))
   await vi.waitFor(() => expect(reading).toHaveBeenCalledTimes(1))
   const refresh = f.host.refreshAccountStatus('simulation-parent', cli, controller.signal)
   const rejected = expect(refresh).rejects.toThrow()
@@ -122,10 +122,10 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 终端清理失败后刷�
   const f = await fixture(cli)
   const started = JSON.parse(await f.host.accountStart('simulation-parent', cli, 'login', f.signal))
   await f.host.accountStatus('simulation-parent', cli, f.signal)
-  expect(f.cache.fresh(f.root, cli, 'account')).toBeDefined()
+  expect(f.cache.fresh(cli, 'account')).toBeDefined()
   f.terminal.terminate.mockRejectedValueOnce(new Error('模拟清理失败'))
   await expect(f.host.accountStop('simulation-parent', started.id)).rejects.toThrow()
-  expect(f.cache.fresh(f.root, cli, 'account')).toBeUndefined()
+  expect(f.cache.fresh(cli, 'account')).toBeUndefined()
   const fresh = JSON.parse(await f.host.refreshAccountStatus('simulation-parent', cli, f.signal))
   expect(fresh).toMatchObject({ cleanupBlocked: true, state: 'unavailable', actions: [] })
   expect(() => f.accounts.assertCleanupRecoverable(cli)).toThrow('账号终端仍在运行')
@@ -134,7 +134,7 @@ it.each(['codex', 'codebuddy'] as const)('模拟：%s 终端清理失败后刷�
   // The next stop confirms simulated cleanup; no real terminal or account was touched.
   expect(await f.host.accountStop('simulation-parent', started.id)).toBe(true)
   expect(f.accounts.isBusy(cli)).toBe(false)
-  expect(f.cache.fresh(f.root, cli, 'account')).toBeUndefined()
+  expect(f.cache.fresh(cli, 'account')).toBeUndefined()
   const recovered = JSON.parse(await f.host.refreshAccountStatus('simulation-parent', cli, f.signal))
   expect(recovered.cleanupBlocked).toBeUndefined()
   expect(recovered.actions.some((action: any) => action.id === 'login')).toBe(true)

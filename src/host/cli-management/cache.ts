@@ -1,7 +1,7 @@
 import { chmodSync, constants, closeSync, fstatSync, fchmodSync, readSync, lstatSync, mkdirSync, openSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { hostname } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
 import { CLI_DOWNLOAD_SOURCES, CLI_INSTALL_SOURCES, CLI_UPDATE_GROUPS, CLI_UPDATE_REASONS, customRegistryProblem, type CliUpdateEntry, type CliDownloadSourceSettings } from '../../shared/cli-management.ts'
@@ -88,17 +88,18 @@ export class CliManagementCache {
     for (const [key, entry] of Object.entries(this.state.accounts)) if (entry.value.cli === cli) delete this.state.accounts[key]
     this.save()
   }
-  private accountKey(cli: ActiveCliId, project: string) { return hash(JSON.stringify([cli, resolve(project)])) }
-  account(cli: ActiveCliId, project: string, now = Date.now()): (AccountStatus & { cache: NonNullable<AccountStatus['cache']> }) | undefined {
-    const entry = this.state.accounts[this.accountKey(cli, project)]
+  /** One account per CLI on this machine; entries written under the earlier per-project key are simply never read. */
+  private accountKey(cli: ActiveCliId) { return hash(JSON.stringify([cli])) }
+  account(cli: ActiveCliId, now = Date.now()): (AccountStatus & { cache: NonNullable<AccountStatus['cache']> }) | undefined {
+    const entry = this.state.accounts[this.accountKey(cli)]
     if (!entry) return
-    return { ...entry.value, summary: summaries[entry.value.state], actions: [], cache: { checkedAt: entry.checkedAt, stale: now < entry.checkedAt || now - entry.checkedAt >= ACCOUNT_TTL, displayOnly: true, project: hash(resolve(project)), revision: this.accountRevision(cli) } }
+    return { ...entry.value, summary: summaries[entry.value.state], actions: [], cache: { checkedAt: entry.checkedAt, stale: now < entry.checkedAt || now - entry.checkedAt >= ACCOUNT_TTL, displayOnly: true, revision: this.accountRevision(cli) } }
   }
-  rememberAccount(cli: ActiveCliId, project: string, status: AccountStatus, revision = this.accountRevision(cli)) {
+  rememberAccount(cli: ActiveCliId, status: AccountStatus, revision = this.accountRevision(cli)) {
     if (revision !== this.accountRevision(cli) || status.cleanupBlocked) return
     // Do not persist summaries, source ids, route URLs, login handles or provider outputs.
     const label = status.authMethod === 'oauth' && status.accountLabel && !/(?:bearer|token|secret|api[_ -]?key|sk-|cookie|https?:)/i.test(status.accountLabel) ? status.accountLabel.slice(0, 256) : undefined
     const value = accountSchema.parse({ cli, installed: status.installed, state: status.state, accountLabel: label, authMethod: status.authMethod, verification: status.verification })
-    this.state.accounts[this.accountKey(cli, project)] = { checkedAt: Date.now(), value }; this.save()
+    this.state.accounts[this.accountKey(cli)] = { checkedAt: Date.now(), value }; this.save()
   }
 }

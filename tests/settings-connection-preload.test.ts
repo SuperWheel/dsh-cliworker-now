@@ -30,7 +30,7 @@ function fixture() {
     runtime: { assertCliEnabled: vi.fn(), catalogCleanupMessage: vi.fn(), blockCatalogOnCleanup: vi.fn(), storage: { directory: root, preference: vi.fn() } },
     accounts: { status }, queryCatalog, readAccountBinding: vi.fn(async () => 'simulated-binding'),
   })
-  const preload = vi.fn((cli: ActiveCliId, project: string, kind: 'account' | 'catalog', control: AbortSignal) => service.preloadSettingsConnection(cli, project, kind, control))
+  const preload = vi.fn((cli: ActiveCliId, kind: 'account' | 'catalog', control: AbortSignal) => service.preloadSettingsConnection(cli, kind, control))
   const management = new CliManagementService({ root, backend, config: config as any,
     idle: () => true, enabled: () => true, cliEnabled: () => true,
     account: status as any, preloadConnection: preload,
@@ -44,15 +44,15 @@ function fixture() {
   return { root, executable, config, service, management, status, queryCatalog, preload, backend }
 }
 
-it.each(included)('模拟：%s 后台按项目排入账号与目录，前台复用模型强度', async cli => {
+it.each(included)('模拟：%s 后台按 CLI 各排一次账号与目录（不按项目），前台复用模型强度', async cli => {
   vi.useFakeTimers(); const f = fixture()
   f.preload.mockImplementation(async () => {})
-  f.management.context(f.root); f.management.context(f.root)
+  f.management.protectProject(f.root); f.management.protectProject(join(f.root, 'project-b'))
   await vi.advanceTimersByTimeAsync(400_000)
   const calls = f.preload.mock.calls.filter(call => call[0] === cli)
-  expect(calls.map(call => [call[1], call[2]])).toEqual([[f.root, 'account'], [f.root, 'catalog']])
-  await f.service.preloadSettingsConnection(cli, f.root, 'account', signal())
-  await f.service.preloadSettingsConnection(cli, f.root, 'catalog', signal())
+  expect(calls.map(call => call[1])).toEqual(['account', 'catalog'])
+  await f.service.preloadSettingsConnection(cli, 'account', signal())
+  await f.service.preloadSettingsConnection(cli, 'catalog', signal())
   const before = f.queryCatalog.mock.calls.length
   const result = JSON.parse(await f.service.settingsCatalog('parent', cli, signal(), false))
   expect(result.models[0].efforts).toEqual(['low', 'high'])
@@ -61,27 +61,27 @@ it.each(included)('模拟：%s 后台按项目排入账号与目录，前台复�
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })
 
-it('模拟：排除名单不入队，CodeBuddy 仅账号；项目独立登记、后台最多一个连接项', async () => {
+it('模拟：排除名单不入队，CodeBuddy 仅账号；登记多个项目不增加连接项、后台最多一个连接项', async () => {
   vi.useFakeTimers(); const f = fixture(); let running = 0, peak = 0
   f.preload.mockImplementation(async () => {
     peak = Math.max(peak, ++running)
     try { await Promise.resolve() } finally { running-- }
   })
-  f.management.context(f.root); f.management.context(join(f.root, 'project-b'))
+  f.management.protectProject(f.root); f.management.protectProject(join(f.root, 'project-b'))
   await vi.advanceTimersByTimeAsync(550_000)
   expect(peak).toBe(1)
   for (const cli of excluded) expect(f.preload.mock.calls.some(call => call[0] === cli)).toBe(false)
-  expect(f.preload.mock.calls.filter(call => call[0] === 'codebuddy').map(call => call[2])).toEqual(['account', 'account'])
-  for (const cli of included) expect(f.preload.mock.calls.filter(call => call[0] === cli)).toHaveLength(4)
+  expect(f.preload.mock.calls.filter(call => call[0] === 'codebuddy').map(call => call[1])).toEqual(['account'])
+  for (const cli of included) expect(f.preload.mock.calls.filter(call => call[0] === cli)).toHaveLength(2)
   for (const cli of [...excluded, 'codebuddy'] as const)
-    await expect(f.service.preloadSettingsConnection(cli, f.root, 'catalog', signal())).rejects.toThrow('保留前台')
+    await expect(f.service.preloadSettingsConnection(cli, 'catalog', signal())).rejects.toThrow('保留前台')
 })
 
 it.each(['account', 'catalog'] as const)('模拟：后台 %s 和前台同槽合并，显式刷新随后执行', async kind => {
   const f = fixture(); let finish!: (value: any) => void
   const load = kind === 'account' ? f.status : f.queryCatalog
   load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }) as any)
-  const background = f.service.preloadSettingsConnection('codex', f.root, kind, signal())
+  const background = f.service.preloadSettingsConnection('codex', kind, signal())
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1))
   const foreground = kind === 'account' ? f.service.accountStatus('parent', 'codex', signal()) : f.service.settingsCatalog('parent', 'codex', signal(), false)
   await Promise.resolve(); expect(load).toHaveBeenCalledTimes(1)
@@ -96,31 +96,31 @@ it.each(['account', 'catalog'] as const)('模拟：打断 %s 等待清理，旧�
   const f = fixture(), control = new AbortController(); let finish!: (value: any) => void
   const load = kind === 'account' ? f.status : f.queryCatalog
   load.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }) as any)
-  const background = f.service.preloadSettingsConnection('codex', f.root, kind, control.signal)
+  const background = f.service.preloadSettingsConnection('codex', kind, control.signal)
   const rejected = expect(background).rejects.toThrow()
   await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)); control.abort()
   const cached = f.service.connectionCache()
-  expect(cached.status(f.root, 'codex')[kind].value).toBeUndefined()
+  expect(cached.status('codex')[kind].value).toBeUndefined()
   const foreground = kind === 'account' ? f.service.accountStatus('parent', 'codex', signal()) : f.service.settingsCatalog('parent', 'codex', signal(), false)
   await Promise.resolve(); expect(load).toHaveBeenCalledTimes(1)
   finish(kind === 'account' ? { cli: 'codex', installed: true, state: 'unknown', summary: '模拟旧结果', actions: [] } : receipt('codex'))
   await rejected; await foreground
   expect(load).toHaveBeenCalledTimes(2)
-  expect(JSON.stringify(cached.status(f.root, 'codex'))).not.toContain('模拟旧结果')
+  expect(JSON.stringify(cached.status('codex'))).not.toContain('模拟旧结果')
 })
 
 it('模拟：后台账号与前台目录跨槽串行，其他 CLI 失败只写自身槽', async () => {
   const f = fixture(); let finish!: (value: any) => void
   f.status.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }) as any)
-  const background = f.service.preloadSettingsConnection('codex', f.root, 'account', signal())
+  const background = f.service.preloadSettingsConnection('codex', 'account', signal())
   await vi.waitFor(() => expect(f.status).toHaveBeenCalledTimes(1))
   const foreground = f.service.settingsCatalog('parent', 'codex', signal(), false)
   f.queryCatalog.mockRejectedValueOnce(new Error('模拟失败'))
-  await expect(f.service.preloadSettingsConnection('kimi', f.root, 'catalog', signal())).rejects.toThrow('模拟失败')
+  await expect(f.service.preloadSettingsConnection('kimi', 'catalog', signal())).rejects.toThrow('模拟失败')
   expect(f.queryCatalog.mock.calls.map(call => call[0])).toEqual(['kimi'])
   const cache = f.service.connectionCache()
-  expect(cache.status(f.root, 'kimi').catalog.error).toBeTruthy()
-  expect(cache.status(f.root, 'codex').account.error).toBeUndefined()
+  expect(cache.status('kimi').catalog.error).toBeTruthy()
+  expect(cache.status('codex').account.error).toBeUndefined()
   finish({ cli: 'codex', installed: true, state: 'unknown', summary: '模拟', actions: [] })
   await Promise.all([background, foreground])
   expect(f.queryCatalog.mock.calls.map(call => call[0])).toEqual(['kimi', 'codex'])
@@ -129,10 +129,10 @@ it('模拟：后台账号与前台目录跨槽串行，其他 CLI 失败只写�
 it('模拟：目录清理未确认进入 CLI 隔离，后续后台不启动查询', async () => {
   const f = fixture(), error = new ProcessCleanupUnconfirmedError()
   f.queryCatalog.mockRejectedValueOnce(error)
-  await expect(f.service.preloadSettingsConnection('codex', f.root, 'catalog', signal())).rejects.toThrow()
+  await expect(f.service.preloadSettingsConnection('codex', 'catalog', signal())).rejects.toThrow()
   expect(f.service.runtime.blockCatalogOnCleanup).toHaveBeenCalledWith('codex', error)
   f.service.runtime.catalogCleanupMessage.mockReturnValue('模拟清理暂停')
-  await expect(f.service.preloadSettingsConnection('codex', f.root, 'account', signal())).rejects.toThrow('模拟清理暂停')
+  await expect(f.service.preloadSettingsConnection('codex', 'account', signal())).rejects.toThrow('模拟清理暂停')
   expect(f.status).not.toHaveBeenCalled()
 })
 
@@ -150,8 +150,7 @@ it('模拟：连接项紧接路径检查、先于版本与发布检查，同一 
   const order: string[] = []
   const versions = vi.fn(async (cli: ActiveCliId) => { order.push(`version:${cli}`); return '1.0.0' })
   ;(f.management as any).deps.version = versions
-  f.preload.mockImplementation(async (cli: ActiveCliId, _project: string, kind: string) => { order.push(`${kind}:${cli}`) })
-  f.management.context(f.root)
+  f.preload.mockImplementation(async (cli: ActiveCliId, kind: string) => { order.push(`${kind}:${cli}`) })
   await vi.advanceTimersByTimeAsync(550_000)
   const firstVersion = order.findIndex(item => item.startsWith('version:'))
   const connection = order.filter(item => !item.startsWith('version:'))

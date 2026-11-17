@@ -47,18 +47,18 @@ function fixture() {
 }
 it('模拟：两个 Remote 调用父会话校验；成功仅作废该 CLI 的账号和目录缓存，密钥不进快照或磁盘缓存', async () => {
   const f = fixture(), signal = f.controller.signal
-  await f.connections.read(f.root, 'pi', 'account', signal, async () => ({ cli: 'pi', installed: true, state: 'configured', summary: '模拟账号', actions: [] }))
-  await f.connections.read(f.root, 'pi', 'catalog', signal, async () => ({ binding: 'synthetic', catalog: { cli: 'pi', models: [] } } as any))
-  await f.connections.read(f.root, 'codex', 'account', signal, async () => ({ cli: 'codex', installed: true, state: 'configured', summary: '其他 CLI', actions: [] }))
+  await f.connections.read('pi', 'account', signal, async () => ({ cli: 'pi', installed: true, state: 'configured', summary: '模拟账号', actions: [] }))
+  await f.connections.read('pi', 'catalog', signal, async () => ({ binding: 'synthetic', catalog: { cli: 'pi', models: [] } } as any))
+  await f.connections.read('codex', 'account', signal, async () => ({ cli: 'codex', installed: true, state: 'configured', summary: '其他 CLI', actions: [] }))
   f.cache.rememberAccount('pi', f.root, { cli: 'pi', installed: true, state: 'configured', summary: '模拟账号', actions: [] })
   const log = vi.spyOn(console, 'log'), warn = vi.spyOn(console, 'warn'), error = vi.spyOn(console, 'error')
   const form = await f.form(), result = await f.save(form.token)
   expect(JSON.parse(result)).toMatchObject({ ok: true })
   expect((f.service as any).parent).toHaveBeenCalledTimes(2)
-  expect(f.connections.fresh(f.root, 'pi', 'account')).toBeUndefined(); expect(f.connections.fresh(f.root, 'pi', 'catalog')).toBeUndefined()
-  expect(f.connections.fresh(f.root, 'codex', 'account')).toBeDefined()
+  expect(f.connections.fresh('pi', 'account')).toBeUndefined(); expect(f.connections.fresh('pi', 'catalog')).toBeUndefined()
+  expect(f.connections.fresh('codex', 'account')).toBeDefined()
   expect(f.cache.accountRevision('pi')).toBe(1); expect(f.catalogs.invalidate).toHaveBeenCalledWith('pi')
-  expect(JSON.stringify(f.connections.snapshot(f.root)) + result + JSON.stringify(form)).not.toContain(f.values.apiKey)
+  expect(JSON.stringify(f.connections.snapshot()) + result + JSON.stringify(form)).not.toContain(f.values.apiKey)
   // CliManagementCache itself persists no submitted values; the only call is invalidation.
   const cacheFile = (f.cache as any).file as string
   if (cacheFile && existsSync(cacheFile)) expect(readFileSync(cacheFile, 'utf8')).not.toContain(f.values.apiKey)
@@ -73,12 +73,12 @@ it('模拟：过期入口拒绝写入，不失效已存在缓存且租约释放'
 })
 it('模拟：保存后缓存磁盘失败仍作废内存两槽，不把已保存误报成未写入', async () => {
   const f = fixture(), form = await f.form()
-  await f.connections.read(f.root, 'pi', 'account', f.controller.signal, async () => ({ cli: 'pi', installed: true, state: 'configured', summary: '模拟旧值', actions: [] }))
+  await f.connections.read('pi', 'account', f.controller.signal, async () => ({ cli: 'pi', installed: true, state: 'configured', summary: '模拟旧值', actions: [] }))
   vi.spyOn(f.cache as any, 'save').mockImplementation(() => { throw new Error(f.values.apiKey) })
   const result = await f.save(form.token)
   expect(JSON.parse(result)).toMatchObject({ ok: true, notice: expect.stringContaining('显示缓存持久化失败') })
   expect(result).not.toContain(f.values.apiKey)
-  expect(f.connections.fresh(f.root, 'pi', 'account')).toBeUndefined()
+  expect(f.connections.fresh('pi', 'account')).toBeUndefined()
   expect(f.catalogs.invalidate).toHaveBeenCalledWith('pi'); expect(f.cache.accountRevision('pi')).toBe(1)
 })
 it('模拟：坏 JSON 和字段失败返回安全 issues，允许修正后复用同一表单', async () => {

@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createElement, forwardRef, useEffect } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -3444,9 +3447,8 @@ describe('account status from the Host background cache (simulated)', () => {
 })
 
 describe('settings connection snapshots from the Host (simulated)', () => {
-  const PROJECT = 'SIMULATED-project'
   const receipt = (checkedAt = Date.now(), revision = 0, stale = false) =>
-    ({ checkedAt, stale, project: PROJECT, revision, displayOnly: true })
+    ({ checkedAt, stale, revision, displayOnly: true })
   const signedIn = (cli: CliId, checkedAt?: number, revision = 0) => ({
     loading: false,
     value: { cli, installed: true, state: 'authenticated', summary: '模拟：已登录', verification: 'cli', actions: [] },
@@ -3458,8 +3460,8 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     cache: receipt(checkedAt, revision),
   })
   const row = (cli: CliId, account: unknown, catalog: unknown, revision = 0) =>
-    ({ cli, project: PROJECT, revision, account, catalog })
-  const snapshot = (sequence: number, entries: unknown[], project = PROJECT) => ({ sequence, project, entries })
+    ({ cli, revision, account, catalog })
+  const snapshot = (sequence: number, entries: unknown[]) => ({ sequence, entries })
   // Simulated watch: yields only what a test pushes, ends on abort.
   function channel() {
     const queue: string[] = [], signals: AbortSignal[] = []
@@ -3478,9 +3480,9 @@ describe('settings connection snapshots from the Host (simulated)', () => {
   }
   const settle = (ms = 0) => act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)) })
   async function setupLive(entries: any[], overrides: Record<string, any> = {}, ids: readonly CliId[] = ['codex', 'qoder'],
-    project = PROJECT) {
+    preferenceScope?: string) {
     const watch = channel()
-    const metadata = { ...warmMetadata(), connections: snapshot(1, entries, project) }
+    const metadata = { ...warmMetadata(), ...(preferenceScope ? { project: preferenceScope } : {}), connections: snapshot(1, entries) }
     const enabled = Object.fromEntries(CLI_IDS.map((id) => [id, ids.includes(id)]))
     const cliSettings = vi.fn(async () => remote({ enabled, settingsCache: metadata }))
     const watchSettingsConnections = vi.fn((_parent, signal: AbortSignal) => watch.open(signal))
@@ -3534,11 +3536,9 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     expect(t.refreshCatalogForCli).not.toHaveBeenCalled()
   })
 
-  it('drops older or foreign snapshots and clears a CLI whose revision changed', async () => {
+  it('drops older snapshots and clears a CLI whose revision changed', async () => {
     const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-old-model'))], {}, ['codex'])
     await act(async () => t.watch.push(snapshot(0, [row('codex', signedIn('codex'), listed('codex', 'codex-older-model'))])))
-    await settle()
-    await act(async () => t.watch.push(snapshot(9, [row('codex', { loading: true }, { loading: false }, 1)], 'SIMULATED-other')))
     await settle()
     expect(t.text()).toContain('codex-old-model')
     expect(t.text()).not.toContain('codex-older-model')
@@ -3583,18 +3583,19 @@ describe('settings connection snapshots from the Host (simulated)', () => {
   })
 
   it.each(['codex', 'codebuddy'] as const)('模拟：%s 使用真实 Host 缓存刷新与订阅后打开账号操作', async cli => {
-    const root = process.cwd(), cache = new SettingsConnectionCache(), control = new AbortController()
+    const root = mkdtempSync(join(tmpdir(), 'settings-dialog-simulated-')), cache = new SettingsConnectionCache(), control = new AbortController()
     const account = { cli, installed: true, state: 'unconfigured' as const, summary: '模拟未登录', actions: accountActions }
     const read = vi.fn(async () => account)
     const host = Object.assign(Object.create(CliWorkerService.prototype), {
-      connections: cache, disposed: control, options: {},
-      parent: async () => ({ session: { header: { cwd: root } } }),
+      connections: cache, disposed: control, options: { stateDirectory: root },
+      // 模拟：主对话没有工作目录，设置页连接状态与项目无关。
+      parent: async () => ({ session: { header: {} } }),
       runtime: { assertCliEnabled() {}, catalogCleanupMessage() {}, storage: {
         cliSettings: () => ({ enabled: Object.fromEntries(CLI_IDS.map(id => [id, id === cli])) }), preference() {},
       } }, accounts: { status: read },
     }) as CliWorkerService
-    await cache.read(root, cli, 'account', control.signal, async () => account)
-    await cache.read(root, cli, 'catalog', control.signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
+    await cache.read(cli, 'account', control.signal, async () => account)
+    await cache.read(cli, 'catalog', control.signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
     const wrap = (method: 'cliSettings' | 'settingsConnectionStatus' | 'refreshAccountStatus' | 'accountStatus') =>
       vi.fn(async (...args: any[]) => ({ ok: true, value: await (host[method] as any)(...args) }))
     try {
@@ -3609,7 +3610,7 @@ describe('settings connection snapshots from the Host (simulated)', () => {
       expect(refreshAccountStatus).toHaveBeenCalledTimes(1)
       expect(read).toHaveBeenCalledTimes(1)
       expect(terminal.started).toHaveBeenCalledWith(cli, 'login')
-    } finally { control.abort(); await cache.close() }
+    } finally { control.abort(); await cache.close(); rmSync(root, { recursive: true, force: true }) }
   })
 
   it('does not open an action the fresh read no longer offers', async () => {
@@ -3666,10 +3667,11 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     expect(t.refreshAccountStatus).not.toHaveBeenCalled()
   })
 
-  it('keeps the older Host path when the snapshot belongs to another project', async () => {
-    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'], 'SIMULATED-other')
-    expect(t.watchSettingsConnections).not.toHaveBeenCalled()
-    expect(t.settingsConnectionStatus).not.toHaveBeenCalled()
-    expect(t.accountStatus.mock.calls.map((call) => call[1])).toEqual(['codex'])
+  it('shows the machine snapshot whatever project the conversation has, including none', async () => {
+    const t = await setupLive([row('codex', signedIn('codex'), listed('codex', 'codex-model'))], {}, ['codex'], 'no-project')
+    expect(t.watchSettingsConnections).toHaveBeenCalledTimes(1)
+    expect(dot(t, 'codex')).toBe('connected')
+    expect(t.text()).toContain('codex-model')
+    expect(t.accountStatus).not.toHaveBeenCalled()
   })
 })

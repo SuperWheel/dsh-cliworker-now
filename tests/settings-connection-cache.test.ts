@@ -10,78 +10,78 @@ const account: AccountStatus = { cli: 'zcode', installed: true, state: 'authenti
 const catalog = { catalog: { cli: 'zcode' as const, models: [{ id: 'simulated', label: '模拟', efforts: ['low' as const, 'high' as const] }], notice: '模拟目录' }, binding: 'private-binding' }
 function fixture() { const cache = new SettingsConnectionCache(); caches.push(cache); return cache }
 afterEach(async () => { await Promise.all(caches.splice(0).map(c => c.close())); vi.useRealTimers() })
-it('模拟：账号与模型命中不启动查询，项目和 CLI 隔离，快照去除动作句柄和 binding', async () => {
+it('模拟：账号与模型命中不启动查询，按 CLI 存一份且不含项目，快照去除动作句柄和 binding', async () => {
   const cache = fixture(), load = vi.fn(async () => account), models = vi.fn(async () => catalog)
-  await cache.read('/a', 'zcode', 'account', signal(), load)
-  await cache.read('/a', 'zcode', 'catalog', signal(), models)
-  await cache.read('/a', 'zcode', 'account', signal(), load)
-  await cache.read('/a', 'zcode', 'catalog', signal(), models)
+  await cache.read('zcode', 'account', signal(), load)
+  await cache.read('zcode', 'catalog', signal(), models)
+  await cache.read('zcode', 'account', signal(), load)
+  await cache.read('zcode', 'catalog', signal(), models)
   expect(load).toHaveBeenCalledTimes(1); expect(models).toHaveBeenCalledTimes(1)
-  expect(cache.fresh('/b', 'zcode', 'account')).toBeUndefined()
-  expect(cache.fresh('/a', 'codex', 'account')).toBeUndefined()
-  const status = cache.status('/a', 'zcode')
+  expect(cache.fresh('codex', 'account')).toBeUndefined()
+  const status = cache.status('zcode')
   expect(status.account.value).toMatchObject({ summary: account.summary, state: 'authenticated', actions: [] })
-  expect(status.account.cache).toMatchObject({ checkedAt: expect.any(Number), project: cache.project('/a'), revision: 0, stale: false })
+  expect(status.account.cache).toMatchObject({ checkedAt: expect.any(Number), revision: 0, stale: false })
+  expect(JSON.stringify(cache.snapshot())).not.toContain('"project"')
   expect(JSON.stringify(status)).not.toMatch(/opaque-action|private-binding/)
   expect(status.catalog.value?.models[0]?.efforts).toEqual(['low', 'high'])
-  expect(new SettingsConnectionCache().fresh('/a', 'zcode', 'account')).toBeUndefined()
+  expect(new SettingsConnectionCache().fresh('zcode', 'account')).toBeUndefined()
 })
 it('模拟：10 分钟到期先显示 unknown，重查后恢复；时钟回拨也过期', async () => {
   vi.useFakeTimers(); const cache = fixture(), load = vi.fn(async () => account)
-  await cache.read('/a', 'zcode', 'account', signal(), load)
+  await cache.read('zcode', 'account', signal(), load)
   const now = Date.now(); vi.setSystemTime(now + CONNECTION_TTL)
-  expect(cache.status('/a', 'zcode').account).toMatchObject({ value: { state: 'unknown' }, cache: { stale: true } })
-  await cache.read('/a', 'zcode', 'account', signal(), load)
+  expect(cache.status('zcode').account).toMatchObject({ value: { state: 'unknown' }, cache: { stale: true } })
+  await cache.read('zcode', 'account', signal(), load)
   expect(load).toHaveBeenCalledTimes(2)
-  expect(cache.status('/a', 'zcode').account.value?.state).toBe('authenticated')
+  expect(cache.status('zcode').account.value?.state).toBe('authenticated')
   vi.setSystemTime(now - 1)
-  expect(cache.status('/a', 'zcode').account.cache?.stale).toBe(true)
+  expect(cache.status('zcode').account.cache?.stale).toBe(true)
 })
 it('模拟：未核实登录不会变绿；刷新失败不保留旧登录', async () => {
   const cache = fixture()
-  await cache.read('/a', 'zcode', 'account', signal(), async () => ({ ...account, verification: undefined }))
-  expect(cache.status('/a', 'zcode').account.value?.state).toBe('unknown')
-  await expect(cache.read('/a', 'zcode', 'account', signal(), async () => { throw new Error('模拟 failure') }, true)).rejects.toThrow()
-  expect(cache.status('/a', 'zcode').account).toMatchObject({ loading: false, error: expect.any(String) })
-  expect(cache.status('/a', 'zcode').account.value).toBeUndefined()
+  await cache.read('zcode', 'account', signal(), async () => ({ ...account, verification: undefined }))
+  expect(cache.status('zcode').account.value?.state).toBe('unknown')
+  await expect(cache.read('zcode', 'account', signal(), async () => { throw new Error('模拟 failure') }, true)).rejects.toThrow()
+  expect(cache.status('zcode').account).toMatchObject({ loading: false, error: expect.any(String) })
+  expect(cache.status('zcode').account.value).toBeUndefined()
 })
 it('模拟：读取失败在快照中保留真实原因，不带错误类名，空原因才用通用文案', async () => {
   const cache = fixture()
   class SimulatedAccountError extends Error { name = 'SimulatedAccountError' }
   const reason = '模拟：返回的 16 个模型在当前账号下均为停用状态'
-  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new SimulatedAccountError(reason) })).rejects.toThrow(reason)
-  expect(cache.status('/a', 'qoder').catalog).toEqual({ loading: false, error: reason, value: undefined, cache: undefined })
-  expect(cache.snapshot('/a').entries.find(entry => entry.cli === 'qoder')?.catalog.error).toBe(reason)
-  expect(cache.fresh('/a', 'qoder', 'catalog')).toBeUndefined()
-  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new Error('  ') }, true)).rejects.toThrow()
-  expect(cache.status('/a', 'qoder').catalog.error).toBe('连接状态读取失败，请刷新重试')
-  await expect(cache.read('/a', 'qoder', 'catalog', signal(), async () => { throw new Error('模'.repeat(5000)) }, true)).rejects.toThrow()
-  expect(cache.status('/a', 'qoder').catalog.error).toHaveLength(1024)
+  await expect(cache.read('qoder', 'catalog', signal(), async () => { throw new SimulatedAccountError(reason) })).rejects.toThrow(reason)
+  expect(cache.status('qoder').catalog).toEqual({ loading: false, error: reason, value: undefined, cache: undefined })
+  expect(cache.snapshot().entries.find(entry => entry.cli === 'qoder')?.catalog.error).toBe(reason)
+  expect(cache.fresh('qoder', 'catalog')).toBeUndefined()
+  await expect(cache.read('qoder', 'catalog', signal(), async () => { throw new Error('  ') }, true)).rejects.toThrow()
+  expect(cache.status('qoder').catalog.error).toBe('连接状态读取失败，请刷新重试')
+  await expect(cache.read('qoder', 'catalog', signal(), async () => { throw new Error('模'.repeat(5000)) }, true)).rejects.toThrow()
+  expect(cache.status('qoder').catalog.error).toHaveLength(1024)
   // A later successful read clears the reason.
-  await cache.read('/a', 'qoder', 'catalog', signal(), async () => ({ ...catalog, catalog: { ...catalog.catalog, cli: 'qoder' as const } }), true)
-  expect(cache.status('/a', 'qoder').catalog).toMatchObject({ loading: false, error: undefined, value: { models: [{ efforts: ['low', 'high'] }] } })
+  await cache.read('qoder', 'catalog', signal(), async () => ({ ...catalog, catalog: { ...catalog.catalog, cli: 'qoder' as const } }), true)
+  expect(cache.status('qoder').catalog).toMatchObject({ loading: false, error: undefined, value: { models: [{ efforts: ['low', 'high'] }] } })
 })
 it('模拟：并发请求复用一次读取，作废等待旧清理后重查且旧结果不能回填', async () => {
   const cache = fixture(); let finish!: (value: AccountStatus) => void, active!: AbortSignal
   const load = vi.fn((control: AbortSignal) => { active = control; return new Promise<AccountStatus>(resolve => { finish = resolve }) })
-  const first = cache.read('/a', 'zcode', 'account', signal(), load)
+  const first = cache.read('zcode', 'account', signal(), load)
   const rejected = expect(first).rejects.toThrow()
   await Promise.resolve(); cache.invalidate('zcode'); expect(active.aborted).toBe(true)
   const freshLoad = vi.fn(async () => ({ ...account, state: 'unconfigured' as const }))
-  const next = cache.read('/a', 'zcode', 'account', signal(), freshLoad)
+  const next = cache.read('zcode', 'account', signal(), freshLoad)
   await Promise.resolve(); expect(freshLoad).not.toHaveBeenCalled()
   finish(account); await rejected; await next
-  expect(cache.status('/a', 'zcode').account).toMatchObject({ value: { state: 'unconfigured' }, cache: { revision: 1 } })
+  expect(cache.status('zcode').account).toMatchObject({ value: { state: 'unconfigured' }, cache: { revision: 1 } })
 })
 it('模拟：强制刷新排在正在读取之后，订阅发布变化并在取消后清理', async () => {
-  const cache = fixture(), watch = new AbortController(), stream = cache.watch('/a', watch.signal)
+  const cache = fixture(), watch = new AbortController(), stream = cache.watch(watch.signal)
   expect((await stream.next()).value?.entries).toHaveLength(17)
   let finish!: (value: AccountStatus) => void
-  const first = cache.read('/a', 'zcode', 'account', signal(), () => new Promise(resolve => { finish = resolve }))
+  const first = cache.read('zcode', 'account', signal(), () => new Promise(resolve => { finish = resolve }))
   await Promise.resolve()
   const update = await stream.next(); expect(update.value?.entries.find(e => e.cli === 'zcode')?.account.loading).toBe(true)
   const refresh = vi.fn(async () => ({ ...account, state: 'unconfigured' as const }))
-  const second = cache.read('/a', 'zcode', 'account', signal(), refresh, true)
+  const second = cache.read('zcode', 'account', signal(), refresh, true)
   finish(account); await first; await second
   expect(refresh).toHaveBeenCalledTimes(1)
   expect((await stream.next()).value?.entries.find(e => e.cli === 'zcode')?.account.value?.state).toBe('unconfigured')
@@ -89,7 +89,7 @@ it('模拟：强制刷新排在正在读取之后，订阅发布变化并在取�
 })
 it('模拟：Host 关闭中止查询并等待清理，不复用上次 Host 的状态', async () => {
   const cache = fixture(); let finish!: (value: AccountStatus) => void, active!: AbortSignal
-  const pending = cache.read('/a', 'zcode', 'account', signal(), control => { active = control; return new Promise(resolve => { finish = resolve }) })
+  const pending = cache.read('zcode', 'account', signal(), control => { active = control; return new Promise(resolve => { finish = resolve }) })
   const rejected = expect(pending).rejects.toThrow(); await Promise.resolve()
   let closed = false; const closing = cache.close().then(() => { closed = true })
   expect(active.aborted).toBe(true); await Promise.resolve(); expect(closed).toBe(false)
@@ -116,7 +116,7 @@ it.each(['任务', '登录窗口'])('模拟：%s 打断后台，确认清理后 
   expect(vi.getTimerCount()).toBe(0)
 })
 
-it('模拟：后登记项目的账号项在版本后、发布源前执行，不打乱正在读取的项', async () => {
+it('模拟：后登记的项在版本后、发布源前执行，不打乱正在读取的项', async () => {
   vi.useFakeTimers(); let n = 0; const seen: string[] = []
   const item = (name: string) => ({ run: async () => { seen.push(name) } })
   const preloader = new CliPreloader({ items: [item('path'), item('version'), item('release')], idle: () => true,
@@ -128,13 +128,13 @@ it('模拟：后登记项目的账号项在版本后、发布源前执行，不�
   } finally { await preloader.close() }
 })
 
-it('模拟：跨项目同 CLI 排队，Host 关闭等待首项清理且不启动排队目录', async () => {
+it('模拟：同 CLI 的账号与目录排队，Host 关闭等待首项清理且不启动排队目录', async () => {
   const cache = fixture(); let finish!: (value: AccountStatus) => void
-  const first = cache.read('/a', 'zcode', 'account', signal(), () => new Promise(resolve => { finish = resolve }))
+  const first = cache.read('zcode', 'account', signal(), () => new Promise(resolve => { finish = resolve }))
   const firstRejected = expect(first).rejects.toThrow()
   await Promise.resolve()
   const models = vi.fn(async () => catalog)
-  const queued = cache.read('/b', 'zcode', 'catalog', signal(), models)
+  const queued = cache.read('zcode', 'catalog', signal(), models)
   const queuedRejected = expect(queued).rejects.toThrow()
   await Promise.resolve(); expect(models).not.toHaveBeenCalled()
   let closed = false
@@ -142,15 +142,15 @@ it('模拟：跨项目同 CLI 排队，Host 关闭等待首项清理且不启动
   await Promise.resolve(); expect(closed).toBe(false)
   finish(account); await Promise.all([firstRejected, queuedRejected, closing])
   expect(closed).toBe(true); expect(models).not.toHaveBeenCalled()
-  expect(cache.status('/b', 'zcode').catalog.value).toBeUndefined()
+  expect(cache.status('zcode').catalog.value).toBeUndefined()
 })
 
 it.each(['account', 'catalog'] as const)('模拟：维护期 %s 被拒时清除旧错误、不缓存红点，释放后可重新读取', async kind => {
   const cache = fixture(), { MaintenanceError } = await import('../src/host/cli-management/maintenance.ts')
-  await expect(cache.read('/a', 'zcode', kind, signal(), async () => { throw new Error('模拟旧错误') })).rejects.toThrow('模拟旧错误')
-  expect(cache.status('/a', 'zcode')[kind].error).toBe('模拟旧错误')
-  await expect(cache.read('/a', 'zcode', kind, signal(), async () => { throw new MaintenanceError('zcode') }, true)).rejects.toMatchObject({ code: 'MAINTENANCE' })
-  expect(cache.status('/a', 'zcode')[kind]).toMatchObject({ value: undefined, error: undefined, loading: false, cache: undefined })
-  await cache.read('/a', 'zcode', kind, signal(), async () => kind === 'account' ? account : catalog)
-  expect(cache.status('/a', 'zcode')[kind].value).toBeDefined()
+  await expect(cache.read('zcode', kind, signal(), async () => { throw new Error('模拟旧错误') })).rejects.toThrow('模拟旧错误')
+  expect(cache.status('zcode')[kind].error).toBe('模拟旧错误')
+  await expect(cache.read('zcode', kind, signal(), async () => { throw new MaintenanceError('zcode') }, true)).rejects.toMatchObject({ code: 'MAINTENANCE' })
+  expect(cache.status('zcode')[kind]).toMatchObject({ value: undefined, error: undefined, loading: false, cache: undefined })
+  await cache.read('zcode', kind, signal(), async () => kind === 'account' ? account : catalog)
+  expect(cache.status('zcode')[kind].value).toBeDefined()
 })

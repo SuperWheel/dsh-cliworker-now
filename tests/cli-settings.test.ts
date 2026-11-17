@@ -46,9 +46,9 @@ it('returns lightweight Host/project display metadata and latest preferences wit
   expect(changed.settingsCache.revisions.codex).not.toBe(first.settingsCache.revisions.codex)
   expect(changed.settingsCache.revisions.antigravity).toBe(first.settingsCache.revisions.antigravity)
 })
-it('pins a reused project list to its original account for another parent without querying auth', async () => {
+it('pins the reused machine-wide list to its original account for another parent without querying auth', async () => {
   const f = fixture(), cache = new SettingsCatalogCache(f.storage.directory)
-  cache.remember(f.project, { catalog, binding: 'SIMULATED-original-account' }, cache.revision('antigravity'))
+  cache.remember(f.machine, { catalog, binding: 'SIMULATED-original-account' }, cache.revision('antigravity'))
   ;(f.service as any).settingsCatalogs = cache
   const settings = JSON.parse(await f.service.cliSettings('another-parent', f.signal))
   expect(settings.settingsCache.catalogReady.antigravity).toBe(true)
@@ -218,7 +218,7 @@ function fixture() {
     parent: { value: vi.fn(async () => agent) },
     runtime: { value: runtime },
     accounts: { value: accounts },
-    options: { value: DEFAULT_CONFIG },
+    options: { value: { ...DEFAULT_CONFIG, stateDirectory: join(project, 'state') } },
     disposed: { value: new AbortController() },
     pending: { value: new Map() },
     dispatchWaits: { value: new Map() },
@@ -246,6 +246,8 @@ function fixture() {
   const signal = new AbortController().signal
   return {
     project,
+    /** 模拟：设置页整机读取使用的插件自有目录（按需创建）。 */
+    get machine() { return (service as any).machineDirectory() as string },
     storage,
     backend,
     runtime,
@@ -299,7 +301,7 @@ describe('profile-wide CLI enablement', () => {
         'parent',
         'zcode',
         'login',
-        f.project,
+        f.machine,
         f.signal,
         undefined,
         provider,
@@ -321,7 +323,7 @@ describe('profile-wide CLI enablement', () => {
     ;(f.service as any).accountParents.set('parent', () => {})
     f.accounts.start.mockResolvedValue({ id: 'synthetic-account', instruction: 'Synthetic' })
     await f.service.accountStartWith('parent', cli, action, JSON.stringify(options), f.signal)
-    expect(f.accounts.start).toHaveBeenCalledExactlyOnceWith('parent', cli, action, f.project, f.signal, undefined, ...target, expect.any(Function))
+    expect(f.accounts.start).toHaveBeenCalledExactlyOnceWith('parent', cli, action, f.machine, f.signal, undefined, ...target, expect.any(Function))
   })
   it.each(['null', '[]', '{"provider":1}', '{"provider":""}', '{"source":"native"}', '{"login":"x","extra":"y"}', 'not json'])(
     'rejects malformed account-window options %s before reading the parent',
@@ -735,30 +737,26 @@ vi.mock('../src/host/cli-account-binding.ts', () => ({
 
 it('模拟：后台目录供设置页直接使用，保留模型强度及账号绑定，启用状态改变作废', async () => {
   const f = fixture(), cache = (f.service as any).connectionCache()
-  await cache.read(f.project, 'antigravity', 'catalog', f.signal, async () => ({ catalog, binding: 'SIMULATED-original-account' }))
+  await cache.read('antigravity', 'catalog', f.signal, async () => ({ catalog, binding: 'SIMULATED-original-account' }))
   const first = JSON.parse(await f.service.catalogForCli('parent', 'antigravity', f.signal))
   expect(first.models).toEqual(catalog.models); expect(first.cache.stale).toBe(false)
   expect(catalogFor).not.toHaveBeenCalled(); expect(readCliAccountBinding).not.toHaveBeenCalled()
   expect((f.service as any).displayedBindings.get(JSON.stringify(['parent', 'antigravity']))).toBe('SIMULATED-original-account')
   await f.service.setCliEnabled('parent', 'antigravity', false, f.signal)
-  expect(cache.status(f.project, 'antigravity').catalog.value).toBeUndefined()
+  expect(cache.status('antigravity').catalog.value).toBeUndefined()
 })
 
-it.each(['login', 'logout'] as const)('模拟：账号 %s 入口作废所有项目的账号与目录，不影响其他 CLI', async action => {
+it.each(['login', 'logout'] as const)('模拟：账号 %s 入口作废该 CLI 的账号与目录，不影响其他 CLI', async action => {
   const f = fixture(), cache = (f.service as any).connectionCache()
   ;(f.service as any).accountParents.set('parent', () => {})
   f.accounts.start.mockResolvedValue({ id: 'simulated-account', instruction: '模拟' })
-  for (const project of [f.project, '/simulated-other-project']) {
-    await cache.read(project, 'zcode', 'account', f.signal, async () => ({ cli: 'zcode', installed: true,
-      state: 'authenticated', verification: 'local', summary: '模拟', actions: [] }))
-    await cache.read(project, 'zcode', 'catalog', f.signal, async () => ({ catalog: { ...catalog, cli: 'zcode' }, binding: 'simulated-binding' }))
-  }
-  await cache.read(f.project, 'codex', 'account', f.signal, async () => ({ cli: 'codex', installed: true,
+  await cache.read('zcode', 'account', f.signal, async () => ({ cli: 'zcode', installed: true,
+    state: 'authenticated', verification: 'local', summary: '模拟', actions: [] }))
+  await cache.read('zcode', 'catalog', f.signal, async () => ({ catalog: { ...catalog, cli: 'zcode' }, binding: 'simulated-binding' }))
+  await cache.read('codex', 'account', f.signal, async () => ({ cli: 'codex', installed: true,
     state: 'authenticated', verification: 'local', summary: '模拟其他 CLI', actions: [] }))
   await f.service.accountStart('parent', 'zcode', action, f.signal)
-  for (const project of [f.project, '/simulated-other-project']) {
-    expect(cache.status(project, 'zcode').account.value).toBeUndefined()
-    expect(cache.status(project, 'zcode').catalog.value).toBeUndefined()
-  }
-  expect(cache.status(f.project, 'codex').account.value?.state).toBe('authenticated')
+  expect(cache.status('zcode').account.value).toBeUndefined()
+  expect(cache.status('zcode').catalog.value).toBeUndefined()
+  expect(cache.status('codex').account.value?.state).toBe('authenticated')
 })

@@ -7,9 +7,9 @@ import type {
   SubprocessTerminalSpawnSpec,
   SubprocessTerminalHandle,
 } from '@deepseek-ai/dsh-subprocess'
-import { accessSync, constants, realpathSync, statSync } from 'node:fs'
+import { accessSync, chmodSync, constants, lstatSync, mkdirSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { isAbsolute, parse, resolve, sep } from 'node:path'
+import { isAbsolute, join, parse, resolve, sep } from 'node:path'
 import type { ModelChoice, Preference, TaskMode } from '../shared/types.ts'
 import type { CliExecutablePathStore } from './cli-executable-paths.ts'
 import { agyBackgroundEnvironment } from './agy-background-environment.ts'
@@ -117,6 +117,34 @@ export const DEFAULT_CONFIG: RuntimeConfig = {
   maxNativeLineBytes: 33_554_432,
   maxToolPreviewBytes: 262_144,
   maxTimelineItems: 1000,
+}
+
+/**
+ * Working directory for CLI processes that belong to this machine and not to any project: the settings
+ * page's install/login/account reads, model lists and account terminals. A process needs some cwd; this
+ * one is a fixed, empty, plugin-owned directory under the plugin's state root, so it never carries
+ * project-level CLI configuration, never depends on a conversation, and nothing is cached by it.
+ */
+export function machineDirectory(stateDirectory?: string): string {
+  const root = stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now')
+  if (!isAbsolute(root)) throw new Error('插件数据目录必须是绝对路径')
+  const directory = join(root, 'machine-scope')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  const info = lstatSync(directory)
+  if (!info.isDirectory() || info.isSymbolicLink() || (process.getuid && info.uid !== process.getuid()))
+    throw new Error('插件数据目录不可用，无法读取 CLI 状态')
+  if (process.platform !== 'win32') chmodSync(directory, 0o700)
+  return realpathSync(directory)
+}
+/** A process working directory handed over by the plugin itself (not a user project to validate). */
+export function processDirectory(input: string): string {
+  if (!isAbsolute(input)) throw new Error('Working directory must be an absolute directory')
+  const path = realpathSync(input)
+  const key = (value: string) => (process.platform === 'win32' ? value.toLowerCase() : value)
+  if (key(path) === key(parse(path).root) || key(path) === key(realpathSync(homedir())))
+    throw new Error('Refusing a root or home directory as working directory')
+  if (!statSync(path).isDirectory()) throw new Error('Working directory is not a directory')
+  return path
 }
 
 export function projectDirectory(input: string): string {

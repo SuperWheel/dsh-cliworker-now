@@ -15,6 +15,7 @@ afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await c
 function fixture() {
   const f = serviceFixture(), storage = new WorkerStorage(join(f.root, 'workers'))
   f.config.cliExecutablePaths = new CliExecutablePathStore(f.root)
+  f.config.stateDirectory = f.root // 模拟：整机探测目录落在夹具内，不触碰真实 ~/.dsh
   const runtime = new WorkerRuntime(storage, f.backend, f.config)
   const accounts = new AccountManager(f.backend, f.config, async () => undefined)
   const parent = { id: 'parent', session: { header: { cwd: f.root } } }

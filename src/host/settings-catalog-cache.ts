@@ -86,7 +86,9 @@ function wait(pending: Promise<void>, signal: AbortSignal): Promise<void> {
 }
 
 /** Display choices only, never execution authorization. Settings still discover
- * once per Host; a Worker may read a saved list matching its original account. */
+ * once per Host; a Worker may read a saved list matching its original account.
+ * `project` is the directory the list was read for: the plugin's machine directory for the settings
+ * page (one machine-wide list per CLI), a real project for dispatch and Worker menus. */
 export class SettingsCatalogCache {
   private ready = new Map<string, Entry>()
   private pending = new Map<string, Promise<void>>()

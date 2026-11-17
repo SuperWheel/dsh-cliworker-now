@@ -15,21 +15,20 @@ import type { ConnectionCacheInfo } from '../src/shared/settings-connection.ts'
 import type { CliId } from '../src/shared/types.ts'
 
 // Simulated Host receipts only: no CLI, account or model is read in these tests.
-const PROJECT = 'SIMULATED-project-hash'
 const NOW = 1_800_000_000_000
 const receipt = (age = 0, changes: Partial<ConnectionCacheInfo> = {}): ConnectionCacheInfo =>
-  ({ checkedAt: NOW - age, stale: false, project: PROJECT, revision: 0, displayOnly: true, ...changes })
+  ({ checkedAt: NOW - age, stale: false, revision: 0, displayOnly: true, ...changes })
 const account = (changes: Partial<AccountStatus> = {}): AccountStatus =>
   ({ cli: 'codex', installed: true, state: 'authenticated', summary: '模拟：已登录', verification: 'cli', actions: [],
     cache: receipt(), ...changes })
 const entry = (cli: CliId, revision = 0, changes: Record<string, unknown> = {}) => ({
-  cli, project: PROJECT, revision,
+  cli, revision,
   account: { loading: false, value: account({ cli, cache: undefined }), cache: receipt(0, { revision }) },
   catalog: { loading: false, value: { cli, models: [{ id: `${cli}-simulated`, efforts: ['low'] }], notice: '' },
     cache: receipt(0, { revision }) },
   ...changes,
 })
-const snapshot = (sequence: number, entries: unknown[], project = PROJECT) => ({ sequence, project, entries })
+const snapshot = (sequence: number, entries: unknown[]) => ({ sequence, entries })
 
 describe('connection receipt freshness (simulated)', () => {
   it('counts only current receipts younger than ten minutes, never a clock rollback', () => {
@@ -99,7 +98,7 @@ describe('slot needs (simulated)', () => {
 
 describe('connection receipts ordering (simulated)', () => {
   it('applies the first snapshot and then only changed slots', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+    const receipts = new ConnectionReceipts()
     const first = receipts.snapshot(snapshot(3, [entry('codex'), entry('qoder')]))!
     expect(first.map(change => [change.cli, change.revisionChanged, Object.keys(change.parts)])).toEqual([
       ['codex', false, ['account', 'catalog']],
@@ -109,14 +108,12 @@ describe('connection receipts ordering (simulated)', () => {
     const next = receipts.snapshot(snapshot(4, [entry('codex'), loading]))!
     expect(next).toEqual([{ cli: 'qoder', revisionChanged: false, parts: { catalog: { loading: true } } }])
   })
-  it('drops older sequences, other projects and malformed entries', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+  it('drops older sequences and malformed entries; a snapshot carries no project', () => {
+    const receipts = new ConnectionReceipts()
     receipts.snapshot(snapshot(5, [entry('codex')]))
     expect(receipts.snapshot(snapshot(4, [entry('codex', 0, { catalog: { loading: true } })]))).toBeUndefined()
-    expect(receipts.snapshot(snapshot(6, [entry('codex', 1)], 'SIMULATED-other-project'))).toBeUndefined()
-    expect(receipts.snapshot({ sequence: 'x', project: PROJECT, entries: [] })).toBeUndefined()
+    expect(receipts.snapshot({ sequence: 'x', entries: [] })).toBeUndefined()
     const mixed = receipts.snapshot(snapshot(7, [
-      { ...entry('qoder'), project: 'SIMULATED-other-project' },
       { ...entry('kimi'), account: { loading: false, value: account({ cli: 'codex' }) } },
       { ...entry('mimo'), cli: 'not-a-cli' },
       entry('pi'),
@@ -124,7 +121,7 @@ describe('connection receipts ordering (simulated)', () => {
     expect(mixed.map(change => change.cli)).toEqual(['pi'])
   })
   it('reports a revision change so old values and drafts are dropped, and ignores older revisions', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+    const receipts = new ConnectionReceipts()
     receipts.snapshot(snapshot(1, [entry('codex', 2)]))
     const cleared = entry('codex', 3, { account: { loading: true }, catalog: { loading: false } })
     expect(receipts.snapshot(snapshot(2, [cleared]))).toEqual([{
@@ -134,7 +131,7 @@ describe('connection receipts ordering (simulated)', () => {
     expect(receipts.revision('codex')).toBe(3)
   })
   it('resyncs on a new stream generation even at a lower sequence (Host restart)', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+    const receipts = new ConnectionReceipts()
     receipts.snapshot(snapshot(40, [entry('codex', 4)]), 1)
     expect(receipts.snapshot(snapshot(2, [entry('codex', 4)]), 1)).toBeUndefined()
     const restarted = receipts.snapshot(snapshot(2, [entry('codex', 0)]), 2)!
@@ -143,7 +140,7 @@ describe('connection receipts ordering (simulated)', () => {
     expect(Object.keys(restarted[0]!.parts)).toEqual(['account', 'catalog'])
   })
   it('drops a status answer taken before a newer snapshot', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+    const receipts = new ConnectionReceipts()
     receipts.snapshot(snapshot(1, [entry('codex')]))
     const ticket = receipts.ticket
     const loading = entry('codex', 0, { account: { loading: true } })
@@ -152,14 +149,12 @@ describe('connection receipts ordering (simulated)', () => {
     expect(receipts.status(loading, receipts.ticket)).toEqual({
       cli: 'codex', revisionChanged: false, parts: { account: { loading: true } },
     })
-    expect(receipts.status({ ...loading, project: 'SIMULATED-other-project' }, receipts.ticket)).toBeUndefined()
   })
   it('orders direct reads by revision', () => {
-    const receipts = new ConnectionReceipts(PROJECT)
+    const receipts = new ConnectionReceipts()
     receipts.snapshot(snapshot(1, [entry('codex', 2)]))
     expect(receipts.read('codex', receipt(0, { revision: 1 }))).toBe('drop')
     expect(receipts.read('codex', receipt(0, { revision: 2 }))).toBe('same')
-    expect(receipts.read('codex', receipt(0, { revision: 2, project: 'SIMULATED-other-project' }))).toBe('drop')
     expect(receipts.read('codex', undefined)).toBe('same')
     expect(receipts.read('codex', receipt(0, { revision: 3 }))).toBe('newer')
     // The snapshot that announces revision 3 later is not a second invalidation.

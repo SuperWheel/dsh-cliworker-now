@@ -94,35 +94,34 @@ export interface ConnectionChange {
 
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-const id = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 128
 
-function validCache(value: unknown, project: string): boolean {
+function validCache(value: unknown): boolean {
   return object(value) && finite(value.checkedAt) && typeof value.stale === 'boolean' &&
-    value.project === project && finite(value.revision) && value.displayOnly === true
+    finite(value.revision) && value.displayOnly === true
 }
-function validPart(value: unknown, cli: CliId, project: string, kind: 'account' | 'catalog'): boolean {
+function validPart(value: unknown, cli: CliId, kind: 'account' | 'catalog'): boolean {
   if (!object(value) || typeof value.loading !== 'boolean') return false
   if (value.error !== undefined && typeof value.error !== 'string') return false
-  if (value.cache !== undefined && !validCache(value.cache, project)) return false
+  if (value.cache !== undefined && !validCache(value.cache)) return false
   if (value.value === undefined) return true
   if (!object(value.value) || value.value.cli !== cli) return false
   return kind === 'account' ? typeof value.value.state === 'string' : Array.isArray(value.value.models)
 }
 function validStatus(value: unknown): value is SettingsConnectionStatus {
-  return object(value) && (CLI_IDS as readonly unknown[]).includes(value.cli) && id(value.project) &&
-    finite(value.revision) && validPart(value.account, value.cli as CliId, value.project, 'account') &&
-    validPart(value.catalog, value.cli as CliId, value.project, 'catalog')
+  return object(value) && (CLI_IDS as readonly unknown[]).includes(value.cli) &&
+    finite(value.revision) && validPart(value.account, value.cli as CliId, 'account') &&
+    validPart(value.catalog, value.cli as CliId, 'catalog')
 }
 export function parseConnectionStatus(value: unknown): SettingsConnectionStatus | undefined {
   return validStatus(value) ? value : undefined
 }
 export function parseConnectionSnapshot(value: unknown): SettingsConnectionSnapshot | undefined {
-  if (!object(value) || !finite(value.sequence) || !id(value.project) || !Array.isArray(value.entries)) return
+  if (!object(value) || !finite(value.sequence) || !Array.isArray(value.entries)) return
   return value as unknown as SettingsConnectionSnapshot
 }
 
 /**
- * Orders Host connection receipts for one open dialog: one Host project, a monotonic snapshot
+ * Orders Host connection receipts for one open dialog: this machine's CLIs, a monotonic snapshot
  * sequence per subscription generation, and a per-CLI revision. Older receipts are dropped.
  */
 export class ConnectionReceipts {
@@ -132,8 +131,6 @@ export class ConnectionReceipts {
   private readonly revisions = new Map<CliId, number>()
   private readonly parts = new Map<string, string>()
 
-  constructor(readonly project: string) {}
-
   /** Changes on every applied snapshot; a quick status answer taken before a newer snapshot is dropped. */
   get ticket(): number { return this.applied }
   revision(cli: CliId): number | undefined { return this.revisions.get(cli) }
@@ -141,7 +138,7 @@ export class ConnectionReceipts {
   /** The settings snapshot or one watch item. A new stream generation (reconnect or Host restart) resyncs. */
   snapshot(raw: unknown, generation?: number): ConnectionChange[] | undefined {
     const snapshot = parseConnectionSnapshot(raw)
-    if (!snapshot || snapshot.project !== this.project) return
+    if (!snapshot) return
     const resync = generation !== undefined && this.generation !== undefined && generation !== this.generation
     if (generation !== undefined) this.generation = generation
     if (!resync && snapshot.sequence < this.sequence) return
@@ -150,7 +147,7 @@ export class ConnectionReceipts {
     this.applied++
     const changes: ConnectionChange[] = []
     for (const entry of snapshot.entries) {
-      if (!validStatus(entry) || entry.project !== snapshot.project) continue
+      if (!validStatus(entry)) continue
       const change = this.entry(entry, resync)
       if (change) changes.push(change)
     }
@@ -159,7 +156,7 @@ export class ConnectionReceipts {
 
   /** A `settingsConnectionStatus` answer, requested when `ticket` was current. */
   status(raw: unknown, ticket: number): ConnectionChange | undefined {
-    if (ticket !== this.applied || !validStatus(raw) || raw.project !== this.project) return
+    if (ticket !== this.applied || !validStatus(raw)) return
     return this.entry(raw, false)
   }
 
@@ -169,7 +166,7 @@ export class ConnectionReceipts {
    */
   read(cli: CliId, cache: ConnectionCacheInfo | undefined): 'same' | 'newer' | 'drop' {
     if (!cache) return 'same'
-    if (cache.project !== this.project || !finite(cache.revision)) return 'drop'
+    if (!finite(cache.revision)) return 'drop'
     const known = this.revisions.get(cli)
     if (known !== undefined && cache.revision < known) return 'drop'
     if (known === cache.revision) return 'same'

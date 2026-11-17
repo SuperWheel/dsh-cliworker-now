@@ -2,7 +2,7 @@ import { lstat, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readPiOmpLogoutSources, safePiOmpAncestors, selectedPiAuthSource } from './pi-omp-native.ts'
-import { projectDirectory } from './process.ts'
+import { processDirectory } from './process.ts'
 import { parseAccountLoginId } from '../shared/account-links.ts'
 import { ompConfigurationEnvironment, windowsProgramDirectories } from './pi-omp-environment.mjs'
 import type { PiOmpAccountTerminalInput, PiOmpAccountTerminalLaunch } from './pi-omp-accounts.ts'
@@ -13,7 +13,7 @@ export async function preparePiOmpLogout(
 ): Promise<PiOmpAccountTerminalLaunch> {
   const { cli, signal } = input
   signal?.throwIfAborted()
-  projectDirectory(input.project)
+  processDirectory(input.project)
   const managed = input.login ? parseAccountLoginId(input.login) : undefined
   if (managed?.cli === cli && ['plugin.config', 'native.config'].includes(managed.entry ?? ''))
     throw new Error('请在账号窗口中删除此服务商配置')

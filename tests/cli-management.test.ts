@@ -143,18 +143,18 @@ describe('private layered cache', () => {
     expect(cache.version('codex', fingerprint)?.version).toBe('1.2.3')
     for (const next of [{ ...fingerprint, realpath: '/new' }, { ...fingerprint, size: 13 }, { ...fingerprint, mtimeMs: 124 }, { ...fingerprint, appVersion: '2.0.0' }]) expect(cache.version('codex', next)).toBeUndefined()
   })
-  it('uses source-specific release TTL, project-hashed account TTL and private modes', () => {
+  it('uses source-specific release TTL, per-CLI account TTL (no project key) and private modes', () => {
     const root = temp(), cache = new CliManagementCache(root), now = Date.now(), key = cache.releaseKey('codex', '@openai/codex', 'https://registry.npmjs.org/')
     cache.rememberRelease(key, { latest: '1.2.3', versions: ['1.2.3'], checkedAt: now, registry: 'https://registry.npmjs.org/' })
     expect(cache.release(key, now + RELEASE_TTL - 1)).toBeDefined(); expect(cache.release(key, now + RELEASE_TTL)).toBeUndefined()
     expect(cache.release(cache.releaseKey('codex', '@openai/codex', 'https://mirror.example/'))).toBeUndefined()
-    cache.rememberAccount('codex', '/synthetic/project-one', { cli: 'codex', installed: true, state: 'authenticated', authMethod: 'oauth', accountLabel: 'synthetic@example.invalid', summary: 'token=TOPSECRET', actions: [], cookie: 'COOKIESECRET', token: 'TOPSECRET' } as any)
-    const cached = cache.account('codex', '/synthetic/project-one')!; expect(cached.cache.stale).toBe(false)
-    expect(cache.account('codex', '/synthetic/project-one', cached.cache.checkedAt + ACCOUNT_TTL)?.cache.stale).toBe(true)
-    expect(cache.account('codex', '/synthetic/project-two')).toBeUndefined()
+    cache.rememberAccount('codex', { cli: 'codex', installed: true, state: 'authenticated', authMethod: 'oauth', accountLabel: 'synthetic@example.invalid', summary: 'token=TOPSECRET', actions: [], cookie: 'COOKIESECRET', token: 'TOPSECRET' } as any)
+    const cached = cache.account('codex')!; expect(cached.cache.stale).toBe(false)
+    expect(cache.account('codex', cached.cache.checkedAt + ACCOUNT_TTL)?.cache.stale).toBe(true)
+    expect(cache.account('claude')).toBeUndefined(); expect(cached.cache).not.toHaveProperty('project')
     const disk = readFileSync(cache.file, 'utf8'); expect(disk).not.toMatch(/TOPSECRET|COOKIESECRET|project-one|token|cookie|actions/)
     expect(statSync(cache.file).mode & 0o777).toBe(0o600); expect(statSync(join(root, 'cli-management')).mode & 0o777).toBe(0o700)
-    expect(new CliManagementCache(root).account('codex', '/synthetic/project-one')).toMatchObject({ accountLabel: 'synthetic@example.invalid' })
+    expect(new CliManagementCache(root).account('codex')).toMatchObject({ accountLabel: 'synthetic@example.invalid' })
   })
   it.each(['not-json', '{"policy":1,"entries":{},"token":"unexpected"}'])('discards the whole corrupt cache', raw => {
     const root = temp(), cache = new CliManagementCache(root); writeFileSync(cache.file, raw)
@@ -162,8 +162,8 @@ describe('private layered cache', () => {
   })
   it('does not resurrect account results after login/path invalidation', () => {
     const cache = new CliManagementCache(temp()), revision = cache.accountRevision('codex'); cache.invalidateAccount('codex')
-    cache.rememberAccount('codex', '/synthetic', { cli: 'codex', installed: true, state: 'authenticated', summary: '', actions: [] }, revision)
-    expect(cache.account('codex', '/synthetic')).toBeUndefined()
+    cache.rememberAccount('codex', { cli: 'codex', installed: true, state: 'authenticated', summary: '', actions: [] }, revision)
+    expect(cache.account('codex')).toBeUndefined()
   })
   it('validates source settings and never accepts credentials or client followRegistry', () => {
     const cache = new CliManagementCache(temp())
@@ -387,9 +387,8 @@ it('foreground handoff finishes and reuses the safe account portion of the backg
   const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'mimo' ? identity : undefined) })
   const account = vi.fn(async () => ({ cli: 'mimo', installed: true, state: 'authenticated', authMethod: 'api', summary: 'Synthetic account', actions: [] }))
   ;(f.service as any).deps.account = account
-  f.service.context(f.root)
   await checked(f.service); expect(account).toHaveBeenCalledTimes(1)
-  expect(f.service.cache.account('mimo', f.root)?.cache.stale).toBe(false)
+  expect(f.service.cache.account('mimo')?.cache.stale).toBe(false)
   await checked(f.service); expect(account).toHaveBeenCalledTimes(1)
 })
 it('bounds npm path lookup as well as the registry subprocess', async () => {
@@ -405,18 +404,16 @@ it('idle notifications cannot shorten the two-second CPU sampling window', async
   await vi.advanceTimersByTimeAsync(501); expect(run).toHaveBeenCalledTimes(1)
 })
 
-it('模拟：后台连接工作按项目分开，只交给安全账号与目录回调，跳过关闭的 CLI', async () => {
+it('模拟：后台连接工作每个 CLI 只做一次（登记两个项目也不重复），只交给安全账号与目录回调，跳过关闭的 CLI', async () => {
   const pi = simulatedPiInstallation(temp())
   const f = serviceFixture({ identify: vi.fn(async (cli: string) => cli === 'pi' ? { ...identity, executable: pi.entry } : identity) })
   const load = vi.fn(async () => {})
   ;(f.service as any).deps.preloadConnection = load
   ;(f.service as any).deps.cliEnabled = (cli: string) => cli !== 'mimo'
-  f.service.context('/simulated-project-a'); f.service.context('/simulated-project-b')
+  f.service.protectProject('/simulated-project-a'); f.service.protectProject('/simulated-project-b')
   await checked(f.service)
-  for (const project of ['/simulated-project-a', '/simulated-project-b']) {
-    expect(load.mock.calls.filter((call: unknown[]) => call[1] === project).map((call: unknown[]) => [call[0], call[2]])).toEqual([
-      ...BACKGROUND_ACCOUNT_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'account']),
-      ...BACKGROUND_CATALOG_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'catalog']),
-    ])
-  }
+  expect(load.mock.calls.map((call: unknown[]) => [call[0], call[1]])).toEqual([
+    ...BACKGROUND_ACCOUNT_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'account']),
+    ...BACKGROUND_CATALOG_CLIS.filter(cli => cli !== 'mimo').map(cli => [cli, 'catalog']),
+  ])
 })

@@ -136,11 +136,11 @@ function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, 
       return { state, label: hostText(data?.summary) || t('状态待确认') }
   }
 }
-/** The connection snapshot this dialog may reuse: same response (Host instance) and project as the rest of settingsCache. */
+/** The connection snapshot this dialog may reuse: this machine's CLIs, from the same response (Host instance) as the rest of settingsCache. */
 function connectionSnapshot(api: API, metadata: SettingsCacheMetadata | undefined) {
   const connections = metadata?.connections
   if (!connections || !api.cliworker.settingsConnectionStatus || !api.cliworker.watchSettingsConnections) return
-  return connections.project === metadata.project ? connections : undefined
+  return connections
 }
 const without = <T,>(entries: Partial<Record<CliId, T>>, id: CliId) => {
   if (!(id in entries)) return entries
@@ -383,7 +383,7 @@ function OpenSettingsDialog({
       const answer = parseConnectionStatus(raw)
       const change = current.status(raw, ticket)
       if (change) applyConnection(change)
-      if (!answer || answer.project !== current.project) return
+      if (!answer) return
       // A slot the Host neither has nor is reading still gets the bounded direct read. A loading
       // account also gets one: it joins the Host's running read, and an account paused after an
       // unconfirmed cleanup is reported only by a direct read, never by the snapshot.
@@ -433,10 +433,10 @@ function OpenSettingsDialog({
         if (!metadata) for (const id of CLI_IDS) saves.sync(id, readVersion)
         setPreferenceSaves(saves)
         preferences.current = { ...metadata?.preferences }
-        // The Host's connection snapshot is reused only for this Host and project; without it, or
+        // The Host's connection snapshot is reused only for this Host; without it, or
         // without its status and watch methods, the dialog keeps the older per-CLI reads.
         const connections = connectionSnapshot(api, metadata)
-        receipts.current = connections ? new ConnectionReceipts(connections.project) : undefined
+        receipts.current = connections ? new ConnectionReceipts() : undefined
         connectionsSupported.current = !!receipts.current
         requested.current.clear()
         openedStatus.current = undefined
@@ -478,12 +478,12 @@ function OpenSettingsDialog({
       requests.clear()
       receipts.current = undefined
       setLive(false)
-      // Another Host session or project: nothing of the old connection state stays on screen.
+      // Another Host session: nothing of the old connection state stays on screen.
       setAccounts({})
       setCatalogEntries({})
     }
   }, [api, sessionId, fallbackSaves])
-  // One watch per open dialog: the full project snapshot first, then each finished, failed or
+  // One watch per open dialog: the full machine snapshot first, then each finished, failed or
   // invalidated read. It ends on close; a failed watch falls back to the bounded direct reads.
   useEffect(() => {
     const watch = api.cliworker.watchSettingsConnections

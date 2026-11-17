@@ -7,7 +7,7 @@ import type { AccountAction, AccountSource } from '../shared/accounts.ts'
 import { preparePiOmpLogout } from './pi-omp-logout.ts'
 import { ompConfigurationEnvironment, windowsProgramDirectories } from './pi-omp-environment.mjs'
 import type { PiOmpCli } from './pi-omp-adapter.ts'
-import { projectDirectory, type RuntimeConfig } from './process.ts'
+import { processDirectory, type RuntimeConfig } from './process.ts'
 
 export interface PiOmpAccountTerminalInput {
   cli: PiOmpCli
@@ -86,7 +86,7 @@ export async function preparePiOmpAccountTerminal(
   if (cli !== 'pi' && cli !== 'omp') throw new Error('Unsupported Pi/OMP account terminal')
   if (input.action === 'logout') return preparePiOmpLogout(input)
   signal?.throwIfAborted()
-  projectDirectory(input.project)
+  processDirectory(input.project)
   const root = await privateDirectory(resolve(input.stateDirectory))
   const accountRoot = await privateDirectory(join(root, 'account-runtime'))
   const runtime = await mkdtemp(join(accountRoot, `${cli}-`))

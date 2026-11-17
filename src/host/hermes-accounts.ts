@@ -20,7 +20,7 @@ import {
   hermesAccountEnvironment,
 } from './hermes-account-context.ts'
 import { hermesNativeCommand } from './hermes-installation.ts'
-import { projectDirectory, type RuntimeConfig } from './process.ts'
+import { processDirectory, type RuntimeConfig } from './process.ts'
 
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -408,7 +408,7 @@ export async function prepareHermesAccount(
   signal.throwIfAborted()
   if (!['login', 'manage', 'logout'].includes(action)) throw new Error('不支持的 Hermes 账号操作')
   if (!nonempty(executable) || executable.includes('\0')) throw new Error('Invalid Hermes executable')
-  projectDirectory(project)
+  processDirectory(project)
   let sourceLabel = ''
   if (action === 'logout') {
     const sources = await listHermesAccountSources(config, signal)

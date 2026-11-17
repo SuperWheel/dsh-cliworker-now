@@ -63,12 +63,29 @@
   - 未做：Windows 实机重测（需要重新部署隔离包并重启 Desktop）。
   - 设计文档 `doc/design.md`「2026-11-17 更快切换插件下载与手动切换」已补充本条。
 
-- [x] 3.9 会话目录不存在时，设置页 CLI 连接状态不再全部失败
+- [x] 3.9 设置页改为整机 CLI 管理：连接状态、账号、模型清单不再绑定任何目录
   - 2026-11-17 Windows Desktop 用户反馈「CLI 状态全部都报错」。Codex（gpt-6-astra）只读核对：DSH 当前会话 `session-3cd19f3c…` 的工作目录 `C:\Users\admin\cw081f1\live-codex` 及上级都不存在；`readAccountStatus` 等先用 `projectDirectory`（`realpathSync`）解析会话目录，抛 ENOENT，17 个 CLI 一起失败。同一时刻更新页缓存 19:25 检查 17 项全部成功。未取得 Windows 设置页截图。
-  - 用户要求：项目存不存在都不应影响 CLI 状态。`src/host/index.ts` 新增 `settingsProject()`：会话目录有效时照旧；缺失或没有时改在系统临时目录下的私有空目录 `dsh-cliworker-now-settings`（0700，拒绝符号链接与他人所有，再过 `projectDirectory`）里探测。用于 `cliSettings`、`settingsConnectionStatus`、`watchSettingsConnections`、`readAccountStatus`、设置页模型清单、账号登录与图形账号窗口。选择模型等项目操作仍要求有效项目，`project()` 在目录不存在时报「此主对话的工作目录已不存在（…），请切换到有效项目」。
-  - 新增测试 1 项（`tests/cli-management-remotes.test.ts`，覆盖目录缺失与没有目录两种），修复前失败；设置页与账号相关 7 个文件 527 项通过，typecheck 通过。
-  - 全量 vitest（含 3.8、3.9）：359 个文件通过、4 个跳过，8783 项通过、15 项跳过、1 项失败。失败的是 `cli-management-download.test.ts`「持续有真实字节仍受两小时总预算约束」，与本次改动无关，单独重跑 3 次各 18 项全部通过，属于全量负载下的时序抖动。
-  - 未做：Windows 实机重测。
+  - 第一版（提交 a0205f0）用 `settingsProject()` 在目录无效时退到临时空目录，仍以目录为前提和缓存键。用户否定：「cli的连接状态不是只和cli有关吗，为什么一定要绑定一个目录」「这个设置页面只是cli的管理」。本条按最终方案改写，`settingsProject()` 已删除，没有两套并存。
+  - 目录在连接链路里的实际作用（代码核对）：
+    - 只是缓存键或预加载范围：`SettingsConnectionCache` 的键（项目、CLI、类别）；`cliManagement.context(project)` 每登记一个项目排一轮账号与目录预加载；更新页账号磁盘缓存 `accountKey(cli, project)`；`AccountManager.status` 的在途查询键。
+    - 只是进程工作目录或入参校验：Codex app-server 账号读取、Kimi `provider list`、TRAE CN `login status`、WorkBuddy 探测的 cwd；`accounts.ts`、`hermes-accounts.ts`、`pi-omp-accounts.ts`、`pi-omp-logout.ts` 里的 `projectDirectory()` 只校验不取值；MiMo、Hermes、ZCode、Grok、OpenCode、Pi、OMP、Antigravity 的账号读取不使用目录。
+    - 确实影响结果（项目级配置）：Claude Code 读 `<项目>/.claude/settings.json`、`settings.local.json` 的 env（`claude-own-route.ts` `readClaudeSettings`）；Codex 从项目向上读 `.codex/config.toml` 的自定义路由（`cli-account-binding.ts` `codexConfigPaths`）；TRAE CN 读 `.trae/traecli.toml`（`traecnStore`）；Qoder 两版读 `<项目>/.qoder*/settings.json`、`settings.local.json`、`.env`（`qoder-accounts.ts`）；CodeBuddy 读项目 `.codebuddy/settings*.json`（`codebuddy-account.ts`）。
+  - 最终方案：
+    - 整机层（设置页）：`cliSettings`、`settingsConnectionStatus`、`watchSettingsConnections`、`accountStatus`／`refreshAccountStatus`、设置页模型清单、账号登录／退出与图形账号窗口都不解析主对话目录。连接缓存键改为（CLI、类别），快照、回执、订阅协议去掉 `project` 字段，客户端同步去掉项目比对。后台连接预加载在 Host 启动时每个 CLI 排一次。更新页账号磁盘缓存按 CLI。`context(project)` 改名 `protectProject`，只保留「安装目录不得落在已知项目内」的保护。
+    - 进程工作目录：`machineDirectory()` 返回 `<插件数据目录>/machine-scope`（0700，拒绝符号链接与他人所有，始终为空）。它不来自任何会话、不是缓存键、不含项目级 CLI 配置；不用系统临时目录，因为会被系统清理，Linux `/tmp` 的上级还可能被他人放入配置。账号模块的入参校验由 `projectDirectory` 改为 `processDirectory`（绝对路径、存在、非根非主目录）。
+    - 项目层（主对话）：派遣、续聊、Worker 模型菜单、保存项目模型偏好仍走 `project()`，保留报错「此主对话没有工作目录，请先选择项目」「此主对话的工作目录已不存在（…），请切换到有效项目」。设置页模型清单按整机口径（只读用户级配置）；主对话没有可用项目时不带出偏好（`settingsCache.project` 为 `no-project`）。`configure` 保存偏好时仍按项目核验，绑定不同则按项目重新授权（既有行为）。`SettingsCatalogCache` 仍按来源目录存：设置页传整机目录，派遣与 Worker 菜单传项目。
+  - 规格：本变更 `specs/cli-update/spec.md` 新增「设置页是整机 CLI 管理」，修改「分层缓存」「项目连接状态静默预加载与缓存消费」「连接快照、过期更新与来源作废」；新增 `specs/cli-model-discovery/spec.md` 修改「设置模型目录持久保存与启动刷新」。`corepack pnpm spec validate --all --strict --no-interactive`：40 项通过。
+  - 测试（均为模拟，不登录、不调用模型）：
+    - `tests/cli-management-remotes.test.ts` 新增 2 项：没有目录、目录已删、两个不同项目四种主对话得到同一份账号状态和同一检查时间，账号只探测 1 次，探测目录是空的 `machine-scope`，回执不含 `project`；没有可用项目时设置快照、订阅、模型清单照常返回且不带偏好，模型清单只查 1 次，有项目的主对话看到同一份清单并带出自己的偏好，项目操作仍报原文案。
+    - 改写既有用例：连接缓存 14 项去掉项目参数；预加载「每个 CLI 各排一次、登记两个项目不增加连接项」；更新页账号缓存按 CLI；设置窗口「无论主对话项目如何都使用整机快照」；账号入口断言工作目录为整机目录。
+    - 修复前失败的确认：把 `src` 退回 HEAD（a0205f0）后新增与改写用例 14 项失败（回执含 `project`、偏好被带出、无 `protectProject`）；退回 HEAD~1 后两项新增用例报「此主对话没有工作目录，请先选择项目」。
+    - `corepack pnpm typecheck` 通过。
+    - 全量 `corepack pnpm exec vitest run`：360 个文件通过、4 个跳过，8785 项通过、15 项跳过，0 项失败。
+    - `corepack pnpm build:preview` 生成隔离包成功。
+    - 测试不再在真实 `~/.dsh/cliworker-now` 下创建 `machine-scope`：5 个夹具补了 `stateDirectory`，全量运行后确认该目录不存在。
+  - 兼容：旧客户端（热启用未刷新）收到不含 `project` 的快照会判为无效并退回逐个 CLI 的旧读取，不会报错。
+  - 遗留：`CliPreloader.enqueue` 不再有生产调用方，本次未删（有两项独立用例）。
+  - 未做：Windows 与 Mac Desktop 实机重测；真实 CLI 账号读取与登录窗口在整机目录下的实测（未登录、未退出、未切换任何真实账号）。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 

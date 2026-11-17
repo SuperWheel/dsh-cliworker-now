@@ -55,8 +55,8 @@ interface Dependencies {
   invalidateModels?(cli: ActiveCliId): void
   root: string; backend: ProcessBackend; config: RuntimeConfig
   idle(): boolean; enabled(): boolean; cliEnabled(cli: ActiveCliId): boolean
-  preloadConnection?(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal): Promise<void>
-  account(cli: ActiveCliId, project: string, signal: AbortSignal): Promise<AccountStatus>
+  preloadConnection?(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal): Promise<void>
+  account(cli: ActiveCliId, signal: AbortSignal): Promise<AccountStatus>
   globalCleanup?(error: ProcessCleanupUnconfirmedError): void
   cleanup?(cli: ActiveCliId, error: ProcessCleanupUnconfirmedError): void
   identify?: typeof identifyInstallation
@@ -92,7 +92,6 @@ export class CliManagementService {
   private running?: Promise<void>
   private pending = new Set<Promise<unknown>>()
   private foregroundController?: AbortController
-  private project?: string
   private registryTask?: Promise<void>
   private followRegistry?: string
   private cleanupFailure?: ProcessCleanupUnconfirmedError
@@ -113,6 +112,13 @@ export class CliManagementService {
       activity: active => { if (!this.running) { this.state.activity = active ? 'preloading' : 'idle'; this.changed() } },
       items: [
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, true) })),
+        // Settings opens far more often than the update page: right after the path pass has recorded
+        // identities, run each CLI's account and catalog back to back so whole rows become ready early.
+        // Connections belong to this machine, so they are queued once at start and not per conversation.
+        ...(deps.preloadConnection ? CLI_IDS.flatMap(cli => [
+          ...(BACKGROUND_ACCOUNT_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, 'account', signal) }] : []),
+          ...(BACKGROUND_CATALOG_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, 'catalog', signal) }] : []),
+        ]) : []),
         ...CLI_IDS.map(cli => ({ run: (signal: AbortSignal) => this.local(cli, signal, true, false) })),
         ...(!deps.preloadConnection ? BACKGROUND_ACCOUNT_CLIS.map(cli => ({ run: (signal: AbortSignal) => this.preloadAccount(cli, signal) })) : []),
         ...CLI_IDS.map(cli => ({ run: async (signal: AbortSignal) => { await this.remote(cli, signal, false) } })),
@@ -121,24 +127,12 @@ export class CliManagementService {
     this.track(prepareDownloads(deps.root)).catch(() => undefined)
     this.preloader.start()
   }
-  context(project: string) {
-    this.project = project
-    if (this.projects.has(project)) return
-    this.projects.add(project)
-    if (this.deps.preloadConnection) {
-      // Settings opens far more often than the update page: right after the path pass has recorded
-      // identities, run each CLI's account and catalog back to back so whole rows become ready early.
-      const items = CLI_IDS.flatMap(cli => [
-        ...(BACKGROUND_ACCOUNT_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'account', signal) }] : []),
-        ...(BACKGROUND_CATALOG_CLIS.includes(cli) ? [{ run: (signal: AbortSignal) => this.preloadConnection(cli, project, 'catalog', signal) }] : []),
-      ])
-      this.preloader.enqueue(items, CLI_IDS.length)
-    }
-  }
-  private async preloadConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+  /** A project seen in a conversation: only kept out of CLI install directories, never a preload or cache scope. */
+  protectProject(project: string) { this.projects.add(project) }
+  private async preloadConnection(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
     this.assertHealthy()
     if (!this.deps.cliEnabled(cli) || !this.identities.has(cli)) return
-    try { await this.deps.preloadConnection?.(cli, project, kind, signal) }
+    try { await this.deps.preloadConnection?.(cli, kind, signal) }
     catch (error) { if (signal.aborted || error instanceof ProcessCleanupUnconfirmedError) throw error }
   }
   snapshot(): CliUpdateSnapshot { return structuredClone(this.state) }
@@ -183,10 +177,8 @@ export class CliManagementService {
       await this.pool(CLI_IDS, 3, async cli => { await this.remote(cli, signal, scope === 'all'); if (!this.entry(cli).installed || !this.entry(cli).currentVersion) await this.installEntry(cli, '', signal); unfinished.delete(cli) }, signal)
       // Finish the safe account portion of the handed-off queue as well.
       if (this.deps.preloadConnection) {
-        for (const project of this.projects) {
-          for (const cli of BACKGROUND_ACCOUNT_CLIS) await this.preloadConnection(cli, project, 'account', signal)
-          for (const cli of BACKGROUND_CATALOG_CLIS) await this.preloadConnection(cli, project, 'catalog', signal)
-        }
+        for (const cli of BACKGROUND_ACCOUNT_CLIS) await this.preloadConnection(cli, 'account', signal)
+        for (const cli of BACKGROUND_CATALOG_CLIS) await this.preloadConnection(cli, 'catalog', signal)
       } else await this.pool(BACKGROUND_ACCOUNT_CLIS, 3, cli => this.preloadAccount(cli, signal), signal)
       if (!signal.aborted) this.state.checkedAt = Date.now()
     })().catch(() => {
@@ -323,12 +315,11 @@ export class CliManagementService {
   }
   private async preloadAccount(cli: ActiveCliId, signal: AbortSignal) {
     this.assertHealthy()
-    if (!this.project || !this.deps.cliEnabled(cli) || !this.identities.has(cli)) return
-    const project = this.project
-    if (this.cache.account(cli, project)?.cache.stale === false) return
+    if (!this.deps.cliEnabled(cli) || !this.identities.has(cli)) return
+    if (this.cache.account(cli)?.cache.stale === false) return
     const revision = this.cache.accountRevision(cli)
-    const status = await this.deps.account(cli, project, signal)
-    signal.throwIfAborted(); this.cache.rememberAccount(cli, project, status, revision)
+    const status = await this.deps.account(cli, signal)
+    signal.throwIfAborted(); this.cache.rememberAccount(cli, status, revision)
   }
   private effectiveRegistry() {
     const s = this.cache.settings()

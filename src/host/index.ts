@@ -18,9 +18,9 @@ import { visibleModelChoices } from '../shared/model-presentation.ts'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as validate } from 'zod'
-import { homedir, tmpdir } from 'node:os'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
@@ -101,6 +101,7 @@ import {
 import { agentNameSchema, readRoleAnswer, roleQuestion } from './roles.ts'
 import {
   DEFAULT_CONFIG,
+  machineDirectory,
   projectDirectory,
   ProcessCleanupUnconfirmedError,
   type ProcessBackend,
@@ -404,8 +405,8 @@ export class CliWorkerService extends TypertRemoteService {
       idle: () => !this.runtime.hasActiveCliWork() && !CLI_IDS.some(cli => this.accounts.isBusy(cli)),
       enabled: () => this.runtime.generalSettings().backgroundCliCheck,
       cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
-      account: (cli, project, signal) => backgroundCredentialRead(() => this.accounts.status(cli, project, signal, { background: true })),
-      preloadConnection: (cli, project, kind, signal) => this.preloadSettingsConnection(cli, project, kind, signal),
+      account: (cli, signal) => backgroundCredentialRead(() => this.accounts.status(cli, this.machineDirectory(), signal, { background: true })),
+      preloadConnection: (cli, kind, signal) => this.preloadSettingsConnection(cli, kind, signal),
       cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
       globalCleanup: error => this.runtime.blockOnCleanup(error),
       busy: cli => ({ workers: this.runtime.busyCliWorkers(cli), accounts: this.accounts.isBusy(cli) || this.accounts.hasActiveQuery(cli) }),
@@ -827,7 +828,7 @@ export class CliWorkerService extends TypertRemoteService {
     const agent = this.ctx.agents.get(id as Agent['id'])
     if (!agent) throw new Error('请先在主对话发送一条消息以激活会话，然后重试')
     if (agent.session.header.cwd) {
-      try { this.cliManagement?.context(this.project(agent)) } catch { /* A non-project session has no preload scope. */ }
+      try { this.cliManagement?.protectProject(this.project(agent)) } catch { /* No usable project: nothing to protect. */ }
     }
     return agent
   }
@@ -837,19 +838,16 @@ export class CliWorkerService extends TypertRemoteService {
     if (!existsSync(cwd)) throw new Error(`此主对话的工作目录已不存在（${cwd}），请切换到有效项目`)
     return projectDirectory(cwd)
   }
-  /** CLI connection status, model catalogs and account login are machine-wide: they must not fail because the
-   * conversation has no usable project (2026-11-17 Windows 实测：会话目录被删除后设置页 17 个 CLI 全部显示失败).
-   * Without one, probes run in an empty plugin-private directory instead of guessing another project. */
-  private settingsProject(agent: Agent): string {
-    try { return this.project(agent) } catch {
-      // Not under ~/.dsh: account code rejects credential/configuration roots (projectDirectory) as a cwd.
-      const directory = join(tmpdir(), 'dsh-cliworker-now-settings')
-      mkdirSync(directory, { recursive: true, mode: 0o700 })
-      const info = lstatSync(directory)
-      if (!info.isDirectory() || info.isSymbolicLink() || process.getuid && info.uid !== process.getuid())
-        throw new Error('插件临时目录不可用，请先选择项目')
-      return projectDirectory(realpathSync(directory))
-    }
+  /**
+   * The settings page manages this machine's CLIs (installation, version, login, accounts, model lists). None of
+   * that belongs to a project or a conversation, so those reads and account terminals neither resolve the
+   * conversation's directory nor use it as a cache key; their processes run in the plugin's own fixed directory.
+   * Dispatch, follow-ups and project model preferences still go through project().
+   */
+  private machineDirectory(): string { return machineDirectory(this.options?.stateDirectory) }
+  /** Where this conversation's project preferences live; undefined when it has no usable project. */
+  private preferenceProject(agent: Agent): string | undefined {
+    try { return this.project(agent) } catch { return undefined }
   }
   /** Resolve ownership only; child status stays read-only even in plan mode. */
   /** CLI Workers win; only an unmatched reference is tried against this conversation's DSH native subagents. */
@@ -2142,27 +2140,26 @@ export class CliWorkerService extends TypertRemoteService {
       const parent = await this.parent(parentSessionId)
       signal.throwIfAborted()
       const settings = this.runtime.storage.cliSettings()
-      const project = this.settingsProject(parent)
-      this.cliManagement?.context(project)
-      // Reusing the same project's display list in another parent still pins
+      // Reusing this machine's display list in another parent still pins
       // configure() to the original verified account; no CLI query is needed.
       for (const cli of CLI_IDS) {
-        const binding = this.connectionCache().fresh(project, cli, 'catalog')?.binding ?? this.settingsCatalogs?.displayBinding(project, cli)
+        const binding = this.connectionCache().fresh(cli, 'catalog')?.binding ?? this.settingsCatalogs?.displayBinding(this.machineDirectory(), cli)
         const key = JSON.stringify([parentSessionId, cli])
         if (binding) (this.displayedBindings ??= new Map()).set(key, binding)
       }
-      return JSON.stringify({ ...settings, settingsCache: this.settingsDisplayMetadata(project) })
+      return JSON.stringify({ ...settings, settingsCache: this.settingsDisplayMetadata(this.preferenceProject(parent)) })
     } catch (error) {
       throw failure(error)
     }
   }
-  private settingsDisplayMetadata(project: string): SettingsCacheMetadata {
+  /** `project` only scopes the saved model preferences; connections and model lists are machine-wide. */
+  private settingsDisplayMetadata(project: string | undefined): SettingsCacheMetadata {
     this.settingsInstance ??= randomUUID()
     return {
       policy: 1,
-      connections: this.connectionCache().snapshot(project),
+      connections: this.connectionCache().snapshot(),
       host: this.settingsInstance,
-      project: createHash('sha256').update(project).digest('hex'),
+      project: project === undefined ? 'no-project' : createHash('sha256').update(project).digest('hex'),
       revisions: Object.fromEntries(
         CLI_IDS.map((cli) => [
           cli,
@@ -2170,11 +2167,11 @@ export class CliWorkerService extends TypertRemoteService {
         ]),
       ) as Record<CliId, string>,
       catalogReady: Object.fromEntries(
-        CLI_IDS.map((cli) => [cli, !!this.connectionCache().fresh(project, cli, 'catalog') || !!this.settingsCatalogs?.displayBinding(project, cli)]),
+        CLI_IDS.map((cli) => [cli, !!this.connectionCache().fresh(cli, 'catalog') || !!this.settingsCatalogs?.displayBinding(this.machineDirectory(), cli)]),
       ) as Record<CliId, boolean>,
       preferences: Object.fromEntries(
         CLI_IDS.flatMap((cli) => {
-          const preference = this.runtime.storage.preference(project, cli)
+          const preference = project === undefined ? undefined : this.runtime.storage.preference(project, cli)
           return preference ? [[cli, preference]] : []
         }),
       ),
@@ -2373,7 +2370,6 @@ export class CliWorkerService extends TypertRemoteService {
   async generalSettings(parentSessionId: string, signal: AbortSignal): Promise<string> {
     try {
       const parent = await this.parent(parentSessionId)
-      if (parent.session.header.cwd) this.cliManagement?.context(this.project(parent))
       signal.throwIfAborted()
       return JSON.stringify(this.runtime.generalSettings())
     } catch (error) {
@@ -2507,22 +2503,21 @@ export class CliWorkerService extends TypertRemoteService {
   async settingsConnectionStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
-      const project = this.settingsProject(await this.parent(parentSessionId))
+      await this.parent(parentSessionId)
       signal.throwIfAborted()
       // A cleanup pause is this CLI's displayed state; report it without scheduling reads that would only return it.
       const held = this.cleanupHeldStatus(id)
       if (held) {
-        const status = this.connectionCache().status(project, id)
+        const status = this.connectionCache().status(id)
         return JSON.stringify({ ...status, account: { loading: false, value: held }, catalog: { ...status.catalog, loading: false } })
       }
       this.runtime.assertCliEnabled(id)
-      this.cliManagement?.context(project)
       // Host-owned refresh outlives this quick snapshot request; close/invalidation cancels it.
-      const account = !this.connectionCache().fresh(project, id, 'account')
-      const catalog = !this.connectionCache().fresh(project, id, 'catalog')
+      const account = !this.connectionCache().fresh(id, 'account')
+      const catalog = !this.connectionCache().fresh(id, 'catalog')
       if (account) void backgroundCredentialRead(() => this.readAccountStatus(parentSessionId, id, this.disposed.signal, false)).catch(() => undefined)
       if (catalog) void backgroundCredentialRead(() => this.settingsCatalog(parentSessionId, id, this.disposed.signal, false)).catch(() => undefined)
-      const status = this.connectionCache().status(project, id)
+      const status = this.connectionCache().status(id)
       // These reads have been scheduled even if their parent lookup has not yielded yet.
       if (account) status.account.loading = true
       if (catalog) status.catalog.loading = true
@@ -2532,8 +2527,8 @@ export class CliWorkerService extends TypertRemoteService {
   @Remote({ name: 'watchSettingsConnections', mode: 'stream' })
   async *watchSettingsConnections(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
     try {
-      const project = this.settingsProject(await this.parent(parentSessionId))
-      for await (const snapshot of this.connectionCache().watch(project, AbortSignal.any([signal, this.disposed.signal])))
+      await this.parent(parentSessionId)
+      for await (const snapshot of this.connectionCache().watch(AbortSignal.any([signal, this.disposed.signal])))
         yield JSON.stringify(snapshot)
     } catch (error) { throw failure(error) }
   }
@@ -2541,10 +2536,10 @@ export class CliWorkerService extends TypertRemoteService {
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
     return explicitCredentialRead(() => this.readAccountStatus(parentSessionId, cli, signal, false))
   }
-  private preloadSettingsConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
-    return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, project, kind, signal))
+  private preloadSettingsConnection(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
+    return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, kind, signal))
   }
-  private async preloadSettingsConnectionNow(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+  private async preloadSettingsConnectionNow(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
     const release = this.options.cliMaintenance?.using(cli)
     try {
       const allowed = kind === 'account' ? BACKGROUND_ACCOUNT_CLIS : BACKGROUND_CATALOG_CLIS
@@ -2552,25 +2547,28 @@ export class CliWorkerService extends TypertRemoteService {
       this.runtime.assertCliEnabled(cli)
       const held = this.runtime.catalogCleanupMessage(cli)
       if (held) throw new Error(held)
-      if (kind === 'account') await this.loadSettingsAccount(project, cli, signal, false, true)
-      else await this.loadSettingsCatalog(project, cli, signal, false, true)
+      if (kind === 'account') await this.loadSettingsAccount(cli, signal, false, true)
+      else await this.loadSettingsCatalog(cli, signal, false, true)
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(cli, error)
       throw error
     } finally { release?.() }
   }
-  private loadSettingsAccount(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
-    return this.connectionCache().read(project, cli, 'account', AbortSignal.any([signal, this.disposed.signal]),
-      control => this.accounts.status(cli, project, control, { background }), refresh)
+  private loadSettingsAccount(cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+    return this.connectionCache().read(cli, 'account', AbortSignal.any([signal, this.disposed.signal]),
+      control => this.accounts.status(cli, this.machineDirectory(), control, { background }), refresh)
   }
-  private async loadSettingsCatalog(project: string, cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
+  /** The machine-wide model list shown in settings. A project's own CLI configuration (for example a project-level
+   * route) only takes effect when a task is dispatched or a model is chosen for that project. */
+  private async loadSettingsCatalog(cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
     const assertAccountIdle = () => {
       if (this.accounts?.isBusy?.(cli)) throw new Error('请先关闭账号终端')
     }
     // The terminal's reservation is also the catalog admission gate. It is
     // released by AccountManager only after terminal/range/runtime cleanup.
     assertAccountIdle()
-    return this.connectionCache().read(project, cli, 'catalog', AbortSignal.any([signal, this.disposed.signal]), async control => {
+    const machine = this.machineDirectory()
+    return this.connectionCache().read(cli, 'catalog', AbortSignal.any([signal, this.disposed.signal]), async control => {
       // A read may have queued before the terminal took the CLI.
       assertAccountIdle()
       const config = background ? await backgroundConnectionConfig(cli, this.options, control) : this.options
@@ -2578,10 +2576,10 @@ export class CliWorkerService extends TypertRemoteService {
       assertAccountIdle()
       this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
       return this.settingsCatalogs.get({
-        cli, project, signal: control, refresh: true,
+        cli, project: machine, signal: control, refresh: true,
         selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
-        binding: () => this.readAccountBinding(cli, this.backend, config, project, control),
-        discover: () => this.queryCatalog(cli, this.backend, config, project, control),
+        binding: () => this.readAccountBinding(cli, this.backend, config, machine, control),
+        discover: () => this.queryCatalog(cli, this.backend, config, machine, control),
       })
     }, refresh)
   }
@@ -2596,24 +2594,23 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
-      const project = this.settingsProject(await this.parent(parentSessionId))
+      await this.parent(parentSessionId)
       signal.throwIfAborted()
       const held = () => this.cleanupHeldStatus(id)
       const before = held()
       if (before) return JSON.stringify(before)
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
-      this.cliManagement?.context(project)
-      if (!refresh && this.connectionCache().fresh(project, id, 'account')) {
-        const receipt = this.connectionCache().status(project, id).account
+      if (!refresh && this.connectionCache().fresh(id, 'account')) {
+        const receipt = this.connectionCache().status(id).account
         return JSON.stringify({ ...receipt.value, cache: receipt.cache })
       }
-      const status = await this.loadSettingsAccount(project, id, signal, refresh)
+      const status = await this.loadSettingsAccount(id, signal, refresh)
       signal.throwIfAborted()
       const after = held()
       if (after) return JSON.stringify(after)
       this.runtime.assertCliEnabled(id)
-      const receipt = this.connectionCache().status(project, id).account
+      const receipt = this.connectionCache().status(id).account
       if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
       return JSON.stringify({ ...status, cache: receipt.cache })
     } catch (error) {
@@ -2756,7 +2753,7 @@ export class CliWorkerService extends TypertRemoteService {
         }, 'cliworker:account-parent')
         this.accountParents.set(parent.id, dispose)
       }
-      return JSON.stringify(await this.accounts.desktop.start(parent.id, id, this.settingsProject(parent),
+      return JSON.stringify(await this.accounts.desktop.start(parent.id, id, this.machineDirectory(),
         AbortSignal.any([signal, this.disposed.signal]), authorize))
     } catch (error) { throw failure(error) }
   }
@@ -2986,7 +2983,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.trackAccountParent(parent)
       this.invalidateSettingsDisplay(id)
       return JSON.stringify(
-        await this.accounts.start(parent.id, id, operation, this.settingsProject(parent), signal, source, provider, login, async () => {
+        await this.accounts.start(parent.id, id, operation, this.machineDirectory(), signal, source, provider, login, async () => {
           // AccountManager has synchronously reserved the CLI. Invalidation
           // cancels reads but their process ranges can still be cleaning up.
           await this.connections?.settle(id)
@@ -3162,17 +3159,18 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
-      const project = this.settingsProject(await this.parent(parentSessionId))
+      const parent = await this.parent(parentSessionId)
       const control = AbortSignal.any([signal, this.disposed.signal])
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
-      const { catalog, binding } = await this.loadSettingsCatalog(project, id, control, refresh)
+      const { catalog, binding } = await this.loadSettingsCatalog(id, control, refresh)
       control.throwIfAborted()
       ;(this.displayedBindings ??= new Map()).set(JSON.stringify([parentSessionId, id]), binding)
       this.runtime.assertCliEnabled(id)
-      const receipt = this.connectionCache().status(project, id).catalog
+      const receipt = this.connectionCache().status(id).catalog
       if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
-      return JSON.stringify({ ...catalog, preference: this.runtime.storage.preference(project, id), cache: receipt.cache })
+      const project = this.preferenceProject(parent)
+      return JSON.stringify({ ...catalog, preference: project === undefined ? undefined : this.runtime.storage.preference(project, id), cache: receipt.cache })
     } catch (error) {
       if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
         this.runtime.blockCatalogOnCleanup(queriedCli, error)

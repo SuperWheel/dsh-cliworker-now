@@ -126,7 +126,7 @@ function fixture() {
       nativeRunDone: new Map(),
       runtime: current,
       backend,
-      options: DEFAULT_CONFIG,
+      options: { ...DEFAULT_CONFIG, stateDirectory: directory },
       parent: async (id) => ({
         id,
         session: { header: { cwd: project, origin: 'user' } },

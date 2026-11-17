@@ -2,6 +2,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
 import { tmpdir } from 'node:os'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { AccountManager, AGY_GUIDE_TIMING } from '../src/host/accounts.ts'
 import { rememberLoginCredential } from '../src/host/account-guide/credential-evidence.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
@@ -218,7 +220,7 @@ it.each(['omp', 'opencode'] as const)('模拟：%s 登录前基线必须早于 P
 it('模拟：成功引导、关闭回执在资源释放及缓存作废之后发布', async () => {
   const f = fixture('omp'), cleanup = deferred(), cache = new SettingsConnectionCache()
   closers.push(() => cache.close())
-  await cache.read(tmpdir(), 'omp', 'account', f.signal, async () => f.status)
+  await cache.read('omp', 'account', f.signal, async () => f.status)
   const off = f.manager.subscribeActivity(cli => { if (cli !== 'harness') cache.invalidate(cli) })
   closers.push(async () => off())
   const started = await f.start(), session = (f.manager as any).sessions.get(started.id)
@@ -249,32 +251,33 @@ it('模拟：whenIdle 不能把已取消但尚未清理的请求当作空闲', a
 
 function hostFixture() {
   const f = fixture('omp'), disposed = new AbortController()
+  const state = mkdtempSync(join(tmpdir(), 'account-races-simulated-'))
   const catalog = { catalog: { cli: 'omp' as const, models: [], notice: '模拟' }, binding: 'simulated' }
   const get = vi.fn(async (_input: any) => catalog)
   const runtime = { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn(), catalogCleanupMessage: vi.fn() }
   const parent = { id: 'parent', session: { header: { cwd: tmpdir() } }, ctx: { effect: () => () => {} } }
   const host = Object.assign(Object.create(CliWorkerService.prototype), {
-    disposed, options: DEFAULT_CONFIG, backend: f.backend, accounts: f.manager, runtime,
+    disposed, options: { ...DEFAULT_CONFIG, stateDirectory: state }, backend: f.backend, accounts: f.manager, runtime,
     accountParents: new Map(), parent: async () => parent, assertExecution: vi.fn(),
     settingsCatalogs: { get, invalidate: vi.fn() },
   }) as any
   const cache: SettingsConnectionCache = host.connectionCache()
   const off = f.manager.subscribeActivity(cli => host.invalidateSettingsDisplay(cli))
-  closers.push(async () => { await f.manager.close(); off(); disposed.abort(); await cache.close() })
+  closers.push(async () => { await f.manager.close(); off(); disposed.abort(); await cache.close(); rmSync(state, { recursive: true, force: true }) })
   return { ...f, host, cache, catalog, get, runtime,
     startHost: (signal = f.signal) => host.startAccount('parent', 'omp', 'login', signal, undefined, 'deepseek'),
-    load: (cli = 'omp', project = tmpdir()) => host.loadSettingsCatalog(project, cli, f.signal, true),
+    load: (cli = 'omp') => host.loadSettingsCatalog(cli, f.signal, true),
   }
 }
 
-it('模拟：Host 等待跨项目目录清理后才准备 OMP 终端，占用期间拒绝新目录读取，退出后恢复', async () => {
+it('模拟：Host 等待已排队的目录读取清理后才准备 OMP 终端，占用期间拒绝新目录读取，退出后恢复', async () => {
   const f = hostFixture(), cleanup = deferred()
   let control!: AbortSignal
   f.get.mockImplementationOnce(async input => { control = input.signal; await cleanup.promise; return f.catalog })
   const old = f.load().catch((error: unknown) => error)
   await vi.waitFor(() => expect(control).toBeDefined())
-  // Another project is already queued behind the same CLI's account lease.
-  const queued = f.load('omp', '/simulated-other-project').catch((error: unknown) => error)
+  // Another read is already queued behind the same CLI's account lease.
+  const queued = f.load('omp').catch((error: unknown) => error)
   const preparations = vi.mocked(preparePiOmpAccountTerminal).mock.calls.length
   const started = f.startHost()
   await tick()
