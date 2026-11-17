@@ -17,7 +17,7 @@ import { createInterface } from 'node:readline';import { appendFileSync,readFile
 const out=x=>process.stdout.write(JSON.stringify(x)+'\n'), log=x=>appendFileSync(process.env.AUDIT,JSON.stringify(x.id==='headers'?{id:x.id,headersApplied:x.result?.headersApplied,headerAccepted:x.result?.requestAuth?.apiKey==='SYNTHETIC_ACCOUNT_KEY'}:x)+'\n',{mode:0o600});
 const scenario=process.env.SCENARIO, sessionId=scenario.startsWith('context-')?'sess_context-fixture':'zcode-fixture', project=process.env.PROJECT;
 const state={session:{sessionId,workspace:{workspacePath:project}},settings:{model:{current:{providerId:'chosen',modelId:'model'},available:[{ref:{providerId:'chosen',modelId:'model'},reasoning:{defaultLevel:'high',levels:[{value:'high'},{value:'low'}]}}]},mode:{current:'edit'}},runtime:{pendingRequestIds:[]},projection:{status:'idle',pendingPermissions:[],activeToolCalls:[]}};
-let inputId, awaiting, stopped=false;
+let inputId, awaiting, stopped=false, planEnabled=false, planSubscriptions=0;
 log({argv:process.argv.slice(2),leakedAccountEnvironment:!!process.env.CLIWORKER_ZCODE_NATIVE_ACCOUNT,leakedMemoryEnvironment:process.env.CLIWORKER_ZCODE_NATIVE_MEMORY!==undefined,leakedSurfaceEnvironment:process.env.CLIWORKER_ZCODE_WORKFLOW_SURFACE!==undefined});
 if(process.argv.indexOf('app-server')>process.argv.indexOf('--disallowedTools'))process.exit(22);
 const reply=(q,result)=>out({id:q.id,result});
@@ -30,17 +30,38 @@ createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
  if(!q.method){if(q.id==='preferences'){if(q.result?.memoryEnabled!==(scenario==='memory-on'))process.exit(23);const allowed=process.env.REPLY_SCHEMA==='legacy'?['nativeSearchEnhancementsEnabled','memoryEnabled','dynamicWorkflowEnabled','dynamicWorkflowMode','askUserQuestionAutoResolutionEnabled']:['additionalDirectories','nativeSearchEnhancementsEnabled','toolSearchMode','subagentRuntimeConfigEnabled','appControlEnabled','memoryEnabled','askUserQuestionAutoResolutionEnabled','integratedTerminalShell','modelContextBudgetStrategy'];if(process.env.REPLY_SCHEMA&&Object.keys(q.result??{}).some(key=>!allowed.includes(key)))process.exit(24);reply(awaiting,state);awaiting=undefined;}else if(q.id==='permission'){event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});finish();return;}event('tool.updated',{kind:'batch',toolCallIds:scenario==='permission-other-failure'?['denied-tool','other-tool']:['denied-tool'],successCount:0,errorCount:scenario==='permission-other-failure'?2:1});if(scenario==='permission-failed'){event('turn.failed',{inputId});out({method:'state.updated',params:{sessionId,reason:'prompt_failed'}});}else finish();}else if(q.id==='headers')finish();else if(String(q.id).startsWith('server-')){answered++;if(q.id!=='server-9'){if(answered===1)announce('server-9');return;}event('permission.resolved',{toolCallId:'denied-tool',decision:q.result?.decision});if(q.result?.decision==='allow'){event('tool.updated',{kind:'result',toolCallId:'denied-tool',toolName:'Bash',result:{success:true,text:'synthetic'}});event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:1,errorCount:0});}else event('tool.updated',{kind:'batch',toolCallIds:['denied-tool'],successCount:0,errorCount:1});finish();}return;}
  if(q.jsonrpc!==undefined)process.exit(20);
- if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1}});
+ if(q.method==='runtime/capabilities')return reply(q,{protocol:{name:'zcode',version:1},...(!scenario.startsWith('legacy-plan')?{independentPlanState:true}:{})});
  if(q.method==='provider/updateAccountConfig')return reply(q,{receivedRevision:q.params.revision,providerCount:1,status:'received'});
  if(q.method==='session/create'||q.method==='session/resume'){
    if(q.method==='session/create'&&q.params.model)return out({id:q.id,error:{code:-32603,message:'Simulated 0.16.9 initial model drops required reasoning options'}});
+   planEnabled=q.params.mode==='plan';
    awaiting=q;return out({id:'preferences',method:'session/requestRuntimePreferences',params:{sessionId}});
  }
  if(q.method==='session/setModel'){state.settings.model.current=scenario==='wrong-model'?{providerId:'wrong',modelId:'wrong'}:q.params.model;return reply(q,state);}
  if(q.method==='session/setMode'){
    if((scenario==='no-edit'&&q.params.mode==='edit')||(scenario==='no-yolo'&&q.params.mode==='yolo')||scenario==='no-modes')return out({id:q.id,error:{code:-32602,message:'Synthetic unavailable mode'}});
-   state.settings.mode.current=scenario==='wrong-mode'||(scenario==='wrong-edit'&&q.params.mode==='edit')?'yolo':q.params.mode;return reply(q,state);
+   planEnabled=q.params.mode==='plan';
+   state.settings.mode.current=scenario==='wrong-mode'||(scenario==='wrong-edit'&&q.params.mode==='edit')?'yolo':q.params.mode==='plan'&&!scenario.startsWith('legacy-plan')?'build':q.params.mode;
+   if(scenario==='legacy-plan-inactive')state.settings.mode.current='build';
+   if(scenario==='plan-mode-spoof')state.settings.mode.current='plan';
+   return reply(q,state);
  }
+ // Partial non-secret snapshots from real 0.16.9 / 0.17.1: legacy mode stays build;
+ // only v4 config carries the independent planning switch. No real model is invoked.
+ if(q.method==='v4/conversation/subscribe'){
+   if(scenario==='plan-unavailable')return out({id:q.id,error:{code:-32601,message:'Synthetic unavailable v4'}});
+   const subscriptionId='plan-sub-'+(++planSubscriptions),topic=q.params.topic,logEpoch='plan-epoch';
+   reply(q,{ack:{subscriptionId,mode:'snapshot',logEpoch}});
+   const config={provider:'chosen',model:'model',thought:'high',thoughtLevels:['high','low'],followupMode:'queue',mode:'build',planEnabled};
+   if(scenario==='plan-inactive'||(scenario==='plan-drift-final'&&inputId))config.planEnabled=false;
+   if(scenario==='plan-missing')delete config.planEnabled;
+   if(scenario==='plan-truthy')config.planEnabled='true';
+   if(scenario==='plan-mode-spoof'){config.mode='plan';config.planEnabled=false;}
+   const snapshot={sessionId:scenario==='plan-foreign'?'foreign':sessionId,logEpoch:scenario==='plan-stale'?'stale-epoch':logEpoch,config};
+   const frame={topic,subscriptionId:scenario==='plan-crossed'?'stale-sub':subscriptionId,sentAt:Date.now(),fromSeq:0,toSeq:0,payload:{kind:'snapshot',snapshot}};
+   return out({method:'v4/conversation/frame',params:{wireVersion:3,kind:scenario==='plan-fragment'?'fragment':'complete',deliveryKind:'initial',logicalFrameId:subscriptionId+'-lf-1',logicalFrameOrdinal:1,topic,subscriptionId,frame}});
+ }
+ if(q.method==='v4/conversation/unsubscribe')return reply(q,{});
  if(q.method==='session/read'){if(scenario==='mode-drift-final'&&inputId)state.settings.mode.current='yolo';if(scenario==='active-final'&&inputId)state.runtime.activeTurnId='still-active';return reply(q,state);}
  if(q.method==='session/subscribe')return reply(q,{sessionId,eventSeq:0,events:[]});
  if(q.method==='session/close')return reply(q,{closed:true});
@@ -425,12 +446,42 @@ describe('Native ZCode app-server (simulated native processes)', () => {
     const { result, records } = await fixture('success', false, { access })
     expect(result.status).toBe('SUCCESS')
     expect(records.find((record) => record.method === 'session/setMode')?.params.mode ?? 'edit').toBe(mode)
+    expect(records.some(row => row.method === 'v4/conversation/subscribe')).toBe(false)
   })
   it.each(['read-only', 'workspace-write', 'danger-full-access'])('keeps plan ahead of %s', async access => {
     const { result, records } = await fixture('success', false, { mode: 'plan', access })
     expect(result.status).toBe('SUCCESS')
     expect(records.find(row => row.method === 'session/create').params.mode).toBe('plan')
     expect(records.find(row => row.method === 'session/setMode').params.mode).toBe('plan')
+    expect(records.filter(row => row.method === 'v4/conversation/subscribe')).toHaveLength(2)
+    expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(1)
+  })
+  it.each(['plan-inactive', 'plan-missing', 'plan-truthy', 'plan-mode-spoof', 'plan-unavailable', 'plan-foreign', 'plan-stale', 'plan-crossed', 'plan-fragment'])(
+    'refuses unconfirmed independent plan state on %s without input or write-mode fallback', async scenario => {
+      const { result, records } = await fixture(scenario, false, { mode: 'plan', access: 'danger-full-access' })
+      expect(result.status).toBe('ERROR')
+      expect(result.error).toContain('ZCode 原生权限模式无法确认，已拒绝启动')
+      expect(records.some(row => row.method === 'session/send')).toBe(false)
+      expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['plan'])
+      expect(records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(scenario === 'plan-unavailable' ? 0 : 1)
+    },
+  )
+  it('confirms independent plan on resume and rechecks it after completion without resending input', async () => {
+    const resumed = await fixture('success', true, { mode: 'plan' })
+    expect(resumed.result.status).toBe('SUCCESS')
+    expect(resumed.records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['plan'])
+    const drifted = await fixture('plan-drift-final', false, { mode: 'plan' })
+    expect(drifted.result.status).toBe('ERROR')
+    expect(drifted.records.filter(row => row.method === 'session/send')).toHaveLength(1)
+    expect(drifted.records.filter(row => row.method === 'v4/conversation/unsubscribe')).toHaveLength(2)
+  })
+  it.each(['legacy-plan', 'legacy-plan-inactive'])('keeps strict mode confirmation without independentPlanState on %s', async scenario => {
+    const { result, records } = await fixture(scenario, false, { mode: 'plan' })
+    expect(result.status).toBe(scenario === 'legacy-plan' ? 'SUCCESS' : 'ERROR')
+    expect(records.some(row => row.method === 'v4/conversation/subscribe')).toBe(false)
+    expect(records.filter(row => row.method === 'session/send')).toHaveLength(scenario === 'legacy-plan' ? 1 : 0)
+    expect(records.filter(row => row.method === 'session/setMode').map(row => row.params.mode)).toEqual(['plan'])
   })
   it.each(['no-edit', 'wrong-edit'])('falls back to confirmed build before input on %s', async scenario => {
     const { result, records, frames } = await fixture(scenario, false, { access: 'workspace-write' })

@@ -171,14 +171,43 @@ function selectedModel(config, snapshot, model) {
     throw new Error('ZCode selected reasoning level is not available')
   return { ...model, ...(level === undefined ? {} : { options: { reasoningLevel: level } }) }
 }
-function confirmSelection(snapshot, model, mode) {
+// 0.16.9 / 0.17.1 keep permission mode and planning independent. Legacy
+// session/read omits planEnabled entirely; the v4 snapshot seeds config from
+// runtime.getPlanEnabled(). Read a fresh, session-bound snapshot for each check.
+async function confirmPlanState(peer, sessionId) {
+  const topic = `conversation/${sessionId}`, connectionId = randomUUID()
+  const { ack } = await peer.request('v4/conversation/subscribe', {
+    topic, connectionId, clientMode: 'desktop-continuous',
+  }, { jsonrpc: false })
+  if (!nonempty(ack?.subscriptionId)) throw new Error('ZCode plan subscription was not confirmed')
+  try {
+    if (ack.mode !== 'snapshot' || !nonempty(ack.logEpoch))
+      throw new Error('ZCode plan snapshot was not confirmed')
+    const message = await peer.waitFor(message => message.method === 'v4/conversation/frame' &&
+      message.params?.topic === topic && message.params?.subscriptionId === ack.subscriptionId)
+    const wire = message.params, frame = wire.frame, planSnapshot = frame?.payload?.snapshot
+    // Unknown/fragmented wire formats cannot prove planning is active: fail closed.
+    if (wire.wireVersion !== 3 || wire.kind !== 'complete' || wire.deliveryKind !== 'initial' ||
+      frame?.topic !== topic || frame.subscriptionId !== ack.subscriptionId ||
+      frame.payload?.kind !== 'snapshot' || planSnapshot?.sessionId !== sessionId ||
+      planSnapshot.logEpoch !== ack.logEpoch || planSnapshot.config?.planEnabled !== true)
+      throw new Error('ZCode independent plan state was not confirmed')
+  } finally {
+    await peer.request('v4/conversation/unsubscribe', {
+      topic, connectionId, subscriptionId: ack.subscriptionId,
+    }, { jsonrpc: false })
+  }
+}
+async function confirmSelection(snapshot, model, mode, peer, capability) {
   const observed = snapshot?.settings?.model?.current
   if (
     !matchingModel(observed, model) ||
     (model.options && observed?.options?.reasoningLevel !== model.options.reasoningLevel)
   )
     throw new Error('ZCode selected model or reasoning level was not confirmed')
-  if (snapshot?.settings?.mode?.current !== mode) throw new Error('ZCode permission mode was not confirmed')
+  if (mode === 'plan' && capability.independentPlanState === true)
+    await confirmPlanState(peer, snapshot.session.sessionId)
+  else if (snapshot?.settings?.mode?.current !== mode) throw new Error('ZCode permission mode was not confirmed')
 }
 
 /** ZCode's own NDJSON has no JSON-RPC version field and send returns admission only. */
@@ -558,7 +587,7 @@ export async function runNativeZcode(config, io) {
         await peer.request('session/setMode', { sessionId, mode: candidate }, { jsonrpc: false })
         snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
         readIdentity(snapshot, sessionId, config.project)
-        confirmSelection(snapshot, selection, candidate)
+        await confirmSelection(snapshot, selection, candidate, peer, capability)
         if (candidate !== mode) io.event({ kind: 'diagnostic', text: candidate === 'build'
           ? 'ZCode 原生权限模式不可用，本轮按询问运行' : 'ZCode 原生完全权限不可用，本轮按仅工作区编辑运行' })
         mode = candidate
@@ -619,7 +648,7 @@ export async function runNativeZcode(config, io) {
     if (!terminal) failure('ZCode 缺少本轮终态')
     snapshot = await peer.request('session/read', { sessionId, messageLimit: 1 }, { jsonrpc: false })
     readIdentity(snapshot, sessionId, config.project)
-    confirmSelection(snapshot, selection, mode)
+    await confirmSelection(snapshot, selection, mode, peer, capability)
     if (
       snapshot.runtime?.activeTurnId ||
       snapshot.runtime?.pendingRequestIds?.length ||

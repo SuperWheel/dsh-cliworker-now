@@ -88,5 +88,25 @@
     - `@zcode/tui` 没有随桌面应用发布。
     - npm 上和 GitHub 上都没有官方的独立 CLI 发行版。
   - 用户 2026-11-17 决定：采用这一方案，管理终端入口隐藏；凭据密钥用插件 ZCode 账号目录里的 `credential-secret` 文件（0600）。
-- [ ] 4.2 按桌面应用的方式运行自带 CLI：解析钩子、密钥文件、迁移自动路径记录、更新页同时显示应用版本与 CLI 版本、隐藏管理终端
+- [x] 4.2 按桌面应用的方式运行自带 CLI：解析钩子、密钥文件、迁移自动路径记录、更新页同时显示应用版本与 CLI 版本、隐藏管理终端
+  - 2026-11-17（Fable）：提交 94a44cd 与 3df1d1e。
+    - 新增 `zcode-app-resolve.cjs`（用 `module.registerHooks`，只在正常解析失败后重定向两个包）、`zcode-app-layout.mjs`、`zcode-launch.ts`。
+    - 改为 ZCode 自己的 Electron 启动的路径：Worker、app-server、resume、登录、退出、`--help`、版本探测与管理页版本读取。
+    - 自动记录在身份核对和 `--version` 探测通过后，按 revision 比较迁移；探测完成后再核对一次 revision；更新核对期间与维护锁持有时不迁移。
+  - 密钥文件：写入同目录的 0600 临时文件并 fsync，再用 `linkSync` 发布，不覆盖已有文件。已有文件不合规（不是普通文件、长度不在 32–4096 字节、权限过宽）时拒绝启动，并报出文件路径。
+  - macOS 上所有 ZCode 进程使用 `/tmp/cwn-XXXXXX` 短临时目录，套接字路径不超过 104 字节。
+  - 测试：`tests/zcode-app-runtime.test.ts` 53 项；主分支全量 357 个文件 8621 项通过（Fable 工作树内运行）；typecheck 与 `build:preview` 通过。
+  - Codex 审查 94a44cd 提出 3 个 P2 问题（密钥非原子写入、探测后未复核 revision、更新核对期间迁移误报），均已在 3df1d1e 修复。
+  - 实机核实（不调用模型，不登录、不退出）：
+    - Mac：ZCode.app 3.18.2 的 Electron 44.7.0 / Node 24.21.0 下，`--version` 输出 0.17.1；keyring 与 playwright-core 可以导入；无轮次的 app-server 握手通过，进程正常退出。
+    - Windows（build 22631）：同一启动方式输出 0.17.1，两个模块可以解析，`@zcode/tui` 按预期找不到。直接启动和经插件隐藏中继启动的握手都通过；抽查的进程没有窗口（MainWindowHandle=0）；D: 盘 134 字符的临时路径可用，Windows 走命名管道。
+  - 旧登录核实（断网，在副本上）：6 条 `enc:v1` 在生成 credential-secret 后全部可读，改写成 `enc:v2:env` 后明文与登录投影都不变。前提是 HOME 与用户名不变，插件的环境满足这一点。真实目录前后哈希一致。
+  - 未执行：真实 Worker 轮次（需要模型调用授权）、真实登录与退出、Desktop 内运行、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
 - [ ] 4.3 迁移成功后，经用户确认删除旧的私有运行时
+- [x] 4.4 修复 ZCode 规划模式 Worker 一律被拒
+  - 实机核实时发现：0.16.9 与 0.17.1 都声明 `independentPlanState`，`plan` 只把独立布尔值 `planEnabled` 设为 true，权限模式仍为 build。旧版的 `session/read` 不含这个布尔值，要从 v4 `conversation/subscribe` 快照的 `config.planEnabled` 读取。证据位置：bundled zcode.cjs 字节 15507235、1084166、15306798、15468179；0.16.9 的第 601975、43256、594695、600933 行。
+  - `native-zcode.mjs` 要求 `settings.mode.current === 'plan'`，所以自 ecaddbe（2026-10-18，v0.8.1）起，ZCode 规划模式 Worker 都在发送输入之前被拒。原测试夹具直接把 mode.current 写成 plan，与真实快照结构不符。
+  - 修复：CLI 声明独立规划状态时，临时订阅 v4 快照，核对会话、订阅和 epoch 身份，并确认 `planEnabled === true`，结束后再核对一次。缺失、类型不对、来源不符或读不到时拒绝启动，不退到可写模式。未声明独立规划状态的旧 CLI 仍按原检查。
+  - 两个版本都实测了无轮次握手：create(plan)、setMode(plan) 后读到 planEnabled=true，setMode(build) 后为 false。`tests/native-zcode.test.ts` 69 项通过。
+  - 主分支全量测试：357 个文件 8633 项通过、14 项跳过；typecheck 通过。
+  - 未执行：真实规划模式 Worker 轮次（需要模型调用授权）。
