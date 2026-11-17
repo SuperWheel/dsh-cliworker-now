@@ -634,6 +634,31 @@ it('模拟：本次官方 fetch 已写出 FETCH_HEAD 后，静默预检不按 10
   await put(join(checkout, '.git/FETCH_HEAD'), `${sha(7)}\t\t'main' of https://simulated.invalid/hermes-agent\n`, now + 2_000)
   await other.poll(now + 10_001); expect(other.reason).toBe('OFFICIAL_STALLED')
 })
+it('模拟：Windows Hermes 按标签名拉取，FETCH_HEAD 写标签对象时也算本次取码完成', async () => {
+  // 2026-11-17 Windows 实测：FETCH_HEAD 为 `28f57ed8…\t\ttag 'v0.23.2' of …`，不含目标提交。
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json')
+  const watch = new HermesWatch(root, checkout, status, now, () => {}, { version: '0.23.2', sha: sha(3) }); await watch.snapshot()
+  await put(status, { stage: 'fetch' }, now + 1); await watch.poll(now + 1)
+  await put(join(checkout, '.git/FETCH_HEAD'), `${sha(7)}\t\ttag 'v0.23.2' of https://simulated.invalid/hermes-agent\n`, now + 2_000)
+  await watch.poll(now + 2_000); expect(watch.canTakeover).toBe(false)
+  await watch.poll(now + 60_000); expect(watch.reason).toBeUndefined()
+  // 其他版本的标签不算。
+  const other = new HermesWatch(root, checkout, join(root, 'status-2.json'), now + 3_000, () => {}, { version: '0.23.3', sha: sha(4) }); await other.snapshot()
+  await put(join(root, 'status-2.json'), { stage: 'fetch' }, now + 3_001); await other.poll(now + 3_001)
+  await put(join(checkout, '.git/FETCH_HEAD'), `${sha(7)}\t\ttag 'v0.23.2' of https://simulated.invalid/hermes-agent\n`, now + 4_000)
+  await other.poll(now + 13_002); expect(other.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：预取交回后的官方重跑在取码阶段显示「插件已下载目标代码」，进入后续步骤后恢复官方文字', async () => {
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json'), progress = vi.fn()
+  const watch = new HermesWatch(root, checkout, status, now, p => { cliDownloadProgressSchema.parse(p); progress(p) }, { version: '0.23.2' }, [], true); await watch.snapshot()
+  await put(status, { stage: 'fetch', message: '→ Fetching updates...' }, now + 1); await watch.poll(now + 1)
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ channel: 'official', stage: '插件已下载目标代码，官方更新正在核对并完成（→ Fetching updates...）' })
+  await put(status, { stage: 'deps', message: '→ Updating Python dependencies' }, now + 2); await watch.poll(now + 2)
+  expect(progress.mock.calls.at(-1)![0].stage).toBe('→ Updating Python dependencies')
+  // 未经预取的官方运行保持原文字。
+  const plain = await observer('fetch')
+  expect(plain.progress.mock.calls.at(-1)![0].stage).not.toContain('插件已下载')
+})
 it('模拟：插件预取并校验后交回官方，重跑的 fetch 阶段静默 60 秒不再被停，更新完成', async () => {
   // 2026-11-17 Mac 实测复现：预取成功后重跑的官方更新 10 秒内又被判 OFFICIAL_STALLED，最终报「准备切换插件接管」。
   const { root, checkout } = await fixture(), watches = captureWatches(), calls: any[] = []

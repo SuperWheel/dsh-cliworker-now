@@ -54,6 +54,14 @@
   - 修复：去掉这四处的强制解析；`parent()` 本来就在目录存在时登记预加载范围，失败时忽略。
   - 新增测试 1 项（`tests/cli-management-remotes.test.ts`）：会话目录不存在时快照与检查仍返回 17 行；相关 3 个文件 38 项通过，typecheck 通过。
 
+- [x] 3.8 Windows Hermes 预取交回官方后页面仍像「没切换」：显示插件已下载，并识别按标签名写的 FETCH_HEAD
+  - 2026-11-17 Windows Desktop（03f46dd 隔离包）用户反馈：Hermes 下载慢、没有变成插件下载、也没有「切换插件下载」按钮。
+  - 只读核对：切换记忆有 11-14 的 `OFFICIAL_SLOW`，所以 19:18:11 的官方运行一进入取码就自动切换；插件预取 19:18:43 写入 `refs/tags/v0.23.2` 的 promisor 包（14.7 MB），目标提交 `ae2a81c…` 已在本地。19:18:53 交回官方：Hermes 查最新版本到 19:19:41 才打印「Fetching updates...」，自己的 fetch 到 19:20:39 才写 FETCH_HEAD，19:20:43、19:20:45 惰性补取两个小包；操作在 19:21:53 结束，回执停在 `running`（进程被结束，原因待用户确认）。这段时间 Windows 内存被远端扫描耗尽，19:31 在同一安装上重跑同样的 fetch 只要 1.2 秒，`ls-remote` 1.8 秒。
+  - 结论：切换和插件下载都发生了；交回后页面只显示官方的「Fetching updates...」，按设计也不再提供按钮（代码已在本地），看起来像没有切换。另外 Windows 上 Hermes 按标签名拉取，FETCH_HEAD 写的是标签对象 `28f57ed8…\t\ttag 'v0.23.2' of …`，已知目标提交时旧规则认不出。
+  - `hermes-watch.ts`：预取交回的重跑在取码阶段显示「插件已下载目标代码，官方更新正在核对并完成（…）」，进入依赖等后续步骤后恢复官方文字；FETCH_HEAD 含目标版本的 `tag 'v<版本>' of` 也算本次取码完成。
+  - 新增 2 项模拟测试（`cli-management-hermes-takeover.test.ts`），修复前均失败；Hermes 相关 3 个文件 173 项通过，typecheck 通过。
+  - 未做：Windows 实机重测（需要重新部署隔离包并重启 Desktop）。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

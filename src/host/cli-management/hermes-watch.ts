@@ -57,8 +57,12 @@ export class HermesWatch {
   exitCode?: number
   constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = [], codeReady = false) {
     this.lastActivity = startedAt; this.lastPartialActivity = startedAt; this.lease = startedAt + 20 * 60_000
-    this.fetchSettled = codeReady
+    this.fetchSettled = codeReady; this.handedBack = codeReady
   }
+  /** This run follows a verified plugin prefetch. Hermes still prints "Fetching updates..." and may spend minutes
+   * on its release lookup and lazy reads, so the page must say the plugin download already finished
+   * (2026-11-17 Windows 实测：预取 30 秒完成，交回后官方约 3 分钟仍显示拉取，用户以为没有切换). */
+  private readonly handedBack: boolean
   /** Manual takeover API: requestTakeover(): boolean. Only code fetch has a plugin
    * takeover recipe; deps/build/apply/restart must finish through the official updater.
    * True means a stop was requested, never that its process tree has exited.
@@ -203,7 +207,10 @@ export class HermesWatch {
       // prefetch and git's own lazy object fetches never write it (--no-write-fetch-head).
       const head = await observe(join(this.checkout, '.git/FETCH_HEAD'))
       const want = this.target?.sha ?? this.expectedSha
-      if (head && (want ? head.text.toLowerCase().includes(want.toLowerCase()) : /^[a-f0-9]{40}\t/m.test(head.text))) this.fetchSettled = true
+      // Windows Hermes fetches the release tag by name, so FETCH_HEAD holds the tag object, not the commit
+      // (2026-11-17 Windows 实测：`28f57ed8…\t\ttag 'v0.23.2' of https://github.com/NousResearch/hermes-agent`).
+      const tag = this.target?.version ? `tag 'v${this.target.version.replace(/^v/, '')}' of ` : undefined
+      if (head && (want ? head.text.toLowerCase().includes(want.toLowerCase()) || !!tag && head.text.includes(tag) : /^[a-f0-9]{40}\t/m.test(head.text))) this.fetchSettled = true
     }
     const dependencies = ['deps', 'tools', 'uv', 'pnpm'].includes(this.currentStage)
     const [pack, cache, partials, work] = await Promise.all([
@@ -250,7 +257,8 @@ export class HermesWatch {
       }
     }
     const observed = pack.bytes > 0
-    this.progress({ channel: 'official', readable: observed, byteProgress: observed, byteProgressState: observed ? 'unknown-total' : 'none', ...(observed ? { downloadedBytes: pack.bytes } : {}), elapsedSeconds: Math.max(0, (now - this.startedAt) / 1000), resumeCount: 0, stage: this.stage,
+    this.progress({ channel: 'official', readable: observed, byteProgress: observed, byteProgressState: observed ? 'unknown-total' : 'none', ...(observed ? { downloadedBytes: pack.bytes } : {}), elapsedSeconds: Math.max(0, (now - this.startedAt) / 1000), resumeCount: 0,
+      stage: this.handedBack && !this.completed && ['unknown', 'plan', 'snapshot', 'fetch'].includes(this.currentStage) ? `插件已下载目标代码，官方更新正在核对并完成（${this.stage}）` : this.stage,
       ...(this.step ? { currentStep: this.step, totalSteps: 6, stepName: HERMES_STEPS[this.step - 1]! } : {}) })
   }
 }
