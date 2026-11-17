@@ -46,6 +46,20 @@ it('模拟：主对话的工作目录已被删除时，更新页快照与检查�
   expect(snapshot.entries).toHaveLength(17)
   expect(JSON.parse(await f.service.checkCliUpdates('parent', 'missing', f.control)).entries).toHaveLength(17)
 })
+it('模拟：主对话的工作目录不存在或没有时，CLI 连接状态仍按本机账号查询，不报目录错误', async () => {
+  // 2026-11-17 Windows 实测：会话目录被删后，设置页 17 个 CLI 的状态全部显示失败。
+  for (const cwd of [undefined, join(tmpdir(), 'cli-settings-gone-synthetic', '已删除的项目')]) {
+    const f = fixture()
+    ;(f.service as any).parent = vi.fn(async () => ({ session: { header: { cwd } } }))
+    const status = JSON.parse(await f.service.accountStatus('parent', 'codex', f.control))
+    expect(status).toMatchObject({ state: 'authenticated' })
+    const project = f.status.mock.calls.at(-1)!.find((v: unknown) => typeof v === 'string' && v.includes('dsh-cliworker-now-settings'))
+    expect(project).toBe(realpathSync(join(tmpdir(), 'dsh-cliworker-now-settings')))
+  }
+  // 属于项目的操作仍需有效项目，并说明原因。
+  const gone = join(tmpdir(), 'cli-settings-gone-synthetic', '已删除的项目')
+  expect(() => (CliWorkerService.prototype as any).project.call({}, { session: { header: { cwd: gone } } })).toThrow(`此主对话的工作目录已不存在（${gone}），请切换到有效项目`)
+})
 it('source Remote saves only validated local settings and rejects credentials', async () => {
   const f = fixture()
   expect(JSON.parse(await f.service.cliDownloadSource('parent', f.control))).toEqual({ source: 'official' })

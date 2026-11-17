@@ -61,6 +61,14 @@
   - `hermes-watch.ts`：预取交回的重跑在取码阶段显示「插件已下载目标代码，官方更新正在核对并完成（…）」，进入依赖等后续步骤后恢复官方文字；FETCH_HEAD 含目标版本的 `tag 'v<版本>' of` 也算本次取码完成。
   - 新增 2 项模拟测试（`cli-management-hermes-takeover.test.ts`），修复前均失败；Hermes 相关 3 个文件 173 项通过，typecheck 通过。
   - 未做：Windows 实机重测（需要重新部署隔离包并重启 Desktop）。
+  - 设计文档 `doc/design.md`「2026-11-17 更快切换插件下载与手动切换」已补充本条。
+
+- [x] 3.9 会话目录不存在时，设置页 CLI 连接状态不再全部失败
+  - 2026-11-17 Windows Desktop 用户反馈「CLI 状态全部都报错」。Codex（gpt-6-astra）只读核对：DSH 当前会话 `session-3cd19f3c…` 的工作目录 `C:\Users\admin\cw081f1\live-codex` 及上级都不存在；`readAccountStatus` 等先用 `projectDirectory`（`realpathSync`）解析会话目录，抛 ENOENT，17 个 CLI 一起失败。同一时刻更新页缓存 19:25 检查 17 项全部成功。未取得 Windows 设置页截图。
+  - 用户要求：项目存不存在都不应影响 CLI 状态。`src/host/index.ts` 新增 `settingsProject()`：会话目录有效时照旧；缺失或没有时改在系统临时目录下的私有空目录 `dsh-cliworker-now-settings`（0700，拒绝符号链接与他人所有，再过 `projectDirectory`）里探测。用于 `cliSettings`、`settingsConnectionStatus`、`watchSettingsConnections`、`readAccountStatus`、设置页模型清单、账号登录与图形账号窗口。选择模型等项目操作仍要求有效项目，`project()` 在目录不存在时报「此主对话的工作目录已不存在（…），请切换到有效项目」。
+  - 新增测试 1 项（`tests/cli-management-remotes.test.ts`，覆盖目录缺失与没有目录两种），修复前失败；设置页与账号相关 7 个文件 527 项通过，typecheck 通过。
+  - 全量 vitest（含 3.8、3.9）：359 个文件通过、4 个跳过，8783 项通过、15 项跳过、1 项失败。失败的是 `cli-management-download.test.ts`「持续有真实字节仍受两小时总预算约束」，与本次改动无关，单独重跑 3 次各 18 项全部通过，属于全量负载下的时序抖动。
+  - 未做：Windows 实机重测。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 

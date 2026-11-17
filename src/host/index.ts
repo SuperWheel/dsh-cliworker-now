@@ -18,8 +18,9 @@ import { visibleModelChoices } from '../shared/model-presentation.ts'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as validate } from 'zod'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
@@ -831,8 +832,24 @@ export class CliWorkerService extends TypertRemoteService {
     return agent
   }
   private project(agent: Agent): string {
-    if (!agent.session.header.cwd) throw new Error('此主对话没有工作目录，请先选择项目')
-    return projectDirectory(agent.session.header.cwd)
+    const cwd = agent.session.header.cwd
+    if (!cwd) throw new Error('此主对话没有工作目录，请先选择项目')
+    if (!existsSync(cwd)) throw new Error(`此主对话的工作目录已不存在（${cwd}），请切换到有效项目`)
+    return projectDirectory(cwd)
+  }
+  /** CLI connection status, model catalogs and account login are machine-wide: they must not fail because the
+   * conversation has no usable project (2026-11-17 Windows 实测：会话目录被删除后设置页 17 个 CLI 全部显示失败).
+   * Without one, probes run in an empty plugin-private directory instead of guessing another project. */
+  private settingsProject(agent: Agent): string {
+    try { return this.project(agent) } catch {
+      // Not under ~/.dsh: account code rejects credential/configuration roots (projectDirectory) as a cwd.
+      const directory = join(tmpdir(), 'dsh-cliworker-now-settings')
+      mkdirSync(directory, { recursive: true, mode: 0o700 })
+      const info = lstatSync(directory)
+      if (!info.isDirectory() || info.isSymbolicLink() || process.getuid && info.uid !== process.getuid())
+        throw new Error('插件临时目录不可用，请先选择项目')
+      return projectDirectory(realpathSync(directory))
+    }
   }
   /** Resolve ownership only; child status stays read-only even in plan mode. */
   /** CLI Workers win; only an unmatched reference is tried against this conversation's DSH native subagents. */
@@ -2125,12 +2142,7 @@ export class CliWorkerService extends TypertRemoteService {
       const parent = await this.parent(parentSessionId)
       signal.throwIfAborted()
       const settings = this.runtime.storage.cliSettings()
-      let project: string
-      try {
-        project = this.project(parent)
-      } catch {
-        return JSON.stringify(settings)
-      }
+      const project = this.settingsProject(parent)
       this.cliManagement?.context(project)
       // Reusing the same project's display list in another parent still pins
       // configure() to the original verified account; no CLI query is needed.
@@ -2495,7 +2507,7 @@ export class CliWorkerService extends TypertRemoteService {
   async settingsConnectionStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
-      const project = this.project(await this.parent(parentSessionId))
+      const project = this.settingsProject(await this.parent(parentSessionId))
       signal.throwIfAborted()
       // A cleanup pause is this CLI's displayed state; report it without scheduling reads that would only return it.
       const held = this.cleanupHeldStatus(id)
@@ -2520,7 +2532,7 @@ export class CliWorkerService extends TypertRemoteService {
   @Remote({ name: 'watchSettingsConnections', mode: 'stream' })
   async *watchSettingsConnections(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
     try {
-      const project = this.project(await this.parent(parentSessionId))
+      const project = this.settingsProject(await this.parent(parentSessionId))
       for await (const snapshot of this.connectionCache().watch(project, AbortSignal.any([signal, this.disposed.signal])))
         yield JSON.stringify(snapshot)
     } catch (error) { throw failure(error) }
@@ -2584,7 +2596,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
-      const project = this.project(await this.parent(parentSessionId))
+      const project = this.settingsProject(await this.parent(parentSessionId))
       signal.throwIfAborted()
       const held = () => this.cleanupHeldStatus(id)
       const before = held()
@@ -2744,7 +2756,7 @@ export class CliWorkerService extends TypertRemoteService {
         }, 'cliworker:account-parent')
         this.accountParents.set(parent.id, dispose)
       }
-      return JSON.stringify(await this.accounts.desktop.start(parent.id, id, this.project(parent),
+      return JSON.stringify(await this.accounts.desktop.start(parent.id, id, this.settingsProject(parent),
         AbortSignal.any([signal, this.disposed.signal]), authorize))
     } catch (error) { throw failure(error) }
   }
@@ -2974,7 +2986,7 @@ export class CliWorkerService extends TypertRemoteService {
       this.trackAccountParent(parent)
       this.invalidateSettingsDisplay(id)
       return JSON.stringify(
-        await this.accounts.start(parent.id, id, operation, this.project(parent), signal, source, provider, login, async () => {
+        await this.accounts.start(parent.id, id, operation, this.settingsProject(parent), signal, source, provider, login, async () => {
           // AccountManager has synchronously reserved the CLI. Invalidation
           // cancels reads but their process ranges can still be cleaning up.
           await this.connections?.settle(id)
@@ -3150,7 +3162,7 @@ export class CliWorkerService extends TypertRemoteService {
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
       queriedCli = id
-      const project = this.project(await this.parent(parentSessionId))
+      const project = this.settingsProject(await this.parent(parentSessionId))
       const control = AbortSignal.any([signal, this.disposed.signal])
       release = this.options?.cliMaintenance?.using(id)
       this.runtime.assertCliEnabled(id)
