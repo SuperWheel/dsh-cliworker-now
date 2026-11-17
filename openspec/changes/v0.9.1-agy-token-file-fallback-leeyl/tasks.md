@@ -72,7 +72,8 @@
 - [x] 6.3 模拟测试与关联回归
   - `tests/account-identity.test.ts` 新增 4 项（只有 CLI 文件、两处并存以 CLI 文件为准与缺失回退、CLI 文件损坏或链接不改读旧文件、链接目录拒绝）；`tests/cli-account-binding.test.ts` 新增 1 项（模拟 linux 平台：CLI 文件绑定、轮换稳定、旧文件不影响、CLI 文件删除后按旧文件、两处都无时拒绝）。
   - `corepack pnpm exec vitest run` agy 关联 9 个文件（cli-account-binding、account-identity、agy-macos-account、agy-windows-account、agy-models、agy-account-guide、accounts、authorized-catalog-windows-agy、windows-accounts）：371 项全部通过；`corepack pnpm typecheck` 通过。
-- [ ] 6.4 Linux 实机确认（无 Linux 环境；发布后请 issue #13 报告者确认）
+- [x] 6.4 Linux 实机确认（无 Linux 环境；发布后请 issue #13 报告者确认）
+  - 2026-11-18 用户决定直接关闭：v0.9.1 已发布，issue #13 已回复修复说明并关闭，留言请报告者有问题时重新打开（https://github.com/SuperWheel/dsh-cliworker-now/issues/13）。未等到报告者确认，Linux 真实行为未验证，只有模拟测试。
 
 ## 跟进
 
