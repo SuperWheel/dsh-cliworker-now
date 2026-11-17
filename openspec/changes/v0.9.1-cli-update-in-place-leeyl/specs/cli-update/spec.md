@@ -95,6 +95,21 @@ Host SHALL 把 ZCode 的自动入口解析为桌面应用自带的 `glm/zcode.cj
 - **WHEN** `credential-secret` 已存在但为空、短于 32 字节、长于 4096 字节或权限不是仅本人可读写
 - **THEN** Host MUST NOT 覆盖该文件，也 MUST NOT 用它启动 ZCode；Worker 与账号入口 SHALL 返回指出该文件路径的错误
 
+### Requirement: ZCode 规划模式按独立规划状态确认且保持只读
+CLI 声明 `independentPlanState` 时，Host SHALL 先把会话权限设为 `build` 再开启规划，并在发送输入前和本轮结束后，从临时 v4 会话快照确认 `config.mode === 'build'` 且 `config.planEnabled === true`；无法确认时 MUST 拒绝启动或报告本轮失败，不得退到可写模式。未声明该能力的旧 CLI 保持原有 `mode.current` 检查。
+
+#### Scenario: 恢复曾用 yolo 的会话进入规划
+- **WHEN** 续聊的 ZCode 会话上次使用 yolo 或 guarded，本轮选择规划模式
+- **THEN** Host SHALL 先设为 build 再开启规划，快照确认 build 与 planEnabled 后才发送输入
+
+#### Scenario: 大会话快照分片
+- **WHEN** 快照超过单帧上限，按 wireVersion 3 分成多片
+- **THEN** Host SHALL 按标识、序号、长度和 CRC32 重组后再确认；缺片、重复片、校验失败、身份不符或超过 16 MiB／1024 片时 MUST 拒绝
+
+#### Scenario: 快照之后到达增量帧
+- **WHEN** 首个快照完整后、退订回执前到达 online 增量帧
+- **THEN** Host SHALL 单独校验该帧；不含权限变化时照常确认，带有权限配置时仍须证明 build 与 planEnabled
+
 ## MODIFIED Requirements
 
 ### Requirement: 自动入口与独立 runtime 的更新一致性

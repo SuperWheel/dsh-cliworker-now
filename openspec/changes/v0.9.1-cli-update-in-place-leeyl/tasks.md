@@ -73,8 +73,15 @@
       - 首轮 8adc1889：853/867 通过、8 项失败，全部是测试在 Windows 上的移植问题（POSIX 路径、`pi.cmd`、npm 前缀布局、模拟凭据库没记录 Windows 目标名），没有发现产品代码缺陷。
       - 修复后 d9f2c237：861 项通过、0 失败、6 项跳过。
     - 另外补了一条 win32 账号摘要的断言：`\\?\` 规范路径，sha256 取前 16 位，对照上游 codex rust-v0.169.0 的 `compute_store_key`。
+  - 2026-11-17：在 ZCode 合并后（提交 3e648be）：
+    - Mac 全量 vitest：357 个文件，8674 项通过、14 项跳过；typecheck、`build:preview` 与正式 `build` 通过。
+    - Windows 隔离回归 b33b5446（含 ZCode 两个测试文件，提交 611c31f）：991 项中 982 项通过、1 项失败、8 项跳过。
+      - 失败的是 `zcode-app-runtime` 的账号入口测试：夹具把平台强制成 darwin，却读写 Windows 真实文件，POSIX 权限检查把有效的密钥文件判为不可用。属于测试问题，产品代码未改；6ea6c9f 改为按真实平台选夹具，并补了模拟 win32 的密钥测试。
+      - 新增的 2 项跳过都是只适用于 POSIX 的测试（密钥权限、`/tmp/cwn-` 短目录），已加入远端证据白名单。
+    - 未执行：6ea6c9f 之后的 Windows 复跑。Windows 机器 11-17 下午断开，等用户回宿舍后再测，所以本项暂不勾选。
 - [ ] 3.2 列出两台机器上已有的重复副本，经用户确认后处理
-- [ ] 3.3 同步 README、`doc/usage-details.md` 与设计文档中的更新说明
+- [x] 3.3 同步 README、`doc/usage-details.md` 与设计文档中的更新说明
+  - README.md「更新 CLI」段、README.en.md 对应段落、`doc/usage-details.md` CLI 路径段、`doc/design.md`「2026-11-17 更新和修复保留原安装」与 ZCode 两节（提交 3939054、a243255、b3c3d9d、3e648be）。
 
 ## 4. ZCode 插件运行时跟随桌面应用 〔后端｜3h｜前置 1〕
 
@@ -109,4 +116,8 @@
   - 修复：CLI 声明独立规划状态时，临时订阅 v4 快照，核对会话、订阅和 epoch 身份，并确认 `planEnabled === true`，结束后再核对一次。缺失、类型不对、来源不符或读不到时拒绝启动，不退到可写模式。未声明独立规划状态的旧 CLI 仍按原检查。
   - 两个版本都实测了无轮次握手：create(plan)、setMode(plan) 后读到 planEnabled=true，setMode(build) 后为 false。`tests/native-zcode.test.ts` 69 项通过。
   - 主分支全量测试：357 个文件 8633 项通过、14 项跳过；typecheck 通过。
+  - Codex 审查 611c31f 提出两项，均在 3e648be 修复：
+    - P1：恢复上次用 yolo/guarded 的会话时，`setMode(plan)` 保留原权限，可写的 MCP 工具无需审批。现在先 `setMode(build)` 再开规划，发送前和结束后都要求 `config.mode === 'build'` 且 `planEnabled === true`。
+    - P2：超过约 1 MiB 的快照按 wireVersion 3 分片（CRC32），原来只认单帧，长会话会被误拒。现在只在临时快照订阅上重组，上限 16 MiB、1024 片，后续 online 帧单独校验，不当作多余分片。
+    - 复审无问题。`native-zcode` 与 `native-transport` 测试 133 项通过。
   - 未执行：真实规划模式 Worker 轮次（需要模型调用授权）。
