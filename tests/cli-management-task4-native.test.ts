@@ -164,6 +164,10 @@ it('模拟：Grok Windows 签名状态和签名主体双校验、PowerShell 使�
   response('Valid', 'CN=Wrong'); await expect(verifyGrokSignature(f.o, [file], control())).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
   response('NotSigned', 'CN=X.AI LLC'); await expect(verifyGrokSignature(f.o, [file], control())).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
   response('Valid', 'CN=X.AI LLC, O=X.AI LLC'); await verifyGrokSignature(f.o, [file], control())
+  // 模拟：真实 Windows 1.0.77/1.0.88 二进制的发布者（2026-11-17 Get-AuthenticodeSignature 实测）。
+  response('Valid', 'CN=X Corp., O=X Corp., L=Bastrop, S=Texas, C=US'); await verifyGrokSignature(f.o, [file], control())
+  response('Valid', 'CN=X Corp. Holdings, O=Other'); await expect(verifyGrokSignature(f.o, [file], control())).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
+  response('Valid', 'CN=Evil, O=X Corp.'); await expect(verifyGrokSignature(f.o, [file], control())).rejects.toMatchObject({ code: 'INTEGRITY_MISMATCH' })
   expect(vi.mocked(f.backend.spawn).mock.calls.at(-1)![0].argv).toEqual(expect.arrayContaining(['-ExecutionPolicy', 'Bypass', '-File', join(f.root, 'verify-signature.ps1'), file]))
 })
 

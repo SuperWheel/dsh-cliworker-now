@@ -71,7 +71,11 @@ export async function verifyGrokSignature(o: LocalArtifactOptions, files: string
       const script = join(dirname(file), 'verify-signature.ps1')
       const value = await captureReadOnly(o.backend, o.config, ['powershell.exe', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, file], signal)
       const result = JSON.parse(value)
-      if (result.Status !== 'Valid' || !/(?:^|,\s*)CN=X\.AI LLC(?:,|$)/.test(result.Subject ?? '')) invalidArtifact('Grok Authenticode 无效')
+      // Publisher seen on the real Windows binaries (2026-11-17：1.0.77 与 1.0.88 的 grok/agent/grove* 均为
+      // `CN=X Corp., O=X Corp., L=Bastrop, S=Texas, C=US`，GlobalSign GCC R45 CodeSigning CA 2020); X.AI LLC kept for older builds.
+      const subject = result.Subject ?? ''
+      const publisher = /(?:^|,\s*)CN=X Corp\.,\s*O=X Corp\.(?:,|$)/.test(subject) || /(?:^|,\s*)CN=X\.AI LLC(?:,|$)/.test(subject)
+      if (result.Status !== 'Valid' || !publisher) invalidArtifact(result.Status !== 'Valid' ? `Grok Authenticode 无效（${String(result.Status).slice(0, 40)}）` : 'Grok Authenticode 发布者不是 X Corp.')
     }
   }
 }
