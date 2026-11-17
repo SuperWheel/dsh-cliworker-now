@@ -80,7 +80,15 @@ export async function hermesCheckoutVersion(checkout: string, stampCommit: unkno
   for (const [ref, value] of candidates) {
     if (value === commit || await peelLooseTag(git, value) === commit) versions.push(ref.slice(11))
   }
-  if (versions.length !== 1) return
+  // The release tag is often an annotated object inside a pack (Windows Hermes fetches tags by name), which
+  // is not decoded here. Hermes' own terminal receipt names the checked-out commit and its version; accept it
+  // only when it is a success for exactly this HEAD (2026-11-17 Windows 实测：构建失败未改写 install-stamp，
+  // 标签对象在包内，插件仍读到 0.23.1，而 `hermes --version` 与回执都是 0.23.2).
+  if (versions.length !== 1) {
+    const receipt = await hermesReceiptVersion(dirname(checkout), commit)
+    if (!receipt) return
+    versions.splice(0, versions.length, receipt)
+  }
   // HEAD must not have moved while refs were being inspected.
   if ((await safeObservation(join(git, 'HEAD'), 4096))?.text.trim() !== head) return
   if (symbolic) {
@@ -88,4 +96,16 @@ export async function hermesCheckoutVersion(checkout: string, stampCommit: unkno
     if (loose && loose.toLowerCase() !== commit) return
   }
   return { version: versions[0]!, commit }
+}
+
+/** Hermes' latest update receipt, read-only: a success whose post-update commit is this HEAD. */
+async function hermesReceiptVersion(home: string, commit: string): Promise<string | undefined> {
+  const text = (await safeObservation(join(home, 'logs/update_receipts/latest.json'), 256 * 1024))?.text
+  try {
+    const r = JSON.parse(text ?? 'null')
+    const post = r?.post_update
+    if (r?.outcome !== 'success' || !post || typeof post !== 'object' || post.source !== 'git') return
+    if (typeof post.sha !== 'string' || post.sha.toLowerCase() !== commit) return
+    return typeof post.version === 'string' && /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(post.version) ? post.version : undefined
+  } catch { return }
 }

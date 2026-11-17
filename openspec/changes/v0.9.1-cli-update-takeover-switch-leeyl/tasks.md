@@ -94,6 +94,21 @@
   - 新增 2 项模拟测试（`settings-connection-view.test.ts`、`settings-dialog.test.tsx`），修复前均失败；圆点、设置弹窗与 ZCode 相关 16 个文件共 641 项通过、1 项跳过；typecheck 通过。
   - 未做：Desktop 实机复看。
 
+- [x] 3.11 Windows Hermes 更新后误报「版本仍为 0.23.1」，Node 依赖阶段慢且改名失败
+  - 2026-11-17 Windows Desktop（c919720 隔离包）Codex CU 实测：20:47 点 Hermes「更新」，约 9.5 分钟后该行报 `VERSION_UNCHANGED`「命令已完成，但版本仍是 0.23.1」，侧栏圆点变红。用户同时反馈安装很慢。
+  - 只读核对：
+    - 回执 `latest.json` 为 `success`，`post_update` 为 0.23.2、`ae2a81cc…`。阶段时间：apply 20:48:30，即取码加切换 39 秒；deps 20:50:37，Python 依赖约 2 分钟，其间有一次 `IncompleteRead` 重试；build 20:57:10 失败，Node 依赖约 6.5 分钟；20:57:18 结束。
+    - `update.log`：`node-deps.mjs` 的 `moveAside` 把 `hermes-agent\node_modules` 改名到 `.cache\node-deps-previous` 时报 `EPERM`；释放说明刷新 30 秒超时；最后一行是「✓ Update complete! (v0.23.1 → v0.23.2)」。11-14 两次更新的 Node 依赖都成功，今天是第一次出现改名失败。
+    - `hermes --version` 为 v0.23.2，HEAD 是 `ae2a81cc…`，`git describe` 为 v0.23.2。
+    - `install-stamp.json` 没有改写，仍是 0.23.1 和 `3b421578…`。`refs/tags/v0.23.2` 指向注释标签对象 `28f57ed8…`，该对象在包内，不是松散对象。
+  - 版本误报原因：`hermes-version.ts` 只解码松散标签对象，读不出版本时回落到 install-stamp 的 0.23.1。修复：标签无法证明时，读 Hermes 自己的 `logs/update_receipts/latest.json`。只有 `outcome` 为 success、`post_update.source` 为 git、`post_update.sha` 等于当前 HEAD、版本为稳定三段号时才采用。
+  - 慢与改名失败：Node 依赖由 Hermes 自己执行，插件不能加速。插件在依赖和构建阶段每秒递归遍历检出目录的三个 `node_modules`（每个最多 10 万项），还有 npm/pnpm 缓存。Windows 上目录内有打开的句柄时不能改名，这可能占住句柄、加重 I/O；当时实际持有句柄的进程已无法回放，所以只是可能原因，未证实。修复（`hermes-watch.ts`）：Windows 不再遍历检出目录的 `node_modules`；依赖树的遍历从每秒一次降为每 15 秒一次，只用于 5 分钟和 20 分钟活动窗口；Hermes 自己的缓存、输出、日志与回执照常计入。
+  - 新增 2 项模拟测试（`cli-management-hermes-version.test.ts`、`cli-management-hermes-takeover.test.ts`），修复前均失败；Hermes 相关文件通过，typecheck 通过。
+  - 全量 vitest（含 3.10、3.11）：360 个文件通过、4 个跳过，8789 项通过、15 项跳过、0 失败。
+  - Windows 现状：Hermes 代码已是 0.23.2；TUI 和网页的 Node 依赖构建未完成，Hermes 提示下次启动或 `hermes update` 时重试。本次 Hermes 官方取码只用了 39 秒，没有触发切换，因此 3.8「插件已下载目标代码」的显示未在实机覆盖。
+  - 同轮 Windows 设置页实测（会话目录 `C:\Users\admin\cw081f1\live-codex` 不存在，未切换会话）：17 个 CLI 圆点全部为绿色，没有出现「失败」「ENOENT」「工作目录」；Codex、Claude Code 的账号与模型下拉正常。Windows 隔离回归 7f7d0214（c919720）共 1032 项：1024 项通过、0 失败、8 项跳过。
+  - 未做：新修复的 Windows 实机重测。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

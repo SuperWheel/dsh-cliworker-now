@@ -20,6 +20,17 @@ export class HermesWatch {
   private lastBytes = 0
   private cacheStamp?: string
   private workStamp?: string
+  private workAt = 0
+  /** Injected in tests; the Host passes nothing. */
+  platform: NodeJS.Platform = process.platform
+  /** Dependency/build activity roots. Windows cannot rename a directory while any handle inside it is open,
+   * and Hermes 0.23.2 renames the checkout's node_modules aside before reinstalling; a per-second recursive
+   * walk of it could hold such handles (2026-11-17 Windows 实测：Node 依赖 6.5 分钟后 EPERM rename node_modules).
+   * There the checkout trees are not walked at all; Hermes' own caches, output, log and receipts still count. */
+  private workRoots(activity: boolean) {
+    const checkout = this.platform === 'win32' ? [] : ['node_modules', 'web/node_modules', 'ui-tui/node_modules'].map(p => join(this.checkout, p))
+    return [...checkout, ...(activity ? this.activityRoots : [])]
+  }
   private outputTail = ''
   private completionTail = ''
   private completed = false
@@ -110,7 +121,7 @@ export class HermesWatch {
     await this.packs.snapshot(this.checkout)
     this.cacheStamp = treeStamp(cache ?? await observeHermesCache(this.home))
     this.partialStamp = treeStamp(await observeTree(join(this.home, 'cache/partials'), n => /\.(?:part|ranges)$/.test(n), false))
-    this.workStamp = (await Promise.all(['node_modules', 'web/node_modules', 'ui-tui/node_modules'].map(p => observeTree(join(this.checkout, p))))).map(treeStamp).join('\n')
+    this.workStamp = (await Promise.all(this.workRoots(false).map(p => observeTree(p)))).map(treeStamp).join('\n')
   }
   private setStage(stage: HermesStage | undefined, at: number, source: string, now: number) {
     if (!stage || at < this.stageAt || at === this.stageAt && source === this.stageSource) return
@@ -216,11 +227,15 @@ export class HermesWatch {
     const [pack, cache, partials, work] = await Promise.all([
       this.packs.poll(this.checkout), judge ? observeHermesCache(this.home) : undefined,
       observeTree(join(this.home, 'cache/partials'), n => /\.(?:part|ranges)$/.test(n), false),
-      Promise.all([...['node_modules', 'web/node_modules', 'ui-tui/node_modules'].map(p => join(this.checkout, p)), ...(dependencies || this.currentStage === 'build' || this.completed ? this.activityRoots : [])].map(p => observeTree(p))),
+      // Dependency trees can hold 100k entries; they only feed the 5/20-minute activity windows, so walk them every 15 s.
+      now - this.workAt >= 15_000 ? Promise.all(this.workRoots(dependencies || this.currentStage === 'build' || this.completed).map(p => observeTree(p))) : undefined,
     ])
-    const workStamp = work.map(treeStamp).join('\n')
-    if (this.workStamp !== undefined && workStamp !== this.workStamp) active = true
-    this.workStamp = workStamp
+    if (work) {
+      this.workAt = now
+      const workStamp = work.map(treeStamp).join('\n')
+      if (this.workStamp !== undefined && workStamp !== this.workStamp) active = true
+      this.workStamp = workStamp
+    }
     if (pack.bytes > this.lastBytes) active = true
     this.lastBytes = pack.bytes
     if (cache) {

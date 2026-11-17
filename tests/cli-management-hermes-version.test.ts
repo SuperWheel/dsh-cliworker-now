@@ -99,3 +99,24 @@ it('模拟：不沿符号链接或越界 HEAD 读取版本', async () => {
   await writeFile(join(root, '.git/HEAD'), 'ref: refs/heads/../../external')
   expect(await hermesCheckoutVersion(root, old)).toBeUndefined()
 })
+it('模拟：发布标签对象在包内无法解码时，用 Hermes 成功回执核对 HEAD 的版本', async () => {
+  // 2026-11-17 Windows 实测：Node 依赖构建失败未改写 install-stamp（0.23.1），v0.23.2 标签对象在包内，
+  // 回执 latest.json 为 success、post_update.sha 等于 HEAD、version 0.23.2，`hermes --version` 也是 0.23.2。
+  const home = await realpath(await mkdtemp(join(tmpdir(), 'hermes-receipt-simulated-'))); roots.push(home)
+  const root = join(home, 'hermes-agent'), packedTag = 'c'.repeat(40)
+  await mkdir(join(root, '.git/refs/tags'), { recursive: true }); await writeFile(join(root, '.git/HEAD'), head)
+  await writeFile(join(root, '.git/refs/tags/v0.23.2'), packedTag)
+  const receipt = (changes: Record<string, unknown> = {}, post: Record<string, unknown> = {}) =>
+    JSON.stringify({ outcome: 'success', post_update: { sha: head, version: '0.23.2', source: 'git', ...post }, ...changes })
+  await mkdir(join(home, 'logs/update_receipts'), { recursive: true })
+  const latest = join(home, 'logs/update_receipts/latest.json')
+  expect(await hermesCheckoutVersion(root, old)).toBeUndefined()
+  await writeFile(latest, receipt())
+  expect(await hermesCheckoutVersion(root, old)).toEqual({ version: '0.23.2', commit: head })
+  // 回执必须是本 HEAD 的成功结果，且版本格式正确。
+  for (const bad of [receipt({ outcome: 'running' }), receipt({}, { sha: old }), receipt({}, { version: '0.23.2-rc.1' }), receipt({}, { source: 'pip' }), '{'])
+    { await writeFile(latest, bad); expect(await hermesCheckoutVersion(root, old)).toBeUndefined() }
+  // 安装记录已是 HEAD 时不读回执。
+  await writeFile(latest, receipt())
+  expect(await hermesCheckoutVersion(root, head)).toBeUndefined()
+})

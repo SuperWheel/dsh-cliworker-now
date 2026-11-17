@@ -506,6 +506,30 @@ it.each(['node_modules', 'web/node_modules', 'ui-tui/node_modules'])('模拟：%
   expect(watch.controller.signal.aborted).toBe(false)
   await watch.poll(now + 2_300_000); expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
 })
+it('模拟：Windows 不遍历检出目录的 node_modules，依赖缓存仍算活动；依赖树每 15 秒才遍历一次', async () => {
+  // 2026-11-17 Windows 实测：Hermes 0.23.2 先把 node_modules 改名挪开，Node 依赖 6.5 分钟后 EPERM rename。
+  {
+    const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json')
+    const watch = new HermesWatch(root, checkout, status, now, () => {}); watch.platform = 'win32'
+    await watch.snapshot(); await put(status, { stage: 'build' }, now + 1); await watch.poll(now + 1)
+    await mkdir(join(checkout, 'node_modules'), { recursive: true }); await put(join(checkout, 'node_modules/built.js'), 'compiled')
+    await watch.poll(now + 1_100_000); await watch.poll(now + 1_300_000)
+    expect(watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+  }
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json'), cache = join(root, 'npm-cache')
+  await mkdir(cache)
+  const watch = new HermesWatch(root, checkout, status, now, () => {}, undefined, [cache]); watch.platform = 'win32'
+  await watch.snapshot(); await put(status, { stage: 'build' }, now + 1); await watch.poll(now + 1)
+  await put(join(cache, 'package'), 'new cache content'); await watch.poll(now + 1_100_000)
+  await watch.poll(now + 1_300_000); expect(watch.controller.signal.aborted).toBe(false)
+  // 15 秒内的变化等到下一次遍历才看到。
+  const posix = await observer('build'), dir = join(posix.checkout, 'node_modules')
+  await posix.watch.poll(posix.now + 1_000)
+  await mkdir(dir, { recursive: true }); await put(join(dir, 'built.js'), 'compiled')
+  const seen = (posix.watch as any).workStamp
+  await posix.watch.poll(posix.now + 10_000); expect((posix.watch as any).workStamp).toBe(seen)
+  await posix.watch.poll(posix.now + 16_000); expect((posix.watch as any).workStamp).not.toBe(seen)
+})
 it('模拟：stdout/stderr 无换行的活动直接识别完成，不等待行缓冲或 EOF', async () => {
   const { root, checkout } = await fixture(), watches = captureWatches(), child = held()
   const stdout = new PassThrough(), stderr = new PassThrough(), activity = vi.spyOn(HermesWatch.prototype, 'output')
