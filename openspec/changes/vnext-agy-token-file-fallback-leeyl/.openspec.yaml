@@ -1,8 +1,0 @@
-pm:
-  title: Antigravity 按原生顺序回退读取令牌文件
-  version: next
-  creator: leeyl
-  creator_name: Leeyl
-  previous_names: []
-schema: pmspec
-created: 2026-11-17

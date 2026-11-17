@@ -1,0 +1,11 @@
+pm:
+  title: Antigravity 按原生顺序回退读取令牌文件
+  version: 0.9.1
+  creator: leeyl
+  creator_name: Leeyl
+  requirement: REQ-0136
+  prd: doc/prd/2026-11-17-v0.9.1-REQ-0136.md
+  previous_names:
+    - vnext-agy-token-file-fallback-leeyl
+schema: pmspec
+created: 2026-11-17

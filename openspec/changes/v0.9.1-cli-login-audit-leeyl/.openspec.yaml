@@ -1,0 +1,10 @@
+pm:
+  title: v0.9.1：逐一排查并修复各 CLI 更新后的登录问题
+  version: 0.9.1
+  creator: leeyl
+  creator_name: Leeyl
+  requirement: REQ-0136
+  prd: doc/prd/2026-11-17-v0.9.1-REQ-0136.md
+  previous_names: []
+schema: pmspec
+created: 2026-11-17
