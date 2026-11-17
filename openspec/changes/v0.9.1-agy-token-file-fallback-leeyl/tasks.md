@@ -57,7 +57,8 @@
   - 最终 `corepack pnpm exec vitest run`：361 文件通过、4 文件跳过；8819 项通过、15 项跳过、0 失败（总计 8834，124.28 秒）；日志 `/tmp/agy-logout-vitest-full-unrestricted.log`。全部为自动测试，不代表真实账号或 Desktop 验收。
   - 首次沙箱内全量：341 文件通过、20 失败、4 跳过；8430 项通过、389 失败、15 跳过，另 20 个错误。单独复现环回 registry `listen EPERM 127.0.0.1` 后获准在沙箱外重跑；日志 `/tmp/agy-logout-vitest-full.log`。诊断额外运行 `pi-omp-native.test.ts` 33/33 通过。
   - 首次沙箱外全量正遇另一 agent 提交 `3b62780` 的 Grok 签名修改：8818 通过、1 失败、15 跳过（签名测试已读到新用例，但源码报错文本仍是旧版），日志 `/tmp/agy-logout-vitest-full-concurrent-edit.log`；当前 `cli-management-task4-native.test.ts` 单独 29/29 通过，随后完整复跑得到上述 0 失败结果。本次未编辑 Grok 文件。下载预算测试没有触发需重跑的失败。
-- [ ] 5.4 用户重新构建后在真实 Mac Desktop 复测退出及状态刷新
+- [x] 5.4 用户重新构建后在真实 Mac Desktop 复测退出及状态刷新
+  - 2026-11-17 Mac Desktop 部署 6f2a095 正式构建（`build:preview` 与 `build` 通过，重启前 Host 无子进程），用户实测 Antigravity「退出登录」成功（用户口头确认，未附截图）。仅文件有效、钥匙串恢复可读这一情形仍未实测，见下一行。
   - （未执行：按任务约束不运行真实登录/退出、账号切换、模型，不重启或更新 Desktop；等待用户复测。）同时确认仅文件有效、钥匙串恢复可读的实际原生行为；本轮不宣称该情形已兼容。不归档隐藏该缺口。
 
 ## 跟进
