@@ -235,7 +235,7 @@ it.each(['success', 'wrong-version', 'wrong-identity'] as const)('模拟：Windo
   const result = (await finished(f.service)).results[0]!
   expect(result.phase).toBe(mode === 'success' ? 'succeeded' : 'failed')
   if (mode !== 'success') expect(result.error?.code).toBe(mode === 'wrong-version' ? 'VERSION_MISMATCH' : 'IDENTITY_CHANGED')
-  expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.invalidateModels).toHaveBeenCalledTimes(1)
+  expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.invalidateModels).not.toHaveBeenCalled()
   expect(result.progress).toMatchObject({ readable: true, downloadedBytes: size })
   expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
 })
@@ -384,7 +384,7 @@ it('模拟：Windows TRAE 服务使用离线 argv 和专用环境，恢复标记
   const result = (await finished(f.service)).results[0]!
   expect(result).toMatchObject({ phase: 'succeeded', afterVersion: version, progress: { readable: true } })
   expect(readFileSync(marker, 'utf8')).toBe(`${version}-${process.arch === 'x64' ? 'x86_64' : 'aarch64'}-pc-windows-msvc`)
-  expect(f.backend.spawn).toHaveBeenCalledOnce(); expect(f.invalidateModels).toHaveBeenCalledExactlyOnceWith('traecn')
+  expect(f.backend.spawn).toHaveBeenCalledOnce(); expect(f.invalidateModels).not.toHaveBeenCalled()
   expect(readdirSync(join(f.root, 'cli-management/downloads'))).toEqual([])
 })
 it('模拟：下载期间安装身份变化，服务再次核对计划后拒绝放置', async () => {

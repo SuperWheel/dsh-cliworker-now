@@ -76,7 +76,7 @@ describe('模拟：受控更新计划与服务', () => {
     f.identities.set('codex', syntheticIdentity('codex', '1.2.3')); child.finish(); await until(() => child.child.waitForExit.mock.calls.length > 0); child.exit(true)
     const result = (await finished(f.service)).results[0]!
     expect(result).toMatchObject({ id: first.operation!.id, phase: 'succeeded', beforeVersion: '1.0.0', afterVersion: '1.2.3', integritySource: 'https://registry.npmjs.org/', progress: { readable: false, byteProgress: false } })
-    expect(f.invalidateModels).toHaveBeenCalledWith('codex'); expect(f.service.cache.version('codex', syntheticIdentity().fingerprint)).toBeUndefined()
+    expect(f.invalidateModels).not.toHaveBeenCalled(); expect(f.service.cache.version('codex', syntheticIdentity().fingerprint)).toBeUndefined()
     expect(f.service.start('codex', 'update', token, '', 'req').operation?.id).toBe(result.id); expect(f.backend.spawn).toHaveBeenCalledTimes(1)
     expect(() => f.service.start('codex', 'update', token + 'a', '', 'req')).toThrow('requestId')
   })
@@ -119,7 +119,7 @@ describe('模拟：受控更新计划与服务', () => {
       return { done: Promise.resolve({ exitCode: 0 }), stdout: Readable.from([]), stderr: Readable.from([]), waitForExit: vi.fn(async () => true), terminate: vi.fn() } as any
     })
     f.service.start('codex', 'update', f.service.snapshot().entries.find(e => e.cli === 'codex')!.planToken!, '', 'req')
-    expect((await finished(f.service)).results[0]?.error?.code).toBe({ unchanged: 'VERSION_UNCHANGED', mismatch: 'VERSION_MISMATCH', identity: 'IDENTITY_CHANGED' }[mode]); expect(f.invalidateModels).toHaveBeenCalledExactlyOnceWith('codex')
+    expect((await finished(f.service)).results[0]?.error?.code).toBe({ unchanged: 'VERSION_UNCHANGED', mismatch: 'VERSION_MISMATCH', identity: 'IDENTITY_CHANGED' }[mode]); expect(f.invalidateModels).not.toHaveBeenCalled()
   })
   it.each([true, false])('取消等整个进程树退出：确认=%s', async confirmed => {
     const f = fixture(), child = childFixture(); await checked(f.service); vi.mocked(f.backend.spawn).mockReturnValue(child.child as any)
@@ -131,8 +131,8 @@ describe('模拟：受控更新计划与服务', () => {
     child.finish(); child.exit(confirmed)
     const result = (await finished(f.service)).results[0]!
     expect(result.phase).toBe(confirmed ? 'cancelled' : 'cleanup-unconfirmed')
-    // 模拟：取消已确认退出才在释放维护锁后作废；隔离清理不发布可用状态。
-    expect(f.invalidateModels).toHaveBeenCalledTimes(confirmed ? 1 : 0)
+    // 模拟：更新结束（含取消）不作废账号与模型显示；隔离清理不发布可用状态。
+    expect(f.invalidateModels).not.toHaveBeenCalled()
     if (!confirmed) { expect(f.cleanup).toHaveBeenCalled(); expect(() => f.config.cliMaintenance.assertAvailable('codex')).toThrow('MAINTENANCE') }
     else expect(() => f.config.cliMaintenance.assertAvailable('codex')).not.toThrow()
   })

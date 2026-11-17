@@ -1,10 +1,12 @@
 # Tasks
 
 ## 1. 排查方法与更新后重读 〔后端｜3h〕
-- [x] 1.1 确认现有代码在 CLI 更新后作废账号与模型显示缓存
-  - 证据：`src/host/cli-management/service.ts` 第 216 行（版本指纹变化）与第 718 行（更新完成）调用 `invalidateModels`；`src/host/index.ts` 把它接到 `invalidateSettingsDisplay`，后者作废连接缓存、模型缓存并调用 `cache.invalidateAccount`
-  - 证据：`tests/cli-management-phase-b.test.ts` 断言更新后 `invalidateModels` 被调用
-- [ ] 1.2 补「设置页在作废后按新版重读、不回显更新前登录状态」的模拟测试
+- [x] 1.1 去掉更新与版本指纹变化时对账号和模型缓存的作废（用户 2026-11-17 决定）
+  - 证据：`src/host/cli-management/service.ts` 删除版本指纹变化时的 `invalidateModels` 调用；更新收尾改为仅 `intent === 'install'` 时调用
+  - 证据：规格增量改为修改「连接快照、过期更新与来源作废」，见 `specs/cli-update/spec.md`
+- [x] 1.2 模拟测试：更新成功、失败、取消及之后版本指纹变化都不作废；安装完成作废一次
+  - 证据：`tests/cli-management-admission.test.ts` 改写 3 项；`tests/cli-management-phase-b.test.ts`、`tests/cli-management-local-artifacts-windows.test.ts` 的更新断言改为不调用；`tests/cli-management-install.test.ts` 新增安装后调用一次的断言
+  - 证据：`corepack pnpm exec vitest run` 上述 4 个文件 159 项通过；临时恢复旧的指纹作废代码时 admission 3 项失败，恢复后通过
 - [ ] 1.3 记录 17 个 CLI 排查时的版本号（Mac 与 Windows 各一份）
 
 ## 2. 官方账号类：Codex、Claude Code、Kimi、MiMo 〔后端｜6h｜前置 1〕

@@ -1553,7 +1553,7 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 
 新增 `settings-connection-cache` 内存展示缓存，按 Host/规范化项目/CLI 隔离账号及目录，10 分钟有效；模型强度随原生目录缓存。2026-11-14 用户决定扩大到「除原生会话外全部」：Codex、Claude Code、Kimi、MiMo、Grok、OMP、Pi、Hermes、OpenCode、ZCode 的账号和目录，以及 CodeBuddy 账号。允许打开设置时已有的原生服务初始化、令牌续期和插件运行配置写入；共用前台加载路径、分槽缓存与同一 CLI 串行读取队列。Antigravity（钥匙串授权）、Qoder 两版/TRAE CN（原生会话）、WorkBuddy 两版（bootstrap 密钥）、CodeBuddy 目录（session/new）仍保留前台。后台不发 prompt、不调用真实模型、不弹终端/窗口、不升级，Kimi 保留禁升级变量，宿主代理环境保持。逐 CLI 函数及命令见 `openspec/archives/v0.9.0-cli-update-page-leeyl/design.md` 决定 12。
 
-主会话解析登记项目并加入原 60 秒/CPU 空闲/逐项队列；任务或账号窗口打断后等清理并在 30 秒空闲后重试。设置首屏 `cliSettings.settingsCache.connections` 直接带结果，新 `settingsConnectionStatus` 返回缓存并补查缺失/过期槽，`watchSettingsConnections` 推送状态。旧账号/模型接口共用缓存，显式刷新强制读取；账号动作与执行选型仍实时核验。账号切换、登录/退出、启用状态、入口或更新后同时作废两槽，晚到结果不得回填。过期或未核实 authenticated 映射 unknown，缓存不持久化、不恢复跨 Host 绿色登录态。前端接入独立交付，不能把 Host 测试当作 UI 已完成。
+主会话解析登记项目并加入原 60 秒/CPU 空闲/逐项队列；任务或账号窗口打断后等清理并在 30 秒空闲后重试。设置首屏 `cliSettings.settingsCache.connections` 直接带结果，新 `settingsConnectionStatus` 返回缓存并补查缺失/过期槽，`watchSettingsConnections` 推送状态。旧账号/模型接口共用缓存，显式刷新强制读取；账号动作与执行选型仍实时核验。账号切换、登录/退出、启用状态、入口变化或首次安装后同时作废两槽，晚到结果不得回填；CLI 更新与版本指纹变化不作废（2026-11-17 用户决定，REQ-0136）。过期或未核实 authenticated 映射 unknown，缓存不持久化、不恢复跨 Host 绿色登录态。前端接入独立交付，不能把 Host 测试当作 UI 已完成。
 
 
 ## 2026-11-14：其他服务商配置（Host）
@@ -1575,7 +1575,7 @@ Windows x64/arm64 的 Claude Code、Antigravity、OMP、TRAE CN 在 self-update 
 
 下载准备不写安装目录；服务在实际放置前重新核对计划。Claude 原子写 versions/<目标> 后替换 .local/bin/claude.exe，失败回滚本次版本写入；Antigravity/OMP 只写同目录临时文件并 rename，不执行 PATH／Bash 配置。锁定错误 EBUSY/EPERM/EACCES 统一 FILE_LOCKED，原 exe 保持不动。TRAE 按官方 Export-OfflineBundle 结构装配主件、sidecar、存在时的两项沙箱辅助件与筛选后的 ripgrep，交内置 CDN 下载的官方 PowerShell offline-install，跳过用户 PATH 修改并保留自动更新标记状态。安装单独计时 10 分钟；完成仍调用 sameInstallation 与 verifyUpdatedVersion 精确核对目标。
 
-维护期 MAINTENANCE 拒绝不缓存为连接错误；更新成功、失败、取消在释放锁后统一作废连接显示，进程清理隔离状态仍保留锁。实现与验收边界见变更 design 决定 13/14 及 tasks 13；本轮仅模拟与匿名清单/HEAD 核对，Windows 实机验收单列。
+维护期 MAINTENANCE 拒绝不缓存为连接错误；进程清理隔离状态仍保留锁。原「更新成功、失败、取消在释放锁后统一作废连接显示」于 2026-11-17 改为只在首次安装后作废：插件按 CLI 自己的登录规则读取账号，CLI 更新不清除账号与模型（变更 `v0.9.1-cli-login-audit-leeyl` 决定 4）。实现与验收边界见变更 design 决定 13/14 及 tasks 13；本轮仅模拟与匿名清单/HEAD 核对，Windows 实机验收单列。
 
 
 ### 2026-11-14 CLI 更新双通道（主任务 1–3，未发布）

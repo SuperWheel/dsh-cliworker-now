@@ -207,6 +207,8 @@ it('模拟：未安装条目提供安装 offer 与 token；成功后路径写回
   const path = join(f.prefix, 'bin/codex')
   expect(new CliExecutablePathStore(f.root).read('codex')?.path).toBe(path)
   expect(done.entries.find(e => e.cli === 'codex')).toMatchObject({ group: 'latest', currentVersion: '1.2.3' })
+  // 模拟：安装完成后作废一次，设置页不再显示缓存的「未安装」。
+  expect(f.invalidateModels).toHaveBeenCalledExactlyOnceWith('codex')
   const install = vi.mocked(f.backend.spawn).mock.calls.find(([s]) => s.argv.includes('install'))![0].argv
   expect(install).toContain(f.prefix); expect(install.some(a => a.endsWith('.tgz'))).toBe(true)
 })

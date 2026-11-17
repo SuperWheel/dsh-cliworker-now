@@ -50,6 +50,7 @@ export { BACKGROUND_ACCOUNT_CLIS } from './sources.ts'
 interface Dependencies {
   busy?(cli: ActiveCliId): { workers: number; accounts: boolean }
   assertUpdateAllowed?(cli: ActiveCliId): void
+  /** Called once after an install ends and its maintenance lock is released; updates never call it. */
   invalidateModels?(cli: ActiveCliId): void
   root: string; backend: ProcessBackend; config: RuntimeConfig
   idle(): boolean; enabled(): boolean; cliEnabled(cli: ActiveCliId): boolean
@@ -212,8 +213,8 @@ export class CliManagementService {
         if (background) { this.publish(cli, { stage: undefined }); return }
         this.identities.delete(cli); this.publish(cli, { installed: false, group: 'notInstalled', reason: 'NOT_INSTALLED', reasonDetail: oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined, currentVersion: undefined, source: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true); return
       }
-      const previous = this.identities.get(cli)
-      if (previous && fingerprintToken(previous.fingerprint) !== fingerprintToken(identity.fingerprint)) this.deps.invalidateModels?.(cli)
+      // A new version is not a new login: account and model displays follow the CLI's own
+      // login rules and their usual expiry, never the version fingerprint (REQ-0136).
       this.identities.set(cli, identity)
       if (pathOnly) return
       if (cli === 'pi') await checkPiInstallationIntegrity(identity.executable, { allowUnsupported: true, signal: control })
@@ -715,7 +716,8 @@ export class CliManagementService {
           op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
           this.operationController = undefined; this.operationRun = undefined
           try {
-            if (!quarantine) { release(); this.deps.invalidateModels?.(cli) }
+            // Only a fresh install replaces the cached「未安装」; an update keeps the CLI's login (REQ-0136).
+            if (!quarantine) { release(); if (intent === 'install') this.deps.invalidateModels?.(cli) }
             else { this.state.queue = []; this.queued.clear() }
           } finally {
             try { this.changed(); this.preloader.changed() }
