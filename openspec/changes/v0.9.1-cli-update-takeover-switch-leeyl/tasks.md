@@ -92,7 +92,7 @@
   - 原因：ZCode 自有 API 的 Host 状态是 `configured`（`zcode-grok-accounts.ts` 的 `withZCodeProviderRows` 与绑定分支、`zcode-adapter.ts`），客户端把 `configured` 一律画成中性；MiMo、Codex、Claude 的 API 登录是 `authenticated`，所以是绿色。
   - 不改 Host 状态：一开始改成 `authenticated` 后有 8 项 ZCode 测试失败。通用退出判定 `account-guide/engine.ts` 要求退出后状态不是 `authenticated`，自有密钥还在时，整账号退出会被判为失败。改为在 `settings-connection-view.ts` 的 `connectionState` 中，把 `cli === 'zcode'`、`state === 'configured'`、`authMethod === 'api'` 并有核验来源的状态视为已连接，回执过期时仍显示过期。`settings-dialog.tsx` 绿点文字沿用 Host 摘要（「已配置 ZCode API」「已配置 ZCode API；登录已过期」）。ZCode「账号绑定未确认」和其他 CLI 的「已配置」（如 Qoder PAT 待验证）仍为中性。
   - 新增 2 项模拟测试（`settings-connection-view.test.ts`、`settings-dialog.test.tsx`），修复前均失败；圆点、设置弹窗与 ZCode 相关 16 个文件共 641 项通过、1 项跳过；typecheck 通过。
-  - 未做：Desktop 实机复看。
+  - 2026-11-17 Mac Desktop 实机复看（正式构建 e68d203，`lib/index.js` 与 Windows 回归 run 345761ec 的预览包哈希一致；重启前 Host 无子进程）：Codex Computer Use（gpt-6.1-sol high）只读查看「CLI Worker 设置」，ZCode 为绿点、文字「已配置 ZCode API」；其余 15 个已安装 CLI 均为绿点，WorkBuddy 未安装为灰点。WorkBuddy CN 配置页有「原默认模型已不可用，请重新选择模型」提示，未改动。Windows 未单独复看 ZCode（该机 ZCode 状态未在本轮核对）。
 
 - [x] 3.11 Windows Hermes 更新后误报「版本仍为 0.23.1」，Node 依赖阶段慢且改名失败
   - 2026-11-17 Windows Desktop（c919720 隔离包）Codex CU 实测：20:47 点 Hermes「更新」，约 9.5 分钟后该行报 `VERSION_UNCHANGED`「命令已完成，但版本仍是 0.23.1」，侧栏圆点变红。用户同时反馈安装很慢。
@@ -139,6 +139,7 @@
     - 页面经 Codex Computer Use（gpt-6.1-sol high）只点 Hermes 行「更新」→「继续更新」：0.23.1 → 0.23.2，渠道全程「官方」，「切换插件下载」只在 0:24 出现，之后不再显示；步数 3/6 apply → 4/6 deps（0:52 起）→ 5/6 build（2:13 起，阶段依次 Building the apps、Updating Node dependencies、Building the web UI）→ 6/6 restart（7:14），最终行「已更新到 0.23.2」、绿色，没有未完成警示、自动重试或「重试」。
     - Windows 只读核对：回执 `8f53b20a…` outcome success，post_update 0.23.2 / `ae2a81cc…` 等于 HEAD；stages plan/apply/deps/build/restart 均 success（snapshot skipped），22:01:56→22:08:59；followups 为空。`install-stamp.json` displayVersion 0.23.2、builtAt 22:08:53；`node_modules` 创建时间 22:04:57，即本次挪开改名与重装成功；本次 `update.log` 段（22:01:52 起）EPERM/EBUSY 0 处；`hermes --version` 为 v0.23.2。命令输出仍有官方「release history 30 秒超时」警告。插件更新清理删除插件临时文件 1 项、Hermes 删除标记 1 项、Hermes 工具旧版本 5 项，释放 611115984 B。
     - 结论：插件不再遍历检出目录后，这一次 Node 依赖改名成功；单次成功不能证明根因，只说明未复现。黄色未完成状态、自动重试与「重试」在真实 Hermes 上未触发，仍只有模拟覆盖。Mac Desktop 未复测。
+  - 2026-11-17 Mac Desktop 复看（同一正式构建）：Mac Hermes 回执 success、0.23.2、`ae2a81cc…` 等于 HEAD、无欠账。「更新 CLI」点一次「检查更新」后，Hermes 行在「已是最新」，文字「0.23.2 · Hermes Agent 自带更新」，没有未完成警示或「重试」；页面「检查完成：4 个可更新」（OpenCode、Qoder、Qoder CN、CodeBuddy Code），未点任何更新。Mac 上未出现半完成回执，黄色状态与「重试」在真机上仍未触发。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
