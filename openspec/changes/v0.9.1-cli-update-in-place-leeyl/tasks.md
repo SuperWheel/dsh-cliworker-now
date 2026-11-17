@@ -80,6 +80,12 @@
       - 新增的 2 项跳过都是只适用于 POSIX 的测试（密钥权限、`/tmp/cwn-` 短目录），已加入远端证据白名单。
     - 未执行：6ea6c9f 之后的 Windows 复跑。Windows 机器 11-17 下午断开，等用户回宿舍后再测，所以本项暂不勾选。
 - [ ] 3.2 列出两台机器上已有的重复副本，经用户确认后处理
+  - 2026-11-17 用户同意删除。Mac 已处理：路径记录（Pi revision 8 → `~/.local/bin/pi`、OMP → `~/.local/bin/omp`）都不指向下列副本，也没有进程占用。
+    - npm 全局 Pi 1.1.0（`/opt/homebrew`）：`npm uninstall -g @earendil-works/pi-coding-agent`。
+    - Bun 全局 OMP 17.0.1：`bun remove -g` 三个包，剩余 702 MB 孤儿依赖移入废纸篓。
+    - 插件旧私有运行时 `runtimes/pi-1.0.2`、Pi 托管旧版本 `releases/1.0.4`（`current-version` 为 1.5.2）移入废纸篓 `~/.Trash/cliworker-old-copies-20261117/`。
+    - 复核：`pi --version` 1.5.2、`omp --version` 18.20.2，登录 shell 的 PATH 上 `pi`、`omp` 都只解析到 `~/.local/bin`。
+  - 未执行：Windows 上的 Pi 托管 1.1.0（`.pi\agent`）与 MiMo npm 0.1.1。Windows 机器断开，连上后处理，所以本项暂不勾选。
 - [x] 3.3 同步 README、`doc/usage-details.md` 与设计文档中的更新说明
   - README.md「更新 CLI」段、README.en.md 对应段落、`doc/usage-details.md` CLI 路径段、`doc/design.md`「2026-11-17 更新和修复保留原安装」与 ZCode 两节（提交 3939054、a243255、b3c3d9d、3e648be）。
 
@@ -115,7 +121,8 @@
     - 其余 16 个 CLI 的状态与模型读取正常，或是账号自身原因：Kimi 需要续期，Qoder 账号下 17 个模型全部停用，WorkBuddy CN 提示原默认模型不可用，WorkBuddy 未安装。
     - `credential-secret` 尚未生成：按设计只在 Worker 或登录、退出启动 ZCode 时创建，读模型目录不会启动 ZCode。
   - 未执行：真实 Worker 轮次（需要模型调用授权，也是真实生成密钥文件、核对旧登录仍可用的环节）、真实登录与退出、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
-- [ ] 4.3 迁移成功后，经用户确认删除旧的私有运行时
+- [x] 4.3 迁移成功后，经用户确认删除旧的私有运行时
+  - Mac Desktop 上路径记录已迁移到应用自带入口（revision 2），用户 2026-11-17 同意删除；`~/.local/share/cliworker-now/runtimes/zcode`（0.16.9，87 MB）移入废纸篓 `~/.Trash/cliworker-old-copies-20261117/`，没有 ZCode 进程占用。
 - [x] 4.4 修复 ZCode 规划模式 Worker 一律被拒
   - 实机核实时发现：0.16.9 与 0.17.1 都声明 `independentPlanState`，`plan` 只把独立布尔值 `planEnabled` 设为 true，权限模式仍为 build。旧版的 `session/read` 不含这个布尔值，要从 v4 `conversation/subscribe` 快照的 `config.planEnabled` 读取。证据位置：bundled zcode.cjs 字节 15507235、1084166、15306798、15468179；0.16.9 的第 601975、43256、594695、600933 行。
   - `native-zcode.mjs` 要求 `settings.mode.current === 'plan'`，所以自 ecaddbe（2026-10-18，v0.8.1）起，ZCode 规划模式 Worker 都在发送输入之前被拒。原测试夹具直接把 mode.current 写成 plan，与真实快照结构不符。
