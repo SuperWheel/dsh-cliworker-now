@@ -1,6 +1,6 @@
 # Tasks
 
-## 1. 排查方法与更新后重读 〔后端｜3h〕
+## 1. 排查方法与更新后保留登录缓存 〔后端｜3h〕
 - [x] 1.1 去掉更新与版本指纹变化时对账号和模型缓存的作废（用户 2026-11-17 决定）
   - 证据：`src/host/cli-management/service.ts` 删除版本指纹变化时的 `invalidateModels` 调用；更新收尾改为仅 `intent === 'install'` 时调用
   - 证据：规格增量改为修改「连接快照、过期更新与来源作废」，见 `specs/cli-update/spec.md`
