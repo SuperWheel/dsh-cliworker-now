@@ -726,7 +726,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
   })
 
   it.each([
-    ['OFFICIAL_STALLED', '官方下载 30 秒没有新数据'],
+    ['OFFICIAL_STALLED', '官方下载 10 秒没有新数据'],
     ['OFFICIAL_SLOW', '官方下载速度过低'],
     ['OFFICIAL_DEADLINE', '官方下载预计超过官方时限'],
     ['OFFICIAL_RESTARTED', '官方下载从头重来'],
@@ -1001,7 +1001,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     const row = f.rowOf('codex')
     expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['已下载 156 MB / 372 MB · 1.2 MB/s'])
     expect(byClass(row, 'cwn-update-meta-side')).toHaveLength(0)
-    expect(hints(row)).toEqual(['官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载'])
+    expect(hints(row)).toEqual(['官方更新不续传；10 秒没有新数据会停止官方更新，改由插件下载'])
   })
 
   it('plugin-owned official downloads say they resume and show the resume count', async () => {
@@ -1011,7 +1011,7 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     }))
     const row = f.rowOf('codex')
     expect(byClass(row, 'cwn-update-meta-side').map(textOf)).toEqual(['已自动续传 2 次'])
-    expect(hints(row)).toEqual(['下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留'])
+    expect(hints(row)).toEqual(['下载停滞会从断点续传；5 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留'])
   })
 
   it('draws no bar when the total size is unknown', async () => {
@@ -1161,6 +1161,15 @@ describe('模拟：手动切换插件下载与取消核验', () => {
     await f.update(data({ snapshot: snapshot({ operation: official({ officialTakeover: undefined, progress: { readable: false, channel: 'takeover', resumeCount: 0 } }) }) }))
     expect(f.button('正在切换…')).toBeUndefined(); expect(f.button('切换插件下载')).toBeUndefined()
     expect(f.button('取消更新')).toBeDefined()
+  })
+  it.each([
+    ['not-official', '当前阶段不能切换插件下载，官方更新继续进行'],
+    ['cleanup-unconfirmed', '官方更新进程未确认退出，没有切换插件下载'],
+  ] as const)('模拟：Host 拒绝切换（%s）时在该行说明原因，不静默消失', async (status, message) => {
+    const op = official(), request = vi.fn(async () => ok({ operationId: op.id, status }))
+    const f = await setup(data({ snapshot: snapshot({ operation: op }) }), { requestCliTakeover: request })
+    await act(async () => { f.button('切换插件下载')!.props.onClick() })
+    expect(textOf(f.rowOf('claude'))).toContain(message)
   })
   it('模拟：旧 Host 不显示切换按钮，取消期间也隐藏', async () => {
     const f = await setup(data({ snapshot: snapshot({ operation: official() }) }))

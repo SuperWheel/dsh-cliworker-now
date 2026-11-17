@@ -578,7 +578,7 @@ export class CliManagementService {
                 this.switchedOperation = op.id
                 tookOver = true; op.officialTakeover = undefined; this.officialOperation?.finish('switched')
                 value = { ...value, reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : manual ? 'OFFICIAL_MANUAL' : value.reason, officialFailedAt: remembered?.failedAt, ...(manual ? { stage: '已手动切换 Hermes 插件代码预取，完成后交回官方更新' } : {}) }
-              } else if (!tookOver && hermesWatch?.currentStage === 'fetch' && !hermesWatch.controller.signal.aborted) {
+              } else if (!tookOver && hermesWatch?.canTakeover) {
                 if (!this.officialOperation) this.registerOfficialOperation(op, hermesWatch)
                 if (remembered && op.officialTakeover === 'available') void this.requestTakeover(cli, op.id).catch(() => undefined)
               } else if (op.officialTakeover !== 'pending') { op.officialTakeover = undefined; this.officialOperation?.finish('finished') }

@@ -570,6 +570,24 @@ it.each(['plan', 'apply', 'deps', 'tools', 'uv', 'pnpm', 'build', 'restart'])('�
   const { watch } = await observer(stage)
   expect(watch.requestTakeover()).toBe(false); expect(watch.controller.signal.aborted).toBe(false)
 })
+it('模拟：update.log 残留上一次「Update complete!」不让本次判为完成，10 秒停滞与手动切换仍可用', async () => {
+  // 2026-11-17 Mac 实测复现：Hermes 追加写 update.log，旧尾部的完成行曾让本次 fetch 被判完成。
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, log = join(root, 'logs/update.log')
+  await put(log, '=== hermes update started 2026-11-14 ===\n✓ Update complete! (v0.21.7 → v0.23.1)\nTip: hermes model\n', now - 60_000)
+  const watch = new HermesWatch(root, checkout, join(root, 'status.json'), now, () => {}, { version: '0.23.2' }); await watch.snapshot()
+  await put(log, '=== hermes update started 2026-11-14 ===\n✓ Update complete! (v0.21.7 → v0.23.1)\nTip: hermes model\n=== hermes update started 2026-11-17 ===\n→ Fetching updates...\n', now + 1)
+  await watch.poll(now + 1)
+  expect(watch.currentStage).toBe('fetch'); expect(watch.canTakeover).toBe(true)
+  await watch.poll(now + 10_001); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  const manual = new HermesWatch(root, checkout, join(root, 'status-2.json'), now + 2, () => {}, { version: '0.23.2' }); await manual.snapshot()
+  await writeFile(log, '→ Fetching updates...\n', { flag: 'a' }); await utimes(log, new Date(now + 3), new Date(now + 3))
+  await manual.poll(now + 3)
+  expect(manual.requestTakeover()).toBe(true)
+  // 本次自己写出的完成行仍然生效。
+  const done = new HermesWatch(root, checkout, join(root, 'status-3.json'), now + 4, () => {}, { version: '0.23.2' }); await done.snapshot()
+  await writeFile(log, '→ Fetching updates...\n✓ Update complete! (v0.23.1 → v0.23.2)\n', { flag: 'a' }); await utimes(log, new Date(now + 5), new Date(now + 5))
+  await done.poll(now + 5); expect(done.canTakeover).toBe(false); expect(done.requestTakeover()).toBe(false)
+})
 it('模拟：Hermes 手动 fetch 接管等待进程树退出才预取，清除公开 watch 句柄', async () => {
   const { root, checkout } = await fixture()
   let confirm!: (exited: boolean) => void

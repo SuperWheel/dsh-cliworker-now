@@ -420,7 +420,7 @@ function switchReason(reason: CliChannelReason | undefined): string | undefined 
     case 'OFFICIAL_MANUAL':
       return t('已手动切换插件下载')
     case 'OFFICIAL_STALLED':
-      return t('官方下载 30 秒没有新数据')
+      return t('官方下载 10 秒没有新数据')
     case 'OFFICIAL_SLOW':
       return t('官方下载速度过低')
     case 'OFFICIAL_DEADLINE':
@@ -465,7 +465,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
   const hermesRule = t('拉取代码过慢会改由插件分段拉取；仅在确认工具下载停滞时停止后重跑，构建及更新收尾会继续等待')
   // A plugin-owned download from the official source (npm, desktop packages) resumes in place;
   // only a CLI's own updater cannot be resumed and is stopped instead.
-  const ownedRule = t('下载停滞会从断点续传；30 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留')
+  const ownedRule = t('下载停滞会从断点续传；5 秒没有新数据或持续过慢会改由插件换源下载，已下载的部分保留')
   const officialRule = (fallback: string) => hermes ? hermesRule : progress.sourceHost ? ownedRule : fallback
   // External-command reruns are counted apart from HTTP Range resumes (PRD 5.6).
   const retries = progress.retryCount && progress.retryCount > 0 ? (
@@ -566,7 +566,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
     // Sums across every file of this run; the bar never restarts per file.
     const percent = Math.min(100, Math.round((downloaded / total) * 100))
     const parts = filesPrefix([t('已下载 {done} / {total}', { done: formatBytes(downloaded), total: formatBytes(total) }), ...transferParts()])
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；10 秒没有新数据会停止官方更新，改由插件下载')))
     body = (
       <div className="cwn-update-progress">
         <div
@@ -614,7 +614,7 @@ function Progress({ operation, npm = false }: { operation: CliUpdateOperation; n
     )
   } else if (downloaded !== undefined) {
     // No denominator: never a percentage, only what has really arrived.
-    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；30 秒没有新数据会停止官方更新，改由插件下载')))
+    if (official && progress.reason !== 'ALREADY_LATEST') hint(officialRule(t('官方更新不续传；10 秒没有新数据会停止官方更新，改由插件下载')))
     // Several files without a known total (an official updater staging more than one file) are still one sum.
     body = <div className="cwn-update-progress">{meta(filesPrefix([receivedText(downloaded), ...transferParts()]), side, hostPart)}</div>
   } else if (state === 'none' || progress.channel || stageText) {
@@ -858,8 +858,14 @@ export function CliUpdatePane({
     const run = service.requestCliTakeover
     if (!run || switchingNow.current.has(operationId)) return
     switchingNow.current.add(operationId); setSwitching(new Set(switchingNow.current)); setRowError(cli, undefined)
-    try { await call(async signal => value(await run(sessionId, cli, operationId, signal))) }
-    catch (error) { if (alive()) setRowError(cli, operationMessage(error)) }
+    try {
+      const raw = await call(async signal => value(await run(sessionId, cli, operationId, signal)))
+      // A refused switch must say so; otherwise the button just disappears (2026-11-17 Hermes 实测).
+      const status = typeof raw === 'string' ? (JSON.parse(raw) as { status?: string }).status : undefined
+      const refused = status === 'not-official' ? t('当前阶段不能切换插件下载，官方更新继续进行')
+        : status === 'cleanup-unconfirmed' ? t('官方更新进程未确认退出，没有切换插件下载') : undefined
+      if (refused && alive()) setRowError(cli, refused)
+    } catch (error) { if (alive()) setRowError(cli, operationMessage(error)) }
     finally { switchingNow.current.delete(operationId); if (alive()) setSwitching(new Set(switchingNow.current)) }
   }
   async function checkAll() {

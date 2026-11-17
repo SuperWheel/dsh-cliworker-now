@@ -40,6 +40,8 @@ export class HermesWatch {
   private step?: number
   private stage = '执行 Hermes 官方更新'
   private fetchWatch?: HermesFetchWatchdog
+  /** update.log is appended across runs; only bytes written after this run's snapshot belong to it. */
+  private logBaseline?: { ino: number; size: number }
   currentStage: HermesStage = 'unknown'
   stoppedStage?: HermesStage
   reason?: SlowReason
@@ -56,8 +58,10 @@ export class HermesWatch {
    * True means a stop was requested, never that its process tree has exited.
    * runHermesUpdate keeps the same exit barrier and prefetch path as an automatic trip.
    */
+  /** Whether a manual takeover would be accepted right now (same guard as requestTakeover). */
+  get canTakeover(): boolean { return !this.completed && this.currentStage === 'fetch' && !this.controller.signal.aborted }
   requestTakeover(): boolean {
-    if (this.completed || this.currentStage !== 'fetch' || this.controller.signal.aborted) return false
+    if (!this.canTakeover) return false
     this.reason = 'OFFICIAL_INTERRUPTED'; this.stoppedStage = 'fetch'
     this.controller.abort(new OfficialUnavailableError(this.reason))
     return true
@@ -91,6 +95,8 @@ export class HermesWatch {
     if (!boundary.finished) { this.toolDownloadMessage = true; this.lastPartialActivity = Math.max(this.lastPartialActivity, at) }
   }
   async snapshot(cache?: TreeObservation) {
+    const log = await safeObservation(join(this.home, 'logs/update.log'), 65536, true)
+    if (log) this.logBaseline = { ino: log.ino, size: log.size }
     await this.packs.snapshot(this.checkout)
     this.cacheStamp = treeStamp(cache ?? await observeHermesCache(this.home))
     this.partialStamp = treeStamp(await observeTree(join(this.home, 'cache/partials'), n => /\.(?:part|ranges)$/.test(n), false))
@@ -108,13 +114,15 @@ export class HermesWatch {
     // Cleanup needs a fresh terminal receipt, even if this poll fails midway.
     this.receiptSucceeded = false
     let active = false
-    const observe = async (path: string, tail = false) => {
-      const value = await safeObservation(path, 65536, tail)
+    const observe = async (path: string, tail = false, since?: { ino: number; size: number }) => {
+      const value = await safeObservation(path, 65536, tail, since)
       if (!value || value.mtimeMs < this.startedAt) return
       if (this.stamps.get(path) !== value.stamp) { active = true; this.stamps.set(path, value.stamp) }
       return value
     }
-    const log = await observe(join(this.home, 'logs/update.log'), true)
+    // A previous run's "Update complete!" must not mark this run completed (2026-11-17 Mac 实测：
+    // 旧日志尾部让本次被判为已完成，10 秒看门狗与手动切换都失效).
+    const log = await observe(join(this.home, 'logs/update.log'), true, this.logBaseline)
     if (log) {
       this.noteCompletion(log.text, log.mtimeMs, 'log')
       const lines = log.text.split(/[\r\n]+/)

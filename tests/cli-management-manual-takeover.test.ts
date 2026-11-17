@@ -169,7 +169,7 @@ it.each([false, true])('模拟：Hermes 仅 fetch 阶段可切换，最近记忆
   let options!: hermesUpdate.HermesUpdateOptions, unblock!: () => void, replay!: () => void
   const replaying = new Promise<void>(resolve => { replay = resolve })
   const gate = new Promise<void>(resolve => { unblock = resolve })
-  const watch = { currentStage: 'deps', controller: new AbortController(), requestTakeover: vi.fn(() => { watch.controller.abort(); return true }) }
+  const watch = { currentStage: 'deps', controller: new AbortController(), get canTakeover() { return watch.currentStage === 'fetch' && !watch.controller.signal.aborted }, requestTakeover: vi.fn(() => { watch.controller.abort(); return true }) }
   vi.spyOn(hermesUpdate, 'runHermesUpdate').mockImplementation(async o => {
     options = o; o.onWatch?.(watch as any)
     o.progress({ channel: 'official', readable: false, resumeCount: 0, stage: '模拟deps' })

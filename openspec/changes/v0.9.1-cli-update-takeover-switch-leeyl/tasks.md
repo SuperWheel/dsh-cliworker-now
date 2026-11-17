@@ -29,6 +29,11 @@
   - `service.ts:764`、`service.ts:849`、`service.ts:881`；文案见 `cli-update-page.tsx:334`。
 - [x] 3.3 模拟测试：协议校验、切换时序、重复点击、按钮显示条件、取消核对的四种结果
   - 新增 `tests/cli-management-manual-takeover.test.ts`，并补充 `tests/cli-update-page.test.tsx`、`tests/cli-update-data.test.ts`；这 3 个文件共 96 项通过。
+- [x] 3.4 修复 Hermes 手动切换无效：旧日志的完成行让本次被判为已完成
+  - 2026-11-17 Mac Desktop 实测：Hermes 0.23.1→0.23.2 拉取阶段点「切换插件下载」，按钮消失，官方更新继续，没有写入切换记忆。`~/.hermes/logs/update.log` 尾部有上一次的「✓ Update complete!」。
+  - `artifacts/observations.ts` 的 `safeObservation` 支持只读追加部分；`hermes-watch.ts` 在开始时记下日志基线，并新增 `canTakeover`；`service.ts` 按 `canTakeover` 显示按钮；`cli-update-page.tsx` 在 `not-official`、`cleanup-unconfirmed` 时提示原因。
+  - 新增测试：残留完成行不影响 10 秒停滞与手动切换，本次的完成行仍生效（`cli-management-hermes-takeover.test.ts`）；拒绝时显示原因的两项（`cli-update-page.test.tsx`）。
+  - 同时修正页面里仍写「30 秒」的三处文案：官方 10 秒，插件下载 5 秒。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
