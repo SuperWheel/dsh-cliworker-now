@@ -105,6 +105,16 @@
 - [x] 7.3 有改动的 CLI 在 Mac 与 Windows 上真实验收：设置页、账号窗口、模型目录、派遣、续聊、退出
   - 2026-11-17 用户决定本版不做真实测试；只有静态核对与模拟测试，真实行为未验证。已有实机记录只覆盖：Mac 与 Windows 设置页连接状态（11-17 全部绿点，见 v0.9.1-cli-update-takeover-switch-leeyl 3.9、3.10）、Windows agy 仅令牌文件登录（用户实测通过）、Mac agy 退出登录失败（用户实测，修复见 v0.9.1-agy-token-file-fallback-leeyl）
 - [ ] 7.4 发布后在 GitHub issue #13 回复版本号，请报告者确认
+- [x] 7.5 v0.9.1 发布验收（版本号由用户 2026-11-17 确认为 0.9.1，`144f4fd chore(release): 0.9.1`；之后加入 Linux agy 修复 8ef27ef）
+  - macOS：`corepack pnpm typecheck` 通过；`corepack pnpm spec validate --all --strict` 40/40；`git diff --check origin/main...HEAD` 通过。全量 vitest（8ef27ef）8835 通过、1 失败、15 跳过，唯一失败为已知偶发的 `tests/cli-management-download.test.ts`「持续有真实字节仍受两小时总预算约束」，该文件单独重跑 18/18 通过；日志 `.test-data/release-v0.9.1/mac-full-vitest-8ef27ef.log`。
+  - Windows 远程隔离：运行 4e551a74（8ef27ef，config-d.json）preview、冻结依赖、解包、契约类型、类型检查、70 个 Windows CI 文件 1033 项（1025 通过、0 失败、8 跳过）与安装包 Host 加载全部通过，无模型调用。
+  - 正式构建与隔离构建：`lib` 1101/1101、`runtime-host` 218/218 文件一致，仅 `lib/client.js(.map)` 的 `//#region` 路径注释不同；Host `lib/index.js` SHA-256 `b1bb9014…`，Client `ed8d1882…`。发布验证记录 `artifacts/dsh-cliworker-now-0.9.1-verification.json`，`scripts/package-release.mjs` 通过。
+  - 安装包：`artifacts/release-v0.9.1/dsh-cliworker-now-0.9.1.tgz`，21905935 字节，SHA-256 `23b29c3c91401710ce0a71b2ad29ec6251ccd48f3bd3b184a23ffb5a132644f0`，1325 个文件；`lib` 与 `runtime-host` 1319 个文件与正式构建逐字节一致。内容扫描：无 `.env`、`.test-data`、日志、私钥、令牌特征、私人路径、IP 或账号标识；`private:false`，无 scripts/devDependencies，仓库地址指向 `SuperWheel/dsh-cliworker-now`。
+  - 官方 dsh 0.2.2-rc.3 全新隔离 `DSH_HOME`：`plugin --profile web add --save-exact <tgz>` 退出 0，版本 0.9.1，1325 个文件逐字节一致；临时目录已删除。
+  - Mac Desktop（链接正式构建，Codex CU 只读）：144f4fd 构建上插件 v0.9.1 已启用、17 个 CLI 设置页与「更新 CLI」页（可更新 4、已是最新 12、未安装 1）无错误提示；8ef27ef 重启后插件 v0.9.1，Antigravity「已登录」且模型可见，Codex、Claude Code 状态正常。截图 `/private/tmp/cliworker-readonly-ui-20261117/`、`/private/tmp/cliworker-readonly-ui-20261117b/`。Grok「当前 CLI 未支持账号模型」因用户账号到期，Kimi 续期、Qoder 模型停用为账号原因。
+  - Windows Desktop：预检空闲后退出，经原生安装器（`dsh.cmd plugin --profile desktop add --save-exact`）装入 0.9.1 包，1325/1325 文件与清单一致，lib 1101/1101，Host SHA-256 与 Mac 正式构建相同；重新启动后 Codex CU 只读核对：插件 v0.9.1 已启用，17 个 CLI 设置页均显示登录状态，「更新 CLI」页检查完成（可更新 9、已是最新 8），无错误提示。
+  - 发布正文草稿 `artifacts/release-v0.9.1/release-body.md`；GitHub CI 链接与 npm／Release 回读待推送发布后补。
+  - 未执行：推送、GitHub Release、npm 发布（待用户批准）；Linux 实机；各 CLI 真实派遣（见 7.3）。
 
 ## 8. 遗留项补齐 〔后端｜8h｜前置 3,5〕
 - [x] 8.1 ZCode：读取系统凭据库中的 `enc:v2:os:` 密钥（macOS 钥匙串、Windows 凭据管理器）
