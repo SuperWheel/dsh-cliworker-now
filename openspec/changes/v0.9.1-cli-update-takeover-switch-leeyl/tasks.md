@@ -35,6 +35,11 @@
   - 新增测试：残留完成行不影响 10 秒停滞与手动切换，本次的完成行仍生效（`cli-management-hermes-takeover.test.ts`）；拒绝时显示原因的两项（`cli-update-page.test.tsx`）。
   - 同时修正页面里仍写「30 秒」的三处文案：官方 10 秒，插件下载 5 秒。
 
+- [x] 3.5 修复 Hermes 预取把更新前提交当作目标提交
+  - 2026-11-17 Mac Desktop 重测：10 秒规则已触发并开始预取，随后报「INTEGRITY_MISMATCH：Hermes 目标标签提交与计划、回执或发布记录不一致」。两份回执的 `plan.expected_sha` 都是 `3b42157…`、`plan.expected_version` 为 0.23.1，等于 `pre_update.sha`；origin 标签 v0.23.2 的提交是 `ae2a81c…`，GitHub 提交接口返回相同的值。
+  - `hermes-watch.ts`：`plan.expected_sha` 只在计划版本等于目标版本时采用，并排除等于 `pre_update.sha` 的提交；否则由 `releaseSha` 查发布标签。
+  - 新增 3 项测试（`cli-management-hermes-takeover.test.ts`），Hermes 相关 2 个文件共 107 项通过。失败后 Hermes 仍为 0.23.1，工作区干净，没有残留进程。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

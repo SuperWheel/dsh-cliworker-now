@@ -175,8 +175,14 @@ export class HermesWatch {
       this.setStage(stage, latest.at, 'receipt', now)
       this.stopClass = typeof r.stop_class === 'string' && /^[a-z][a-z0-9_]{0,100}$/.test(r.stop_class) ? r.stop_class : undefined
       this.exitCode = Number.isInteger(r.exit_code) ? r.exit_code : undefined
-      const expected = r.expected_sha ?? r.target_sha ?? r.completion_request?.expected_sha ?? r.plan?.expected_sha
-      if (typeof expected === 'string' && /^[a-f0-9]{40}$/i.test(expected)) this.expectedSha = expected.toLowerCase()
+      // plan.expected_sha/expected_version describe the checkout BEFORE the update (Hermes 0.23.1 receipts:
+      // equal to pre_update.sha). Use it only when its version is the target; never accept the pre-update commit.
+      const plain = (v: unknown) => typeof v === 'string' ? v.replace(/^v/, '') : undefined
+      const planTarget = this.target?.version && plain(r.plan?.expected_version) === plain(this.target.version) ? r.plan?.expected_sha : undefined
+      const before = typeof r.pre_update?.sha === 'string' ? r.pre_update.sha.toLowerCase() : undefined
+      const expected = [r.expected_sha, r.target_sha, r.completion_request?.expected_sha, planTarget]
+        .find((v): v is string => typeof v === 'string' && /^[a-f0-9]{40}$/i.test(v) && v.toLowerCase() !== before)
+      if (expected) this.expectedSha = expected.toLowerCase()
     }
     const status = await observe(this.status)
     if (status) {

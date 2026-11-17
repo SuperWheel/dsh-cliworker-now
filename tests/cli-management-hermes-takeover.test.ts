@@ -428,6 +428,30 @@ it('模拟：没有计划 SHA 时使用本次回执 expected_sha，不查询发�
   await stall(watches[0]!); await result
   expect(o.releaseSha).not.toHaveBeenCalled(); expect(calls.at(-1).argv).toEqual(o.argv)
 })
+it.each([
+  ['计划提交是更新前的提交', { plan: { expected_sha: sha(7), expected_version: '0.21.7' }, pre_update: { sha: sha(7), version: '0.21.7' } }],
+  ['顶层提交等于更新前提交', { expected_sha: sha(7), pre_update: { sha: sha(7) } }],
+])('模拟：回执%s时不当作目标提交，改查发布记录', async (_name, fields) => {
+  // 2026-11-17 Mac 实测：Hermes 0.23.1 回执 plan.expected_sha 等于 pre_update.sha，曾被当作目标提交，导致 INTEGRITY_MISMATCH。
+  const { root, checkout } = await fixture(), watches = captureWatches(), calls: any[] = []
+  const spawn = vi.fn((s: any) => { calls.push(s); return calls.length === 1 ? held() : finished(s.argv.includes('ls-remote') ? refs : '') })
+  const o = options(root, checkout, spawn as any); o.targetSha = undefined; o.releaseSha = vi.fn(async () => sha(3))
+  const result = runHermesUpdate(o)
+  await until(() => calls.length === 1)
+  await put(join(root, 'logs/update_receipts/update_expected.json'), { pid: process.pid, stage: 'fetch', ...fields })
+  await stall(watches[0]!); await result
+  expect(watches[0]!.expectedSha).toBeUndefined(); expect(o.releaseSha).toHaveBeenCalled(); expect(calls.at(-1).argv).toEqual(o.argv)
+})
+it('模拟：计划版本就是目标版本时，plan.expected_sha 可作为目标提交', async () => {
+  const { root, checkout } = await fixture(), watches = captureWatches(), calls: any[] = []
+  const spawn = vi.fn((s: any) => { calls.push(s); return calls.length === 1 ? held() : finished(s.argv.includes('ls-remote') ? refs : '') })
+  const o = options(root, checkout, spawn as any); o.targetSha = undefined; o.releaseSha = vi.fn(async () => sha(8))
+  const result = runHermesUpdate(o)
+  await until(() => calls.length === 1)
+  await put(join(root, 'logs/update_receipts/update_expected.json'), { pid: process.pid, stage: 'fetch', plan: { expected_sha: sha(3), expected_version: '0.23.1' }, pre_update: { sha: sha(7) } })
+  await stall(watches[0]!); await result
+  expect(watches[0]!.expectedSha).toBe(sha(3)); expect(o.releaseSha).not.toHaveBeenCalled()
+})
 it('模拟：Downloading uv 是工具下载阶段，采用 10 秒无增长规则', async () => {
   const { watch, status, now } = await observer('deps')
   await put(status, { message: 'Downloading uv runtime tool' }, now + 1); await watch.poll(now + 1)

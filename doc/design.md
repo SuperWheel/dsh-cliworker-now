@@ -1788,6 +1788,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 - **Qoder 续传**：Qoder 的 OSS 只在 HEAD 与 200 响应里附带 Content-MD5，206 不带。改为强 ETag 相同且 Content-Range 总长一致即可续传，完成后仍按初始摘要校验整个文件；ETag 缺失、为弱 ETag 或改变，以及总长不同，仍然拒绝。
 - **手动切换**：`OfficialWatch.requestTakeover()` / `HermesWatch.requestTakeover()` 与自动判定走同一路径；Gateway 动作为 `requestCliTakeover`。进程树退出并清理后才报告已切换，接管成功后写 7 天失败记忆。按钮是否显示取决于现有接管描述与安装布局。
 - **Hermes 只读本次日志**：Mac Desktop 实测中，Hermes 点「切换插件下载」后按钮消失，官方更新继续。原因是 `update.log` 跨次追加，上一次留下的「Update complete!」让本次被判为已完成，10 秒停滞和手动切换因此都不生效。改为开始时记下日志的 inode 与长度，之后只读新追加的部分；文件被替换或截短时从头读。按钮只在 `HermesWatch.canTakeover` 为真时显示；Host 拒绝切换时，该行说明原因，不再静默消失。
+- **Hermes 目标提交来源**：同一轮实测中，10 秒规则已触发，但预取报 `INTEGRITY_MISMATCH`。Hermes 0.23.1 回执里 `plan.expected_sha` / `expected_version` 是更新前的提交（等于 `pre_update.sha`），之前被当作目标提交。改为只有计划版本等于目标版本时才采用 `plan.expected_sha`，任何等于 `pre_update.sha` 的提交都不采用；没有可用的目标提交时，按 GitHub 发布标签查（v0.23.2 实查为 `ae2a81c…`，与 origin 标签一致）。
 - **取消后核对**：持维护锁只读核对原安装，60 秒上限，不写路径记录；结果分为原版本未受影响、更新已完成、安装已损坏（附修复入口）和核对失败。
 
 详见 `openspec/changes/v0.9.1-cli-update-takeover-switch-leeyl/`。只做了模拟测试；真实 Grok、Qoder 更新与 Windows 待验收。
