@@ -12,7 +12,7 @@ import { checked, control, finished, serviceFixture, syntheticIdentity } from '.
 const fixtures: ReturnType<typeof serviceFixture>[] = []
 const fixture = () => { const f = serviceFixture(['mimo', 'opencode', 'traecn']); fixtures.push(f); return f }
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.close() })
-const identity = (cli: 'mimo' | 'opencode' | 'traecn') => ({ ...syntheticIdentity(cli), source: 'self-update' as const, executable: join(homedir(), cli === 'traecn' ? '.local/bin/traecli' : cli === 'mimo' ? '.mimocode/bin/mimo' : LOCAL_INSTALLERS[cli].entry), channel: cli === 'traecn' ? 'public' : undefined })
+const identity = (cli: 'mimo' | 'opencode' | 'traecn') => ({ ...syntheticIdentity(cli), source: 'self-update' as const, executable: join(homedir(), cli === 'traecn' ? '.local/bin/traecli' : cli === 'mimo' ? '.mimocode/bin/mimo' : LOCAL_INSTALLERS[cli].entry), channel: cli === 'traecn' ? 'public' : undefined, fingerprint: { size: 10, mtimeMs: 100, realpath: join(homedir(), cli === 'traecn' ? '.local/bin/traecli' : LOCAL_INSTALLERS[cli].entry) } })
 const md5Headers = { etag: '"fixture-object"', 'content-md5': createHash('md5').update('模拟').digest('hex'), 'content-length': '6' }
 const child = () => ({ stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() })
 const options = (f: ReturnType<typeof fixture>, cli: 'mimo' | 'opencode' | 'traecn') => ({ cli, version: '1.2.3', identity: identity(cli), root: f.root, backend: f.backend, config: f.config, releases: f.releases, signal: control(), output: vi.fn(), progress: vi.fn(), fetcher: f.artifactFetch, platform: 'darwin' as const, arch: 'arm64' })
@@ -52,7 +52,7 @@ it('模拟：GitHub 签名工件只允许已核实的 HTTPS release-assets 跳�
 it('模拟：npm/brew、自定义路径和 Windows 保持原更新器，不套用默认本地安装位置', () => {
   for (const cli of ['mimo', 'opencode'] as const) {
     expect(canPrepareLocalUpdate(cli, { ...identity(cli), source: 'npm' })).toBe(false)
-    expect(canPrepareLocalUpdate(cli, { ...identity(cli), executable: '/自定义/bin/tool' })).toBe(false)
+    expect(canPrepareLocalUpdate(cli, { ...identity(cli), executable: '/自定义/bin/tool', fingerprint: { ...identity(cli).fingerprint, realpath: '/自定义/bin/tool' } })).toBe(false)
     expect(canPrepareLocalUpdate(cli, identity(cli), 'win32')).toBe(false)
   }
   expect(canPrepareLocalUpdate('traecn', { ...identity('traecn'), channel: 'internal' })).toBe(false)

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { join, isAbsolute, win32 } from 'node:path'
+import { join, dirname, isAbsolute, win32 } from 'node:path'
+import { homedir } from 'node:os'
 import type { ActiveCliId } from '../../shared/types.ts'
 import { type CliOperationErrorCode } from '../../shared/cli-management.ts'
 import type { ProcessBackend } from '../process.ts'
@@ -34,11 +35,13 @@ export function operationToken(cli: ActiveCliId, identity: InstallationIdentity,
 }
 export function updateProblem(cli: ActiveCliId, identity: InstallationIdentity, platform = process.platform, arch = process.arch): string | undefined {
   if (['winget', 'scoop', 'nix', 'bun', 'pnpm'].includes(identity.source)) return `此安装由 ${identity.source} 管理，请使用原包管理器更新。`
+  if (identity.repairNeeded) return identity.notice ?? '托管安装需要修复，请使用重新安装入口。'
   if (identity.source === 'unknown') return '没有识别出安装方式，请核实官方安装入口后重新检查。'
   if (identity.source === 'plugin-runtime') return ZCODE_PLUGIN_RUNTIME_NOTE
   if (!['darwin', 'linux', 'win32'].includes(platform)) return '此操作系统尚无已核实的官方更新方法。'
   if ((cli === 'qoder' || cli === 'qodercn') && platform === 'win32' && arch === 'arm64') return 'Qoder Windows ARM64 尚未核实支持，不能自动更新。'
   const method = automaticMethod(cli, identity), script = NATIVE_UPDATES[cli]?.script
+  if ((cli === 'mimo' || cli === 'opencode') && identity.source === 'self-update' && platform !== 'win32' && !samePath(identity.fingerprint.realpath, join(homedir(), cli === 'mimo' ? '.mimocode/bin/mimo' : '.opencode/bin/opencode'))) return `检测到已有安装位于 ${identity.executable}（官方安装器管理），脚本不能指定此目录，插件不会另装一份；请用原渠道修复，或先卸载后再安装`
   if (method === 'official-script' && script && !script.platforms.includes(platform)) return '此平台的官方安装器锁版和无交互参数尚未核实。'
   if (method === 'self-update' && cli === 'traecn' && identity.channel !== 'public') return `TRAE 安装通道 ${identity.channel ?? '未知'} 尚无已核实的对应官方发布源，不能切换为 public。`
   if (!method) return '此安装渠道没有已核实的自动更新方法。'
@@ -58,6 +61,7 @@ export function planCliOperation(cli: ActiveCliId, intent: 'update', identity: I
 export async function operationArgv(plan: CliOperationPlan, backend: ProcessBackend, artifact?: string, platform = process.platform, runtime?: [string, string]): Promise<string[]> {
   const s = CLI_SOURCES[plan.cli], path = platform === 'win32' ? win32 : { join }
   if (plan.method === 'npm') {
+    assertNpmInstallation(plan.cli, plan.identity, platform)
     if (!artifact || !(isAbsolute(artifact) || win32.isAbsolute(artifact)) || !artifact.endsWith('.tgz')) throw new CliOperationError('PREREQUISITE_MISSING', '缺少已校验的本地主包文件')
     let npm: [string, string]
     try { npm = runtime ?? await resolveNpmRuntime(backend, platform) }
@@ -83,12 +87,12 @@ export function verifyUpdatedVersion(plan: CliOperationPlan, version: string | u
   if (!validUpdateVersion(plan.cli, version) || compareVersions(version, plan.beforeVersion) <= 0 || !compatible(plan.cli, version) || plan.pinsVersion && version !== plan.targetVersion)
     throw new CliOperationError('VERSION_MISMATCH', '命令已完成，但版本未前进、未适配或与锁定目标不一致，请重新检查')
 }
-const foldPath = (value: string) => /^[A-Za-z]:[\\/]/.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value
-const samePath = (a: string | undefined, b: string | undefined) => a === b || a !== undefined && b !== undefined && foldPath(a) === foldPath(b)
+export const foldPath = (value: string) => /^(?:[A-Za-z]:[\\/]|[\\/]{2})/.test(value) ? value.replace(/\\/g, '/').toLowerCase() : value
+export const samePath = (a: string | undefined, b: string | undefined) => a === b || a !== undefined && b !== undefined && foldPath(a) === foldPath(b)
 export function sameInstallation(before: InstallationIdentity, after: InstallationIdentity, cli?: ActiveCliId): boolean {
   // A managed ZCode runtime stays in place while its associated app is replaced.
   // The app root must stay the same, but its EXE size/mtime and version may change.
-  if (cli === 'zcode' && (before.source === 'desktop-app' || after.source === 'desktop-app') && !samePath(before.appPath, after.appPath)) return false
+  if ((before.source === 'desktop-app' || after.source === 'desktop-app') && !samePath(before.appPath, after.appPath)) return false
   if (cli === 'codebuddy' && (before.source === 'self-update' || after.source === 'self-update')) {
     if (before.source !== after.source || !before.updateRoot || !samePath(before.updateRoot, after.updateRoot) || before.channel !== after.channel) return false
     // Stable links, hard links/copies, and version entities all belong to this root.
@@ -135,4 +139,24 @@ export function sameInstallation(before: InstallationIdentity, after: Installati
   }
   return samePath(before.executable, after.executable) && before.source === after.source && samePath(before.prefix, after.prefix) &&
     samePath(before.packageRoot, after.packageRoot) && samePath(before.fingerprint.realpath, after.fingerprint.realpath)
+}
+
+/** Verify the physical package tree against the prefix before any npm install/cache command. */
+export function assertNpmInstallation(cli: ActiveCliId, identity: InstallationIdentity, platform = process.platform): void {
+  const windows = platform === 'win32', path = windows ? win32 : { join }
+  const prefix = identity.prefix, pkg = CLI_SOURCES[cli].npm
+  const expected = prefix && pkg ? path.join(prefix, windows ? 'node_modules' : 'lib/node_modules', pkg) : undefined
+  if (!expected || !identity.packageRoot || !samePath(expected, identity.packageRoot))
+    throw new CliOperationError('PREREQUISITE_MISSING', `检测到已有安装位于 ${identity.packageRoot ?? identity.executable}（npm 管理），包根与原前缀 ${prefix ?? '未知'} 不符，插件不会另装一份；请用 npm 修复，或先卸载后再安装`)
+}
+/** Official install.sh reads these variables (2026-11-17 source inspection). */
+export function boundOfficialEnv(cli: ActiveCliId, identity: InstallationIdentity): Record<string, string> {
+  if (cli === 'pi' && identity.source === 'self-update') {
+    if (!identity.updateRoot) throw new CliOperationError('PREREQUISITE_MISSING', 'Pi 原托管根无法核实，无法确认在原安装上更新')
+    return { PI_MANAGED_INSTALL_ROOT: join(identity.updateRoot, 'install'), PI_CODING_AGENT_DIR: identity.updateRoot }
+  }
+  if (cli !== 'codex') return {}
+  const root = identity.updateRoot
+  if (!root?.endsWith('/packages/standalone') || identity.executable.startsWith(root + '/')) throw new CliOperationError('PREREQUISITE_MISSING', 'Codex 原安装根无法核实，插件不会另装一份；请用原安装渠道修复')
+  return { CODEX_HOME: root.slice(0, -'/packages/standalone'.length), CODEX_INSTALL_DIR: dirname(identity.executable) }
 }

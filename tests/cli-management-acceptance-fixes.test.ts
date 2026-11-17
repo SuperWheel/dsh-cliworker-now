@@ -40,6 +40,7 @@ function pi(f: ReturnType<typeof fixture>, version: string) {
   const root = join(f.root, '.pi/agent'), pkg = join(root, 'install/releases', version, 'node_modules/@earendil-works/pi-coding-agent')
   f.file(join(pkg, 'package.json'), JSON.stringify({ name: CLI_SOURCES.pi.npm, version, bin: { pi: 'dist/cli.js' } }))
   for (const path of ['cli.js', 'index.js', 'core/model-runtime.js', 'core/auth-storage.js']) f.file(join(pkg, 'dist', path))
+  f.file(join(root, 'install/managed-install.json'), JSON.stringify({ kind: 'pi-managed-install', schemaVersion: 1, layout: 'releases-v1' }))
   const pointer = f.file(join(root, 'install/current-version'), version)
   const launcher = f.file(join(root, 'bin/pi'), '#!/bin/sh\n# 模拟 PI_MANAGED_INSTALL_ROOT= install/current-version\n')
   mkdirSync(dirname(f.entry), { recursive: true })
@@ -95,7 +96,9 @@ it('模拟：Pi auto 迁移、后台不做 PATH 迁移、current-version 切换�
   expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
   const before = await identifyInstallation('pi', f.backend, f.config, control())
   expect(before).toMatchObject({ executable: f.entry, manifestVersion: '1.0.4' })
-  expect(f.store.read('pi')).toEqual({ mode: 'auto', path: f.entry })
+  expect(f.store.read('pi')).toEqual({ mode: 'auto', path: old.target })
+  // 模拟：通过核验后提交；后台测试继续使用已记录的稳定入口。
+  f.store.remember('pi', f.entry, f.store.revision('pi'))
   const cache = new CliManagementCache(join(f.root, 'cache')); cache.rememberVersion('pi', before!.fingerprint, '1.0.4')
   const next = pi(f, '1.1.0')
   const after = await identifyInstallation('pi', f.backend, f.config, control(), true)

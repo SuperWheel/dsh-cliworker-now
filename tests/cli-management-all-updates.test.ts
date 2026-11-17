@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Readable } from 'node:stream'
 import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ActiveCliId } from '../src/shared/types.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
@@ -24,6 +25,9 @@ const fixtures: ReturnType<typeof serviceFixture>[] = []
 const json = (value: unknown) => new Response(JSON.stringify(value))
 const exited = () => ({ stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), terminate: vi.fn(), waitForExit: vi.fn(async () => true) })
 const identity = (cli: ActiveCliId): InstallationIdentity => ({ ...syntheticIdentity(cli), source: isDesktopCli(cli) ? 'desktop-app' : cli === 'codex' ? 'official-installer' : 'self-update', channel: cli === 'traecn' ? 'public' : cli === 'hermes' ? 'canary' : undefined,
+  ...(['mimo', 'opencode'].includes(cli) ? { executable: join(homedir(), cli === 'mimo' ? '.mimocode/bin/mimo' : '.opencode/bin/opencode'), fingerprint: { realpath: join(homedir(), cli === 'mimo' ? '.mimocode/bin/mimo' : '.opencode/bin/opencode'), size: 10, mtimeMs: 100 } } : {}),
+  ...(cli === 'pi' ? { updateRoot: join(homedir(), '.pi/agent') } : {}),
+  ...(cli === 'codex' ? { updateRoot: join(homedir(), '.codex/packages/standalone') } : {}),
   ...(cli === 'codebuddy' ? { executable: '/模拟/.local/bin/codebuddy', updateRoot: '/模拟/.local/share/codebuddy', fingerprint: { realpath: '/模拟/.local/share/codebuddy/versions/1.0.0/codebuddy', size: 10, mtimeMs: 1 } } : {}),
   ...(isDesktopCli(cli) ? { appPath: `/模拟/${cli}.app`, fingerprint: { realpath: `/模拟/${cli}.app/Contents/cli`, size: 10, mtimeMs: 1, appVersion: '1.0.0' } } : {}) })
 function sample(cli: ActiveCliId): unknown {
@@ -137,7 +141,7 @@ it('模拟：Codex 官方脚本私有下载、锁版无交互执行、成功清�
   let script = ''
   vi.mocked(f.backend.spawn).mockImplementation(command => {
     expect(command.argv[0]).toBe('/bin/sh'); script = command.argv[1]!
-    expect(command.argv.slice(2)).toEqual(['--release', '1.2.3']); expect(command.env).toEqual({ CODEX_NON_INTERACTIVE: '1' })
+    expect(command.argv.slice(2)).toEqual(['--release', '1.2.3']); expect(command.env).toMatchObject({ CODEX_NON_INTERACTIVE: '1', CODEX_HOME: homedir() + '/.codex', CODEX_INSTALL_DIR: '/模拟/bin' })
     expect(statSync(script).mode & 0o777).toBe(0o600); expect(statSync(join(script, '..')).mode & 0o777).toBe(0o700)
     f.identities.set('codex', { ...identity('codex'), manifestVersion: '1.2.3' }); return exited()
   })

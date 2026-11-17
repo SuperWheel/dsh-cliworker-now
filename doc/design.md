@@ -1747,3 +1747,12 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 `CustomProviderForm.presets` 新增内置模板预填（可选字段）。
 
 决定、放弃的方案与风险见 [变更设计](../openspec/changes/v0.9.0-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。
+
+
+### 2026-11-17 更新和修复保留原安装
+
+安装准备先区分不存在、存在但归属未核实、归属已核实。独立于首次安装方式核对全部 17 个 CLI 的已知原生/托管目录，入口消失不等于安装不存在。只有不存在才能选择默认首次安装渠道；npm 包根必须与原 prefix 的平台布局完全一致（Windows 不剥除 lib），内层 JS 与 cmd 使用同一包根证据。原生/brew/桌面修复分别调用原更新器、同前缀 brew reinstall、同 appPath 桌面更新器；不能核实原渠道时明确拒绝。Pi 初次识别读取 managed-install.json/current-version，损坏入口保留 self-update/root；有效标记的损坏安装使用绑定 PI_MANAGED_INSTALL_ROOT 和 PI_CODING_AGENT_DIR、禁用 legacy 模式的官方脚本。PATH 存在另一 Pi 且原入口不可用时拒绝此修复，避免官方脚本改变其他安装。约束针对安装目标：npm tarball 可用于原托管根的接管，npm-global 则在原 prefix 安装。修复脚本固定已审计 SHA-256，字节变化拒绝执行；更新及修复前后核对原 current-version、npm 前缀、PATH 与环境指向的其他根，新增或改变其他安装立即失败，路径记录不变。Pi 修复允许同版本恢复，仍核对目标版本和完整性；更新要求版本前进。失败后的补查若无法确认进程范围退出，继续保留维护锁和临时文件。Pi 自定义 selfUpdateCommand/PI_SELF_UPDATE_COMMAND 会绕过托管分支，其目标不可核实则在执行前拒绝。
+
+管理页调用只读发现，禁止发现期间 reset/remember；装后核实同一 owner/root/prefix/appPath、实际版本和完整性，再提交路径，失败保留 revision。Codex 官方脚本绑定 CODEX_HOME/CODEX_INSTALL_DIR；MiMo/OpenCode 脚本固定默认目录，无已确认目录参数，非默认根拒绝。Windows 安装向导保持可见，进程范围退出后读取卸载注册表并核实产品身份，先快照其他已注册副本，新增或改动其他目录时报实际新旧位置；未变化的既有副本不影响原位更新，不修改其记录。原有更新双通道、七天失败记忆、Grok/Pi/Hermes 接管保持。
+
+脚本证据为 2026-11-17 只读下载的 https://releases.openai.com/codex/install.sh、https://mimo.xiaomi.com/install、https://opencode.ai/install、https://pi.dev/install.sh 和 https://pi.dev/install.ps1；没有执行这些脚本。Windows 安装器目录开关未确认，依据 doc/prd/2026-11-13-cli-update-PRD.md 的证据边界使用落点复核，不猜测 /D= 或 /DIR=。验证仅模拟，不代表真实更新或安装成功。

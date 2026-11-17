@@ -1,7 +1,7 @@
 import { access, lstat, readFile, realpath, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, dirname, join, isAbsolute } from 'node:path'
+import { basename, dirname, join, isAbsolute, win32 } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { ActiveCliId } from '../../shared/types.ts'
 import type { CliInstallSource } from '../../shared/cli-management.ts'
@@ -31,6 +31,7 @@ export interface InstallationIdentity {
   channel?: string
   releaseChannel?: string
   notice?: string
+  repairNeeded?: boolean
 }
 /** Same origin as the deployed runtime's INSTALL-MANIFEST (design 2026-10-11): official source tree only. */
 export const ZCODE_RUNTIME_MANIFEST_LIMIT = 4 * 1024 * 1024
@@ -83,6 +84,10 @@ export function isQoderDispatcher(cli: ActiveCliId, path: string, home = homedir
 /** Path components, not substrings or command names, decide ownership. */
 export function classifyInstallation(cli: ActiveCliId, path: string, packageName?: string, home = homedir(), selectedPath?: string): { source: CliInstallSource; prefix?: string; packageRoot?: string; updateRoot?: string } {
   const p = path.replace(/\\/g, '/'), lower = p.toLowerCase(), spec = CLI_SOURCES[cli]
+  const windows = /^[A-Za-z]:\//.test(p) || p.startsWith('//'), fold = (v: string) => windows ? v.toLowerCase() : v
+  const h = home.replace(/\\/g, '/')
+  // Embedded node_modules retain the managed installation owner and root.
+  if (cli === 'pi' && fold(p).startsWith(fold(`${h}/.pi/agent/`))) return { source: 'self-update', updateRoot: `${h}/.pi/agent` }
   // Other managers can embed node_modules. Check those before npm.
   if (lower.includes('/nix/store/')) return { source: 'nix' }
   if (lower.includes('/scoop/apps/')) return { source: 'scoop' }
@@ -93,13 +98,12 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
   if (brew && brew[2] === spec.brew?.name) return { source: 'brew', prefix: p.slice(0, brew.index) }
   if (/\.app\/Contents\//.test(p) || /\/resources\/app\.asar(?:\.unpacked)?\//i.test(p)) return { source: 'desktop-app' }
   if (spec.npm && packageName === spec.npm) {
-    const marker = `/node_modules/${spec.npm}/`, index = p.lastIndexOf(marker)
+    const marker = `/node_modules/${spec.npm}/`, index = fold(p).lastIndexOf(fold(marker))
     if (index >= 0) {
-      const root = p.slice(0, index), windows = /^[A-Za-z]:\//.test(p)
-      if (root.endsWith('/lib') || windows && (root.toLowerCase() === selectedPath?.replace(/\\/g, '/').replace(/\/[^/]+$/, '').toLowerCase() || /\/AppData\/Roaming\/npm$/i.test(root))) return { source: 'npm', prefix: root.endsWith('/lib') ? root.slice(0, -4) : root, packageRoot: p.slice(0, index + marker.length - 1) }
+      const root = p.slice(0, index)
+      if (windows || root.endsWith('/lib')) return { source: 'npm', prefix: !windows && root.endsWith('/lib') ? root.slice(0, -4) : root, packageRoot: p.slice(0, index + marker.length - 1) }
     }
   }
-  const h = home.replace(/\\/g, '/')
   if (cli === 'codebuddy') {
     const native = codebuddyNativeLayout(path, home)
     return native ? { source: 'self-update', updateRoot: native.root } : { source: 'unknown' }
@@ -111,7 +115,7 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
     antigravity: ['.local/bin/agy', 'AppData/Local/agy/bin/agy.exe'], omp: ['.local/bin/omp', 'AppData/Local/omp/omp.exe'],
     mimo: ['.local/bin/mimo'], claude: ['.local/bin/claude.exe'],
   }
-  const windows = /^[A-Za-z]:\//.test(p), same = (a: string, b: string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b
+  const same = (a: string, b: string) => windows ? a.toLowerCase() === b.toLowerCase() : a === b
   if (exact[cli]?.some(part => same(p, `${h}/${part}`) && (windows || !part.includes('AppData/') && !part.endsWith('.exe')))) return { source: 'self-update', updateRoot: p }
   const layouts: Partial<Record<ActiveCliId, string[]>> = {
     codex: ['.codex/packages/standalone/'],
@@ -122,7 +126,7 @@ export function classifyInstallation(cli: ActiveCliId, path: string, packageName
     hermes: ['.hermes/hermes-agent/', 'AppData/Local/hermes/'],
     opencode: ['.opencode/bin/'],
   }
-  const layout = layouts[cli]?.find(part => p.startsWith(`${h}/${part}`))
+  const layout = layouts[cli]?.find(part => fold(p).startsWith(fold(`${h}/${part}`)))
   if (layout) return { source: spec.update ? 'self-update' : 'official-installer', updateRoot: `${h}/${layout.slice(0, -1)}` }
   return { source: 'unknown' }
 }
@@ -134,10 +138,18 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
   const remembered = entry?.mode === 'manual' ? entry.path : configured || entry?.path
   let executable: string
   if (background && entry?.mode === 'auto' && !configured && isVersionedAutoEntry(cli, entry.path)) return undefined
-  if (!background && entry?.mode === 'auto' && !configured) executable = await resolveCliExecutable(cli, backend, config, signal, { management: true })
-  else if (remembered && isAbsolute(remembered)) executable = remembered
-  else if (background) return undefined
-  else executable = await resolveCliExecutable(cli, backend, config, signal, { management: true })
+  let managedPi = cli === 'pi' ? await identifyManagedPi(entry?.mode === 'auto' && !configured && isVersionedAutoEntry(cli, entry.path) ? undefined : remembered) : undefined
+  if (managedPi?.repairNeeded) return managedPi
+  try {
+    if (!background && entry?.mode === 'auto' && !configured) executable = await resolveCliExecutable(cli, backend, config, signal, { management: true, readOnly: true })
+    else if (remembered && isAbsolute(remembered)) executable = remembered
+    else if (background) return undefined
+    else executable = await resolveCliExecutable(cli, backend, config, signal, { management: true, readOnly: true })
+  } catch (error) {
+    signal.throwIfAborted()
+    if (managedPi) return { ...managedPi, repairNeeded: true, notice: 'Pi 托管安装需要修复' }
+    throw error
+  }
   signal.throwIfAborted()
   let target = await realpath(executable), desktopRoot: string | undefined
   if (cli === 'hermes') {
@@ -162,7 +174,8 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     // unpacked CLI product.json also records the desktop version as genieVersion.
     if (process.platform === 'win32' && !validAppVersion(appVersion) && validAppVersion(app.appVersion)) appVersion = app.appVersion
   } else if (cli === 'pi') {
-    const pi = inspectPiInstallation(executable, { allowUnsupported: true }); target = pi.executable; manifestVersion = pi.version
+    try { const pi = inspectPiInstallation(executable, { allowUnsupported: true }); target = pi.executable; manifestVersion = pi.version }
+    catch (error) { if (managedPi) return { ...managedPi, repairNeeded: true, notice: 'Pi 托管安装需要修复' }; throw error }
   } else target = await realpath(resolveNativeEntry(target))
   const managedApp = cli === 'zcode' && entry?.mode !== 'manual' && !configured
     ? await managedZCodeApplication(executable) : undefined
@@ -239,7 +252,51 @@ export async function identifyInstallation(cli: ActiveCliId, backend: ProcessBac
     if (receipt?.source?.tap?.toLowerCase() !== CLI_SOURCES[cli].brew!.tap!.toLowerCase()) identity.source = 'unknown'
   }
   signal.throwIfAborted()
+  if (cli === 'pi' && identity.source === 'self-update' && !managedPi) {
+    managedPi = await identifyManagedPi(target)
+    if (!managedPi) throw Object.assign(new Error(`检测到已有安装位于 ${identity.updateRoot}（Pi 官方托管安装管理），无法核实托管标记，插件不会另装一份；请用 Pi 官方安装器修复`), { code: 'CLI_IDENTITY_MISMATCH' })
+  }
+  if (managedPi && identity.source !== 'self-update') managedPi = undefined
+  if (managedPi) {
+    if (manifestVersion !== managedPi.manifestVersion) return { ...managedPi, repairNeeded: true, notice: 'Pi 托管安装需要修复' }
+    identity.source = 'self-update'; identity.updateRoot = managedPi.updateRoot
+    metadataToken = managedPi.fingerprint.metadataToken
+  }
   return { executable, ...identity, packageRoot, manifestVersion, appPath: desktopRoot, channel, releaseChannel,
     ...(managedApp ? { notice: ZCODE_RUNTIME_NOTICE } : {}),
     fingerprint: { realpath: target, size: info.size, mtimeMs: info.mtimeMs, ...(appVersion ? { appVersion } : {}), ...(manifestVersion ? { manifestVersion } : {}), ...(metadataToken ? { metadataToken } : {}) } }
+}
+
+/** Bounded metadata inspection before launcher discovery; never mistakes a damaged managed tree for absence. */
+export async function identifyManagedPi(selected?: string, home = homedir(), platform = process.platform): Promise<InstallationIdentity | undefined> {
+  const path = platform === 'win32' ? win32 : { join, dirname }, root = path.join(home, '.pi', 'agent')
+  const fold = (v: string) => { const p = v.replace(/\\/g, '/'); return platform === 'win32' ? p.toLowerCase() : p }
+  let missingAlias = false
+  if (selected && !fold(selected).startsWith(fold(root) + '/')) {
+    try { if (!fold(await realpath(selected)).startsWith(fold(root) + '/')) return }
+    catch (error) {
+      if (!['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error
+      missingAlias = true
+    }
+  }
+  const install = path.join(root, 'install'), markerFile = path.join(install, 'managed-install.json')
+  const marker = await readManifest(markerFile)
+  const pointer = path.join(install, 'current-version')
+  const evidence = await Promise.all([markerFile, pointer, path.join(install, 'releases')].map(file => lstat(file).catch(error => { if (error.code === 'ENOENT' || error.code === 'ENOTDIR') return undefined; throw error })))
+  if (!evidence.some(Boolean)) return
+  const executable = selected ?? path.join(root, 'bin', platform === 'win32' ? 'pi.cmd' : 'pi')
+  const refuse = () => { throw Object.assign(new Error(`检测到已有安装位于 ${root}（Pi 官方托管安装管理），插件不会另装一份；托管安装需要修复，请用 Pi 官方安装器修复，或先卸载后再安装`), { code: 'CLI_IDENTITY_MISMATCH' }) }
+  if (missingAlias) return refuse()
+  if (evidence.some(item => item?.isSymbolicLink()) || fold(await realpath(root)) !== fold(root)) return refuse()
+  if (marker?.kind !== 'pi-managed-install' || marker.layout !== 'releases-v1' || marker.schemaVersion !== 1) return refuse()
+  let version: string | undefined
+  if (evidence[1]?.isFile() && evidence[1].size <= 128) version = (await readFile(pointer, 'utf8')).trim()
+  if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) version = undefined
+  let real = executable, info: Awaited<ReturnType<typeof stat>> | undefined
+  try { real = await realpath(executable); info = await stat(real) } catch { /* metadata retains the owner */ }
+  if (info && !fold(real).startsWith(fold(root) + '/')) return refuse()
+  const repairNeeded = !version || !info?.isFile()
+  return { source: 'self-update', executable, updateRoot: root, manifestVersion: version, repairNeeded,
+    ...(repairNeeded ? { notice: 'Pi 托管安装需要修复' } : {}),
+    fingerprint: { realpath: real, size: Number(info?.size ?? 0), mtimeMs: Number(info?.mtimeMs ?? 0), metadataToken: fingerprintToken({ realpath: markerFile, size: evidence[0]!.size, mtimeMs: evidence[0]!.mtimeMs, manifestVersion: version }) } }
 }

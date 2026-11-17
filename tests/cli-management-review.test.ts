@@ -85,7 +85,7 @@ it('模拟 P1：主包下载超过准备阶段 30 秒仍可续传、核对并安
 })
 
 it('模拟 P2：POSIX 自定义全局前缀仅作为安装目标，npm 与 Node 从独立安装解析', async () => {
-  const f = fixture(), id = { ...syntheticIdentity(), prefix: join(f.root, '自定义 global prefix') }
+  const f = fixture(), id = { ...syntheticIdentity(), prefix: join(f.root, '自定义 global prefix'), packageRoot: join(f.root, '自定义 global prefix/lib/node_modules/@openai/codex') }
   const plan = planCliOperation('codex', 'update', id, '1.0.0', '1.2.3', 'https://registry.npmjs.org/')
   expect(await operationArgv(plan, f.backend, '/模拟/main.tgz')).toEqual([f.npm.node, f.npm.entry, 'install', '--global', '--prefix', id.prefix, '/模拟/main.tgz', '--registry', plan.registry, '--prefer-offline', '--include=optional'])
   expect(f.backend.resolveExecutable).toHaveBeenCalledWith('npm')
@@ -108,7 +108,7 @@ it('模拟 P2/P3：官方 npm.cmd 结构不交给 inspectBatch，Program Files N
   expect(() => nativeLaunchArgv([npm.launcher, 'install'], 'win32')).toThrow()
   vi.mocked(f.backend.resolveExecutable).mockImplementation(async name => name === 'npm.cmd' ? npm.launcher : npm.node)
   const prefix = 'C:\\Users\\模拟 User\\AppData\\Roaming\\npm'
-  const plan = planCliOperation('codex', 'update', { ...syntheticIdentity(), prefix }, '1.0.0', '1.2.3', 'https://registry.npmjs.org/')
+  const plan = planCliOperation('codex', 'update', { ...syntheticIdentity(), prefix, packageRoot: prefix + '/node_modules/@openai/codex' }, '1.0.0', '1.2.3', 'https://registry.npmjs.org/')
   const argv = await operationArgv(plan, f.backend, 'C:\\模拟 cache\\verified.tgz', 'win32')
   expect(argv).toEqual([npm.node, npm.entry, 'install', '--global', '--prefix', prefix, 'C:\\模拟 cache\\verified.tgz', '--registry', plan.registry, '--prefer-offline', '--include=optional'])
   expect(nativeLaunchArgv(argv, 'win32')).toEqual(argv)

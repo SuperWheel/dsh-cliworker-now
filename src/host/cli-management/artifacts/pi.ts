@@ -12,7 +12,7 @@ import { record, invalidArtifact, safeUrl } from './native.ts'
 import { parseIntegrity } from '../download.ts'
 import { privatePath } from './download.ts'
 import { executeCliOperation } from '../executor.ts'
-import { CliOperationError } from '../planner.ts'
+import { CliOperationError, boundOfficialEnv } from '../planner.ts'
 /** No directory serving, redirects, proxying or metadata fallback; exact checked file map only. */
 export async function startVerifiedRegistry(directory: string, paths: Record<string, string>, signal: AbortSignal) {
   signal.throwIfAborted()
@@ -47,7 +47,7 @@ export async function startVerifiedRegistry(directory: string, paths: Record<str
   return { url: `http://127.0.0.1:${address.port}/${token}/`, close }
 }
 export async function describePi(o: LocalArtifactOptions): Promise<ArtifactDescription> {
-  const home = o.home ?? homedir(), platform = o.platform ?? process.platform, root = join(home, '.pi/agent/install')
+  const home = o.home ?? homedir(), platform = o.platform ?? process.platform, root = o.identity?.updateRoot ? join(o.identity.updateRoot, 'install') : join(home, '.pi/agent/install')
   const markerText = await safeObservation(join(root, 'managed-install.json')); if (!markerText) throw new CliOperationError('PREREQUISITE_MISSING', 'Pi 托管安装标记不可验证')
   const marker = JSON.parse(markerText.text)
   if (marker.kind !== 'pi-managed-install' || marker.layout !== 'releases-v1') throw new CliOperationError('PREREQUISITE_MISSING', 'Pi 不是已核实的托管安装')
@@ -85,6 +85,6 @@ export async function placePi(description: ArtifactDescription, directory: strin
     o.progress({ channel: 'takeover', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '官方安装已校验的包', currentStep: Math.min(count, total), totalSteps: total, stepName: `第 ${count}/${total} 个包`, elapsedSeconds: (Date.now() - startedAt) / 1000 })
   }).catch(() => undefined) }, 1000)
   try {
-    await executeCliOperation(o.backend, o.config, nativeLaunchArgv(p.argv), signal, o.output, 10 * 60_000, { npm_config_registry: registry.url, npm_config_cache: join(directory, 'npm-cache'), npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' })
+    await executeCliOperation(o.backend, o.config, nativeLaunchArgv(p.argv), signal, o.output, 10 * 60_000, { ...boundOfficialEnv('pi', o.identity!), npm_config_registry: registry.url, npm_config_cache: join(directory, 'npm-cache'), npm_config_audit: 'false', npm_config_fund: 'false', npm_config_update_notifier: 'false' })
   } finally { clearInterval(timer); await polling; await registry.close() }
 }

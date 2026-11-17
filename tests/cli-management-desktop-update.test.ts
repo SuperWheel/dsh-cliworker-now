@@ -133,6 +133,7 @@ async function fixture(cli: DesktopCli = 'zcode', platform = 'darwin') {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'desktop-update-模拟-'))); roots.push(root)
   const applications = join(root, 'Applications'), appPath = join(applications, cli === 'zcode' ? 'ZCode.app' : 'WorkBuddy.app')
   await mkdir(appPath, { recursive: true }); await writeFile(join(appPath, 'version.txt'), 'old')
+  vi.spyOn(desktopUpdateIo, 'installedPaths').mockResolvedValue([appPath])
   const controller = new AbortController()
   const release: DesktopRelease = cli === 'zcode'
     ? { version: '3.18.2', url: platform === 'darwin' ? zurl : zurl.replace('.zip', '.exe'), sha512, size: 123 }

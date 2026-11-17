@@ -37,9 +37,9 @@ it('模拟：环回 registry 只读、随机令牌、拒绝未登记路径与文
 it.each(['success', 'failure', 'cancel'] as const)('模拟：Pi 官方交接 %s 一律关闭环回服务并保留宿主代理', async mode => {
   const root = await fixture(), c = new AbortController(); await writeFile(join(root, 'one.tgz'), 'verified'); vi.stubEnv('HTTPS_PROXY', 'http://127.0.0.1:7890')
   let url = ''
-  const backend = { spawn: vi.fn((spec: any) => { url = spec.env.npm_config_registry; expect(process.env.HTTPS_PROXY).toBe('http://127.0.0.1:7890'); expect(spec.env).not.toHaveProperty('HTTPS_PROXY'); expect(spec.env).not.toHaveProperty('PI_INSTALLER_API_BASE'); if (mode === 'cancel') c.abort(); return { stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: mode === 'failure' ? 1 : 0, signal: null }), waitForExit: async () => true, terminate() {} } }) }
+  const backend = { spawn: vi.fn((spec: any) => { url = spec.env.npm_config_registry; expect(process.env.HTTPS_PROXY).toBe('http://127.0.0.1:7890'); expect(spec.env).not.toHaveProperty('HTTPS_PROXY'); expect(spec.env).not.toHaveProperty('PI_INSTALLER_API_BASE'); expect(spec.env.PI_MANAGED_INSTALL_ROOT).toBe(join(root, 'install')); expect(spec.env.PI_CODING_AGENT_DIR).toBe(root); if (mode === 'cancel') c.abort(); return { stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: mode === 'failure' ? 1 : 0, signal: null }), waitForExit: async () => true, terminate() {} } }) }
   const d: any = { placement: { kind: 'registry', argv: ['simulated-pi', 'update', '--self'], paths: { '/pkg/-/one.tgz': 'one.tgz' } } }
-  const promise = placePi(d, root, c.signal, { backend, config: DEFAULT_CONFIG, output: vi.fn() } as any)
+  const promise = placePi(d, root, c.signal, { backend, config: DEFAULT_CONFIG, identity: { source: 'self-update', updateRoot: root }, output: vi.fn() } as any)
   if (mode === 'success') await promise; else await expect(promise).rejects.toThrow()
   await expect(fetch(url)).rejects.toThrow(); expect(backend.spawn).toHaveBeenCalledTimes(1)
 })

@@ -12,12 +12,13 @@ import { homedir } from 'node:os'
 import type { ActiveCliId } from '../../shared/types.ts'
 import { OFFICIAL_NPM_REGISTRY, type CliInstallOffer, type CliUpdateOperation } from '../../shared/cli-management.ts'
 import { type ProcessBackend, type RuntimeConfig, ProcessCleanupUnconfirmedError } from '../process.ts'
-import { identifyInstallation, type InstallationIdentity } from './identity.ts'
+import { identifyInstallation, classifyInstallation, readManifest, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, DESKTOP_INSTALL_SOURCES, installationSource, isDesktopCli, type InstallSource } from './sources.ts'
 import { readDesktopRelease } from './desktop-update.ts'
 import { captureReadOnly, compareVersions, compatible, currentVersion, desktopVersion, latestCompatible, ReleaseClient, validVersion } from './versions.ts'
 import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
-import { CliOperationError } from './planner.ts'
+import { CliOperationError, automaticMethod, assertNpmInstallation, sameInstallation, samePath, updateProblem, type CliOperationPlan } from './planner.ts'
+import { executeOwnerRepair } from './repair.ts'
 import { downloadCliArtifact } from './download.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
 import { listRunningApps, reopenStoppedApp, WINDOWS_APP_IMAGES, type RunningApp } from './windows-installer-apps.ts'
@@ -26,12 +27,14 @@ export const WINDOWS_SIGNATURE_TIMEOUT_MS = 120_000
 import { withInterruptionRecovery } from './recovery.ts'
 import { installDesktop } from './desktop.ts'
 import { findGitBash } from '../windows-git-bash.ts'
-import { WorkBuddyUnavailableError } from '../workbuddy-installation.ts'
+import { configuredCliExecutable } from '../adapters.ts'
+import { knownInstallationPaths } from './installation-evidence.ts'
+import { WorkBuddyUnavailableError, resolveWorkBuddyInstallation } from '../workbuddy-installation.ts'
 
 export interface InstallPlan {
   cli: ActiveCliId; source: InstallSource; target?: string; directory: string; registry: string
   before?: InstallationIdentity; oldPath?: string; pathRevision: number; token: string; npm?: [string, string]
-  unusableBefore?: 'CLI_IDENTITY_MISMATCH'
+  repair?: CliOperationPlan
   gitBash?: string
   automaticSources: boolean
   offer: CliInstallOffer; problem?: 'PREREQUISITE_MISSING' | 'PERMISSION_DENIED'
@@ -77,19 +80,45 @@ export class CliInstaller {
   async prepare(cli: ActiveCliId, registry: string, directory: string, signal: AbortSignal, automaticSources = true): Promise<InstallPlan> {
     const source = installationSource(cli, this.platform, this.deps.arch), store = this.deps.config.cliExecutablePaths!
     if (directory && source.method !== 'desktop' && source.method !== 'manual') throw new CliOperationError('LOCATION_INVALID', '纯 CLI 只使用官方默认安装位置')
-    let before: InstallationIdentity | undefined, unusableBefore: InstallPlan['unusableBefore']
+    let before: InstallationIdentity | undefined
     try { before = await this.inspect(cli, signal) }
     catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError || signal.aborted) throw error
-      if (cli !== 'pi' || (error as NodeJS.ErrnoException).code !== 'CLI_IDENTITY_MISMATCH') throw error
-      unusableBefore = 'CLI_IDENTITY_MISMATCH'
+      const location = store.read(cli)?.path ?? CLI_SOURCES[cli].defaultLocation
+      throw new CliOperationError('PREREQUISITE_MISSING', `检测到已有安装位于 ${location}（${cli === 'pi' ? 'Pi 官方安装渠道' : '原安装渠道'}管理），插件不会另装一份；请用原渠道修复，或先卸载后再安装。${error instanceof Error ? error.message : ''}`)
+    }
+    // A failed lookup is not proof of absence when a selected file/link or directory survives.
+    const selected = store.read(cli)?.path ?? configuredCliExecutable(cli, this.deps.config)
+    if (!before) {
+      const evidence = await existingInstallationEvidence(cli, selected, source, this.platform)
+      if (evidence) throw new CliOperationError('PREREQUISITE_MISSING', `检测到已有安装位于 ${evidence}（原安装渠道管理），插件不会另装一份；请用原渠道修复，或先卸载后再安装`)
+    }
+    if (!before && selected) {
+      const existing = await lstat(selected).catch(error => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return undefined; throw error })
+      if (existing) throw new CliOperationError('PREREQUISITE_MISSING', `检测到已有安装位于 ${selected}（原安装渠道管理），插件不会另装一份；请用原渠道修复，或先卸载后再安装`)
+    }
+    if (before && !automaticMethod(cli, before)) throw new CliOperationError('PREREQUISITE_MISSING', `检测到已有安装位于 ${before.appPath ?? before.updateRoot ?? before.prefix ?? before.executable}（${before.source === 'unknown' ? '原安装渠道，归属未核实' : before.source} 管理），插件不会另装一份；请用 ${before.source === 'unknown' ? '原安装渠道' : before.source} 修复，或先卸载后再安装`)
+    if (before?.source === 'npm') {
+      assertNpmInstallation(cli, before, this.platform)
+      Object.assign(source, { method: 'npm', command: installationSource(cli, 'win32').command ?? cli })
     }
     const oldPath = store.read(cli)?.path
     const pathRevision = store.revision(cli)
     const offer: CliInstallOffer = { method: source.method, guideUrl: CLI_SOURCES[cli].guideUrl, selectableLocation: source.method === 'desktop', prerequisites: [], scriptUrl: source.script?.url, experimental: CLI_SOURCES[cli].experimental }
-    const plan: InstallPlan = { cli, source, registry, directory, automaticSources, before, unusableBefore, oldPath, pathRevision, offer, token: '' }
+    const plan: InstallPlan = { cli, source, registry, directory, automaticSources, before, oldPath, pathRevision, offer, token: '' }
     const prerequisite = (name: string, required: string, found: string | undefined, satisfied: boolean) => { offer.prerequisites.push({ name, required, found, satisfied }); if (!satisfied) plan.problem = 'PREREQUISITE_MISSING' }
-    if (source.method === 'manual') prerequisite('安装方法', source.reason!, undefined, false)
+    if (before && before.source !== 'npm') {
+      const method = automaticMethod(cli, before)!
+      const problem = updateProblem(cli, { ...before, repairNeeded: false }, this.platform)
+      if (problem) throw new CliOperationError('PREREQUISITE_MISSING', `${before.executable}：${problem} 插件不会另装一份，请用原渠道修复。`)
+      const desktop = method === 'desktop' && isDesktopCli(cli) ? await readDesktopRelease(cli, {}, signal, { platform: this.platform, arch: this.deps.arch, fetcher: (url, init) => this.deps.releases.response(String(url), init?.signal ?? signal) }) : undefined
+      plan.target = desktop?.version ?? latestCompatible(cli, (await this.deps.releases.query(cli, registry, signal, before.source)).versions)
+      if (!plan.target) throw new CliOperationError('PREREQUISITE_MISSING', '没有已核实的修复版本，请用原安装渠道修复')
+      plan.directory = before.appPath ?? before.updateRoot ?? before.prefix ?? dirname(before.executable)
+      plan.repair = { cli, intent: 'update', method, identity: before, beforeVersion: before.manifestVersion ?? 'unknown', targetVersion: plan.target, registry, pinsVersion: false, token: '', desktopRelease: desktop }
+      offer.method = method === 'desktop' ? 'desktop' : 'script'; offer.selectableLocation = false
+      if (directory && !samePath(directory, plan.directory)) throw new CliOperationError('LOCATION_INVALID', `已有安装必须在 ${plan.directory} 修复，插件不会另装一份`)
+    } else if (source.method === 'manual') prerequisite('安装方法', source.reason!, undefined, false)
     else if (source.method === 'npm') {
       const release = await this.deps.releases.query(cli, registry, signal, 'npm')
       plan.target = latestCompatible(cli, release.versions.filter(v => !v.includes('-')))
@@ -101,7 +130,7 @@ export class CliInstaller {
         if (data.name !== CLI_SOURCES[cli].npm || data.version !== plan.target) throw new Error('package identity')
         const requirement = data.engines?.node ?? (source.nodeMinimum ? `>=${source.nodeMinimum}` : undefined)
         prerequisite('Node.js', requirement ?? '目标包 engines.node 尚未核实', nodeVersion, !!requirement && nodeSatisfies(nodeVersion, requirement) && (!source.nodeMinimum || nodeSatisfies(nodeVersion, `>=${source.nodeMinimum}`)))
-        plan.directory = (await captureReadOnly(this.deps.backend, this.deps.config, [...plan.npm, 'prefix', '-g'], signal)).trim()
+        plan.directory = before?.prefix ?? (await captureReadOnly(this.deps.backend, this.deps.config, [...plan.npm, 'prefix', '-g'], signal)).trim()
         try { await writablePrefix(plan.directory) } catch { plan.problem = 'PERMISSION_DENIED'; prerequisite('npm 全局目录', '当前用户可写（不提权）', plan.directory, false); plan.problem = 'PERMISSION_DENIED' }
       } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError || signal.aborted) throw error; prerequisite('Node/npm', '已核实的原生 Node 与 npm-cli.js', undefined, false) }
     } else if (source.method === 'script') {
@@ -139,13 +168,14 @@ export class CliInstaller {
     }
     signal.throwIfAborted()
     offer.defaultLocation = plan.directory || CLI_SOURCES[cli].defaultLocation
-    plan.token = createHash('sha256').update(JSON.stringify([this.platform, cli, 'install', before ?? null, unusableBefore, pathRevision, oldPath, source, plan.target, plan.directory, registry, plan.npm, plan.gitBash, plan.automaticSources])).digest('hex')
+    plan.token = createHash('sha256').update(JSON.stringify([this.platform, cli, 'install', before ?? null, plan.repair, pathRevision, oldPath, source, plan.target, plan.directory, registry, plan.npm, plan.gitBash, plan.automaticSources])).digest('hex')
     return plan
   }
   async execute(plan: InstallPlan, op: CliUpdateOperation, signal: AbortSignal, changed: () => void, recheck: () => Promise<void>): Promise<{ identity: InstallationIdentity; version: string }> {
     return withUpdateCleanup(text => { op.outputTail = outputTail(op.outputTail + text); changed() }, () => this.executeOperation(plan,op,signal,changed,recheck))
   }
   private async executeOperation(plan: InstallPlan, op: CliUpdateOperation, signal: AbortSignal, changed: () => void, recheck: () => Promise<void>): Promise<{ identity: InstallationIdentity; version: string }> {
+    if (plan.repair) return executeOwnerRepair({ ...this.deps, platform: this.platform }, plan, op, signal, changed, recheck)
     if (plan.problem || plan.source.method === 'manual') throw new CliOperationError(plan.problem ?? 'PREREQUISITE_MISSING', `${plan.source.reason ?? '安装前置条件不满足'}；官方说明：${plan.offer.guideUrl}`)
     const { cli, source } = plan
     let file: string | undefined, quarantined = false, npmDownload: NpmDownload | undefined, succeeded = false
@@ -189,11 +219,12 @@ export class CliInstaller {
         }
         let candidate: string
         if (source.method === 'npm') {
+          if (plan.before) assertNpmInstallation(cli, { ...plan.before, prefix: plan.directory }, this.platform)
           await writablePrefix(plan.directory)
           op.progress = { readable: false, byteProgress: false, resumeCount: 0, stage: 'npm 正在使用本地缓存安装；仍可能查询元数据或下载其他依赖' }; changed()
           for (const file of npmDownload!.platforms) await executeCliOperation(this.deps.backend, this.deps.config, npmCacheAddArgv(plan.npm!, file, plan.directory, plan.registry, npmDownload!.cache), control, output)
           await run([...plan.npm!, 'install', '--global', '--prefix', plan.directory, packageFile, '--registry', plan.registry, '--cache', npmDownload!.cache, '--prefer-offline', '--include=optional', ...(cli === 'pi' ? ['--ignore-scripts'] : [])])
-          candidate = join(plan.directory, this.platform === 'win32' ? '' : 'bin', source.command + (this.platform === 'win32' ? '.cmd' : ''))
+          candidate = plan.before?.executable ?? join(plan.directory, this.platform === 'win32' ? '' : 'bin', source.command + (this.platform === 'win32' ? '.cmd' : ''))
         } else if (source.method === 'script') {
           // Re-read the built-in descriptor; a client cannot supply a URL or interpreter.
           if (JSON.stringify(installationSource(cli, this.platform).script) !== JSON.stringify(source.script)) throw new CliOperationError('PLAN_EXPIRED', '官方脚本定义已变化')
@@ -231,6 +262,7 @@ export class CliInstaller {
           }
         }
         if (!identity) throw exitError ?? new CliOperationError('VERSION_MISMATCH', `安装命令已完成，但在 ${candidate} 找不到 ${cli}${workbuddyReason ? `（WorkBuddy 原因：${workbuddyReason}）` : ''}`)
+        if (plan.before && !sameInstallation(plan.before, identity, cli)) throw new CliOperationError('IDENTITY_CHANGED', `安装命令已完成，但 ${plan.before.executable} 的安装归属或根发生变化；未修改路径记录`)
         if (cli === 'pi') await checkPiInstallationIntegrity(identity.executable, { allowUnsupported: true, fresh: true, signal: control })
         if (source.method === 'npm' && identity.source !== 'npm') throw new CliOperationError('IDENTITY_CHANGED', 'npm 安装后的实际归属不符')
         if (source.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(identity, this.deps.releases, plan.registry, control, npmDownload!.host, npmDownload!.components, this.deps.root)
@@ -255,10 +287,9 @@ export class CliInstaller {
         control.throwIfAborted()
         const store = this.deps.config.cliExecutablePaths!
         if (store.revision(cli) !== plan.pathRevision) throw new CliOperationError('PLAN_EXPIRED', '安装期间路径设置已变化，未覆盖新设置')
-        store.setManual(cli, identity.executable)
+        if (!plan.before) store.setManual(cli, identity.executable)
         op.afterVersion = version
         if (image) await reopenStoppedApp({ backend: this.deps.backend, config: this.deps.config, image, stopped: stoppedDesktopApps, appRoot: identity.appPath, signal: control, note: text => { op.outputTail = outputTail(op.outputTail + text); changed() } })
-        if (plan.oldPath && plan.oldPath !== identity.executable) op.outputTail = outputTail(op.outputTail + `\n已改用新位置；旧位置 ${plan.oldPath} 未删除。\n`)
         succeeded = true
         return { identity, version }
       }, count => {
@@ -272,4 +303,32 @@ export class CliInstaller {
       finally { if (file && !npmDownload && !quarantined) await removeUpdateTemporary(file) }
     }
   }
+}
+
+/** Missing launcher alone does not establish absence; inspect only this CLI's metadata/layout. */
+async function existingInstallationEvidence(cli: ActiveCliId, selected: string | undefined, source: InstallSource, platform: NodeJS.Platform): Promise<string | undefined> {
+  for (const path of knownInstallationPaths(cli, platform)) {
+    const exists = await installFs.lstat(path).then(() => true).catch(error => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return false; throw error })
+    if (exists && (cli === 'workbuddy' || cli === 'workbuddycn')) {
+      try { await resolveWorkBuddyInstallation(cli, { platform, manualPath: path }) }
+      catch (error) { if (error instanceof WorkBuddyUnavailableError && error.reason === 'variant-mismatch') continue }
+    }
+    if (exists) return path
+  }
+  const paths = [selected, source.script && join(homedir(), source.script.relativeEntry)].filter((p): p is string => !!p)
+  for (const entry of paths) {
+    const exists = async (file: string) => lstat(file).then(() => true).catch(error => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return false; throw error })
+    if (await exists(entry)) return entry
+    const owner = classifyInstallation(cli, entry)
+    if (owner.updateRoot && !samePath(owner.updateRoot, entry) && await exists(owner.updateRoot)) return owner.updateRoot
+    const normalized = entry.replace(/\\/g, '/')
+    const appRoot = /^(.*?\.app)(?:\/|$)/.exec(normalized)?.[1] ?? /^(.*?)\/resources\//i.exec(normalized)?.[1]
+    if (appRoot && await exists(appRoot)) return appRoot
+    for (let dir = dirname(entry), depth = 0; depth < 4 && dirname(dir) !== dir; depth++, dir = dirname(dir)) {
+      const pkg = await readManifest(join(dir, 'package.json'))
+      if (pkg?.name === CLI_SOURCES[cli].npm && pkg?.name) return dir
+      for (const layout of ['node_modules', 'lib/node_modules']) if (CLI_SOURCES[cli].npm && await exists(join(dir, layout, CLI_SOURCES[cli].npm!))) return join(dir, layout, CLI_SOURCES[cli].npm!)
+    }
+  }
+  return undefined
 }

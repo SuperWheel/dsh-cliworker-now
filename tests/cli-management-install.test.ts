@@ -21,12 +21,18 @@ import { identifyInstallation } from '../src/host/cli-management/identity.ts'
 import { currentVersion } from '../src/host/cli-management/versions.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { serviceFixture, control, finished, syntheticIdentity, childFixture, until, sri } from './cli-management-phase-b-fixture.ts'
+const simulated = vi.hoisted(() => ({ home: '/模拟/home' }))
+vi.mock('../src/host/cli-management/installation-evidence.ts', async original => {
+  const actual = await original<typeof import('../src/host/cli-management/installation-evidence.ts')>()
+  return { ...actual, knownInstallationPaths: (...args: Parameters<typeof actual.knownInstallationPaths>) => actual.knownInstallationPaths(...args).map(path => path.startsWith('/Applications/') ? join(simulated.home, path.slice(1)) : path) }
+})
+vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => simulated.home }))
 const fixtures: ReturnType<typeof serviceFixture>[] = []
 const closes: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const close of closes.splice(0)) await close().catch(() => undefined); for (const f of fixtures.splice(0)) await f.close() })
 function exited(output = '') { return { stdout: Readable.from([output]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() } }
 function fixture() {
-  const f = serviceFixture(); fixtures.push(f)
+  const f = serviceFixture(); fixtures.push(f); simulated.home = f.root
   f.identities.clear()
   const config = { ...f.config, cliExecutablePaths: new CliExecutablePathStore(f.root) }
   const prefix = join(f.root, 'global'); mkdirSync(prefix)
@@ -120,7 +126,7 @@ it.each(['qoder', 'qodercn'] as const)('模拟审查 2：%s 使用发现工具�
   expect(f.config.cliExecutablePaths.read(cli)?.path).toBe(candidate)
 })
 
-it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 4：Pi 旧安装损坏允许重装；新核对/取消/隔离不放松（%s）', async mode => {
+it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 4：Pi 未核实损坏安装拒绝另装；取消/隔离不放松（%s）', async mode => {
   const f = fixture(), old = join(f.root, 'broken-pi'); writeFileSync(old, '模拟损坏 Pi')
   f.config.cliExecutablePaths.setManual('pi', old)
   const mismatch = Object.assign(new Error('模拟 Pi 身份损坏'), { code: 'CLI_IDENTITY_MISMATCH' })
@@ -141,11 +147,11 @@ it.each(['success', 'new-invalid', 'cancel', 'cleanup'] as const)('模拟审查 
     const controller = new AbortController(); f.identify.mockImplementation(async () => { controller.abort(); throw mismatch })
     await expect(f.installer.prepare('pi', 'https://registry.npmjs.org/', '', controller.signal)).rejects.toBe(mismatch); return
   }
-  const plan = await prepare(f, 'pi'); expect(plan.unusableBefore).toBe('CLI_IDENTITY_MISMATCH')
-  f.service.start('pi', 'install', plan.token, '', 'repair-pi')
-  const result = (await finished(f.service)).results[0]!
-  expect(result.phase).toBe(mode === 'success' ? 'succeeded' : 'failed')
-  expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(mode === 'success' ? pi.entry : old)
+  const revision = f.config.cliExecutablePaths.revision('pi')
+  await expect(prepare(f, 'pi')).rejects.toThrow('插件不会另装一份')
+  expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.artifactFetch).not.toHaveBeenCalled()
+  expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(old)
+  expect(f.config.cliExecutablePaths.revision('pi')).toBe(revision)
   expect(readFileSync(old, 'utf8')).toBe('模拟损坏 Pi')
 })
 
@@ -231,15 +237,21 @@ it('模拟：安装计划绑定当前缺失状态、路径记录、npm 前缀和
   expect((await finished(f.service)).results[0]?.error?.code).toBe('PLAN_EXPIRED')
   expect(f.artifactFetch).not.toHaveBeenCalled()
 })
-it('模拟：失效旧路径说明与未知版本重新安装；成功改用新路径不删旧文件', async () => {
+it('模拟：未知版本重新安装保留原 npm 前缀和路径；旧文件不删除', async () => {
   const f = fixture(), old = join(f.root, 'old-cli'); writeFileSync(old, '模拟旧文件')
   f.config.cliExecutablePaths.setManual('codex', old)
-  f.identities.set('codex', { ...syntheticIdentity(), executable: old, manifestVersion: undefined })
+  f.identities.set('codex', { ...syntheticIdentity(), executable: old, prefix: f.prefix, packageRoot: join(f.prefix, 'lib/node_modules/@openai/codex'), manifestVersion: undefined })
+  const beforeRevision = f.config.cliExecutablePaths.revision('codex')
+  const identify = f.identify.getMockImplementation()!
+  f.identify.mockImplementation(async (...args) => args[2].cliExecutablePaths ? identify(...args) : { ...f.identities.get('codex')!, manifestVersion: '1.2.3' })
   await (f.service as any).local('codex', control(), false, false)
   expect(f.service.snapshot().entries.find(e => e.cli === 'codex')).toMatchObject({ group: 'failed', reason: 'UNKNOWN_VERSION' })
-  const plan = await prepare(f); f.service.start('codex', 'install', plan.token, '', 'reinstall')
+  const plan = await prepare(f)
+  expect(plan.directory).toBe(f.prefix)
+  expect(vi.mocked(f.backend.spawn).mock.calls.some(([s]) => s.argv.includes('prefix'))).toBe(false)
+  f.service.start('codex', 'install', plan.token, '', 'reinstall')
   expect((await finished(f.service)).results[0]).toMatchObject({ phase: 'succeeded' })
-  expect(f.config.cliExecutablePaths.read('codex')?.path).toBe(join(f.prefix, 'bin/codex')); expect(readFileSync(old, 'utf8')).toBe('模拟旧文件')
+  expect(f.config.cliExecutablePaths.read('codex')?.path).toBe(old); expect(f.config.cliExecutablePaths.revision('codex')).toBe(beforeRevision); expect(readFileSync(old, 'utf8')).toBe('模拟旧文件')
   f.identities.clear(); f.config.cliExecutablePaths.setManual('kimi', join(f.root, 'gone'))
   await (f.service as any).local('kimi', control(), false, false)
   expect(f.service.snapshot().entries.find(e => e.cli === 'kimi')?.reasonDetail).toContain('之前记录的路径')

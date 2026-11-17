@@ -68,6 +68,7 @@ it('HEAD rejects feed size disagreement and redirects', async () => {
 async function updateFixture(sha = '', headerOverrides = {}, signature: unknown = validSignature) {
   const root = await mkdtemp(join(tmpdir(), 'mock-wb-win-')); roots.push(root)
   const fetcher = fetchArtifact(headerOverrides), run = vi.fn(async (_argv: string[], _signal: AbortSignal) => {}), awaiting = vi.fn()
+  vi.spyOn(desktopUpdateIo, 'installedPaths').mockResolvedValue(['D:\\Apps\\WorkBuddyAI'])
   const capture = vi.spyOn(desktopUpdateIo, 'capture').mockResolvedValue(JSON.stringify(signature))
   const downloaded: string[] = []
   const options = { cli: 'workbuddy' as const, appPath: 'D:\\Apps\\WorkBuddyAI', root, platform: 'win32', signal: signal(), release: await release({ sha256hash: sha }), fetcher, run, awaiting,

@@ -35,7 +35,7 @@ describe('模拟：Phase A 四项回归', () => {
     expect((await checked(f.service)).entries.find(e => e.cli === 'codex')?.currentVersion).toBe('1.1.0')
     expect(new CliManagementCache(f.root).entries().find(e => e.cli === 'codex')?.currentVersion).toBe('1.1.0')
   })
-  it('自动路径失效：后台不搜索，前台重找并写回记录', async () => {
+  it('自动路径失效：后台不搜索，前台只读重找且保留记录', async () => {
     const f = fixture(), pkg = join(f.root, 'lib/node_modules/@openai/codex'), entry = join(pkg, 'bin/codex.js')
     mkdirSync(join(pkg, 'bin'), { recursive: true }); writeFileSync(entry, '// 模拟'); writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@openai/codex', version: '1.0.0' }))
     const store = new CliExecutablePathStore(f.root); store.remember('codex', join(f.root, 'gone'), store.revision('codex'))
@@ -44,7 +44,7 @@ describe('模拟：Phase A 四项回归', () => {
     await expect(identifyInstallation('codex', f.backend, config, control(), true)).rejects.toThrow()
     expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
     expect((await identifyInstallation('codex', f.backend, config, control()))?.manifestVersion).toBe('1.0.0')
-    expect(store.read('codex')?.path).toBe(entry)
+    expect(store.read('codex')?.path).toBe(join(f.root, 'gone'))
   })
   it('manual 变成 npm 后恢复远端查询', async () => {
     const f = fixture(); f.identities.get('codex')!.source = 'unknown'; await checked(f.service)

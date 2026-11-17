@@ -35,7 +35,7 @@ describe('source identities', () => {
     ['codex', '/usr/local/lib/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'npm'],
     ['codex', '/usr/local/lib/node_modules/not-codex/bin/codex.js', 'not-codex', 'unknown'],
     ['codex', '/project/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'unknown'],
-    ['codex', 'C:/project/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'unknown'],
+    ['codex', 'C:/project/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'npm'],
     ['codex', 'C:/Users/a/AppData/Roaming/npm/node_modules/@openai/codex/bin/codex.js', '@openai/codex', 'npm'],
     ['codex', '/opt/homebrew/bin/codex', undefined, 'unknown'],
     ['codex', '/opt/homebrew/Caskroom/codex/1.0.0/codex', undefined, 'brew'],

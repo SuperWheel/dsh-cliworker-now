@@ -3,6 +3,7 @@ import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, 
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from '../pi-installation.mjs'
+import { preparePiRepairGuard } from './pi-repair.ts'
 import { codexInstallerEnv } from './artifacts/codex.ts'
 import { runHermesUpdate } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
@@ -21,7 +22,7 @@ import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffe
 import { bounded, captureReadOnly, currentVersion, ReadOnlyTimeoutError, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
-import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
+import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, boundOfficialEnv, assertNpmInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
 import { DESKTOP_INSTALLER_TIMEOUT_MS, executeCliOperation, outputTail } from './executor.ts'
 import { listRunningApps, reopenStoppedApp, WINDOWS_APP_IMAGES, type RunningApp } from './windows-installer-apps.ts'
 import { interruptionRecoveryChannel, withInterruptionRecovery, type InterruptionEvidence } from './recovery.ts'
@@ -59,6 +60,7 @@ interface Dependencies {
   globalCleanup?(error: ProcessCleanupUnconfirmedError): void
   cleanup?(cli: ActiveCliId, error: ProcessCleanupUnconfirmedError): void
   identify?: typeof identifyInstallation
+  piGuard?: typeof preparePiRepairGuard
   npmCheck?: typeof verifyNpmPlatforms
   npmRuntimeHost?: typeof resolveNpmHost
   version?: typeof currentVersion
@@ -217,6 +219,11 @@ export class CliManagementService {
       // login rules and their usual expiry, never the version fingerprint (REQ-0136).
       this.identities.set(cli, identity)
       if (pathOnly) return
+      if (identity.repairNeeded) {
+        this.cache.invalidateVersion(cli)
+        this.publish(cli, { installed: true, source: identity.source, group: 'failed', reason: 'UNKNOWN_VERSION', reasonDetail: identity.notice ?? '托管安装需要修复', currentVersion: undefined, planToken: undefined, stage: undefined, checkedAt: Date.now() }, true)
+        return
+      }
       if (cli === 'pi') await checkPiInstallationIntegrity(identity.executable, { allowUnsupported: true, signal: control })
       // A main-package fingerprint does not cover optional component removal.
       let npmUnavailable = false
@@ -260,7 +267,7 @@ export class CliManagementService {
       const failedIdentity = this.identities.get(cli)
       this.cache.invalidateVersion(cli)
       this.identities.delete(cli)
-      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : piInstallationIntegrityMessage(error) ?? (timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : error instanceof NpmInstallationError ? error.message : old.source === 'npm' || failedIdentity?.source === 'npm' ? 'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试' : undefined)
+      const detail = missing ? (oldPath ? `之前记录的路径 ${oldPath} 已找不到` : undefined) : piInstallationIntegrityMessage(error) ?? ((error as NodeJS.ErrnoException).code === 'CLI_IDENTITY_MISMATCH' ? (error as Error).message : undefined) ?? (timer.signal.aborted ? LOCAL_CHECK_TIMEOUT_DETAIL : error instanceof NpmInstallationError ? error.message : old.source === 'npm' || failedIdentity?.source === 'npm' ? 'npm 安装需要修复或重新核验：平台组件或版本探针未通过，请重新安装或稍后重试' : undefined)
       this.publish(cli, { source: failedIdentity?.source, installed: !missing, group: missing ? 'notInstalled' : 'failed', reason: missing ? 'NOT_INSTALLED' : 'UNKNOWN_VERSION', reasonDetail: detail, stage: undefined, currentVersion: undefined, planToken: undefined, checkedAt: Date.now() }, true)
     } finally { clearTimeout(timeout) }
   }
@@ -423,6 +430,7 @@ export class CliManagementService {
     this.foregroundController?.abort(); this.preloader.changed(); this.changed()
     this.operationRun = Promise.resolve().then(() => withUpdateCleanup(output, async () => {
       let quarantine = false
+      let piGuard: Awaited<ReturnType<typeof preparePiRepairGuard>> | undefined, piAttempted = false
       let artifact: string | undefined, local: LocalArtifactInstall | undefined, npmDownload: NpmDownload | undefined
       const desktopArtifacts: string[] = []
       try {
@@ -438,7 +446,7 @@ export class CliManagementService {
             const fresh = await this.planCliOperation(cli, 'install', control, { ...selected, installDirectory: directory })
             if (fresh.token !== token) throw new CliOperationError('PLAN_EXPIRED', '执行前安装计划已变化')
             if (fresh.problem) throw new CliOperationError(fresh.problem, '安装前置条件已变化，请重新检查')
-            if (plan.source.method === 'desktop') {
+            if (plan.source.method === 'desktop' && !plan.repair) {
               const location = await this.checkDirectory(cli, plan.directory, control)
               if (location.problem) throw new CliOperationError('LOCATION_INVALID', location.message!)
             }
@@ -457,7 +465,10 @@ export class CliManagementService {
         await registerNativeResidueCleanup({ ...this.deps, cli, targetVersion: plan.targetVersion, success: () => op.phase === 'succeeded' })
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
         let npmRuntime: [string, string] | undefined
+        const pathRevision = this.deps.config.cliExecutablePaths?.revision(cli)
+        if (cli === 'pi' && plan.identity.source === 'self-update') piGuard = await (this.deps.piGuard ?? preparePiRepairGuard)(plan.identity, this.deps.backend, this.deps.config, signal)
         if (plan.method === 'npm') {
+          assertNpmInstallation(cli, plan.identity)
           npmRuntime = await bounded(resolveNpmRuntime(this.deps.backend), preparation)
           const host = await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, preparation, npmRuntime)
           op.integritySource = OFFICIAL_NPM_REGISTRY
@@ -492,8 +503,9 @@ export class CliManagementService {
           // Windows desktop updates run the verified official installer, whose window the user must see.
           const installer = plan.method === 'desktop' && process.platform === 'win32'
           const image = installer && isDesktopCli(cli) ? WINDOWS_APP_IMAGES[cli] : undefined
+          if (piGuard) piAttempted = true
           const result = await executeCliOperation(this.deps.backend, this.deps.config, op.command, control, value => { op.outputTail = outputTail(op.outputTail + value); this.changed() }, installer ? DESKTOP_INSTALLER_TIMEOUT_MS : undefined,
-            local?.env ?? (plan.method === 'self-update' || plan.method === 'official-script' ? NATIVE_UPDATES[cli]?.env : undefined), evidence, undefined, undefined,
+            local?.env ? { ...local.env, ...piGuard?.env } : (plan.method === 'self-update' || plan.method === 'official-script' ? { ...NATIVE_UPDATES[cli]?.env, ...(cli === 'codex' ? codexInstallerEnv() : {}), ...boundOfficialEnv(cli, plan.identity), ...piGuard?.env } : undefined), evidence, undefined, undefined,
             installer && { runningApps: image ? appSignal => listRunningApps(this.deps.backend, this.deps.config, image, appSignal) : undefined })
           stoppedDesktopApps.push(...result.stoppedApps)
         }
@@ -503,6 +515,7 @@ export class CliManagementService {
           const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 60_000)
           const verification = AbortSignal.any([control, deadline.signal])
           try {
+            const managedVersion = await piGuard?.verify(plan.targetVersion)
             const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
             verification.throwIfAborted()
             if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
@@ -511,6 +524,7 @@ export class CliManagementService {
             const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000, plan.method === 'npm')
             verification.throwIfAborted()
             const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
+            if (managedVersion && version !== managedVersion) throw new CliOperationError('VERSION_MISMATCH', 'Pi 运行版本与原托管根 current-version 不符；路径记录未修改')
             op.afterVersion = version
             if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
             if (!(allowLatest && version === plan.beforeVersion)) verifyUpdatedVersion(local ? { ...plan, pinsVersion: true, targetVersion: local.targetVersion } : plan, version)
@@ -586,9 +600,10 @@ export class CliManagementService {
               op.command = argv!; op.phase = 'installing'; this.changed()
               watch.start()
               try {
-                const env = { ...NATIVE_UPDATES[cli]?.env, ...(cli === 'codex' ? codexInstallerEnv() : {}), ...watch.env }
+                const env = { ...NATIVE_UPDATES[cli]?.env, ...(cli === 'codex' ? codexInstallerEnv() : {}), ...boundOfficialEnv(cli, plan.identity), ...piGuard?.env, ...watch.env }
                 // Keep the Host environment, including proxies; only augment the child PATH.
                 if (['mimo', 'traecn', 'codex'].includes(cli)) env.PATH = [process.env.PATH ?? '', cli === 'mimo' ? dirname(plan.identity.executable) : join(homedir(), '.local/bin')].join(process.platform === 'win32' ? ';' : ':')
+                if (piGuard) piAttempted = true
                 await executeCliOperation(this.deps.backend, { ...this.deps.config, graceMs: Math.min(5000, this.deps.config.graceMs) }, argv!, AbortSignal.any([signal, watch.controller.signal]), output, 10 * 60_000, env, watch)
               } catch (error) {
                 if (error instanceof ProcessCleanupUnconfirmedError) { cleanupConfirmed = false; throw error }
@@ -644,6 +659,7 @@ export class CliManagementService {
               const deadline = new AbortController(), timer = setTimeout(() => deadline.abort(), 10 * 60_000)
               try {
                 const control = AbortSignal.any([signal, deadline.signal])
+                if (piGuard) piAttempted = true
                 if (local.install) await local.install(control, run); else await run(local.argv, control)
                 control.throwIfAborted()
               } catch (error) {
@@ -673,6 +689,12 @@ export class CliManagementService {
           output(`\n── 下载中断；已自动重试 ${count} 次 ──\n`)
         })
         const { after, cliVersion, version } = verified
+        const pathStore = this.deps.config.cliExecutablePaths
+        if (pathStore && pathRevision !== undefined) {
+          if (pathStore.revision(cli) !== pathRevision) throw new CliOperationError('PLAN_EXPIRED', '更新期间路径设置已变化，未覆盖新设置')
+          const record = pathStore.read(cli)
+          if (record?.mode !== 'manual' && record?.path !== after.executable && !pathStore.remember(cli, after.executable, pathRevision)) throw new CliOperationError('PLAN_EXPIRED', '更新期间路径设置已变化')
+        }
         this.cache.invalidateVersion(cli)
         this.identities.set(cli, after)
         this.cache.rememberVersion(cli, after.fingerprint, cliVersion)
@@ -684,6 +706,9 @@ export class CliManagementService {
           planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
         op.phase = 'succeeded'
       } catch (error) {
+        if (piGuard && piAttempted && !signal.aborted && !(error instanceof ProcessCleanupUnconfirmedError)) {
+          try { await piGuard.verify() } catch (verification) { if (verification instanceof ProcessCleanupUnconfirmedError || verification instanceof CliOperationError && verification.code === 'IDENTITY_CHANGED') error = verification }
+        }
         if (error instanceof ProcessCleanupUnconfirmedError) {
           quarantineUpdateCleanup(); quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
           op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认更新进程全部退出，已暂停后续操作', retryable: false }

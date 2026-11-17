@@ -463,7 +463,7 @@ export async function resolveCliExecutable(
   backend: ProcessBackend,
   config: RuntimeConfig,
   signal: AbortSignal = AbortSignal.timeout(15000),
-  options: { management?: boolean } = {},
+  options: { management?: boolean; readOnly?: boolean } = {},
 ): Promise<string> {
   signal.throwIfAborted()
   const store = config.cliExecutablePaths
@@ -482,7 +482,7 @@ export async function resolveCliExecutable(
       present = false
     }
     if (!present) {
-      store.reset(cli)
+      if (!options.readOnly) store.reset(cli)
       entry = undefined
     }
   }
@@ -507,7 +507,7 @@ export async function resolveCliExecutable(
     if (current?.mode === 'auto' && current.path === discovered && entry?.mode !== 'manual') return result
     throw new Error('CLI 路径已更新，请刷新后重试')
   }
-  if (entry?.mode !== 'manual' && !deployment && !store.remember(cli, discovered ?? result, revision))
+  if (!options.readOnly && entry?.mode !== 'manual' && !deployment && !store.remember(cli, discovered ?? result, revision))
     throw new Error('CLI 路径已更新，请刷新后重试')
   return result
 }

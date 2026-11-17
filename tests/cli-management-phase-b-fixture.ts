@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto'
 import { CliManagementService } from '../src/host/cli-management/service.ts'
 import { CliMaintenance } from '../src/host/cli-management/maintenance.ts'
 import { ReleaseClient } from '../src/host/cli-management/versions.ts'
+import { CLI_SOURCES } from '../src/host/cli-management/sources.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 import type { hostFetch } from '../src/host/host-fetch.mjs'
 import type { InstallationIdentity } from '../src/host/cli-management/identity.ts'
@@ -47,8 +48,8 @@ export function npmFixture(root: string, platform = process.platform) {
   return { node, entry, launcher, pkg }
 }
 export function syntheticIdentity(cli: ActiveCliId = 'codex', version = '1.0.0'): InstallationIdentity {
-  return { executable: `/模拟/bin/${cli}`, prefix: '/模拟', packageRoot: `/模拟/lib/node_modules/${cli}`, source: 'npm', manifestVersion: version,
-    fingerprint: { realpath: `/模拟/lib/node_modules/${cli}/cli.js`, size: 10, mtimeMs: 100, manifestVersion: version } }
+  return { executable: `/模拟/bin/${cli}`, prefix: '/模拟', packageRoot: `/模拟/lib/node_modules/${CLI_SOURCES[cli].npm ?? cli}`, source: 'npm', manifestVersion: version,
+    fingerprint: { realpath: `/模拟/lib/node_modules/${CLI_SOURCES[cli].npm ?? cli}/cli.js`, size: 10, mtimeMs: 100, manifestVersion: version } }
 }
 export function childFixture() {
   const stdout = new PassThrough(), stderr = new PassThrough()
@@ -77,7 +78,9 @@ export function serviceFixture(clis: ActiveCliId[] = ['codex']) {
   const identify = vi.fn(async (cli: ActiveCliId) => structuredClone(identities.get(cli)))
   const version = vi.fn(async (_cli: ActiveCliId, identity: InstallationIdentity) => identity.manifestVersion)
   const busy = vi.fn(() => ({ workers: 0, accounts: false })), invalidateModels = vi.fn(), cleanup = vi.fn(), globalCleanup = vi.fn()
-  const service = new CliManagementService({ root, backend, config, idle: () => true, enabled: () => false, cliEnabled: () => true, account: vi.fn(), identify, version, npmRuntimeHost: async () => ({ platform: process.platform, arch: process.arch, libc: process.platform === 'linux' ? 'glibc' : undefined }), npmCheck: vi.fn(async () => {}), releases, artifactFetch, busy, invalidateModels, cleanup, globalCleanup })
+  // 模拟：generic service tests inject all discovery/verification; in-place tests use the real guard.
+  const piGuard = vi.fn(async (identity: InstallationIdentity) => ({ beforeVersion: identity.manifestVersion!, env: {}, verify: async () => (await identify('pi'))?.manifestVersion! }))
+  const service = new CliManagementService({ piGuard, root, backend, config, idle: () => true, enabled: () => false, cliEnabled: () => true, account: vi.fn(), identify, version, npmRuntimeHost: async () => ({ platform: process.platform, arch: process.arch, libc: process.platform === 'linux' ? 'glibc' : undefined }), npmCheck: vi.fn(async () => {}), releases, artifactFetch, busy, invalidateModels, cleanup, globalCleanup })
   service.saveDownloadSource({ source: 'official' })
   return { root, service, config, backend, identities, releases, integrity, identify, version, busy, invalidateModels, cleanup, globalCleanup, npm, metadataFetch, artifactFetch,
     async close() { await service.close().catch(() => undefined); rmSync(root, { recursive: true, force: true }) } }

@@ -52,6 +52,9 @@ export async function describeUnixUpdate(options: LocalArtifactOptions, director
       placement: { kind: 'official-local', argv: ['/bin/sh', script, '--binary', '--ref', `v${version}`], env: { PI_BUILD_URL: pathToFileURL(directory).href, PI_INSTALL_DIR: join(home, '.local/bin'), PATH: [join(home, '.local/bin'), process.env.PATH ?? ''].join(':') } },
       allowedTargets: [join(home, source.entry)], platform, officialProbe: officialProbe(options, metadata.expectedBytes) }
   }
+  // Both audited scripts hard-code $HOME; no directory flag exists.
+  const expected = join(home, source.entry)
+  if (options.identity && options.identity.fingerprint.realpath !== expected) throw new CliOperationError('PREREQUISITE_MISSING', `已有安装 ${options.identity.executable} 不在脚本固定目录 ${expected}，插件不会另装一份；请用原渠道修复`)
   const archiveSource = LOCAL_INSTALLERS[cli as 'mimo' | 'opencode']
   const target = `${platform}-${arch}${arch === 'x64' ? '-baseline' : ''}${musl ? '-musl' : ''}`
   const archive = platform === 'linux' ? 'package.tar.gz' : 'package.zip'

@@ -6,7 +6,7 @@ import { readPeVersion, PE_VERSION_READ_LIMIT } from '../src/host/cli-management
 import { identifyInstallation, managedZCodeApplication, fingerprintToken, ZCODE_RUNTIME_NOTICE, ZCODE_PLUGIN_RUNTIME_NOTE, ZCODE_RUNTIME_ORIGIN } from '../src/host/cli-management/identity.ts'
 import { automaticMethod, operationToken, planCliOperation, sameInstallation, updateProblem, verifyUpdatedVersion } from '../src/host/cli-management/planner.ts'
 import { currentVersion, desktopVersion, validAppVersion } from '../src/host/cli-management/versions.ts'
-import { readDesktopRelease } from '../src/host/cli-management/desktop-update.ts'
+import { readDesktopRelease, desktopUpdateIo } from '../src/host/cli-management/desktop-update.ts'
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
 import { serviceFixture, checked, finished, control, sri, childFixture, until } from './cli-management-phase-b-fixture.ts'
 
@@ -170,8 +170,11 @@ it('模拟：EXE 替换后读回 3.18.2，计划失效而同一安装核对通�
   expect(sameInstallation(windows, { ...windows, executable: windows.executable.toUpperCase(), appPath: windows.appPath.toUpperCase(), fingerprint: { ...windows.fingerprint, appVersion: '3.18.2', realpath: windows.fingerprint.realpath.toUpperCase() } }, 'zcode')).toBe(true)
   expect(sameInstallation(windows, { ...windows, appPath: 'C:\\Other\\ZCode' }, 'zcode')).toBe(false)
 })
-it('模拟：官方 Windows feed 到现有安装程序执行与 verify，等待整个进程范围退出', async () => {
+it.each([false, true])('模拟：官方 Windows 向导等待进程范围退出，跨根=%s', async moved => {
   const f = fixture(), app = f.app(), child = childFixture()
+  const record = f.store.read('zcode'), revision = f.store.revision('zcode')
+  const installed = moved ? join(f.root, 'Other/ZCode') : app
+  vi.spyOn(desktopUpdateIo, 'installedPaths').mockResolvedValueOnce([app]).mockResolvedValue([installed])
   const release = await readDesktopRelease('zcode', { appVersion: '3.14.5' }, control(), { fetcher: f.metadataFetch, platform: 'win32', arch: 'x64' })
   expect(release.url).toBe(f.url)
   const row = (await checked(f.service)).entries.find(e => e.cli === 'zcode')!
@@ -188,7 +191,12 @@ it('模拟：官方 Windows feed 到现有安装程序执行与 verify，等待�
   child.finish(); await until(() => child.child.waitForExit.mock.calls.length > 0)
   expect(f.service.snapshot().operation).toBeDefined()
   child.exit(true)
-  expect((await finished(f.service)).results[0]).toMatchObject({ phase: 'succeeded', afterVersion: '3.18.2' })
+  const result = (await finished(f.service)).results[0]
+  if (moved) {
+    expect(result).toMatchObject({ phase: 'failed', error: { code: 'IDENTITY_CHANGED' } })
+    expect(result?.error?.message).toContain(`安装程序把新版本装到了 ${installed}，原安装 ${app} 未更新`)
+  } else expect(result).toMatchObject({ phase: 'succeeded', afterVersion: '3.18.2' })
+  expect(f.store.read('zcode')).toEqual(record); expect(f.store.revision('zcode')).toBe(revision)
   expect(f.backend.spawn).toHaveBeenCalledTimes(1)
   expect((await f.identify())?.fingerprint.appVersion).toBe('3.18.2')
 })

@@ -126,7 +126,7 @@ it.each([false, true])('模拟：旧 auto 实体已删除=%s 时同根稳定入�
   vi.mocked(f.backend.resolveExecutable).mockImplementation(async name => isAbsolute(name) ? name : '/other/npm/codebuddy')
   const id = await identifyInstallation('codebuddy', f.backend, f.config, control())
   expect(id).toMatchObject({ executable: f.entry, source: 'self-update', fingerprint: { realpath: next } })
-  expect(f.store.read('codebuddy')).toEqual({ mode: 'auto', path: f.entry })
+  expect(f.store.read('codebuddy')).toEqual({ mode: 'auto', path: f.old })
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })
 it('模拟：首次 PATH 为版本实体也记录稳定入口，后台旧记录不查 PATH', async () => {
@@ -191,7 +191,7 @@ it('模拟：稳定入口恰为 npm 符号链接时仍按 npm 分类', async () 
   unlinkSync(f.entry); symlinkSync(npm, f.entry)
   const id = await identifyInstallation('codebuddy', f.backend, f.config, control())
   expect(id?.source).toBe('npm'); expect(automaticMethod('codebuddy', id!)).toBe('npm')
-  expect(f.store.read('codebuddy')?.path).toBe(f.entry)
+  expect(f.store.read('codebuddy')).toBeUndefined()
 })
 it('模拟：手动别名不变且实体仍在原生根内，可通过更新后身份核对', () => {
   const before = { ...identity('/home/模拟/.local/share/codebuddy/versions/2.183.0/codebuddy', '/home/模拟'), executable: '/usr/local/bin/custom-codebuddy' }

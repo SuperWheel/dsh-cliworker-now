@@ -1,6 +1,6 @@
 /** 模拟：Windows npm 静默跳过 optionalDependency、发布元数据及下载；不运行真实 CLI。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, writeFileSync, existsSync, cpSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { npmDependency, npmPlatformMatches, npmPlatformComponents, npmManifest, npmDigest, verifyNpmPlatforms, type NpmManifest } from '../src/host/cli-management/npm-platform.ts'
@@ -371,8 +371,10 @@ it('模拟 Windows 手动证据：镜像低速后转官方源，保持偏移；�
 })
 it.each(['ENOSPC', 'EACCES', 'directory'])('模拟：通道记忆或目录清理 %s 不能阻塞结束、锁释放或队列推进', async code => {
   const f = serviceFixture(['codex', 'pi']); roots.push(f)
-  const pi = simulatedPiInstallation(f.root, '1.0.0')
-  const piIdentity = (version: string) => ({ ...syntheticIdentity('pi', version), executable: pi.entry, packageRoot: pi.pkg,
+  const originalPi = simulatedPiInstallation(f.root, '1.0.0'), prefix = join(f.root, 'pi-prefix'), pkg = join(prefix, 'lib/node_modules/@earendil-works/pi-coding-agent')
+  cpSync(originalPi.pkg, pkg, { recursive: true })
+  const pi = { pkg, entry: join(pkg, 'dist/bundle/cli.js'), write: (name: string, value: string) => writeFileSync(join(pkg, name), value) }
+  const piIdentity = (version: string) => ({ ...syntheticIdentity('pi', version), executable: pi.entry, prefix, packageRoot: pi.pkg,
     fingerprint: { ...syntheticIdentity('pi', version).fingerprint, realpath: pi.entry } })
   f.identities.set('pi', piIdentity('1.0.0'))
   vi.mocked(f.backend.spawn).mockImplementation(spec => {

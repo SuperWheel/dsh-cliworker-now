@@ -1,20 +1,23 @@
 import { WORKBUDDY_COS_POLICY, readWorkBuddyCos, workbuddyWindowsUrl, verifyWorkBuddyWindowsSignature, type WorkBuddyCosIntegrity } from './workbuddy-windows.ts'
 import { trackUpdateTemporary, retainUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { physicalFs } from './physical-fs.ts'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, isAbsolute, join, win32 } from 'node:path'
 import { isAlias, isPair, isScalar, parseDocument, visit } from 'yaml'
 import { hostFetch } from '../host-fetch.mjs'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
-import { CliOperationError } from './planner.ts'
+import { resolveWorkBuddyInstallation, WORKBUDDY_WINDOWS_INSTALL_QUERY, workbuddyWindowsRegistryCandidates } from '../workbuddy-installation.ts'
+import { readPeVersion } from './pe-version.ts'
+import { CliOperationError, samePath } from './planner.ts'
+import { WINDOWS_APP_IMAGES } from './windows-installer-apps.ts'
 import { bounded } from './versions.ts'
 import { installDesktop, desktopSignatureRequirement } from './desktop.ts'
 import { DESKTOP_INSTALL_SOURCES } from './sources.ts'
 
 // App bundles contain app.asar; Electron's patched fs would treat it as a directory.
-const { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm } = physicalFs().promises
+const { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rename, rm, readFile } = physicalFs().promises
 
 export type DesktopCli = 'zcode' | 'workbuddycn' | 'workbuddy'
 export interface DesktopRelease { version: string; url: string; sha512?: string; sha256?: string; size?: number; teamId?: string; integrityPolicy?: typeof WORKBUDDY_COS_POLICY }
@@ -158,6 +161,8 @@ export async function readDesktopRelease(cli: DesktopCli, current: { appVersion?
  * separate seam; tests replace capture and never launch native processes. */
 export const desktopUpdateIo = {
   access, rename, rm,
+  installedPaths: installedWindowsAppPaths,
+  installationStamp: windowsInstallationStamp,
   capture(argv: string[], signal: AbortSignal): Promise<string> {
     signal.throwIfAborted()
     return new Promise((resolve, reject) => {
@@ -206,8 +211,21 @@ export async function runDesktopUpdate(options: {
       }
       signal.throwIfAborted()
       if (cli === 'workbuddy') await verifyWorkBuddyWindowsSignature(temporaryExe ?? file, signal, desktopUpdateIo.capture)
+      const baseline = new Map<string, string>()
+      for (const path of await desktopUpdateIo.installedPaths(cli, signal)) {
+        if (!samePath(path, appPath)) baseline.set(path, await desktopUpdateIo.installationStamp(cli, path, signal))
+      }
       options.awaiting(); signal.throwIfAborted()
       await run([temporaryExe ?? file], signal); signal.throwIfAborted()
+      const installed = await desktopUpdateIo.installedPaths(cli, signal)
+      let different: string | undefined
+      for (const path of installed) {
+        if (samePath(path, appPath)) continue
+        const previous = [...baseline.keys()].find(before => samePath(before, path))
+        if (!previous || baseline.get(previous) !== await desktopUpdateIo.installationStamp(cli, path, signal)) { different = path; break }
+      }
+      if (different) throw new CliOperationError('IDENTITY_CHANGED', `安装程序把新版本装到了 ${different}，原安装 ${appPath} 未更新`)
+      if (!installed.some(path => samePath(path, appPath))) throw new CliOperationError('IDENTITY_CHANGED', `无法核实安装程序的实际落点，原安装 ${appPath} 未确认更新；未修改路径记录`)
       return { appPath }
     } catch (error) { operationError = error; throw error }
     finally {
@@ -322,4 +340,42 @@ export async function runDesktopUpdate(options: {
       throw new CliOperationError(movedOld ? 'IDENTITY_CHANGED' : 'UNKNOWN', operationError instanceof Error ? `${operationError.message}；${cleanup}` : cleanup)
     }
   }
+}
+
+/** Read uninstall locations after the installer tree exits; validate product identity, never execute hints. */
+export async function installedWindowsAppPaths(cli: DesktopCli, signal: AbortSignal): Promise<string[]> {
+  const query = cli === 'zcode' ? WORKBUDDY_WINDOWS_INSTALL_QUERY
+    .replace("'^WorkBuddy(?: AI)?(?:\\s.*)?$'", () => "'^ZCode(?:\\s.*)?$'")
+    .replace("if([string]$key.GetValue('Publisher') -notmatch '^Tencent\\b'){continue}", '') : WORKBUDDY_WINDOWS_INSTALL_QUERY
+  const raw = await desktopUpdateIo.capture(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', query], signal)
+  let data: { complete?: boolean; schema?: number; records?: unknown[] }
+  try { data = JSON.parse(raw.trim()) } catch { throw new CliOperationError('IDENTITY_CHANGED', '无法读取安装程序实际落点，未修改路径记录') }
+  if (data.schema !== 1 || data.complete !== true || !Array.isArray(data.records)) throw new CliOperationError('IDENTITY_CHANGED', '安装目录注册表查询不完整，未修改路径记录')
+  const paths = workbuddyWindowsRegistryCandidates(raw), result: string[] = []
+  for (const candidate of paths) {
+    signal.throwIfAborted()
+    if (cli === 'zcode') {
+      const root = candidate.toLowerCase().endsWith('.exe') ? win32.dirname(candidate) : candidate
+      const version = await readPeVersion(win32.join(root, 'ZCode.exe'))
+      if (version?.productName === 'ZCode') result.push(root)
+    } else {
+      try { result.push((await resolveWorkBuddyInstallation(cli, { platform: 'win32', manualPath: candidate })).appRoot) }
+      catch { /* The other WorkBuddy site is not this product. */ }
+    }
+  }
+  return [...new Set(result)]
+}
+
+/** Compare existing foreign copies without treating their mere presence as a new destination. */
+async function windowsInstallationStamp(cli: DesktopCli, root: string, signal: AbortSignal): Promise<string> {
+  const records = []
+  for (const relative of ['', WINDOWS_APP_IMAGES[cli], 'resources/app.asar', 'resources/app/package.json', 'resources/app/product.json', 'resources/cli/package.json', 'resources/app.asar.unpacked/cli/package.json', 'resources/app.asar.unpacked/cli/product.json']) {
+    signal.throwIfAborted()
+    const path = join(root, relative)
+    const info = await lstat(path).catch(error => { if (['ENOENT', 'ENOTDIR'].includes(error.code)) return undefined; throw error })
+    if (!info) { records.push([relative, null]); continue }
+    const digest = relative.endsWith('.json') && info.isFile() && info.size <= 128 * 1024 ? createHash('sha256').update(await readFile(path)).digest('hex') : undefined
+    records.push(relative === '' ? [relative, await realpath(path), info.ino] : [relative, await realpath(path), info.ino, info.size, info.mtimeMs, info.ctimeMs, digest])
+  }
+  return JSON.stringify(records)
 }
