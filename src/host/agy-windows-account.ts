@@ -123,6 +123,9 @@ async function readNativeWindowsAgyAccount(
       '-NoLogo',
       '-NoProfile',
       '-NonInteractive',
+      // This process only: the default Restricted policy would refuse the unsigned helper.
+      '-ExecutionPolicy',
+      'Bypass',
       '-File',
       fileURLToPath(new URL('./windows-agy-account.ps1', import.meta.url)),
     ],

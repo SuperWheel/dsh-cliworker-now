@@ -42,7 +42,19 @@ issue #13 的修复已有独立规格、设计与 Windows 测试，保留为 `v0
 CodeBuddy 的环境令牌、apiKeyHelper 与 API Key，MiMo 的 Token Plan 账号，Pi 1.5.2 的仅 env 凭据与模板，ZCode 0.17 的 `enc:v2` 加密及 `auth-source`，Hermes 的嵌套 `renewal` 与签发时间排序，都按各 CLI 安装包里的读取顺序补齐。插件只检查来源是否存在、读取身份字段，不执行 apiKeyHelper，不自己调用 OAuth 刷新接口；需要续期的走 CLI 原生入口，没有安全入口时给出明确提示，不显示成未登录。
 
 ### 决定 7：不在本次处理的差异
-OMP、Pi 的 profile 与目录环境变量、OMP 在 XDG 目录存在时改用 XDG 数据目录：本机与测试机都未设置、目录不存在，Desktop 一般也不继承终端环境，只记录不修改。OpenCode 的 `OPENCODE_AUTH_CONTENT` 和 `wellknown` 凭据属于既有隔离边界。WorkBuddy 不提供账号主体接口，同站点换号仍无法识别，维持既有站点绑定语义。TRAE CN 0.215.0 的 `cli_auth_credentials_store` 支持 keyring／auto，存入钥匙串成功后会删除 `auth.json`（服务名先查 `Codex Auth` 再查 `TRAE CLI Auth`）；Mac 本机为文件存储且钥匙串无该条目（Windows 凭据管理器经 SSH 不可见，未核实），本次不实现钥匙串读取，此模式下仍显示未登录。
+OMP、Pi 的 profile 与目录环境变量、OMP 在 XDG 目录存在时改用 XDG 数据目录：本机与测试机都未设置、目录不存在，Desktop 一般也不继承终端环境，只记录不修改。OpenCode 的 `OPENCODE_AUTH_CONTENT` 和 `wellknown` 凭据属于既有隔离边界。WorkBuddy 不提供账号主体接口，同站点换号仍无法识别，维持既有站点绑定语义。TRAE CN 0.215.0 的 `cli_auth_credentials_store` 支持 keyring／auto 模式，起初列为不处理，已在任务 8.2 实现，见决定 8。
+
+### 决定 8：系统凭据库只读、拒绝后不在后台重问（2026-11-17）
+- ZCode 的 `enc:v2:os:`、TRAE CN 与 Codex 的 keyring／auto 模式，统一经 `src/host/os-credential-store.ts` 只读读取：
+  - macOS 用 `/usr/bin/security`；
+  - Windows 用本进程放行执行策略的 `windows-credential-read.ps1` 调用 CredRead；
+  - Linux 用 `secret-tool`。
+- 插件不写入、不刷新、不迁移凭据，也不输出值。读不到时显示「无法确认」，不判为未登录。
+- Codex 的 keyring／auto 模式改为读取完整的 AuthDotJson，复用文件模式的投影，同一账号两种存储的绑定一致，冻结的文件模式哈希不变。不再使用 `getAuthStatus(includeToken)`：它拿不到 id_token，而且可能刷新令牌。
+- secrets 后端的 scrypt 在整个 Host 中串行执行，工作因子上限 20，计入 30 秒超时。
+- auto 模式按原生 `AutoAuthStorage::load` 的规则：钥匙串读取出错时回退到 `auth.json`。
+- macOS 上用户拒绝授权或授权超时后，该条目在后台路径上不再读取，直到 Host 重启。用户主动打开账号窗口、刷新、派遣或查询模型时，可以再试一次。
+- Host 释放时取消正在进行的读取，并等待其进程范围退出。
 
 ## Risks
 

@@ -7,6 +7,8 @@ import type { AccountStatus } from '../shared/accounts.ts'
 import type { ModelChoice } from '../shared/types.ts'
 import { METADATA_EXIT_GRACE_MS, ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 
+import { OsCredentialStoreError, decodeMacSecurityHex, keyringHomeDigest, readGenericPassword, type OsCredentialReadOptions } from './os-credential-store.ts'
+
 type Identity = Pick<AccountStatus, 'state' | 'summary' | 'verification'>
 
 /** traex gives a non-empty TRAECLI_HOME precedence over the shared TRAE home. */
@@ -102,4 +104,28 @@ export async function discoverTraecnModels(backend: ProcessBackend, config: Runt
   if (!rows.length) throw new Error('TRAE CN 当前账号暂无可确认模型，请刷新或检查套餐')
   // TRAE publishes no effort source: the only choice is the native default (same as Kimi OAuth / Claude own route).
   return rows.map(row => ({ id: row.config_name, label: typeof row.name === 'string' ? row.name : row.config_name, efforts: ['default'] }))
+}
+
+/**
+ * traex 0.215.0 (a Codex fork, `keyring` 3.6.3) keeps Codex's keyring scheme: its
+ * binary carries the service names `Codex Auth` (the one it saves under) and
+ * `TRAE CLI Auth`, read in that order, and the `cli|` account prefix that Codex
+ * follows with the first 16 hex characters of SHA-256 over the canonical CLI home.
+ * The value is the same JSON document as `auth.json`.
+ */
+export const TRAE_KEYRING_SERVICES = ['Codex Auth', 'TRAE CLI Auth'] as const
+
+/** The login document of traex's keyring storage, `undefined` when neither item exists. */
+export async function readTraecnKeyringAuth(backend: ProcessBackend, config: RuntimeConfig, cliHome: string,
+  signal: AbortSignal, options: OsCredentialReadOptions = {}): Promise<unknown> {
+  const platform = options.platform ?? process.platform
+  const account = `cli|${await keyringHomeDigest(cliHome, platform)}`
+  for (const service of TRAE_KEYRING_SERVICES) {
+    const raw = await readGenericPassword(backend, config, { service, account }, signal, options)
+    if (raw === undefined) continue
+    try { return JSON.parse(platform === 'darwin' && !raw.startsWith('{') ? decodeMacSecurityHex(raw) : raw) }
+    // Native: "failed to deserialize CLI auth from keyring" is a load error, not a missing login.
+    catch { throw new OsCredentialStoreError() }
+  }
+  return undefined
 }

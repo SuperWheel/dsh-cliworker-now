@@ -108,6 +108,7 @@ import { nativeProcessBackend } from './native-process.ts'
 import { WindowsSystemProxySource } from './windows-system-proxy.ts'
 import { MacOSSystemProxySource } from './macos-system-proxy.ts'
 import { hostProxyLookup } from './system-proxy.ts'
+import { backgroundCredentialRead, explicitCredentialRead, installOsCredentialStore } from './os-credential-store.ts'
 import { setHostProxy } from './host-fetch.mjs'
 import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
 import { CliExecutablePathStore } from './cli-executable-paths.ts'
@@ -383,6 +384,8 @@ export class CliWorkerService extends TypertRemoteService {
       void systemProxy.refresh()
       setHostProxy(hostProxyLookup(systemProxy))
     }
+    // ZCode's OS-held credential key is read through the Host's own process backend.
+    const releaseCredentialStore = installOsCredentialStore(this.backend, this.options)
     this.accounts = new AccountManager(this.backend, this.options, undefined, (cli, error) =>
       this.runtime.blockCatalogOnCleanup(cli, error),
       cli => this.invalidateSettingsDisplay(cli),
@@ -399,7 +402,7 @@ export class CliWorkerService extends TypertRemoteService {
       idle: () => !this.runtime.hasActiveCliWork() && !CLI_IDS.some(cli => this.accounts.isBusy(cli)),
       enabled: () => this.runtime.generalSettings().backgroundCliCheck,
       cliEnabled: cli => this.runtime.storage.cliSettings().enabled[cli],
-      account: (cli, project, signal) => this.accounts.status(cli, project, signal, { background: true }),
+      account: (cli, project, signal) => backgroundCredentialRead(() => this.accounts.status(cli, project, signal, { background: true })),
       preloadConnection: (cli, project, kind, signal) => this.preloadSettingsConnection(cli, project, kind, signal),
       cleanup: (cli, error) => this.runtime.blockCatalogOnCleanup(cli, error),
       globalCleanup: error => this.runtime.blockOnCleanup(error),
@@ -772,6 +775,7 @@ export class CliWorkerService extends TypertRemoteService {
         this.dshSubagents.dispose()
         setHostProxy(undefined)
         return Promise.all([
+          releaseCredentialStore(),
           temporarySweep.close(),
           systemProxy?.close(),
           this.cliManagement.close(),
@@ -1003,14 +1007,15 @@ export class CliWorkerService extends TypertRemoteService {
   }
   private async readAccountBinding(...args: Parameters<typeof readCliAccountBinding>) {
     const release = this.options?.cliMaintenance?.using(args[0])
-    try { return await readCliAccountBinding(...args) }
+    // A dispatch or settings read the user asked for may ask the keychain again; background scopes stay background.
+    try { return await explicitCredentialRead(() => readCliAccountBinding(...args)) }
     catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error); throw error }
     finally { release?.() }
   }
   private async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
     const release = this.options?.cliMaintenance?.using(args[0])
     try {
-      return await this.freshCatalog(...args)
+      return await explicitCredentialRead(() => this.freshCatalog(...args))
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error)
       if (accountBusy(error)) return await this.busyAccountCatalog(error, ...args)
@@ -2491,8 +2496,8 @@ export class CliWorkerService extends TypertRemoteService {
       // Host-owned refresh outlives this quick snapshot request; close/invalidation cancels it.
       const account = !this.connectionCache().fresh(project, id, 'account')
       const catalog = !this.connectionCache().fresh(project, id, 'catalog')
-      if (account) void this.readAccountStatus(parentSessionId, id, this.disposed.signal, false).catch(() => undefined)
-      if (catalog) void this.settingsCatalog(parentSessionId, id, this.disposed.signal, false).catch(() => undefined)
+      if (account) void backgroundCredentialRead(() => this.readAccountStatus(parentSessionId, id, this.disposed.signal, false)).catch(() => undefined)
+      if (catalog) void backgroundCredentialRead(() => this.settingsCatalog(parentSessionId, id, this.disposed.signal, false)).catch(() => undefined)
       const status = this.connectionCache().status(project, id)
       // These reads have been scheduled even if their parent lookup has not yielded yet.
       if (account) status.account.loading = true
@@ -2510,9 +2515,12 @@ export class CliWorkerService extends TypertRemoteService {
   }
   @Remote('accountStatus')
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return this.readAccountStatus(parentSessionId, cli, signal, false)
+    return explicitCredentialRead(() => this.readAccountStatus(parentSessionId, cli, signal, false))
   }
-  private async preloadSettingsConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+  private preloadSettingsConnection(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
+    return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, project, kind, signal))
+  }
+  private async preloadSettingsConnectionNow(cli: ActiveCliId, project: string, kind: 'account' | 'catalog', signal: AbortSignal) {
     const release = this.options.cliMaintenance?.using(cli)
     try {
       const allowed = kind === 'account' ? BACKGROUND_ACCOUNT_CLIS : BACKGROUND_CATALOG_CLIS
@@ -2556,7 +2564,7 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Read lifetime. @returns Fresh account status and action handles. */
   @Remote('refreshAccountStatus')
   async refreshAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return this.readAccountStatus(parentSessionId, cli, signal, true)
+    return explicitCredentialRead(() => this.readAccountStatus(parentSessionId, cli, signal, true))
   }
   private async readAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal, refresh: boolean): Promise<string> {
     let queriedCli: CliId | undefined

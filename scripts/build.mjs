@@ -237,6 +237,8 @@ cpSync('src/host/windows-account-stdio.mjs', 'lib/types/host/windows-account-std
 cpSync('src/host/windows-hidden-launch.mjs', 'lib/types/host/windows-hidden-launch.mjs')
 cpSync('src/host/windows-agy-account.ps1', 'lib/windows-agy-account.ps1')
 cpSync('src/host/windows-agy-account.ps1', 'lib/types/host/windows-agy-account.ps1')
+cpSync('src/host/windows-credential-read.ps1', 'lib/windows-credential-read.ps1')
+cpSync('src/host/windows-credential-read.ps1', 'lib/types/host/windows-credential-read.ps1')
 await build({
   entry: { index: 'lib/types/host/index.js' },
   outDir: 'lib',

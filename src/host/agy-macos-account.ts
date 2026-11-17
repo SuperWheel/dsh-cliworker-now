@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
-import { captureCatalogMetadata } from './adapters.ts'
 import { agyIdentityFromCredential, readAgyTokenFile, type AccountIdentitySource } from './account-identity.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
+import { captureMacGenericPassword } from './os-credential-store.ts'
 
 const LIMIT = 64 * 1024
 /** agy 1.4.x stores its macOS login through go-keyring; the Windows target is `gemini:antigravity`. */
@@ -14,7 +14,6 @@ export const MAC_AGY_KEYCHAIN_ARGUMENTS = [
   'antigravity',
   '-w',
 ] as const
-const ITEM_NOT_FOUND = 44
 
 export class MacAgyKeychainError extends Error {
   constructor() {
@@ -52,15 +51,8 @@ export async function readMacAgyCredential(
   signal.throwIfAborted()
   let output: string
   try {
-    output = await captureCatalogMetadata(
-      backend,
-      config,
-      [...MAC_AGY_KEYCHAIN_ARGUMENTS],
-      homedir(),
-      signal,
-      undefined,
-      [0, ITEM_NOT_FOUND],
-    )
+    // Same argument array as MAC_AGY_KEYCHAIN_ARGUMENTS, built by the shared store reader.
+    output = await captureMacGenericPassword(backend, config, { service: 'gemini', account: 'antigravity' }, signal)
   } catch (error) {
     signal.throwIfAborted()
     if (error instanceof ProcessCleanupUnconfirmedError) throw error

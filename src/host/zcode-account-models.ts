@@ -1,5 +1,6 @@
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
+import { ProcessCleanupUnconfirmedError } from './process.ts'
 import { createZCodeCredentialReader, type ZCodeCredentialOptions, type ZCodeCredentialReader } from './zcode-credentials.ts'
 import { join } from 'node:path'
 
@@ -73,6 +74,7 @@ export async function readZCodeAccountBindings(
     }
     return result
   } catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
     options.signal?.throwIfAborted()
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return result
     throw new Error('无法安全读取 ZCode 当前账号的 Worker 凭据，请在原生登录设置中检查')

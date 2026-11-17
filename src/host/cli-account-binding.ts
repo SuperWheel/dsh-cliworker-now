@@ -17,7 +17,8 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
-import { readCodexAccountBinding } from './codex-account.ts'
+import { readCodexKeyringAuth } from './codex-auth-store.ts'
+import { OsCredentialStoreError } from './os-credential-store.ts'
 import { accountEmail } from './account-identity.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
@@ -35,7 +36,7 @@ import { readZCodeBindingMaterial, zcodeAuthDirectory } from './zcode-adapter.ts
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { ensureHermesNousFresh, HermesRenewalError } from './hermes-renewal.ts'
 import { readQoderAccountBindingMaterial, QoderAccountError } from './qoder-accounts.ts'
-import { traeCliHome } from './traecn-accounts.ts'
+import { readTraecnKeyringAuth, traeCliHome } from './traecn-accounts.ts'
 
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const text = (v: unknown): v is string => typeof v === 'string' && !!v.trim()
@@ -200,25 +201,40 @@ function codexConfigPaths(root: string, project: string) {
   return [...new Set([join(root, 'config.toml'), ...ancestors])]
 }
 /** Minimal TOML root-key reader: quoted strings/comments and nested values are
- * consumed as units, so their contents cannot impersonate root keys or tables. */
-function codexStoreSetting(raw: string): string | undefined {
-  let statement = '', depth = 0, store: string | undefined
+ * consumed as units, so their contents cannot impersonate root keys or tables.
+ * `cli` and `modes` name the CLI whose file this is (Codex, or its fork traex). */
+function codexStoreSetting(
+  raw: string, cli: CliId = 'codex', modes: readonly string[] = ['file', 'keyring', 'auto'],
+): string | undefined {
+  let store: string | undefined
   const stringValue = (value: string): string => value.startsWith("'") ? value.slice(1, -1) : JSON.parse(
     // JSON and TOML basic strings share escapes except TOML's eight-digit form.
     value.replace(/\\(?:U([0-9a-fA-F]{8})|.)/g, (escape, unicode: string | undefined) =>
       unicode ? JSON.stringify(String.fromCodePoint(parseInt(unicode, 16))).slice(1, -1) : escape),
   )
-  const consume = () => {
+  tomlStatements(raw, cli, true, (_table, statement) => {
     const match = /^\s*([A-Za-z0-9_-]+|"(?:\\.|[^"\\])*"|'[^']*')\s*=\s*([\s\S]*)$/.exec(statement)
-    statement = ''
     if (!match) return
     const key = /^["']/.test(match[1]!) ? stringValue(match[1]!) : match[1]
     if (key !== 'cli_auth_credentials_store') return
     const value = match[2]!.trim()
     if (store !== undefined || !/^(?:"(?:\\.|[^"\\])*"|'[^']*')$/.test(value))
-      throw new CliAccountBindingError('codex')
+      throw new CliAccountBindingError(cli)
     store = stringValue(value)
-    if (!['file', 'keyring', 'auto'].includes(store!)) throw new CliAccountBindingError('codex')
+    if (!modes.includes(store!)) throw new CliAccountBindingError(cli)
+  })
+  return store
+}
+/** The scanner behind the readers above and below: `key = value` statements with the
+ * table they belong to ('' is the root table; array tables never match a name). */
+function tomlStatements(
+  raw: string, cli: CliId, rootOnly: boolean, emit: (table: string, statement: string) => void,
+) {
+  let statement = '', depth = 0, table = ''
+  const consume = () => {
+    const current = statement
+    statement = ''
+    emit(table, current)
   }
   for (let i = 0; i < raw.length; i++) {
     const char = raw[i]!
@@ -233,13 +249,20 @@ function codexStoreSetting(raw: string): string | undefined {
         if (char === '"' && raw[i] === '\\') i++
         i++
       }
-      if (i >= raw.length) throw new CliAccountBindingError('codex')
+      if (i >= raw.length) throw new CliAccountBindingError(cli)
       i += delimiter.length - 1
       // TOML permits one or two content quotes immediately before the closing triple.
       if (delimiter.length === 3) for (let extra = 0; extra < 2 && raw[i + 1] === char; extra++) i++
       statement += raw.slice(start, i + 1)
     } else if (char === '[' && !statement.trim() && depth === 0) {
-      break // The root table cannot be resumed after a TOML table/array-table header.
+      if (rootOnly) break // The root table cannot be resumed after a TOML table/array-table header.
+      const end = raw.indexOf('\n', i)
+      const header = /^\[\s*([A-Za-z0-9_-]+|"[^"\\]*"|'[^']*')\s*\]\s*(?:#.*)?$/.exec(
+        raw.slice(i, end < 0 ? raw.length : end).trimEnd(),
+      )
+      table = header ? header[1]!.replace(/^["']|["']$/g, '') : '\0'
+      statement = ''
+      i = end < 0 ? raw.length : end
     } else if (char === '\n' && depth === 0) {
       consume()
     } else {
@@ -249,17 +272,60 @@ function codexStoreSetting(raw: string): string | undefined {
     }
   }
   consume()
-  return store
+}
+/** Codex's `secret_auth_storage` feature as one config file sets it: `[features]`,
+ * a dotted root key or an inline table. A file this scanner cannot follow sets nothing. */
+function codexSecretAuthStorage(raw: string): boolean | undefined {
+  const key = String.raw`(?:[A-Za-z0-9_-]+|"[^"\\]*"|'[^']*')`
+  const assignment = new RegExp(String.raw`^\s*(${key}(?:\s*\.\s*${key})*)\s*=\s*([\s\S]*)$`)
+  let enabled: boolean | undefined
+  try {
+    tomlStatements(raw, 'codex', false, (table, statement) => {
+      const match = assignment.exec(statement)
+      if (!match) return
+      const path = [...(table ? [table] : []), ...match[1]!.split('.').map((part) => part.trim().replace(/^["']|["']$/g, ''))].join('.')
+      const value = match[2]!.trim()
+      if (path === 'features.secret_auth_storage' && /^(?:true|false)$/.test(value)) enabled = value === 'true'
+      else if (path === 'features' && value.startsWith('{')) {
+        const inline = /[{,]\s*["']?secret_auth_storage["']?\s*=\s*(true|false)\s*[,}]/.exec(value)
+        if (inline) enabled = inline[1] === 'true'
+      }
+    })
+  } catch {
+    return undefined
+  }
+  return enabled
 }
 async function codexStore(project: string, signal: AbortSignal) {
   const root = codexConfigDirectory()
   let store = 'file'
+  // rust-v0.169.0 features: `secret_auth_storage` is `default_enabled: cfg!(windows)`.
+  let secrets = process.platform === 'win32'
   for (const path of codexConfigPaths(root, project)) {
     const raw = await read(path, signal)
     if (!raw) continue
     store = codexStoreSetting(raw) ?? store
+    secrets = codexSecretAuthStorage(raw) ?? secrets
   }
-  return { root, store }
+  return { root, store, secrets }
+}
+/** traex's store mode from its own layers: `$TRAE_HOME/traecli.toml`, then each
+ * `<dir>/.trae/traecli.toml` from the filesystem root down to the project. */
+async function traecnStore(project: string, signal: AbortSignal, home: string) {
+  const paths = [join(process.env.TRAE_HOME || join(home, '.trae'), 'traecli.toml')]
+  for (let directory = resolve(project), index = 1; ; ) {
+    paths.splice(index, 0, join(directory, '.trae/traecli.toml'))
+    const parent = dirname(directory)
+    if (parent === directory) break
+    directory = parent
+  }
+  let store = 'file'
+  for (const path of new Set(paths)) {
+    const raw = await read(path, signal)
+    if (!raw) continue
+    store = codexStoreSetting(raw, 'traecn', ['file', 'keyring', 'auto', 'ephemeral']) ?? store
+  }
+  return store
 }
 const CODEX_ROUTE_ENV = [
   'CODEX_API_KEY',
@@ -340,7 +406,10 @@ export async function readCodexOwnAccountSource(project: string, signal: AbortSi
   const { root, store } = await codexStore(project, signal)
   if (store !== 'file') throw new CliAccountBindingError('codex')
   await requireDefaultCodexRoute(root, project, signal)
-  const auth = await document(join(root, 'auth.json'), signal)
+  return codexAuthSource(await document(join(root, 'auth.json'), signal), root)
+}
+/** One projection of Codex's AuthDotJson for every store it can be loaded from. */
+function codexAuthSource(auth: Record<string, any>, root: string) {
   if (literal(auth.OPENAI_API_KEY) && auth.auth_mode !== 'chatgpt')
     return {
       provider: 'openai',
@@ -403,7 +472,36 @@ async function material(
     return readCodebuddyAccountBindingMaterial(backend, config, executable, signal, { project })
   }
   if (cli === 'traecn') {
-    const path = join(traeCliHome(process.env, home), 'auth.json')
+    const cliHome = traeCliHome(process.env, home), path = join(cliHome, 'auth.json')
+    // Only stable identity fields are accessed. Never inspect credentials or device material.
+    const identity = (auth: unknown): BindingMaterial => {
+      if (!object(auth) || !object(auth.trae) || !text(auth.trae.user_id)) throw new CliAccountBindingError(cli)
+      const subject = { auth_mode: auth.auth_mode, user_id: auth.trae.user_id, region: auth.trae.region,
+        login_method: auth.trae.login_method, credential_kind: auth.trae.credential_kind,
+        api_base_url: auth.trae.endpoints?.api_base_url }
+      if (Object.values(subject).some(value => value !== undefined && typeof value !== 'string')) throw new CliAccountBindingError(cli)
+      const route = Object.fromEntries(['TRAECLI_PERSONAL_ACCESS_TOKEN', 'TRAECLI_HOST']
+        .filter(name => process.env[name] !== undefined).map(name => [name, hash(process.env[name]!)]))
+      // REQ-0136: where the CLI keeps its login is not who is logged in.
+      return { sourceIds: ['trae-cli-auth'], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
+    }
+    // REQ-0136: traex loads its login from the store `cli_auth_credentials_store` names:
+    // keyring → the keyring item, auto → the keyring item and otherwise auth.json, file → auth.json.
+    const store = await traecnStore(project, signal, home)
+    // An in-memory login of another process is no login of this Host.
+    if (store === 'ephemeral') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
+    let keyringUnread = false
+    if (store !== 'file') {
+      try {
+        const auth = await readTraecnKeyringAuth(backend, config, cliHome, signal)
+        if (auth !== undefined) return identity(auth)
+        if (store === 'keyring') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
+      } catch (error) {
+        // traex `auto` falls back to auth.json when the keyring cannot be loaded; `keyring` does not.
+        if (store !== 'auto' || !(error instanceof OsCredentialStoreError)) throw error
+        keyringUnread = true
+      }
+    }
     await safePiOmpAncestors(dirname(path))
     let handle: Awaited<ReturnType<typeof open>> | undefined, bytes: Buffer | undefined
     try {
@@ -425,19 +523,11 @@ async function material(
       if (offset !== before.size || after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
         current.isSymbolicLink() || current.ino !== before.ino || current.dev !== before.dev || current.size !== before.size || current.mtimeMs !== before.mtimeMs)
         throw new CliAccountBindingError(cli)
-      const auth = JSON.parse(bytes.subarray(0, offset).toString('utf8'))
-      // Only stable identity fields are accessed. Never inspect credentials or device material.
-      if (!object(auth) || !object(auth.trae) || !text(auth.trae.user_id)) throw new CliAccountBindingError(cli)
-      const subject = { auth_mode: auth.auth_mode, user_id: auth.trae.user_id, region: auth.trae.region,
-        login_method: auth.trae.login_method, credential_kind: auth.trae.credential_kind,
-        api_base_url: auth.trae.endpoints?.api_base_url }
-      if (Object.values(subject).some(value => value !== undefined && typeof value !== 'string')) throw new CliAccountBindingError(cli)
-      const route = Object.fromEntries(['TRAECLI_PERSONAL_ACCESS_TOKEN', 'TRAECLI_HOST']
-        .filter(name => process.env[name] !== undefined).map(name => [name, hash(process.env[name]!)]))
-      // REQ-0136: where the CLI keeps its login is not who is logged in.
-      return { sourceIds: ['trae-cli-auth'], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
+      return identity(JSON.parse(bytes.subarray(0, offset).toString('utf8')))
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
+      // A keyring that could not be read may still hold the login: unconfirmed, not signed out.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT')
+        throw keyringUnread ? new CliAccountBindingError(cli) : new CliAccountBindingError(cli, 'TRAE CN 未登录')
       throw error
     } finally { bytes?.fill(0); await handle?.close() }
   }
@@ -481,7 +571,7 @@ async function material(
     return { sourceIds: [root], entries: principal ? [{ provider: 'antigravity', principal }] : [] }
   }
   if (cli === 'codex') {
-    const { root, store } = await codexStore(project, signal)
+    const { root, store, secrets } = await codexStore(project, signal)
     // A relay set in Codex's own config: Codex runs it as configured.
     if (await codexCustomRoute(root, project, signal))
       return {
@@ -495,36 +585,21 @@ async function material(
       }
     if (store !== 'file') {
       await requireDefaultCodexRoute(root, project, signal)
-      const executable = await resolveCliExecutable(cli, backend, config, signal)
-      const account = await readCodexAccountBinding(backend, config, executable, project, signal)
-      const identity = account?.identity
-      if (identity?.state === 'authenticated' && identity.authMethod === 'api' && account?.apiKeyHash)
-        return {
-          sourceIds: [root],
-          entries: [{ provider: 'openai', principal: { kind: 'api', key: account.apiKeyHash } }],
-        }
-      if (
-        identity?.state !== 'authenticated' ||
-        identity.authMethod !== 'oauth' ||
-        !text(identity.accountLabel)
-      )
-        throw new CliAccountBindingError(cli)
-      return {
-        sourceIds: [root],
-        entries: [
-          {
-            provider: 'openai-codex',
-            // v0.169.0 account/read has email/workspaceName, not account ID,
-            // subject or issuer. Preserve existing file hashes; native OAuth
-            // therefore still differs from file OAuth. Workspace names can
-            // change or collide, but are the only exposed workspace discriminator.
-            principal: {
-              kind: 'oauth', email: identity.accountLabel.toLowerCase(),
-              ...(account?.workspaceName ? { workspaceName: account.workspaceName } : {}),
-            },
-          },
-        ],
+      // REQ-0136: read the login where Codex itself loads it, so one login gives one
+      // binding in every store. Nothing is refreshed and no app-server is started.
+      let auth: Record<string, any> | undefined
+      try {
+        auth = await readCodexKeyringAuth(backend, config, { root, secrets }, signal)
+      } catch (error) {
+        // Native `auto` loads auth.json when the keyring cannot be read; `keyring` fails.
+        if (store !== 'auto' || !(error instanceof OsCredentialStoreError)) throw error
       }
+      // Native `auto` also loads auth.json when the keyring holds no login.
+      if (!auth && store === 'auto') auth = await document(join(root, 'auth.json'), signal)
+      if (!auth) throw new CliAccountBindingError(cli)
+      const source = codexAuthSource(auth, root)
+      const entry = credentialEntry(source.provider, source.credential)
+      return { sourceIds: source.sourceIds, entries: entry ? [entry] : [] }
     }
     const source = await readCodexOwnAccountSource(project, signal)
     const entry = credentialEntry(source.provider, source.credential)

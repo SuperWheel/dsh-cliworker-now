@@ -3,6 +3,8 @@ import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
 import { homedir, platform, userInfo } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { installedOsSecretReader } from './os-credential-store.ts'
+import { ProcessCleanupUnconfirmedError } from './process.ts'
 
 /** Content-free errors: never expose ciphertext, secrets or native exception messages. */
 export class ZCodeCredentialError extends Error {
@@ -14,7 +16,7 @@ export interface ZCodeCredentialOptions {
   signal?: AbortSignal
   credentialSecret?: string
   env?: NodeJS.ProcessEnv
-  /** Read-only, non-interactive store transport; unavailable unless supplied. */
+  /** Read-only store transport; defaults to the Host's OS credential store reader. */
   readOsSecret?: (service: string, account: string, signal: AbortSignal) => Promise<string | undefined>
 }
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest()
@@ -123,12 +125,14 @@ export async function createZCodeCredentialReader(
       if (hasV2 && !secret) {
         if (!pinned && entries.some(([, value]) => value.startsWith('enc:v2:env:')))
           throw new ZCodeCredentialError()
-        // Existing AGY readers are account-specific. macOS security -w may prompt;
-        // the Windows helper returns AGY identity, not a generic NAPI keyring secret.
-        // Until a proven non-interactive transport exists, fail closed without launching either.
-        if (!options.readOsSecret) throw new ZCodeCredentialError()
-        const signal = AbortSignal.any([AbortSignal.timeout(3_000), ...(options.signal ? [options.signal] : [])])
-        const encoded = await options.readOsSecret('ZCode Credential Encryption', digest(resolve(filePath)).toString('hex'), signal)
+        // ZCode 0.17.1 keeps this key through @napi-rs/keyring (keyring-core): service
+        // `ZCode Credential Encryption`, account = SHA-256 of the resolved credentials path,
+        // value = 32 random bytes as base64url. The shared reader bounds its own wait (a
+        // macOS keychain prompt may be pending); without a Host reader this stays closed.
+        const readOsSecret = options.readOsSecret ?? installedOsSecretReader()
+        if (!readOsSecret) throw new ZCodeCredentialError()
+        const signal = AbortSignal.any([AbortSignal.timeout(20_000), ...(options.signal ? [options.signal] : [])])
+        const encoded = await readOsSecret('ZCode Credential Encryption', digest(resolve(filePath)).toString('hex'), signal)
         signal.throwIfAborted()
         if (!encoded || !/^[A-Za-z0-9_-]{43}$/.test(encoded)) throw new ZCodeCredentialError()
         key = Buffer.from(encoded, 'base64url')
@@ -155,6 +159,7 @@ export async function createZCodeCredentialReader(
     }
   } catch (error) {
     key?.fill(0)
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
     options.signal?.throwIfAborted()
     if (error instanceof ZCodeCredentialError) throw error
     throw new ZCodeCredentialError()

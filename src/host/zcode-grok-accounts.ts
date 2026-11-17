@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import type { AccountAction, ZCodeLoginProvider } from '../shared/accounts.ts'
 import { accountEmail, localTokenExpired, type AccountIdentity } from './account-identity.ts'
 import type { AccountLogin } from '../shared/accounts.ts'
-import type { ProcessBackend, RuntimeConfig } from './process.ts'
+import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { readZCodePersonalIdentity, zcodeAuthDirectory, zcodeEnvironment } from './zcode-adapter.ts'
 import { zcodeProviderLogins, zcodeProviderTarget } from './zcode-custom-provider.ts'
 import { assertGrokNativeEnvironment, selectGrokOwnAccount } from './grok-models.ts'
@@ -316,6 +316,7 @@ export async function zcodeGrokAccountStatus(
         )
       : identity, zcodeRows(config, home, options.home))
   } catch (error) {
+    if (error instanceof ProcessCleanupUnconfirmedError) throw error
     signal.throwIfAborted()
     if (cli === 'zcode' && error instanceof ZCodeCredentialError)
       return { state: error.state, verification: 'local', summary: error.message }

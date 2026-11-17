@@ -91,8 +91,10 @@ it('reads only the fixed native helper on every request and clears logout immedi
   expect((await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())).identity.state).toBe('unconfigured')
   expect(capture).toHaveBeenCalledTimes(2)
   const argv = capture.mock.calls[0]![2]
-  expect(argv.slice(1, 5)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-File'])
-  expect(argv[5]).toMatch(/windows-agy-account\.ps1$/)
+  // Process-local Bypass: the default Restricted policy would refuse the unsigned helper.
+  expect(argv.slice(1, 7)).toEqual(['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'])
+  expect(argv).toHaveLength(8)
+  expect(argv[7]).toMatch(/windows-agy-account\.ps1$/)
   expect(argv.join(' ')).not.toMatch(/cmd\.exe|CredEnumerate|token/)
 })
 it('discards a projection returned after cancellation', async () => {

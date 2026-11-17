@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { createHash } from 'node:crypto'
 import { constants, existsSync } from 'node:fs'
-import { chmod, lstat, mkdtemp, open, realpath, rm } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, open, realpath, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -69,8 +69,8 @@ export function codebuddyDeclaredSite(env = process.env): { id: string; label: s
   const label = new Map([['internal', '中国站'], ['external', '国际站'], ['ioa', 'iOA'], ['selfhosted', '企业域']]).get(id)
   return label ? { id, label } : { id: `declared:${value}`, label: value }
 }
-/** Project private JSON immediately; never return documents or parser errors.
- * Only the selected fields can escape this function; input bytes are discarded. */
+/** Project private JSON immediately; never expose documents or parser errors.
+ * The catalog may retain raw settings only to copy them into its private cwd. */
 async function projectPrivateJson<T>(path: string, select: (value: any, raw: string) => T, parse: (raw: string) => unknown = JSON.parse): Promise<T | undefined> {
   let file: Awaited<ReturnType<typeof open>> | undefined, bytes: Buffer | undefined
   try {
@@ -98,10 +98,7 @@ async function projectPrivateJson<T>(path: string, select: (value: any, raw: str
     await file?.close().catch(() => {})
   }
 }
-/** CodeBuddy 2.184.0: USER -> PROJECT -> PROJECT_LOCAL. env is replaced as a
- * whole, not merged by key. Only booleans and sanitized site IDs leave the reader.
- * Callers must supply the worker project; the host's cwd is not that project. */
-async function readSettings(options: AccountOptions) {
+function settingsPaths(options: AccountOptions) {
   const env = options.env ?? process.env
   const paths = (options.platform ?? process.platform) === 'win32' ? win32 : { join, isAbsolute }
   const home = env.CODEBUDDY_CONFIG_DIR?.trim() ? env.CODEBUDDY_CONFIG_DIR : paths.join(options.home ?? homedir(), '.codebuddy')
@@ -111,8 +108,14 @@ async function readSettings(options: AccountOptions) {
     const project = paths.isAbsolute(configured) ? configured : paths.join(options.project, configured)
     files.push(paths.join(project, 'settings.json'), paths.join(project, 'settings.local.json'))
   }
+  return files
+}
+/** CodeBuddy 2.184.0: USER -> PROJECT -> PROJECT_LOCAL. env is replaced as a
+ * whole, not merged by key. Only booleans and sanitized site IDs leave the reader.
+ * Callers must supply the worker project; the host's cwd is not that project. */
+async function readSettings(options: AccountOptions) {
   let helper = false, scannedToken = false, token = false, apiKey = false, site: ReturnType<typeof codebuddyDeclaredSite>
-  for (const file of files) {
+  for (const file of settingsPaths(options)) {
     options.signal?.throwIfAborted()
     const settings = await projectPrivateJson(file, (value, raw) => ({
       hasHelper: Object.hasOwn(value ?? {}, 'apiKeyHelper'),
@@ -249,15 +252,30 @@ function bridgePath() {
   throw new CodebuddyAccountError('CodeBuddy catalog bridge 未安装，请重新构建插件')
 }
 async function queryCatalog(backend: ProcessBackend, config: RuntimeConfig, executable: string, signal: AbortSignal,
-  env: Record<string, string>) {
+  env: Record<string, string>, projectSettings?: (string | undefined)[]) {
   signal.throwIfAborted()
   // Keep the read-only catalog out of the user's project: an untrusted folder would
-  // prompt, and CodeBuddy may write session files there. Env credentials are forwarded
-  // explicitly; project-only apiKeyHelper is a known gap (REQ-0136).
+  // prompt, and CodeBuddy may write session files there.
   const temporary = await mkdtemp(join(tmpdir(), 'cliworker-codebuddy-catalog-'))
   const cwd = temporary
   try {
     await chmod(temporary, 0o700)
+    if (projectSettings) {
+      // Native 2.184.0 PathUtils resolves both PROJECT and PROJECT_LOCAL under
+      // this override. Point it at copies, never at the user's config directory:
+      // the same override is also used by native project-config write paths.
+      // Keep each scope's original bytes (including JSONC) so the native merge
+      // and early JSON-only custom-token scan behave exactly as before.
+      const directory = join(temporary, '.codebuddy')
+      await mkdir(directory, { mode: 0o700 })
+      for (const [index, raw] of projectSettings.entries()) {
+        signal.throwIfAborted()
+        if (raw !== undefined) await writeFile(join(directory, index === 0 ? 'settings.json' : 'settings.local.json'), raw,
+          { mode: 0o600, flag: 'wx' })
+      }
+      env = { ...env, CODEBUDDY_PROJECT_CONFIG_DIR: directory }
+    }
+    signal.throwIfAborted()
     const output = await captureCatalogMetadata(backend, config, [process.execPath, bridgePath(), executable, cwd], cwd, signal, env)
     let raw: unknown
     try { raw = JSON.parse(output) } catch { throw new CodebuddyAccountError() }
@@ -283,15 +301,21 @@ export async function withCodebuddyCatalogSnapshot<T>(backend: ProcessBackend, c
   })
 }
 async function metadata(backend: ProcessBackend, config: RuntimeConfig, executable: string, signal: AbortSignal, options: AccountOptions = {}) {
+  signal.throwIfAborted()
   const scope = snapshots.getStore()
   const env = codebuddyEnvironment(options.env)
+  const configuredHome = (options.env ?? process.env).CODEBUDDY_CONFIG_DIR
+  if (configuredHome?.trim()) env.CODEBUDDY_CONFIG_DIR = configuredHome
+  const projectSettings = options.project ? await Promise.all(settingsPaths(options).slice(1).map(file =>
+    projectPrivateJson(file, (_value, raw) => raw, parseNativeJsonc))) : undefined
+  signal.throwIfAborted()
   // Cache only a protected context digest and models, never environment values.
-  const key = createHash('sha256').update(JSON.stringify([options.project ?? null,
+  const key = createHash('sha256').update(JSON.stringify([options.project ?? null, projectSettings,
     Object.entries(env).filter(([, value]) => value !== '')])).digest('hex')
   if (scope && scope.readingKey !== key) { scope.reading = undefined; scope.readingKey = key }
   const result = scope?.active && scope.backend === backend && scope.config === config && scope.executable === executable && scope.signal === signal
-    ? await (scope.reading ??= queryCatalog(backend, config, executable, signal, env))
-    : await queryCatalog(backend, config, executable, signal, env)
+    ? await (scope.reading ??= queryCatalog(backend, config, executable, signal, env, projectSettings))
+    : await queryCatalog(backend, config, executable, signal, env, projectSettings)
   signal.throwIfAborted()
   return structuredClone(result)
 }
@@ -304,7 +328,7 @@ export async function readCodebuddyAccountBindingMaterial(backend: ProcessBacken
   if (await readCodebuddyLoginState({ ...options, signal }) !== 'authenticated') throw loginRequired()
   const declared = await readCodebuddySite({ ...options, executable, signal })
   const env = codebuddyEnvironment(options.env)
-  const data = await metadata(backend, config, executable, signal, { ...options, env })
+  const data = await metadata(backend, config, executable, signal, options)
   const pairs = data.raw.map(model => [model.modelId, model._meta?.credits ?? null]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
   const catalog = createHash('sha256').update(JSON.stringify(pairs)).digest('hex')
   const credentials = Object.fromEntries(['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY']

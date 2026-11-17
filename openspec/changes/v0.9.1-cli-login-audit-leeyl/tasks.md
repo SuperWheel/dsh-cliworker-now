@@ -8,9 +8,9 @@
   - 证据：`tests/cli-management-admission.test.ts` 改写 3 项；`tests/cli-management-phase-b.test.ts`、`tests/cli-management-local-artifacts-windows.test.ts` 的更新断言改为不调用；`tests/cli-management-install.test.ts` 新增安装后调用一次的断言
   - 证据：`corepack pnpm exec vitest run` 上述 4 个文件 159 项通过；临时恢复旧的指纹作废代码时 admission 3 项失败，恢复后通过
 - [x] 1.3 记录 17 个 CLI 排查时的版本号（Mac 与 Windows 各一份）
-  - 证据（2026-11-17 只读排查，Mac／Windows）：Antigravity 1.5.9／1.5.9；Codex 0.169.0／0.169.0；Claude Code 2.1.311／2.1.325；Kimi 2.6.1／2.5.3；MiMo 0.1.17／0.1.17；ZCode CLI 0.17.1／0.17.1（桌面 3.18.2）；Grok Build 1.0.77／1.0.77；Hermes Agent 0.23.1／0.23.1；OMP 18.20.2／18.20.2；Pi 1.5.2／1.1.0；OpenCode 1.19.5／1.19.5；Qoder 1.1.89／1.1.89；Qoder CN 1.1.89／1.1.89；CodeBuddy Code 2.184.0（Mac）；TRAE CN 0.215.0／0.215.0；WorkBuddy CN 桌面 5.11.3（CLI 2.176.0）／5.9.3（CLI 2.165.0）；WorkBuddy 国际版 Mac 未安装／5.9.4（CLI 2.165.0）
+  - 证据（2026-11-17 只读排查，Mac／Windows）：Antigravity 1.5.9／1.5.9；Codex 0.169.0／0.169.0；Claude Code 2.1.311／2.1.325；Kimi 2.6.1／2.5.3；MiMo 0.1.17／0.1.17；ZCode CLI 0.17.1／0.17.1（桌面 3.18.2）；Grok Build 1.0.77／1.0.77；Hermes Agent 0.23.1／0.23.1；OMP 18.20.2／18.20.2；Pi 1.5.2／1.5.2（Windows 插件记录的是 npm 全局包 1.5.2；另有 2026-10-10 的旧托管安装 1.1.0 在 PATH 前面）；OpenCode 1.19.5／1.19.5；Qoder 1.1.89／1.1.89；Qoder CN 1.1.89／1.1.89；CodeBuddy Code 2.184.0（Mac）；TRAE CN 0.215.0／0.215.0；WorkBuddy CN 桌面 5.11.3（CLI 2.176.0）／5.9.3（CLI 2.165.0）；WorkBuddy 国际版 Mac 未安装／5.9.4（CLI 2.165.0）
   - 证据：Kimi 命令均带 `KIMI_CODE_NO_AUTO_UPDATE=1`；Windows 经 SSH 只读查询；Windows Grok 的 `~/.grok/version.json` 仍写 1.0.50，以可执行文件内版本常量为准
-  - 未执行：Windows Pi 未更新到 1.5.2，新版在 Windows 上的结果待获准更新后核实
+  - 更正：最初把 Windows 旧托管安装 `~/.pi/agent/install` 的 `current-version`（1.1.0）误记为插件所用版本；插件实际路径是 npm 全局 `@earendil-works/pi-coding-agent` 1.5.2
 
 ## 2. 官方账号类：Codex、Claude Code、Kimi、MiMo 〔后端｜6h｜前置 1〕
 - [x] 2.1 Codex：ChatGPT 账号与 API Key 两种登录，核对 auth.json 与系统凭据库
@@ -57,7 +57,7 @@
   - 证据：Mac 1.5.2 `checkPiInstallationIntegrity` 通过；隔离元数据助手退出 0，43 项
   - 修复：`pi-omp-native.ts`、`pi-native-catalog.mjs`（新增 `.d.mts`）接受只带 env 的 API 凭据，按凭据私有 env、进程 env 解析模板；`cli-account-binding.ts` Pi/OMP 段使用受保护摘要
   - 证据：`vitest run tests/pi-omp-*.test.ts tests/cli-account-binding.test.ts tests/account-logout.test.ts` 351 项通过、2 项仅 Windows 跳过；对已安装 Pi 解析器 121 组模板对照一致
-  - 未执行：Windows Pi 仍为 1.1.0；AWS profile 的真实模型权限未验证
+  - 未执行：AWS profile 的真实模型权限未验证；Windows 上 1.5.2 的核对见 8.5
 - [x] 4.3 OpenCode：核对授权档案结构；替换同一服务商 Key 后状态立即正确
   - 证据：两端 1.19.5；`auth.json` 与 XDG 路径一致，未发现新版改路径或结构；无改动
   - 未执行：替换 Key 的真实登录流程
@@ -102,6 +102,41 @@
   - 过程：C 盘写满导致两次 ENOSPC，按用户要求清理插件与 DSH 残留后改用 D 盘配置
 - [ ] 7.3 有改动的 CLI 在 Mac 与 Windows 上真实验收：设置页、账号窗口、模型目录、派遣、续聊、退出
 - [ ] 7.4 发布后在 GitHub issue #13 回复版本号，请报告者确认
+
+## 8. 遗留项补齐 〔后端｜8h｜前置 3,5〕
+- [x] 8.1 ZCode：读取系统凭据库中的 `enc:v2:os:` 密钥（macOS 钥匙串、Windows 凭据管理器）
+  - 2026-11-17（Fable）：新增共享只读模块 `src/host/os-credential-store.ts` 与 `windows-credential-read.ps1`，`zcode-credentials.ts` 经它读取 `enc:v2:os:` 的密钥。
+    - 依据：ZCode 0.17.1 原生实现为 `@napi-rs/keyring`，服务名 `ZCode Credential Encryption`，账号为凭据文件绝对路径的 sha256。
+    - 等待上限 20 秒；读不到时报「无法确认」，不报「未登录」。
+  - macOS 拒绝或超时后，该条目在后台路径上不再读取，直到 Host 重启；用户主动打开账号窗口、刷新、派遣或查模型时重试一次。条目不存在不算拒绝。`tests/os-credential-store.test.ts` 36 项模拟测试。
+  - 未执行：没有读过任何真实的钥匙串或凭据管理器条目，ps1 未在 Windows 运行过，macOS 授权弹窗未实测。本机 ZCode 凭据全部为 `enc:v1`，不走系统凭据库。
+- [x] 8.2 TRAE CN：按 `cli_auth_credentials_store` 读取钥匙串存储的登录，同一账号文件与钥匙串绑定一致
+  - 2026-11-17（Fable）：
+    - 设置读取 `$TRAE_HOME/traecli.toml` 与项目 `.trae/traecli.toml`，支持 file / keyring / auto / ephemeral 四种模式。
+    - keyring 依次读服务 `Codex Auth`、`TRAE CLI Auth`；auto 模式读不到时回退到 `auth.json`，与原生 `AutoAuthStorage::load` 一致。
+    - 同一账号的投影与文件模式相同，绑定一致。
+  - 未执行：TRAE 的钥匙串账号名（`cli|` 加 CLI 目录 sha256 前 16 位）是根据二进制字符串和上游 Codex 的规则推断的，本机没有钥匙串条目可核对；未读取 `/etc/trae/traecli.toml`、profile 与 `-c` 覆盖。
+- [x] 8.3 CodeBuddy：只在项目级 settings 配置的认证也能用于模型目录查询，查询仍不进入用户项目
+  - 2026-11-17（Codex gpt-6.1-sol high）：
+    - 把项目的 `settings.json` 与 `settings.local.json` 原样复制到私有临时目录（目录 0700，文件 0600），用原生的 `CODEBUDDY_PROJECT_CONFIG_DIR` 指向副本。
+    - 命令行参数里没有密钥；查询结束（成功、失败或取消）后删除副本；项目配置变化时模型缓存失效。
+    - 依据：CodeBuddy 2.184.0 的 `getProjectHomeDir()` 支持绝对路径覆盖，合并顺序为用户、项目、项目本地。
+    - 相关 6 个测试文件共 271 项通过，typecheck 通过。
+  - 未执行：相对路径的 apiKeyHelper 会按临时目录解析，依赖项目目录的 helper 不支持；Windows 与真实账号未测。
+- [x] 8.4 Codex：同一账号在文件与钥匙串存储之间切换绑定一致，文件模式既有绑定不变
+  - 2026-11-17：Codex gpt-6-astra high 核对 rust-v0.169.0 后确认，官方 RPC 拿不到 id_token，而 `getAuthStatus` 可能刷新令牌，所以不改 RPC 方案。之后由 Fable 实现 `src/host/codex-auth-store.ts`：
+    - 直存后端：服务 `Codex Auth`，账号 `cli|` 加 `CODEX_HOME` sha256 前 16 位。
+    - secrets 后端：`secrets/codex_auth.age`，scrypt 解密，口令在钥匙串服务 `codex`；已用 C2SP 公开测试向量核对。
+    - 取得完整的 AuthDotJson 后复用文件模式的投影；冻结的文件模式哈希不变；移除 `getAuthStatus(includeToken)` 的绑定路径。
+    - `tests/cli-account-binding.test.ts` 改为跨模式相等、auto 读取顺序和读不到时报错等模拟测试。
+  - 未执行：未读取真实钥匙串；Windows 规范路径（`\\?\C:\…`）的摘要形式未核实；每次 secrets 读取在 Windows 上约耗时 1 秒（scrypt 工作因子 18）。
+- [x] 8.5 Windows 核对插件所用 Pi 1.5.2（npm 全局包）的安装完整性、登录方式列表与账号读取；确认插件不会误用 PATH 上的旧托管安装 1.1.0
+  - 2026-11-17（Codex gpt-6.1-sol high，SSH，未调用模型）：
+    - 记录的 npm 入口与规范化后的 `dist\cli.js` 执行 `--version` 都输出 1.5.2，退出码 0。
+    - `checkPiInstallationIntegrity` 通过；登录方式列表 43 项；插件账号文件为 deepseek api_key，可读（未输出值）。
+    - 账号终端与 Worker 都用记录的路径启动，不按名字在 PATH 上找 `pi`（`adapters.ts:469`、`accounts.ts:1037`、`pi-omp-accounts.ts:190`）。
+    - 托管 1.1.0 与路径记录的哈希前后不变。
+  - 重复安装的成因与修复转入变更 `v0.9.1-cli-update-in-place-leeyl`。
 
 ## 跟进
 

@@ -20,6 +20,8 @@ const fixture = vi.hoisted(() => ({
   sources: {} as Record<string, any[]>,
   codex: undefined as any,
   windowsAgy: undefined as any,
+  keyring: {} as Record<string, string | false | undefined>,
+  keyringReads: [] as string[],
 }))
 vi.mock('node:os', async (original) => ({
   ...(await original<typeof import('node:os')>()),
@@ -51,10 +53,21 @@ vi.mock('../src/host/claude-own-route.ts', async (original) => ({
 }))
 vi.mock('../src/host/codex-account.ts', () => ({
   readCodexAccount: vi.fn(async () => fixture.codex),
-  readCodexAccountBinding: vi.fn(async () => fixture.codex && ({
-    identity: fixture.codex, workspaceName: fixture.codex.workspaceName, apiKeyHash: fixture.codex.apiKeyHash,
-  })),
 }))
+// A synthetic OS credential store keyed by service: a string is the stored value,
+// `false` an unreadable store, absent a missing item. Never a real keychain.
+vi.mock('../src/host/os-credential-store.ts', async (original) => {
+  const actual = await original<typeof import('../src/host/os-credential-store.ts')>()
+  return {
+    ...actual,
+    readGenericPassword: vi.fn(async (_backend: unknown, _config: unknown, query: { service: string; account: string }) => {
+      fixture.keyringReads.push(`${query.service} ${query.account}`)
+      const value = fixture.keyring[query.service]
+      if (value === false) throw new actual.OsCredentialStoreError()
+      return value
+    }),
+  }
+})
 // Windows reads native keyring metadata instead of the POSIX token file below.
 // This is the same synthetic identity, never a real Credential Manager read.
 vi.mock('../src/host/agy-windows-account.ts', async (original) => ({
@@ -222,6 +235,8 @@ beforeEach(() => {
   fixture.sources = {}
   fixture.status = {}
   fixture.codex = undefined
+  fixture.keyring = {}
+  fixture.keyringReads = []
   fixture.windowsAgy = undefined
   config = {
     ...DEFAULT_CONFIG,
@@ -573,24 +588,35 @@ it('模拟：Codex binds account and workspace, not refreshed access/refresh tok
   expect(await run('codex')).not.toBe(first)
 })
 
+// Codex's direct keyring item (rust-v0.169.0): service `Codex Auth`, value = AuthDotJson.
+// `secret_auth_storage = false` keeps that backend on Windows too, where it defaults to on.
+const DIRECT = '\n[features]\nsecret_auth_storage = false\n'
+const codexAuth = (sub = 'own-codex', account = 'own-workspace') => ({
+  auth_mode: 'chatgpt',
+  tokens: { access_token: jwt(sub), refresh_token: 'synthetic-keyring-refresh', id_token: jwt(sub), account_id: account },
+})
+
 it('模拟：Codex uses the effective keyring OAuth or API account instead of an old file', async () => {
   own('codex')
-  write(join(fixture.home, '.codex/config.toml'), 'cli_auth_credentials_store = "keyring"\n', true)
-  fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
+  const file = await run('codex')
+  write(join(fixture.home, '.codex/config.toml'), `cli_auth_credentials_store = "keyring"${DIRECT}`, true)
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('other-codex'))
   const first = await run('codex')
-  fixture.codex.accountLabel = 'changed@synthetic.example'
+  expect(first).not.toBe(file)
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('changed-codex'))
   expect(await run('codex')).not.toBe(first)
-  fixture.codex = { state: 'authenticated', authMethod: 'api', apiKeyHash: createHash('sha256').update('synthetic-native-api').digest('hex') }
+  fixture.keyring['Codex Auth'] = JSON.stringify({ OPENAI_API_KEY: 'synthetic-native-api' })
   expect(await run('codex')).not.toBe(first)
   await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
+  expect(backend.spawn).not.toHaveBeenCalled()
 })
 
 it.each(['"cli_auth_credentials_store"', "'cli_auth_credentials_store'", '"cli_auth_credentials_\\u0073tore"', '"cli_auth_credentials_\\U00000073tore"'])(
   '模拟：Codex reads quoted top-level TOML key %s', async key => {
     own('codex')
     const file = await run('codex')
-    fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
-    write(join(fixture.home, '.codex/config.toml'), `${key} = 'keyring' # native store\n`, true)
+    fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('other-codex'))
+    write(join(fixture.home, '.codex/config.toml'), `${key} = 'keyring' # native store${DIRECT}`, true)
     expect(await run('codex')).not.toBe(file)
     await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
   },
@@ -610,45 +636,82 @@ it.each(['[notice]', '[[notice]]', '["notice.with.dots"]'])(
 it.each(['"""', "'''"])(
   '模拟：Codex skips fake root keys and table headers inside %s strings and arrays', async delimiter => {
     own('codex')
-    fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
+    fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth())
     write(join(fixture.home, '.codex/config.toml'), [
       `notice = ${delimiter}`, '[fake.table]', 'cli_auth_credentials_store = "file"', delimiter,
       'notices = [', '"cli_auth_credentials_store = file",', '"[fake.table]",', ']',
-      '"cli_auth_credentials_store" = "keyring"',
+      '"cli_auth_credentials_store" = "keyring"', DIRECT,
     ].join('\n'), true)
     await expect(run('codex')).resolves.toMatch(/^cli-account-v1:/)
+    expect(fixture.keyringReads).toHaveLength(1)
     await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
   },
 )
 
-it('模拟：Codex native OAuth is stable across keyring and auto but changes with workspace or account', async () => {
-  // Invalid stale JSON proves neither native mode uses file credentials.
-  write(join(fixture.home, '.codex/auth.json'), 'invalid stale auth', true)
-  const path = join(fixture.home, '.codex/config.toml')
-  fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example', workspaceName: 'Workspace A' }
-  write(path, 'cli_auth_credentials_store = "keyring"', true)
-  const first = await run('codex')
-  write(path, 'cli_auth_credentials_store = "auto"', true)
-  expect(await run('codex')).toBe(first)
-  fixture.codex.workspaceName = 'Workspace B'
-  expect(await run('codex')).not.toBe(first)
-  fixture.codex = { state: 'unconfigured' }
+it('模拟：Codex 同一登录在 file、keyring、auto 三种存储下绑定相同，账号或工作区变化才改变', async () => {
+  const path = join(fixture.home, '.codex/config.toml'), auth = join(fixture.home, '.codex/auth.json')
+  own('codex')
+  const file = await run('codex')
+  // Invalid stale JSON proves keyring mode never uses file credentials.
+  write(auth, 'invalid stale auth', true)
+  // The keyring copy has rotated tokens; only identity fields enter the binding.
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth())
+  write(path, `cli_auth_credentials_store = "keyring"${DIRECT}`, true)
+  expect(await run('codex')).toBe(file)
+  write(path, `cli_auth_credentials_store = "auto"${DIRECT}`, true)
+  expect(await run('codex')).toBe(file)
+  expect(fixture.keyringReads.every(read => /^Codex Auth cli\|[a-f0-9]{16}$/.test(read))).toBe(true)
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('own-codex', 'other-workspace'))
+  expect(await run('codex')).not.toBe(file)
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('other-codex'))
+  expect(await run('codex')).not.toBe(file)
+  expect(backend.spawn).not.toHaveBeenCalled()
+})
+
+it('模拟：Codex auto 先读钥匙串，缺失或读不到才按原生规则读 auth.json；keyring 读不到即报错', async () => {
+  const path = join(fixture.home, '.codex/config.toml'), auth = join(fixture.home, '.codex/auth.json')
+  own('codex')
+  const file = await run('codex')
+  write(path, `cli_auth_credentials_store = "auto"${DIRECT}`, true)
+  // Native AutoAuthStorage::load: no keyring entry → auth.json.
+  expect(await run('codex')).toBe(file)
+  // A keyring entry wins over auth.json.
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('keyring-codex'))
+  const keyring = await run('codex')
+  expect(keyring).not.toBe(file)
+  // Native AutoAuthStorage::load: keyring error → auth.json.
+  fixture.keyring['Codex Auth'] = false
+  expect(await run('codex')).toBe(file)
+  // Unreadable keyring and no file: unconfirmed, a binding error.
+  rmSync(auth)
   await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  // keyring mode never falls back: unreadable, undecodable or missing is an error even with a file.
+  own('codex')
+  write(path, `cli_auth_credentials_store = "keyring"${DIRECT}`, true)
+  await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  fixture.keyring['Codex Auth'] = 'not json SYNTHETIC-SECRET'
+  const failure = await run('codex').catch(error => error)
+  expect(failure).toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  expect(String(failure.message)).not.toContain('SYNTHETIC-SECRET')
+  delete fixture.keyring['Codex Auth']
+  await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  fixture.keyring['Codex Auth'] = JSON.stringify(codexAuth('keyring-codex'))
+  expect(await run('codex')).toBe(keyring)
 })
 
 it('模拟：Codex native API keys match file bindings, survive store changes and detect key changes', async () => {
   const path = join(fixture.home, '.codex/config.toml')
   write(join(fixture.home, '.codex/auth.json'), { OPENAI_API_KEY: 'synthetic-codex-api' })
   const file = await run('codex')
-  fixture.codex = { state: 'authenticated', authMethod: 'api', apiKeyHash: createHash('sha256').update('synthetic-codex-api').digest('hex') }
+  fixture.keyring['Codex Auth'] = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'synthetic-codex-api' })
   write(join(fixture.home, '.codex/auth.json'), 'invalid stale auth', true)
   for (const store of ['keyring', 'auto']) {
-    write(path, `cli_auth_credentials_store = "${store}"`, true)
+    write(path, `cli_auth_credentials_store = "${store}"${DIRECT}`, true)
     expect(await run('codex')).toBe(file)
   }
-  fixture.codex.apiKeyHash = createHash('sha256').update('synthetic-other-api').digest('hex')
+  fixture.keyring['Codex Auth'] = JSON.stringify({ OPENAI_API_KEY: 'synthetic-other-api' })
   expect(await run('codex')).not.toBe(file)
-  delete fixture.codex.apiKeyHash
+  fixture.keyring['Codex Auth'] = JSON.stringify({})
   await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
 })
 

@@ -68,6 +68,8 @@ const required = new Set([
   'lib/types/host/native-spawn.mjs',
   'lib/windows-agy-account.ps1',
   'lib/types/host/windows-agy-account.ps1',
+  'lib/windows-credential-read.ps1',
+  'lib/types/host/windows-credential-read.ps1',
   'lib/native-runtime-guard/index.mjs',
   'lib/native-runtime-guard/host-runtime.mjs',
   'lib/native-runtime-guard/package.json',
