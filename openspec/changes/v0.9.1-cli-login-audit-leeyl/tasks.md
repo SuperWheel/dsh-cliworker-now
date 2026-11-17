@@ -41,7 +41,8 @@
   - 审查修复：改为按字段延迟解码，无关的旧条目解不开不再拖垮当前账号；必需字段解不开仍判不可用
   - 证据：同一命令 17 个文件 461 项通过
   - 遗留：真实系统凭据库读取未实现（返回不可用）；无绑定 Key 的 OAuth 账号模型目录待原生项目令牌流程支持
-- [ ] 3.2 Grok Build：核对 auth.json 与续期接口；访问令牌过期后派遣前能续期
+- [x] 3.2 Grok Build：核对 auth.json 与续期接口；访问令牌过期后派遣前能续期
+  - 2026-11-17 用户决定本版不做真实测试；只有静态核对与模拟测试，真实行为未验证（真实续期未验证）
   - 证据：两端 1.0.77；默认 `~/.grok/auth.json` 结构未变；公开 OIDC discovery 的 `token_endpoint` 支持 refresh_token；续期链路 `grok-models.ts:310` → `grok-renewal.ts:112`；无改动
   - 未执行：真实续期未验证
 - [x] 3.3 Hermes Agent：核对共享状态与 Nous 续期；续期失败时提示重新登录
@@ -50,7 +51,8 @@
   - 证据：`vitest run tests/hermes-*.test.ts` 18 个文件 347 项通过；对原生排序函数 576 组合成数据对照一致
 
 ## 4. 多服务商类：OMP、Pi、OpenCode 〔后端｜5h｜前置 1〕
-- [ ] 4.1 OMP：核对账号存储与原生登录方式列表，逐条退出凭据
+- [x] 4.1 OMP：核对账号存储与原生登录方式列表，逐条退出凭据
+  - 2026-11-17 用户决定本版不做真实测试；只有静态核对与模拟测试，真实行为未验证（真实逐条退出未验证）
   - 证据：两端 18.20.2；`agent.db` 的 `auth_credentials` 表字段与插件一致；隔离元数据助手退出 0，94 项登录方式；无改动
   - 未执行：真实逐条退出；profile、`PI_CODING_AGENT_DIR` 与 XDG 目录覆盖见设计决定 7
 - [x] 4.2 Pi：同 OMP，并核对安装完整性提示
@@ -100,7 +102,8 @@
   - 清单新增 `tests/pi-omp-native.test.ts`、`tests/zcode-account-models.test.ts`、`tests/first-party-account-context.test.ts`、`tests/kimi-accounts.test.ts`（`scripts/windows-remote-common.mjs` 与 `.github/workflows/windows.yml` 同步）
   - 未纳入：`tests/traecn-accounts.test.ts` 在 Windows 有 8 项既有失败（账号终端与退出用例只按 macOS 写，HEAD 即有），本次新增的 TRAE 路径用例在该次运行中通过
   - 过程：C 盘写满导致两次 ENOSPC，按用户要求清理插件与 DSH 残留后改用 D 盘配置
-- [ ] 7.3 有改动的 CLI 在 Mac 与 Windows 上真实验收：设置页、账号窗口、模型目录、派遣、续聊、退出
+- [x] 7.3 有改动的 CLI 在 Mac 与 Windows 上真实验收：设置页、账号窗口、模型目录、派遣、续聊、退出
+  - 2026-11-17 用户决定本版不做真实测试；只有静态核对与模拟测试，真实行为未验证。已有实机记录只覆盖：Mac 与 Windows 设置页连接状态（11-17 全部绿点，见 v0.9.1-cli-update-takeover-switch-leeyl 3.9、3.10）、Windows agy 仅令牌文件登录（用户实测通过）、Mac agy 退出登录失败（用户实测，修复见 v0.9.1-agy-token-file-fallback-leeyl）
 - [ ] 7.4 发布后在 GitHub issue #13 回复版本号，请报告者确认
 
 ## 8. 遗留项补齐 〔后端｜8h｜前置 3,5〕
