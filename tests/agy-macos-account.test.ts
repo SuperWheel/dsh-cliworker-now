@@ -17,6 +17,7 @@ import {
   decodeMacAgyKeychain,
   macAgyAccountIdentity,
   readMacAgyCredential,
+  readMacAgyLogin,
 } from '../src/host/agy-macos-account.ts'
 import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
 
@@ -35,6 +36,12 @@ const login = (sub = 'synthetic-subject', email?: string) => ({
   auth_method: 'consumer',
   token: { access_token: 'synthetic-access', refresh_token: SECRET, expiry: '2099-01-01T00:00:00Z' },
   id_token: `synthetic.${Buffer.from(JSON.stringify({ sub, iss: 'https://accounts.google.com', ...(email ? { email } : {}) })).toString('base64url')}.signature`,
+})
+// agy 1.4.7 writes the macOS keychain item without `id_token`, only `id_token_email` (checked 2026-10-26).
+const keychainLogin = (email: string) => ({
+  auth_method: 'consumer',
+  token: { access_token: 'synthetic-access', refresh_token: SECRET, expiry: '2099-01-01T00:00:00Z', expires_in: 3599 },
+  id_token_email: email,
 })
 function security(output: string, exitCode = 0) {
   const spawn = vi.fn(() => ({
@@ -66,14 +73,51 @@ it.each([
   expect(decodeMacAgyKeychain(encode(JSON.stringify(login())) + '\n')).toEqual(login())
 })
 
-it('answers a missing item (exit 44) as signed out, not from the stale token file', async () => {
-  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(login()))
+it('answers a missing item (exit 44) with no token file as signed out', async () => {
   const backend = security('', 44)
   expect(await readMacAgyCredential(backend, DEFAULT_CONFIG, signal())).toBeUndefined()
+  expect(await readMacAgyLogin(backend, DEFAULT_CONFIG, signal())).toBeUndefined()
   expect(await macAgyAccountIdentity(backend, DEFAULT_CONFIG)('antigravity', signal())).toMatchObject({
     state: 'unconfigured',
     summary: '尚未登录 Antigravity',
   })
+})
+
+// agy 1.5.x moves the login to its token file after a keychain timeout or write
+// failure and clears the keychain item (issue #13); it then loads the file itself.
+it.each([
+  ['a missing item', '', 44],
+  ['an unreadable keychain', '', 51],
+])('reads the token file agy fell back to on %s', async (_name, output, exitCode) => {
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(keychainLogin('Synthetic@Example.test')))
+  const identity = await macAgyAccountIdentity(security(output, exitCode), DEFAULT_CONFIG)('antigravity', signal())
+  expect(identity).toMatchObject({ state: 'authenticated', accountLabel: 'Synthetic@Example.test' })
+  expect(JSON.stringify(identity)).not.toContain(SECRET)
+})
+
+it('prefers the keychain item over a token file, as agy does', async () => {
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(keychainLogin('file@example.test')))
+  const identity = await macAgyAccountIdentity(security(JSON.stringify(keychainLogin('keychain@example.test'))), DEFAULT_CONFIG)(
+    'antigravity',
+    signal(),
+  )
+  expect(identity).toMatchObject({ state: 'authenticated', accountLabel: 'keychain@example.test' })
+})
+
+it('keeps one binding when the same login moves between the keychain and the token file', async () => {
+  Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })
+  const value = keychainLogin('synthetic@example.test')
+  const fromKeychain = await readCliAccountBinding('antigravity', security(JSON.stringify(value)), DEFAULT_CONFIG, state.home, signal())
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), JSON.stringify(value))
+  const fromFile = await readCliAccountBinding('antigravity', security('', 44), DEFAULT_CONFIG, state.home, signal())
+  expect(fromFile).toBe(fromKeychain)
+})
+
+it('reports an unreadable token file as an unreadable keychain when the item is also unreadable', async () => {
+  writeFileSync(join(state.home, '.gemini/jetski-standalone-oauth-token'), 'not-json-' + SECRET)
+  const identity = await macAgyAccountIdentity(security('', 51), DEFAULT_CONFIG)('antigravity', signal())
+  expect(identity).toMatchObject({ state: 'unavailable', summary: '无法读取 macOS 钥匙串中的 Antigravity 账号，请重试' })
+  expect(JSON.stringify(identity)).not.toContain(SECRET)
 })
 
 it.each([
@@ -106,12 +150,6 @@ it('shows the signed-in email and never exposes the token in the identity', asyn
   expect(JSON.stringify(identity)).not.toContain(SECRET)
 })
 
-// agy 1.4.7 writes the macOS keychain item without `id_token`, only `id_token_email` (checked 2026-10-26).
-const keychainLogin = (email: string) => ({
-  auth_method: 'consumer',
-  token: { access_token: 'synthetic-access', refresh_token: SECRET, expiry: '2099-01-01T00:00:00Z', expires_in: 3599 },
-  id_token_email: email,
-})
 
 it('keeps one binding for one keychain account and tells accounts apart', async () => {
   Object.defineProperty(process, 'platform', { ...platform, value: 'darwin' })

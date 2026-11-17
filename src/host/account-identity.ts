@@ -66,6 +66,73 @@ export function agyIdentityFromCredential(value: Record<string, unknown>): Accou
   }
 }
 
+/** agy's file store: Linux always, and macOS/Windows once agy has fallen back from the OS keyring. */
+export const agyTokenFile = (home = homedir()) => join(home, '.gemini', 'jetski-standalone-oauth-token')
+
+/**
+ * Bounded, ephemeral, no-follow read of agy's token file. Resolves undefined when
+ * the file does not exist; any other failure throws without carrying file content.
+ */
+export async function readAgyTokenFile(
+  signal: AbortSignal,
+  home = homedir(),
+): Promise<Record<string, unknown> | undefined> {
+  const path = agyTokenFile(home)
+  let handle
+  let buffer: Buffer | undefined
+  try {
+    signal.throwIfAborted()
+    await safePiOmpAncestors(dirname(path))
+    const entry = await lstat(path)
+    if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1)
+      throw new Error('Invalid account metadata')
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    const stat = await handle.stat()
+    if (
+      !stat.isFile() ||
+      stat.nlink !== 1 ||
+      stat.dev !== entry.dev ||
+      stat.ino !== entry.ino ||
+      stat.size > LIMIT
+    )
+      throw new Error('Invalid account metadata')
+    buffer = Buffer.alloc(LIMIT + 1)
+    let offset = 0
+    while (offset <= LIMIT) {
+      signal.throwIfAborted()
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null)
+      if (!bytesRead) break
+      offset += bytesRead
+    }
+    if (offset > LIMIT) throw new Error('Invalid account metadata')
+    const after = await handle.stat()
+    const current = await lstat(path)
+    if (
+      current.isSymbolicLink() ||
+      current.dev !== stat.dev ||
+      current.ino !== stat.ino ||
+      current.nlink !== 1 ||
+      offset !== stat.size ||
+      after.size !== stat.size ||
+      after.mtimeMs !== stat.mtimeMs ||
+      current.size !== after.size ||
+      current.mtimeMs !== after.mtimeMs
+    )
+      throw new Error('Account metadata changed during read')
+    const value: unknown = JSON.parse(buffer.subarray(0, offset).toString('utf8'))
+    signal.throwIfAborted()
+    if (!record(value)) throw new Error('Invalid account metadata')
+    return value
+  } catch (error) {
+    signal.throwIfAborted()
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return undefined
+    throw new Error('Invalid account metadata')
+  } finally {
+    buffer?.fill(0)
+    await handle?.close().catch(() => undefined)
+  }
+}
+
 /**
  * This format/path is verified from the installed AGY CLI. Reading is
  * bounded and ephemeral. No credential leaves this function; ID tokens are decoded
@@ -78,65 +145,18 @@ export function localAccountIdentity(
 ): AccountIdentitySource {
   return async (cli, signal) => {
     if (cli !== 'antigravity') return undefined
-    const home = options.home ?? homedir()
-    const path = join(home, '.gemini', 'jetski-standalone-oauth-token')
-    let handle
-    let buffer: Buffer | undefined
     try {
+      const value = await readAgyTokenFile(signal, options.home ?? homedir())
+      return value
+        ? agyIdentityFromCredential(value)
+        : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Antigravity' }
+    } catch {
       signal.throwIfAborted()
-      await safePiOmpAncestors(dirname(path))
-      const entry = await lstat(path)
-      if (entry.isSymbolicLink() || !entry.isFile() || entry.nlink !== 1)
-        throw new Error('Invalid account metadata')
-      handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
-      const stat = await handle.stat()
-      if (
-        !stat.isFile() ||
-        stat.nlink !== 1 ||
-        stat.dev !== entry.dev ||
-        stat.ino !== entry.ino ||
-        stat.size > LIMIT
-      )
-        throw new Error('Invalid account metadata')
-      buffer = Buffer.alloc(LIMIT + 1)
-      let offset = 0
-      while (offset <= LIMIT) {
-        signal.throwIfAborted()
-        const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null)
-        if (!bytesRead) break
-        offset += bytesRead
-      }
-      if (offset > LIMIT) throw new Error('Invalid account metadata')
-      const after = await handle.stat()
-      const current = await lstat(path)
-      if (
-        current.isSymbolicLink() ||
-        current.dev !== stat.dev ||
-        current.ino !== stat.ino ||
-        current.nlink !== 1 ||
-        offset !== stat.size ||
-        after.size !== stat.size ||
-        after.mtimeMs !== stat.mtimeMs ||
-        current.size !== after.size ||
-        current.mtimeMs !== after.mtimeMs
-      )
-        throw new Error('Account metadata changed during read')
-      const value: unknown = JSON.parse(buffer.subarray(0, offset).toString('utf8'))
-      signal.throwIfAborted()
-      if (!record(value)) throw new Error('Invalid account metadata')
-      return agyIdentityFromCredential(value)
-    } catch (error) {
-      signal.throwIfAborted()
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT')
-        return { state: 'unconfigured', verification: 'local', summary: '尚未登录 Antigravity' }
       return {
         state: 'unavailable',
         verification: 'local',
         summary: '登录状态读取失败，请重试',
       }
-    } finally {
-      buffer?.fill(0)
-      await handle?.close().catch(() => undefined)
     }
   }
 }

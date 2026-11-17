@@ -15,7 +15,7 @@ export const WINDOWS_TESTS = [
   'tests/windows-cli-resolution.test.ts', 'tests/windows-codex-launch.test.ts',
   'tests/windows-system-proxy.test.ts', 'tests/opencode-windows-login.test.ts',
   'tests/zcode-grok-windows-regression.test.ts', 'tests/authorized-catalog-windows-agy.test.ts',
-  'tests/native-agy-acp.test.ts', 'tests/agy-account-guide.test.ts',
+  'tests/native-agy-acp.test.ts', 'tests/agy-account-guide.test.ts', 'tests/agy-windows-account.test.ts',
   'tests/codebuddy-account.test.ts', 'tests/traecn-integration.test.ts',
   'tests/workbuddy-installation.test.ts', 'tests/workbuddy-desktop-open.test.ts',
 ]

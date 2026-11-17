@@ -21,7 +21,7 @@ import { readCodexAccount } from './codex-account.ts'
 import { accountEmail } from './account-identity.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
-import { readMacAgyCredential } from './agy-macos-account.ts'
+import { readMacAgyLogin } from './agy-macos-account.ts'
 import { readFirstPartyModelSources } from './first-party-models.ts'
 import { KimiOAuthModelError } from './kimi-oauth-models.ts'
 import { readPiOmpAccountMaterial, safePiOmpAncestors } from './pi-omp-native.ts'
@@ -410,6 +410,8 @@ async function material(
             : account.identity.accountLabel
               ? { kind: 'oauth', email: account.identity.accountLabel.toLowerCase() }
               : undefined
+      // One logical source whether agy keeps the login in the Credential Manager or in
+      // its token file, so a store fallback alone never reads as an account change.
       return {
         sourceIds: ['windows-credential:gemini:antigravity'],
         entries: principal ? [{ provider: 'antigravity', principal }] : [],
@@ -420,7 +422,7 @@ async function material(
     // with only `id_token_email`, so its principal is the email.
     const auth =
       process.platform === 'darwin'
-        ? await readMacAgyCredential(backend, config, signal)
+        ? await readMacAgyLogin(backend, config, signal, home)
         : await document(join(root, 'jetski-standalone-oauth-token'), signal)
     if (!auth) throw new CliAccountBindingError(cli, AGY_SIGNED_OUT)
     const principal =

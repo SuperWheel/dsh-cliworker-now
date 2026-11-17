@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { homedir } from 'node:os'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { win32 } from 'node:path'
@@ -5,7 +6,9 @@ import { fileURLToPath } from 'node:url'
 import { captureCatalogMetadata } from './adapters.ts'
 import {
   accountEmail,
+  agyIdentityFromCredential,
   localAccountIdentity,
+  readAgyTokenFile,
   type AccountIdentity,
   type AccountIdentitySource,
 } from './account-identity.ts'
@@ -129,7 +132,62 @@ async function readNativeWindowsAgyAccount(
     [0, 1],
   )
   signal.throwIfAborted()
-  return projectWindowsAgyAccount(raw)
+  const keyring = projectWindowsAgyAccount(raw)
+  const state = keyring.identity.state
+  if (state !== 'unconfigured' && state !== 'unavailable') return keyring
+  // agy 1.5.x keeps the login in its token file once the Credential Manager timed
+  // out or failed a write, and then removes the Credential Manager item.
+  return windowsAgyAccountFromFile(keyring, signal)
+}
+
+/** The file holds the same JSON as the Credential Manager item. */
+export function projectAgyCredential(value: Record<string, unknown>): WindowsAgyAccount {
+  const identity = agyIdentityFromCredential(value)
+  if (identity.state !== 'authenticated') return { identity }
+  const claims = idTokenClaims(value.id_token)
+  const subject =
+    claims &&
+    (claims.iss === 'accounts.google.com' || claims.iss === 'https://accounts.google.com') &&
+    typeof claims.sub === 'string' &&
+    /^[A-Za-z0-9_-]{6,128}$/.test(claims.sub)
+      ? claims.sub
+      : undefined
+  // Same subject hash as windows-agy-account.ps1, so the store in use never changes the binding.
+  return subject
+    ? { identity, principalHash: createHash('sha256').update(`google:${subject}`, 'utf8').digest('hex') }
+    : { identity }
+}
+
+function idTokenClaims(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'string' || value.length > 32 * 1024) return undefined
+  const pieces = value.split('.')
+  if (pieces.length !== 3 || !pieces.every((piece) => /^[A-Za-z0-9_-]+$/.test(piece))) return undefined
+  try {
+    const claims: unknown = JSON.parse(Buffer.from(pieces[1]!, 'base64url').toString('utf8'))
+    return claims && typeof claims === 'object' && !Array.isArray(claims)
+      ? (claims as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+export async function windowsAgyAccountFromFile(
+  keyring: WindowsAgyAccount,
+  signal: AbortSignal,
+  home = homedir(),
+): Promise<WindowsAgyAccount> {
+  let file: Record<string, unknown> | undefined
+  try {
+    file = await readAgyTokenFile(signal, home)
+  } catch {
+    signal.throwIfAborted()
+    // A broken file is reported as such only when the Credential Manager had nothing either.
+    return keyring.identity.state === 'unconfigured'
+      ? { identity: { state: 'unavailable', verification: 'local', summary: '登录状态读取失败，请重试' } }
+      : keyring
+  }
+  return file ? projectAgyCredential(file) : keyring
 }
 
 export function nativeAgyAccountIdentity(

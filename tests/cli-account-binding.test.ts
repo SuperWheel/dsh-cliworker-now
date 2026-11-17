@@ -63,7 +63,7 @@ vi.mock('../src/host/agy-macos-account.ts', async (original) => {
   const { join } = await import('node:path')
   return {
     ...(await original<typeof import('../src/host/agy-macos-account.ts')>()),
-    readMacAgyCredential: vi.fn(async () => {
+    readMacAgyLogin: vi.fn(async () => {
       const path = join(fixture.home, '.gemini/jetski-standalone-oauth-token')
       return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : undefined
     }),

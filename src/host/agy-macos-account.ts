@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { captureCatalogMetadata } from './adapters.ts'
-import { agyIdentityFromCredential, type AccountIdentitySource } from './account-identity.ts'
+import { agyIdentityFromCredential, readAgyTokenFile, type AccountIdentitySource } from './account-identity.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 
 const LIMIT = 64 * 1024
@@ -43,10 +43,7 @@ export function decodeMacAgyKeychain(output: string): Record<string, unknown> | 
   }
 }
 
-/**
- * The keychain item is the only macOS login: `/logout` removes it and leaves a
- * stale token file behind, so a missing item is never answered from that file.
- */
+/** The keychain item alone; `readMacAgyLogin` adds agy's file fallback. */
 export async function readMacAgyCredential(
   backend: ProcessBackend,
   config: RuntimeConfig,
@@ -73,11 +70,43 @@ export async function readMacAgyCredential(
   return decodeMacAgyKeychain(output)
 }
 
+/**
+ * agy's own load order: the keychain item first, then its token file when the item
+ * is missing or the keychain cannot be read. agy 1.5.x writes the file after a
+ * keychain timeout or write failure and then clears the keychain item; its
+ * `/logout` removes both, so a remaining file is the login agy itself loads.
+ */
+export async function readMacAgyLogin(
+  backend: ProcessBackend,
+  config: RuntimeConfig,
+  signal: AbortSignal,
+  home = homedir(),
+): Promise<Record<string, unknown> | undefined> {
+  let failure: MacAgyKeychainError | undefined
+  try {
+    const credential = await readMacAgyCredential(backend, config, signal)
+    if (credential) return credential
+  } catch (error) {
+    if (!(error instanceof MacAgyKeychainError)) throw error
+    failure = error
+  }
+  let file: Record<string, unknown> | undefined
+  try {
+    file = await readAgyTokenFile(signal, home)
+  } catch {
+    signal.throwIfAborted()
+    throw failure ?? new MacAgyKeychainError()
+  }
+  if (file) return file
+  if (failure) throw failure
+  return undefined
+}
+
 export function macAgyAccountIdentity(backend: ProcessBackend, config: RuntimeConfig): AccountIdentitySource {
   return async (cli, signal) => {
     if (cli !== 'antigravity') return undefined
     try {
-      const credential = await readMacAgyCredential(backend, config, signal)
+      const credential = await readMacAgyLogin(backend, config, signal)
       return credential
         ? agyIdentityFromCredential(credential)
         : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Antigravity' }

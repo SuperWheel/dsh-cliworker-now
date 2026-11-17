@@ -1,18 +1,31 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 const capture = vi.hoisted(() => vi.fn())
 vi.mock('../src/host/adapters.ts', () => ({ captureCatalogMetadata: capture }))
+// A synthetic home: the token-file fallback must never read the developer's real login.
+const os = vi.hoisted(() => ({ home: '' }))
+vi.mock('node:os', async (actual) => ({
+  ...(await actual<typeof import('node:os')>()),
+  homedir: () => os.home,
+}))
 import {
   nativeAgyAccountIdentity,
+  projectAgyCredential,
   projectWindowsAgyAccount,
   readWindowsAgyAccount,
   withWindowsAgyAccountSnapshot,
 } from '../src/host/agy-windows-account.ts'
 import { discoverAgyAccountModels } from '../src/host/agy-models.ts'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
+import { mkdtempSync } from 'node:fs'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 const roots: string[] = []
+beforeEach(() => {
+  os.home = mkdtempSync(join(tmpdir(), 'cwn-agy-win-home-synthetic-'))
+  roots.push(os.home)
+})
 afterEach(async () => {
   vi.restoreAllMocks()
   capture.mockReset()
@@ -171,4 +184,65 @@ it('uses Windows native metadata without requiring a plaintext auth file', async
       nativeAgyAccountIdentity(backend, DEFAULT_CONFIG, 'win32'),
     ),
   ).rejects.toThrow('请先登录')
+})
+
+// agy 1.5.x falls back to its token file after a Credential Manager timeout or
+// write failure and removes the Credential Manager item (issue #13). Synthetic file.
+const SECRET = 'synthetic-refresh-secret'
+const fileLogin = (extra: Record<string, unknown> = {}) => ({
+  auth_method: 'consumer',
+  token: { access_token: 'synthetic-access', refresh_token: SECRET, expiry: '2099-01-01T00:00:00Z' },
+  ...extra,
+})
+const writeLogin = async (value: unknown) => {
+  await mkdir(join(os.home, '.gemini'), { recursive: true })
+  await writeFile(join(os.home, '.gemini/jetski-standalone-oauth-token'), typeof value === 'string' ? value : JSON.stringify(value))
+}
+it.each(['{"state":"unconfigured"}', '{"state":"unavailable"}'])(
+  'reads the token file agy fell back to when the Credential Manager answers %s',
+  async (raw) => {
+    await writeLogin(fileLogin({ id_token_email: 'Own@Example.test', writer_id: 'synthetic-writer' }))
+    capture.mockResolvedValue(raw)
+    const account = await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())
+    expect(account.identity).toMatchObject({ state: 'authenticated', accountLabel: 'Own@Example.test' })
+    expect(account.principalHash).toBeUndefined()
+    expect(JSON.stringify(account)).not.toContain(SECRET)
+  },
+)
+it('keeps a Credential Manager login and ignores the token file then', async () => {
+  await writeLogin(fileLogin({ id_token_email: 'file@example.test' }))
+  capture.mockResolvedValue(JSON.stringify({ state: 'authenticated', email: 'keyring@example.test' }))
+  expect((await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())).identity.accountLabel).toBe('keyring@example.test')
+  capture.mockResolvedValue('{"state":"unauthenticated"}')
+  expect((await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())).identity.state).toBe('unauthenticated')
+})
+it('stays signed out with neither store, and fails closed on a broken token file', async () => {
+  capture.mockResolvedValue('{"state":"unconfigured"}')
+  expect((await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())).identity.state).toBe('unconfigured')
+  await writeLogin('not-json-' + SECRET)
+  const broken = await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())
+  expect(broken.identity.state).toBe('unavailable')
+  expect(JSON.stringify(broken)).not.toContain(SECRET)
+  capture.mockResolvedValue('{"state":"unavailable"}')
+  expect((await readWindowsAgyAccount(backend, DEFAULT_CONFIG, signal())).identity.state).toBe('unavailable')
+})
+it('derives the same subject digest from a token file as the Credential Manager helper', () => {
+  const claims = Buffer.from(JSON.stringify({ iss: 'https://accounts.google.com', sub: 'synthetic-subject' })).toString('base64url')
+  const result = projectAgyCredential(fileLogin({ id_token: `synthetic.${claims}.signature` }))
+  expect(result.principalHash).toBe(createHash('sha256').update('google:synthetic-subject').digest('hex'))
+  const foreign = Buffer.from(JSON.stringify({ iss: 'https://example.test', sub: 'synthetic-subject' })).toString('base64url')
+  expect(projectAgyCredential(fileLogin({ id_token: `synthetic.${foreign}.signature` })).principalHash).toBeUndefined()
+  expect(projectAgyCredential({ auth_method: 'consumer', token: {} }).identity.state).toBe('unauthenticated')
+})
+it('lists models for a Windows login kept only in the token file', async () => {
+  await mkdir(join(os.home, '.gemini/antigravity-cli'), { recursive: true })
+  await writeLogin(fileLogin({ id_token_email: 'own@example.test' }))
+  capture.mockResolvedValue('{"state":"unconfigured"}')
+  const models = await discoverAgyAccountModels(
+    async () => 'synthetic-model\tSynthetic',
+    signal(),
+    os.home,
+    nativeAgyAccountIdentity(backend, DEFAULT_CONFIG, 'win32'),
+  )
+  expect(models[0]?.id).toBe('synthetic-model')
 })
