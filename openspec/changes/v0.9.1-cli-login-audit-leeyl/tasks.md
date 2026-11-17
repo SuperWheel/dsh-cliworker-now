@@ -104,7 +104,9 @@
   - 过程：C 盘写满导致两次 ENOSPC，按用户要求清理插件与 DSH 残留后改用 D 盘配置
 - [x] 7.3 有改动的 CLI 在 Mac 与 Windows 上真实验收：设置页、账号窗口、模型目录、派遣、续聊、退出
   - 2026-11-17 用户决定本版不做真实测试；只有静态核对与模拟测试，真实行为未验证。已有实机记录只覆盖：Mac 与 Windows 设置页连接状态（11-17 全部绿点，见 v0.9.1-cli-update-takeover-switch-leeyl 3.9、3.10）、Windows agy 仅令牌文件登录（用户实测通过）、Mac agy 退出登录失败（用户实测，修复见 v0.9.1-agy-token-file-fallback-leeyl）
-- [ ] 7.4 发布后在 GitHub issue #13 回复版本号，请报告者确认
+- [x] 7.4 发布后在 GitHub issue #13 回复版本号，请报告者确认
+  - 2026-11-18 GitHub Release v0.9.1 已发布（https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.9.1，目标 d51fcef，附件下载回读 SHA-256 一致；CI 44120622422 通过）。用户报告 npm 已发布、处于审核中；本机查询 `dsh-cliworker-now@0.9.1` 当时仍返回 404，npm 回读核对待审核结束后补。
+  - 回复：https://github.com/SuperWheel/dsh-cliworker-now/issues/13#issuecomment-6953638708（说明 Linux 原因与 v0.9.1 修复、更新方法，请报告者确认设置页显示已登录与模型列表）。报告者确认前，agy 变更 6.4 保持未完成。
 - [x] 7.5 v0.9.1 发布验收（版本号由用户 2026-11-17 确认为 0.9.1，`144f4fd chore(release): 0.9.1`；之后加入 Linux agy 修复 8ef27ef）
   - macOS：`corepack pnpm typecheck` 通过；`corepack pnpm spec validate --all --strict` 40/40；`git diff --check origin/main...HEAD` 通过。全量 vitest（8ef27ef）8835 通过、1 失败、15 跳过，唯一失败为已知偶发的 `tests/cli-management-download.test.ts`「持续有真实字节仍受两小时总预算约束」，该文件单独重跑 18/18 通过；日志 `.test-data/release-v0.9.1/mac-full-vitest-8ef27ef.log`。
   - Windows 远程隔离：运行 4e551a74（8ef27ef，config-d.json）preview、冻结依赖、解包、契约类型、类型检查、70 个 Windows CI 文件 1033 项（1025 通过、0 失败、8 跳过）与安装包 Host 加载全部通过，无模型调用。
