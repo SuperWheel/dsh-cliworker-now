@@ -134,6 +134,11 @@
     - 自动重试 12 秒等待中取消，`verifyCancellation` 只核版本，把行发成「已是最新」，`incomplete` 与重试令牌丢失。改为取消后核对时重读回执，仍未完成则保持「可更新」、警示色和「重试」。
     - 新增 2 项测试：重试后回执缺失、读不出或仍在运行（3 种）都保持未完成并保留重试令牌、不清理；等待中取消后行仍为未完成。原「同一回执重写两次」的夹具改为每次写新 `update_id`。相关 5 个文件 233 项通过；`corepack pnpm typecheck` 与 `spec validate --all --strict`（40 项）通过；全量 vitest 361 个文件通过、4 个跳过，8815 项通过、15 项跳过、0 失败。
   - 未做：真实 Hermes 上的重试与自动重试（Windows 正在回退到 0.23.1，本次没有碰任何 Hermes 安装，没有运行 `hermes update`）；Windows 与 Mac Desktop 实机界面复看；`pnpm build:preview` 隔离构建。
+  - 2026-11-17 Windows 实机复测（插件 5f12d67 预览包，1325/1325 文件哈希一致，lib 1101/1101；装前 Desktop 空闲，无 Worker、无 Hermes 进程）：
+    - 先用 v0.23.1 提交里的官方 `scripts/install.ps1 -Commit 3b421578… -NonInteractive`（带系统代理 127.0.0.1:7897）回退：21:20:35→21:34:48 exit 0，HEAD 3b42157、`install-stamp.json` 0.23.1。此次 `node_modules` 仍为 11-14 22:26:45 所建，依赖未变，Hermes 未做挪开改名，不能算对照实验。
+    - 页面经 Codex Computer Use（gpt-6.1-sol high）只点 Hermes 行「更新」→「继续更新」：0.23.1 → 0.23.2，渠道全程「官方」，「切换插件下载」只在 0:24 出现，之后不再显示；步数 3/6 apply → 4/6 deps（0:52 起）→ 5/6 build（2:13 起，阶段依次 Building the apps、Updating Node dependencies、Building the web UI）→ 6/6 restart（7:14），最终行「已更新到 0.23.2」、绿色，没有未完成警示、自动重试或「重试」。
+    - Windows 只读核对：回执 `8f53b20a…` outcome success，post_update 0.23.2 / `ae2a81cc…` 等于 HEAD；stages plan/apply/deps/build/restart 均 success（snapshot skipped），22:01:56→22:08:59；followups 为空。`install-stamp.json` displayVersion 0.23.2、builtAt 22:08:53；`node_modules` 创建时间 22:04:57，即本次挪开改名与重装成功；本次 `update.log` 段（22:01:52 起）EPERM/EBUSY 0 处；`hermes --version` 为 v0.23.2。命令输出仍有官方「release history 30 秒超时」警告。插件更新清理删除插件临时文件 1 项、Hermes 删除标记 1 项、Hermes 工具旧版本 5 项，释放 611115984 B。
+    - 结论：插件不再遍历检出目录后，这一次 Node 依赖改名成功；单次成功不能证明根因，只说明未复现。黄色未完成状态、自动重试与「重试」在真实 Hermes 上未触发，仍只有模拟覆盖。Mac Desktop 未复测。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
