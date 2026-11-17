@@ -314,7 +314,8 @@ it.each([
   f.service.start('hermes', 'update', row.planToken!, '', `模拟-registry-${source}`)
   expect((await finished(f.service)).results.find(r => r.cli === 'hermes')).toMatchObject({ phase: 'succeeded' })
   expect(calls).toBe(2)
-  expect(memoryGet).not.toHaveBeenCalled(); expect(memorySet).not.toHaveBeenCalled()
+  // 模拟：Hermes 现在读取同一份 7 天渠道记忆；普通失败重跑没有接管，不写失败记录。
+  expect(memoryGet).toHaveBeenCalledOnce(); expect(memorySet).not.toHaveBeenCalled()
   expect(existsSync(join(f.root, 'cli-management/channel-memory.json'))).toBe(false)
   const updates = vi.mocked(f.backend.spawn).mock.calls.filter(([spec]) => spec.argv.includes('--yes'))
   expect(updates).toHaveLength(2)

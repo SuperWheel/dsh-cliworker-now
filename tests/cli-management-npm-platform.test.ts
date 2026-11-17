@@ -199,7 +199,7 @@ it('模拟服务：收尾清理无法确认进程退出时，结果标为 cleanu
   expect(result.phase).toBe('cleanup-unconfirmed')
   expect(result.error).toMatchObject({ code: 'CLEANUP_UNCONFIRMED', retryable: false })
 })
-it('模拟：官方持续 30 秒无字节后改用接管，安装成功才记忆 7 天', async () => {
+it('模拟：官方持续 10 秒无字节后改用接管，安装成功才记忆 7 天', async () => {
   vi.useFakeTimers(); const f = fixture()
   let takeover = false
   f.options.fetcher.mockImplementation(async (url, init) => {
@@ -211,7 +211,7 @@ it('模拟：官方持续 30 秒无字节后改用接管，安装成功才记忆
   })
   const pending = prepareNpmDownload(f.options)
   await vi.waitFor(() => expect(f.options.fetcher).toHaveBeenCalled(), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(30_010)
+  await vi.advanceTimersByTimeAsync(10_010)
   const bundle = await pending
   expect(f.options.progress.mock.calls.at(-1)![0]).toMatchObject({ channel: 'takeover', reason: 'OFFICIAL_STALLED', completedFiles: 2, downloadedBytes: 21 })
   const memory = new ChannelMemory(f.root), key = channelMemoryKey('codex', f.identity, host.platform, host.arch)
@@ -317,7 +317,7 @@ it.each(['stall', 'slow', 'budget'] as const)('模拟：官方 %s 接管保留�
     return new Response(data.slice(8), { status: 206, headers: { ...headers, 'content-length': String(data.length - 8), 'content-range': `bytes 8-${data.length - 1}/${data.length}` } })
   })
   // Independent watchdog reasons use the same transport transition. Exercise
-  // 30-second stall end-to-end; slow/budget use the exported transport hook below.
+  // 10-second stall end-to-end; slow/budget use the exported transport hook below.
   if (mode !== 'stall') {
     const { downloadCliArtifact } = await import('../src/host/cli-management/download.ts')
     const trigger = new AbortController(), takeover = vi.fn()
@@ -329,7 +329,7 @@ it.each(['stall', 'slow', 'budget'] as const)('模拟：官方 %s 接管保留�
   } else {
     const pending = prepareNpmDownload(f.options)
     await vi.waitFor(() => expect(f.options.progress.mock.calls.some(([p]) => p.downloadedBytes === 12)).toBe(true))
-    await vi.advanceTimersByTimeAsync(30_010)
+    await vi.advanceTimersByTimeAsync(10_010)
     const bundle = await pending
     expect(f.options.progress.mock.calls.at(-1)![0]).toMatchObject({ downloadedBytes: 21, channel: 'takeover', reason: 'OFFICIAL_STALLED' })
     await bundle.cleanup(true)

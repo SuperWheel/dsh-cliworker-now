@@ -64,7 +64,7 @@ export async function prepareNpmDownload(options: {
       const started = Date.now()
       const timer = setInterval(() => {
         const now = Date.now()
-        const reason = now - lastByte >= 30_000 ? 'OFFICIAL_STALLED' : now - windowStart >= 60_000 && (bytes - windowBytes) / ((now - windowStart) / 1000) < 100_000 ? 'OFFICIAL_SLOW' : now - started >= 10 * 60_000 ? 'OFFICIAL_BUDGET' : undefined
+        const reason = now - lastByte >= 10_000 ? 'OFFICIAL_STALLED' : now - windowStart >= 60_000 && (bytes - windowBytes) / ((now - windowStart) / 1000) < 100_000 ? 'OFFICIAL_SLOW' : now - started >= 10 * 60_000 ? 'OFFICIAL_BUDGET' : undefined
         if (reason) { failure = reason; controller.abort() }
         if (now - windowStart >= 60_000) { windowBytes = bytes; windowStart = now }
       }, 1000)

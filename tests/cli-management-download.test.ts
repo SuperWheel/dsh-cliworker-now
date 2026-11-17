@@ -11,7 +11,7 @@ const temp = () => { const path = realpathSync(mkdtempSync(join(tmpdir(), 'downl
 afterEach(() => { vi.useRealTimers(); for (const path of roots.splice(0)) rmSync(path, { recursive: true, force: true }) })
 const stream = (initial: string, complete = false) => new ReadableStream<Uint8Array>({ start(c) { if (initial) c.enqueue(Buffer.from(initial)); if (complete) c.close() } })
 
-it.each([206, 200, 416])('模拟：10 秒无字节，Range 响应 %s 正确处理并校验', async status => {
+it.each([206, 200, 416])('模拟：5 秒无字节，Range 响应 %s 正确处理并校验', async status => {
   vi.useFakeTimers(); const root = temp(), progress = vi.fn()
   const fetcher = vi.fn(async (_url, init) => {
     if (fetcher.mock.calls.length === 1) return new Response(stream(status === 416 ? 'abcdef' : 'abc'), { headers: { 'content-length': '6' } })
@@ -21,7 +21,7 @@ it.each([206, 200, 416])('模拟：10 秒无字节，Range 响应 %s 正确处�
   })
   const pending = downloadCliArtifact({ root, url: 'https://模拟.invalid/file', integrity: sri('abcdef'), signal: control(), progress, fetcher })
   await vi.waitFor(() => expect(progress).toHaveBeenCalled(), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(10_001)
+  await vi.advanceTimersByTimeAsync(5_001)
   const file = await pending
   expect(readFileSync(file, 'utf8')).toBe('abcdef'); expect(fetcher).toHaveBeenCalledTimes(2)
   expect(progress.mock.calls.at(-1)![0]).toMatchObject({ downloadedBytes: 6, totalBytes: 6, resumeCount: 1 })
@@ -40,12 +40,12 @@ it('模拟：持续有真实字节仍受两小时总预算约束', async () => {
   const fetcher = vi.fn(async () => new Response(new ReadableStream<Uint8Array>({ start(c) { controller = c } })))
   const pending = downloadCliArtifact({ root, url: 'https://模拟.invalid/file', integrity: sri('unused'), signal: control(), progress, fetcher }).catch(error => error)
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce(), { interval: 1 })
-  // Every nine seconds an actual byte arrives; await its disk write before advancing.
-  for (let n = 1; n < DOWNLOAD_TIMEOUT_MS / 9000; n++) {
-    await vi.advanceTimersByTimeAsync(9000); controller.enqueue(Buffer.from('x'))
+  // Every four seconds an actual byte arrives; await its disk write before advancing.
+  for (let n = 1; n < DOWNLOAD_TIMEOUT_MS / 4000; n++) {
+    await vi.advanceTimersByTimeAsync(4000); controller.enqueue(Buffer.from('x'))
     await vi.waitFor(() => expect(progress.mock.calls.at(-1)![0].downloadedBytes).toBe(n), { interval: 1 })
   }
-  await vi.advanceTimersByTimeAsync(9001)
+  await vi.advanceTimersByTimeAsync(4001)
   expect((await pending).code).toBe('DOWNLOAD_TIMEOUT'); expect(fetcher).toHaveBeenCalledTimes(1)
 }, 15000)
 it.each(['sha256', 'sha512'])('模拟：%s 校验与错误摘要删除文件', async algorithm => {

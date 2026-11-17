@@ -1,7 +1,7 @@
 import { trackUpdateTemporary, removeUpdateTemporary } from './update-cleanup.ts'
 import { observedPackages } from './artifacts/observations.ts'
 import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import { promisify, stripVTControlCharacters } from 'node:util'
 import { lstat, readdir, rmdir, open, mkdtemp, chmod } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -17,8 +17,19 @@ export class OfficialUnavailableError extends CliOperationError {
   constructor(readonly reason: CliChannelReason) { super('OFFICIAL_UNAVAILABLE', `官方渠道不可用（${reason}），准备切换插件接管`) }
 }
 export const officialBudgetMs = (bytes?: number) => Math.min(600_000, Math.max(180_000, bytes ? bytes / 200_000 * 1000 : 600_000))
+/** Applies only to observed downloading, never version checks or post-download work. */
+export const OFFICIAL_STALL_MS = 10_000
 const missing = (e: unknown) => ['ENOENT', 'ENOTDIR'].includes((e as NodeJS.ErrnoException).code ?? '')
 const matches = (pattern: RegExp | undefined, value: string) => { if (!pattern) return false; pattern.lastIndex = 0; return pattern.test(value) }
+/** Grok's observed indicatif templates: {bytes} downloaded and {bytes}/{total_bytes} ({eta}). */
+function downloadStatusBytes(line: string): number | undefined {
+  const match = /(?:^|\s)(\d+(?:\.\d+)?)\s*(bytes?|[kmgt]i?b|b)\s+downloaded\b/i.exec(line)
+    ?? /(?:^|\s)(\d+(?:\.\d+)?)\s*(bytes?|[kmgt]i?b|b)\s*\/\s*\d+(?:\.\d+)?\s*(?:bytes?|[kmgt]i?b|b)(?:\s+\([^)]*\))?\s*$/i.exec(line)
+  if (!match) return
+  const unit = match[2]!.toLowerCase(), power = ['b', 'kb', 'mb', 'gb', 'tb'].indexOf(unit.replace('i', '').replace(/^bytes?$/, 'b'))
+  const bytes = Number(match[1]) * (unit.includes('i') ? 1024 : 1000) ** power
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : undefined
+}
 interface Sample { time: number; bytes: number }
 /** Pure time/byte policy, independent of polling frequency and wall-clock test sleeps. */
 export class OfficialWatchdog {
@@ -26,23 +37,33 @@ export class OfficialWatchdog {
   private lastBytes?: number
   private lastGrowth: number
   private downloadStarted?: number
+  private downloading = false
   constructor(readonly startedAt: number, public totalBytes?: number, readonly hardTimeoutMs?: number) { this.lastGrowth = startedAt }
+  /** Explicit phase boundaries override lingering staging files. Unknown output does not end a download. */
+  phase(downloading: boolean, now: number) {
+    if (this.downloading === downloading) return
+    this.downloading = downloading
+    this.lastGrowth = now; this.lastBytes = undefined; this.samples = []; this.downloadStarted = undefined
+  }
+  activity(now: number) { if (this.downloading) this.lastGrowth = now }
   check(now: number, bytes?: number): CliChannelReason | undefined {
     if (bytes !== undefined) {
+      if (!this.downloading) this.phase(true, now)
       if (this.lastBytes !== undefined && bytes < this.lastBytes) return 'OFFICIAL_RESTARTED'
       this.downloadStarted ??= now
-      if (this.lastBytes === undefined || bytes > this.lastBytes) this.lastGrowth = now
+      if (bytes > (this.lastBytes ?? 0)) this.lastGrowth = now
       this.lastBytes = bytes
       this.samples.push({ time: now, bytes })
       while (this.samples.length > 1 && this.samples[1]!.time <= now - 60_000) this.samples.shift()
       if (!this.totalBytes || bytes < this.totalBytes) {
-        if (now - this.lastGrowth >= 30_000) return 'OFFICIAL_STALLED'
+        if (now - this.lastGrowth >= OFFICIAL_STALL_MS) return 'OFFICIAL_STALLED'
         const first = this.samples[0]!, duration = now - first.time, rate = duration > 0 ? (bytes - first.bytes) / duration * 1000 : 0
         if (duration >= 60_000 && rate < 100_000) return 'OFFICIAL_SLOW'
         if (this.totalBytes && this.hardTimeoutMs && now - this.downloadStarted >= 30_000 && rate > 0 && now - this.startedAt + (this.totalBytes - bytes) / rate * 1000 >= this.hardTimeoutMs) return 'OFFICIAL_DEADLINE'
-      }
+      } else this.phase(false, now)
     }
-    // No trustworthy bytes: silence is not a 30-second stall. Always allow the bounded full budget.
+    // Stage-only updaters (including Grok) arm this only on an explicit download marker.
+    if (this.downloading && now - this.lastGrowth >= OFFICIAL_STALL_MS) return 'OFFICIAL_STALLED'
     if (now - this.startedAt >= (bytes === undefined ? officialBudgetMs(this.totalBytes) : 600_000)) return 'OFFICIAL_BUDGET'
   }
 }
@@ -67,6 +88,9 @@ export class OfficialWatch extends InterruptionEvidence {
   private line = ''
   private stage = '执行官方更新命令'
   private phaseOnly = false
+  private downloadPhase?: boolean
+  private lastDownloadOutput = ''
+  private lastDownloadBytes?: number
   private lastTotal = 0
   private lastAt = 0
   private disabled = false
@@ -108,9 +132,52 @@ export class OfficialWatch extends InterruptionEvidence {
     this.rawSuffix = text.slice(-512)
     this.line += value
     const lines = this.line.split(/[\r\n]+/); this.line = lines.pop() ?? ''
-    for (const line of lines) if (line.trim()) this.stage = redactOutput(line).slice(0, 2048)
+    for (const line of lines) this.observeStage(line)
+    // Some native updaters never terminate the status line until the download finishes.
+    if (this.line.trim()) this.observeStage(this.line, false)
     if (this.line.length > 64 * 1024) this.line = ''
   }
+  private observeStage(raw: string, terminated = true) {
+    const line = stripVTControlCharacters(raw).trim().replace(/^[\s\u2800-\u28ff|/\\-]+/, '')
+    if (!line) return
+    this.stage = redactOutput(line).slice(0, 2048)
+    const statusBytes = downloadStatusBytes(line)
+    // A chunk may end inside the number, unit, total or ETA. Do not let its
+    // download marker take the text fallback before a complete counter arrives.
+    const pendingCounter = !terminated && statusBytes === undefined && /(?:^|\s)\d+(?:\.\d*)?(?:\s|[kmgtb]|$)/i.test(line)
+    // A trailing status from a finished transfer must not reopen extraction/installation.
+    const downloading = /\bdownload(?:ing)?\b|正在下载/i.test(line) || statusBytes !== undefined && this.downloadPhase !== false
+    const afterDownload = /\b(?:extracting|unpacking|verifying|validating|installing|linking|restarting|defender|authenticode)\b|signature|签名|解压|正在安装|checking (?:for )?updates|已是最新|\b(?:updated to|reinstalled|up to date)\b/i.test(line)
+    // Qoder's "Downloading and installing update" announces the combined operation,
+    // not completion of the download. A subsequent standalone install marker ends it.
+    const complete = /\bdownload\s+(?:complete|completed|finished)\b|下载完成/i.test(line) || /^downloaded\b(?!.*\bof\b)/i.test(line) || downloading && /\b100(?:\.0+)?\s*%/.test(line)
+    const combined = /\bdownloading and installing\b/i.test(line)
+    const phase = complete || afterDownload && !combined ? false : downloading ? true : undefined
+    if (phase !== undefined) {
+      if (phase && this.downloadPhase !== true) { this.lastDownloadBytes = undefined; this.lastDownloadOutput = '' }
+      this.downloadPhase = phase
+      this.watchdog?.phase(phase, Date.now())
+    }
+    // Grok 1.0.77's binary contains parallel-download preallocation; its logical file
+    // length cannot measure received bytes. With no trustworthy staging probe, use
+    // explicit download-status changes as observable activity (not network/IO claims).
+    // Numeric status must exceed its high-water mark; text/spinner changes alone
+    // cannot renew a repeated or decreasing byte count. Keep it as activity only,
+    // rather than treating a rounded display value as verified disk/network bytes.
+    if (phase) {
+      const textActivity = this.lastDownloadBytes === undefined && !pendingCounter && line !== this.lastDownloadOutput
+      if (statusBytes === undefined ? textActivity : statusBytes > (this.lastDownloadBytes ?? 0)) this.watchdog?.activity(Date.now())
+      if (statusBytes !== undefined) this.lastDownloadBytes = Math.max(this.lastDownloadBytes ?? 0, statusBytes)
+      this.lastDownloadOutput = line
+    }
+  }
+  /** Manual takeover API: requestTakeover(): void.
+   * Uses the same OFFICIAL_INTERRUPTED error, process-tree exit barrier, cleanup and
+   * channel-memory path as an automatic trip. This requests a stop, NOT completion;
+   * callers must await executeCliOperation before cleaning or publishing takeover.
+   * Safe to repeat. The service owns capability checks and the watch's lifetime.
+   */
+  requestTakeover(): void { this.fail('OFFICIAL_INTERRUPTED') }
   private fail(reason: CliChannelReason) { if (!this.reason) { this.reason = reason; this.controller.abort(new OfficialUnavailableError(reason)) } }
   private async scan(): Promise<Owned[]> {
     const root = this.probe.directory
@@ -150,7 +217,7 @@ export class OfficialWatch extends InterruptionEvidence {
       if (parts.some((_, index) => this.baseline.has(parts.slice(0, index + 1).join('/'))) || entry.stat.mtimeMs < this.startedAt) continue
       const entries = entry.stat.isDirectory() ? this.ownedDirs : this.owned
       const before = entries.get(entry.relative)
-      if (before && (before.stat.ino !== entry.stat.ino || before.stat.dev !== entry.stat.dev || entry.stat.size < before.stat.size) && !entry.stat.isDirectory()) this.fail('OFFICIAL_RESTARTED')
+      if (this.downloadPhase !== false && before && (before.stat.ino !== entry.stat.ino || before.stat.dev !== entry.stat.dev || entry.stat.size < before.stat.size) && !entry.stat.isDirectory()) this.fail('OFFICIAL_RESTARTED')
       entries.set(entry.relative, entry)
       if (entry.stat.isFile()) present.set(entry.relative, entry)
     }
@@ -173,13 +240,13 @@ export class OfficialWatch extends InterruptionEvidence {
       this.probe.totalBytes = lengths.length && lengths.every(n => n !== undefined) ? lengths.reduce<number>((sum, n) => sum + n!, 0) : undefined
       if (this.watchdog) this.watchdog.totalBytes = this.probe.totalBytes
     }
-    let bytes = !this.disabled && !this.phaseOnly && this.present.size ? [...this.present.values()].reduce((sum, e) => sum + e.stat.size, 0) : undefined
+    let bytes = this.downloadPhase !== false && !this.disabled && !this.phaseOnly && this.present.size ? [...this.present.values()].reduce((sum, e) => sum + e.stat.size, 0) : undefined
     // Disappearing incomplete staging is a restart. Finished staging may be moved during installation.
-    if (bytes === undefined && !this.disabled && !this.phaseOnly && this.lastTotal > 0 && this.probe.totalBytes && this.lastTotal < this.probe.totalBytes) bytes = 0
+    if (bytes === undefined && this.downloadPhase !== false && !this.disabled && !this.phaseOnly && this.lastTotal > 0 && this.probe.totalBytes && this.lastTotal < this.probe.totalBytes) bytes = 0
     if (this.lockConflict && !this.controller.signal.aborted) {
       const lock = await officialLockState(this.probe.lockFile, this.probe.lockCommandPattern)
       if (lock !== 'stale') this.controller.abort(new CliOperationError('UPDATE_LOCKED', '官方更新锁仍有效或无法确认归属'))
-      else if (now - this.startedAt >= 30_000) this.fail('OFFICIAL_STALLED')
+      else if (now - this.startedAt >= OFFICIAL_STALL_MS) this.fail('OFFICIAL_STALLED')
     }
     const reason = this.watchdog?.check(now, bytes)
     if (reason && !this.lockConflict) this.fail(reason)

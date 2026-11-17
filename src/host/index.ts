@@ -4,6 +4,7 @@ import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-manageme
 import { backgroundConnectionConfig } from './settings-connection-background.ts'
 import { CliMaintenance, CliBusyError, MaintenanceError } from './cli-management/maintenance.ts'
 import { CustomProviders, type CustomProviderSource } from './custom-provider.ts'
+import { cliTakeoverRequestSchema } from '../shared/cli-management.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -2447,6 +2448,16 @@ export class CliWorkerService extends TypertRemoteService {
   async cancelCliOperation(parentSessionId: string, target: string, signal: AbortSignal): Promise<string> {
     try { await this.parent(parentSessionId); signal.throwIfAborted(); return JSON.stringify(this.cliManagement.cancel(validate.string().min(1).max(256).parse(target))) }
     catch (error) { throw failure(error) }
+  }
+  /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param operationId - Exact running operation. @param signal - Admission only. @returns CliTakeoverResult JSON after official exit and cleanup. */
+  @Remote('requestCliTakeover')
+  async requestCliTakeover(parentSessionId: string, cli: string, operationId: string, signal: AbortSignal): Promise<string> {
+    try {
+      const parent = await this.parent(parentSessionId)
+      this.assertExecution(parent); signal.throwIfAborted()
+      const request = cliTakeoverRequestSchema.parse({ cli, operationId })
+      return JSON.stringify(await this.cliManagement.requestTakeover(request.cli, request.operationId))
+    } catch (error) { throw failure(error) }
   }
   /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param signal - Picker lifetime. @returns Directory check JSON; empty path on cancel. */
   @Remote('chooseInstallDirectory')

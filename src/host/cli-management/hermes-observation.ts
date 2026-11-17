@@ -1,8 +1,9 @@
 import { lstat, readdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { OFFICIAL_STALL_MS } from './official-watch.ts'
 
 export type HermesStage = 'unknown' | 'plan' | 'snapshot' | 'fetch' | 'apply' | 'deps' | 'tools' | 'uv' | 'pnpm' | 'build' | 'restart'
-export type SlowReason = 'OFFICIAL_SLOW' | 'OFFICIAL_STALLED'
+export type SlowReason = 'OFFICIAL_SLOW' | 'OFFICIAL_STALLED' | 'OFFICIAL_INTERRUPTED'
 export function hermesStage(text: unknown): HermesStage | undefined {
   if (typeof text !== 'string') return
   if (/\brestart(?:ing)?\b|restarting services/i.test(text)) return 'restart'
@@ -80,7 +81,7 @@ export async function observeHermesCache(home: string): Promise<HermesCacheObser
 export const cacheGrew = (before: HermesCacheObservation, after: HermesCacheObservation) => before.completed.complete && after.completed.complete && [...after.completed.files].some(([p, f]) => !before.completed.files.has(p) || f.size > before.completed.files.get(p)!.size)
 export const treeStamp = (tree: TreeObservation) => [...tree.files].map(([p, f]) => `${p}:${f.stamp}`).sort().join('\n')
 
-/** Fetch-only clock: a first-byte grace, then no-growth and rolling 60-second speed. */
+/** Fetch-only clock: 10 seconds from fetch entry or last growth; never build/install time. */
 export class HermesFetchWatchdog {
   private samples: { at: number; bytes: number }[] = []
   private lastBytes = 0
@@ -90,10 +91,10 @@ export class HermesFetchWatchdog {
   check(now: number, bytes: number): SlowReason | undefined {
     if (bytes > this.lastBytes) { this.firstByte = true; this.lastGrowth = now }
     this.lastBytes = bytes
-    if (!this.firstByte) return now - this.startedAt >= 60_000 ? 'OFFICIAL_STALLED' : undefined
+    if (!this.firstByte) return now - this.startedAt >= OFFICIAL_STALL_MS ? 'OFFICIAL_STALLED' : undefined
     this.samples.push({ at: now, bytes })
     while (this.samples.length > 1 && this.samples[1]!.at <= now - 60_000) this.samples.shift()
-    if (now - this.lastGrowth >= 30_000) return 'OFFICIAL_STALLED'
+    if (now - this.lastGrowth >= OFFICIAL_STALL_MS) return 'OFFICIAL_STALLED'
     const first = this.samples[0]!, duration = now - first.at
     if (duration >= 60_000 && (bytes - first.bytes) * 1000 / duration < 100_000) return 'OFFICIAL_SLOW'
   }

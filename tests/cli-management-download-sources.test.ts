@@ -41,7 +41,7 @@ it.each(['EOF', 'ECONNRESET'])('模拟：%s 中断轮换源，从已落盘字节
   expect(options.output).toHaveBeenCalledWith('切换到 mimocode.cnbj1.mi-fds.com 继续下载（第 1 次）\n')
   expect(options.progress.mock.calls.at(-1)![0].resumeCount).toBe(1)
 })
-it('模拟：仅 HEAD 声明 Range 时低于 100 KB/s 的 10 秒窗口换源保留已下字节', async () => {
+it('模拟：仅 HEAD 声明 Range 时低于 100 KB/s 的 5 秒窗口换源保留已下字节', async () => {
   vi.useFakeTimers(); const options = opts(); let stream!: ReadableStreamDefaultController<Uint8Array>
   const fetcher = vi.fn(async (url, init) => {
     if (init?.method === 'HEAD') return new Response(null, { headers })
@@ -51,9 +51,9 @@ it('模拟：仅 HEAD 声明 Range 时低于 100 KB/s 的 10 秒窗口换源保�
   })
   const pending = downloadCliArtifact({ ...options, fetcher })
   await vi.waitFor(() => expect(options.progress.mock.calls.at(-1)?.[0].downloadedBytes).toBe(3), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(5000); stream.enqueue(Buffer.from('d'))
+  await vi.advanceTimersByTimeAsync(2500); stream.enqueue(Buffer.from('d'))
   await vi.waitFor(() => expect(options.progress.mock.calls.at(-1)?.[0].downloadedBytes).toBe(4), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(5000)
+  await vi.advanceTimersByTimeAsync(2500)
   expect(readFileSync(await pending, 'utf8')).toBe('abcdef')
   expect(options.output).toHaveBeenCalledWith(expect.stringContaining('下载过慢'))
   expect(options.output).toHaveBeenCalledWith('切换到 mimocode.cnbj1.mi-fds.com 继续下载（第 1 次）\n')

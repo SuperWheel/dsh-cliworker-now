@@ -69,11 +69,11 @@ async function stall(watch: HermesWatch, stage = 'fetch', growth?: () => Promise
   await watch.poll(now + (stage === 'fetch' ? 60_000 : 120_000))
 }
 
-it('模拟：fetch 首字节宽限 60 秒，首字节后 30 秒无增长；60 秒低均速独立判慢', () => {
+it('模拟：fetch 首字节及后续无增长均为 10 秒；60 秒低均速独立判慢', () => {
   const empty = new HermesFetchWatchdog(0)
-  expect(empty.check(59_999, 0)).toBeUndefined(); expect(empty.check(60_000, 0)).toBe('OFFICIAL_STALLED')
+  expect(empty.check(9_999, 0)).toBeUndefined(); expect(empty.check(10_000, 0)).toBe('OFFICIAL_STALLED')
   const stalled = new HermesFetchWatchdog(0)
-  expect(stalled.check(59_999, 1)).toBeUndefined(); expect(stalled.check(89_998, 1)).toBeUndefined(); expect(stalled.check(89_999, 1)).toBe('OFFICIAL_STALLED')
+  expect(stalled.check(9_999, 1)).toBeUndefined(); expect(stalled.check(19_998, 1)).toBeUndefined(); expect(stalled.check(19_999, 1)).toBe('OFFICIAL_STALLED')
   const slow = new HermesFetchWatchdog(0)
   for (let t = 0; t < 60_000; t += 10_000) expect(slow.check(t, t + 1)).toBeUndefined()
   expect(slow.check(60_000, 60_001)).toBe('OFFICIAL_SLOW')
@@ -174,15 +174,15 @@ it('模拟：tmp_pack 增长计入活动，完成改名不丢字节，未知总�
   await rm(path); await watch.poll(now + 2000)
   expect(progress.mock.calls.at(-1)![0]).toMatchObject({ downloadedBytes: 4, byteProgressState: 'unknown-total' })
   expect(progress.mock.calls.at(-1)![0].totalBytes).toBeUndefined()
-  await watch.poll(now + 31_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await watch.poll(now + 11_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
-it('模拟：工具 .part 无增长 30 秒即停；日志噪声不掩盖工具停滞', async () => {
+it('模拟：工具 .part 无增长 10 秒即停；日志噪声不掩盖工具停滞', async () => {
   const { watch, now, root } = await observer('tools')
   await put(join(root, 'cache/partials/a.part'), '1234'); await watch.poll(now + 1000)
-  await put(join(root, 'logs/update.log'), '→ waiting for tools\n', now + 30_999); await watch.poll(now + 30_999)
-  expect(watch.reason).toBeUndefined(); await watch.poll(now + 31_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await put(join(root, 'logs/update.log'), '→ waiting for tools\n', now + 10_999); await watch.poll(now + 10_999)
+  expect(watch.reason).toBeUndefined(); await watch.poll(now + 11_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
-it.each(['part', 'ranges'])('模拟：预分配 part 的 %s 活动持续不误停，全部不变 30 秒才停', async activity => {
+it.each(['part', 'ranges'])('模拟：预分配 part 的 %s 活动持续不误停，全部不变 10 秒才停', async activity => {
   const { watch, now, root } = await observer('tools'), part = join(root, 'cache/partials/a.part'), ranges = join(root, 'cache/partials/a.ranges')
   await put(part, ''); await truncate(part, 128 * 1024 * 1024)
   await put(ranges, { total: 128 * 1024 * 1024, ranges: [] }); await watch.poll(now + 1)
@@ -191,8 +191,8 @@ it.each(['part', 'ranges'])('模拟：预分配 part 的 %s 活动持续不误�
     else await put(ranges, { total: 128 * 1024 * 1024, ranges: [[0, t]] }, now + t)
     await watch.poll(now + t); expect(watch.reason).toBeUndefined()
   }
-  await watch.poll(now + 149_999); expect(watch.reason).toBeUndefined()
-  await watch.poll(now + 150_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await watch.poll(now + 129_999); expect(watch.reason).toBeUndefined()
+  await watch.poll(now + 130_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
 it('模拟：PM 完成文件出现延续工具活动，预分配、检查点和 staging 不算完成缓存增长', async () => {
   const { watch, now, root } = await observer('tools'), before = await observeHermesCache(root)
@@ -207,8 +207,8 @@ it('模拟：PM 完成文件出现延续工具活动，预分配、检查点和 
   await mkdir(entry, { recursive: true }); await put(join(entry, 'archive.zip'), 'finished verified content')
   await watch.poll(now + 29_000)
   expect(cacheGrew(before, await observeHermesCache(root))).toBe(true)
-  await watch.poll(now + 58_999); expect(watch.reason).toBeUndefined()
-  await watch.poll(now + 59_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await watch.poll(now + 38_999); expect(watch.reason).toBeUndefined()
+  await watch.poll(now + 39_000); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
 it.each(['uv', 'pnpm'])('模拟：%s 缓存和日志更新延长 20 分钟租约，不按速度判慢', async stage => {
   const { watch, now, root } = await observer(stage), path = join(root, stage === 'uv' ? 'cache/uv/wheel' : 'cache/pnpm/store/pkg')
@@ -428,20 +428,20 @@ it('模拟：没有计划 SHA 时使用本次回执 expected_sha，不查询发�
   await stall(watches[0]!); await result
   expect(o.releaseSha).not.toHaveBeenCalled(); expect(calls.at(-1).argv).toEqual(o.argv)
 })
-it('模拟：Downloading uv 是工具下载阶段，采用 30 秒无增长规则', async () => {
+it('模拟：Downloading uv 是工具下载阶段，采用 10 秒无增长规则', async () => {
   const { watch, status, now } = await observer('deps')
   await put(status, { message: 'Downloading uv runtime tool' }, now + 1); await watch.poll(now + 1)
-  expect(watch.currentStage).toBe('tools'); await watch.poll(now + 30_001); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  expect(watch.currentStage).toBe('tools'); await watch.poll(now + 10_001); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })
 it('模拟：原生 Downloading updates 与旧版 PM 子进程状态区分 fetch、工具下载及 uv', async () => {
   const { watch, status, root, now } = await observer('plan')
   await put(status, { message: 'Downloading updates' }, now + 1); await watch.poll(now + 1); expect(watch.currentStage).toBe('fetch')
   await put(status, { message: 'Updating Python dependencies (PM)' }, now + 2)
   await put(join(root, 'cache/partials/uv.part'), 'partial'); await watch.poll(now + 2); expect(watch.currentStage).toBe('deps')
-  await watch.poll(now + 30_002); expect(watch.reason).toBe('OFFICIAL_STALLED')
+  await watch.poll(now + 10_002); expect(watch.reason).toBe('OFFICIAL_STALLED')
   const next = new HermesWatch(root, watch.checkout, status, now, () => {})
-  await put(join(root, 'logs/update.log'), 'Installing Python dependencies\n', now + 30_003)
-  await next.poll(now + 30_003); expect(next.currentStage).toBe('uv')
+  await put(join(root, 'logs/update.log'), 'Installing Python dependencies\n', now + 10_003)
+  await next.poll(now + 10_003); expect(next.currentStage).toBe('uv')
 })
 
 it.each(['stdout', 'log', 'status', 'receipt'])('模拟：%s 完成标记后安静等待退出，只有 20 分钟租约兜底', async source => {
@@ -556,4 +556,55 @@ it('模拟：仅 stdout 提供 Node 阶段时也使用 20 分钟租约', async (
   watch.output('Updating Node dependencies', now + 1)
   await watch.poll(now + 360_000)
   expect(watch.currentStage).toBe('pnpm'); expect(watch.controller.signal.aborted).toBe(false)
+})
+
+it('模拟：Hermes fetch 在 9999 毫秒等待，10000 毫秒停止；apply 禁用短时钟', async () => {
+  const a = await observer('fetch')
+  await a.watch.poll(a.now + 9_999); expect(a.watch.reason).toBeUndefined()
+  await a.watch.poll(a.now + 10_000); expect(a.watch.reason).toBe('OFFICIAL_STALLED')
+  const b = await observer('fetch')
+  await put(b.status, { stage: 'apply' }, b.now + 9_999); await b.watch.poll(b.now + 9_999)
+  await b.watch.poll(b.now + 60_000); expect(b.watch.reason).toBeUndefined()
+})
+it.each(['plan', 'apply', 'deps', 'tools', 'uv', 'pnpm', 'build', 'restart'])('模拟：Hermes %s 没有预取接管配方，拒绝手动接管', async stage => {
+  const { watch } = await observer(stage)
+  expect(watch.requestTakeover()).toBe(false); expect(watch.controller.signal.aborted).toBe(false)
+})
+it('模拟：Hermes 手动 fetch 接管等待进程树退出才预取，清除公开 watch 句柄', async () => {
+  const { root, checkout } = await fixture()
+  let confirm!: (exited: boolean) => void
+  const child = held(new Promise(resolve => { confirm = resolve })), calls: any[] = []
+  const spawn = vi.fn((s: any) => { calls.push(s); return calls.length === 1 ? child : finished(s.argv.includes('ls-remote') ? refs : '') })
+  const o = options(root, checkout, spawn as any), onWatch = vi.fn(); o.onWatch = onWatch
+  const pending = runHermesUpdate(o)
+  await until(() => calls.length === 1)
+  const watch = onWatch.mock.calls.at(-1)![0] as HermesWatch
+  watch.output('Downloading updates')
+  expect(watch.requestTakeover()).toBe(true)
+  expect(watch.requestTakeover()).toBe(false)
+  await until(() => child.waitForExit.mock.calls.length > 0)
+  expect(calls).toHaveLength(1)
+  expect(onWatch.mock.calls.at(-1)![0]).toBe(watch)
+  expect((await readdir(join(root, 'cli-management/downloads'))).length).toBe(1)
+  confirm(true); await pending
+  expect(calls.some(s => s.argv.includes('fetch'))).toBe(true)
+  expect(onWatch.mock.calls.at(-1)![0]).toBeUndefined()
+  expect(await readdir(join(root, 'cli-management/downloads'))).toEqual([])
+})
+it.each(['Verifying tool signature', 'Extracting runtime archive', 'Installing tool', 'Windows Defender scan'])('模拟：Hermes 工具下载后 %s 即使仍留 part 也不按 10 秒停滞中止', async marker => {
+  const { watch, now, root } = await observer('tools')
+  watch.output('Downloading uv runtime tool\n', now + 1)
+  await put(join(root, 'cache/partials/tool.part'), 'partial'); await watch.poll(now + 1)
+  watch.output(marker + '\n', now + 9_000)
+  await watch.poll(now + 60_000); expect(watch.reason).toBeUndefined()
+})
+it('模拟：Hermes 旧下载日志不能覆盖较新的签名阶段，新下载独立获得 10 秒', async () => {
+  const { watch, now, root } = await observer('tools'), log = join(root, 'logs/update.log')
+  await put(log, 'Downloading uv runtime tool\n', now + 1); await watch.poll(now + 1)
+  watch.output('Verifying tool signature\n', now + 9_000)
+  await put(log, 'Downloading uv runtime tool\nwaiting\n', now + 10_000)
+  await watch.poll(now + 60_000); expect(watch.reason).toBeUndefined()
+  watch.output('Downloading node runtime tool\n', now + 60_001)
+  await watch.poll(now + 70_000); expect(watch.reason).toBeUndefined()
+  await watch.poll(now + 70_001); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })

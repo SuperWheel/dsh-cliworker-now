@@ -88,12 +88,25 @@ export async function captureReadOnly(backend: ProcessBackend, config: RuntimeCo
     clearTimeout(timeout); control.removeEventListener('abort', abort)
     if (child) {
       let exited = false
+      const cleanup = new AbortController()
+      let cleanupTimeout: ReturnType<typeof setTimeout> | undefined
       try {
-        if (finished && !control.aborted) exited = await child.waitForExit(AbortSignal.timeout(METADATA_EXIT_GRACE_MS))
-        if (!exited) { child.terminate(); exited = await child.waitForExit() }
-      } catch (cause) { throw new ProcessCleanupUnconfirmedError({ cause }) }
-      if (!exited) throw new ProcessCleanupUnconfirmedError()
-      await Promise.allSettled([child.done, ...readers])
+        if (finished && !control.aborted) {
+          const natural = AbortSignal.timeout(METADATA_EXIT_GRACE_MS)
+          try { exited = await bounded(child.waitForExit(natural), natural) }
+          catch (cause) { if (!natural.aborted || cause !== natural.reason) throw cause }
+        }
+        if (!exited) {
+          // Do not reuse the query signal: it may already be aborted. Allow TERM/KILL its configured grace,
+          // then a separate metadata exit grace; a broken provider must not hang shutdown.
+          cleanupTimeout = setTimeout(() => cleanup.abort(new ProcessCleanupUnconfirmedError()), config.graceMs + METADATA_EXIT_GRACE_MS)
+          child.terminate()
+          exited = await bounded(child.waitForExit(cleanup.signal), cleanup.signal)
+        }
+        if (!exited) throw new ProcessCleanupUnconfirmedError()
+        await bounded(Promise.allSettled([child.done, ...readers]), cleanup.signal)
+      } catch (cause) { throw cause instanceof ProcessCleanupUnconfirmedError ? cause : new ProcessCleanupUnconfirmedError({ cause }) }
+      finally { clearTimeout(cleanupTimeout) }
     }
   }
 }

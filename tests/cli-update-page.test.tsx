@@ -1128,3 +1128,54 @@ describe('模拟「更新 CLI」进度行：来源、切换原因、合计与阶
     expect(byClass(row, 'cwn-update-meta-main').map(textOf)).toEqual(['Received 2.0 KB, total size unknown'])
   })
 })
+
+
+describe('模拟：手动切换插件下载与取消核验', () => {
+  const official = (patch: Partial<CliUpdateOperation> = {}): CliUpdateOperation => ({
+    id: 'SIMULATED-switch', cli: 'claude', intent: 'update', phase: 'installing', startedAt: 1, outputTail: '',
+    officialTakeover: 'available', progress: { channel: 'official', readable: false, resumeCount: 0 }, ...patch,
+  })
+  it.each([
+    [undefined, 'official', false], ['available', 'official', true], ['pending', 'official', true],
+    [undefined, 'takeover', false], ['available', 'takeover', false], [undefined, undefined, false],
+  ] as const)('模拟：按钮状态 %s / %s 仅由 Host 的官方接管能力决定', async (state, channel, visible) => {
+    const f = await setup(data({ snapshot: snapshot({ operation: official({ officialTakeover: state, progress: { readable: false, resumeCount: 0, channel } }) }) }), { requestCliTakeover: vi.fn() })
+    const button = f.button(state === 'pending' ? '正在切换…' : '切换插件下载', f.rowOf('claude'))
+    expect(!!button).toBe(visible)
+    if (visible) expect(button!.props).toMatchObject({ 'data-variant': 'ghost', 'data-size': 'md', disabled: state === 'pending' })
+    expect(f.button('取消更新', f.rowOf('claude'))!.props.disabled).toBe(false)
+  })
+  it('模拟：点击后等待 Host 退出屏障，双击不重发，取消仍可用，接管后隐藏', async () => {
+    let resolve!: (value: unknown) => void
+    const request = vi.fn(() => new Promise(done => { resolve = done }))
+    const op = official(), f = await setup(data({ snapshot: snapshot({ operation: op }) }), { requestCliTakeover: request })
+    const click = f.button('切换插件下载')!.props.onClick
+    await act(async () => { click(); click() })
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledWith('SIMULATED/parent', 'claude', op.id, expect.any(AbortSignal))
+    expect(f.button('正在切换…')!.props.disabled).toBe(true)
+    expect(f.button('取消更新')!.props.disabled).toBe(false)
+    await f.update(data({ snapshot: snapshot({ operation: official({ officialTakeover: 'pending' }) }) }))
+    await act(async () => resolve(ok({ operationId: op.id, status: 'switched' })))
+    expect(f.button('正在切换…')!.props.disabled).toBe(true)
+    await f.update(data({ snapshot: snapshot({ operation: official({ officialTakeover: undefined, progress: { readable: false, channel: 'takeover', resumeCount: 0 } }) }) }))
+    expect(f.button('正在切换…')).toBeUndefined(); expect(f.button('切换插件下载')).toBeUndefined()
+    expect(f.button('取消更新')).toBeDefined()
+  })
+  it('模拟：旧 Host 不显示切换按钮，取消期间也隐藏', async () => {
+    const f = await setup(data({ snapshot: snapshot({ operation: official() }) }))
+    expect(f.button('切换插件下载')).toBeUndefined()
+    const remote = await setup(data({ snapshot: snapshot({ operation: official({ phase: 'cancelling' }) }) }), { requestCliTakeover: vi.fn() })
+    expect(remote.button('切换插件下载')).toBeUndefined()
+  })
+  it.each(['unchanged', 'advanced', 'broken', 'unknown'] as const)('模拟：取消核验 %s 显示真实结果并保留修复入口', async outcome => {
+    const check = outcome === 'unknown' ? undefined : outcome === 'broken' ? { outcome, reason: '模拟入口缺失' } : { outcome, version: outcome === 'advanced' ? '1.2.3' : '1.0.0' }
+    const result = official({ phase: 'cancelled', officialTakeover: undefined, cancellationCheck: check })
+    const f = await setup(data({ snapshot: snapshot({ results: [result], entries: [entry('claude', outcome === 'broken' ? { group: 'failed', reason: 'UNKNOWN_VERSION', planToken: 'SIMULATED-repair' } : { group: 'updatable' })] }) }))
+    const row = f.rowOf('claude'), text = textOf(row)
+    expect(text).toContain({ unchanged: '已取消，原版本 1.0.0 未受影响', advanced: '已取消，但更新已完成：1.2.3', broken: '已取消，安装已损坏：模拟入口缺失', unknown: '已取消。已写入的文件不会回滚，建议重新检查' }[outcome])
+    const status = row.find(node => node.props.className === 'cwn-update-desc')
+    if (outcome === 'unchanged' || outcome === 'advanced') expect(status.props['data-tone']).not.toBe('error')
+    if (outcome === 'broken') { expect(f.button('重新安装', row)).toBeDefined(); expect(status.props['data-tone']).toBe('error') }
+  })
+})

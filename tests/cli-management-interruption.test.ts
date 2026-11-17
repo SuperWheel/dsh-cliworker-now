@@ -51,8 +51,8 @@ it.each(['wrong-start', 'changed-total', 'wrong-length', 'excess-body'])('模拟
 it('模拟：中断与真实停滞共用次数且输出区分', async () => {
   vi.useFakeTimers(); const output = vi.fn(), fetcher = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(new Response(new ReadableStream({ start(c) { c.enqueue(Buffer.from('abc')) } }), { headers: { 'content-length': '6' } })).mockResolvedValueOnce(new Response('def', { status: 206, headers: { 'content-range': 'bytes 3-5/6' } }))
   const pending = downloadCliArtifact({ root: temp(), url: 'https://模拟.invalid/f', expectedBytes: 6, signal: control(), fetcher, progress: vi.fn(), output })
-  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2)); await vi.advanceTimersByTimeAsync(10_001); await pending
-  expect(output.mock.calls.map(c => c[0])).toEqual(['下载中断，从 0 B 处续传（第 1 次）\n', '下载停滞 10 秒，从 3 B 处续传（第 2 次）\n'])
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2)); await vi.advanceTimersByTimeAsync(5_001); await pending
+  expect(output.mock.calls.map(c => c[0])).toEqual(['下载中断，从 0 B 处续传（第 1 次）\n', '下载停滞 5 秒，从 3 B 处续传（第 2 次）\n'])
 })
 it.each(['curl: (18)', 'curl: (28)', 'curl: (52)', 'curl: (56)', 'transfer closed', 'Connection reset', 'ECONNRESET', 'ETIMEDOUT', 'socket hang up', 'unexpected EOF', 'premature close'])('模拟：原始证据 %s 跨块识别', evidence => {
   const detector = new InterruptionEvidence()

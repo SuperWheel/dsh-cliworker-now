@@ -5,7 +5,7 @@ import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from '../pi-installation.mjs'
 import { preparePiRepairGuard } from './pi-repair.ts'
 import { codexInstallerEnv } from './artifacts/codex.ts'
-import { runHermesUpdate } from './hermes-watch.ts'
+import { runHermesUpdate, type HermesWatch } from './hermes-watch.ts'
 import { randomUUID } from 'node:crypto'
 import { rename } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -19,7 +19,7 @@ import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
 import { identifyInstallation, fingerprintToken, type InstallationIdentity } from './identity.ts'
 import { CLI_SOURCES, NATIVE_RELEASES, NATIVE_UPDATES, isDesktopCli, installOffer, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './sources.ts'
-import { bounded, captureReadOnly, currentVersion, ReadOnlyTimeoutError, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
+import { bounded, captureReadOnly, currentVersion, ReadOnlyTimeoutError, ReleaseClient, ReleaseError, compatible, latestCompatible, updateAvailable, compareVersions, validVersion, validAppVersion, desktopVersion, piNotice } from './versions.ts'
 import { CliPreloader } from './preload.ts'
 import { CliMaintenance, CliBusyError } from './maintenance.ts'
 import { planCliOperation, automaticMethod, operationToken, operationArgv, sameInstallation, boundOfficialEnv, assertNpmInstallation, CliOperationError, updateProblem, verifyUpdatedVersion } from './planner.ts'
@@ -30,7 +30,7 @@ import { canPrepareLocalUpdate, prepareLocalUpdate, describeLocalUpdate, type Lo
 import { OfficialWatch, officialLockState } from './official-watch.ts'
 import { officialProbe } from './artifacts/probes.ts'
 import { ChannelMemory, channelMemoryKey } from './channel-memory.ts'
-import { cliDownloadProgressSchema, type CliChannelReason } from '../../shared/cli-management.ts'
+import { cliDownloadProgressSchema, cliTakeoverRequestSchema, type CliTakeoverResult, type CliChannelReason } from '../../shared/cli-management.ts'
 import { downloadCliArtifact, prepareDownloads } from './download.ts'
 import { resolveNpmRuntime, resolveNpmHost } from './npm.ts'
 import { checkInstallDirectory, chooseInstallDirectory } from './directory.ts'
@@ -78,6 +78,8 @@ export class CliManagementService {
   readonly maintenance: CliMaintenance
   readonly cache: CliManagementCache
   private operationRun?: Promise<void>
+  private switchedOperation?: string
+  private officialOperation?: { id: string; request(): Promise<CliTakeoverResult>; finish(status: CliTakeoverResult['status']): void }
   private operationController?: AbortController
   private requests = new Map<string, { signature: string; operation: CliUpdateOperation }>()
   private batches = new Set<string>()
@@ -351,7 +353,7 @@ export class CliManagementService {
     finally { clearTimeout(timeout) }
   }
   private track<T>(operation: Promise<T>) { this.pending.add(operation); void operation.finally(() => this.pending.delete(operation)).catch(() => undefined); return operation }
-  private async installEntry(cli: ActiveCliId, directory: string, signal: AbortSignal) {
+  private async installEntry(cli: ActiveCliId, directory: string, signal: AbortSignal, propagateCleanupFailure = false) {
     if (!this.installer) return
     this.assertHealthy()
     try {
@@ -359,7 +361,11 @@ export class CliManagementService {
       this.publish(cli, { install: plan.offer, planToken: plan.token, latestCompatibleVersion: validVersion(plan.target) ? plan.target : undefined,
         reasonDetail: (this.entry(cli).installed && !this.entry(cli).currentVersion ? CLI_SOURCES[cli].versionNote : undefined) ?? plan.source.reason ?? this.entry(cli).reasonDetail })
     } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) { this.cleanupFailure = error; this.cleanupCli = cli; this.deps.cleanup?.(cli, error); this.preloader.changed() }
+      if (error instanceof ProcessCleanupUnconfirmedError) {
+        // Cancellation still owns the maintenance lease and must quarantine it in its finalizer.
+        if (propagateCleanupFailure) throw error
+        this.cleanupFailure = error; this.cleanupCli = cli; this.deps.cleanup?.(cli, error); this.preloader.changed()
+      }
       signal.throwIfAborted()
       const source = installationSource(cli)
       this.publish(cli, { planToken: undefined, install: { ...installOffer(cli), method: source.method, prerequisites: [{ name: '安装准备', required: '可核实的版本、路径和运行时', satisfied: false }] } })
@@ -424,6 +430,7 @@ export class CliManagementService {
     const op: CliUpdateOperation = { id: randomUUID(), cli, intent, phase: 'preparing', startedAt: Date.now(), outputTail: '' }
     const output = (value: string) => { op.outputTail = outputTail(op.outputTail + value); this.changed() }
     this.requests.set(requestId, { signature, operation: op })
+    this.switchedOperation = undefined
     this.state.operation = op; this.state.results = this.state.results.filter(item => item.cli !== cli)
     this.operationController = new AbortController()
     const signal = AbortSignal.any([this.operationController.signal, this.lifetime.signal])
@@ -433,6 +440,8 @@ export class CliManagementService {
       let piGuard: Awaited<ReturnType<typeof preparePiRepairGuard>> | undefined, piAttempted = false
       let artifact: string | undefined, local: LocalArtifactInstall | undefined, npmDownload: NpmDownload | undefined
       const desktopArtifacts: string[] = []
+      let cancelledPlan: CliOperationPlan | undefined, pathRevision: number | undefined
+      let hermesMemory: { memory: ChannelMemory; key: string } | undefined
       try {
         await this.preloader.pause(); await this.running
         this.assertHealthy(); signal.throwIfAborted()
@@ -465,7 +474,8 @@ export class CliManagementService {
         await registerNativeResidueCleanup({ ...this.deps, cli, targetVersion: plan.targetVersion, success: () => op.phase === 'succeeded' })
         op.beforeVersion = plan.beforeVersion; op.targetVersion = plan.targetVersion
         let npmRuntime: [string, string] | undefined
-        const pathRevision = this.deps.config.cliExecutablePaths?.revision(cli)
+        cancelledPlan = plan
+        pathRevision = this.deps.config.cliExecutablePaths?.revision(cli)
         if (cli === 'pi' && plan.identity.source === 'self-update') piGuard = await (this.deps.piGuard ?? preparePiRepairGuard)(plan.identity, this.deps.backend, this.deps.config, signal)
         if (plan.method === 'npm') {
           assertNpmInstallation(cli, plan.identity)
@@ -516,14 +526,7 @@ export class CliManagementService {
           const verification = AbortSignal.any([control, deadline.signal])
           try {
             const managedVersion = await piGuard?.verify(plan.targetVersion)
-            const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, verification)
-            verification.throwIfAborted()
-            if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '命令已完成，但实际路径或安装归属已变化，请重新检查')
-            if (cli === 'pi') await checkPiInstallationIntegrity(after.executable, { allowUnsupported: true, fresh: true, signal: verification })
-            if (plan.method === 'npm') await (this.deps.npmCheck ?? verifyNpmPlatforms)(after, this.releases, plan.registry, verification, npmDownload!.host, npmDownload!.components, this.deps.root)
-            const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, verification, false, 45_000, plan.method === 'npm')
-            verification.throwIfAborted()
-            const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
+            const { after, cliVersion, version } = await this.readInstallation(plan, verification, npmDownload)
             if (managedVersion && version !== managedVersion) throw new CliOperationError('VERSION_MISMATCH', 'Pi 运行版本与原托管根 current-version 不符；路径记录未修改')
             op.afterVersion = version
             if (evidence && version && updateAvailable(plan.beforeVersion, version)) evidence.interrupted = false
@@ -561,7 +564,26 @@ export class CliManagementService {
           // `hermes update` writes logs/receipts there (2026-11-14 Windows 实机：账号目录导致看不到阶段、5 分钟误杀).
           const home = hermesHomeDirectory()
           const checkout = plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent')
-          const receipt = await runHermesUpdate({ root: this.deps.root, home, checkout, argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, progress: localOptions.progress,
+          const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity), remembered = await memory.get(key)
+          hermesMemory = { memory, key }
+          let hermesWatch: HermesWatch | undefined, tookOver = false, manual = false
+          const receipt = await runHermesUpdate({ root: this.deps.root, home, checkout, argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output,
+            onWatch: watch => {
+              hermesWatch = watch
+              if (!watch && op.officialTakeover !== 'pending') { op.officialTakeover = undefined; this.officialOperation?.finish('finished'); this.changed() }
+            },
+            progress: value => {
+              if (value.channel === 'takeover') {
+                manual ||= op.officialTakeover === 'pending' && !remembered
+                this.switchedOperation = op.id
+                tookOver = true; op.officialTakeover = undefined; this.officialOperation?.finish('switched')
+                value = { ...value, reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : manual ? 'OFFICIAL_MANUAL' : value.reason, officialFailedAt: remembered?.failedAt, ...(manual ? { stage: '已手动切换 Hermes 插件代码预取，完成后交回官方更新' } : {}) }
+              } else if (!tookOver && hermesWatch?.currentStage === 'fetch' && !hermesWatch.controller.signal.aborted) {
+                if (!this.officialOperation) this.registerOfficialOperation(op, hermesWatch)
+                if (remembered && op.officialTakeover === 'available') void this.requestTakeover(cli, op.id).catch(() => undefined)
+              } else if (op.officialTakeover !== 'pending') { op.officialTakeover = undefined; this.officialOperation?.finish('finished') }
+              localOptions.progress(value)
+            },
             beforeVersion: plan.beforeVersion, targetVersion: plan.targetVersion, npmRegistry: selected.hermesRegistry,
             activityRoots: [process.env.npm_config_cache ?? join(homedir(), process.platform === 'win32' ? 'AppData/Local/npm-cache' : '.npm'),
               join(process.env.PNPM_HOME ?? (process.platform === 'darwin' ? join(homedir(), 'Library/pnpm') : process.platform === 'win32' ? join(homedir(), 'AppData/Local/pnpm') : join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'pnpm')), 'store')],
@@ -581,6 +603,7 @@ export class CliManagementService {
             },
           })
           verified = await verify(signal)
+          if (tookOver) await memory.set(key, remembered?.reason ?? (manual ? 'OFFICIAL_MANUAL' : 'OFFICIAL_INTERRUPTED'), remembered?.failedAt)
           const installedVersion = verified.version
           afterUpdateCleanup(() => cleanHermesResidues(home, {success: op.phase === 'succeeded', receiptSucceeded: receipt.receiptSucceeded, targetVersion: plan.targetVersion, verifiedVersion: installedVersion},
             () => hermesProcessState(home,checkout,this.deps.backend,this.deps.config)))
@@ -599,6 +622,7 @@ export class CliManagementService {
             try {
               op.command = argv!; op.phase = 'installing'; this.changed()
               watch.start()
+              this.registerOfficialOperation(op, watch)
               try {
                 const env = { ...NATIVE_UPDATES[cli]?.env, ...(cli === 'codex' ? codexInstallerEnv() : {}), ...boundOfficialEnv(cli, plan.identity), ...piGuard?.env, ...watch.env }
                 // Keep the Host environment, including proxies; only augment the child PATH.
@@ -610,7 +634,7 @@ export class CliManagementService {
                 signal.throwIfAborted()
                 if (!(error instanceof CliOperationError) || !['EXIT_CODE', 'INSTALL_TIMEOUT', 'OFFICIAL_UNAVAILABLE', 'UPDATE_LOCKED'].includes(error.code)) throw error
                 officialError = error
-              } finally { await watch.stop() }
+              } finally { if ((op as CliUpdateOperation).officialTakeover !== 'pending') op.officialTakeover = undefined; await watch.stop(); this.changed() }
               signal.throwIfAborted()
               if (watch.lockConflict && await officialLockState(probe.lockFile, probe.lockCommandPattern) !== 'stale') {
                 await memory.set(key, undefined)
@@ -624,7 +648,7 @@ export class CliManagementService {
                 if (op.afterVersion && updateAvailable(plan.beforeVersion, op.afterVersion)) throw error
                 // Kimi stages first; a zero exit can still leave an unapplied swap.
                 if (cli !== 'kimi' && !officialError && !watch.reason && !watch.lockConflict) throw error
-                failure = watch.reason ?? (watch.lockConflict ? 'OFFICIAL_STALLED' : officialError instanceof CliOperationError && officialError.code === 'INSTALL_TIMEOUT' ? 'OFFICIAL_BUDGET' : 'OFFICIAL_EXIT')
+                failure = op.officialTakeover === 'pending' ? 'OFFICIAL_MANUAL' : watch.reason ?? (watch.lockConflict ? 'OFFICIAL_STALLED' : officialError instanceof CliOperationError && officialError.code === 'INSTALL_TIMEOUT' ? 'OFFICIAL_BUDGET' : 'OFFICIAL_EXIT')
               }
               if (officialResult) {
                 await memory.set(key, undefined)
@@ -643,6 +667,8 @@ export class CliManagementService {
             if (failure) await memory.set(key, failure)
             op.progress = { readable: false, byteProgress: false, resumeCount: 0, channel: 'takeover', reason: remembered ? 'OFFICIAL_RECENT_FAILURE' : failure, officialFailedAt: remembered?.failedAt,
               stage: remembered ? '官方渠道近期在本机失败（7 天内），直接接管' : '官方进程已退出，切换插件接管' }
+            op.officialTakeover = undefined
+            this.officialOperation?.finish('switched')
             output(op.progress.stage! + '\n')
             try {
               signal.throwIfAborted()
@@ -713,7 +739,7 @@ export class CliManagementService {
           quarantineUpdateCleanup(); quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
           op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认更新进程全部退出，已暂停后续操作', retryable: false }
         } else if (signal.aborted) {
-          op.phase = 'cancelled'; op.outputTail = outputTail(op.outputTail + '\n已取消；已写入的文件不回滚，请重新检查。')
+          op.phase = 'cancelled'
         } else {
           op.phase = 'failed'
           const code = error instanceof CliOperationError ? error.code : (error as { code?: string }).code === 'INTEGRITY_MISMATCH' ? 'INTEGRITY_MISMATCH' : 'UNKNOWN'
@@ -724,6 +750,7 @@ export class CliManagementService {
         // strand the operation, maintenance lease, or remaining batch entries.
         try {
           const cleanup = await Promise.allSettled([
+            ...(hermesMemory && op.phase !== 'succeeded' && !quarantine ? [hermesMemory.memory.set(hermesMemory.key, undefined)] : []),
             ...(local && !quarantine ? [Promise.resolve().then(() => local!.cleanup())] : []),
             ...(npmDownload ? [Promise.resolve().then(() => npmDownload!.cleanup(op.phase === 'succeeded', quarantine))] : []),
             ...(artifact && !npmDownload && !quarantine ? [removeUpdateTemporary(artifact)] : []),
@@ -738,6 +765,20 @@ export class CliManagementService {
             const error = new ProcessCleanupUnconfirmedError()
             this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli,error)
           }
+          if (op.phase === 'cancelled' && cancelledPlan && !quarantine && !this.lifetime.signal.aborted) {
+            // Keep the maintenance lease until this read-only check has finished.
+            op.phase = 'cancelling'; this.changed()
+            try { await this.verifyCancellation(op, cancelledPlan, pathRevision); op.phase = 'cancelled' }
+            catch (error) {
+              if (error instanceof ProcessCleanupUnconfirmedError) {
+                quarantineUpdateCleanup(); quarantine = true; this.cleanupFailure = error; this.cleanupCli = cli; this.quarantined.set(cli, release); this.deps.cleanup?.(cli, error)
+                op.phase = 'cleanup-unconfirmed'; op.error = { code: 'CLEANUP_UNCONFIRMED', message: '无法确认核验进程全部退出，已暂停后续操作', retryable: false }
+              } else op.phase = 'cancelled'
+            }
+          }
+          if (op.phase === 'cancelled' && !op.cancellationCheck) output('\n已取消；已写入的文件不回滚，请重新检查。')
+          op.officialTakeover = undefined
+          this.officialOperation?.finish(op.phase === 'cleanup-unconfirmed' ? 'cleanup-unconfirmed' : op.phase === 'cancelled' ? 'cancelled' : 'finished')
           op.finishedAt = Date.now(); this.state.results.push(op); this.state.operation = undefined
           this.operationController = undefined; this.operationRun = undefined
           try {
@@ -778,6 +819,90 @@ export class CliManagementService {
       }
     }
     this.changed(); this.preloader.changed()
+  }
+  private registerOfficialOperation(op: CliUpdateOperation, watch: { requestTakeover(): void | boolean }) {
+    let pending: Promise<CliTakeoverResult> | undefined, settle: ((result: CliTakeoverResult) => void) | undefined
+    this.officialOperation = { id: op.id,
+      request: () => {
+        if (pending) return pending
+        pending = new Promise(resolve => { settle = resolve })
+        op.officialTakeover = 'pending'; this.changed()
+        try {
+          if (triggerOfficialTakeover(watch) === false) {
+            settle!({ operationId: op.id, status: 'not-official' }); const rejected = pending
+            pending = undefined; settle = undefined; op.officialTakeover = undefined; this.changed(); return rejected
+          }
+        } catch (error) { pending = undefined; settle = undefined; op.officialTakeover = 'available'; this.changed(); throw error }
+        return pending
+      },
+      finish: status => { if (status === 'switched') this.switchedOperation = op.id; settle?.({ operationId: op.id, status }); if (this.officialOperation?.id === op.id) this.officialOperation = undefined },
+    }
+    op.officialTakeover = 'available'; this.changed()
+  }
+  async requestTakeover(cli: ActiveCliId, operationId: string): Promise<CliTakeoverResult> {
+    cliTakeoverRequestSchema.parse({ cli, operationId })
+    const result = (status: CliTakeoverResult['status']): CliTakeoverResult => ({ operationId, status })
+    const op = this.state.operation
+    if (!op || op.id !== operationId || op.cli !== cli) return result('finished')
+    if (op.phase === 'cancelling') return result('cancelled')
+    if (this.switchedOperation === operationId || op.progress?.channel === 'takeover') return result('already-switched')
+    if (!op.officialTakeover || this.officialOperation?.id !== operationId) return result('not-official')
+    return this.officialOperation.request()
+  }
+  /** Uses the same identity/version/integrity readback as post-update verification, without placement or path writes. */
+  private async verifyCancellation(op: CliUpdateOperation, plan: CliOperationPlan, pathRevision?: number) {
+    const control = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(60_000)])
+    try {
+      if (this.deps.config.cliExecutablePaths?.revision(op.cli) !== pathRevision) return
+      const readback = await this.readInstallation(plan, control)
+      if (this.deps.config.cliExecutablePaths?.revision(op.cli) !== pathRevision) return
+      const readable = plan.method === 'desktop' ? validAppVersion(readback.version) : validVersion(readback.version)
+      if (!readable || !readback.version) throw new CliOperationError('VERSION_MISMATCH', '读不出原安装的版本')
+      const movement = compareVersions(readback.version, plan.beforeVersion)
+      if (movement < 0) throw new CliOperationError('VERSION_MISMATCH', '原安装版本低于更新前版本')
+      op.afterVersion = readback.version
+      op.cancellationCheck = { outcome: movement > 0 ? 'advanced' : 'unchanged', version: readback.version }
+      this.identities.set(op.cli, readback.after)
+      this.cache.invalidateVersion(op.cli); this.cache.rememberVersion(op.cli, readback.after.fingerprint, readback.cliVersion)
+      const row = this.entry(op.cli), next = row.latestCompatibleVersion
+      const updatable = !!next && updateAvailable(readback.version, next)
+      this.publish(op.cli, { installed: true, currentVersion: readback.cliVersion, appVersion: readback.after.fingerprint.appVersion,
+        group: updatable ? 'updatable' : 'latest', reason: undefined, reasonDetail: undefined, stage: undefined,
+        planToken: updatable ? operationToken(op.cli, readback.after, next, this.effectiveRegistry(), readback.version, plan.desktopRelease) : undefined }, true)
+    } catch (error) {
+      if (error instanceof ProcessCleanupUnconfirmedError) throw error
+      if (control.aborted || error instanceof ReadOnlyTimeoutError) return
+      const detail = piInstallationIntegrityMessage(error)
+      const missing = ['ENOENT', 'ENOTDIR', 'SUBPROCESS_EXECUTABLE_NOT_FOUND'].includes((error as NodeJS.ErrnoException).code ?? '') || (error as { reason?: string }).reason === 'not-installed'
+      if (!(error instanceof CliOperationError && ['IDENTITY_CHANGED', 'VERSION_MISMATCH', 'INTEGRITY_MISMATCH'].includes(error.code)) && !detail && !(error instanceof NpmInstallationError) && !missing && (error as NodeJS.ErrnoException).code !== 'CLI_IDENTITY_MISMATCH') return
+      const reason = outputTail(detail ?? (error as Error).message)
+      op.cancellationCheck = { outcome: 'broken', reason }
+      this.cache.invalidateVersion(op.cli)
+      this.publish(op.cli, { group: 'failed', reason: 'UNKNOWN_VERSION', reasonDetail: reason, currentVersion: undefined, planToken: undefined, stage: undefined }, true)
+      // Prepare only the existing repair offer. This never executes an installer or writes a path record.
+      // The operation owns subprocess cleanup: abort its deadline, then await its exit barrier.
+      try { await this.installEntry(op.cli, '', control, true) }
+      catch (preparation) {
+        if (preparation instanceof ProcessCleanupUnconfirmedError) throw preparation
+        // Otherwise keep the damaged-installation evidence.
+      }
+    }
+  }
+  private async readInstallation(plan: CliOperationPlan, control: AbortSignal, npmDownload?: NpmDownload) {
+    const cli = plan.cli
+    const after = await (this.deps.identify ?? identifyInstallation)(cli, this.deps.backend, this.deps.config, control)
+    control.throwIfAborted()
+    if (!after || !sameInstallation(plan.identity, after, cli)) throw new CliOperationError('IDENTITY_CHANGED', '原安装入口缺失或实际路径、安装归属已变化')
+    if (after.repairNeeded) throw new CliOperationError('INTEGRITY_MISMATCH', after.notice ?? '原安装需要修复')
+    if (cli === 'pi') await checkPiInstallationIntegrity(after.executable, { allowUnsupported: true, fresh: true, signal: control })
+    if (plan.method === 'npm') {
+      const host = npmDownload?.host ?? await (this.deps.npmRuntimeHost ?? resolveNpmHost)(this.deps.backend, this.deps.config, control)
+      await (this.deps.npmCheck ?? verifyNpmPlatforms)(after, this.releases, plan.registry, control, host, npmDownload?.components, this.deps.root)
+    }
+    const cliVersion = await (this.deps.version ?? currentVersion)(cli, after, this.deps.backend, this.deps.config, control, false, 45_000, plan.method === 'npm')
+    control.throwIfAborted()
+    const version = plan.method === 'desktop' && after.fingerprint.appVersion ? desktopVersion(cli, after.fingerprint.appVersion) : cliVersion
+    return { after, cliVersion, version }
   }
   cancel(target: string): CliUpdateSnapshot {
     if (this.state.operation?.id === target) {
@@ -830,4 +955,10 @@ export class CliManagementService {
     } finally { off(); control.removeEventListener('abort', notify) }
   }
   async close() { this.state.queue = []; this.queued.clear(); this.lifetime.abort(); this.operationController?.abort(); await this.operationRun; this.foregroundController?.abort(); await this.preloader.close(); await this.running; await Promise.allSettled(this.pending); this.listeners.clear(); if (this.cleanupFailure) throw this.cleanupFailure }
+}
+
+/** Integration point owned by the official watchdog agent; requestTakeover must trip its normal stop/cleanup path. */
+function triggerOfficialTakeover(watch: { requestTakeover(): void | boolean }): void | boolean {
+  // WATCHDOG MANUAL-TAKEOVER INTEGRATION: reconcile this single call with the exported watch API.
+  return watch.requestTakeover()
 }

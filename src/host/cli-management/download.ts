@@ -13,8 +13,10 @@ import { OFFICIAL_SIGNED_ARTIFACT_HOSTS } from './sources.ts'
 import { ArtifactSources, PresignedExpiredError, SourceIdentityError, responseMd5 } from './download-sources.ts'
 import { recoverableDownloadError, RECOVERY_LIMIT, RECOVERY_TIMEOUT_MS } from './recovery.ts'
 
-export const DOWNLOAD_STALL_MS = 10_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWNLOAD_TIMEOUT_MS = RECOVERY_TIMEOUT_MS
-/** Decimal KB/s: 1,000,000 new bytes per 10-second window. */
+export const DOWNLOAD_STALL_MS = 5_000, DOWNLOAD_RESUMES = RECOVERY_LIMIT, DOWNLOAD_TIMEOUT_MS = RECOVERY_TIMEOUT_MS
+/** Preserve connection/redirect/first-byte grace; the 5-second clock starts with body bytes. */
+export const DOWNLOAD_RESPONSE_TIMEOUT_MS = 10_000
+/** Decimal KB/s: 500,000 new bytes per 5-second window. */
 export const DOWNLOAD_SLOW_BYTES_PER_SECOND = 100_000
 export const DOWNLOAD_MAX_BYTES = 2 * 1024 ** 3, DOWNLOAD_RETENTION_MS = 24 * 60 * 60_000
 export function parseIntegrity(integrity: string) {
@@ -125,7 +127,8 @@ export async function downloadCliArtifact(options: {
       for (;;) {
         global.throwIfAborted()
         const stall = new AbortController(), control = AbortSignal.any([global, stall.signal, ...(official ? [options.officialFirst!.signal] : [])])
-        let timer = setTimeout(() => stall.abort(), DOWNLOAD_STALL_MS)
+        let bodyStarted = false
+        let timer = setTimeout(() => stall.abort(), DOWNLOAD_RESPONSE_TIMEOUT_MS)
         let speedTimer: ReturnType<typeof setInterval> | undefined, slowSpeed: number | undefined
         const heartbeat = () => { clearTimeout(timer); timer = setTimeout(() => stall.abort(), DOWNLOAD_STALL_MS); lastByte = Date.now() }
         let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, responseEnd: number | undefined
@@ -181,7 +184,8 @@ export async function downloadCliArtifact(options: {
           // Never deliberately interrupt a slow connection that would restart at
           // zero. A 206 or explicit Accept-Ranges proves the server's capability;
           // a subsequent ignored Range disables slow reconnections for this file.
-          if (!rangeRejected && (sources?.supportsRange || response.status === 206 || response.headers.get('accept-ranges')?.toLowerCase() === 'bytes')) {
+          const startSpeedWindow = () => {
+            if (rangeRejected || !(sources?.supportsRange || response.status === 206 || response.headers.get('accept-ranges')?.toLowerCase() === 'bytes')) return
             let windowBytes = bytes, windowStarted = Date.now()
             speedTimer = setInterval(() => {
               const now = Date.now(), added = bytes - windowBytes, elapsed = (now - windowStarted) / 1000
@@ -195,6 +199,7 @@ export async function downloadCliArtifact(options: {
             const chunk = await bounded(reader.read(), control)
             if (chunk.done) break
             if (!chunk.value.byteLength) continue
+            if (!bodyStarted) { bodyStarted = true; startSpeedWindow() }
             if (bytes + chunk.value.byteLength > maxBytes || total !== undefined && bytes + chunk.value.byteLength > total || responseEnd !== undefined && bytes + chunk.value.byteLength > responseEnd) throw new CliOperationError('NETWORK', '下载长度超出声明或缓存上限')
             let written = 0
             while (written < chunk.value.length) { const result = await handle.write(chunk.value, written, chunk.value.length - written, bytes + written); if (!result.bytesWritten) throw new Error('Download write made no progress'); written += result.bytesWritten }
@@ -225,7 +230,7 @@ export async function downloadCliArtifact(options: {
           sourceHost = new URL(sources.url).host
           if (sources.url !== previous) options.output?.(`切换到 ${new URL(sources.url).host} 继续下载（第 ${resumes} 次）\n`)
         }
-        options.output?.(slowSpeed !== undefined ? `下载过慢（${slowSpeed.toFixed(1)} KB/s），从 ${bytes} B 处重新连接（第 ${resumes} 次）\n` : `${stall.signal.aborted ? '下载停滞 10 秒' : '下载中断'}，从 ${bytes} B 处续传（第 ${resumes} 次）\n`)
+        options.output?.(slowSpeed !== undefined ? `下载过慢（${slowSpeed.toFixed(1)} KB/s），从 ${bytes} B 处重新连接（第 ${resumes} 次）\n` : `${stall.signal.aborted ? bodyStarted ? '下载停滞 5 秒' : '下载响应等待超时' : '下载中断'}，从 ${bytes} B 处续传（第 ${resumes} 次）\n`)
         report()
       }
       await handle.sync(); global.throwIfAborted()

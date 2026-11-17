@@ -117,7 +117,12 @@ export class ArtifactSources {
     if (response.status !== 200 && response.status !== 206) return
     if (!this.current) mismatch()
     const { length, etag, md5 } = this.current!
-    if (etag && response.headers.get('etag')?.trim() !== etag || md5 && responseMd5(response.headers) !== md5) mismatch()
+    const actualEtag = response.headers.get('etag')?.trim(), actualMd5 = responseMd5(response.headers)
+    // OSS omits the whole-object Content-MD5 on partial GETs. Only an unchanged
+    // strong ETag can authenticate those fragments without a response digest;
+    // keep the HEAD digest anchored for final whole-file verification.
+    const partialWithoutMd5 = response.status === 206 && actualMd5 === undefined && !this.requireMd5 && !!etag && !etag.startsWith('W/') && actualEtag === etag
+    if (etag && actualEtag !== etag || md5 && actualMd5 !== md5 && !partialWithoutMd5) mismatch()
     if (response.status === 206 && !response.headers.get('content-range')?.endsWith(`/${length}`)) mismatch()
   }
 }

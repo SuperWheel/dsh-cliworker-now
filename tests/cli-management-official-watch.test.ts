@@ -8,13 +8,13 @@ import { officialProbe } from '../src/host/cli-management/artifacts/probes.ts'
 import { ChannelMemory, CHANNEL_MEMORY_TTL, channelMemoryKey } from '../src/host/cli-management/channel-memory.ts'
 import { syntheticIdentity } from './cli-management-phase-b-fixture.ts'
 const roots: string[] = [], watches: OfficialWatch[] = []
-afterEach(async () => { for (const watch of watches.splice(0)) await watch.stop(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); vi.restoreAllMocks() })
+afterEach(async () => { for (const watch of watches.splice(0)) await watch.stop(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); vi.restoreAllMocks(); vi.useRealTimers() })
 async function fixture() { const root = await realpath(await mkdtemp(join(tmpdir(), 'cli-official-simulated-'))); roots.push(root); return root }
 const started = 2_000_000_000_000
 async function fresh(path: string, value = 'abc') { await writeFile(path, value); await utimes(path, new Date(started + 1000), new Date(started + 1000)) }
-it('模拟：30 秒无增长、大小回落、60 秒低速、30 秒后硬截止预测', () => {
+it('模拟：10 秒无增长、大小回落、60 秒低速、30 秒后硬截止预测', () => {
   const stalled = new OfficialWatchdog(0, 50_000_000)
-  expect(stalled.check(0, 1)).toBeUndefined(); expect(stalled.check(29_999, 1)).toBeUndefined(); expect(stalled.check(30_000, 1)).toBe('OFFICIAL_STALLED')
+  expect(stalled.check(0, 1)).toBeUndefined(); expect(stalled.check(9_999, 1)).toBeUndefined(); expect(stalled.check(10_000, 1)).toBe('OFFICIAL_STALLED')
   const rewind = new OfficialWatchdog(0); rewind.check(0, 100); expect(rewind.check(1000, 1)).toBe('OFFICIAL_RESTARTED')
   const slow = new OfficialWatchdog(0)
   for (const time of [0, 15_000, 30_000, 45_000]) expect(slow.check(time, time * 10)).toBeUndefined()
@@ -135,4 +135,160 @@ it('模拟：未完成暂存消失或换名从零重试触发接管，不累计�
   const path = join(root, 'one.new'); await fresh(path, '12345'); await watch.poll(started + 1000)
   await rm(path); await fresh(join(root, 'two.new'), '1'); await watch.poll(started + 2000)
   expect(watch.reason).toBe('OFFICIAL_RESTARTED'); expect(progress.mock.calls.at(-1)![0].downloadedBytes).toBe(1)
+})
+
+it('模拟：Grok 无字节时从分块 Downloading 开始计 10 秒，重复状态和日志噪声不续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const root = await fixture(), progress = vi.fn()
+  const watch = await OfficialWatch.prepare(officialProbe({ cli: 'grok', platform: 'darwin', version: '1.0.88', home: root }), root, progress)
+  watches.push(watch); watch.start()
+  await vi.advanceTimersByTimeAsync(40_000); await watch.poll()
+  expect(watch.reason).toBeUndefined() // checking/unknown is not downloading
+  watch.push('Down'); watch.push('loading Grok 1.0.88...')
+  await vi.advanceTimersByTimeAsync(9_999); watch.push('\rDownloading Grok 1.0.88...\n'); watch.push('waiting\n'); await watch.poll()
+  expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll()
+  expect(watch.reason).toBe('OFFICIAL_STALLED')
+  expect(watch.controller.signal.reason).toMatchObject({ code: 'OFFICIAL_UNAVAILABLE' })
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ readable: false, byteProgress: false })
+  expect(progress.mock.calls.at(-1)![0]).not.toHaveProperty('downloadedBytes')
+})
+it('模拟：没有可观察字节时新的下载状态续期，但相同状态不续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading archive 1\n')
+  await vi.advanceTimersByTimeAsync(9_000); watch.push('Downloading archive 2\n')
+  await vi.advanceTimersByTimeAsync(9_999); await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each(['Extracting files...', 'Verifying signature...', 'Installing update...', 'Windows Defender scan...', 'Download complete', 'Checking for updates...', 'Updated to 1.0.88'])('模拟：%s 关闭下载短时钟，残留暂存不重新启动时钟', async marker => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const root = await fixture(), watch = await OfficialWatch.prepare({ kind: 'files', directory: root, fileRule: /\.part$/, totalBytes: 100 }, root, vi.fn())
+  watches.push(watch); watch.start(); watch.push('Downloading Grok 1.0.88...\n')
+  await fresh(join(root, 'simulated.part'), '123'); await watch.poll()
+  await vi.advanceTimersByTimeAsync(9_000); watch.push(marker + '\n')
+  await vi.advanceTimersByTimeAsync(30_000); await watch.poll(); expect(watch.reason).toBeUndefined()
+  // Another actual download explicitly rearms the clock even after installation.
+  watch.push('Downloading companion\n'); await watch.poll()
+  await vi.advanceTimersByTimeAsync(10_000); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Qoder Downloading and installing 表示下载开始，不把组合文字当安装完成', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading and installing update...\n')
+  await vi.advanceTimersByTimeAsync(10_000); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：官方手动接管重复调用使用同一中断原因，不伪造进程退出', () => {
+  const progress = vi.fn(), watch = new OfficialWatch({ kind: 'stage' }, progress)
+  watch.requestTakeover(); const reason = watch.controller.signal.reason
+  watch.requestTakeover()
+  expect(watch.reason).toBe('OFFICIAL_INTERRUPTED')
+  expect(watch.controller.signal.reason).toBe(reason)
+  expect(reason).toMatchObject({ code: 'OFFICIAL_UNAVAILABLE', reason: 'OFFICIAL_INTERRUPTED' })
+  expect(progress).not.toHaveBeenCalled()
+})
+it('模拟：下载阶段的空暂存不能延后首字节截止，旋转符号不是进展', async () => {
+  const policy = new OfficialWatchdog(0); policy.phase(true, 0)
+  expect(policy.check(9_000, 0)).toBeUndefined()
+  expect(policy.check(10_000, 0)).toBe('OFFICIAL_STALLED')
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('⠋ Downloading Grok 1.0.88...\r')
+  await vi.advanceTimersByTimeAsync(9_000); watch.push('⠙ Downloading Grok 1.0.88...\r')
+  await vi.advanceTimersByTimeAsync(1_000); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each(['Downloading: 100%', 'Extracting download archive'])('模拟：%s 结束无字节下载时钟', async marker => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n'); await vi.advanceTimersByTimeAsync(9_000); watch.push(marker + '\n')
+  await vi.advanceTimersByTimeAsync(30_000); await watch.poll(); expect(watch.reason).toBeUndefined()
+})
+it('模拟：downloaded 字节计数不冒充整次下载完成', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n'); await vi.advanceTimersByTimeAsync(1_000)
+  watch.push('Downloaded 10 of 100 bytes\n'); watch.push('10 bytes downloaded\n')
+  await vi.advanceTimersByTimeAsync(9_000); await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1_000); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each(['downloaded', 'total'])('模拟：Grok %s 字节状态持续增长超过 30 秒不接管，不伪造字节进度', async format => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const progress = vi.fn(), watch = new OfficialWatch({ kind: 'stage' }, progress); watches.push(watch); watch.start()
+  watch.push('Downloading Grok 1.0.77...\n')
+  for (let n = 1; n <= 5; n++) {
+    await vi.advanceTimersByTimeAsync(8_000)
+    watch.push(format === 'downloaded' ? `⠋ ${n * 12.3} MB downloaded\n` : `████ ${n * 12.3} MB/100 MB (3s)\n`)
+    await watch.poll(); expect(watch.reason).toBeUndefined()
+  }
+  expect(progress.mock.calls.at(-1)![0]).toMatchObject({ byteProgress: false, readable: false })
+  expect(progress.mock.calls.at(-1)![0]).not.toHaveProperty('downloadedBytes')
+})
+it.each(['same', 'decreasing', 'below-high-water', 'equivalent-unit'])('模拟：Grok %s 字节状态超过 10 秒没有增长则接管', async mode => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n12.3 MB downloaded\n')
+  await vi.advanceTimersByTimeAsync(6_000)
+  watch.push(mode === 'same' ? '⠙ 12.3 MB downloaded\n' : mode === 'equivalent-unit' ? '12300 KB downloaded\n' : '10 MB downloaded\n')
+  await vi.advanceTimersByTimeAsync(3_999)
+  watch.push(mode === 'below-high-water' ? '11 MB downloaded\n' : '12.3 MB downloaded\n')
+  await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(2); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：Grok CR 状态与跨块未换行状态按增长续期，重复 CR 不续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\r12.3 MB downloaded\r')
+  for (let n = 2; n <= 5; n++) {
+    await vi.advanceTimersByTimeAsync(8_000)
+    watch.push(`⠙ ${n * 12.3} MiB down`); watch.push('loaded'); await watch.poll()
+    expect(watch.reason).toBeUndefined(); watch.push('\r')
+  }
+  await vi.advanceTimersByTimeAsync(9_999); watch.push('⠋ 61.5 MiB downloaded\r'); await watch.poll()
+  expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each(['Extracting files...', 'Installing update...', 'Download complete', 'Downloading: 100%'])('模拟：%s 后残留 Grok 字节状态不重开短时钟，新下载可从较小数值开始', async marker => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\r12.3 MB downloaded\r'); watch.push(marker + '\n')
+  watch.push('13 MB downloaded\r'); await vi.advanceTimersByTimeAsync(30_000); await watch.poll()
+  expect(watch.reason).toBeUndefined()
+  watch.push('Downloading companion\n1 MB downloaded\r')
+  await vi.advanceTimersByTimeAsync(9_000); watch.push('2 MB downloaded\r')
+  await vi.advanceTimersByTimeAsync(9_999); await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：建立数值进度后反复变化的 download 诊断不能续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n12.3 MB downloaded\n')
+  for (const size of [24, 32, 48]) {
+    await vi.advanceTimersByTimeAsync(3_000); watch.push(`download buffer size: ${size} MB\n`)
+    await watch.poll(); expect(watch.reason).toBeUndefined()
+  }
+  await vi.advanceTimersByTimeAsync(1_001); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it.each([false, true])('模拟：未完成总量计数分块不能续期，已有数值进度=%s', async numericSeen => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n'); if (numericSeen) watch.push('12.3 MB downloaded\n')
+  await vi.advanceTimersByTimeAsync(6_000); watch.push('Downloading 12.3 MB/')
+  await vi.advanceTimersByTimeAsync(3_000); watch.push('100 M')
+  await vi.advanceTimersByTimeAsync(1_001); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：首个分块总量计数完整后才建立数值进度并续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n'); await vi.advanceTimersByTimeAsync(6_000); watch.push('Downloading 12.3 MB/')
+  await vi.advanceTimersByTimeAsync(3_000); watch.push('100 MB (3s)')
+  await vi.advanceTimersByTimeAsync(9_999); await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：新下载阶段清除数值状态，未建立数值前仍允许变化文本续期', async () => {
+  vi.useFakeTimers(); vi.setSystemTime(started)
+  const watch = new OfficialWatch({ kind: 'stage' }, vi.fn()); watches.push(watch); watch.start()
+  watch.push('Downloading\n12.3 MB downloaded\nExtracting files...\nDownloading companion\n')
+  await vi.advanceTimersByTimeAsync(9_000); watch.push('Downloading companion from mirror')
+  await vi.advanceTimersByTimeAsync(9_999); await watch.poll(); expect(watch.reason).toBeUndefined()
+  await vi.advanceTimersByTimeAsync(1); await watch.poll(); expect(watch.reason).toBe('OFFICIAL_STALLED')
 })

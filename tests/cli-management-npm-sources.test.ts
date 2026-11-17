@@ -40,9 +40,9 @@ it.each(['official', 'mirror'] as const)('模拟：npm %s 慢速轮换，官方 
   })
   const pending = downloadCliArtifact({ ...artifact, root: f.root, signal: control(), fetcher, progress, output })
   await vi.waitFor(() => expect(progress.mock.calls.at(-1)?.[0].downloadedBytes).toBe(3), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(5000); stream.enqueue(Buffer.from('d'))
+  await vi.advanceTimersByTimeAsync(2500); stream.enqueue(Buffer.from('d'))
   await vi.waitFor(() => expect(progress.mock.calls.at(-1)?.[0].downloadedBytes).toBe(4), { interval: 1 })
-  await vi.advanceTimersByTimeAsync(5000)
+  await vi.advanceTimersByTimeAsync(2500)
   expect(readFileSync(await pending, 'utf8')).toBe('abcdef'); expect(gets).toBe(2)
   const host = first === 'official' ? 'cdn.npmmirror.com' : 'registry.npmjs.org'
   expect(output).toHaveBeenCalledWith(`切换到 ${host} 继续下载（第 1 次）\n`)

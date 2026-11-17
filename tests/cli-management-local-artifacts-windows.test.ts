@@ -1,6 +1,7 @@
 /** 模拟：Windows 平台、官方元数据、二进制和文件占用；仅写测试临时目录，不运行真实安装器。 */
 import { ChannelMemory, channelMemoryKey } from '../src/host/cli-management/channel-memory.ts'
 import { afterEach, expect, it, vi } from 'vitest'
+import { Readable } from 'node:stream'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync, rmSync, renameSync } from 'node:fs'
 import { dirname, join, win32 } from 'node:path'
@@ -258,9 +259,16 @@ it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfir
   })
   let temporary!: string
   vi.mocked(f.backend.spawn).mockImplementation(spec => {
-    temporary = spec.env!.TEMP!
-    expect(temporary).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
-    probeRoots.add(temporary)
+    const queryRoot = spec.env!.TEMP!
+    expect(queryRoot).toMatch(/[/\\]cliworker-probe-[^/\\]+$/)
+    probeRoots.add(queryRoot)
+    if (temporary) {
+      // 模拟：取消后的独立只读核验，不能复用已结束的进程句柄。
+      expect(mode).toBe('cancel')
+      expect(existsSync(temporary)).toBe(false)
+      return { stdout: Readable.from([`${version} (Claude Code)\n`]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), terminate: vi.fn(), waitForExit: vi.fn(async () => true) } as any
+    }
+    temporary = queryRoot
     started()
     return probe.child as any
   })
@@ -308,7 +316,8 @@ it.each(['9032ms', '20000ms', 'timeout', 'deadline', 'cancel', 'cleanup-unconfir
   if (mode === '9032ms' || mode === '20000ms') expect(result.afterVersion).toBe(version)
   expect(readFileSync(f.target, 'utf8')).toBe(bytes)
   expect(readFileSync(join(f.root, '.local/share/claude/versions', version), 'utf8')).toBe(bytes)
-  expect(f.backend.spawn).toHaveBeenCalledTimes(1)
+  expect(f.backend.spawn).toHaveBeenCalledTimes(mode === 'cancel' ? 2 : 1)
+  if (mode === 'cancel') expect(result.cancellationCheck).toEqual({ outcome: 'advanced', version })
   expect(existsSync(temporary)).toBe(mode === 'cleanup-unconfirmed')
   if (mode === 'cleanup-unconfirmed') expect(existsSync(join(temporary, `.cliworker-owner-${process.pid}`))).toBe(true)
 })

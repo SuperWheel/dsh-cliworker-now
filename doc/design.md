@@ -1775,3 +1775,18 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 临时订阅退订前可能收到独立的后续逻辑帧。安装包第 15639 行 `reserveFlush` 使用 `deliveryKind=online`，`reserveFrame` 分配新的 logicalFrameId 与递增 logicalFrameOrdinal；初始帧由 `controlReservations` 保留，第 15649 行 NDJSON `handleMessage` 连续发送 response 与全部 initialWires 再 commit，随后才解除 inFlight，因此初始分片之间出现 online 帧仍拒绝。完整初始帧之后，online/recovery 帧单独重组，不当作初始帧的多余片；相同初始 logicalFrameId 的重复或多余片仍拒绝。第 15639 行 `onSessionModeChanged` 会生成 `state.updated.patch.config`，故不直接忽略后续权限信息：普通后台更新通过，后续 config 替换或 snapshot 仍须证明 build 与 planEnabled=true；后续分片损坏或未完成则拒绝。后续流另限累计 16 MiB 物理 JSON 与 1024 个物理帧，监听及缓存仍在退订后清理。本轮结束后仍重新获取独立快照。
 
 证据为安装包静态分析、提取纯函数的内存探针和标注「模拟」的协议回归。原编码器对 30×32 KiB 与 60×32 KiB 行分别生成 2 片和 4 片，重组及 CRC32 一致。没有执行真实 ZCode 模型任务、登录或退出，也没有 Windows 实机验收。
+
+### 2026-11-17 更快切换插件下载与手动切换
+
+用户实测：Grok 官方下载近 4 分钟不切换，Qoder 接管续传被判「工件身份不一致」，用户要求 10 秒没进展就切换、下载慢 5 秒就重试，并给每个更新行加「切换插件下载」按钮。
+
+- **官方看门狗**：只在下载阶段计时，下载阶段 10 秒没有进展就切换（原 30 秒），解压、安装、签名、杀毒扫描阶段不计时。
+  - 能读到字节的，看暂存文件是否增长；Grok 等读不到字节的，看下载状态文字与已下载字节数是否前进。
+  - Hermes 拉取首字节、后续停滞与工具下载停滞，npm 官方工件停滞，同样改为 10 秒。
+  - 60 秒低速窗口与总预算不变。
+- **插件下载器**：停滞检查与低速窗口由 10 秒改为 5 秒，阈值仍为 100 KB/s；低速窗口从首段正文开始计，连接与首字节仍按原时限。
+- **Qoder 续传**：Qoder 的 OSS 只在 HEAD 与 200 响应里附带 Content-MD5，206 不带。改为强 ETag 相同且 Content-Range 总长一致即可续传，完成后仍按初始摘要校验整个文件；ETag 缺失、为弱 ETag 或改变，以及总长不同，仍然拒绝。
+- **手动切换**：`OfficialWatch.requestTakeover()` / `HermesWatch.requestTakeover()` 与自动判定走同一路径；Gateway 动作为 `requestCliTakeover`。进程树退出并清理后才报告已切换，接管成功后写 7 天失败记忆。按钮是否显示取决于现有接管描述与安装布局。
+- **取消后核对**：持维护锁只读核对原安装，60 秒上限，不写路径记录；结果分为原版本未受影响、更新已完成、安装已损坏（附修复入口）和核对失败。
+
+详见 `openspec/changes/v0.9.1-cli-update-takeover-switch-leeyl/`。只做了模拟测试；真实 Grok、Qoder 更新与 Windows 待验收。

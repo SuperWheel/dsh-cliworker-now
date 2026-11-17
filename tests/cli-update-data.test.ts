@@ -346,3 +346,16 @@ it('takes a reopened stream generation as a new baseline after a Host restart, e
   await flush()
   expect(data().snapshot?.revision).toBe(1)
 })
+
+
+it('模拟：验证官方切换状态与取消核验字段，拒绝会生成误导按钮或结果的快照', () => {
+  const operation = { id: '模拟op', cli: 'claude', intent: 'update', phase: 'installing', outputTail: '', startedAt: 1 }
+  const parse = (patch: Record<string, unknown>) => parseCliUpdateSnapshot(JSON.stringify(snapshot(1, { operation: { ...operation, ...patch } })))
+  expect(parse({ officialTakeover: 'available' }).operation?.officialTakeover).toBe('available')
+  expect(parse({ officialTakeover: 'pending' }).operation?.officialTakeover).toBe('pending')
+  expect(() => parse({ officialTakeover: true })).toThrow()
+  expect(() => parse({ officialTakeover: 'switched' })).toThrow()
+  expect(parse({ cancellationCheck: { outcome: 'unchanged', version: '1.0.0' } }).operation?.cancellationCheck).toMatchObject({ outcome: 'unchanged' })
+  expect(() => parse({ cancellationCheck: { outcome: 'unchanged' } })).toThrow()
+  expect(() => parse({ cancellationCheck: { outcome: 'broken' } })).toThrow()
+})

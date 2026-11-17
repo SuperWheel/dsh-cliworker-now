@@ -7,7 +7,7 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource' | 'customProviderForm' | 'saveCustomProvider'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'requestCliTakeover' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource' | 'customProviderForm' | 'saveCustomProvider'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
@@ -52,6 +52,8 @@ export type API = Pick<ClientRemote, '$stream'> & {
     updateAllClis?: (parentId: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** Cancels the running operation (its id) or removes a queued CLI (its CLI id). */
     cancelCliOperation?: (parentId: string, target: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    /** Waits for official process exit and cleanup; returns CliTakeoverResult JSON. */
+    requestCliTakeover?: (parentId: string, cli: CliId, operationId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** Opens the system folder picker in the Host; CliInstallDirectoryCheck JSON, `path` '' when dismissed. */
     chooseInstallDirectory?: (parentId: string, cli: CliId, signal: AbortSignal) => Promise<RemoteResult<string>>
     /** CliInstallDirectoryCheck JSON for a directory, '' meaning the default location. */

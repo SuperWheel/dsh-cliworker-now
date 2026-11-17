@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { ActiveCliId } from './types.ts'
+import { CLI_IDS, type ActiveCliId } from './types.ts'
 
 /**
  * Contract for the "Update CLI" settings page (openspec change v0.9.0-cli-update-page-leeyl).
@@ -149,7 +149,7 @@ export interface CliDownloadProgress {
   stalledSeconds?: number
 }
 
-export const CLI_CHANNEL_REASONS = ['OFFICIAL_INTERRUPTED', 'OFFICIAL_STALLED', 'OFFICIAL_RESTARTED', 'OFFICIAL_SLOW', 'OFFICIAL_DEADLINE', 'OFFICIAL_BUDGET', 'OFFICIAL_EXIT', 'OFFICIAL_RECENT_FAILURE', 'ALREADY_LATEST', 'UPDATE_LOCKED'] as const
+export const CLI_CHANNEL_REASONS = ['OFFICIAL_MANUAL', 'OFFICIAL_INTERRUPTED', 'OFFICIAL_STALLED', 'OFFICIAL_RESTARTED', 'OFFICIAL_SLOW', 'OFFICIAL_DEADLINE', 'OFFICIAL_BUDGET', 'OFFICIAL_EXIT', 'OFFICIAL_RECENT_FAILURE', 'ALREADY_LATEST', 'UPDATE_LOCKED'] as const
 export type CliChannelReason = (typeof CLI_CHANNEL_REASONS)[number]
 const nonnegative = z.number().finite().nonnegative()
 export const cliDownloadProgressSchema = z.object({
@@ -211,6 +211,13 @@ export const CLI_OPERATION_ERRORS = [
 ] as const
 export type CliOperationErrorCode = (typeof CLI_OPERATION_ERRORS)[number]
 
+export const cliCancellationCheckSchema = z.discriminatedUnion('outcome', [
+  z.object({ outcome: z.literal('unchanged'), version: z.string().min(1).max(128) }).strict(),
+  z.object({ outcome: z.literal('advanced'), version: z.string().min(1).max(128) }).strict(),
+  z.object({ outcome: z.literal('broken'), reason: z.string().min(1).max(32768) }).strict(),
+])
+export type CliCancellationCheck = z.infer<typeof cliCancellationCheckSchema>
+
 export interface CliUpdateOperation {
   id: string
   intent: 'update' | 'install'
@@ -226,6 +233,10 @@ export interface CliUpdateOperation {
   /** Where integrity values came from when a mirror was used. */
   integritySource?: string
   progress?: CliDownloadProgress
+  /** Present only while an eligible official process is running or stopping for takeover. */
+  officialTakeover?: 'available' | 'pending'
+  /** Read-only verification after cancellation and cleanup; absent when inconclusive. */
+  cancellationCheck?: CliCancellationCheck
   /** Plain text, ANSI stripped, secrets redacted, last 32 KiB. */
   outputTail: string
   installDirectory?: string
@@ -304,3 +315,13 @@ export function cliUpdateGroupLabel(group: CliUpdateGroup): string {
     notInstalled: '未安装',
   }[group]
 }
+
+/** Bound to an operation ID so a delayed click cannot switch a newer update of the same CLI. */
+export const cliTakeoverRequestSchema = z.object({
+  cli: z.enum(CLI_IDS), operationId: z.string().trim().min(1).max(256),
+}).strict()
+export const cliTakeoverResultSchema = z.object({
+  operationId: z.string().trim().min(1).max(256),
+  status: z.enum(['switched', 'already-switched', 'finished', 'not-official', 'cancelled', 'cleanup-unconfirmed']),
+}).strict()
+export type CliTakeoverResult = z.infer<typeof cliTakeoverResultSchema>

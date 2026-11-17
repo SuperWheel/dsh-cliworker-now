@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CLI_OPERATION_PHASES,
+  cliCancellationCheckSchema,
   CLI_UPDATE_GROUPS,
   type CliUpdateOperation,
   type CliUpdateSnapshot,
@@ -41,7 +42,9 @@ const validOperation = (input: unknown): input is CliUpdateOperation =>
   (input.intent === 'update' || input.intent === 'install') &&
   CLIS.has(input.cli) &&
   PHASES.has(input.phase) &&
-  typeof input.outputTail === 'string'
+  typeof input.outputTail === 'string' &&
+  (input.officialTakeover === undefined || ['available', 'pending'].includes(input.officialTakeover as string)) &&
+  (input.cancellationCheck === undefined || cliCancellationCheckSchema.safeParse(input.cancellationCheck).success)
 
 /**
  * Basic shape check of a Host snapshot. Any invalid part discards the whole snapshot:

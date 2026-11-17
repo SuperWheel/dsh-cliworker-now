@@ -6,7 +6,7 @@ import { tmpdir, type CpuInfo } from 'node:os'
 import { Readable, PassThrough } from 'node:stream'
 import { CLI_IDS } from '../src/shared/types.ts'
 import { customRegistryProblem } from '../src/shared/cli-management.ts'
-import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
+import { DEFAULT_CONFIG, METADATA_EXIT_GRACE_MS, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import { CLI_SOURCES, BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from '../src/host/cli-management/sources.ts'
 import { classifyInstallation, identifyInstallation, fingerprintToken, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { compareVersions, compatible, currentVersion, latestCompatible, updateAvailable, ReleaseClient, captureReadOnly } from '../src/host/cli-management/versions.ts'
@@ -109,6 +109,31 @@ describe('versions and bounded metadata', () => {
     let settled = false; const pending = captureReadOnly(b, DEFAULT_CONFIG, ['synthetic'], controller.signal).catch(() => {}).finally(() => { settled = true })
     controller.abort(); await Promise.resolve(); await Promise.resolve(); expect(settled).toBe(false)
     release(); await pending; expect(h.terminate).toHaveBeenCalled()
+  })
+  it.each(['timeout', 'cancel', 'undrained-output'] as const)('模拟：只读探针 %s 后，独立终止宽限到期即报告未确认退出', async mode => {
+    vi.useFakeTimers()
+    const b = backend(), controller = new AbortController(), out = new PassThrough()
+    let exitSignal: AbortSignal | undefined
+    const h = {
+      stdout: out, stderr: undefined, done: new Promise(() => {}), terminate: vi.fn(),
+      // 模拟未遵守 signal 的 provider；输出未排空分支则先确认范围退出。
+      waitForExit: vi.fn((signal: AbortSignal) => { exitSignal = signal; return mode === 'undrained-output' ? Promise.resolve(true) : new Promise<boolean>(() => {}) }),
+    }
+    vi.mocked(b.spawn).mockReturnValue(h as any)
+    let settled = false, failure: unknown
+    const pending = captureReadOnly(b, DEFAULT_CONFIG, ['synthetic'], controller.signal, false, undefined, 1000)
+      .catch(error => { failure = error }).finally(() => { settled = true })
+    await vi.advanceTimersByTimeAsync(0)
+    if (mode === 'timeout') await vi.advanceTimersByTimeAsync(1000)
+    else { controller.abort(new Error('模拟调用方取消')); await vi.advanceTimersByTimeAsync(0) }
+    expect(h.terminate).toHaveBeenCalled(); expect(h.waitForExit).toHaveBeenCalledOnce()
+    expect(exitSignal).toBeInstanceOf(AbortSignal); expect(exitSignal!.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(DEFAULT_CONFIG.graceMs + METADATA_EXIT_GRACE_MS - 1)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1); await pending
+    expect(failure).toBeInstanceOf(ProcessCleanupUnconfirmedError)
+    expect(exitSignal!.aborted).toBe(true)
+    out.destroy()
   })
 })
 

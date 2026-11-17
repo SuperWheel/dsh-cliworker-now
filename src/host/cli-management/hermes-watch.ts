@@ -9,7 +9,7 @@ import { safeObservation } from './artifacts/observations.ts'
 import { prepareDownloads } from './download.ts'
 import { executeCliOperation, redactOutput } from './executor.ts'
 import { CliOperationError } from './planner.ts'
-import { OfficialUnavailableError } from './official-watch.ts'
+import { OfficialUnavailableError, OFFICIAL_STALL_MS } from './official-watch.ts'
 import { cacheGrew, HermesFetchWatchdog, HermesPacks, hermesStage, observeHermesCache, observeTree, pidAlive, treeStamp, type HermesStage, type SlowReason, type TreeObservation } from './hermes-observation.ts'
 import { prefetchHermes } from './hermes-prefetch.ts'
 export const HERMES_STEPS = ['plan', 'snapshot', 'apply', 'deps', 'build', 'restart'] as const
@@ -26,6 +26,9 @@ export class HermesWatch {
   private partialStamp?: string
   private toolDownloadObserved = false
   private toolDownloadMessage = false
+  private toolDownloadFinished = false
+  private toolBoundaryAt = 0
+  private toolBoundaryText = new Map<string, string>()
   private lastPartialActivity: number
   private completedStamp?: string
   private lastActivity: number
@@ -48,6 +51,17 @@ export class HermesWatch {
   constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = []) {
     this.lastActivity = startedAt; this.lastPartialActivity = startedAt; this.lease = startedAt + 20 * 60_000
   }
+  /** Manual takeover API: requestTakeover(): boolean. Only code fetch has a plugin
+   * takeover recipe; deps/build/apply/restart must finish through the official updater.
+   * True means a stop was requested, never that its process tree has exited.
+   * runHermesUpdate keeps the same exit barrier and prefetch path as an automatic trip.
+   */
+  requestTakeover(): boolean {
+    if (this.completed || this.currentStage !== 'fetch' || this.controller.signal.aborted) return false
+    this.reason = 'OFFICIAL_INTERRUPTED'; this.stoppedStage = 'fetch'
+    this.controller.abort(new OfficialUnavailableError(this.reason))
+    return true
+  }
   /** Observe chunks before line buffering: quiet partial lines are still real activity. */
   output(text: string, now = Date.now()) {
     if (!text) return
@@ -56,15 +70,25 @@ export class HermesWatch {
     // Inspect every incoming character before bounding the stage display tail.
     // Keep enough boundary text to recognize a completion marker split by pipes.
     const completionText = this.completionTail + incoming
-    this.noteCompletion(completionText)
+    this.noteCompletion(completionText, now, 'output')
     this.completionTail = completionText.slice(-64)
     this.outputTail = (this.outputTail + incoming).slice(-4096)
     const line = this.outputTail.split(/[\r\n]+/).filter(Boolean).at(-1)
     this.setStage(hermesStage(line), now, 'output', now)
   }
-  private noteCompletion(text: string) {
+  private noteCompletion(text: string, at: number, source: string) {
     if (/\b(?:Update complete!|Code updated!)/i.test(text)) this.completed = true
-    if (/\bdownloading\b[^\r\n]*(?:tool|runtime|python|node|uv|pnpm)/i.test(text)) this.toolDownloadMessage = true
+    // Keep download/install boundaries in arrival order even when both share one chunk.
+    let boundary: { line: string; finished: boolean } | undefined
+    for (const line of text.split(/[\r\n]+/)) {
+      if (/\bdownloading\b[^\r\n]*(?:tool|runtime|python|node|uv|pnpm)/i.test(line)) boundary = { line, finished: false }
+      else if (/\b(?:extracting|unpacking|verifying|validating|installing|defender|authenticode)\b|signature|download (?:complete|finished)/i.test(line)) boundary = { line, finished: true }
+    }
+    if (!boundary || this.toolBoundaryText.get(source) === boundary.line) return
+    this.toolBoundaryText.set(source, boundary.line)
+    if (at < this.toolBoundaryAt) return
+    this.toolBoundaryAt = at; this.toolDownloadFinished = boundary.finished
+    if (!boundary.finished) { this.toolDownloadMessage = true; this.lastPartialActivity = Math.max(this.lastPartialActivity, at) }
   }
   async snapshot(cache?: TreeObservation) {
     await this.packs.snapshot(this.checkout)
@@ -92,7 +116,7 @@ export class HermesWatch {
     }
     const log = await observe(join(this.home, 'logs/update.log'), true)
     if (log) {
-      this.noteCompletion(log.text)
+      this.noteCompletion(log.text, log.mtimeMs, 'log')
       const lines = log.text.split(/[\r\n]+/)
       const line = lines.filter(l => /^[→✓✗⚠]/.test(l.trim())).at(-1)
       if (line) this.stage = redactOutput(line).slice(0, 2048)
@@ -150,7 +174,7 @@ export class HermesWatch {
     if (status) {
       try {
         const value = JSON.parse(status.text)
-        if (typeof value.message === 'string') { this.stage = redactOutput(value.message).slice(0, 2048); this.noteCompletion(value.message) }
+        if (typeof value.message === 'string') { this.stage = redactOutput(value.message).slice(0, 2048); this.noteCompletion(value.message, status.mtimeMs, 'status') }
         this.setStage(hermesStage(value.stage) ?? hermesStage(value.message), status.mtimeMs, 'status', now)
       } catch { /* atomic writer may not have published yet */ }
     }
@@ -188,7 +212,7 @@ export class HermesWatch {
       if (!this.completed && this.currentStage === 'fetch' && pack.complete) reason = this.fetchWatch?.check(now, pack.bytes)
       const downloadingPart = this.toolDownloadObserved && [...partials.files.keys()].some(p => p.endsWith('.part'))
       const tools = this.currentStage === 'tools' && (this.toolDownloadMessage || downloadingPart) || this.currentStage === 'deps' && downloadingPart
-      if (!this.completed && tools && partials.complete && cache?.complete && now - this.lastPartialActivity >= 30_000) reason = 'OFFICIAL_STALLED'
+      if (!this.completed && !this.toolDownloadFinished && tools && partials.complete && cache?.complete && now - this.lastPartialActivity >= OFFICIAL_STALL_MS) reason = 'OFFICIAL_STALLED'
       if (reason) { this.reason = reason; this.stoppedStage = this.currentStage; this.controller.abort(this.currentStage === 'fetch' ? new OfficialUnavailableError(reason) : new CliOperationError('OFFICIAL_UNAVAILABLE', 'Hermes 依赖下载停滞，已停止官方更新')) }
       else {
         // Dependencies/build/post-update may perform quiet network checks or compilation.
@@ -204,6 +228,8 @@ export class HermesWatch {
   }
 }
 export interface HermesUpdateOptions {
+  /** Register the current official watch for manual takeover; cleared after its exit barrier. */
+  onWatch?: (watch: HermesWatch | undefined) => void
   root: string; home: string; checkout: string; argv: string[]; backend: ProcessBackend; config: RuntimeConfig; signal: AbortSignal
   beforeVersion?: string; targetVersion?: string; targetSha?: string
   npmRegistry?: string
@@ -226,6 +252,7 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
       const before = await observeHermesCache(o.home)
       const watch = new HermesWatch(o.home, o.checkout, join(privateDir, `status-${attempt}.json`), Date.now(), p => o.progress({ ...p, retryCount: attempt }), { version: o.targetVersion, sha: o.targetSha }, o.activityRoots)
       await watch.snapshot(before); let polling = Promise.resolve(), pending = false
+      o.onWatch?.(watch)
       const timer = setInterval(() => {
         if (pending) return
         pending = true
@@ -238,7 +265,7 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
           ...(o.npmRegistry !== undefined ? { npm_config_registry: o.npmRegistry } : {}),
         }, undefined, undefined, text => watch.output(text))
       } catch (error) { failure = error; if (error instanceof ProcessCleanupUnconfirmedError) throw error }
-      finally { clearInterval(timer); await polling; stopped ||= watch.controller.signal.aborted || o.signal.aborted; await watch.poll(Date.now(), false).catch(() => undefined); receiptSucceeded = watch.receiptSucceeded }
+      finally { o.onWatch?.(undefined); clearInterval(timer); await polling; stopped ||= watch.controller.signal.aborted || o.signal.aborted; await watch.poll(Date.now(), false).catch(() => undefined); receiptSucceeded = watch.receiptSucceeded }
       o.signal.throwIfAborted()
       if (failure && await o.verifyInstalled?.()) return {receiptSucceeded}
       if (recoveryFailure) throw recoveryFailure

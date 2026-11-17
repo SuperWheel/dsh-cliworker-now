@@ -331,6 +331,9 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
       if (result.progress?.reason === 'ALREADY_LATEST') return { tone: 'ok', text: t('已是最新 {version}', { version }) }
       return { tone: 'ok', text: t('已更新到 {version}', { version }) }
     case 'cancelled':
+      if (result.cancellationCheck?.outcome === 'unchanged') return { text: t('已取消，原版本 {version} 未受影响', { version: result.cancellationCheck.version ?? '' }) }
+      if (result.cancellationCheck?.outcome === 'advanced') return { text: t('已取消，但更新已完成：{version}', { version: result.cancellationCheck.version ?? '' }) }
+      if (result.cancellationCheck?.outcome === 'broken') return { tone: 'error', text: t('已取消，安装已损坏：{reason}', { reason: result.cancellationCheck.reason ?? '' }) }
       return { tone: 'warn', text: t('已取消。已写入的文件不会回滚，建议重新检查') }
     case 'cleanup-unconfirmed':
       return { tone: 'error', text: hostText(result.error?.message) || t('进程清理尚未确认，请稍后重新检查') }
@@ -414,6 +417,8 @@ const TRANSITION_STAGES: ReadonlySet<string> = new Set(['官方进程已退出�
 /** Why the official channel was abandoned during this run (not the remembered 7-day failure). */
 function switchReason(reason: CliChannelReason | undefined): string | undefined {
   switch (reason) {
+    case 'OFFICIAL_MANUAL':
+      return t('已手动切换插件下载')
     case 'OFFICIAL_STALLED':
       return t('官方下载 30 秒没有新数据')
     case 'OFFICIAL_SLOW':
@@ -677,6 +682,8 @@ export function CliUpdatePane({
   const [expanded, setExpanded] = useState<Partial<Record<ActiveCliId, 'manual' | 'install' | 'confirm'>>>({})
   const [outputs, setOutputs] = useState<Record<string, boolean>>({})
   const [drafts, setDrafts] = useState<Partial<Record<ActiveCliId, InstallDraft>>>({})
+  const [switching, setSwitching] = useState<ReadonlySet<string>>(new Set())
+  const switchingNow = useRef(new Set<string>())
   const [pending, setPending] = useState<ReadonlySet<ActiveCliId>>(new Set())
   const [rowErrors, setRowErrors] = useState<Partial<Record<ActiveCliId, string>>>({})
   const [pageError, setPageError] = useState<string>()
@@ -847,6 +854,14 @@ export function CliUpdatePane({
     if (!run) return
     await rowCall(cli, async (signal) => value(await run(sessionId, target, signal)))
   }
+  async function takeover(cli: ActiveCliId, operationId: string) {
+    const run = service.requestCliTakeover
+    if (!run || switchingNow.current.has(operationId)) return
+    switchingNow.current.add(operationId); setSwitching(new Set(switchingNow.current)); setRowError(cli, undefined)
+    try { await call(async signal => value(await run(sessionId, cli, operationId, signal))) }
+    catch (error) { if (alive()) setRowError(cli, operationMessage(error)) }
+    finally { switchingNow.current.delete(operationId); if (alive()) setSwitching(new Set(switchingNow.current)) }
+  }
   async function checkAll() {
     setRequesting('check')
     setPageError(undefined)
@@ -998,16 +1013,24 @@ export function CliUpdatePane({
   function rowActions(cli: ActiveCliId, entry: CliUpdateEntry | undefined, result: CliUpdateOperation | undefined): ReactNode {
     const busy = pending.has(cli)
     if (operation?.cli === cli) {
+      const switchPending = operation.officialTakeover === 'pending' || switching.has(operation.id)
       return (
-        <Button
-          type="button"
-          size="md"
-          variant="ghost"
-          disabled={busy || operation.phase === 'cancelling' || !service.cancelCliOperation}
-          onClick={() => void cancel(cli, operation.id)}
-        >
-          {operation.intent === 'install' ? t('取消安装') : t('取消更新')}
-        </Button>
+        <>
+          {operation.officialTakeover && operation.progress?.channel === 'official' && operation.phase !== 'cancelling' && service.requestCliTakeover && (
+            <Button type="button" size="md" variant="ghost" disabled={switchPending} onClick={() => void takeover(cli, operation.id)}>
+              {switchPending ? t('正在切换…') : t('切换插件下载')}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="md"
+            variant="ghost"
+            disabled={busy || operation.phase === 'cancelling' || !service.cancelCliOperation}
+            onClick={() => void cancel(cli, operation.id)}
+          >
+            {operation.intent === 'install' ? t('取消安装') : t('取消更新')}
+          </Button>
+        </>
       )
     }
     if (queue.includes(cli)) {
