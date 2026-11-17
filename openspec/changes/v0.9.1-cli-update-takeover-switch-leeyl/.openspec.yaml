@@ -1,0 +1,8 @@
+pm:
+  title: 更新 CLI：更快切换插件下载与手动切换按钮
+  version: 0.9.1
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-17
