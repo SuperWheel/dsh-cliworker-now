@@ -67,6 +67,12 @@
 ## 3. 验收与清理 〔后端｜3h｜前置 2〕
 
 - [ ] 3.1 全量 vitest、类型检查与 Windows 隔离回归
+  - 2026-11-17：在 ZCode 合并前的提交 3939054 上：
+    - Mac 全量 vitest：356 个文件，8564 项通过、14 项跳过；typecheck 通过，`build:preview` 通过。
+    - Windows 隔离回归（config-d.json）新增 `os-credential-store`、`cli-account-binding`、`cli-management-in-place` 三个测试文件。
+      - 首轮 8adc1889：853/867 通过、8 项失败，全部是测试在 Windows 上的移植问题（POSIX 路径、`pi.cmd`、npm 前缀布局、模拟凭据库没记录 Windows 目标名），没有发现产品代码缺陷。
+      - 修复后 d9f2c237：861 项通过、0 失败、6 项跳过。
+    - 另外补了一条 win32 账号摘要的断言：`\\?\` 规范路径，sha256 取前 16 位，对照上游 codex rust-v0.169.0 的 `compute_store_key`。
 - [ ] 3.2 列出两台机器上已有的重复副本，经用户确认后处理
 - [ ] 3.3 同步 README、`doc/usage-details.md` 与设计文档中的更新说明
 

@@ -20,6 +20,7 @@ export const WINDOWS_TESTS = [
   'tests/workbuddy-installation.test.ts', 'tests/workbuddy-desktop-open.test.ts',
   'tests/pi-omp-native.test.ts', 'tests/zcode-account-models.test.ts', 'tests/first-party-account-context.test.ts',
   'tests/kimi-accounts.test.ts',
+  'tests/os-credential-store.test.ts', 'tests/cli-account-binding.test.ts', 'tests/cli-management-in-place.test.ts',
 ]
 export const SOURCE_ROOT_FILES = [
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',
@@ -77,6 +78,8 @@ export function validateSourcePath(value) {
   // Dev tools installed from a checked-in tarball (package.json `file:vendor/...`).
   if (/^vendor\/[A-Za-z\d][A-Za-z\d._-]*\.tgz$/.test(value)) return value
   if (/^(?:src|tests)\/.+\.(?:ts|tsx|mts|mjs|cjs|js|json|py|cmd|ps1|txt)$/.test(value) || /^src\/client\/assets\/.+\.(?:png|svg)$/.test(value)) return value
+  // Archived official installer scripts whose digests the tests pin (README documents provenance).
+  if (/^tests\/fixtures\/official-installers\/[A-Za-z\d][A-Za-z\d._-]*\.(?:sh|md)$/.test(value)) return value
   if (/^runtime-host\/(?:manifest\.json|README\.md|source\.patch|dsh-client-ui-(?:session|conversation|subagent|chat)\/(?:LICENSE|package\.json|lib\/.+\.(?:js|d\.ts))|dsh-client-ui-chat\/lib\/assets\/[^/]+\.png)$/.test(value)) return value
   throw new Error(`Source path is outside the allowlist: ${value}`)
 }

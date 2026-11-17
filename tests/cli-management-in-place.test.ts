@@ -102,10 +102,15 @@ it.each(['success', 'npm-copy', 'npm-copy-nonzero', 'other-root', 'unchanged', '
   expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(executable); expect(f.config.cliExecutablePaths.revision('pi')).toBe(revision)
 })
 it.each(['same-root', 'second-root', 'same-root-takeover', 'unchanged'] as const)('模拟：Pi 1.1.0 托管更新达到原根目标且保留其他安装与记录：%s', async mode => {
-  const f = fixture('pi'), root = join(f.root, '.pi/agent'), executable = join(root, 'bin/pi'), prefix = join(f.root, 'npm-global')
+  const f = fixture('pi'), root = join(f.root, '.pi/agent'), executable = join(root, 'bin', process.platform === 'win32' ? 'pi.cmd' : 'pi'), prefix = join(f.root, 'npm-global')
   const before = { ...syntheticIdentity('pi', '1.1.0'), executable, source: 'self-update' as const, updateRoot: root }
   mkdirSync(join(root, 'install'), { recursive: true }); mkdirSync(join(root, 'bin'), { recursive: true })
-  writeFileSync(executable, '模拟启动器'); writeFileSync(join(root, 'install/current-version'), '1.1.0')
+  if (process.platform === 'win32') {
+    const entry = join(root, 'install/releases/1.1.0/node_modules/@earendil-works/pi-coding-agent/dist/cli.js')
+    mkdirSync(dirname(entry), { recursive: true }); writeFileSync(entry, '#!/usr/bin/env node\n// 模拟：仅供启动器解析，不执行\n')
+    writeFileSync(executable, '@echo off\r\nnode "%~dp0..\\install\\releases\\1.1.0\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js" %*\r\n')
+  } else writeFileSync(executable, '模拟启动器')
+  writeFileSync(join(root, 'install/current-version'), '1.1.0')
   writeFileSync(join(root, 'install/managed-install.json'), JSON.stringify({ kind: 'pi-managed-install', schemaVersion: 1, layout: 'releases-v1' }))
   vi.stubEnv('PATH', join(root, 'bin'))
   f.identities.set('pi', before); f.config.cliExecutablePaths.setManual('pi', executable)
@@ -144,7 +149,7 @@ it.each(['same-root', 'second-root', 'same-root-takeover', 'unchanged'] as const
   expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(executable)
 })
 it('模拟：npm-global Pi 在非默认原前缀更新，其他前缀与路径记录不变', async () => {
-  const f = fixture('pi'), prefix = join(f.root, 'custom-prefix'), executable = join(prefix, 'bin/pi'), pkg = join(prefix, 'lib/node_modules/@earendil-works/pi-coding-agent'), other = join(f.root, 'default-prefix')
+  const f = fixture('pi'), prefix = join(f.root, 'custom-prefix'), executable = join(prefix, process.platform === 'win32' ? 'pi.cmd' : 'bin/pi'), pkg = join(prefix, process.platform === 'win32' ? 'node_modules' : 'lib/node_modules', '@earendil-works/pi-coding-agent'), other = join(f.root, 'default-prefix')
   mkdirSync(pkg, { recursive: true }); writeFileSync(join(pkg, 'package.json'), JSON.stringify({ name: '@earendil-works/pi-coding-agent', version: '1.1.0' }))
   const before = { ...syntheticIdentity('pi', '1.1.0'), prefix, packageRoot: pkg, executable }
   f.identities.set('pi', before); f.config.cliExecutablePaths.setManual('pi', executable)
@@ -163,24 +168,32 @@ it('模拟：npm-global Pi 在非默认原前缀更新，其他前缀与路径�
   expect(f.config.cliExecutablePaths.read('pi')?.path).toBe(executable); expect(f.config.cliExecutablePaths.revision('pi')).toBe(revision)
 })
 it.each(['self-update', 'brew'] as const)('模拟：已有 CodeBuddy %s 修复保留原 owner 与安装目录', async source => {
-  const f = fixture('codebuddy'), before = { ...syntheticIdentity('codebuddy'), source, executable: '/模拟/home/.local/bin/codebuddy', updateRoot: '/模拟/home/.local/share/codebuddy', prefix: '/模拟/brew', fingerprint: { realpath: '/模拟/home/.local/share/codebuddy/versions/1.0.0/codebuddy', size: 1, mtimeMs: 1 } }
+  const f = fixture('codebuddy'), win = process.platform === 'win32', root = join(f.root, win ? 'AppData/Local/codebuddy' : '.local/share/codebuddy')
+  const before = { ...syntheticIdentity('codebuddy'), source, executable: win ? join(root, 'bin/codebuddy.exe') : join(f.root, '.local/bin/codebuddy'), updateRoot: root, prefix: join(f.root, 'brew'),
+    fingerprint: { realpath: join(root, win ? 'Data/versions/1.0.0/codebuddy.exe' : 'versions/1.0.0/codebuddy'), size: 1, mtimeMs: 1 } }
+  // 模拟：Windows 没有原生 Homebrew；backend 返回原 owner 根内的假 exe，不运行它。
+  const brew = join(before.prefix, 'bin', win ? 'brew.exe' : 'brew')
+  if (win && source === 'brew') vi.mocked(f.backend.resolveExecutable).mockResolvedValue(brew)
   f.identities.set('codebuddy', before); f.config.cliExecutablePaths.setManual('codebuddy', before.executable)
   vi.spyOn(f.releases, 'query').mockResolvedValue({ latest: '1.2.3', versions: ['1.2.3'], checkedAt: Date.now(), registry })
+  const revision = f.config.cliExecutablePaths.revision('codebuddy')
   const plan = await f.installer.prepare('codebuddy', registry, '', control())
   await f.installer.execute(plan, { ...operation(), cli: 'codebuddy' }, control(), () => {}, async () => {})
   const args = vi.mocked(f.backend.spawn).mock.calls.map(([s]) => s.argv)
-  expect(args).toHaveLength(1); expect(args[0]).toEqual(source === 'brew' ? ['/模拟/brew/bin/brew', 'reinstall', 'Tencent-CodeBuddy/tap/codebuddy-code'] : [before.executable, 'update'])
+  expect(args).toHaveLength(1); expect(args[0]).toEqual(source === 'brew' ? [brew, 'reinstall', 'Tencent-CodeBuddy/tap/codebuddy-code'] : [before.executable, 'update'])
   expect(f.artifactFetch).not.toHaveBeenCalled()
+  expect(f.config.cliExecutablePaths.read('codebuddy')?.path).toBe(before.executable); expect(f.config.cliExecutablePaths.revision('codebuddy')).toBe(revision)
 })
 it('模拟：未知现有安装失败、无安装进程且记录和 revision 不变', async () => {
-  const f = fixture(), before = { ...syntheticIdentity(), source: 'unknown' as const }
+  const f = fixture(), before = { ...syntheticIdentity(), executable: join(f.root, 'unknown/bin/codex'), source: 'unknown' as const }
   f.identities.set('codex', before); f.config.cliExecutablePaths.setManual('codex', before.executable)
   const revision = f.config.cliExecutablePaths.revision('codex')
   await expect(f.installer.prepare('codex', registry, '', control())).rejects.toThrow('插件不会另装一份')
   expect(f.backend.spawn).not.toHaveBeenCalled(); expect(f.config.cliExecutablePaths.revision('codex')).toBe(revision)
 })
 it('模拟：更新后发现另一安装时 path 与 revision 不变', async () => {
-  const f = fixture(), before = syntheticIdentity(), other = { ...before, executable: '/另一副本/bin/codex', prefix: '/另一副本', manifestVersion: '1.2.3' }
+  const f = fixture(), prefix = join(f.root, 'original-prefix'), before = { ...syntheticIdentity(), prefix, executable: join(prefix, process.platform === 'win32' ? 'codex.cmd' : 'bin/codex'), packageRoot: join(prefix, process.platform === 'win32' ? 'node_modules/@openai/codex' : 'lib/node_modules/@openai/codex') }, other = { ...before, executable: join(f.root, 'other-prefix/bin/codex'), prefix: join(f.root, 'other-prefix'), manifestVersion: '1.2.3' }
+  f.identities.set('codex', before)
   f.config.cliExecutablePaths.remember('codex', before.executable, 0)
   const revision = f.config.cliExecutablePaths.revision('codex')
   vi.mocked(f.backend.spawn).mockImplementation(spec => { if (spec.argv.includes('install')) f.identities.set('codex', other); return exited() })
@@ -260,7 +273,12 @@ it('模拟：Pi 更新失败后的补查进程退出不明，保留维护锁并�
   f.identities.set('pi', before); f.config.cliExecutablePaths.setManual('pi', executable)
   const revision = f.config.cliExecutablePaths.revision('pi')
   mkdirSync(join(root, 'install'), { recursive: true }); mkdirSync(join(root, 'bin'), { recursive: true })
-  writeFileSync(executable, '模拟启动器'); writeFileSync(join(root, 'install/current-version'), '1.1.0')
+  if (process.platform === 'win32') {
+    const entry = join(root, 'install/releases/1.1.0/node_modules/@earendil-works/pi-coding-agent/dist/cli.js')
+    mkdirSync(dirname(entry), { recursive: true }); writeFileSync(entry, '#!/usr/bin/env node\n// 模拟：仅供启动器解析，不执行\n')
+    writeFileSync(executable, '@echo off\r\nnode "%~dp0..\\install\\releases\\1.1.0\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js" %*\r\n')
+  } else writeFileSync(executable, '模拟启动器')
+  writeFileSync(join(root, 'install/current-version'), '1.1.0')
   writeFileSync(join(root, 'install/managed-install.json'), JSON.stringify({ kind: 'pi-managed-install', schemaVersion: 1, layout: 'releases-v1' }))
   vi.stubEnv('PATH', join(root, 'bin'))
   let probes = 0

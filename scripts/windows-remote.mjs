@@ -111,6 +111,8 @@ export function verifyRemoteReport(report, testBytes, state) {
   const skipped = tests.testResults.flatMap((result) => result.assertionResults.filter((assertion) => assertion.status === 'pending' || assertion.status === 'skipped').map((assertion) => ({ file: result.name.replaceAll('\\', '/'), title: assertion.title })))
   // Only these POSIX/macOS-only cases may skip on Windows; any other skip fails the run.
   const allowedSkips = [
+    ['/tests/cli-account-binding.test.ts', 'binds an Antigravity login that keeps only id_token_email, stable across case and rotation'],
+    ['/tests/os-credential-store.test.ts', '模拟：security 以十六进制输出的非 ASCII 登录文档同样可读'],
     ['/tests/pi-omp-identity.test.ts', 'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry'],
     ['/tests/codebuddy-account.test.ts', 'keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout'],
     ['/tests/codebuddy-account.test.ts', 'checks macOS fallbacks only after missing PATH, preserves explicit failures'],

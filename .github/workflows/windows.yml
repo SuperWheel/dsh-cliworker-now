@@ -52,6 +52,7 @@ jobs:
           tests/workbuddy-installation.test.ts tests/workbuddy-desktop-open.test.ts
           tests/pi-omp-native.test.ts tests/zcode-account-models.test.ts tests/first-party-account-context.test.ts
           tests/kimi-accounts.test.ts
+          tests/os-credential-store.test.ts tests/cli-account-binding.test.ts tests/cli-management-in-place.test.ts
           --reporter=default --reporter=json
           --outputFile=.test-data/windows-ci-tests.json
       - name: Install official CLI fixtures

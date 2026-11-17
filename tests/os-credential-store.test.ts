@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCipheriv, createHash, createHmac, hkdfSync, randomBytes, scryptSync } from 'node:crypto'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, win32 } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 // 模拟：the real scrypt, optionally held back by a test to observe queueing and cancellation.
@@ -92,8 +92,11 @@ function store(items: Record<string, string | false>) {
     else if (argv[0] === 'secret-tool') [service, account] = [argv[3]!, argv[5]!]
     else {
       const target = Buffer.from(argv.at(-1)!, 'base64url').toString('utf8')
-      const known = Object.keys(items).map((key) => key.split('\n')).find(([s, a]) => `${a}.${s}` === target)
-      ;[service, account] = known ? [known[0]!, known[1]!] : ['?', target]
+      // These synthetic accounts contain no dots. Decode the native target even
+      // when the item is absent, so query evidence does not depend on its value.
+      const separator = target.indexOf('.')
+      expect(separator).toBeGreaterThan(0)
+      ;[service, account] = [target.slice(separator + 1), target.slice(0, separator)]
     }
     reads.push(`${service} ${account}`)
     const value = items[`${service}\n${account}`]
@@ -266,8 +269,12 @@ describe('模拟：系统凭据库只读读取', () => {
     expect(await keyringHomeDigest(home, 'darwin')).toBe(createHash('sha256').update(home).digest('hex').slice(0, 16))
     // A path that does not exist is hashed as given, like `unwrap_or_else(|_| codex_home.to_path_buf())`.
     expect(await rustCanonicalPath(join(home, 'missing'), 'darwin')).toBe(join(home, 'missing'))
-    // Windows verbatim form of an existing path (the POSIX temp path stands in for a drive path).
-    expect(await rustCanonicalPath(home, 'win32')).toBe(`\\\\?\\${home}`)
+    // Native Windows fixtures have a drive path; Node drops the verbatim prefix
+    // that Rust canonicalize retains. On POSIX this is a simulated drive path.
+    const windowsHome = process.platform === 'win32' ? win32.toNamespacedPath(realpathSync(home)) : `\\\\?\\${home}`
+    expect(await rustCanonicalPath(home, 'win32')).toBe(windowsHome)
+    expect(await keyringHomeDigest(home, 'win32')).toBe(createHash('sha256').update(windowsHome).digest('hex').slice(0, 16))
+    expect(await rustCanonicalPath(join(home, 'missing'), 'win32')).toBe(join(home, 'missing'))
     expect(decodeMacSecurityHex(Buffer.from('{"名":"模拟"}').toString('hex'))).toBe('{"名":"模拟"}')
     expect(decodeMacSecurityHex('{"plain":1}')).toBe('{"plain":1}')
   })

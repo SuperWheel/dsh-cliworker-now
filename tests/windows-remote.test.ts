@@ -167,5 +167,21 @@ describe('Windows remote developer safety and evidence boundaries (synthetic fix
     expect(() => verifyRemoteReport({ ...report, tests: { ...report.tests, passed: 6 } }, bytes, state)).toThrow('disagree')
     expect(() => verifyRemoteReport({ ...report, modelCalls: 1 }, bytes, state)).toThrow('scope')
     expect(() => verifyRemoteReport({ ...report, cleanup: { confirmed: false, lockReleased: false } }, bytes, state)).toThrow('cleanup')
+    // Newly included suites retain their exact POSIX/macOS-only cases on Windows.
+    const skips = [
+      ['tests/cli-account-binding.test.ts', 'binds an Antigravity login that keeps only id_token_email, stable across case and rotation'],
+      ['tests/os-credential-store.test.ts', '模拟：security 以十六进制输出的非 ASCII 登录文档同样可读'],
+    ]
+    const withSkips = (entries: string[][]) => ({ ...tests, numPendingTests: entries.length, numTotalTests: tests.numTotalTests + entries.length,
+      testResults: WINDOWS_TESTS.map((name: string) => ({ name: `C:/owned/source/${name}`,
+        assertionResults: entries.filter(([file]) => file === name).map(([, title]) => ({ status: 'pending', title })) })) })
+    const verifySkips = (entries: string[][]) => {
+      const skipped = withSkips(entries), skippedBytes = Buffer.from(JSON.stringify(skipped))
+      return verifyRemoteReport({ ...report, windowsTestsSha256: sha256(skippedBytes),
+        tests: { ...report.tests, pending: skipped.numPendingTests, total: skipped.numTotalTests } }, skippedBytes, state)
+    }
+    expect(verifySkips(skips)).toBe(true)
+    expect(() => verifySkips([[skips[0]![0]!, 'an unexpected skip']])).toThrow('Unexpected skipped')
+    expect(() => verifySkips([[skips[0]![0]!, skips[1]![1]!]])).toThrow('Unexpected skipped')
   })
 })
