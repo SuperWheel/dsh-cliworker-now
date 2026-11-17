@@ -2,3 +2,4 @@
 # (Windows runners default to core.autocrlf=true, which breaks their SHA-256 checks).
 /runtime-host/** -text
 /host-extensions/** -text
+/tests/fixtures/official-installers/** -text
