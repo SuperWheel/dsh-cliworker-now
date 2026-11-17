@@ -86,7 +86,7 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **路径与身份。** 默认可执行文件配置为 `traecnExecutable: traecli`；在「CLI 连接 → 高级设置」可指定绝对路径。自动发现只找 `traecli`，macOS / Linux 在 PATH 外补查 `~/.local/bin/traecli`，macOS 子进程 PATH 也补 `~/.local/bin`。自动发现和手动路径都核对 `--version` 首行 `traecli <版本>` 及 `installation:` 行，ACP 再核对 `agentInfo.name = traecli-acp`；身份不符即拒绝。安装脚本的 `trae-cli`、`trae-agent`、`coco`、`ta` 链接不用于自动发现；手动指定的同品牌链接仍须通过身份核对。Windows 找不到时配置 `traecnExecutable`，不据未验证的路径猜测安装位置。
 
-**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 且退出 0 表示已登录（不区分个人与企业），`Not logged in` 且退出 1 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。
+**账号。** 官方文档写明仅企业版旗舰版套餐开放 CLI；本次前置调研中，个人账号经开发中特性登录后可执行真实任务，不代表所有个人账号都有权限。账号状态只取 `traecli login status`：`Logged in using Trae` 且退出 0 表示已登录（不区分个人与企业），`Not logged in` 且退出 1 表示未登录；其他输出保持未知，套餐不支持时显示原生原因。如果你在 `traecli.toml` 里把 `cli_auth_credentials_store` 设为 keyring 或 auto，TRAE 会把登录存进系统钥匙串或凭据管理器，插件也从那里只读读取，用来生成账号绑定。在 macOS 上，系统第一次会询问是否允许读取，选「始终允许」以后就不会再问；如果点了「拒绝」，插件在后台不再重复询问，下次你主动打开账号窗口时才会再试一次。
 
 | 登录方式 | 原生命令与说明 |
 | --- | --- |
@@ -138,7 +138,7 @@ Qoder 设置中的单次目录加载会合并账号与模型查询，减少重�
 
 按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令。已登录时先显示当前账号卡，点击切换才打开退出流程。首次文件夹信任在窗口中由用户确认，只信任当前文件夹；识别空编辑器后自动输入一次 `/login`。站点菜单提供中国站、国际站、企业域、iOA；前两项使用浏览器引导，后两项在原生终端继续。切换自动输入一次 `/logout`，不在登录菜单补按 Enter；回读明确未登录且确认清理后才进入登录。2026-11-07 隔离空项目已采集 C1–C6 授权前路径；有效账号退出与 Windows/Desktop 尚未验收。未知屏保持原生，不根据文件 mtime、读取错误或零退出码判断已换号。
 
-登录状态按 CodeBuddy 自己的顺序判断：`CODEBUDDY_AUTH_TOKEN`、settings 中的 `apiKeyHelper`、`CODEBUDDY_API_KEY`（环境变量或 settings 的 env），最后才是登录文件；`CODEBUDDY_API_KEY_HELPER_DISABLED`、`CODEBUDDY_API_KEY_DISABLED` 照常生效。settings 按用户、项目、项目本地依次合并，项目里的站点设置会覆盖用户级。插件只确认这些来源是否配置，不执行 helper，也不读取令牌值。
+登录状态按 CodeBuddy 自己的顺序判断：`CODEBUDDY_AUTH_TOKEN`、settings 中的 `apiKeyHelper`、`CODEBUDDY_API_KEY`（环境变量或 settings 的 env），最后才是登录文件；`CODEBUDDY_API_KEY_HELPER_DISABLED`、`CODEBUDDY_API_KEY_DISABLED` 照常生效。settings 按用户、项目、项目本地依次合并，项目里的站点设置会覆盖用户级。插件只确认这些来源是否配置，不执行 helper，也不读取令牌值。查询模型目录时，插件把项目里的 settings 原样复制到自己的临时目录交给 CodeBuddy 读取，用完即删；查询不会在你的项目里留下文件。用相对路径写的 apiKeyHelper 暂不支持，请改成绝对路径。
 
 - 通信：`codebuddy --acp`，transport `codebuddy-acp-v1`。插件启动的进程都带 `DISABLE_AUTOUPDATER=1`，不会触发自动更新；你自己打开的终端仍按原方式更新。
 - 站点：优先采用 `~/.codebuddy/settings.json` 或环境中显式设置的 `CODEBUDDY_INTERNET_ENVIRONMENT`；否则在内存中只读取认证文件里的 `auth.domain`，按 CLI 自带的域名表显示中国站、国际站、企业域或 iOA。令牌等字段不读出，域名也不写入日志或持久化。无法判断时显示“站点未公开”。
