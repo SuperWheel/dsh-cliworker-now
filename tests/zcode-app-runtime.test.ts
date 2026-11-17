@@ -3,7 +3,8 @@
  * 不启动真实 ZCode、不读真实账号、不调用模型；真实核对见变更的验收记录。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -17,6 +18,7 @@ import { managedZCodeEntry, prepareZCode, zcodeEnvironment } from '../src/host/z
 import { zcodeAppLayout, zcodeAppRuntime, zcodeEntryArgv, zcodeEntryEnvironment, isZCodeAppArgv, ZCODE_APP_RESOURCES_ENVIRONMENT } from '../src/host/zcode-app-layout.mjs'
 import {
   ensureZCodeCredentialSecret, probeZCodeAppRuntime, resetZCodeLaunchState, verifiedZCodeApp, zcodeLaunchEnvironment, zcodeLaunchPrefix,
+  zcodeTemporaryEnvironment, ZCodeCredentialSecretError,
   zcodeRuntimeNotice, zcodeTuiResolvable, ZCODE_APP_RUNTIME_FALLBACK_NOTICE, ZCODE_MIGRATION_PENDING_NOTICE,
 } from '../src/host/zcode-launch.ts'
 import { zcodeGrokAccountLaunch, ZCODE_TUI_UNAVAILABLE } from '../src/host/zcode-grok-accounts.ts'
@@ -25,6 +27,8 @@ import { nativeProcessBackend } from '../src/host/native-process.ts'
 import { currentVersion } from '../src/host/cli-management/versions.ts'
 import { identifyInstallation, ZCODE_RUNTIME_NOTICE, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { CliManagementCache } from '../src/host/cli-management/cache.ts'
+import { CliMaintenance } from '../src/host/cli-management/maintenance.ts'
+import { sameInstallation } from '../src/host/cli-management/planner.ts'
 import { findWindowsPathCommand } from '../src/host/windows-cli-path.ts'
 import { findWindowsDesktopCli } from '../src/host/windows-desktop-cli-installation.ts'
 
@@ -248,9 +252,9 @@ describe('模拟：启动检查失败时的回退', () => {
     const capture = vi.fn(async (_argv: string[], _env: Record<string, string>): Promise<string> => { throw new Error('模拟：应用运行环境无法启动') })
     expect(zcodeLaunchPrefix(app.entry)).toEqual([app.electron, '--require', hook, app.entry])
     expect(await probeZCodeAppRuntime(app.entry, capture)).toEqual({ ok: false })
-    expect(capture).toHaveBeenCalledWith([app.electron, '--require', hook, app.entry, '--version'], { ELECTRON_RUN_AS_NODE: '1', [ZCODE_APP_RESOURCES_ENVIRONMENT]: app.resources })
+    expect(capture).toHaveBeenCalledWith([app.electron, '--require', hook, app.entry, '--version'], { ...zcodeTemporaryEnvironment(), ELECTRON_RUN_AS_NODE: '1', [ZCODE_APP_RESOURCES_ENVIRONMENT]: app.resources })
     expect(zcodeLaunchPrefix(app.entry)).toEqual([process.execPath, app.entry])
-    expect(zcodeLaunchEnvironment(app.entry)).toEqual({})
+    expect(zcodeLaunchEnvironment(app.entry)).toEqual(zcodeTemporaryEnvironment())
     expect(zcodeRuntimeNotice(app.entry)).toBe(ZCODE_APP_RUNTIME_FALLBACK_NOTICE)
     await probeZCodeAppRuntime(app.entry, capture)
     expect(capture).toHaveBeenCalledTimes(1)
@@ -302,13 +306,49 @@ describe('模拟：旧独立 runtime 的自动记录迁移', () => {
     await expect(resolveCliExecutable('zcode', backend, f.config)).resolves.toBe(app.entry)
     expect(calls).toHaveLength(1)
   })
-  it('模拟：只读解析返回应用入口但不改写记录', async () => {
-    const f = fixture(), app = windowsApp(), { backend } = fakeBackend()
+  it('模拟：只读解析（更新页的身份识别）不迁移、不探测，仍返回记录中的旧入口', async () => {
+    const f = fixture(), { backend, calls } = fakeBackend()
+    windowsApp()
     f.store.remember('zcode', f.managed, 0)
     const revision = f.store.revision('zcode')
-    await expect(resolveCliExecutable('zcode', backend, f.config, undefined, { readOnly: true })).resolves.toBe(app.entry)
+    await expect(resolveCliExecutable('zcode', backend, f.config, undefined, { readOnly: true })).resolves.toBe(f.managed)
     expect(f.store.read('zcode')).toEqual({ mode: 'auto', path: f.managed })
     expect(f.store.revision('zcode')).toBe(revision)
+    expect(calls).toHaveLength(0)
+    expect(zcodeRuntimeNotice(f.managed)).toBeUndefined()
+  })
+  it('模拟：更新操作占用期间不迁移，更新前后识别为同一安装；释放后才迁移', async () => {
+    const f = fixture(), app = windowsApp(), { backend, calls } = fakeBackend()
+    const maintenance = new CliMaintenance()
+    const config: RuntimeConfig = { ...f.config, cliMaintenance: maintenance }
+    f.store.remember('zcode', f.managed, 0)
+    const signal = new AbortController().signal
+    const before = await identifyInstallation('zcode', backend, config, signal)
+    const release = maintenance.begin('zcode', () => ({ workers: 0, accounts: false }))
+    // 更新期间其他读取（账号状态、路径查询）走普通解析，同样不得改写记录。
+    await expect(resolveCliExecutable('zcode', backend, config)).resolves.toBe(f.managed)
+    const after = await identifyInstallation('zcode', backend, config, signal)
+    expect(before?.executable).toBe(f.managed)
+    expect(after?.executable).toBe(f.managed)
+    expect(sameInstallation(before!, after!, 'zcode')).toBe(true)
+    expect(f.store.read('zcode')).toEqual({ mode: 'auto', path: f.managed })
+    expect(calls).toHaveLength(0)
+    release()
+    await expect(resolveCliExecutable('zcode', backend, config)).resolves.toBe(app.entry)
+    expect(f.store.read('zcode')).toEqual({ mode: 'auto', path: app.entry })
+  })
+  it.each(['首次发现', '旧记录迁移'])('模拟：%s 的启动检查期间路径被改为手动选择时，本次请求作废，不覆盖也不报告可用', async (kind) => {
+    const f = fixture(), app = windowsApp()
+    const manual = file(join(state.home, '手动/zcode.cjs'))
+    if (kind === '旧记录迁移') f.store.remember('zcode', f.managed, 0)
+    // 模拟：--version 探测进行中，用户在设置里保存了另一条路径。
+    const { backend, calls } = fakeBackend(() => { f.store.setManual('zcode', manual); return { stdout: '0.17.1\n' } })
+    await expect(resolveCliExecutable('zcode', backend, f.config)).rejects.toThrow('CLI 路径已更新，请刷新后重试')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.argv).toContain(app.entry)
+    expect(f.store.read('zcode')).toEqual({ mode: 'manual', path: manual })
+    // 之后的请求按手动路径解析，不再用应用入口。
+    await expect(resolveCliExecutable('zcode', backend, f.config)).resolves.toBe(manual)
   })
   it.each(['手动记录', '显式配置'])('模拟：%s 指向旧 runtime 时不迁移、不探测', async (kind) => {
     const f = fixture(), { backend, calls } = fakeBackend()
@@ -428,6 +468,64 @@ describe('模拟：插件账号目录的 credential-secret', () => {
     expect(existsSync(secret(auth))).toBe(false)
     expect(existsSync(secret(target))).toBe(false)
   })
+  const leftovers = (auth: string) => readdirSync(join(auth, '.zcode/v2')).filter((name) => name !== 'credential-secret')
+  it('模拟：密钥先写入私有临时文件再原子发布，发布前目标不存在，发布后不留临时文件', () => {
+    const auth = directory()
+    let seen: string[] = []
+    expect(ensureZCodeCredentialSecret(auth, { beforePublish: () => {
+      // 并发启动此刻看到的要么没有密钥文件，要么是完整密钥；不会看到空文件。
+      expect(existsSync(secret(auth))).toBe(false)
+      seen = leftovers(auth)
+      const temporary = join(auth, '.zcode/v2', seen[0]!)
+      expect(statSync(temporary).size).toBe(43)
+      if (platform.value !== 'win32') expect(statSync(temporary).mode & 0o777).toBe(0o600)
+    } })).toBe('created')
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatch(/^\.credential-secret\.\d+\.[0-9a-f-]{36}\.tmp$/)
+    expect(leftovers(auth)).toEqual([])
+    expect(statSync(secret(auth)).size).toBe(43)
+    expect(statSync(secret(auth)).nlink).toBe(1)
+  })
+  it('模拟：发布前另一个启动已写好密钥时不覆盖，沿用对方的密钥', () => {
+    const auth = directory(), other = randomBytes(32).toString('base64url')
+    expect(ensureZCodeCredentialSecret(auth, { beforePublish: () => writeFileSync(secret(auth), other, { mode: 0o600 }) })).toBe('present')
+    expect(readFileSync(secret(auth), 'utf8')).toBe(other)
+    expect(leftovers(auth)).toEqual([])
+  })
+  it('模拟：写入与发布之间中断时不留下空的或过短的密钥文件，下次重新创建', () => {
+    const auth = directory()
+    expect(ensureZCodeCredentialSecret(auth, { beforePublish: () => { throw new Error('模拟：进程在发布前中断') } })).toBe('skipped')
+    expect(existsSync(secret(auth))).toBe(false)
+    expect(leftovers(auth)).toEqual([])
+    expect(ensureZCodeCredentialSecret(auth)).toBe('created')
+  })
+  it.each([
+    ['空文件', ''],
+    ['过短', 'x'.repeat(31)],
+    ['过长', 'x'.repeat(4097)],
+  ])('模拟：已有密钥文件%s时判为不可用：不覆盖，启动环境与账号入口给出明确错误', async (_name, content) => {
+    as('darwin')
+    const app = macApp(), auth = directory()
+    file(secret(auth), content)
+    chmodSync(secret(auth), 0o600)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
+    expect(readFileSync(secret(auth), 'utf8')).toBe(content)
+    expect(() => zcodeEnvironment(app.entry, join(state.home, 'state-invalid'), auth)).toThrow(ZCodeCredentialSecretError)
+    expect(() => zcodeEnvironment(app.entry, join(state.home, 'state-invalid'), auth)).toThrow(secret(auth))
+    const { backend } = fakeBackend(() => ({ stdout: 'zcode 0.17.1\n  login [zai|bigmodel]  Sign in\n  logout  Remove credentials\n' }))
+    const config: RuntimeConfig = { ...DEFAULT_CONFIG, stateDirectory: join(state.home, 'state'), zcodeAuthDirectory: auth }
+    await expect(zcodeGrokAccountLaunch('zcode', 'login', app.entry, config, backend, new AbortController().signal, { home: state.home, platform: 'darwin', loginProvider: 'zai' }))
+      .rejects.toThrow(/密钥文件不可用.*credential-secret/)
+    expect(readFileSync(secret(auth), 'utf8')).toBe(content)
+  })
+  it.skipIf(platform.value === 'win32')('模拟：权限不是仅本人可读写的密钥文件同样判为不可用', () => {
+    const auth = directory()
+    file(secret(auth), randomBytes(32).toString('base64url'))
+    chmodSync(secret(auth), 0o644)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('invalid')
+    chmodSync(secret(auth), 0o600)
+    expect(ensureZCodeCredentialSecret(auth)).toBe('present')
+  })
   it('模拟：用户自己的 ~/.zcode 不受影响', () => {
     expect(ensureZCodeCredentialSecret(state.home)).toBe('skipped')
     expect(existsSync(join(state.home, '.zcode'))).toBe(false)
@@ -499,5 +597,66 @@ describe('模拟：版本读取与缓存', () => {
     expect(cache.version('zcode', { ...fingerprint, appVersion: '3.19.0' })).toBeUndefined()
     expect(cache.version('zcode', { ...fingerprint, size: fingerprint.size + 1 })).toBeUndefined()
     expect(cache.version('zcode', { ...fingerprint, mtimeMs: fingerprint.mtimeMs + 1000 })).toBeUndefined()
+  })
+})
+
+describe('模拟：macOS 上每一种 ZCode 启动都带短临时目录', () => {
+  const help = 'zcode 0.17.1\n  login [zai|bigmodel]  Sign in\n  logout  Remove credentials\n  tui  Open terminal\n'
+  /** macOS sockaddr_un 的 sun_path 为 104 字节（含结尾 0）；ZCode 在 TMPDIR 下建 `znr-<uuid>.sock`。 */
+  const fits = (env: NodeJS.ProcessEnv | Record<string, string> | undefined) => {
+    expect(env?.TMPDIR).toMatch(/^\/tmp\/cwn-[A-Za-z0-9]{6}$/)
+    expect(env?.TMP).toBe(env?.TMPDIR)
+    expect(env?.TEMP).toBe(env?.TMPDIR)
+    expect(Buffer.byteLength(join(env!.TMPDIR!, `znr-${randomUUID()}.sock`))).toBeLessThan(104)
+    expect(statSync(env!.TMPDIR!).isDirectory()).toBe(true)
+    expect(statSync(env!.TMPDIR!).mode & 0o777).toBe(0o700)
+    return env!.TMPDIR!
+  }
+  it.skipIf(platform.value !== 'darwin')('模拟：启动检查、--help、登录、退出、账号终端、版本读取和基础环境都使用同一个 /tmp/cwn- 目录', async () => {
+    as('darwin')
+    const app = macApp(), signal = new AbortController().signal
+    const config: RuntimeConfig = { ...DEFAULT_CONFIG, stateDirectory: join(state.home, 'state') }
+    const options = { home: state.home, platform: 'darwin' as const }
+    const kinds: Record<string, string> = {}
+    // 启动检查（--version 探测）
+    let probeEnv: Record<string, string> | undefined
+    await probeZCodeAppRuntime(app.entry, async (_argv, env) => { probeEnv = env; return '0.17.1\n' })
+    kinds['启动检查'] = fits(probeEnv)
+    // 账号能力检查（--help）、登录、退出
+    const accounts = fakeBackend(() => ({ stdout: help }))
+    const login = await zcodeGrokAccountLaunch('zcode', 'login', app.entry, config, accounts.backend, signal, { ...options, loginProvider: 'zai' })
+    const logout = await zcodeGrokAccountLaunch('zcode', 'logout', app.entry, config, accounts.backend, signal, options)
+    kinds['--help'] = fits(accounts.calls[0]!.env)
+    kinds['登录'] = fits(login.env)
+    kinds['退出'] = fits(logout.env)
+    // 账号终端（完整 runtime 才有）
+    const full = file(join(state.home, 'full/cli/zcode.cjs'))
+    file(join(state.home, 'full/cli/config/provider/zcode-builtin.json'), builtin)
+    file(join(state.home, 'full/node_modules/@zcode/tui/package.json'), '{}')
+    const manage = await zcodeGrokAccountLaunch('zcode', 'manage', full, config, accounts.backend, signal, options)
+    kinds['账号终端'] = fits(manage.env)
+    // 更新页版本读取
+    const versions = fakeBackend()
+    const stat = statSync(app.entry)
+    await currentVersion('zcode', { executable: app.entry, source: 'desktop-app', appPath: app.app,
+      fingerprint: { realpath: app.entry, size: stat.size, mtimeMs: stat.mtimeMs, appVersion: '3.18.2' } }, versions.backend, DEFAULT_CONFIG, signal)
+    kinds['版本读取'] = fits(versions.calls[0]!.env)
+    // Worker、app-server 与模型目录读取的基础环境（它们随后换成各自的 /tmp/cwn- 目录）
+    kinds['基础环境'] = fits(zcodeEnvironment(app.entry, join(state.home, 'state-x')))
+    kinds['非应用入口'] = fits(zcodeLaunchEnvironment(full))
+    expect(new Set(Object.values(kinds)).size).toBe(1)
+    // 目录被外部删除后重新建立，不沿用失效路径。
+    const first = kinds['基础环境']!
+    rmSync(first, { recursive: true, force: true })
+    const next = fits(zcodeTemporaryEnvironment())
+    expect(next).not.toBe(first)
+    resetZCodeLaunchState()
+    expect(existsSync(next)).toBe(false)
+  })
+  it('模拟：继承的 /var/folders 临时目录会超出限制，Windows 与 Linux 不改临时目录', () => {
+    const inherited = '/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T/cliworker-now-state-000000/tmp'
+    expect(Buffer.byteLength(join(inherited, `znr-${randomUUID()}.sock`))).toBeGreaterThanOrEqual(104)
+    expect(zcodeTemporaryEnvironment('win32')).toEqual({})
+    expect(zcodeTemporaryEnvironment('linux')).toEqual({})
   })
 })

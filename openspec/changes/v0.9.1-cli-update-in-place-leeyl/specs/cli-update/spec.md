@@ -53,6 +53,14 @@ Host SHALL 把 ZCode 的自动入口解析为桌面应用自带的 `glm/zcode.cj
 - **WHEN** 以上述方式执行 `--version` 失败或没有输出版本号
 - **THEN** Host SHALL 改用宿主自带的 Node 运行同一入口，并在账号行与更新行显示提示；应用的可执行文件或入口变化后 SHALL 重新检查
 
+#### Scenario: macOS 上的临时目录
+- **WHEN** Host 在 macOS 启动任一 ZCode 进程（Worker、app-server、模型目录读取、`--version` 启动检查、更新页版本读取、`--help`、登录、退出、账号终端）
+- **THEN** 该进程的 `TMPDIR`、`TMP`、`TEMP` SHALL 指向 `/tmp/cwn-XXXXXX` 形式的 0700 私有目录，使 ZCode 在其中创建的 Unix 套接字路径短于 104 字节；Windows 与 Linux 不改临时目录
+
+#### Scenario: 启动检查期间路径被修改
+- **WHEN** `--version` 启动检查进行中，CLI 路径记录的 revision 发生变化
+- **THEN** Host SHALL 在检查结束后再比较 revision，本次解析报告路径已更新，MUST NOT 覆盖新的记录或把它报告为可用
+
 #### Scenario: 账号终端入口
 - **WHEN** 入口旁解析不到 `@zcode/tui`（桌面应用自带的 CLI）
 - **THEN** 账号状态不提供「账号终端」动作，设置页隐藏该入口；登录与退出仍可用。能解析到该包的完整 runtime 保留账号终端
@@ -79,6 +87,14 @@ Host SHALL 把 ZCode 的自动入口解析为桌面应用自带的 `glm/zcode.cj
 - **WHEN** 目录已固定到系统凭据库、已有 v2 记录、已设置任一变量或文件已存在
 - **THEN** Host 不创建也不改写任何文件，原样传递用户设置的那一个变量
 
+#### Scenario: 并发启动与中断
+- **WHEN** 多个 ZCode 进程同时首次启动，或 Host 在写入密钥期间中断
+- **THEN** Host SHALL 先把密钥写入同目录的 0600 临时文件并落盘，再以不覆盖已有文件的方式发布；其他启动只会看到没有密钥文件或完整的密钥文件，后到者沿用已发布的密钥
+
+#### Scenario: 已有密钥文件不可用
+- **WHEN** `credential-secret` 已存在但为空、短于 32 字节、长于 4096 字节或权限不是仅本人可读写
+- **THEN** Host MUST NOT 覆盖该文件，也 MUST NOT 用它启动 ZCode；Worker 与账号入口 SHALL 返回指出该文件路径的错误
+
 ## MODIFIED Requirements
 
 ### Requirement: 自动入口与独立 runtime 的更新一致性
@@ -95,6 +111,10 @@ Host SHALL 保存自动发现的启动器或符号链接入口，每次使用时
 #### Scenario: ZCode 自动记录仍为独立 runtime
 - **WHEN** auto 记录为插件早期的独立 ZCode runtime，且桌面应用的身份（macOS bundle id `dev.zcode.app`，Windows PE ProductName `ZCode` 与配套服务商文件）与启动检查均通过
 - **THEN** Host SHALL 把记录改写为应用自带的入口，revision 加一，独立 runtime 的文件保持原样
+
+#### Scenario: 更新核对期间不迁移 ZCode 记录
+- **WHEN** 更新页的只读身份识别正在解析入口，或 ZCode 的安装、更新、修复操作占用中
+- **THEN** Host MUST NOT 迁移独立 runtime 的 auto 记录，更新前后的身份识别 SHALL 得到同一入口；迁移留给操作结束后的下一次普通解析
 
 #### Scenario: ZCode 自动入口为独立 runtime
 - **WHEN** auto 记录为独立 runtime，但没有桌面应用、身份不符或 `--version` 启动检查失败

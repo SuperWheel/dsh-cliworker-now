@@ -12,6 +12,8 @@ export class CliBusyError extends Error {
 export class CliMaintenance {
   private held = new Set<CliId>()
   private readers = new Map<CliId, number>()
+  /** An install, update or repair currently owns this CLI. */
+  isHeld(cli: CliId): boolean { return this.held.has(cli) }
   assertAvailable(cli: CliId) { if (this.held.has(cli)) throw new MaintenanceError(cli) }
   using(cli: CliId): () => void {
     this.assertAvailable(cli)

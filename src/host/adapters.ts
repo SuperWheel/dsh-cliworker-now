@@ -504,7 +504,12 @@ export async function resolveCliExecutable(
   let selected = entry?.mode === 'manual' ? entry.path : nativeEntry ?? (deployment || migrate ? undefined : entry?.path)
   // An automatic record of the old private runtime moves to the desktop app's
   // own CLI once that app proves its identity and starts; otherwise it stays.
-  if (cli === 'zcode' && entry?.mode === 'auto' && !deployment && sameZCodeEntry(entry.path, managedZCodeEntry()))
+  // A read-only (cli-management identity) pass and a held maintenance operation
+  // never migrate: an update is verified against the installation it started on.
+  if (
+    cli === 'zcode' && entry?.mode === 'auto' && !deployment && sameZCodeEntry(entry.path, managedZCodeEntry()) &&
+    !options.readOnly && !config.cliMaintenance?.isHeld('zcode')
+  )
     selected = (await migratedZCodeEntry(backend, config, signal, options.management)) ?? entry.path
   let discovered: string | undefined
   const result = await resolveUncachedCliExecutable(
@@ -516,6 +521,9 @@ export async function resolveCliExecutable(
     path => { discovered = path },
     options.management,
   )
+  // The launch probe is awaited before the revision is validated: nothing below
+  // yields, so a path changed meanwhile is never overridden or reported usable.
+  if (cli === 'zcode') await probeZCodeRuntime(result, backend, config, signal)
   signal.throwIfAborted()
   const current = store.read(cli)
   if (store.revision(cli) !== revision) {
@@ -526,7 +534,6 @@ export async function resolveCliExecutable(
   }
   if (!options.readOnly && entry?.mode !== 'manual' && !deployment && !store.remember(cli, discovered ?? result, revision))
     throw new Error('CLI 路径已更新，请刷新后重试')
-  if (cli === 'zcode') await probeZCodeRuntime(result, backend, config, signal)
   return result
 }
 

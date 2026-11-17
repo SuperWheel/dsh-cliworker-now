@@ -27,7 +27,7 @@ import { ZcodeResponseTracker } from './zcode-response.mjs'
 import { withCatalogNotice } from './catalog-notice.ts'
 import { shareNativeMemory, unshareNativeMemory, parseZcodeDeniedTools, zcodeWorkflowMode } from './cli-native-capabilities.mjs'
 import { zcodeWorkflowSurface, ZCODE_WORKFLOW_SURFACE_ENVIRONMENT } from './zcode-schema-probe.ts'
-import { ensureZCodeCredentialSecret, zcodeLaunchEnvironment, zcodeLaunchPrefix } from './zcode-launch.ts'
+import { ZCodeCredentialSecretError, ensureZCodeCredentialSecret, zcodeLaunchEnvironment, zcodeLaunchPrefix, zcodeTemporaryEnvironment } from './zcode-launch.ts'
 
 // Keep only the bundled browser REPL closure (DSH permissions); native delegation
 // and skills follow native configuration, independently of the plugin task tree.
@@ -111,7 +111,10 @@ export function zcodeEnvironment(executable: string, state: string, auth?: strin
   const credentialSecretFile = process.env.ZCODE_CREDENTIAL_SECRET_FILE
   // Only an explicitly named plugin account directory gets a file-held key; the
   // helper leaves ~/.zcode, an OS-pinned directory and either variable alone.
-  if (auth !== undefined) ensureZCodeCredentialSecret(auth)
+  // An existing key file ZCode would refuse stops the launch: starting anyway
+  // would let the CLI pick another key source for this directory.
+  if (auth !== undefined && ensureZCodeCredentialSecret(auth) === 'invalid')
+    throw new ZCodeCredentialSecretError(join(auth, '.zcode', 'v2', 'credential-secret'))
   return {
     // The desktop app's own runtime and its preload; empty for every other entry.
     ...zcodeLaunchEnvironment(executable),
@@ -124,6 +127,8 @@ export function zcodeEnvironment(executable: string, state: string, auth?: strin
     ZCODE_PERSONAL_PROVIDER_CONFIG_FILE: join(state, 'personal.json'),
     ZCODE_BUILTIN_PROVIDER_CONFIG_FILE: builtinPath(executable, builtin),
     TMPDIR: join(state, 'tmp'),
+    // macOS: a short directory, so the CLI's Unix sockets fit `sockaddr_un`.
+    ...zcodeTemporaryEnvironment(),
   }
 }
 /** Handed to the bridge only; it removes the variable before starting the CLI. */

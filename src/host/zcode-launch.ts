@@ -1,11 +1,12 @@
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, writeSync, fsyncSync, rmSync } from 'node:fs'
+import { chmodSync, closeSync, constants, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, statSync, writeSync, fsyncSync, rmSync } from 'node:fs'
 import { readFile, stat, lstat } from 'node:fs/promises'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { stripVTControlCharacters } from 'node:util'
 import { readPeVersion } from './cli-management/pe-version.ts'
 import { ProcessCleanupUnconfirmedError } from './process.ts'
+import { markTemporaryTreeActive } from './temporary-tree.mjs'
 import {
   zcodeAppLayout,
   zcodeAppRuntime,
@@ -63,9 +64,57 @@ const appRuntimeAllowed = (executable: string) => probeRecord(executable)?.ok !=
 export function zcodeLaunchPrefix(executable: string): string[] {
   return zcodeEntryArgv(executable, { appRuntime: appRuntimeAllowed(executable) })
 }
-/** `ELECTRON_RUN_AS_NODE` and the preload's resources directory, or nothing. */
+let shortTemporary: string | undefined
+let shortTemporaryCleanup = false
+/** Remove this Host's shared directory; a leftover is reclaimed by the temporary sweep. */
+function removeShortTemporary(): void {
+  const path = shortTemporary
+  shortTemporary = undefined
+  if (path) try { rmSync(path, { recursive: true, force: true }) } catch { /* Swept later. */ }
+}
+/**
+ * ZCode binds Unix sockets under TMPDIR (`znr-<uuid>.sock`, the broker socket).
+ * macOS's `/var/folders/…/T` plus that name passes the 104-byte `sockaddr_un`
+ * limit, so every ZCode process started here gets one short private directory
+ * (`/tmp/cwn-XXXXXX`, 0700, owner-marked for the temporary sweep). Workers and
+ * catalog queries replace it with their own per-run directory of the same form.
+ */
+export function zcodeTemporaryEnvironment(
+  platform: NodeJS.Platform = process.platform,
+  root = '/tmp',
+): Record<string, string> {
+  if (platform !== 'darwin') return {}
+  try {
+    let usable = false
+    if (shortTemporary?.startsWith(join(root, 'cwn-'))) {
+      try {
+        const info = lstatSync(shortTemporary)
+        usable = info.isDirectory() && !info.isSymbolicLink() && (info.mode & 0o77) === 0 &&
+          (typeof process.getuid !== 'function' || info.uid === process.getuid())
+      } catch { /* Removed underneath us: make another. */ }
+    }
+    if (!usable) {
+      const made = mkdtempSync(join(root, 'cwn-'))
+      chmodSync(made, 0o700)
+      markTemporaryTreeActive(made)
+      shortTemporary = made
+      if (!shortTemporaryCleanup) {
+        shortTemporaryCleanup = true
+        process.once('exit', removeShortTemporary)
+      }
+    }
+    return { TMPDIR: shortTemporary!, TMP: shortTemporary!, TEMP: shortTemporary! }
+  } catch {
+    // No short directory: the CLI keeps the inherited one rather than not starting.
+    return {}
+  }
+}
+/**
+ * What every ZCode spawn adds: the short temporary directory on macOS, plus
+ * `ELECTRON_RUN_AS_NODE` and the preload's resources directory for an app entry.
+ */
 export function zcodeLaunchEnvironment(executable: string): Record<string, string> {
-  return zcodeEntryEnvironment(executable, { appRuntime: appRuntimeAllowed(executable) })
+  return { ...zcodeTemporaryEnvironment(), ...zcodeEntryEnvironment(executable, { appRuntime: appRuntimeAllowed(executable) }) }
 }
 /** The provider file next to the entry this launch actually runs. */
 export function zcodeAppBuiltinConfig(executable: string): string | undefined {
@@ -109,7 +158,7 @@ export async function probeZCodeAppRuntime(
   try {
     version = zcodeVersionToken(await capture(
       [...zcodeEntryArgv(executable), '--version'],
-      zcodeEntryEnvironment(executable),
+      { ...zcodeTemporaryEnvironment(), ...zcodeEntryEnvironment(executable) },
     ))
   } catch (error) {
     if (error instanceof ProcessCleanupUnconfirmedError) throw error
@@ -140,6 +189,7 @@ export function zcodeRuntimeNotice(executable?: string): string | undefined {
 /** Test isolation only. */
 export function resetZCodeLaunchState(): void {
   probes.clear()
+  removeShortTemporary()
   migrationNotice = undefined
   migrationRetryAt = 0
 }
@@ -186,6 +236,27 @@ export function zcodeTuiResolvable(executable: string): boolean | undefined {
   return false
 }
 
+export const ZCODE_CREDENTIAL_SECRET_MIN_BYTES = 32
+export const ZCODE_CREDENTIAL_SECRET_MAX_BYTES = 4096
+/** The key file exists but ZCode would not use it; launching would silently choose another key source. */
+export class ZCodeCredentialSecretError extends Error {
+  constructor(readonly path: string) {
+    super(`ZCode 账号目录的密钥文件不可用（为空、过短、过长或权限不是仅本人可读写）：${path}。为避免登录信息改用其他密钥，ZCode 未启动；请检查该文件，确认不需要后删除它再重试。`)
+    this.name = 'ZCodeCredentialSecretError'
+  }
+}
+/** ZCode's own acceptance rule: a private regular file of 32 to 4096 bytes. */
+function credentialSecretState(target: string): 'present' | 'invalid' | 'absent' | 'unknown' {
+  let info
+  try {
+    info = lstatSync(target)
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'absent' : 'unknown'
+  }
+  if (!info.isFile() || info.size < ZCODE_CREDENTIAL_SECRET_MIN_BYTES || info.size > ZCODE_CREDENTIAL_SECRET_MAX_BYTES) return 'invalid'
+  return process.platform !== 'win32' && (info.mode & 0o77) !== 0 ? 'invalid' : 'present'
+}
+
 /**
  * Give the plugin's own ZCode account directory a file-held encryption key, the
  * source ZCode itself reads before the OS store (`<data>/.zcode/v2/credential-secret`,
@@ -194,11 +265,16 @@ export function zcodeTuiResolvable(executable: string): boolean | undefined {
  * Created only when nothing has chosen a key source yet: no `ZCODE_CREDENTIAL_SECRET`
  * or `ZCODE_CREDENTIAL_SECRET_FILE`, no `credential-source` marker, no v2 record.
  * The user's own `~/.zcode` is never touched, and an existing file is never replaced.
+ *
+ * The key is written and synced to a private temporary file beside the target and
+ * published with a hard link, which never replaces an existing name: a concurrent
+ * launch sees either no file or the complete key, and a crash leaves no short file.
+ * `invalid` is an existing file ZCode would refuse; it is left as found.
  */
 export function ensureZCodeCredentialSecret(
   authDirectory: string,
-  options: { env?: NodeJS.ProcessEnv; home?: string } = {},
-): 'created' | 'present' | 'skipped' {
+  options: { env?: NodeJS.ProcessEnv; home?: string; beforePublish?: () => void } = {},
+): 'created' | 'present' | 'skipped' | 'invalid' {
   const env = options.env ?? process.env
   if (env.ZCODE_CREDENTIAL_SECRET || env.ZCODE_CREDENTIAL_SECRET_FILE) return 'skipped'
   const base = resolve(authDirectory)
@@ -223,12 +299,9 @@ export function ensureZCodeCredentialSecret(
       }
       if (!info.isDirectory() || info.isSymbolicLink()) return 'skipped'
     }
-    try {
-      lstatSync(target)
-      return 'present'
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return 'skipped'
-    }
+    const existing = credentialSecretState(target)
+    if (existing === 'present' || existing === 'invalid') return existing
+    if (existing === 'unknown') return 'skipped'
     if (existsSync(join(directory, 'credential-source'))) return 'skipped'
     let records = ''
     try {
@@ -240,18 +313,30 @@ export function ensureZCodeCredentialSecret(
     }
     // `enc:v2:os:` is pinned to the OS store; `enc:v2:env:` already has a key elsewhere.
     if (records.includes('enc:v2:')) return 'skipped'
+    const temporary = join(directory, `.credential-secret.${process.pid}.${randomUUID()}.tmp`)
     let fd: number | undefined
     try {
-      fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+      fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
       writeSync(fd, randomBytes(32).toString('base64url'))
       fsyncSync(fd)
-    } catch (error) {
-      if (fd !== undefined) { closeSync(fd); fd = undefined; rmSync(target, { force: true }) }
-      return (error as NodeJS.ErrnoException).code === 'EEXIST' ? 'present' : 'skipped'
+      closeSync(fd)
+      fd = undefined
+      options.beforePublish?.()
+      try {
+        // link(2) / CreateHardLink fail when the name exists; rename would replace it.
+        linkSync(temporary, target)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') return 'skipped'
+        const winner = credentialSecretState(target)
+        return winner === 'present' || winner === 'invalid' ? winner : 'skipped'
+      }
+      return 'created'
+    } catch {
+      return 'skipped'
     } finally {
       if (fd !== undefined) closeSync(fd)
+      rmSync(temporary, { force: true })
     }
-    return 'created'
   } catch {
     return 'skipped'
   }

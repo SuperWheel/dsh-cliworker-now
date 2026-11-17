@@ -14,7 +14,7 @@ import type { AccountLogin } from '../shared/accounts.ts'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { readZCodePersonalIdentity, zcodeAuthDirectory, zcodeEnvironment } from './zcode-adapter.ts'
 import { zcodeProviderLogins, zcodeProviderTarget } from './zcode-custom-provider.ts'
-import { zcodeLaunchEnvironment, zcodeLaunchPrefix, zcodeTuiResolvable } from './zcode-launch.ts'
+import { ZCodeCredentialSecretError, zcodeLaunchEnvironment, zcodeLaunchPrefix, zcodeTuiResolvable } from './zcode-launch.ts'
 import { assertGrokNativeEnvironment, selectGrokOwnAccount } from './grok-models.ts'
 import { grokRenewalRejected } from './grok-renewal.ts'
 
@@ -483,7 +483,8 @@ export async function zcodeGrokAccountLaunch(
       ...zcodeEnvironment(executable, state, auth, config.zcodeBuiltinConfig),
       ELECTRON_RUN_AS_NODE: '1',
     }
-  } catch {
+  } catch (error) {
+    if (error instanceof ZCodeCredentialSecretError) throw new ZCodeAccountCapabilityError(error.message)
     throw new ZCodeAccountCapabilityError('ZCode 配套资源不可用，请检查 CLI 安装或配置 zcodeBuiltinConfig')
   }
   signal.throwIfAborted()
