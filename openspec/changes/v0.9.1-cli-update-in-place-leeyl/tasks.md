@@ -120,7 +120,15 @@
     - 「更新 CLI」页 ZCode 行显示「应用 3.18.2 · CLI 0.17.1」，归入「已是最新」。
     - 其余 16 个 CLI 的状态与模型读取正常，或是账号自身原因：Kimi 需要续期，Qoder 账号下 17 个模型全部停用，WorkBuddy CN 提示原默认模型不可用，WorkBuddy 未安装。
     - `credential-secret` 尚未生成：按设计只在 Worker 或登录、退出启动 ZCode 时创建，读模型目录不会启动 ZCode。
-  - 未执行：真实 Worker 轮次（需要模型调用授权，也是真实生成密钥文件、核对旧登录仍可用的环节）、真实登录与退出、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
+  - 真实账号目录核对（2026-11-17，用户授权，不调用模型、不登录或退出）：
+    - 先完整备份账号目录，再用插件的 `zcodeEnvironment` 生成密钥文件（0600、43 字节、nlink 1，无临时残留）。
+    - 按插件方式启动 0.17.1 的 `app-server`，`runtime/capabilities` 与 `session/create` 都成功，没有发送输入，数据库里没有轮次或模型用量记录。
+    - 生成前、生成后、启动后三次读取，插件的登录投影一致：OAuth 已登录、个人 API 已配置、4 个服务商、订阅账号绑定的身份和密钥都存在。Host 模型目录返回 5 个模型。`~/.zcode` 前后哈希一致。
+    - 6 条 `enc:v1` 没有改写：`app-server` 不读文件密钥。它的凭据解密委托给调用方（安装包第 15650 行 `createProtocolCredentialCipher` → `interaction/requestCredentialCipher`），插件没有实现这个请求，所以启动日志有一条「Credential cipher host is unavailable」。这条警告与密钥文件无关：密钥存在时照样出现，代码路径也不读文件密钥。
+    - Worker 用订阅账号时，由插件解出账号绑定，经 `interaction/requestProviderRuntimeHeaders` 提供认证，不依赖 ZCode 自己解密。
+    - 按事先约定，日志出现警告即回滚：账号目录已恢复到原始清单（sha256 86e6f88f…），不含密钥文件；下次派遣或登录时插件会重新生成。备份保留在会话临时目录。
+    - 文件密钥只在 `login`、`logout` 等直接读写凭据的命令中起作用；此前副本测试已证明有密钥时 6 条 `enc:v1` 仍可解密。
+  - 未执行：真实 Worker 轮次（需要模型调用授权）、真实登录与退出（会用到文件密钥）、OAuth 远端有效性、Windows 上桌面应用更新时正在运行的 Worker 会不会被结束。
 - [x] 4.3 迁移成功后，经用户确认删除旧的私有运行时
   - Mac Desktop 上路径记录已迁移到应用自带入口（revision 2），用户 2026-11-17 同意删除；`~/.local/share/cliworker-now/runtimes/zcode`（0.16.9，87 MB）移入废纸篓 `~/.Trash/cliworker-old-copies-20261117/`，没有 ZCode 进程占用。
 - [x] 4.4 修复 ZCode 规划模式 Worker 一律被拒
