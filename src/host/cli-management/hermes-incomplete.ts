@@ -34,7 +34,8 @@ function shorten(line: string, home: string, checkout: string): string {
   return text.length > DETAIL_LIMIT ? `${text.slice(0, DETAIL_LIMIT - 1)}…` : text
 }
 
-export async function readHermesIncomplete(home: string, checkout: string): Promise<HermesIncomplete | undefined> {
+/** The terminal success receipt for exactly the checked-out commit, or undefined. */
+async function successReceipt(home: string, checkout: string): Promise<Record<string, any> | undefined> {
   const text = (await safeObservation(join(home, 'logs/update_receipts/latest.json'), 256 * 1024))?.text
   let r: any
   try { r = JSON.parse(text ?? 'null') } catch { return }
@@ -43,8 +44,30 @@ export async function readHermesIncomplete(home: string, checkout: string): Prom
   // Only a receipt for exactly the checked-out commit describes this installation.
   const head = await hermesHeadCommit(checkout)
   if (!head || post.sha.toLowerCase() !== head) return
+  return r
+}
+function owedSteps(r: Record<string, any>) {
   const stages: unknown[] = Array.isArray(r.stages) ? r.stages : [], followups: unknown[] = Array.isArray(r.followups) ? r.followups : []
   const failed = stages.filter((s: any) => ['build', 'deps'].includes(s?.name) && s?.outcome === 'failed').map((s: any) => s.name as string)
+  return { failed, followups }
+}
+const UPDATE_ID = /^[A-Za-z0-9_-]{1,128}$/
+
+/**
+ * Positive completion evidence for a resume: the id of a terminal success receipt for HEAD that owes nothing.
+ * A missing, unreadable, still-running or other-commit receipt is not evidence (undefined).
+ */
+export async function hermesCompletedReceipt(home: string, checkout: string): Promise<string | undefined> {
+  const r = await successReceipt(home, checkout)
+  if (!r || typeof r.update_id !== 'string' || !UPDATE_ID.test(r.update_id)) return
+  const { failed, followups } = owedSteps(r)
+  return failed.length || followups.length ? undefined : r.update_id
+}
+
+export async function readHermesIncomplete(home: string, checkout: string): Promise<HermesIncomplete | undefined> {
+  const r = await successReceipt(home, checkout)
+  if (!r) return
+  const { failed, followups } = owedSteps(r)
   if (!failed.length && !followups.length) return
   const steps = [...new Set([...failed, ...followups.map((f: any) => f?.step).filter((s): s is string => typeof s === 'string' && STEP.test(s))])].slice(0, 8)
   // followups[].reason is the truncated launcher command, not a cause. The cause is the log line of this run.
@@ -54,6 +77,6 @@ export async function readHermesIncomplete(home: string, checkout: string): Prom
   return {
     steps, renameBusy: !!line && /node_modules/.test(line),
     ...(line ? { detail: shorten(line, home, checkout) } : {}),
-    ...(typeof r.update_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(r.update_id) ? { updateId: r.update_id } : {}),
+    ...(typeof r.update_id === 'string' && UPDATE_ID.test(r.update_id) ? { updateId: r.update_id } : {}),
   }
 }

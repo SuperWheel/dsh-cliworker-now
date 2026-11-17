@@ -1,6 +1,6 @@
 import { withUpdateCleanup, finishUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
 import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, hermesDirectoryProcesses, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
-import { readHermesIncomplete, type HermesIncomplete } from './hermes-incomplete.ts'
+import { readHermesIncomplete, hermesCompletedReceipt, type HermesIncomplete } from './hermes-incomplete.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from '../pi-installation.mjs'
@@ -622,6 +622,17 @@ export class CliManagementService {
             },
           })
           const owedBefore = plan.resume ? await readHermesIncomplete(home, checkout).catch(() => undefined) : undefined
+          // A resume clears owed steps only on positive evidence: a new terminal success receipt for HEAD that owes
+          // nothing. A missing, unreadable, still-running or unchanged receipt keeps the row incomplete.
+          const confirmResume = async (before: HermesIncomplete | undefined, after?: HermesIncomplete) => {
+            after ??= await readHermesIncomplete(home, checkout).catch(() => undefined)
+            const fresh = (id: string | undefined) => !!id && id !== before?.updateId
+            if (after && fresh(after.updateId)) return after
+            if (!after && fresh(await hermesCompletedReceipt(home, checkout).catch(() => undefined))) return undefined
+            output('Hermes 没有写出新的完成回执，无法确认后续步骤已完成。\n')
+            return { steps: (after ?? before)?.steps.length ? (after ?? before)!.steps : ['completion'], renameBusy: false,
+              detail: 'Hermes 没有写出新的完成回执，无法确认后续步骤已完成', ...(before?.updateId ? { updateId: before.updateId } : {}) } satisfies HermesIncomplete
+          }
           let receipt = await hermesRun(!!plan.resume)
           let owed = await readHermesIncomplete(home, checkout).catch(() => undefined)
           if (owed?.renameBusy) {
@@ -635,11 +646,10 @@ export class CliManagementService {
               const timer = setTimeout(done, this.deps.hermesRetryDelayMs ?? 12_000)
               signal.addEventListener('abort', stop, { once: true })
             })
-            const previous = owed.updateId
+            const previous = owed
             receipt = await hermesRun(true)
-            owed = await readHermesIncomplete(home, checkout).catch(() => undefined)
-            if (owed && previous && owed.updateId === previous) output('Hermes 没有写出新的回执，无法确认后续步骤已完成。\n')
-          } else if (owed && owedBefore?.updateId && owed.updateId === owedBefore.updateId) output('Hermes 没有写出新的回执，无法确认后续步骤已完成。\n')
+            owed = await confirmResume(previous)
+          } else if (plan.resume) owed = await confirmResume(owedBefore, owed)
           verified = await verify(signal, undefined, !!plan.resume)
           if (owed) {
             // Only a still-refused rename asks who runs from the Hermes directories; nothing is guessed otherwise.
@@ -914,9 +924,13 @@ export class CliManagementService {
       this.cache.invalidateVersion(op.cli); this.cache.rememberVersion(op.cli, readback.after.fingerprint, readback.cliVersion)
       const row = this.entry(op.cli), next = row.latestCompatibleVersion
       const updatable = !!next && updateAvailable(readback.version, next)
+      // A cancelled Hermes run (or its retry wait) can leave the receipt owing steps: keep 「重试」, never report it done.
+      const owed = updatable ? undefined : await this.hermesIncomplete(op.cli, readback.after)
       this.publish(op.cli, { installed: true, currentVersion: readback.cliVersion, appVersion: readback.after.fingerprint.appVersion,
-        group: updatable ? 'updatable' : 'latest', reason: undefined, reasonDetail: undefined, stage: undefined,
-        planToken: updatable ? operationToken(op.cli, readback.after, next, this.effectiveRegistry(), readback.version, plan.desktopRelease) : undefined }, true)
+        group: updatable || owed ? 'updatable' : 'latest', reason: undefined, reasonDetail: undefined, stage: undefined,
+        incomplete: owed ? { steps: owed.steps, ...(owed.detail ? { detail: owed.detail } : {}) } : undefined,
+        planToken: updatable ? operationToken(op.cli, readback.after, next, this.effectiveRegistry(), readback.version, plan.desktopRelease)
+          : owed ? operationToken(op.cli, readback.after, readback.version, this.effectiveRegistry(), readback.version, plan.desktopRelease) : undefined }, true)
     } catch (error) {
       if (error instanceof ProcessCleanupUnconfirmedError) throw error
       if (control.aborted || error instanceof ReadOnlyTimeoutError) return

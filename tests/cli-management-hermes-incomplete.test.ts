@@ -1,6 +1,6 @@
 /** 模拟：合成回执、update.log、检出目录与进程后端；不运行 Hermes、Git，不读取用户安装或账号。 */
 import { afterEach, expect, it, vi } from 'vitest'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { mkdtemp, realpath, mkdir, writeFile, rm, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -186,7 +186,8 @@ it('模拟：自动重试后回执不再有未完成步骤，结果为成功并�
   expect(f.row()).toMatchObject({ group: 'latest' }); expect(f.row().incomplete).toBeUndefined()
 
   const g = await service('1.0.0')
-  vi.mocked(hermesUpdate.runHermesUpdate).mockImplementation(async () => { g.identities.set('hermes', { ...g.identity, manifestVersion: '1.2.3' }); g.write(owedReceipt()); return { receiptSucceeded: true } })
+  let n = 0
+  vi.mocked(hermesUpdate.runHermesUpdate).mockImplementation(async () => { g.identities.set('hermes', { ...g.identity, manifestVersion: '1.2.3' }); g.write(owedReceipt(String(++n).repeat(32))); return { receiptSucceeded: true } })
   await checked(g.service); g.service.start('hermes', 'update', g.row().planToken!, '', '模拟none')
   const none = (await finished(g.service)).results[0]!
   expect(none).toMatchObject({ phase: 'incomplete', incomplete: { processes: [] } }); expect(none.outputTail).toContain('未发现占用进程。')
@@ -249,5 +250,36 @@ it('模拟：重试后回执没有换新时如实说明无法确认，保持未�
   vi.spyOn(hermesUpdate, 'runHermesUpdate').mockResolvedValue({ receiptSucceeded: false })
   await checked(f.service); f.service.start('hermes', 'update', f.row().planToken!, '', '模拟stale')
   const result = (await finished(f.service)).results[0]!
-  expect(result).toMatchObject({ phase: 'incomplete' }); expect(result.outputTail).toContain('Hermes 没有写出新的回执，无法确认后续步骤已完成。')
+  expect(result).toMatchObject({ phase: 'incomplete' }); expect(result.outputTail).toContain('Hermes 没有写出新的完成回执，无法确认后续步骤已完成。')
+})
+
+it('模拟：重试后回执缺失、读不出或仍在运行，都不算完成，保持未完成并保留「重试」', async () => {
+  for (const after of ['missing', 'garbage', 'running'] as const) {
+    const f = await service('1.2.3'); f.write(owedReceipt())
+    vi.spyOn(hermesUpdate, 'runHermesUpdate').mockImplementation(async () => {
+      const path = join(f.home, 'logs/update_receipts/latest.json')
+      if (after === 'missing') rmSync(path)
+      else writeFileSync(path, after === 'garbage' ? '{"outcome":' : JSON.stringify({ ...owedReceipt('c'.repeat(32)), outcome: 'running', followups: [], stages: [] }))
+      return { receiptSucceeded: false }
+    })
+    await checked(f.service); f.service.start('hermes', 'update', f.row().planToken!, '', `模拟${after}`)
+    const result = (await finished(f.service)).results[0]!
+    expect(result, after).toMatchObject({ phase: 'incomplete', incomplete: { steps: ['build'], detail: 'Hermes 没有写出新的完成回执，无法确认后续步骤已完成' } })
+    expect(f.cleanup, after).not.toHaveBeenCalled()
+    expect(f.row(), after).toMatchObject({ group: 'updatable', incomplete: { steps: ['build'] } }); expect(f.row().planToken).toMatch(/^[a-f0-9]{64}$/)
+  }
+})
+
+it('模拟：在自动重试的等待中取消，行仍为未完成并保留「重试」，不显示成已是最新', async () => {
+  const f = await service('1.0.0')
+  ;(f.service as any).deps.hermesRetryDelayMs = 60_000
+  vi.spyOn(hermesUpdate, 'runHermesUpdate').mockImplementation(async () => {
+    f.identities.set('hermes', { ...f.identity, manifestVersion: '1.2.3' }); f.write(owedReceipt()); return { receiptSucceeded: true }
+  })
+  await checked(f.service); f.service.start('hermes', 'update', f.row().planToken!, '', '模拟cancel-wait')
+  await vi.waitFor(() => expect(f.service.snapshot().operation?.progress?.stage).toBe('等待后从中断处重试'))
+  f.service.cancel(f.service.snapshot().operation!.id)
+  const result = (await finished(f.service)).results[0]!
+  expect(result.phase).toBe('cancelled'); expect(result.cancellationCheck).toMatchObject({ outcome: 'advanced', version: '1.2.3' })
+  expect(f.row()).toMatchObject({ group: 'updatable', currentVersion: '1.2.3', incomplete: { steps: ['build'] } }); expect(f.row().planToken).toMatch(/^[a-f0-9]{64}$/)
 })

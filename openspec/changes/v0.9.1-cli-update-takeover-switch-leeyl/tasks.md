@@ -128,7 +128,11 @@
   - 已知限制：
     - 发布源查不到时该行显示检查失败，不显示未完成状态。
     - 有更新的版本可装时按普通更新处理，更新会一并补做欠下的步骤。
-    - 判断重试是否完成依赖 Hermes 每次 `hermes update` 都写新回执；回执没有换新时保持未完成并写明无法确认。代码已是最新时的这条路径是否一定写回执，未在真实 Hermes 上核实。
+    - 判断重试是否完成依赖 Hermes 每次 `hermes update` 都写新回执。源码已核对（Mac 本机 Hermes ae2a81cc `hermes_cli/update_cmd.py`）：`_cmd_update_impl` 在 1813 行先 `_begin_update_receipt_and_plan` 建回执，1924 行才走 `_finish_already_up_to_date` → `_complete_source_update`，即代码已是最新时也写新回执、只补做后续步骤。真实运行未核实。
+  - Codex 审查（gpt-6.1-sol high，提交 0956d94）两处 P2，已修：
+    - 重试后回执缺失、读不出、仍在运行时，与「已完成」无法区分，会误报成功。改为要求正向证据：`hermesCompletedReceipt` 返回一份对应 HEAD、终态 success、无欠账且 `update_id` 与重试前不同的回执，才算完成；否则保持未完成，原因写「Hermes 没有写出新的完成回执，无法确认后续步骤已完成」。
+    - 自动重试 12 秒等待中取消，`verifyCancellation` 只核版本，把行发成「已是最新」，`incomplete` 与重试令牌丢失。改为取消后核对时重读回执，仍未完成则保持「可更新」、警示色和「重试」。
+    - 新增 2 项测试：重试后回执缺失、读不出或仍在运行（3 种）都保持未完成并保留重试令牌、不清理；等待中取消后行仍为未完成。原「同一回执重写两次」的夹具改为每次写新 `update_id`。相关 5 个文件 233 项通过；`corepack pnpm typecheck` 与 `spec validate --all --strict`（40 项）通过；全量 vitest 361 个文件通过、4 个跳过，8815 项通过、15 项跳过、0 失败。
   - 未做：真实 Hermes 上的重试与自动重试（Windows 正在回退到 0.23.1，本次没有碰任何 Hermes 安装，没有运行 `hermes update`）；Windows 与 Mac Desktop 实机界面复看；`pnpm build:preview` 隔离构建。
 
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
