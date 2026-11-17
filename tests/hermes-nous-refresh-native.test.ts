@@ -17,7 +17,7 @@ import { join, resolve } from 'node:path'
 // network, browser or model. The stub models the reviewed native callback order
 // and reentrant lock contract, and makes forbidden broader entry points fail.
 const harness = String.raw`
-import contextlib, json, os, pathlib, runpy, stat, sys, types
+import base64, contextlib, json, os, pathlib, runpy, stat, sys, types
 home=pathlib.Path(sys.argv[2]); options=json.loads((home/'options.json').read_text())
 events=[]; depths={'auth':0,'shared':0}
 def event(value): events.append(value)
@@ -41,13 +41,23 @@ def save(store):
 def persist(store,provider,state,source):
  assert depths['auth'] and depths['shared'] and source==home/'auth.json'
  event('save:'+state['refresh_token']); store['providers'][provider]=state; save(store)
-def shared_path(): return home/('foreign' if options.get('outside_shared') else 'shared')/'nous-auth.json'
+def shared_path(): return home/('foreign' if options.get('outside_shared') else 'shared')/'nous_auth.json'
 def mirror(state):
  with lock('shared'):
   event('mirror:'+state['refresh_token'])
   if options.get('mirror_failure'): return
   shared_path().parent.mkdir(exist_ok=True)
-  shared_path().write_text(json.dumps({'_schema':1,**state}))
+  shared={'_schema':1,**state}
+  if options.get('mirror_contract')=='current' and shared_path().exists():
+   held=json.loads(shared_path().read_text())
+   def subject(row):
+    payload=row['access_token'].split('.')[1]
+    return json.loads(base64.urlsafe_b64decode(payload+'='*(-len(payload)%4)))['sub']
+   # Simulate native renewal=True: keep another login at the top, or keep
+   # another account's nested renewal when updating this top-level login.
+   if subject(held)!=subject(state): shared={**held,'renewal':dict(state)}
+   elif 'renewal' in held: shared['renewal']=held['renewal']
+  shared_path().write_text(json.dumps(shared))
 def select(state):
  state['agent_key']=state['access_token']; state['agent_key_expires_at']=state['expires_at']; state['agent_key_id']=None
 def refresh(src,*,timeout_seconds,force_refresh,on_state_update):
@@ -126,8 +136,8 @@ const helper = resolve('src/host/hermes-nous-refresh.py')
 // Windows's python3 App Execution Alias may exist without an interpreter.
 // Use the platform's real Python command, and fail explicitly if it cannot run.
 const python = process.env.CWN_TEST_PYTHON ?? (process.platform === 'win32' ? 'python.exe' : 'python3')
-const token = (exp: number, subject = 'synthetic-subject', client?: string) =>
-  `e30.${Buffer.from(JSON.stringify({ sub: subject, org_id: 'synthetic-org', iss: 'synthetic-issuer', exp, scope: 'inference:invoke', ...(client ? { client_id: client } : {}) })).toString('base64url')}.synthetic`
+const token = (exp: number, subject = 'synthetic-subject', client?: string, iat?: number) =>
+  `e30.${Buffer.from(JSON.stringify({ sub: subject, org_id: 'synthetic-org', iss: 'synthetic-issuer', exp, scope: 'inference:invoke', ...(client ? { client_id: client } : {}), ...(iat === undefined ? {} : { iat }) })).toString('base64url')}.synthetic`
 const digest = (subject = 'synthetic-subject', client = '') =>
   createHash('sha256')
     .update(
@@ -142,8 +152,8 @@ const digest = (subject = 'synthetic-subject', client = '') =>
       ]),
     )
     .digest('hex')
-function state(exp = now - 10, subject = 'synthetic-subject', refresh = 'synthetic-old-refresh') {
-  const access = token(exp, subject)
+function state(exp = now - 10, subject = 'synthetic-subject', refresh = 'synthetic-old-refresh', stamps: { iat?: number; obtained_at?: string | number } = {}) {
+  const access = token(exp, subject, undefined, stamps.iat)
   return {
     access_token: access,
     agent_key: access,
@@ -154,6 +164,7 @@ function state(exp = now - 10, subject = 'synthetic-subject', refresh = 'synthet
     client_id: 'hermes-cli',
     portal_base_url: portal,
     inference_base_url: inference,
+    ...(stamps.obtained_at === undefined ? {} : { obtained_at: stamps.obtained_at }),
   }
 }
 function fixture() {
@@ -214,14 +225,124 @@ function fixture() {
   }
   function share(value: unknown) {
     mkdirSync(join(home, 'shared'), { recursive: true })
-    write('shared/nous-auth.json', { _schema: 1, ...(value as object) })
+    write('shared/nous_auth.json', { _schema: 1, ...(value as object) })
   }
   const read = (name = 'auth.json') => JSON.parse(readFileSync(join(home, name), 'utf8'))
-  return { home, store, fresh, write, run, share, read }
+  function select(value: ReturnType<typeof state>) {
+    Object.assign(store.providers.nous, value)
+    store.credential_pool.nous.forEach((row) => Object.assign(row, value))
+    write('auth.json', store)
+  }
+  return { home, store, fresh, write, run, share, read, select }
 }
 afterEach(() => roots.splice(0).forEach((path) => rmSync(path, { recursive: true, force: true })))
 
 describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () => {
+  it.each(['foreign-subject', 'synthetic-subject'])('模拟：优先采用当前主体的嵌套 renewal，顶层主体为 %s', (subject) => {
+    const f = fixture()
+    const top = { _schema: 1, ...state(now - 100, subject, 'synthetic-top-refresh'), keep: { identity: true } }
+    f.share({ ...top, renewal: f.fresh })
+    const result = f.run({ mirror_contract: 'current' })
+    expect(result.receipt.state).toBe('ready')
+    expect(result.events).not.toContain('refresh')
+    expect(f.read().providers.nous).toMatchObject({ ...f.fresh, custom: { keep: 1 } })
+    expect(f.read().credential_pool.nous.every((row: any) => row.refresh_token === f.fresh.refresh_token)).toBe(true)
+    const saved = f.read('shared/nous_auth.json')
+    expect(saved.renewal).toMatchObject(f.fresh)
+    if (subject === 'foreign-subject') {
+      const { renewal: _renewal, ...held } = saved
+      expect(held).toEqual(top)
+    }
+  })
+  it.each([false, true])('模拟：嵌套 renewal 续期即时落盘并保留顶层其他身份，后续验证失败=%s', (afterCallback) => {
+    const f = fixture()
+    const top = { _schema: 1, ...state(now + 7200, 'foreign-subject'), keep: { identity: true } }
+    f.share({ ...top, renewal: f.store.providers.nous })
+    const result = f.run({ mirror_contract: 'current', after_callback: afterCallback })
+    expect(result.receipt.state).toBe(afterCallback ? 'unavailable' : 'ready')
+    expect(result.events.filter((event) => event === 'refresh')).toHaveLength(1)
+    expect(result.events.indexOf('save:' + f.fresh.refresh_token)).toBeLessThan(result.events.indexOf('mirror:' + f.fresh.refresh_token))
+    expect(result.events).toContain('shared:enter:1')
+    const { renewal, ...held } = f.read('shared/nous_auth.json')
+    expect(held).toEqual(top)
+    expect(renewal.refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read().providers.nous.refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read().credential_pool.nous.every((row: any) => row.refresh_token === f.fresh.refresh_token)).toBe(true)
+  })
+  it('模拟：修复当前主体的旧嵌套 renewal 后再续期，保留顶层身份', () => {
+    const f = fixture()
+    const top = { _schema: 1, ...state(now + 7200, 'foreign-subject') }
+    f.share({ ...top, renewal: state(now - 100, 'synthetic-subject', 'synthetic-stale-refresh') })
+    const result = f.run({ mirror_contract: 'current' })
+    expect(result.receipt.state).toBe('ready')
+    expect(result.events.indexOf('save:synthetic-old-refresh')).toBeLessThan(result.events.indexOf('refresh'))
+    const { renewal, ...held } = f.read('shared/nous_auth.json')
+    expect(held).toEqual(top)
+    expect(renewal.refresh_token).toBe(f.fresh.refresh_token)
+  })
+  it.each([false, true])('模拟：其他身份的嵌套 renewal 不遮蔽当前顶层账号，访客=%s', (guest) => {
+    const f = fixture()
+    const other = guest
+      ? { ...state(now + 7200), auth_method: 'anonymous', anon_token: 'synthetic-guest' }
+      : state(now + 7200, 'foreign-subject')
+    f.share({ ...f.store.providers.nous, renewal: other })
+    expect(f.run({ mirror_contract: 'current' }).receipt.state).toBe('ready')
+    expect(f.read('shared/nous_auth.json').renewal).toEqual(other)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(f.fresh.refresh_token)
+  })
+  it.each(['subject', 'client', 'route'])('模拟：嵌套 renewal 的 %s 不匹配时禁止采用或改写', (kind) => {
+    const f = fixture()
+    const renewed = { ...f.fresh }
+    if (kind === 'subject') renewed.access_token = token(now + 3600, 'other-subject')
+    if (kind === 'client') renewed.client_id = 'other-client'
+    if (kind === 'route') renewed.portal_base_url = 'https://other.example.test'
+    f.share({ ...state(now + 7200, 'foreign-subject'), renewal: renewed })
+    const shared = f.read('shared/nous_auth.json')
+    const result = f.run({ mirror_contract: 'current' })
+    expect(result.receipt.state).toBe('changed')
+    expect(result.events).not.toContain('refresh')
+    expect(f.read()).toEqual(f.store)
+    expect(f.read('shared/nous_auth.json')).toEqual(shared)
+  })
+  it.each([
+    { label: 'iat 较新但提前到期', localExp: now + 7200, peerExp: now + 600, local: { iat: now - 60 }, peer: { iat: now - 30 } },
+    { label: '相同 exp 按 iat', localExp: now + 600, peerExp: now + 600, local: { iat: now - 60 }, peer: { iat: now - 30 } },
+    { label: 'iat 优先于相反的 obtained_at', localExp: now + 7200, peerExp: now + 600, local: { iat: now - 60, obtained_at: now }, peer: { iat: now - 30, obtained_at: now - 100 } },
+    { label: '相同 iat 按 obtained_at 小数秒', localExp: now + 7200, peerExp: now + 600, local: { iat: now - 30, obtained_at: now - 20.8 }, peer: { iat: now - 30, obtained_at: now - 20.2 } },
+    { label: '无 iat 按 ISO obtained_at', localExp: now + 7200, peerExp: now + 600, local: { obtained_at: new Date((now - 60) * 1000).toISOString() }, peer: { obtained_at: new Date((now - 30) * 1000).toISOString() } },
+    { label: '无 iat 按毫秒 obtained_at', localExp: now + 7200, peerExp: now + 600, local: { obtained_at: (now - 60) * 1000 }, peer: { obtained_at: String((now - 30) * 1000) } },
+    { label: '均无签发时间时回退 exp', localExp: now + 300, peerExp: now + 600, local: {}, peer: {} },
+  ])('模拟：轮换排序 $label，采用共享令牌且不重复兑换', ({ localExp, peerExp, local, peer }) => {
+    const f = fixture()
+    f.select(state(localExp, 'synthetic-subject', 'synthetic-local-refresh', local))
+    const newer = state(peerExp, 'synthetic-subject', 'synthetic-peer-refresh', peer)
+    f.share(newer)
+    const result = f.run({ mirror_contract: 'current' })
+    expect(result.receipt.state).toBe('ready')
+    expect(result.events).not.toContain('refresh')
+    expect(f.read().providers.nous).toMatchObject(newer)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(newer.refresh_token)
+  })
+  it('模拟：iat 较旧但较晚到期的共享副本由本地较新轮换修复', () => {
+    const f = fixture()
+    const newer = state(now + 600, 'synthetic-subject', 'synthetic-local-refresh', { iat: now - 30 })
+    f.select(newer)
+    f.share(state(now + 7200, 'synthetic-subject', 'synthetic-peer-refresh', { iat: now - 60 }))
+    const result = f.run({ mirror_contract: 'current' })
+    expect(result.receipt.state).toBe('ready')
+    expect(result.events).not.toContain('refresh')
+    expect(f.read().providers.nous).toMatchObject(newer)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(newer.refresh_token)
+  })
+  it.each([{ iat: now - 30 }, { obtained_at: now - 30 }])('模拟：相同签发时间 %j 不以不同 exp 判定轮换', (stamps) => {
+    const f = fixture()
+    f.select(state(now + 600, 'synthetic-subject', 'synthetic-local-refresh', stamps))
+    f.share(state(now + 7200, 'synthetic-subject', 'synthetic-peer-refresh', stamps))
+    const shared = f.read('shared/nous_auth.json')
+    expect(f.run({ mirror_contract: 'current' }).receipt.state).toBe('changed')
+    expect(f.read()).toEqual(f.store)
+    expect(f.read('shared/nous_auth.json')).toEqual(shared)
+  })
   it.each([false, true])('模拟 Hermes 0.23.1 必需 renewal 参数，含旧共享镜像恢复=%s', (staleMirror) => {
     const f = fixture()
     if (staleMirror) f.share(state(now - 100, 'synthetic-subject', 'synthetic-older-refresh'))
@@ -231,18 +352,18 @@ describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () 
     expect(result.events.filter((x) => x === 'refresh')).toHaveLength(1)
     expect(result.events).toContain('mirror-renewal')
     expect(f.read().providers.nous.refresh_token).toBe(f.fresh.refresh_token)
-    expect(f.read('shared/nous-auth.json').refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(f.fresh.refresh_token)
     expect(f.read().credential_pool.nous[0]).toMatchObject({ label: 'synthetic-label', priority: 7 })
   })
   it.each(['future', 'opaque'])('模拟未知共享写入签名 %s 在任何兑换或写入前拒绝', (contract) => {
     const f = fixture()
     f.share(state(now - 100, 'synthetic-subject', 'synthetic-older-refresh'))
-    const shared = f.read('shared/nous-auth.json')
+    const shared = f.read('shared/nous_auth.json')
     const result = f.run({ mirror_contract: contract })
     expect(result.receipt).toEqual({ version: 1, state: 'unsupported' })
     expect(result.events).toEqual([])
     expect(f.read()).toEqual(f.store)
-    expect(f.read('shared/nous-auth.json')).toEqual(shared)
+    expect(f.read('shared/nous_auth.json')).toEqual(shared)
   })
   it('模拟共享写入内部 TypeError 不降级重试，保留已经落盘的轮换', () => {
     const f = fixture()
@@ -304,7 +425,7 @@ describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () 
         model_cooldowns: { 'synthetic-model': now - 99 },
       })
     })
-    expect(f.read('shared/nous-auth.json').refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(f.fresh.refresh_token)
   })
   it('retains rotated token in both stores and aliases when later native validation fails', () => {
     const f = fixture()
@@ -315,7 +436,7 @@ describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () 
     expect(
       f.read().credential_pool.nous.every((row: any) => row.refresh_token === f.fresh.refresh_token),
     ).toBe(true)
-    expect(f.read('shared/nous-auth.json').refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(f.fresh.refresh_token)
   })
   it('does not refresh or rewrite a healthy selected token', () => {
     const f = fixture()
@@ -341,7 +462,7 @@ describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () 
     const result = f.run()
     expect(result.receipt.state).toBe('ready')
     expect(result.events.filter((x) => x === 'refresh')).toHaveLength(1)
-    expect(f.read('shared/nous-auth.json').refresh_token).toBe(f.fresh.refresh_token)
+    expect(f.read('shared/nous_auth.json').refresh_token).toBe(f.fresh.refresh_token)
   })
   it.each(['subject', 'client', 'route', 'equal-expiry'])(
     'rejects unproven shared %s before rotation or writes',
@@ -462,7 +583,7 @@ describe('Hermes Nous private renewal (explicit synthetic native fixtures)', () 
     expect(f.run().receipt.state).toBe('changed')
     f.write('config.yaml', { auth: { adopt_external_logins: false }, model: { provider: 'nous' } })
     mkdirSync(join(f.home, 'shared'))
-    symlinkSync(join(f.home, 'auth.json'), join(f.home, 'shared', 'nous-auth.json'))
+    symlinkSync(join(f.home, 'auth.json'), join(f.home, 'shared', 'nous_auth.json'))
     expect(f.run().receipt.state).toBe('changed')
   })
   it('enters the fixed helper only after the native lease and own dotenv boundary', () => {

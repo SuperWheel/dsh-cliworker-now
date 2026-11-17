@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { readKimiOwnToken } from './kimi-accounts.ts'
+import { readKimiOwnToken, resolveKimiTokenStorageName } from './kimi-accounts.ts'
 import { hostFetch } from './host-fetch.mjs'
 import type { FirstPartyModelSource } from './first-party-models.ts'
 import type { AccountModelScope, probeAccountModels } from './account-models.mjs'
@@ -12,11 +12,13 @@ const id = (value: unknown): value is string =>
 const BASES = new Set(['https://api.kimi.com/coding/v1', 'https://api.kimi.ai/coding/v1'])
 const PROVIDER = 'managed:kimi-code'
 const nearExpiry = (expires: unknown, now: number): boolean =>
-  typeof expires !== 'number' || !Number.isFinite(expires) || expires <= now + 30_000
+  typeof expires !== 'number' || !Number.isFinite(expires) || (expires !== 0 && expires <= now + 30_000)
 
 export class KimiOAuthModelError extends Error {
-  readonly code = 'KIMI_OAUTH_UNAVAILABLE'
-  constructor(message: string) {
+  constructor(
+    message: string,
+    readonly code = 'KIMI_OAUTH_UNAVAILABLE',
+  ) {
     super(message)
     this.name = 'KimiOAuthModelError'
   }
@@ -24,6 +26,15 @@ export class KimiOAuthModelError extends Error {
 const unavailable = () => new KimiOAuthModelError('Kimi OAuth 配置来源暂无法核验，请检查该 CLI 配置')
 const expired = () =>
   new KimiOAuthModelError('Kimi 登录凭据已过期或即将过期，请打开账号终端完成原生续期或重新登录')
+// Native provider list/model catalogue only read configuration. The verified
+// refresh entry is interactive /usage (or the running native server's
+// /oauth/usage), neither a safe standalone CLI metadata command. Never emulate
+// its OAuth HTTP exchange or start a native session just to refresh a token.
+const needsNativeRefresh = () =>
+  new KimiOAuthModelError(
+    'Kimi 登录需要续期（凭据已过期或即将过期），请在 Kimi 原生终端执行 /usage 后重试',
+    'KIMI_OAUTH_REFRESH_REQUIRED',
+  )
 
 /** JWT fields label the stable account only. The server must independently accept this token. */
 function ownPrincipal(access: string): string | undefined {
@@ -67,7 +78,6 @@ export async function readKimiOAuthModelSources(
     !BASES.has(baseUrl) ||
     !record(provider.oauth) ||
     provider.oauth.storage !== 'file' ||
-    !['oauth/kimi-code', 'kimi-code'].includes(provider.oauth.key) ||
     (provider.oauth.oauthHost !== undefined && provider.oauth.oauthHost !== 'https://auth.kimi.com') ||
     provider.apiKey ||
     provider.apiKeyEnv ||
@@ -82,15 +92,30 @@ export async function readKimiOAuthModelSources(
   if (!isAbsolute(home)) throw unavailable()
   let token: Record<string, any> | undefined
   try {
-    token = await readKimiOwnToken(join(home, 'credentials'), 'kimi-code', signal)
+    token = await readKimiOwnToken(
+      join(home, 'credentials'),
+      resolveKimiTokenStorageName(provider.oauth.key),
+      signal,
+    )
   } catch {
     signal.throwIfAborted()
     throw unavailable()
   }
   if (!token || typeof token.access_token !== 'string' || !token.access_token.trim())
     throw new KimiOAuthModelError('Kimi OAuth 尚未登录或已退出，请打开账号终端登录')
-  const expires = typeof token.expires_at === 'number' ? token.expires_at * 1000 : undefined
-  if (nearExpiry(expires, options.now ?? Date.now())) throw expired()
+  if (
+    (token.expires_at !== undefined &&
+      (typeof token.expires_at !== 'number' || !Number.isFinite(token.expires_at) || token.expires_at < 0)) ||
+    (token.refresh_token !== undefined && typeof token.refresh_token !== 'string')
+  )
+    throw unavailable()
+  // Native tokenFromWire treats a missing/zero expiry as non-expiring. Project
+  // that Kimi-only meaning as a finite far-future timestamp: the shared binding
+  // reader must keep rejecting missing/zero expiries from other CLIs. Expiry is
+  // not part of its principal/hash, so ordinary expiring bindings stay unchanged.
+  const expires = token.expires_at ? token.expires_at * 1000 : Number.MAX_SAFE_INTEGER
+  if (nearExpiry(expires, options.now ?? Date.now()))
+    throw token.refresh_token?.trim() ? needsNativeRefresh() : expired()
   const accountId = ownPrincipal(token.access_token)
   if (!accountId || (token.token_type !== undefined && String(token.token_type).toLowerCase() !== 'bearer'))
     throw unavailable()
@@ -126,6 +151,9 @@ export async function readKimiOAuthModelSources(
           credential: { type: 'oauth', access: token.access_token, expires, accountId },
           baseUrl,
           apiType: 'kimi-managed-oauth',
+          // Logical managed-login anchor, deliberately independent of the physical
+          // slot. Preserve existing default-slot bindings during slot migrations.
+          // Physical token reads/fingerprints must use the resolved OAuth key.
           sourceIds: [sourceId, join(home, 'credentials/kimi-code.json'), 'native:kimi-managed-oauth'],
           nativeModels,
         },
@@ -193,7 +221,7 @@ export async function probeKimiOAuthModels(
     ownPrincipal(source.credential.access) !== source.credential.accountId
   )
     throw unavailable()
-  if (nearExpiry(source.credential.expires, Date.now())) throw expired()
+  if (nearExpiry(source.credential.expires, Date.now())) throw needsNativeRefresh()
   const cancel = new AbortController()
   const control = AbortSignal.any([signal, cancel.signal, AbortSignal.timeout(options.timeoutMs ?? 8_000)])
   const request = async (name: 'models' | 'usages') => {

@@ -6,6 +6,30 @@ import { inspectPiInstallation } from './pi-installation.mjs'
 import { nativeLaunchArgv } from './native-launch.mjs'
 
 const levels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+
+/** Pi 1.5.2 resolve-config-value.ts template semantics, without command helpers.
+ * Keep credential env local to this read; never merge it into process/worker env.
+ */
+export function readPiApiCredential(value, ambient = process.env) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.type !== 'api_key') return undefined
+  const env = value.env
+  if (env !== undefined && (!env || typeof env !== 'object' || Array.isArray(env) ||
+    Object.values(env).some(entry => typeof entry !== 'string'))) return undefined
+  if (value.key === undefined) return { configured: true, envOnly: true, env }
+  if (typeof value.key !== 'string' || value.key.trimStart().startsWith('!')) return undefined
+  let missing = false
+  const fallbackEnv = {}
+  const key = value.key.replace(/\$(\$|!|\{[^}]*\}|[A-Za-z_][A-Za-z0-9_]*|)/g, (literal, reference) => {
+    if (reference === '$' || reference === '!') return reference
+    const name = reference.startsWith('{') ? reference.slice(1, -1) : reference
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return literal
+    const resolved = env?.[name] || ambient[name] || undefined
+    if (resolved === undefined) missing = true
+    else if (!env?.[name]) fallbackEnv[name] = resolved
+    return resolved ?? ''
+  })
+  return { configured: !missing && !!key.trim(), missing, envOnly: false, key: missing ? undefined : key, env, fallbackEnv }
+}
 export function snapshotNativeCandidates(candidates, env = {}) {
   const secrets = Object.entries(env)
     .filter(([key, value]) => /_(?:API_KEY|TOKEN|SECRET)$/.test(key) && typeof value === 'string' && value)
@@ -333,7 +357,11 @@ export async function accountSupportedChoices(cli, directory, candidates, env = 
     [...groups.values()].map(async ({ provider, baseUrl, apiType, models }) => {
       const config = custom[provider]
       const defaults = builtinAPI[provider] ?? {}
-      const stored = credentials.get(provider) ?? []
+      const stored = (credentials.get(provider) ?? []).map(entry => {
+        if (cli !== 'pi' || entry?.type !== 'api_key') return entry
+        const credential = readPiApiCredential(entry, env)
+        return credential?.configured ? { ...entry, key: credential.key } : undefined
+      }).filter(entry => entry && typeof entry === 'object' && !Array.isArray(entry))
       const groupIds = new Set(
         models.map((model) => (model.provider ? model.id : model.id.slice(model.id.indexOf('/') + 1))),
       )

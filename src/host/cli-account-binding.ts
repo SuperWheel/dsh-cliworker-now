@@ -17,7 +17,7 @@ import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
-import { readCodexAccount } from './codex-account.ts'
+import { readCodexAccountBinding } from './codex-account.ts'
 import { accountEmail } from './account-identity.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
@@ -35,6 +35,7 @@ import { readZCodeBindingMaterial, zcodeAuthDirectory } from './zcode-adapter.ts
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { ensureHermesNousFresh, HermesRenewalError } from './hermes-renewal.ts'
 import { readQoderAccountBindingMaterial, QoderAccountError } from './qoder-accounts.ts'
+import { traeCliHome } from './traecn-accounts.ts'
 
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const text = (v: unknown): v is string => typeof v === 'string' && !!v.trim()
@@ -198,18 +199,65 @@ function codexConfigPaths(root: string, project: string) {
   }
   return [...new Set([join(root, 'config.toml'), ...ancestors])]
 }
+/** Minimal TOML root-key reader: quoted strings/comments and nested values are
+ * consumed as units, so their contents cannot impersonate root keys or tables. */
+function codexStoreSetting(raw: string): string | undefined {
+  let statement = '', depth = 0, store: string | undefined
+  const stringValue = (value: string): string => value.startsWith("'") ? value.slice(1, -1) : JSON.parse(
+    // JSON and TOML basic strings share escapes except TOML's eight-digit form.
+    value.replace(/\\(?:U([0-9a-fA-F]{8})|.)/g, (escape, unicode: string | undefined) =>
+      unicode ? JSON.stringify(String.fromCodePoint(parseInt(unicode, 16))).slice(1, -1) : escape),
+  )
+  const consume = () => {
+    const match = /^\s*([A-Za-z0-9_-]+|"(?:\\.|[^"\\])*"|'[^']*')\s*=\s*([\s\S]*)$/.exec(statement)
+    statement = ''
+    if (!match) return
+    const key = /^["']/.test(match[1]!) ? stringValue(match[1]!) : match[1]
+    if (key !== 'cli_auth_credentials_store') return
+    const value = match[2]!.trim()
+    if (store !== undefined || !/^(?:"(?:\\.|[^"\\])*"|'[^']*')$/.test(value))
+      throw new CliAccountBindingError('codex')
+    store = stringValue(value)
+    if (!['file', 'keyring', 'auto'].includes(store!)) throw new CliAccountBindingError('codex')
+  }
+  for (let i = 0; i < raw.length; i++) {
+    const char = raw[i]!
+    if (char === '#') {
+      while (i < raw.length && raw[i] !== '\n') i++
+      i--
+    } else if (char === '"' || char === "'") {
+      const delimiter = raw.startsWith(char.repeat(3), i) ? char.repeat(3) : char
+      const start = i
+      i += delimiter.length
+      while (i < raw.length && !raw.startsWith(delimiter, i)) {
+        if (char === '"' && raw[i] === '\\') i++
+        i++
+      }
+      if (i >= raw.length) throw new CliAccountBindingError('codex')
+      i += delimiter.length - 1
+      // TOML permits one or two content quotes immediately before the closing triple.
+      if (delimiter.length === 3) for (let extra = 0; extra < 2 && raw[i + 1] === char; extra++) i++
+      statement += raw.slice(start, i + 1)
+    } else if (char === '[' && !statement.trim() && depth === 0) {
+      break // The root table cannot be resumed after a TOML table/array-table header.
+    } else if (char === '\n' && depth === 0) {
+      consume()
+    } else {
+      if (char === '[' || char === '{') depth++
+      if (char === ']' || char === '}') depth--
+      statement += char
+    }
+  }
+  consume()
+  return store
+}
 async function codexStore(project: string, signal: AbortSignal) {
   const root = codexConfigDirectory()
   let store = 'file'
   for (const path of codexConfigPaths(root, project)) {
     const raw = await read(path, signal)
     if (!raw) continue
-    for (const line of raw.split(/\r?\n/)) {
-      if (!/^\s*cli_auth_credentials_store\s*=/.test(line)) continue
-      const match = /^\s*cli_auth_credentials_store\s*=\s*["'](file|keyring|auto)["']\s*(?:#.*)?$/.exec(line)
-      if (!match) throw new CliAccountBindingError('codex')
-      store = match[1]!
-    }
+    store = codexStoreSetting(raw) ?? store
   }
   return { root, store }
 }
@@ -352,10 +400,10 @@ async function material(
   const home = homedir()
   if (cli === 'codebuddy') {
     const executable = await resolveCliExecutable(cli, backend, config, signal)
-    return readCodebuddyAccountBindingMaterial(backend, config, executable, signal)
+    return readCodebuddyAccountBindingMaterial(backend, config, executable, signal, { project })
   }
   if (cli === 'traecn') {
-    const path = join(process.env.TRAE_HOME ?? join(home, '.trae'), 'cli/auth.json')
+    const path = join(traeCliHome(process.env, home), 'auth.json')
     await safePiOmpAncestors(dirname(path))
     let handle: Awaited<ReturnType<typeof open>> | undefined, bytes: Buffer | undefined
     try {
@@ -386,7 +434,8 @@ async function material(
       if (Object.values(subject).some(value => value !== undefined && typeof value !== 'string')) throw new CliAccountBindingError(cli)
       const route = Object.fromEntries(['TRAECLI_PERSONAL_ACCESS_TOKEN', 'TRAECLI_HOST']
         .filter(name => process.env[name] !== undefined).map(name => [name, hash(process.env[name]!)]))
-      return { sourceIds: [path], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
+      // REQ-0136: where the CLI keeps its login is not who is logged in.
+      return { sourceIds: ['trae-cli-auth'], entries: [{ provider: 'trae', principal: { kind: 'trae', subjectHash: hash(stable(subject)) }, route }] }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new CliAccountBindingError(cli, 'TRAE CN 未登录')
       throw error
@@ -447,7 +496,13 @@ async function material(
     if (store !== 'file') {
       await requireDefaultCodexRoute(root, project, signal)
       const executable = await resolveCliExecutable(cli, backend, config, signal)
-      const identity = await readCodexAccount(backend, config, executable, project, signal)
+      const account = await readCodexAccountBinding(backend, config, executable, project, signal)
+      const identity = account?.identity
+      if (identity?.state === 'authenticated' && identity.authMethod === 'api' && account?.apiKeyHash)
+        return {
+          sourceIds: [root],
+          entries: [{ provider: 'openai', principal: { kind: 'api', key: account.apiKeyHash } }],
+        }
       if (
         identity?.state !== 'authenticated' ||
         identity.authMethod !== 'oauth' ||
@@ -455,11 +510,18 @@ async function material(
       )
         throw new CliAccountBindingError(cli)
       return {
-        sourceIds: [root, `native-store:${store}`],
+        sourceIds: [root],
         entries: [
           {
             provider: 'openai-codex',
-            principal: { kind: 'oauth', email: identity.accountLabel.toLowerCase() },
+            // v0.169.0 account/read has email/workspaceName, not account ID,
+            // subject or issuer. Preserve existing file hashes; native OAuth
+            // therefore still differs from file OAuth. Workspace names can
+            // change or collide, but are the only exposed workspace discriminator.
+            principal: {
+              kind: 'oauth', email: identity.accountLabel.toLowerCase(),
+              ...(account?.workspaceName ? { workspaceName: account.workspaceName } : {}),
+            },
           },
         ],
       }
@@ -544,6 +606,14 @@ async function material(
     if (source.configAuth.auth?.broker) throw new CliAccountBindingError(cli)
     const entries: BindingEntry[] = []
     for (const [provider, auth] of Object.entries(source.auth)) {
+      if (cli === 'pi') {
+        if (!object(auth)) continue
+        if (auth.type === 'api_key') {
+          const principal = source.piApiPrincipals[provider]
+          if (principal) entries.push({ provider, principal })
+          continue
+        }
+      }
       if (!object(auth)) throw new CliAccountBindingError(cli)
       const resolved = ['api', 'api_key'].includes(auth.type)
         ? { ...auth, key: ownKey(auth.key ?? auth.apiKey, source.env), apiKey: undefined }

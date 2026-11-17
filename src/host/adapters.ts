@@ -179,7 +179,7 @@ export async function catalogFor(
 ): Promise<Catalog> {
   const executable = await resolveCliExecutable(cli, backend, config, signal)
   signal.throwIfAborted()
-  if (cli === 'codebuddy') return { cli, models: await discoverCodebuddyModels(backend, config, executable, signal),
+  if (cli === 'codebuddy') return { cli, models: await discoverCodebuddyModels(backend, config, executable, signal, { project: cwd }),
     notice: 'CodeBuddy 原生账号模型目录；调用权限以实际请求为准' }
   if (cli === 'traecn') return { cli, models: await discoverTraecnModels(backend, config, executable, cwd, signal),
     notice: 'TRAE CN 原生账号模型目录；不提供强度选择' }

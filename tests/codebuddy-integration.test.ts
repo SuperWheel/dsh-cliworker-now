@@ -94,8 +94,8 @@ it('packages both CodeBuddy runtime resources and disables automatic updates onl
   expect(build).toContain("'native-codebuddy',")
   expect(build).toContain("'codebuddy-catalog',")
   const runtime = readFileSync('src/host/runtime.ts', 'utf8')
-  expect(runtime).toContain("...(cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {})")
-  expect(runtime).toContain("...(cliOf(worker.preference) === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : {})")
+  expect(runtime).toContain("...(cli === 'codebuddy' ? codebuddyEnvironment() : {})")
+  expect(runtime).toContain("...(cliOf(worker.preference) === 'codebuddy' ? codebuddyEnvironment() : {})")
   expect(runtime).not.toContain('CODEBUDDY_INTERNET_ENVIRONMENT')
 })
 

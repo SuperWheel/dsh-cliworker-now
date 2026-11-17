@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, rename, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import {
   readKimiOAuthModelSources,
   probeKimiOAuthModels,
@@ -10,6 +11,7 @@ import {
 import { discoverFirstPartySources, readFirstPartyModelSources } from '../src/host/first-party-models.ts'
 import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
+import { readKimiAccount } from '../src/host/kimi-accounts.ts'
 
 // Synthetic own native config, OAuth files and HTTP responses; never uses a real account.
 const roots: string[] = []
@@ -70,7 +72,7 @@ async function fixture() {
 }
 
 describe('native Kimi managed OAuth uses only its own stable identity and verified route', () => {
-  it('reads the native token without changing or propagating refresh material and integrates native aliases', async () => {
+  it('模拟：reads the native token without changing or propagating refresh material and integrates native aliases', async () => {
     const f = await fixture(),
       before = await readFile(f.path)
     const sources = await readFirstPartyModelSources(
@@ -104,7 +106,7 @@ describe('native Kimi managed OAuth uses only its own stable identity and verifi
   })
 
   it.each(['route', 'slot', 'storage', 'host', 'api', 'api-env', 'headers', 'environment'])(
-    'refuses an unverified %s without an HTTP request',
+    '模拟：refuses an unverified %s without an HTTP request',
     async (kind) => {
       const f = await fixture(),
         raw: any = native(),
@@ -122,7 +124,7 @@ describe('native Kimi managed OAuth uses only its own stable identity and verifi
   )
 
   it.each(['missing', 'tombstone', 'expired', 'near-expiry', 'issuer', 'conflict'])(
-    'rejects %s credentials without native refresh',
+    '模拟：rejects %s credentials without native refresh',
     async (kind) => {
       const f = await fixture()
       if (kind === 'missing') await rm(f.path)
@@ -143,7 +145,7 @@ describe('native Kimi managed OAuth uses only its own stable identity and verifi
     },
   )
 
-  it('rejects linked credential files', async () => {
+  it('模拟：rejects linked credential files', async () => {
     const f = await fixture(),
       other = join(f.home, 'other.json')
     await writeFile(other, JSON.stringify(f.token))
@@ -152,7 +154,7 @@ describe('native Kimi managed OAuth uses only its own stable identity and verifi
     await expect(f.read()).rejects.toThrow('配置来源暂无法核验')
   })
 
-  it('binds stable identity across token rotation and preserves account-change and expiry diagnostics', async () => {
+  it('模拟：binds stable identity across token rotation and preserves account-change and expiry diagnostics', async () => {
     const f = await fixture()
     const backend = {
       resolveExecutable: async () => '/synthetic/kimi',
@@ -185,8 +187,157 @@ describe('native Kimi managed OAuth uses only its own stable identity and verifi
     expect(await binding()).not.toBe(before)
     f.token.expires_at = 1
     await writeFile(f.path, JSON.stringify(f.token))
-    await expect(binding()).rejects.toThrow('登录凭据已过期')
+    await expect(binding()).rejects.toMatchObject({ code: 'KIMI_OAUTH_REFRESH_REQUIRED' })
   })
+
+  it('模拟：自定义槽位贯通状态、模型、缓存与绑定，迁移槽位不换账号', async () => {
+    const f = await fixture(),
+      raw = native()
+    const executable = join(f.home, 'synthetic-kimi'),
+      configPath = join(f.home, 'config.toml')
+    await writeFile(executable, 'synthetic executable identity')
+    await writeFile(configPath, '# synthetic default slot')
+    const capture = vi.fn(async () => JSON.stringify(raw))
+    const backend = {
+      resolveExecutable: async () => executable,
+      spawn: () => ({
+        stdout: (async function* () {
+          yield JSON.stringify(raw)
+        })(),
+        stderr: (async function* () {})(),
+        done: Promise.resolve({ exitCode: 0 }),
+        terminate() {},
+        waitForExit: async () => true,
+      }),
+    } as unknown as ProcessBackend
+    const project = f.home
+    const binding = () => readCliAccountBinding('kimi', backend, DEFAULT_CONFIG, project, signal())
+    const read = () => readFirstPartyModelSources('kimi', executable, project, capture, signal())
+    const initial = await binding()
+    raw.providers['managed:kimi-code'].oauth.key = 'oauth/region-custom'
+    const moved = join(f.home, 'credentials/region-custom.json')
+    await rename(f.path, moved)
+    await writeFile(configPath, '# synthetic custom slot')
+    expect(await readKimiAccount(JSON.stringify(raw), signal())).toMatchObject({ state: 'authenticated' })
+    const sources = await read()
+    expect(await read()).toEqual(sources)
+    expect(capture).toHaveBeenCalledTimes(1)
+    expect(capture).toHaveBeenCalledWith([executable, 'provider', 'list', '--json'], {
+      KIMI_CODE_NO_AUTO_UPDATE: '1',
+    })
+    expect(await binding()).toBe(initial)
+    expect(await discoverFirstPartySources(sources, signal(), { fetch: replies() })).toHaveLength(1)
+    // Changing an unrelated default slot must not invalidate custom-slot metadata.
+    await writeFile(f.path, JSON.stringify({ ...f.token, access_token: '' }))
+    await read()
+    expect(capture).toHaveBeenCalledTimes(1)
+    // Rotation invalidates the actual file fingerprint, but keeps the principal.
+    await writeFile(moved, JSON.stringify({ ...f.token, refresh_token: 'synthetic-rotated-refresh' }))
+    await read()
+    expect(capture).toHaveBeenCalledTimes(2)
+    expect(await binding()).toBe(initial)
+    await writeFile(moved, JSON.stringify({ ...f.token, access_token: '' }))
+    await expect(read()).rejects.toMatchObject({ code: 'KIMI_OAUTH_UNAVAILABLE' })
+    await expect(binding()).rejects.toThrow('尚未登录或已退出')
+  })
+
+  it('模拟：过期可续期与原生续期失败保持独立状态，重读成功后恢复模型', async () => {
+    const f = await fixture()
+    await writeFile(f.path, JSON.stringify({ ...f.token, expires_at: 1 }))
+    const before = await readFile(f.path)
+    const capture = vi.fn(async () => JSON.stringify(native()))
+    const read = () => readFirstPartyModelSources('kimi', '/synthetic/kimi', f.home, capture, signal())
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Simulate native network refresh failure: the expired file remains intact.
+      await expect(read()).rejects.toMatchObject({
+        code: 'KIMI_OAUTH_REFRESH_REQUIRED',
+        message: expect.stringContaining('原生终端执行 /usage'),
+      })
+      expect(await readFile(f.path)).toEqual(before)
+      expect(await readKimiAccount(JSON.stringify(native()), signal())).toMatchObject({
+        state: 'authenticated',
+      })
+    }
+    expect(
+      capture.mock.calls.every(
+        ([argv, env]: any[]) =>
+          argv.join(' ') === '/synthetic/kimi provider list --json' && env.KIMI_CODE_NO_AUTO_UPDATE === '1',
+      ),
+    ).toBe(true)
+    // Simulate a later successful native refresh, without invoking a CLI/network.
+    await writeFile(f.path, JSON.stringify({ ...f.token, refresh_token: 'synthetic-refreshed' }))
+    expect(await read()).toHaveLength(1)
+    // Native unauthorized refresh may persist a tombstone, even with a stale refresh token.
+    await writeFile(f.path, JSON.stringify({ ...f.token, access_token: '', expires_at: 0 }))
+    await expect(read()).rejects.toMatchObject({ code: 'KIMI_OAUTH_UNAVAILABLE' })
+  })
+
+  it.each([0, undefined])('模拟：原生无到期时间 %s 不误报需要续期', async (expires_at) => {
+    const f = await fixture()
+    await writeFile(f.path, JSON.stringify({ ...f.token, expires_at }))
+    const sources = await f.read()
+    await expect(discoverFirstPartySources(sources, signal(), { fetch: replies() })).resolves.toHaveLength(1)
+  })
+
+  it.each([0, undefined])(
+    '模拟：原生到期时间 %s 可绑定，轮换稳定且普通到期绑定摘要不变',
+    async (expires_at) => {
+      const f = await fixture()
+      const backend = {
+        resolveExecutable: async () => '/synthetic/kimi',
+        spawn: () => ({
+          stdout: (async function* () {
+            yield JSON.stringify(native())
+          })(),
+          stderr: (async function* () {})(),
+          done: Promise.resolve({ exitCode: 0 }),
+          terminate() {},
+          waitForExit: async () => true,
+        }),
+      } as unknown as ProcessBackend
+      const binding = () => readCliAccountBinding('kimi', backend, DEFAULT_CONFIG, f.home, signal())
+      // Frozen canonical inputs from the ordinary expiring-token binding contract.
+      const entry =
+        '{"principal":{"accountId":"synthetic-kimi-user","issuer":"kimi-auth","kind":"oauth","subject":"synthetic-kimi-user"},"provider":"managed:kimi-code","route":{"apiType":"kimi-managed-oauth","baseUrl":"https://api.kimi.com/coding/v1"}}'
+      const expected = `cli-account-v1:${createHash('sha256')
+        .update(
+          JSON.stringify({
+            cli: 'kimi',
+            entries: [entry],
+            sources: [join(f.home, 'config.toml'), f.path, 'native:kimi-managed-oauth'].sort(),
+          }),
+        )
+        .digest('hex')}`
+      expect((await f.read())[0]!.credential.expires).toBe(f.token.expires_at * 1000)
+      expect(await binding()).toBe(expected)
+      for (const revision of [1, 2]) {
+        // Even an old JWT exp cannot override the native file's no-expiry meaning.
+        await writeFile(
+          f.path,
+          JSON.stringify({
+            ...f.token,
+            expires_at,
+            refresh_token: undefined,
+            access_token: jwt({
+              iss: 'kimi-auth',
+              sub: 'synthetic-kimi-user',
+              exp: revision,
+              jti: `synthetic-${revision}`,
+            }),
+          }),
+        )
+        const sources = await f.read()
+        expect(sources[0]!.credential.expires).toBe(Number.MAX_SAFE_INTEGER)
+        expect(await binding()).toBe(expected)
+        await expect(
+          discoverFirstPartySources(sources, signal(), { fetch: replies() }),
+        ).resolves.toHaveLength(1)
+      }
+      // Switching back to an expiring native token keeps the exact legacy binding.
+      await writeFile(f.path, JSON.stringify(f.token))
+      expect(await binding()).toBe(expected)
+    },
+  )
 })
 
 describe('Kimi OAuth catalogue requires current subscription allowance', () => {
@@ -196,7 +347,7 @@ describe('Kimi OAuth catalogue requires current subscription allowance', () => {
     [{ usages: { limit_5h: { used_ratio: -0.1 } } }, '暂无法确认'],
     [{ usages: { limit_5h: { used_ratio: '' } } }, '暂无法确认'],
     [{ usages: { limit_5h: { used_ratio: 1 }, limit_7d: { used_ratio: 0 } } }, '已用尽'],
-  ])('does not allow listed models with an unknown or exhausted quota', async (usage, message) => {
+  ])('模拟：does not allow listed models with an unknown or exhausted quota', async (usage, message) => {
     const f = await fixture(),
       sources = await f.read()
     await expect(discoverFirstPartySources(sources, signal(), { fetch: replies(usage) })).rejects.toThrow(
@@ -204,7 +355,7 @@ describe('Kimi OAuth catalogue requires current subscription allowance', () => {
     )
   })
 
-  it('rechecks both endpoints and rejects revocation instead of reusing a previous success', async () => {
+  it('模拟：rechecks both endpoints and rejects revocation instead of reusing a previous success', async () => {
     const f = await fixture(),
       source = (await f.read())[0]!,
       fetch = replies()
@@ -214,16 +365,18 @@ describe('Kimi OAuth catalogue requires current subscription allowance', () => {
     expect(fetch).toHaveBeenCalledTimes(4)
   })
 
-  it('rejects near-expiry credentials before the HTTP request', async () => {
+  it('模拟：rejects near-expiry credentials before the HTTP request', async () => {
     const f = await fixture(),
       source = (await f.read())[0]!,
       fetch = replies()
     source.credential.expires = Date.now() + 20_000
-    await expect(probeKimiOAuthModels(source, { fetch })).rejects.toThrow('过期')
+    await expect(probeKimiOAuthModels(source, { fetch })).rejects.toMatchObject({
+      code: 'KIMI_OAUTH_REFRESH_REQUIRED',
+    })
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('cancels both requests without retaining native credentials in an error', async () => {
+  it('模拟：cancels both requests without retaining native credentials in an error', async () => {
     const f = await fixture(),
       source = (await f.read())[0]!,
       controller = new AbortController()
@@ -241,7 +394,7 @@ describe('Kimi OAuth catalogue requires current subscription allowance', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
-  it('bounds native payloads and refuses malformed model metadata', async () => {
+  it('模拟：bounds native payloads and refuses malformed model metadata', async () => {
     const f = await fixture(),
       source = (await f.read())[0]!
     await expect(probeKimiOAuthModels(source, { fetch: replies(usagePayload(), {}) })).rejects.toThrow(
@@ -251,7 +404,7 @@ describe('Kimi OAuth catalogue requires current subscription allowance', () => {
     await expect(probeKimiOAuthModels(source, { fetch })).rejects.toThrow('响应过大')
   })
 
-  it('accepts only recognized finite subscription ratios with positive remaining allowance', () => {
+  it('模拟：accepts only recognized finite subscription ratios with positive remaining allowance', () => {
     expect(kimiQuotaRemaining({ usages: { limit_month_code: { used_ratio: '0.99' } } })).toBe('available')
     expect(kimiQuotaRemaining({ usages: { new_unknown_limit: { used_ratio: 0 } } })).toBe('unknown')
     expect(kimiQuotaRemaining({ usages: { limit_7d: { used_ratio: 'NaN' } } })).toBe('unknown')

@@ -21,6 +21,57 @@ async function fixture(auth?: unknown) {
   return { root, data }
 }
 describe('MiMo own native account context (synthetic files only)', () => {
+  it.each([
+    ['xiaomi-token-plan-cn', 'Xiaomi Token Plan (China)'],
+    ['xiaomi-token-plan-ams', 'Xiaomi Token Plan (Europe)'],
+    ['xiaomi-token-plan-sgp', 'Xiaomi Token Plan (Singapore)'],
+  ])('模拟：单独登录 %s 识别原生 Token Plan 且不暴露私有字段', async (provider, label) => {
+    await fixture({
+      [provider]: { type: 'api', key: 'synthetic-plan-key', metadata: { uid: 'synthetic-private-uid' } },
+    })
+    const status = await readMimoAccount(signal())
+    expect(status).toEqual({ state: 'authenticated', summary: label, authMethod: 'api', verification: 'local' })
+    expect(JSON.stringify(status)).not.toMatch(/synthetic-plan-key|synthetic-private-uid/)
+  })
+  it('模拟：多个官方登录按 whoami 顺序选择首个有效项，移除 xiaomi 后 Token Plan 仍有效', async () => {
+    const auth: Record<string, unknown> = {
+      xiaomi: { type: 'api', key: 'synthetic-payg' },
+      'xiaomi-token-plan-sgp': { type: 'api', key: 'synthetic-sgp' },
+      'xiaomi-token-plan-ams': { type: 'api', key: 'synthetic-ams' },
+      'xiaomi-token-plan-cn': { type: 'api', key: 'synthetic-cn' },
+    }
+    const f = await fixture(auth)
+    const path = join(f.data, 'auth.json')
+    expect((await readMimoAccount(signal())).summary).toBe('Xiaomi Token Plan (China)')
+    delete auth.xiaomi
+    await writeFile(path, JSON.stringify(auth))
+    expect((await readMimoAccount(signal())).summary).toBe('Xiaomi Token Plan (China)')
+    auth['xiaomi-token-plan-cn'] = { type: 'api', key: '' }
+    await writeFile(path, JSON.stringify(auth))
+    expect((await readMimoAccount(signal())).summary).toBe('Xiaomi Token Plan (Europe)')
+    delete auth['xiaomi-token-plan-ams']
+    await writeFile(path, JSON.stringify(auth))
+    expect((await readMimoAccount(signal())).summary).toBe('Xiaomi Token Plan (Singapore)')
+  })
+  it.each([
+    null, [], 'corrupt', { type: 'oauth', access: 'synthetic' },
+    { type: 'api', key: '' }, { type: 'api', key: '   ' }, { type: 'api', key: 123 },
+    { type: 'api', key: 'synthetic', metadata: null },
+    { type: 'api', key: 'synthetic', metadata: [] },
+    { type: 'api', key: 'synthetic', metadata: { uid: 123 } },
+  ])('模拟：损坏的 Token Plan ApiAuth 不算已登录（%j）', async (entry) => {
+    await fixture({ 'xiaomi-token-plan-cn': entry })
+    expect(await readMimoAccount(signal())).toMatchObject({ state: 'configured' })
+  })
+  it('模拟：不按 xiaomi 前缀接受无关账号，损坏的 auth.json 明确失败', async () => {
+    const f = await fixture({
+      'xiaomi-unrelated': { type: 'api', key: 'synthetic-unrelated' },
+      openai: { type: 'api', key: 'synthetic-other' },
+    })
+    expect(await readMimoAccount(signal())).toMatchObject({ state: 'unconfigured' })
+    await writeFile(join(f.data, 'auth.json'), '{broken')
+    await expect(readMimoAccount(signal())).rejects.toThrow('来源无法确认')
+  })
   it('recognizes the native browser-login ApiAuth without exposing private fields or loading project config', async () => {
     const f = await fixture({
       xiaomi: {

@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { chmod, lstat, mkdir, mkdtemp, open, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve, win32 } from 'node:path'
 import { Readable } from 'node:stream'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { codebuddyAuthDirectory, readCodebuddyLoginState, codebuddyDeclaredSite, readCodebuddySite, parseCodebuddyModels,
+import { codebuddyEnvironment, codebuddyAuthDirectory, readCodebuddyLoginState, codebuddyDeclaredSite, readCodebuddySite, parseCodebuddyModels,
   CodebuddyAccountError, readCodebuddyAccount, readCodebuddyAccountBindingMaterial,
   discoverCodebuddyModels, withCodebuddyCatalogSnapshot } from '../src/host/codebuddy-account.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
@@ -31,12 +32,19 @@ async function fixture() {
   vi.stubEnv('LOCALAPPDATA', win32.join(home, 'AppData', 'Local'))
   vi.stubEnv('CODEBUDDY_INTERNET_ENVIRONMENT', '')
   vi.stubEnv('CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT', '')
+  for (const key of ['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY', 'CODEBUDDY_API_KEY_HELPER_DISABLED',
+    'CODEBUDDY_API_KEY_DISABLED', 'CODEBUDDY_CONFIG_DIR', 'CODEBUDDY_PROJECT_CONFIG_DIR']) vi.stubEnv(key, '')
   const options = { home, env: {}, platform: process.platform }
   const file = join(codebuddyAuthDirectory(options.platform, options.env, home), 'Tencent-Cloud.coding-copilot.info')
   await mkdir(dirname(file), { recursive: true, mode: 0o700 })
   return { home, file, options }
 }
 const model = (modelId = 'hy4free', credits = 'x0.00 credits') => ({ modelId, name: 'Hy4', _meta: { credits, effortOptions: [{ value: 'high' }] } })
+async function saveLoginSettings(root: string, settings: unknown, local = false) {
+  await mkdir(join(root, '.codebuddy'), { recursive: true, mode: 0o700 })
+  await writeFile(join(root, '.codebuddy', local ? 'settings.local.json' : 'settings.json'),
+    JSON.stringify({ _comment: '模拟夹具', ...settings as object }), { mode: 0o600 })
+}
 function backendFixture() {
   let models = [model()], exitCode = 0
   const calls: any[] = [], directories: Promise<number>[] = []
@@ -51,6 +59,178 @@ function backendFixture() {
   return { backend, calls, directories, set: (value: ReturnType<typeof model>[]) => { models = value }, fail: (code: number) => { exitCode = code } }
 }
 describe('CodeBuddy 账号与目录（模拟）', () => {
+  it.each(['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY'])('模拟：%s reaches catalog child env only and token rotation invalidates binding', async name => {
+    const f = await fixture(), b = backendFixture(), signal = new AbortController().signal
+    const project = join(f.home, 'project'); await mkdir(project)
+    const env = { [name]: 'SIMULATED_ONLY', CODEBUDDY_API_KEY_HELPER_DISABLED: '1', CODEBUDDY_API_KEY_DISABLED: '',
+      CODEBUDDY_INTERNET_ENVIRONMENT: 'external', CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT: '',
+      OPENAI_API_KEY: 'SIMULATED_UNRELATED', HTTPS_PROXY: 'http://simulated.invalid' }
+    const options = { ...f.options, project, env }
+    await withCodebuddyCatalogSnapshot(b.backend, DEFAULT_CONFIG, '/simulated', signal, async () => {
+      const first = await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal, options)
+      expect(b.calls[0].env).toMatchObject(codebuddyEnvironment(env))
+      expect(b.calls[0].env).not.toHaveProperty('OPENAI_API_KEY')
+      expect(Object.keys(codebuddyEnvironment(env)).sort()).toEqual(['DISABLE_AUTOUPDATER', name,
+        'CODEBUDDY_API_KEY_HELPER_DISABLED', 'CODEBUDDY_API_KEY_DISABLED',
+        'CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT'].sort())
+      expect(b.calls[0].cwd).not.toBe(project); expect(b.calls[0].argv.at(-1)).toBe(b.calls[0].cwd)
+      expect(JSON.stringify([first, b.calls[0].argv])).not.toContain('SIMULATED_ONLY')
+      env[name] = 'SIMULATED_CHANGED'
+      const second = await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal, options)
+      expect(second).not.toEqual(first); expect(b.calls).toHaveLength(2)
+      expect(b.calls[1].env[name] === env[name]).toBe(true)
+      expect(JSON.stringify(second)).not.toContain('SIMULATED_CHANGED')
+    })
+    expect((await lstat(project)).isDirectory()).toBe(true)
+  })
+  it('模拟：no env credentials preserves byte-identical legacy binding material', async () => {
+    const f = await fixture(), b = backendFixture(), signal = new AbortController().signal
+    await writeFile(f.file, '{"auth":{"domain":"www.codebuddy.cn"}}')
+    const catalog = createHash('sha256').update(JSON.stringify([['hy4free', 'x0.00 credits']])).digest('hex')
+    const legacy = JSON.stringify({ sourceIds: [f.file], entries: [{ provider: 'codebuddy', principal: { site: 'internal', catalog } }] })
+    for (const env of [{}, { CODEBUDDY_AUTH_TOKEN: '', CODEBUDDY_API_KEY: '', CODEBUDDY_API_KEY_DISABLED: '1' }]) {
+      expect(JSON.stringify(await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal,
+        { ...f.options, env }))).toBe(legacy)
+    }
+    await rm(f.file); await saveLoginSettings(f.home, { apiKeyHelper: '/simulated/helper', env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'internal' } })
+    expect(JSON.stringify(await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal, f.options))).toBe(legacy)
+  })
+  it('模拟：project settings feed the login check while the catalog runs in a private temp dir without forwarding file credentials', async () => {
+    const f = await fixture(), b = backendFixture(), project = join(f.home, 'project'), signal = new AbortController().signal
+    await saveLoginSettings(project, { env: { CODEBUDDY_API_KEY: 'SIMULATED_PROJECT_ONLY', CODEBUDDY_INTERNET_ENVIRONMENT: 'external' } })
+    const result = await authorizedCatalog('codebuddy', b.backend, { ...DEFAULT_CONFIG, codebuddyExecutable: '/simulated' }, project, signal)
+    expect(result.catalog.models).toHaveLength(1); expect(b.calls).toHaveLength(1)
+    expect(b.calls[0].cwd).not.toBe(project); expect(b.calls[0].argv.at(-1)).toBe(b.calls[0].cwd)
+    expect(JSON.stringify([b.calls[0].env, result])).not.toContain('SIMULATED_PROJECT_ONLY')
+    expect(await readFile(join(project, '.codebuddy/settings.json'), 'utf8')).toContain('模拟夹具')
+  })
+  it.each([
+    ['env token', { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_AUTH_TOKEN' }, {}],
+    ['settings token', {}, { env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_AUTH_TOKEN' } }],
+    ['settings helper', {}, { apiKeyHelper: '/simulated/never-execute-helper' }],
+    ['env API key', { CODEBUDDY_API_KEY: 'SIMULATED_API_KEY' }, {}],
+    ['settings API key', {}, { env: { CODEBUDDY_API_KEY: 'SIMULATED_API_KEY' } }],
+  ])('模拟：%s authenticates without a login file and survives a file logout marker', async (_name, env, settings) => {
+    const f = await fixture(), options = { ...f.options, env }
+    await saveLoginSettings(f.home, settings)
+    for (const withFile of [false, true]) {
+      if (withFile) {
+        await writeFile(f.file, '{"auth":{"domain":"www.codebuddy.cn"}}')
+        await writeFile(`${f.file}.logged-out`, '')
+      }
+      expect(await readCodebuddyLoginState(options)).toBe('authenticated')
+      const account = await readCodebuddyAccount(options)
+      expect(account).toMatchObject({ state: 'authenticated', verification: 'local', summary: '已登录 · 站点未公开' })
+      expect(JSON.stringify(account)).not.toMatch(/SIMULATED_|never-execute-helper/)
+      expect(vi.mocked(open).mock.calls.some(call => call[0] === f.file)).toBe(false)
+    }
+  })
+  it.each(['1', '0', 'false'])('模拟：nonempty disabled switches (%s) suppress only their own source', async disabled => {
+    const f = await fixture()
+    await saveLoginSettings(f.home, { apiKeyHelper: '/simulated/never-execute-helper' })
+    const env = { CODEBUDDY_API_KEY_HELPER_DISABLED: disabled }
+    expect(await readCodebuddyLoginState({ ...f.options, env })).toBe('unauthenticated')
+    expect(await readCodebuddyLoginState({ ...f.options, env: { ...env, CODEBUDDY_API_KEY: 'SIMULATED_KEY' } })).toBe('authenticated')
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_API_KEY_DISABLED: disabled } })).toBe('authenticated')
+    await saveLoginSettings(f.home, { env: { CODEBUDDY_API_KEY: 'SIMULATED_KEY' } })
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_API_KEY_DISABLED: disabled } })).toBe('unauthenticated')
+    await saveLoginSettings(f.home, {})
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_API_KEY: 'SIMULATED_KEY', CODEBUDDY_API_KEY_DISABLED: disabled } })).toBe('unauthenticated')
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_TOKEN',
+      CODEBUDDY_API_KEY_DISABLED: disabled, CODEBUDDY_API_KEY_HELPER_DISABLED: disabled } })).toBe('authenticated')
+    await saveLoginSettings(f.home, { env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_TOKEN' } })
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_API_KEY_DISABLED: disabled,
+      CODEBUDDY_API_KEY_HELPER_DISABLED: disabled } })).toBe('authenticated')
+  })
+  it('模拟：empty switches keep helper and API key enabled; default process env is honored', async () => {
+    const f = await fixture()
+    await saveLoginSettings(f.home, { apiKeyHelper: '/simulated/never-execute-helper' })
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_API_KEY_HELPER_DISABLED: '' } })).toBe('authenticated')
+    await saveLoginSettings(f.home, {})
+    vi.stubEnv('CODEBUDDY_API_KEY', 'SIMULATED_KEY')
+    expect(await readCodebuddyAccount({ ...f.options, env: undefined })).toMatchObject({ state: 'authenticated' })
+    vi.stubEnv('CODEBUDDY_API_KEY_DISABLED', '1')
+    expect(await readCodebuddyLoginState({ ...f.options, env: undefined })).toBe('unauthenticated')
+    vi.stubEnv('CODEBUDDY_AUTH_TOKEN', 'SIMULATED_TOKEN')
+    expect(await readCodebuddyLoginState({ ...f.options, env: undefined })).toBe('authenticated')
+  })
+  it('模拟：nothing configured, file-only login, logout marker and disabled-source fallback', async () => {
+    const f = await fixture()
+    await saveLoginSettings(f.home, { apiKeyHelper: '', env: { CODEBUDDY_AUTH_TOKEN: '', CODEBUDDY_API_KEY: '' } })
+    expect(await readCodebuddyLoginState(f.options)).toBe('unauthenticated')
+    await writeFile(f.file, '{"auth":{"domain":"www.codebuddy.cn"}}')
+    const options = { ...f.options, env: { CODEBUDDY_API_KEY: 'SIMULATED_KEY', CODEBUDDY_API_KEY_DISABLED: '1', CODEBUDDY_API_KEY_HELPER_DISABLED: '1' } }
+    expect(await readCodebuddyLoginState(options)).toBe('authenticated')
+    expect(await readCodebuddyAccount(options)).toMatchObject({ state: 'authenticated', summary: '已登录 · 中国站' })
+    await writeFile(`${f.file}.logged-out`, '')
+    expect(await readCodebuddyLoginState(options)).toBe('unauthenticated')
+  })
+  it('模拟：project then local override helper and replace the whole settings env including site', async () => {
+    const f = await fixture(), project = join(f.home, 'project'), options = { ...f.options, project,
+      env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'ioa' } }
+    await saveLoginSettings(f.home, { apiKeyHelper: '/simulated/helper', env: { CODEBUDDY_API_KEY: 'SIMULATED_KEY', CODEBUDDY_INTERNET_ENVIRONMENT: 'internal' } })
+    await saveLoginSettings(project, { apiKeyHelper: '', env: { CODEBUDDY_INTERNET_ENVIRONMENT: 'external' } })
+    expect(await readCodebuddyLoginState(options)).toBe('unauthenticated')
+    expect((await readCodebuddySite(options)).id).toBe('external')
+    await saveLoginSettings(project, { apiKeyHelper: '/simulated/local-helper', env: {} }, true)
+    expect(await readCodebuddyLoginState(options)).toBe('authenticated')
+    expect((await readCodebuddySite(options)).id).toBe('ioa')
+    await saveLoginSettings(project, { apiKeyHelper: '', env: { CODEBUDDY_API_KEY: 'SIMULATED_LOCAL_KEY', CODEBUDDY_INTERNET_ENVIRONMENT: 'selfhosted' } }, true)
+    expect(await readCodebuddyAccount(options)).toMatchObject({ state: 'authenticated', summary: '已登录 · 企业域' })
+    // No project means no guess from host cwd and no user settings.local.json.
+    await saveLoginSettings(f.home, { apiKeyHelper: '', env: {} }, true)
+    expect((await readCodebuddySite(f.options)).id).toBe('internal')
+    expect(await readCodebuddyLoginState(f.options)).toBe('authenticated')
+  })
+  it('模拟：custom-token file scan survives an overriding settings env and helper disable', async () => {
+    const f = await fixture(), project = join(f.home, 'project')
+    await saveLoginSettings(f.home, { env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_TOKEN' } })
+    await saveLoginSettings(project, { env: {} })
+    expect(await readCodebuddyLoginState({ ...f.options, project, env: { CODEBUDDY_API_KEY_HELPER_DISABLED: '1' } })).toBe('authenticated')
+  })
+  it('模拟：JSONC token uses merged env while the early per-file token scan requires strict JSON', async () => {
+    const f = await fixture(), project = join(f.home, 'project')
+    await saveLoginSettings(f.home, {})
+    await writeFile(join(f.home, '.codebuddy/settings.json'), '{ // 模拟 JSONC\n "env": {"CODEBUDDY_AUTH_TOKEN": "SIMULATED_TOKEN"}, }')
+    expect(await readCodebuddyLoginState(f.options)).toBe('authenticated')
+    await saveLoginSettings(project, { env: {} })
+    expect(await readCodebuddyLoginState({ ...f.options, project })).toBe('unauthenticated')
+  })
+  it('模拟：env token is checked before settings or login files', async () => {
+    const f = await fixture()
+    vi.mocked(lstat).mockClear()
+    expect(await readCodebuddyLoginState({ ...f.options, env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_TOKEN' } })).toBe('authenticated')
+    expect(open).not.toHaveBeenCalled(); expect(lstat).not.toHaveBeenCalled()
+  })
+  it('模拟：JSONC settings and configured config directories are read without running helper', async () => {
+    const f = await fixture(), config = join(f.home, 'custom-user'), project = join(f.home, 'project'), local = join(project, 'custom-project')
+    await mkdir(config, { recursive: true }); await mkdir(local, { recursive: true })
+    await writeFile(join(config, 'settings.json'), '{ // 模拟 JSONC\n "apiKeyHelper": "/simulated/never-execute-helper", }')
+    await writeFile(join(local, 'settings.local.json'), '{"env":{"CODEBUDDY_INTERNET_ENVIRONMENT":"external"}}')
+    const options = { ...f.options, project, env: { CODEBUDDY_CONFIG_DIR: config, CODEBUDDY_PROJECT_CONFIG_DIR: 'custom-project' } }
+    expect(await readCodebuddyAccount(options)).toMatchObject({ state: 'authenticated', summary: '已登录 · 国际站' })
+    expect((await readCodebuddySite({ ...options, env: { ...options.env, CODEBUDDY_PROJECT_CONFIG_DIR: local } })).id).toBe('external')
+    expect(vi.mocked(open).mock.calls.every(call => String(call[0]).startsWith(f.home))).toBe(true)
+  })
+  it('模拟：env authentication binds protected credential digests and still validates catalog', async () => {
+    const f = await fixture(), b = backendFixture(), signal = new AbortController().signal
+    const options = { ...f.options, env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_TOKEN', CODEBUDDY_INTERNET_ENVIRONMENT: 'external' } }
+    const first = await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal, options)
+    expect(first.sourceIds).toEqual([f.file])
+    expect(first.entries[0]?.principal).toEqual({ site: 'external', catalog: expect.any(String),
+      environment: { credentials: { CODEBUDDY_AUTH_TOKEN: createHash('sha256').update('SIMULATED_TOKEN').digest('hex') },
+        helperDisabled: false, apiKeyDisabled: false } })
+    expect(await readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal,
+      { ...options, env: { CODEBUDDY_API_KEY: 'SIMULATED_DIFFERENT_KEY', CODEBUDDY_INTERNET_ENVIRONMENT: 'external' } })).not.toEqual(first)
+    expect(JSON.stringify(first)).not.toContain('SIMULATED_')
+    b.fail(3)
+    await expect(readCodebuddyAccountBindingMaterial(b.backend, DEFAULT_CONFIG, '/simulated', signal, options)).rejects.toThrow('/login')
+  })
+  it('模拟：aborted reads stop before inspecting any source', async () => {
+    const f = await fixture(), controller = new AbortController(); controller.abort()
+    await expect(readCodebuddyLoginState({ ...f.options, signal: controller.signal, env: { CODEBUDDY_AUTH_TOKEN: 'SIMULATED' } })).rejects.toThrow()
+    expect(open).not.toHaveBeenCalled()
+  })
   it('uses platform-specific auth paths', () => {
     expect(codebuddyAuthDirectory('darwin', {}, '/synthetic')).toBe(join('/synthetic', 'Library', 'Application Support', 'CodeBuddyExtension', 'Data', 'Public', 'auth'))
     expect(codebuddyAuthDirectory('linux', {}, '/synthetic')).toBe(join('/synthetic', '.local', 'share', 'CodeBuddyExtension', 'Data', 'Public', 'auth'))
@@ -110,8 +290,8 @@ describe('CodeBuddy 账号与目录（模拟）', () => {
     expect(b.calls[0].argv[1]).toMatch(/codebuddy-catalog\.mjs$/)
     expect(b.calls[0].argv.slice(2)).toEqual(['/simulated/codebuddy.mjs', b.calls[0].cwd])
     // Windows probes also get a private TMP/TEMP (spawnProbe); other platforms pass only the update switch.
-    if (process.platform === 'win32') expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1', TMP: expect.any(String), TEMP: expect.any(String) })
-    else expect(b.calls[0].env).toEqual({ DISABLE_AUTOUPDATER: '1' })
+    if (process.platform === 'win32') expect(b.calls[0].env).toEqual({ ...codebuddyEnvironment(), TMP: expect.any(String), TEMP: expect.any(String) })
+    else expect(b.calls[0].env).toEqual(codebuddyEnvironment())
     // Windows has no POSIX directory modes; the private directory is still removed after exit.
     if (!(process.platform === 'win32')) expect(await Promise.all(b.directories)).toEqual([0o700])
     await expect(lstat(b.calls[0].cwd)).rejects.toMatchObject({ code: 'ENOENT' })
@@ -333,11 +513,13 @@ describe('CodeBuddy 只读站点（模拟）', () => {
 // 模拟 child stays alive after EOF, as measured in CodeBuddy; never invokes the installed CLI.
 const catalogPeer = String.raw`
 import { createInterface } from 'node:readline';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, realpathSync } from 'node:fs';
 const scenario=process.env.SIMULATED_SCENARIO;
 const log=value=>appendFileSync(process.env.SIMULATED_AUDIT,JSON.stringify(value)+'\n');
 const out=value=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...value})+'\n');
 log({pid:process.pid,argv:process.argv.slice(2),updater:process.env.DISABLE_AUTOUPDATER});
+if(scenario==='environment')log({authConfigured:process.env.CODEBUDDY_AUTH_TOKEN==='SIMULATED_CATALOG_TOKEN',
+ homeMatches:realpathSync(process.env.HOME)===realpathSync(process.cwd())});
 setInterval(()=>{},1000);
 process.on('SIGTERM',()=>{log({terminated:true});if(scenario!=='ignore-term')process.exit(0)});
 createInterface({input:process.stdin}).on('line',line=>{
@@ -359,13 +541,13 @@ createInterface({input:process.stdin}).on('line',line=>{
 });
 `
 describe('CodeBuddy 目录脚本（模拟原生子进程）', () => {
-  async function run(scenario = 'success') {
+  async function run(scenario = 'success', env: Record<string, string> = {}) {
     const f = await fixture(), script = join(f.home, 'simulated-catalog-peer.mjs'), audit = join(f.home, 'audit.ndjson')
     await writeFile(script, catalogPeer, { mode: 0o600 })
     let stdout = '', stderr = '', code: any = 0
     try {
       const result = await promisify(execFile)(process.execPath, [resolve('src/host/codebuddy-catalog.mjs'), script, f.home], {
-        env: { ...process.env, SIMULATED_SCENARIO: scenario, SIMULATED_AUDIT: audit }, timeout: 18000,
+        env: { ...process.env, ...env, SIMULATED_SCENARIO: scenario, SIMULATED_AUDIT: audit }, timeout: 18000,
       }); stdout = result.stdout; stderr = result.stderr
     } catch (error: any) { stdout = error.stdout; stderr = error.stderr; code = error.code }
     const records = (await readFile(audit, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
@@ -373,6 +555,12 @@ describe('CodeBuddy 目录脚本（模拟原生子进程）', () => {
     expect(stdout + stderr).not.toContain('PRIVATE_RAW')
     return { stdout, stderr, code, records }
   }
+  it('模拟：catalog bridge forwards auth environment and keeps inherited HOME to its native child', async () => {
+    const result = await run('environment', codebuddyEnvironment({ CODEBUDDY_AUTH_TOKEN: 'SIMULATED_CATALOG_TOKEN' }))
+    expect(result.code).toBe(0)
+    expect(result.records[1]).toEqual({ authConfigured: true, homeMatches: true })
+    expect(JSON.stringify(result)).not.toContain('SIMULATED_CATALOG_TOKEN')
+  })
   it('outputs one allowlisted JSON line after confirmed SIGTERM exit and rejects agent requests', async () => {
     const result = await run()
     expect(result.code).toBe(0); expect(result.stderr).toBe(''); expect(result.stdout.trim().split('\n')).toHaveLength(1)
@@ -398,6 +586,8 @@ describe('CodeBuddy 目录脚本（模拟原生子进程）', () => {
 
 it.each(['EACCES', 'EPERM', 'ENOTDIR'])('模拟：CodeBuddy %s cannot prove sign-out', async code => {
   const f = await fixture()
-  vi.mocked(lstat).mockRejectedValueOnce(Object.assign(new Error('SIMULATED denied'), { code }))
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')
+  vi.mocked(lstat).mockImplementation((path: any, options?: any) => path === f.file
+    ? Promise.reject(Object.assign(new Error('SIMULATED denied'), { code })) : actual.lstat(path, options))
   expect(await readCodebuddyLoginState(f.options)).toBe('unavailable')
 })

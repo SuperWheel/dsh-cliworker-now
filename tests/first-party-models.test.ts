@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createHash } from 'node:crypto'
 import {
   discoverFirstPartySources,
   discoverMimoModels,
@@ -16,6 +17,9 @@ import {
   claudeManagedSettingsPath,
 } from '../src/host/first-party-models.ts'
 import { workerArguments } from '../src/host/adapters.ts'
+import * as mimoAdapters from '../src/host/adapters.ts'
+import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
+import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 
 // All identities, configurations, subprocess replies, and HTTP responses are synthetic.
 const roots: string[] = []
@@ -260,6 +264,129 @@ describe('first-party model scopes', () => {
     await expect(
       discoverFirstPartySources(parseKimiModelSources(kimi(), '/synthetic'), controller.signal, { fetch }),
     ).rejects.toThrow()
+  })
+})
+
+describe('MiMo Token Plan native providers (synthetic only)', () => {
+  const clusters = [
+    ['xiaomi-token-plan-cn', 'https://token-plan-cn.xiaomimimo.com/v1'],
+    ['xiaomi-token-plan-ams', 'https://token-plan-ams.xiaomimimo.com/v1'],
+    ['xiaomi-token-plan-sgp', 'https://token-plan-sgp.xiaomimimo.com/v1'],
+  ] as const
+  const modelFor = (provider: string, baseUrl: string) => mimo({
+    providerID: provider,
+    api: { id: 'upstream-model', npm: '@ai-sdk/openai-compatible', url: baseUrl },
+  })
+  const native = clusters.map(([provider, baseUrl]) => modelFor(provider, baseUrl))
+
+  async function fixture(auth: Record<string, unknown>, records = native) {
+    const root = await mkdtemp(join(tmpdir(), 'cwn-mimo-plans-'))
+    roots.push(root)
+    for (const directory of ['data', 'config', 'project']) await mkdir(join(root, directory))
+    vi.stubEnv('MIMOCODE_HOME', root)
+    vi.stubEnv('HOME', root)
+    const authPath = join(root, 'data/auth.json'), project = join(root, 'project')
+    await writeFile(authPath, JSON.stringify(auth))
+    // A real file enables the metadata cache while every subprocess remains simulated.
+    const executable = join(root, 'synthetic-mimo')
+    await writeFile(executable, 'synthetic metadata executable; never run')
+    const capture = vi.fn(async (argv: string[]) => argv.includes('paths')
+      ? `data ${join(root, 'data')}\nconfig ${join(root, 'config')}\n`
+      : argv.includes('config') ? '{}'
+        : records.map((model) => `${model.providerID}/${model.id}\n${JSON.stringify(model)}\n`).join(''))
+    const read = () => readFirstPartyModelSources('mimo', executable, project, capture, signal())
+    const backend: ProcessBackend = { resolveExecutable: vi.fn(), spawn: vi.fn() }
+    vi.spyOn(mimoAdapters, 'resolveCliExecutable').mockResolvedValue(executable)
+    vi.spyOn(mimoAdapters, 'captureCatalogMetadata').mockImplementation(
+      async (_backend, _config, argv) => capture(argv),
+    )
+    const binding = () => readCliAccountBinding('mimo', backend, DEFAULT_CONFIG, project, signal())
+    return { read, binding, authPath, capture }
+  }
+
+  it.each(clusters)('模拟：%s 单独登录只列对应模型并使用集群 URL 与账号 key', async (provider, baseUrl) => {
+    const f = await fixture({ [provider]: { type: 'api', key: `synthetic-${provider}` } })
+    const sources = await f.read()
+    expect(sources).toHaveLength(1)
+    expect(sources[0]).toMatchObject({
+      provider, baseUrl, credential: { type: 'api', key: `synthetic-${provider}` },
+      sourceIds: [f.authPath, `provider:${provider}`],
+      nativeModels: [{ choice: { id: `${provider}/native-model` } }],
+    })
+    const fetch = fetchModels(['upstream-model'])
+    expect((await discoverFirstPartySources(sources, signal(), { fetch })).map((model) => model.id))
+      .toEqual([`${provider}/native-model`])
+    expect(String(fetch.mock.calls[0]![0])).toBe(`${baseUrl}/models`)
+    expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('authorization')).toBe(`Bearer synthetic-${provider}`)
+    expect(await f.binding()).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
+  })
+
+  it('模拟：多个登录按模型 provider 分别路由，删除 xiaomi 后 Token Plan 与其绑定仍有效', async () => {
+    const auth: Record<string, unknown> = Object.fromEntries(
+      [...clusters].reverse().map(([provider]) => [provider, { type: 'api', key: `synthetic-${provider}` }]),
+    )
+    auth.xiaomi = { type: 'api', key: 'synthetic-payg', metadata: { base_url: 'https://payg.example.test/v1' } }
+    const f = await fixture(auth, [...native, modelFor('xiaomi', 'https://api.xiaomimimo.com/v1')])
+    const sources = await f.read(), before = await f.binding()
+    expect(sources.map(({ provider, baseUrl, credential }) => [provider, baseUrl, credential])).toEqual([
+      ...clusters.map(([provider, baseUrl]) => [provider, baseUrl, { type: 'api', key: `synthetic-${provider}` }]),
+      ['xiaomi', 'https://payg.example.test/v1', { type: 'api', key: 'synthetic-payg' }],
+    ])
+    delete auth.xiaomi
+    await writeFile(f.authPath, JSON.stringify(auth))
+    expect(await f.read()).toEqual(sources.filter(({ provider }) => provider !== 'xiaomi'))
+    const remaining = await f.binding()
+    expect(remaining).not.toBe(before)
+    expect(await f.binding()).toBe(remaining)
+    auth['xiaomi-token-plan-cn'] = { type: 'api', key: 'synthetic-cn-replaced' }
+    await writeFile(f.authPath, JSON.stringify(auth))
+    expect(await f.binding()).not.toBe(remaining)
+  })
+
+  it.each(clusters)('模拟：%s 原生集群路由忽略登录 metadata，显式配置最后覆盖', (provider, baseUrl) => {
+    const auth = { [provider]: {
+      type: 'api', key: 'synthetic-plan', metadata: { base_url: 'https://wrong-cluster.example.test/v1' },
+    } }
+    const model = modelFor(provider, baseUrl)
+    expect(mimoModelSources([model], {}, auth, '/synthetic/auth.json')[0]?.baseUrl).toBe(baseUrl)
+    expect(mimoModelSources([model], {
+      provider: { [provider]: { options: { baseURL: 'https://explicit.example.test/v1' } } },
+    }, auth, '/synthetic/auth.json')[0]?.baseUrl).toBe('https://explicit.example.test/v1')
+  })
+
+  it.each([
+    null, [], { type: 'oauth', access: 'synthetic' }, { type: 'api', key: '' },
+    { type: 'api', key: '   ' }, { type: 'api', key: 123 },
+    { type: 'api', key: 'synthetic', metadata: { uid: 123 } },
+  ])('模拟：损坏或空的 Token Plan 凭据不产生模型或绑定（%j）', async (entry) => {
+    const f = await fixture({ 'xiaomi-token-plan-cn': entry })
+    expect(await f.read()).toEqual([])
+    await expect(f.binding()).rejects.toThrow('账号')
+  })
+
+  it('模拟：现有 xiaomi 登录保留此前完整来源形状及 cli-account-v1 绑定', async () => {
+    const baseUrl = 'https://payg.example.test/v1', key = 'synthetic-payg'
+    const model = modelFor('xiaomi', 'https://api.xiaomimimo.com/v1')
+    const f = await fixture({ xiaomi: { type: 'api', key, metadata: { uid: 'synthetic-user', base_url: baseUrl } } }, [model])
+    expect(await f.read()).toEqual([{
+      provider: 'xiaomi', credential: { type: 'api', key }, baseUrl,
+      apiType: 'openai-completions', sourceIds: [f.authPath, 'provider:xiaomi'],
+      nativeModels: [{ remoteId: 'upstream-model', choice: {
+        id: 'xiaomi/native-model', label: 'Synthetic MiMo', efforts: ['default', 'high'],
+      } }],
+    }])
+    // Pre-change v1 binding material: same provider, credential hash, route and sources.
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+    const entry = JSON.stringify({
+      principal: { key: hash(key), kind: 'api' }, provider: 'xiaomi',
+      route: { apiType: 'openai-completions', baseUrl },
+    })
+    const expected = `cli-account-v1:${hash(JSON.stringify({
+      cli: 'mimo', entries: [entry], sources: [f.authPath, 'provider:xiaomi'].sort(),
+    }))}`
+    expect(await f.binding()).toBe(expected)
+    await writeFile(f.authPath, JSON.stringify({ xiaomi: { type: 'api', key, metadata: { uid: 'synthetic-other-user', base_url: baseUrl } } }))
+    expect(await f.binding()).toBe(expected)
   })
 })
 

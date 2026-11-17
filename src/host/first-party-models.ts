@@ -22,19 +22,24 @@ import {
 } from './mimo-metadata-cache.ts'
 import { metadataFileFingerprint, NativeCapabilityCache } from './native-capability-cache.ts'
 import { readKimiOAuthModelSources, probeKimiOAuthModels } from './kimi-oauth-models.ts'
-import { readKimiOwnToken } from './kimi-accounts.ts'
+import { readKimiOwnToken, resolveKimiTokenStorageName } from './kimi-accounts.ts'
 import { ProcessCleanupUnconfirmedError } from './process.ts'
 import {
   assertMimoConfiguration,
   mimoConfigurationFiles,
   mimoConfigurationPaths,
+  MIMO_OFFICIAL_PROVIDERS,
+  mimoApiAuth,
   MimoConfigurationError,
 } from './mimo-configuration.ts'
 export { MimoConfigurationError } from './mimo-configuration.ts'
 
 type Capture = (argv: string[], env?: Record<string, string>) => Promise<string>
 const claudeHelpCapabilities = new NativeCapabilityCache<true>()
-const kimiOAuthCapabilities = new NativeCapabilityCache<Record<string, unknown>>()
+const kimiOAuthCapabilities = new NativeCapabilityCache<{
+  metadata: Record<string, any>
+  tokenFingerprint: string
+}>()
 const record = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
 const literal = (v: unknown): v is string =>
   typeof v === 'string' && !!v.trim() && !/[\s\x00-\x1f{}$]/.test(v) && !v.startsWith('!')
@@ -256,11 +261,13 @@ export function mimoModelSources(
   const sources: FirstPartyModelSource[] = []
   for (const model of raw) {
     const provider = model.providerID,
+      official = MIMO_OFFICIAL_PROVIDERS.some(({ id }) => id === provider),
+      ownAuth = !official || mimoApiAuth(auth[provider]) ? auth[provider] : undefined,
       options = config.provider?.[provider]?.options ?? {},
       inline = ownInline[provider],
       credential =
         options.apiKey === undefined
-          ? auth[provider]
+          ? ownAuth
           : inline?.key === options.apiKey
             ? { type: 'api', key: inline.key }
             : undefined
@@ -286,10 +293,11 @@ export function mimoModelSources(
       !['@ai-sdk/openai', '@ai-sdk/openai-compatible', '@ai-sdk/anthropic'].includes(api.npm)
     )
       continue
-    // MiMo's built-in Xiaomi login plugin loads its own ApiAuth metadata first;
-    // explicit provider options are then merged last by the native resolver.
+    // Native JE.auth.loader is registered only for xiaomi. Token Plan models use
+    // their own provider's native api.url (cluster route), not another login's
+    // metadata/key. Explicit provider options are merged last for every provider.
     const loginBase =
-      provider === 'xiaomi' && auth[provider]?.type === 'api' ? auth[provider].metadata?.base_url : undefined
+      provider === 'xiaomi' ? ownAuth?.metadata?.base_url || undefined : undefined
     const baseUrl = options.baseURL ?? loginBase ?? api.url
     if (!literal(baseUrl)) continue
     sources.push({
@@ -335,17 +343,19 @@ export async function readFirstPartyModelSources(
       return []
     const sourceId = join(process.env.KIMI_CODE_HOME ?? join(homedir(), '.kimi-code'), 'config.toml')
     const keyFor = async () => {
-      const fingerprints = await Promise.all([
-        metadataFileFingerprint(sourceId, signal),
-        metadataFileFingerprint(join(dirname(sourceId), 'credentials/kimi-code.json'), signal),
-      ])
+      const fingerprints = [await metadataFileFingerprint(sourceId, signal)]
       return fingerprints.some((value) => value === undefined)
         ? undefined
         : nativeMetadataKey(executable, project, { cli, sourceId, fingerprints }, signal)
     }
     const key = await keyFor(),
       cached = kimiOAuthCapabilities.get(key)
-    if (cached) return readKimiOAuthModelSources(cached, sourceId, signal)
+    const tokenFingerprintFor = (raw: Record<string, any>) => {
+      const slot = resolveKimiTokenStorageName(raw.providers?.['managed:kimi-code']?.oauth?.key)
+      return metadataFileFingerprint(join(dirname(sourceId), 'credentials', `${slot}.json`), signal)
+    }
+    if (cached && cached.tokenFingerprint === (await tokenFingerprintFor(cached.metadata)))
+      return readKimiOAuthModelSources(cached.metadata, sourceId, signal)
     const raw = parseMetadata(await capture([executable, 'provider', 'list', '--json'], firstPartyEnvironment('kimi')))
     signal.throwIfAborted()
     const sources = [
@@ -356,12 +366,14 @@ export async function readFirstPartyModelSources(
     // token. API providers remain uncached: their native resolver may derive keys.
     if (sources.length === 1 && sources[0]!.apiType === 'kimi-managed-oauth') {
       const source = sources[0]!
+      const slot = resolveKimiTokenStorageName(raw.providers['managed:kimi-code'].oauth.key)
+      const tokenFingerprint = await tokenFingerprintFor(raw)
       const metadata = {
         providers: {
           'managed:kimi-code': {
             type: 'kimi',
             baseUrl: source.baseUrl,
-            oauth: { storage: 'file', key: 'oauth/kimi-code' },
+            oauth: { storage: 'file', key: `oauth/${slot}` },
           },
         },
         models: Object.fromEntries(
@@ -373,7 +385,7 @@ export async function readFirstPartyModelSources(
       }
       // Neither tokens nor arbitrary provider fields enter the capability cache.
       const serialized = JSON.stringify(metadata)
-      const token = await readKimiOwnToken(join(dirname(sourceId), 'credentials'), 'kimi-code', signal)
+      const token = await readKimiOwnToken(join(dirname(sourceId), 'credentials'), slot, signal)
       const configFingerprint = await keyFor()
       if (
         source.credential.type === 'oauth' &&
@@ -381,9 +393,11 @@ export async function readFirstPartyModelSources(
         ![token?.access_token, token?.refresh_token].some(
           (value) => typeof value === 'string' && value && serialized.includes(value),
         ) &&
-        key === configFingerprint
+        key === configFingerprint &&
+        tokenFingerprint !== undefined &&
+        tokenFingerprint === (await tokenFingerprintFor(raw))
       )
-        kimiOAuthCapabilities.set(key, metadata)
+        kimiOAuthCapabilities.set(key, { metadata, tokenFingerprint })
     }
     signal.throwIfAborted()
     return sources

@@ -72,7 +72,8 @@ export async function prepareKimiAccountDirectory(stateDirectory: string, signal
 }
 
 /** Installed Kimi toolkit.resolveKimiTokenStorageName, constrained to one own file. */
-function tokenSlot(key: unknown): string {
+export function resolveKimiTokenStorageName(key: unknown): string {
+  key ??= 'oauth/kimi-code'
   if (key === 'kimi-code' || key === 'oauth/kimi-code') return 'kimi-code'
   if (!text(key)) throw new Error('Unknown Kimi OAuth slot')
   const slot = key.startsWith('oauth/') ? key.slice(6) : key
@@ -126,7 +127,7 @@ export async function readKimiOwnToken(directory: string, slot: string, signal: 
   let bytes: Buffer | undefined
   try {
     signal.throwIfAborted()
-    if (tokenSlot(slot) !== slot) throw new Error('Unsafe Kimi token slot')
+    slot = resolveKimiTokenStorageName(slot)
     await safePiOmpAncestors(directory)
     const path = join(directory, `${slot}.json`)
     const entry = await lstat(path)
@@ -191,7 +192,9 @@ export async function readKimiAccount(
     const apiLogins: AccountLogin[] = Object.entries(config.providers)
       .filter(
         ([, provider]) =>
-          object(provider) && !provider.oauth && (literal(provider.apiKey) || literal(provider.env?.KIMI_API_KEY)),
+          object(provider) &&
+          !provider.oauth &&
+          (literal(provider.apiKey) || literal(provider.env?.KIMI_API_KEY)),
       )
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
       .map(([key, provider]) => {
@@ -201,13 +204,19 @@ export async function readKimiAccount(
       })
     const api = apiLogins.length > 0
     const configured: AccountIdentity = api
-      ? { state: 'configured', verification: 'local', authMethod: 'api', summary: '已配置 Kimi API', logins: apiLogins }
+      ? {
+          state: 'configured',
+          verification: 'local',
+          authMethod: 'api',
+          summary: '已配置 Kimi API',
+          logins: apiLogins,
+        }
       : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Kimi' }
     const provider = config.providers['managed:kimi-code']
     if (!object(provider) || provider.oauth === undefined) return configured
     if (provider.type !== 'kimi' || !object(provider.oauth) || provider.oauth.storage !== 'file')
       return { state: 'unknown', verification: 'local', summary: 'Kimi 登录配置暂不支持，请打开账号终端' }
-    const slot = tokenSlot(provider.oauth.key)
+    const slot = resolveKimiTokenStorageName(provider.oauth.key)
     const token = await readKimiOwnToken(
       join(options.home ?? process.env.KIMI_CODE_HOME ?? join(homedir(), '.kimi-code'), 'credentials'),
       slot,

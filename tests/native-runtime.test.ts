@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   existsSync,
   mkdtempSync,
@@ -37,8 +37,13 @@ vi.mock('../src/host/claude-own-route.ts', () => ({
   },
 }))
 const closes: Array<() => void | Promise<void>> = []
+beforeEach(() => {
+  for (const name of ['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY', 'CODEBUDDY_API_KEY_HELPER_DISABLED',
+    'CODEBUDDY_API_KEY_DISABLED', 'CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT']) vi.stubEnv(name, undefined)
+})
 afterEach(async () => {
   for (const close of closes.splice(0).reverse()) await close()
+  vi.unstubAllEnvs()
 })
 function setup(status = 'SUCCESS') {
   const project = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-native-runtime-')))
@@ -311,6 +316,7 @@ it('does not report normal completion when the native Harness lease cannot drain
 })
 
 it.each(['codebuddy', 'antigravity', 'qoder'] as const)('sets the updater environment only for CodeBuddy (%s; simulated)', async cli => {
+  vi.stubEnv('CODEBUDDY_INTERNET_ENVIRONMENT', undefined)
   const f = setup()
   const preference = { cli, model: 'synthetic-model', effort: 'default' as const }
   const worker = await f.runtime.submit('parent', f.project, 'synthetic updater env', 'first', preference,
@@ -318,4 +324,34 @@ it.each(['codebuddy', 'antigravity', 'qoder'] as const)('sets the updater enviro
   expect(worker.status, worker.error).toBe('completed')
   expect(f.calls[0]!.env?.DISABLE_AUTOUPDATER).toBe(cli === 'codebuddy' ? '1' : undefined)
   expect(f.calls[0]!.env ?? {}).not.toHaveProperty('CODEBUDDY_INTERNET_ENVIRONMENT')
+})
+
+it.each(['codebuddy', 'antigravity', 'qoder'] as const)('模拟：CodeBuddy env credentials reach only its Worker child (%s) without persistence', async cli => {
+  const f = setup()
+  const env = { CODEBUDDY_AUTH_TOKEN: 'SIMULATED_WORKER_TOKEN', CODEBUDDY_API_KEY: 'SIMULATED_WORKER_KEY',
+    CODEBUDDY_API_KEY_HELPER_DISABLED: 'false', CODEBUDDY_API_KEY_DISABLED: '0',
+    CODEBUDDY_INTERNET_ENVIRONMENT: 'external', CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT: 'internal' }
+  for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+  const preference = { cli, model: 'synthetic-model', effort: 'default' as const }
+  const worker = await f.runtime.submit('parent', f.project, '模拟认证环境', 'first', preference,
+    cli === 'codebuddy' ? 'plan' : 'accept-edits').done
+  expect(worker.status, worker.error).toBe('completed')
+  for (const [name, value] of Object.entries(env)) {
+    expect(f.calls[0]!.env?.[name] === value).toBe(cli === 'codebuddy')
+    if (cli !== 'codebuddy') expect(f.calls[0]!.env).not.toHaveProperty(name)
+  }
+  expect(f.calls[0]!.cwd).toBe(f.project)
+  const publicState = JSON.stringify([f.requests, worker, f.runtime.get('parent', worker.id), f.storage.history(worker.id)])
+  expect(publicState).not.toContain(env.CODEBUDDY_AUTH_TOKEN); expect(publicState).not.toContain(env.CODEBUDDY_API_KEY)
+  function inspect(directory: string) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) inspect(path)
+      else if (entry.isFile()) {
+        const raw = readFileSync(path, 'utf8')
+        expect(raw.includes(env.CODEBUDDY_AUTH_TOKEN) || raw.includes(env.CODEBUDDY_API_KEY)).toBe(false)
+      }
+    }
+  }
+  inspect(f.storage.directory)
 })

@@ -332,6 +332,24 @@ describe('shared native Hermes Nous renewal', () => {
       switched = backend(other, { rotate: () => other.rotate({ sub: 'other-subject' }) })
     await expect(start(other, switched)).rejects.toMatchObject({ state: 'changed' })
   })
+  it('模拟：iat 更新且到期时间缩短的轮换保持账号绑定稳定', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const f = fixture(7200)
+    const b = backend(f, { rotate: () => f.rotate({ iat: now, exp: now + 600 }) })
+    const before = await readCliAccountBinding('hermes', b, f.runtime, f.home, signal())
+    const principal = hermesNousPrincipalDigest(projectHermesNousSource(f.raw))
+    const expired = jwt(-60, { iat: now - 300 })
+    for (const row of [f.raw.providers.nous, ...f.raw.credential_pool.nous])
+      Object.assign(row, { access_token: expired, agent_key: expired })
+    f.save()
+    await start(f, b)
+    expect(b.spawn).toHaveBeenCalledTimes(1)
+    const saved = JSON.parse(readFileSync(join(f.home, 'auth.json'), 'utf8'))
+    expect(saved.providers.nous.refresh_token).toBe('synthetic-rotated')
+    expect(hermesNousPrincipalDigest(projectHermesNousSource(saved))).toBe(principal)
+    expect(await readCliAccountBinding('hermes', b, f.runtime, f.home, signal())).toBe(before)
+    expect(b.spawn).toHaveBeenCalledTimes(1)
+  })
   it('shares concurrent status/catalog requests and one reader cancellation does not cancel the rotation', async () => {
     const f = fixture(),
       gate = deferred(),

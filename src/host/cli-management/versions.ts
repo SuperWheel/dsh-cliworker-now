@@ -1,4 +1,5 @@
 import { spawnProbe } from '../probe-process.ts'
+import { codebuddyEnvironment } from '../codebuddy-account.ts'
 import { isMusl, qoderPlatform, selectQoderFile } from './artifacts/platform.ts'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
@@ -100,7 +101,7 @@ export async function currentVersion(cli: ActiveCliId, identity: InstallationIde
   const spec = CLI_SOURCES[cli]
   if (background && !spec.backgroundSafe) return
   if (spec.version !== 'kimi' && spec.version !== 'command') return
-  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : cli === 'codebuddy' ? { DISABLE_AUTOUPDATER: '1' } : undefined, timeoutMs)
+  const raw = await captureReadOnly(backend, config, [identity.executable, '--version'], signal, background, cli === 'kimi' ? { KIMI_CODE_NO_AUTO_UPDATE: '1' } : cli === 'codebuddy' ? codebuddyEnvironment() : undefined, timeoutMs)
   if (cli === 'traecn') {
     const channel = /\binstallation:\s*(public|tob|tob-alpha|internal)\b/.exec(stripVTControlCharacters(raw))?.[1]
     if (channel) identity.channel = channel

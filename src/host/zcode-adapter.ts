@@ -22,7 +22,7 @@ import { EFFORTS, type Effort, type ModelChoice, type TaskMode } from '../shared
 import type { EventInput, ProtocolResult } from './protocol.ts'
 import type { AccountIdentity } from './account-identity.ts'
 import { probeAccountModels } from './account-models.mjs'
-import { readZCodeAccountApiKeys, readZCodeAccountBindings } from './zcode-account-models.ts'
+import { readZCodeAccountBindings } from './zcode-account-models.ts'
 import { ZcodeResponseTracker } from './zcode-response.mjs'
 import { withCatalogNotice } from './catalog-notice.ts'
 import { shareNativeMemory, unshareNativeMemory, parseZcodeDeniedTools, zcodeWorkflowMode } from './cli-native-capabilities.mjs'
@@ -102,9 +102,11 @@ export function zcodeEnvironment(executable: string, state: string, auth?: strin
   // Harness deliberately scrubs parent SECRET variables. Native authentication,
   // metadata decryption and resumed/headless tasks must use the same cipher key.
   // Keep it exclusively in the selected ZCode child's environment.
-  const credentialSecret = process.env.ZCODE_CREDENTIAL_SECRET?.trim()
+  const credentialSecret = process.env.ZCODE_CREDENTIAL_SECRET
+  const credentialSecretFile = process.env.ZCODE_CREDENTIAL_SECRET_FILE
   return {
     ...(credentialSecret ? { ZCODE_CREDENTIAL_SECRET: credentialSecret } : {}),
+    ...(credentialSecretFile ? { ZCODE_CREDENTIAL_SECRET_FILE: credentialSecretFile } : {}),
     ZCODE_DATA_BASE_DIR: auth ?? zcodeAuthDirectory(),
     ZCODE_STORAGE_DIR: join(state, 'storage'),
     ZCODE_SESSION_DB_PATH: join(state, 'storage/session.sqlite'),
@@ -224,6 +226,8 @@ export async function prepareZCode(input: ZCodeInput) {
     )
     if (!binding || credentialDigest() !== before)
       throw new Error('ZCode 当前账号绑定缺失或已变化，请重新检查原生登录')
+    if (binding.authSource === 'oauth' && !nonempty(binding.key))
+      throw new Error('ZCode OAuth 已登录，但原生桥接尚未支持项目访问令牌；请使用已配置的自有 API Key 路由')
     const providerId = selected.providerId
     Object.assign(env, {
       CLIWORKER_ZCODE_NATIVE_ACCOUNT: JSON.stringify({
@@ -236,7 +240,7 @@ export async function prepareZCode(input: ZCodeInput) {
           mode: access.mode,
           entitled: true,
         },
-        binding,
+        binding: { identity: binding.identity, key: binding.key },
         credential: { authDirectory, sha256: before },
         snapshot: {
           revision: `cliworker-account:${randomUUID()}`,
@@ -556,11 +560,11 @@ export async function readZCodeBindingMaterial(
     const key =
       account?.key ??
       (['api-key', 'zhipu-coding-plan-api-key'].includes(access?.type) ? access.apiKey : undefined)
-    if (!nonempty(key)) continue
+    if (!nonempty(key) && account?.authSource !== 'oauth') continue
     credentials.set(entry.providerId, {
       provider: entry.providerId,
-      key,
-      identity: account?.identity,
+      key: key ?? '',
+      identity: account?.authSource === 'manual' ? undefined : account?.identity,
       baseUrl: api.baseUrl,
       apiType: api.type,
     })
@@ -868,7 +872,7 @@ export async function discoverZCode(
     readZCodeConfig(builtinPath(executable, builtinConfig), false),
     personal,
   )
-  const bound = await readZCodeAccountApiKeys(
+  const accounts = await readZCodeAccountBindings(
     authDirectory ?? zcodeAuthDirectory(),
     candidates.flatMap((entry) => {
       const access = entry.providerConfig.access
@@ -880,13 +884,14 @@ export async function discoverZCode(
     }),
     options,
   )
+  const bound = new Map([...accounts].filter(([, account]) => !!account.key).map(([provider, account]) => [provider, account.key]))
+  const oauthUnavailable = [...accounts.values()].some((account) => account.authSource === 'oauth' && !nonempty(account.key))
   const groups = new Map<string, ResolvedZCodeModel[]>()
   let skippedHeaders = 0
   for (const entry of candidates) {
     const { access, api } = entry.providerConfig
-    // Native OAuth login binds a concrete Worker API key to the current account.
-    // Only that exact binding enters the same native route; static entitled flags,
-    // old identities, desktop OAuth tokens and refresh tokens do not substitute.
+    // REQ-0136: keep using the current identity's legacy key until the native
+    // 0.17.1 project-token flow is supported. Never substitute an OAuth token.
     const apiKey =
       access?.type === 'zhipu-account'
         ? bound.get(entry.providerId)
@@ -972,6 +977,7 @@ export async function discoverZCode(
   options.signal?.throwIfAborted()
   const models = results.flat()
   const notes = [
+    oauthUnavailable ? 'OAuth 已登录；项目访问令牌目录查询尚未支持，可使用已配置的自有 API Key 路由' : '',
     unverified ? `${unverified} 个自定义服务商未提供模型目录，所列模型来自本机配置` : '',
     rejected ? `已跳过 ${rejected} 个认证失败的服务商` : '',
     skippedHeaders ? `已跳过 ${skippedHeaders} 个请求头无法核对的服务商` : '',

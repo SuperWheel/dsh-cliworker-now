@@ -18,6 +18,8 @@ export const WINDOWS_TESTS = [
   'tests/native-agy-acp.test.ts', 'tests/agy-account-guide.test.ts', 'tests/agy-windows-account.test.ts',
   'tests/codebuddy-account.test.ts', 'tests/traecn-integration.test.ts',
   'tests/workbuddy-installation.test.ts', 'tests/workbuddy-desktop-open.test.ts',
+  'tests/pi-omp-native.test.ts', 'tests/zcode-account-models.test.ts', 'tests/first-party-account-context.test.ts',
+  'tests/kimi-accounts.test.ts',
 ]
 export const SOURCE_ROOT_FILES = [
   'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml',

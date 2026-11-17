@@ -18,7 +18,7 @@ const managers: AccountManager[] = []
 afterEach(async () => { await Promise.all(managers.splice(0).map(m => m.close())); vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 async function fixture() {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'traecn-SIMULATED-account-'))); roots.push(root)
-  vi.stubEnv('TRAE_HOME', root); vi.stubEnv('TRAECLI_HOST', ''); vi.stubEnv('TRAECLI_PERSONAL_ACCESS_TOKEN', '')
+  vi.stubEnv('TRAE_HOME', root); vi.stubEnv('TRAECLI_HOME', ''); vi.stubEnv('TRAECLI_HOST', ''); vi.stubEnv('TRAECLI_PERSONAL_ACCESS_TOKEN', '')
   const path = join(root, 'cli/auth.json'); await mkdir(join(root, 'cli'))
   const value = { auth_mode: 'trae', trae: { user_id: 'SIMULATED-user', region: 'cn', login_method: 'personal', credential_kind: 'oauth',
     endpoints: { api_base_url: 'https://api.example.invalid' }, access_token: 'SIMULATED-access-secret', refresh_token: 'SIMULATED-refresh-secret', personal_device: 'SIMULATED-private-device' } }

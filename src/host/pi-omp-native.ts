@@ -5,7 +5,8 @@ import { constants } from 'node:fs'
 import { lstat, open, mkdir, writeFile, rename, rm, mkdtemp, realpath, readlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve, sep, parse, relative, toNamespacedPath } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { readPiApiCredential } from './pi-native-catalog.mjs'
 import { DatabaseSync } from 'node:sqlite'
 import { parse as parseYaml } from 'yaml'
 import { accountEmail, type AccountIdentity } from './account-identity.ts'
@@ -175,6 +176,33 @@ function credentialState(
   }
   throw new Error('Unsupported native credential type')
 }
+
+/** Malformed Pi entries do not hide other providers; OMP retains its own schema. */
+function piCredentialState(data: unknown): 'configured' | 'expired' | undefined {
+  if (!object(data)) return
+  if (data.type === 'api_key') return readPiApiCredential(data)?.configured ? 'configured' : undefined
+  try { return credentialState(data.type, data) } catch { return undefined }
+}
+
+/** Host-only principal. Preserve existing key digests; env-only logins hash sorted material. */
+function piApiBindingPrincipal(data: unknown) {
+  const credential = readPiApiCredential(data)
+  if (!credential?.configured) return undefined
+  return credential.envOnly
+    ? { kind: 'api', env: refreshFingerprint(credential.env ?? {}) }
+    : { kind: 'api', key: createHash('sha256').update(credential.key!).digest('hex') }
+}
+
+function piWorkerAuth(auth: Record<string, any>) {
+  return Object.fromEntries(Object.entries(auth).filter(([, value]) => piCredentialState(value) !== undefined)
+    .map(([provider, value]) => {
+      const credential = readPiApiCredential(value)
+      // The bridge deliberately strips ambient credentials. Capture only variables
+      // explicitly referenced by this credential, inside its native private env.
+      return [provider, credential?.fallbackEnv && Object.keys(credential.fallbackEnv).length
+        ? { ...value, env: { ...value.env, ...credential.fallbackEnv } } : value]
+    }))
+}
 interface NativeSource {
   sourceId: string
   auth: Record<string, any>
@@ -230,8 +258,7 @@ async function source(cli: PiOmpCli, path: string, scratch?: string): Promise<Na
     rejectCommands(result.auth)
     rejectCommands(result.models)
     for (const auth of Object.values(result.auth)) {
-      if (!object(auth) || typeof auth.type !== 'string') throw new Error('Invalid Pi native credential')
-      const state = credentialState(auth.type, auth)
+      const state = piCredentialState(auth)
       if (state === 'configured') result.kinds.add(auth.type)
       if (state === 'expired') result.expired = true
     }
@@ -497,7 +524,7 @@ function mergeSources(sources: NativeSource[]) {
   const kinds = new Set<string>()
   let expired = false
   for (const entry of Object.values(auth) as Record<string, any>[]) {
-    const state = credentialState(entry.type, entry)
+    const state = piCredentialState(entry)
     if (state === 'configured') kinds.add(entry.type)
     if (state === 'expired') expired = true
   }
@@ -523,6 +550,7 @@ export async function readPiOmpAccountMaterial(cli: PiOmpCli, options: PiOmpNati
     const merged = mergeSources(sources)
     return {
       auth: merged.auth,
+      piApiPrincipals: Object.fromEntries(Object.entries(merged.auth).map(([provider, value]) => [provider, piApiBindingPrincipal(value)])),
       credentials: [...merged.credentialProviders.values()].flat(),
       env: merged.env,
       models: { providers: merged.providers },
@@ -551,7 +579,7 @@ async function sharedOAuthStore(cli: PiOmpCli, sources: NativeSource[], options:
       owners.set(provider, source)
   const credentials =
     cli === 'pi'
-      ? Object.entries(merged.auth).map(([provider, data]) => ({
+      ? Object.entries(piWorkerAuth(merged.auth)).map(([provider, data]) => ({
           provider,
           data,
           row: undefined as any,
@@ -675,7 +703,7 @@ export async function snapshotPiOmpNative(
           auth: Object.fromEntries(
             Object.entries(source.auth).filter(([provider, value]) => {
               if (authOwners.get(provider) !== source) return false
-              const allowed = value.type !== 'oauth' || !!refreshPrincipal(value)
+              const allowed = value?.type !== 'oauth' || !!refreshPrincipal(value)
               if (!allowed) unsupportedOAuth = true
               return allowed
             }),
@@ -710,7 +738,7 @@ export async function snapshotPiOmpNative(
         const files: Record<string, unknown> =
           cli === 'pi'
             ? {
-                'auth.json': auth,
+                'auth.json': piWorkerAuth(auth),
                 'models.json': { providers },
                 'settings.json': Object.assign(
                   Object.create(null),
@@ -856,9 +884,13 @@ export async function inspectPiOmpNativeAccount(
         disabled: unknown,
         stored: Stored,
       ) => {
-        if (credentialState(type, value, disabled) !== 'configured') return
+        if ((cli === 'pi' ? piCredentialState(value) : credentialState(type, value, disabled)) !== 'configured') return
         if (type === 'api' || type === 'api_key') {
-          if (usableNativeApiKey(ownValue(value.key ?? value.apiKey)))
+          if (cli === 'pi' && type === 'api_key') {
+            const credential = readPiApiCredential(value)!
+            add(provider, 'api', stored, undefined, undefined, credential.envOnly
+              ? ['api', piApiBindingPrincipal(value)] : ['api', credential.key])
+          } else if (usableNativeApiKey(ownValue(value.key ?? value.apiKey)))
             add(provider, 'api', stored, undefined, undefined, ['api', ownValue(value.key ?? value.apiKey)])
         } else if (
           usableNativeApiKey(value.access) &&
@@ -874,7 +906,7 @@ export async function inspectPiOmpNativeAccount(
         const source: AccountSource = index === 0 ? 'native' : 'plugin'
         for (const [provider, value] of Object.entries(item.auth) as [string, Record<string, any>][])
           if (!later(index, (next) => Object.hasOwn(next.auth, provider)))
-            inspect(provider, value.type, value, undefined, { source, entry: source })
+            inspect(provider, value?.type, value, undefined, { source, entry: source })
         for (const row of item.credentials)
           if (!later(index, (next) => next.credentials.some((other) => other.provider === row.provider && ownsProvider(other))))
             inspect(row.provider, row.credential_type, JSON.parse(row.data), row.disabled_cause, {
@@ -895,6 +927,8 @@ export async function inspectPiOmpNativeAccount(
       if (logins.length) return authenticatedAccountLogins(logins)
       if (expired || invalidOAuth)
         return { state: 'unauthenticated', verification: 'local', summary: '原生登录已失效，请重新登录' }
+      if (cli === 'pi' && Object.values(auth).some(value => readPiApiCredential(value)?.missing))
+        return { state: 'unconfigured', verification: 'local', summary: 'API 凭据引用的环境变量缺失或为空，请检查配置' }
       if (Object.keys(auth).length || credentialProviders.size || Object.keys(providers).length)
         return { state: 'configured', verification: 'local', summary: '尚未配置有效凭据' }
       return { state: 'unconfigured', verification: 'local', summary: '尚未配置原生账号' }

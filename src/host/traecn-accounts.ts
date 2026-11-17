@@ -9,11 +9,16 @@ import { METADATA_EXIT_GRACE_MS, ProcessCleanupUnconfirmedError, type ProcessBac
 
 type Identity = Pick<AccountStatus, 'state' | 'summary' | 'verification'>
 
+/** traex gives a non-empty TRAECLI_HOME precedence over the shared TRAE home. */
+export function traeCliHome(env: NodeJS.ProcessEnv = process.env, home = homedir()): string {
+  return env.TRAECLI_HOME || join(env.TRAE_HOME || join(home, '.trae'), 'cli')
+}
+
 /** Keep TRAE's native configuration and inherited environment; Desktop does not source shell profiles. */
 export function traecnEnvironment(env: NodeJS.ProcessEnv = process.env, platform = process.platform, home = homedir()): Record<string, string> {
   const local = join(home, '.local/bin'), path = env.PATH ?? ''
   // DSH scrubs credential-shaped ambient names; forward only TRAE's own route, in child env only.
-  const own = Object.fromEntries(['TRAE_HOME', 'TRAECLI_HOST', 'TRAECLI_PERSONAL_ACCESS_TOKEN']
+  const own = Object.fromEntries(['TRAE_HOME', 'TRAECLI_HOME', 'TRAECLI_HOST', 'TRAECLI_PERSONAL_ACCESS_TOKEN']
     .flatMap(name => env[name] === undefined ? [] : [[name, env[name]!]]))
   return { ...own, ...(platform === 'darwin' && !path.split(delimiter).includes(local)
     ? { PATH: path ? `${path}${delimiter}${local}` : local } : {}) }

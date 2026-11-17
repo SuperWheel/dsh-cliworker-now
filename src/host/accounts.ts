@@ -2,7 +2,7 @@ import { piInstallationIntegrityMessage } from './pi-installation.mjs'
 import { deletePiOmpNativeConfigProvider } from './custom-provider-native.ts'
 import { deletePiOmpManagedProvider } from './custom-provider-managed.ts'
 import { spawnProbe } from './probe-process.ts'
-import { readCodebuddyAccount } from './codebuddy-account.ts'
+import { codebuddyEnvironment, readCodebuddyAccount } from './codebuddy-account.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { WorkBuddyDesktopAccounts, desktopActions, workbuddyDesktopFailure } from './workbuddy-desktop.ts'
 import { openWorkBuddyDesktop } from './workbuddy-desktop-open.ts'
@@ -562,7 +562,7 @@ export class AccountManager {
       const executable = background ? path! : await resolveCliExecutable(cli, this.backend, this.config, control)
       installed = true
       control.throwIfAborted()
-      if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable })),
+      if (cli === 'codebuddy') return { cli, installed, ...(await readCodebuddyAccount({ signal: control, executable, project: cwd })),
         actions: this.backend.spawnTerminal ? actionsFor(cli, this.config) : [] }
       if (cli === 'traecn') return { cli, installed,
         ...(await readTraecnAccount(this.backend, this.config, executable, cwd, control)),
@@ -1062,7 +1062,7 @@ export class AccountManager {
             ? '退出 Claude 官方账号；本地代理设置保留。'
             : '在原生终端登录 Claude 官方账号；本地代理设置保留。'
       } else if (cli === 'codebuddy') {
-        launch.env = { DISABLE_AUTOUPDATER: '1' }
+        launch.env = codebuddyEnvironment()
       } else if (cli === 'traecn') {
         launch.argv = [executable, ...traecnAccountArguments(action, provider)]
         launch.env = traecnEnvironment()

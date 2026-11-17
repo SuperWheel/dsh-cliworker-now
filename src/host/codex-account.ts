@@ -1,5 +1,6 @@
 import { spawnProbe } from './probe-process.ts'
 import { StringDecoder } from 'node:string_decoder'
+import { createHash } from 'node:crypto'
 import { ProcessCleanupUnconfirmedError, type ProcessBackend, type RuntimeConfig } from './process.ts'
 import { accountEmail, type AccountIdentity } from './account-identity.ts'
 
@@ -37,6 +38,28 @@ export async function readCodexAccount(
   cwd: string,
   signal: AbortSignal,
 ): Promise<AccountIdentity | undefined> {
+  return (await probeCodexAccount(backend, config, executable, cwd, signal))?.identity
+}
+
+interface CodexAccountBinding {
+  identity: AccountIdentity
+  workspaceName?: string
+  apiKeyHash?: string
+}
+
+/** Host-only projection; API credentials are hashed before leaving the probe. */
+export function readCodexAccountBinding(...args: Parameters<typeof readCodexAccount>) {
+  return probeCodexAccount(...args, true)
+}
+
+async function probeCodexAccount(
+  backend: ProcessBackend,
+  config: RuntimeConfig,
+  executable: string,
+  cwd: string,
+  signal: AbortSignal,
+  binding = false,
+): Promise<CodexAccountBinding | undefined> {
   signal.throwIfAborted()
   const control = AbortSignal.any([signal, AbortSignal.timeout(4_000)])
   const child = await spawnProbe(backend, {
@@ -65,11 +88,12 @@ export async function readCodexAccount(
     if (child.stderr) for await (const chunk of child.stderr) count(chunk)
   })()
   void stderr.catch(() => undefined)
-  const stdout = (async (): Promise<AccountIdentity | undefined> => {
+  const stdout = (async (): Promise<CodexAccountBinding | undefined> => {
     if (!child.stdout) return undefined
     const decoder = new StringDecoder('utf8')
     let pending = '',
       initialized = false
+    let account: CodexAccountBinding | undefined
     for await (const chunk of child.stdout) {
       pending += decoder.write(count(chunk))
       let newline: number
@@ -88,8 +112,31 @@ export async function readCodexAccount(
           initialized = true
           await write({ method: 'initialized', params: {} })
           await write({ id: 2, method: 'account/read', params: { refreshToken: false } })
-        } else if (response.id === 2 && initialized) {
-          return response.error ? undefined : projectAccount(response.result)
+        } else if (response.id === 2 && initialized && !account) {
+          const identity = response.error ? undefined : projectAccount(response.result)
+          if (!identity) return undefined
+          account = { identity }
+          if (!binding) return account
+          if (identity.authMethod === 'api') {
+            // v0.169.0 account/read only reports the API login kind. The legacy
+            // read-only RPC exports its effective key without a token refresh.
+            await write({ id: 3, method: 'getAuthStatus', params: { includeToken: true, refreshToken: false } })
+            continue
+          }
+          if (isRecord(response.result) && isRecord(response.result.account)) {
+            const name = response.result.account.workspaceName
+            if (typeof name === 'string' && name.trim() && name.length <= 1024 && !/[\x00-\x1f]/.test(name))
+              account.workspaceName = name
+          }
+          return account
+        } else if (response.id === 3 && binding && account?.identity.authMethod === 'api') {
+          if (response.error || !isRecord(response.result) || response.result.authMethod !== 'apikey') return undefined
+          const key = response.result.authToken
+          // Same literal-credential acceptance and SHA-256 rule as file bindings.
+          if (typeof key !== 'string' || !key.trim() ||
+              /^(?:!|\$|op:\/\/|<|your[_ -]|placeholder|changeme)/i.test(key.trim()) || /[\x00-\x1f]/.test(key)) return undefined
+          account.apiKeyHash = createHash('sha256').update(key).digest('hex')
+          return account
         }
       }
     }

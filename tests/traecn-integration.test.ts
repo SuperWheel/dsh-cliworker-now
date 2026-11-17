@@ -13,7 +13,7 @@ import { nativeAttachmentCapability } from '../src/host/native-attachments.mjs'
 import { transportFor, usesNativeBridge } from '../src/host/native-worker.ts'
 import { nativeSkillPaths, nativeCliCapabilities } from '../src/host/cli-native-capabilities.mjs'
 import { nativeHarnessExecutionReady } from '../src/host/native-harness-injection.mjs'
-import { traecnEnvironment } from '../src/host/traecn-accounts.ts'
+import { readTraecnAccount, traecnEnvironment } from '../src/host/traecn-accounts.ts'
 import { windowsCliCommands } from '../src/host/windows-cli-installation.ts'
 import { traecnMetadata } from './fixtures/traecn-metadata.ts'
 const state = vi.hoisted(() => ({ home: '' }))
@@ -86,9 +86,19 @@ describe('模拟：TRAE 注册、路由与官方身份', () => {
     for (const path of paths) await mkdir(path, { recursive: true })
     expect(nativeSkillPaths('traecn', { home, project })).toEqual(paths)
     expect(nativeCliCapabilities({ cli: 'traecn', mode: 'accept-edits' }).classes).toEqual(['file-read', 'file-write', 'search', 'shell', 'web', 'skills'])
-    expect(traecnEnvironment({ PATH: '/usr/bin', TRAE_HOME: '/模拟native' }, 'darwin', home)).toEqual({ TRAE_HOME: '/模拟native', PATH: `/usr/bin${delimiter}${join(home, '.local/bin')}` })
+    expect(traecnEnvironment({ PATH: '/usr/bin', TRAE_HOME: '/模拟native', TRAECLI_HOME: join(home, '模拟-cli') }, 'darwin', home)).toEqual({ TRAE_HOME: '/模拟native', TRAECLI_HOME: join(home, '模拟-cli'), PATH: `/usr/bin${delimiter}${join(home, '.local/bin')}` })
     expect(traecnEnvironment({ PATH: `/usr/bin${delimiter}${join(home, '.local/bin')}` }, 'darwin', home)).toEqual({})
   })
+})
+
+it('模拟：TRAE 元数据查询传递 TRAECLI_HOME', async () => {
+  const home = await root()
+  vi.stubEnv('TRAECLI_HOME', join(home, '模拟-cli'))
+  const f = traecnMetadata()
+  await expect(readTraecnAccount(f.backend, DEFAULT_CONFIG, '模拟-traecli', home, new AbortController().signal))
+    .resolves.toMatchObject({ state: 'authenticated' })
+  expect(f.calls.length).toBeGreaterThan(0)
+  for (const call of f.calls) expect(call.env).toMatchObject({ TRAECLI_HOME: join(home, '模拟-cli') })
 })
 
 it('模拟：Windows 只走共享 PATH，缺失提示配置 traecnExecutable', async () => {

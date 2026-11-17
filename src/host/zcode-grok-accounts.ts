@@ -1,8 +1,9 @@
+import { createZCodeCredentialReader, decodeZCodeLegacyCredentials, ZCodeCredentialError, type ZCodeCredentialOptions, type ZCodeCredentialReader } from './zcode-credentials.ts'
 import { spawnProbe } from './probe-process.ts'
 import { chmod, lstat, mkdir, open, realpath } from 'node:fs/promises'
-import { homedir, platform, userInfo } from 'node:os'
+import { homedir, platform } from 'node:os'
 import { constants } from 'node:fs'
-import { createHash, createDecipheriv } from 'node:crypto'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { stripVTControlCharacters } from 'node:util'
@@ -54,130 +55,120 @@ const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value)
 const nonempty = (value: unknown): value is string => typeof value === 'string' && !!value.trim()
 
-/** ZCode 0.16.9 native AES-GCM format. Plaintext never leaves this projection. */
+/** Synchronous legacy projection retained for existing callers and fixtures. */
 export function projectZCodeIdentity(raw: unknown, secret: string): AccountIdentity {
-  if (!record(raw)) throw new Error('Invalid account metadata')
-  const key = createHash('sha256').update(secret).digest()
-  const decode = (value: unknown): string => {
-    if (!nonempty(value)) return ''
-    if (!value.startsWith('enc:v1:')) return value
-    const parts = value.slice(7).split('.')
-    if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part)))
-      throw new Error('Invalid encrypted account metadata')
-    const [iv, tag, encrypted] = parts.map((part) => Buffer.from(part, 'base64url'))
-    if (iv!.length !== 12 || tag!.length !== 16) throw new Error('Invalid account cipher')
-    const cipher = createDecipheriv('aes-256-gcm', key, iv!)
-    cipher.setAuthTag(tag!)
-    const plain = Buffer.concat([cipher.update(encrypted!), cipher.final()])
+  return projectDecodedZCodeIdentity(decodeZCodeLegacyCredentials(raw, secret))
+}
+function projectDecodedZCodeIdentity(raw: Record<string, string>): AccountIdentity {
+  const decode = (value: unknown): string => typeof value === 'string' ? value : ''
+  const provider = decode(raw['oauth:active_provider']).trim()
+  const userInfo = (family: string): Record<string, unknown> | undefined => {
     try {
-      return plain.toString('utf8')
-    } finally {
-      plain.fill(0)
+      const info: unknown = JSON.parse(decode(raw[`oauth:${family}:user_info`]))
+      return record(info) ? info : undefined
+    } catch (error) {
+      if (error instanceof ZCodeCredentialError) throw error
+      return undefined
     }
   }
-  try {
-    const provider = decode(raw['oauth:active_provider']).trim()
-    const userInfo = (family: string): Record<string, unknown> | undefined => {
-      try {
-        const info: unknown = JSON.parse(decode(raw[`oauth:${family}:user_info`]))
-        return record(info) ? info : undefined
-      } catch {
-        return undefined
-      }
+  const label = (info: Record<string, unknown> | undefined): string | undefined => {
+    const profile = record(info?.rawProfile) ? info.rawProfile : undefined
+    const email = accountEmail(profile?.email) || accountEmail(info?.email) || accountEmail(info?.username)
+    const name = info?.displayName
+    const display =
+      typeof name === 'string' && name.length <= 80 && !/[\p{C}<>]|(?:Bearer|sk-|enc:v1:)/iu.test(name)
+        ? name.trim()
+        : undefined
+    return email || display || undefined
+  }
+  let bound = false
+  let apiBinding = false
+  for (const family of ['bigmodel', 'zai']) {
+    const nativeProvider = `account:${family}-individual-coding-plan`
+    const identity = decode(raw[`account-provider:${nativeProvider}:identity`]).trim()
+    if (!identity) continue
+    const apiKey = decode(
+      raw[`account-provider:coding-plan:${nativeProvider}:account:${encodeURIComponent(identity)}:api-key`],
+    ).trim()
+    const authSource = decode(raw[`account-provider:${nativeProvider}:auth-source`])
+    const oauth = authSource === 'oauth' || !authSource && !!decode(raw[`oauth:${family}:access_token`]).trim() && !/^key-[a-f0-9]{24}$/.test(identity)
+    if (authSource && !['oauth', 'manual'].includes(authSource))
+      return { state: 'unknown', verification: 'local', summary: 'ZCode 账号授权来源未知' }
+    const access = authSource === 'manual' ? '' : decode(raw[`oauth:${family}:access_token`]).trim()
+    if (oauth ? !access : !apiKey) continue
+    bound = true
+    if (authSource === 'manual') {
+      apiBinding = true
+      continue
     }
-    const label = (info: Record<string, unknown> | undefined): string | undefined => {
-      const profile = record(info?.rawProfile) ? info.rawProfile : undefined
-      const email = accountEmail(profile?.email) || accountEmail(info?.email) || accountEmail(info?.username)
-      const name = info?.displayName
-      const display =
-        typeof name === 'string' && name.length <= 80 && !/[\p{C}<>]|(?:Bearer|sk-|enc:v1:)/iu.test(name)
-          ? name.trim()
-          : undefined
-      return email || display || undefined
+    // Native API setup also persists a binding, using a fingerprint identity.
+    // It remains API configuration rather than an OAuth login.
+    if (/^key-[a-f0-9]{24}$/.test(identity)) {
+      apiBinding ||= identity === `key-${createHash('sha256').update(apiKey).digest('hex').slice(0, 24)}`
+      continue
     }
-    let bound = false
-    let apiBinding = false
-    for (const family of ['bigmodel', 'zai']) {
-      const nativeProvider = `account:${family}-individual-coding-plan`
-      const identity = decode(raw[`account-provider:${nativeProvider}:identity`]).trim()
-      if (!identity) continue
-      const apiKey = decode(
-        raw[`account-provider:coding-plan:${nativeProvider}:account:${encodeURIComponent(identity)}:api-key`],
-      ).trim()
-      if (!apiKey) continue
-      bound = true
-      // Native API setup also persists a binding, using a fingerprint identity.
-      // It remains API configuration rather than an OAuth login.
-      if (/^key-[a-f0-9]{24}$/.test(identity)) {
-        apiBinding ||= identity === `key-${createHash('sha256').update(apiKey).digest('hex').slice(0, 24)}`
-        continue
-      }
-      const info = userInfo(family)
-      const profile = record(info?.rawProfile) ? info.rawProfile : undefined
-      const userIds = (family === 'zai' ? [info?.user_id] : [info?.id, profile?.user_id]).filter(
-        (id) => id !== undefined,
-      )
-      if (
-        provider === family &&
-        userIds.length &&
-        userIds.every((id) => nonempty(id) && id.trim() === identity)
-      ) {
-        // Native login saves these together; native logout removes both binding
-        // entries. The Worker uses this key even after its OAuth access expires.
-        return {
-          state: 'authenticated',
-          authMethod: 'oauth',
-          verification: 'local',
-          accountLabel: label(info),
-          summary: '已登录 ZCode',
-        }
-      }
-    }
-    if (bound)
-      return {
-        state: 'configured',
-        verification: 'local',
-        ...(apiBinding ? { authMethod: 'api' as const } : {}),
-        summary: apiBinding ? '已配置 ZCode API' : 'ZCode 账号绑定未确认，请重新登录',
-      }
-    if (
-      !provider &&
-      Object.keys(raw).some((name) => {
-        const match = /^account-provider:(.+):identity$/.exec(name)
-        return (
-          match &&
-          !['account:bigmodel-individual-coding-plan', 'account:zai-individual-coding-plan'].includes(
-            match[1]!,
-          ) &&
-          nonempty(raw[name])
-        )
-      })
+    const info = userInfo(family)
+    const profile = record(info?.rawProfile) ? info.rawProfile : undefined
+    const userIds = (family === 'zai' ? [info?.user_id] : [info?.id, profile?.user_id]).filter(
+      (id) => id !== undefined,
     )
-      return { state: 'unknown', verification: 'local', summary: '账号类型未知' }
-    if (provider !== 'bigmodel' && provider !== 'zai')
-      return provider
-        ? { state: 'unknown', verification: 'local', summary: '登录服务商未知' }
-        : { state: 'unconfigured', verification: 'local', summary: '尚未登录 ZCode' }
-    const access = decode(raw[`oauth:${provider}:access_token`])
-    const refresh = decode(raw[`oauth:${provider}:refresh_token`])
-    if (!access && !refresh)
-      return { state: 'unauthenticated', verification: 'local', summary: '本地登录凭据已清除' }
-    if (localTokenExpired(access))
+    if (
+      (provider === family || authSource === 'oauth' && !provider) &&
+      (userIds.length || authSource === 'oauth' && !info) &&
+      userIds.every((id) => nonempty(id) && id.trim() === identity)
+    ) {
+      // 0.17.1 OAuth is identified by its stable native identity, not the legacy API key.
       return {
-        state: 'unauthenticated',
-        verification: 'local',
+        state: 'authenticated',
         authMethod: 'oauth',
-        summary: '登录已过期，请重新登录',
+        verification: 'local',
+        accountLabel: label(info),
+        summary: '已登录 ZCode',
       }
+    }
+  }
+  if (bound)
     return {
       state: 'configured',
-      authMethod: 'oauth',
       verification: 'local',
-      accountLabel: label(userInfo(provider)),
-      summary: access ? 'ZCode 登录凭据已保存，账号绑定未确认，请重新登录' : '已保存 ZCode 续期凭据',
+      ...(apiBinding ? { authMethod: 'api' as const } : {}),
+      summary: apiBinding ? '已配置 ZCode API' : 'ZCode 账号绑定未确认，请重新登录',
     }
-  } finally {
-    key.fill(0)
+  if (
+    !provider &&
+    Object.keys(raw).some((name) => {
+      const match = /^account-provider:(.+):identity$/.exec(name)
+      return (
+        match &&
+        !['account:bigmodel-individual-coding-plan', 'account:zai-individual-coding-plan'].includes(
+          match[1]!,
+        ) &&
+        nonempty(raw[name])
+      )
+    })
+  )
+    return { state: 'unknown', verification: 'local', summary: '账号类型未知' }
+  if (provider !== 'bigmodel' && provider !== 'zai')
+    return provider
+      ? { state: 'unknown', verification: 'local', summary: '登录服务商未知' }
+      : { state: 'unconfigured', verification: 'local', summary: '尚未登录 ZCode' }
+  const access = decode(raw[`oauth:${provider}:access_token`])
+  const refresh = decode(raw[`oauth:${provider}:refresh_token`])
+  if (!access && !refresh)
+    return { state: 'unauthenticated', verification: 'local', summary: '本地登录凭据已清除' }
+  if (localTokenExpired(access))
+    return {
+      state: 'unauthenticated',
+      verification: 'local',
+      authMethod: 'oauth',
+      summary: '登录已过期，请重新登录',
+    }
+  return {
+    state: 'configured',
+    authMethod: 'oauth',
+    verification: 'local',
+    accountLabel: label(userInfo(provider)),
+    summary: access ? 'ZCode 登录凭据已保存，账号绑定未确认，请重新登录' : '已保存 ZCode 续期凭据',
   }
 }
 
@@ -240,7 +231,7 @@ export async function zcodeGrokAccountStatus(
   cli: ZCodeGrokCli,
   config: RuntimeConfig,
   signal: AbortSignal,
-  options: { home?: string; credentialSecret?: string; activeOnly?: boolean } = {},
+  options: ZCodeCredentialOptions & { home?: string; activeOnly?: boolean } = {},
 ): Promise<AccountIdentity> {
   signal.throwIfAborted()
   const home = options.home ?? homedir()
@@ -252,6 +243,7 @@ export async function zcodeGrokAccountStatus(
         )
       : join(home, '.grok/auth.json')
   let file: Awaited<ReturnType<typeof open>> | undefined
+  let credentials: ZCodeCredentialReader | undefined
   const buffer = Buffer.alloc(64 * 1024 + 1)
   try {
     if (cli === 'grok') {
@@ -298,12 +290,7 @@ export async function zcodeGrokAccountStatus(
       throw new Error('Account file changed during read')
     const raw: unknown = JSON.parse(buffer.subarray(0, offset).toString('utf8'))
     signal.throwIfAborted()
-    let username = 'unknown'
-    try {
-      username = userInfo().username
-    } catch {
-      /* native fallback */
-    }
+    if (cli === 'zcode') credentials = await createZCodeCredentialReader(raw, path, { ...options, signal })
     const projected =
       cli === 'grok'
         ? projectGrokIdentity(raw, Date.now(), options.activeOnly)
@@ -320,11 +307,7 @@ export async function zcodeGrokAccountStatus(
               summary: 'Grok 登录已失效，请在账号终端重新登录',
             } satisfies AccountIdentity)
           : projected
-        : projectZCodeIdentity(
-            raw,
-            (options.credentialSecret ?? process.env.ZCODE_CREDENTIAL_SECRET?.trim()) ||
-              `zcode-credential-fallback:${platform()}:${homedir()}:${username}`,
-          )
+        : projectDecodedZCodeIdentity(credentials!.values)
     if (cli !== 'zcode') return identity
     return withZCodeProviderRows(identity.state === 'unconfigured'
       ? readZCodePersonalIdentity(
@@ -334,6 +317,8 @@ export async function zcodeGrokAccountStatus(
       : identity, zcodeRows(config, home, options.home))
   } catch (error) {
     signal.throwIfAborted()
+    if (cli === 'zcode' && error instanceof ZCodeCredentialError)
+      return { state: error.state, verification: 'local', summary: error.message }
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? cli === 'zcode'
         ? withZCodeProviderRows(readZCodePersonalIdentity(
@@ -345,6 +330,7 @@ export async function zcodeGrokAccountStatus(
         ? grokReadFailure(error)
         : { state: 'unavailable', verification: 'local', summary: '登录配置读取失败，请重试' }
   } finally {
+    credentials?.dispose()
     buffer.fill(0)
     await file?.close()
   }

@@ -83,7 +83,7 @@ function fixture(
 
 describe('ZCode/Grok user-operated account helpers', () => {
   it.each(['login', 'logout', 'manage'] as const)(
-    'passes the existing cipher secret only to the ZCode %s environment',
+    '模拟：passes the exact native cipher secret only to the ZCode %s environment',
     async (action) => {
       const f = fixture()
       const secret = 'SYNTHETIC_ACCOUNT_CIPHER_SECRET'
@@ -97,7 +97,7 @@ describe('ZCode/Grok user-operated account helpers', () => {
         f.signal,
         f,
       )
-      expect(launch.env.ZCODE_CREDENTIAL_SECRET).toBe(secret)
+      expect(launch.env.ZCODE_CREDENTIAL_SECRET).toBe(` ${secret} `)
       expect(JSON.stringify(launch.argv)).not.toContain(secret)
       expect(launch.instruction).not.toContain(secret)
       const grok = await zcodeGrokAccountLaunch(
@@ -118,7 +118,7 @@ describe('ZCode/Grok user-operated account helpers', () => {
           undefined,
           f.config.zcodeBuiltinConfig,
         ),
-      ).not.toHaveProperty('ZCODE_CREDENTIAL_SECRET')
+      ).toHaveProperty('ZCODE_CREDENTIAL_SECRET', '   ')
     },
   )
   it('uses the same native Grok auth source as workers, with only verified action arguments', async () => {
@@ -574,16 +574,6 @@ it.each(['bigmodel', 'zai'])(
   },
 )
 it.each([
-  [
-    'missing current key',
-    (raw: Record<string, string>) => {
-      delete raw[
-        'account-provider:coding-plan:account:bigmodel-individual-coding-plan:account:synthetic-current-user:api-key'
-      ]
-      raw['account-provider:coding-plan:account:bigmodel-individual-coding-plan:account:old-user:api-key'] =
-        'SYNTHETIC_OLD_KEY'
-    },
-  ],
   [
     'orphaned key',
     (raw: Record<string, string>) => {

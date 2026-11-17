@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync, symlinkSync, unlinkSync, statSync } from 'nod
 import { dirname, isAbsolute, join } from 'node:path'
 import { Readable } from 'node:stream'
 import { codebuddyNativeLayout } from '../src/host/codebuddy-native-layout.ts'
+import { codebuddyEnvironment } from '../src/host/codebuddy-account.ts'
 import { classifyInstallation, identifyInstallation, type InstallationIdentity } from '../src/host/cli-management/identity.ts'
 import { automaticMethod, operationArgv, planCliOperation, sameInstallation, verifyUpdatedVersion } from '../src/host/cli-management/planner.ts'
 import { currentVersion } from '../src/host/cli-management/versions.ts'
@@ -17,7 +18,11 @@ import { serviceFixture, checked, finished, control } from './cli-management-pha
 const simulated = vi.hoisted(() => ({ home: '/模拟/home' }))
 vi.mock('node:os', async original => ({ ...await original<typeof import('node:os')>(), homedir: () => simulated.home }))
 const fixtures: ReturnType<typeof serviceFixture>[] = []
-beforeEach(() => { vi.stubEnv('XDG_DATA_HOME', undefined); vi.stubEnv('LOCALAPPDATA', undefined) })
+beforeEach(() => {
+  vi.stubEnv('XDG_DATA_HOME', undefined); vi.stubEnv('LOCALAPPDATA', undefined)
+  for (const name of ['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY', 'CODEBUDDY_API_KEY_HELPER_DISABLED',
+    'CODEBUDDY_API_KEY_DISABLED', 'CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT']) vi.stubEnv(name, undefined)
+})
 afterEach(async () => { for (const f of fixtures.splice(0)) await f.close(); vi.restoreAllMocks(); vi.unstubAllEnvs(); simulated.home = '/模拟/home' })
 const homes = ['/Users/模拟', '/home/模拟', 'C:/Users/模拟']
 const layouts = homes.flatMap(home => {
@@ -172,10 +177,12 @@ it.each(['relink', 'replace-realpath'] as const)('模拟：服务更新 %s 后�
   expect(await nativeResidueCandidates('codebuddy', { home: f.root })).toEqual([])
 })
 it('模拟：版本探针禁止后台自动升级且不从目录名取版本', async () => {
+  vi.stubEnv('CODEBUDDY_AUTH_TOKEN', 'SIMULATED_VERSION_TOKEN')
   const f = fixture(), id = await identifyInstallation('codebuddy', f.backend, f.config, control())
   vi.mocked(f.backend.spawn).mockImplementation(() => ({ stdout: Readable.from(['2.184.0']), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() } as any))
   expect(await currentVersion('codebuddy', id!, f.backend, f.config, control())).toBe('2.184.0')
-  expect(f.backend.spawn).toHaveBeenCalledWith(expect.objectContaining({ argv: [f.entry, '--version'], env: { DISABLE_AUTOUPDATER: '1' } }))
+  expect(f.backend.spawn).toHaveBeenCalledWith(expect.objectContaining({ argv: [f.entry, '--version'], env: codebuddyEnvironment() }))
+  expect(vi.mocked(f.backend.spawn).mock.calls.some(([spec]) => spec.env?.CODEBUDDY_AUTH_TOKEN === 'SIMULATED_VERSION_TOKEN')).toBe(true)
 })
 it('模拟：稳定入口恰为 npm 符号链接时仍按 npm 分类', async () => {
   const f = fixture(), pkg = join(f.root, 'lib/node_modules/@tencent-ai/codebuddy-code')

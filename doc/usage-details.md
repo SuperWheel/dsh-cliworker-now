@@ -58,6 +58,8 @@ MiMo 指 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)。Herme
 
 MiMo 短时间重复加载模型能力时复用有界内存缓存，减少 Windows 上反复启动 CLI 的等待。首次加载仍需查询原生 CLI；账号、配置、项目或程序变化使缓存失效，每次派遣仍核对当前账号授权。插件读取 MiMo 模型时不让它自行联网更新模型列表；如果本机列表过旧、与账号可用模型一个都对不上（例如账号只剩 v2.6 而本机缓存仍是 v2.5），插件会调用一次 MiMo 自带的 `mimo models --refresh` 更新它自己的模型缓存再读取（同一程序 10 分钟内最多一次）；仍对不上时提示更新 MiMo。
 
+MiMo 0.1.17 起，Token Plan 账号（`xiaomi-token-plan-cn`、`-ams`、`-sgp`）与普通 `xiaomi` 账号并列保存。只登录了 Token Plan 也显示已登录，模型目录使用对应集群的地址。
+
 设置页最多同时执行两项预加载任务，每项按账号、模型目录顺序读取，当前选中 CLI 优先；切换只调整待排顺序。目录查询内部仍遵循各 CLI 的原生进程与清理规则，并非所有底层子进程总数的承诺。关闭或禁用取消未完成读取，已经完成的结果保留，底层进程清理由 Host 管理。
 
 Kimi 已核验的 managed OAuth 模型能力和 Claude 的命令参数能力也可短时复用；每次实际重新识别目录时仍核对当前凭据、有效期和远端权限，不缓存远端额度。Windows 后台查询及嵌入式账号终端的启动器隐藏额外控制台窗口。
@@ -135,6 +137,8 @@ Qoder 设置中的单次目录加载会合并账号与模型查询，减少重�
 ### CodeBuddy Code 安装与登录
 
 按腾讯官方说明用 npm 安装：`npm install -g @tencent-ai/codebuddy-code`，命令为 `codebuddy`。中国站、国际站、企业域与 iOA 是同一个 CLI 的登录站点，插件只有一个「CodeBuddy Code」入口。CodeBuddy 没有登录子命令。已登录时先显示当前账号卡，点击切换才打开退出流程。首次文件夹信任在窗口中由用户确认，只信任当前文件夹；识别空编辑器后自动输入一次 `/login`。站点菜单提供中国站、国际站、企业域、iOA；前两项使用浏览器引导，后两项在原生终端继续。切换自动输入一次 `/logout`，不在登录菜单补按 Enter；回读明确未登录且确认清理后才进入登录。2026-11-07 隔离空项目已采集 C1–C6 授权前路径；有效账号退出与 Windows/Desktop 尚未验收。未知屏保持原生，不根据文件 mtime、读取错误或零退出码判断已换号。
+
+登录状态按 CodeBuddy 自己的顺序判断：`CODEBUDDY_AUTH_TOKEN`、settings 中的 `apiKeyHelper`、`CODEBUDDY_API_KEY`（环境变量或 settings 的 env），最后才是登录文件；`CODEBUDDY_API_KEY_HELPER_DISABLED`、`CODEBUDDY_API_KEY_DISABLED` 照常生效。settings 按用户、项目、项目本地依次合并，项目里的站点设置会覆盖用户级。插件只确认这些来源是否配置，不执行 helper，也不读取令牌值。
 
 - 通信：`codebuddy --acp`，transport `codebuddy-acp-v1`。插件启动的进程都带 `DISABLE_AUTOUPDATER=1`，不会触发自动更新；你自己打开的终端仍按原方式更新。
 - 站点：优先采用 `~/.codebuddy/settings.json` 或环境中显式设置的 `CODEBUDDY_INTERNET_ENVIRONMENT`；否则在内存中只读取认证文件里的 `auth.domain`，按 CLI 自带的域名表显示中国站、国际站、企业域或 iOA。令牌等字段不读出，域名也不写入日志或持久化。无法判断时显示“站点未公开”。

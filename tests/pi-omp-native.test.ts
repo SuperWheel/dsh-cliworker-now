@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm, symlink, link, stat } from 'node:fs/promises'
 import { join, posix, win32 } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -10,10 +10,12 @@ import {
   nativeAccountAncestors,
   readPiOmpLogoutSources,
 } from '../src/host/pi-omp-native.ts'
+import { readPiApiCredential, accountSupportedChoices } from '../src/host/pi-native-catalog.mjs'
 
 // Every path and credential in this suite is synthetic; no user native home is read.
 const roots: string[] = []
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 async function fixture(cli: 'pi' | 'omp') {
@@ -31,6 +33,128 @@ async function fixture(cli: 'pi' | 'omp') {
 }
 const save = (directory: string, name: string, value: unknown) =>
   writeFile(join(directory, name), JSON.stringify(value), { mode: 0o600 })
+
+it('模拟：Pi env-only AWS profile 保持已配置和 stored，私有 env 不进入通用进程环境', async () => {
+  const f = await fixture('pi')
+  const credential = { type: 'api_key', env: { AWS_PROFILE: 'synthetic-profile', HOME: '/synthetic/private-home' } }
+  await save(f.global, 'auth.json', { 'amazon-bedrock': credential })
+  expect((await f.status()).state).toBe('authenticated')
+  expect(JSON.stringify(await f.status())).not.toContain('synthetic-profile')
+  const sources = await readPiOmpLogoutSources('pi', f.state, new AbortController().signal, { nativeHome: f.root })
+  expect(sources[0].stored).toBe(true)
+  expect(sources[0].env).toEqual({})
+  const snapshot = await snapshotPiOmpNative('pi', f.worker, f.options)
+  expect(snapshot.configured).toBe(true)
+  expect(snapshot.env).toEqual({})
+  expect(await restorePiOmpEnvironment(f.worker)).toEqual({})
+  expect(JSON.parse(await readFile(join(f.worker, 'auth.json'), 'utf8'))).toEqual({ 'amazon-bedrock': credential })
+})
+
+it.each(['$ANTHROPIC_API_KEY', '${ANTHROPIC_API_KEY}'])(
+  '模拟：Pi 私有 env 模板 %s 优先于 process env，状态和 Worker 使用同一凭据', async (key) => {
+    const f = await fixture('pi')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-ambient-key')
+    const credential = { type: 'api_key', key, env: { ANTHROPIC_API_KEY: 'synthetic-private-key' } }
+    await save(f.global, 'auth.json', { anthropic: credential })
+    expect((await f.status()).state).toBe('authenticated')
+    expect(readPiApiCredential(credential)?.key).toBe('synthetic-private-key')
+    expect((await snapshotPiOmpNative('pi', f.worker, f.options)).env).toEqual({})
+    expect(JSON.parse(await readFile(join(f.worker, 'auth.json'), 'utf8'))).toEqual({ anthropic: credential })
+  },
+)
+
+it.each([undefined, ''])('模拟：Pi 私有 env 为 %s 时模板回退 process env，快照只捕获显式引用', async (privateValue) => {
+  const f = await fixture('pi')
+  vi.stubEnv('REQ0136_PI_KEY', 'synthetic-process-key')
+  vi.stubEnv('REQ0136_UNRELATED', 'synthetic-unrelated-key')
+  const credential = { type: 'api_key', key: '${REQ0136_PI_KEY}',
+    ...(privateValue === undefined ? {} : { env: { REQ0136_PI_KEY: privateValue } }) }
+  await save(f.global, 'auth.json', { anthropic: credential })
+  expect((await f.status()).state).toBe('authenticated')
+  const snapshot = await snapshotPiOmpNative('pi', f.worker, f.options)
+  expect(snapshot.configured).toBe(true)
+  expect(snapshot.env).toEqual({})
+  const worker = JSON.parse(await readFile(join(f.worker, 'auth.json'), 'utf8')).anthropic
+  expect(readPiApiCredential(worker, {})?.key).toBe('synthetic-process-key')
+  expect(worker.env).toEqual({ REQ0136_PI_KEY: 'synthetic-process-key' })
+  expect(JSON.stringify(await f.status())).not.toContain('synthetic-process-key')
+})
+
+it('模拟：Pi 缺失模板变量不算已配置并给出明确状态', async () => {
+  const f = await fixture('pi')
+  vi.stubEnv('REQ0136_PI_MISSING', '')
+  await save(f.global, 'auth.json', { anthropic: { type: 'api_key', key: 'prefix-${REQ0136_PI_MISSING}' } })
+  expect(await f.status()).toMatchObject({ state: 'unconfigured', summary: expect.stringContaining('环境变量缺失') })
+  expect((await snapshotPiOmpNative('pi', f.worker, f.options)).configured).toBe(false)
+})
+
+it('模拟：Pi 混合 OAuth 的共享执行快照保留 process 模板解析且续用校验一致', async () => {
+  const f = await fixture('pi')
+  vi.stubEnv('REQ0136_PI_KEY', 'synthetic-process-key')
+  await save(f.global, 'auth.json', {
+    anthropic: { type: 'api_key', key: '${REQ0136_PI_KEY}' },
+    oauth: { type: 'oauth', access: 'synthetic-access', refresh: 'synthetic-refresh',
+      accountId: 'synthetic-account', expires: Date.now() + 3600000 },
+  })
+  const options = { ...f.options, sharedOAuth: true }
+  const first = await snapshotPiOmpNative('pi', f.worker, options)
+  expect(first.leaseDirectory).toBeDefined()
+  const second = await snapshotPiOmpNative('pi', f.worker, options)
+  expect(second.directory).toBe(first.directory)
+  let worker = JSON.parse(await readFile(join(second.directory, 'auth.json'), 'utf8'))
+  expect(readPiApiCredential(worker.anthropic, {})?.key).toBe('synthetic-process-key')
+  vi.stubEnv('REQ0136_PI_KEY', 'synthetic-new-process-key')
+  const changed = await snapshotPiOmpNative('pi', f.worker, options)
+  worker = JSON.parse(await readFile(join(changed.directory, 'auth.json'), 'utf8'))
+  expect(readPiApiCredential(worker.anthropic, {})?.key).toBe('synthetic-new-process-key')
+})
+
+it('模拟：Pi 有效与 malformed 条目并存，坏条目不遮蔽其他 provider', async () => {
+  const f = await fixture('pi')
+  await save(f.global, 'auth.json', { valid: { type: 'api_key', key: 'synthetic-valid-key' },
+    badEnv: { type: 'api_key', env: { AWS_PROFILE: 3 } }, badKey: { type: 'api_key', key: 4 },
+    badArray: [], badNull: null })
+  const status = await f.status()
+  expect(status.state).toBe('authenticated')
+  expect(status.logins).toHaveLength(1)
+  expect((await snapshotPiOmpNative('pi', f.worker, { ...f.options, sharedOAuth: true })).configured).toBe(true)
+  expect(Object.keys(JSON.parse(await readFile(join(f.worker, 'auth.json'), 'utf8')))).toEqual(['valid'])
+})
+
+it.each([
+  ['prefix-$key/${other}-$$-$!', { key: 'first', other: 'second' }, 'prefix-first/second-$-!'],
+  ['${INVALID-NAME}/$9/${unfinished', {}, '${INVALID-NAME}/$9/${unfinished'],
+  ['$$KEY', { KEY: 'unused' }, '$KEY'],
+  ['$key', { key: '$other' }, '$other'],
+] as const)('模拟：Pi 原生内插与转义 %s', (key, env, expected) => {
+  expect(readPiApiCredential({ type: 'api_key', key, env }, {})?.key).toBe(expected)
+})
+
+it('模拟：OMP env-only SQLite 凭据仍按 OMP 必填 key 规则拒绝', async () => {
+  const f = await fixture('omp')
+  credentialDB(join(f.global, 'agent.db'), 'amazon-bedrock', { env: { AWS_PROFILE: 'synthetic-profile' } })
+  const db = new DatabaseSync(join(f.global, 'agent.db'))
+  db.exec("UPDATE auth_credentials SET credential_type = 'api_key'")
+  db.close()
+  expect((await f.status()).state).toBe('unavailable')
+})
+
+it('模拟：Pi 模型目录探测使用私有 env 解析后的 key，env-only 不伪造支持模型', async () => {
+  const f = await fixture('pi')
+  await save(f.worker, 'auth.json', { synthetic: { type: 'api_key', key: '${PRIVATE_KEY}', env: { PRIVATE_KEY: 'synthetic-catalog-key' } },
+    'amazon-bedrock': { type: 'api_key', env: { AWS_PROFILE: 'synthetic-profile' } } })
+  await save(f.worker, 'models.json', { providers: { synthetic: { models: [{ id: 'chat' }] } } })
+  const fetch = vi.fn(async (_url, init) => {
+    expect(init.headers.Authorization).toBe('Bearer synthetic-catalog-key')
+    return new Response(JSON.stringify({ data: [{ id: 'chat' }] }), { status: 200 })
+  })
+  const choices = await accountSupportedChoices('pi', f.worker, [
+    { provider: 'synthetic', id: 'chat', baseUrl: 'https://synthetic.invalid/v1', api: 'openai-completions' },
+    { provider: 'amazon-bedrock', id: 'bedrock-chat', api: 'bedrock-converse-stream' },
+  ], {}, { fetch })
+  expect(fetch).toHaveBeenCalledOnce()
+  expect(choices.map(choice => choice.id)).toEqual(['synthetic/chat'])
+})
 
 it('preserves Windows drive and UNC roots while walking account ancestors (synthetic paths)', () => {
   expect(nativeAccountAncestors('C:\\Users\\名字\\.pi\\agent', win32)).toEqual([

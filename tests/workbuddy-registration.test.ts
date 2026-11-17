@@ -13,6 +13,7 @@ import { buildNativeHarnessInjection, nativeHarnessToolCapability, nativeHarness
 import { resolveCliExecutable, catalogFor, workerArguments, protocolFor } from '../src/host/adapters.ts'
 import { authorizedCatalog } from '../src/host/authorized-catalog.ts'
 import { readCliAccountBinding } from '../src/host/cli-account-binding.ts'
+import { readWorkBuddyMetadata } from '../src/host/workbuddy-metadata.ts'
 import { AccountManager } from '../src/host/accounts.ts'
 import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
 import { transportFor, usesNativeBridge, prepareNativeWorker } from '../src/host/native-worker.ts'
@@ -118,6 +119,47 @@ describe('模拟 WorkBuddy 发现、目录与账号接线（不启动程序）',
     expect(probe).toHaveBeenCalledTimes(3)
     const other = cli === 'workbuddycn' ? 'workbuddy' : 'workbuddycn'
     expect((await authorizedCatalog(other, f.backend, f.config, f.root, signal())).binding).not.toBe(a.binding)
+  })
+  for (const cli of clis) {
+    it.each(['cliVersion', 'runtime', 'configDir'] as const)(`模拟：${cli} 仅改变 %s 不改变站点绑定`, async field => {
+      const f = fixture()
+      const before = await readWorkBuddyMetadata(cli, f.installs[cli].entry, f.root, signal())
+      const updated = field === 'runtime' ? fixture() : f
+      if (field !== 'runtime') {
+        const file = join(dirname(dirname(f.installs[cli].entry)), field === 'cliVersion' ? 'package.json' : 'product.json')
+        const metadata = JSON.parse(readFileSync(file, 'utf8'))
+        if (field === 'cliVersion') metadata.version = '2.166.0'
+        else metadata.dataFolderName = `.${cli}-SIMULATED-moved`
+        writeFileSync(file, JSON.stringify(metadata))
+      }
+      const after = await readWorkBuddyMetadata(cli, updated.installs[cli].entry, f.root, signal())
+      expect(after.binding).toBe(before.binding)
+      expect(after.binding).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
+      expect(probe).toHaveBeenCalledTimes(2)
+      expect(probe.mock.calls[1]![0].argv).toEqual([updated.installs[cli].runtime, updated.installs[cli].entry])
+    })
+  }
+  it('模拟：相同端点的国内版与国际版仍有独立站点绑定', async () => {
+    const f = fixture()
+    probe.mockResolvedValue({ models: [], endpoint: 'https://SIMULATED.example.test' })
+    const cn = await readWorkBuddyMetadata('workbuddycn', f.installs.workbuddycn.entry, f.root, signal())
+    const international = await readWorkBuddyMetadata('workbuddy', f.installs.workbuddy.entry, f.root, signal())
+    expect(cn.binding).not.toBe(international.binding)
+  })
+  it.each(clis)('模拟：%s 不同端点生成不同站点绑定', async cli => {
+    const f = fixture()
+    const before = await readWorkBuddyMetadata(cli, f.installs[cli].entry, f.root, signal())
+    probe.mockResolvedValueOnce({ models: [], endpoint: `https://workbuddy.${cli === 'workbuddycn' ? 'cn' : 'ai'}` })
+    const after = await readWorkBuddyMetadata(cli, f.installs[cli].entry, f.root, signal())
+    expect(after.binding).not.toBe(before.binding)
+  })
+  it.each(clis)('模拟：%s 端点主机大小写与尾部斜杠不改变站点绑定', async cli => {
+    const f = fixture()
+    const before = await readWorkBuddyMetadata(cli, f.installs[cli].entry, f.root, signal())
+    probe.mockResolvedValueOnce({ models: [], endpoint: `${before.endpoint.toUpperCase()}///` })
+    const after = await readWorkBuddyMetadata(cli, f.installs[cli].entry, f.root, signal())
+    expect(after.binding).toBe(before.binding)
+    expect(after.endpoint).toBe(`${before.endpoint.toUpperCase()}///`)
   })
   it.each(clis)('%s reports login, authentication failure and bootstrap failure with only desktop management actions', async cli => {
     const f = fixture(), manager = new AccountManager(f.backend, f.config)

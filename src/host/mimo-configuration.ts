@@ -152,13 +152,43 @@ export async function readMimoOwnAuth(signal: AbortSignal): Promise<Record<strin
   }
 }
 
+/** MiMo 0.1.17 H3/GX0: native whoami order, not a prefix match. */
+export const MIMO_OFFICIAL_PROVIDERS = [
+  { id: 'xiaomi-token-plan-cn', label: 'Xiaomi Token Plan (China)' },
+  { id: 'xiaomi-token-plan-ams', label: 'Xiaomi Token Plan (Europe)' },
+  { id: 'xiaomi-token-plan-sgp', label: 'Xiaomi Token Plan (Singapore)' },
+  { id: 'xiaomi', label: 'MiMo 登录' },
+] as const
+
+/** Native ApiAuth schema; an empty key is not usable login evidence. */
+export function mimoApiAuth(value: unknown): value is {
+  type: 'api'
+  key: string
+  metadata?: Record<string, string>
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const auth = value as Record<string, unknown>
+  return (
+    auth.type === 'api' &&
+    typeof auth.key === 'string' &&
+    !!auth.key.trim() &&
+    (auth.metadata === undefined ||
+      (!!auth.metadata &&
+        typeof auth.metadata === 'object' &&
+        !Array.isArray(auth.metadata) &&
+        Object.values(auth.metadata).every((value) => typeof value === 'string')))
+  )
+}
+
 export async function readMimoAccount(signal: AbortSignal): Promise<AccountIdentity> {
-  const auth = (await readMimoOwnAuth(signal)).xiaomi
+  const auth = await readMimoOwnAuth(signal)
   signal.throwIfAborted()
-  if (!auth) return { state: 'unconfigured', summary: '尚未登录 MiMo', verification: 'local' }
-  // The built-in browser login persists ApiAuth, including optional uid/base_url metadata.
-  if (auth.type === 'api' && typeof auth.key === 'string' && auth.key.trim())
-    return { state: 'authenticated', summary: 'MiMo 登录', authMethod: 'api', verification: 'local' }
+  // whoami lists every official entry; the compact status uses its first usable entry.
+  const selected = MIMO_OFFICIAL_PROVIDERS.find(({ id }) => mimoApiAuth(auth[id]))
+  if (selected)
+    return { state: 'authenticated', summary: selected.label, authMethod: 'api', verification: 'local' }
+  if (!MIMO_OFFICIAL_PROVIDERS.some(({ id }) => Object.hasOwn(auth, id)))
+    return { state: 'unconfigured', summary: '尚未登录 MiMo', verification: 'local' }
   return { state: 'configured', summary: '已配置 MiMo 账号，请检查登录', verification: 'local' }
 }
 

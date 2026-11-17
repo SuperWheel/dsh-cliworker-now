@@ -14,7 +14,12 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { readKimiAccount, prepareKimiAccountDirectory } from '../src/host/kimi-accounts.ts'
+import {
+  readKimiAccount,
+  prepareKimiAccountDirectory,
+  readKimiOwnToken,
+  resolveKimiTokenStorageName,
+} from '../src/host/kimi-accounts.ts'
 
 // Explicit synthetic native provider JSON and token files. No CLI or network.
 const roots: string[] = []
@@ -50,6 +55,38 @@ async function fixture() {
 // The managed Kimi Code OAuth login as one removable row of the account window.
 const OAUTH_ROW = { providerLabel: 'Kimi Code', authMethod: 'oauth', id: 'kimi:kimi-code' } as const
 
+it.each([
+  ['kimi-code', 'kimi-code'],
+  ['oauth/kimi-code', 'kimi-code'],
+  ['oauth/custom-slot', 'custom-slot'],
+  ['custom-slot', 'custom-slot'],
+  [undefined, 'kimi-code'],
+] as const)('模拟：原生槽位 %s 在状态与凭据读取中一致', async (key, slot) => {
+  const f = await fixture()
+  expect(resolveKimiTokenStorageName(key)).toBe(slot)
+  await writeFile(join(f.home, 'credentials', `${slot}.json`), JSON.stringify(f.token))
+  const raw = { providers: { 'managed:kimi-code': { type: 'kimi', oauth: { storage: 'file', key } } } }
+  expect(await f.read(raw)).toMatchObject({ state: 'authenticated', logins: [OAUTH_ROW] })
+  expect(
+    await readKimiOwnToken(
+      join(f.home, 'credentials'),
+      key ?? 'oauth/kimi-code',
+      new AbortController().signal,
+    ),
+  ).toEqual(f.token)
+})
+
+it('模拟：原生续期网络失败后保留登录，写入撤销墓碑后才退出', async () => {
+  const f = await fixture()
+  await f.set({ ...f.token, expires_at: 1 })
+  const before = await readFile(f.path)
+  // Native network failures leave the prior token on disk; no real refresh here.
+  expect(await f.read()).toMatchObject({ state: 'authenticated', logins: [OAUTH_ROW] })
+  expect(await readFile(f.path)).toEqual(before)
+  await f.set({ ...f.token, access_token: '', expires_at: 0 })
+  expect(await f.read()).toMatchObject({ state: 'unauthenticated' })
+})
+
 function syntheticJwt(claims: unknown) {
   return [
     Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url'),
@@ -58,7 +95,7 @@ function syntheticJwt(claims: unknown) {
   ].join('.')
 }
 
-it('isolates account working directories and project MCP without changing native accounts or trust', async () => {
+it('模拟：isolates account working directories and project MCP without changing native accounts or trust', async () => {
   const f = await fixture()
   await f.set(f.token)
   await mkdir(join(f.home, '.git'))
@@ -83,7 +120,7 @@ it('isolates account working directories and project MCP without changing native
   expect(JSON.parse(await readFile(f.path, 'utf8'))).toEqual(f.token)
 })
 
-it('does not allocate a cancelled login directory or clean a replaced directory', async () => {
+it('模拟：does not allocate a cancelled login directory or clean a replaced directory', async () => {
   const f = await fixture(),
     state = join(f.home, 'plugin-state')
   const abort = new AbortController()
@@ -99,7 +136,7 @@ it('does not allocate a cancelled login directory or clean a replaced directory'
 })
 
 it.each(['current', 'refreshable', 'native-no-expiry'] as const)(
-  'recognizes %s native OAuth without changing token files',
+  '模拟：recognizes %s native OAuth without changing token files',
   async (kind) => {
     const f = await fixture()
     await f.set({
@@ -121,7 +158,7 @@ it.each(['current', 'refreshable', 'native-no-expiry'] as const)(
 )
 
 it.each(['current', 'refreshable', 'native-no-expiry'] as const)(
-  'shows only a masked decoded native account ID for %s OAuth',
+  '模拟：shows only a masked decoded native account ID for %s OAuth',
   async (kind) => {
     const f = await fixture()
     const id = 'synthetic-account-123abc'
@@ -147,7 +184,7 @@ it.each(['current', 'refreshable', 'native-no-expiry'] as const)(
   },
 )
 
-it.each(['sub', 'user_id'] as const)('supports the native %s identity field alone', async (field) => {
+it.each(['sub', 'user_id'] as const)('模拟：supports the native %s identity field alone', async (field) => {
   const f = await fixture()
   await f.set({ ...f.token, access_token: syntheticJwt({ iss: 'kimi-auth', [field]: 'account-abc123' }) })
   expect((await f.read()).accountLabel).toBe('Kimi ID · …abc123')
@@ -171,7 +208,7 @@ it.each([
   ['email is not a native ID', { iss: 'kimi-auth', sub: 'synthetic@example.invalid' }],
   ['profile is not an ID', { iss: 'kimi-auth', email: 'synthetic@example.invalid', nickname: 'Synthetic' }],
   ['non-object claims', ['account-abc123']],
-] as const)('omits unsafe or unconfirmed identity metadata: %s', async (_kind, claims) => {
+] as const)('模拟：omits unsafe or unconfirmed identity metadata: %s', async (_kind, claims) => {
   const f = await fixture()
   const accessToken = syntheticJwt(claims)
   await f.set({ ...f.token, access_token: accessToken })
@@ -190,7 +227,7 @@ it.each([
   'header.bnVsbA.signature',
   'header.e30=.signature',
   `header.${'a'.repeat(16 * 1024 + 1)}.signature`,
-])('keeps native login when access-token identity cannot be decoded (case %#)', async (accessToken) => {
+])('模拟：keeps native login when access-token identity cannot be decoded (case %#)', async (accessToken) => {
   const f = await fixture()
   await f.set({ ...f.token, access_token: accessToken })
   const value = await f.read()
@@ -198,7 +235,7 @@ it.each([
   expect(value.accountLabel).toBeUndefined()
 })
 
-it('reads a changed account afresh and removes its label after logout, source switch or expiry', async () => {
+it('模拟：reads a changed account afresh and removes its label after logout, source switch or expiry', async () => {
   const f = await fixture()
   const token = (id: string) => ({ ...f.token, access_token: syntheticJwt({ iss: 'kimi-auth', sub: id }) })
   await f.set(token('account-abc123'))
@@ -217,7 +254,7 @@ it('reads a changed account afresh and removes its label after logout, source sw
   expect((await f.read()).accountLabel).toBeUndefined()
 })
 
-it('does not treat provider configuration or a stale other slot as logged in', async () => {
+it('模拟：does not treat provider configuration or a stale other slot as logged in', async () => {
   const f = await fixture()
   expect((await f.read()).state).toBe('unconfigured')
   await f.set(f.token)
@@ -233,13 +270,13 @@ it.each([
   { access_token: '', refresh_token: 'synthetic-old-refresh', expires_at: 0 },
   { refresh_token: 'synthetic-refresh', expires_at: 0 },
   { access_token: 'synthetic-expired', expires_at: 1 },
-])('does not revive revoked, refresh-only or expired native records: %j', async (token) => {
+])('模拟：does not revive revoked, refresh-only or expired native records: %j', async (token) => {
   const f = await fixture()
   await f.set(token)
   expect((await f.read()).state).toBe('unauthenticated')
 })
 
-it('keeps literal own API configuration distinct from native OAuth login', async () => {
+it('模拟：keeps literal own API configuration distinct from native OAuth login', async () => {
   const f = await fixture()
   expect(await f.read({ providers: { own: { type: 'openai', apiKey: 'synthetic-api' } } })).toMatchObject({
     state: 'configured',
@@ -259,7 +296,7 @@ it('keeps literal own API configuration distinct from native OAuth login', async
 })
 
 it.each(['../kimi-code', 'oauth/../kimi-code', 'oauth/a/b', '.', 'oauth/.hidden', 'oauth/\\other'])(
-  'rejects unsafe slot %s without exposing it',
+  '模拟：rejects unsafe slot %s without exposing it',
   async (slot) => {
     const f = await fixture()
     f.config.providers['managed:kimi-code'].oauth.key = slot
@@ -272,7 +309,7 @@ it.each(['../kimi-code', 'oauth/../kimi-code', 'oauth/a/b', '.', 'oauth/.hidden'
 )
 
 it.each(['symlink', 'hardlink', 'parent-symlink', 'malformed', 'oversized', 'wrong-token-type'] as const)(
-  'refuses unsafe token source: %s',
+  '模拟：refuses unsafe token source: %s',
   async (kind) => {
     const f = await fixture()
     const other = join(f.home, 'other.json')
@@ -291,7 +328,7 @@ it.each(['symlink', 'hardlink', 'parent-symlink', 'malformed', 'oversized', 'wro
   },
 )
 
-it('keeps unknown storage unknown and propagates cancellation', async () => {
+it('模拟：keeps unknown storage unknown and propagates cancellation', async () => {
   const f = await fixture()
   await f.set(f.token)
   f.config.providers['managed:kimi-code'].oauth.storage = 'keyring'
@@ -307,7 +344,7 @@ const apiProviders = {
   deepseek: { type: 'openai', baseUrl: 'https://api.deepseek.com/v1', apiKey: 'synthetic-deepseek-key' },
 }
 
-it('lists the Kimi Code login and each own API provider as removable rows, in /logout order', async () => {
+it('模拟：lists the Kimi Code login and each own API provider as removable rows, in /logout order', async () => {
   const f = await fixture()
   const id = 'synthetic-account-123abc'
   await f.set({ ...f.token, access_token: syntheticJwt({ iss: 'kimi-auth', sub: id }) })
@@ -328,7 +365,7 @@ it('lists the Kimi Code login and each own API provider as removable rows, in /l
     expect(JSON.stringify(value)).not.toContain(secret)
 })
 
-it('keeps API-only Kimi configured while listing its API rows, and never a managed row', async () => {
+it('模拟：keeps API-only Kimi configured while listing its API rows, and never a managed row', async () => {
   const f = await fixture()
   const value = await f.read({ providers: { ...apiProviders, ...f.config.providers }, models: {} })
   expect(value).toEqual({
@@ -343,13 +380,12 @@ it('keeps API-only Kimi configured while listing its API rows, and never a manag
   })
   // A revoked managed token stays out of the rows; the API rows remain.
   await f.set({ access_token: '', refresh_token: 'synthetic-old-refresh', expires_at: 0 })
-  expect((await f.read({ providers: { ...apiProviders, ...f.config.providers } })).logins?.map((row) => row.id)).toEqual([
-    'kimi:deepseek',
-    'kimi:moonshot-cn',
-  ])
+  expect(
+    (await f.read({ providers: { ...apiProviders, ...f.config.providers } })).logins?.map((row) => row.id),
+  ).toEqual(['kimi:deepseek', 'kimi:moonshot-cn'])
 })
 
-it('gives no removal id to a provider key the window cannot address, nor to referenced keys', async () => {
+it('模拟：gives no removal id to a provider key the window cannot address, nor to referenced keys', async () => {
   const f = await fixture()
   const value = await f.read({
     providers: {
@@ -370,10 +406,12 @@ it('gives no removal id to a provider key the window cannot address, nor to refe
   expect(JSON.stringify(value)).not.toMatch(/synthetic-key|referenced|oauth\//)
 })
 
-it('lists no rows when nothing is signed in, or the status cannot be read', async () => {
+it('模拟：lists no rows when nothing is signed in, or the status cannot be read', async () => {
   const f = await fixture()
   expect(await f.read()).not.toHaveProperty('logins')
   f.config.providers['managed:kimi-code'].oauth.storage = 'keyring'
   expect(await f.read({ providers: { ...apiProviders, ...f.config.providers } })).not.toHaveProperty('logins')
-  expect(await readKimiAccount('not json', new AbortController().signal, { home: f.home })).not.toHaveProperty('logins')
+  expect(
+    await readKimiAccount('not json', new AbortController().signal, { home: f.home }),
+  ).not.toHaveProperty('logins')
 })

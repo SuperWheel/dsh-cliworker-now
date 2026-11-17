@@ -257,6 +257,8 @@ Subscriptions, billing and model access are decided by each CLI's provider. Logg
 
 Grok sign-ins expire after about 6 hours. When that happens, the plugin runs `grok models` once in the background before listing models or dispatching, so Grok renews itself and writes `~/.grok/auth.json` back, just as when you run grok in a terminal; the plugin never reads or copies the refresh token, sends no renewal request of its own and makes no model call. If renewal fails, the message names the reason: “no longer valid” means sign in again in the account terminal; a temporary renewal failure means check the network or proxy and refresh; “account terminal is running” means close the account terminal first.
 
+When a Kimi sign-in has expired but can still be renewed, the model check asks you to run `/usage` in Kimi's own terminal and try again. Kimi only renews itself before `/usage`, and the plugin sends no renewal request of its own.
+
 </details>
 
 <details>

@@ -49,7 +49,12 @@ vi.mock('../src/host/claude-own-route.ts', async (original) => ({
       : { kind: 'native', sourceIds: [fixture.home] },
   ),
 }))
-vi.mock('../src/host/codex-account.ts', () => ({ readCodexAccount: vi.fn(async () => fixture.codex) }))
+vi.mock('../src/host/codex-account.ts', () => ({
+  readCodexAccount: vi.fn(async () => fixture.codex),
+  readCodexAccountBinding: vi.fn(async () => fixture.codex && ({
+    identity: fixture.codex, workspaceName: fixture.codex.workspaceName, apiKeyHash: fixture.codex.apiKeyHash,
+  })),
+}))
 // Windows reads native keyring metadata instead of the POSIX token file below.
 // This is the same synthetic identity, never a real Credential Manager read.
 vi.mock('../src/host/agy-windows-account.ts', async (original) => ({
@@ -86,6 +91,27 @@ const jwt = (sub: string, extra: Record<string, unknown> = {}) =>
   `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({ sub, iss: 'https://synthetic.example', exp: 4e9, ...extra })).toString('base64url')}.synthetic`
 const run = (cli: CliId, signal = new AbortController().signal) =>
   readCliAccountBinding(cli, backend, config, project, signal)
+
+it.each(['grok', 'mimo'] as const)('模拟：%s 的共享 OAuth 到期判断不受 Kimi 非过期投影影响', async (cli) => {
+  // Grok calls oauthPrincipal directly; MiMo goes through credentialEntry.
+  const set = (expires: number | undefined, refresh?: string) => {
+    const credential = { type: 'oauth', access: jwt('synthetic-expiry-user', { exp: undefined }), expires, refresh }
+    if (cli === 'grok') write(join(fixture.home, '.grok/auth.json'), { own: { ...credential, auth_mode: 'oidc' } })
+    else fixture.sources.mimo = [{ provider: 'synthetic-own', credential, sourceIds: [join(fixture.home, 'mimo.json')] }]
+  }
+  set(4e12)
+  const before = await run(cli)
+  for (const expires of [undefined, 0, 1]) {
+    set(expires)
+    await expect(run(cli)).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+    set(expires, 'synthetic-refresh')
+    expect(await run(cli)).toBe(before)
+    set(expires, 'synthetic-rotated-refresh')
+    expect(await run(cli)).toBe(before)
+  }
+  set(4e12)
+  expect(await run(cli)).toBe(before)
+})
 
 it('binds explicit Claude bearer credentials as API material, including endpoint and header mode', async () => {
   fixture.status = { loggedIn: true, authMethod: 'oauth_token', email: 'synthetic@example.test' }
@@ -231,10 +257,42 @@ beforeEach(() => {
   vi.stubEnv('LOCALAPPDATA', join(fixture.home, 'Local'))
   vi.stubEnv('QODER_CONFIG_DIR', join(fixture.home, '.qoder'))
   vi.stubEnv('TRAE_HOME', join(fixture.home, '.trae'))
+  vi.stubEnv('TRAECLI_HOME', '')
 })
 afterEach(() => {
   vi.unstubAllEnvs()
   rmSync(fixture.home, { force: true, recursive: true })
+})
+
+it.each([
+  ['TRAECLI_HOME overrides TRAE_HOME', 'cli-override', 'shared-home', 'cli-override/auth.json'],
+  ['TRAE_HOME fallback', undefined, 'shared-home', 'shared-home/cli/auth.json'],
+  ['empty TRAECLI_HOME falls back to TRAE_HOME', '', 'shared-home', 'shared-home/cli/auth.json'],
+  ['default ~/.trae/cli', undefined, undefined, '.trae/cli/auth.json'],
+  ['empty home overrides use ~/.trae/cli', '', '', '.trae/cli/auth.json'],
+])('模拟：TRAE auth path uses %s', async (_label, cliHome, sharedHome, relativePath) => {
+  vi.stubEnv('TRAECLI_HOME', cliHome ? join(fixture.home, cliHome) : cliHome)
+  vi.stubEnv('TRAE_HOME', sharedHome ? join(fixture.home, sharedHome) : sharedHome)
+  write(join(fixture.home, relativePath!), { auth_mode: 'trae', trae: { user_id: '模拟-trae-user' } })
+  expect(await run('traecn')).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
+  expect(backend.spawn).not.toHaveBeenCalled()
+})
+
+it.each(['TRAECLI_HOME', 'TRAE_HOME'])('模拟：TRAE binding survives identical auth moving between two %s homes', async name => {
+  const auth = { auth_mode: 'trae', trae: { user_id: '模拟-trae-user', region: 'cn' } }
+  const homes = [join(fixture.home, 'native-before'), join(fixture.home, 'native-after')]
+  for (const home of homes) write(join(home, name === 'TRAECLI_HOME' ? 'auth.json' : 'cli/auth.json'), auth)
+  vi.stubEnv(name, homes[0])
+  const before = await run('traecn')
+  vi.stubEnv(name, homes[1])
+  expect(await run('traecn')).toBe(before)
+})
+
+it('模拟：TRAE missing override auth reports 未登录 without falling back to an old login', async () => {
+  own('traecn')
+  vi.stubEnv('TRAECLI_HOME', join(fixture.home, 'missing-cli-home'))
+  await expect(run('traecn')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED', message: 'TRAE CN 未登录' })
+  expect(backend.spawn).not.toHaveBeenCalled()
 })
 
 function agy(sub = 'own-agy', refresh = 'synthetic-refresh') {
@@ -476,7 +534,20 @@ it('rejects an Antigravity route change even when its old consumer login file re
   await expect(run('antigravity')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
 })
 
-it('binds Codex account and workspace, not refreshed access/refresh tokens', async () => {
+it('模拟：Codex file bindings retain the pre-change OAuth and API hash inputs', async () => {
+  // Frozen canonical entry strings from the implementation before REQ-0136.
+  // Only the isolated fixture's random root varies between test runs.
+  const legacy = (entry: string) => `cli-account-v1:${createHash('sha256').update(JSON.stringify({
+    cli: 'codex', entries: [entry], sources: [join(fixture.home, '.codex')],
+  })).digest('hex')}`
+  own('codex')
+  expect(await run('codex')).toBe(legacy('{"principal":{"accountId":"own-workspace","issuer":"https://synthetic.example","kind":"oauth","subject":"own-codex"},"provider":"openai-codex"}'))
+  write(join(fixture.home, '.codex/auth.json'), { OPENAI_API_KEY: 'synthetic-codex-api' })
+  const digest = createHash('sha256').update('synthetic-codex-api').digest('hex')
+  expect(await run('codex')).toBe(legacy(`{"principal":{"key":"${digest}","kind":"api"},"provider":"openai"}`))
+})
+
+it('模拟：Codex binds account and workspace, not refreshed access/refresh tokens', async () => {
   own('codex')
   const first = await run('codex')
   const path = join(fixture.home, '.codex/auth.json')
@@ -502,16 +573,83 @@ it('binds Codex account and workspace, not refreshed access/refresh tokens', asy
   expect(await run('codex')).not.toBe(first)
 })
 
-it('uses the effective Codex keyring account rather than an old file or API-only status', async () => {
+it('模拟：Codex uses the effective keyring OAuth or API account instead of an old file', async () => {
   own('codex')
   write(join(fixture.home, '.codex/config.toml'), 'cli_auth_credentials_store = "keyring"\n', true)
   fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
   const first = await run('codex')
   fixture.codex.accountLabel = 'changed@synthetic.example'
   expect(await run('codex')).not.toBe(first)
-  fixture.codex = { state: 'authenticated', authMethod: 'api' }
-  await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  fixture.codex = { state: 'authenticated', authMethod: 'api', apiKeyHash: createHash('sha256').update('synthetic-native-api').digest('hex') }
+  expect(await run('codex')).not.toBe(first)
   await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
+})
+
+it.each(['"cli_auth_credentials_store"', "'cli_auth_credentials_store'", '"cli_auth_credentials_\\u0073tore"', '"cli_auth_credentials_\\U00000073tore"'])(
+  '模拟：Codex reads quoted top-level TOML key %s', async key => {
+    own('codex')
+    const file = await run('codex')
+    fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
+    write(join(fixture.home, '.codex/config.toml'), `${key} = 'keyring' # native store\n`, true)
+    expect(await run('codex')).not.toBe(file)
+    await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
+  },
+)
+
+it.each(['[notice]', '[[notice]]', '["notice.with.dots"]'])(
+  '模拟：Codex ignores credentials-store keys scoped under %s', async header => {
+    own('codex')
+    const file = await run('codex')
+    write(join(fixture.home, '.codex/config.toml'), `${header}\n"cli_auth_credentials_store" = "keyring"\n`, true)
+    expect(await run('codex')).toBe(file)
+    write(join(fixture.home, '.codex/config.toml'), `cli_auth_credentials_store = "file"\n${header}\ncli_auth_credentials_store = "invalid"\n`, true)
+    expect(await run('codex')).toBe(file)
+  },
+)
+
+it.each(['"""', "'''"])(
+  '模拟：Codex skips fake root keys and table headers inside %s strings and arrays', async delimiter => {
+    own('codex')
+    fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example' }
+    write(join(fixture.home, '.codex/config.toml'), [
+      `notice = ${delimiter}`, '[fake.table]', 'cli_auth_credentials_store = "file"', delimiter,
+      'notices = [', '"cli_auth_credentials_store = file",', '"[fake.table]",', ']',
+      '"cli_auth_credentials_store" = "keyring"',
+    ].join('\n'), true)
+    await expect(run('codex')).resolves.toMatch(/^cli-account-v1:/)
+    await expect(readCodexOwnAccountSource(project, new AbortController().signal)).rejects.toThrow()
+  },
+)
+
+it('模拟：Codex native OAuth is stable across keyring and auto but changes with workspace or account', async () => {
+  // Invalid stale JSON proves neither native mode uses file credentials.
+  write(join(fixture.home, '.codex/auth.json'), 'invalid stale auth', true)
+  const path = join(fixture.home, '.codex/config.toml')
+  fixture.codex = { state: 'authenticated', authMethod: 'oauth', accountLabel: 'current@synthetic.example', workspaceName: 'Workspace A' }
+  write(path, 'cli_auth_credentials_store = "keyring"', true)
+  const first = await run('codex')
+  write(path, 'cli_auth_credentials_store = "auto"', true)
+  expect(await run('codex')).toBe(first)
+  fixture.codex.workspaceName = 'Workspace B'
+  expect(await run('codex')).not.toBe(first)
+  fixture.codex = { state: 'unconfigured' }
+  await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+})
+
+it('模拟：Codex native API keys match file bindings, survive store changes and detect key changes', async () => {
+  const path = join(fixture.home, '.codex/config.toml')
+  write(join(fixture.home, '.codex/auth.json'), { OPENAI_API_KEY: 'synthetic-codex-api' })
+  const file = await run('codex')
+  fixture.codex = { state: 'authenticated', authMethod: 'api', apiKeyHash: createHash('sha256').update('synthetic-codex-api').digest('hex') }
+  write(join(fixture.home, '.codex/auth.json'), 'invalid stale auth', true)
+  for (const store of ['keyring', 'auto']) {
+    write(path, `cli_auth_credentials_store = "${store}"`, true)
+    expect(await run('codex')).toBe(file)
+  }
+  fixture.codex.apiKeyHash = createHash('sha256').update('synthetic-other-api').digest('hex')
+  expect(await run('codex')).not.toBe(file)
+  delete fixture.codex.apiKeyHash
+  await expect(run('codex')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
 })
 
 it.each([
@@ -635,6 +773,65 @@ it('accepts Pi private env references but never resolves them from ambient env',
   const first = await run('pi')
   write(join(fixture.home, '.pi/agent/.env'), 'CUSTOM_API_KEY=synthetic-new-private-key\n', true)
   expect(await run('pi')).not.toBe(first)
+})
+
+it('模拟：Pi env-only AWS profile 绑定仅含受保护摘要并响应凭据变化', async () => {
+  const path = join(fixture.home, '.pi/agent/auth.json')
+  const credential = { type: 'api_key', env: { AWS_PROFILE: 'synthetic-profile', AWS_REGION: 'synthetic-region' } }
+  write(path, { 'amazon-bedrock': credential })
+  const first = await run('pi')
+  expect(first).toMatch(/^cli-account-v1:[a-f0-9]{64}$/)
+  expect(first).not.toMatch(/synthetic|AWS_PROFILE/)
+  write(path, { 'amazon-bedrock': { type: 'api_key', env: { AWS_REGION: 'synthetic-region', AWS_PROFILE: 'synthetic-profile' } } })
+  expect(await run('pi')).toBe(first)
+  write(path, { 'amazon-bedrock': { ...credential, env: { ...credential.env, AWS_PROFILE: 'synthetic-other-profile' } } })
+  expect(await run('pi')).not.toBe(first)
+})
+
+it.each(['$ANTHROPIC_API_KEY', '${ANTHROPIC_API_KEY}'])(
+  '模拟：Pi 私有 env 模板 %s 与原有明文 key 生成相同绑定', async key => {
+    const path = join(fixture.home, '.pi/agent/auth.json')
+    write(path, { anthropic: { type: 'api_key', key: 'synthetic-private-key' } })
+    const first = await run('pi')
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-ambient-key')
+    write(path, { anthropic: { type: 'api_key', key, env: { ANTHROPIC_API_KEY: 'synthetic-private-key' } } })
+    expect(await run('pi')).toBe(first)
+    vi.stubEnv('ANTHROPIC_API_KEY', 'synthetic-other-ambient-key')
+    expect(await run('pi')).toBe(first)
+    write(path, { anthropic: { type: 'api_key', key, env: { ANTHROPIC_API_KEY: 'synthetic-changed-private-key' } } })
+    expect(await run('pi')).not.toBe(first)
+  },
+)
+
+it('模拟：Pi 模板仅在私有 env 无非空值时回退 process env，缺失变量拒绝绑定', async () => {
+  const path = join(fixture.home, '.pi/agent/auth.json')
+  write(path, { anthropic: { type: 'api_key', key: 'synthetic-process-key' } })
+  const first = await run('pi')
+  vi.stubEnv('REQ0136_PI_KEY', 'synthetic-process-key')
+  write(path, { anthropic: { type: 'api_key', key: '${REQ0136_PI_KEY}', env: { REQ0136_PI_KEY: '' } } })
+  expect(await run('pi')).toBe(first)
+  vi.stubEnv('REQ0136_PI_KEY', '')
+  await expect(run('pi')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+})
+
+it('模拟：Pi 有效与 malformed 凭据并存仍可绑定有效账号', async () => {
+  const path = join(fixture.home, '.pi/agent/auth.json')
+  write(path, { anthropic: { type: 'api_key', key: 'synthetic-valid-key' } })
+  const first = await run('pi')
+  write(path, { anthropic: { type: 'api_key', key: 'synthetic-valid-key' }, badNull: null,
+    badEnv: { type: 'api_key', env: { AWS_PROFILE: 123 } }, badKey: { type: 'api_key', key: [] } })
+  expect(await run('pi')).toBe(first)
+})
+
+it('模拟：Pi 既有 key 绑定摘要保持原有格式和内容', async () => {
+  own('pi')
+  const stable = (value: any): any => Array.isArray(value) ? value.map(stable) : value && typeof value === 'object'
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+  const entry = JSON.stringify(stable({ provider: 'own', principal: { kind: 'api', key: hash('synthetic-pi-key') } }))
+  const expected = `cli-account-v1:${hash(JSON.stringify(stable({ cli: 'pi',
+    sources: [join(fixture.home, '.pi/agent')], entries: [entry] })))}`
+  expect(await run('pi')).toBe(expected)
 })
 
 it('detects moving the same Pi key from global to plugin account provenance', async () => {

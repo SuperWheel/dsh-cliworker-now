@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,7 +11,11 @@ import { parseCodebuddyContextReport } from '../src/host/codebuddy-context-inspe
 import { extractTelemetry } from '../src/host/telemetry.ts'
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+beforeEach(() => {
+  for (const name of ['CODEBUDDY_AUTH_TOKEN', 'CODEBUDDY_API_KEY', 'CODEBUDDY_API_KEY_HELPER_DISABLED',
+    'CODEBUDDY_API_KEY_DISABLED', 'CODEBUDDY_INTERNET_ENVIRONMENT', 'CODEBUDDY_COPILOT_INTERNET_ENVIRONMENT']) vi.stubEnv(name, undefined)
+})
+afterEach(async () => { vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 // 模拟 CodeBuddy 2.181.0 stdio peer. No installation, credential or network access.
 const source = String.raw`
 import { createInterface } from 'node:readline';
@@ -33,6 +37,8 @@ const text=value=>update({sessionUpdate:'agent_message_chunk',content:{type:'tex
 const tool=(value={})=>update({sessionUpdate:'tool_call',toolCallId:'cmd',title:'Bash',kind:'other',status:'in_progress',_meta:{'codebuddy.ai/toolName':'Bash'},...value});
 let pending;
 log({fixture:'模拟 CodeBuddy',pid:process.pid,env:process.env.DISABLE_AUTOUPDATER,argv:process.argv.slice(2)});
+if(scenario==='environment')log({authConfigured:process.env.CODEBUDDY_AUTH_TOKEN==='SIMULATED_NATIVE_TOKEN',
+ keyConfigured:process.env.CODEBUDDY_API_KEY==='SIMULATED_NATIVE_KEY'});
 createInterface({input:process.stdin}).on('line',line=>{
  const q=JSON.parse(line);log(q);
  if(!q.method){
@@ -141,6 +147,15 @@ async function fixture(scenario = 'success', options: { access?: string; mode?: 
 }
 const methods = (records: any[], method: string) => records.filter(record => record.method === method)
 describe('CodeBuddy ACP（模拟）', () => {
+  it('模拟：native Worker and context children inherit auth env without exposing it in frames', async () => {
+    vi.stubEnv('CODEBUDDY_AUTH_TOKEN', 'SIMULATED_NATIVE_TOKEN')
+    vi.stubEnv('CODEBUDDY_API_KEY', 'SIMULATED_NATIVE_KEY')
+    const { result, frames, records, context } = await fixture('environment')
+    expect(result.status).toBe('SUCCESS')
+    expect(records[1]).toEqual({ authConfigured: true, keyConfigured: true })
+    expect(context[1]).toEqual({ authConfigured: true, keyConfigured: true })
+    expect(JSON.stringify([frames, records, context])).not.toMatch(/SIMULATED_NATIVE_(TOKEN|KEY)/)
+  })
   it('checks the native initialize identity without requiring agentInfo', () => {
     expect(codebuddyVerifyInitialize({ protocolVersion: 1, authMethods: [{ id: 'internal' }, { id: 'external' }] })).toBeUndefined()
     expect(codebuddyVerifyInitialize({ protocolVersion: 1 })).toContain('身份不匹配')

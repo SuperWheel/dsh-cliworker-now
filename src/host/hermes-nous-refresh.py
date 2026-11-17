@@ -6,6 +6,7 @@ anonymous identity, browser, model request or credential output is permitted.
 """
 import base64
 import contextlib
+from datetime import datetime
 import hashlib
 import inspect
 import json
@@ -191,13 +192,72 @@ def checked_pool(store, state, expected):
     return rows
 
 
-def checked_shared(shared, expected):
-    if shared.get("_schema") != 1 or not text(shared.get("refresh_token")):
+def checked_shared(shared, state, expected):
+    if shared.get("_schema") != 1:
+        raise Refusal()
+    # Hermes 0.23.1 auth_nous._merge_shared_nous_oauth_state prefers the
+    # renewal beside another identity when its JWT subject is this account's.
+    # The nested shape has no _schema. Keep our full principal/client/route
+    # checks after selection, including when verifying a native mirror write.
+    renewed = shared.get("renewal")
+    if isinstance(renewed, dict) and renewed.get("auth_method") != "anonymous":
+        try:
+            subject = claims(renewed.get("access_token")).get("sub")
+        except (Refusal, ValueError):
+            subject = None
+        if subject == claims(state.get("access_token")).get("sub"):
+            shared = renewed
+    if not text(shared.get("refresh_token")):
         raise Refusal()
     found = identity(shared)
     if found[:2] != expected[:2]:
         raise Refusal()
-    return found
+    return shared
+
+
+def oauth_timestamp(value):
+    # Native credential_pool_timestamps accepts epoch seconds, milliseconds,
+    # numeric strings and ISO-8601 for OAuth issue/expiry metadata.
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        try:
+            numeric = datetime.fromisoformat(value).timestamp()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    if not math.isfinite(numeric) or numeric <= 0:
+        return None
+    return numeric / 1000.0 if numeric > 1_000_000_000_000 else numeric
+
+
+def state_order(a, b):
+    # Reviewed Hermes 0.23.1 auth_oauth_grants.oauth_pair_order: issue time
+    # wins even for shorter-lived rotations. Equal iat falls to the local
+    # issue stamp, never expiry; expiry orders states without comparable issue
+    # stamps. Keep this pure so no broader native resolver can run here.
+    def stamps(state):
+        token = claims(state.get("access_token"))
+        def first(*values):
+            return next((stamp for stamp in map(oauth_timestamp, values) if stamp is not None), None)
+        return (first(token.get("iat")), first(state.get("last_refresh"), state.get("obtained_at")),
+                first(token.get("exp"), state.get("expires_at_ms"), state.get("expires_at")))
+    def sign(x, y):
+        return None if x is None or y is None else (x > y) - (x < y)
+    (ia, la, ea), (ib, lb, eb) = stamps(a), stamps(b)
+    if ia is not None and ib is not None:
+        return sign(ia, ib) or sign(la, lb) or 0
+    issued = sign(ia or la, ib or lb)
+    if issued is not None:
+        return issued
+    expiry = sign(ea, eb)
+    if expiry:
+        return expiry
+    a_any, b_any = any(v is not None for v in (ia, la, ea)), any(v is not None for v in (ib, lb, eb))
+    if not a_any and not b_any:
+        return None
+    return 0 if a_any == b_any else (1 if a_any else -1)
 
 
 def shared_write_options(write):
@@ -264,12 +324,13 @@ def _run(home, expected_digest, cancelled):
         with auth._nous_shared_store_lock(timeout_seconds=1.0):
             shared = read_json(shared_path) if regular_file(shared_path, optional=True) else None
             if shared is not None:
-                shared_identity = checked_shared(shared, expected)
+                shared = checked_shared(shared, state, expected)
                 different_pair = (shared.get("access_token"), shared.get("refresh_token")) != (state.get("access_token"), state.get("refresh_token"))
-                if different_pair and shared_identity[2] == expected[2]:
+                order = state_order(shared, state)
+                if different_pair and order not in (-1, 1):
                     raise Refusal()
             else:
-                shared_identity, different_pair = None, False
+                order, different_pair = None, False
 
             def persist(update, _reason=None):
                 nonlocal state
@@ -291,13 +352,13 @@ def _run(home, expected_digest, cancelled):
                 # Native mirror is best-effort, so verify the saved pair before
                 # reporting ready. No outside-home store is ever touched.
                 auth._write_shared_nous_state(state, **mirror_options)
-                saved = read_json(shared_path)
-                if checked_shared(saved, expected)[:2] != expected[:2] or any(saved.get(k) != state.get(k) for k in ("access_token", "refresh_token")):
+                saved = checked_shared(read_json(shared_path), state, expected)
+                if any(saved.get(k) != state.get(k) for k in ("access_token", "refresh_token")):
                     raise Refusal("unavailable")
 
             # A newer peer rotation for this exact principal/client/route may
-            # be adopted. Equal-expiry differing tokens are not a proven chain.
-            if different_pair and shared_identity[2] > expected[2]:
+            # be adopted. Tied issue stamps are not a proven chain.
+            if different_pair and order == 1:
                 persist(shared)
             elif different_pair:
                 # The selected store is provably newer. Repair this same-home,

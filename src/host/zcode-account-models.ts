@@ -1,24 +1,20 @@
 import { constants } from 'node:fs'
 import { lstat, open } from 'node:fs/promises'
-import { createHash, createDecipheriv } from 'node:crypto'
-import { homedir, platform, userInfo } from 'node:os'
+import { createZCodeCredentialReader, type ZCodeCredentialOptions, type ZCodeCredentialReader } from './zcode-credentials.ts'
 import { join } from 'node:path'
 
-/** Native standalone-account-provider-runtime.js identity binding (ZCode 0.16.9).
- * Keys remain in the Host and are used only for the corresponding native route.
- * OAuth access/refresh tokens and old identities are deliberately not fallbacks.
- */
+/** Native identity binding. OAuth may have no legacy key; API secrets stay in the Host. */
 export async function readZCodeAccountBindings(
   authDirectory: string,
   providerIds: string[],
-  options: { signal?: AbortSignal; credentialSecret?: string } = {},
-): Promise<Map<string, { identity: string; key: string }>> {
-  const result = new Map<string, { identity: string; key: string }>()
+  options: ZCodeCredentialOptions = {},
+): Promise<Map<string, { identity: string; key: string; authSource: 'oauth' | 'manual' | 'legacy' }>> {
+  const result = new Map<string, { identity: string; key: string; authSource: 'oauth' | 'manual' | 'legacy' }>()
   if (!providerIds.length) return result
   options.signal?.throwIfAborted()
   let file: Awaited<ReturnType<typeof open>> | undefined
+  let credentials: ZCodeCredentialReader | undefined
   const buffer = Buffer.alloc(64 * 1024 + 1)
-  let key: Buffer | undefined
   try {
     for (const directory of [
       authDirectory,
@@ -52,44 +48,28 @@ export async function readZCodeAccountBindings(
       throw new Error('ZCode credentials changed during read')
     const raw: unknown = JSON.parse(buffer.subarray(0, length).toString('utf8'))
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Invalid ZCode credentials')
-    const values = raw as Record<string, unknown>
-    let username = 'unknown'
-    try {
-      username = userInfo().username
-    } catch {
-      /* native fallback */
-    }
-    const secret =
-      (options.credentialSecret ?? process.env.ZCODE_CREDENTIAL_SECRET?.trim()) ||
-      `zcode-credential-fallback:${platform()}:${homedir()}:${username}`
-    key = createHash('sha256').update(secret).digest()
-    const decode = (id: string): string | undefined => {
-      const value = values[id]
-      if (value == null) return
-      if (typeof value !== 'string') throw new Error('Invalid ZCode credential value')
-      if (!value.startsWith('enc:v1:')) return value.trim() || undefined
-      const parts = value.slice(7).split('.')
-      if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part)))
-        throw new Error('Invalid ZCode cipher')
-      const [iv, tag, body] = parts.map((part) => Buffer.from(part, 'base64url'))
-      if (iv!.length !== 12 || tag!.length !== 16) throw new Error('Invalid ZCode cipher')
-      const cipher = createDecipheriv('aes-256-gcm', key!, iv!)
-      cipher.setAuthTag(tag!)
-      const plain = Buffer.concat([cipher.update(body!), cipher.final()])
-      try {
-        return plain.toString('utf8').trim() || undefined
-      } finally {
-        plain.fill(0)
-      }
-    }
+    credentials = await createZCodeCredentialReader(raw, join(authDirectory, '.zcode/v2/credentials.json'), options)
+    const values = credentials.values
+    const decode = (id: string) => values[id]?.trim() || undefined
     for (const providerId of new Set(providerIds)) {
       options.signal?.throwIfAborted()
       const identity = decode(`account-provider:${providerId}:identity`)
       if (!identity) continue
+      const source = decode(`account-provider:${providerId}:auth-source`)
+      if (source && !['oauth', 'manual'].includes(source)) throw new Error('Unsupported ZCode auth source')
+      const family = /^account:(bigmodel|zai)-individual-coding-plan$/.exec(providerId)?.[1]
+      const access = family && source !== 'manual' ? decode(`oauth:${family}:access_token`) : undefined
       const apiKey = decode(
         `account-provider:coding-plan:${providerId}:account:${encodeURIComponent(identity)}:api-key`,
       )
-      if (apiKey) result.set(providerId, { identity, key: apiKey })
+      // Native 0.17.1 uses the project-token flow. Until supported, retain the
+      // identity-scoped legacy key for OAuth too (REQ-0136: no regression).
+      // Lqn in native ZCode creates manual identities as key-<sha256 hex slice(0, 24)>.
+      if (source === 'oauth' || source !== 'manual' && access && !/^key-[a-f0-9]{24}$/.test(identity)) {
+        if (access && !/^key-[a-f0-9]{24}$/.test(identity)) result.set(providerId, { identity, key: apiKey ?? '', authSource: 'oauth' })
+        continue
+      }
+      if (apiKey) result.set(providerId, { identity, key: apiKey, authSource: source === 'manual' ? 'manual' : 'legacy' })
     }
     return result
   } catch (error) {
@@ -97,7 +77,7 @@ export async function readZCodeAccountBindings(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return result
     throw new Error('无法安全读取 ZCode 当前账号的 Worker 凭据，请在原生登录设置中检查')
   } finally {
-    key?.fill(0)
+    credentials?.dispose()
     buffer.fill(0)
     await file?.close()
   }
@@ -107,10 +87,10 @@ export async function readZCodeAccountBindings(
 export async function readZCodeAccountApiKeys(
   authDirectory: string,
   providerIds: string[],
-  options: { signal?: AbortSignal; credentialSecret?: string } = {},
+  options: ZCodeCredentialOptions = {},
 ): Promise<Map<string, string>> {
   return new Map(
-    [...(await readZCodeAccountBindings(authDirectory, providerIds, options))].map(([provider, value]) => [
+    [...(await readZCodeAccountBindings(authDirectory, providerIds, options))].filter(([, value]) => !!value.key).map(([provider, value]) => [
       provider,
       value.key,
     ]),

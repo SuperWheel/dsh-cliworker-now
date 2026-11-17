@@ -45,7 +45,9 @@ export async function readWorkBuddyMetadata(
     signal.throwIfAborted()
     // This is an installation/site binding, not a claim of principal identity.
     // WorkBuddy exposes no verified account ID; each admission probes login afresh.
-    const source = [cli, install.runtime, install.entry, install.cliVersion, install.configDir, result.endpoint]
+    // Install path and versions are left out on purpose: an update is not an account change (REQ-0136).
+    const canonicalEndpoint = new URL(result.endpoint).href.replace(/\/+$/, '')
+    const source = [cli, canonicalEndpoint]
     return { models: result.models, endpoint: result.endpoint,
       binding: `cli-account-v1:${createHash('sha256').update(JSON.stringify(source)).digest('hex')}` }
   }
