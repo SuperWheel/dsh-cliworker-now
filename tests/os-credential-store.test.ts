@@ -44,7 +44,7 @@ const roots: string[] = []
 const releases: (() => unknown)[] = []
 const signal = () => new AbortController().signal
 const temp = (label: string) => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), `cwn-store-SIMULATED-${label}-`)))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), `cwn-store-SIMULATED-${label}-`)))
   roots.push(root)
   return root
 }

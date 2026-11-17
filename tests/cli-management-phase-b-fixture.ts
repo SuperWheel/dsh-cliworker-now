@@ -60,7 +60,7 @@ export function childFixture() {
   return { child, finish, exit: (value: boolean) => exit(value) }
 }
 export function serviceFixture(clis: ActiveCliId[] = ['codex']) {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cli-update-phase-b-')))
+  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'cli-update-phase-b-')))
   const npm = npmFixture(root)
   const identities = new Map(clis.map(cli => [cli, syntheticIdentity(cli)]))
   const backend: ProcessBackend = { resolveExecutable: vi.fn(async name => name === 'npm' || name === 'npm.cmd' ? npm.launcher : name === 'node' || name === 'node.exe' ? npm.node : name), spawn: vi.fn(() => ({ stdout: Readable.from([]), stderr: Readable.from([]), done: Promise.resolve({ exitCode: 0, signal: null }), waitForExit: vi.fn(async () => true), terminate: vi.fn() }) as any) }

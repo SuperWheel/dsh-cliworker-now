@@ -102,7 +102,7 @@ function fakeBackend(answer: (argv: readonly string[]) => { stdout?: string; exi
 }
 
 beforeEach(() => {
-  state.home = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-zcode-app-')))
+  state.home = realpathSync.native(mkdtempSync(join(tmpdir(), 'cwn-zcode-app-')))
   state.product = 'ZCode'
   resetZCodeLaunchState()
   vi.stubEnv('APPDATA', join(state.home, 'Roaming'))
