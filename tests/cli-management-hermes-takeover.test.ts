@@ -612,6 +612,44 @@ it('模拟：update.log 残留上一次「Update complete!」不让本次判为�
   await writeFile(log, '→ Fetching updates...\n✓ Update complete! (v0.23.1 → v0.23.2)\n', { flag: 'a' }); await utimes(log, new Date(now + 5), new Date(now + 5))
   await done.poll(now + 5); expect(done.canTakeover).toBe(false); expect(done.requestTakeover()).toBe(false)
 })
+it('模拟：本次官方 fetch 已写出 FETCH_HEAD 后，静默预检不按 10 秒拉取停滞中止，也不再提供手动切换', async () => {
+  // 2026-11-17 Mac 实测复现：blobless 安装的官方 fetch 约 4 秒完成，之后逐个惰性读取目标文件且不写日志。
+  const a = await observer('fetch'), head = join(a.checkout, '.git/FETCH_HEAD')
+  await put(head, `${sha(7)}\t\t'${sha(7)}' of https://simulated.invalid/hermes-agent\n`, a.now + 4_000)
+  await a.watch.poll(a.now + 4_000); expect(a.watch.canTakeover).toBe(false); expect(a.watch.requestTakeover()).toBe(false)
+  await a.watch.poll(a.now + 60_000); expect(a.watch.reason).toBeUndefined(); expect(a.watch.controller.signal.aborted).toBe(false)
+  // 完成取码后仍保留 5 分钟无活动兜底。
+  await a.watch.poll(a.now + 4_000 + 5 * 60_000); expect(a.watch.controller.signal.reason).toMatchObject({ code: 'INSTALL_TIMEOUT' })
+  // 上一次运行留下的 FETCH_HEAD、fetch 进行中被清空的 FETCH_HEAD 都不是本次证据。
+  const old = await observer('fetch')
+  await put(join(old.checkout, '.git/FETCH_HEAD'), `${sha(7)}\t\t'${sha(7)}' of https://simulated.invalid/hermes-agent\n`, old.now - 60_000)
+  await old.watch.poll(old.now + 10_000); expect(old.watch.reason).toBe('OFFICIAL_STALLED')
+  const empty = await observer('fetch')
+  await put(join(empty.checkout, '.git/FETCH_HEAD'), '', empty.now + 1_000)
+  await empty.watch.poll(empty.now + 10_000); expect(empty.watch.reason).toBe('OFFICIAL_STALLED')
+  // 已知目标提交时，FETCH_HEAD 必须写的是该提交。
+  const { root, checkout } = await fixture(), now = Date.now() - 1000, status = join(root, 'status.json')
+  const other = new HermesWatch(root, checkout, status, now, () => {}, { version: '0.23.1', sha: sha(3) }); await other.snapshot()
+  await put(status, { stage: 'fetch' }, now + 1); await other.poll(now + 1)
+  await put(join(checkout, '.git/FETCH_HEAD'), `${sha(7)}\t\t'main' of https://simulated.invalid/hermes-agent\n`, now + 2_000)
+  await other.poll(now + 10_001); expect(other.reason).toBe('OFFICIAL_STALLED')
+})
+it('模拟：插件预取并校验后交回官方，重跑的 fetch 阶段静默 60 秒不再被停，更新完成', async () => {
+  // 2026-11-17 Mac 实测复现：预取成功后重跑的官方更新 10 秒内又被判 OFFICIAL_STALLED，最终报「准备切换插件接管」。
+  const { root, checkout } = await fixture(), watches = captureWatches(), calls: any[] = []
+  let finish!: (value: { exitCode: number; signal: null }) => void
+  const rerun = { stdout: Readable.from([]), stderr: Readable.from([]), done: new Promise<{ exitCode: number; signal: null }>(r => { finish = r }), terminate: vi.fn(), waitForExit: vi.fn(async () => true) }
+  const spawn = vi.fn((s: any) => { calls.push(s); return calls.length === 1 ? held() : s.argv[0] === 'simulated-hermes' ? rerun : finished(s.argv.includes('ls-remote') ? refs : '') })
+  const o = options(root, checkout, spawn as any)
+  const run = runHermesUpdate(o); await until(() => calls.length === 1)
+  await stall(watches[0]!); await until(() => watches.length === 2 && calls.at(-1).argv[0] === 'simulated-hermes')
+  expect(calls.some(s => s.argv.includes('cat-file'))).toBe(true)
+  await stall(watches[1]!)
+  expect(watches[1]!.currentStage).toBe('fetch'); expect(watches[1]!.reason).toBeUndefined(); expect(watches[1]!.canTakeover).toBe(false)
+  expect(rerun.terminate).not.toHaveBeenCalled()
+  finish({ exitCode: 0, signal: null }); await run
+  expect(calls.map(s => s.argv).filter(a => a[0] === 'simulated-hermes')).toEqual([o.argv, o.argv])
+})
 it('模拟：Hermes 手动 fetch 接管等待进程树退出才预取，清除公开 watch 句柄', async () => {
   const { root, checkout } = await fixture()
   let confirm!: (exited: boolean) => void

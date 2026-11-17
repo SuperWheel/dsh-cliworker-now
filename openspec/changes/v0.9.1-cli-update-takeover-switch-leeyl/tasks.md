@@ -40,6 +40,14 @@
   - `hermes-watch.ts`：`plan.expected_sha` 只在计划版本等于目标版本时采用，并排除等于 `pre_update.sha` 的提交；否则由 `releaseSha` 查发布标签。
   - 新增 3 项测试（`cli-management-hermes-takeover.test.ts`），Hermes 相关 2 个文件共 107 项通过。失败后 Hermes 仍为 0.23.1，工作区干净，没有残留进程。
 
+- [x] 3.6 修复 Hermes 预取后交回官方又被 10 秒看门狗停掉
+  - 2026-11-17 Mac Desktop 再测：点「切换插件下载」后以「OFFICIAL_UNAVAILABLE：官方渠道不可用（OFFICIAL_STALLED），准备切换插件接管」结束，Hermes 仍为 0.23.1。回执显示官方更新被停两次（17:11:25、17:11:51 启动），日志都停在「→ Fetching updates...」。
+  - 只读核对：目标提交 `ae2a81c…` 与标签 v0.23.2 已在本地（预取成功）；`.git/FETCH_HEAD` 于 17:11:55 写入目标提交，即第二次官方 fetch 约 4 秒完成；17:11:30 有一个 376 字节的包，对应第一次。安装是 `blob:none` 部分克隆，Hermes `update_cmd.py:1881` 只拉目标提交，随后 `update_cmd_commit.py:568-610` 用 `cat-file --batch` 惰性读取目标文件做语法预检，到 `update_cmd.py:1927` 才写下一行日志。
+  - `hermes-watch.ts`：新增 `fetchSettled`，本次运行写出的 `FETCH_HEAD` 含提交、或预取校验通过后交回（`codeReady`）时，不再用 10 秒拉取时钟，`canTakeover` 为否；保留 5 分钟无活动与 20 分钟租约。预取后在 fetch 阶段再次失败的分支因此不会再走到，「准备切换插件接管」不会再作为预取后的最终错误出现。
+  - 手动切换路径（`service.ts` 的 `registerOfficialOperation` / `requestTakeover`）核对无误：点击会中止官方进程并进入预取，本次失败发生在预取之后的重跑。
+  - 新增 2 项模拟测试（`cli-management-hermes-takeover.test.ts`），在修复前的源码上两项均失败。`corepack pnpm typecheck` 通过；Hermes 相关 3 个文件 129 项通过；全量 360 个文件通过、4 个跳过，8780 项通过、15 项跳过。
+  - 未做：真实 `hermes update` 重测（未获授权运行，Hermes 仍为 0.23.1）；17:11:55 之后具体停在哪一步预检没有日志可证，只能确定官方 fetch 已完成。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

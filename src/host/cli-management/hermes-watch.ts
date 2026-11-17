@@ -42,6 +42,11 @@ export class HermesWatch {
   private fetchWatch?: HermesFetchWatchdog
   /** update.log is appended across runs; only bytes written after this run's snapshot belong to it. */
   private logBaseline?: { ino: number; size: number }
+  /** The code this run needs is already local: the official fetch of this run wrote FETCH_HEAD, or the
+   * plugin prefetch verified the target commit. Hermes prints nothing between "Fetching updates..." and
+   * the checkout while a blobless install lazily reads target files, so that quiet time is not a fetch stall
+   * (2026-11-17 Mac 实测：官方 fetch 约 4 秒完成，随后的静默预检被 10 秒看门狗当成拉取停滞，预取后重跑再次被停). */
+  private fetchSettled: boolean
   currentStage: HermesStage = 'unknown'
   stoppedStage?: HermesStage
   reason?: SlowReason
@@ -50,8 +55,9 @@ export class HermesWatch {
   expectedSha?: string
   stopClass?: string
   exitCode?: number
-  constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = []) {
+  constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = [], codeReady = false) {
     this.lastActivity = startedAt; this.lastPartialActivity = startedAt; this.lease = startedAt + 20 * 60_000
+    this.fetchSettled = codeReady
   }
   /** Manual takeover API: requestTakeover(): boolean. Only code fetch has a plugin
    * takeover recipe; deps/build/apply/restart must finish through the official updater.
@@ -59,7 +65,7 @@ export class HermesWatch {
    * runHermesUpdate keeps the same exit barrier and prefetch path as an automatic trip.
    */
   /** Whether a manual takeover would be accepted right now (same guard as requestTakeover). */
-  get canTakeover(): boolean { return !this.completed && this.currentStage === 'fetch' && !this.controller.signal.aborted }
+  get canTakeover(): boolean { return !this.completed && !this.fetchSettled && this.currentStage === 'fetch' && !this.controller.signal.aborted }
   requestTakeover(): boolean {
     if (!this.canTakeover) return false
     this.reason = 'OFFICIAL_INTERRUPTED'; this.stoppedStage = 'fetch'
@@ -192,6 +198,13 @@ export class HermesWatch {
         this.setStage(hermesStage(value.stage) ?? hermesStage(value.message), status.mtimeMs, 'status', now)
       } catch { /* atomic writer may not have published yet */ }
     }
+    if (!this.fetchSettled && this.currentStage === 'fetch') {
+      // git truncates FETCH_HEAD when a fetch starts and writes its lines only when it ends; the plugin
+      // prefetch and git's own lazy object fetches never write it (--no-write-fetch-head).
+      const head = await observe(join(this.checkout, '.git/FETCH_HEAD'))
+      const want = this.target?.sha ?? this.expectedSha
+      if (head && (want ? head.text.toLowerCase().includes(want.toLowerCase()) : /^[a-f0-9]{40}\t/m.test(head.text))) this.fetchSettled = true
+    }
     const dependencies = ['deps', 'tools', 'uv', 'pnpm'].includes(this.currentStage)
     const [pack, cache, partials, work] = await Promise.all([
       this.packs.poll(this.checkout), judge ? observeHermesCache(this.home) : undefined,
@@ -223,7 +236,7 @@ export class HermesWatch {
     const protectedStage = this.currentStage === 'apply' || this.currentStage === 'restart'
     if (judge && !this.controller.signal.aborted) {
       let reason: SlowReason | undefined
-      if (!this.completed && this.currentStage === 'fetch' && pack.complete) reason = this.fetchWatch?.check(now, pack.bytes)
+      if (!this.completed && !this.fetchSettled && this.currentStage === 'fetch' && pack.complete) reason = this.fetchWatch?.check(now, pack.bytes)
       const downloadingPart = this.toolDownloadObserved && [...partials.files.keys()].some(p => p.endsWith('.part'))
       const tools = this.currentStage === 'tools' && (this.toolDownloadMessage || downloadingPart) || this.currentStage === 'deps' && downloadingPart
       if (!this.completed && !this.toolDownloadFinished && tools && partials.complete && cache?.complete && now - this.lastPartialActivity >= OFFICIAL_STALL_MS) reason = 'OFFICIAL_STALLED'
@@ -257,14 +270,14 @@ export interface HermesUpdateOptions {
 }
 export async function runHermesUpdate(o: HermesUpdateOptions) {
   let privateDir: string | undefined
-  let quarantine = false, stopped = false, attempt = 0, depsRetries = 0, fallbackRetries = 0, prefetched = false
+  let quarantine = false, stopped = false, attempt = 0, depsRetries = 0, fallbackRetries = 0, prefetched = false, codeReady = false
   let recoveryFailure: unknown, receiptSucceeded = false
   try {
     privateDir = trackUpdateTemporary(await mkdtemp(join(await prepareDownloads(o.root), 'local-')))
     for (;;) {
       o.signal.throwIfAborted()
       const before = await observeHermesCache(o.home)
-      const watch = new HermesWatch(o.home, o.checkout, join(privateDir, `status-${attempt}.json`), Date.now(), p => o.progress({ ...p, retryCount: attempt }), { version: o.targetVersion, sha: o.targetSha }, o.activityRoots)
+      const watch = new HermesWatch(o.home, o.checkout, join(privateDir, `status-${attempt}.json`), Date.now(), p => o.progress({ ...p, retryCount: attempt }), { version: o.targetVersion, sha: o.targetSha }, o.activityRoots, codeReady)
       await watch.snapshot(before); let polling = Promise.resolve(), pending = false
       o.onWatch?.(watch)
       const timer = setInterval(() => {
@@ -288,7 +301,8 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
       if (watch.exitCode === 2 || failure instanceof CliOperationError && /退出码 2(?:\D|$)/.test(failure.message)) throw failure
       if (watch.reason && watch.stoppedStage === 'fetch' && !prefetched) {
         prefetched = true
-        try { await prefetchHermes(o, watch.reason, o.targetSha ?? watch.expectedSha) }
+        // Only a verified prefetch (cat-file passed) lifts the 10 s fetch clock for the handed-back run.
+        try { await prefetchHermes(o, watch.reason, o.targetSha ?? watch.expectedSha); codeReady = true }
         catch (error) {
           if (error instanceof ProcessCleanupUnconfirmedError) throw error
           o.signal.throwIfAborted()
@@ -306,6 +320,8 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
         o.output(`Hermes 依赖停滞，缓存已有新落盘，官方重跑 ${depsRetries}/3。\n`)
         continue
       }
+      // A verified prefetch leaves no fetch clock or manual takeover on the handed-back run (codeReady),
+      // so a fetch-stage reason cannot reach here after a takeover; other reasons keep their own message.
       if (watch.reason || fallbackRetries++ >= 1) throw failure
       attempt++
       o.output('Hermes 官方更新失败，读取回执后自动重跑一次；由官方恢复残留。\n')
