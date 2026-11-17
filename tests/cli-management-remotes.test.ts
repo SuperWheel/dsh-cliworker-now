@@ -38,6 +38,14 @@ it('snapshot and watch validate the parent and never run discovery', async () =>
   const next = stream.next(); controller.abort(); expect((await next).done).toBe(true)
   expect(f.identify).not.toHaveBeenCalled(); expect(f.spawn).not.toHaveBeenCalled()
 })
+it('模拟：主对话的工作目录已被删除时，更新页快照与检查仍可用', async () => {
+  // 2026-11-17 Windows 实测：旧测试会话的目录被删后，更新页整页报 ENOENT lstat。
+  const f = fixture(), gone = join(f.root, '已删除的项目')
+  ;(f.service as any).parent = vi.fn(async () => ({ session: { header: { cwd: gone } } }))
+  const snapshot = JSON.parse(await f.service.cliUpdateSnapshot('parent', f.control))
+  expect(snapshot.entries).toHaveLength(17)
+  expect(JSON.parse(await f.service.checkCliUpdates('parent', 'missing', f.control)).entries).toHaveLength(17)
+})
 it('source Remote saves only validated local settings and rejects credentials', async () => {
   const f = fixture()
   expect(JSON.parse(await f.service.cliDownloadSource('parent', f.control))).toEqual({ source: 'official' })

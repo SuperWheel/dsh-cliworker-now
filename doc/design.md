@@ -1790,6 +1790,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 - **Hermes 只读本次日志**：Mac Desktop 实测中，Hermes 点「切换插件下载」后按钮消失，官方更新继续。原因是 `update.log` 跨次追加，上一次留下的「Update complete!」让本次被判为已完成，10 秒停滞和手动切换因此都不生效。改为开始时记下日志的 inode 与长度，之后只读新追加的部分；文件被替换或截短时从头读。按钮只在 `HermesWatch.canTakeover` 为真时显示；Host 拒绝切换时，该行说明原因，不再静默消失。
 - **Hermes 目标提交来源**：同一轮实测中，10 秒规则已触发，但预取报 `INTEGRITY_MISMATCH`。Hermes 0.23.1 回执里 `plan.expected_sha` / `expected_version` 是更新前的提交（等于 `pre_update.sha`），之前被当作目标提交。改为只有计划版本等于目标版本时才采用 `plan.expected_sha`，任何等于 `pre_update.sha` 的提交都不采用；没有可用的目标提交时，按 GitHub 发布标签查（v0.23.2 实查为 `ae2a81c…`，与 origin 标签一致）。
 - **Hermes 取码完成后不再按拉取停滞判定**：同一轮实测中，预取成功后交回官方，约 10 秒又被判 `OFFICIAL_STALLED`，最后报「准备切换插件接管」，Hermes 仍是 0.23.1。原因不在拉取：这份安装是 `blob:none` 的部分克隆，官方 `git fetch --no-tags origin <目标提交>` 约 4 秒就完成（`.git/FETCH_HEAD` 写入目标提交），之后 Hermes 在移动检出前逐个惰性读取目标文件做预检，期间不写日志和回执，插件仍停在「fetch」阶段，看不到包字节增长，10 秒看门狗把这段静默当成拉取停滞；第二次触发时已经预取过，直接抛出原错误。改为两种情况下不再用 10 秒拉取时钟，也不再提供手动切换：本次运行写出的 `FETCH_HEAD` 里有提交（已知目标提交时须是该提交），或者插件预取已通过 `cat-file` 校验后交回官方。之后只保留 5 分钟无活动与 20 分钟租约兜底，Hermes 自己的网络 Git 也有 300 秒上限。代价是预取后官方那次 fetch 如果真的断网，要等到这些兜底才结束，不再是 10 秒。上一次运行留下的或被清空的 `FETCH_HEAD` 不算证据。
+- **更新页不依赖会话目录**：Windows 实测中，当前会话的工作目录已被删除，更新页整页报 ENOENT。更新页是整机范围的，四个更新相关的 Gateway 动作不再强制解析会话目录，只由 `parent()` 在目录存在时登记预加载范围。
 - **取消后核对**：持维护锁只读核对原安装，60 秒上限，不写路径记录；结果分为原版本未受影响、更新已完成、安装已损坏（附修复入口）和核对失败。
 
 详见 `openspec/changes/v0.9.1-cli-update-takeover-switch-leeyl/`。只做了模拟测试；真实 Grok、Qoder 更新与 Windows 待验收。

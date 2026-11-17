@@ -48,12 +48,25 @@
   - 新增 2 项模拟测试（`cli-management-hermes-takeover.test.ts`），在修复前的源码上两项均失败。`corepack pnpm typecheck` 通过；Hermes 相关 3 个文件 129 项通过；全量 360 个文件通过、4 个跳过，8780 项通过、15 项跳过。
   - 未做：真实 `hermes update` 重测（未获授权运行，Hermes 仍为 0.23.1）；17:11:55 之后具体停在哪一步预检没有日志可证，只能确定官方 fetch 已完成。
 
+- [x] 3.7 修复主对话工作目录被删除后「更新 CLI」页整页加载失败
+  - 2026-11-17 Windows Desktop 实测：当前会话是旧的 smoke 测试，工作目录 `C:\Users\admin\cw081f1` 已删除，更新页只显示「ENOENT: no such file or directory, lstat 'C:\Users\admin\cw081f1'」和「重试」。v0.9.0 起即有此问题。
+  - 原因：`src/host/index.ts` 的 `cliUpdateSnapshot`、`checkCliUpdates`、`startCliOperation`、`checkInstallDirectory` 先用 `projectDirectory`（`realpathSync`）解析会话目录，目录不存在就抛错；更新页本身是整机范围的，不需要项目目录。
+  - 修复：去掉这四处的强制解析；`parent()` 本来就在目录存在时登记预加载范围，失败时忽略。
+  - 新增测试 1 项（`tests/cli-management-remotes.test.ts`）：会话目录不存在时快照与检查仍返回 17 行；相关 3 个文件 38 项通过，typecheck 通过。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查
   - 2026-11-17 Mac：`pnpm typecheck` 通过；全量 vitest 360 个文件通过、4 个跳过，8772 项通过、15 项跳过；`build:preview` 通过。
   - 两轮 Codex 审查的发现均已修复：取消核对提前释放维护锁、缺失可执行文件未判为损坏、Grok「downloaded」行未识别、`captureReadOnly` 等待退出无上限、数字回退误续期。
 - [ ] 4.2 Mac Desktop 实测：Grok、Qoder 更新的自动切换、手动切换、取消（使用 `~/.cache/cliworker-test-backups/2026-11-17/` 的备份回滚后重复测试）
+  - 2026-11-17 Mac Desktop（aca5b85 正式构建）用户实测结果：
+    - Grok：1.0.77 → 1.0.88（`~/.grok/bin/grok` 16:39 指向 1.0.88），切换记忆 16:39:17 记为 `OFFICIAL_STALLED`，即官方下载 10 秒无进展后自动切到插件下载并完成。
+    - Qoder：1.1.89 → 1.1.90（`~/.qoder/bin/qodercli/version.txt` 16:39:54 写入），206 续传修复后完成。
+    - Hermes：手动「切换插件下载」先后暴露 3 个问题（旧日志完成行、更新前提交当作目标、取码后静默预检被当成停滞），修复见 3.4–3.6；18:34 的一次官方更新顺利越过取码阶段，`Update complete! (v0.23.1 → v0.23.2) [detached @ ae2a81ccc0]`，`hermes --version` 为 0.23.2。
+  - 未验证：新构建下 Grok、Qoder 的手动切换，以及取消后的四种核对结果（只有模拟测试）。
 - [ ] 4.3 Windows 回归与实机（等 Windows 连上）
+  - 2026-11-17 晚 Windows 隔离回归 37e3d6c3（aca5b85，config-d.json）：1032 项中 1024 项通过、0 失败、8 项跳过。
+  - Windows Desktop 已部署同一源码的隔离包（1322 个文件与清单一致，Host `lib/index.js` 与 Mac 正式构建相同，SHA-256 `e1d5f40e…`），实机更新测试进行中。
 - [x] 4.4 同步 README、`doc/usage-details.md` 与设计文档中的时限和按钮说明
   - README.md 下载续传段与双通道段、README.en.md 对应段落、`doc/design.md`「2026-11-17 更快切换插件下载与手动切换」。`doc/usage-details.md` 没有涉及这些时限的内容，未改。

@@ -66,7 +66,7 @@
 
 ## 3. 验收与清理 〔后端｜3h｜前置 2〕
 
-- [ ] 3.1 全量 vitest、类型检查与 Windows 隔离回归
+- [x] 3.1 全量 vitest、类型检查与 Windows 隔离回归
   - 2026-11-17：在 ZCode 合并前的提交 3939054 上：
     - Mac 全量 vitest：356 个文件，8564 项通过、14 项跳过；typecheck 通过，`build:preview` 通过。
     - Windows 隔离回归（config-d.json）新增 `os-credential-store`、`cli-account-binding`、`cli-management-in-place` 三个测试文件。
@@ -78,14 +78,17 @@
     - Windows 隔离回归 b33b5446（含 ZCode 两个测试文件，提交 611c31f）：991 项中 982 项通过、1 项失败、8 项跳过。
       - 失败的是 `zcode-app-runtime` 的账号入口测试：夹具把平台强制成 darwin，却读写 Windows 真实文件，POSIX 权限检查把有效的密钥文件判为不可用。属于测试问题，产品代码未改；6ea6c9f 改为按真实平台选夹具，并补了模拟 win32 的密钥测试。
       - 新增的 2 项跳过都是只适用于 POSIX 的测试（密钥权限、`/tmp/cwn-` 短目录），已加入远端证据白名单。
-    - 未执行：6ea6c9f 之后的 Windows 复跑。Windows 机器 11-17 下午断开，等用户回宿舍后再测，所以本项暂不勾选。
-- [ ] 3.2 列出两台机器上已有的重复副本，经用户确认后处理
+  - 2026-11-17 晚 Windows 复跑（提交 aca5b85，含 6ea6c9f 与更新切换修复）：隔离回归 37e3d6c3（config-d.json）70 个测试文件，1032 项中 1024 项通过、0 失败、8 项跳过（均为白名单内只适用于 POSIX 的测试）；远端类型检查、安装包加载均通过。
+- [x] 3.2 列出两台机器上已有的重复副本，经用户确认后处理
   - 2026-11-17 用户同意删除。Mac 已处理：路径记录（Pi revision 8 → `~/.local/bin/pi`、OMP → `~/.local/bin/omp`）都不指向下列副本，也没有进程占用。
     - npm 全局 Pi 1.1.0（`/opt/homebrew`）：`npm uninstall -g @earendil-works/pi-coding-agent`。
     - Bun 全局 OMP 17.0.1：`bun remove -g` 三个包，剩余 702 MB 孤儿依赖移入废纸篓。
     - 插件旧私有运行时 `runtimes/pi-1.0.2`、Pi 托管旧版本 `releases/1.0.4`（`current-version` 为 1.5.2）移入废纸篓 `~/.Trash/cliworker-old-copies-20261117/`。
     - 复核：`pi --version` 1.5.2、`omp --version` 18.20.2，登录 shell 的 PATH 上 `pi`、`omp` 都只解析到 `~/.local/bin`。
-  - 未执行：Windows 上的 Pi 托管 1.1.0（`.pi\agent`）与 MiMo npm 0.1.1。Windows 机器断开，连上后处理，所以本项暂不勾选。
+  - 2026-11-17 晚 Windows 已处理：路径记录 Pi（revision 2）指向 npm 1.5.2 的 `cli.js`，MiMo（revision 1）指向官方 `.mimocode\bin\mimo.exe`，都不指向下列副本，也没有进程占用。
+    - Pi 托管 1.1.0：`.pi\agent\bin` 与 `.pi\agent\install` 移入回收站。它原本排在 PATH 最前，终端里的 `pi` 实际跑的是 1.1.0。
+    - MiMo npm 0.1.1：`npm uninstall -g @mimo-ai/cli`（移除 3 个包）。
+    - 复核：`where pi` 只剩 npm 1.5.2，`where mimo` 只剩官方 0.1.17；两者 `--version` 分别为 1.5.2、0.1.17。PATH 里 `.pi\agent\bin` 这一项没有改，目录已不存在，不影响解析。
 - [x] 3.3 同步 README、`doc/usage-details.md` 与设计文档中的更新说明
   - README.md「更新 CLI」段、README.en.md 对应段落、`doc/usage-details.md` CLI 路径段、`doc/design.md`「2026-11-17 更新和修复保留原安装」与 ZCode 两节（提交 3939054、a243255、b3c3d9d、3e648be）。
 
