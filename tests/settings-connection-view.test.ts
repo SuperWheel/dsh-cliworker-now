@@ -72,6 +72,14 @@ describe('connection dot (simulated)', () => {
     expect(connectionState(undefined, { loading: false, data: account() }, '', NOW)).toBe('pending')
     expect(connectionState(true, { loading: false, data: account() }, '模拟：设置读取失败', NOW)).toBe('failed')
   })
+  it('模拟：ZCode 已配置自有 API 时显示绿点，其他「已配置」仍为中性', () => {
+    const zcode = (extra: Partial<AccountStatus>) => account({ cli: 'zcode', state: 'configured', authMethod: 'api', summary: '已配置 ZCode API', ...extra } as Partial<AccountStatus>)
+    expect(state(zcode({}))).toBe('connected')
+    expect(state(zcode({ summary: '已配置 ZCode API；登录已过期' }))).toBe('connected')
+    expect(state(zcode({ cache: receipt(CONNECTION_FRESH_MS) }))).toBe('expired')
+    expect(state(zcode({ authMethod: undefined, summary: 'ZCode 账号绑定未确认，请重新登录' }))).toBe('unverified')
+    expect(state(account({ cli: 'qoder', state: 'configured', authMethod: 'api' } as Partial<AccountStatus>))).toBe('unverified')
+  })
   it('treats a live answer from a Host without receipts as just read', () => {
     expect(state(account({ cache: undefined }))).toBe('connected')
   })

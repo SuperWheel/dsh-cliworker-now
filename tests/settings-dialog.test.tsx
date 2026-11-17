@@ -1538,6 +1538,15 @@ it.each([
   expect(t.configure).not.toHaveBeenCalled()
 })
 
+it('模拟：ZCode 已配置自有 API 时导航与账号摘要显示绿点和原文', async () => {
+  const t = await setup({ accountStatus: accountFixture({ state: 'configured', authMethod: 'api', verification: 'local', summary: '已配置 ZCode API' }, 'zcode') }, undefined, 'zcode')
+  const nav = t.button(`${CLI_LABELS.zcode} 设置`)
+  expect(nav.findByProps({ role: 'img' }).props['aria-label']).toBe('已配置 ZCode API')
+  expect(nav.findByProps({ className: 'cwn-connection-dot' }).props['data-state']).toBe('connected')
+  expect(accountSummary(t.r).findByProps({ className: 'cwn-account-status-dot' }).props['data-state']).toBe('connected')
+  expect(visibleText(accountSummary(t.r)).trim()).toContain('已配置 ZCode API')
+})
+
 it.each([
   { state: 'configured', summary: 'ZCode 账号绑定未确认，请重新登录', label: 'ZCode 账号绑定未确认，请重新登录' },
   { state: 'configured', authMethod: 'api', summary: '已配置 ZCode API', label: '已配置 ZCode API' },

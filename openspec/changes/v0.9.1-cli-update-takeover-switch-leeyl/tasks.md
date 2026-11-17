@@ -87,6 +87,13 @@
   - 遗留：`CliPreloader.enqueue` 不再有生产调用方，本次未删（有两项独立用例）。
   - 未做：Windows 与 Mac Desktop 实机重测；真实 CLI 账号读取与登录窗口在整机目录下的实测（未登录、未退出、未切换任何真实账号）。
 
+- [x] 3.10 ZCode 已配置自有 API 时设置页圆点显示绿色
+  - 2026-11-17 Mac Desktop（c919720 正式构建）Codex CU 只读检查：17 个 CLI 中 15 个绿色；ZCode 灰色，文字「已配置 ZCode API」；WorkBuddy 灰色，因为未安装。用户要求：ZCode 配了 API 应显示绿色。
+  - 原因：ZCode 自有 API 的 Host 状态是 `configured`（`zcode-grok-accounts.ts` 的 `withZCodeProviderRows` 与绑定分支、`zcode-adapter.ts`），客户端把 `configured` 一律画成中性；MiMo、Codex、Claude 的 API 登录是 `authenticated`，所以是绿色。
+  - 不改 Host 状态：一开始改成 `authenticated` 后有 8 项 ZCode 测试失败。通用退出判定 `account-guide/engine.ts` 要求退出后状态不是 `authenticated`，自有密钥还在时，整账号退出会被判为失败。改为在 `settings-connection-view.ts` 的 `connectionState` 中，把 `cli === 'zcode'`、`state === 'configured'`、`authMethod === 'api'` 并有核验来源的状态视为已连接，回执过期时仍显示过期。`settings-dialog.tsx` 绿点文字沿用 Host 摘要（「已配置 ZCode API」「已配置 ZCode API；登录已过期」）。ZCode「账号绑定未确认」和其他 CLI 的「已配置」（如 Qoder PAT 待验证）仍为中性。
+  - 新增 2 项模拟测试（`settings-connection-view.test.ts`、`settings-dialog.test.tsx`），修复前均失败；圆点、设置弹窗与 ZCode 相关 16 个文件共 641 项通过、1 项跳过；typecheck 通过。
+  - 未做：Desktop 实机复看。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

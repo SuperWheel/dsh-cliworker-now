@@ -63,8 +63,11 @@ export function connectionState(
   if (account.error || !data || data.cleanupBlocked) return 'failed'
   if (data.state === 'unconfigured') return 'unconfigured'
   if (data.state === 'unavailable' || data.state === 'unauthenticated') return 'failed'
-  if (data.state === 'configured') return 'unverified'
-  if (data.state !== 'authenticated') return 'unknown'
+  // ZCode's own API key is its working credential, like an API sign-in elsewhere. The Host keeps it `configured`
+  // (an account logout must still be provable while keys remain), but the dot is green (2026-11-17 用户要求).
+  const apiKey = data.state === 'configured' && data.cli === 'zcode' && data.authMethod === 'api'
+  if (data.state === 'configured' && !apiKey) return 'unverified'
+  if (data.state !== 'authenticated' && !apiKey) return 'unknown'
   if (!data.verification) return 'unverified'
   if (data.cache !== undefined && !freshReceipt(data.cache, now)) return 'expired'
   return 'connected'

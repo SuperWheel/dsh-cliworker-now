@@ -123,7 +123,7 @@ function connectionStatus(enabled: boolean | undefined, account?: AccountEntry, 
     case 'unconfigured':
       return { state, label: data!.installed ? (data!.cli === 'claude' ? hostText(data!.summary) : t('未登录')) : t('未安装') }
     case 'connected':
-      return { state, label: authenticatedLabel(data!) }
+      return { state, label: data!.state === 'configured' ? hostText(data!.summary)?.trim() || t('已配置') : authenticatedLabel(data!) }
     case 'unverified':
       return {
         state,
