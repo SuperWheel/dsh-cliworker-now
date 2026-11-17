@@ -39,3 +39,22 @@
 #### Scenario: 令牌文件损坏
 - **WHEN** 凭据管理器中没有该目标，令牌文件无法解析
 - **THEN** 显示登录状态读取失败，拒绝绑定，不显示文件内容
+
+### Requirement: Linux Antigravity 按 CLI 文件存储读取登录
+在 Linux 上，Host SHALL 先有界读取 agy 的 CLI 文件存储 `~/.gemini/antigravity-cli/antigravity-oauth-token`；该文件不存在时，SHALL 再读旧位置 `~/.gemini/jetski-standalone-oauth-token`。账号状态、账号绑定与模型目录前的登录检查 MUST 使用同一顺序。CLI 文件存在但无法解析、是链接或所在目录是链接时 MUST 报告读取失败，MUST NOT 改用旧文件。两处来源 MUST 使用同一来源标识 `~/.gemini`，凭据原文与令牌 MUST NOT 越过读取函数或进入投影。macOS 与 Windows 的读取顺序不受本要求影响。
+
+#### Scenario: 只有 CLI 文件存储中有登录
+- **WHEN** Linux 上 `~/.gemini/antigravity-cli/antigravity-oauth-token` 是有效的 agy 登录，旧文件不存在
+- **THEN** 设置页显示已登录及邮箱，绑定成功，模型目录可读取
+
+#### Scenario: 新旧两处都有登录
+- **WHEN** 两处文件都存在且分属不同账号
+- **THEN** 以 CLI 文件存储中的账号为准，旧文件不影响状态与绑定
+
+#### Scenario: 只有旧文件
+- **WHEN** CLI 文件存储不存在，旧文件是有效登录（旧版 agy）
+- **THEN** 按旧文件显示已登录并绑定
+
+#### Scenario: CLI 文件损坏
+- **WHEN** CLI 文件存在但无法解析或是符号链接
+- **THEN** 显示登录状态读取失败，拒绝绑定，不改读旧文件，不显示文件内容

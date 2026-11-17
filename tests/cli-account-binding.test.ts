@@ -542,6 +542,34 @@ it('binds a Windows Antigravity credential without id_token by its local email o
   }
 })
 
+// GitHub issue #13 (2026-11-17, Linux): agy 1.5.x keeps the login in its CLI file store. Synthetic files only.
+it('binds a Linux Antigravity login from the CLI file store before the legacy file (simulated)', async () => {
+  const platform = Object.getOwnPropertyDescriptor(process, 'platform')!
+  Object.defineProperty(process, 'platform', { value: 'linux' })
+  const legacy = join(fixture.home, '.gemini/jetski-standalone-oauth-token')
+  const cliFile = join(fixture.home, '.gemini/antigravity-cli/antigravity-oauth-token')
+  const login = (path: string, sub: string, refresh = 'synthetic-refresh') =>
+    write(path, {
+      auth_method: 'consumer',
+      token: { access_token: jwt(sub), refresh_token: refresh, expiry: '2099-01-01T00:00:00Z' },
+      id_token: jwt(sub),
+    })
+  try {
+    login(cliFile, 'own-agy')
+    const first = await run('antigravity')
+    login(cliFile, 'own-agy', 'synthetic-rotated-refresh')
+    expect(await run('antigravity')).toBe(first)
+    login(legacy, 'legacy-user')
+    expect(await run('antigravity')).toBe(first)
+    rmSync(cliFile)
+    expect(await run('antigravity')).not.toBe(first)
+    rmSync(legacy)
+    await expect(run('antigravity')).rejects.toMatchObject({ code: 'CLI_OWN_ACCOUNT_REQUIRED' })
+  } finally {
+    Object.defineProperty(process, 'platform', platform)
+  }
+})
+
 it('rejects an Antigravity route change even when its old consumer login file remains', async () => {
   agy()
   await run('antigravity')

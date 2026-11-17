@@ -173,3 +173,54 @@ describe('bounded account identity projection', () => {
     expect(accountEmail('a'.repeat(255) + '@example.com')).toBeUndefined()
   })
 })
+
+// GitHub issue #13 (2026-11-17, Linux): agy 1.5.x keeps the login in ~/.gemini/antigravity-cli/antigravity-oauth-token.
+// Synthetic files only; this order is used on Linux (macOS/Windows keep their keyring-first readers).
+describe('Linux agy token file order (simulated)', () => {
+  const cliFile = (home: string) => {
+    mkdirSync(join(home, '.gemini', 'antigravity-cli'), { recursive: true })
+    return join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')
+  }
+
+  it('reads a login kept only in the CLI file store', async () => {
+    const f = fixture()
+    writeFileSync(cliFile(f.home), JSON.stringify(agy({ id_token: jwt({ email: 'cli@example.com' }) })))
+    const result = await f.source('antigravity', f.signal)
+    expect(result).toMatchObject({ state: 'authenticated', accountLabel: 'cli@example.com', verification: 'local' })
+    expect(JSON.stringify(result)).not.toMatch(/SECRET|eyJ|access_token|refresh_token/)
+  })
+
+  it('prefers the CLI file over a legacy file and falls back only when the CLI file is absent', async () => {
+    const f = fixture()
+    const path = cliFile(f.home)
+    writeFileSync(f.agyPath, JSON.stringify(agy({ id_token: jwt({ email: 'legacy@example.com' }) })))
+    writeFileSync(path, JSON.stringify(agy({ id_token: jwt({ email: 'cli@example.com' }) })))
+    expect((await f.source('antigravity', f.signal))?.accountLabel).toBe('cli@example.com')
+    rmSync(path)
+    expect((await f.source('antigravity', f.signal))?.accountLabel).toBe('legacy@example.com')
+    rmSync(f.agyPath)
+    expect((await f.source('antigravity', f.signal))?.state).toBe('unconfigured')
+  })
+
+  it('reports an unreadable or linked CLI file as a read error instead of using the legacy file', async () => {
+    const f = fixture()
+    const path = cliFile(f.home)
+    writeFileSync(f.agyPath, JSON.stringify(agy({ id_token: jwt({ email: 'legacy@example.com' }) })))
+    writeFileSync(path, 'not-json-SECRET')
+    const invalid = await f.source('antigravity', f.signal)
+    expect(invalid?.state).toBe('unavailable')
+    expect(JSON.stringify(invalid)).not.toMatch(/SECRET|legacy@/)
+    rmSync(path)
+    symlinkSync(f.agyPath, path)
+    expect((await f.source('antigravity', f.signal))?.state).toBe('unavailable')
+  })
+
+  it('rejects a linked antigravity-cli directory', async () => {
+    const f = fixture()
+    const elsewhere = mkdtempSync(join(tmpdir(), 'cwn-identity-elsewhere-'))
+    roots.push(elsewhere)
+    writeFileSync(join(elsewhere, 'antigravity-oauth-token'), JSON.stringify(agy()))
+    symlinkSync(elsewhere, join(f.home, '.gemini', 'antigravity-cli'))
+    expect((await f.source('antigravity', f.signal))?.state).toBe('unavailable')
+  })
+})

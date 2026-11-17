@@ -66,8 +66,25 @@ export function agyIdentityFromCredential(value: Record<string, unknown>): Accou
   }
 }
 
-/** agy's file store: Linux always, and macOS/Windows once agy has fallen back from the OS keyring. */
+/** agy's legacy file store; macOS/Windows read it once agy has fallen back from the OS keyring. */
 export const agyTokenFile = (home = homedir()) => join(home, '.gemini', 'jetski-standalone-oauth-token')
+
+/**
+ * agy's CLI file store (`auth.cliFileTokenStorage`, path from `auth.CLITokenFilePath` in agy 1.5.10).
+ * GitHub issue #13 (2026-11-17, Linux) reports the login there; macOS/Windows keep their keyring order unchanged.
+ */
+export const agyCliTokenFile = (home = homedir()) => join(home, '.gemini', 'antigravity-cli', 'antigravity-oauth-token')
+
+/**
+ * Linux login: the CLI file store first, then the legacy file for older agy releases.
+ * The legacy file is consulted only when the CLI file does not exist, so a newer login is never shadowed.
+ */
+export async function readLinuxAgyTokenFile(
+  signal: AbortSignal,
+  home = homedir(),
+): Promise<Record<string, unknown> | undefined> {
+  return (await readAgyTokenFile(signal, home, agyCliTokenFile(home))) ?? readAgyTokenFile(signal, home)
+}
 
 /**
  * Bounded, ephemeral, no-follow read of agy's token file. Resolves undefined when
@@ -76,8 +93,8 @@ export const agyTokenFile = (home = homedir()) => join(home, '.gemini', 'jetski-
 export async function readAgyTokenFile(
   signal: AbortSignal,
   home = homedir(),
+  path = agyTokenFile(home),
 ): Promise<Record<string, unknown> | undefined> {
-  const path = agyTokenFile(home)
   let handle
   let buffer: Buffer | undefined
   try {
@@ -146,7 +163,7 @@ export function localAccountIdentity(
   return async (cli, signal) => {
     if (cli !== 'antigravity') return undefined
     try {
-      const value = await readAgyTokenFile(signal, options.home ?? homedir())
+      const value = await readLinuxAgyTokenFile(signal, options.home ?? homedir())
       return value
         ? agyIdentityFromCredential(value)
         : { state: 'unconfigured', verification: 'local', summary: '尚未登录 Antigravity' }

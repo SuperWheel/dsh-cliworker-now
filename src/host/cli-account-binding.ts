@@ -19,7 +19,7 @@ import { CLI_LABELS, type CliId } from '../shared/types.ts'
 import { captureCatalogMetadata, resolveCliExecutable } from './adapters.ts'
 import { readCodexKeyringAuth } from './codex-auth-store.ts'
 import { OsCredentialStoreError } from './os-credential-store.ts'
-import { accountEmail } from './account-identity.ts'
+import { accountEmail, readLinuxAgyTokenFile } from './account-identity.ts'
 import { assertAgyNativeAccountRoute } from './agy-models.ts'
 import { readWindowsAgyAccount } from './agy-windows-account.ts'
 import { readMacAgyLogin } from './agy-macos-account.ts'
@@ -562,7 +562,7 @@ async function material(
     const auth =
       process.platform === 'darwin'
         ? await readMacAgyLogin(backend, config, signal, home)
-        : await document(join(root, 'jetski-standalone-oauth-token'), signal)
+        : await readLinuxAgyTokenFile(signal, home)
     if (!auth) throw new CliAccountBindingError(cli, AGY_SIGNED_OUT)
     const principal =
       auth.auth_method === 'consumer' && object(auth.token)

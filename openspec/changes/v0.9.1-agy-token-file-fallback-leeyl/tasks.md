@@ -61,6 +61,19 @@
   - 2026-11-17 Mac Desktop 部署 6f2a095 正式构建（`build:preview` 与 `build` 通过，重启前 Host 无子进程），用户实测 Antigravity「退出登录」成功（用户口头确认，未附截图）。仅文件有效、钥匙串恢复可读这一情形仍未实测，见下一行。
   - （未执行：按任务约束不运行真实登录/退出、账号切换、模型，不重启或更新 Desktop；等待用户复测。）同时确认仅文件有效、钥匙串恢复可读的实际原生行为；本轮不宣称该情形已兼容。不归档隐藏该缺口。
 
+## 6. Linux 读取 agy CLI 文件存储 〔后端｜2h〕
+- [x] 6.1 核对报告者的 Linux 证据与 agy 存储位置
+  - 2026-11-17 报告者在 issue #13 补充：「我是linux系统，/.gemini/antigravity-cli路径有antigravity-oauth-token文件」；关闭登录弹窗时显示「正在关闭终端…」属正常提示。
+  - 插件原先在 Linux 只读 `~/.gemini/jetski-standalone-oauth-token`（`account-identity.ts` 状态与模型目录、`cli-account-binding.ts` 绑定），读不到新位置。
+  - 本机 agy 1.5.10 二进制只读核对：含 `auth.cliFileTokenStorage`、`auth.CLITokenFilePath`、独立 `-oauth-token` 常量；旧 `jetski-standalone-oauth-token` 在 `codeassistclient` 包。未下载 Linux 版二进制，新旧并存时 agy 自身的优先顺序未证实（见 design 决定 6）。
+- [x] 6.2 实现 Linux 读取顺序：CLI 文件存储优先，缺失时读旧文件；CLI 文件损坏或是链接时报告读取失败
+  - `src/host/account-identity.ts` 新增 `agyCliTokenFile`、`readLinuxAgyTokenFile`，`readAgyTokenFile` 增加路径参数（默认仍为旧文件，macOS、Windows 调用不变）；`localAccountIdentity`（仅 Linux 使用）改走新顺序。`src/host/cli-account-binding.ts` Linux 分支改用 `readLinuxAgyTokenFile`，来源标识仍为 `~/.gemini`；两处都没有时与 macOS 一致报未登录。
+  - 规格增量新增「Linux Antigravity 按 CLI 文件存储读取登录」；proposal、design 决定 6 与 `doc/design.md` 同步。README 未改（README 支持平台只列 macOS/Windows）。
+- [x] 6.3 模拟测试与关联回归
+  - `tests/account-identity.test.ts` 新增 4 项（只有 CLI 文件、两处并存以 CLI 文件为准与缺失回退、CLI 文件损坏或链接不改读旧文件、链接目录拒绝）；`tests/cli-account-binding.test.ts` 新增 1 项（模拟 linux 平台：CLI 文件绑定、轮换稳定、旧文件不影响、CLI 文件删除后按旧文件、两处都无时拒绝）。
+  - `corepack pnpm exec vitest run` agy 关联 9 个文件（cli-account-binding、account-identity、agy-macos-account、agy-windows-account、agy-models、agy-account-guide、accounts、authorized-catalog-windows-agy、windows-accounts）：371 项全部通过；`corepack pnpm typecheck` 通过。
+- [ ] 6.4 Linux 实机确认（无 Linux 环境；发布后请 issue #13 报告者确认）
+
 ## 跟进
 
 - issue 截图 3：关闭账号终端时停在「正在关闭终端…」，设置页提示「此 CLI 已有账号终端，请先关闭后重试」，未复现，未处理。
