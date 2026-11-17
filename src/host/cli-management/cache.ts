@@ -4,7 +4,7 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
-import { CLI_DOWNLOAD_SOURCES, CLI_INSTALL_SOURCES, CLI_UPDATE_GROUPS, CLI_UPDATE_REASONS, customRegistryProblem, type CliUpdateEntry, type CliDownloadSourceSettings } from '../../shared/cli-management.ts'
+import { CLI_DOWNLOAD_SOURCES, CLI_INSTALL_SOURCES, CLI_UPDATE_GROUPS, CLI_UPDATE_REASONS, cliUpdateIncompleteSchema, customRegistryProblem, type CliUpdateEntry, type CliDownloadSourceSettings } from '../../shared/cli-management.ts'
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { atomicJSON } from '../storage.ts'
 import { fingerprintToken, type Fingerprint } from './identity.ts'
@@ -13,7 +13,7 @@ export const RELEASE_TTL = 6 * 60 * 60 * 1000, ACCOUNT_TTL = 10 * 60 * 1000
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const version = z.string().refine(v => validVersion(v) || validAppVersion(v)), time = z.number().finite().nonnegative()
 const fingerprintSchema = z.object({ realpath: z.string().max(4096), size: time, mtimeMs: time, appVersion: z.string().max(128).optional(), manifestVersion: z.string().max(128).optional(), metadataToken: z.string().length(64).optional() }).strict()
-const entrySchema = z.object({ cli: z.enum(CLI_IDS), group: z.enum(CLI_UPDATE_GROUPS), installed: z.boolean(), source: z.enum(CLI_INSTALL_SOURCES).optional(), currentVersion: version.optional(), appVersion: version.optional(), notice: z.string().max(2048).optional(), channel: z.string().max(64).optional(), latestVersion: version.optional(), latestCompatibleVersion: version.optional(), checkedAt: time.optional(), latestCheckedAt: time.optional(), mirrored: z.boolean().optional(), reason: z.enum(CLI_UPDATE_REASONS).optional(), planToken: z.string().length(64).optional() }).strict()
+const entrySchema = z.object({ cli: z.enum(CLI_IDS), group: z.enum(CLI_UPDATE_GROUPS), installed: z.boolean(), source: z.enum(CLI_INSTALL_SOURCES).optional(), currentVersion: version.optional(), appVersion: version.optional(), notice: z.string().max(2048).optional(), channel: z.string().max(64).optional(), latestVersion: version.optional(), latestCompatibleVersion: version.optional(), checkedAt: time.optional(), latestCheckedAt: time.optional(), mirrored: z.boolean().optional(), reason: z.enum(CLI_UPDATE_REASONS).optional(), planToken: z.string().length(64).optional(), incomplete: cliUpdateIncompleteSchema.optional() }).strict()
 const accountSchema = z.object({ cli: z.enum(CLI_IDS), installed: z.boolean(), state: z.enum(['authenticated', 'unconfigured', 'unauthenticated', 'configured', 'unknown', 'unavailable']), accountLabel: z.string().max(256).optional(), authMethod: z.enum(['oauth', 'api']).optional(), verification: z.enum(['cli', 'local']).optional() }).strict()
 const url = z.string().max(2048).transform(value => value.trim()).refine(value => !customRegistryProblem(value))
 export const downloadSettingsSchema = z.object({ source: z.enum(CLI_DOWNLOAD_SOURCES), customUrl: url.optional() }).strict().refine(s => s.source !== 'custom' || !!s.customUrl)
@@ -62,8 +62,8 @@ export class CliManagementCache {
   private save() { this.prepare(); atomicJSON(this.file, stateSchema.parse(this.state)) }
   entries(): CliUpdateEntry[] { return structuredClone(Object.values(this.state.entries)) }
   rememberEntry(entry: CliUpdateEntry) {
-    const { cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken } = entry
-    this.state.entries[cli] = entrySchema.parse({ cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken }); this.save()
+    const { cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken, incomplete } = entry
+    this.state.entries[cli] = entrySchema.parse({ cli, group, installed, source, currentVersion, appVersion, notice, channel, latestVersion, latestCompatibleVersion, checkedAt, latestCheckedAt, mirrored, reason, planToken, incomplete }); this.save()
   }
   version(cli: ActiveCliId, fingerprint: Fingerprint) {
     const old = this.state.versions[cli]

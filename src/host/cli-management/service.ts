@@ -1,5 +1,6 @@
 import { withUpdateCleanup, finishUpdateCleanup, quarantineUpdateCleanup, removeUpdateTemporary, trackUpdateTemporary, afterUpdateCleanup } from './update-cleanup.ts'
-import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
+import { registerNativeResidueCleanup, cleanHermesResidues, hermesProcessState, hermesDirectoryProcesses, cleanNpmResidues, npmPrefixIdle } from './update-residue.ts'
+import { readHermesIncomplete, type HermesIncomplete } from './hermes-incomplete.ts'
 import { prepareNpmDownload, npmCacheAddArgv, type NpmDownload } from './npm-download.ts'
 import { verifyNpmPlatforms, NpmInstallationError } from './npm-platform.ts'
 import { checkPiInstallationIntegrity, piInstallationIntegrityMessage } from '../pi-installation.mjs'
@@ -13,7 +14,7 @@ import { basename, dirname, join } from 'node:path'
 import { nativeLaunchArgv } from '../native-launch.mjs'
 import type { AccountStatus } from '../../shared/accounts.ts'
 import { CLI_IDS, type ActiveCliId } from '../../shared/types.ts'
-import { customRegistryProblem, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, type CliUpdateEntry, type CliUpdateSnapshot, type CliDownloadSourceSettings, type CliDownloadSourceTest, type CliUpdateOperation } from '../../shared/cli-management.ts'
+import { customRegistryProblem, NPMMIRROR_REGISTRY, OFFICIAL_NPM_REGISTRY, type CliUpdateEntry, type CliUpdateSnapshot, type CliDownloadSourceSettings, type CliDownloadSourceTest, type CliUpdateOperation, type CliUpdateIncomplete } from '../../shared/cli-management.ts'
 import type { ProcessBackend, RuntimeConfig } from '../process.ts'
 import { ProcessCleanupUnconfirmedError } from '../process.ts'
 import { CliManagementCache } from './cache.ts'
@@ -66,6 +67,8 @@ interface Dependencies {
   version?: typeof currentVersion
   releases?: ReleaseClient
   artifactFetch?: Parameters<typeof downloadCliArtifact>[0]['fetcher']
+  /** Wait before the single automatic retry of a refused node_modules rename; tests shorten it. */
+  hermesRetryDelayMs?: number
 }
 /**
  * Budget for one CLI's local identity + version read. Windows cold-starts 100-200 MB executables under
@@ -149,6 +152,8 @@ export class CliManagementService {
   }
   private entry(cli: ActiveCliId) { return this.state.entries.find(e => e.cli === cli)! }
   private publish(cli: ActiveCliId, patch: Partial<CliUpdateEntry>, persist = false) {
+    // 「后续步骤未完成」 belongs to an updatable row; a row that leaves that section without restating it drops it.
+    if (patch.group && !('incomplete' in patch) && patch.group !== 'updatable' && patch.group !== 'checking') patch = { ...patch, incomplete: undefined }
     Object.assign(this.entry(cli), patch); if (persist) this.cache.rememberEntry(this.entry(cli)); this.changed()
   }
   check(scope: 'missing' | 'all'): CliUpdateSnapshot {
@@ -292,9 +297,14 @@ export class CliManagementService {
       const before = method === 'desktop' ? desktopVersion(cli, row.appVersion!) : row.currentVersion!
       const next = latestCompatible(cli, release.versions, before)
       const incompatible = !compatible(cli, release.latest)
-      this.publish(cli, { planToken: operationToken(cli, identity, next, registry, before, desktop), latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
+      const newer = !incompatible && !!next && updateAvailable(before, next)
+      // Hermes only: its receipt may still owe follow-up steps for the installed commit. Read on every check,
+      // so the row keeps 「重试」 after a Desktop restart; with a newer release the ordinary update covers it.
+      const owed = newer ? undefined : await this.hermesIncomplete(cli, identity)
+      signal.throwIfAborted()
+      this.publish(cli, { planToken: operationToken(cli, identity, owed ? before : next, registry, before, desktop), incomplete: owed ? { steps: owed.steps, ...(owed.detail ? { detail: owed.detail } : {}) } : undefined, latestVersion: release.latest, latestCompatibleVersion: next, latestCheckedAt: release.checkedAt, mirrored: registry !== OFFICIAL_NPM_REGISTRY && row.source === 'npm', stage: undefined,
         notice: identity.notice ?? piNotice(cli, next ?? row.currentVersion) ?? (canPrepareLocalUpdate(cli, identity) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice), manual: undefined,
-        group: !incompatible && next && updateAvailable(before, next) ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
+        group: newer || owed ? 'updatable' : 'latest', reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined }, true)
     } catch (error) {
       signal.throwIfAborted()
       if (isDesktopCli(cli) && error instanceof DesktopUnavailableError && error.message.includes('未提供更新，当前应用可能已是最新版本') && validAppVersion(row.appVersion)) {
@@ -397,7 +407,22 @@ export class CliManagementService {
     const desktop = identity && automaticMethod(cli, identity) === 'desktop' && isDesktopCli(cli) ? await this.desktopRelease(cli, identity, signal) : undefined
     if (desktop && identity?.fingerprint.appVersion) version = desktopVersion(cli, identity.fingerprint.appVersion)
     signal.throwIfAborted()
-    return planCliOperation(cli, intent, identity, version, selected ? selected.target : this.entry(cli).latestCompatibleVersion, selected?.registry ?? this.effectiveRegistry(), desktop)
+    const target = selected ? selected.target : this.entry(cli).latestCompatibleVersion
+    // Nothing newer to install, yet Hermes' receipt still owes follow-up steps: plan a resume of the same version.
+    const resume = !!identity && !!version && !(target && updateAvailable(version, target)) && !!await this.hermesIncomplete(cli, identity)
+    signal.throwIfAborted()
+    return planCliOperation(cli, intent, identity, version, target, selected?.registry ?? this.effectiveRegistry(), desktop, resume)
+  }
+  /** Hermes' own home and checkout for an identified installation (HERMES_HOME or the native default, never an account home). */
+  private hermesPaths(identity: InstallationIdentity) {
+    const home = hermesHomeDirectory()
+    return { home, checkout: identity.updateRoot ? basename(identity.updateRoot) === 'hermes-agent' ? identity.updateRoot : join(identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent') }
+  }
+  /** Read-only: "code updated, follow-up steps owed" from Hermes' receipt for the checked-out commit. */
+  private async hermesIncomplete(cli: ActiveCliId, identity: InstallationIdentity): Promise<HermesIncomplete | undefined> {
+    if (cli !== 'hermes' || automaticMethod(cli, identity) !== 'self-update') return
+    try { const { home, checkout } = this.hermesPaths(identity); return await readHermesIncomplete(home, checkout) }
+    catch { return }
   }
   start(cli: ActiveCliId, intent: 'update' | 'install', token: string, directory: string, requestId: string): CliUpdateSnapshot {
     const signature = JSON.stringify([cli, intent, token, directory]), previous = this.requests.get(`single:${requestId}`)
@@ -433,6 +458,7 @@ export class CliManagementService {
       const desktopArtifacts: string[] = []
       let cancelledPlan: CliOperationPlan | undefined, pathRevision: number | undefined
       let hermesMemory: { memory: ChannelMemory; key: string } | undefined
+      let hermesOwed: CliUpdateIncomplete | undefined
       try {
         await this.preloader.pause(); await this.running
         this.assertHealthy(); signal.throwIfAborted()
@@ -553,12 +579,12 @@ export class CliManagementService {
           op.command = argv!; op.phase = 'installing'; this.changed()
           // The installation's own home (HERMES_HOME or native default), never the plugin's account home:
           // `hermes update` writes logs/receipts there (2026-11-14 Windows 实机：账号目录导致看不到阶段、5 分钟误杀).
-          const home = hermesHomeDirectory()
-          const checkout = plan.identity.updateRoot ? basename(plan.identity.updateRoot) === 'hermes-agent' ? plan.identity.updateRoot : join(plan.identity.updateRoot, 'hermes-agent') : join(home, 'hermes-agent')
+          const { home, checkout } = this.hermesPaths(plan.identity)
+          if (plan.resume) { op.resume = true; output(`代码已是 ${plan.targetVersion}：从中断处继续，只补做未完成的后续步骤，不重新应用代码。\n`) }
           const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity), remembered = await memory.get(key)
           hermesMemory = { memory, key }
           let hermesWatch: HermesWatch | undefined, tookOver = false, manual = false
-          const receipt = await runHermesUpdate({ root: this.deps.root, home, checkout, argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output,
+          const hermesRun = (resume: boolean) => runHermesUpdate({ root: this.deps.root, home, checkout, argv: argv!, backend: this.deps.backend, config: this.deps.config, signal, output, resume,
             onWatch: watch => {
               hermesWatch = watch
               if (!watch && op.officialTakeover !== 'pending') { op.officialTakeover = undefined; this.officialOperation?.finish('finished'); this.changed() }
@@ -579,6 +605,8 @@ export class CliManagementService {
             activityRoots: [process.env.npm_config_cache ?? join(homedir(), process.platform === 'win32' ? 'AppData/Local/npm-cache' : '.npm'),
               join(process.env.PNPM_HOME ?? (process.platform === 'darwin' ? join(homedir(), 'Library/pnpm') : process.platform === 'win32' ? join(homedir(), 'AppData/Local/pnpm') : join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local/share'), 'pnpm')), 'store')],
             verifyInstalled: async () => {
+              // A resume starts at the target version, so the version proves nothing about a failed rerun.
+              if (resume) return false
               try { return (await verify(signal)).version === plan.targetVersion }
               catch (error) {
                 if (!(error instanceof CliOperationError) || !['VERSION_UNCHANGED', 'VERSION_MISMATCH'].includes(error.code)) throw error
@@ -593,10 +621,38 @@ export class CliManagementService {
               return record.sha
             },
           })
-          verified = await verify(signal)
+          const owedBefore = plan.resume ? await readHermesIncomplete(home, checkout).catch(() => undefined) : undefined
+          let receipt = await hermesRun(!!plan.resume)
+          let owed = await readHermesIncomplete(home, checkout).catch(() => undefined)
+          if (owed?.renameBusy) {
+            // A handle inside node_modules refuses the rename; such holds are usually brief. One bounded retry,
+            // which Hermes continues from the owed steps (the code is already at the target commit).
+            output('\nNode 依赖改名被占用，自动从中断处重试 1/1\n')
+            op.resume = true; op.progress = { readable: false, resumeCount: 0, retryCount: 1, stage: '等待后从中断处重试' }; this.changed()
+            await new Promise<void>((resolve, reject) => {
+              const done = () => { clearTimeout(timer); signal.removeEventListener('abort', stop); resolve() }
+              const stop = () => { clearTimeout(timer); reject(signal.reason) }
+              const timer = setTimeout(done, this.deps.hermesRetryDelayMs ?? 12_000)
+              signal.addEventListener('abort', stop, { once: true })
+            })
+            const previous = owed.updateId
+            receipt = await hermesRun(true)
+            owed = await readHermesIncomplete(home, checkout).catch(() => undefined)
+            if (owed && previous && owed.updateId === previous) output('Hermes 没有写出新的回执，无法确认后续步骤已完成。\n')
+          } else if (owed && owedBefore?.updateId && owed.updateId === owedBefore.updateId) output('Hermes 没有写出新的回执，无法确认后续步骤已完成。\n')
+          verified = await verify(signal, undefined, !!plan.resume)
+          if (owed) {
+            // Only a still-refused rename asks who runs from the Hermes directories; nothing is guessed otherwise.
+            const processes = owed.renameBusy ? await hermesDirectoryProcesses(home, checkout, this.deps.backend, this.deps.config) : undefined
+            hermesOwed = { steps: owed.steps, ...(owed.detail ? { detail: owed.detail } : {}), ...(processes ? { processes } : {}) }
+            output(`\n代码已更新到 ${verified.version}，后续步骤未完成${owed.detail ? `：${owed.detail}` : ''}\n`)
+            if (owed.renameBusy) output(processes === undefined ? '未能列出 Hermes 目录内的进程。\n' : processes.length ? `Hermes 目录内仍在运行的进程：${processes.map(item => `${item.name}（PID ${item.pid}）`).join('、')}\n` : '未发现占用进程。\n')
+            output('点「重试」会从中断处继续。\n')
+          }
           if (tookOver) await memory.set(key, remembered?.reason ?? (manual ? 'OFFICIAL_MANUAL' : 'OFFICIAL_INTERRUPTED'), remembered?.failedAt)
           const installedVersion = verified.version
-          afterUpdateCleanup(() => cleanHermesResidues(home, {success: op.phase === 'succeeded', receiptSucceeded: receipt.receiptSucceeded, targetVersion: plan.targetVersion, verifiedVersion: installedVersion},
+          // Owed follow-up steps: no post-success cleanup; Hermes still needs what the next run resumes from.
+          if (!hermesOwed) afterUpdateCleanup(() => cleanHermesResidues(home, {success: op.phase === 'succeeded', receiptSucceeded: receipt.receiptSucceeded, targetVersion: plan.targetVersion, verifiedVersion: installedVersion},
             () => hermesProcessState(home,checkout,this.deps.backend,this.deps.config)))
         } else if (dualChannel) {
           const memory = new ChannelMemory(this.deps.root), key = channelMemoryKey(cli, plan.identity)
@@ -718,10 +774,11 @@ export class CliManagementService {
         const row = this.entry(cli), next = row.latestCompatibleVersion
         const incompatible = !!row.latestVersion && !compatible(cli, row.latestVersion)
         const updatable = !incompatible && !!next && updateAvailable(version, next)
-        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: after.notice ?? piNotice(cli, version) ?? (canPrepareLocalUpdate(cli, after) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice), group: updatable ? 'updatable' : 'latest',
+        this.publish(cli, { installed: true, source: after.source, currentVersion: cliVersion, appVersion: after.fingerprint.appVersion, channel: after.channel, notice: after.notice ?? piNotice(cli, version) ?? (canPrepareLocalUpdate(cli, after) && process.platform === 'win32' ? NATIVE_UPDATES[cli]?.windowsNotice : NATIVE_UPDATES[cli]?.notice), group: updatable || hermesOwed ? 'updatable' : 'latest',
           reason: incompatible ? 'INCOMPATIBLE_TARGET' : undefined, reasonDetail: undefined, manual: undefined, stage: undefined, checkedAt: Date.now(),
-          planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
-        op.phase = 'succeeded'
+          incomplete: hermesOwed && !updatable ? { steps: hermesOwed.steps, ...(hermesOwed.detail ? { detail: hermesOwed.detail } : {}) } : undefined,
+          planToken: updatable ? operationToken(cli, after, next, this.effectiveRegistry(), version, plan.desktopRelease) : hermesOwed ? operationToken(cli, after, version, this.effectiveRegistry(), version, plan.desktopRelease) : undefined }, true)
+        if (hermesOwed) { op.incomplete = hermesOwed; op.phase = 'incomplete' } else op.phase = 'succeeded'
       } catch (error) {
         if (piGuard && piAttempted && !signal.aborted && !(error instanceof ProcessCleanupUnconfirmedError)) {
           try { await piGuard.verify() } catch (verification) { if (verification instanceof ProcessCleanupUnconfirmedError || verification instanceof CliOperationError && verification.code === 'IDENTITY_CHANGED') error = verification }
@@ -741,7 +798,7 @@ export class CliManagementService {
         // strand the operation, maintenance lease, or remaining batch entries.
         try {
           const cleanup = await Promise.allSettled([
-            ...(hermesMemory && op.phase !== 'succeeded' && !quarantine ? [hermesMemory.memory.set(hermesMemory.key, undefined)] : []),
+            ...(hermesMemory && op.phase !== 'succeeded' && op.phase !== 'incomplete' && !quarantine ? [hermesMemory.memory.set(hermesMemory.key, undefined)] : []),
             ...(local && !quarantine ? [Promise.resolve().then(() => local!.cleanup())] : []),
             ...(npmDownload ? [Promise.resolve().then(() => npmDownload!.cleanup(op.phase === 'succeeded', quarantine))] : []),
             ...(artifact && !npmDownload && !quarantine ? [removeUpdateTemporary(artifact)] : []),

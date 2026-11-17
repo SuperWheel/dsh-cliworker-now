@@ -1188,3 +1188,69 @@ describe('模拟：手动切换插件下载与取消核验', () => {
     if (outcome === 'broken') { expect(f.button('重新安装', row)).toBeDefined(); expect(status.props['data-tone']).toBe('error') }
   })
 })
+
+describe('模拟：Hermes 代码已更新、后续步骤未完成', () => {
+  const byClass = (scope: ReactTestInstance, name: string) =>
+    scope.findAll((node) => typeof node.type === 'string' && String(node.props.className ?? '').split(' ').includes(name))
+  const detail = "EPERM: operation not permitted, rename '<Hermes 代码目录>/node_modules' -> '<Hermes 代码目录>/.cache/node-deps-previous/node_modules'"
+  const hermes = (patch: Partial<CliUpdateEntry> = {}) =>
+    entry('hermes', { group: 'updatable', source: 'self-update', currentVersion: '0.23.2', latestVersion: '0.23.2', latestCompatibleVersion: '0.23.2', planToken: 'SIMULATED-resume', incomplete: { steps: ['build'], detail }, ...patch })
+  const result = (patch: Partial<CliUpdateOperation> = {}): CliUpdateOperation => ({
+    id: 'SIMULATED-owed', intent: 'update', cli: 'hermes', phase: 'incomplete', startedAt: 1, finishedAt: 2, beforeVersion: '0.23.1', targetVersion: '0.23.2', afterVersion: '0.23.2',
+    outputTail: 'SIMULATED Node 依赖改名被占用，自动从中断处重试 1/1', incomplete: { steps: ['build'], detail, processes: [{ name: 'node.exe', pid: 4321 }] }, ...patch,
+  })
+
+  it('结束的操作显示警示色（不是成功圆点也不是错误色）、原因、目录内进程与「重试」', async () => {
+    const f = await setup(data({ snapshot: snapshot({ entries: [hermes()], results: [result()] }) }))
+    const row = f.rowOf('hermes'), desc = byClass(row, 'cwn-update-desc')[0]!
+    expect(desc.props['data-tone']).toBe('warn')
+    expect(textOf(desc)).toBe(`代码已更新到 0.23.2，后续步骤未完成：${detail}`)
+    expect(desc.findAll((node) => node.props['data-state'] === 'done')).toHaveLength(0)
+    expect(textOf(row)).not.toMatch(/已更新到 0\.23\.2$|更新失败/)
+    expect(byClass(row, 'cwn-update-hint').map(textOf)).toEqual(['Hermes 目录内仍在运行的进程：node.exe（PID 4321）。点「重试」会从中断处继续，不重新应用代码'])
+    expect(f.button('查看输出', row)).toBeDefined()
+    // 输出默认收起；重试用这一行的计划令牌启动同一个更新操作。
+    expect(textOf(row)).not.toContain('SIMULATED Node 依赖改名被占用')
+    await act(async () => f.button('重试', row)!.props.onClick())
+    expect(f.service.startCliOperation).toHaveBeenCalledWith('SIMULATED/parent', 'hermes', 'update', 'SIMULATED-resume', '', expect.any(String), expect.anything())
+  })
+
+  it('查不到进程只写「未发现占用进程」；Host 没有枚举时不写进程，也不出现安全软件字样', async () => {
+    const none = await setup(data({ snapshot: snapshot({ entries: [hermes()], results: [result({ incomplete: { steps: ['build'], detail, processes: [] } })] }) }))
+    expect(byClass(none.rowOf('hermes'), 'cwn-update-hint').map(textOf)).toEqual(['未发现占用进程。点「重试」会从中断处继续，不重新应用代码'])
+    const unlisted = await setup(data({ snapshot: snapshot({ entries: [hermes()], results: [result({ incomplete: { steps: ['build'] } })] }) }))
+    const row = unlisted.rowOf('hermes')
+    expect(textOf(byClass(row, 'cwn-update-desc')[0]!)).toBe('代码已更新到 0.23.2，后续步骤未完成')
+    expect(byClass(row, 'cwn-update-hint').map(textOf)).toEqual(['点「重试」会从中断处继续，不重新应用代码'])
+    expect(textOf(row)).not.toMatch(/进程|杀毒|安全软件|信任/)
+  })
+
+  it('重启后只有检查结果时，这一行仍是警示色并提供「重试」；没有未完成状态的可更新行仍是「更新」', async () => {
+    const f = await setup(data({ snapshot: snapshot({ entries: [hermes(), entry('codex', { group: 'updatable', source: 'npm', currentVersion: '0.129.0', latestVersion: '0.130.0', planToken: 'SIMULATED-plan' })] }) }))
+    const row = f.rowOf('hermes'), desc = byClass(row, 'cwn-update-desc')[0]!
+    expect(desc.props['data-tone']).toBe('warn'); expect(textOf(desc)).toBe(`代码已更新到 0.23.2，后续步骤未完成：${detail}`)
+    expect(f.button('重试', row)).toBeDefined(); expect(f.button('更新', row)).toBeUndefined()
+    expect(f.button('更新', f.rowOf('codex'))).toBeDefined(); expect(f.button('重试', f.rowOf('codex'))).toBeUndefined()
+    await act(async () => f.button('重试', row)!.props.onClick())
+    expect(f.service.startCliOperation).toHaveBeenCalledWith('SIMULATED/parent', 'hermes', 'update', 'SIMULATED-resume', '', expect.any(String), expect.anything())
+  })
+
+  it('重试运行中写「正在从中断处继续…」，不写「正在安装」', async () => {
+    const operation: CliUpdateOperation = { id: 'SIMULATED-resume-op', intent: 'update', cli: 'hermes', phase: 'installing', startedAt: 1, targetVersion: '0.23.2', resume: true, outputTail: '',
+      progress: { channel: 'official', readable: false, byteProgress: false, byteProgressState: 'none', resumeCount: 0, stage: '从中断处继续，不重新应用代码（Fetching updates...）', currentStep: 5, totalSteps: 6, stepName: 'build' } }
+    const f = await setup(data({ snapshot: snapshot({ entries: [hermes()], operation }) }))
+    const row = f.rowOf('hermes')
+    expect(textOf(byClass(row, 'cwn-update-desc')[0]!)).toContain('正在从中断处继续…')
+    expect(textOf(row)).not.toContain('正在安装'); expect(f.button('切换插件下载', row)).toBeUndefined()
+  })
+
+  it('英文界面有对应文字', async () => {
+    const f = await setup(data({ snapshot: snapshot({ entries: [hermes()], results: [result({ incomplete: { steps: ['build'], processes: [] } })] }) }))
+    setLanguagePreference('en')
+    await f.update(data({ snapshot: snapshot({ entries: [hermes()], results: [result({ incomplete: { steps: ['build'], processes: [] } })] }) }))
+    const row = f.rowOf('hermes')
+    expect(textOf(byClass(row, 'cwn-update-desc')[0]!)).toBe('Code updated to 0.23.2; follow-up steps not finished')
+    expect(byClass(row, 'cwn-update-hint').map(textOf)).toEqual(['No process holding the directory was found. Retry continues from where it stopped without re-applying the code'])
+    expect(f.button('Retry', row)).toBeDefined()
+  })
+})

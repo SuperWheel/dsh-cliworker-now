@@ -19,6 +19,7 @@ import {
   type CliDownloadProgress,
   type CliInstallDirectoryCheck,
   type CliUpdateEntry,
+  type CliUpdateIncomplete,
   type CliUpdateGroup,
   type CliUpdateOperation,
   type CliUpdateSnapshot,
@@ -208,6 +209,14 @@ const versionKnown = (entry: CliUpdateEntry) => !!entry.currentVersion || deskto
 const noticeOf = (entry: CliUpdateEntry | undefined) =>
   entry?.group === 'updatable' && entry.notice?.trim() ? hostText(entry.notice.trim()) : undefined
 
+/** 「代码已更新，后续步骤未完成」 with the Host's own cause line when it has one; never a guess. */
+function incompleteText(version: string | undefined, incomplete: CliUpdateIncomplete): string {
+  const head = version
+    ? t('代码已更新到 {version}，后续步骤未完成', { version })
+    : t('代码已更新，后续步骤未完成')
+  return incomplete.detail ? `${head}${uiLanguage() === 'en' ? ': ' : '：'}${hostText(incomplete.detail)}` : head
+}
+
 type Tone = 'error' | 'warn' | 'ok' | undefined
 interface Description {
   text: string
@@ -257,6 +266,8 @@ function describeEntry(entry: CliUpdateEntry, mirror: MirrorKind): Description {
   switch (entry.group) {
     case 'updatable': {
       const busy = entry.busyWorkers ?? 0
+      // Read from the updater's receipt on every check, so the row says so after a restart too.
+      if (entry.incomplete && busy === 0) return { tone: 'warn', text: incompleteText(entry.currentVersion, entry.incomplete) }
       return {
         text: `${versionPart(entry)} · ${busy > 0 ? t('有 {count} 个任务正在使用', { count: busy }) : sourceLabel(entry, mirror)}`,
       }
@@ -310,6 +321,8 @@ function operationText(operation: CliUpdateOperation, desktop = false): string {
     case 'verifying-download':
       return t('正在校验下载的文件…')
     case 'installing':
+      // The code is already applied; only the owed follow-up steps run again.
+      if (operation.resume) return t('正在从中断处继续…')
       return version ? t('正在安装 {version}…', { version }) : t('正在安装…')
     case 'awaiting-user':
       return t('请在打开的安装程序中完成安装…')
@@ -330,6 +343,8 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
       // The official updater said it is current; nothing was replaced, so do not claim an update.
       if (result.progress?.reason === 'ALREADY_LATEST') return { tone: 'ok', text: t('已是最新 {version}', { version }) }
       return { tone: 'ok', text: t('已更新到 {version}', { version }) }
+    case 'incomplete':
+      return { tone: 'warn', text: incompleteText(version || undefined, result.incomplete ?? { steps: [] }) }
     case 'cancelled':
       if (result.cancellationCheck?.outcome === 'unchanged') return { text: t('已取消，原版本 {version} 未受影响', { version: result.cancellationCheck.version ?? '' }) }
       if (result.cancellationCheck?.outcome === 'advanced') return { text: t('已取消，但更新已完成：{version}', { version: result.cancellationCheck.version ?? '' }) }
@@ -349,6 +364,16 @@ function resultDescription(result: CliUpdateOperation): Description & { stall?: 
 /** One extra line under a finished row, only for facts the Host reported. */
 function resultNote(result: CliUpdateOperation): string | undefined {
   if (result.progress?.reason === 'ALREADY_LATEST') return t('官方报告已是最新，未改由插件下载，也不降级')
+  if (result.phase === 'incomplete') {
+    const processes = result.incomplete?.processes
+    const separator = uiLanguage() === 'en' ? ', ' : '、'
+    const retry = t('点「重试」会从中断处继续，不重新应用代码')
+    const stop = uiLanguage() === 'en' ? '. ' : '。'
+    // The Host lists processes only after a rename stayed refused; absent means it did not look or could not read.
+    if (!processes) return retry
+    if (processes.length === 0) return `${t('未发现占用进程')}${stop}${retry}`
+    return `${t('Hermes 目录内仍在运行的进程：{list}', { list: processes.map((item) => (uiLanguage() === 'en' ? `${item.name} (PID ${item.pid})` : `${item.name}（PID ${item.pid}）`)).join(separator) })}${stop}${retry}`
+  }
   return undefined
 }
 
@@ -1071,6 +1096,17 @@ export function CliUpdatePane({
         return outputToggle(result)
       }
       if (result.phase === 'cleanup-unconfirmed') return outputToggle(result)
+      if (result.phase === 'incomplete') {
+        const reason = writeReason()
+        return [
+          outputToggle(result),
+          <Explained key="retry" reason={reason}>
+            <Button type="button" size="md" variant="outline" disabled={!!reason || busy} onClick={() => requestUpdate(cli)}>
+              {t('重试')}
+            </Button>
+          </Explained>,
+        ]
+      }
       if (result.error?.code === 'VERSION_UNCHANGED')
         return [
           outputToggle(result),
@@ -1116,7 +1152,7 @@ export function CliUpdatePane({
               disabled={!!reason || busy}
               onClick={() => requestUpdate(cli)}
             >
-              {t('更新')}
+              {entry.incomplete ? t('重试') : t('更新')}
             </Button>
           </Explained>
         )

@@ -109,6 +109,28 @@
   - 同轮 Windows 设置页实测（会话目录 `C:\Users\admin\cw081f1\live-codex` 不存在，未切换会话）：17 个 CLI 圆点全部为绿色，没有出现「失败」「ENOENT」「工作目录」；Codex、Claude Code 的账号与模型下拉正常。Windows 隔离回归 7f7d0214（c919720）共 1032 项：1024 项通过、0 失败、8 项跳过。
   - 未做：新修复的 Windows 实机重测。
 
+- [x] 3.12 Hermes「代码已更新、后续步骤未完成」：黄色状态、从中断处「重试」、改名被占用自动重试一次
+  - 起因：3.11 的 Windows 更新中，回执是 success，但 build 失败、followups 一项，插件没有对应状态。用户决定：按钮写「重试」，从中断处接着做，不从头再来；完全不提杀毒软件。
+  - 识别（`hermes-incomplete.ts`）：`outcome` 为 success、`post_update.sha` 等于 HEAD，并且 `stages` 的 build 或 deps 失败，或 `followups` 非空。原因取本次 `update.log` 的 `EPERM|EBUSY … rename` 行，脱敏、安装路径换成占位、截到 240 字；没有这一行就不写原因。
+  - 结果：新增结束阶段 `incomplete`（共享类型 `CliUpdateIncomplete`），行用 `--dsw-alias-state-warn-label`，按钮「重试」，不做 `cleanHermesResidues`。「检查更新」读 Hermes 行时同样识别并写入行缓存，重启后仍显示。
+  - 重试：仍是参数数组 `hermes update --yes`。计划允许目标等于已装版本（`plan.resume`），核对不要求版本前进；重试进程失败时不靠版本回读判成功。
+  - 不触发接管：`HermesWatch` 新增 `resume`，关掉 10 秒拉取看门狗与手动切换，阶段文字写「从中断处继续，不重新应用代码」，不写「插件已下载目标代码」。预取只在拉取停滞时进入，重试运行进不去。
+  - 自动重试：只有改名 `node_modules` 被拒时等 12 秒重试一次，输出「Node 依赖改名被占用，自动从中断处重试 1/1」。仍未完成时用 `hermesDirectoryProcesses` 只读列出可执行文件或命令行在 Hermes 目录内的进程，只传名字和 PID；没有就写「未发现占用进程」，列不出写「未能列出 Hermes 目录内的进程」。
+  - 没有做：不查 SecurityCenter2，没有任何安全软件或信任区提示；不移动或删除 `node_modules`；不调 Hermes 内部入口。
+  - 测试（全部为模拟）：
+    - 新增 `tests/cli-management-hermes-incomplete.test.ts` 16 项：回执识别与 4 种不判定的情况、原因脱敏截短、分支 HEAD 解析、进程列表（Windows 与 POSIX）、Windows 活动遍历根不含检出目录内路径、`resume` 不被停也不提供切换、服务层 6 项（自动重试 1/1 后仍未完成；自动重试后成功，以及查不到进程；非改名原因不重试；检查时识别并在版本已是最新时重试；回执干净时仍拒绝；回执未换新时如实说明）。
+    - `tests/cli-update-page.test.tsx` 新增 5 项：警示色与原因、进程与「未发现占用进程」、重启后行上的「重试」、「正在从中断处继续…」、英文文字。
+    - `tests/cli-update-data.test.ts` 新增 3 项：接受新阶段与行状态，拒绝两种畸形的未完成数据。
+    - Hermes、更新页与 i18n 相关 9 个文件共 430 项通过。
+  - `corepack pnpm typecheck` 通过。`pnpm spec validate --all --strict` 40 项通过。
+  - 全量 vitest 跑了两次。第一次 1 项失败：`client-i18n.test.tsx` 要求每个字典键含中文，我加的 `{name}（PID {pid}）` 不含，改为代码里按语言拼接。第二次 361 个文件通过、4 个跳过，8813 项通过、15 项跳过、0 失败；下载预算那项偶发失败这两次都没有出现。
+  - 兼容：热启用后未刷新的旧客户端不认识 `incomplete` 阶段，收到带这个结果的快照会按无效状态提示重试，刷新后正常。
+  - 已知限制：
+    - 发布源查不到时该行显示检查失败，不显示未完成状态。
+    - 有更新的版本可装时按普通更新处理，更新会一并补做欠下的步骤。
+    - 判断重试是否完成依赖 Hermes 每次 `hermes update` 都写新回执；回执没有换新时保持未完成并写明无法确认。代码已是最新时的这条路径是否一定写回执，未在真实 Hermes 上核实。
+  - 未做：真实 Hermes 上的重试与自动重试（Windows 正在回退到 0.23.1，本次没有碰任何 Hermes 安装，没有运行 `hermes update`）；Windows 与 Mac Desktop 实机界面复看；`pnpm build:preview` 隔离构建。
+
 ## 4. 验收 〔测试｜3h｜前置 1,2,3〕
 
 - [x] 4.1 全量 vitest、类型检查、`build:preview` 与 Codex 审查

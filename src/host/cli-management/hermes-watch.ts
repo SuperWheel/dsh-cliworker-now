@@ -67,9 +67,13 @@ export class HermesWatch {
   expectedSha?: string
   stopClass?: string
   exitCode?: number
-  constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = [], codeReady = false) {
+  constructor(readonly home: string, readonly checkout: string, readonly status: string, readonly startedAt: number, readonly progress: (p: CliDownloadProgress) => void, readonly target?: { version?: string; sha?: string }, readonly activityRoots: string[] = [], codeReady = false,
+    /** The checkout already is the target commit and only owed follow-up steps remain: Hermes still prints
+     * "Fetching updates..." before it finds nothing to apply, so neither the 10 s fetch clock nor a manual
+     * takeover applies (there is no code to prefetch), and the stage text says the run continues. */
+    readonly resume = false) {
     this.lastActivity = startedAt; this.lastPartialActivity = startedAt; this.lease = startedAt + 20 * 60_000
-    this.fetchSettled = codeReady; this.handedBack = codeReady
+    this.fetchSettled = codeReady || resume; this.handedBack = codeReady && !resume
   }
   /** This run follows a verified plugin prefetch. Hermes still prints "Fetching updates..." and may spend minutes
    * on its release lookup and lazy reads, so the page must say the plugin download already finished
@@ -274,7 +278,8 @@ export class HermesWatch {
     }
     const observed = pack.bytes > 0
     this.progress({ channel: 'official', readable: observed, byteProgress: observed, byteProgressState: observed ? 'unknown-total' : 'none', ...(observed ? { downloadedBytes: pack.bytes } : {}), elapsedSeconds: Math.max(0, (now - this.startedAt) / 1000), resumeCount: 0,
-      stage: this.handedBack && !this.completed && ['unknown', 'plan', 'snapshot', 'fetch'].includes(this.currentStage) ? `插件已下载目标代码，官方更新正在核对并完成（${this.stage}）` : this.stage,
+      stage: this.resume && !this.completed ? `从中断处继续，不重新应用代码${this.stage ? `（${this.stage}）` : ''}`
+        : this.handedBack && !this.completed && ['unknown', 'plan', 'snapshot', 'fetch'].includes(this.currentStage) ? `插件已下载目标代码，官方更新正在核对并完成（${this.stage}）` : this.stage,
       ...(this.step ? { currentStep: this.step, totalSteps: 6, stepName: HERMES_STEPS[this.step - 1]! } : {}) })
   }
 }
@@ -285,6 +290,8 @@ export interface HermesUpdateOptions {
   beforeVersion?: string; targetVersion?: string; targetSha?: string
   npmRegistry?: string
   activityRoots?: string[]
+  /** Continue an update whose code is already applied; see HermesWatch.resume. */
+  resume?: boolean
   /** Service-owned readback, including installation identity and verifyUpdatedVersion. */
   verifyInstalled?: () => Promise<boolean>
   releaseSha?: (version: string, signal: AbortSignal) => Promise<string>
@@ -301,7 +308,7 @@ export async function runHermesUpdate(o: HermesUpdateOptions) {
     for (;;) {
       o.signal.throwIfAborted()
       const before = await observeHermesCache(o.home)
-      const watch = new HermesWatch(o.home, o.checkout, join(privateDir, `status-${attempt}.json`), Date.now(), p => o.progress({ ...p, retryCount: attempt }), { version: o.targetVersion, sha: o.targetSha }, o.activityRoots, codeReady)
+      const watch = new HermesWatch(o.home, o.checkout, join(privateDir, `status-${attempt}.json`), Date.now(), p => o.progress({ ...p, retryCount: attempt }), { version: o.targetVersion, sha: o.targetSha }, o.activityRoots, codeReady, o.resume)
       await watch.snapshot(before); let polling = Promise.resolve(), pending = false
       o.onWatch?.(watch)
       const timer = setInterval(() => {

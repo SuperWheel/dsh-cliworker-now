@@ -98,6 +98,22 @@ export async function hermesCheckoutVersion(checkout: string, stampCommit: unkno
   return { version: versions[0]!, commit }
 }
 
+/** The commit HEAD names (detached, loose branch ref or packed ref), read-only; never runs Git. */
+export async function hermesHeadCommit(checkout: string): Promise<string | undefined> {
+  const git = join(checkout, '.git'), sha = /^[a-f0-9]{40}$/i
+  const head = (await safeObservation(join(git, 'HEAD'), 4096))?.text.trim()
+  if (!head) return
+  if (sha.test(head)) return head.toLowerCase()
+  const symbolic = /^ref: (refs\/heads\/[A-Za-z0-9_./-]+)$/.exec(head)?.[1]
+  if (!symbolic || symbolic.split('/').some(p => !p || p === '.' || p === '..')) return
+  const loose = (await safeObservation(join(git, symbolic), 4096))?.text.trim()
+  if (loose) return sha.test(loose) ? loose.toLowerCase() : undefined
+  for (const line of ((await safeObservation(join(git, 'packed-refs'), 4 * 1024 * 1024))?.text ?? '').split(/\r?\n/)) {
+    const ref = /^([a-f0-9]{40}) (refs\/.+)$/.exec(line)
+    if (ref?.[2] === symbolic) return ref[1]!.toLowerCase()
+  }
+}
+
 /** Hermes' latest update receipt, read-only: a success whose post-update commit is this HEAD. */
 async function hermesReceiptVersion(home: string, commit: string): Promise<string | undefined> {
   const text = (await safeObservation(join(home, 'logs/update_receipts/latest.json'), 256 * 1024))?.text

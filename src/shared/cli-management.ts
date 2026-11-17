@@ -111,10 +111,30 @@ export interface CliUpdateEntry {
   install?: CliInstallOffer
   /** Opaque fingerprint digest of the checked installation; `startCliOperation` refuses when it no longer matches. */
   planToken?: string
+  /** The updater's own receipt says the code is updated but later steps are still owed (Hermes); the row offers 「重试」. */
+  incomplete?: CliUpdateIncomplete
   /** Epoch ms of the last local read and the last release-source read. */
   checkedAt?: number
   latestCheckedAt?: number
 }
+
+/**
+ * "Code updated, follow-up steps not finished": read from the updater's own receipt, never inferred.
+ * Not a success and not a failure; a retry continues from the owed steps without re-applying the code.
+ */
+export interface CliUpdateIncomplete {
+  /** Step names the receipt reports as failed or owed, e.g. `build`. */
+  steps: string[]
+  /** One redacted, shortened line from the updater's log naming the cause; absent when the log has none. */
+  detail?: string
+  /** Finished operation only, after a rename stayed blocked: processes running from the install directory. Absent = not listed or unreadable. */
+  processes?: { name: string; pid: number }[]
+}
+export const cliUpdateIncompleteSchema = z.object({
+  steps: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/)).max(8),
+  detail: z.string().min(1).max(320).optional(),
+  processes: z.array(z.object({ name: z.string().min(1).max(64), pid: z.number().int().positive() }).strict()).max(8).optional(),
+}).strict()
 
 /** Download progress built from real bytes only; no invented percentages. */
 export interface CliDownloadProgress {
@@ -180,12 +200,14 @@ export const CLI_OPERATION_PHASES = [
   'verifying-installation',
   'cancelling',
   'succeeded',
+  /** Code updated, follow-up steps owed (`operation.incomplete`); neither success nor failure. */
+  'incomplete',
   'failed',
   'cancelled',
   'cleanup-unconfirmed',
 ] as const
 export type CliOperationPhase = (typeof CLI_OPERATION_PHASES)[number]
-export const CLI_OPERATION_TERMINAL: readonly CliOperationPhase[] = ['succeeded', 'failed', 'cancelled', 'cleanup-unconfirmed']
+export const CLI_OPERATION_TERMINAL: readonly CliOperationPhase[] = ['succeeded', 'incomplete', 'failed', 'cancelled', 'cleanup-unconfirmed']
 
 export const CLI_OPERATION_ERRORS = [
   'NETWORK',
@@ -235,6 +257,10 @@ export interface CliUpdateOperation {
   progress?: CliDownloadProgress
   /** Present only while an eligible official process is running or stopping for takeover. */
   officialTakeover?: 'available' | 'pending'
+  /** This run continues an update whose code is already applied: only the owed follow-up steps are redone. */
+  resume?: boolean
+  /** Present with phase `incomplete`. */
+  incomplete?: CliUpdateIncomplete
   /** Read-only verification after cancellation and cleanup; absent when inconclusive. */
   cancellationCheck?: CliCancellationCheck
   /** Plain text, ANSI stripped, secrets redacted, last 32 KiB. */

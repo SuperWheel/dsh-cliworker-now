@@ -167,6 +167,8 @@ it.each([
   ['a duplicated CLI', { entries: [{ cli: 'codex', group: 'latest', installed: true }, { cli: 'codex', group: 'failed', installed: true }] }],
   ['a queue with an unknown CLI', { queue: ['not-a-cli'] }],
   ['a malformed operation', { operation: { id: 'op', intent: 'update', cli: 'codex', phase: 'flying', outputTail: '' } }],
+  ['a malformed incomplete result', { results: [{ id: 'op', intent: 'update', cli: 'hermes', phase: 'incomplete', outputTail: '', incomplete: { steps: ['build'], processes: [{ name: 'node.exe', pid: 'x' }] } }] }],
+  ['a malformed incomplete row', { entries: [{ cli: 'hermes', group: 'updatable', installed: true, incomplete: { steps: 'build' } }] }],
 ])('discards a whole snapshot with %s and reports it', async (_name, changes) => {
   expect(() => parseCliUpdateSnapshot(JSON.stringify(snapshot(9, changes)))).toThrow('收到无效的 CLI 更新状态，请重试')
   const host = simulatedHost(snapshot(1))
@@ -358,4 +360,14 @@ it('模拟：验证官方切换状态与取消核验字段，拒绝会生成误�
   expect(parse({ cancellationCheck: { outcome: 'unchanged', version: '1.0.0' } }).operation?.cancellationCheck).toMatchObject({ outcome: 'unchanged' })
   expect(() => parse({ cancellationCheck: { outcome: 'unchanged' } })).toThrow()
   expect(() => parse({ cancellationCheck: { outcome: 'broken' } })).toThrow()
+})
+
+it('模拟：接受「后续步骤未完成」的结束阶段与行状态', () => {
+  const owed = { steps: ['build'], detail: 'EPERM: operation not permitted, rename' }
+  const parsed = parseCliUpdateSnapshot(JSON.stringify(snapshot(4, {
+    entries: [{ cli: 'hermes', group: 'updatable', installed: true, incomplete: owed }],
+    results: [{ id: 'op', intent: 'update', cli: 'hermes', phase: 'incomplete', outputTail: '', resume: true, incomplete: { ...owed, processes: [{ name: 'node.exe', pid: 4321 }] } }],
+  })))
+  expect(parsed.results[0]).toMatchObject({ phase: 'incomplete', incomplete: { processes: [{ name: 'node.exe', pid: 4321 }] } })
+  expect(parsed.entries[0]?.incomplete).toEqual(owed)
 })

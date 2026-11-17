@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   CLI_OPERATION_PHASES,
   cliCancellationCheckSchema,
+  cliUpdateIncompleteSchema,
   CLI_UPDATE_GROUPS,
   type CliUpdateOperation,
   type CliUpdateSnapshot,
@@ -44,7 +45,9 @@ const validOperation = (input: unknown): input is CliUpdateOperation =>
   PHASES.has(input.phase) &&
   typeof input.outputTail === 'string' &&
   (input.officialTakeover === undefined || ['available', 'pending'].includes(input.officialTakeover as string)) &&
-  (input.cancellationCheck === undefined || cliCancellationCheckSchema.safeParse(input.cancellationCheck).success)
+  (input.cancellationCheck === undefined || cliCancellationCheckSchema.safeParse(input.cancellationCheck).success) &&
+  (input.resume === undefined || typeof input.resume === 'boolean') &&
+  (input.incomplete === undefined || cliUpdateIncompleteSchema.safeParse(input.incomplete).success)
 
 /**
  * Basic shape check of a Host snapshot. Any invalid part discards the whole snapshot:
@@ -67,7 +70,8 @@ export function parseCliUpdateSnapshot(raw: string): CliUpdateSnapshot {
     next.entries.every((entry) => {
       if (!record(entry) || !CLIS.has(entry.cli) || !GROUPS.has(entry.group) || seen.has(entry.cli)) return false
       seen.add(entry.cli)
-      return typeof entry.installed === 'boolean' && STAGES.has(entry.stage)
+      return typeof entry.installed === 'boolean' && STAGES.has(entry.stage) &&
+        (entry.incomplete === undefined || cliUpdateIncompleteSchema.safeParse(entry.incomplete).success)
     }) &&
     Array.isArray(next.queue) &&
     next.queue.every((cli) => CLIS.has(cli)) &&

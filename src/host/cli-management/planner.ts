@@ -20,6 +20,8 @@ export interface CliOperationPlan {
   beforeVersion: string; targetVersion: string; registry: string; token: string
   pinsVersion: boolean
   desktopRelease?: DesktopRelease
+  /** The installed version already is the target; the updater's receipt still owes follow-up steps (Hermes). */
+  resume?: boolean
 }
 export function automaticMethod(cli: ActiveCliId, identity: InstallationIdentity): CliMethod | undefined {
   const s = CLI_SOURCES[cli]
@@ -46,16 +48,18 @@ export function updateProblem(cli: ActiveCliId, identity: InstallationIdentity, 
   if (method === 'self-update' && cli === 'traecn' && identity.channel !== 'public') return `TRAE 安装通道 ${identity.channel ?? '未知'} 尚无已核实的对应官方发布源，不能切换为 public。`
   if (!method) return '此安装渠道没有已核实的自动更新方法。'
 }
-export function planCliOperation(cli: ActiveCliId, intent: 'update', identity: InstallationIdentity | undefined, before: string | undefined, target: string | undefined, registry: string, desktopRelease?: DesktopRelease): CliOperationPlan {
+export function planCliOperation(cli: ActiveCliId, intent: 'update', identity: InstallationIdentity | undefined, before: string | undefined, target: string | undefined, registry: string, desktopRelease?: DesktopRelease, resume = false): CliOperationPlan {
   const method = identity && automaticMethod(cli, identity)
   if (!identity || !method) throw new CliOperationError('PREREQUISITE_MISSING', '安装归属或自动更新方法尚未核实，请按官方说明手动更新')
   const problem = updateProblem(cli, identity)
   if (problem) throw new CliOperationError('PREREQUISITE_MISSING', problem)
-  if (!validUpdateVersion(cli, before) || !validUpdateVersion(cli, target) || !compatible(cli, target) || !updateAvailable(before, target)) throw new CliOperationError('PLAN_EXPIRED', '目标版本尚未核实或未适配，请重新检查更新')
+  // A resume keeps the version: the target is the installed version and nothing newer is required.
+  if (resume) target = before
+  if (!validUpdateVersion(cli, before) || !validUpdateVersion(cli, target) || !compatible(cli, target) || !resume && !updateAvailable(before, target)) throw new CliOperationError('PLAN_EXPIRED', '目标版本尚未核实或未适配，请重新检查更新')
   if ((method === 'npm' || method === 'brew') && (!identity.prefix || !(isAbsolute(identity.prefix) || win32.isAbsolute(identity.prefix))))
     throw new CliOperationError('PREREQUISITE_MISSING', '无法确认原安装前缀，请按原安装渠道手动更新')
   const pinsVersion = method === 'npm' || method === 'desktop' || method === 'official-script' || method === 'self-update' && !!NATIVE_UPDATES[cli]?.pinsVersion
-  return { cli, intent, identity, method, beforeVersion: before, targetVersion: target, registry, pinsVersion, desktopRelease, token: operationToken(cli, identity, target, registry, before, desktopRelease) }
+  return { cli, intent, identity, method, beforeVersion: before, targetVersion: target, registry, pinsVersion, desktopRelease, ...(resume ? { resume: true } : {}), token: operationToken(cli, identity, target, registry, before, desktopRelease) }
 }
 /** npm's runtime is independent; only the target prefix belongs to the CLI. */
 export async function operationArgv(plan: CliOperationPlan, backend: ProcessBackend, artifact?: string, platform = process.platform, runtime?: [string, string]): Promise<string[]> {

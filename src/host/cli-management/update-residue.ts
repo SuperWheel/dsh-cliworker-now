@@ -260,6 +260,45 @@ export async function hermesProcessState(home: string, checkout: string, backend
   } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) throw error; return 'unknown' }
 }
 /** PID locks retain tri-state evidence. Readable PID-less locks fall back to a fresh process snapshot. */
+/** Processes whose executable or command line lies inside the Hermes directories, for the "rename still refused"
+ * hint. Read-only, same enumeration as hermesProcessState plus the command line. `undefined` = could not be listed;
+ * an empty list is a real "none found". Names and PIDs only: command lines never leave the Host. */
+export async function hermesDirectoryProcesses(home: string, checkout: string, backend: ProcessBackend, config: RuntimeConfig, platform: NodeJS.Platform = process.platform): Promise<{ name: string; pid: number }[] | undefined> {
+  const paths = platform === 'win32' ? win32 : posix
+  const fold = (p: string) => platform === 'win32' ? p.replace(/^\\\\\?\\/, '').replace(/\//g, '\\').toLowerCase() : p
+  const roots = [...new Set([home, checkout].map(p => fold(paths.normalize(p))))]
+  if (!roots.every(root => paths.isAbsolute(root) && root.length > 3)) return
+  const inside = (text: string) => { const value = fold(text); return roots.some(root => value.includes(root + paths.sep) || value.endsWith(root)) }
+  try {
+    const argv = platform === 'win32'
+      ? ['powershell.exe','-NoProfile','-NonInteractive','-Command','$ErrorActionPreference = "Stop"; [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); @(Get-CimInstance Win32_Process | Select-Object ProcessId,Name,ExecutablePath,CommandLine) | ConvertTo-Json -Compress']
+      : ['/bin/ps','-axww','-o','pid=,args=']
+    const raw = await captureReadOnly(backend,config,argv,AbortSignal.timeout(5000))
+    const found: { name: string; pid: number }[] = []
+    const add = (pid: number, name: string) => {
+      const clean = name.replace(/[^\p{L}\p{N}._ +-]/gu, '').trim().slice(0, 64)
+      if (pid > 0 && pid !== process.pid && clean && !found.some(item => item.pid === pid)) found.push({ name: clean, pid })
+    }
+    if (platform === 'win32') {
+      const rows: unknown = JSON.parse(raw.replace(/^\uFEFF/,''))
+      if (!Array.isArray(rows)) return
+      for (const row of rows) {
+        if (!object(row) || !Number.isSafeInteger(row.ProcessId)) return
+        // The enumerating PowerShell names no Hermes path; a match is another process.
+        if ([row.ExecutablePath, row.CommandLine].some(value => typeof value === 'string' && inside(value)))
+          add(row.ProcessId as number, typeof row.Name === 'string' ? row.Name : '')
+      }
+    } else {
+      if (!raw.trim()) return
+      for (const line of raw.trim().split(/\r?\n/)) {
+        const row = /^\s*(\d+)\s+(.+)$/.exec(line)
+        if (!row) return
+        if (inside(row[2]!)) add(Number(row[1]), posix.basename(row[2]!.trim().split(/\s+/)[0]!))
+      }
+    }
+    return found.slice(0, 8)
+  } catch (error) { if (error instanceof ProcessCleanupUnconfirmedError) throw error; return }
+}
 export async function hermesResidueLockState(home: string, inspect?: () => Promise<HermesLockState>): Promise<HermesLockState> {
   if (!await cleanupPathSafe(home,join(home,'tools','_candidate'))) return 'unknown'
   try {

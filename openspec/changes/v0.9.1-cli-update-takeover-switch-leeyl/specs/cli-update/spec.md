@@ -37,6 +37,55 @@
 - **WHEN** 主对话的工作目录已不存在，用户在设置页保存某 CLI 的项目默认模型
 - **THEN** 保存被拒并说明工作目录已不存在，需切换到有效项目；连接状态显示不受影响
 
+### Requirement: Hermes 代码已更新但后续步骤未完成
+Hermes 官方更新先提交代码，再做依赖与构建，后续步骤失败时回执仍是 success。Host SHALL 只按回执字段识别这一状态：`outcome` 为 success、`post_update.sha` 等于检出目录当前 HEAD，并且 `stages` 中 build 或 deps 为 failed，或 `followups` 非空。该状态 MUST NOT 显示为成功或失败：操作以 `incomplete` 阶段结束，行用警示色并提供「重试」，Host MUST NOT 执行成功后的残留清理。原因 SHALL 取自本次 `update.log` 的 `EPERM|EBUSY … rename` 行，脱敏、路径换成占位并截短；没有这一行时不写原因，MUST NOT 使用 `followups.reason` 或推测。「检查更新」SHALL 同样识别并写入行缓存。
+
+#### Scenario: Node 依赖改名被拒
+- **WHEN** Hermes 从 0.23.1 更新到 0.23.2，代码已切换，`node-deps.mjs` 改名 `node_modules` 报 EPERM，回执为 success、build 为 failed
+- **THEN** 该行显示警示色「代码已更新到 0.23.2，后续步骤未完成」与改名那一行原因，并提供「重试」，不显示成功圆点或错误色
+
+#### Scenario: 重启 Desktop 后
+- **WHEN** 回执仍是未完成状态，用户重启 Desktop 并打开「更新 CLI」
+- **THEN** Hermes 行仍在「可更新」，显示警示色原因与「重试」，不显示为「已是最新」
+
+#### Scenario: 原因不是改名被占用
+- **WHEN** 回执显示 build 未完成，但本次日志没有改名被拒的行
+- **THEN** Host 只显示未完成状态与「重试」，不写原因
+
+#### Scenario: 回执与当前代码不符
+- **WHEN** 回执的 `post_update.sha` 不是当前 HEAD，或回执不是 success
+- **THEN** Host 不判为未完成，按原有规则显示
+
+### Requirement: Hermes 从中断处重试
+未完成状态下，即使已装版本已是最新，Host SHALL 允许启动重试；回执没有未完成步骤时 SHALL 照旧拒绝对已是最新的版本启动更新。重试 SHALL 用参数数组运行官方命令 `hermes update --yes`，由 Hermes 补做未完成的步骤；Host MUST NOT 自己移动或删除 `node_modules`，MUST NOT 调用 Hermes 未公开的内部入口。输出与阶段文字 SHALL 写明「从中断处继续」，进度沿用官方六步，MUST NOT 伪造进度。目标提交已在 HEAD，重试 MUST NOT 启动拉取看门狗、插件预取或接管，MUST NOT 显示「切换插件下载」或「插件已下载目标代码」。重试进程失败时 MUST NOT 以版本已是目标回读为成功。
+
+#### Scenario: 版本已是最新时重试
+- **WHEN** 已装版本等于最新版本，回执仍有未完成步骤，用户点「重试」
+- **THEN** Host 启动 `hermes update --yes`，输出写明从中断处继续、不重新应用代码；取码阶段长时间无输出不被判为停滞，不出现「切换插件下载」
+
+#### Scenario: 重试后完成
+- **WHEN** 重试写出的新回执不再有失败步骤和 followups
+- **THEN** 操作以成功结束，行回到「已是最新」，照常执行成功后的清理
+
+#### Scenario: 重试后回执没有换新
+- **WHEN** 重试进程退出后，回执仍是重试前那一份未完成回执
+- **THEN** Host 如实说明无法确认后续步骤已完成，保持未完成状态
+
+### Requirement: Node 依赖改名被占用时自动重试一次
+仅当未完成的原因是改名 `node_modules` 被拒（EPERM/EBUSY）时，Host SHALL 等待 10–15 秒后自动从中断处重试一次，并输出「Node 依赖改名被占用，自动从中断处重试 1/1」；其他原因 MUST NOT 自动重试。自动重试后仍未完成时，Host SHALL 只读列出可执行文件或命令行在 Hermes 目录内的进程，写出名字和 PID；没有这样的进程时只写「未发现占用进程」，无法列出时如实说明，MUST NOT 写出命令行内容或对占用者的猜测。
+
+#### Scenario: 自动重试后完成
+- **WHEN** 第一次运行因改名被拒未完成，自动重试写出的新回执没有未完成步骤
+- **THEN** 操作以成功结束，不列进程
+
+#### Scenario: 仍被占用时列出进程
+- **WHEN** 自动重试后改名仍被拒
+- **THEN** 结果为未完成，提示写出 Hermes 目录内仍在运行的进程名与 PID；一个也没有时只写「未发现占用进程」
+
+#### Scenario: 其他原因不自动重试
+- **WHEN** 未完成的原因不是改名 `node_modules` 被拒
+- **THEN** Host 只运行一次官方命令，不枚举进程
+
 ## MODIFIED Requirements
 
 ### Requirement: 官方优先与看门狗
