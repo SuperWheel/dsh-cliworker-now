@@ -1,7 +1,5 @@
 import { SettingsConnectionCache } from './settings-connection-cache.ts'
-import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-management/sources.ts'
-import { backgroundConnectionConfig } from './settings-connection-background.ts'
-import { CustomProviders, type CustomProviderSource } from './custom-provider.ts'
+import { CustomProviders } from './custom-provider.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -16,7 +14,6 @@ import { Context, withProps } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as validate } from 'zod'
 import { join } from 'node:path'
-import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
 import type { HarnessConversationApi } from './harness-conversation-types.ts'
 import { readNativeColdSessionState } from './native-cold-session-state.ts'
@@ -61,7 +58,6 @@ import {
   effortLabel,
   EFFORTS,
   type CliId,
-  type ActiveCliId,
   type Preference,
   type TaskMode,
   type RoleSnapshot,
@@ -76,9 +72,8 @@ import {
   type ProcessBackend,
   type RuntimeConfig,
 } from './process.ts'
-import { backgroundCredentialRead, explicitCredentialRead } from './os-credential-store.ts'
+import { explicitCredentialRead } from './os-credential-store.ts'
 import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
-import type { CliExecutablePathStatus } from '../shared/cli-settings.ts'
 import { RUNNING_MESSAGE_MODES } from '../shared/running-message.ts'
 import {
   runsUnderViewOnly,
@@ -90,7 +85,7 @@ import {
   type WorkerPermissionReceipt,
   type WorkerPermissionState,
 } from '../shared/worker-permissions.ts'
-import { WindowsCliInstallationError, WindowsCliNotFoundError } from './windows-cli-installation.ts'
+import { WindowsCliNotFoundError } from './windows-cli-installation.ts'
 import { ACCOUNT_CHANGED, authorizedCatalog, authorizeSelection } from './authorized-catalog.ts'
 import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
 import { type DispatchSetup } from './storage.ts'
@@ -112,6 +107,8 @@ import * as history from './service-history.ts'
 import * as workers from './service-workers.ts'
 import * as settings from './service-settings.ts'
 import * as cliUpdates from './service-cli-updates.ts'
+import * as accounts from './service-accounts.ts'
+import * as connections from './service-connections.ts'
 import * as lifecycle from './service-lifecycle.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
@@ -542,104 +539,30 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Safe account status JSON. */
   @Remote('settingsConnectionStatus')
   async settingsConnectionStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      // A cleanup pause is this CLI's displayed state; report it without scheduling reads that would only return it.
-      const held = this.host.cleanupHeldStatus(id)
-      if (held) {
-        const status = this.host.connectionCache().status(id)
-        return JSON.stringify({
-          ...status,
-          account: { loading: false, value: held },
-          catalog: { ...status.catalog, loading: false },
-        })
-      }
-      this.host.runtime.assertCliEnabled(id)
-      // Host-owned refresh outlives this quick snapshot request; close/invalidation cancels it.
-      const account = !this.host.connectionCache().fresh(id, 'account')
-      const catalog = !this.host.connectionCache().fresh(id, 'catalog')
-      if (account)
-        void backgroundCredentialRead(() =>
-          this.host.readAccountStatus(parentSessionId, id, this.host.disposed.signal, false),
-        ).catch(() => undefined)
-      if (catalog)
-        void backgroundCredentialRead(() =>
-          this.host.settingsCatalog(parentSessionId, id, this.host.disposed.signal, false),
-        ).catch(() => undefined)
-      const status = this.host.connectionCache().status(id)
-      // These reads have been scheduled even if their parent lookup has not yielded yet.
-      if (account) status.account.loading = true
-      if (catalog) status.catalog.loading = true
-      return JSON.stringify(status)
-    } catch (error) {
-      throw failure(error)
-    }
+    return connections.settingsConnectionStatus(this.host, parentSessionId, cli, signal)
   }
   @Remote({ name: 'watchSettingsConnections', mode: 'stream' })
   async *watchSettingsConnections(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      for await (const snapshot of this.host
-        .connectionCache()
-        .watch(AbortSignal.any([signal, this.host.disposed.signal])))
-        yield JSON.stringify(snapshot)
-    } catch (error) {
-      throw failure(error)
-    }
+    yield* connections.watchSettingsConnections(this.host, parentSessionId, signal)
   }
   @Remote('accountStatus')
   async accountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return explicitCredentialRead(() => this.host.readAccountStatus(parentSessionId, cli, signal, false))
+    return accounts.accountStatus(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Read lifetime. @returns Fresh account status and action handles. */
   @Remote('refreshAccountStatus')
   async refreshAccountStatus(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return explicitCredentialRead(() => this.host.readAccountStatus(parentSessionId, cli, signal, true))
+    return accounts.refreshAccountStatus(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - CLI the user confirmed has no leftover process. @param signal - Mutation lifetime. @returns Fresh account status JSON. */
   @Remote('recoverCliCleanup')
   async recoverCliCleanup(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      // Both checks precede either release, so a refusal leaves the CLI paused as it was.
-      this.host.accounts.assertCleanupRecoverable(id)
-      this.host.runtime.recoverCatalogCleanup(id)
-      this.host.accounts.recoverCleanup(id)
-      this.host.cliManagement?.recoverCleanup(id)
-      this.host.invalidateSettingsDisplay(id)
-      return JSON.stringify({ cli: id, recovered: true })
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.recoverCliCleanup(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Machine-local executable path and availability JSON. */
   @Remote('cliExecutablePath')
   async cliExecutablePath(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    let release: (() => void) | undefined
-    try {
-      await this.host.parent(parentSessionId)
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      release = this.host.options?.cliMaintenance?.using(id)
-      // While a CLI is in use, expose its saved selection without probing or
-      // replacing an installation under an active task/account terminal.
-      try {
-        this.host.runtime.assertAccountIdle(id)
-        if (this.host.accounts.isBusy(id)) throw new Error('请先关闭此 CLI 的账号终端再刷新路径')
-      } catch (error) {
-        return JSON.stringify({ ...this.host.executablePathSnapshot(id), error: String(error) })
-      }
-      return JSON.stringify(await this.host.probeExecutablePath(id, control))
-    } catch (error) {
-      throw failure(error)
-    } finally {
-      release?.()
-    }
+    return connections.cliExecutablePath(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param path - Full file path for manual selection. @param action - manual, refresh or auto. @param signal - Mutation/query lifetime. @returns Saved machine-local path and fresh availability JSON. */
   @Remote('refreshCliExecutablePath')
@@ -650,98 +573,28 @@ export class CliWorkerService extends TypertRemoteService {
     action: string,
     signal: AbortSignal,
   ): Promise<string> {
-    let release: (() => void) | undefined
-    try {
-      await this.host.parent(parentSessionId)
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const operation = validate.enum(['manual', 'refresh', 'auto']).parse(action)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      release = this.host.options?.cliMaintenance?.using(id)
-      this.host.runtime.assertAccountIdle(id)
-      if (this.host.accounts.isBusy(id)) throw new Error('请先关闭此 CLI 的账号终端再修改路径')
-      const store = this.host.options.cliExecutablePaths
-      if (!store) throw new Error('CLI 路径存储尚未就绪')
-      if (operation === 'manual') store.setManual(id, path)
-      else if (operation === 'auto') store.reset(id)
-      this.host.displayedBindings?.clear()
-      this.host.invalidateSettingsDisplay(id)
-      this.host.runtime.changed()
-      return JSON.stringify(await this.host.probeExecutablePath(id, control))
-    } catch (error) {
-      throw failure(error)
-    } finally {
-      release?.()
-    }
+    return connections.refreshCliExecutablePath(this.host, parentSessionId, cli, path, action, signal)
   }
   /** @param parentSessionId - Owning parent. @param cli - WorkBuddy edition. @param signal - Startup lifetime. @returns No-PTY guide identity JSON. */
   @Remote('accountDesktopStart')
   async accountDesktopStart(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    try {
-      const id = validate.enum(['workbuddycn', 'workbuddy']).parse(cli)
-      const parent = await this.host.parent(parentSessionId)
-      const authorize = () => {
-        this.host.disposed.signal.throwIfAborted()
-        this.host.assertExecution(parent)
-        this.host.runtime.assertCliEnabled(id)
-        this.host.runtime.assertAccountIdle(id)
-      }
-      authorize()
-      if (!this.host.accountParents.has(parent.id)) {
-        const dispose = parent.ctx.effect(
-          () => () => {
-            this.host.accountParents.delete(parent.id)
-            return this.host.accounts.closeParent(parent.id)
-          },
-          'cliworker:account-parent',
-        )
-        this.host.accountParents.set(parent.id, dispose)
-      }
-      return JSON.stringify(
-        await this.host.accounts.desktop.start(
-          parent.id,
-          id,
-          this.host.machineDirectory(),
-          AbortSignal.any([signal, this.host.disposed.signal]),
-          authorize,
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountDesktopStart(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @param action - Fixed open/refresh/continue action. @returns Action accepted. */
   @Remote('accountDesktopRespond')
   async accountDesktopRespond(parentSessionId: string, accountId: string, action: string): Promise<boolean> {
-    try {
-      await this.host.parent(parentSessionId)
-      await this.host.accounts.desktop.respond(parentSessionId, accountId, action)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountDesktopRespond(this.host, parentSessionId, accountId, action)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @param signal - Watch lifetime. @returns Safe guide frames. */
   @Remote({ mode: 'stream' })
   async *accountDesktopWatch(parentSessionId: string, accountId: string, signal: AbortSignal): AsyncIterable<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      for await (const frame of this.host.accounts.desktop.watch(parentSessionId, accountId, signal))
-        yield JSON.stringify(frame)
-    } catch (error) {
-      throw failure(error)
-    }
+    yield* accounts.accountDesktopWatch(this.host, parentSessionId, accountId, signal)
   }
   /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @returns Query cleanup confirmed; never closes the desktop app. */
   @Remote('accountDesktopStop')
   async accountDesktopStop(parentSessionId: string, accountId: string): Promise<boolean> {
-    try {
-      await this.host.accounts.desktop.stop(parentSessionId, accountId)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountDesktopStop(this.host, parentSessionId, accountId)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param action - Explicit human action. @param signal - Startup lifetime. @returns Managed account terminal identity and instruction JSON. */
   @Remote('accountStart')
@@ -751,7 +604,7 @@ export class CliWorkerService extends TypertRemoteService {
     action: string,
     signal: AbortSignal,
   ): Promise<string> {
-    return this.host.startAccount(parentSessionId, cli, action, signal)
+    return accounts.accountStart(this.host, parentSessionId, cli, action, signal)
   }
   /** @param source - One current CLI-native source, never a filesystem path. */
   @Remote('accountStartForSource')
@@ -762,12 +615,7 @@ export class CliWorkerService extends TypertRemoteService {
     source: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const selected = validate.enum(['native', 'plugin']).parse(source)
-      return this.host.startAccount(parentSessionId, cli, action, signal, selected)
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountStartForSource(this.host, parentSessionId, cli, action, source, signal)
   }
   /** @param provider - Explicit ZCode native login provider, never a URL or logout source. */
   @Remote('accountStartForProvider')
@@ -778,13 +626,7 @@ export class CliWorkerService extends TypertRemoteService {
     provider: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const selected = validate.enum(['bigmodel', 'zai']).parse(provider)
-      if (cli !== 'zcode' || action !== 'login') throw new Error('不支持的 ZCode 授权来源')
-      return this.host.startAccount(parentSessionId, cli, action, signal, undefined, selected)
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountStartForProvider(this.host, parentSessionId, cli, action, provider, signal)
   }
   /**
    * @param options - JSON `{ provider?, login? }`: a login provider of the window's picker, or
@@ -798,155 +640,24 @@ export class CliWorkerService extends TypertRemoteService {
     options: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const parsed: unknown = JSON.parse(
-        typeof options === 'string' && options.length <= 1024 ? options : 'null',
-      )
-      const value =
-        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? (parsed as Record<string, unknown>)
-          : undefined
-      const name = (key: string) => {
-        const item = value?.[key]
-        if (item === undefined) return undefined
-        if (typeof item !== 'string' || !item || item.length > 160) throw new Error('无效的账号操作')
-        return item
-      }
-      if (!value || Object.keys(value).some((key) => key !== 'provider' && key !== 'login'))
-        throw new Error('无效的账号操作')
-      return this.host.startAccount(
-        parentSessionId,
-        cli,
-        action,
-        signal,
-        undefined,
-        name('provider'),
-        name('login'),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountStartWith(this.host, parentSessionId, cli, action, options, signal)
   }
   /** @returns JSON form, or literal null for an unverified CLI/native configuration source. */
   @Remote('customProviderForm')
   async customProviderForm(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    let release: (() => void) | undefined, releaseAccount: (() => void) | undefined
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const parent = await this.host.parent(parentSessionId)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      release = this.host.options.cliMaintenance?.using(id)
-      this.host.runtime.assertCliEnabled(id)
-      // Reading the form writes nothing, so it must not contend with the status read the account
-      // window starts at the same moment; only saving takes the account reservation.
-      this.host.trackAccountParent(parent)
-      // Unsupported CLIs must not touch their entry stores (notably retired Harness).
-      if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id)) return 'null'
-      return JSON.stringify(
-        this.host.customProviderManager().form(this.host.customProviderSource(parent.id, id)),
-      )
-    } catch (error) {
-      throw failure(error)
-    } finally {
-      releaseAccount?.()
-      release?.()
-    }
+    return accounts.customProviderForm(this.host, parentSessionId, cli, signal)
   }
   // prettier-ignore
   /** Write-only secret input. Never log valuesJson or put it into account/catalog snapshots. */
   @Remote('saveCustomProvider')
   async saveCustomProvider(parentSessionId: string, cli: string, token: string, valuesJson: string, signal: AbortSignal): Promise<string> {
-    let release: (() => void) | undefined, releaseAccount: (() => void) | undefined
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const parent = await this.host.parent(parentSessionId)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      this.host.assertExecution(parent)
-      release = this.host.options.cliMaintenance?.using(id)
-      this.host.runtime.assertCliEnabled(id)
-      this.host.runtime.assertAccountIdle(id)
-      // The account window refreshes status when it opens; wait for that read instead of refusing the save.
-      await this.host.accounts.settleQueries(id, AbortSignal.any([control, AbortSignal.timeout(30_000)]))
-      releaseAccount = this.host.accounts.reserveCustomProvider(id)
-      this.host.trackAccountParent(parent)
-      if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id))
-        return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
-      const source = this.host.customProviderSource(parent.id, id)
-      const result = this.host.customProviderManager().save(source, token, valuesJson, () => {
-        control.throwIfAborted()
-        this.host.runtime.assertCliEnabled(id)
-        this.host.runtime.assertAccountIdle(id)
-        if (JSON.stringify(this.host.customProviderSource(parent.id, id)) !== JSON.stringify(source))
-          throw new Error('CLI 入口已变化')
-      })
-      if (result.ok) {
-        try {
-          this.host.invalidateSettingsDisplay(id)
-        } catch {
-          result.notice = '原生配置已保存；显示缓存持久化失败，请刷新账号与模型目录'
-        }
-      }
-      return JSON.stringify(result)
-    } catch (error) {
-      throw failure(error)
-    } finally {
-      releaseAccount?.()
-      release?.()
-    }
+    return accounts.saveCustomProvider(this.host, parentSessionId, cli, token, valuesJson, signal)
   }
   // prettier-ignore
   /** Direct config deletion: no CLI executable or terminal is required. */
   @Remote('deleteAccountConfiguration')
   async deleteAccountConfiguration(parentSessionId: string, cli: string, login: string, signal: AbortSignal): Promise<string> {
-    let release: (() => void) | undefined
-    try {
-      const id = validate.enum(['pi', 'omp', 'zcode']).parse(cli)
-      const selected = validate.string().min(1).max(512).parse(login)
-      const parent = await this.host.parent(parentSessionId)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      this.host.assertExecution(parent)
-      release = this.host.options.cliMaintenance?.using(id)
-      this.host.runtime.assertCliEnabled(id)
-      this.host.runtime.assertAccountIdle(id)
-      this.host.trackAccountParent(parent)
-      // Invalidate readers before waiting for their process cleanup under the account lease.
-      this.host.invalidateSettingsDisplay(id)
-      try {
-        const result = await this.host.accounts.deleteConfiguration(
-          parent.id,
-          id,
-          selected,
-          control,
-          async () => {
-            await this.host.connections?.settle(id)
-            control.throwIfAborted()
-            this.host.runtime.assertCliEnabled(id)
-            this.host.runtime.assertAccountIdle(id)
-          },
-        )
-        try {
-          this.host.invalidateSettingsDisplay(id)
-        } catch {
-          result.notice = '配置已删除；显示缓存持久化失败，请刷新账号与模型目录'
-        }
-        return JSON.stringify(result)
-      } catch (error) {
-        // A conflict can leave a partial transaction/external edit. Never retain an old snapshot.
-        try {
-          this.host.invalidateSettingsDisplay(id)
-        } catch {
-          /* In-memory invalidation runs first. */
-        }
-        throw error
-      }
-    } catch (error) {
-      throw failure(error)
-    } finally {
-      release?.()
-    }
+    return accounts.deleteAccountConfiguration(this.host, parentSessionId, cli, login, signal)
   }
   /** @param parentSessionId - Owning session. @param accountId - Account terminal identity. @param signal - Stream lifetime. @returns Ephemeral terminal frame JSON. */
   @Remote({ mode: 'stream' })
@@ -955,51 +666,17 @@ export class CliWorkerService extends TypertRemoteService {
     accountId: string,
     signal: AbortSignal,
   ): AsyncIterable<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      for await (const frame of this.host.accounts.watch(parentSessionId, accountId, signal))
-        yield JSON.stringify(frame)
-    } catch (error) {
-      throw failure(error)
-    }
+    yield* accounts.accountWatch(this.host, parentSessionId, accountId, signal)
   }
   /** @param parentSessionId - Owning session. @param accountId - Account terminal identity. @param data - Human keyboard input. @returns Input accepted. */
   @Remote('accountWrite')
   async accountWrite(parentSessionId: string, accountId: string, data: string): Promise<boolean> {
-    try {
-      this.host.assertExecution(await this.host.parent(parentSessionId))
-      await this.host.accounts.write(parentSessionId, accountId, data)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountWrite(this.host, parentSessionId, accountId, data)
   }
   /** @param parentSessionId - Owning session. @param accountId - Account terminal identity. @param response - The user's answer to the window's current step (JSON). @returns Answer accepted. */
   @Remote('accountRespond')
   async accountRespond(parentSessionId: string, accountId: string, response: string): Promise<boolean> {
-    try {
-      this.host.assertExecution(await this.host.parent(parentSessionId))
-      const parsed: unknown = JSON.parse(
-        typeof response === 'string' && response.length <= 8192 ? response : 'null',
-      )
-      const value = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {}
-      const keys = Object.keys(value)
-      const text = (name: 'option' | 'code' | 'secret') =>
-        keys.length === 1 && typeof value[name] === 'string'
-      let answer: AccountResponse
-      if (text('option')) answer = { option: value.option as string }
-      else if (text('code')) answer = { code: value.code as string }
-      else if (text('secret')) answer = { secret: value.secret as string }
-      else if (keys.length === 1 && (value.confirm === 'trust' || value.confirm === 'decline'))
-        answer = { confirm: value.confirm }
-      else if (keys.length === 2 && value.agree === 'terms' && typeof value.share === 'boolean')
-        answer = { agree: 'terms', share: value.share }
-      else throw new Error('无效的账号窗口操作')
-      await this.host.accounts.respond(parentSessionId, accountId, answer)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountRespond(this.host, parentSessionId, accountId, response)
   }
   /** @param parentSessionId - Owning session. @param accountId - Account terminal identity. @param cols - Visible columns. @param rows - Visible rows. @returns Resize accepted. */
   @Remote('accountResize')
@@ -1009,23 +686,12 @@ export class CliWorkerService extends TypertRemoteService {
     cols: number,
     rows: number,
   ): Promise<boolean> {
-    try {
-      await this.host.parent(parentSessionId)
-      await this.host.accounts.resize(parentSessionId, accountId, cols, rows)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountResize(this.host, parentSessionId, accountId, cols, rows)
   }
   /** @param parentSessionId - Owning session. @param accountId - Account terminal identity. @returns Process cleanup completed. */
   @Remote('accountStop')
   async accountStop(parentSessionId: string, accountId: string): Promise<boolean> {
-    try {
-      await this.host.accounts.stop(parentSessionId, accountId)
-      return true
-    } catch (error) {
-      throw failure(error)
-    }
+    return accounts.accountStop(this.host, parentSessionId, accountId)
   }
   /** @param parentSessionId - Parent session identity. @param signal - Caller lifetime. @returns JSON model catalog and project preference. */
   @Remote('catalog')
@@ -1631,31 +1297,7 @@ class ServiceContext {
     readonly ctx: Context,
     readonly remote: CliWorkerService,
   ) {}
-  connectionCache() {
-    const cache = (this.connections ??= new SettingsConnectionCache())
-    const epochs = (this.connectionEpochs ??= new Map())
-    for (const cli of CLI_IDS) {
-      const entry = this.options?.cliExecutablePaths?.read(cli)
-      const epoch = {
-        account: this.cliManagement?.cache.accountRevision(cli) ?? 0,
-        path: this.options?.cliExecutablePaths?.revision(cli) ?? 0,
-        recorded: !!entry,
-        held: !!this.runtime?.catalogCleanupMessage?.(cli),
-      }
-      const previous = epochs.get(cli)
-      // The first auto-discovery records the very entry just queried; it is not a source switch.
-      const initialAuto = previous && !previous.recorded && entry?.mode === 'auto'
-      if (
-        previous &&
-        (previous.account !== epoch.account ||
-          previous.held !== epoch.held ||
-          (previous.path !== epoch.path && !initialAuto))
-      )
-        cache.invalidate(cli)
-      epochs.set(cli, epoch)
-    }
-    return cache
-  }
+  connectionCache = connections.connectionCache
   parent = harness.parent
   project = harness.project
   machineDirectory = harness.machineDirectory
@@ -2797,218 +2439,18 @@ class ServiceContext {
   settingsDisplayMetadata = settings.settingsDisplayMetadata
   invalidateSettingsDisplay = settings.invalidateSettingsDisplay
   mergeIsolatedWorker = workers.mergeIsolatedWorker
-  preloadSettingsConnection(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
-    return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, kind, signal))
-  }
-  async preloadSettingsConnectionNow(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
-    const release = this.options.cliMaintenance?.using(cli)
-    try {
-      const allowed = kind === 'account' ? BACKGROUND_ACCOUNT_CLIS : BACKGROUND_CATALOG_CLIS
-      if (!allowed.includes(cli)) throw new Error('此 CLI 的连接查询保留前台')
-      this.runtime.assertCliEnabled(cli)
-      const held = this.runtime.catalogCleanupMessage(cli)
-      if (held) throw new Error(held)
-      if (kind === 'account') await this.loadSettingsAccount(cli, signal, false, true)
-      else await this.loadSettingsCatalog(cli, signal, false, true)
-    } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(cli, error)
-      throw error
-    } finally {
-      release?.()
-    }
-  }
-  loadSettingsAccount(cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
-    return this.connectionCache().read(
-      cli,
-      'account',
-      AbortSignal.any([signal, this.disposed.signal]),
-      (control) => this.accounts.status(cli, this.machineDirectory(), control, { background }),
-      refresh,
-    )
-  }
-  /** The machine-wide model list shown in settings. A project's own CLI configuration (for example a project-level
-   * route) only takes effect when a task is dispatched or a model is chosen for that project. */
-  async loadSettingsCatalog(cli: ActiveCliId, signal: AbortSignal, refresh: boolean, background = false) {
-    const assertAccountIdle = () => {
-      if (this.accounts?.isBusy?.(cli)) throw new Error('请先关闭账号终端')
-    }
-    // The terminal's reservation is also the catalog admission gate. It is
-    // released by AccountManager only after terminal/range/runtime cleanup.
-    assertAccountIdle()
-    const machine = this.machineDirectory()
-    return this.connectionCache().read(
-      cli,
-      'catalog',
-      AbortSignal.any([signal, this.disposed.signal]),
-      async (control) => {
-        // A read may have queued before the terminal took the CLI.
-        assertAccountIdle()
-        const config = background
-          ? await backgroundConnectionConfig(cli, this.options, control)
-          : this.options
-        control.throwIfAborted()
-        assertAccountIdle()
-        this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
-        return this.settingsCatalogs.get({
-          cli,
-          project: machine,
-          signal: control,
-          refresh: true,
-          selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
-          binding: () => this.readAccountBinding(cli, this.backend, config, machine, control),
-          discover: () => this.queryCatalog(cli, this.backend, config, machine, control),
-        })
-      },
-      refresh,
-    )
-  }
-  async readAccountStatus(
-    parentSessionId: string,
-    cli: string,
-    signal: AbortSignal,
-    refresh: boolean,
-  ): Promise<string> {
-    let queriedCli: CliId | undefined
-    let release: (() => void) | undefined
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      queriedCli = id
-      await this.parent(parentSessionId)
-      signal.throwIfAborted()
-      const held = () => this.cleanupHeldStatus(id)
-      const before = held()
-      if (before) return JSON.stringify(before)
-      release = this.options?.cliMaintenance?.using(id)
-      this.runtime.assertCliEnabled(id)
-      if (!refresh && this.connectionCache().fresh(id, 'account')) {
-        const receipt = this.connectionCache().status(id).account
-        return JSON.stringify({ ...receipt.value, cache: receipt.cache })
-      }
-      const status = await this.loadSettingsAccount(id, signal, refresh)
-      signal.throwIfAborted()
-      const after = held()
-      if (after) return JSON.stringify(after)
-      this.runtime.assertCliEnabled(id)
-      const receipt = this.connectionCache().status(id).account
-      if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
-      return JSON.stringify({ ...status, cache: receipt.cache })
-    } catch (error) {
-      if (queriedCli) this.runtime.assertCliEnabled(queriedCli)
-      if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
-        this.runtime.blockCatalogOnCleanup(queriedCli, error)
-      throw failure(error)
-    } finally {
-      release?.()
-    }
-  }
-  /** A CLI paused by its own unconfirmed cleanup reports that state instead of failing the read. */
-  cleanupHeldStatus(cli: CliId): AccountStatus | undefined {
-    const message = this.runtime.catalogCleanupMessage(cli)
-    if (!message) return undefined
-    // Shutdown and the unattributed global quarantine are not this CLI's to release.
-    this.runtime.assertHostOpen()
-    return { cli, installed: true, state: 'unavailable', summary: message, cleanupBlocked: true, actions: [] }
-  }
-  executablePathSnapshot(cli: CliId): CliExecutablePathStatus {
-    const saved = this.options.cliExecutablePaths?.read(cli)
-    const configured = configuredCliExecutable(cli, this.options)
-    const manual = saved?.mode === 'manual'
-    return {
-      cli,
-      path: manual ? saved.path : (configured ?? saved?.path ?? ''),
-      source: manual ? 'manual' : configured ? 'configured' : saved ? 'auto' : 'none',
-      available: false,
-    }
-  }
-  async probeExecutablePath(cli: CliId, signal: AbortSignal): Promise<CliExecutablePathStatus> {
-    try {
-      const path = await resolveCliExecutable(cli, this.backend, this.options, signal)
-      signal.throwIfAborted()
-      const current = this.executablePathSnapshot(cli)
-      return { ...current, path: current.source === 'manual' ? current.path : path, available: true }
-    } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) {
-        this.runtime.blockCatalogOnCleanup(cli, error)
-        throw error
-      }
-      signal.throwIfAborted()
-      return {
-        ...this.executablePathSnapshot(cli),
-        error:
-          error instanceof WindowsCliInstallationError
-            ? error.message
-            : 'CLI 路径不可用，请确认填写的是 CLI 文件的完整路径，再刷新重试',
-      }
-    }
-  }
-  trackAccountParent(parent: Agent) {
-    if (this.accountParents.has(parent.id)) return
-    const dispose = parent.ctx.effect(
-      () => () => {
-        this.accountParents.delete(parent.id)
-        this.customProviders?.closeParent(parent.id)
-        return this.accounts.closeParent(parent.id)
-      },
-      'cliworker:account-parent',
-    )
-    this.accountParents.set(parent.id, dispose)
-  }
-  customProviderSource(parent: string, cli: CliId): CustomProviderSource {
-    return {
-      parent,
-      cli,
-      entry: this.options.cliExecutablePaths?.read(cli),
-      revision: this.options.cliExecutablePaths?.revision(cli) ?? 0,
-    }
-  }
-  customProviderManager() {
-    return (this.customProviders ??= new CustomProviders({
-      stateDirectory: this.options.stateDirectory,
-      hermesHome: this.options.hermesHome,
-      zcodeAuthDirectory: this.options.zcodeAuthDirectory,
-      zcodeBuiltinConfig: this.options.zcodeBuiltinConfig,
-    }))
-  }
-  async startAccount(
-    parentSessionId: string,
-    cli: string,
-    action: string,
-    signal: AbortSignal,
-    source?: 'native' | 'plugin',
-    provider?: string,
-    login?: string,
-  ): Promise<string> {
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const operation = validate.enum(['login', 'logout', 'manage']).parse(action)
-      const parent = await this.parent(parentSessionId)
-      this.assertExecution(parent)
-      this.runtime.assertCliEnabled(id)
-      this.runtime.assertAccountIdle(id)
-      this.trackAccountParent(parent)
-      this.invalidateSettingsDisplay(id)
-      return JSON.stringify(
-        await this.accounts.start(
-          parent.id,
-          id,
-          operation,
-          this.machineDirectory(),
-          signal,
-          source,
-          provider,
-          login,
-          async () => {
-            // AccountManager has synchronously reserved the CLI. Invalidation
-            // cancels reads but their process ranges can still be cleaning up.
-            await this.connections?.settle(id)
-            this.runtime.assertAccountIdle(id)
-          },
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
-  }
+  preloadSettingsConnection = connections.preloadSettingsConnection
+  preloadSettingsConnectionNow = connections.preloadSettingsConnectionNow
+  loadSettingsAccount = connections.loadSettingsAccount
+  loadSettingsCatalog = connections.loadSettingsCatalog
+  readAccountStatus = accounts.readAccountStatus
+  cleanupHeldStatus = accounts.cleanupHeldStatus
+  executablePathSnapshot = connections.executablePathSnapshot
+  probeExecutablePath = connections.probeExecutablePath
+  trackAccountParent = accounts.trackAccountParent
+  customProviderSource = accounts.customProviderSource
+  customProviderManager = accounts.customProviderManager
+  startAccount = accounts.startAccount
   async settingsCatalog(
     parentSessionId: string,
     cli: string,
