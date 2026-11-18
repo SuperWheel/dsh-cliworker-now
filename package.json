@@ -82,7 +82,10 @@
     "smoke:extended": "tsx scripts/smoke-extended.ts",
     "spec": "OPENSPEC_TELEMETRY=0 pmspec",
     "spec:list": "pnpm spec list",
-    "spec:check": "pnpm spec validate --all --strict --no-interactive"
+    "spec:check": "pnpm spec validate --all --strict --no-interactive",
+    "lint": "eslint src scripts",
+    "typecheck:tests": "tsc --project tsconfig.tests.json",
+    "format:check": "node scripts/format-check.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4 || 4.0.5 || ~4.1.0",
@@ -188,7 +191,12 @@
     "vitest": "4.1.8",
     "zustand": "~4.4.7",
     "@deepseek-ai/dsh-client-ui-subagent": "0.2.2-rc.3",
-    "@types/semver": "7.7.1"
+    "@types/semver": "7.7.1",
+    "eslint": "10.15.0",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-import-x": "4.18.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "typescript-eslint": "8.73.0"
   },
   "repository": {
     "type": "git",

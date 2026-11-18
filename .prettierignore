@@ -4,3 +4,9 @@ lib
 .test-data
 .pnpm-store
 pnpm-lock.yaml
+/runtime-host/
+/host-extensions/
+/.claude/
+/artifacts/
+/dist/
+/vendor/

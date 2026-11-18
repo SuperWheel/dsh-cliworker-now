@@ -1,0 +1,41 @@
+name: Linux checks
+
+on:
+  push:
+    branches: [main, 'release/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PNPM_CONFIG_VERIFY_DEPS_BEFORE_RUN: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate build artifacts used by typecheck and tests
+        run: pnpm build
+      - name: Check source types
+        run: pnpm typecheck
+      - name: Validate OpenSpec
+        run: pnpm spec:check
+      - name: Run tests
+        run: pnpm exec vitest run
+      - name: Lint source and scripts
+        run: pnpm lint
+        continue-on-error: true
+      - name: Check test types
+        run: pnpm typecheck:tests
+        continue-on-error: true
