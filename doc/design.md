@@ -46,6 +46,24 @@
 - 独立保存 workerId、Harness parentSessionId 和外部 conversation_id。每轮运行独立记录，事件带单调递增序号。
 - 自然语言路由通过工具描述及作用域内提示规则完成。只管理通过插件启动的进程。
 
+### Host 服务模块（v0.9.2）
+
+`src/host/index.ts` 注册 Cordis 服务，并承载全部 80 个 Typert 门面（74 个直接调用、6 个流）。新增 Remote 时，将装饰器、签名和 JSDoc 写在门面，将实现放进对应领域模块。Typert 的 Host 描述符会收录签名原文，换行和尾逗号也会影响产物。
+
+下列文件均位于 `src/host/`。每个服务实例拥有一个 `ServiceContext`。领域函数接收这个上下文，内部方法以它为接收者。Cordis 调用方提供的 `ctx` 随调用传入，运行时、账号管理器和缓存仍归服务实例所有。
+
+| 文件 | 职责 |
+| --- | --- |
+| `service-context.ts`、`service-lifecycle.ts` | 保存实例状态与内部操作，按原顺序初始化运行时、安装桥、注册订阅和释放进程及定时器。 |
+| `service-harness.ts` | 解析父会话与项目，管理 Harness 原生会话桥、显示修复与 DSH 子 Agent。 |
+| `service-history.ts`、`service-workers.ts` | 前者处理 Worker 快照流、历史、运行中消息偏好及角色预设，后者处理改名、目标、删除、恢复、分叉和隔离副本合并。 |
+| `service-settings.ts`、`service-cli-updates.ts` | 前者处理通用设置、CLI 启用与设置快照，后者处理更新检查、安装操作、接管和下载源。 |
+| `service-connections.ts`、`service-accounts.ts` | 前者管理连接缓存、后台加载及可执行路径探测，后者管理账号查询、终端、桌面账号窗口与自定义提供商。 |
+| `service-models.ts`、`service-permissions.ts` | 前者管理目录、绑定与选型授权，后者计算 Worker 权限并处理中继审批及冷会话设置。 |
+| `service-tools.ts`、`service-dispatch.ts`、`service-launch.ts` | 注册主 Agent 工具，解析派遣对象与 CLI 变体，完成运行准入、发布和完成回执。 |
+| `service-messages.ts`、`service-errors.ts` | 前者处理直接消息、引导、续聊队列、重启及停止，后者封装 Remote 错误与可取消的输入等待。 |
+
+
 ## 4. 生命周期与边界
 
 - 状态：等待配置、排队、运行、停止中、完成、失败、中断。

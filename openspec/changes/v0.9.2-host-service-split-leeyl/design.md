@@ -32,13 +32,23 @@
 
 ### 决定 5：领域划分与上下文对象
 
-基准提交 `086b865` 的 TypeScript 语法树有 **80 个**带 Remote 装饰器的方法（其中 6 个流方法），另有 48 个内部方法和 1 个构造函数。原估算 74 漏计了流方法。保留所有 80 个门面的源码签名、JSDoc、装饰器及调用方式。
+基准提交 `086b865` 的 TypeScript 语法树有 **80 个**带 Remote 装饰器的方法（其中 6 个流方法），另有 48 个内部方法和 1 个构造函数。74 是直接调用的数量。保留所有 80 个门面的源码签名、JSDoc、装饰器及调用方式。
 
-每个 Cordis 服务实例拥有一个 ServiceContext。它持有 Cordis Context、原有字段及实例级辅助操作；原生会话桥经门面回调使用原有 Remote 调用链。领域函数显式接收该实例。构造阶段按源顺序初始化，连续的会话桥安装代码在原位置调用；订阅与释放继续由原有 Cordis scope 管理。实例之间不共享可变状态。
+每个 Cordis 服务实例在 `super` 返回后创建一个 `ServiceContext`。Remote 实现显式接收它，内部辅助函数以类型为 `ServiceContext` 的 `this` 接收它。Cordis 为调用方赋予作用域时，门面用 SDK 的 `withProps` 将调用方的 `ctx` 和门面接收者投影到同一份状态。原生会话桥保存的回调仍使用构造时的作用域。注册与释放均由原有 Cordis scope 管理。
 
-八个提交领域中，账号域分开管理连接缓存和账号会话；模型域分开目录与权限；消息域把主 Agent 工具注册、选型等待和运行发布分别成文件。这些辅助方法各有独立的调用者及生命周期。
+| 状态归属             | 上下文持有的成员                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Host 生命周期与运行  | `ctx`、`remote`（内部回调使用的 8 个门面方法）、`runtime`、`options`、`backend`、`disposed`                                                |
+| 账号、安装与连接     | `accounts`、`accountParents`、`customProviders`、`cliManagement`、`connections`、`connectionEpochs`                                        |
+| 设置、目录与选型     | `settingsCatalogs`、`settingsInstance`、`settingsSourceRevisions`、`displayedBindings`、`selectionBindings`、`selectionProjects`           |
+| 会话、原生工具及审批 | `dshSubagents`、`harnessConversation`、`harnessConversationStore`、`bridgeCalls`、`repairingDisplays`、`runOrigins`、`runQuestionSessions` |
+| 派遣与消息           | `pending`、`dispatchWaits`、`messageSubmissions`、`nativeRunDone`                                                                          |
 
-下表列出每个方法直接使用的实例字段与调用。写入列记载赋值、成员赋值和可静态识别的集合写操作；经运行时或存储 API 产生的副作用仍由相应对象管理。构造函数一行包括它注册的回调。
+`service-context.ts` 保存这些字段。`service-lifecycle.ts` 的 `initialize` 按原顺序装配运行时、注册与释放订阅。其中会话桥注册由 `service-harness.ts` 的 `registerConversationBridge` 在原位置执行。`service-errors.ts` 的 `failure` 生成原有 Remote 错误，`waitForInput` 处理可取消的询问等待。
+
+八个提交领域中，账号域分开管理连接缓存和账号会话。模型域分开目录与权限。消息域把主 Agent 工具注册、选型等待和运行发布分别成文件。这些辅助方法各有独立的调用者及生命周期。
+
+下表列出每个方法直接使用的实例字段与调用。写入列记载赋值、成员赋值和可静态识别的集合写操作。经运行时或存储 API 产生的副作用仍由相应对象管理。构造函数一行包括它注册的回调。
 
 #### 2.1 · service-harness（Harness 会话、父会话与 DSH 子 Agent）
 
