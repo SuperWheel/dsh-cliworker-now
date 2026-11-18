@@ -1,6 +1,24 @@
 # 首页效果图说明
 
-## 1. 来源
+## 1. 当前截图（2026-11-18）
+
+首页使用的九张 WebP 由用户 2026-11-18 在 macOS 的 DeepSeek Harness Desktop 内自行截取，账号邮箱、授权码和工作区列表已在截图中打码。`codex-computer-use.webp` 拍摄的是 2026-11-06 的 Codex 任务。未收录显示个人自定义服务地址的 Pi 账号页。
+
+| 文件 | 展示内容 |
+| --- | --- |
+| `worker-conversation.webp` | 主对话汇总各 CLI 问候，右侧打开 Antigravity 智能体的原生对话 |
+| `worker-list.webp` | CLI Worker 侧栏按 CLI 分组（含 DSH 子 Agent）与状态筛选 |
+| `dispatch-model-card.webp` | 首次派遣时选择 Antigravity 模型的问题卡片 |
+| `agy-image-task.webp` | Antigravity 生成图片，主对话核验产物 |
+| `codex-computer-use.webp` | Codex 生成 GIF 并用 Computer Use 插入 Word |
+| `account-model-settings.webp` | Antigravity 账号登录状态与项目默认模型、强度 |
+| `graphical-login.webp` | Antigravity 分步登录窗口 |
+| `cli-update.webp` | 「更新 CLI」页的可更新列表 |
+| `role-presets.webp` | 智能体预设页 |
+
+## 2. 旧版截图（v0.6.5）
+
+以下四张 JPEG 已不在首页使用；npm 页面上已发布版本的 README 仍引用它们，下次发布后可删除。
 
 四张 JPEG 均为 2026-10-06 在 macOS 的 **DeepSeek Harness Desktop 0.2.0-rc.2** 内直接拍摄，插件版本 **0.6.5**。未使用独立 React 演示页、合成产品界面或 AI 重绘。
 
@@ -11,13 +29,13 @@
 | `role-presets.jpg` | 原生设置弹窗中的默认角色卡片 |
 | `cli-settings.jpg` | OMP 的独立开关、登录入口和项目模型偏好 |
 
-## 2. 演示与验证范围
+### 演示与验证范围
 
 经用户明确授权，在新建的空演示工作区和会话中，使用 Antigravity / `gemini-3.8-flash` / `low`，不选角色预设，派遣“演示助手”仅回复指定欢迎语。任务不要求读取或修改文件、执行命令或调用其他工具。
 
 检查了持久化记录：worker 状态为 `completed`，结果事件为 `SUCCESS`，实际结果与欢迎语一致；事件记录没有工具事件。截图保留界面实际显示的时间和用量。主对话的总耗时包含人工选型等待，不能作为模型响应速度或性能比较。该演示不代表其他 CLI、模型或套餐均已实测。
 
-## 3. 隐私处理
+### 隐私处理
 
 - 新建专用于公开展示的会话，不拍摄用户已有的私人对话。
 - 收起历史会话侧栏，避免展示其他项目和会话标题。
