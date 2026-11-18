@@ -98,7 +98,6 @@ import { ACCOUNT_CHANGED, authorizedCatalog, authorizeSelection } from './author
 import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
 import { type DispatchSetup } from './storage.ts'
 import { WorkerRuntime, type Submission } from './runtime.ts'
-import type { MergeResolution } from './isolated-workspace.ts'
 import { integrationReport, isolationGuidance, readResolutions } from './isolated-merge-decisions.ts'
 import { AccountManager } from './accounts.ts'
 import {
@@ -113,6 +112,7 @@ import {
 import { failure } from './service-errors.ts'
 import * as harness from './service-harness.ts'
 import * as history from './service-history.ts'
+import * as workers from './service-workers.ts'
 import * as lifecycle from './service-lifecycle.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
@@ -239,6 +239,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     }
   }
 }
+// Typert embeds the Remote signature text in Host metadata, including whitespace and trailing commas.
 /** Host owner of CLI conversations, model tools and Remote streams. */
 export class CliWorkerService extends TypertRemoteService {
   static inject = [
@@ -325,24 +326,16 @@ export class CliWorkerService extends TypertRemoteService {
   async *watchDshSubagents(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
     yield* harness.watchDshSubagents(this.host, parentSessionId, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param prompt - Human message. @param requestId - Browser-minted prompt identity. @param signal - Admission lifetime. @returns Native inbox receipt JSON. */
   @Remote({ name: 'promptDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
-  async promptDshSubagent(
-    parentSessionId: string,
-    childSessionId: string,
-    prompt: string,
-    requestId: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async promptDshSubagent(parentSessionId: string, childSessionId: string, prompt: string, requestId: string, signal: AbortSignal): Promise<string> {
     return harness.promptDshSubagent(this.host, parentSessionId, childSessionId, prompt, requestId, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Stop confirmation lifetime. @returns JSON only after native settlement. */
   @Remote({ name: 'stopDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
-  async stopDshSubagent(
-    parentSessionId: string,
-    childSessionId: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async stopDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<string> {
     return harness.stopDshSubagent(this.host, parentSessionId, childSessionId, signal)
   }
   /** @param parentSessionId - Main conversation. @param childSessionId - Direct child. @param signal - Mutation lifetime. @returns Nothing; only plugin visibility changes. */
@@ -427,13 +420,7 @@ export class CliWorkerService extends TypertRemoteService {
     name: string,
     signal: AbortSignal,
   ): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.renameWorker(parentSessionId, workerId, name)
-    } catch (error) {
-      throw failure(error)
-    }
+    return workers.renameWorker(this.host, parentSessionId, workerId, name, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Worker identity. @param title - Single-line chat title, at most 160 characters. @param signal - Mutation lifetime. @returns Completion. */
   @Remote('renameWorkerTitle')
@@ -443,114 +430,41 @@ export class CliWorkerService extends TypertRemoteService {
     title: string,
     signal: AbortSignal,
   ): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.renameWorkerTitle(parentSessionId, workerId, title)
-    } catch (error) {
-      throw failure(error)
-    }
+    return workers.renameWorkerTitle(this.host, parentSessionId, workerId, title, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Worker identity. @param objective - Persistent objective. @param expectedRevision - Current goal revision, or zero when absent. @param signal - Mutation lifetime. @returns WorkerGoal JSON. */
   @Remote('setWorkerGoal')
-  async setWorkerGoal(
-    parentSessionId: string,
-    workerId: string,
-    objective: string,
-    expectedRevision: number,
-    signal: AbortSignal,
-  ): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.runtime.setWorkerGoal(parentSessionId, workerId, objective, expectedRevision),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+  async setWorkerGoal(parentSessionId: string, workerId: string, objective: string, expectedRevision: number, signal: AbortSignal): Promise<string> {
+    return workers.setWorkerGoal(this.host, parentSessionId, workerId, objective, expectedRevision, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Worker identity. @param status - Active or paused. @param expectedRevision - Current goal revision. @param signal - Mutation lifetime. @returns WorkerGoal JSON. */
   @Remote('setWorkerGoalStatus')
-  async setWorkerGoalStatus(
-    parentSessionId: string,
-    workerId: string,
-    status: 'active' | 'paused',
-    expectedRevision: number,
-    signal: AbortSignal,
-  ): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.runtime.setWorkerGoalStatus(parentSessionId, workerId, status, expectedRevision),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+  async setWorkerGoalStatus(parentSessionId: string, workerId: string, status: 'active' | 'paused', expectedRevision: number, signal: AbortSignal): Promise<string> {
+    return workers.setWorkerGoalStatus(this.host, parentSessionId, workerId, status, expectedRevision, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Worker identity. @param expectedRevision - Current goal revision. @param signal - Mutation lifetime. @returns Completion. */
   @Remote('clearWorkerGoal')
-  async clearWorkerGoal(
-    parentSessionId: string,
-    workerId: string,
-    expectedRevision: number,
-    signal: AbortSignal,
-  ): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.clearWorkerGoal(parentSessionId, workerId, expectedRevision)
-    } catch (error) {
-      throw failure(error)
-    }
+  async clearWorkerGoal(parentSessionId: string, workerId: string, expectedRevision: number, signal: AbortSignal): Promise<void> {
+    return workers.clearWorkerGoal(this.host, parentSessionId, workerId, expectedRevision, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Idle Worker to hide. @param signal - Mutation lifetime. @returns Completion without deleting native data. */
   @Remote('deleteWorker')
   async deleteWorker(parentSessionId: string, workerId: string, signal: AbortSignal): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.deleteWorker(parentSessionId, workerId)
-    } catch (error) {
-      throw failure(error)
-    }
+    return workers.deleteWorker(this.host, parentSessionId, workerId, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Deleted Worker identity. @param signal - Mutation lifetime. @returns Completion with the original ID and history. */
   @Remote('restoreWorker')
   async restoreWorker(parentSessionId: string, workerId: string, signal: AbortSignal): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.restoreWorker(parentSessionId, workerId)
-    } catch (error) {
-      throw failure(error)
-    }
+    return workers.restoreWorker(this.host, parentSessionId, workerId, signal)
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Idle source Worker. @param atMessageId - Completed assistant message, or empty for latest. @param signal - Fork lifetime. @returns Worker and child session identities as JSON. */
   @Remote('forkWorker')
-  async forkWorker(
-    parentSessionId: string,
-    workerId: string,
-    atMessageId: string,
-    signal: AbortSignal,
-  ): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      if (!this.host.harnessConversation) throw new Error('Harness CLI 会话桥未就绪')
-      return JSON.stringify(
-        await this.host.runtime.forkWorker(
-          parent,
-          workerId,
-          atMessageId,
-          this.host.harnessConversation,
-          signal,
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+  async forkWorker(parentSessionId: string, workerId: string, atMessageId: string, signal: AbortSignal): Promise<string> {
+    return workers.forkWorker(this.host, parentSessionId, workerId, atMessageId, signal)
   }
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Profile-wide general settings JSON. */
   @Remote('generalSettings')
@@ -614,13 +528,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning session. @param scope - missing or all. @param signal - Request lifetime. @returns Immediate page JSON; watch carries results. */
   @Remote('checkCliUpdates')
-  async checkCliUpdates(
-    parentSessionId: string,
-    scope: 'missing' | 'all',
-    signal: AbortSignal,
-  ): Promise<string> {
+  async checkCliUpdates(parentSessionId: string, scope: 'missing' | 'all', signal: AbortSignal): Promise<string> {
     try {
       await this.host.parent(parentSessionId)
       signal.throwIfAborted()
@@ -639,17 +550,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param intent - update or install. @param planToken - Host fingerprint. @param installDirectory - Validated optional desktop location. @param requestId - Idempotency key. @param signal - Admission only; does not own the operation. @returns Page snapshot JSON. */
   @Remote('startCliOperation')
-  async startCliOperation(
-    parentSessionId: string,
-    cli: string,
-    intent: 'update' | 'install',
-    planToken: string,
-    installDirectory: string,
-    requestId: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async startCliOperation(parentSessionId: string, cli: string, intent: 'update' | 'install', planToken: string, installDirectory: string, requestId: string, signal: AbortSignal): Promise<string> {
     try {
       const parent = await this.host.parent(parentSessionId)
       this.host.assertExecution(parent)
@@ -700,14 +604,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param operationId - Exact running operation. @param signal - Admission only. @returns CliTakeoverResult JSON after official exit and cleanup. */
   @Remote('requestCliTakeover')
-  async requestCliTakeover(
-    parentSessionId: string,
-    cli: string,
-    operationId: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async requestCliTakeover(parentSessionId: string, cli: string, operationId: string, signal: AbortSignal): Promise<string> {
     try {
       const parent = await this.host.parent(parentSessionId)
       this.host.assertExecution(parent)
@@ -731,14 +631,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param path - Proposed directory. @param signal - Query lifetime. @returns Directory check JSON. */
   @Remote('checkInstallDirectory')
-  async checkInstallDirectory(
-    parentSessionId: string,
-    cli: string,
-    path: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async checkInstallDirectory(parentSessionId: string, cli: string, path: string, signal: AbortSignal): Promise<string> {
     try {
       await this.host.parent(parentSessionId)
       signal.throwIfAborted()
@@ -968,13 +864,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param accountId - Desktop guide identity. @param signal - Watch lifetime. @returns Safe guide frames. */
   @Remote({ mode: 'stream' })
-  async *accountDesktopWatch(
-    parentSessionId: string,
-    accountId: string,
-    signal: AbortSignal,
-  ): AsyncIterable<string> {
+  async *accountDesktopWatch(parentSessionId: string, accountId: string, signal: AbortSignal): AsyncIterable<string> {
     try {
       await this.host.parent(parentSessionId)
       for await (const frame of this.host.accounts.desktop.watch(parentSessionId, accountId, signal))
@@ -1103,15 +996,10 @@ export class CliWorkerService extends TypertRemoteService {
       release?.()
     }
   }
+  // prettier-ignore
   /** Write-only secret input. Never log valuesJson or put it into account/catalog snapshots. */
   @Remote('saveCustomProvider')
-  async saveCustomProvider(
-    parentSessionId: string,
-    cli: string,
-    token: string,
-    valuesJson: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async saveCustomProvider(parentSessionId: string, cli: string, token: string, valuesJson: string, signal: AbortSignal): Promise<string> {
     let release: (() => void) | undefined, releaseAccount: (() => void) | undefined
     try {
       const id = validate.enum(CLI_IDS).parse(cli)
@@ -1151,14 +1039,10 @@ export class CliWorkerService extends TypertRemoteService {
       release?.()
     }
   }
+  // prettier-ignore
   /** Direct config deletion: no CLI executable or terminal is required. */
   @Remote('deleteAccountConfiguration')
-  async deleteAccountConfiguration(
-    parentSessionId: string,
-    cli: string,
-    login: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async deleteAccountConfiguration(parentSessionId: string, cli: string, login: string, signal: AbortSignal): Promise<string> {
     let release: (() => void) | undefined
     try {
       const id = validate.enum(['pi', 'omp', 'zcode']).parse(cli)
@@ -1473,14 +1357,10 @@ export class CliWorkerService extends TypertRemoteService {
       throw failure(error)
     }
   }
+  // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Exact idle Worker. @param mode - An advertised native CLI mode. @param signal - Save lifetime. @returns Saved Worker; no task is launched. */
   @Remote('configureWorkerPermission')
-  async configureWorkerPermission(
-    parentSessionId: string,
-    workerId: string,
-    mode: string,
-    signal: AbortSignal,
-  ): Promise<string> {
+  async configureWorkerPermission(parentSessionId: string, workerId: string, mode: string, signal: AbortSignal): Promise<string> {
     try {
       const parent = await this.host.parent(parentSessionId)
       signal.throwIfAborted()
@@ -3094,23 +2974,7 @@ class ServiceContext {
     // Disk-cache failure must not preserve an in-memory account/catalog from before the mutation.
     if (cli !== 'harness') this.cliManagement?.cache.invalidateAccount(cli)
   }
-  /** Writes into the parent's project, so the host's plan/read-only boundary applies. */
-  async mergeIsolatedWorker(
-    agent: Agent,
-    workerId: string,
-    signal: AbortSignal,
-    resolutions?: Record<string, MergeResolution>,
-  ) {
-    const worker = this.runtime.get(agent.id, workerId)
-    this.assertExecution(agent)
-    if (this.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目合并')
-    return this.runtime.mergeIsolation(
-      agent.id,
-      workerId,
-      AbortSignal.any([signal, this.disposed.signal]),
-      resolutions,
-    )
-  }
+  mergeIsolatedWorker = workers.mergeIsolatedWorker
   preloadSettingsConnection(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
     return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, kind, signal))
   }
