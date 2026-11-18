@@ -1,6 +1,6 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { expect, it, vi } from 'vitest'
 import { installHarnessModelGuard, withinCliTool } from '../src/host/harness-model-guard.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import type { Context } from '@deepseek-ai/cordis'
 
 it('blocks unattributed auxiliary model calls from CLI tools without blocking ordinary DSH calls', async () => {
@@ -45,7 +45,7 @@ it('authorized sibling job publication detaches only the old tool guard and reta
   // Simulated DSH services: jobs, plus the permission state read for the dispatch receipt.
   const services: Record<string, unknown> = { jobs, sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) } }
   const parent: any = { id: 'main', ctx: { get: (name: string) => services[name] } }
-  const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+  const service: any = hostServiceFixture({
     disposed: new AbortController(), nativeRunDone: new Map(),
     assertExecution: vi.fn(), assertAccessSupported: vi.fn(), project: () => '/synthetic/project',
     accounts: { isBusy: () => false }, authorizeChoice: async () => ({ binding: 'synthetic', preference }),
@@ -57,7 +57,7 @@ it('authorized sibling job publication detaches only the old tool guard and reta
     },
   })
   await withinCliTool('source-run', async () => {
-    const receipt = JSON.parse(await service.launch(parent, 'sibling', 'synthetic', preference, 'accept-edits', undefined,
+    const receipt = JSON.parse(await service['host'].launch(parent, 'sibling', 'synthetic', preference, 'accept-edits', undefined,
       { initiator: { kind: 'worker', id: 'source', name: 'Source' } }))
     expect(receipt.workerId).toBe('sibling')
     await done

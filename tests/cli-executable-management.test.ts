@@ -70,7 +70,7 @@ function fixture() {
   })
   const agent = { id: 'parent', session: { header: { cwd: project, origin: 'user' } } }
   const service = Object.create(CliWorkerService.prototype) as CliWorkerService
-  Object.defineProperties(service, {
+  Object.defineProperties(service['host'], {
     ctx: {
       value: {
         typert: { lookups: new Map([['agent', { resolve: lookup }]]) },

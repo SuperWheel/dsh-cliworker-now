@@ -1,8 +1,8 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { CliWorkerService } from '../src/host/index.ts'
 import { WorkerRuntime } from '../src/host/runtime.ts'
 import { runAccess } from '../src/host/native-approval-policy.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
@@ -37,15 +37,15 @@ async function fixture() {
   const chooseDispatch = vi.fn(async (_agent, _signal, cli, _surface) => ({ preference: { cli, model: 'user-selected', effort: 'high' }, role: null }))
   const launch = vi.fn(async (...args: any[]) => {
     // Assert actual main policy, while publication itself remains simulated.
-    service.assertAccessSupported(args[0], args[3].cli, undefined)
+    service['host'].assertAccessSupported(args[0], args[3].cli, undefined)
     return 'synthetic-background-receipt'
   })
-  const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+  const service: any = hostServiceFixture({
     ctx: { tools: ctx.tools, agents: sessions, effect: (register: () => unknown) => register(), get: (name: string) => name === 'sessionQuery' ? { observeSession: async () => ({ header: {}, projections: { values: { subagentCatalog: [{ id: child.id, label: 'Native researcher' }] } }, [Symbol.dispose]() {} }) } : undefined },
     runtime, chooseDispatch, launch, runOrigins: new Map(), runQuestionSessions: new Map(), disposed: new AbortController(),
     dshSubagents,
   })
-  service.registerTools()
+  service['host'].registerTools()
   const call = (name: string, args: any = {}, caller = child) => ctx.tools.get(name)!.execute(args, { agent: caller, signal: new AbortController().signal } as any)
   const start = (args = {}, caller = child) => call('cliworker_start', { cli: 'codex', title: 'sibling', prompt: 'synthetic', ...args }, caller)
   const source = () => { const worker = { id: 'source', parentSessionId: 'main', agentName: 'Codex-1', runId: 'source-turn', level: 'full', harnessConversation: { sessionId: child.id }, status: 'running' }; workers.set(worker.id, worker); return worker }
@@ -56,19 +56,19 @@ async function fixture() {
 describe('direct children dispatch siblings under the main conversation', () => {
   it('states the actual tier in the dispatch receipt: parent preset when unset, saved level otherwise', async () => {
     const f = await fixture()
-    const unset = f.service.permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined })
+    const unset = f.service['host'].permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined })
     expect(unset).toEqual({ permission: { level: 'auto', name: '自动审批', source: 'parent' },
       permissionSummary: '本轮权限：自动审批（此 Worker 未选过档位，跟随主对话权限预设）' })
-    expect(f.service.permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: 'ask' }).permission)
+    expect(f.service['host'].permissionReceipt(f.parent, { preference: { cli: 'codebuddy', model: 'm', effort: 'default' }, mode: 'accept-edits', level: 'ask' }).permission)
       .toEqual({ level: 'ask', name: '询问', source: 'worker' })
     f.viewOnly()
-    expect(f.service.permissionReceipt(f.parent, { preference: { cli: 'codex', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined }).permission)
+    expect(f.service['host'].permissionReceipt(f.parent, { preference: { cli: 'codex', model: 'm', effort: 'default' }, mode: 'accept-edits', level: undefined }).permission)
       .toMatchObject({ level: 'ask', source: 'parent' })
     expect(f.ctx.tools.get('cliworker_start')!.description).toContain('permission')
   })
   it('uses main project and selected settings, ignores initiator model/role/session/level fields', async () => {
     const f = await fixture(), source = f.source()
-    f.service.runOrigins.set(source.runId, 'agent')
+    f.service['host'].runOrigins.set(source.runId, 'agent')
     await f.start({ model: 'invented', effort: 'low', role: { name: 'invented' }, sessionId: 'stolen', conversationId: 'stolen', level: 'full' })
     const args = f.launch.mock.calls[0]!
     expect(args[0]).toBe(f.parent)
@@ -76,11 +76,11 @@ describe('direct children dispatch siblings under the main conversation', () => 
     expect(args[5]).toBeUndefined()
     expect(args[6]).toEqual({ agentName: undefined, role: undefined, initiator: { kind: 'worker', id: 'source', name: 'Codex-1' } })
     expect(args[14]).toBe('main')
-    expect(runAccess(args[4], args[6].level, f.service.permissionState(args[0]))).toBe('workspace-write')
+    expect(runAccess(args[4], args[6].level, f.service['host'].permissionState(args[0]))).toBe('workspace-write')
   })
   it.each(['agent', 'user'])('routes %s-started Worker turn selection and later approvals to the same surface', async origin => {
     const f = await fixture(), source = f.source()
-    f.service.runOrigins.set(source.runId, origin)
+    f.service['host'].runOrigins.set(source.runId, origin)
     await f.start()
     const surface = origin === 'agent' ? f.parent : f.child
     expect(f.chooseDispatch.mock.calls[0]![3]).toBe(surface)
@@ -116,7 +116,7 @@ describe('direct children dispatch siblings under the main conversation', () => 
   it('applies main view-only policy even if the source has full access', async () => {
     const f = await fixture(); f.source(); f.viewOnly()
     await f.start()
-    expect(runAccess('accept-edits', undefined, f.service.permissionState(f.launch.mock.calls[0]![0]))).toBe('read-only')
+    expect(runAccess('accept-edits', undefined, f.service['host'].permissionState(f.launch.mock.calls[0]![0]))).toBe('read-only')
     await expect(f.start({ cli: 'hermes' })).rejects.toThrow('仅可查看')
   })
   it('selection cancellation does not publish a task', async () => {

@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
@@ -6,7 +7,6 @@ import { createUserMessage, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { SystemPrompt, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { CliWorkerService } from '../src/host/index.ts'
 import { CLI_IDS } from '../src/shared/types.ts'
 import {
   CLI_ALIASES,
@@ -219,7 +219,7 @@ async function fixture() {
   // The model tool continues through the shared path with origin 'agent'.
   const followup = vi.fn(async () => 'synthetic-followup-receipt')
   const resolveWorker = vi.fn(() => ({ id: 'synthetic-worker' }))
-  const service = Object.assign(Object.create(CliWorkerService.prototype), {
+  const service = hostServiceFixture({
     nativeRunDone: new Map(),
     ctx,
     chooseDispatch,
@@ -229,7 +229,7 @@ async function fixture() {
     runtime: { resolveWorker },
     disposed: new AbortController(),
   })
-  ;(CliWorkerService.prototype as any).registerTools.call(service)
+  ;service['host'].registerTools()
   const ask = vi.fn(async () => 'ordinary question remains available')
   ctx.tools.register(
     defineTool({

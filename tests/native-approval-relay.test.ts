@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -462,27 +463,27 @@ describe('Host permission boundaries (synthetic agents, no DSH Desktop)', () => 
   })
   it('仅可查看 admits CLI dispatch but still refuses project/account writes such as merging a copy', () => {
     const service: any = Object.create(CliWorkerService.prototype)
-    expect(() => service.assertExecution(agent('read-only'))).toThrow('只读权限')
-    expect(() => service.assertExecution(agent('read-only'), true)).not.toThrow()
-    expect(() => service.assertExecution(agent('workspace-write'))).not.toThrow()
+    expect(() => service['host'].assertExecution(agent('read-only'))).toThrow('只读权限')
+    expect(() => service['host'].assertExecution(agent('read-only'), true)).not.toThrow()
+    expect(() => service['host'].assertExecution(agent('workspace-write'))).not.toThrow()
   })
   it('a Worker-UI turn asks in the child with its policy refreshed, and a plan launch never asks', async () => {
     const request = vi.fn(async () => 'allowed-once')
     const parent = agent('workspace-write')
     const child = { id: 'child', session: { id: 'child-session' }, ctx: { get: () => ({ overrideOf: () => 'never', request }) } }
-    const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+    const service: any = hostServiceFixture({
       ctx: { agents: { get: (id: string) => (id === 'parent' ? parent : id === 'child' ? child : undefined) } },
       disposed: new AbortController(),
     })
     const worker = { id: 'worker-synthetic', agentName: 'w', parentSessionId: 'parent', runId: 'run-1', preference: { cli: 'kimi' }, project: '/p', title: 'w',
       harnessConversation: { sessionId: 'child' } }
     const ask = { kind: 'network', summary: 'x', allowSession: false }
-    expect(await service.decideNativeApproval(worker, ask, new AbortController().signal, 'accept-edits'))
+    expect(await service['host'].decideNativeApproval(worker, ask, new AbortController().signal, 'accept-edits'))
       .toEqual({ decision: 'allow-once', source: 'user' })
     // Launched under full access (child pinned to never), parent now asks: the child asks too.
     expect(setApprovalPolicy).toHaveBeenCalledWith(child.session, 'ask')
     expect(request).toHaveBeenCalledTimes(1)
-    expect(await service.decideNativeApproval(worker, ask, new AbortController().signal, 'plan'))
+    expect(await service['host'].decideNativeApproval(worker, ask, new AbortController().signal, 'plan'))
       .toEqual({ decision: 'deny', source: 'plan' })
     expect(request).toHaveBeenCalledTimes(1)
   })
@@ -537,7 +538,7 @@ describe('DSH tool approvals from the tool bridge follow the turn origin', () =>
       })[name] },
     }
     const child = { id: 'child' }
-    const service: any = Object.assign(Object.create(CliWorkerService.prototype), {
+    const service: any = hostServiceFixture({
       ctx: { agents: { get: (id: string) => (id === 'parent' ? parent : id === 'child' ? child : undefined) } },
       disposed: new AbortController(),
       runOrigins: new Map([['run-1', origin]]),
@@ -546,7 +547,7 @@ describe('DSH tool approvals from the tool bridge follow the turn origin', () =>
       runtime: { harnessApproval: (...args: any[]) => (WorkerRuntime.prototype as any).harnessApproval.apply(shell, args) },
     })
     const raise = (next: () => Promise<any>, extra: Record<string, unknown> = {}) =>
-      service.answerHarnessApproval({ agent: child, toolName: 'bash', callId: 'cliworker:cwn-harness-1', ...escalation, ...extra }, next)
+      service['host'].answerHarnessApproval({ agent: child, toolName: 'bash', callId: 'cliworker:cwn-harness-1', ...escalation, ...extra }, next)
     return { events, worker, task, ask, child, raise }
   }
 
@@ -640,13 +641,13 @@ it('sibling native approvals use the captured initiator surface, without inherit
   })[name] } }
   const source: any = { id: 'source-child', session: {}, ctx: { get: () => ({ overrideOf: () => 'ask', request }) } }
   const agents = new Map([['main', parent], ['source-child', source]])
-  const service: any = Object.assign(Object.create(CliWorkerService.prototype), { ctx: { agents }, disposed: new AbortController(),
+  const service: any = hostServiceFixture({ ctx: { agents }, disposed: new AbortController(),
     runOrigins: new Map([['sibling-run', 'agent']]), runQuestionSessions: new Map([['sibling-run', 'source-child']]) })
   const worker: any = { id: 'sibling', runId: 'sibling-run', parentSessionId: 'main', project: '/fixture', preference: { cli: 'codex' },
     initiator: { kind: 'worker', id: 'source', name: 'Source' }, harnessConversation: { sessionId: 'sibling-child' } }
-  expect(await service.decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')).toEqual({ decision: 'allow-once', source: 'user' })
+  expect(await service['host'].decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')).toEqual({ decision: 'allow-once', source: 'user' })
   expect(request).toHaveBeenCalledWith(expect.objectContaining({ agent: source })); expect(ask).not.toHaveBeenCalled()
-  service.runQuestionSessions.set('sibling-run', 'main')
-  await service.decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')
+  service['host'].runQuestionSessions.set('sibling-run', 'main')
+  await service['host'].decideNativeApproval(worker, { kind: 'tool', summary: 'synthetic edit' }, new AbortController().signal, 'accept-edits')
   expect(ask).toHaveBeenCalledWith(expect.objectContaining({ agent: parent }))
 })

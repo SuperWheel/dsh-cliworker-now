@@ -1,5 +1,5 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { expect, it, vi } from 'vitest'
-import { CliWorkerService } from '../src/host/index.ts'
 import type { DispatchSetup } from '../src/host/storage.ts'
 
 // Real registered tool entry; complete setup and publication are synthetic.
@@ -24,7 +24,7 @@ function setup() {
     disposed: new AbortController(),
     launch,
   }
-  ;(CliWorkerService.prototype as any).registerTools.call(service)
+  hostServiceFixture()['host'].registerTools.call(service)
   const controller = new AbortController(),
     agent = { id: 'synthetic-parent' }
   const start = () =>

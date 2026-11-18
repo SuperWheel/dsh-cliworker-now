@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟：真实 Host/AccountManager/连接缓存，只有账号读取与 PTY 是替身；不访问真实账号。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
@@ -39,13 +40,13 @@ async function fixture(cli: 'codex' | 'codebuddy') {
   const runtime = new WorkerRuntime(new WorkerStorage(root), backend, options)
   const accounts = new AccountManager(backend, options, async () => undefined, (id, error) => runtime.blockCatalogOnCleanup(id, error))
   const parent = { id: 'simulation-parent', session: { header: { cwd: root } }, ctx: { effect: () => () => {} } }
-  const host = Object.assign(Object.create(CliWorkerService.prototype), {
+  const host = hostServiceFixture({
     disposed, options, backend, accounts, accountParents: new Map(), parent: async () => parent, assertExecution: vi.fn(),
     runtime,
   }) as CliWorkerService
   // Same reservation invalidation hook as the production Host constructor.
-  const off = accounts.subscribeActivity(id => (host as any).invalidateSettingsDisplay(id))
-  const cache = (host as any).connectionCache()
+  const off = accounts.subscribeActivity(id => (host as any)['host'].invalidateSettingsDisplay(id))
+  const cache = (host as any)['host'].connectionCache()
   cleanups.push(async () => { disposed.abort(); off(); await accounts.close(); await runtime.close(); await cache.close(); rmSync(root, { recursive: true, force: true }) })
   await cache.read(cli, 'catalog', signal, async () => ({ catalog: { cli, models: [], notice: '模拟' }, binding: 'simulated' }))
   return { host, accounts, cache, root, signal, backend, terminal, pause: () => runtime.blockCatalogOnCleanup(cli, new ProcessCleanupUnconfirmedError()) }

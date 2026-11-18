@@ -125,7 +125,7 @@ function fixture() {
     },
   }
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, {
+  Object.assign(service['host'], {
     nativeRunDone: new Map(),
     runtime,
     backend,
@@ -397,11 +397,11 @@ describe('private account admission and reversible management', () => {
     const f = fixture(),
       worker = storedWorker(f.project)
     f.storage.save(worker)
-    f.service.displayedBindings = new Map([['["parent","antigravity"]', 'synthetic-account-a']])
+    f.service['host'].displayedBindings = new Map([['["parent","antigravity"]', 'synthetic-account-a']])
     await expect(
       f.service.configureWorker('parent', worker.id, JSON.stringify(worker.preference), f.signal),
     ).rejects.toThrow('模型目录已失效')
-    expect(f.service.querySelection).not.toHaveBeenCalled()
+    expect(f.service['host'].querySelection).not.toHaveBeenCalled()
     expect(f.storage.accountBinding(worker.id)).toBeUndefined()
     expect(f.runtime.get('parent', worker.id).preference).toEqual(worker.preference)
   })
@@ -421,7 +421,7 @@ describe('explicit legacy restart Remote', () => {
     )
     expect(receipt.workerId).not.toBe(old.id)
     expect(receipt.cli).toBe('antigravity')
-    expect(f.service.querySelection).toHaveBeenCalledWith(
+    expect(f.service['host'].querySelection).toHaveBeenCalledWith(
       old.preference,
       f.backend,
       DEFAULT_CONFIG,
@@ -496,7 +496,7 @@ describe('explicit legacy restart Remote', () => {
     const f = fixture(),
       worker = storedWorker(f.project)
     f.storage.save(worker)
-    f.service.querySelection.mockImplementationOnce(async (preference) => {
+    f.service['host'].querySelection.mockImplementationOnce(async (preference) => {
       f.runtime.deleteWorker('parent', worker.id)
       return { binding: 'synthetic-account-a', preference }
     })
@@ -514,7 +514,7 @@ describe('explicit legacy restart Remote', () => {
         worker = storedWorker(f.project)
       f.storage.save(worker)
       const controller = new AbortController()
-      f.service.querySelection.mockImplementationOnce(async (preference) => {
+      f.service['host'].querySelection.mockImplementationOnce(async (preference) => {
         if (change === 'bound') f.storage.bindAccount(worker.id, 'synthetic-account-a')
         else controller.abort()
         return { binding: 'synthetic-account-a', preference }

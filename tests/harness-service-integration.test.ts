@@ -197,9 +197,9 @@ it('runs real native child submissions through CLI once and preserves owned clea
     graceMs: 100,
   })
   const service = ctx.cliworker as any
-  await vi.waitFor(() => expect(service.harnessConversation).toBeDefined())
+  await vi.waitFor(() => expect(service['host'].harnessConversation).toBeDefined())
   const receipt = JSON.parse(
-    await service.launch(
+    await service['host'].launch(
       parent.agent,
       'Synthetic service task',
       'first',
@@ -211,12 +211,12 @@ it('runs real native child submissions through CLI once and preserves owned clea
     ),
   )
   await vi.waitFor(() =>
-    expect(leases.closes[0], service.runtime.get(parent.agent.id, receipt.workerId).error).toBeDefined(),
+    expect(leases.closes[0], service['host'].runtime.get(parent.agent.id, receipt.workerId).error).toBeDefined(),
   )
   await vi.waitFor(() => expect(leases.closes[0]).toHaveBeenCalledTimes(1))
   expect(calls).toHaveLength(1)
   expect(calls[0].request.prompt).toBe('first')
-  const activeWorker = service.runtime.get(parent.agent.id, receipt.workerId)
+  const activeWorker = service['host'].runtime.get(parent.agent.id, receipt.workerId)
   expect(activeWorker.status).toBe('running')
   expect(activeWorker.harnessConversation?.sessionId).toBeDefined()
   const child = ctx.agents.get(SessionId(activeWorker.harnessConversation.sessionId))!
@@ -234,7 +234,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   releaseFirst.resolve()
   await jobRuns[0].done
   await child.whenIdle()
-  expect(service.runtime.get(parent.agent.id, receipt.workerId).status).toBe('completed')
+  expect(service['host'].runtime.get(parent.agent.id, receipt.workerId).status).toBe('completed')
   expect(calls).toHaveLength(1)
   expect(
     child.session
@@ -262,7 +262,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   expect(calls[1].request.prompt).toBe('native continuation')
   expect(activeWorker.harnessConversation.capabilities.send).toBe(true)
   expect(child.inbox.nextTurn).toHaveLength(0)
-  await service.launch(
+  await service['host'].launch(
     parent.agent,
     'Synthetic service task',
     'worker continuation',
@@ -294,7 +294,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
 
   // Old direct/queue controls still launch only through WorkerRuntime. Their
   // native display attachment must neither disappear nor launch a duplicate.
-  await service.launch(
+  await service['host'].launch(
     parent.agent,
     'Synthetic service task',
     'external direct',
@@ -307,11 +307,11 @@ it('runs real native child submissions through CLI once and preserves owned clea
   await jobRuns[3].done
   await child.whenIdle()
   expect(calls).toHaveLength(4)
-  service.runtime.queueFollowup(
+  service['host'].runtime.queueFollowup(
     parent.agent.id,
     activeWorker.id,
     'external queue',
-    service.runtime.get(parent.agent.id, activeWorker.id).runId,
+    service['host'].runtime.get(parent.agent.id, activeWorker.id).runId,
     randomUUID(),
     true,
   )
@@ -342,7 +342,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
     }),
   )
   const planReceipt = JSON.parse(
-    await service.launch(
+    await service['host'].launch(
       parent.agent,
       'Synthetic plan',
       'plan input',
@@ -354,7 +354,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
     ),
   )
   await jobRuns[5].done
-  const planWorker = service.runtime.get(parent.agent.id, planReceipt.workerId)
+  const planWorker = service['host'].runtime.get(parent.agent.id, planReceipt.workerId)
   const planChild = ctx.agents.get(SessionId(planWorker.harnessConversation.sessionId))!
   await planChild.whenIdle()
   const planTools = await leases.options.at(-1).tools()
@@ -372,8 +372,8 @@ it('runs real native child submissions through CLI once and preserves owned clea
   // An invalid native log can fail Client retain.ready before any composer is
   // shown. Explicit repair therefore owns an idle Runtime preparation lease;
   // it must succeed without a fresh user prompt or native CLI process.
-  const oldDisplay = service.runtime.get(parent.agent.id, activeWorker.id).harnessConversation.sessionId
-  await service.harnessConversation.drainChildren(parent.agent, [SessionId(oldDisplay)])
+  const oldDisplay = service['host'].runtime.get(parent.agent.id, activeWorker.id).harnessConversation.sessionId
+  await service['host'].harnessConversation.drainChildren(parent.agent, [SessionId(oldDisplay)])
   const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
   const corrupt = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (id, options) => {
     if (id === oldDisplay)
@@ -393,10 +393,10 @@ it('runs real native child submissions through CLI once and preserves owned clea
     await display.whenIdle()
     expect(repaired.sessionId).not.toBe(oldDisplay)
     expect(calls).toHaveLength(6)
-    expect(service.runtime.get(parent.agent.id, activeWorker.id).conversationId).toBe(
+    expect(service['host'].runtime.get(parent.agent.id, activeWorker.id).conversationId).toBe(
       'synthetic-native-session',
     )
-    expect(service.runtime.snapshot(parent.agent.id, activeWorker.id).selectedBusy).toBe(false)
+    expect(service['host'].runtime.snapshot(parent.agent.id, activeWorker.id).selectedBusy).toBe(false)
   } finally {
     corrupt.mockRestore()
   }
@@ -415,16 +415,16 @@ it('runs real native child submissions through CLI once and preserves owned clea
         !message.content[0].text.startsWith('cliworker:attach-existing-run:')
       )
         return
-      const pending = [...service.runtime.storage.workers.values()].find(
+      const pending = [...service['host'].runtime.storage.workers.values()].find(
         (worker: Worker) => worker.title === 'Stop during child publication',
       ) as Worker | undefined
-      if (pending) stopped = service.runtime.stop(parent.agent.id, pending.id)
+      if (pending) stopped = service['host'].runtime.stop(parent.agent.id, pending.id)
     },
     { global: true },
   )
   try {
     const stopReceipt = JSON.parse(
-      await service.launch(
+      await service['host'].launch(
         parent.agent,
         'Stop during child publication',
         'must never spawn',
@@ -438,7 +438,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
     await vi.waitFor(() => expect(stopped).toBeDefined())
     await stopped
     await jobRuns[6].done
-    expect(service.runtime.get(parent.agent.id, stopReceipt.workerId).status).toBe('interrupted')
+    expect(service['host'].runtime.get(parent.agent.id, stopReceipt.workerId).status).toBe('interrupted')
     expect(calls).toHaveLength(6)
     expect(leases.closes.every((close) => close.mock.calls.length === 1)).toBe(true)
   } finally {
@@ -446,11 +446,11 @@ it('runs real native child submissions through CLI once and preserves owned clea
   }
   // Once Runtime has admitted a request, a failed job binding must cancel and
   // drain it before the caller sees an error, even though no receipt was sent.
-  const brokenJob = vi.spyOn(service.runtime, 'attachJob').mockImplementationOnce(() => {
+  const brokenJob = vi.spyOn(service['host'].runtime, 'attachJob').mockImplementationOnce(() => {
     throw new Error('Synthetic job binding write failed')
   })
   try {
-    await expect(service.launch(
+    await expect(service['host'].launch(
       parent.agent,
       'Failed job binding',
       'must drain without a receipt',
@@ -460,12 +460,12 @@ it('runs real native child submissions through CLI once and preserves owned clea
       undefined,
       new AbortController().signal,
     )).rejects.toThrow('Synthetic job binding write failed')
-    const admitted = [...service.runtime.storage.workers.values()].find(
+    const admitted = [...service['host'].runtime.storage.workers.values()].find(
       (worker: any) => worker.title === 'Failed job binding',
     ) as Worker
     expect(admitted.status).toBe('interrupted')
-    expect(service.runtime.snapshot(parent.agent.id, admitted.id).selectedBusy).toBe(false)
-    expect(service.nativeRunDone.has(admitted.runId)).toBe(false)
+    expect(service['host'].runtime.snapshot(parent.agent.id, admitted.id).selectedBusy).toBe(false)
+    expect(service['host'].nativeRunDone.has(admitted.runId)).toBe(false)
     expect(calls).toHaveLength(6)
   } finally {
     brokenJob.mockRestore()
@@ -473,7 +473,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   // 仅可查看 admits the first level, except CLIs whose first level would not ask first.
   setSandboxMode(parent.agent.session, 'read-only')
   await expect(
-    service.launch(
+    service['host'].launch(
       parent.agent,
       'Rejected write',
       'blocked',
@@ -486,7 +486,7 @@ it('runs real native child submissions through CLI once and preserves owned clea
   ).rejects.toThrow('仅可查看；Antigravity 无法把授权请求转给你')
   for (const [cli, message] of [['hermes', 'Hermes 没有可询问的档位'], ['kimi', 'Kimi 的第一项会自动批准 Git 仓库内的编辑']] as const)
     await expect(
-      service.launch(parent.agent, 'Rejected read-only', 'blocked', { ...activeWorker.preference, cli },
+      service['host'].launch(parent.agent, 'Rejected read-only', 'blocked', { ...activeWorker.preference, cli },
         'plan', undefined, undefined, new AbortController().signal),
     ).rejects.toThrow(message)
   expect(calls).toHaveLength(6)

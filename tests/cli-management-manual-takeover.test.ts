@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟：发布清单、下载、CLI 进程与版本均为夹具；仅写测试临时目录。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
@@ -145,7 +146,7 @@ it('模拟：非官方准备阶段不切换，服务再次校验非法 CLI', asy
 it('模拟：Gateway 校验会话、权限、CLI 与操作 ID，返回明确状态', async () => {
   const management = { requestTakeover: vi.fn(async (_cli, operationId) => ({ operationId, status: 'finished' })) }
   const parent = vi.fn(async () => ({})), assertExecution = vi.fn()
-  const host = Object.assign(Object.create(CliWorkerService.prototype), { cliManagement: management, parent, assertExecution }) as CliWorkerService
+  const host = hostServiceFixture({ cliManagement: management, parent, assertExecution }) as CliWorkerService
   const signal = new AbortController().signal
   expect(JSON.parse(await host.requestCliTakeover('模拟parent', 'claude', '模拟op', signal))).toEqual({ operationId: '模拟op', status: 'finished' })
   expect(parent).toHaveBeenCalledWith('模拟parent'); expect(assertExecution).toHaveBeenCalledOnce()

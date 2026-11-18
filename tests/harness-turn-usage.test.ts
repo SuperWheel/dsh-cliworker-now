@@ -197,7 +197,7 @@ it('refreshes an exact child on native turn settlement and releases its subscrip
   let onEvent: any; const off = vi.fn(), release = vi.fn()
   const snapshot = { selected: worker, selectedBusy: false, timeline: [], workers: [worker], revision: 1 }
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, { ctx: { on: (_name: string, listener: any) => { onEvent = listener; return off }, get: () => undefined },
+  Object.assign(service['host'], { ctx: { on: (_name: string, listener: any) => { onEvent = listener; return off }, get: () => undefined },
     runtime: { subscribe: () => release, snapshot: () => snapshot, runUsage: () => usage(), storage: { history: () => [] } },
     disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [record] } })
   const controller = new AbortController(), iterator = service.watch(worker.parentSessionId, worker.id, controller.signal)
@@ -214,7 +214,7 @@ it('Gateway watch publishes only the selected child association and omits ordina
   const source = { ...worker }, snapshot = { selected: source, selectedBusy: false, timeline: [], workers: [source], revision: 1 }
   const service: any = Object.create(CliWorkerService.prototype)
   const runtime = { subscribe: () => () => {}, snapshot: () => snapshot, runUsage: vi.fn(() => usage()), storage: { history: vi.fn(() => []) } }
-  Object.assign(service, { ctx: { on: () => () => {}, get: () => undefined }, runtime, disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [record] } })
+  Object.assign(service['host'], { ctx: { on: () => () => {}, get: () => undefined }, runtime, disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [record] } })
   const controller = new AbortController(), iterator = service.watch(worker.parentSessionId, worker.id, controller.signal)
   const first = JSON.parse((await iterator.next()).value)
   expect(first.externalTurnUsage['9']).toMatchObject({ basis: 'external-run', runIds: [worker.runId] })
@@ -300,7 +300,7 @@ describe('read-only legacy Hermes turn recovery from official Session events', (
     const f = legacyHermes(), dispose = vi.fn(), observe = vi.fn(async () => ({ ...f.observation, [Symbol.dispose]: dispose }))
     const service: any = Object.create(CliWorkerService.prototype), before = structuredClone(f.record)
     const snapshot = { selected: f.worker, selectedBusy: false, timeline: [], workers: [f.worker], revision: 1 }
-    Object.assign(service, { ctx: { on: () => () => {}, get: (name: string) => name === 'sessionQuery' ? { observeSession: observe } : undefined },
+    Object.assign(service['host'], { ctx: { on: () => () => {}, get: (name: string) => name === 'sessionQuery' ? { observeSession: observe } : undefined },
       runtime: { subscribe: () => () => {}, snapshot: () => snapshot, storage: { history: () => f.events }, runUsage: () => ({ scope: 'run', input: 13, output: 4, cacheRead: 2, cacheWrite: 1, total: 17 }) },
       disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [f.record] } })
     const controller = new AbortController(), iterator = service.watch(f.worker.parentSessionId, f.worker.id, controller.signal)
@@ -313,7 +313,7 @@ describe('read-only legacy Hermes turn recovery from official Session events', (
   it('a failed official read stays unknown without mutating the old binding or falling back to text', async () => {
     const f = legacyHermes(), service: any = Object.create(CliWorkerService.prototype), before = structuredClone(f.record)
     const snapshot = { selected: f.worker, selectedBusy: false, timeline: [], workers: [f.worker], revision: 1 }
-    Object.assign(service, { ctx: { on: () => () => {}, get: () => ({ observeSession: async () => { throw new Error('SIMULATED corrupt read') } }) },
+    Object.assign(service['host'], { ctx: { on: () => () => {}, get: () => ({ observeSession: async () => { throw new Error('SIMULATED corrupt read') } }) },
       runtime: { subscribe: () => () => {}, snapshot: () => snapshot, storage: { history: () => f.events }, runUsage: () => usage() },
       disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [f.record] } })
     const controller = new AbortController(), iterator = service.watch(f.worker.parentSessionId, f.worker.id, controller.signal)

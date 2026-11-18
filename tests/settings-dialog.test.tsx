@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -3595,7 +3596,7 @@ describe('settings connection snapshots from the Host (simulated)', () => {
     const root = mkdtempSync(join(tmpdir(), 'settings-dialog-simulated-')), cache = new SettingsConnectionCache(), control = new AbortController()
     const account = { cli, installed: true, state: 'unconfigured' as const, summary: '模拟未登录', actions: accountActions }
     const read = vi.fn(async () => account)
-    const host = Object.assign(Object.create(CliWorkerService.prototype), {
+    const host = hostServiceFixture({
       connections: cache, disposed: control, options: { stateDirectory: root },
       // 模拟：主对话没有工作目录，设置页连接状态与项目无关。
       parent: async () => ({ session: { header: {} } }),

@@ -91,7 +91,7 @@ function fixture(cli: CliId = 'codex') {
     if (id !== worker.parentSessionId) throw new Error('模拟父会话无权访问')
     return { id }
   })
-  Object.assign(service, { runtime, parent })
+  Object.assign(service['host'], { runtime, parent })
   const signal = new AbortController().signal
   const submit = (prompt: string) => runtime.submit(worker.parentSessionId, project, worker.title,
     prompt, worker.preference, worker.mode, worker.id)

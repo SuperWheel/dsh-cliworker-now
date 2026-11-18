@@ -175,7 +175,7 @@ function fixture(
     },
   }
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, {
+  Object.assign(service['host'], {
     nativeRunDone: new Map(),
     runtime,
     backend,
@@ -201,7 +201,7 @@ function fixture(
     ),
   })
   runtime.setFollowupLauncher(async (current, item, admission, signal) => {
-    await service.launch(
+    await service['host'].launch(
       agent,
       current.title,
       item.prompt,
@@ -243,7 +243,7 @@ it('drains two messages FIFO after clean completion without a subscribed Panel, 
   second.finish()
   const third = await f.ready(3)
   expect(third.spec.argv.at(-1)).toBe('任务：\nthird')
-  expect(f.service.querySelection).toHaveBeenCalledTimes(2)
+  expect(f.service['host'].querySelection).toHaveBeenCalledTimes(2)
   third.finish()
   await vi.waitFor(() => expect(f.worker.status).toBe('completed'))
   expect(f.items()).toEqual([])
@@ -262,7 +262,7 @@ it('waits for process-scope cleanup, and preserves messages when cleanup fails',
   cleanupGate.resolve()
   expect((await task.done).status).toBe('failed')
   expect(f.items()[0]).toMatchObject({ prompt: 'must not run', state: 'paused' })
-  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service['host'].querySelection).not.toHaveBeenCalled()
 })
 
 it('pauses failures and stop, keeps appended text paused, and resumes only on explicit retry', async () => {
@@ -291,7 +291,7 @@ it('never follows an uncertain native outcome automatically', async () => {
   expect((await first.done).status).toBe('uncertain')
   expect(f.items()[0]).toMatchObject({ state: 'paused', prompt: 'wait for verification' })
   expect(f.items()[0]?.pauseReason).toContain('结果待核实')
-  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service['host'].querySelection).not.toHaveBeenCalled()
 })
 
 it('retains an unsent message if no native conversation was received', async () => {
@@ -383,12 +383,12 @@ it('preserves text when the actual launch rejects changed account, model or plan
     first = f.start()
   await f.ready(1)
   f.queue('retain rejected message')
-  f.service.querySelection.mockRejectedValueOnce(new Error('账号或模型已变更'))
+  f.service['host'].querySelection.mockRejectedValueOnce(new Error('账号或模型已变更'))
   f.calls[0]!.finish()
   await first.done
   await vi.waitFor(() => expect(f.items()[0]?.state).toBe('paused'))
   expect(f.items()[0]?.pauseReason).toContain('账号或模型已变更')
-  f.service.assertExecution.mockImplementation(() => {
+  f.service['host'].assertExecution.mockImplementation(() => {
     throw new Error('规划模式不可执行')
   })
   f.runtime.retryQueuedFollowups('parent', f.worker.id, f.worker.runId)
@@ -907,15 +907,15 @@ it.each(['send', 'card'] as const)(
             f.worker.runId,
             new AbortController().signal,
           )
-    f.service.assertExecution.mockImplementation(() => {
+    f.service['host'].assertExecution.mockImplementation(() => {
       throw new Error('planning blocked')
     })
     await expect(call()).rejects.toThrow('planning blocked')
-    f.service.assertExecution.mockReset()
-    f.service.project = () => '/another-project'
+    f.service['host'].assertExecution.mockReset()
+    f.service['host'].project = () => '/another-project'
     await expect(call()).rejects.toThrow('项目已变更')
-    f.service.project = () => f.worker.project
-    f.service.accounts.isBusy = () => true
+    f.service['host'].project = () => f.worker.project
+    f.service['host'].accounts.isBusy = () => true
     await expect(call()).rejects.toThrow('账号终端')
     expect(f.worker.status).toBe('running')
     expect(f.items()).toHaveLength(1)
@@ -1080,7 +1080,7 @@ it('can start again after cancellation before native account binding, without by
   rmSync(join(f.directory, `${f.worker.id}.account-binding.json`))
   await f.service.followup('parent', f.worker.id, 'new after preparation stop', new AbortController().signal)
   const next = await f.ready(1)
-  expect(f.service.querySelection).toHaveBeenCalled()
+  expect(f.service['host'].querySelection).toHaveBeenCalled()
   expect(next.spec.argv).not.toContain('--conversation')
   expect(f.storage.accountBinding(f.worker.id)).toBe('synthetic-account')
   next.finish()
@@ -1114,7 +1114,7 @@ it('waits for cancelled Gateway preparation cleanup before Stop completes or ano
     signal = new AbortController()
   const send = f.service.followup('parent', f.worker.id, 'cancel preparation', signal.signal)
   const rejected = expect(send).rejects.toThrow()
-  await vi.waitFor(() => expect(f.service.querySelection).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1))
   signal.abort(new Error('synthetic client disconnected'))
   let stopped = false
   const stop = f.runtime.stop('parent', f.worker.id).then(() => {
@@ -1145,7 +1145,7 @@ it('waits for cancelled Gateway preparation cleanup before Stop completes or ano
 it('blocks later messages if cancelled Gateway preparation cannot confirm cleanup', async () => {
   const gate = deferred(),
     f = fixture()
-  f.service.querySelection.mockImplementation(async () => {
+  f.service['host'].querySelection.mockImplementation(async () => {
     await gate.promise
     throw new ProcessCleanupUnconfirmedError()
   })
@@ -1156,7 +1156,7 @@ it('blocks later messages if cancelled Gateway preparation cannot confirm cleanu
     new AbortController().signal,
   )
   const rejected = expect(send).rejects.toThrow(ProcessCleanupUnconfirmedError)
-  await vi.waitFor(() => expect(f.service.querySelection).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1))
   const stop = f.runtime.stop('parent', f.worker.id)
   const stopRejected = expect(stop).rejects.toThrow('清理')
   gate.resolve()
@@ -1251,7 +1251,7 @@ it('keeps the accepted priority in conversation when permission fails after its 
       new AbortController().signal,
     ),
   ) as { queuedId: string; revision: number }
-  f.service.assertExecution.mockImplementation(() => {
+  f.service['host'].assertExecution.mockImplementation(() => {
     throw new Error('synthetic permission changed')
   })
   selectionGate.resolve()
@@ -1282,19 +1282,19 @@ it('replaces metadata preparation with the latest request after the old cleanup 
   f.start()
   await f.ready(1)
   const ordinary = f.queue('ordinary sibling')
-  f.service.querySelection.mockImplementationOnce(async () => {
+  f.service['host'].querySelection.mockImplementationOnce(async () => {
     await gate.promise
     throw new Error('late old preparation rejection')
   })
   f.runtime.interruptMessage('parent', f.worker.id, 'prepare A', a, client, 1)
-  await vi.waitFor(() => expect(f.service.querySelection).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1))
   f.runtime.interruptMessage('parent', f.worker.id, 'prepare B', b, client, 2)
   f.runtime.interruptMessage('parent', f.worker.id, 'prepare C', c, client, 3)
-  expect(f.service.querySelection).toHaveBeenCalledTimes(1)
+  expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1)
   expect(f.calls).toHaveLength(1)
   gate.resolve()
   expect((await f.ready(2)).spec.argv.at(-1)).toBe('任务：\nprepare C')
-  expect(f.service.querySelection).toHaveBeenCalledTimes(2)
+  expect(f.service['host'].querySelection).toHaveBeenCalledTimes(2)
   expect(f.items()).toMatchObject([{ id: ordinary.id, state: 'pending' }])
   expect(
     f.runtime.snapshot('parent', f.worker.id).timeline.filter((row) => row.queuedFollowupId),
@@ -1454,12 +1454,12 @@ it('keeps later priority blocked when superseded metadata cannot confirm cleanup
     b = randomUUID()
   f.start()
   await f.ready(1)
-  f.service.querySelection.mockImplementationOnce(async () => {
+  f.service['host'].querySelection.mockImplementationOnce(async () => {
     await gate.promise
     throw new ProcessCleanupUnconfirmedError()
   })
   f.runtime.interruptMessage('parent', f.worker.id, 'old metadata', a, client, 1)
-  await vi.waitFor(() => expect(f.service.querySelection).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1))
   f.runtime.interruptMessage('parent', f.worker.id, 'must not spawn', b, client, 2)
   gate.resolve()
   await vi.waitFor(() =>
@@ -1725,10 +1725,10 @@ it('correlates direct submissions by id and preserves two separate identical-tex
 it('reserves a unified Remote before parent lookup and cancels both retries when Stop wins that lookup', async () => {
   const f = fixture(),
     parentGate = deferred<any>(),
-    agent = await f.service.parent('parent')
+    agent = await f.service['host'].parent('parent')
   cleanups.push(() => parentGate.resolve(agent))
-  f.service.parent.mockClear()
-  f.service.parent.mockImplementationOnce(() => parentGate.promise)
+  f.service['host'].parent.mockClear()
+  f.service['host'].parent.mockImplementationOnce(() => parentGate.promise)
   const request = JSON.stringify({
     id: randomUUID(),
     clientId: randomUUID(),
@@ -1746,12 +1746,12 @@ it('reserves a unified Remote before parent lookup and cancels both retries when
     selectedBusy: true,
     selectedBusyReason: 'accepting',
   })
-  expect(f.service.parent).toHaveBeenCalledTimes(1)
+  expect(f.service['host'].parent).toHaveBeenCalledTimes(1)
   await f.runtime.stop('parent', f.worker.id)
   parentGate.resolve(agent)
   await Promise.all([firstRejected, duplicateRejected])
   expect(f.calls).toHaveLength(0)
-  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service['host'].querySelection).not.toHaveBeenCalled()
   expect(f.runtime.snapshot('parent', f.worker.id).selectedBusy).toBe(false)
 })
 
@@ -1771,7 +1771,7 @@ it('deduplicates unified Remote admission and a later retry with the same direct
   })
   const first = f.service.submitMessage('parent', f.worker.id, request, new AbortController().signal)
   const duplicate = f.service.submitMessage('parent', f.worker.id, request, new AbortController().signal)
-  await vi.waitFor(() => expect(f.service.querySelection).toHaveBeenCalledTimes(1))
+  await vi.waitFor(() => expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1))
   expect(f.runtime.snapshot('parent', f.worker.id)).toMatchObject({
     selectedBusy: true,
     selectedBusyReason: 'preparing',
@@ -1784,7 +1784,7 @@ it('deduplicates unified Remote admission and a later retry with the same direct
   )
   expect(receipt).toMatchObject({ workerId: f.worker.id, runId: f.worker.runId })
   expect(f.calls).toHaveLength(1)
-  expect(f.service.querySelection).toHaveBeenCalledTimes(1)
+  expect(f.service['host'].querySelection).toHaveBeenCalledTimes(1)
   expect(
     f.storage.history(f.worker.id).filter((event) => event.kind === 'user' && event.queuedFollowupId === id),
   ).toHaveLength(1)
@@ -1795,10 +1795,10 @@ it('uses the unified Remote click-time mode after settings change during parent 
   const f = fixture(),
     first = f.start(),
     parentGate = deferred<any>(),
-    agent = await f.service.parent('parent')
+    agent = await f.service['host'].parent('parent')
   cleanups.push(() => parentGate.resolve(agent))
   await f.ready(1)
-  f.service.parent.mockImplementationOnce(() => parentGate.promise)
+  f.service['host'].parent.mockImplementationOnce(() => parentGate.promise)
   const id = randomUUID(),
     request = JSON.stringify({
       id,
@@ -1860,10 +1860,10 @@ it('upgrades a unified queue Remote before its parent lookup returns without rep
   const f = fixture(),
     first = f.start(),
     gate = deferred<any>(),
-    agent = await f.service.parent('parent')
+    agent = await f.service['host'].parent('parent')
   cleanups.push(() => gate.resolve(agent))
   await f.ready(1)
-  f.service.parent.mockImplementationOnce(() => gate.promise)
+  f.service['host'].parent.mockImplementationOnce(() => gate.promise)
   const request = {
     id: randomUUID(),
     clientId: randomUUID(),
@@ -2075,10 +2075,10 @@ it('rejects a dedicated steering Remote that loses its target during parent look
     f = fixture({ cli: 'pi', steer }),
     first = f.start()
   await f.ready(1)
-  const agent = await f.service.parent('parent'),
+  const agent = await f.service['host'].parent('parent'),
     gate = deferred<any>()
   cleanups.push(() => gate.resolve(agent))
-  f.service.parent.mockImplementationOnce(() => gate.promise)
+  f.service['host'].parent.mockImplementationOnce(() => gate.promise)
   const sending = f.service.steerMessage(
     'parent',
     f.worker.id,

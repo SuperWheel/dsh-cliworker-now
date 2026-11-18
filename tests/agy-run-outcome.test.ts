@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,7 +9,6 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { AgyProtocol, type EventInput } from '../src/host/protocol.ts'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import { DEFAULT_CONFIG, type ProcessBackend } from '../src/host/process.ts'
 import { active, foldEvents, type Worker, type WorkerEvent } from '../src/shared/types.ts'
 
@@ -336,7 +336,7 @@ describe('AGY runtime outcomes', () => {
         } as Record<string, unknown>)[name],
       },
     }
-    const service = Object.assign(Object.create(CliWorkerService.prototype), {
+    const service = hostServiceFixture({
       nativeRunDone: new Map(),
       runtime: f.runtime,
       options: DEFAULT_CONFIG,
@@ -347,7 +347,7 @@ describe('AGY runtime outcomes', () => {
       project: () => f.project,
       querySelection: async () => ({ binding: 'synthetic-account', preference }),
     })
-    await service.launch(agent, 'Synthetic', '合成续聊', preference, 'plan', f.previous.id)
+    await service['host'].launch(agent, 'Synthetic', '合成续聊', preference, 'plan', f.previous.id)
     const call = await f.current()
     call.stdout.write(doneSteps().map(line).join('') + line(aggregate()))
     call.finish()

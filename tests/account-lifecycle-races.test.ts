@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟：受控账号元数据、PTY 和 Promise；不读取真实凭据、不运行 CLI。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { PassThrough } from 'node:stream'
@@ -11,7 +12,6 @@ import { AccountQueryQueue } from '../src/client/account-query-queue.ts'
 import type { AccountStatus } from '../src/shared/accounts.ts'
 import { SettingsConnectionCache } from '../src/host/settings-connection-cache.ts'
 import { readPiOmpAccount } from '../src/host/harness-opencode-accounts.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import { preparePiOmpAccountTerminal } from '../src/host/pi-omp-accounts.ts'
 
 vi.mock('../src/host/native-login-providers.ts', () => ({ NativeLoginProviders: class {
@@ -256,17 +256,17 @@ function hostFixture() {
   const get = vi.fn(async (_input: any) => catalog)
   const runtime = { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn(), catalogCleanupMessage: vi.fn() }
   const parent = { id: 'parent', session: { header: { cwd: tmpdir() } }, ctx: { effect: () => () => {} } }
-  const host = Object.assign(Object.create(CliWorkerService.prototype), {
+  const host = hostServiceFixture({
     disposed, options: { ...DEFAULT_CONFIG, stateDirectory: state }, backend: f.backend, accounts: f.manager, runtime,
     accountParents: new Map(), parent: async () => parent, assertExecution: vi.fn(),
     settingsCatalogs: { get, invalidate: vi.fn() },
   }) as any
-  const cache: SettingsConnectionCache = host.connectionCache()
-  const off = f.manager.subscribeActivity(cli => host.invalidateSettingsDisplay(cli))
+  const cache: SettingsConnectionCache = host['host'].connectionCache()
+  const off = f.manager.subscribeActivity(cli => host['host'].invalidateSettingsDisplay(cli))
   closers.push(async () => { await f.manager.close(); off(); disposed.abort(); await cache.close(); rmSync(state, { recursive: true, force: true }) })
   return { ...f, host, cache, catalog, get, runtime,
-    startHost: (signal = f.signal) => host.startAccount('parent', 'omp', 'login', signal, undefined, 'deepseek'),
-    load: (cli = 'omp') => host.loadSettingsCatalog(cli, f.signal, true),
+    startHost: (signal = f.signal) => host['host'].startAccount('parent', 'omp', 'login', signal, undefined, 'deepseek'),
+    load: (cli = 'omp') => host['host'].loadSettingsCatalog(cli, f.signal, true),
   }
 }
 

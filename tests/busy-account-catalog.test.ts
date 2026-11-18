@@ -34,11 +34,11 @@ function service() {
   cleanup.push(() => rmSync(root, { recursive: true, force: true }))
   const cache = new SettingsCatalogCache(root)
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, { settingsCatalogs: cache, runtime: { blockCatalogOnCleanup: vi.fn() }, backend: {}, options: {} })
+  Object.assign(service['host'], { settingsCatalogs: cache, runtime: { blockCatalogOnCleanup: vi.fn() }, backend: {}, options: {} })
   const remember = (binding: string) =>
     cache.remember(root, { binding, catalog: { cli: 'omp', models: [{ id: 'cached', label: 'Cached', efforts: ['default'] }], notice: '' } satisfies Catalog }, cache.revision('omp'))
-  const query = (expected?: string) => service.queryCatalog('omp', {}, {}, root, new AbortController().signal, expected)
-  return { remember, query, select: (model: string) => service.querySelection({ cli: 'omp', model, effort: 'default' }, {}, {}, root, new AbortController().signal) }
+  const query = (expected?: string) => service['host'].queryCatalog('omp', {}, {}, root, new AbortController().signal, expected)
+  return { remember, query, select: (model: string) => service['host'].querySelection({ cli: 'omp', model, effort: 'default' }, {}, {}, root, new AbortController().signal) }
 }
 
 it('a busy account dispatches from its own last verified catalog without waiting for the holder', async () => {

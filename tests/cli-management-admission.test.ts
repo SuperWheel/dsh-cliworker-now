@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟：真实 Host/Runtime 入口，替身账号与进程，不执行 CLI。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
@@ -19,7 +20,7 @@ function fixture() {
   const runtime = new WorkerRuntime(storage, f.backend, f.config)
   const accounts = new AccountManager(f.backend, f.config, async () => undefined)
   const parent = { id: 'parent', session: { header: { cwd: f.root } } }
-  const service = Object.assign(Object.create(CliWorkerService.prototype), { cliManagement: f.service, runtime, accounts, options: f.config, backend: f.backend, disposed: new AbortController(), parent: vi.fn(async () => parent), assertExecution: vi.fn(), accountParents: new Map() }) as CliWorkerService
+  const service = hostServiceFixture({ cliManagement: f.service, runtime, accounts, options: f.config, backend: f.backend, disposed: new AbortController(), parent: vi.fn(async () => parent), assertExecution: vi.fn(), accountParents: new Map() }) as CliWorkerService
   const worker = { id: randomUUID(), runId: randomUUID(), parentSessionId: 'parent', project: f.root, title: '模拟', preference: { cli: 'codex' as const, model: '模拟', effort: 'default' as const }, mode: 'accept-edits' as const, status: 'completed' as const, conversationId: '模拟', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
   storage.save(worker)
   ;(f.service as any).deps.busy = (cli: any) => ({ workers: runtime.busyCliWorkers(cli), accounts: accounts.isBusy(cli) || accounts.hasActiveQuery(cli) })

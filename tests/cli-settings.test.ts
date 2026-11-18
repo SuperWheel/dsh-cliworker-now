@@ -49,15 +49,15 @@ it('returns lightweight Host/project display metadata and latest preferences wit
 it('pins the reused machine-wide list to its original account for another parent without querying auth', async () => {
   const f = fixture(), cache = new SettingsCatalogCache(f.storage.directory)
   cache.remember(f.machine, { catalog, binding: 'SIMULATED-original-account' }, cache.revision('antigravity'))
-  ;(f.service as any).settingsCatalogs = cache
+  ;(f.service as any)['host'].settingsCatalogs = cache
   const settings = JSON.parse(await f.service.cliSettings('another-parent', f.signal))
   expect(settings.settingsCache.catalogReady.antigravity).toBe(true)
-  expect((f.service as any).displayedBindings.get(JSON.stringify(['another-parent', 'antigravity']))).toBe('SIMULATED-original-account')
+  expect((f.service as any)['host'].displayedBindings.get(JSON.stringify(['another-parent', 'antigravity']))).toBe('SIMULATED-original-account')
   expect(f.accounts.status).not.toHaveBeenCalled(); expect(f.backend.spawn).not.toHaveBeenCalled()
   cache.invalidate('antigravity')
   const invalid = JSON.parse(await f.service.cliSettings('another-parent', f.signal))
   expect(invalid.settingsCache.catalogReady.antigravity).toBe(false)
-  expect((f.service as any).displayedBindings.get(JSON.stringify(['another-parent', 'antigravity']))).toBe('SIMULATED-original-account')
+  expect((f.service as any)['host'].displayedBindings.get(JSON.stringify(['another-parent', 'antigravity']))).toBe('SIMULATED-original-account')
 })
 it('a settings model-query cleanup failure blocks only that CLI metadata and task admission', async () => {
   const f = fixture()
@@ -82,7 +82,7 @@ describe.each(CLI_IDS)('%s refresh failure isolation (synthetic queries, no real
   const mockQuery = (f: ReturnType<typeof fixture>) => {
     // Protocol-specific account transports have separate suites. Exercise the
     // actual RPC/cache/runtime boundary with one synthetic account per CLI.
-    vi.spyOn(f.service as any, 'queryCatalog').mockImplementation(async (cli: any) => ({
+    vi.spyOn(f.service['host'] as any, 'queryCatalog').mockImplementation(async (cli: any) => ({
       binding: 'synthetic-settings-account',
       catalog: await catalogFor(cli, f.backend, DEFAULT_CONFIG, f.project, f.signal),
     }))
@@ -207,7 +207,7 @@ function fixture() {
   }
   const tools = new Map<string, any>()
   const service = Object.create(CliWorkerService.prototype) as CliWorkerService
-  Object.defineProperties(service, {
+  Object.defineProperties(service['host'], {
     ctx: {
       value: {
         subprocess: backend,
@@ -224,7 +224,7 @@ function fixture() {
     dispatchWaits: { value: new Map() },
     accountParents: { value: new Map() },
   })
-  ;(service as any).registerTools()
+  ;(service as any)['host'].registerTools()
   vi.mocked(catalogFor).mockResolvedValue(catalog)
   const worker: Worker = {
     id: randomUUID(),
@@ -247,7 +247,7 @@ function fixture() {
   return {
     project,
     /** 模拟：设置页整机读取使用的插件自有目录（按需创建）。 */
-    get machine() { return (service as any).machineDirectory() as string },
+    get machine() { return (service as any)['host'].machineDirectory() as string },
     storage,
     backend,
     runtime,
@@ -293,7 +293,7 @@ describe('profile-wide CLI enablement', () => {
     'forwards the selected ZCode %s provider through the guarded account endpoint',
     async (provider) => {
       const f = fixture()
-      ;(f.service as any).accountParents.set('parent', () => {})
+      ;(f.service as any)['host'].accountParents.set('parent', () => {})
       f.accounts.start.mockResolvedValue({ id: 'synthetic-account', instruction: 'Synthetic login' })
       const result = await f.service.accountStartForProvider('parent', 'zcode', 'login', provider, f.signal)
       expect(JSON.parse(result).id).toBe('synthetic-account')
@@ -320,7 +320,7 @@ describe('profile-wide CLI enablement', () => {
     ['hermes', 'logout', { login: 'hermes:deepseek:a1b2c3' }, [undefined, 'hermes:deepseek:a1b2c3']],
   ] as const)('forwards a %s account-window %s target unchanged to the account manager', async (cli, action, options, target) => {
     const f = fixture()
-    ;(f.service as any).accountParents.set('parent', () => {})
+    ;(f.service as any)['host'].accountParents.set('parent', () => {})
     f.accounts.start.mockResolvedValue({ id: 'synthetic-account', instruction: 'Synthetic' })
     await f.service.accountStartWith('parent', cli, action, JSON.stringify(options), f.signal)
     expect(f.accounts.start).toHaveBeenCalledExactlyOnceWith('parent', cli, action, f.machine, f.signal, undefined, ...target, expect.any(Function))
@@ -330,7 +330,7 @@ describe('profile-wide CLI enablement', () => {
     async (options) => {
       const f = fixture()
       await expect(f.service.accountStartWith('parent', 'opencode', 'login', options, f.signal)).rejects.toThrow()
-      expect((f.service as any).parent).not.toHaveBeenCalled()
+      expect((f.service as any)['host'].parent).not.toHaveBeenCalled()
       expect(f.accounts.start).not.toHaveBeenCalled()
     },
   )
@@ -348,7 +348,7 @@ describe('profile-wide CLI enablement', () => {
       await expect(
         f.service.accountStartForProvider('parent', cli, action, provider, f.signal),
       ).rejects.toThrow()
-      expect((f.service as any).parent).not.toHaveBeenCalled()
+      expect((f.service as any)['host'].parent).not.toHaveBeenCalled()
       expect(f.accounts.start).not.toHaveBeenCalled()
       expect(f.backend.spawn).not.toHaveBeenCalled()
     },
@@ -381,7 +381,7 @@ describe('profile-wide CLI enablement', () => {
   it('does not read or mutate CLI settings when the caller cancels during parent resolution', async () => {
     const { service, storage } = fixture()
     const parent = deferred<unknown>()
-    ;(service as any).parent.mockReturnValue(parent.promise)
+    ;(service as any)['host'].parent.mockReturnValue(parent.promise)
     const controller = new AbortController()
     const read = expect(service.cliSettings('parent', controller.signal)).rejects.toThrow('Caller closed')
     const write = expect(
@@ -571,8 +571,8 @@ describe('account-supported model selection', () => {
     ask
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_model', selected: ['GLM-5.3-Flash'] }] })
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_role', selected: ['不使用角色预设'] }] })
-    const agent = await (service as any).parent('parent')
-    const setup = await (service as any).chooseDispatch(agent, signal, 'antigravity')
+    const agent = await (service as any)['host'].parent('parent')
+    const setup = await (service as any)['host'].chooseDispatch(agent, signal, 'antigravity')
     const chosen = setup.preference
     const options = ask.mock.calls[0]![0].questions[0].options
     expect(options).toEqual([{ label: 'GLM-5.3-Flash' }, { label: 'GLM-5.3' }])
@@ -591,8 +591,8 @@ describe('account-supported model selection', () => {
       binding: 'synthetic-settings-account',
     })
     ask.mockResolvedValue({ answers: [{ id: 'cliworker_reuse', selected: ['沿用'] }] })
-    const agent = await (service as any).parent('parent')
-    expect((await (service as any).chooseDispatch(agent, signal, 'antigravity')).preference).toEqual(saved)
+    const agent = await (service as any)['host'].parent('parent')
+    expect((await (service as any)['host'].chooseDispatch(agent, signal, 'antigravity')).preference).toEqual(saved)
     expect(storage.preference(project, 'antigravity')).toEqual(saved)
     expect(ask).toHaveBeenCalledTimes(1)
     expect(ask.mock.calls[0]![0].questions[0].id).toBe('cliworker_reuse')
@@ -618,7 +618,7 @@ describe('saved Worker model directory', () => {
     const first = JSON.parse(await f.service.catalogForWorker('parent', f.worker.id, f.signal))
     expect(first).toEqual(catalog)
     expect(catalogFor).toHaveBeenCalledOnce()
-    ;(f.service as any).settingsCatalogs = new SettingsCatalogCache(f.storage.directory)
+    ;(f.service as any)['host'].settingsCatalogs = new SettingsCatalogCache(f.storage.directory)
     vi.mocked(catalogFor).mockClear()
     vi.mocked(readCliAccountBinding).mockClear()
     const cached = await f.service.catalogForWorker('parent', f.worker.id, f.signal)
@@ -699,7 +699,7 @@ describe('saved Worker model directory', () => {
         f.signal,
       ),
     ).rejects.toThrow('不可用')
-    ;(f.service as any).settingsCatalogs.invalidate('antigravity')
+    ;(f.service as any)['host'].settingsCatalogs.invalidate('antigravity')
     vi.mocked(catalogFor).mockClear()
     // After an account change the Worker's choices come from the current account,
     // and viewing them does not rebind the Worker.
@@ -708,7 +708,7 @@ describe('saved Worker model directory', () => {
     expect(catalogFor).toHaveBeenCalledOnce()
     expect(f.storage.accountBinding(f.worker.id)).toBe('synthetic-settings-account')
     vi.mocked(readCliAccountBinding).mockResolvedValue('synthetic-settings-account')
-    ;(f.service as any).parent.mockResolvedValueOnce({ id: 'other-parent' })
+    ;(f.service as any)['host'].parent.mockResolvedValueOnce({ id: 'other-parent' })
     vi.mocked(readCliAccountBinding).mockClear()
     await expect(f.service.catalogForWorker('parent', f.worker.id, f.signal)).rejects.toThrow()
     expect(readCliAccountBinding).not.toHaveBeenCalled()
@@ -720,8 +720,8 @@ describe('saved Worker model directory', () => {
     f.ask
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_model', selected: ['Synthetic fixture'] }] })
       .mockResolvedValueOnce({ answers: [{ id: 'cliworker_role', selected: ['不使用角色预设'] }] })
-    const agent = await (f.service as any).parent('parent')
-    await (f.service as any).chooseDispatch(agent, f.signal, 'antigravity')
+    const agent = await (f.service as any)['host'].parent('parent')
+    await (f.service as any)['host'].chooseDispatch(agent, f.signal, 'antigravity')
     vi.mocked(catalogFor).mockClear()
     vi.mocked(readCliAccountBinding).mockClear()
     expect(JSON.parse(await f.service.catalogForWorker('parent', f.worker.id, f.signal))).toEqual(catalog)
@@ -736,19 +736,19 @@ vi.mock('../src/host/cli-account-binding.ts', () => ({
 }))
 
 it('模拟：后台目录供设置页直接使用，保留模型强度及账号绑定，启用状态改变作废', async () => {
-  const f = fixture(), cache = (f.service as any).connectionCache()
+  const f = fixture(), cache = (f.service as any)['host'].connectionCache()
   await cache.read('antigravity', 'catalog', f.signal, async () => ({ catalog, binding: 'SIMULATED-original-account' }))
   const first = JSON.parse(await f.service.catalogForCli('parent', 'antigravity', f.signal))
   expect(first.models).toEqual(catalog.models); expect(first.cache.stale).toBe(false)
   expect(catalogFor).not.toHaveBeenCalled(); expect(readCliAccountBinding).not.toHaveBeenCalled()
-  expect((f.service as any).displayedBindings.get(JSON.stringify(['parent', 'antigravity']))).toBe('SIMULATED-original-account')
+  expect((f.service as any)['host'].displayedBindings.get(JSON.stringify(['parent', 'antigravity']))).toBe('SIMULATED-original-account')
   await f.service.setCliEnabled('parent', 'antigravity', false, f.signal)
   expect(cache.status('antigravity').catalog.value).toBeUndefined()
 })
 
 it.each(['login', 'logout'] as const)('模拟：账号 %s 入口作废该 CLI 的账号与目录，不影响其他 CLI', async action => {
-  const f = fixture(), cache = (f.service as any).connectionCache()
-  ;(f.service as any).accountParents.set('parent', () => {})
+  const f = fixture(), cache = (f.service as any)['host'].connectionCache()
+  ;(f.service as any)['host'].accountParents.set('parent', () => {})
   f.accounts.start.mockResolvedValue({ id: 'simulated-account', instruction: '模拟' })
   await cache.read('zcode', 'account', f.signal, async () => ({ cli: 'zcode', installed: true,
     state: 'authenticated', verification: 'local', summary: '模拟', actions: [] }))

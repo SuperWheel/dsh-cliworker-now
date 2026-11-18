@@ -65,7 +65,7 @@ function fixture(installed: string[] = ['qoder', 'qodercn']) {
     },
   }
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, {
+  Object.assign(service['host'], {
     ctx: {
       effect: (register: () => void) => register(),
       tools: { register: (tool: any) => tools.set(tool.name, tool) },
@@ -81,7 +81,7 @@ function fixture(installed: string[] = ['qoder', 'qodercn']) {
     })),
     launch: vi.fn(() => 'synthetic-receipt'),
   })
-  service.registerTools()
+  service['host'].registerTools()
   const start = (cli = 'qoder') =>
     tools
       .get('cliworker_start')
@@ -147,9 +147,9 @@ describe('native Qoder variant question before model selection', () => {
     const f = fixture()
     f.ask.mockRejectedValue(new Error('synthetic question failed'))
     await expect(f.start()).rejects.toThrow('synthetic question failed')
-    expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-    expect(f.service.launch).not.toHaveBeenCalled()
-    expect(f.service.pending.size).toBe(0)
+    expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+    expect(f.service['host'].launch).not.toHaveBeenCalled()
+    expect(f.service['host'].pending.size).toBe(0)
   })
   it('checks parent and permission gates before probing installations', async () => {
     for (const gate of ['child', 'plan', 'read-only']) {
@@ -160,14 +160,14 @@ describe('native Qoder variant question before model selection', () => {
       await expect(f.start()).rejects.toThrow()
       expect(f.backend.resolveExecutable).not.toHaveBeenCalled()
       expect(f.ask).not.toHaveBeenCalled()
-      expect(f.service.launch).not.toHaveBeenCalled()
+      expect(f.service['host'].launch).not.toHaveBeenCalled()
     }
   })
   it.each([['qoder'], ['qodercn']])('uses only installed %s without version question', async (cli) => {
     const f = fixture([cli])
     expect(await f.start()).toBe('synthetic-receipt')
     expect(f.ask).not.toHaveBeenCalled()
-    expect(f.service.chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
+    expect(f.service['host'].chooseDispatch).toHaveBeenCalledWith(f.agent, expect.any(AbortSignal), cli, f.agent)
     expect(f.backend.spawn).not.toHaveBeenCalled()
   })
   it.each(['Qoder', 'Qoder CN'])(
@@ -187,26 +187,26 @@ describe('native Qoder variant question before model selection', () => {
         id: 'cliworker_qoder_variant',
         options: [{ label: 'Qoder' }, { label: 'Qoder CN' }],
       })
-      expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-      expect(f.service.launch).not.toHaveBeenCalled()
+      expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+      expect(f.service['host'].launch).not.toHaveBeenCalled()
       answer(f.answer(label))
       await pending
-      expect(f.service.chooseDispatch).toHaveBeenCalledWith(
+      expect(f.service['host'].chooseDispatch).toHaveBeenCalledWith(
         f.agent,
         expect.any(AbortSignal),
         label === 'Qoder' ? 'qoder' : 'qodercn',
         f.agent,
       )
-      expect(f.service.pending.size).toBe(0)
+      expect(f.service['host'].pending.size).toBe(0)
     },
   )
   it('read-only resolve reports both candidates without questions, account lookup or persistence', async () => {
     const f = fixture()
     const store = { read: vi.fn(), remember: vi.fn(), reset: vi.fn() }
-    f.service.options.cliExecutablePaths = store
+    f.service['host'].options.cliExecutablePaths = store
     expect(JSON.parse(await f.resolve())).toEqual({ status: 'ambiguous', candidates: ['qoder', 'qodercn'] })
     expect(f.ask).not.toHaveBeenCalled()
-    expect(f.service.chooseDispatch).not.toHaveBeenCalled()
+    expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
     expect(store.remember).not.toHaveBeenCalled()
     expect(store.reset).not.toHaveBeenCalled()
     expect(f.backend.spawn).not.toHaveBeenCalled()
@@ -214,17 +214,17 @@ describe('native Qoder variant question before model selection', () => {
   it('refuses no installation and does not substitute CN for an explicit international request', async () => {
     const f = fixture([])
     await expect(f.start()).rejects.toThrow('未找到 Qoder')
-    expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-    expect(f.service.launch).not.toHaveBeenCalled()
+    expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+    expect(f.service['host'].launch).not.toHaveBeenCalled()
     await f.start('qoder国际版')
-    expect(f.service.chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), 'qoder', f.agent)
+    expect(f.service['host'].chooseDispatch).toHaveBeenLastCalledWith(f.agent, expect.any(AbortSignal), 'qoder', f.agent)
     expect(f.ask).not.toHaveBeenCalled()
   })
   it('retains configured missing paths, broken installations and cleanup errors as errors', async () => {
     const f = fixture(['qodercn'])
-    f.service.options.qoderExecutable = '/synthetic/manual-qoder'
+    f.service['host'].options.qoderExecutable = '/synthetic/manual-qoder'
     await expect(f.resolve()).rejects.toThrow('synthetic missing')
-    f.service.options.qoderExecutable = 'qoder'
+    f.service['host'].options.qoderExecutable = 'qoder'
     for (const error of [
       new WindowsCliInstallationError('synthetic broken install', true),
       new ProcessCleanupUnconfirmedError(),
@@ -232,8 +232,8 @@ describe('native Qoder variant question before model selection', () => {
       f.backend.resolveExecutable.mockRejectedValue(error)
       await expect(f.start()).rejects.toBe(error)
     }
-    expect(f.service.runtime.blockCatalogOnCleanup).toHaveBeenCalled()
-    expect(f.service.launch).not.toHaveBeenCalled()
+    expect(f.service['host'].runtime.blockCatalogOnCleanup).toHaveBeenCalled()
+    expect(f.service['host'].launch).not.toHaveBeenCalled()
   })
   it('accepts native missing-executable error as absence', async () => {
     const f = fixture()
@@ -248,8 +248,8 @@ describe('native Qoder variant question before model selection', () => {
     const f = fixture()
     f.ask.mockResolvedValue(answer)
     await expect(f.start()).rejects.toThrow('请选择 Qoder 或 Qoder CN')
-    expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-    expect(f.service.launch).not.toHaveBeenCalled()
+    expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+    expect(f.service['host'].launch).not.toHaveBeenCalled()
   })
   it('cancels a question and ignores late answers', async () => {
     const f = fixture()
@@ -267,9 +267,9 @@ describe('native Qoder variant question before model selection', () => {
     await rejected
     answer(f.answer('Qoder CN'))
     await Promise.resolve()
-    expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-    expect(f.service.launch).not.toHaveBeenCalled()
-    expect(f.service.pending.size).toBe(0)
+    expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+    expect(f.service['host'].launch).not.toHaveBeenCalled()
+    expect(f.service['host'].pending.size).toBe(0)
   })
   it('rechecks project and native permission after the version answer', async () => {
     for (const changed of ['project', 'plan', 'disabled']) {
@@ -280,14 +280,14 @@ describe('native Qoder variant question before model selection', () => {
           f.agent.ctx.get = (name: string) =>
             name === 'planMode' ? ({ get: () => ({ active: true }) } as any) : undefined
         if (changed === 'disabled')
-          f.service.runtime.assertCliEnabled.mockImplementation(() => {
+          f.service['host'].runtime.assertCliEnabled.mockImplementation(() => {
             throw new Error('disabled')
           })
         return f.answer('Qoder CN')
       })
       await expect(f.start()).rejects.toThrow()
-      expect(f.service.chooseDispatch).not.toHaveBeenCalled()
-      expect(f.service.launch).not.toHaveBeenCalled()
+      expect(f.service['host'].chooseDispatch).not.toHaveBeenCalled()
+      expect(f.service['host'].launch).not.toHaveBeenCalled()
     }
   })
 })

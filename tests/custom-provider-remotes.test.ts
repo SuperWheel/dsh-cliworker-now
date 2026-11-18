@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟 Gateway、真实本机文件事务（临时 HOME）；没有账号或网络访问。 */
 import { afterEach, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
@@ -31,7 +32,7 @@ function fixture() {
   const runtime = { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn() }
   const catalogs = { invalidate: vi.fn() }
   const manager = new CustomProviders({ home: root, env: {}, stateDirectory: join(root, 'state') })
-  const service = Object.assign(Object.create(CliWorkerService.prototype), {
+  const service = hostServiceFixture({
     disposed: controller, accounts, accountParents: new Map(), customProviders: manager,
     options: { ...config, cliExecutablePaths: { read: () => entry, revision: () => revision } },
     runtime, assertExecution: vi.fn(), parent: vi.fn(async () => parent),
@@ -54,7 +55,7 @@ it('模拟：两个 Remote 调用父会话校验；成功仅作废该 CLI 的账
   const log = vi.spyOn(console, 'log'), warn = vi.spyOn(console, 'warn'), error = vi.spyOn(console, 'error')
   const form = await f.form(), result = await f.save(form.token)
   expect(JSON.parse(result)).toMatchObject({ ok: true })
-  expect((f.service as any).parent).toHaveBeenCalledTimes(2)
+  expect((f.service as any)['host'].parent).toHaveBeenCalledTimes(2)
   expect(f.connections.fresh('pi', 'account')).toBeUndefined(); expect(f.connections.fresh('pi', 'catalog')).toBeUndefined()
   expect(f.connections.fresh('codex', 'account')).toBeDefined()
   expect(f.cache.accountRevision('pi')).toBe(1); expect(f.catalogs.invalidate).toHaveBeenCalledWith('pi')
@@ -102,7 +103,7 @@ it('模拟：维护中、禁用、清理暂停及在运行任务均不能绕过�
 })
 it('模拟：宿主规划/只读拒绝写入；已取消请求和 Host 关闭不修改文件', async () => {
   const f = fixture(), form = await f.form()
-  ;(f.service as any).assertExecution.mockImplementationOnce(() => { throw new Error('plan mode') })
+  ;(f.service as any)['host'].assertExecution.mockImplementationOnce(() => { throw new Error('plan mode') })
   await expect(f.save(form.token)).rejects.toThrow('plan mode')
   const aborted = AbortSignal.abort()
   await expect(f.service.saveCustomProvider('parent', 'pi', form.token, JSON.stringify(f.values), aborted)).rejects.toThrow()
@@ -136,14 +137,14 @@ it('模拟：父会话释放作废 token；新父会话无法重用旧 token', a
   await f.effects[0]!()
   expect(JSON.parse(await f.save(form.token))).toMatchObject({ ok: false })
   const newForm = await f.form()
-  ;(f.service as any).parent.mockResolvedValueOnce({ id: 'another-parent', ctx: { effect: () => async () => {} } })
+  ;(f.service as any)['host'].parent.mockResolvedValueOnce({ id: 'another-parent', ctx: { effect: () => async () => {} } })
   expect(JSON.parse(await f.save(newForm.token))).toMatchObject({ ok: false })
 })
 it('模拟：未核实 CLI 表单统一为 null；非法 CLI 和无效 parent 拒绝', async () => {
   const f = fixture()
   for (const cli of CLI_IDS.filter(id => !['pi', 'hermes', 'opencode', 'zcode'].includes(id))) expect(await f.form(cli)).toBeNull()
   await expect(f.form('invalid')).rejects.toThrow()
-  ;(f.service as any).parent.mockRejectedValueOnce(new Error('missing parent'))
+  ;(f.service as any)['host'].parent.mockRejectedValueOnce(new Error('missing parent'))
   await expect(f.form()).rejects.toThrow('missing parent')
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })
@@ -152,24 +153,24 @@ it('模拟：Host 实际创建表单管理器时传入运行配置的 stateDirec
   const f = fixture()
   vi.spyOn(os, 'homedir').mockReturnValue(f.root)
   // Exercise production manager creation rather than the pre-injected synthetic manager.
-  ;(f.service as any).customProviders = undefined
+  ;(f.service as any)['host'].customProviders = undefined
   const form = await f.form()
   expect(form.target).toBe(`${join(f.root, 'state/accounts/pi/agent/models.json')} + ${join(f.root, 'state/accounts/pi/agent/auth.json')}`)
   expect(existsSync(join(f.root, 'state/accounts/pi'))).toBe(false)
   expect(JSON.parse(await f.save(form.token))).toMatchObject({ ok: true })
   expect(JSON.parse(readFileSync(join(f.root, 'state/accounts/pi/agent/auth.json'), 'utf8'))['custom-synthetic']).toEqual({ type: 'api_key', key: f.values.apiKey })
   expect(existsSync(join(f.root, '.pi'))).toBe(false)
-  ;(f.service as any).customProviders.close()
+  ;(f.service as any)['host'].customProviders.close()
 })
 
 it.each(['hermes', 'opencode'] as const)('模拟：%s Remote 的真实管理器使用账号持久来源并显示实际路径', async cli => {
   const f = fixture()
   vi.spyOn(os, 'homedir').mockReturnValue(f.root)
   const host = f.service as any
-  host.customProviders = undefined
-  host.options.hermesHome = join(f.root, 'global-hermes')
-  const state = host.options.stateDirectory
-  const own = cli === 'hermes' ? prepareHermesAccountHome(host.options) : join(state, 'accounts/opencode')
+  host['host'].customProviders = undefined
+  host['host'].options.hermesHome = join(f.root, 'global-hermes')
+  const state = host['host'].options.stateDirectory
+  const own = cli === 'hermes' ? prepareHermesAccountHome(host['host'].options) : join(state, 'accounts/opencode')
   const config = cli === 'hermes' ? join(own, 'config.yaml') : join(own, 'config/opencode/opencode.json')
   const auth = cli === 'hermes' ? join(own, '.env') : join(own, 'data/opencode/auth.json')
   const form = await f.form(cli)
@@ -182,7 +183,7 @@ it.each(['hermes', 'opencode'] as const)('模拟：%s Remote 的真实管理器�
   expect(existsSync(join(f.root, 'global-hermes'))).toBe(false)
   expect(existsSync(join(f.root, '.config/opencode'))).toBe(false)
   expect(existsSync(join(f.root, '.local/share/opencode'))).toBe(false)
-  host.customProviders.close()
+  host['host'].customProviders.close()
 })
 
 it('模拟：direct managed-provider deletion returns readback acknowledgment and invalidates caches without terminal support', async () => {
@@ -201,7 +202,7 @@ it('模拟：direct managed-provider deletion returns readback acknowledgment an
 it('模拟：direct deletion enforces execution, active worker and maintenance admission before any write', async () => {
   const f = fixture(), form = await f.form(); await f.save(form.token)
   const remove = () => f.service.deleteAccountConfiguration('parent', 'pi', 'pi:custom-synthetic:plugin.config', f.controller.signal)
-  ;(f.service as any).assertExecution.mockImplementationOnce(() => { throw new Error('plan mode') })
+  ;(f.service as any)['host'].assertExecution.mockImplementationOnce(() => { throw new Error('plan mode') })
   await expect(remove()).rejects.toThrow('plan mode')
   f.runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('worker running') })
   await expect(remove()).rejects.toThrow('worker running')
@@ -212,9 +213,9 @@ it('模拟：direct deletion enforces execution, active worker and maintenance a
 })
 it('模拟：cache persistence failure after direct deletion does not misreport a completed mutation', async () => {
   const f = fixture(), form = await f.form(); await f.save(form.token)
-  const invalidate = (f.service as any).invalidateSettingsDisplay.bind(f.service)
+  const invalidate = (f.service as any)['host'].invalidateSettingsDisplay.bind(f.service)
   let calls = 0
-  vi.spyOn(f.service as any, 'invalidateSettingsDisplay').mockImplementation((cli: any) => {
+  vi.spyOn(f.service['host'] as any, 'invalidateSettingsDisplay').mockImplementation((cli: any) => {
     invalidate(cli)
     if (++calls === 2) throw new Error('simulated cache persistence failure')
   })

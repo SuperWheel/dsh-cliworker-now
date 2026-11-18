@@ -122,7 +122,7 @@ function fixture() {
   cleanups.push(() => runtime.close())
   const serviceFor = (current: WorkerRuntime) => {
     const service: any = Object.create(CliWorkerService.prototype)
-    Object.assign(service, {
+    Object.assign(service['host'], {
       nativeRunDone: new Map(),
       runtime: current,
       backend,
@@ -238,7 +238,7 @@ describe('durable Host cleanup quarantine', () => {
       isBusy: vi.fn(() => false),
       status: vi.fn(async (cli: string) => ({ cli, installed: true, state: 'authenticated', actions: [] })),
     }
-    service.accounts = accounts
+    service['host'].accounts = accounts
     const held = JSON.parse(await service.accountStatus('parent', 'antigravity', f.signal))
     expect(held).toMatchObject({ cli: 'antigravity', state: 'unavailable', cleanupBlocked: true, actions: [] })
     expect(held.summary).toContain('已暂停此 CLI')
@@ -270,13 +270,13 @@ describe('durable Host cleanup quarantine', () => {
       }),
       recoverCleanup: vi.fn(),
     }
-    f.service.accounts = refusing
+    f.service['host'].accounts = refusing
     await expect(f.service.recoverCliCleanup('parent', 'antigravity', f.signal)).rejects.toThrow('账号终端')
     expect(f.storage.cleanupBlockState('antigravity')).toBe('blocked')
-    f.service.accounts = { assertCleanupRecoverable: vi.fn(), recoverCleanup: vi.fn() }
+    f.service['host'].accounts = { assertCleanupRecoverable: vi.fn(), recoverCleanup: vi.fn() }
     f.storage.save({ ...f.legacy, status: 'queued' })
     await expect(f.service.recoverCliCleanup('parent', 'antigravity', f.signal)).rejects.toThrow('排队')
-    expect(f.service.accounts.recoverCleanup).not.toHaveBeenCalled()
+    expect(f.service['host'].accounts.recoverCleanup).not.toHaveBeenCalled()
     expect(f.storage.cleanupBlockState('antigravity')).toBe('blocked')
     expect(() => f.runtime.assertCliEnabled('antigravity')).toThrow('已暂停此 CLI')
     f.storage.save({ ...f.legacy, status: 'completed' })

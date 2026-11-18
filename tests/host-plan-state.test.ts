@@ -1,6 +1,6 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { readHostPlanActive } from '../src/host/host-plan-state.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 
 // SIMULATION: synthetic Agent/ctx objects shaped like DSH 0.2.2-rc.3 Desktop,
 // where the plan service is isolated inside each Agent preset and only the
@@ -39,19 +39,19 @@ describe('host plan boundary when the plan service is isolated', () => {
       sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
       approval: { overrideOf: () => undefined, config: { policy: 'never' } },
     } as Record<string, unknown>)[name] } }
-    const host: any = Object.assign(Object.create(CliWorkerService.prototype), {
+    const host: any = hostServiceFixture({
       ctx: { get: (name: string) => (name === 'sessionProjections' ? projections({ active: plan }) : undefined) },
     })
     return { host, parent }
   }
   it('refuses dispatch and reports plan mode while the projection is active', () => {
     const { host, parent } = service(true)
-    expect(() => host.assertExecution(parent, true)).toThrow('请先退出 Harness 规划模式')
-    expect(host.permissionState(parent)).toEqual({ planMode: true, sandbox: 'workspace-write', approval: 'never' })
+    expect(() => host['host'].assertExecution(parent, true)).toThrow('请先退出 Harness 规划模式')
+    expect(host['host'].permissionState(parent)).toEqual({ planMode: true, sandbox: 'workspace-write', approval: 'never' })
   })
   it('admits dispatch after plan mode is off', () => {
     const { host, parent } = service(false)
-    expect(() => host.assertExecution(parent, true)).not.toThrow()
-    expect(host.permissionState(parent).planMode).toBe(false)
+    expect(() => host['host'].assertExecution(parent, true)).not.toThrow()
+    expect(host['host'].permissionState(parent).planMode).toBe(false)
   })
 })

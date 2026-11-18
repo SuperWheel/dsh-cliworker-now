@@ -129,7 +129,7 @@ async function fixture(cli: Worker['preference']['cli'] = 'codex') {
   storage.append(worker, { kind: 'user', text: 'Synthetic historical user message' })
   storage.append(worker, { kind: 'assistant', text: 'Synthetic historical answer' })
   const service: CliWorkerService = Object.create(CliWorkerService.prototype)
-  Object.defineProperties(service, {
+  Object.defineProperties(service['host'], {
     ctx: { value: ctx },
     runtime: { value: runtime },
     options: { value: DEFAULT_CONFIG },
@@ -609,8 +609,8 @@ it('模拟：TRAE 菜单三档（询问由原生只读沙箱实现），中档�
 it('模拟：TRAE 仅可查看下未选档派遣按询问档运行，三档与原生规划可用', async () => {
   const f = await fixture('traecn')
   setSandboxMode(f.parent.session, 'read-only')
-  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn')).not.toThrow()
-  expect(() => (f.service as any).assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
+  expect(() => (f.service as any)['host'].assertAccessSupported(f.parent, 'traecn')).not.toThrow()
+  expect(() => (f.service as any)['host'].assertAccessSupported(f.parent, 'traecn', 'auto')).not.toThrow()
   expect(await f.read()).toMatchObject({ currentValue: 'ask', options: [{ value: 'ask' }, { value: 'auto' }, { value: 'full' }], plan: { supported: true } })
   expect(await f.save('ask')).toMatchObject({ level: 'ask' })
   expect(await f.save('plan')).toMatchObject({ mode: 'plan' })

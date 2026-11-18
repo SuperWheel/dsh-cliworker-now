@@ -222,9 +222,9 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
     const agent = { id: 'SIMULATED/parent', session: { header: { cwd: f.root, origin: 'user' } },
       ctx: { get: (key: string) => key === 'userQuestions' ? { ask } : key === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined } }
     const service: any = Object.create(CliWorkerService.prototype)
-    Object.assign(service, { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
+    Object.assign(service['host'], { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
-    expect(await service.chooseWorkBuddyVariant(agent, signal(), 'WorkBuddy')).toBe(label === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy')
+    expect(await service['host'].chooseWorkBuddyVariant(agent, signal(), 'WorkBuddy')).toBe(label === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy')
     expect(ask).toHaveBeenCalledTimes(1)
     expect(ask.mock.calls[0]).toEqual(expect.arrayContaining([expect.objectContaining({ questions: [expect.objectContaining({ options: [{ label: 'WorkBuddy CN' }, { label: 'WorkBuddy（国际版）' }] })] })]))
     expect(probe).not.toHaveBeenCalled()
@@ -234,10 +234,10 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
     const agent = { id: 'SIMULATED/parent', session: { header: { cwd: f.root, origin: 'user' } },
       ctx: { get: (key: string) => key === 'userQuestions' ? { ask } : key === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined } }
     const service: any = Object.create(CliWorkerService.prototype)
-    Object.assign(service, { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
+    Object.assign(service['host'], { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
-    await expect(service.chooseWorkBuddyVariant(agent, signal(), 'workbuddy')).rejects.toThrow('任务尚未启动')
-    expect(probe).not.toHaveBeenCalled(); expect(service.pending.size).toBe(0)
+    await expect(service['host'].chooseWorkBuddyVariant(agent, signal(), 'workbuddy')).rejects.toThrow('任务尚未启动')
+    expect(probe).not.toHaveBeenCalled(); expect(service['host'].pending.size).toBe(0)
   })
 })
 
@@ -264,19 +264,19 @@ describe('模拟 WorkBuddy desktop Gateway and AccountManager integration', () =
       const close = factory(); dispose.push(close); return close
     } } }
     const service: any = Object.create(CliWorkerService.prototype)
-    Object.assign(service, { accounts: manager, accountParents: new Map(), disposed: new AbortController(),
+    Object.assign(service['host'], { accounts: manager, accountParents: new Map(), disposed: new AbortController(),
       // 模拟：主对话没有项目；桌面账号窗口属于整机，不解析会话目录。
       parent: vi.fn(async () => parent), options: { stateDirectory: f.root }, assertExecution: vi.fn(),
       project: () => { throw new Error('模拟：账号窗口不得解析会话目录') },
       runtime: { assertCliEnabled: vi.fn(), assertAccountIdle: vi.fn() } })
     await expect(service.accountDesktopStart(parent.id, 'codebuddy', signal())).rejects.toThrow()
-    service.runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('SIMULATED active worker') })
+    service['host'].runtime.assertAccountIdle.mockImplementationOnce(() => { throw new Error('SIMULATED active worker') })
     await expect(service.accountDesktopStart(parent.id, 'workbuddycn', signal())).rejects.toThrow()
     const started = JSON.parse(await service.accountDesktopStart(parent.id, 'workbuddycn', signal()))
-    expect(service.assertExecution).toHaveBeenCalled(); expect(service.runtime.assertCliEnabled).toHaveBeenCalledWith('workbuddycn')
+    expect(service['host'].assertExecution).toHaveBeenCalled(); expect(service['host'].runtime.assertCliEnabled).toHaveBeenCalledWith('workbuddycn')
     await expect(service.accountDesktopRespond('OTHER', started.id, 'refresh')).rejects.toThrow()
     await expect(service.accountDesktopRespond(parent.id, started.id, 'arbitrary command')).rejects.toThrow()
-    service.assertExecution.mockImplementation(() => { throw new Error('SIMULATED permission revoked') })
+    service['host'].assertExecution.mockImplementation(() => { throw new Error('SIMULATED permission revoked') })
     expect(await service.accountDesktopStop(parent.id, started.id)).toBe(true)
     await dispose[0]!()
     expect(manager.isBusy('workbuddycn')).toBe(false)

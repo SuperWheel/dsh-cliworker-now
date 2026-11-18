@@ -38,7 +38,7 @@ function fixture() {
     { id: 'fixture-b', label: 'Fixture B', efforts: ['default'] },
   ]
   const service: any = Object.create(CliWorkerService.prototype)
-  Object.assign(service, {
+  Object.assign(service['host'], {
     nativeRunDone: new Map(),
     disposed: new AbortController(),
     pending: new Map(),
@@ -88,7 +88,7 @@ function fixture() {
     cli: CliId = 'antigravity',
     signal = new AbortController().signal,
     cwd = project,
-  ) => service.chooseDispatch(agent(id, cwd), signal, cli) as Promise<DispatchSetup>
+  ) => service['host'].chooseDispatch(agent(id, cwd), signal, cli) as Promise<DispatchSetup>
   const respond = (index: number, answers: Record<string, string>) =>
     requests[index]!.resolve({
       answers: Object.entries(answers).map(([id, value]) => ({ id, selected: [value] })),
@@ -151,7 +151,7 @@ it('first use asks model then only its actual efforts with role, with no detail 
     }
   expect(f.storage.dispatchSetup(f.project, 'antigravity')).toEqual(result)
   expect(f.storage.conversationSetup('parent', f.project, 'antigravity')).toEqual(result)
-  expect(f.service.pending.size).toBe(0)
+  expect(f.service['host'].pending.size).toBe(0)
 })
 
 it('one supported effort asks only role and a legacy preference never substitutes for complete setup', async () => {
@@ -177,8 +177,8 @@ it('same conversation reuses its frozen setup even if project default or role li
   expect(await f.choose()).toEqual({ ...f.setup, role })
   expect(await f.choose()).toEqual({ ...f.setup, role })
   expect(f.ask).not.toHaveBeenCalled()
-  expect(f.service.queryCatalog).toHaveBeenCalledTimes(2)
-  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service['host'].queryCatalog).toHaveBeenCalledTimes(2)
+  expect(f.service['host'].querySelection).not.toHaveBeenCalled()
 })
 
 it('new conversation asks only reuse and captures the offered default without overwriting newer project defaults', async () => {
@@ -293,8 +293,8 @@ it('same conversation concurrency asks one set; followers freshly validate the s
   await f.complete()
   expect(await one).toEqual(await two)
   expect(f.ask).toHaveBeenCalledTimes(2)
-  await vi.waitFor(() => expect(f.service.dispatchWaits.size).toBe(0))
-  expect(f.service.queryCatalog).toHaveBeenCalledTimes(2)
+  await vi.waitFor(() => expect(f.service['host'].dispatchWaits.size).toBe(0))
+  expect(f.service['host'].queryCatalog).toHaveBeenCalledTimes(2)
 })
 
 it('different conversations cannot consume another conversation pending answers', async () => {
@@ -326,7 +326,7 @@ it('waiting cancellation is prompt, cannot release the leader slot, and a later 
   expect(f.ask).toHaveBeenCalledTimes(1)
   await f.complete()
   expect(await one).toEqual(await three)
-  await vi.waitFor(() => expect(f.service.dispatchWaits.size).toBe(0))
+  await vi.waitFor(() => expect(f.service['host'].dispatchWaits.size).toBe(0))
 })
 
 it('leader cancellation leaves no partial setup, releases followers, and ignores its late answer', async () => {
@@ -372,10 +372,10 @@ it('plugin disposal cancels questions and waiting callers and clears admission/p
     expect(two).rejects.toThrow('disposed'),
   ])
   await f.ready(1)
-  f.service.disposed.abort(new Error('disposed'))
+  f.service['host'].disposed.abort(new Error('disposed'))
   await failures
-  await vi.waitFor(() => expect(f.service.dispatchWaits.size).toBe(0))
-  expect(f.service.pending.size).toBe(0)
+  await vi.waitFor(() => expect(f.service['host'].dispatchWaits.size).toBe(0))
+  expect(f.service['host'].pending.size).toBe(0)
   expect(f.storage.preference(f.project)).toBeUndefined()
 })
 
@@ -456,32 +456,32 @@ it('reopened Host storage reuses this conversation without any question', async 
   f.storage.close()
   const reopened = new WorkerStorage(join(f.project, 'state'))
   cleanups.push(() => reopened.close())
-  f.service.runtime.storage = reopened
-  f.service.dispatchWaits = new Map()
-  f.service.selectionBindings = new WeakMap()
+  f.service['host'].runtime.storage = reopened
+  f.service['host'].dispatchWaits = new Map()
+  f.service['host'].selectionBindings = new WeakMap()
   expect(await f.choose()).toEqual(f.setup)
   expect(f.ask).not.toHaveBeenCalled()
-  expect(f.service.queryCatalog).toHaveBeenCalledOnce()
+  expect(f.service['host'].queryCatalog).toHaveBeenCalledOnce()
   // Nothing was asked, so the fresh catalog is the check; launch authorizes again.
-  expect(f.service.querySelection).not.toHaveBeenCalled()
+  expect(f.service['host'].querySelection).not.toHaveBeenCalled()
 })
 
 it('parallel dispatches of a settled conversation check the catalog together instead of in turn', async () => {
   const f = fixture()
   f.storage.setConversationSetup('parent', f.project, f.setup)
   const gate = Promise.withResolvers<void>()
-  const query = f.service.queryCatalog.getMockImplementation()
-  f.service.queryCatalog.mockImplementation(async (...args: any[]) => {
+  const query = f.service['host'].queryCatalog.getMockImplementation()
+  f.service['host'].queryCatalog.mockImplementation(async (...args: any[]) => {
     await gate.promise
     return query(...args)
   })
   const all = Promise.all([f.choose(), f.choose(), f.choose()])
-  await vi.waitFor(() => expect(f.service.queryCatalog).toHaveBeenCalledTimes(3))
+  await vi.waitFor(() => expect(f.service['host'].queryCatalog).toHaveBeenCalledTimes(3))
   gate.resolve()
   expect(await all).toEqual([f.setup, f.setup, f.setup])
   expect(f.ask).not.toHaveBeenCalled()
-  await vi.waitFor(() => expect(f.service.dispatchWaits.size).toBe(0))
-  expect(f.service.pending.size).toBe(0)
+  await vi.waitFor(() => expect(f.service['host'].dispatchWaits.size).toBe(0))
+  expect(f.service['host'].pending.size).toBe(0)
 })
 
 it('a settled setup the catalog no longer offers asks once in turn, and parallel callers share the new answer', async () => {
@@ -494,7 +494,7 @@ it('a settled setup the catalog no longer offers asks once in turn, and parallel
   expect(first).toEqual(second)
   expect(first.preference).toMatchObject({ model: 'fixture-a', effort: 'high' })
   expect(f.ask).toHaveBeenCalledTimes(2)
-  await vi.waitFor(() => expect(f.service.dispatchWaits.size).toBe(0))
+  await vi.waitFor(() => expect(f.service['host'].dispatchWaits.size).toBe(0))
 })
 
 it('replays omitted CLI then explicit Hermes without consuming the previous Antigravity setup', async () => {
@@ -503,8 +503,8 @@ it('replays omitted CLI then explicit Hermes without consuming the previous Anti
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
   await mountNativeTools(ctx)
   const launch = vi.fn(async (_agent, _title, _prompt, preference) => JSON.stringify(preference))
-  Object.assign(f.service, { ctx, launch })
-  f.service.registerTools()
+  Object.assign(f.service['host'], { ctx, launch })
+  f.service['host'].registerTools()
   const agy = structuredClone(f.setup)
   const hermes: DispatchSetup = {
     preference: { cli: 'hermes', model: 'fixture-b', effort: 'default' },
@@ -519,7 +519,7 @@ it('replays omitted CLI then explicit Hermes without consuming the previous Anti
   const request = { title: '说一句你好', prompt: '请只回复一句话：你好。' }
   try {
     await expect(start.execute(request, exec)).rejects.toThrow(/cli/)
-    expect(f.service.queryCatalog).not.toHaveBeenCalled()
+    expect(f.service['host'].queryCatalog).not.toHaveBeenCalled()
     expect(f.ask).not.toHaveBeenCalled()
     expect(launch).not.toHaveBeenCalled()
     const pending = start.execute({ ...request, cli: 'hermes' }, exec)
@@ -527,14 +527,14 @@ it('replays omitted CLI then explicit Hermes without consuming the previous Anti
     expect(f.requests[0]!.request.questions).toMatchObject([
       { id: 'cliworker_reuse', question: '是否沿用 Fixture B · 默认 · 不使用角色预设？' },
     ])
-    expect(f.service.queryCatalog.mock.calls.map((args: any[]) => args[0])).toEqual(['hermes'])
+    expect(f.service['host'].queryCatalog.mock.calls.map((args: any[]) => args[0])).toEqual(['hermes'])
     expect(launch).not.toHaveBeenCalled()
     f.respond(0, { cliworker_reuse: '沿用' })
     expect(JSON.parse((await pending) as string)).toEqual(hermes.preference)
     expect(f.storage.conversationSetup('parent', f.project, 'hermes')).toEqual(hermes)
     expect(f.storage.conversationSetup('parent', f.project, 'antigravity')).toEqual(agy)
     expect(f.storage.dispatchSetup(f.project, 'antigravity')).toEqual(agy)
-    expect(f.service.querySelection.mock.calls[0][0]).toEqual(hermes.preference)
+    expect(f.service['host'].querySelection.mock.calls[0][0]).toEqual(hermes.preference)
     expect(launch).toHaveBeenCalledOnce()
   } finally {
     await ctx.fiber.dispose()
@@ -563,10 +563,10 @@ it('asking off starts with a valid saved setup without any question card and pin
   expect(result).toEqual(saved)
   expect(f.ask).not.toHaveBeenCalled()
   // Checked against the fresh catalog here; launch authorizes it live against this binding.
-  expect(f.service.queryCatalog).toHaveBeenCalledOnce()
-  expect(f.service.selectionBindings.get(result.preference)).toBe(saved.binding)
+  expect(f.service['host'].queryCatalog).toHaveBeenCalledOnce()
+  expect(f.service['host'].selectionBindings.get(result.preference)).toBe(saved.binding)
   expect(f.storage.conversationSetup('new', f.project, 'antigravity')).toEqual(saved)
-  expect(f.service.pending.size).toBe(0)
+  expect(f.service['host'].pending.size).toBe(0)
 })
 
 it('asking off with only a settings-page model and no confirmed role falls back to full selection, then stops asking', async () => {
@@ -614,13 +614,13 @@ it('asking off rejects without saving when execution is refused after the setup 
   const f = fixture()
   f.storage.setDispatchSetup(f.project, f.setup)
   f.storage.setGeneralSettings({ askBeforeDispatch: false })
-  f.service.assertExecution.mockImplementationOnce(() => {}).mockImplementationOnce(() => {
+  f.service['host'].assertExecution.mockImplementationOnce(() => {}).mockImplementationOnce(() => {
     throw new Error('Harness 当前为只读权限')
   })
   await expect(f.choose('new')).rejects.toThrow('只读')
   expect(f.ask).not.toHaveBeenCalled()
   expect(f.storage.conversationSetup('new', f.project, 'antigravity')).toBeUndefined()
-  expect(f.service.pending.size).toBe(0)
+  expect(f.service['host'].pending.size).toBe(0)
 })
 
 it('asking off replaces an invalid conversation setup with the valid project setup', async () => {
@@ -661,8 +661,8 @@ it('asking off reaches launch through cliworker_start with the saved setup and n
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
   await mountNativeTools(ctx)
   const launch = vi.fn(async (_agent, _title, _prompt, preference) => JSON.stringify(preference))
-  Object.assign(f.service, { ctx, launch })
-  f.service.registerTools()
+  Object.assign(f.service['host'], { ctx, launch })
+  f.service['host'].registerTools()
   const hermes: DispatchSetup = {
     preference: { cli: 'hermes', model: 'fixture-b', effort: 'default' },
     role: null,
@@ -686,7 +686,7 @@ it('asking off reaches launch through cliworker_start with the saved setup and n
 
 it('asks on an explicit sibling initiator surface but saves the complete setup under the main conversation', async () => {
   const f = fixture(), parent = f.agent(), child = f.agent('synthetic-initiator', '/different/child')
-  const waiting = f.service.chooseDispatch(parent, new AbortController().signal, 'antigravity', child)
+  const waiting = f.service['host'].chooseDispatch(parent, new AbortController().signal, 'antigravity', child)
   await f.complete()
   await waiting
   expect(f.requests.every(row => row.request.agent === child)).toBe(true)

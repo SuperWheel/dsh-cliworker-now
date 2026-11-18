@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -28,7 +29,7 @@ it('publishes a completed persisted Worker independently of native directory ava
     const spawn = vi.fn(() => { throw new Error('CLI execution forbidden') })
     runtime = new WorkerRuntime(storage, { resolveExecutable: async () => { throw new Error('CLI discovery forbidden') }, spawn }, DEFAULT_CONFIG)
     const off = vi.fn(), nativeList = vi.fn(() => { throw new Error('simulation: native directory unavailable') })
-    const service: CliWorkerService = Object.assign(Object.create(CliWorkerService.prototype), {
+    const service: CliWorkerService = hostServiceFixture({
       ctx: { on: () => off }, runtime, disposed: new AbortController(), pending: new Map(),
       dshSubagents: { list: nativeList },
     })
