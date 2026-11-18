@@ -15,6 +15,7 @@
 - 接入新 CLI 按 `doc/knowledge/cli-integration/new-cli-onboarding.md` 逐阶段实施：先按包名、可执行文件、配置根、登录站点等证据判定国内版与国际版是两个 CLI 还是同一 CLI 的不同账号或站点，再按其附录 B 核对交付物。
 - 设置页新增或调整内容须先读 `doc/settings-ui-design.md`，复用统一文字层级、间距、分隔线及控件规则；修改设计参数时同步该文档。
 - UI 不伪造进度、对话或内部推理。测试夹具须明确标注模拟；真实验收保留可核查的结果。
+- 测试与备份目录（2026-11-18 用户规定）：仓库外的测试和备份只放 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/`（目录 0700）。`test/` 放实机验收工作区、工作区外目标、临时 `HOME`/`DSH_HOME`、并行 worktree（`test/worktrees/<主题>`）与验收产物；`backup/` 放 CLI 程序、配置、插件版本等备份及其恢复脚本。每次新建一个子目录，命名 `<YYYY-MM-DD>-<主题>`，在对应 `tasks.md` 里写明路径。禁止在 `~/AI-Project/`、`~/AI-Project/DeepSeekHarness/`、`~/.cache/` 或主目录等其他位置新建测试、备份或 worktree 目录。仓库内被 Git 忽略的 `.test-data/`、`artifacts/` 只放脚本自动生成的日志和构建产物；会话 scratchpad 只放用完即弃的临时文件。worktree 分支并入 main 后立即 `git worktree remove` 并删除分支；变更归档时删除不再需要的测试子目录，作为证据保留的留在 `test/` 下。
 
 ## 验证与交付
 
