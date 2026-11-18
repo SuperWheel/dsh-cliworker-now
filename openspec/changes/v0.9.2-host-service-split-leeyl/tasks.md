@@ -60,8 +60,9 @@
   - 2026-11-18 主会话复验：逐条核对测试改动，去掉 `['host']` 访问层与夹具构造后增删行一致，断言没有变化；`vitest.config.ts`、`scripts/build.mjs`、`cordis.patch.yml`、`package.json`、锁文件、`src/host/runtime.ts`、Client 与 Shared 均无改动。快进合并到 main（`720693b`）后，`pnpm typecheck` 通过；全量 Vitest 362 个文件通过、4 个跳过，8841 例通过、15 跳过、0 失败；`pnpm lint` 0 error、333 warning；`pnpm spec:check` 37 项通过；`pnpm build:preview` 的 `lib/typert.remote-client.d.ts` 与基线 `cmp` 一致（SHA-256 `ee2d2fc8…cf6d`）。日志在仓库外 `cliworker-now-test/test/2026-11-18-host-service-split-verify/`。
   - 拆分 worktree 已在合并后移除。上文 `.test-data/baseline/` 与 `.test-data/final/` 的文件已复制到同一目录的 `codex-baseline/`（不含源码与 `lib` 副本）和 `codex-final/`；各步骤的 `.test-data/step-N/` 日志没有保留，逐步数字以本文件记录为准。
   - 按提交运行 `corepack pnpm format:check`。本变更涉及的 29 个原测试中，27 个文件在基准源码上即有 Prettier 差异。最终仓库检查还包括有存量差异的 `doc/design.md`。保留这些文件的原文与断言，入口、新模块及新增夹具通过单独的 Prettier 检查。
-- [ ] 3.3 Windows 远程隔离运行 Windows CI 测试文件
-  - （未执行：Windows 远程隔离验收留给主会话。）
+- [x] 3.3 Windows 远程隔离运行 Windows CI 测试文件
+  - 2026-11-18 `pnpm test:windows:remote --config .test-data/windows-remote/config-d.json`（远程根目录在 D 盘）。首次运行 `afe36491…` 在 Windows typecheck 失败：`2fbe8ab` 让构建脚本引用 `scripts/build-host-copy-manifest.mjs` 与 `scripts/host-targets.json`，远程快照白名单未同步，与本拆分无关。`2da7268` 补入白名单，并在 `tests/windows-remote.test.ts` 新增「上传的构建脚本引用的本地模块必须同在白名单」用例（修复前该用例失败，修复后本文件 29/29 通过）。
+  - 重跑 `e4b8050d-efc4-4e74-ad51-d969daf562e2` 全部阶段通过：install、包清单与条目、解包、Mac 契约类型、Windows typecheck、Windows 测试 31 个文件全部通过（1025 例通过、8 跳过，与 2026-11-17 v0.9.1 发布验收 1025/8 相同）、Mac 打包产物在 win32 x64 上加载出 `CliWorkerService`。证据在仓库 `.test-data/windows-remote/runs/e4b8050d-…/`，运行日志在 `cliworker-now-test/test/2026-11-18-host-service-split-verify/windows-remote-2.log`。
 - [x] 3.4 Mac Desktop 实测：设置页、派遣、续聊、停止与 CLI 更新页
   - 2026-11-18 确认 Desktop 无活动任务后退出，在 main（`881b09d`）执行 `pnpm build`；profile 以 `link:` 加载仓库，`lib/types/host/` 含新模块产物，`lib/typert.remote-client.d.ts` 与预览包 `cmp` 一致。以无障碍与防节流参数启动 DSH Desktop 0.2.2-rc.3，由 Codex Computer Use（gpt-6.2-sol high）操作真实窗口，未重载、未改设置。
   - 设置页：「CLI Worker 设置」正常渲染，「CLI 连接」列出 17 个 CLI；Codex 显示「已登录」、项目默认 GPT-6-Luna · Low。流程结束后再次打开仍正常。
