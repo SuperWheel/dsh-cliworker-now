@@ -1,8 +1,9 @@
-import { cpSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, existsSync, rmSync, readdirSync } from 'node:fs'
+import { copyFileSync, cpSync, mkdirSync, readFileSync, writeFileSync, symlinkSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { selectBuildDependencies, buildTypeConfig, clientBundleDependencies, clientBundleDefines, selectedTypertResolver } from './build-dependencies.mjs'
+import { buildHostCopyManifest } from './build-host-copy-manifest.mjs'
 import { verifyHostRuntime } from './host-runtime.mjs'
 
 // Declaration emit can elide imports used only inside module augmentations:
@@ -104,6 +105,10 @@ if (typecheckOnly) {
   console.log(`Host/Client typecheck passed against DSH ${dependencies.target}: ${dependencies.modules}`)
   process.exit(0)
 }
+const hostFiles = readdirSync('src/host', { withFileTypes: true })
+  .filter(entry => !entry.isDirectory()).map(entry => entry.name)
+const hostCopies = buildHostCopyManifest(hostFiles)
+
 // Discard only generated outputs so old entry points cannot leak into packages.
 rmSync(join(root, 'lib'), { recursive: true, force: true })
 rmSync(join(root, '.cache/typert'), { recursive: true, force: true })
@@ -115,138 +120,10 @@ writeFileSync('lib/native-runtime-guard/package.json', JSON.stringify({
   name: 'dsh-cliworker-native-preflight', private: true, type: 'module', main: './index.mjs',
 }) + '\n')
 tsc('tsconfig.host-build.json')
-for (const name of [
-  'private-launch',
-  'windows-account-launch',
-  'windows-account-stdio',
-  'windows-hidden-launch',
-  'windows-console-manifest',
-  'native-launch',
-  'native-spawn',
-  'native-bridge',
-  'native-time-limit',
-  'native-transport',
-  'native-tool-outcomes',
-  'native-harness-injection',
-  'cli-native-capabilities',
-  'native-agy-harness',
-  'native-attachments',
-  'native-harness-mcp',
-  'native-harness-extension',
-  'native-codex',
-  'native-claude',
-  'native-agy',
-  'native-agy-acp',
-  'native-response',
-  'primary-response',
-  'codex-run-usage',
-  'http-rpc-response',
-  'grok-response',
-  'grok-durable-context',
-  'native-file-privacy',
-  'zcode-response',
-  'zcode-context-observation',
-  'native-acp',
-  'native-kimi',
-  'native-qoder',
-  'native-codebuddy',
-  'native-traecn',
-  'native-workbuddy',
-  'workbuddy-bootstrap',
-  'qoder-durable-context',
-  'codebuddy-durable-usage',
-  'codebuddy-context-inspection',
-  'kimi-durable-usage',
-  'omp-context-inspection',
-  'pi-context-observer',
-  'pi-permission-gate',
-  'http-context-observer',
-  'http-context-relay',
-  'hermes-observer',
-  'native-grok',
-  'native-zcode',
-  'native-http',
-  'native-session-http',
-  'native-opencode',
-  'native-mimo',
-  'native-hermes',
-  'native-hermes-home',
-  'temporary-tree',
-  'pi-omp-environment',
-  'terminal-bridge',
-  'pi-omp-bridge',
-  'pi-omp-control',
-  'pi-native-catalog',
-  'native-login-providers',
-  'pi-installation',
-  'account-models',
-  'zcode-resume',
-  'zcode-app-layout',
-  'pi-login',
-  'grok-catalog',
-  'codebuddy-catalog',
-  'own-account-lease',
-  'pi-omp-refresh',
-  'host-fetch',
-]) {
-  const source = `src/host/${name}.mjs`
-  if (existsSync(source)) cpSync(source, `lib/${name}.mjs`)
-}
-// ZCode's desktop-bundled CLI is preloaded with this resolver, from the bundle
-// and from the unbundled modules alike (zcode-app-layout.mjs looks in both).
-cpSync('src/host/zcode-app-resolve.cjs', 'lib/zcode-app-resolve.cjs')
 mkdirSync('lib/types/host', { recursive: true })
-cpSync('src/host/zcode-app-resolve.cjs', 'lib/types/host/zcode-app-resolve.cjs')
-cpSync('src/host/zcode-app-layout.mjs', 'lib/types/host/zcode-app-layout.mjs')
-cpSync('src/host/zcode-app-layout.d.mts', 'lib/types/host/zcode-app-layout.d.mts')
-// WorkBuddy's bootstrap helper must remain beside its plain ESM runner.
-cpSync('src/host/workbuddy-key-helper.cjs', 'lib/workbuddy-key-helper.cjs')
-// Native metadata helpers are also imported by the emitted adapter declarations/runtime.
-if (existsSync('src/host/account-models.mjs')) {
-  cpSync('src/host/account-models.mjs', 'lib/types/host/account-models.mjs')
-  cpSync('src/host/account-models.d.mts', 'lib/types/host/account-models.d.mts')
+for (const { source, destination } of hostCopies) {
+  copyFileSync(source, destination)
 }
-cpSync('src/host/pi-installation.mjs', 'lib/types/host/pi-installation.mjs')
-cpSync('src/host/pi-installation.d.mts', 'lib/types/host/pi-installation.d.mts')
-cpSync('src/host/native-launch.mjs', 'lib/types/host/native-launch.mjs')
-cpSync('src/host/native-launch.d.mts', 'lib/types/host/native-launch.d.mts')
-cpSync('src/host/native-spawn.mjs', 'lib/types/host/native-spawn.mjs')
-for (const name of ['native-workbuddy', 'pi-native-catalog', 'native-codebuddy', 'workbuddy-bootstrap', 'native-acp', 'native-transport', 'native-spawn', 'kimi-durable-usage', 'qoder-durable-context', 'codebuddy-durable-usage', 'codebuddy-context-inspection', 'omp-context-inspection', 'hermes-observer', 'native-hermes-home', 'native-http', 'native-attachments', 'native-agy-harness', 'native-harness-injection', 'cli-native-capabilities', 'native-harness-mcp', 'native-harness-extension', 'native-response', 'native-tool-outcomes', 'primary-response', 'codex-run-usage', 'http-rpc-response', 'grok-response', 'grok-durable-context', 'zcode-response', 'zcode-context-observation', 'windows-console-manifest']) {
-  cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
-  if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
-}
-for (const extension of ['mjs', 'ps1', 'd.mts']) {
-  const source = `src/host/native-file-privacy.${extension}`
-  if (existsSync(source)) {
-    if (extension !== 'd.mts') cpSync(source, `lib/native-file-privacy.${extension}`)
-    cpSync(source, `lib/types/host/native-file-privacy.${extension}`)
-  }
-}
-cpSync('src/host/workbuddy-key-helper.cjs', 'lib/types/host/workbuddy-key-helper.cjs')
-cpSync('src/host/private-launch.mjs', 'lib/types/host/private-launch.mjs')
-cpSync('src/host/pi-omp-environment.mjs', 'lib/types/host/pi-omp-environment.mjs')
-cpSync('src/host/pi-omp-environment.d.mts', 'lib/types/host/pi-omp-environment.d.mts')
-for (const name of ['temporary-tree', 'own-account-lease', 'pi-omp-refresh', 'pi-omp-control', 'host-fetch']) {
-  cpSync(`src/host/${name}.mjs`, `lib/types/host/${name}.mjs`)
-  if (existsSync(`src/host/${name}.d.mts`)) cpSync(`src/host/${name}.d.mts`, `lib/types/host/${name}.d.mts`)
-}
-// The native Hermes bridge is executed by the verified installed Python, both
-// from the bundle URL and from emitted unbundled adapter modules.
-for (const name of ['hermes-native-entry', 'hermes-nous-refresh', 'hermes-observer']) {
-  cpSync(`src/host/${name}.py`, `lib/${name}.py`)
-  cpSync(`src/host/${name}.py`, `lib/types/host/${name}.py`)
-}
-cpSync('src/host/windows-account-owner.ps1', 'lib/windows-account-owner.ps1')
-cpSync('src/host/windows-account-owner.ps1', 'lib/types/host/windows-account-owner.ps1')
-cpSync('src/host/windows-account-bootstrap.ps1', 'lib/windows-account-bootstrap.ps1')
-cpSync('src/host/windows-account-bootstrap.ps1', 'lib/types/host/windows-account-bootstrap.ps1')
-cpSync('src/host/windows-account-launch.mjs', 'lib/types/host/windows-account-launch.mjs')
-cpSync('src/host/windows-account-stdio.mjs', 'lib/types/host/windows-account-stdio.mjs')
-cpSync('src/host/windows-hidden-launch.mjs', 'lib/types/host/windows-hidden-launch.mjs')
-cpSync('src/host/windows-agy-account.ps1', 'lib/windows-agy-account.ps1')
-cpSync('src/host/windows-agy-account.ps1', 'lib/types/host/windows-agy-account.ps1')
-cpSync('src/host/windows-credential-read.ps1', 'lib/windows-credential-read.ps1')
-cpSync('src/host/windows-credential-read.ps1', 'lib/types/host/windows-credential-read.ps1')
 await build({
   entry: { index: 'lib/types/host/index.js' },
   outDir: 'lib',

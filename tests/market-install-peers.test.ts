@@ -107,8 +107,9 @@ it('bundles the real model directory store and its engine while preserving host 
   const { build } = await import(pathToFileURL(selected.require.resolve('tsdown')).href)
   const singletons = ['react', 'react-dom', 'react/jsx-runtime', '@deepseek-ai/cordis', '@deepseek-ai/dsh-client-ui-primitives']
   const localPackages = ['@deepseek-ai/dsh-client-store', 'zustand', 'immer']
-  mkdirSync(join(root, '.cache'), { recursive: true })
-  const directory = mkdtempSync(join(root, '.cache/market-peer-bundle-')); temporary.push(directory)
+  mkdirSync(join(root, '.test-data'), { recursive: true })
+  const directory = realpathSync.native(mkdtempSync(join(root, '.test-data/market-peer-bundle-')))
+  temporary.push(directory)
   const entry = join(directory, 'entry.mjs')
   writeFileSync(entry, [
     `export * from ${JSON.stringify(pathToFileURL(join(root, 'src/client/native-cli-model-directory.ts')).href)}`,

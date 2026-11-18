@@ -12,7 +12,9 @@ mkdirSync(preview, { recursive: true })
 for (const file of [
   'src',
   'scripts/build.mjs',
+  'scripts/build-host-copy-manifest.mjs',
   'scripts/build-dependencies.mjs',
+  'scripts/host-targets.json',
   'scripts/host-runtime.mjs',
   'scripts/host-extension-guard.mjs',
   'runtime-host',

@@ -2,20 +2,18 @@
 import { existsSync, readFileSync, realpathSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, join } from 'node:path'
 import { createRequire } from 'node:module'
+import hostTargets from './host-targets.json' with { type: 'json' }
 
 const json = path => JSON.parse(readFileSync(path, 'utf8'))
 export function selectBuildDependencies(root, environment = process.env) {
   const manifest = json(join(root, 'package.json'))
   const target = manifest.devDependencies?.['@deepseek-ai/dsh']
-  const isolatedRoots = { '0.2.0-rc.2': '.cache/cliworker-build-deps-020rc2',
-    '0.2.1-rc.1': '.cache/cliworker-build-deps-021rc1', '0.2.1-rc.2': '.cache/cliworker-build-deps-021rc2', '0.2.1-rc.3': '.cache/cliworker-build-deps-021rc3',
-    '0.2.1-rc.5': '.cache/cliworker-build-deps-021rc5', '0.2.2-rc.1': '.cache/cliworker-build-deps-022rc1',
-    '0.2.2-rc.2': '.cache/cliworker-build-deps-022rc2', '0.2.2-rc.3': '.cache/cliworker-build-deps-022rc3' }
-  if (!Object.hasOwn(isolatedRoots, target)) throw new Error('Unsupported pinned DSH build target')
+  if (!Object.hasOwn(hostTargets.targets, target)) throw new Error('Unsupported pinned DSH build target')
+  const { suffix } = hostTargets.targets[target]
   const candidate = environment.CLIWORKER_BUILD_DEPS
     ? resolve(environment.CLIWORKER_BUILD_DEPS)
     : existsSync(join(root, 'node_modules/@deepseek-ai/dsh/package.json')) && json(join(root, 'node_modules/@deepseek-ai/dsh/package.json')).version === target
-      ? root : join(root, isolatedRoots[target])
+      ? root : join(root, '.cache', `cliworker-build-deps-${suffix}`)
   const modules = realpathSync(join(candidate, 'node_modules'))
   const sdk = json(join(modules, '@deepseek-ai/dsh/package.json'))
   if (sdk.name !== '@deepseek-ai/dsh' || sdk.version !== target) throw new Error('Build dependency SDK differs from the pinned target')

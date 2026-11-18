@@ -3,17 +3,14 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { digest, hostRuntimeDirectory, hostRuntimePackages, normalizeHostClient, runtimeFiles, verifyHostRuntime } from './host-runtime.mjs'
+import hostTargets from './host-targets.json' with { type: 'json' }
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const targets = {
-  '0.2.2-rc.3': '38a6a5c965aa99ab525161efb7cc5cf1fe62fced',
-  '0.2.2-rc.1': '66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db',
-  '0.2.2-rc.2': 'ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c',
-}
 const args = process.argv.slice(2)
 const targetFlag = args.indexOf('--target')
-const targetVersion = targetFlag < 0 ? '0.2.2-rc.3' : args[targetFlag + 1]
-if (!Object.hasOwn(targets, targetVersion)) throw new Error('Unsupported pinned runtime target')
+const targetVersion = targetFlag < 0 ? hostTargets.vendorDefault : args[targetFlag + 1]
+const hostTarget = Object.hasOwn(hostTargets.targets, targetVersion) && hostTargets.targets[targetVersion]
+if (!hostTarget?.vendor) throw new Error('Unsupported pinned runtime target')
 if (targetFlag >= 0) args.splice(targetFlag, 2)
 if (args.length === 0) {
   const manifest = verifyHostRuntime(root)
@@ -23,7 +20,7 @@ if (args.length === 0) {
   const source = resolve(root, args[1])
   const input = JSON.parse(readFileSync(join(source, 'manifest.json'), 'utf8'))
   const patch = readFileSync(join(root, `host-extensions/dsh-${targetVersion}/source.patch`))
-  if (input.upstream?.commit !== targets[targetVersion] || input.upstream?.tag !== `dsh-v${targetVersion}` || input.patch.sha256 !== digest(patch))
+  if (input.upstream?.commit !== hostTarget.commit || input.upstream?.tag !== `dsh-v${targetVersion}` || input.patch.sha256 !== digest(patch))
     throw new Error('Reviewed artifact does not match the pinned official source and current patch')
   for (const file of input.files) {
     const bytes = readFileSync(join(source, file.path))

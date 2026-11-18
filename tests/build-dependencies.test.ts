@@ -63,6 +63,7 @@ it('resolves generated rc1 Typert imports from the actual repository entry witho
   const entry = join(root, 'lib/typert.remote-client.js')
   const bundle = await rolldown({ input: entry, plugins: [plugin, {
     name: 'simulated-generated-descriptor',
+    resolveId(id: string) { if (id === entry) return entry },
     load(path: string) { if (path === entry) return `export * from ${JSON.stringify(id)}` },
   }] })
   try {
@@ -75,6 +76,7 @@ it('resolves generated rc1 Typert imports from the actual repository entry witho
     platform: 'browser', format: 'cjs', logLevel: 'silent',
     deps: clientBundleDependencies(), plugins: [plugin, {
       name: 'simulated-generated-descriptor-tsdown',
+      resolveId(id: string) { if (id === entry) return entry },
       load(path: string) { if (path === entry) return `export * from ${JSON.stringify(id)}` },
     }],
   })
@@ -95,6 +97,7 @@ it('keeps Host Typert classes external while the resolver is limited to Client',
   await build({ entry: { regression: entry }, write: false, clean: false, dts: false,
     platform: 'node', format: 'esm', logLevel: 'silent', plugins: [{
       name: 'simulated-host-import',
+      resolveId(id: string) { if (id === entry) return entry },
       load(path: string) {
         if (path === entry) return 'export { Remote, RemoteError, TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol"'
       },

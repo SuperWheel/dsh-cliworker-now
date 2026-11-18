@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -13,6 +13,7 @@ import { nativeAttachmentCapability } from '../src/host/native-attachments.mjs'
 import { buildNativeHarnessInjection, nativeHarnessExecutionReady, nativeHarnessMcpServers, nativeHarnessToolCapability } from '../src/host/native-harness-injection.mjs'
 import { nativeCliCapabilities, nativeSkillPaths } from '../src/host/cli-native-capabilities.mjs'
 import { extractTelemetry, TelemetryReader } from '../src/host/telemetry.ts'
+import { buildHostCopyManifest } from '../scripts/build-host-copy-manifest.mjs'
 
 // Synthetic registration/ACP receipts and temporary directories only. No real CLI, login, or model.
 const preference = { cli: 'codebuddy' as const, model: 'SIMULATED-model', effort: 'default' as const }
@@ -90,9 +91,10 @@ it('reports native tool classes and only CodeBuddy skill roots that exist', () =
 })
 
 it('packages both CodeBuddy runtime resources and disables automatic updates only for its native launches', () => {
-  const build = readFileSync('scripts/build.mjs', 'utf8')
-  expect(build).toContain("'native-codebuddy',")
-  expect(build).toContain("'codebuddy-catalog',")
+  const destinations = buildHostCopyManifest(readdirSync('src/host')).map(copy => copy.destination)
+  expect(destinations).toContain('lib/native-codebuddy.mjs')
+  expect(destinations).toContain('lib/types/host/native-codebuddy.mjs')
+  expect(destinations).toContain('lib/codebuddy-catalog.mjs')
   const runtime = readFileSync('src/host/runtime.ts', 'utf8')
   expect(runtime).toContain("...(cli === 'codebuddy' ? codebuddyEnvironment() : {})")
   expect(runtime).toContain("...(cliOf(worker.preference) === 'codebuddy' ? codebuddyEnvironment() : {})")

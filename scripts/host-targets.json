@@ -1,0 +1,50 @@
+{
+  "extensionDefault": "0.2.0-rc.2",
+  "vendorDefault": "0.2.2-rc.3",
+  "targets": {
+    "0.2.0-rc.2": {
+      "suffix": "020rc2",
+      "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+      "legacyExtensionLayout": true
+    },
+    "0.2.1-rc.1": {
+      "suffix": "021rc1",
+      "commit": "1600d8a1e140dcde43a1a0941940a0480712c011",
+      "appBuild": { "installedDesktopBuildCommit": "ed75efeffee65f9fe93625bbd76a68cb219aaaf9" }
+    },
+    "0.2.1-rc.2": {
+      "suffix": "021rc2",
+      "commit": "687f282e8625c6b8d11ff58211a90524be2e4317",
+      "appBuild": { "installedDesktopBuildCommit": "332895e0f7c9d4dbfb29729f5eb367fa263ff986" }
+    },
+    "0.2.1-rc.3": {
+      "suffix": "021rc3",
+      "commit": "1f81c047fc48fa190a683e469daa699857e9afe8",
+      "appBuild": {
+        "installedAppBuildIdentity": "be72761",
+        "installedAppBuildCommitStatus": "not-resolved-to-public-commit"
+      }
+    },
+    "0.2.1-rc.5": {
+      "suffix": "021rc5",
+      "commit": "b830ec950faba0a46dda564be3e2d854afed94f1"
+    },
+    "0.2.2-rc.1": {
+      "suffix": "022rc1",
+      "commit": "66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db",
+      "vendor": true
+    },
+    "0.2.2-rc.2": {
+      "suffix": "022rc2",
+      "commit": "ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c",
+      "vendor": true,
+      "frozenToolchain": true
+    },
+    "0.2.2-rc.3": {
+      "suffix": "022rc3",
+      "commit": "38a6a5c965aa99ab525161efb7cc5cf1fe62fced",
+      "vendor": true,
+      "frozenToolchain": true
+    }
+  }
+}
