@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { ownsDirectSubagent } from '../src/host/native-subagent-ownership.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -128,7 +129,7 @@ async function fixture(cli: Worker['preference']['cli'] = 'codex') {
   storage.bindAccount(worker.id, 'synthetic-account')
   storage.append(worker, { kind: 'user', text: 'Synthetic historical user message' })
   storage.append(worker, { kind: 'assistant', text: 'Synthetic historical answer' })
-  const service: CliWorkerService = Object.create(CliWorkerService.prototype)
+  const service: CliWorkerService = hostServiceFixture()
   Object.defineProperties(service['host'], {
     ctx: { value: ctx },
     runtime: { value: runtime },

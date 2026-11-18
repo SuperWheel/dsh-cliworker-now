@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   mkdirSync,
@@ -15,7 +16,6 @@ import { randomUUID } from 'node:crypto'
 import { PassThrough } from 'node:stream'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import { authorizedCatalog } from '../src/host/authorized-catalog.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import type { Worker } from '../src/shared/types.ts'
@@ -121,7 +121,7 @@ function fixture() {
   const runtime = new WorkerRuntime(storage, backend, DEFAULT_CONFIG)
   cleanups.push(() => runtime.close())
   const serviceFor = (current: WorkerRuntime) => {
-    const service: any = Object.create(CliWorkerService.prototype)
+    const service: any = hostServiceFixture()
     Object.assign(service['host'], {
       nativeRunDone: new Map(),
       runtime: current,

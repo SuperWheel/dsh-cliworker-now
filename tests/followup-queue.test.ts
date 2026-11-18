@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import {
   mkdtempSync,
@@ -20,7 +21,6 @@ import { PassThrough } from 'node:stream'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
 import { WorkerStorage } from '../src/host/storage.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import { authorizeSelection } from '../src/host/authorized-catalog.ts'
 import { CARRYOVER_FAILED_NOTICE, type Worker } from '../src/shared/types.ts'
@@ -174,7 +174,7 @@ function fixture(
         : name === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined,
     },
   }
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], {
     nativeRunDone: new Map(),
     runtime,

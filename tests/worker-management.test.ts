@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,7 +7,6 @@ import { randomUUID } from 'node:crypto'
 import { PassThrough } from 'node:stream'
 import { WorkerStorage } from '../src/host/storage.ts'
 import { WorkerRuntime } from './fixtures/legacy-runtime.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import { validatePreference } from '../src/host/adapters.ts'
 import { CLI_IDS, CLI_SHORT_NAMES, effortLabel, workerName, type Worker } from '../src/shared/types.ts'
@@ -124,7 +124,7 @@ function fixture() {
         name === 'jobs' ? jobs : name === 'sandboxPolicy' ? { resolve: () => policy } : undefined,
     },
   }
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], {
     nativeRunDone: new Map(),
     runtime,

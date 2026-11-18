@@ -10,7 +10,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { CLI_IDS } from '../shared/types.ts'
 import { RUNNING_MESSAGE_MODES } from '../shared/running-message.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function* watch(
   host: ServiceContext,

@@ -1,8 +1,8 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { CliWorkerService } from '../src/host/index.ts'
 import { SettingsCatalogCache } from '../src/host/settings-catalog-cache.ts'
 import { OWN_ACCOUNT_BUSY } from '../src/host/own-account-lease.mjs'
 import type { Catalog } from '../src/host/adapters.ts'
@@ -33,7 +33,7 @@ function service() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'cwn-busy-catalog-')))
   cleanup.push(() => rmSync(root, { recursive: true, force: true }))
   const cache = new SettingsCatalogCache(root)
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], { settingsCatalogs: cache, runtime: { blockCatalogOnCleanup: vi.fn() }, backend: {}, options: {} })
   const remember = (binding: string) =>
     cache.remember(root, { binding, catalog: { cli: 'omp', models: [{ id: 'cached', label: 'Cached', efforts: ['default'] }], notice: '' } satisfies Catalog }, cache.revision('omp'))

@@ -1,71 +1,16 @@
-import { SettingsConnectionCache } from './settings-connection-cache.ts'
-import { CustomProviders } from './custom-provider.ts'
-import { CliManagementService } from './cli-management/service.ts'
-import { isWorkBuddyCli } from './workbuddy-variant.ts'
-import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
-import { DshSubagents, readDshChildren } from './dsh-subagents.ts'
-import { SettingsCatalogCache } from './settings-catalog-cache.ts'
-import { resolveModel } from '../shared/models.ts'
-import { visibleModelChoices } from '../shared/model-presentation.ts'
 import { Context, withProps } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { z as validate } from 'zod'
-import { join } from 'node:path'
-import { HarnessConversationStore } from './harness-conversation-store.ts'
-import type { HarnessConversationApi } from './harness-conversation-types.ts'
-import { publishSiblingOutsideTool } from './harness-model-guard.ts'
-import type { NativeAttachment } from './native-attachments.mjs'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-subprocess'
-import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-plan-mode'
-import { type RunOrigin } from './native-approval-policy.ts'
-import {
-  CLI_LABELS,
-  cliOf,
-  workerName,
-  effortLabel,
-  type CliId,
-  type Preference,
-  type TaskMode,
-  type RoleSnapshot,
-  type Worker,
-} from '../shared/types.ts'
-import { agentNameSchema, readRoleAnswer, roleQuestion } from './roles.ts'
-import {
-  DEFAULT_CONFIG,
-  machineDirectory,
-  ProcessCleanupUnconfirmedError,
-  type ProcessBackend,
-  type RuntimeConfig,
-} from './process.ts'
-import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
-import { RUNNING_MESSAGE_MODES } from '../shared/running-message.ts'
-import { type WorkerPermissionReceipt } from '../shared/worker-permissions.ts'
-import { WindowsCliNotFoundError } from './windows-cli-installation.ts'
-import { type DispatchSetup } from './storage.ts'
-import { WorkerRuntime, type Submission } from './runtime.ts'
-import { integrationReport, isolationGuidance, readResolutions } from './isolated-merge-decisions.ts'
-import { AccountManager } from './accounts.ts'
-import {
-  CLI_NAME_GUIDANCE,
-  requireCliName,
-  resolveCliName,
-  isGenericQoderName,
-  isGenericWorkBuddyName,
-  resolveAvailableWorkBuddyName,
-  resolveAvailableCliName,
-} from './routing.ts'
-import { failure, waitForInput } from './service-errors.ts'
-import { preferenceSchema } from './service-models.ts'
+
+import { DEFAULT_CONFIG } from './process.ts'
+import { ServiceContext } from './service-context.ts'
 import * as harness from './service-harness.ts'
 import * as history from './service-history.ts'
 import * as workers from './service-workers.ts'
@@ -75,23 +20,8 @@ import * as accounts from './service-accounts.ts'
 import * as connections from './service-connections.ts'
 import * as models from './service-models.ts'
 import * as permissions from './service-permissions.ts'
+import * as messages from './service-messages.ts'
 import * as lifecycle from './service-lifecycle.ts'
-
-const messageSubmissionSchema = validate
-  .object({
-    id: validate.uuid(),
-    clientId: validate.uuid(),
-    sequence: validate.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-    prompt: validate
-      .string()
-      .min(1)
-      .max(100_000)
-      .refine((text) => !!text.trim()),
-    mode: validate.enum(RUNNING_MESSAGE_MODES),
-    intent: validate.enum(['direct', 'running']),
-    expectedRunId: validate.string().min(1).max(128),
-  })
-  .strict()
 
 export type {
   Preference,
@@ -221,17 +151,19 @@ export class CliWorkerService extends TypertRemoteService {
     maxTimelineItems: z.natural().min(10).default(DEFAULT_CONFIG.maxTimelineItems),
   })
 
-  private context?: ServiceContext
+  private readonly context: ServiceContext
   private get host(): ServiceContext {
-    const context = (this.context ??= new ServiceContext(this.ctx, this))
     // Cordis overlays ctx on the receiver at each call site. Keep state shared across those scopes.
-    return context.remote === this ? context : withProps(context, { ctx: this.ctx, remote: this })
+    return this.context.remote === this
+      ? this.context
+      : withProps(this.context, { ctx: this.ctx, remote: this })
   }
 
   /** @param ctx - Harness services. @param config - Validated deployment options. */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'cliworker', { namespace: 'cliworker' })
-    lifecycle.initialize(this.host, ctx, config)
+    this.context = new ServiceContext(ctx, this)
+    lifecycle.initialize(this.context, ctx, config)
   }
   /** @param parentSessionId - Owning Harness parent. @param workerId - Existing Worker identity. @param signal - View lifetime. @returns Real native child binding; opening never submits the user task again. */
   @Remote('ensureHarnessConversation')
@@ -687,93 +619,7 @@ export class CliWorkerService extends TypertRemoteService {
     requestJSON: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const request = messageSubmissionSchema.parse(JSON.parse(requestJSON))
-      const key = `${parentSessionId}:${workerId}:${request.id}`
-      const canonical = JSON.stringify(request)
-      const submissions = (this.host.messageSubmissions ??= new Map())
-      const prior = submissions.get(key)
-      if (prior) {
-        if (prior.request === canonical) return await prior.done
-        const original = messageSubmissionSchema.parse(JSON.parse(prior.request))
-        const promotion =
-          original.mode === 'queue' &&
-          original.intent === 'running' &&
-          request.mode === 'interrupt' &&
-          request.intent === 'running' &&
-          request.prompt === original.prompt &&
-          request.clientId === original.clientId &&
-          request.sequence > original.sequence
-        if (!promotion) throw new Error('重复提交标识对应的消息不同')
-      }
-      // Occupancy and the Stop boundary must exist before parent lookup or model preparation awaits.
-      const reservation = this.host.runtime.reserveSubmission(parentSessionId, workerId, request.id)
-      const control = AbortSignal.any([signal, this.host.disposed.signal, reservation.signal])
-      const done = (async () => {
-        const agent = await this.host.parent(parentSessionId)
-        control.throwIfAborted()
-        reservation.assertCurrent()
-        this.host.assertExecution(agent, true)
-        const worker = this.host.runtime.get(agent.id, workerId)
-        if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-        if (this.host.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
-        if (request.intent === 'direct') {
-          const receipt = this.host.runtime.directMessageReceipt(
-            agent.id,
-            workerId,
-            request.prompt,
-            request.id,
-          )
-          if (receipt) return JSON.stringify({ ...receipt, revision: this.host.runtime.revision })
-          return await this.host.launch(
-            agent,
-            worker.title,
-            request.prompt,
-            worker.preference,
-            worker.mode,
-            workerId,
-            undefined,
-            control,
-            undefined,
-            undefined,
-            undefined,
-            request.id,
-          )
-        }
-        if (request.mode === 'interrupt')
-          return JSON.stringify(
-            this.host.runtime.interruptMessage(
-              agent.id,
-              workerId,
-              request.prompt,
-              request.id,
-              request.clientId,
-              request.sequence,
-              control,
-            ),
-          )
-        const receipt = await this.host.runtime.sendRunningMessage(
-          agent.id,
-          workerId,
-          request.prompt,
-          request.expectedRunId,
-          request.id,
-          control,
-          request.mode,
-        )
-        return JSON.stringify({ ...(receipt ?? { accepted: true }), revision: this.host.runtime.revision })
-      })()
-      const operation = { request: canonical, done }
-      submissions.set(key, operation)
-      try {
-        return await done
-      } finally {
-        if (submissions.get(key) === operation) submissions.delete(key)
-        reservation.release()
-      }
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.submitMessage(this.host, parentSessionId, workerId, requestJSON, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Worker to continue after this turn. @param prompt - Unsent message. @param expectedRunId - Run observed by the caller. @param requestId - Stable UUID for retries of this message. @param signal - Admission lifetime. @returns Accepted outbox item JSON. */
   @Remote('queueFollowup')
@@ -785,18 +631,15 @@ export class CliWorkerService extends TypertRemoteService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      return JSON.stringify(
-        this.host.runtime.queueFollowup(agent.id, workerId, prompt, expectedRunId, requestId),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.queueFollowup(
+      this.host,
+      parentSessionId,
+      workerId,
+      prompt,
+      expectedRunId,
+      requestId,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning parent. @param workerId - Current native Worker. @param prompt - Current-run input. @param expectedRunId - Exact target run. @param requestId - Stable steering identity. @param signal - Receipt lifetime. @returns Native acceptance; never creates or schedules a later turn. */
   @Remote('steerMessage')
@@ -808,42 +651,15 @@ export class CliWorkerService extends TypertRemoteService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      validate.uuid().parse(requestId)
-      validate
-        .string()
-        .min(1)
-        .max(100_000)
-        .refine((text) => !!text.trim())
-        .parse(prompt)
-      const observed = this.host.runtime.get(parentSessionId, workerId)
-      if (observed.runId !== expectedRunId) throw new Error('本轮状态已变化，请核对当前运行后发送引导')
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      const agent = await this.host.parent(parentSessionId)
-      control.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      if (this.host.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
-      // After an account switch the message is queued for the next turn instead.
-      const queued = await this.host.runtime.steerMessage(
-        agent.id,
-        workerId,
-        prompt,
-        expectedRunId,
-        requestId,
-        control,
-      )
-      return JSON.stringify({
-        accepted: true,
-        requestId,
-        runId: expectedRunId,
-        ...(queued ? { queued } : {}),
-        revision: this.host.runtime.revision,
-      })
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.steerMessage(
+      this.host,
+      parentSessionId,
+      workerId,
+      prompt,
+      expectedRunId,
+      requestId,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning parent. @param workerId - Active Worker. @param prompt - New message. @param expectedRunId - Observed run. @param requestId - Stable submission UUID. @param signal - Admission lifetime. @returns Accepted submission using the saved mode. */
   @Remote('sendRunningMessage')
@@ -855,25 +671,15 @@ export class CliWorkerService extends TypertRemoteService {
     requestId: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      if (this.host.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
-      const receipt = await this.host.runtime.sendRunningMessage(
-        agent.id,
-        workerId,
-        prompt,
-        expectedRunId,
-        requestId,
-        signal,
-      )
-      return JSON.stringify(receipt ?? { accepted: true })
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.sendRunningMessage(
+      this.host,
+      parentSessionId,
+      workerId,
+      prompt,
+      expectedRunId,
+      requestId,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning parent. @param workerId - Current Worker. @param prompt - Message text. @param requestId - Stable message UUID, including a local queue item. @param clientId - Panel source UUID. @param sequence - Increasing click order for this source. @param signal - Admission transport lifetime. @returns JSON durable acceptance receipt; execution proceeds independently of this RPC. */
   @Remote('interruptMessage')
@@ -886,19 +692,16 @@ export class CliWorkerService extends TypertRemoteService {
     sequence: number,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      if (this.host.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
-      return JSON.stringify(
-        this.host.runtime.interruptMessage(agent.id, workerId, prompt, requestId, clientId, sequence, signal),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.interruptMessage(
+      this.host,
+      parentSessionId,
+      workerId,
+      prompt,
+      requestId,
+      clientId,
+      sequence,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning parent. @param workerId - Worker with pending messages. @param queuedId - Explicit priority message. @param expectedRunId - Observed run. @param signal - Admission lifetime. @returns JSON priority request receipt with queuedId and snapshot revision; not confirmation of native delivery. */
   @Remote('interruptQueuedFollowup')
@@ -909,18 +712,14 @@ export class CliWorkerService extends TypertRemoteService {
     expectedRunId: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      if (this.host.accounts.isBusy(cliOf(worker.preference))) throw new Error('请先关闭账号终端')
-      await this.host.runtime.interruptQueuedFollowup(agent.id, workerId, queuedId, expectedRunId, signal)
-      return JSON.stringify({ queuedId, revision: this.host.runtime.revision })
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.interruptQueuedFollowup(
+      this.host,
+      parentSessionId,
+      workerId,
+      queuedId,
+      expectedRunId,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning parent. @param workerId - Owning Worker. @param queuedId - Unsent item identity. @param signal - Mutation lifetime. @returns Completion; already admitted messages cannot be cancelled here. */
   @Remote('cancelQueuedFollowup')
@@ -930,13 +729,7 @@ export class CliWorkerService extends TypertRemoteService {
     queuedId: string,
     signal: AbortSignal,
   ): Promise<void> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.cancelQueuedFollowup(agent.id, workerId, queuedId)
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.cancelQueuedFollowup(this.host, parentSessionId, workerId, queuedId, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Idle Worker with paused messages. @param expectedRunId - Current run identity. @param signal - Mutation lifetime. @returns Explicit queue reactivation; each turn rechecks native authorization. */
   @Remote('retryQueuedFollowups')
@@ -946,16 +739,7 @@ export class CliWorkerService extends TypertRemoteService {
     expectedRunId: string,
     signal: AbortSignal,
   ): Promise<void> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      this.host.runtime.retryQueuedFollowups(agent.id, workerId, expectedRunId)
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.retryQueuedFollowups(this.host, parentSessionId, workerId, expectedRunId, signal)
   }
   /** @param parentSessionId - Parent session identity. @param workerId - Worker to continue. @param prompt - New task. @param signal - Admission lifetime. @returns Published background receipt. */
   @Remote('followup')
@@ -965,7 +749,7 @@ export class CliWorkerService extends TypertRemoteService {
     prompt: string,
     signal: AbortSignal,
   ): Promise<string> {
-    return this.host.continueWorker(parentSessionId, workerId, prompt, signal, 'user')
+    return messages.followup(this.host, parentSessionId, workerId, prompt, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Idle legacy history without an account binding. @param prompt - Explicit new-dialog task. @param signal - Admission lifetime. @returns JSON background receipt for a fresh Worker. */
   @Remote('restartWorker')
@@ -975,1043 +759,13 @@ export class CliWorkerService extends TypertRemoteService {
     prompt: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(agent, true)
-      const worker = this.host.runtime.assertLegacyRestart(agent.id, workerId)
-      if (this.host.project(agent) !== worker.project) throw new Error('项目已变更，请在原项目新建对话')
-      return await this.host.launch(
-        agent,
-        worker.title,
-        prompt,
-        { ...worker.preference },
-        worker.mode,
-        undefined,
-        { role: worker.role ? structuredClone(worker.role) : undefined },
-        signal,
-        workerId,
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.restartWorker(this.host, parentSessionId, workerId, prompt, signal)
   }
   /** @param parentSessionId - Owning Harness session. @param workerId - Worker to stop. @returns Final worker state after cleanup. */
   @Remote('stop')
   async stop(parentSessionId: string, workerId: string): Promise<string> {
-    try {
-      return JSON.stringify(await this.host.runtime.stop(parentSessionId, workerId))
-    } catch (error) {
-      throw failure(error)
-    }
+    return messages.stop(this.host, parentSessionId, workerId)
   }
 }
 
 export default CliWorkerService
-
-/** Per-instance dependencies and the operations shared across Host domains. */
-class ServiceContext {
-  runtime!: WorkerRuntime
-  accounts!: AccountManager
-  cliManagement!: CliManagementService
-  accountParents = new Map<string, () => Promise<void>>()
-  customProviders?: CustomProviders
-  options!: RuntimeConfig
-  backend!: ProcessBackend
-  pending = new Map<string, number>()
-  dispatchWaits = new Map<string, Promise<void>>()
-  messageSubmissions = new Map<string, { request: string; done: Promise<string> }>()
-  selectionBindings = new WeakMap<Preference, string>()
-  selectionProjects = new WeakMap<Preference, string>()
-  /** Turn origin by runId: the parent model's tool call, or the user in the Worker UI. */
-  runOrigins?: Map<string, RunOrigin>
-  /** Exact per-turn question surface; attribution never controls lifecycle. */
-  runQuestionSessions?: Map<string, string>
-  /** DSH tool calls the tool bridge is executing, by their DSH call id. */
-  bridgeCalls = new Map<
-    string,
-    { worker: Worker; runId: string; child: Agent; name: string; arguments: unknown }
-  >()
-  displayedBindings = new Map<string, string>()
-  connections?: SettingsConnectionCache
-  connectionEpochs?: Map<string, { account: number; path: number; recorded: boolean; held: boolean }>
-  settingsCatalogs?: SettingsCatalogCache
-  settingsInstance?: string
-  settingsSourceRevisions?: Map<CliId, number>
-  dshSubagents!: DshSubagents
-  disposed = new AbortController()
-  harnessConversation?: HarnessConversationApi
-  harnessConversationStore?: HarnessConversationStore
-  nativeRunDone = new Map<string, Promise<Worker>>()
-  repairingDisplays = new Set<string>()
-
-  constructor(
-    readonly ctx: Context,
-    readonly remote: CliWorkerService,
-  ) {}
-  connectionCache = connections.connectionCache
-  parent = harness.parent
-  project = harness.project
-  machineDirectory = harness.machineDirectory
-  preferenceProject = harness.preferenceProject
-  dshFallback = harness.dshFallback
-  async dispatchSubject(caller: Agent): Promise<Agent> {
-    if (caller.session.header.origin !== 'subagent') return caller
-    const parentId = caller.session.header.parentSession
-    // A background Worker can outlive its parent's resident Agent; load it the
-    // same way native Remote Agent parameters do before deciding it is gone.
-    if (parentId)
-      try {
-        await this.ctx.typert.lookups.get('agent')?.resolve(parentId)
-      } catch {
-        /* reported below */
-      }
-    const parent = parentId && this.ctx.agents.get(parentId)
-    if (!parent) throw new Error('无法解析子 Agent 所属主对话；任务尚未创建')
-    if (
-      parent.id === caller.id ||
-      parent.session.header.origin === 'subagent' ||
-      parent.session.header.parentSession
-    )
-      throw new Error('只允许主对话的直接子 Agent 同级派遣；第三层调用被拒绝')
-    return parent
-  }
-  async siblingDispatch(caller: Agent, parent: Agent, signal: AbortSignal) {
-    if (caller === parent) return { questionAgent: parent }
-    this.runtime.assertSiblingCapacity(parent.id)
-    const worker = [...this.runtime.storage.workers.values()].find(
-      (row) => row.parentSessionId === parent.id && row.harnessConversation?.sessionId === caller.id,
-    )
-    const surface =
-      worker &&
-      (this.runQuestionSessions?.get(worker.runId) ??
-        (this.runOrigins?.get(worker.runId) === 'agent' ? parent.id : caller.id))
-    const questionAgent = surface ? this.ctx.agents.get(surface as Agent['id']) : parent
-    if (!questionAgent) throw new Error('发起者当前轮的询问会话不可用；任务尚未创建')
-    const label = worker
-      ? workerName(worker)
-      : (await readDshChildren(this.ctx.get('sessionQuery'), parent.id, signal)).find(
-          (row) => row.id === caller.id,
-        )?.label
-    return {
-      questionAgent,
-      initiator: {
-        kind: worker ? ('worker' as const) : ('subagent' as const),
-        id: worker?.id ?? caller.id,
-        name: label || caller.id,
-      },
-    }
-  }
-  assertExecution = permissions.assertExecution
-  assertAccessSupported = permissions.assertAccessSupported
-  childPermission = permissions.childPermission
-  permissionReceipt = permissions.permissionReceipt
-  hostPlanActive = permissions.hostPlanActive
-  permissionState = permissions.permissionState
-  decideNativeApproval = permissions.decideNativeApproval
-  answerHarnessApproval = permissions.answerHarnessApproval
-  readAccountBinding = models.readAccountBinding
-  queryCatalog = models.queryCatalog
-  freshCatalog = models.freshCatalog
-  busyAccountCatalog = models.busyAccountCatalog
-  authorizeChoice = models.authorizeChoice
-  querySelection = models.querySelection
-  /** Read installation paths without saving discovery or opening a native account/model process. */
-  async resolveDispatchName(name: string, signal: AbortSignal) {
-    const installed = async (cli: 'qoder' | 'qodercn' | 'workbuddycn' | 'workbuddy') => {
-      signal.throwIfAborted()
-      const saved = this.options.cliExecutablePaths?.read(cli)
-      const config = {
-        ...this.options,
-        cliExecutablePaths: undefined,
-        ...(saved?.mode === 'manual' ? { [`${cli}Executable`]: saved.path } : {}),
-      }
-      try {
-        await resolveCliExecutable(cli, this.backend, config, signal)
-        signal.throwIfAborted()
-        return true
-      } catch (error) {
-        if (error instanceof ProcessCleanupUnconfirmedError) {
-          this.runtime.blockCatalogOnCleanup(cli, error)
-          throw error
-        }
-        signal.throwIfAborted()
-        // A missing manually configured entry is a broken selection, not absence.
-        if (!saved || saved.mode !== 'manual') {
-          if (
-            !configuredCliExecutable(cli, config) &&
-            ((error instanceof WorkBuddyUnavailableError && error.reason === 'not-installed') ||
-              error instanceof WindowsCliNotFoundError ||
-              error instanceof SubprocessExecutableNotFoundError ||
-              ['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException)?.code ?? ''))
-          )
-            return false
-        }
-        throw error
-      }
-    }
-    return isGenericWorkBuddyName(name)
-      ? resolveAvailableWorkBuddyName(name, installed)
-      : resolveAvailableCliName(name, installed)
-  }
-  async chooseQoderVariant(agent: Agent, callerSignal: AbortSignal, name: string, questionAgent = agent) {
-    const signal = AbortSignal.any([callerSignal, this.disposed.signal])
-    signal.throwIfAborted()
-    const project = this.project(agent)
-    const key = JSON.stringify([agent.id, project, 'qoder-variant'])
-    const waits = (this.dispatchWaits ??= new Map())
-    const previous = waits.get(key) ?? Promise.resolve()
-    let release!: () => void
-    const owned = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const tail = previous.then(() => owned)
-    waits.set(key, tail)
-    void tail.then(() => {
-      if (waits.get(key) === tail) waits.delete(key)
-    })
-    this.pending.set(agent.id, (this.pending.get(agent.id) ?? 0) + 1)
-    this.runtime.changed()
-    try {
-      await waitForInput(previous, signal)
-      this.assertExecution(agent, true)
-      const resolution = await this.resolveDispatchName(name, signal)
-      signal.throwIfAborted()
-      let cli: 'qoder' | 'qodercn'
-      if (resolution.status === 'resolved' && (resolution.cli === 'qoder' || resolution.cli === 'qodercn'))
-        cli = resolution.cli
-      else if (resolution.status === 'ambiguous') {
-        const response = await waitForInput(
-          questionAgent.ctx.get('userQuestions')!.ask({
-            agent: questionAgent,
-            signal,
-            questions: [
-              {
-                id: 'cliworker_qoder_variant',
-                header: 'Qoder 版本',
-                question: '检测到 Qoder 和 Qoder CN，请选择本次使用的版本',
-                options: [{ label: 'Qoder' }, { label: 'Qoder CN' }],
-              },
-            ],
-          }),
-          signal,
-        )
-        signal.throwIfAborted()
-        const answer = response.answers.find((item) => item.id === 'cliworker_qoder_variant')
-        if (
-          answer?.custom !== undefined ||
-          answer?.selected.length !== 1 ||
-          !['Qoder', 'Qoder CN'].includes(answer.selected[0]!)
-        )
-          throw new Error('请选择 Qoder 或 Qoder CN；任务尚未启动')
-        cli = answer.selected[0] === 'Qoder' ? 'qoder' : 'qodercn'
-      } else throw new Error('未找到 Qoder 或 Qoder CN 安装，请先安装或配置 CLI 路径；任务尚未启动')
-      signal.throwIfAborted()
-      this.assertExecution(agent, true)
-      if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
-      this.runtime.assertCliEnabled(cli)
-      return cli
-    } finally {
-      release()
-      const pending = (this.pending.get(agent.id) ?? 1) - 1
-      if (pending) this.pending.set(agent.id, pending)
-      else this.pending.delete(agent.id)
-      this.runtime.changed()
-    }
-  }
-  async chooseWorkBuddyVariant(agent: Agent, callerSignal: AbortSignal, name: string, questionAgent = agent) {
-    const signal = AbortSignal.any([callerSignal, this.disposed.signal])
-    signal.throwIfAborted()
-    const project = this.project(agent)
-    const key = JSON.stringify([agent.id, project, 'workbuddy-variant'])
-    const waits = (this.dispatchWaits ??= new Map())
-    const previous = waits.get(key) ?? Promise.resolve()
-    let release!: () => void
-    const owned = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const tail = previous.then(() => owned)
-    waits.set(key, tail)
-    void tail.then(() => {
-      if (waits.get(key) === tail) waits.delete(key)
-    })
-    this.pending.set(agent.id, (this.pending.get(agent.id) ?? 0) + 1)
-    this.runtime.changed()
-    try {
-      await waitForInput(previous, signal)
-      this.assertExecution(agent, true)
-      const resolution = await this.resolveDispatchName(name, signal)
-      signal.throwIfAborted()
-      let cli: 'workbuddycn' | 'workbuddy'
-      if (resolution.status === 'resolved' && isWorkBuddyCli(resolution.cli)) cli = resolution.cli
-      else if (resolution.status === 'ambiguous') {
-        const response = await waitForInput(
-          questionAgent.ctx.get('userQuestions')!.ask({
-            agent: questionAgent,
-            signal,
-            questions: [
-              {
-                id: 'cliworker_workbuddy_variant',
-                header: 'WorkBuddy 版本',
-                question: '检测到 WorkBuddy CN 和 WorkBuddy（国际版），请选择本次使用的版本',
-                options: [{ label: 'WorkBuddy CN' }, { label: 'WorkBuddy（国际版）' }],
-              },
-            ],
-          }),
-          signal,
-        )
-        signal.throwIfAborted()
-        const answer = response.answers.find((item) => item.id === 'cliworker_workbuddy_variant')
-        if (
-          answer?.custom !== undefined ||
-          answer?.selected.length !== 1 ||
-          !['WorkBuddy CN', 'WorkBuddy（国际版）'].includes(answer.selected[0]!)
-        )
-          throw new Error('请选择 WorkBuddy CN 或 WorkBuddy（国际版）；任务尚未启动')
-        cli = answer.selected[0] === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy'
-      } else
-        throw new Error(
-          '未找到 WorkBuddy CN 或 WorkBuddy（国际版）安装，请先安装或配置 CLI 路径；任务尚未启动',
-        )
-      signal.throwIfAborted()
-      this.assertExecution(agent, true)
-      if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
-      this.runtime.assertCliEnabled(cli)
-      return cli
-    } finally {
-      release()
-      const pending = (this.pending.get(agent.id) ?? 1) - 1
-      if (pending) this.pending.set(agent.id, pending)
-      else this.pending.delete(agent.id)
-      this.runtime.changed()
-    }
-  }
-  /**
-   * Serialize only this conversation's questions; a cancelled waiter never owns
-   * the question. A settled setup asks nothing, so its catalog check leaves the
-   * queue and parallel dispatches of one conversation start together.
-   */
-  async chooseDispatch(
-    agent: Agent,
-    callerSignal: AbortSignal,
-    cli: CliId,
-    questionAgent = agent,
-  ): Promise<DispatchSetup> {
-    const signal = AbortSignal.any([callerSignal, this.disposed.signal])
-    signal.throwIfAborted()
-    this.runtime.assertCliEnabled(cli)
-    const project = this.project(agent)
-    const key = JSON.stringify([agent.id, project, cli])
-    const waits = (this.dispatchWaits ??= new Map())
-    const turn = () => {
-      const previous = waits.get(key) ?? Promise.resolve()
-      let release!: () => void
-      const owned = new Promise<void>((resolve) => {
-        release = resolve
-      })
-      const tail = previous.then(() => owned)
-      waits.set(key, tail)
-      void tail.then(() => {
-        if (waits.get(key) === tail) waits.delete(key)
-      })
-      return { previous, release }
-    }
-    this.pending.set(agent.id, (this.pending.get(agent.id) ?? 0) + 1)
-    this.runtime.changed()
-    try {
-      for (let queued = false; ; queued = true) {
-        const { previous, release } = turn()
-        let held = true
-        try {
-          await waitForInput(previous, signal)
-          signal.throwIfAborted()
-          this.assertExecution(agent, true)
-          this.runtime.assertCliEnabled(cli)
-          if (!queued && this.runtime.storage.conversationSetup(agent.id, project, cli)) {
-            release()
-            held = false
-          }
-          this.settingsCatalogs ??= new SettingsCatalogCache(this.runtime.storage.directory)
-          const catalogRevision = this.settingsCatalogs.revision(cli)
-          const queried = await this.queryCatalog(cli, this.backend, this.options, project, signal)
-          const { catalog } = queried
-          let { binding } = queried
-          signal.throwIfAborted()
-          this.runtime.assertCliEnabled(cli)
-          this.settingsCatalogs.remember(project, { catalog, binding }, catalogRevision)
-          const models = catalog.models
-          const valid = (setup: DispatchSetup | undefined): setup is DispatchSetup => {
-            // A saved choice outlives an account change: the current account must still offer it,
-            // and launch authorizes it again under that account.
-            if (!setup || cliOf(setup.preference) !== cli) return false
-            try {
-              validatePreference(setup.preference, catalog)
-              return resolveModel(setup.preference, models).model === setup.preference.model
-            } catch {
-              return false
-            }
-          }
-          let asked = false
-          const ask = async (questions: AskUserQuestionItem[]) => {
-            signal.throwIfAborted()
-            asked = true
-            const response = await waitForInput(
-              questionAgent.ctx.get('userQuestions')!.ask({ agent: questionAgent, signal, questions }),
-              signal,
-            )
-            signal.throwIfAborted()
-            this.runtime.assertCliEnabled(cli)
-            return response
-          }
-          const current = this.runtime.storage.conversationSetup(agent.id, project, cli)
-          let setup: DispatchSetup | undefined = valid(current) ? current : undefined
-          // The settled setup no longer fits this catalog: ask again in turn.
-          if (!setup && !held) continue
-          let selected = false
-          // The only unasked start: the user turned asking off and the saved complete setup still checks out.
-          if (!setup && this.runtime.storage.generalSettings().askBeforeDispatch === false) {
-            const saved = this.runtime.storage.dispatchSetup(project, cli)
-            if (valid(saved)) setup = saved
-          } else if (!current) {
-            const saved = this.runtime.storage.dispatchSetup(project, cli)
-            if (valid(saved)) {
-              const modelLabel =
-                models.find(
-                  (model) =>
-                    model.id === saved.preference.model ||
-                    Object.values(model.variants ?? {}).includes(saved.preference.model),
-                )?.label ?? saved.preference.model
-              const response = await ask([
-                {
-                  id: 'cliworker_reuse',
-                  header: '沿用设定',
-                  question: `是否沿用 ${modelLabel} · ${effortLabel(saved.preference.effort)} · ${saved.role?.name ?? '不使用角色预设'}？`,
-                  options: [{ label: '沿用' }, { label: '重新选择' }],
-                },
-              ])
-              const answer = response.answers.find((item) => item.id === 'cliworker_reuse')
-              if (
-                answer?.custom !== undefined ||
-                answer?.selected.length !== 1 ||
-                !['沿用', '重新选择'].includes(answer.selected[0]!)
-              )
-                throw new Error('请选择沿用或重新选择；任务尚未启动')
-              if (answer.selected[0] === '沿用') setup = saved
-            }
-          }
-          if (!setup) {
-            const choices = visibleModelChoices(models)
-            const response = await ask([
-              {
-                id: 'cliworker_model',
-                header: `${CLI_LABELS[cli]} 模型`,
-                question: '选择模型',
-                options: choices.map((model) => ({ label: model.label })),
-              },
-            ])
-            const answer = response.answers.find((item) => item.id === 'cliworker_model')
-            const chosen =
-              answer?.custom === undefined && answer?.selected.length === 1
-                ? choices.find((model) => model.label === answer.selected[0])
-                : undefined
-            if (!chosen?.efforts?.length) throw new Error('请选择列表中的模型')
-            const offered = structuredClone(this.runtime.storage.rolePresets())
-            const questions: AskUserQuestionItem[] = []
-            if (chosen.efforts.length > 1)
-              questions.push({
-                id: 'cliworker_effort',
-                header: '思考强度',
-                question: `选择 ${chosen.label} 的思考强度`,
-                options: chosen.efforts.map((effort) => ({ label: effortLabel(effort) })),
-              })
-            questions.push(roleQuestion(offered))
-            const selection = await ask(questions)
-            const effortAnswer = selection.answers.find((item) => item.id === 'cliworker_effort')
-            const effort =
-              chosen.efforts.length === 1
-                ? chosen.efforts[0]
-                : effortAnswer?.custom === undefined && effortAnswer?.selected.length === 1
-                  ? chosen.efforts.find((effort) => effortLabel(effort) === effortAnswer.selected[0])
-                  : undefined
-            const preference = resolveModel(preferenceSchema.parse({ cli, model: chosen.id, effort }), models)
-            setup = { preference, role: readRoleAnswer(offered, selection) ?? null, binding }
-            selected = true
-          }
-          // A remembered answer is never execution authority. Detect changes during any
-          // question; an unasked setup was just checked, and launch checks it again.
-          if (asked) {
-            const checked = await this.authorizeChoice(
-              setup.preference,
-              this.backend,
-              this.options,
-              project,
-              signal,
-              binding,
-            )
-            if (checked.preference.model !== setup.preference.model)
-              throw new Error('模型与思考强度已变更，请重新选择')
-            binding = checked.binding
-            setup = { ...setup, binding }
-          }
-          signal.throwIfAborted()
-          this.assertExecution(agent, true)
-          this.runtime.assertCliEnabled(cli)
-          if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
-          if (selected) this.runtime.storage.setDispatchSetup(project, setup)
-          if (current !== setup) this.runtime.storage.setConversationSetup(agent.id, project, setup)
-          ;(this.selectionBindings ??= new WeakMap()).set(setup.preference, binding)
-          ;(this.selectionProjects ??= new WeakMap()).set(setup.preference, project)
-          return setup
-        } finally {
-          if (held) release()
-        }
-      }
-    } finally {
-      const pending = (this.pending.get(agent.id) ?? 1) - 1
-      if (pending) this.pending.set(agent.id, pending)
-      else this.pending.delete(agent.id)
-      this.runtime.changed()
-    }
-  }
-  async launch(
-    agent: Agent,
-    title: string,
-    prompt: string,
-    preference: Preference,
-    mode: TaskMode,
-    workerId?: string,
-    identity?: { agentName?: string; role?: RoleSnapshot; initiator?: Worker['initiator'] },
-    signal: AbortSignal = this.disposed.signal,
-    restartSourceId?: string,
-    queuedAdmission?: { id: string; expectedRunId: string; priority?: boolean },
-    preparationId?: string,
-    submissionId?: string,
-    attachments?: readonly NativeAttachment[],
-    origin: RunOrigin = 'user',
-    questionSessionId?: string,
-  ): Promise<string> {
-    if (workerId && !preparationId)
-      return this.runtime.prepareFollowup(
-        agent.id,
-        workerId,
-        signal,
-        (control, id) =>
-          this.launch(
-            agent,
-            title,
-            prompt,
-            preference,
-            mode,
-            workerId,
-            identity,
-            control,
-            restartSourceId,
-            queuedAdmission,
-            id,
-            submissionId,
-            attachments,
-            origin,
-            questionSessionId,
-          ),
-        queuedAdmission?.priority ? queuedAdmission.id : undefined,
-      )
-    this.assertExecution(agent, true)
-    this.assertAccessSupported(
-      agent,
-      cliOf(preference),
-      workerId ? this.runtime.get(agent.id, workerId).level : undefined,
-    )
-    this.runtime.assertCliEnabled(cliOf(preference))
-    if (this.accounts.isBusy(cliOf(preference)))
-      throw new Error('此 CLI 正在管理账号，请先关闭账号终端再启动任务')
-    const project = this.project(agent)
-    const selectedProject = this.selectionProjects?.get(preference)
-    if (!workerId && selectedProject && selectedProject !== project) throw new Error('项目已变更，请重新选择')
-    // An existing task continues under the own account signed in now; a new task's
-    // choice is authorized again under it when the account changed after the choice.
-    const expected = workerId ? undefined : this.selectionBindings?.get(preference)
-    const { binding, preference: authorizedPreference } = await this.authorizeChoice(
-      preference,
-      this.backend,
-      this.options,
-      project,
-      signal,
-      expected,
-    )
-    if (authorizedPreference.model !== preference.model) throw new Error('模型与思考强度不匹配，请重新选择')
-    signal.throwIfAborted()
-    this.assertExecution(agent, true)
-    this.runtime.assertCliEnabled(cliOf(preference))
-    if (this.accounts.isBusy(cliOf(preference))) throw new Error('请先关闭账号终端')
-    if (this.project(agent) !== project) throw new Error('项目已变更，请重新选择')
-    if (restartSourceId) this.runtime.assertLegacyRestart(agent.id, restartSourceId)
-    if (identity?.initiator && !workerId) this.runtime.assertSiblingCapacity(agent.id)
-    let submission: Submission | undefined
-    // Fixed when the turn is admitted: a later parent change applies from the next turn.
-    let permission:
-      | { permission: Pick<WorkerPermissionReceipt, 'level' | 'name' | 'source'>; permissionSummary: string }
-      | undefined
-    const publish = () =>
-      agent.ctx.get('jobs')!.start({
-        kind: 'cliworker',
-        owner: agent.id,
-        label: `${CLI_LABELS[cliOf(preference)]} · ${title} · ${workerId ? '续聊' : '新任务'}：${prompt.replace(/\s+/g, ' ').slice(0, 100)}`,
-        outputLimitBytes: 12000,
-        run: () => {
-          const submitted = this.runtime.submit(
-            agent.id,
-            project,
-            title,
-            prompt,
-            preference,
-            mode,
-            workerId,
-            identity,
-            binding,
-            queuedAdmission,
-            preparationId,
-            submissionId,
-            attachments,
-          )
-          submission = submitted
-          const admittedPermission = (permission = this.permissionReceipt(agent, submitted.worker))
-          // Approvals of this exact turn surface where it was started.
-          const runId = submitted.worker.runId
-          if (runId) {
-            const origins = (this.runOrigins ??= new Map())
-            origins.set(runId, origin)
-            if (questionSessionId) (this.runQuestionSessions ??= new Map()).set(runId, questionSessionId)
-            void submitted.done.finally(() => {
-              origins.delete(runId)
-              this.runQuestionSessions?.delete(runId)
-            })
-          }
-          return {
-            cancel: submitted.cancel,
-            done: submitted.done.then((worker) => ({
-              status:
-                worker.status === 'completed'
-                  ? ('completed' as const)
-                  : worker.status === 'interrupted'
-                    ? ('killed' as const)
-                    : ('failed' as const),
-              detail: worker.error,
-              result: JSON.stringify({
-                cli: cliOf(worker.preference),
-                workerId: worker.id,
-                agentName: workerName(worker),
-                runId: worker.runId,
-                task: prompt.slice(0, 300),
-                status: worker.status,
-                response: worker.lastResult,
-                error: worker.error,
-                ...(worker.status === 'completed' && worker.resultNotice
-                  ? { notice: worker.resultNotice }
-                  : {}),
-                ...admittedPermission,
-                guidance:
-                  [
-                    worker.status === 'uncertain'
-                      ? '结果待核实；请先核查本轮输出和实际产物，不要自动重试。'
-                      : undefined,
-                    worker.status === 'completed' && worker.resultNotice ? worker.resultNotice : undefined,
-                    isolationGuidance(worker),
-                  ]
-                    .filter(Boolean)
-                    .join(' ') || undefined,
-              }),
-            })),
-          }
-        },
-      })
-    const id = identity?.initiator ? publishSiblingOutsideTool(publish) : publish()
-    if (!submission) throw new Error('Harness did not publish the worker job')
-    this.nativeRunDone.set(submission.worker.runId, submission.done)
-    const runId = submission.worker.runId
-    void submission.done.then(
-      () => {
-        this.nativeRunDone.delete(runId)
-      },
-      () => {
-        this.nativeRunDone.delete(runId)
-      },
-    )
-    try {
-      this.runtime.attachJob(submission.worker, id)
-    } catch (error) {
-      // Admission already happened. Do not leave a process running without a
-      // receipt when the job binding cannot be persisted.
-      const admitted = submission
-      const outcomes = await Promise.allSettled([
-        Promise.resolve().then(() => admitted.cancel()),
-        admitted.done,
-      ])
-      const failures = outcomes.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
-      if (failures.length)
-        throw new AggregateError(
-          [error, ...failures.map((item) => item.reason)],
-          '任务登记失败；取消或清理报告异常',
-        )
-      throw error
-    }
-    return JSON.stringify({
-      cli: cliOf(submission.worker.preference),
-      workerId: submission.worker.id,
-      agentName: workerName(submission.worker),
-      runId: submission.worker.runId,
-      jobId: id,
-      status: submission.worker.status,
-      model: submission.worker.preference.model,
-      effort: submission.worker.preference.effort,
-      // Report this tier as is; a Worker without its own level follows the parent preset.
-      ...(permission ?? this.permissionReceipt(agent, submission.worker)),
-    })
-  }
-  waitHarnessRun = harness.waitHarnessRun
-  registerTools(): void {
-    const output = {
-      schema: { type: 'string' as const },
-      render: (_args: unknown, value: string) => [{ type: 'text' as const, text: value }],
-    }
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_resolve',
-            description: `只读解析明确调用中的 CLI 名称、别名或轻微拼写误差，不启动任务、不读取账号、不保存选型。${CLI_NAME_GUIDANCE}。未知、歧义或多个目标返回简短候选错误，不启动、不额外发问题卡。`,
-            parameters: {
-              name: {
-                type: 'string',
-                required: true,
-                description: '用户要求调用的 CLI 名称；不是任务内容或模型名称。',
-              },
-            },
-            output,
-            isConcurrencySafe: () => true,
-            execute: async (args, exec) =>
-              JSON.stringify(
-                isGenericQoderName(args.name) || isGenericWorkBuddyName(args.name)
-                  ? await this.resolveDispatchName(
-                      args.name,
-                      AbortSignal.any([exec.signal, this.disposed.signal]),
-                    )
-                  : resolveCliName(args.name),
-              ),
-          }),
-        ),
-      'cliworker:resolve',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_start',
-            description: `用户明确要求“调用 agy cli”或“用 glm cli 完成任务”时，调用本工具打开 CLI Worker 的选型流程。只需提供 CLI、任务标题和任务内容；模型、思考强度与角色由插件收集，完成选型前不会启动任务，不要把它们当作调用本工具的前置输入。${CLI_NAME_GUIDANCE}。泛称 qoder / WorkBuddy 在双版本均安装时先通过原生询问选择版本。Host 在首次选择模型、思考强度与角色，或同项目新对话确认是否沿用时提问；同对话后续不重复。不要提前自行提问或增加确认，不代答。返回后台 job、worker ID、agentName 与 permission（本轮实际权限档位；未选过档位的 Worker 跟随主对话权限预设），向用户说明权限时以 permission 为准，不要自行推断。主对话的直接子 Agent（包括 CLI Worker）可同级派遣，新 Worker 归属主对话并与发起者同级；发起者不提供模型、强度、角色或会话 ID，每个主对话最多 6 个未结束的子 Agent 派遣。主对话的已有智能体续聊用 cliworker_followup；除泛称 qoder / WorkBuddy 的双版本选择外，其他歧义返回简短候选错误，不启动、不额外发问题卡。`,
-            parameters: {
-              cli: {
-                type: 'string',
-                required: true,
-                description: `本次用户明确指定的 CLI 规范 ID 或别名：${CLI_NAME_GUIDANCE}。每次调用必填，Antigravity 也不可省略；不得照搬历史调用中省略 cli 的写法。较长名称仅接受唯一轻微误差；短名须精确，不猜模型。`,
-              },
-              title: { type: 'string', required: true },
-              prompt: { type: 'string', required: true },
-              agent_name: {
-                type: 'string',
-                description:
-                  'Optional user-requested unique worker name within this parent conversation. Otherwise assigned from the CLI short name and an ordinal. Use followup by worker_name to reuse an existing named worker.',
-              },
-              read_only: {
-                type: 'boolean',
-                description:
-                  'Use native read-only/plan mode; unsupported by Kimi print mode. Omit or false for coding.',
-              },
-            },
-            output,
-            timeoutMs: 1800000,
-            isConcurrencySafe: () => true,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const parent = await this.dispatchSubject(exec.agent)
-              this.assertExecution(parent, true)
-              const { questionAgent, initiator } = await this.siblingDispatch(exec.agent, parent, exec.signal)
-              let cli = requireCliName(args.cli)
-              if (isGenericWorkBuddyName(args.cli))
-                cli = await this.chooseWorkBuddyVariant(parent, exec.signal, args.cli, questionAgent)
-              if (isGenericQoderName(args.cli))
-                cli = await this.chooseQoderVariant(parent, exec.signal, args.cli, questionAgent)
-              const agentName =
-                args.agent_name === undefined ? undefined : agentNameSchema.parse(args.agent_name)
-              if (cli === 'kimi' && args.read_only) throw new Error('Kimi 非交互模式不支持只读派遣')
-              const setup = await this.chooseDispatch(
-                parent,
-                AbortSignal.any([exec.signal, this.disposed.signal]),
-                cli,
-                questionAgent,
-              )
-              exec.signal.throwIfAborted()
-              return this.launch(
-                parent,
-                args.title,
-                args.prompt,
-                setup.preference,
-                args.read_only ? 'plan' : 'accept-edits',
-                undefined,
-                { agentName, role: setup.role ?? undefined, ...(initiator ? { initiator } : {}) },
-                AbortSignal.any([exec.signal, this.disposed.signal]),
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                undefined,
-                'agent',
-                initiator ? questionAgent.id : undefined,
-              )
-            },
-          }),
-        ),
-      'cliworker:start',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_status',
-            description:
-              'Read the parent conversation’s CLI workers or one worker’s latest result. Background completion is announced automatically.',
-            parameters: { worker_id: { type: 'string' }, worker_name: { type: 'string' } },
-            output,
-            isConcurrencySafe: () => true,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const parent = await this.dispatchSubject(exec.agent)
-              if (args.worker_id || args.worker_name) {
-                const dsh = await this.dshFallback(parent.id, args, exec.signal, () =>
-                  this.runtime.resolveWorker(parent.id, args.worker_id, args.worker_name),
-                )
-                if ('kind' in dsh) return JSON.stringify(dsh)
-                return JSON.stringify({
-                  ...dsh,
-                  agentName: workerName(dsh),
-                  guidance: isolationGuidance(dsh),
-                })
-              }
-              const dshRows =
-                this.runtime.snapshot(parent.id).showDshSubagents === false
-                  ? []
-                  : (await this.dshSubagents.list(parent.id, exec.signal)).map((row) => ({
-                      kind: 'dsh-subagent',
-                      workerId: row.id,
-                      agentName: row.agentName,
-                      title: row.name,
-                      status: row.stopped ? 'stopped' : row.status,
-                      model: row.model,
-                      mode: row.mode,
-                    }))
-              return JSON.stringify([
-                ...this.runtime.snapshot(parent.id).workers.map((worker) => ({
-                  ...worker,
-                  agentName: workerName(worker),
-                  guidance: isolationGuidance(worker),
-                })),
-                ...dshRows,
-              ])
-            },
-          }),
-        ),
-      'cliworker:status',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_followup',
-            description:
-              "Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its `dsh-N` name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn's actual tier (a Worker without its own level follows the parent preset); report it as is.",
-            parameters: {
-              worker_id: { type: 'string' },
-              worker_name: { type: 'string' },
-              prompt: { type: 'string', required: true },
-            },
-            output,
-            isConcurrencySafe: () => true,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const agent = exec.agent
-              const target = await this.dshFallback(
-                agent.id,
-                args,
-                exec.signal,
-                () => this.runtime.resolveWorker(agent.id, args.worker_id, args.worker_name),
-                args.prompt,
-              )
-              if ('kind' in target) return JSON.stringify(target)
-              return this.continueWorker(agent.id, target.id, args.prompt, exec.signal, 'agent')
-            },
-          }),
-        ),
-      'cliworker:followup',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_stop',
-            description: 'Stop a CLI worker and await cleanup of its managed processes.',
-            parameters: { worker_id: { type: 'string' }, worker_name: { type: 'string' } },
-            output,
-            isConcurrencySafe: () => true,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const worker = this.runtime.resolveWorker(exec.agent.id, args.worker_id, args.worker_name)
-              return JSON.stringify(await this.runtime.stop(exec.agent.id, worker.id))
-            },
-          }),
-        ),
-      'cliworker:stop',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_merge',
-            description:
-              '把空闲 CLI 智能体隔离副本中的改动三方合并回当前项目，作为未提交改动写回，不会提交。隔离运行的智能体完成后，由你核查结果再调用本工具。只有一边改过的文件直接写回；两边都改过的文件不是错误，返回 needs_integration 及基线、项目、副本三个版本的文件路径，由你按各任务目标整合，再带 resolutions 调用本工具（use=content 附完整最终内容，或 use=copy / use=project）。只有两边目标相互矛盾时才用 ask_user_question 请用户选择。决定齐全前项目不变、副本保留。不要让 CLI 改到原目录重做。',
-            parameters: {
-              worker_id: { type: 'string' },
-              worker_name: { type: 'string' },
-              resolutions: {
-                type: 'array',
-                description:
-                  'Decisions for files a previous call returned in needs_integration. Each item: path, use (content | copy | project), and content (the complete final file text) when use is content.',
-                items: {
-                  type: 'object',
-                  additionalProperties: false,
-                  properties: {
-                    path: { type: 'string', required: true },
-                    use: { type: 'string', enum: ['content', 'copy', 'project'], required: true },
-                    content: { type: 'string' },
-                  },
-                },
-              },
-            },
-            output,
-            isConcurrencySafe: () => false,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const worker = this.runtime.resolveWorker(exec.agent.id, args.worker_id, args.worker_name)
-              const resolutions = readResolutions(args.resolutions)
-              const result = await this.mergeIsolatedWorker(exec.agent, worker.id, exec.signal, resolutions)
-              return JSON.stringify(
-                result.status === 'merged'
-                  ? result
-                  : integrationReport(
-                      workerName(worker),
-                      result,
-                      resolutions && result.conflicts.map((item) => item.path),
-                    ),
-              )
-            },
-          }),
-        ),
-      'cliworker:merge',
-    )
-    this.ctx.effect(
-      () =>
-        this.ctx.tools.register(
-          defineTool({
-            name: 'cliworker_discard',
-            description:
-              '丢弃空闲 CLI 智能体的隔离副本。执行前会向用户确认；确认后副本中的改动永久删除，主目录不变。用户未确认时副本保留。',
-            parameters: { worker_id: { type: 'string' }, worker_name: { type: 'string' } },
-            output,
-            isConcurrencySafe: () => false,
-            execute: async (args, exec) => {
-              if (!exec.agent) throw new Error('A parent Agent is required')
-              const agent = exec.agent
-              const worker = this.runtime.resolveWorker(agent.id, args.worker_id, args.worker_name)
-              const signal = AbortSignal.any([exec.signal, this.disposed.signal])
-              const response = await waitForInput(
-                agent.ctx.get('userQuestions')!.ask({
-                  agent,
-                  signal,
-                  questions: [
-                    {
-                      id: 'cliworker_discard',
-                      header: '丢弃副本',
-                      question: `丢弃 ${workerName(worker)} 的隔离副本？副本中的改动将永久删除，项目主目录不变。`,
-                      options: [{ label: '丢弃' }, { label: '保留' }],
-                    },
-                  ],
-                }),
-                signal,
-              )
-              const answer = response.answers.find((item) => item.id === 'cliworker_discard')
-              if (
-                answer?.custom !== undefined ||
-                answer?.selected.length !== 1 ||
-                answer.selected[0] !== '丢弃'
-              )
-                return JSON.stringify({ status: 'kept', message: '用户未确认，隔离副本已保留' })
-              await this.runtime.discardIsolation(agent.id, worker.id)
-              return JSON.stringify({ status: 'discarded' })
-            },
-          }),
-        ),
-      'cliworker:discard',
-    )
-  }
-  settingsDisplayMetadata = settings.settingsDisplayMetadata
-  invalidateSettingsDisplay = settings.invalidateSettingsDisplay
-  mergeIsolatedWorker = workers.mergeIsolatedWorker
-  preloadSettingsConnection = connections.preloadSettingsConnection
-  preloadSettingsConnectionNow = connections.preloadSettingsConnectionNow
-  loadSettingsAccount = connections.loadSettingsAccount
-  loadSettingsCatalog = connections.loadSettingsCatalog
-  readAccountStatus = accounts.readAccountStatus
-  cleanupHeldStatus = accounts.cleanupHeldStatus
-  executablePathSnapshot = connections.executablePathSnapshot
-  probeExecutablePath = connections.probeExecutablePath
-  trackAccountParent = accounts.trackAccountParent
-  customProviderSource = accounts.customProviderSource
-  customProviderManager = accounts.customProviderManager
-  startAccount = accounts.startAccount
-  settingsCatalog = models.settingsCatalog
-  assertNativeWorkerSettingsIdle = permissions.assertNativeWorkerSettingsIdle
-  configureColdWorkerPermission = permissions.configureColdWorkerPermission
-  /** Shared follow-up admission; `origin` decides where this turn's approvals appear. */
-  async continueWorker(
-    parentSessionId: string,
-    workerId: string,
-    prompt: string,
-    signal: AbortSignal,
-    origin: RunOrigin,
-  ): Promise<string> {
-    try {
-      const agent = await this.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.assertExecution(agent, true)
-      const worker = this.runtime.get(agent.id, workerId)
-      this.runtime.assertCliEnabled(cliOf(worker.preference))
-      return this.launch(
-        agent,
-        worker.title,
-        prompt,
-        worker.preference,
-        worker.mode,
-        workerId,
-        undefined,
-        signal,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        origin,
-      )
-    } catch (error) {
-      throw failure(error)
-    }
-  }
-}
-
-export type { ServiceContext }

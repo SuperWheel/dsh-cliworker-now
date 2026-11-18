@@ -2,7 +2,7 @@ import { cliTakeoverRequestSchema } from '../shared/cli-management.ts'
 import { z as validate } from 'zod'
 import { CLI_IDS } from '../shared/types.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function cliUpdateSnapshot(
   host: ServiceContext,

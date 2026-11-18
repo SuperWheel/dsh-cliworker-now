@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,6 @@ import { CliExecutablePathStore } from '../src/host/cli-executable-paths.ts'
 import { transportFor, usesNativeBridge, prepareNativeWorker } from '../src/host/native-worker.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError, type ProcessBackend } from '../src/host/process.ts'
 import { invocationResolution, requireCliName, isGenericWorkBuddyName, resolveAvailableWorkBuddyName } from '../src/host/routing.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 
 const { probe } = vi.hoisted(() => ({ probe: vi.fn() }))
 vi.mock('../src/host/native-workbuddy.mjs', async load => ({
@@ -221,7 +221,7 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
     const f = fixture(), ask = vi.fn(async () => ({ answers: [{ id: 'cliworker_workbuddy_variant', selected: [label] }] }))
     const agent = { id: 'SIMULATED/parent', session: { header: { cwd: f.root, origin: 'user' } },
       ctx: { get: (key: string) => key === 'userQuestions' ? { ask } : key === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined } }
-    const service: any = Object.create(CliWorkerService.prototype)
+    const service: any = hostServiceFixture()
     Object.assign(service['host'], { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
     expect(await service['host'].chooseWorkBuddyVariant(agent, signal(), 'WorkBuddy')).toBe(label === 'WorkBuddy CN' ? 'workbuddycn' : 'workbuddy')
@@ -233,7 +233,7 @@ describe('模拟 WorkBuddy 别名与泛称路由', () => {
     const f = fixture(), ask = vi.fn(async () => ({ answers: [] }))
     const agent = { id: 'SIMULATED/parent', session: { header: { cwd: f.root, origin: 'user' } },
       ctx: { get: (key: string) => key === 'userQuestions' ? { ask } : key === 'sandboxPolicy' ? { resolve: () => ({ mode: 'workspace-write' }) } : undefined } }
-    const service: any = Object.create(CliWorkerService.prototype)
+    const service: any = hostServiceFixture()
     Object.assign(service['host'], { options: f.config, backend: f.backend, disposed: new AbortController(), pending: new Map(),
       runtime: { changed: vi.fn(), assertCliEnabled: vi.fn() } })
     await expect(service['host'].chooseWorkBuddyVariant(agent, signal(), 'workbuddy')).rejects.toThrow('任务尚未启动')
@@ -263,7 +263,7 @@ describe('模拟 WorkBuddy desktop Gateway and AccountManager integration', () =
     const parent = { id: 'SIMULATED/parent', ctx: { effect: (factory: () => () => Promise<void>) => {
       const close = factory(); dispose.push(close); return close
     } } }
-    const service: any = Object.create(CliWorkerService.prototype)
+    const service: any = hostServiceFixture()
     Object.assign(service['host'], { accounts: manager, accountParents: new Map(), disposed: new AbortController(),
       // 模拟：主对话没有项目；桌面账号窗口属于整机，不解析会话目录。
       parent: vi.fn(async () => parent), options: { stateDirectory: f.root }, assertExecution: vi.fn(),

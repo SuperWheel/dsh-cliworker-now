@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -206,7 +207,7 @@ function fixture() {
     },
   }
   const tools = new Map<string, any>()
-  const service = Object.create(CliWorkerService.prototype) as CliWorkerService
+  const service = hostServiceFixture() as CliWorkerService
   Object.defineProperties(service['host'], {
     ctx: {
       value: {

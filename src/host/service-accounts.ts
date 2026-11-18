@@ -3,10 +3,10 @@ import { z as validate } from 'zod'
 import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CLI_IDS, type CliId } from '../shared/types.ts'
-import { machineDirectory, ProcessCleanupUnconfirmedError } from './process.ts'
+import { ProcessCleanupUnconfirmedError } from './process.ts'
 import { explicitCredentialRead } from './os-credential-store.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function accountStatus(
   host: ServiceContext,

@@ -2,9 +2,8 @@ import { z as validate } from 'zod'
 import { createHash, randomUUID } from 'node:crypto'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
 import { CLI_IDS, type CliId } from '../shared/types.ts'
-import { machineDirectory } from './process.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function cliSettings(
   host: ServiceContext,

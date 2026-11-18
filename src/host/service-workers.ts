@@ -1,7 +1,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { MergeResolution } from './isolated-workspace.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function renameWorker(
   host: ServiceContext,

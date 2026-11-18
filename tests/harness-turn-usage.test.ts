@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs'
@@ -8,7 +9,6 @@ import { HarnessConversationBridge, HARNESS_CLI_PROVIDER } from '../src/host/har
 import { HarnessConversationStream } from '../src/host/harness-conversation-stream.ts'
 import { HarnessConversationStore } from '../src/host/harness-conversation-store.ts'
 import { bindHarnessTurnRun, projectExternalTurnUsage, recoverHarnessTurnRuns, type HarnessTurnObservation } from '../src/host/harness-turn-usage.ts'
-import { CliWorkerService } from '../src/host/index.ts'
 import type { HarnessConversationRecord } from '../src/host/harness-conversation-types.ts'
 import type { Worker, WorkerEvent } from '../src/shared/types.ts'
 import type { TokenUsage } from '../src/shared/telemetry.ts'
@@ -196,7 +196,7 @@ it('refreshes an exact child on native turn settlement and releases its subscrip
   const { record, worker } = state(); record.turnRuns = [{ turn: 9, runId: worker.runId }]
   let onEvent: any; const off = vi.fn(), release = vi.fn()
   const snapshot = { selected: worker, selectedBusy: false, timeline: [], workers: [worker], revision: 1 }
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], { ctx: { on: (_name: string, listener: any) => { onEvent = listener; return off }, get: () => undefined },
     runtime: { subscribe: () => release, snapshot: () => snapshot, runUsage: () => usage(), storage: { history: () => [] } },
     disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [record] } })
@@ -212,7 +212,7 @@ it('refreshes an exact child on native turn settlement and releases its subscrip
 it('Gateway watch publishes only the selected child association and omits ordinary sessions', async () => {
   const { record, worker } = state(); record.turnRuns = [{ turn: 9, runId: worker.runId }]
   const source = { ...worker }, snapshot = { selected: source, selectedBusy: false, timeline: [], workers: [source], revision: 1 }
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   const runtime = { subscribe: () => () => {}, snapshot: () => snapshot, runUsage: vi.fn(() => usage()), storage: { history: vi.fn(() => []) } }
   Object.assign(service['host'], { ctx: { on: () => () => {}, get: () => undefined }, runtime, disposed: new AbortController(), pending: new Map(), harnessConversationStore: { list: () => [record] } })
   const controller = new AbortController(), iterator = service.watch(worker.parentSessionId, worker.id, controller.signal)
@@ -298,7 +298,7 @@ describe('read-only legacy Hermes turn recovery from official Session events', (
   })
   it('Gateway uses one disposable official read and projects only its in-memory association', async () => {
     const f = legacyHermes(), dispose = vi.fn(), observe = vi.fn(async () => ({ ...f.observation, [Symbol.dispose]: dispose }))
-    const service: any = Object.create(CliWorkerService.prototype), before = structuredClone(f.record)
+    const service: any = hostServiceFixture(), before = structuredClone(f.record)
     const snapshot = { selected: f.worker, selectedBusy: false, timeline: [], workers: [f.worker], revision: 1 }
     Object.assign(service['host'], { ctx: { on: () => () => {}, get: (name: string) => name === 'sessionQuery' ? { observeSession: observe } : undefined },
       runtime: { subscribe: () => () => {}, snapshot: () => snapshot, storage: { history: () => f.events }, runUsage: () => ({ scope: 'run', input: 13, output: 4, cacheRead: 2, cacheWrite: 1, total: 17 }) },
@@ -311,7 +311,7 @@ describe('read-only legacy Hermes turn recovery from official Session events', (
     controller.abort(); await iterator.return(undefined)
   })
   it('a failed official read stays unknown without mutating the old binding or falling back to text', async () => {
-    const f = legacyHermes(), service: any = Object.create(CliWorkerService.prototype), before = structuredClone(f.record)
+    const f = legacyHermes(), service: any = hostServiceFixture(), before = structuredClone(f.record)
     const snapshot = { selected: f.worker, selectedBusy: false, timeline: [], workers: [f.worker], revision: 1 }
     Object.assign(service['host'], { ctx: { on: () => () => {}, get: () => ({ observeSession: async () => { throw new Error('SIMULATED corrupt read') } }) },
       runtime: { subscribe: () => () => {}, snapshot: () => snapshot, storage: { history: () => f.events }, runUsage: () => usage() },

@@ -11,7 +11,7 @@ import { validatePreference } from './adapters.ts'
 import { ACCOUNT_CHANGED, authorizedCatalog, authorizeSelection } from './authorized-catalog.ts'
 import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
 const BUSY_ACCOUNT_WAIT_MS = 30_000

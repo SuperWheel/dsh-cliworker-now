@@ -1,6 +1,6 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
-import { CliWorkerService } from '../src/host/index.ts'
 import { DEFAULT_CONFIG, ProcessCleanupUnconfirmedError } from '../src/host/process.ts'
 import {
   invocationResolution,
@@ -64,7 +64,7 @@ function fixture(installed: string[] = ['qoder', 'qodercn']) {
             : undefined,
     },
   }
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], {
     ctx: {
       effect: (register: () => void) => register(),

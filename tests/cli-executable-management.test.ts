@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -69,7 +70,7 @@ function fixture() {
     if (id !== 'parent') throw new Error('Synthetic parent access denied')
   })
   const agent = { id: 'parent', session: { header: { cwd: project, origin: 'user' } } }
-  const service = Object.create(CliWorkerService.prototype) as CliWorkerService
+  const service = hostServiceFixture() as CliWorkerService
   Object.defineProperties(service['host'], {
     ctx: {
       value: {

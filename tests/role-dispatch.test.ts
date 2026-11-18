@@ -1,4 +1,4 @@
-import { hostServiceFixture } from './fixtures/host-service.ts'
+import { registerTools } from '../src/host/service-tools.ts'
 import { expect, it, vi } from 'vitest'
 import type { DispatchSetup } from '../src/host/storage.ts'
 
@@ -24,7 +24,7 @@ function setup() {
     disposed: new AbortController(),
     launch,
   }
-  hostServiceFixture()['host'].registerTools.call(service)
+  registerTools.call(service)
   const controller = new AbortController(),
     agent = { id: 'synthetic-parent' }
   const start = () =>

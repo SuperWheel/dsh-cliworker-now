@@ -26,7 +26,6 @@ import { WorkerRuntime } from '../src/host/runtime.ts'
 import { workerArguments } from '../src/host/adapters.ts'
 import { claudePermissionMode } from '../src/host/native-claude.mjs'
 import { grokAcpArgv } from '../src/host/native-grok.mjs'
-import { CliWorkerService } from '../src/host/index.ts'
 import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 
 // The policy write goes to a real session log; record it instead.
@@ -462,7 +461,7 @@ describe('Host permission boundaries (synthetic agents, no DSH Desktop)', () => 
     },
   })
   it('仅可查看 admits CLI dispatch but still refuses project/account writes such as merging a copy', () => {
-    const service: any = Object.create(CliWorkerService.prototype)
+    const service: any = hostServiceFixture()
     expect(() => service['host'].assertExecution(agent('read-only'))).toThrow('只读权限')
     expect(() => service['host'].assertExecution(agent('read-only'), true)).not.toThrow()
     expect(() => service['host'].assertExecution(agent('workspace-write'))).not.toThrow()

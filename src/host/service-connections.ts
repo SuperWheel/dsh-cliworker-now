@@ -5,14 +5,13 @@ import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { SettingsCatalogCache } from './settings-catalog-cache.ts'
 import { z as validate } from 'zod'
 import { CLI_IDS, type CliId, type ActiveCliId } from '../shared/types.ts'
-import { machineDirectory, ProcessCleanupUnconfirmedError } from './process.ts'
+import { ProcessCleanupUnconfirmedError } from './process.ts'
 import { backgroundCredentialRead } from './os-credential-store.ts'
 import { configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
 import type { CliExecutablePathStatus } from '../shared/cli-settings.ts'
 import { WindowsCliInstallationError } from './windows-cli-installation.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
-import * as settings from './service-settings.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export function connectionCache(this: ServiceContext) {
   const cache = (this.connections ??= new SettingsConnectionCache())

@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -86,7 +87,7 @@ function fixture(cli: CliId = 'codex') {
   }
   storage.save(worker)
   storage.bindAccount(worker.id, '模拟账号')
-  const service = Object.create(CliWorkerService.prototype) as CliWorkerService
+  const service = hostServiceFixture() as CliWorkerService
   const parent = vi.fn(async (id: string) => {
     if (id !== worker.parentSessionId) throw new Error('模拟父会话无权访问')
     return { id }

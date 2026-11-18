@@ -1,5 +1,4 @@
 import { z as validate } from 'zod'
-import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { createHarnessConversationBridge } from './harness-conversation.ts'
 import { workerGoalCommand } from './harness-conversation-commands.ts'
@@ -27,7 +26,7 @@ import { cliOf, DSH_AGENT_NAME, type Worker } from '../shared/types.ts'
 import { machineDirectory as resolveMachineDirectory, projectDirectory } from './process.ts'
 import { askRunsAsPlan, type WorkerPermissionState } from '../shared/worker-permissions.ts'
 import { failure } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 export async function parent(this: ServiceContext, id: string): Promise<Agent> {
   // Use the same composition-owned resolution policy as native Remote Agent parameters.
@@ -44,7 +43,7 @@ export async function parent(this: ServiceContext, id: string): Promise<Agent> {
   return agent
 }
 
-export function project(this: ServiceContext, agent: Agent): string {
+export function project(agent: Agent): string {
   const cwd = agent.session.header.cwd
   if (!cwd) throw new Error('此主对话没有工作目录，请先选择项目')
   if (!existsSync(cwd)) throw new Error(`此主对话的工作目录已不存在（${cwd}），请切换到有效项目`)

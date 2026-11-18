@@ -1,3 +1,4 @@
+import { hostServiceFixture } from './fixtures/host-service.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
@@ -6,7 +7,6 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { AskUserQuestionAnswer } from '@deepseek-ai/dsh-user-questions/types'
-import { CliWorkerService } from '../src/host/index.ts'
 import { ACCOUNT_CHANGED } from '../src/host/authorized-catalog.ts'
 import { WorkerStorage, type DispatchSetup } from '../src/host/storage.ts'
 import { validatePreference, type Catalog } from '../src/host/adapters.ts'
@@ -37,7 +37,7 @@ function fixture() {
     { id: 'fixture-a', label: 'Fixture A', efforts: ['low', 'high'] },
     { id: 'fixture-b', label: 'Fixture B', efforts: ['default'] },
   ]
-  const service: any = Object.create(CliWorkerService.prototype)
+  const service: any = hostServiceFixture()
   Object.assign(service['host'], {
     nativeRunDone: new Map(),
     disposed: new AbortController(),

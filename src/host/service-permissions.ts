@@ -40,7 +40,7 @@ import {
   type WorkerPermissionState,
 } from '../shared/worker-permissions.ts'
 import { failure, waitForInput } from './service-errors.ts'
-import type { ServiceContext } from './index.ts'
+import type { ServiceContext } from './service-context.ts'
 
 /**
  * @param dispatch - A CLI run (or its control), which view-only mode admits in the

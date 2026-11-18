@@ -1,8 +1,11 @@
+import { ServiceContext } from '../../src/host/service-context.ts'
 import { CliWorkerService } from '../../src/host/index.ts'
 
 /** Build a synthetic Remote facade and supply the same per-instance collaborators as the Host. */
-export function hostServiceFixture(fields: Record<string, unknown> = {}): CliWorkerService {
-  const service: CliWorkerService = Object.create(CliWorkerService.prototype)
-  Object.assign(service['host'], fields)
+export function hostServiceFixture(fields: Record<string, unknown> = {}) {
+  const service = Object.create(CliWorkerService.prototype)
+  const context = new ServiceContext(service['ctx'], service)
+  Object.assign(service, { context })
+  Object.assign(context, fields)
   return service
 }
