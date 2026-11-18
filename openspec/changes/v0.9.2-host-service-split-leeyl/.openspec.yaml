@@ -1,0 +1,10 @@
+pm:
+  title: 拆分 Host 主服务 index.ts，按领域分模块（行为不变）
+  version: 0.9.2
+  creator: leeyl
+  creator_name: Leeyl
+  requirement: REQ-0137
+  prd: doc/prd/2026-11-18-v0.9.2-host-service-split-PRD.json
+  previous_names: []
+schema: pmspec
+created: 2026-11-18
