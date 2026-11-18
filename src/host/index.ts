@@ -1,12 +1,9 @@
 import { SettingsConnectionCache } from './settings-connection-cache.ts'
 import { CustomProviders } from './custom-provider.ts'
 import { CliManagementService } from './cli-management/service.ts'
-import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
 import { WorkBuddyUnavailableError } from './workbuddy-installation.ts'
 import { DshSubagents, readDshChildren } from './dsh-subagents.ts'
-import { readCliAccountBinding } from './cli-account-binding.ts'
-import { setTimeout as sleep } from 'node:timers/promises'
 import { SettingsCatalogCache } from './settings-catalog-cache.ts'
 import { resolveModel } from '../shared/models.ts'
 import { visibleModelChoices } from '../shared/model-presentation.ts'
@@ -16,11 +13,8 @@ import { z as validate } from 'zod'
 import { join } from 'node:path'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
 import type { HarnessConversationApi } from './harness-conversation-types.ts'
-import { readNativeColdSessionState } from './native-cold-session-state.ts'
-import { readHostPlanActive } from './host-plan-state.ts'
 import { publishSiblingOutsideTool } from './harness-model-guard.ts'
 import type { NativeAttachment } from './native-attachments.mjs'
-import { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -33,36 +27,17 @@ import type { AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-plan-mode'
-import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
-import type { ApprovalRequestEvent } from '@deepseek-ai/dsh-user-approval/types'
+import { type RunOrigin } from './native-approval-policy.ts'
 import {
-  approvalPrompt,
-  approvalQuestion,
-  decideApproval,
-  decisionFromAnswer,
-  decisionFromOutcome,
-  harnessApprovalRequest,
-  outcomeFromDecision,
-  runAccess,
-  workerApproval,
-  type ApprovalOutcome,
-  type NativeApprovalDecision,
-  type PermissionState,
-  type RunOrigin,
-} from './native-approval-policy.ts'
-import {
-  CLI_IDS,
   CLI_LABELS,
   cliOf,
   workerName,
   effortLabel,
-  EFFORTS,
   type CliId,
   type Preference,
   type TaskMode,
   type RoleSnapshot,
   type Worker,
-  type WorkerLevel,
 } from '../shared/types.ts'
 import { agentNameSchema, readRoleAnswer, roleQuestion } from './roles.ts'
 import {
@@ -72,22 +47,10 @@ import {
   type ProcessBackend,
   type RuntimeConfig,
 } from './process.ts'
-import { explicitCredentialRead } from './os-credential-store.ts'
 import { validatePreference, configuredCliExecutable, resolveCliExecutable } from './adapters.ts'
 import { RUNNING_MESSAGE_MODES } from '../shared/running-message.ts'
-import {
-  runsUnderViewOnly,
-  cliLevelOptions,
-  effectiveLevel,
-  workerLevelOptions,
-  workerPlanSupported,
-  workerPermissionReceipt,
-  type WorkerPermissionReceipt,
-  type WorkerPermissionState,
-} from '../shared/worker-permissions.ts'
+import { type WorkerPermissionReceipt } from '../shared/worker-permissions.ts'
 import { WindowsCliNotFoundError } from './windows-cli-installation.ts'
-import { ACCOUNT_CHANGED, authorizedCatalog, authorizeSelection } from './authorized-catalog.ts'
-import { ownAccountBusy as accountBusy } from './own-account-lease.mjs'
 import { type DispatchSetup } from './storage.ts'
 import { WorkerRuntime, type Submission } from './runtime.ts'
 import { integrationReport, isolationGuidance, readResolutions } from './isolated-merge-decisions.ts'
@@ -101,7 +64,8 @@ import {
   resolveAvailableWorkBuddyName,
   resolveAvailableCliName,
 } from './routing.ts'
-import { failure } from './service-errors.ts'
+import { failure, waitForInput } from './service-errors.ts'
+import { preferenceSchema } from './service-models.ts'
 import * as harness from './service-harness.ts'
 import * as history from './service-history.ts'
 import * as workers from './service-workers.ts'
@@ -109,20 +73,9 @@ import * as settings from './service-settings.ts'
 import * as cliUpdates from './service-cli-updates.ts'
 import * as accounts from './service-accounts.ts'
 import * as connections from './service-connections.ts'
+import * as models from './service-models.ts'
+import * as permissions from './service-permissions.ts'
 import * as lifecycle from './service-lifecycle.ts'
-
-/** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
-const BUSY_ACCOUNT_WAIT_MS = 30_000
-
-const BUSY_ACCOUNT_RETRY_MS = 1000
-
-const EXCLUSIVE_ACCOUNT_CLIS = new Set<CliId>(['omp', 'pi'])
-
-const preferenceSchema = validate.object({
-  cli: validate.enum(CLI_IDS).optional(),
-  model: validate.string().min(1),
-  effort: validate.enum(EFFORTS),
-})
 
 const messageSubmissionSchema = validate
   .object({
@@ -139,19 +92,6 @@ const messageSubmissionSchema = validate
     expectedRunId: validate.string().min(1).max(128),
   })
   .strict()
-
-/** Cancel a question/wait independently; late answers cannot commit a selection. */
-function waitForInput<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted()
-  return new Promise<T>((resolve, reject) => {
-    const aborted = () => {
-      signal.removeEventListener('abort', aborted)
-      reject(signal.reason ?? new Error('选择已取消'))
-    }
-    signal.addEventListener('abort', aborted, { once: true })
-    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
-  })
-}
 
 export type {
   Preference,
@@ -696,116 +636,27 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Parent session identity. @param signal - Caller lifetime. @returns JSON model catalog and project preference. */
   @Remote('catalog')
   async catalog(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    return this.catalogForCli(parentSessionId, 'antigravity', signal)
+    return models.catalog(this.host, parentSessionId, signal)
   }
   /** @param parentSessionId - Parent session identity. @param cli - Selected CLI. @param signal - Caller lifetime. @returns CLI catalog and saved project preference. */
   @Remote('catalogForCli')
   async catalogForCli(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return this.host.settingsCatalog(parentSessionId, cli, signal, false)
+    return models.catalogForCli(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Worker whose original account scopes the saved choices. @param signal - Caller lifetime. @returns Saved model choices; only a missing valid directory requires discovery. */
   @Remote('catalogForWorker')
   async catalogForWorker(parentSessionId: string, workerId: string, signal: AbortSignal): Promise<string> {
-    let queriedCli: CliId | undefined
-    let release: (() => void) | undefined
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      const control = AbortSignal.any([signal, this.host.disposed.signal])
-      control.throwIfAborted()
-      const worker = this.host.runtime.get(agent.id, workerId)
-      const cli = cliOf(worker.preference)
-      queriedCli = cli
-      release = this.host.options?.cliMaintenance?.using(cli)
-      this.host.runtime.assertCliEnabled(cli)
-      this.host.settingsCatalogs ??= new SettingsCatalogCache(this.host.runtime.storage.directory)
-      // An isolated conversation's account was verified against its copy.
-      const directory = this.host.runtime.catalogDirectory(worker)
-      const saved = this.host.runtime.storage.accountBinding(workerId)
-      let catalog = saved ? this.host.settingsCatalogs.display(directory, cli, saved) : undefined
-      // After an account change the choices come from the account signed in now.
-      let expected = catalog
-        ? saved!
-        : await this.host.readAccountBinding(cli, this.host.backend, this.host.options, directory, control)
-      catalog ??= this.host.settingsCatalogs.display(directory, cli, expected)
-      for (let attempt = 0; !catalog; attempt++) {
-        let result
-        try {
-          result = await this.host.settingsCatalogs.get({
-            cli,
-            project: directory,
-            signal: control,
-            selfVerifiedDiscovery: cli === 'qoder' || cli === 'qodercn' || isWorkBuddyCli(cli),
-            binding: async () => {
-              const current = await this.host.readAccountBinding(
-                cli,
-                this.host.backend,
-                this.host.options,
-                directory,
-                control,
-              )
-              if (current !== expected) throw new Error(ACCOUNT_CHANGED)
-              return current
-            },
-            discover: () =>
-              this.host.queryCatalog(cli, this.host.backend, this.host.options, directory, control, expected),
-          })
-        } catch (error) {
-          // The account changed during this read: show the one signed in now, silently.
-          if (attempt > 0 || !(error instanceof Error) || error.message !== ACCOUNT_CHANGED) throw error
-          expected = await this.host.readAccountBinding(
-            cli,
-            this.host.backend,
-            this.host.options,
-            directory,
-            control,
-          )
-          catalog = this.host.settingsCatalogs.display(directory, cli, expected)
-          continue
-        }
-        catalog = result.catalog
-      }
-      control.throwIfAborted()
-      this.host.runtime.assertCliEnabled(cli)
-      return JSON.stringify(catalog)
-    } catch (error) {
-      if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
-        this.host.runtime.blockCatalogOnCleanup(queriedCli, error)
-      throw failure(error)
-    } finally {
-      release?.()
-    }
+    return models.catalogForWorker(this.host, parentSessionId, workerId, signal)
   }
   /** @param parentSessionId - Parent session identity. @param cli - Selected CLI. @param signal - Caller lifetime. @returns Fresh model catalog and saved project preference. */
   @Remote('refreshCatalogForCli')
   async refreshCatalogForCli(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    return this.host.settingsCatalog(parentSessionId, cli, signal, true)
+    return models.refreshCatalogForCli(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Parent session identity. @param selection - JSON model and effort. @param signal - Caller lifetime. @returns Saved JSON preference. */
   @Remote('configure')
   async configure(parentSessionId: string, selection: string, signal: AbortSignal): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      let preference: Preference = preferenceSchema.parse(JSON.parse(selection))
-      const project = this.host.project(agent)
-      this.host.runtime.assertCliEnabled(cliOf(preference))
-      const { catalog } = await this.host.authorizeChoice(
-        preference,
-        this.host.backend,
-        this.host.options,
-        project,
-        signal,
-        this.host.displayedBindings?.get(JSON.stringify([parentSessionId, cliOf(preference)])),
-      )
-      validatePreference(preference, catalog)
-      preference = resolveModel(preference, catalog.models)
-      signal.throwIfAborted()
-      this.host.runtime.assertCliEnabled(cliOf(preference))
-      this.host.runtime.storage.setPreference(project, preference)
-      this.host.runtime.changed()
-      return JSON.stringify(preference)
-    } catch (error) {
-      throw failure(error)
-    }
+    return models.configure(this.host, parentSessionId, selection, signal)
   }
   /** @param parentSessionId - Owning session. @param workerId - Idle worker. @param selection - JSON preference from saved choices. @param signal - Caller lifetime. @returns Saved preference; execution performs live authorization. */
   @Remote('configureWorker')
@@ -815,117 +666,18 @@ export class CliWorkerService extends TypertRemoteService {
     selection: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      const worker = this.host.runtime.get(agent.id, workerId)
-      const preference = preferenceSchema.parse(JSON.parse(selection))
-      if (cliOf(preference) !== cliOf(worker.preference)) throw new Error('已有会话不能切换 CLI')
-      this.host.runtime.assertCliEnabled(cliOf(preference))
-      this.host.settingsCatalogs ??= new SettingsCatalogCache(this.host.runtime.storage.directory)
-      const directory = this.host.runtime.catalogDirectory(worker)
-      const saved = this.host.runtime.storage.accountBinding(workerId)
-      const catalog =
-        (saved && this.host.settingsCatalogs.display(directory, cliOf(preference), saved)) ||
-        this.host.settingsCatalogs.display(
-          directory,
-          cliOf(preference),
-          await this.host.readAccountBinding(
-            cliOf(preference),
-            this.host.backend,
-            this.host.options,
-            directory,
-            signal,
-          ),
-        )
-      if (!catalog) throw new Error('模型目录已失效，请重试读取或在设置中刷新')
-      validatePreference(preference, catalog)
-      signal.throwIfAborted()
-      this.host.runtime.assertCliEnabled(cliOf(preference))
-      this.host.assertNativeWorkerSettingsIdle(worker)
-      return JSON.stringify(
-        this.host.runtime.configureWorker(agent.id, workerId, resolveModel(preference, catalog.models)),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return models.configureWorker(this.host, parentSessionId, workerId, selection, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Exact Worker. @param signal - Read lifetime. @returns Native permission control data; no task or permission change. */
   @Remote('permissionForWorker')
   async permissionForWorker(parentSessionId: string, workerId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      const worker = this.host.runtime.get(parent.id, workerId)
-      if (this.host.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      let reason: string | undefined
-      try {
-        this.host.assertExecution(parent, true)
-        this.host.assertNativeWorkerSettingsIdle(worker)
-        const snapshot = this.host.runtime.snapshot(parent.id, worker.id)
-        if (snapshot.selectedBusy) throw new Error('请等待本轮结束后再修改权限')
-        if (snapshot.queuedFollowups?.length)
-          throw new Error('请先发送或取消待发送消息（包含已暂停消息），再修改权限')
-      } catch (error) {
-        reason = error instanceof Error ? error.message : String(error)
-      }
-      const state: WorkerPermissionState = {
-        currentValue: effectiveLevel(worker.level, this.host.permissionState(parent).sandbox),
-        options: workerLevelOptions(worker),
-        plan: { supported: workerPlanSupported(worker), active: worker.mode === 'plan' },
-        writable: !reason,
-        ...(reason ? { reason } : {}),
-      }
-      return JSON.stringify(state)
-    } catch (error) {
-      throw failure(error)
-    }
+    return permissions.permissionForWorker(this.host, parentSessionId, workerId, signal)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning parent. @param workerId - Exact idle Worker. @param mode - An advertised native CLI mode. @param signal - Save lifetime. @returns Saved Worker; no task is launched. */
   @Remote('configureWorkerPermission')
   async configureWorkerPermission(parentSessionId: string, workerId: string, mode: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.assertExecution(parent, true)
-      const worker = this.host.runtime.get(parent.id, workerId)
-      if (this.host.project(parent) !== worker.project) throw new Error('项目已变更，请在原项目继续')
-      const selected = validate.enum(['plan', 'accept-edits', 'ask', 'auto', 'full']).parse(mode)
-      if (selected === 'plan' && !workerPlanSupported(worker)) throw new Error('当前 CLI 不支持规划模式')
-      if (
-        selected !== 'plan' &&
-        selected !== 'accept-edits' &&
-        !cliLevelOptions(cliOf(worker.preference)).some((option) => option.value === selected)
-      )
-        throw new Error('当前 CLI 通路不支持此权限模式')
-      this.host.assertNativeWorkerSettingsIdle(worker)
-      const binding = worker.harnessConversation
-      const child = binding && this.host.ctx.agents.get(binding.sessionId as Agent['id'])
-      if (
-        binding &&
-        (binding.parentSessionId !== parent.id ||
-          binding.sessionId === parent.id ||
-          (child &&
-            (child.session.header.origin !== 'subagent' ||
-              child.session.header.parentSession !== parent.id ||
-              !ownsDirectSubagent(this.host.ctx.get('subagents'), parent, child))))
-      )
-        throw new Error('CLI 子会话所属主对话不匹配，未修改权限')
-      if (binding && !child)
-        return JSON.stringify(await this.host.configureColdWorkerPermission(parent, worker, selected, signal))
-      const saved = this.host.runtime.configureWorkerPermission(parent.id, worker.id, selected)
-      if (child) {
-        // Keep the real session projection and tool policy aligned with the
-        // saved setting while idle; the next run rechecks the same parent policy.
-        const { sandbox } = this.host.childPermission(parent, saved)
-        if (child.ctx.get('sandboxPolicy')!.resolve({ session: child.session }).mode !== sandbox)
-          setSandboxMode(child.session, sandbox)
-        child.ctx.get('planMode')?.set(child, saved.mode === 'plan')
-      }
-      return JSON.stringify(saved)
-    } catch (error) {
-      throw failure(error)
-    }
+    return permissions.configureWorkerPermission(this.host, parentSessionId, workerId, mode, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Conversation identity. @param requestJSON - Immutable click identity, text, mode and destination. @param signal - Admission lifetime. @returns Exact message acceptance receipt, not native completion. */
   @Remote('submitMessage')
@@ -1350,248 +1102,20 @@ class ServiceContext {
       },
     }
   }
-  /**
-   * @param dispatch - A CLI run (or its control), which view-only mode admits in the
-   * CLI's native read-only mode. Other project or account writes (merging an
-   * isolated copy, account login) stay refused under read-only.
-   */
-  assertExecution(agent: Agent, dispatch = false): void {
-    if (agent.session.header.origin === 'subagent') throw new Error('MVP 只支持主对话下的直接 CLI 子 Agent')
-    if (this.hostPlanActive(agent))
-      throw new Error('请先退出 Harness 规划模式，再运行外部 CLI；本插件不会绕过规划边界')
-    if (!dispatch && agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode === 'read-only')
-      throw new Error('Harness 当前为只读权限；此操作会写入项目或账号状态，请先明确切换项目权限')
-  }
-  /**
-   * In view-only mode a Worker without its own level runs at its first item: the
-   * CLI's native ask mode, or Pi's tool_call gate. A CLI whose first item
-   * cannot ask before a change is refused rather than silently weakened: agy's
-   * plan launch keeps its terminal sandbox state writable, Kimi's default
-   * auto-approves Git workspace edits, and Hermes offers no first item. A level
-   * the user picked in the Worker menu runs as picked.
-   */
-  assertAccessSupported(agent: Agent, cli: CliId, level: WorkerLevel | undefined): void {
-    if (level !== undefined || this.permissionState(agent).sandbox !== 'read-only') return
-    if (cli === 'antigravity')
-      throw new Error(
-        'Harness 当前为仅可查看；Antigravity 无法把授权请求转给你，请切换权限预设或改用其他 CLI',
-      )
-    if (cli === 'hermes')
-      throw new Error('Harness 当前为仅可查看；Hermes 没有可询问的档位，请切换权限预设或改用其他 CLI')
-    if (!runsUnderViewOnly(cli))
-      throw new Error(
-        'Harness 当前为仅可查看；Kimi 的第一项会自动批准 Git 仓库内的编辑，请切换权限预设或改用其他 CLI',
-      )
-  }
-  /** The child session's DSH sandbox and approval policy for a Worker's plan switch and level. */
-  childPermission(
-    parent: Agent,
-    worker: Pick<Worker, 'mode' | 'level'>,
-  ): Pick<PermissionState, 'sandbox' | 'approval'> {
-    const state = this.permissionState(parent)
-    const sandbox = runAccess(worker.mode, worker.level, state)
-    return { sandbox, approval: workerApproval(sandbox, state) }
-  }
-  /** The tier this turn actually runs with, for the main Agent's dispatch/follow-up receipt. */
-  permissionReceipt(parent: Agent, worker: Pick<Worker, 'preference' | 'mode' | 'level'>) {
-    const receipt = workerPermissionReceipt(
-      cliOf(worker.preference),
-      worker.mode,
-      worker.level,
-      this.permissionState(parent),
-    )
-    return {
-      permission: { level: receipt.level, name: receipt.name, source: receipt.source },
-      permissionSummary: receipt.summary,
-    }
-  }
-  /** Whether the parent conversation is in DSH plan mode; see {@link readHostPlanActive}. */
-  hostPlanActive(agent: Agent): boolean {
-    // Only consulted when the parent cannot see the plan service; synthetic hosts may omit `get`.
-    return readHostPlanActive(agent, () => this.ctx?.get?.('sessionProjections'))
-  }
-  /** The parent's DSH permission state now: plan mode, sandbox and approval policy. */
-  permissionState(agent: Agent): PermissionState {
-    const approval = agent.ctx.get('approval')
-    return {
-      planMode: this.hostPlanActive(agent),
-      sandbox: agent.ctx.get('sandboxPolicy')!.resolve({ session: agent.session }).mode,
-      // Without an approval service nothing can be asked; DSH fails closed.
-      approval: approval ? (approval.overrideOf(agent.session) ?? approval.config.policy ?? 'ask') : 'never',
-    }
-  }
-  /**
-   * Decide one native authorization request from the parent's current state.
-   * A parent-started turn asks on the parent page; a Worker-UI turn asks in the
-   * Worker's own native conversation. Any failure to ask is a denial.
-   */
-  async decideNativeApproval(
-    worker: Worker,
-    request: Parameters<typeof approvalQuestion>[0],
-    signal: AbortSignal,
-    /** The run's launch mode: a 仅可查看 run launched as plan denies. */
-    mode: TaskMode,
-  ): Promise<NativeApprovalDecision> {
-    const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
-    if (!parent) return { decision: 'deny', source: 'unavailable' }
-    const decided = decideApproval(mode, worker.level, this.permissionState(parent))
-    if (decided !== 'ask') return decided
-    const cli = cliOf(worker.preference)
-    const context = { worker: workerName(worker), cli: CLI_LABELS[cli], project: worker.project }
-    const control = AbortSignal.any([signal, this.disposed.signal])
-    const surface = this.runQuestionSessions?.get(worker.runId)
-    if (surface === parent.id || (!surface && this.runOrigins?.get(worker.runId ?? '') === 'agent')) {
-      const response = await waitForInput(
-        parent.ctx
-          .get('userQuestions')!
-          .ask({ agent: parent, signal: control, questions: [approvalQuestion(request, context)] }),
-        control,
-      )
-      return decisionFromAnswer(
-        request,
-        response.answers.find((item) => item.id === 'cliworker_approval'),
-      )
-    }
-    const binding = worker.harnessConversation
-    const child = this.ctx.agents.get((surface ?? binding?.sessionId) as Agent['id'])
-    const approval = child?.ctx.get('approval')
-    if (!child || !approval) return { decision: 'deny', source: 'unavailable' }
-    // The parent may have switched presets since preparation: ask with its policy now.
-    if (approval.overrideOf(child.session) !== 'ask') setApprovalPolicy(child.session, 'ask')
-    const outcome = await approval.request({
-      agent: child,
-      toolName: `cliworker:${cli}`,
-      reason: approvalPrompt(request, context),
-      signal: control,
-    })
-    return decisionFromOutcome(outcome)
-  }
-  /**
-   * Answer a DSH tool approval raised by a tool bridge call like a native
-   * request: a parent-started turn asks on the parent page, a Worker-UI turn
-   * keeps the child's own panel. Any other request is not ours.
-   */
-  async answerHarnessApproval(
-    request: ApprovalRequestEvent,
-    next: () => Promise<ApprovalOutcome>,
-  ): Promise<ApprovalOutcome> {
-    const call = request.callId === undefined ? undefined : this.bridgeCalls.get(request.callId)
-    if (!call || call.child !== request.agent) return next()
-    const { worker, runId } = call
-    const summary = harnessApprovalRequest(call.name, call.arguments, request)
-    const decision = await this.runtime.harnessApproval(
-      worker,
-      runId,
-      summary,
-      request.signal ?? this.disposed.signal,
-      async (signal, mode) => {
-        if (this.runQuestionSessions?.has(runId) || this.runOrigins?.get(runId) === 'agent')
-          return this.decideNativeApproval(worker, summary, signal, mode)
-        // The child's own panel answers, after the same plan and preset rules.
-        const parent = this.ctx.agents.get(worker.parentSessionId as Agent['id'])
-        if (!parent) return { decision: 'deny', source: 'unavailable' }
-        const decided = decideApproval(mode, worker.level, this.permissionState(parent))
-        if (decided !== 'ask') return decided
-        // A stop must not wait on a panel nobody may answer.
-        return decisionFromOutcome(await waitForInput(next(), signal))
-      },
-    )
-    return outcomeFromDecision(decision)
-  }
-  async readAccountBinding(...args: Parameters<typeof readCliAccountBinding>) {
-    const release = this.options?.cliMaintenance?.using(args[0])
-    // A dispatch or settings read the user asked for may ask the keychain again; background scopes stay background.
-    try {
-      return await explicitCredentialRead(() => readCliAccountBinding(...args))
-    } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error)
-      throw error
-    } finally {
-      release?.()
-    }
-  }
-  async queryCatalog(...args: Parameters<typeof authorizedCatalog>) {
-    const release = this.options?.cliMaintenance?.using(args[0])
-    try {
-      return await explicitCredentialRead(() => this.freshCatalog(...args))
-    } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError) this.runtime.blockCatalogOnCleanup(args[0], error)
-      if (accountBusy(error)) return await this.busyAccountCatalog(error, ...args)
-      throw error
-    } finally {
-      release?.()
-    }
-  }
-  async freshCatalog(...args: Parameters<typeof authorizedCatalog>) {
-    const [cli, , , project] = args
-    const revision = this.settingsCatalogs?.revision(cli)
-    const result = await authorizedCatalog(...args)
-    // Parallel dispatches waiting on this exclusive account read the fresh result.
-    if (EXCLUSIVE_ACCOUNT_CLIS.has(cli) && revision !== undefined)
-      try {
-        this.settingsCatalogs?.remember(project, result, revision)
-      } catch {
-        // A source change during the read is caught by the next fresh check.
-      }
-    return result
-  }
-  /**
-   * A Pi/OMP OAuth account is exclusive while another run or catalog read holds
-   * it. Dispatch only needs this account's choices to queue the task, and the run
-   * authorizes afresh once the account is free, so a busy account uses its last
-   * verified catalog. Without one, wait for the short catalog reads to finish.
-   */
-  async busyAccountCatalog(busy: unknown, ...args: Parameters<typeof authorizedCatalog>) {
-    const [cli, backend, config, project, signal, expected] = args
-    const saved = async () => {
-      const binding = await this.readAccountBinding(cli, backend, config, project, signal)
-      if (expected && binding !== expected) throw new Error(ACCOUNT_CHANGED)
-      const catalog = this.settingsCatalogs?.display(project, cli, binding)
-      return catalog && { catalog, binding }
-    }
-    for (const deadline = Date.now() + BUSY_ACCOUNT_WAIT_MS; ; ) {
-      const hit = await saved()
-      if (hit) return hit
-      if (Date.now() >= deadline) throw busy
-      await sleep(BUSY_ACCOUNT_RETRY_MS, undefined, { signal })
-      // Another read may have finished while this one slept.
-      const later = await saved()
-      if (later) return later
-      try {
-        return await this.freshCatalog(...args)
-      } catch (error) {
-        if (!accountBusy(error)) throw error
-      }
-    }
-  }
-  async authorizeChoice(...args: Parameters<typeof authorizeSelection>) {
-    const release = this.options?.cliMaintenance?.using(cliOf(args[0]))
-    try {
-      return await this.querySelection(...args)
-    } catch (error) {
-      // A choice made under the previous account stands when the account signed in
-      // now offers it too; the change itself is not announced.
-      const [preference, backend, config, project, signal, expected] = args
-      if (!expected || !(error instanceof Error) || error.message !== ACCOUNT_CHANGED) throw error
-      signal.throwIfAborted()
-      return await this.querySelection(preference, backend, config, project, signal)
-    } finally {
-      release?.()
-    }
-  }
-  async querySelection(...args: Parameters<typeof authorizeSelection>) {
-    const [preference, ...rest] = args
-    try {
-      return await authorizeSelection(...args)
-    } catch (error) {
-      if (error instanceof ProcessCleanupUnconfirmedError)
-        this.runtime.blockCatalogOnCleanup(cliOf(preference), error)
-      if (!accountBusy(error)) throw error
-      const result = await this.busyAccountCatalog(error, cliOf(preference), ...rest)
-      validatePreference(preference, result.catalog)
-      return { ...result, preference: resolveModel(preference, result.catalog.models) }
-    }
-  }
+  assertExecution = permissions.assertExecution
+  assertAccessSupported = permissions.assertAccessSupported
+  childPermission = permissions.childPermission
+  permissionReceipt = permissions.permissionReceipt
+  hostPlanActive = permissions.hostPlanActive
+  permissionState = permissions.permissionState
+  decideNativeApproval = permissions.decideNativeApproval
+  answerHarnessApproval = permissions.answerHarnessApproval
+  readAccountBinding = models.readAccountBinding
+  queryCatalog = models.queryCatalog
+  freshCatalog = models.freshCatalog
+  busyAccountCatalog = models.busyAccountCatalog
+  authorizeChoice = models.authorizeChoice
+  querySelection = models.querySelection
   /** Read installation paths without saving discovery or opening a native account/model process. */
   async resolveDispatchName(name: string, signal: AbortSignal) {
     const installed = async (cli: 'qoder' | 'qodercn' | 'workbuddycn' | 'workbuddy') => {
@@ -2451,154 +1975,9 @@ class ServiceContext {
   customProviderSource = accounts.customProviderSource
   customProviderManager = accounts.customProviderManager
   startAccount = accounts.startAccount
-  async settingsCatalog(
-    parentSessionId: string,
-    cli: string,
-    signal: AbortSignal,
-    refresh: boolean,
-  ): Promise<string> {
-    let queriedCli: CliId | undefined
-    let release: (() => void) | undefined
-    try {
-      const id = validate.enum(CLI_IDS).parse(cli)
-      queriedCli = id
-      const parent = await this.parent(parentSessionId)
-      const control = AbortSignal.any([signal, this.disposed.signal])
-      release = this.options?.cliMaintenance?.using(id)
-      this.runtime.assertCliEnabled(id)
-      const { catalog, binding } = await this.loadSettingsCatalog(id, control, refresh)
-      control.throwIfAborted()
-      ;(this.displayedBindings ??= new Map()).set(JSON.stringify([parentSessionId, id]), binding)
-      this.runtime.assertCliEnabled(id)
-      const receipt = this.connectionCache().status(id).catalog
-      if (!receipt.value || !receipt.cache) throw new Error('CLI 来源已变化，请刷新重试')
-      const project = this.preferenceProject(parent)
-      return JSON.stringify({
-        ...catalog,
-        preference: project === undefined ? undefined : this.runtime.storage.preference(project, id),
-        cache: receipt.cache,
-      })
-    } catch (error) {
-      if (queriedCli && error instanceof ProcessCleanupUnconfirmedError)
-        this.runtime.blockCatalogOnCleanup(queriedCli, error)
-      throw failure(error)
-    } finally {
-      release?.()
-    }
-  }
-  assertNativeWorkerSettingsIdle(worker: Worker): void {
-    const id = worker.harnessConversation?.sessionId
-    if (!id) return
-    const child = this.ctx.agents.get(id as Agent['id'])
-    if (child && (child.status !== 'idle' || child.inbox.nextTurn.length || child.inbox.nextStep.length))
-      throw new Error('请等待原生对话结束，并发送或移除原生待发消息后再修改设置')
-  }
-  /** Update a cold child's real Session without activating an Agent or delivering input. */
-  async configureColdWorkerPermission(
-    parent: Agent,
-    worker: Worker,
-    selected: TaskMode | WorkerLevel,
-    signal: AbortSignal,
-  ): Promise<Worker> {
-    const sessionId = SessionId(worker.harnessConversation!.sessionId)
-    return this.runtime.prepareFollowup(
-      parent.id,
-      worker.id,
-      AbortSignal.any([signal, this.disposed.signal]),
-      async (control, preparationId) => {
-        const persistence = this.ctx.get('sessionPersistence')
-        const sessions = this.ctx.get('sessions')
-        const query = this.ctx.get('sessionQuery')
-        const projections = this.ctx.get('sessionProjections')
-        if (!persistence || !sessions || !query || !projections)
-          throw new Error('原生历史会话服务尚未就绪，未修改权限')
-        const validateCurrent = () => {
-          control.throwIfAborted()
-          if (this.ctx.agents.get(parent.id) !== parent) throw new Error('所属主对话已关闭，未修改权限')
-          this.assertExecution(parent, true)
-          const current = this.runtime.get(parent.id, worker.id)
-          const record = this.harnessConversation?.lookup(sessionId)
-          if (
-            this.project(parent) !== current.project ||
-            current.project !== worker.project ||
-            current.harnessConversation?.sessionId !== sessionId ||
-            current.harnessConversation.parentSessionId !== parent.id ||
-            record?.sessionId !== sessionId ||
-            record.workerId !== worker.id ||
-            record.parentSessionId !== parent.id
-          )
-            throw new Error('CLI 子会话所属主对话不匹配，未修改权限')
-          this.assertNativeWorkerSettingsIdle(current)
-        }
-        validateCurrent()
-        // The public writer is the exclusive cold-session mutation lease. It
-        // also prevents a concurrent native resume from using an older mode.
-        const writer = await persistence.open(sessionId, 'write', { signal: control })
-        let detach: (() => void) | undefined
-        try {
-          validateCurrent()
-          const read = await writer.read(0, undefined, { signal: control })
-          validateCurrent()
-          if (
-            writer.header.origin !== 'subagent' ||
-            writer.header.parentSession !== parent.id ||
-            writer.header.cwd !== worker.project ||
-            this.ctx.agents.get(sessionId)
-          )
-            throw new Error('CLI 子会话所属主对话不匹配，未修改权限')
-          const session = sessions.prepare(sessionId, {
-            seed: read.events,
-            meta: structuredClone(writer.header),
-            inheritedEventCount: writer.inheritedEventCount,
-            eventState: read.eventState,
-          })
-          const { inbox, turn, plan } = readNativeColdSessionState(
-            projections.stateOf(session, 'inbox'),
-            projections.stateOf(session, 'turnBoundary'),
-            projections.stateOf(session, 'plan'),
-          )
-          if (plan.running !== null) throw new Error('原生规划命令尚未完成，未修改权限')
-          if (inbox['next-turn'].length || inbox['next-step'].length || turn.openTurnStartSeq !== null)
-            throw new Error('请等待原生对话结束，并发送或移除原生待发消息后再修改设置')
-          detach = sessions.enter(session)
-          // Native restore may append a lifecycle marker before publication.
-          // Read that suffix through the public query rather than private logs.
-          const observation = await query.observeSession(sessionId, {
-            signal: control,
-            projectionMode: 'none',
-          })
-          try {
-            const suffix = observation.events.slice(read.events.length)
-            if (suffix.length) await writer.append(suffix, { signal: control })
-          } finally {
-            observation[Symbol.dispose]()
-          }
-          validateCurrent()
-          sessions.announce(session)
-          validateCurrent()
-          const saved = this.runtime.configureWorkerPermission(parent.id, worker.id, selected, preparationId)
-          const { sandbox } = this.childPermission(parent, saved)
-          if (parent.ctx.get('sandboxPolicy')!.resolve({ session }).mode !== sandbox)
-            setSandboxMode(session, sandbox)
-          // This is the native persisted collaboration event. There is no
-          // Agent to queue a pending intent or inject a synthetic user message.
-          if (plan.active !== (saved.mode === 'plan') || plan.wanted !== null)
-            session.append('plan/mode', { active: saved.mode === 'plan' })
-          if (!(await sessions.flush(session)))
-            throw new Error('原生会话权限持久化服务不可用，请重新读取当前状态')
-          return saved
-        } finally {
-          // Finish the writer even on cancellation/failure before releasing the
-          // Session and the outer Worker preparation lease.
-          try {
-            await writer.close()
-          } finally {
-            detach?.()
-          }
-        }
-      },
-    )
-  }
+  settingsCatalog = models.settingsCatalog
+  assertNativeWorkerSettingsIdle = permissions.assertNativeWorkerSettingsIdle
+  configureColdWorkerPermission = permissions.configureColdWorkerPermission
   /** Shared follow-up admission; `origin` decides where this turn's approvals appear. */
   async continueWorker(
     parentSessionId: string,

@@ -13,3 +13,16 @@ export const failure = (error: unknown) =>
       ? { deliveryUnknown: true }
       : {}),
   })
+
+/** Cancel a question/wait independently; late answers cannot commit a selection. */
+export function waitForInput<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
+  return new Promise<T>((resolve, reject) => {
+    const aborted = () => {
+      signal.removeEventListener('abort', aborted)
+      reject(signal.reason ?? new Error('选择已取消'))
+    }
+    signal.addEventListener('abort', aborted, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', aborted))
+  })
+}
