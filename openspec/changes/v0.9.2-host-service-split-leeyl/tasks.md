@@ -62,8 +62,14 @@
   - 按提交运行 `corepack pnpm format:check`。本变更涉及的 29 个原测试中，27 个文件在基准源码上即有 Prettier 差异。最终仓库检查还包括有存量差异的 `doc/design.md`。保留这些文件的原文与断言，入口、新模块及新增夹具通过单独的 Prettier 检查。
 - [ ] 3.3 Windows 远程隔离运行 Windows CI 测试文件
   - （未执行：Windows 远程隔离验收留给主会话。）
-- [ ] 3.4 Mac Desktop 实测：设置页、派遣、续聊、停止与 CLI 更新页
-  - （未执行：Mac Desktop 的设置、派遣、续聊、停止和 CLI 更新页实测留给主会话。）
+- [x] 3.4 Mac Desktop 实测：设置页、派遣、续聊、停止与 CLI 更新页
+  - 2026-11-18 确认 Desktop 无活动任务后退出，在 main（`881b09d`）执行 `pnpm build`；profile 以 `link:` 加载仓库，`lib/types/host/` 含新模块产物，`lib/typert.remote-client.d.ts` 与预览包 `cmp` 一致。以无障碍与防节流参数启动 DSH Desktop 0.2.2-rc.3，由 Codex Computer Use（gpt-6.2-sol high）操作真实窗口，未重载、未改设置。
+  - 设置页：「CLI Worker 设置」正常渲染，「CLI 连接」列出 17 个 CLI；Codex 显示「已登录」、项目默认 GPT-6-Luna · Low。流程结束后再次打开仍正常。
+  - 更新 CLI 页：从「正在检查」变为「检查完成：8 个可更新」（可更新 8、已是最新 8、未安装 1），各 CLI 版本行显示；未点击任何更新按钮。
+  - 派遣：主对话调用 CLI Worker 派遣一个 Codex Worker（Codex 0.169.0、gpt-6-luna、Low，确认卡选「沿用」）。Worker `27ac8c44-75b2-4463-be3c-4fc081a2b9fc` 的 `events.jsonl`：run `99c63c8f…` 依次为 queued、「本轮权限：自动审批」、「CLI 已连接」（observedModel gpt-6-luna）、result SUCCESS、completed（06:34:20Z→06:34:33Z）。
+  - 续聊：同一 Worker 子会话窗口发送，run `dd92b750…` 经续聊队列（queuedFollowupId → admittedRunId）进入，result SUCCESS、completed（06:35:23Z→06:35:36Z），两轮历史同时保留。
+  - 停止：第三轮 run `746d5744…` 开始输出后点击「停止生成」，事件为 result ERROR（resultScope run，保留部分正文）后 status「已停止」（interrupted，06:37:02Z），与 2026-11-15 拆分前三个已停止 Worker 的事件顺序相同；界面无错误对话框，历史可查看；停止后 Desktop Host 进程下无残留子进程。
+  - 三轮 stderr 均为用户 Codex 配置中 Cloudflare MCP 未授权（AuthRequired）的诊断，与本变更无关。截图未落盘（Codex 沙箱拒绝写入）；主对话派遣使用了一次主 Agent 模型调用。
 
 ## 4. 文档 〔产品｜1h｜前置 2〕
 
