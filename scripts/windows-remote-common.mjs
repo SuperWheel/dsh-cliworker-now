@@ -30,7 +30,8 @@ export const SOURCE_ROOT_FILES = [
 ]
 // build.mjs imports these helpers and verifies runtime-host before typecheck.
 export const SOURCE_SCRIPTS = new Set(['scripts/build.mjs', 'scripts/build-preview.mjs', 'scripts/build-dependencies.mjs',
-  'scripts/host-runtime.mjs', 'scripts/host-extension-guard.mjs'])
+  'scripts/host-runtime.mjs', 'scripts/host-extension-guard.mjs', 'scripts/build-host-copy-manifest.mjs',
+  'scripts/host-targets.json'])
 export const RUNTIME_HOST = 'runtime-host'
 const RUNTIME_MANIFEST = `${RUNTIME_HOST}/manifest.json`
 export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')

@@ -33,6 +33,16 @@ function packageListing(runtimeFiles = ['manifest.json', ...repositoryManifest.f
 const regular = (listing: string) => listing.trim().split('\n').map((name) => `-rw-r--r-- 0 0 0 1 Oct 20 00:00 ${name}`).join('\n')
 
 describe('Windows remote developer safety and evidence boundaries (synthetic fixtures)', () => {
+  it('uploads every local module the uploaded build scripts import', async () => {
+    const scripts = resolve(import.meta.dirname, '..', 'scripts')
+    for (const file of SOURCE_SCRIPTS) {
+      if (!file.endsWith('.mjs')) continue
+      const source = await readFile(resolve(scripts, '..', file), 'utf8')
+      for (const [, local] of source.matchAll(/(?:from|import)\s*\(?\s*['"]\.\/([^'"]+)['"]/g)) {
+        expect(SOURCE_SCRIPTS, `${file} imports ./${local}`).toContain(`scripts/${local}`)
+      }
+    }
+  })
   it('requires private explicit config and bypasses general SSH config/password fallback', async () => {
     const root = await fixture()
     const privateDir = join(root, '.test-data/windows-remote')
