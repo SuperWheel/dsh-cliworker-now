@@ -57,6 +57,8 @@
 - [x] 3.2 `pnpm lint` 0 error，不新增 warning 与 import 循环。`pnpm spec:check` 通过
   - 最终编译、Vitest 与 lint 数量见 2.8。`corepack pnpm spec:check` 37 项通过、0 失败。`corepack pnpm spec validate v0.9.2-host-service-split-leeyl --strict` 通过。嵌套 pnpm 通过 `.test-data/bin/pnpm` 转发到 Corepack。
   - 按 `tsconfig.tests.json` 对基准和最终源码另外做完整诊断比对，947 项存量诊断的文件、错误码和消息多重集完全相同。
+  - 2026-11-18 主会话复验：逐条核对测试改动，去掉 `['host']` 访问层与夹具构造后增删行一致，断言没有变化；`vitest.config.ts`、`scripts/build.mjs`、`cordis.patch.yml`、`package.json`、锁文件、`src/host/runtime.ts`、Client 与 Shared 均无改动。快进合并到 main（`720693b`）后，`pnpm typecheck` 通过；全量 Vitest 362 个文件通过、4 个跳过，8841 例通过、15 跳过、0 失败；`pnpm lint` 0 error、333 warning；`pnpm spec:check` 37 项通过；`pnpm build:preview` 的 `lib/typert.remote-client.d.ts` 与基线 `cmp` 一致（SHA-256 `ee2d2fc8…cf6d`）。日志在仓库外 `cliworker-now-test/test/2026-11-18-host-service-split-verify/`。
+  - 拆分 worktree 已在合并后移除。上文 `.test-data/baseline/` 与 `.test-data/final/` 的文件已复制到同一目录的 `codex-baseline/`（不含源码与 `lib` 副本）和 `codex-final/`；各步骤的 `.test-data/step-N/` 日志没有保留，逐步数字以本文件记录为准。
   - 按提交运行 `corepack pnpm format:check`。本变更涉及的 29 个原测试中，27 个文件在基准源码上即有 Prettier 差异。最终仓库检查还包括有存量差异的 `doc/design.md`。保留这些文件的原文与断言，入口、新模块及新增夹具通过单独的 Prettier 检查。
 - [ ] 3.3 Windows 远程隔离运行 Windows CI 测试文件
   - （未执行：Windows 远程隔离验收留给主会话。）
