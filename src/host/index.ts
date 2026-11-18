@@ -2,7 +2,6 @@ import { SettingsConnectionCache } from './settings-connection-cache.ts'
 import { BACKGROUND_ACCOUNT_CLIS, BACKGROUND_CATALOG_CLIS } from './cli-management/sources.ts'
 import { backgroundConnectionConfig } from './settings-connection-background.ts'
 import { CustomProviders, type CustomProviderSource } from './custom-provider.ts'
-import { cliTakeoverRequestSchema } from '../shared/cli-management.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -112,6 +111,7 @@ import * as harness from './service-harness.ts'
 import * as history from './service-history.ts'
 import * as workers from './service-workers.ts'
 import * as settings from './service-settings.ts'
+import * as cliUpdates from './service-cli-updates.ts'
 import * as lifecycle from './service-lifecycle.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
@@ -469,169 +469,75 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Cached page JSON; never starts probes. */
   @Remote('cliUpdateSnapshot')
   async cliUpdateSnapshot(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    // The update page is machine-wide: parent() records the project when it still exists, and a
-    // conversation whose working directory was deleted must not break the page (ENOENT observed on Windows, 2026-11-17).
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.cliManagement.snapshot())
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.cliUpdateSnapshot(this.host, parentSessionId, signal)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning session. @param scope - missing or all. @param signal - Request lifetime. @returns Immediate page JSON; watch carries results. */
   @Remote('checkCliUpdates')
   async checkCliUpdates(parentSessionId: string, scope: 'missing' | 'all', signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.cliManagement.check(validate.enum(['missing', 'all']).parse(scope)))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.checkCliUpdates(this.host, parentSessionId, scope, signal)
   }
   /** @param parentSessionId - Owning session. @param signal - Stream lifetime. @returns Revision-ordered page JSON. */
   @Remote({ name: 'watchCliUpdates', mode: 'stream' })
   async *watchCliUpdates(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      for await (const snapshot of this.host.cliManagement.watch(signal)) yield JSON.stringify(snapshot)
-    } catch (error) {
-      throw failure(error)
-    }
+    yield* cliUpdates.watchCliUpdates(this.host, parentSessionId, signal)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param intent - update or install. @param planToken - Host fingerprint. @param installDirectory - Validated optional desktop location. @param requestId - Idempotency key. @param signal - Admission only; does not own the operation. @returns Page snapshot JSON. */
   @Remote('startCliOperation')
   async startCliOperation(parentSessionId: string, cli: string, intent: 'update' | 'install', planToken: string, installDirectory: string, requestId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      this.host.assertExecution(parent)
-      signal.throwIfAborted()
-      const id = validate.enum(CLI_IDS).parse(cli),
-        action = validate.enum(['update', 'install']).parse(intent)
-      const directory = validate.string().max(4096).parse(installDirectory)
-      if (directory) {
-        const check = await this.host.cliManagement.checkDirectory(id, directory, signal)
-        if (check.problem) throw new Error(`LOCATION_INVALID：${check.message}`)
-      }
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.cliManagement.start(
-          id,
-          action,
-          validate.string().max(128).parse(planToken),
-          directory,
-          validate.string().min(1).max(256).parse(requestId),
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.startCliOperation(
+      this.host,
+      parentSessionId,
+      cli,
+      intent,
+      planToken,
+      installDirectory,
+      requestId,
+      signal,
+    )
   }
   /** @param parentSessionId - Owning session. @param requestId - Idempotency key. @param signal - Admission lifetime only. @returns Page snapshot JSON. */
   @Remote('updateAllClis')
   async updateAllClis(parentSessionId: string, requestId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      this.host.assertExecution(parent)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.cliManagement.updateAll(validate.string().min(1).max(256).parse(requestId)),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.updateAllClis(this.host, parentSessionId, requestId, signal)
   }
   /** @param parentSessionId - Owning session. @param target - Operation id or queued CLI id. @param signal - Request lifetime. @returns Page snapshot JSON. */
   @Remote('cancelCliOperation')
   async cancelCliOperation(parentSessionId: string, target: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.cliManagement.cancel(validate.string().min(1).max(256).parse(target)))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.cancelCliOperation(this.host, parentSessionId, target, signal)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param operationId - Exact running operation. @param signal - Admission only. @returns CliTakeoverResult JSON after official exit and cleanup. */
   @Remote('requestCliTakeover')
   async requestCliTakeover(parentSessionId: string, cli: string, operationId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      this.host.assertExecution(parent)
-      signal.throwIfAborted()
-      const request = cliTakeoverRequestSchema.parse({ cli, operationId })
-      return JSON.stringify(await this.host.cliManagement.requestTakeover(request.cli, request.operationId))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.requestCliTakeover(this.host, parentSessionId, cli, operationId, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param signal - Picker lifetime. @returns Directory check JSON; empty path on cancel. */
   @Remote('chooseInstallDirectory')
   async chooseInstallDirectory(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        await this.host.cliManagement.chooseDirectory(validate.enum(CLI_IDS).parse(cli), signal),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.chooseInstallDirectory(this.host, parentSessionId, cli, signal)
   }
   // prettier-ignore
   /** @param parentSessionId - Owning session. @param cli - Desktop CLI. @param path - Proposed directory. @param signal - Query lifetime. @returns Directory check JSON. */
   @Remote('checkInstallDirectory')
   async checkInstallDirectory(parentSessionId: string, cli: string, path: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        await this.host.cliManagement.checkDirectory(
-          validate.enum(CLI_IDS).parse(cli),
-          validate.string().max(4096).parse(path),
-          signal,
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.checkInstallDirectory(this.host, parentSessionId, cli, path, signal)
   }
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Machine-local download settings JSON. */
   @Remote('cliDownloadSource')
   async cliDownloadSource(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(await this.host.cliManagement.downloadSource(signal))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.cliDownloadSource(this.host, parentSessionId, signal)
   }
   /** @param parentSessionId - Owning session. @param json - Download settings JSON. @param signal - Request lifetime. @returns Saved settings JSON. */
   @Remote('saveCliDownloadSource')
   async saveCliDownloadSource(parentSessionId: string, json: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.cliManagement.saveDownloadSource(JSON.parse(json)))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.saveCliDownloadSource(this.host, parentSessionId, json, signal)
   }
   /** @param parentSessionId - Owning session. @param url - HTTPS registry URL. @param signal - Query lifetime. @returns Connection check JSON. */
   @Remote('testCliDownloadSource')
   async testCliDownloadSource(parentSessionId: string, url: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(await this.host.cliManagement.testDownloadSource(url, signal))
-    } catch (error) {
-      throw failure(error)
-    }
+    return cliUpdates.testCliDownloadSource(this.host, parentSessionId, url, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param signal - Query lifetime. @returns Safe account status JSON. */
   @Remote('settingsConnectionStatus')
