@@ -17,9 +17,7 @@ import { Context, withProps } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as validate } from 'zod'
 import { join } from 'node:path'
-import { createHash, randomUUID } from 'node:crypto'
 import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
-import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
 import type { HarnessConversationApi } from './harness-conversation-types.ts'
 import { readNativeColdSessionState } from './native-cold-session-state.ts'
@@ -113,6 +111,7 @@ import { failure } from './service-errors.ts'
 import * as harness from './service-harness.ts'
 import * as history from './service-history.ts'
 import * as workers from './service-workers.ts'
+import * as settings from './service-settings.ts'
 import * as lifecycle from './service-lifecycle.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
@@ -361,26 +360,7 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning Harness session. @param signal - Query lifetime. @returns Profile-wide CLI enablement JSON. */
   @Remote('cliSettings')
   async cliSettings(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      const settings = this.host.runtime.storage.cliSettings()
-      // Reusing this machine's display list in another parent still pins
-      // configure() to the original verified account; no CLI query is needed.
-      for (const cli of CLI_IDS) {
-        const binding =
-          this.host.connectionCache().fresh(cli, 'catalog')?.binding ??
-          this.host.settingsCatalogs?.displayBinding(this.host.machineDirectory(), cli)
-        const key = JSON.stringify([parentSessionId, cli])
-        if (binding) (this.host.displayedBindings ??= new Map()).set(key, binding)
-      }
-      return JSON.stringify({
-        ...settings,
-        settingsCache: this.host.settingsDisplayMetadata(this.host.preferenceProject(parent)),
-      })
-    } catch (error) {
-      throw failure(error)
-    }
+    return settings.cliSettings(this.host, parentSessionId, signal)
   }
   /** @param parentSessionId - Active parent. @param cli - Explicit CLI. @param signal - Read lifetime. @returns Project/CLI running-message preference and native capability. */
   @Remote('runningMessageSettings')
@@ -469,26 +449,12 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Profile-wide general settings JSON. */
   @Remote('generalSettings')
   async generalSettings(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    try {
-      const parent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.runtime.generalSettings())
-    } catch (error) {
-      throw failure(error)
-    }
+    return settings.generalSettings(this.host, parentSessionId, signal)
   }
   /** @param parentSessionId - Owning session. @param patch - JSON object of changed fields; `null` restores a default. @param signal - Mutation admission lifetime. @returns Updated general settings JSON. */
   @Remote('saveGeneralSettings')
   async saveGeneralSettings(parentSessionId: string, patch: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.runtime.setGeneralSettings(JSON.parse(validate.string().max(4096).parse(patch))),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return settings.saveGeneralSettings(this.host, parentSessionId, patch, signal)
   }
   /** @param parentSessionId - Owning session. @param cli - Selected CLI. @param enabled - Allow new CLI operations. @param signal - Mutation admission lifetime. @returns Updated profile-wide CLI enablement JSON. */
   @Remote('setCliEnabled')
@@ -498,22 +464,7 @@ export class CliWorkerService extends TypertRemoteService {
     enabled: boolean,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      const id = validate.enum(CLI_IDS).parse(cli)
-      const next = validate.boolean().parse(enabled)
-      // The check, persistence, and account startup reservation are synchronous;
-      // a pending managed terminal cannot be disabled during its async startup.
-      if (!next && this.host.accounts.isBusy(id))
-        throw new Error('此 CLI 正在管理账号，请先关闭账号终端再关闭 CLI')
-      signal.throwIfAborted()
-      const settings = this.host.runtime.setCliEnabled(id, next)
-      this.host.invalidateSettingsDisplay(id)
-      return JSON.stringify(settings)
-    } catch (error) {
-      throw failure(error)
-    }
+    return settings.setCliEnabled(this.host, parentSessionId, cli, enabled, signal)
   }
   /** @param parentSessionId - Owning session. @param signal - Query lifetime. @returns Cached page JSON; never starts probes. */
   @Remote('cliUpdateSnapshot')
@@ -2937,43 +2888,8 @@ class ServiceContext {
       'cliworker:discard',
     )
   }
-  /** `project` only scopes the saved model preferences; connections and model lists are machine-wide. */
-  settingsDisplayMetadata(project: string | undefined): SettingsCacheMetadata {
-    this.settingsInstance ??= randomUUID()
-    return {
-      policy: 1,
-      connections: this.connectionCache().snapshot(),
-      host: this.settingsInstance,
-      project: project === undefined ? 'no-project' : createHash('sha256').update(project).digest('hex'),
-      revisions: Object.fromEntries(
-        CLI_IDS.map((cli) => [
-          cli,
-          `${this.settingsSourceRevisions?.get(cli) ?? 0}:${this.options.cliExecutablePaths?.revision(cli) ?? 0}`,
-        ]),
-      ) as Record<CliId, string>,
-      catalogReady: Object.fromEntries(
-        CLI_IDS.map((cli) => [
-          cli,
-          !!this.connectionCache().fresh(cli, 'catalog') ||
-            !!this.settingsCatalogs?.displayBinding(this.machineDirectory(), cli),
-        ]),
-      ) as Record<CliId, boolean>,
-      preferences: Object.fromEntries(
-        CLI_IDS.flatMap((cli) => {
-          const preference = project === undefined ? undefined : this.runtime.storage.preference(project, cli)
-          return preference ? [[cli, preference]] : []
-        }),
-      ),
-    }
-  }
-  invalidateSettingsDisplay(cli: CliId) {
-    if (cli !== 'harness') this.connections?.invalidate(cli)
-    this.settingsCatalogs?.invalidate(cli)
-    const revisions = (this.settingsSourceRevisions ??= new Map())
-    revisions.set(cli, (revisions.get(cli) ?? 0) + 1)
-    // Disk-cache failure must not preserve an in-memory account/catalog from before the mutation.
-    if (cli !== 'harness') this.cliManagement?.cache.invalidateAccount(cli)
-  }
+  settingsDisplayMetadata = settings.settingsDisplayMetadata
+  invalidateSettingsDisplay = settings.invalidateSettingsDisplay
   mergeIsolatedWorker = workers.mergeIsolatedWorker
   preloadSettingsConnection(cli: ActiveCliId, kind: 'account' | 'catalog', signal: AbortSignal) {
     return backgroundCredentialRead(() => this.preloadSettingsConnectionNow(cli, kind, signal))
