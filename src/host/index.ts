@@ -21,13 +21,6 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { AccountResponse, AccountStatus } from '../shared/accounts.ts'
 import type { SettingsCacheMetadata } from '../shared/settings-cache.ts'
 import { HarnessConversationStore } from './harness-conversation-store.ts'
-import {
-  projectExternalTurnUsage,
-  recoverHarnessTurnRuns,
-  type HarnessTurnObservation,
-} from './harness-turn-usage.ts'
-import { projectExternalTurnAnswer } from './harness-turn-answer.ts'
-import { projectRequestState } from './native-request-state.ts'
 import type { HarnessConversationApi } from './harness-conversation-types.ts'
 import { readNativeColdSessionState } from './native-cold-session-state.ts'
 import { readHostPlanActive } from './host-plan-state.ts'
@@ -119,6 +112,7 @@ import {
 } from './routing.ts'
 import { failure } from './service-errors.ts'
 import * as harness from './service-harness.ts'
+import * as history from './service-history.ts'
 import * as lifecycle from './service-lifecycle.ts'
 
 /** Catalog reads hold a busy Pi/OMP account for seconds; a run holds it longer. */
@@ -359,118 +353,7 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Owning Harness session. @param workerId - Selected worker or empty string. @param signal - Stream lifetime. @returns JSON snapshots, initially and after changes. */
   @Remote({ mode: 'stream' })
   async *watch(parentSessionId: string, workerId: string, signal: AbortSignal): AsyncIterable<string> {
-    let wake: (() => void) | undefined
-    let dirty = true
-    let observedSessionId: string | undefined
-    const notify = () => {
-      dirty = true
-      wake?.()
-    }
-    const unsubscribe = this.host.runtime.subscribe(notify)
-    const unsubscribeSession = this.host.ctx.on(
-      'session/event',
-      (session, event) => {
-        if (session.id === observedSessionId && event.type === 'turn/end') notify()
-      },
-      { global: true },
-    )
-    const lifetime = AbortSignal.any([signal, this.host.disposed.signal])
-    lifetime.addEventListener('abort', notify)
-    try {
-      while (!lifetime.aborted) {
-        if (!dirty)
-          await new Promise<void>((resolve) => {
-            wake = resolve
-          })
-        wake = undefined
-        if (lifetime.aborted) return
-        dirty = false
-        const snapshot = this.host.runtime.snapshot(parentSessionId, workerId || undefined)
-        const selected = snapshot.selected
-        const binding = selected?.harnessConversation
-        observedSessionId = binding?.parentSessionId === parentSessionId ? binding.sessionId : undefined
-        let record =
-          binding &&
-          this.host.harnessConversationStore
-            ?.list()
-            .find(
-              (entry) =>
-                entry.sessionId === binding.sessionId &&
-                entry.workerId === selected.id &&
-                entry.parentSessionId === parentSessionId,
-            )
-        const events = selected ? this.host.runtime.storage.history(selected.id) : []
-        const needsRecovery = record?.nativeInputs?.some(
-          (input) =>
-            input.accepted &&
-            events.some(
-              (event) =>
-                event.kind === 'user' &&
-                event.queuedFollowupId === input.batchId &&
-                event.admittedRunId === event.runId &&
-                !record?.turnRuns?.some((entry) => entry.runId === event.runId),
-            ),
-        )
-        let externalTurnAnswer: import('../shared/native-turn-answer.ts').ExternalTurnAnswer | undefined
-        if (record && selected && (record.turnRuns?.length || (!snapshot.selectedBusy && needsRecovery))) {
-          const query = this.host.ctx?.get('sessionQuery') as
-            | {
-                observeSession(
-                  id: SessionId,
-                  options: { signal: AbortSignal; projectionMode: 'none' },
-                ): Promise<Disposable & HarnessTurnObservation>
-              }
-            | undefined
-          if (query) {
-            try {
-              const observation = await query.observeSession(SessionId(record.sessionId), {
-                signal: lifetime,
-                projectionMode: 'none',
-              })
-              try {
-                if (!snapshot.selectedBusy && needsRecovery)
-                  record = recoverHarnessTurnRuns(record, selected, events, observation)
-                externalTurnAnswer = projectExternalTurnAnswer(record, selected, events, observation)
-              } finally {
-                observation[Symbol.dispose]()
-              }
-            } catch {
-              if (lifetime.aborted) return
-              // Read failures are not permission to guess or rewrite an old turn.
-            }
-            if (
-              this.host.runtime.snapshot(parentSessionId, workerId || undefined).revision !==
-              snapshot.revision
-            ) {
-              dirty = true
-              continue
-            }
-          }
-        }
-        yield JSON.stringify({
-          ...snapshot,
-          ...(selected && binding?.parentSessionId === parentSessionId
-            ? {
-                externalRequestState: projectRequestState(selected, events),
-                externalTurnAnswer,
-                externalTurnUsage: projectExternalTurnUsage(
-                  record,
-                  selected,
-                  !!snapshot.selectedBusy,
-                  events,
-                  (runId) => this.host.runtime.runUsage(parentSessionId, selected.id, runId),
-                  (runId) => this.host.runtime.runCredits(parentSessionId, selected.id, runId),
-                ),
-              }
-            : {}),
-          configuring: this.host.pending.has(parentSessionId),
-        })
-      }
-    } finally {
-      unsubscribe()
-      unsubscribeSession()
-      lifetime.removeEventListener('abort', notify)
-    }
+    yield* history.watch(this.host, parentSessionId, workerId, signal)
   }
   /** @param parentSessionId - Owning parent session. @param workerId - Worker identity. @param anchor - Stable logical row ID, excluded from the result. @param direction - before or after. @returns JSON historical page, at most 200 rows. */
   @Remote('history')
@@ -480,11 +363,7 @@ export class CliWorkerService extends TypertRemoteService {
     anchor: string,
     direction: string,
   ): Promise<string> {
-    try {
-      return JSON.stringify(this.host.runtime.history(parentSessionId, workerId, anchor, direction))
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.history(this.host, parentSessionId, workerId, anchor, direction)
   }
   /** @param parentSessionId - Owning Harness session. @param signal - Query lifetime. @returns Profile-wide CLI enablement JSON. */
   @Remote('cliSettings')
@@ -513,18 +392,7 @@ export class CliWorkerService extends TypertRemoteService {
   /** @param parentSessionId - Active parent. @param cli - Explicit CLI. @param signal - Read lifetime. @returns Project/CLI running-message preference and native capability. */
   @Remote('runningMessageSettings')
   async runningMessageSettings(parentSessionId: string, cli: string, signal: AbortSignal): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(
-        this.host.runtime.storage.runningMessageSettings(
-          this.host.project(agent),
-          validate.enum(CLI_IDS).parse(cli),
-        ),
-      )
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.runningMessageSettings(this.host, parentSessionId, cli, signal)
   }
   /** @param parentSessionId - Active parent. @param cli - Explicit CLI. @param mode - Running submission preference. @param signal - Save lifetime. @returns Saved preference; never starts a CLI. */
   @Remote('saveRunningMessageMode')
@@ -534,55 +402,22 @@ export class CliWorkerService extends TypertRemoteService {
     mode: string,
     signal: AbortSignal,
   ): Promise<string> {
-    try {
-      const agent = await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      const result = this.host.runtime.storage.setRunningMessageMode(
-        this.host.project(agent),
-        validate.enum(CLI_IDS).parse(cli),
-        validate.enum(RUNNING_MESSAGE_MODES).parse(mode),
-      )
-      this.host.runtime.changed()
-      return JSON.stringify(result)
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.saveRunningMessageMode(this.host, parentSessionId, cli, mode, signal)
   }
   /** @param parentSessionId - Active parent. @param signal - Query lifetime. @returns JSON role preset library. */
   @Remote('rolePresets')
   async rolePresets(parentSessionId: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      return JSON.stringify(this.host.runtime.storage.rolePresets())
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.rolePresets(this.host, parentSessionId, signal)
   }
   /** @param parentSessionId - Active parent. @param requestJSON - Preset fields, optional existing id. @param signal - Mutation lifetime. @returns Saved preset JSON. */
   @Remote('saveRolePreset')
   async saveRolePreset(parentSessionId: string, requestJSON: string, signal: AbortSignal): Promise<string> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      const preset = this.host.runtime.storage.saveRolePreset(JSON.parse(requestJSON))
-      this.host.runtime.changed()
-      return JSON.stringify(preset)
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.saveRolePreset(this.host, parentSessionId, requestJSON, signal)
   }
   /** @param parentSessionId - Active parent. @param presetId - Preset to delete. @param signal - Mutation lifetime. @returns Completion. */
   @Remote('deleteRolePreset')
   async deleteRolePreset(parentSessionId: string, presetId: string, signal: AbortSignal): Promise<void> {
-    try {
-      await this.host.parent(parentSessionId)
-      signal.throwIfAborted()
-      this.host.runtime.storage.deleteRolePreset(presetId)
-      this.host.runtime.changed()
-    } catch (error) {
-      throw failure(error)
-    }
+    return history.deleteRolePreset(this.host, parentSessionId, presetId, signal)
   }
   /** @param parentSessionId - Owning parent. @param workerId - Worker identity. @param name - Unique readable name. @param signal - Mutation lifetime. @returns Completion. */
   @Remote('renameWorker')
