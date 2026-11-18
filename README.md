@@ -1,57 +1,70 @@
 <div align="center">
 
-# dsh-cliworker-now
+<img src="icon.png" width="96" alt="CLI Worker Now">
 
-**简体中文** | [English](README.en.md)
+# dsh-cliworker-now
 
 **在 DeepSeek Harness 里，给不同 CLI 一个共同的协作空间。**
 
-在主对话里点名 Codex、Claude Code、Antigravity 等 17 种 AI CLI，派出有名字的智能体；<br>侧栏实时查看过程，结果回到主对话，结束后还能接着聊。
+[![npm](https://img.shields.io/npm/v/dsh-cliworker-now?logo=npm)](https://www.npmjs.com/package/dsh-cliworker-now)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
+[![CLIs](https://img.shields.io/badge/CLI-17_%E7%A7%8D-FF7A45)](#支持的-cli)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.19-3C873A?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/Platform-macOS_%7C_Windows-6E56CF)](#安装与更新)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[![Release](https://img.shields.io/github/v/release/SuperWheel/dsh-cliworker-now?color=4176e6)](https://github.com/SuperWheel/dsh-cliworker-now/releases/latest)
-[![Harness](https://img.shields.io/badge/DeepSeek_Harness-plugin-555)](https://github.com/deepseek-ai/deepseek-harness)
-[![Platform](https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows-555)](#支持的-cli)
-[![License](https://img.shields.io/badge/License-MIT-555)](LICENSE)
-[![dshfind](https://dshfind.com/api/badge/SuperWheel/dsh-cliworker-now?lang=zh)](https://dshfind.com/zh/plugins/SuperWheel/dsh-cliworker-now?ref=badge)
+**简体中文** · [English](README.en.md)
 
-[亮点](#亮点) · [支持的 CLI](#支持的-cli) · [安装](#安装与更新) · [开始使用](#开始使用) · [常见问题](#常见问题) · [反馈问题](https://github.com/SuperWheel/dsh-cliworker-now/issues)
+[这是什么](#这是什么) · [亮点](#亮点) · [界面一览](#界面一览) · [支持的 CLI](#支持的-cli) · [安装](#安装与更新) · [开始使用](#开始使用) · [常见问题](#常见问题) · [反馈问题](https://github.com/SuperWheel/dsh-cliworker-now/issues)
 
 </div>
 
-![主对话汇总各 CLI 的回复，右侧打开 Antigravity 智能体的原生对话](doc/assets/readme/worker-conversation.webp)
+![CLI Worker 侧栏按 CLI 分组管理全部智能体](doc/assets/readme/worker-list.webp)
 
 ## 这是什么
 
-dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装后在 Harness 中显示为 **CLI Worker / CLI Worker Now**。
+dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装后显示为 **CLI Worker / CLI Worker Now**。它把终端里的 AI CLI 接进 Harness，分工如下：
 
-- **主对话**负责派遣任务、接收结果；**右侧栏**用 Harness 原生对话视图展示每个智能体的过程、用量和状态。
-- 各 CLI 仍使用**自己的账号、模型和原生会话**，插件只负责把它们组织起来。插件不附带模型服务、订阅或 API 额度。
-- 适合**开发协作**（让 Codex 审查代码，再按名字追问）、**写作与审校**（为逻辑、文风、审稿配置不同角色）和**长任务跟进**（记录完整保留，结束后可继续）。
+| 🗣️ 主对话 | 🤖 CLI 智能体 | 📋 右侧栏 |
+| --- | --- | --- |
+| 点名 CLI 派遣任务，接收结果 | 用该 CLI 自己的账号、模型、工具运行 | 用 Harness 原生对话视图实时显示过程、用量与状态 |
+
+**一次任务的流程**：主对话点名 CLI → 选模型、强度与角色 → 智能体在后台运行 → 侧栏实时查看 → 结果回到主对话 → 按名字续聊
+
+| 适用场景 | 例子 |
+| --- | --- |
+| 💻 开发协作 | 让 Codex 审查代码，再按名字追问 |
+| ✍️ 写作与审校 | 为逻辑、文风、商业审稿配置不同角色 |
+| ⏳ 长任务跟进 | 对话与执行记录完整保留，结束后可接着做 |
+
+> 插件不附带模型服务、订阅或 API 额度，模型调用走各 CLI 自己的账号。
 
 ## 亮点
 
-- **🧭 一个主对话，指挥 17 种 CLI**
-  直接说「用 Codex 检查登录逻辑」即可派遣；侧栏按 CLI 分组列出全部智能体，支持搜索和按状态筛选。
-- **💬 和原生对话一样的子会话**
-  每个智能体都是一段完整的 Harness 对话：实时回复、思考与工具调用，用量和上下文统计，运行中排队发送、随时停止，结束后直接续聊。
-- **🧩 保留 CLI 的全部原生能力**
-  使用各 CLI 自己的协议、登录、工具和 skill（原生优先，DSH 工具只作备选）。Codex 的 Computer Use、Antigravity 的生图子 Agent 都能照常工作。
-- **🎯 先选型，再运行**
-  首次使用某个 CLI 时，通过问题卡片选定模型、思考强度和角色，选项来自该 CLI 当前账号的真实目录，不猜测、不替换。也可以关闭询问，直接使用项目默认设定。
-- **🏷️ 有名字、有角色的智能体**
-  每个智能体有唯一名字，可按名字反复调用；内置七种小说创作角色预设，也可以自定义。
-- **🛡️ 权限三档，审批回到 DSH**
-  每个智能体可选「询问 / 自动审批 / 完全权限」，以 CLI 自己的原生模式运行；需要授权时，在 DSH 页面上弹出审批卡片。
-- **🔑 账号与更新都在设置页**
-  分步窗口完成登录、切换和多账号管理，可添加自己的 API 服务商；「更新 CLI」页集中检查、更新和安装，官方渠道中断或过慢时，支持接管的 CLI 改由插件下载并断点续传。
-- **🔒 调度可靠，结果可核查**
-  同一会话互斥，同一目录的写任务默认串行（可选在隔离副本中并行）；CLI 失败不会悄悄换成另一个；停止要等进程全部退出才算成功；结果按 CLI 自己的终态判定。
+<table>
+<tr>
+<td width="50%" valign="top">🧭 <b>一个主对话，指挥 17 种 CLI</b><br>说一句「用 Codex 检查登录逻辑」就能派遣；侧栏按 CLI 分组，可搜索、按状态筛选</td>
+<td width="50%" valign="top">💬 <b>原生体验的子会话</b><br>每个智能体都是完整的 Harness 对话：实时过程、用量与上下文，可排队、停止、续聊</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🧩 <b>原生能力全保留</b><br>各 CLI 用自己的协议、登录、工具和 skill；Codex 的 Computer Use、Antigravity 生图照常可用</td>
+<td width="50%" valign="top">🎯 <b>先选型，再运行</b><br>问题卡片选模型、强度和角色，选项读自当前账号的真实目录；也可直接用项目默认</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🏷️ <b>有名字、有角色</b><br>每个智能体有唯一名字，可反复调用；内置七种小说创作角色，也可自定义</td>
+<td width="50%" valign="top">🛡️ <b>权限三档，审批回到 DSH</b><br>询问 / 自动审批 / 完全权限，按 CLI 原生模式运行；授权请求在 DSH 页面处理</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🔑 <b>账号与更新一站管理</b><br>分步登录、多账号、自带 API 服务商；「更新 CLI」页官方与插件双通道下载、断点续传</td>
+<td width="50%" valign="top">🔒 <b>调度可靠，结果可核查</b><br>同会话互斥、同目录写任务串行；不偷换 CLI；停止等进程全部退出；按 CLI 终态判定结果</td>
+</tr>
+</table>
 
 ## 界面一览
 
-| 侧栏按 CLI 分组管理智能体 | 首次使用时选择模型、强度与角色 |
+| 主对话汇总结果，右侧查看智能体对话 | 首次使用时选择模型、强度与角色 |
 | :---: | :---: |
-| ![CLI Worker 侧栏按 CLI 分组列出智能体](doc/assets/readme/worker-list.webp) | ![主对话中选择 Antigravity 模型的问题卡片](doc/assets/readme/dispatch-model-card.webp) |
+| ![主对话汇总各 CLI 的回复，右侧打开 Antigravity 智能体的原生对话](doc/assets/readme/worker-conversation.webp) | ![主对话中选择 Antigravity 模型的问题卡片](doc/assets/readme/dispatch-model-card.webp) |
 | **让 Antigravity 生成图片，主对话核验产物** | **让 Codex 生成 GIF，再用 Computer Use 插入 Word** |
 | ![Antigravity 智能体生成红色小汽车图片](doc/assets/readme/agy-image-task.webp) | ![Codex 智能体生成 GIF 并插入 Word 文档](doc/assets/readme/codex-computer-use.webp) |
 | **账号登录与项目默认模型** | **图形化分步登录** |

@@ -1,56 +1,70 @@
 <div align="center">
 
-# dsh-cliworker-now
+<img src="icon.png" width="96" alt="CLI Worker Now">
 
-[简体中文](README.md) | **English**
+# dsh-cliworker-now
 
 **A shared workspace for your AI CLIs inside DeepSeek Harness.**
 
-Name Codex, Claude Code, Antigravity or any of 17 AI CLIs in the main conversation to dispatch a named agent;<br>follow its work live in the sidebar, get the result back, and keep talking after it finishes.
+[![npm](https://img.shields.io/npm/v/dsh-cliworker-now?logo=npm)](https://www.npmjs.com/package/dsh-cliworker-now)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
+[![CLIs](https://img.shields.io/badge/CLIs-17-FF7A45)](#supported-clis)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.19-3C873A?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Platform](https://img.shields.io/badge/Platform-macOS_%7C_Windows-6E56CF)](#install-and-update)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-[![Release](https://img.shields.io/github/v/release/SuperWheel/dsh-cliworker-now?color=4176e6)](https://github.com/SuperWheel/dsh-cliworker-now/releases/latest)
-[![Harness](https://img.shields.io/badge/DeepSeek_Harness-plugin-555)](https://github.com/deepseek-ai/deepseek-harness)
-[![Platform](https://img.shields.io/badge/Platforms-macOS%20%7C%20Windows-555)](#supported-clis)
-[![License](https://img.shields.io/badge/License-MIT-555)](LICENSE)
+[简体中文](README.md) · **English**
 
-[Highlights](#highlights) · [Supported CLIs](#supported-clis) · [Install](#install-and-update) · [Get started](#get-started) · [FAQ](#faq) · [Report an issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)
+[What it is](#what-it-is) · [Highlights](#highlights) · [Screenshots](#screenshots) · [Supported CLIs](#supported-clis) · [Install](#install-and-update) · [Get started](#get-started) · [FAQ](#faq) · [Report an issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)
 
 </div>
 
-![The main conversation summarizes each CLI's reply while the Antigravity agent's own conversation is open on the right](doc/assets/readme/worker-conversation.webp)
+![The CLI Worker sidebar groups every agent by CLI](doc/assets/readme/worker-list.webp)
 
 ## What it is
 
-dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**. Once installed, it appears in Harness as **CLI Worker / CLI Worker Now**.
+dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in Harness as **CLI Worker / CLI Worker Now**. It brings your terminal AI CLIs into Harness and splits the work like this:
 
-- The **main conversation** dispatches work and receives results; the **right sidebar** shows each agent in Harness's own conversation view, with its process, usage and status.
-- Each CLI keeps **its own account, models and native sessions**; the plugin only organizes the work. It does not include any model service, subscription or API quota.
-- Useful for **development** (ask Codex to review code, then keep asking the same agent), **writing and editing** (separate roles for logic, style and review) and **long tasks** (full records, continue after it finishes).
+| 🗣️ Main conversation | 🤖 CLI agent | 📋 Right sidebar |
+| --- | --- | --- |
+| Name a CLI to dispatch work and receive the result | Runs with that CLI's own account, models and tools | Shows the process, usage and status live in Harness's native conversation view |
+
+**How one task flows**: name a CLI in the main conversation → choose model, effort and role → the agent runs in the background → follow it in the sidebar → the result returns to the main conversation → follow up by name
+
+| Use case | Example |
+| --- | --- |
+| 💻 Development | Ask Codex to review code, then keep asking the same agent |
+| ✍️ Writing and editing | Separate roles for logic, style and commercial review |
+| ⏳ Long tasks | Conversations and run records are kept, so you can continue after it ends |
+
+> The plugin includes no model service, subscription or API quota; model calls go through each CLI's own account.
 
 ## Highlights
 
-- **🧭 One conversation, 17 CLIs**
-  Just say "use Codex to check the login logic". The sidebar groups every agent by CLI, with search and status filters.
-- **💬 Child sessions that feel native**
-  Every agent is a full Harness conversation: live replies, reasoning and tool calls, usage and context indicators, queued messages while it runs, stop at any time, and follow up after it ends.
-- **🧩 Every native CLI capability is kept**
-  Each CLI uses its own protocol, login, tools and skills (native first, DSH tools only as fallbacks). Codex Computer Use and Antigravity's image-generation sub-agent work as usual.
-- **🎯 Choose first, then run**
-  The first time you use a CLI, question cards ask for the model, reasoning effort and role, read from that CLI's real catalog for the current account. Nothing is guessed or swapped. You can turn the questions off and use the project defaults.
-- **🏷️ Named agents with roles**
-  Every agent has a unique name you can call again; seven built-in fiction-writing role presets, plus your own.
-- **🛡️ Three permission levels, approvals back in DSH**
-  Pick Ask / Auto-approve / Full access per agent; each runs in the CLI's own native mode, and approval requests appear as cards in DSH.
-- **🔑 Accounts and updates in settings**
-  Step-by-step windows for login, switching and multiple accounts, including your own API providers. The "Update CLIs" page checks, updates and installs in one place; when the official channel stalls or is too slow, supported CLIs switch to a resumable plugin download.
-- **🔒 Reliable scheduling, verifiable results**
-  One turn per session and serialized writes per directory by default (optionally in parallel in an isolated copy); no silent fallback to another CLI; a stop only succeeds after every process exits; results follow the CLI's own final state.
+<table>
+<tr>
+<td width="50%" valign="top">🧭 <b>One conversation, 17 CLIs</b><br>Say "use Codex to check the login logic" to dispatch; the sidebar groups agents by CLI, with search and status filters</td>
+<td width="50%" valign="top">💬 <b>Child sessions that feel native</b><br>Every agent is a full Harness conversation: live process, usage and context, with queueing, stop and follow-up</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🧩 <b>Native capabilities kept</b><br>Each CLI uses its own protocol, login, tools and skills; Codex Computer Use and Antigravity image generation work as usual</td>
+<td width="50%" valign="top">🎯 <b>Choose first, then run</b><br>Question cards pick model, effort and role from the current account's real catalog, or use the project defaults</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🏷️ <b>Named agents with roles</b><br>Each agent has a unique name you can call again; seven built-in fiction-writing roles, plus your own</td>
+<td width="50%" valign="top">🛡️ <b>Three levels, approvals in DSH</b><br>Ask / Auto-approve / Full access in each CLI's native mode; approval requests are handled on DSH pages</td>
+</tr>
+<tr>
+<td width="50%" valign="top">🔑 <b>Accounts and updates in one place</b><br>Step-by-step login, multiple accounts, your own API providers; "Update CLIs" with official and plugin download channels and resume</td>
+<td width="50%" valign="top">🔒 <b>Reliable scheduling, verifiable results</b><br>One turn per session, serialized writes per folder; no silent CLI swap; stop waits for every process; results follow the CLI's final state</td>
+</tr>
+</table>
 
 ## Screenshots
 
-| Agents grouped by CLI in the sidebar | Choose model, effort and role on first use |
+| Main conversation summary beside an agent's conversation | Choose model, effort and role on first use |
 | :---: | :---: |
-| ![CLI Worker sidebar grouping agents by CLI](doc/assets/readme/worker-list.webp) | ![Question card choosing an Antigravity model](doc/assets/readme/dispatch-model-card.webp) |
+| ![The main conversation summarizes each CLI's reply while the Antigravity agent's own conversation is open on the right](doc/assets/readme/worker-conversation.webp) | ![Question card choosing an Antigravity model](doc/assets/readme/dispatch-model-card.webp) |
 | **Antigravity generates an image; the main agent checks the file** | **Codex makes a GIF and inserts it into Word with Computer Use** |
 | ![Antigravity agent generating a red car image](doc/assets/readme/agy-image-task.webp) | ![Codex agent inserting a GIF into a Word document](doc/assets/readme/codex-computer-use.webp) |
 | **Account and project default model** | **Step-by-step login** |
