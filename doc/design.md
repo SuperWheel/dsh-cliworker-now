@@ -122,9 +122,9 @@ v0.3.0 采用用户确认的 B 桌面侧栏方案：父级为按 CLI 分组的�
 - MiMo 使用官方像素字标提炼的 M 适配图，不宣称为官方独立图标。素材设计阶段未改变运行界面；v0.3.0 按用户提供的素材包原样接入。
 - 素材、原始来源、生成提示词和实际尺寸预览见 [图标说明](assets/cli-icons/v1/README.md)。
 
-项目独立图标：v1 的主终端与子会话块被用户否定，原因是过于接近 Codex。第二轮移除终端符号，提供会话气泡、任务分派、Worker W 三种扁平透明方向，见 [第二轮候选](assets/project-icon/v2/README.md)。第二轮方案未采用；当前采用下述 v3。
+项目独立图标：v1 的主终端与子会话块被用户否定，原因是过于接近 Codex。第二轮移除终端符号，提供会话气泡、任务分派、Worker W 三种扁平透明方向，见 [第二轮候选](assets/project-icon/archive/v2/README.md)。第二轮方案未采用；当前采用下述 v3。
 
-项目 Logo 新设计稿 v3：以打开的会话窗口、三条并列会话和状态圆点表达“让每个 Agent 的工作过程可见”。使用蓝色双调、圆角扁平形状及透明背景；同一 PNG 已检查亮暗背景和 24px／32px／48px 展示。见 [会话可见 Logo](assets/project-icon/v3/README.md)，已在 v0.3.0 用作总览标题、侧栏入口和新标签页引导图标。
+项目 Logo 新设计稿 v3：以打开的会话窗口、三条并列会话和状态圆点表达“让每个 Agent 的工作过程可见”。使用蓝色双调、圆角扁平形状及透明背景；同一 PNG 已检查亮暗背景和 24px／32px／48px 展示。见 [会话可见 Logo](assets/project-icon/archive/v3/README.md)，已在 v0.3.0 用作总览标题、侧栏入口和新标签页引导图标。
 
 ## 13. v0.3.0 桌面父子页面
 
@@ -160,19 +160,19 @@ v0.3.0 采用用户确认的 B 桌面侧栏方案：父级为按 CLI 分组的�
 - 从完整事件序列计算每轮起止时间，在历史分页前附着到逻辑行；耗时为任务提交到终态，含队列与 CLI 启动。运行中按秒更新；终态固定。过程折叠位于回复之前，只展示 CLI 实际公开的工具/状态/诊断，不推断内部思考。
 - Desktop 的本地链接更新必须完整重启宿主，不能以插件目录的版本号或刷新按钮代替 Host API 验收。验收必须实际加载目录、保存当前 worker 配置并观察恢复结果。
 
-项目 Logo v4 按用户标注去掉内部三条横条和原圆点，保留 C 形对话框，在右侧紧贴加入小写 li 并加粗，形成 Cli 字形。见 [v4 设计稿](assets/project-icon/v4/README.md)，尚未接入插件。
+项目 Logo v4 按用户标注去掉内部三条横条和原圆点，保留 C 形对话框，在右侧紧贴加入小写 li 并加粗，形成 Cli 字形。见 [v4 设计稿](assets/project-icon/archive/v4/README.md)，尚未接入插件。
 
-项目 Logo v5 将 C 主体、l 与 i（含圆点）上下对齐，缩窄 C 并减少内部空白，保留小对话尾部。见 [紧凑等高版](assets/project-icon/v5/README.md)。
+项目 Logo v5 将 C 主体、l 与 i（含圆点）上下对齐，缩窄 C 并减少内部空白，保留小对话尾部。见 [紧凑等高版](assets/project-icon/archive/v5/README.md)。
 
-用户认可 v5 基本样式后，v6 沿用 Cli 构形，以柔和的曲线、尾部、笔画变化和浅蓝圆点增加人文感，并调整字母间隔。已查看明暗背景中的 24／32／48px 展示，页面标题建议 32px，见 [柔和人文版](assets/project-icon/v6/README.md)。仍为设计稿，尚未接入插件。
+用户认可 v5 基本样式后，v6 沿用 Cli 构形，以柔和的曲线、尾部、笔画变化和浅蓝圆点增加人文感，并调整字母间隔。已查看明暗背景中的 24／32／48px 展示，页面标题建议 32px，见 [柔和人文版](assets/project-icon/archive/v6/README.md)。仍为设计稿，尚未接入插件。
 
 ## v0.3.4 菜单导航一致性
 
 两个子菜单都将共享返回项放在原生 Menu 的 items 第一项，避免 items 与 children 的渲染先后造成位置不一致。插件内按钮、Portal 菜单按钮及主会话 CLI 入口去除静态边框；hover 使用宿主主题色并以 180ms 缓出曲线过渡，不影响尺寸。禁用按钮不触发 hover；prefers-reduced-motion 下取消过渡，键盘 focus-visible 保留。CLI 分组标题与任务之间的分隔线继续独立绘制。
 
-项目 Logo v7 按用户要求，以 v6 第二张为基础调整为近正方形构形。主体外接框为 1000 × 996px，宽高比约 1.004:1，保留双蓝色、人文曲线及透明背景，见 [v7 设计稿](assets/project-icon/v7/README.md)。
+项目 Logo v7 按用户要求，以 v6 第二张为基础调整为近正方形构形。主体外接框为 1000 × 996px，宽高比约 1.004:1，保留双蓝色、人文曲线及透明背景，见 [v7 设计稿](assets/project-icon/archive/v7/README.md)。
 
-用户随后要求宽度大于高度、比例更舒展；v8 从 v7 继续调整，主体实测 1189 × 862px，约 1.379:1，保留双蓝色、圆角与透明背景。已查看亮暗背景和 24／32／48px 展示，见 [v8 推荐稿](assets/project-icon/v8/README.md)。
+用户随后要求宽度大于高度、比例更舒展；v8 从 v7 继续调整，主体实测 1189 × 862px，约 1.379:1，保留双蓝色、圆角与透明背景。已查看亮暗背景和 24／32／48px 展示，见 [v8 推荐稿](assets/project-icon/archive/v8/README.md)。
 
 ## v0.3.5 真实遥测与日期
 
@@ -203,11 +203,11 @@ v0.3.0 采用用户确认的 B 桌面侧栏方案：父级为按 CLI 分组的�
 
 亮色 neutral resting fill 与 hover-solid 视觉近似，灰色筛选/返回按钮及禁用灰色控件的 hover 使用 interactive-bg-active。仅作用于 body:not([data-ds-dark-theme])；已选筛选按钮、发送按钮及暗色样式不变。实测未选中按钮默认 rgba(38,49,72,0.06)，真实 :hover 为 rgba(38,49,72,0.1)，180ms 过渡期间存在中间色。
 
-项目 Logo v9 按用户反馈放大左下对话尾部，大幅收缩 C 内部留白，调整三字母重量和柔和轮廓，保留双蓝色与透明背景，见 [饱满对话版](assets/project-icon/v9/README.md)。
+项目 Logo v9 按用户反馈放大左下对话尾部，大幅收缩 C 内部留白，调整三字母重量和柔和轮廓，保留双蓝色与透明背景，见 [饱满对话版](assets/project-icon/archive/v9/README.md)。
 
-项目 Logo v10 在 v9 基础上适当收窄，重新协调 C、l、i 比例，保留大尾部与小留白，见 [收窄协调版](assets/project-icon/v10/README.md)。
+项目 Logo v10 在 v9 基础上适当收窄，重新协调 C、l、i 比例，保留大尾部与小留白，见 [收窄协调版](assets/project-icon/archive/v10/README.md)。
 
-用户已选定第二张收窄版 Logo（v10）。以此结合 B 方案制作[整体效果图](assets/overall-preview/logo-v10/overview.png)，展示父级总览／子级对话和亮暗主题。图中内容为设计示例，尚不代表已安装界面的变更。
+用户已选定第二张收窄版 Logo（v10）。以此结合 B 方案制作[整体效果图](https://github.com/SuperWheel/dsh-cliworker-now/blob/64684741a6787c5873a4ab0e54a757d0f068d028/doc/assets/overall-preview/logo-v10/overview.png)，展示父级总览／子级对话和亮暗主题。图中内容为设计示例，尚不代表已安装界面的变更。
 
 
 ## v0.4.0 原生设置弹窗与账号终端
@@ -220,9 +220,9 @@ v0.3.0 采用用户确认的 B 桌面侧栏方案：父级为按 CLI 分组的�
 - 账号终端通过 subprocess.spawnTerminal 参数数组管理；xterm 6.0.0 / fit 0.11.0 渲染 ANSI，禁用自动链接导航，不加载剪贴板写入附加组件。不持久化账号终端输入或输出，CLI 自身按其原生流程保管凭据。
 - 状态查询 10 秒/64KiB 上限，终端内存 256KiB/512帧、输入单包16KiB、最多30分钟，30秒未订阅自动清理；关闭/断流/卸载清理，确认进程组退出才释放 CLI 锁。清理失败保留锁并可重试，不报告成功。
 
-用户提供新的手绘构形后，v11 按草图采用短上沿、左竖线与 li 下方长底边组成的开放对话框，保留尾部和自然笔画，使用蓝色及透明背景。见 [草图整理版](assets/project-icon/v11/README.md)，为新的设计方向，未覆盖此前版本或接入插件。
+用户提供新的手绘构形后，v11 按草图采用短上沿、左竖线与 li 下方长底边组成的开放对话框，保留尾部和自然笔画，使用蓝色及透明背景。见 [草图整理版](https://github.com/SuperWheel/dsh-cliworker-now/blob/64684741a6787c5873a4ab0e54a757d0f068d028/doc/assets/project-icon/v11/README.md)，为新的设计方向，未覆盖此前版本或接入插件。
 
-用户澄清草图仅用于示范结构，明确不要笔绘风。v12 采用平滑几何扁平样式，保留短上沿和 li 下长底边，收紧内部间距；见 [紧凑扁平版](assets/project-icon/v12/README.md)。
+用户澄清草图仅用于示范结构，明确不要笔绘风。v12 采用平滑几何扁平样式，保留短上沿和 li 下长底边，收紧内部间距；见 [紧凑扁平版](https://github.com/SuperWheel/dsh-cliworker-now/blob/64684741a6787c5873a4ab0e54a757d0f068d028/doc/assets/project-icon/v12/README.md)。
 
 
 ## v0.4.1 CLI 开关与设置布局
@@ -310,7 +310,7 @@ OMP 原生登录向导的顶部标志与说明占用较多终端行；账号弹�
 
 共享协议将活跃 ID 与历史 ID 分离；Storage 兼容旧 Harness 开关、偏好和 worker 文件，但不向设置页暴露旧开关，不迁移到 Hermes。历史行标注已移除，仅支持查看；Host 在新建、续聊、改模型及开启操作前拒绝旧 ID。Hermes 首次独立选型。
 
-Hermes 账号与模型使用原生 home，不注入共享智谱引用。账号终端分别打开 model/auth 原生菜单，状态仅返回安全本地摘要。目录只读取原生明确选择的 provider/model；能力缓存不明确则只提供 default。任务通过原生 stream-json，session_id 独立校验，最终结果结合退出码；工具错误可被后续成功恢复，真实 tokens 进入回复和底栏，不伪造 context。所有进程复用宿主管理与清理机制、macOS 外层写入沙箱。原生 launcher 需要安装锁与运行租约；任务和目录读取仅对白名单日志、会话、数据库、锁与租约授予写入，账号/config/.env/源码保持只读；首次初始化或凭据刷新需通过原生账号终端。详细协议与真实/模拟证据区分见 `doc/hermes-probe.md`。
+Hermes 账号与模型使用原生 home，不注入共享智谱引用。账号终端分别打开 model/auth 原生菜单，状态仅返回安全本地摘要。目录只读取原生明确选择的 provider/model；能力缓存不明确则只提供 default。任务通过原生 stream-json，session_id 独立校验，最终结果结合退出码；工具错误可被后续成功恢复，真实 tokens 进入回复和底栏，不伪造 context。所有进程复用宿主管理与清理机制、macOS 外层写入沙箱。原生 launcher 需要安装锁与运行租约；任务和目录读取仅对白名单日志、会话、数据库、锁与租约授予写入，账号/config/.env/源码保持只读；首次初始化或凭据刷新需通过原生账号终端。详细协议与真实/模拟证据区分见 `doc/probes/hermes-probe.md`。
 
 
 ## 智能体角色预设与稳定名称（2026-10-06）
@@ -999,7 +999,7 @@ Windows 按已核验的官方原生位置 `~/.qoder/bin/qodercli/qodercli.exe` �
 
 Qoder 元数据查询必须先取得原生成功回执并确认 `end_session`（旧 worker）或 `daemon.shutdown`（daemon）。官方 Windows SDK 使用 `TerminateJobObject(1)` 收尾，因此仅在该请求由插件正常主动终止、没有取消或协议错误、进程范围已确认退出时接纳对应的 `1/null` 退出；自然非零、提前退出和未确认清理仍拒绝。该分类不执行登录、续期或模型请求，不改变账号文件与派遣前授权核验。
 
-正式 Desktop 的 ConPTY 二进制与清单可能分别在 `app.asar.unpacked` 和 `app.asar`。新增受当前 Host 安装位置、随机 nonce、归档只读锁与固定版本约束的清单证明；Electron 的逻辑读取和 `original-fs` 的物理无链接检查分离。继续按同一实际 helper 校验固定 exe/DLL 摘要、对应源码副本、父 PID、创建时间和控制台身份，并以 Job 范围为空及终端释放作为停止成功条件。普通 npm 物理清单路径保持。来源及完整边界见 `windows-conpty-source.md`；真实账号、模拟终端和实际 UI 的验收证据分别记入 `tasks.md`。
+正式 Desktop 的 ConPTY 二进制与清单可能分别在 `app.asar.unpacked` 和 `app.asar`。新增受当前 Host 安装位置、随机 nonce、归档只读锁与固定版本约束的清单证明；Electron 的逻辑读取和 `original-fs` 的物理无链接检查分离。继续按同一实际 helper 校验固定 exe/DLL 摘要、对应源码副本、父 PID、创建时间和控制台身份，并以 Job 范围为空及终端释放作为停止成功条件。普通 npm 物理清单路径保持。来源及完整边界见 `audits/windows-conpty-source.md`；真实账号、模拟终端和实际 UI 的验收证据分别记入 `tasks.md`。
 
 
 ## 2026-10-18：Qoder 上下文与本轮积分（v0.8.1）
@@ -1012,7 +1012,7 @@ Windows 实机暴露 Qoder 默认原生文件由 Administrators 拥有，当前�
 
 Qoder 的可选遥测来源增加积分计费单位，原生与备用用量组件只显示积分，标题为“积分用量”；有效零、等待、缺失与断连各自保留实际语义。当前归属断连时保留单位并清空数字，释放或换代时清除单位。后台有效 token 桶继续校验，不作为积分模块的显示替代，也不影响独立上下文的 token 单位。
 
-Windows Hermes 的 venv python.exe 派生实际 Python 解释器，原生状态 PID 与启动器不同；文件日志中已经就绪，但没有 stdout 监听行，旧门禁因此超时。本次仅向精确自有 Python 入口传入每次随机 nonce，经本次管道取得当前解释器 PID，再核对新鲜状态的 pid/writer_pid、精确本机地址和鉴权能力。该进程回执不含 API 秘密，进入原生 CLI 前移除 nonce；不从磁盘 PID 单独扩大信任。完整停止范围、原始账号及会话保留，实机网关能力检查不提交模型请求。来源与边界见 `hermes-probe.md` 和 `tasks.md`。
+Windows Hermes 的 venv python.exe 派生实际 Python 解释器，原生状态 PID 与启动器不同；文件日志中已经就绪，但没有 stdout 监听行，旧门禁因此超时。本次仅向精确自有 Python 入口传入每次随机 nonce，经本次管道取得当前解释器 PID，再核对新鲜状态的 pid/writer_pid、精确本机地址和鉴权能力。该进程回执不含 API 秘密，进入原生 CLI 前移除 nonce；不从磁盘 PID 单独扩大信任。完整停止范围、原始账号及会话保留，实机网关能力检查不提交模型请求。来源与边界见 `probes/hermes-probe.md` 和 `tasks.md`。
 
 ## 2026-10-18：逐轮积分、模型展示与简洁统计弹层（v0.8.1）
 
@@ -1557,7 +1557,7 @@ Worker 安装识别使用 `pi-installation.mjs` 的明确版本表：1.0.2、1.0
 
 桥接补认 Pi 1.1.0 起新增的 `agent_settled.aborted=true`，即使助手消息正常且进程退出 0 也不能报告成功；1.0.4 缺字段保留既有判断。1.5.2 的成本总额可为服务商账单，现有 token 投影不读取成本字段，不将 reasoning 重复相加。原生登录 shell 子命令虽已增加，插件仍使用核实过的 UI/SDK，不更换交互协议。
 
-Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。2026-11-15 Windows 修复：正常管道结束先有界等待直接进程退出，随后有界确认范围自然退出，超时才终止；隐藏窗口 native 回执不等于 Job runner 退出。停止/超时仍立即终止，真实清理失败仍隔离。Pi/OMP 子进程保留 ProgramFiles、ProgramFiles(x86)、ProgramW6432，支持 PATH 仅有 Git/cmd 的原生 bash 查找；Host 代理环境不变。修复后 Windows 实机复验待进行。完整差异、文件行号及验收边界见 [本次设计](../openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。
+Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 只切换 release 指针，没有新安装器 launcher 模板，未知启动器仍拒绝。2026-11-15 Windows 修复：正常管道结束先有界等待直接进程退出，随后有界确认范围自然退出，超时才终止；隐藏窗口 native 回执不等于 Job runner 退出。停止/超时仍立即终止，真实清理失败仍隔离。Pi/OMP 子进程保留 ProgramFiles、ProgramFiles(x86)、ProgramW6432，支持 PATH 仅有 Git/cmd 的原生 bash 查找；Host 代理环境不变。修复后 Windows 实机复验待进行。完整差异、文件行号及验收边界见 [本次设计](../openspec/archives/v0.9.0-pi-1-5-adapt-leeyl/design.md)，实际检查写在其 tasks.md；不将模拟或无模型探测描述为真实模型验收。
 
 ## 2026-11-14：设置页连接状态纳入静默预加载（Host 与共享协议）
 
@@ -1742,7 +1742,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 
 共享 Harness 回执边界将工具失败对象的 message/text/content/error 提取为纯文本，未知对象输出有界 JSON（4096 字符、深度/节点上限）。成功回执不变；原始 CLI 事件不改写。结构化取消原因在退出回执等待时转换为 AbortError，避免 DSH 工具管线把 `{ kind: 'user' }` 转成 `[object Object]`，保留取消分类与清理屏障。legacy 工具结果投影使用相同文本规则。
 
-关联模拟测试、安装源码证据与 Desktop 待验收项见 [Worker 目录与工具错误变更](../openspec/changes/v0.9.0-worker-cwd-tool-errors-leeyl/tasks.md)。本次未构建、未更新 lib、未调用真实模型。
+关联模拟测试、安装源码证据与 Desktop 待验收项见 [Worker 目录与工具错误变更](../openspec/archives/v0.9.0-worker-cwd-tool-errors-leeyl/tasks.md)。本次未构建、未更新 lib、未调用真实模型。
 
 ### ZCode 自定义 API Key（v0.9.0-zcode-custom-key-leeyl，2026-11-15，未发布）
 
@@ -1755,7 +1755,7 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 
 `CustomProviderForm.presets` 新增内置模板预填（可选字段）。
 
-决定、放弃的方案与风险见 [变更设计](../openspec/changes/v0.9.0-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。
+决定、放弃的方案与风险见 [变更设计](../openspec/archives/v0.9.0-zcode-custom-key-leeyl/design.md)。真实订阅过期 + 自有密钥的 Desktop 派遣（headless 与 app-server）需另行取得模型调用授权，尚未执行。
 
 
 ### 2026-11-17 更新和修复保留原安装
@@ -1802,4 +1802,4 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
   - 不做的事：不替 Hermes 移动或删除 `node_modules`，不调 `source_completion.py --finish-update` 这类内部入口，不猜占用者。
 - **取消后核对**：持维护锁只读核对原安装，60 秒上限，不写路径记录；结果分为原版本未受影响、更新已完成、安装已损坏（附修复入口）和核对失败。
 
-详见 `openspec/changes/v0.9.1-cli-update-takeover-switch-leeyl/`。只做了模拟测试；真实 Grok、Qoder 更新与 Windows 待验收。
+详见 `openspec/archives/v0.9.1-cli-update-takeover-switch-leeyl/`。只做了模拟测试；真实 Grok、Qoder 更新与 Windows 待验收。

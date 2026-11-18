@@ -6,5 +6,6 @@ pm:
   requirement: REQ-0136
   prd: doc/prd/2026-11-17-v0.9.1-REQ-0136.md
   previous_names: []
+  archived: 2026-11-18
 schema: pmspec
 created: 2026-11-17

@@ -78,7 +78,7 @@ StatsPills 接真实四桶；OMP 明确额外桶和无法归类的 reported tota
 - Pi 1.0.4 安装 SDK 的 AgentSession／ExtensionContext，证明已有全历史 stats 已覆盖压缩等调用，同时限定扩展只公开总占用，没有分类计数方法。
 - [OpenCode 1.19.0 原生 projector](https://github.com/anomalyco/opencode/blob/v1.19.0/packages/core/src/session/projector.ts) 的增减 counter 规则，经安装 binary 对照，证明 session snapshot 应替换而非累加；MiMo 0.1.15 的独立 SDK/plugin 没有同一 counter，不套用 OpenCode 新字段。
 
-细节见 [前轮 ACP 组](cli-usage-audit-acp.md)、[前轮 HTTP/RPC 组](native-http-rpc-audit.md)、[本轮 Kimi 持久回执](kimi-durable-usage-audit.md)、[本轮 Pi／OMP／HTTP 接口](native-http-rpc-data-interfaces.md)、[两个参考的定向核查](codingns-reference-audit.md) 和 [原生每轮用量](native-turn-usage.md)。
+细节见 [前轮 ACP 组](audits/cli-usage-audit-acp.md)、[前轮 HTTP/RPC 组](audits/native-http-rpc-audit.md)、[本轮 Kimi 持久回执](kimi-durable-usage-audit.md)、[本轮 Pi／OMP／HTTP 接口](native-http-rpc-data-interfaces.md)、[两个参考的定向核查](codingns-reference-audit.md) 和 [原生每轮用量](protocols/native-turn-usage.md)。
 
 ## 验收状态
 

@@ -43,7 +43,7 @@ ZCode 显式禁用原生子代理、Skill、工作流调度、跨会话工具及
 
 若明确要复用 Harness 智谱凭据，设置 `zaiCredentialRef: ZAI_CODING_CN_API_KEY`。Host 每次通过原生 credentials 服务解析该引用，只向选定的 Pi/OMP/OpenCode 子进程注入对应环境变量；不把密钥存入插件偏好、argv 或页面。不会自动复用其他 CLI 的账号；OpenCode 未设置引用时使用下述插件私有原生账号目录。OMP 的 `cliworker-zai-cn` 是插件注册的隔离 Provider，不冒充原生内置 Provider。
 
-验证说明：[ZCode](zcode-probe.md)、[Grok](grok-probe.md)、[Pi/OMP](pi-omp-probe.md)、[Hermes](hermes-probe.md)、[OpenCode](opencode-probe.md)。`node --import tsx scripts/smoke-extended.ts --help` 查看真实适配器验收入口；`--catalog-only` 不发送模型任务。
+验证说明：[ZCode](zcode-probe.md)、[Grok](grok-probe.md)、[Pi/OMP](pi-omp-probe.md)、[Hermes](probes/hermes-probe.md)、[OpenCode](opencode-probe.md)。`node --import tsx scripts/smoke-extended.ts --help` 查看真实适配器验收入口；`--catalog-only` 不发送模型任务。
 
 ## v0.6.0 Hermes Agent 替换外部 Harness CLI
 

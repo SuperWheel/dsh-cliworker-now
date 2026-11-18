@@ -151,22 +151,26 @@ Pi/OMP 的 OAuth 账号由来源绑定的共享存储与 Host 租约独占时，
 - **THEN** 不使用旧账号的目录，按账号已变更失败
 
 ### Requirement: macOS Antigravity 账号读取系统钥匙串
-在 macOS 上，Host SHALL 以系统钥匙串中 service `gemini`、account `antigravity` 的条目作为 Antigravity 登录状态与账号绑定的唯一来源，通过参数数组调用 `/usr/bin/security` 读取并在 Host 进程内解码；凭据、令牌与条目原文 MUST NOT 写入日志、事件、持久化文件或界面。条目不存在时 MUST 视为未登录，MUST NOT 回退到 `~/.gemini/jetski-standalone-oauth-token`；读取失败时 MUST 报告无法读取，不判为已登录或未登录。绑定主体 SHALL 与原文件来源的计算方式一致，同一账号的绑定版本不因来源切换而改变。
+在 macOS 上，Host SHALL 区分钥匙串条目缺失与读取失败来确定 Antigravity 登录状态与账号绑定：先读系统钥匙串中 service `gemini`、account `antigravity` 的条目（通过参数数组调用 `/usr/bin/security` 并在 Host 进程内解码）；只有钥匙串读取失败时，才读 `~/.gemini/jetski-standalone-oauth-token`。钥匙串正常读取时 MUST 以结果为准，不读文件；明确条目不存在时 MUST 视为未登录，即使旧令牌文件仍在。钥匙串读取失败且文件不存在或无法解析时 MUST 报告无法读取，不判为已登录或未登录。凭据、令牌与条目原文 MUST NOT 写入日志、事件、持久化文件或界面。同一账号的绑定版本 MUST NOT 因登录在钥匙串与文件之间切换而改变。
 
 #### Scenario: 原生退出后
-- **WHEN** 用户在 Antigravity 中 `/logout`，钥匙串条目已删除而遗留文件仍在
+- **WHEN** 用户在 agy 中 `/logout` 后，钥匙串读取明确返回条目不存在，旧令牌文件仍存在（包括有效或损坏内容）
 - **THEN** 设置页显示未登录；续聊拒绝启动并提示登录，原会话与绑定保留
+
+#### Scenario: agy 回退到令牌文件
+- **WHEN** 本次钥匙串读取失败或超时，且存在可解析的 agy 登录令牌文件
+- **THEN** 设置页显示已登录及邮箱，模型目录与派遣可用，绑定与原钥匙串来源相同
 
 #### Scenario: 重新登录原账号
 - **WHEN** 用户重新登录同一 Antigravity 账号，钥匙串条目重新写入
 - **THEN** 设置页显示已登录及邮箱；已有任务以原绑定原生续接，不追加改绑说明
 
 #### Scenario: 在 agy 中换到另一账号
-- **WHEN** 钥匙串条目对应另一账号，遗留文件仍属原账号
+- **WHEN** 钥匙串条目对应另一账号，令牌文件仍属原账号
 - **THEN** 绑定按钥匙串中的账号计算，与原账号不同，按换号处理
 
 #### Scenario: 钥匙串不可读
-- **WHEN** `/usr/bin/security` 以非「条目不存在」的状态失败、超时或输出无法解析
+- **WHEN** `/usr/bin/security` 以非「条目不存在」的状态失败、超时或输出无法解析，且没有可解析的令牌文件
 - **THEN** 显示无法读取 macOS 钥匙串中的 Antigravity 账号，拒绝绑定，不启动任务
 
 ### Requirement: 元数据优化不复活账号
@@ -417,3 +421,91 @@ Pi 退出 SHALL 只读取并修改所选来源的 auth.json，以 Pi 原生 Auth
 #### Scenario: 退出后持续读不到状态
 - **WHEN** 非指定服务商的账号流程在终端退出后连续 3 次读到 unavailable 或 unknown
 - **THEN** 停止重试并给出未确认结果，不耗尽整个确认时限
+
+### Requirement: Windows Antigravity 凭据管理器无登录时读取令牌文件
+在 Windows 上，Host SHALL 先通过固定帮助脚本读取凭据管理器目标 `gemini:antigravity`；该目标不存在或凭据管理器读取失败时，SHALL 在 Host 进程内有界读取 `%USERPROFILE%\.gemini\jetski-standalone-oauth-token`，按与帮助脚本相同的规则投影状态、邮箱与主体摘要。凭据管理器有登录（含已过期、格式未知）时 MUST 以其为准。文件来源 MUST 使用与凭据管理器相同的来源标识，同一账号的绑定版本不因存放位置变化而改变。凭据原文与令牌 MUST NOT 越过读取函数或进入投影。
+
+#### Scenario: agy 已改用令牌文件
+- **WHEN** 凭据管理器中没有 `gemini:antigravity`，令牌文件中是有效的 agy 1.5.x 登录（仅含 `id_token_email`）
+- **THEN** 设置页显示已登录及邮箱，绑定成功，模型与强度可选
+
+#### Scenario: 两处都没有登录
+- **WHEN** 凭据管理器中没有该目标，令牌文件也不存在
+- **THEN** 设置页显示未登录，派遣与续聊提示先登录 Antigravity
+
+#### Scenario: 令牌文件损坏
+- **WHEN** 凭据管理器中没有该目标，令牌文件无法解析
+- **THEN** 显示登录状态读取失败，拒绝绑定，不显示文件内容
+
+### Requirement: Linux Antigravity 按 CLI 文件存储读取登录
+在 Linux 上，Host SHALL 先有界读取 agy 的 CLI 文件存储 `~/.gemini/antigravity-cli/antigravity-oauth-token`；该文件不存在时，SHALL 再读旧位置 `~/.gemini/jetski-standalone-oauth-token`。账号状态、账号绑定与模型目录前的登录检查 MUST 使用同一顺序。CLI 文件存在但无法解析、是链接或所在目录是链接时 MUST 报告读取失败，MUST NOT 改用旧文件。两处来源 MUST 使用同一来源标识 `~/.gemini`，凭据原文与令牌 MUST NOT 越过读取函数或进入投影。macOS 与 Windows 的读取顺序不受本要求影响。
+
+#### Scenario: 只有 CLI 文件存储中有登录
+- **WHEN** Linux 上 `~/.gemini/antigravity-cli/antigravity-oauth-token` 是有效的 agy 登录，旧文件不存在
+- **THEN** 设置页显示已登录及邮箱，绑定成功，模型目录可读取
+
+#### Scenario: 新旧两处都有登录
+- **WHEN** 两处文件都存在且分属不同账号
+- **THEN** 以 CLI 文件存储中的账号为准，旧文件不影响状态与绑定
+
+#### Scenario: 只有旧文件
+- **WHEN** CLI 文件存储不存在，旧文件是有效登录（旧版 agy）
+- **THEN** 按旧文件显示已登录并绑定
+
+#### Scenario: CLI 文件损坏
+- **WHEN** CLI 文件存在但无法解析或是符号链接
+- **THEN** 显示登录状态读取失败，拒绝绑定，不改读旧文件，不显示文件内容
+
+### Requirement: 绑定不随 CLI 更新与存放位置变化
+账号绑定 SHALL 只由账号主体（不提供主体的 CLI 用站点）和路由生成。CLI 版本、安装路径、配置目录、凭据文件的绝对路径及凭据存放方式（文件、钥匙串、自动）MUST NOT 参与绑定。WorkBuddy CN 与 WorkBuddy SHALL 以 CLI ID 加规范站点生成绑定；TRAE CN SHALL 以固定逻辑来源代替授权文件路径；Codex 的钥匙串与自动模式 MUST NOT 把存储方式算入绑定。未改变的既有来源（Codex 文件模式、Kimi 默认槽位、MiMo `xiaomi`、ZCode v1、Pi 带 Key 的凭据）绑定 MUST 与修改前逐字节一致。插件私有账号与 CLI 自身账号之间的来源区分 SHALL 保持不变。
+
+#### Scenario: 桌面端内置 CLI 更新
+- **WHEN** WorkBuddy 内置 CLI 版本或应用安装路径变化，站点不变
+- **THEN** 绑定不变，执行前重检不报账号变化
+
+#### Scenario: TRAE 登录目录改到 TRAECLI_HOME
+- **WHEN** 同一份 TRAE 授权内容从 `~/.trae/cli` 移到 `TRAECLI_HOME` 指定目录
+- **THEN** 插件从 `TRAECLI_HOME` 读取，绑定不变
+
+#### Scenario: Codex 钥匙串与自动模式互换
+- **WHEN** 同一账号的 `cli_auth_credentials_store` 在 keyring 与 auto 之间切换
+- **THEN** 绑定不变；文件模式既有绑定不变
+
+### Requirement: 按 CLI 原生顺序读取登录来源
+插件 SHALL 按各 CLI 安装包中的读取顺序判断登录，只检查来源是否存在并读取身份字段，MUST NOT 执行凭据脚本、自行调用 OAuth 刷新接口，或写入、迁移 CLI 的凭据文件。读不懂的凭据格式 MUST NOT 当作明文。
+
+#### Scenario: CodeBuddy 只配置环境令牌或 API Key
+- **WHEN** 存在 `CODEBUDDY_AUTH_TOKEN`、settings 中的 `apiKeyHelper` 或 `CODEBUDDY_API_KEY`，且对应的 `*_DISABLED` 开关未打开，没有登录文件
+- **THEN** 设置页显示已登录；settings 按用户、项目、项目本地合并，项目级站点覆盖用户级
+
+#### Scenario: TRAE 设置了 TRAECLI_HOME
+- **WHEN** `TRAECLI_HOME` 非空
+- **THEN** 从其中的 `auth.json` 读取，否则用 `${TRAE_HOME:-~/.trae}/cli/auth.json`
+
+#### Scenario: ZCode 凭据迁移到 v2
+- **WHEN** 同一账号的凭据由 `enc:v1:` 迁移为 `enc:v2:env:` 且密钥可得
+- **THEN** 登录状态与绑定都不变；无法解密时显示不可用
+
+#### Scenario: ZCode OAuth 登录没有旧绑定 Key
+- **WHEN** `auth-source` 为 oauth（或按原生规则推断为 oauth）
+- **THEN** 不需要旧绑定 Key 即确认身份；同一身份已有绑定 Key 时继续用于模型目录与执行，没有时提示项目访问令牌查询尚未支持
+
+#### Scenario: Hermes 共享文件含嵌套 renewal
+- **WHEN** 顶层状态属于其他身份、嵌套 `renewal` 属于当前账号
+- **THEN** 采用嵌套状态，并按 JWT `iat`、`obtained_at`、到期时间判断轮换先后
+
+#### Scenario: 只登录 MiMo Token Plan
+- **WHEN** auth.json 只有 `xiaomi-token-plan-sgp`
+- **THEN** 显示已登录，模型目录使用新加坡集群地址
+
+#### Scenario: Kimi 使用自定义槽位或令牌可续期
+- **WHEN** Kimi 登录存放在非默认槽位，或访问令牌过期但有刷新令牌
+- **THEN** 状态、凭据、文件指纹与绑定使用同一槽位；可续期时提示在原生终端执行 `/usage` 后重试，不显示未登录；撤销标记仍为未登录
+
+#### Scenario: Codex 钥匙串模式的 API Key 登录
+- **WHEN** 顶层 `cli_auth_credentials_store` 为 keyring 或 auto（含带引号键），账号以 API Key 登录
+- **THEN** 经原生只读状态接口取得 Key 并立即摘要后绑定
+
+#### Scenario: Pi 只带 env 的凭据
+- **WHEN** Pi 1.5.2 的 API 凭据省略 `key` 只带 `env`，或 `key` 为 `${VAR}` 模板
+- **THEN** 视为已配置，模板按凭据私有 env、进程 env 的顺序解析；引用变量缺失时显示未配置并说明原因

@@ -16,6 +16,9 @@ artifacts/
 .DS_Store
 *.tsbuildinfo
 .pnpm-store/
+.claude/worktrees/
+.claude/settings.local.json
+.mimocode/
 
 # Personal machine runbooks and connection notes (never publish)
 /doc/local/

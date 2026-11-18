@@ -16,6 +16,6 @@
 
 - [归属与投影](../../../src/host/harness-turn-usage.ts)：`bindHarnessTurnRun`、`recoverHarnessTurnRuns`、`projectExternalTurnUsage`；[共享合同](../../../src/shared/native-turn-usage.ts)。
 - [存储不可改写约束](../../../src/host/harness-conversation-store.ts) · [逐轮用量回归](../../../tests/harness-turn-usage.test.ts)。
-- [详细归属规则](../../native-turn-usage.md)；该文部分示例早于积分扩展，现行类型以源码为准。
+- [详细归属规则](../../protocols/native-turn-usage.md)；该文部分示例早于积分扩展，现行类型以源码为准。
 
 关联：[三类身份](session-identities.md) · [遥测口径](telemetry-semantics.md) · [返回分类索引](README.md)

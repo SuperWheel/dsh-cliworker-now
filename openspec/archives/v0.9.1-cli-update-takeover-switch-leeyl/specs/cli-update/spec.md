@@ -252,5 +252,9 @@ Host SHALL 按 Host 生命周期和 CLI 保存连接展示缓存（整机一份�
 - **THEN** 连接快照、连接状态、账号状态与订阅 SHALL 照常返回同一份结果，同一 CLI 在有效期内只探测一次，MUST NOT 报目录错误
 
 #### Scenario: 维护期读取被拒不显示为连接错误
-- **WHEN** 账号或目录读取因该 CLI 正在更新（MAINTENANCE）被拒
-- **THEN** 连接缓存 MUST NOT 把它记为读取错误（不显示红点）；更新以任何结果结束（成功、失败、取消）并释放维护锁后，Host SHALL 作废该 CLI 的连接显示缓存，让设置页重新读取
+- **WHEN** 账号或目录读取因该 CLI 正在更新或安装（MAINTENANCE）被拒
+- **THEN** 连接缓存 MUST NOT 把它记为读取错误（不显示红点）；首次安装操作结束并释放维护锁后，Host SHALL 作废该 CLI 的连接显示缓存，让设置页重新读取
+
+#### Scenario: CLI 更新或版本变化不作废账号与模型
+- **WHEN** 某个 CLI 经「更新 CLI」页更新结束（成功、失败或取消），或 CLI 自行升级后 Host 发现其版本指纹变化
+- **THEN** Host MUST NOT 因此作废该 CLI 的账号与模型显示缓存或增加 revision；账号与模型照常按 CLI 自身的登录规则和 10 分钟有效期重读，CLI 更新后仍保留登录时插件也显示已登录

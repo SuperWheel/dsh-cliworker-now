@@ -73,9 +73,9 @@ WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面�
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.3；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
-- **验证范围**：本次升级（0.2.2-rc.3）已在隔离 DSH_HOME 的 rc.3 宿主上核对插件加载与主要界面；2026-11-15 至 11-16 又在 Mac 与 Windows 正式 Desktop 0.2.2-rc.3 上完成多个 CLI 的真实派遣、续聊与停止（范围见 v0.8.10 Release 的验证段），具体边界见 [升级验证记录](openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md)；0.2.2-rc.2 的记录见 [rc.2 升级验证](openspec/archives/upgrade-host-022rc2/tasks.md)。每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界) 和 [实际验证记录](doc/tasks.md)。能列出模型不代表一定有调用权限。
+- **验证范围**：本次升级（0.2.2-rc.3）已在隔离 DSH_HOME 的 rc.3 宿主上核对插件加载与主要界面；2026-11-15 至 11-16 又在 Mac 与 Windows 正式 Desktop 0.2.2-rc.3 上完成多个 CLI 的真实派遣、续聊与停止，具体边界见 [升级验证记录](openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md)；0.2.2-rc.2 的记录见 [rc.2 升级验证](openspec/archives/upgrade-host-022rc2/tasks.md)。每个 CLI 的实测版本、已通过和未验证的部分见 [使用细节与 CLI 说明](doc/usage-details.md#42-支持范围与验证边界)。能列出模型不代表一定有调用权限。
 
-Antigravity 在 macOS 上以可读的钥匙串结果确认账号：条目不存在即未登录，避免原生退出后残留旧文件导致确认失败；钥匙串不可读或超时时仍可回退令牌文件。Windows 保留凭据管理器无项或不可读时的文件回退。插件不删除凭据；macOS 仅文件登录且钥匙串已恢复可读的识别边界见 [回退设计与验证记录](openspec/changes/v0.9.1-agy-token-file-fallback-leeyl/design.md)。
+Antigravity 在 macOS 上以可读的钥匙串结果确认账号：条目不存在即未登录，避免原生退出后残留旧文件导致确认失败；钥匙串不可读或超时时仍可回退令牌文件。Windows 保留凭据管理器无项或不可读时的文件回退。插件不删除凭据；macOS 仅文件登录且钥匙串已恢复可读的识别边界见 [回退设计与验证记录](openspec/archives/v0.9.1-agy-token-file-fallback-leeyl/design.md)。
 
 Qoder、Claude Code（含 CC Switch）、ZCode、Hermes 等 CLI 的安装、登录和路径说明见 [使用细节](doc/usage-details.md)。
 
@@ -128,7 +128,7 @@ OMP 仅在更新成功、托管范围退出且当前入口的新鲜版本探针�
 
 CLI 更新双通道后端现已覆盖上述四条 Windows 路径、Kimi 三平台、Qoder/CN（不含 musl 与 Windows arm64）、MiMo 三平台、Antigravity/Claude 原生 Unix、TRAE CN Unix、Codex 独立 Unix、Grok 和 Pi 托管布局，以及 OpenCode/OMP 已支持的 Unix 默认布局。npm 安装继续走 npm。官方进度来自本次启动后新建且名称、修改时间都匹配的暂存文件，总量取官方清单或 HEAD；无法确认字节时只提供真实阶段文字和已用时间。Host 协议带有「官方 / 插件接管」来源，TRAE 多工件显示合计字节与合计续传次数；前端通道标签另行实施。官方中断、下载阶段 10 秒没有进展、暂存回落、持续低速或超出预算后，先终止并确认进程范围退出，只清理本次暂存，再接管；不会原样重跑已具备接管描述的命令。10 秒计时只在下载阶段进行，解压、安装、签名校验和杀毒扫描阶段不计；Grok 仅把本次目标版本、平台匹配的 `.tmp*` 文件指纹变化当作活动，不显示下载字节：Downloading 后无文件活动等待 60 秒，观察到活动后 10 秒无变化切换；临时文件达到原始主程序 HEAD 长度且连续 3 次轮询不变后，改用 120 秒无活动时限，总预算不变。重试缩小或换名不判重启；进程范围退出后只清理本次普通临时文件，保留启动前文件、链接和 Unix 最终版本文件。该修复仅经模拟测试，未实机验证。
 
-官方更新进行中，支持接管的行显示「切换插件下载」，点击后与自动判定走同一流程：结束官方进程树、清理半成品，再由插件下载，并记住官方失败 7 天；ZCode、CodeBuddy Code、两版 WorkBuddy 和 npm、brew 安装没有这个按钮，Hermes 只在拉取阶段显示。取消更新后插件只读核对原安装，显示「原版本未受影响」「更新已完成」或「安装已损坏」及修复入口，核对失败才提示「建议重新检查」（v0.9.1-cli-update-takeover-switch-leeyl，仅模拟测试，真实更新待验收）。
+官方更新进行中，支持接管的行显示「切换插件下载」，点击后与自动判定走同一流程：结束官方进程树、清理半成品，再由插件下载，并记住官方失败 7 天；ZCode、CodeBuddy Code、两版 WorkBuddy 和 npm、brew 安装没有这个按钮，Hermes 只在拉取阶段显示。取消更新后插件只读核对原安装，显示「原版本未受影响」「更新已完成」或「安装已损坏」及修复入口，核对失败才提示「建议重新检查」（见 [接管与取消验收记录](openspec/archives/v0.9.1-cli-update-takeover-switch-leeyl/tasks.md)）。
 
 Hermes 更新先切换代码，再装依赖、做构建。后面的步骤没完成时（例如 Windows 上改名 `node_modules` 被占用），该行显示警示色「代码已更新到 X，后续步骤未完成」和日志里的原因，按钮是「重试」，重启 Desktop 后仍在。「重试」再运行一次 `hermes update --yes`，Hermes 从中断处接着做，不重新应用代码，这一轮不会切换到插件下载。改名被占用时插件先等十几秒自动重试一次；仍不行会列出 Hermes 目录内还在运行的进程名和 PID，没有就写「未发现占用进程」。
 
@@ -225,9 +225,9 @@ Pi/OMP 的“当前项目”以 Worker 所选目录为准，即使它是 Git 仓
 
 Pi 和 OMP 的「登录到」选项从当前安装的原生注册表读取，包含各自支持的智谱 BigModel Coding（中国）与 Z.AI（国际）；读取失败时可进入原生终端选择。两者的国内 provider ID 不相同，不能互换。OMP 账号行及替换选项显示原生凭据编号，便于区分同一服务商的新旧 key。退出只移除选中的来源和凭据，原生记录确认移除且账号进程清理完成后才报成功；「替换」先保存新凭据，再退出选中的旧凭据，失败时保留结果供重试。环境变量中的 key 仍在原配置中管理。Pi／OMP 原生模型配置文件（如 `~/.omp/agent/models.yml`）中的服务商可在账号窗口「删除」：确认后只移除这一个服务商，先把原文件备份到插件状态目录的 `account-config-backups/`，保留其余内容与格式，直接运行该 CLI 时也不再可用；插件「其他服务商」表单添加的服务商同样可删除。同一服务商有多条凭据时，被服务商拒绝认证的凭据不再让模型目录变空：设置页会按其余凭据显示模型，并提示已跳过几条认证失败的凭据；全部被拒绝时提示账号认证失败，而不是「暂无可用模型」。OpenCode 同样会说明认证失败。
 
-「更新 CLI」中的更新和重新安装只作用于原有安装：npm 保留原全局前缀，brew 使用原前缀的 brew，原生安装使用自身更新器，桌面应用保留原 appPath。仅确认不存在安装时才使用默认首次安装方式；独立于首次安装方式检查已知原生/托管安装目录；入口丢失但文件或元数据仍在、归属不明时会显示原位置及修复渠道，不会另装一份。Pi 托管安装损坏仍在原托管根修复；npm tarball 可以作为下载源，npm-global 安装则保留原前缀，任何渠道都不能产生另一安装。管理页发现路径不写记录，身份、版本和完整性核验通过后才提交；核验发现新增副本或原安装外的变更时，原路径记录与 revision 保持不变。Pi 修复允许同版本恢复，但仍须通过目标版本与完整性核验；更新仍要求版本前进。Windows 官方安装向导继续可见，退出后核对注册表和产品身份；新增或改动其他目录的安装会明确报失败并保留原记录；未变化的既有副本不影响原位更新。本次变更仅经过模拟测试，未执行真实安装或 Windows 实机验收。
+「更新 CLI」中的更新和重新安装只作用于原有安装：npm 保留原全局前缀，brew 使用原前缀的 brew，原生安装使用自身更新器，桌面应用保留原 appPath。仅确认不存在安装时才使用默认首次安装方式；独立于首次安装方式检查已知原生/托管安装目录；入口丢失但文件或元数据仍在、归属不明时会显示原位置及修复渠道，不会另装一份。Pi 托管安装损坏仍在原托管根修复；npm tarball 可以作为下载源，npm-global 安装则保留原前缀，任何渠道都不能产生另一安装。管理页发现路径不写记录，身份、版本和完整性核验通过后才提交；核验发现新增副本或原安装外的变更时，原路径记录与 revision 保持不变。Pi 修复允许同版本恢复，但仍须通过目标版本与完整性核验；更新仍要求版本前进。Windows 官方安装向导继续可见，退出后核对注册表和产品身份；新增或改动其他目录的安装会明确报失败并保留原记录；未变化的既有副本不影响原位更新。本次变更仅经过模拟测试，未执行真实安装或 Windows 实机验收。详见 [原位更新验收记录](openspec/archives/v0.9.1-cli-update-in-place-leeyl/tasks.md)。
 
-Pi Coding Agent 明确支持 **1.0.2、1.0.4、1.1.0、1.5.2**，安装、登录、模型发现与更新检查使用同一版本名单；未核验版本会明确拒绝。1.5.2 已核对本地 SDK/RPC、扩展、模型目录与隔离空会话列表；本次未调用真实模型，未执行 Windows 真机验收。插件会检查实际加载的 Pi 模块及其依赖是否完整：安装中断留下的残缺安装会提示「Pi 安装不完整（缺少依赖 …），请在「更新 CLI」中重新安装」，安装或更新后同样核对，不完整即判失败。Windows 修复保留 Git Bash 原生安装目录环境，并在正常完成后先等待进程范围自然退出，避免收尾重复终止导致误报清理失败；真实清理失败仍暂停派遣。修复后 Windows 实机复验待进行。详细差异与证据见 [Pi 1.5.2 适配记录](openspec/changes/vnext-pi-1-5-adapt-leeyl/design.md)。
+Pi Coding Agent 明确支持 **1.0.2、1.0.4、1.1.0、1.5.2**，安装、登录、模型发现与更新检查使用同一版本名单；未核验版本会明确拒绝。1.5.2 已核对本地 SDK/RPC、扩展、模型目录与隔离空会话列表；本次未调用真实模型，未执行 Windows 真机验收。插件会检查实际加载的 Pi 模块及其依赖是否完整：安装中断留下的残缺安装会提示「Pi 安装不完整（缺少依赖 …），请在「更新 CLI」中重新安装」，安装或更新后同样核对，不完整即判失败。Windows 修复保留 Git Bash 原生安装目录环境，并在正常完成后先等待进程范围自然退出，避免收尾重复终止导致误报清理失败；真实清理失败仍暂停派遣。修复后 Windows 实机复验待进行。详细差异与证据见 [Pi 1.5.2 适配记录](openspec/archives/v0.9.0-pi-1-5-adapt-leeyl/design.md)。
 
 ### 4. 目标、规划、反馈与分支
 
@@ -361,7 +361,8 @@ pnpm build
 
 - [使用细节与 CLI 说明](doc/usage-details.md)：各 CLI 的账号、路径、模型规则及完整安装说明
 - [设计与协议](doc/design.md) · [原生通信说明](doc/native-protocols.md) · [原生界面说明](doc/native-conversation-ui.md)
-- [任务与实际验证](doc/tasks.md) · [历史版本与配置](doc/version-notes.md) · [文档索引](doc/README.md)
+- [历史验证记录](doc/tasks.md)保留 2026-10-28 之前的记录，不再追加。之后的任务与验证见[活动变更](openspec/changes/)和[归档变更](openspec/archives/)各自的 `tasks.md`。
+- [v0.9.1 登录排查记录](openspec/archives/v0.9.1-cli-login-audit-leeyl/tasks.md) · [历史版本与配置](doc/version-notes.md) · [文档索引](doc/README.md)
 - [新 CLI 接入流程](doc/knowledge/cli-integration/new-cli-onboarding.md)：接入新 CLI 的步骤、改动文件与验收清单
 - [提交 Issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)：请附 Harness / 插件 / CLI 版本、复现步骤和脱敏日志，不要上传令牌或私人项目内容。
 

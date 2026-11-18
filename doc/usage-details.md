@@ -70,7 +70,7 @@ Windows 的 Antigravity 后台模型查询及任务使用官方环境开关关�
 
 成功且进程退出已确认的扩展 CLI 模型查询会自动删除本次临时目录和原生解压缓存；失败或清理未确认时保留现场，不删除原始账号文件。
 
-专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
+专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](probes/hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
 
 ### TRAE CN 安装与登录
 
