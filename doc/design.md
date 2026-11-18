@@ -270,7 +270,7 @@ v0.3.0 采用用户确认的 B 桌面侧栏方案：父级为按 CLI 分组的�
 - Provider、模型、强度及会话 ID 取自真实能力；用户已选 GLM-5.3-Flash，探针使用目录支持的 low。独立 CLI 授权与桌面授权不能混同，不伪造 identity 或套餐 entitlement。
 - 规划模式须验证实际返回状态，不能仅凭请求参数判断。legacy snapshot 的 mode=build 不代表未规划：真实 headless 会话持久化 planEnabled=true；正式适配须读取独立 plan 状态，探针另以 macOS sandbox 限制工作区写入。
 - 个人模型配置、会话库、日志与 socket 均隔离；原生登录写入独立测试 profile。事件与凭据留在忽略目录，停止需确认进程组退出。正式实现继续遵守宿主权限、项目锁和账号操作互斥。
-- 入口、能力差异、官方源码构建与待验收项见 [ZCode 验证记录](zcode-probe.md)。
+- 入口、能力差异、官方源码构建与待验收项见 [ZCode 验证记录](probes/zcode-probe.md)。
 - 真实权限拒绝测试表明，permission.resolved(deny) 后仍可能输出最终 result 并退出 0。首版 headless 适配器必须将权限拒绝/工具失败投影为未完成任务，不能单凭 result 和退出状态报告成功。可交互批准需要后续双向 Bridge。
 
 
@@ -739,7 +739,7 @@ Cordis patch id `cliworker-now`、Gateway `cliworker`、工具 `cliworker_*`、�
 - 同父会话、项目、原生会话和账号绑定边界不变。待发授权查询与 runtime 同目录锁等待期间均可停止；停止等查询或任务清理确认。任务启动前同步再核父会话权限、项目与账号终端，阻止等待期间切入规划/只读后自动启动。新持久文件使用私有权限和有界 FD 读取，拒绝链接及身份变化；旧 Worker 无队列不需迁移。
 - 输入保持可编辑，已接受队列与草稿分开，晚到响应不清除后来输入。按用户最终要求，右下角只有一个动作按钮：运行中无正文为停止，有正文切换为发送；停止中按钮禁用。队列显示待发/准备/暂停状态，准备元数据阶段可取消，进入 runtime 后使用停止。
 - 首次派遣保存账号已核验的目录，Worker 以本机、项目、CLI 和原账号绑定读取内存/磁盘展示；菜单挂载预取并复用，选择只校验保存目录并保存精确偏好。真实发送重新核验账号、路由、模型和强度，缓存不代表调用授权；设置页刷新仍按既有规则。换模型保留原生会话 ID，未发现主动清空上下文路径，不显示无证据的上下文丢失弹窗；原生后台跨模型语义未做真实调用验收。
-- Codex、Claude Code、Pi、OMP、Grok 的明确公开摘要/思考以及 Grok 计划进入过程区；独立 reasoning 快照、白名单字段、实时节流、结束保留，最终正文与成功判定独立。其他 CLI 没有可据以实现的公开字段时维持现状，详见 [公开过程支持范围](public-process.md)。
+- Codex、Claude Code、Pi、OMP、Grok 的明确公开摘要/思考以及 Grok 计划进入过程区；独立 reasoning 快照、白名单字段、实时节流、结束保留，最终正文与成功判定独立。其他 CLI 没有可据以实现的公开字段时维持现状，详见 [公开过程支持范围](protocols/public-process.md)。
 - 本次保持 v0.7.9，只做关联最小验收、隔离预览与实际组件渲染；没有更新 Desktop、真实模型调用、Windows 实机验收、全量验收或 GitHub 提交。
 
 
@@ -749,7 +749,7 @@ Cordis patch id `cliworker-now`、Gateway `cliworker`、工具 `cliworker_*`、�
 - 运行中发送由 Host 读取当前方式分流。引导通过 Pi/OMP 本轮私有控制邮箱交给原生 `steer`，只接受匹配成功回执，保持 runId/原生会话；成功回执先于后续停止判定。接收不等于模型执行。明确未接收可使用新 attempt 重试，超时或未知结果不自动重投，切换方式也不能重复发送同一请求。
 - 插队先持久保留文本，再停止当前轮并等待进程范围清理，复用原授权与续聊入口优先发送；队列其他文本、相对顺序及原先暂停状态保留。停止代次、单 Worker 操作互斥、请求标识和取消信号防止停止/取消后重新派发；权限、账号变化或清理不确定拒绝执行。
 - 待发送卡片同时提供插队和取消。标题下为主题分隔线，右侧原生箭头折叠列表，数量及继续发送保留。列表使用 220ms 高度、180ms 透明度，箭头 220ms；减少动态效果时禁用过渡，收起内容设置 inert。按 Worker 保留当前侧栏中的折叠状态，不影响 Host 队列。
-- 输入框继续只保留一个动作按钮，运行中有草稿时发送、无草稿时停止。无明确原生能力的 CLI 不模拟引导。原生证据与真实验证边界见 `doc/running-message-protocol.md`。
+- 输入框继续只保留一个动作按钮，运行中有草稿时发送、无草稿时停止。无明确原生能力的 CLI 不模拟引导。原生证据与真实验证边界见 `doc/protocols/running-message-protocol.md`。
 
 ## 2026-10-15：v0.7.9 正常停止、即时提交与待发送外观
 
@@ -933,7 +933,7 @@ Hermes 通过原进程官方 pre_api_request hook 的实际 request_messages 与
 
 ACP/ZCode 的正文→公开思考→正文按真实边界分段；没有公开思考不构造替代。Pi/OMP 在确认模型后传递原生容量，并在 prompt 前及 response 间发起独立 ID、单个在途、750ms 超时的只读统计查询；终态迟到回执忽略，查询失败不重发用户任务。OpenCode/MiMo 的初始全零 assistant 为占位，不能清空已知上下文；明确完成的真零保留，完成回执缺少完整输入则清旧占用、保留已证实同模型容量。
 
-逐响应 usage、run 合计、session 累计、最近请求上下文分别投影。缺少对应响应身份时不把总账挂到消息，缺分类不猜三桶；不同 CLI 的输入/缓存口径继续独立。完整逐项来源和限制见 `doc/ten-cli-native-parity.md`，实际离线、浏览器与 Desktop 范围见 `doc/tasks.md` 第15节。
+逐响应 usage、run 合计、session 累计、最近请求上下文分别投影。缺少对应响应身份时不把总账挂到消息，缺分类不猜三桶；不同 CLI 的输入/缓存口径继续独立。完整逐项来源和限制见 `doc/audits/ten-cli-native-parity.md`，实际离线、浏览器与 Desktop 范围见 `doc/tasks.md` 第15节。
 
 ## v0.8.1 七张真实截图回归（2026-10-17，第16阶段）
 
@@ -1084,7 +1084,7 @@ OpenSpec `recover-cli-cleanup-quarantine`。Windows 实机 Antigravity 与 Grok 
 - 官方 CN 1.1.74 的品牌环境是 QODERCN_、用户根 .qoder-cn，默认项目目录仍是 .qoder。SDK 控制变量与 qodercli 认证载荷、ACP 的 _meta.qoder 工具字段及 qodercli.log 日志名保留共享原生定义，不作字符串猜测。账号/目录操作显式传递品牌，快照与来源包含品牌，子进程清除对侧品牌控制变量；当前未支持的认证或 VPC 路由明确拒绝。
 - 会话前核对 agentInfo.name 为 qoder-cli-cn；配置、模型及权限仍由原生回执确认。中国版公开过程、附件和工具桥复用相同算法，但持久身份与统计事件/source 保留 qodercn；停止仍等待范围退出，未知用量不补零。
 - 所有 CLI 复用有界 Windows 公共安装目录及最新用户/机器 PATH 发现。原生安装、npm 包身份、跨版拒绝和特殊桌面 CLI 验证继续保留，显式损坏路径不静默更换。此公共层减少新增 CLI 的发现代码，不声称任意便携位置都能自动定位。
-- 仅在 Windows 做 Desktop 验收，Mac Desktop 供用户其他工作使用；本地只做源码、离线检查及隔离构建。实际证据与登录/真实模型边界见 doc/tasks.md、doc/qodercn-protocol.md。
+- 仅在 Windows 做 Desktop 验收，Mac Desktop 供用户其他工作使用；本地只做源码、离线检查及隔离构建。实际证据与登录/真实模型边界见 doc/tasks.md、doc/protocols/qodercn-protocol.md。
 
 ## v0.8.1 目标、规划、反馈与分支桥接（2026-10-20）
 
@@ -1268,7 +1268,7 @@ OpenSpec 变更 `scope-harness-bridge-tools`（起因：Windows 用户反馈插�
 - 技能 `requiredTools` 改按获准目录判断，被原生覆盖的工具仍算满足。
 - 原生优先说明只走已核实的追加入口：Codex `developerInstructions`（用户已配置 `developer_instructions` 时不发）、Claude `--append-system-prompt`、Pi `--append-system-prompt`、OpenCode/MiMo `prompt_async.system`、Grok 新会话 `_meta.rules`；Kimi、Qoder、Antigravity 无已核实入口，不加。说明列出运行开始时实际交出的工具（`NativeHarnessConnection.tools` 快照）。
 - ZCode 不再注入目录并记录原因；Codex MCP 设 `tool_timeout_sec` 为任务时限；支持 MCP 图片的 CLI（Claude、OpenCode、MiMo、Kimi）透传图片结果，其余保持错误投影。
-- 逐 CLI 表与核实依据见 `doc/native-harness-tools.md`「原生工具优先」。真实模型验收待合并后执行。
+- 逐 CLI 表与核实依据见 `doc/protocols/native-harness-tools.md`「原生工具优先」。真实模型验收待合并后执行。
 
 ## 2026-10-28 CLI 权限跟随 DSH 预设，额外授权交给 DSH（未发布）
 
@@ -1492,11 +1492,11 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 决定：经 `codebuddy --acp` 复用 `runNativeAcp`，transport `codebuddy-acp-v1`；所有插件进程设置 `DISABLE_AUTOUPDATER=1`。三档映射为 `default`/`auto`/`bypassPermissions`，规划为 `plan`，不使用 `fullAccess`。强度取每个模型的 `_meta.effortOptions`，“默认”对应 `thought_level=enabled`。
 - 共享 runner：`native-acp.mjs` 新增四个默认关闭的 runner 设置——`verifyInitialize`（CodeBuddy 回执没有 `agentInfo`）、`defaultEffort`、`approvalFromToolCall`（审批请求缺标题时取同一 `toolCallId` 的 `tool_call`）、`deniedCancelEndsTurn`（与 TRAE 共用：本轮有 DSH 拒绝、原生 cancelled、未主动停止且无其他失败时，SUCCESS 与“因拒绝审批而结束：被拒操作未执行，可续聊继续”；空正文不降为 UNCERTAIN）。其他 ACP CLI 行为不变。
 - 账号与站点：登录状态只看认证文件与 `.logged-out` 标记。2026-11-07 用户批准“允许只读站点”：显式 `CODEBUDDY_INTERNET_ENVIRONMENT`（`settings.json` 的 `env` 键或进程环境）优先，否则在内存中只取认证文件 `auth.domain`，按 CLI `product.json` 的域名表映射；域名与文件内容不落日志、事件、持久化。绑定为站点 ID 与模型目录摘要，任一变化都让旧目录与偏好失效。
-- 记录：`openspec/archives/add-codebuddy-cli/`，协议实测见 `doc/codebuddy-protocol.md`。
+- 记录：`openspec/archives/add-codebuddy-cli/`，协议实测见 `doc/protocols/codebuddy-protocol.md`。
 
 ## 2026-11-07 v0.8.8 TRAE CLI CN 接入决策
 
-定稿见 [add-traecn-cli](../openspec/archives/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/archives/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](traecn-protocol.md)。
+定稿见 [add-traecn-cli](../openspec/archives/add-traecn-cli/design.md)，前置实测与插件验收分列在 [任务清单](../openspec/archives/add-traecn-cli/tasks.md)，协议字段见 [TRAE 原生协议](protocols/traecn-protocol.md)。
 
 - 只接国内版官方 `traecli`：CliId `traecn`、配置 `traecnExecutable`、transport `traecn-acp-v1`；以版本输出及 ACP `traecli-acp` 双重确认身份，不自动发现同名开源程序。2026-11-07 未发现官方国际版 CLI；官方安装脚本需直连 trae.cn。
 - 个人登录只在该次命令开启开发中特性 `personal_user_login`，另提供企业 SSO/PAT；不修改 `TRAE_HOME`、`traecli.toml` 或调用更新。目录先核对登录再读 `models --json`，模型用 `config_name`，不提供强度。

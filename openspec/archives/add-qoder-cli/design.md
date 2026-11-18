@@ -10,7 +10,7 @@
 
 ## Decisions
 
-- 采用已核对的官方 1.1.73 `qoder --acp`（stdio JSON-RPC 2.0），transport 为 `qoder-acp-v1`。SDK 1.0.53 自带较旧 1.1.71，不额外引入该运行时。模型/强度/mode 使用实际 configOptions 的字符串设置与回执；CLI flag 的 `accept_edits` 对应 ACP `acceptEdits`。该版未公开 ACP plan，界面和运行前均拒绝规划，不以提示词代替保护。证据见 `doc/qoder-protocol.md`。
+- 采用已核对的官方 1.1.73 `qoder --acp`（stdio JSON-RPC 2.0），transport 为 `qoder-acp-v1`。SDK 1.0.53 自带较旧 1.1.71，不额外引入该运行时。模型/强度/mode 使用实际 configOptions 的字符串设置与回执；CLI flag 的 `accept_edits` 对应 ACP `acceptEdits`。该版未公开 ACP plan，界面和运行前均拒绝规划，不以提示词代替保护。证据见 `doc/protocols/qoder-protocol.md`。
 - 复用现有 native IO 与桥接边界，Qoder 特有控制、模型及权限确认置于独立 runner。无法确认的恢复、权限或强度在发送前失败，不以无检查的一次性执行兜底。
 - 使用同一安装 CLI 的官方 stream-json `initialize → account_info → end_session` 查询网页登录的稳定 userId/organization，通过原生 `qodercli` 只读认证策略读取当前登录，不解析加密凭据或引入 SDK 依赖。私有临时认证描述文件为 0600，内容仅为 `{"type":"qodercli"}`；停止及范围退出确认后删除。PAT 来源按本 CLI 显式变量的摘要绑定，原生 provider 配置及 BYOK 变化进入来源版本；敏感值不返回 Client、不入日志。
 - 模型与强度在独立 ACP 元数据进程的新会话读取，逐模型确认公开配置；不发送 prompt。仅关闭并删除本次新建的空目录查询会话，结束后确认进程退出。`--list-models` 是显示名表格，不能据此猜模型 ID。账号与模型查询失败均不回退其他来源。

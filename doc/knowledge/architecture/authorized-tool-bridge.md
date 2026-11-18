@@ -19,6 +19,6 @@ Host 为每个 run 创建仅监听回环地址的临时端点，以随机令牌�
 - [工具桥](../../../src/host/native-harness-tools.ts)：`createNativeHarnessTools`；[模型守卫](../../../src/host/harness-model-guard.ts)：`withinCliTool`、`installHarnessModelGuard`。
 - [临时注入](../../../src/host/native-harness-injection.mjs)与[ACP 会话配置](../../../src/host/native-acp.mjs)：连接材料的私有传递路径。
 - [工具桥回归](../../../tests/native-harness-tools.test.ts) · [扩展回归](../../../tests/native-harness-extended.test.ts)。
-- [逐 CLI 能力矩阵与历史真实证据](../../native-harness-tools.md)。
+- [逐 CLI 能力矩阵与历史真实证据](../../protocols/native-harness-tools.md)。
 
 关联：[三类身份](session-identities.md) · [账号与存储](account-storage-isolation.md) · [返回分类索引](README.md)

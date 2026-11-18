@@ -56,7 +56,7 @@
 
 - 共享：`src/shared/types.ts`、`worker-permissions.ts`、`conversation-features.ts`、`account-links.ts`。
 - Host：`routing.ts`、`index.ts`、`process.ts`、`adapters.ts`、`accounts.ts`、`cli-account-binding.ts`、`authorized-catalog.ts`、`runtime.ts`、`native-worker.ts`、`native-bridge.mjs`、`native-acp.mjs`（可选行为）、`native-attachments.mjs`、`native-harness-injection.mjs`、`cli-native-capabilities.mjs`、`telemetry.ts`、`windows-cli-installation.ts`。
-- 新文件：`src/host/native-codebuddy.mjs`、`src/host/codebuddy-catalog.mjs`、`src/host/codebuddy-account.ts`、`src/client/assets/codebuddy.png`、`doc/assets/cli-icons/v5-codebuddy/`、`doc/codebuddy-protocol.md`。
+- 新文件：`src/host/native-codebuddy.mjs`、`src/host/codebuddy-catalog.mjs`、`src/host/codebuddy-account.ts`、`src/client/assets/codebuddy.png`、`doc/assets/cli-icons/v5-codebuddy/`、`doc/protocols/codebuddy-protocol.md`。
 - Client：`icons.tsx`、i18n 文案。
 - 构建：`scripts/build.mjs` 运行资源清单。
 - 不改动其他 CLI 的行为；共享 runner 的新行为默认关闭。

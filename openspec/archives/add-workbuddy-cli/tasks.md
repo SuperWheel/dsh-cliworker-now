@@ -88,7 +88,7 @@
     - 新会话执行 `touch c1.txt`：同样再次询问，拒绝后未创建。
     - `~/.workbuddy` 下没有设置/权限文件被改（变更的只有桌面端自身的缓存与状态文件），项目目录没有新增隐藏目录。结论：授权只保存在 CLI 进程内；插件每轮重启 CLI，所以实际只覆盖当前这一轮。
     - CodeBuddy 2.181 用 hy4free 做同样测试（`accept/run.mjs`）：同一轮第二条不再询问，下一轮再次询问，行为一致。
-    - 据此为 WorkBuddy 接上与 CodeBuddy 相同的 `sessionOption`（`src/host/native-workbuddy.mjs`），模拟用例新增「本会话始终允许映射原生 allow_always」；design、spec、`doc/workbuddy-protocol.md`、`doc/codebuddy-protocol.md`、`doc/usage-details.md` 与 CodeBuddy 规格同步改为“只在 CLI 进程内、下一轮再次询问”。`tests/native-workbuddy.test.ts`、`tests/native-codebuddy.test.ts` 71/71 通过。
+    - 据此为 WorkBuddy 接上与 CodeBuddy 相同的 `sessionOption`（`src/host/native-workbuddy.mjs`），模拟用例新增「本会话始终允许映射原生 allow_always」；design、spec、`doc/workbuddy-protocol.md`、`doc/protocols/codebuddy-protocol.md`、`doc/usage-details.md` 与 CodeBuddy 规格同步改为“只在 CLI 进程内、下一轮再次询问”。`tests/native-workbuddy.test.ts`、`tests/native-codebuddy.test.ts` 71/71 通过。
   - 2026-11-09 验收结论（用户规则：每个 CLI 只要一个账号真实登录成功，其他账号、站点与企业方式默认也能登录）：询问档的允许与拒绝、thought_level 随模型变化均已实测（Mac Desktop 11-09 再次核对询问档出现审批卡）。`allow_always` 作用域仍未验证：插件审批卡只提供「拒绝」「允许一次」，无法从界面测试，本项保持未勾选。
   - 询问档：命令审批的允许与拒绝已在 7.1 实测。`allow_always` 未验证：本次命令审批 `allowSession` 为 false，CLI 没有提供会话级授权。
   - `thought_level` 会随模型变化（2026-11-07，对 17 个模型逐个 `session/set_config_option model`，不发 prompt）：auto 和 mimo-v2.6-pro 是 minimal…max 全档；hy4free、hy4std 只有 high；hy3、hy3-x 有 low/high；glm-5.2 有 high/xhigh；deepseek-v4-pro 有 disabled/high/xhigh；其余各不相同；每个模型都有 `enabled`（模型默认）。

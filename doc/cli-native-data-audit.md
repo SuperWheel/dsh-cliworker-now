@@ -78,7 +78,7 @@ StatsPills 接真实四桶；OMP 明确额外桶和无法归类的 reported tota
 - Pi 1.0.4 安装 SDK 的 AgentSession／ExtensionContext，证明已有全历史 stats 已覆盖压缩等调用，同时限定扩展只公开总占用，没有分类计数方法。
 - [OpenCode 1.19.0 原生 projector](https://github.com/anomalyco/opencode/blob/v1.19.0/packages/core/src/session/projector.ts) 的增减 counter 规则，经安装 binary 对照，证明 session snapshot 应替换而非累加；MiMo 0.1.15 的独立 SDK/plugin 没有同一 counter，不套用 OpenCode 新字段。
 
-细节见 [前轮 ACP 组](audits/cli-usage-audit-acp.md)、[前轮 HTTP/RPC 组](audits/native-http-rpc-audit.md)、[本轮 Kimi 持久回执](kimi-durable-usage-audit.md)、[本轮 Pi／OMP／HTTP 接口](native-http-rpc-data-interfaces.md)、[两个参考的定向核查](codingns-reference-audit.md) 和 [原生每轮用量](protocols/native-turn-usage.md)。
+细节见 [前轮 ACP 组](audits/cli-usage-audit-acp.md)、[前轮 HTTP/RPC 组](audits/native-http-rpc-audit.md)、[本轮 Kimi 持久回执](audits/kimi-durable-usage-audit.md)、[本轮 Pi／OMP／HTTP 接口](audits/native-http-rpc-data-interfaces.md)、[两个参考的定向核查](codingns-reference-audit.md) 和 [原生每轮用量](protocols/native-turn-usage.md)。
 
 ## 验收状态
 
@@ -191,7 +191,7 @@ CodexHost 启动 Hermes `tui_gateway.entry`，调用 `session.usage`，并直接
 
 ## 2026-10-17 其余十 CLI 对齐复查
 
-按用户要求使用 GPT-6.1-sol 分组复查全部其他 CLI，补 Codex 工具输出、Claude 主子公开流隔离、ACP/ZCode 公开过程分段、Pi/OMP 运行中统计与已选模型容量、OpenCode/MiMo 初始零占位及完成缺值边界。采用同一官方完整原生侧栏，不改父管理界面。逐 CLI 数据来源、未知项和验证边界见 [十 CLI 对齐报告](ten-cli-native-parity.md) 与 `tasks.md` 第15节；新增离线证据不替换上文真实模型的历史结论。
+按用户要求使用 GPT-6.1-sol 分组复查全部其他 CLI，补 Codex 工具输出、Claude 主子公开流隔离、ACP/ZCode 公开过程分段、Pi/OMP 运行中统计与已选模型容量、OpenCode/MiMo 初始零占位及完成缺值边界。采用同一官方完整原生侧栏，不改父管理界面。逐 CLI 数据来源、未知项和验证边界见 [十 CLI 对齐报告](audits/ten-cli-native-parity.md) 与 `tasks.md` 第15节；新增离线证据不替换上文真实模型的历史结论。
 
 
 ## 2026-10-17 第16节 MiMo／OpenCode 请求分类与真实验收

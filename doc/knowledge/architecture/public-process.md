@@ -16,6 +16,6 @@ Host 按协议白名单提取公开 `reasoning` 与 `PublicToolCall`，分别保
 
 - [Host 流投影](../../../src/host/harness-conversation-stream.ts)：`HarnessConversationStream`；[公开数据类型](../../../src/shared/types.ts)：`PublicToolCall`；[思考记录适配](../../../src/client/harness-reasoning-records.tsx)。
 - [公开过程回归](../../../tests/public-process.test.ts) · [工具投影回归](../../../tests/public-tool-projection.test.ts) · [思考记录回归](../../../tests/harness-reasoning-records.test.tsx)。
-- [逐 CLI 字段及展示边界](../../public-process.md)。
+- [逐 CLI 字段及展示边界](../../protocols/public-process.md)。
 
 关联：[原生会话投影](native-session-projection.md) · [遥测口径](telemetry-semantics.md) · [返回分类索引](README.md)

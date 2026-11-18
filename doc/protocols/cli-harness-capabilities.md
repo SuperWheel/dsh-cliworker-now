@@ -8,7 +8,7 @@
 
 | CLI | 原生通道 | 文件输入 | 图片输入 | Harness Skill / MCP 工具桥 |
 | --- | --- | --- | --- | --- |
-| Antigravity | ACP（`agy acp --stdio`，需 1.4.11+）；未确认时回退旧版 stream-json | ACP `resource_link` 与路径提示；回退时为文本路径 | ACP 公示 image 能力时用图片块，否则图片路径 | ACP `mcpServers` 注入 stdio MCP，执行已准入；只对 `mcp_dsh_worker_tools_<工具>` 等精确命名的桥工具回复 `allow_once`。回退时用本轮私有 `agy-tools` 工作区（MCP + PreToolUse Hook），见 [antigravity-harness-bridge.md](antigravity-harness-bridge.md) |
+| Antigravity | ACP（`agy acp --stdio`，需 1.4.11+）；未确认时回退旧版 stream-json | ACP `resource_link` 与路径提示；回退时为文本路径 | ACP 公示 image 能力时用图片块，否则图片路径 | ACP `mcpServers` 注入 stdio MCP，执行已准入；只对 `mcp_dsh_worker_tools_<工具>` 等精确命名的桥工具回复 `allow_once`。回退时用本轮私有 `agy-tools` 工作区（MCP + PreToolUse Hook），见 [antigravity-harness-bridge.md](../audits/antigravity-harness-bridge.md) |
 | Codex | app-server | 文件路径提示 | app-server `localImage` | 临时 stdio MCP（`-c mcp_servers.dsh_worker_tools.*`），执行已准入；Host 执行权限链保留 |
 | Claude Code | stream-json | 文件路径提示 | stream-json 原生 base64 图片块 | 临时 `--mcp-config`，仅专属 server 经 `--allowedTools` 准入 |
 | Kimi | ACP | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | stdio MCP；只对结构化、精确命名的桥工具回复 `allow_once` |
@@ -23,7 +23,7 @@
 | Qoder CN | ACP（独立品牌绑定） | 同 Qoder | 同 Qoder | 独立品牌绑定的 stdio MCP，精确准入；真实模型未验收 |
 | CodeBuddy Code | ACP | ACP `resource_link` 与路径提示 | 安装版公示 `promptCapabilities.image: true`，用 ACP 图片块 | 只建立传输、不准入执行：会配置 stdio MCP，但 CodeBuddy 只公示 http/sse MCP，原生授权未核验，桥工具调用由 Host 拒绝 |
 | TRAE CN | ACP | ACP `resource_link` 与路径提示 | 按 `promptCapabilities.image` 判定；图片理解未实测 | 不注入：ACP 只公示 HTTP MCP，`_meta.trae.options.mcpServers` 有替换语义，注入可能覆盖用户 MCP，见 [traecn-protocol.md](traecn-protocol.md) |
-| WorkBuddy CN（试验性） | ACP（内置 CodeBuddy CLI） | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | 不注入：内置 CLI 只公开 http/sse MCP，未验证插件工具通道，见 [workbuddy-protocol.md](workbuddy-protocol.md) |
+| WorkBuddy CN（试验性） | ACP（内置 CodeBuddy CLI） | ACP `resource_link` 与路径提示 | ACP 公示 image 能力时用图片块，否则图片路径 | 不注入：内置 CLI 只公开 http/sse MCP，未验证插件工具通道，见 [workbuddy-protocol.md](../workbuddy-protocol.md) |
 | WorkBuddy（试验性） | 同 WorkBuddy CN | 同 WorkBuddy CN | 同 WorkBuddy CN | 同 WorkBuddy CN |
 
 「执行已准入」指 `nativeHarnessExecutionReady` 当前为真的 10 个 CLI：Codex、Claude Code、OpenCode、MiMo、Pi、Kimi、Grok、Qoder、Qoder CN、Antigravity。其他 CLI 即使能建立传输，桥工具执行也会被 Host 以「当前原生工具授权尚未核验」拒绝。来源：`src/host/native-harness-injection.mjs`、`src/host/native-attachments.mjs`、`src/host/native-acp.mjs`。
@@ -61,8 +61,8 @@ ACP 仅接受 Provider 结构化报告的工具名与本轮桥实时目录完全
 参考 Codingns4DSH `27b4c95065e9f3ae01d513c60673a871487257f3` 的附件存储解析及按协议转换经验，自主实现；不照搬其对子代理/Team 的专用 MCP 桥作为整个 Harness 工具目录。
 
 - [原生工具桥及此前证据](native-harness-tools.md)
-- [原生会话与界面](native-conversation-ui.md)
-- [实际最小验收记录](tasks.md)
+- [原生会话与界面](../native-conversation-ui.md)
+- [实际最小验收记录](../tasks.md)
 
 macOS / Windows 使用同一转换及去重模块；2026-10-18 那轮桌面验收只在 Windows 进行。模拟 CLI、安装版元数据和真实模型调用分别记录，未运行的项目保留未验证。
 

@@ -427,7 +427,7 @@
 - [x] 最终离线复测三项 sandbox 边界通过：测试目录可写、目录外拒写、plan 工作区拒写；空闲 app-server SIGTERM 退出及进程组清理通过。证据 .test-data/zcode-probe/run-o2uMDT/report.json；未发送 prompt。探针语法、Prettier 与 git diff --check 通过。原始事件、退出状态与哈希不入 Git。
 - [x] 用户明确选择 GLM-5.3-Flash；根据官方目录选择 low 进行短任务验证。首次复用桌面账号的首轮报 Select a model before continuing，当时未执行续聊；后续独立授权结果见下。
 - [x] 临时构建官方完整 CLI：独立 Node 24.14.0 / pnpm 10.33.2、冻结锁文件、跳过安装脚本；17 个相关 workspace 构建及完整 CLI 离线探针通过。未替换桌面安装。
-- [x] 完整 CLI 原生 BigModel 登录可生成授权链接；首次等待超时并清理退出；续接重新授权成功，见下。探针与接入门槛记录在 doc/zcode-probe.md。
+- [x] 完整 CLI 原生 BigModel 登录可生成授权链接；首次等待超时并清理退出；续接重新授权成功，见下。探针与接入门槛记录在 doc/probes/zcode-probe.md。
 - [x] 续接完成独立 BigModel 原生授权；GLM-5.3-Flash / low 的首轮、同会话续聊、Write JSON 产物和真实流式输出中 SIGTERM 取消均通过。证据 .test-data/zcode-probe/run-4XC18i/report.json；取消退出 143、无最终 result，进程组退出确认通过。
 - [x] 只读核验 CLI 数据库：真实选型 GLM-5.3-Flash / low；规划为 mode=build 且 planEnabled=true，文件任务为 edit 且 planEnabled=false。脱敏证据 run-4XC18i/runtime-verification.json。
 - [x] build 模式 Write 产生 permission.requested 与 permission.resolved(deny)，目标文件不存在；证据 run-r9wKpm/report.json。CLI 仍退出 0，正式适配必须单独判断权限拒绝。
@@ -436,10 +436,10 @@
 
 ## 六项 CLI 验证汇总（2026-10-05）
 
-- [x] Grok 1.0.0 离线帮助、目录、ACP 与空闲停止/沙箱通过；按用户要求不做订阅模型调用，见 doc/grok-probe.md。
-- [x] OMP 16.4.4、Pi 1.0.2 复用用户授权的智谱 GLM-5.3-Flash / low，真实首轮、原会话续聊、Write 产物、沙箱拒写和流中取消通过；OMP 显式 write 审批并关闭模型回退，见 doc/pi-omp-probe.md。
-- [x] Harness 0.2.0-rc.2 同一智谱选型的真实首轮、续聊、Write 与只读拒绝通过；独立原生 sandbox 下已观察真实 sleep 后代启动、SIGTERM 后完整清理。双层 Seatbelt 的失败记录保留，见 doc/harness-probe.md。
-- [x] OpenCode 1.18.21 的免费 MiMo 原生 run/serve 均远端403；经用户改选智谱后，首轮、续聊、实际文件、SSE中取消和原生权限询问拒绝通过，见 doc/opencode-probe.md。
+- [x] Grok 1.0.0 离线帮助、目录、ACP 与空闲停止/沙箱通过；按用户要求不做订阅模型调用，见 doc/probes/grok-probe.md。
+- [x] OMP 16.4.4、Pi 1.0.2 复用用户授权的智谱 GLM-5.3-Flash / low，真实首轮、原会话续聊、Write 产物、沙箱拒写和流中取消通过；OMP 显式 write 审批并关闭模型回退，见 doc/probes/pi-omp-probe.md。
+- [x] Harness 0.2.0-rc.2 同一智谱选型的真实首轮、续聊、Write 与只读拒绝通过；独立原生 sandbox 下已观察真实 sleep 后代启动、SIGTERM 后完整清理。双层 Seatbelt 的失败记录保留，见 doc/harness-probe.md（已于 2026-11-18 删除，见 Git 历史）。
+- [x] OpenCode 1.18.21 的免费 MiMo 原生 run/serve 均远端403；经用户改选智谱后，首轮、续聊、实际文件、SSE中取消和原生权限询问拒绝通过，见 doc/probes/opencode-probe.md。
 - [x] ZCode 探针加强 Write 的调用ID/路径/成功结果关联，以及权限 requestID/toolCallID 对应；已有真实事件离线复核通过，没有为此追加模型调用。
 - [x] 五个新增探针语法/格式检查和原始报告复核完成。凭据与运行数据均留在忽略目录；未修改原账号配置。
 - [ ] 统一接入在隔离 worktree 开始；本次验证提交不代表插件已构建或 Desktop 已更新。
@@ -1234,7 +1234,7 @@
 - npm 包原本已名为 `dsh-cliworker-now`。当前 package、未来公开包生成器的 repository/bugs/homepage 指向新仓库，开发 private 标志仍为 true；没有覆盖已冻结包、修改版本或改变账号/会话路径。Release 模板按新外部名称更新，安装界面原名要求写入 AGENTS.md。
 - 市场沿用 PR #6795，新文件为 `data/plugins/SuperWheel__dsh-cliworker-now.yml`，只有一个本插件条目；条目/PR 名称、仓库与包链接均回读匹配。全目录 schema 4415 条、双语生成和站点构建通过，远端审核保持 OPEN，不声称已上架。
 - dshfind 原条目安装探测停留 0.6.5；下载采集需站点维护权限。只读快照 npm 官方 462、npmmirror 25（2026-10-10 至 2026-10-13），按目录 npm 渠道为 487，GitHub 全部 Release 资产 29 单独记录；这些不是独立用户数，也没有写死进页面。
-- 已提交 [dshfind PR #51](https://github.com/hikariming/dshfind/pull/51)，提交 `bd643d647c3f51ab86938bc3c983c1b9ee0f880f`，仅修改三文件：本插件旧新名映射、经核验的历史 npm 回链兼容和回归；44 项辅助函数测试通过。没有改变其他别名策略、全站下载门槛或工作流；没有 D1 写入/部署权限，因此主键迁移与公开页面刷新仍待维护方完成，保留未勾选任务。维护步骤见 `doc/dshfind-sync.md`。
+- 已提交 [dshfind PR #51](https://github.com/hikariming/dshfind/pull/51)，提交 `bd643d647c3f51ab86938bc3c983c1b9ee0f880f`，仅修改三文件：本插件旧新名映射、经核验的历史 npm 回链兼容和回归；44 项辅助函数测试通过。没有改变其他别名策略、全站下载门槛或工作流；没有 D1 写入/部署权限，因此主键迁移与公开页面刷新仍待维护方完成，保留未勾选任务。维护步骤见 `doc/dshfind-sync.md（已于 2026-11-18 删除，见 Git 历史）`。
 - 名称预览曾执行 318 项关联检查及 typecheck，但用户澄清后对应实现已撤回，不将这些当作当前新增功能。最终运行时/测试零 diff，139 个源码文件与重新生成的隔离 preview 全部一致，冻结包哈希不变；浏览器复查恢复 CLI Worker NOW。此次外部分发修改未重复全量或真实模型调用。
 - 私有证据：`.test-data/dshfind-078/` 中 repository-rename、redirect-verification、release-names-after、ui-preserved-final、dshfind-pr-receipt，以及市场 canonical-market-update-receipt；均未作为运行数据提交 Git。
 
@@ -1287,7 +1287,7 @@
 
 - 已实现 Host 持久待发送队列、正常结束后 FIFO 续聊、取消/暂停/显式恢复，失败/停止/uncertain/重启保留未发送内容。停止等待发送前原生查询清理；真正执行前重新核验账号/模型及父会话权限。输入运行中可编辑，成功响应不覆盖后来草稿；用户最终要求的单一动作按钮已落实：空草稿停止，有文本发送，二者不并排。
 - 已实现首次派遣保存目录、Worker 同来源缓存读取、菜单预取复用及选择时本地保存。原生会话 ID 保持；没有依据添加“换模型必然丢失上下文”弹窗。发送时原生授权继续，失效不静默回退。
-- 公开过程接入 Codex、Claude、Pi、OMP、Grok，协议来源及未支持范围见 [public-process.md](public-process.md)。只显示原生公开文本与计划，不提取隐藏推理。
+- 公开过程接入 Codex、Claude、Pi、OMP、Grok，协议来源及未支持范围见 [public-process.md](protocols/public-process.md)。只显示原生公开文本与计划，不提取隐藏推理。
 - 所有命令加 `--config.verifyDepsBeforeRun=false`，避免 pnpm 触发与本次无关的依赖重建。缓存/设置/core 三个关联测试文件 69 项通过；Panel 全文件在初版测试按钮名修正后 66 项通过，随后新增 metadata 取消用例通过，并对最终单按钮行为定向回归 3 项通过（最终文件共 67 项；未把重复运行累加成新增覆盖）。
 - `tests/followup-queue.test.ts tests/runtime.test.ts tests/agy-run-outcome.test.ts tests/storage.test.ts tests/cleanup-persistence.test.ts` 共 69 项通过，其中队列新增 15 项覆盖 FIFO、身份/账号、去重、停止清理、重启、uncertain、取消、执行前拒绝保留、目录等待后权限变化及文件边界。
 - `tests/public-process.test.ts tests/conversation-timeline.test.tsx tests/grok-adapter.test.ts tests/adapters.test.ts` 共 47 项通过；Pi/OMP 相关定向测试 4 项通过（其余 52 项按名称未运行）。首次 Pi/OMP 合成回环服务器受沙箱 EPERM 阻断，获准本机监听后重跑通过；没有真实模型请求。
@@ -1312,7 +1312,7 @@
 - Tabbit 加载实际 Panel/高级设置/原生菜单与明确模拟 Gateway：三项文字、Codex 禁用引导及默认排队、Pi 默认引导、按 CLI 恢复选择、三模式提交、卡片插队顺序、单按钮均通过。折叠高度从 108.5px 到 0、标题线 0.5px、inert 生效，过渡 220ms/180ms；reduced-motion 下为 0s。360px 视口内对话内容宽与滚动宽同为 340px，折叠期间新消息仍保留、计数更新。证据在 `.cache/running-modes-ui/verification.json`、`settings-and-queue.png`、`narrow-layout.png`；测试页已关闭、服务已停止。
 - `spec:check` 归档前 16 项、归档后 15 项均通过、0 失败；本 change 的 9 项任务完成，规格同步并归档为 `2026-10-15-add-running-message-modes`；已有 `release-v078-latest-install` 的重复 ADDED 信息保留，本轮未修改该旧 change。`git diff --check` 通过。
 
-未执行：真实 CLI 模型引导/跨模型上下文、Windows 实机、已安装 Desktop、全量测试、GitHub 推送或发布。原生语义来源和能力边界见 `doc/running-message-protocol.md`；回执仅表示 CLI 接收，不等于模型执行完毕。独立审查发现的回执与结束竞态、确定未发送失败重试问题已修复并回归。
+未执行：真实 CLI 模型引导/跨模型上下文、Windows 实机、已安装 Desktop、全量测试、GitHub 推送或发布。原生语义来源和能力边界见 `doc/protocols/running-message-protocol.md`；回执仅表示 CLI 接收，不等于模型执行完毕。独立审查发现的回执与结束竞态、确定未发送失败重试问题已修复并回归。
 
 
 ## 2026-10-15：v0.7.9 已安装 macOS Desktop 最小验收
@@ -1436,7 +1436,7 @@
 - 普通队列准备期间仍是卡片，原生 spawn 准入才转换一次为气泡。即时卡片插队保留同一 ID；原 queue RPC 未回执时允许显式升级到 interrupt，引用计数 reservation 防旧 RPC 释放新占用。未执行的连续插队仅最新能启动，spawn 已尝试的旧轮先确认退出。
 - 主动停止切换队列代际，撤销停止前未执行提交并暂停旧队列；新一轮及新增 pending 独立执行，旧 paused 保留，迟到旧 cleanup/job.cancel 不影响新轮。Host 重启恢复内容并暂停。存在任何待发送卡片（含 paused）时须先发送/取消，才能更改模型与强度，避免改变旧消息选型；发送方式可以修改，只影响之后提交。
 - 正文独立计算气泡宽度；尾部时间/复制/实际错误独立布局。移除正常发送、被后续插队取代和正常停止的文字及占位，保留未知/失败恢复。一个动作按钮按正文与清理状态切换。精确 Host 对账会解除曾丢回执的未知锁；原生投递后回执未知通过结构化 `deliveryUnknown` 保真，禁止新 ID 盲重投。
-- 确认并接通 Codex、Hermes、Pi、OMP 当前运行引导，其他七项默认排队，具体原生限制及官方依据见 `doc/running-message-protocol.md`。能力按 Worker transport 核对，历史通路不偷换；policy 1 项目发送方式仅迁移一次，后续 policy 2 手动选择保留，模型/强度/账号/历史不迁移。
+- 确认并接通 Codex、Hermes、Pi、OMP 当前运行引导，其他七项默认排队，具体原生限制及官方依据见 `doc/protocols/running-message-protocol.md`。能力按 Worker transport 核对，历史通路不偷换；policy 1 项目发送方式仅迁移一次，后续 policy 2 手动选择保留，模型/强度/账号/历史不迁移。
 
 ### 定向离线与模拟验收
 
@@ -1493,7 +1493,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ## 2026-10-16：v0.7.10 原生回复、过程与上下文集中修复
 
-- OpenSpec：`fix-native-message-streaming-and-inspection`。完成 11 CLI 原生消息边界与指标来源审计，见 `doc/native-inspection.md`；不改变已完成的队列代际、独立引导、保存选型、账号或 Worker transport，不增加版本号、不推送或发布。
+- OpenSpec：`fix-native-message-streaming-and-inspection`。完成 11 CLI 原生消息边界与指标来源审计，见 `doc/protocols/native-inspection.md`；不改变已完成的队列代际、独立引导、保存选型、账号或 Worker transport，不增加版本号、不推送或发布。
 - OpenCode/MiMo 以真实 messageID/partID 关联 delta、完整快照和最终读取，补尾并拒绝冲突。Hermes 连续增量使用稳定片段，ACP/ZCode 在明确工具边界后分段。终态 resultScope 区分本轮汇总和最后回复，修复重复前缀误删、开头空白被 trim 和不完整汇总擦除末段。公开思考继续排除签名、加密与 redacted；未知 delta 字段不写作公开文本。
 - 工具真实调用 ID、明确父调用、输入、输出、命令及退出码经 Bridge 白名单、持久化 schema 和 timeline 完整保留。没有 ID 不用 step 冒充，没有父字段不从调度依赖造树。原生 TerminalBlock 与合法局部统一补丁 DiffBlock 使用真实内容；未确认 read schema 保留通用 JSON，不读取磁盘凑结果。
 - 截图旧 Worker `887dadd0…` / run `d81b9c8a…`：有界只读 helper 证明一个原生 assistant message、一个 text part、22个增量与终态完全一致，恢复为 **1条42字符** 回复。root 以正确 CLI 参数独立复核，events/raw SHA256 前后不变。多 part、跨 run、未知边界、超限、链接或读取中变化均不盲合并；证据 `.test-data/native-inspection/historical-readback.json`。
@@ -1703,7 +1703,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ### 实施与最终候选
 
-- 按用户授权继续参考固定 codex-host、Codingns4DSH 及当前安装版官方接口，补齐 Kimi 同一 ACP session 的 durable 用量回执、Hermes 原进程官方 request hooks、OMP 原生 /context 分类与显式 orchestration 桶、OpenCode GET session.tokens counter。具体版本、来源、完整性条件与未提供字段见 `doc/cli-native-data-audit.md`、`doc/kimi-durable-usage-audit.md` 和 `doc/native-http-rpc-data-interfaces.md`。保留官方完整侧栏和原 CLI Agent／选型／transport，不补造过程、缓存零或分类。
+- 按用户授权继续参考固定 codex-host、Codingns4DSH 及当前安装版官方接口，补齐 Kimi 同一 ACP session 的 durable 用量回执、Hermes 原进程官方 request hooks、OMP 原生 /context 分类与显式 orchestration 桶、OpenCode GET session.tokens counter。具体版本、来源、完整性条件与未提供字段见 `doc/cli-native-data-audit.md`、`doc/audits/kimi-durable-usage-audit.md` 和 `doc/audits/native-http-rpc-data-interfaces.md`。保留官方完整侧栏和原 CLI Agent／选型／transport，不补造过程、缓存零或分类。
 - OMP get_session_stats 仅覆盖当前保留 state.messages，明确 reported／native-active-context，不持久成完整 session；正额外桶不能塞进普通四桶。OpenCode 原生 session 快照覆盖替换，允许下降／清零，不累加或取最大。原生 ContextMeter 保留 partial 分类、来源与估算，原生用量详情可保留 total-only／extra 和 unknown；普通 DSH 会话无外部来源时默认行为不变。
 - 最终 `build:preview` 已成功，包含最后 ZCode 工具输入形态修复，源码冻结。候选四包目录为 `artifacts/dsh-host-extension-rc2-data/`；旧 `rc2-audit` 为前一阶段候选，不代表本轮最终包。Desktop 已完成安装与冷启动原生侧栏验收；具体数据、范围及回退记录见本节末的安装记录。
 
@@ -1814,7 +1814,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ### 实施与范围
 
-- GPT-6.1-sol 分三组复查 Antigravity/Codex/Claude、Kimi/Grok/ZCode、OpenCode/MiMo/Pi/OMP，沿原始协议→安全遥测→官方 AgentLoop/Session→完整原生侧栏检查。具体数据通路和真实上游限制见 `doc/ten-cli-native-parity.md`。
+- GPT-6.1-sol 分三组复查 Antigravity/Codex/Claude、Kimi/Grok/ZCode、OpenCode/MiMo/Pi/OMP，沿原始协议→安全遥测→官方 AgentLoop/Session→完整原生侧栏检查。具体数据通路和真实上游限制见 `doc/audits/ten-cli-native-parity.md`。
 - Codex 补命令增量、MCP进度和动态工具内容；终帧未携带输出时保留已接收输出，过滤跨thread/turn及终态后迟到事件。Claude隔离主/子Agent流，主响应完成前不让子流打断主响应归属；异常或取消先确认peer关闭再排空已收到的公开事件，不伪造完成或usage。
 - Kimi/Grok ACP与ZCode修复正文→公开思考→后续正文的分段顺序。Pi/OMP在确认选型后投影真实容量，首轮前和响应间使用独立ID、有界750ms、最多一个在途的只读stats查询；终态后不覆盖结算。HTTP两协议分别区分初始全零占位、确认完成的真零、完成时缺字段以及错误帧，缺失当前输入不沿用旧占用。
 - 用户随后要求去掉所有“分类来源／数据来源”。在原生 ContextMeter 中统一删除来源行及重复英文/额外分类行；已知、部分、未知、等待和不可用状态均覆盖。保留占用比例、分子/分母、占用条、系统提示词/工具定义/对话消息三行及缺失说明。内部来源和OMP额外分类仍用于诊断，不在该弹层展示。此前第14阶段“显示来源与额外分类”的界面描述由本阶段替代。
@@ -1870,7 +1870,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 | MiMo | `xiaomi/mimo-v2.6-flash` | `http-mimo-4EkKKR/report.json`，三分类3868/16987/38，上下文21125/1048576；先前回复成功但观察为0的记录保留 |
 | OpenCode | `zhipuai-coding-plan/glm-5.3-flash` | `http-opencode-erdy4T/report.json`，三分类2294/4113/39，上下文6041/1000000 |
 
-路径均相对私有 `.test-data/seven-cli-regression-20261017/`，数据不入Git。Pi/MiMo/OpenCode 经完整 WorkerRuntime；ZCode/Grok 本轮实际执行证据为适配器与原生 runner，不冒称全部Runtime取消/恢复已实测。MiMo/OpenCode 每个最终运行只有1个用户turn和1个主请求；真实工具调用均为0。Pi官方fd3和两HTTP官方CLI路由另有零模型本机探针；详细范围见 `doc/cli-native-data-audit.md`、`doc/ten-cli-native-parity.md`。
+路径均相对私有 `.test-data/seven-cli-regression-20261017/`，数据不入Git。Pi/MiMo/OpenCode 经完整 WorkerRuntime；ZCode/Grok 本轮实际执行证据为适配器与原生 runner，不冒称全部Runtime取消/恢复已实测。MiMo/OpenCode 每个最终运行只有1个用户turn和1个主请求；真实工具调用均为0。Pi官方fd3和两HTTP官方CLI路由另有零模型本机探针；详细范围见 `doc/cli-native-data-audit.md`、`doc/audits/ten-cli-native-parity.md`。
 
 ### 自动与原生界面验收
 
@@ -1944,7 +1944,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 | `node --import tsx scripts/smoke-native.ts --help` / `git diff --check` | 通过；help 不启动 CLI；未全量验收、未真实模型调用。 |
 | 官方 1.1.73 隔离探针 | 非模拟 initialize、明确模拟空 ACP 会话配置/关闭，以及明确模拟 SDK 账号元数据查询通过；真实无账号 SDK 返回 auth_required/exit41。没有发送 user/prompt。 |
 
-私有结果与独立已接受构建保存在 `.test-data/qoder-cli-20261017/`：verification.json、regression.log、account-tests.log、typecheck.log、preview.log、panel-isolated.log、spec-check.log、accepted-package/。这里的日志和产物不会进入 Git。协议、版本、精确 wire 和官方来源见 [Qoder 原生协议核验](qoder-protocol.md)。初始裸 pnpm 触发依赖自动检查并因无 TTY 退出，后统一关闭该自动检查，未重新安装根依赖。
+私有结果与独立已接受构建保存在 `.test-data/qoder-cli-20261017/`：verification.json、regression.log、account-tests.log、typecheck.log、preview.log、panel-isolated.log、spec-check.log、accepted-package/。这里的日志和产物不会进入 Git。协议、版本、精确 wire 和官方来源见 [Qoder 原生协议核验](protocols/qoder-protocol.md)。初始裸 pnpm 触发依赖自动检查并因无 TTY 退出，后统一关闭该自动检查，未重新安装根依赖。
 
 ### Desktop 协调及未验证边界
 
@@ -2284,7 +2284,7 @@ OpenSpec 两个增量均已同步：新增 cli-model-discovery 的跨平台展�
 
 - 参考 Codingns4DSH 固定源码的宿主附件解析及按协议转换方式，补齐真实子 Agent 的附件输入；文件/图片身份参与回执去重，运行中附件保留原生 Inbox，私有执行配置不进入 Worker 持久化。macOS / Windows 共用 Host 转换和 Client 适配，原有 legacy 会话保持原协议。
 - CLI 子会话加号菜单增加“添加文件”“添加图片”。桌面普通文件通过宿主 preload 的真实路径和公开 SessionInput/source codec 进入原生草稿，图片调用原生 File action。修复 rc.2 隐藏文件控件统一禁用子会话的遗漏，增加默认关闭、只对附件能力有效的 CLI 绑定开启的 childImageUploads；私有生成路由声明可接收图片用于协议/路径转换，仍不把该声明当成实际模型视觉。ACP 未明确公布 image prompt 能力时传入验证后的路径。追加文件使用原生 TokenSpan 的不透明字符坐标，不用展开后的剪贴板坐标覆盖已有引用。
-- 复用现有 tools.schemas → tools.execute 与 Skill 按需读取桥。Kimi/Grok/Qoder 的 ACP 仅在结构化精确工具名、本轮实时目录及 allow_once 同时匹配时准入；不因标题或 namespace 前缀自动批准。十二 CLI 的入口和真实限制见 [能力矩阵](cli-harness-capabilities.md)。Codex/Claude/Kimi/Grok/MiMo/Pi/OpenCode/Qoder 有当前执行接入口；Antigravity/Hermes/OMP/ZCode 保留临时注入或额外交互未核验的具体限制。
+- 复用现有 tools.schemas → tools.execute 与 Skill 按需读取桥。Kimi/Grok/Qoder 的 ACP 仅在结构化精确工具名、本轮实时目录及 allow_once 同时匹配时准入；不因标题或 namespace 前缀自动批准。十二 CLI 的入口和真实限制见 [能力矩阵](protocols/cli-harness-capabilities.md)。Codex/Claude/Kimi/Grok/MiMo/Pi/OpenCode/Qoder 有当前执行接入口；Antigravity/Hermes/OMP/ZCode 保留临时注入或额外交互未核验的具体限制。
 - 最小回归分组分别记录，**不累计重叠项**：初始关联 macOS 404/404，Windows 401/404（3 个平台跳过）；路由及 ACP 图片能力修复后 macOS 141/141，Windows 140/141（1 个平台跳过）；最终客户端 30/30 两端通过。原生输入 120 项、原生侧栏 18 项通过；四包类型检查、Host/Client 两端类型检查、preview、四包 220 文件校验及 runtime-host 203 文件冻结通过。Windows 699 份源码/运行资源与本地冻结输入哈希一致。
 - 正常 Windows Desktop 通过官方安装器安装并冷启动 v0.8.1。Qoder 1.1.73 沿原有 qfmodel / low、同一 Harness child 与原生 CLI 会话，真实完成一次文本文件 + PNG 的只读续聊。原始同 run 事件确认 4 个完成回执：两次 mcp__dsh_worker_tools__read、一次 dsh_list_skills、一次 dsh_read_skill（office）。两次读取均命中仅存在于文件中的随机标识；技能目录和正文均有实际工具回执。initialize 明确声明 image=true，原生历史保留 PNG；终态 end_turn、SUCCESS 和 Worker completed 一致，受管 CLI/MCP 进程归零。
 - 此真实任务使用冻结候选 v4 的后端；最终 v5 仅修正追加引用坐标，Host 与协议 sidecar 字节相同。v5 完成最终 Windows 类型检查及 30 项回归，实际连续选择两个不同文件后两个原生草稿引用均保留；清除仅用于验收的未发送草稿。未为这项客户端修正额外调用模型。宿主按既有完成通知行为向父会话追加一条自动回复；不把该自动回复称作无模型调用。本轮未手工切换选型或运行其他 CLI 模型。
@@ -2309,7 +2309,7 @@ OpenSpec 两个增量均已同步：新增 cli-model-discovery 的跨平台展�
 
 ## 2026-10-19：Qoder CN 独立接入、Windows 路径发现与设置服务恢复（v0.8.1）
 
-- 按本次授权新增独立 `qodercn`：中国版使用 `qoderclicn`、`.qoder-cn`、`QODERCN_`、`qodercn-acp-v1` 与原生 `qoder-cli-cn` 身份；国际版 `qoder` 保持原身份。账号/PAT、路径、目录缓存、项目偏好、会话协议、清理保护、积分和上下文来源均区分两版。共享 SDK 控制字段与中国版仍使用的 `qodercli.log` 按官方 1.1.74 发行包核验，没有机械替换原生字段。协议细节见 [Qoder CN 原生协议与隔离](qodercn-protocol.md)。
+- 按本次授权新增独立 `qodercn`：中国版使用 `qoderclicn`、`.qoder-cn`、`QODERCN_`、`qodercn-acp-v1` 与原生 `qoder-cli-cn` 身份；国际版 `qoder` 保持原身份。账号/PAT、路径、目录缓存、项目偏好、会话协议、清理保护、积分和上下文来源均区分两版。共享 SDK 控制字段与中国版仍使用的 `qodercli.log` 按官方 1.1.74 发行包核验，没有机械替换原生字段。协议细节见 [Qoder CN 原生协议与隔离](protocols/qodercn-protocol.md)。
 - 泛称“调用 qoder”按安装情况处理：只装国际版使用国际版，只装中国版使用中国版，两版都有则使用 Harness 原生询问框选择；明确国际版、中国版或 `qodercn` 时固定相应身份。只读 resolve 不弹窗、不落盘；取消、项目变化、CLI 禁用或授权条件不满足均不创建任务。路由和询问行为已经模拟回归，未通过真实模型调用验证派遣。
 - 提取所有已支持 CLI 共用的 Windows 发现层：常见用户 bin/npm/Bun/Scoop/pnpm 路径、PATHEXT 和有界最新 User/Machine PATH 查询；特殊安装入口与包身份保留各 CLI 声明。自动发现不枚举磁盘或猜最新版本，拒绝已知对侧品牌与 GUI，显式自定义入口优先。真实 Windows 清空继承 PATH 后仍通过该公共层找到系统 Node；其他 CLI 的不同安装器布局由对应模拟回归覆盖，未逐个重新安装所有 CLI。
 - Windows Node **v24.15.0**，冻结的 **1359 文件**及生成资源摘要核对一致；复用该机同锁文件依赖，没有升级依赖。最终 Host/Client 类型检查退出 0；30 个关联测试文件 **1192 项：1189 通过、0 失败、3 跳过**，测试用时约 61.5 秒。覆盖注册、账号隔离、Windows 入口、路由询问、原生 ACP/工具/附件、取消清理、恢复及遥测。属于相关范围回归，不是全量发布验收；跳过为平台限定测试，不能当作实际运行成功。

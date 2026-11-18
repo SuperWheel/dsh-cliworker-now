@@ -6,7 +6,7 @@ Client 通过原生 Gateway 请求 `ensureHarnessConversation`，只获取或建
 
 顶部保留原 CLI Worker 返回、Worker 名称/标题与任务操作；该正文入口不包含主页面 Header/frame。窗口及全局侧栏开关由外层宿主保留，打开 Worker 不调用主页面的 `uiWorkspace.openSession`。原入口的组件、注入、Store、locale 保持一致。
 
-2026-10-16 用户明确允许在官方 rc.2 源码开发宿主扩展，并要求安装前先验收。`composerPresentation: 'main'` 使真实子 Agent 采用主对话原有按钮切换规则，`commandSource` 只传递当前 CLI 可用指令的数据来源。两者经过同一官方侧栏、content 和 composer 路径；默认 DSH 会话保持原行为，子 Agent 身份、停止对象和 Inbox 不变。统计通过新增 `uiSession.provideProjections(reference, sources)` 从会话层提供，删除逐个组件的统计包装。源码、构建和回退说明见 [宿主扩展](native-conversation-host-extension.md)，实际安装状态以实施记录为准。
+2026-10-16 用户明确允许在官方 rc.2 源码开发宿主扩展，并要求安装前先验收。`composerPresentation: 'main'` 使真实子 Agent 采用主对话原有按钮切换规则，`commandSource` 只传递当前 CLI 可用指令的数据来源。两者经过同一官方侧栏、content 和 composer 路径；默认 DSH 会话保持原行为，子 Agent 身份、停止对象和 Inbox 不变。统计通过新增 `uiSession.provideProjections(reference, sources)` 从会话层提供，删除逐个组件的统计包装。源码、构建和回退说明见 [宿主扩展](protocols/native-conversation-host-extension.md)，实际安装状态以实施记录为准。
 
 切换 Worker、关闭侧栏和插件卸载会取消读取等待并释放插件持有的引用，不停止已运行的 CLI。迟到的绑定回执不会切换当前 Worker；读取失败显示真实错误，不借用父会话。普通主对话及其他会话的控件数据和行为保持原样。
 
@@ -38,7 +38,7 @@ AGY 的 `input_tokens` 是未缓存输入，`cache_read_tokens` 为独立缓存�
 
 AGY 上下文只读当前 CLI conversation 对应本地数据库的原生 `gen_metadata`，取得最近一次请求的 `estimated_tokens_used`、`max_context_tokens` 及可用分类。它是 CLI 原生估算，不是累计计费用量。ContextMeter 需要已用量和正容量；分类是可选信息，缺少分类不会移除已有占用读数。读取失败或元数据不完整时保持缺失，具体 Desktop 验证范围以实施记录为准。
 
-附件菜单复用原生输入：macOS / Windows Desktop 普通文件以真实路径引用进入草稿，图片由显式 childImageUploads 开关和原生 File action 上传、保存历史，Host 按 CLI 转换内容块及路径；旧协议或失效附件仍返回真实原因。运行中附件保留原生队列，不转为纯文本引导；重试校验包含附件身份。分支仍受限。加号始终保留可用指令菜单；指令弹窗由原生 controller 管理，尚未桥接的命令在 Host 返回具体错误，不调用未知模型路径。能力详情保留在任务选项中，不增加一排不可用按钮。逐 CLI 接入见 [能力矩阵](cli-harness-capabilities.md)。
+附件菜单复用原生输入：macOS / Windows Desktop 普通文件以真实路径引用进入草稿，图片由显式 childImageUploads 开关和原生 File action 上传、保存历史，Host 按 CLI 转换内容块及路径；旧协议或失效附件仍返回真实原因。运行中附件保留原生队列，不转为纯文本引导；重试校验包含附件身份。分支仍受限。加号始终保留可用指令菜单；指令弹窗由原生 controller 管理，尚未桥接的命令在 Host 返回具体错误，不调用未知模型路径。能力详情保留在任务选项中，不增加一排不可用按钮。逐 CLI 接入见 [能力矩阵](protocols/cli-harness-capabilities.md)。
 
 ## 响应边界与单次用量
 

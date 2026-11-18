@@ -17,6 +17,6 @@
 
 - [Client 原生会话](../../../src/client/harness-conversation.tsx)：`HarnessConversation`；[Host 桥](../../../src/host/harness-conversation.ts)：`HarnessConversationBridge.route`；[流投影](../../../src/host/harness-conversation-stream.ts)。
 - [官方会话回归](../../../tests/harness-conversation-official.test.ts) · [界面回归](../../../tests/harness-conversation.test.tsx)。
-- [现行界面与历史边界](../../native-conversation-ui.md) · [有限宿主扩展](../../native-conversation-host-extension.md)。
+- [现行界面与历史边界](../../native-conversation-ui.md) · [有限宿主扩展](../../protocols/native-conversation-host-extension.md)。
 
 关联：[职责边界](host-client-gateway.md) · [三类身份](session-identities.md) · [返回分类索引](README.md)

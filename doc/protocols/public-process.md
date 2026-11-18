@@ -16,11 +16,11 @@
 | Hermes Agent | Runs SSE 的 `reasoning.available`、工具开始和结束事件 | 只展示实际公开摘要；当前没有已确认工具调用 ID 时保持平级，不把 FIFO 配对序号伪装成原生父调用。 |
 | Qoder CLI | ACP 的 `agent_thought_chunk` 与公开工具事件 | 按原生会话和消息更新；没有公开文本时不从用量或最终正文构造摘要。 |
 
-新 Worker 的完整协议、恢复与停止边界见 [原生通信协议](native-protocols.md)；既有 Worker 保留持久 transport 所属的旧通路。表内字段是接入范围，并不意味着每个模型和每轮任务都返回公开摘要。
+新 Worker 的完整协议、恢复与停止边界见 [原生通信协议](../native-protocols.md)；既有 Worker 保留持久 transport 所属的旧通路。表内字段是接入范围，并不意味着每个模型和每轮任务都返回公开摘要。
 
 v0.8.1 原生会话的完成行仅在确有公开思考、计划或工具记录时提供展开。Grok / OMP 没有这些内容的轮次保留原生完成状态，不在回复正文或轮次尾部插入缺失说明。reasoning token 数、空片段、签名和最终正文都不能用来补造思考内容。
 
-OMP 的 OpenAI 订阅通路使用原生公开摘要配置；实际安装版 16.4.4 的隔离本机探针确认请求 `reasoning.summary=detailed`、`effort=low`，公开 summary 经原生 RPC 与生产桥完整传递。Grok 官方 Responses 通路默认请求 `concise` 摘要，`reasoning_summary` 是原生模型配置；TUI 的 `show_thinking_blocks` 只控制终端展示，不作为 ACP 的摘要开关。两者仍取决于该轮实际返回内容，旧轮次没有公开摘要时不可补回。实际请求探针与真实历史核查的范围见 [验收记录](tasks.md)。
+OMP 的 OpenAI 订阅通路使用原生公开摘要配置；实际安装版 16.4.4 的隔离本机探针确认请求 `reasoning.summary=detailed`、`effort=low`，公开 summary 经原生 RPC 与生产桥完整传递。Grok 官方 Responses 通路默认请求 `concise` 摘要，`reasoning_summary` 是原生模型配置；TUI 的 `show_thinking_blocks` 只控制终端展示，不作为 ACP 的摘要开关。两者仍取决于该轮实际返回内容，旧轮次没有公开摘要时不可补回。实际请求探针与真实历史核查的范围见 [验收记录](../tasks.md)。
 
 ## 每轮思考记录
 
@@ -30,7 +30,7 @@ OMP 的 OpenAI 订阅通路使用原生公开摘要配置；实际安装版 16.4
 
 Codex 后续 `turn/start` 显式设置 `summary: auto`，保持用户选择的模型和强度，只采集原生 `summaryTextDelta` / `summary[]`。`codex-app-v1` 的公开增量到达后即进入原生思考过程，完成快照不重复，停止或失败保留已公开前缀。开启请求选项不保证每个模型每轮返回内容；是否有记录以实际公开摘要事件为准，不能用 rollout 的兼容字段 `turn_context.summary: none` 判断请求未生效。
 
-2026-10-18 用户再次确认：仅在有公开思考或工具记录时允许展开，不为无内容的完成行添加模型、耗时或用量占位。只读复核当天新增的 `agy-new`、`codex-new`、`zcode-new`、`grok-new`、`pi-new` 问好轮次，均未采集到公开思考或工具记录。实际 Desktop 的 `pi-2` 和 `zcode-1` 第二轮已有公开文本，均可按上述原生层级展开；ZCode 同一会话的其他无内容轮次仍不可展开。这些是既有记录复核，不是新模型调用或五种 CLI 的全部能力验收。后续用安装中 Codex 0.162.1 与隔离本机模拟服务确认 `reasoning.summary: auto` 实际发送，公开摘要可经适配器传入；这不代表问好轮次已产生摘要或完成了真实订阅验收。详见 [数据核查](cli-native-data-audit.md)。
+2026-10-18 用户再次确认：仅在有公开思考或工具记录时允许展开，不为无内容的完成行添加模型、耗时或用量占位。只读复核当天新增的 `agy-new`、`codex-new`、`zcode-new`、`grok-new`、`pi-new` 问好轮次，均未采集到公开思考或工具记录。实际 Desktop 的 `pi-2` 和 `zcode-1` 第二轮已有公开文本，均可按上述原生层级展开；ZCode 同一会话的其他无内容轮次仍不可展开。这些是既有记录复核，不是新模型调用或五种 CLI 的全部能力验收。后续用安装中 Codex 0.162.1 与隔离本机模拟服务确认 `reasoning.summary: auto` 实际发送，公开摘要可经适配器传入；这不代表问好轮次已产生摘要或完成了真实订阅验收。详见 [数据核查](../cli-native-data-audit.md)。
 
 ## 共享投影与内容安全
 
@@ -68,4 +68,4 @@ Client 只读订阅 `configForms.get('ui-chat')` 的 `transcriptView`，不写�
 
 组件回归使用明确标记的模拟事件，覆盖工作详情订阅与清理、公开 Markdown、结构化参数与结果、原生命令和局部差异、真实身份树、缺失/循环关系、停止工具状态、原生耗时规则和完整/部分/未知/零值上下文；同时回归既有队列与独立引导。
 
-隔离浏览器验收必须核对实际服务的 preview `lib/client.js` 路径和 SHA-256，使用独立模拟 profile，禁止模型、原生 CLI 和外网请求。模拟展示不替代真实生成证据。实际浏览器、Desktop、真实账号及 Windows 的完成与限制统一记录在 [验收记录](tasks.md)。
+隔离浏览器验收必须核对实际服务的 preview `lib/client.js` 路径和 SHA-256，使用独立模拟 profile，禁止模型、原生 CLI 和外网请求。模拟展示不替代真实生成证据。实际浏览器、Desktop、真实账号及 Windows 的完成与限制统一记录在 [验收记录](../tasks.md)。

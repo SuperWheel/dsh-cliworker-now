@@ -19,7 +19,7 @@
 | Pi | `--mode rpc` | 保留 `--no-extensions`，只显式加载插件扩展；先读取获准 schema，再精确扩展 `--tools` | 只注册 run 目录内工具；每次调用使用原生 toolCallId，经 Host 执行 | 安装版 loader 无模型往返及冻结预览真实只读 canary 一轮均通过；真实 Host 调用 1 次 |
 | OMP | `--mode rpc` | 当前不可用；不移除 `--no-extensions` | 禁用，给出隔离模式忽略显式扩展的原因 | OMP 16.4.4 零 prompt `get_state` 正常退出，但未加载扩展、无桥 schema 请求；见下文 |
 | Hermes | 私有 gateway Runs HTTP + SSE | 当前 `HERMES_SAFE_MODE` 的隔离运行没有已核验的 run 专属注入方案 | 禁用并说明原因 | 不因普通 MCP 配置存在就解除当前隔离；未做真实模型工具验收 |
-| Antigravity | 双向 stream-json / stdio | 本轮私有 `agy-tools` 工作区（`.agents/mcp_config.json` + PreToolUse Hook）经 `--add-dir` 加入；服务器名 `dsh_worker_<绑定哈希>`，不改用户项目与全局配置，见 [antigravity-harness-bridge.md](antigravity-harness-bridge.md) | Hook 仅对与本轮实时目录完全匹配的桥工具返回 `auto_approve`，Host 仍逐次鉴权 | 离线回归与隔离构建通过；Windows Desktop 真实工具/Skill 验收未完成（`integrate-native-cli-conversations` 20.4 未勾选） |
+| Antigravity | 双向 stream-json / stdio | 本轮私有 `agy-tools` 工作区（`.agents/mcp_config.json` + PreToolUse Hook）经 `--add-dir` 加入；服务器名 `dsh_worker_<绑定哈希>`，不改用户项目与全局配置，见 [antigravity-harness-bridge.md](../audits/antigravity-harness-bridge.md) | Hook 仅对与本轮实时目录完全匹配的桥工具返回 `auto_approve`，Host 仍逐次鉴权 | 离线回归与隔离构建通过；Windows Desktop 真实工具/Skill 验收未完成（`integrate-native-cli-conversations` 20.4 未勾选） |
 
 2026-10-18 的附件、平台及逐 CLI 当前状态统一见 [能力矩阵](cli-harness-capabilities.md)。下文冻结预览的真实 canary 属此前证据，不等于本次 Windows 已验证所有 CLI。
 

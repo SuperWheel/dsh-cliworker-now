@@ -12,7 +12,7 @@
 
 **Goals:** 原生会话与界面，现有 CLI Agent 执行，受控 DSH 工具/技能桥，明确不可用能力，v0.8.1 可回退。
 
-**Non-Goals:** 除用户 2026-10-16 明确批准的两个可选宿主扩展外修改 Harness 核心、复制 GPL 项目源码、静默升级旧原生会话、绕过宿主权限或自动审批、假造缺失的上下文和公开思考。批准范围与验收/安装顺序见 doc/native-conversation-host-extension.md，覆盖本次原先不修改核心的限制，不扩大为任意核心变更授权。
+**Non-Goals:** 除用户 2026-10-16 明确批准的两个可选宿主扩展外修改 Harness 核心、复制 GPL 项目源码、静默升级旧原生会话、绕过宿主权限或自动审批、假造缺失的上下文和公开思考。批准范围与验收/安装顺序见 doc/protocols/native-conversation-host-extension.md，覆盖本次原先不修改核心的限制，不扩大为任意核心变更授权。
 
 ## Decisions
 

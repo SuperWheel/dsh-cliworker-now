@@ -17,6 +17,6 @@
 
 - [运行调度](../../../src/host/runtime.ts)：`reserveSubmission`、`prepareFollowup`、`busyReason`、`drain`。
 - [运行回归](../../../tests/runtime.test.ts) · [原生运行回归](../../../tests/native-runtime.test.ts) · [权限回归](../../../tests/worker-permissions.test.ts)。
-- [运行中发送的协议边界](../../running-message-protocol.md)。
+- [运行中发送的协议边界](../../protocols/running-message-protocol.md)。
 
 关联：[职责边界](host-client-gateway.md) · [停止与恢复](stop-and-recovery.md) · [返回分类索引](README.md)

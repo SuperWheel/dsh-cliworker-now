@@ -56,7 +56,7 @@
 | 用量 | token、积分、上下文的公开字段与范围 |
 | 副作用 | 探测命令是否会自动升级、联网、写缓存或弹出界面（Kimi 曾因探测自动升级真实安装） |
 
-调研结论写进该 CLI 的 OpenSpec 变更 `proposal.md`；协议细节写进 `doc/<cli>-protocol.md`（参照 [qoder-protocol.md](../../qoder-protocol.md)、[qodercn-protocol.md](../../qodercn-protocol.md)）。
+调研结论写进该 CLI 的 OpenSpec 变更 `proposal.md`；协议细节写进 `doc/<cli>-protocol.md`（参照 [qoder-protocol.md](../../protocols/qoder-protocol.md)、[qodercn-protocol.md](../../protocols/qodercn-protocol.md)）。
 
 ### 1.2 国内版与国际版的四种形态
 
@@ -311,7 +311,7 @@
   - `native-harness-tools.ts`、`native-harness-executor.ts`：执行与回执，一般不改。
 - 工具调用的展示：只有命令的工具条目以命令作参数（[native-cli-conversations](../../../openspec/specs/native-cli-conversations/spec.md)）；超大工具事件按 [native-output-budget](../../../openspec/specs/native-output-budget/spec.md) 截断成摘要。
 
-原理见 [工具桥](../architecture/authorized-tool-bridge.md) 与 [原生 Harness 工具](../../native-harness-tools.md)。
+原理见 [工具桥](../architecture/authorized-tool-bridge.md) 与 [原生 Harness 工具](../../protocols/native-harness-tools.md)。
 
 ---
 
@@ -450,7 +450,7 @@
 | 阶段 | Qoder CN 的实际落点 |
 | --- | --- |
 | 形态判定 | 形态 A：`qoderclicn`、`@qodercn-ai/qoderclicn`、`.qoder-cn`、`QODERCN_`、站点 `cn`（`src/host/qoder-variant.ts`） |
-| 规格 | [qodercn-cli](../../../openspec/specs/qodercn-cli/spec.md)、[qoder-cli](../../../openspec/specs/qoder-cli/spec.md)；协议见 [qodercn-protocol.md](../../qodercn-protocol.md) |
+| 规格 | [qodercn-cli](../../../openspec/specs/qodercn-cli/spec.md)、[qoder-cli](../../../openspec/specs/qoder-cli/spec.md)；协议见 [qodercn-protocol.md](../../protocols/qodercn-protocol.md) |
 | 身份 | `CLI_IDS` 中的 `qodercn`、名称 `Qoder CN CLI`、短名 `qodercn`；别名包括“qoder 中国版”“国内版 qoder” |
 | 路由 | `src/host/routing.ts`：泛称 qoder 时按安装分流；`src/host/index.ts`：两版都安装时用宿主原生询问框选择 |
 | 配置 | `qodercnExecutable`，默认 `qodercn` |

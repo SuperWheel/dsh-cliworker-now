@@ -7,7 +7,7 @@
 | 对象 | 已存在 | 缺口 |
 | --- | --- | --- |
 | 通用窗口 | `FlowGuide` / `AgyAccountGuide`、`LoginWindow`、`AccountTerminal`、`AccountsWindow`；200 × 60 隐藏 PTY、480px 窗口；`ProviderCards` 已提取并复用 | CodeBuddy 完整自动按键与 Desktop/Windows 验收未完成 |
-| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 已按 C1–C6 实采接入信任确认、自动 `/login`、四站点 choice、中国/国际 browser 与自动 `/logout`；未知屏和企业/iOA 保留原生，退出仍需严格状态证明。`doc/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
+| CodeBuddy | `accounts.ts` 的登录指引要求手输 `/login`；`argumentsFor('codebuddy', …)` 返回 `[]`；`startSession` 启动 `[executable]`，仅额外设置 `DISABLE_AUTOUPDATER=1` | 已按 C1–C6 实采接入信任确认、自动 `/login`、四站点 choice、中国/国际 browser 与自动 `/logout`；未知屏和企业/iOA 保留原生，退出仍需严格状态证明。`doc/protocols/codebuddy-protocol.md` §6 明确没有 login/logout 子命令，不能写成 `codebuddy login` / `auth login` |
 | TRAE CN | `providers.ts` 已列 personal / enterprise / enterprise-pat；`traecnAccountArguments` 已实现三条登录 argv 与 logout；`readTraecnAccount` 查询 `login status` | 已注册个人回调网址 flow、单账号 holding 与共享方式卡片；企业完整流程与 Desktop/Windows 尚未核实 |
 | WorkBuddy 两版 | `workbuddy-installation.ts` 返回 appRoot/runtime/entry 并核对 product 站点；`workbuddy-metadata.ts` 查询账号相关元数据 | `accounts.ts` 的 actions 为空且 `start` 拒绝账号操作；无 CLI 登录/退出、无打开应用/状态观察会话 |
 
@@ -74,7 +74,7 @@ UI 复用 `.cwn-login-*` / `.cwn-accounts-*`；按用户要求新流程的操作
 | 企业 PAT `enterprise-pat` | `[exe, 'login', '--with-trae-pat']` | 选择卡片后 `native`；继承原生读取环境变量或 stdin 的行为，插件不查看环境变量值、不显示/保存 PAT，也不新增 `secret` 输入框 |
 | 退出 | `[exe, 'logout']` | 隐藏终端自动运行，`waiting → result`；状态确认并清理后才进入登录方式选择 |
 
-PAT 默认留在原生是有意选择：`doc/traecn-protocol.md` 明确令牌由用户在原生终端提供，完整企业流程未核实；通用模板支持 secret 不能证明 TRAE 已被授权改用该输入。后续若需要 PAT 图形输入，应单独确认范围并采集输入/回显/取消行为，本方案不阻塞其他流程。
+PAT 默认留在原生是有意选择：`doc/protocols/traecn-protocol.md` 明确令牌由用户在原生终端提供，完整企业流程未核实；通用模板支持 secret 不能证明 TRAE 已被授权改用该输入。后续若需要 PAT 图形输入，应单独确认范围并采集输入/回显/取消行为，本方案不阻塞其他流程。
 
 `readTraecnAccount` 当前调用 `login status` 后只传 output 给解析器。实现需要核对协议记录的组合：完整行 `Logged in using Trae` 且退出 0 才为已登录，`Not logged in` 且退出 1 才为明确未登录；其他组合/错误/清理阻塞不能证明成功。保留 `does not support CLI usage` 套餐原因。返回只证明当前 TRAE 登录，不显示个人/企业身份或具体账号。
 

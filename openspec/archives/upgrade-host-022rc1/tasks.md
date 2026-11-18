@@ -30,7 +30,7 @@
   - Codex gpt-6.1-sol high 更新 `build-dependencies`（新增 022rc1 选图、SDK pin、兼容列表含 0.2.2-rc.1、未验证目标改用 0.2.2-rc.2）、`host-runtime-package`（来源 commit、ui-chat 资源导出与 PNG 与官方包逐字节比较）、`clean` 测试。0.2.2 app-boot `evaluatePluginCompatibility` 不检查 cordis peer，故未加 cordis 准入断言。
   - typert（Codex gpt-6-astra high 实施）：tsc 声明输出会省掉只在 `declare module '<X>'` 扩充块内使用的 import（块内可直接引用 X 的导出），0.2.2 新增的 `SessionProjectionSummaryExcluded` 引用因此被 typert 分析器判为跨包未显式导入；生成器本身 rc.5 与 rc.1 逐字节相同。`scripts/build.mjs` 只对暂存的 SDK 声明副本用 TypeScript API 补 `import type`（通用、幂等、名称冲突时用别名，不掩盖其他分析错误），已安装 SDK 3019 个声明文件未改；新增 `tests/build-typert-augmentations.test.ts`。构建日志：10 个 SDK 声明文件被规范化。
   - 主会话复跑：`pnpm typecheck` 通过；全量 `vitest run --maxWorkers=2`（沙箱外，HTTP 桥测试需监听 127.0.0.1）253 个文件通过、4 个跳过，5437 项通过、14 项跳过、0 失败。`pnpm build:preview` 成功：预览包四包 0.2.2-rc.1，含 `runtime-host/dsh-client-ui-chat/lib/assets/running-whale@2x-06738fa29b2f.png`；`typert.remote-client.d.ts` 与 rc.5 构建产物逐字节相同（`typert.host.d.ts` 亦相同）。
-- [x] 3.4 文档（Codex gpt-6.1-sol high，主会话审查）：README（中英）、`doc/native-conversation-host-extension.md`、`doc/design.md`、`host-extensions/dsh-0.2.2-rc.1/README.md`。
+- [x] 3.4 文档（Codex gpt-6.1-sol high，主会话审查）：README（中英）、`doc/protocols/native-conversation-host-extension.md`、`doc/design.md`、`host-extensions/dsh-0.2.2-rc.1/README.md`。
 
 ## 4. 安装与界面
 

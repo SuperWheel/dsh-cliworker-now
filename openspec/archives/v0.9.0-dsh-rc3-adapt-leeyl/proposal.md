@@ -9,7 +9,7 @@
 - 开发 SDK 的全部 `@deepseek-ai/dsh*` pin 升到 0.2.2-rc.3，workspace 发布期限例外同步；构建依赖选择加入 rc.3 目标。
 - 从固定 tag `dsh-v0.2.2-rc.3` 重建四个随包界面包（沿用 rc.2 的 48 文件补丁），冻结独立构建依赖并重新 vendor `runtime-host/`；构建、vendor 脚本与测试加入新目标。
 - 核对 rc.2 → rc.3 的公开 API、类型、Gateway、Remote、扩展点、主题 token 与组件差异，按结果适配（若无破坏性变化则不改插件业务代码）。
-- 同步 README（中英）、`doc/design.md` 与 `doc/native-conversation-host-extension.md` 中的宿主版本说明。
+- 同步 README（中英）、`doc/design.md` 与 `doc/protocols/native-conversation-host-extension.md` 中的宿主版本说明。
 - 插件版本号不变（下一版本由用户确认，2026-11-16 定为 v0.9.0）。
 
 ## Capabilities

@@ -8,6 +8,6 @@
 
 模型元数据查询采用隔离的临时原生目录，保留必要的当前来源并避免复制历史或默认模型缓存。这个优化不能承诺“任何 CLI 读取都完全无副作用”：应检查各 CLI 的实际查询实现，也不能把真实任务的 ACP 会话和元数据读取协议混为一谈。
 
-实现：[Qoder 作用域与来源证明](../../../src/host/qoder-accounts.ts)；回归：[Qoder 账号与目录测试](../../../tests/qoder-accounts.test.ts)；协议背景：[Qoder 说明](../../qoder-protocol.md)。
+实现：[Qoder 作用域与来源证明](../../../src/host/qoder-accounts.ts)；回归：[Qoder 账号与目录测试](../../../tests/qoder-accounts.test.ts)；协议背景：[Qoder 说明](../../protocols/qoder-protocol.md)。
 
 关联：[原生元数据短期缓存](native-metadata-cache.md)、[有界预热](bounded-prewarm.md)。

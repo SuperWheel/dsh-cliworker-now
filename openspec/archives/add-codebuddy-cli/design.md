@@ -1,6 +1,6 @@
 ## Context
 
-CodeBuddy Code 2.181.0 是同一 CLI、按站点登录（形态 C）。实测事实见 proposal.md 调研表与 [doc/codebuddy-protocol.md](../../../doc/codebuddy-protocol.md)。最接近的已有实现是 Qoder（ACP、配置项 `mode`/`model`、单账号）。v0.8.8 另有 TRAE 与 WorkBuddy 两个分支并行接入，共享清单的冲突由协调会话合并；WorkBuddy 的内置 CLI 派生自 CodeBuddy，可能复用本变更的 runner 设置。
+CodeBuddy Code 2.181.0 是同一 CLI、按站点登录（形态 C）。实测事实见 proposal.md 调研表与 [doc/protocols/codebuddy-protocol.md](../../../doc/protocols/codebuddy-protocol.md)。最接近的已有实现是 Qoder（ACP、配置项 `mode`/`model`、单账号）。v0.8.8 另有 TRAE 与 WorkBuddy 两个分支并行接入，共享清单的冲突由协调会话合并；WorkBuddy 的内置 CLI 派生自 CodeBuddy，可能复用本变更的 runner 设置。
 
 ## Goals / Non-Goals
 

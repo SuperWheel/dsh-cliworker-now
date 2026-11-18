@@ -16,7 +16,7 @@
 
 ## 3、源码与验证入口
 
-- [数据来源总审计](../../cli-native-data-audit.md)、[HTTP/RPC 数据接口](../../native-http-rpc-data-interfaces.md)。
+- [数据来源总审计](../../cli-native-data-audit.md)、[HTTP/RPC 数据接口](../../audits/native-http-rpc-data-interfaces.md)。
 - [Qoder 元数据查询](../../../src/host/qoder-accounts.ts)。
 - [原生本轮用量契约](../../../src/shared/native-turn-usage.ts)、[模型显示归一化](../../../src/shared/native-model-display.ts)。
 - [Qoder 计量回归](../../../tests/qoder-native-metering.test.ts)、[原生用量详情回归](../../../tests/native-usage-details.test.ts)。

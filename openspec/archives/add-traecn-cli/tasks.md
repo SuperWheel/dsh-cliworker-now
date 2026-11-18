@@ -133,7 +133,7 @@
 
 ## 8. 文档
 
-- [x] 8.1 README、README.en、AGENTS.md、usage-details（中英）、design.md、`doc/traecn-protocol.md`
+- [x] 8.1 README、README.en、AGENTS.md、usage-details（中英）、design.md、`doc/protocols/traecn-protocol.md`
 
 ## 共享改动
 

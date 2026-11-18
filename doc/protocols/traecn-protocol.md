@@ -1,6 +1,6 @@
 # TRAE CLI CN 原生协议与权限
 
-核验日期：2026-11-07，macOS 安装版 `traecli 0.213.1`（`installation: public`）。插件 v0.8.8 的接入定稿见 [提案](../openspec/archives/add-traecn-cli/proposal.md)、[设计](../openspec/archives/add-traecn-cli/design.md) 和 [规格](../openspec/archives/add-traecn-cli/specs/traecn-cli/spec.md)。本页整理这些文件与 [任务 §0](../openspec/archives/add-traecn-cli/tasks.md) 已记录的前置实测，不表示本次文档工作重新执行了 CLI，也不表示插件集成或 Desktop 已验收。未有实测记录的内容标为「待核实」。
+核验日期：2026-11-07，macOS 安装版 `traecli 0.213.1`（`installation: public`）。插件 v0.8.8 的接入定稿见 [提案](../../openspec/archives/add-traecn-cli/proposal.md)、[设计](../../openspec/archives/add-traecn-cli/design.md) 和 [规格](../../openspec/archives/add-traecn-cli/specs/traecn-cli/spec.md)。本页整理这些文件与 [任务 §0](../../openspec/archives/add-traecn-cli/tasks.md) 已记录的前置实测，不表示本次文档工作重新执行了 CLI，也不表示插件集成或 Desktop 已验收。未有实测记录的内容标为「待核实」。
 
 ## 1. 身份、安装与账号
 
@@ -128,10 +128,10 @@ ACP 为 stdio JSON-RPC。下列为定稿记录中的字段摘记，不是完整�
 - DSH 工具桥不提供：ACP 仅声明 HTTP MCP；`_meta.trae.options.mcpServers` 声明的值是已配置 MCP 服务名且有替换语义，不等于标准 ACP 的服务定义。未经核实的注入可能失效或覆盖用户 MCP。工具桥加载、调用与配置互操作待核实。
 - 运行中引导不提供：`_meta.steering.supported: true` 只是声明，真实 steering 往返待核实；运行中发送按原生 Inbox 排队。
 - 程序存在默认开启的 `in_app_updates` 与 `traecli update`；前置探测后 `current` 始终指向 0.213.1，未观察到升级，不能据此保证未来不更新。插件不调用 update。
-- 前置 macOS CLI 探测已核对事件、产物和退出；插件回归、真实 Worker、Desktop 明暗图标及 Windows 验收仍须看 [本次任务清单](../openspec/archives/add-traecn-cli/tasks.md) 的实际记录，不能由本页替代。其他模型、企业账号完整流程、图片理解、项目 skills、MCP 工具桥及 steering 均待核实。
+- 前置 macOS CLI 探测已核对事件、产物和退出；插件回归、真实 Worker、Desktop 明暗图标及 Windows 验收仍须看 [本次任务清单](../../openspec/archives/add-traecn-cli/tasks.md) 的实际记录，不能由本页替代。其他模型、企业账号完整流程、图片理解、项目 skills、MCP 工具桥及 steering 均待核实。
 
 ## 8. 图形登录采集与实现（2026-11-07）
 
 本次隔离 HOME/TRAE_HOME 的真实 200 × 60 采集取得个人 `https://www.trae.cn/authorization` 及 `Paste callback URL to verify automatically:`，图形模板为 browserCode，允许粘贴完整回调网址；不显示设备码。企业 SSO 首屏主机 `console.enterprise.trae.cn` 保持原生处理，不进入图形白名单。无 PAT 的原生行为见 §1。未登录 status 为 `Not logged in`/1，logout 为同文/0；个人与企业授权前取消均退出 1，没有授权提交。
 
-窗口复用两列方式卡片；退出确认和进程清理完成后再选择登录方式，取消选择不启动终端。状态解析必须联合完整行与退出码，矛盾行/退出码保持未知；保存启动前基线，原生 logout 自行退出后核对退出码 0 与明确未登录。完整企业、有效账号切换、Desktop 与 Windows 仍未验收。详见 [采集记录](../openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)。
+窗口复用两列方式卡片；退出确认和进程清理完成后再选择登录方式，取消选择不启动终端。状态解析必须联合完整行与退出码，矛盾行/退出码保持未知；保存启动前基线，原生 logout 自行退出后核对退出码 0 与明确未登录。完整企业、有效账号切换、Desktop 与 Windows 仍未验收。详见 [采集记录](../../openspec/archives/add-new-cli-graphical-login/capture-2026-11-07.md)。

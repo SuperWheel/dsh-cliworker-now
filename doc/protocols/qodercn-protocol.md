@@ -1,6 +1,6 @@
 # Qoder CN CLI 原生协议与隔离
 
-核验日期：2026-10-19，插件仍为 v0.8.1。中国版独立注册为 `qodercn`，沿用经实际发行包核对的 ACP/SDK 算法。参考：[官方 ACP](https://docs.qoder.cn/cli/acp)、[安装](https://docs.qoder.cn/cli/installation)、[模型](https://docs.qoder.cn/cli/models)。执行证据另见 [实际记录](tasks.md)。
+核验日期：2026-10-19，插件仍为 v0.8.1。中国版独立注册为 `qodercn`，沿用经实际发行包核对的 ACP/SDK 算法。参考：[官方 ACP](https://docs.qoder.cn/cli/acp)、[安装](https://docs.qoder.cn/cli/installation)、[模型](https://docs.qoder.cn/cli/models)。执行证据另见 [实际记录](../tasks.md)。
 
 ## 1. 两版身份
 

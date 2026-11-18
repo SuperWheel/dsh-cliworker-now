@@ -50,7 +50,7 @@
 
 ## 4. 文档
 
-- [x] 4.1 `doc/traecn-protocol.md` 权限表与启动参数
+- [x] 4.1 `doc/protocols/traecn-protocol.md` 权限表与启动参数
   - 同步更新 `doc/usage-details.md` 与 `doc/design.md` v0.8.9 小节。
 - [x] 4.2 README 权限说明（TRAE 第一项、仅可查看下的派遣）
 

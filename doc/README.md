@@ -31,20 +31,20 @@
 
 | 主题 | 文档 |
 | --- | --- |
-| 通信 | [原生协议总览](native-protocols.md)、[运行中发送](running-message-protocol.md) |
-| 原生会话与工具 | [完整会话界面](native-conversation-ui.md)、[宿主接口扩展](native-conversation-host-extension.md)、[Harness 工具桥](native-harness-tools.md)、[附件与 Skill/MCP 矩阵](cli-harness-capabilities.md) |
+| 通信 | [原生协议总览](native-protocols.md)、[运行中发送](protocols/running-message-protocol.md) |
+| 原生会话与工具 | [完整会话界面](native-conversation-ui.md)、[宿主接口扩展](protocols/native-conversation-host-extension.md)、[Harness 工具桥](protocols/native-harness-tools.md)、[附件与 Skill/MCP 矩阵](protocols/cli-harness-capabilities.md) |
 | 设置与角色 | [设置设计规范](settings-ui-design.md)、[角色预设](role-presets.md) |
-| 过程与遥测 | [公开过程](public-process.md)、[原生回复与上下文](native-inspection.md)、[逐轮用量](protocols/native-turn-usage.md) |
-| 数据接口核查 | [全 CLI 数据审计](cli-native-data-audit.md)、[ACP 数据接线](audits/cli-usage-audit-acp.md)、[HTTP／RPC 接线](audits/native-http-rpc-audit.md)、[原生接口补充](native-http-rpc-data-interfaces.md)、[Kimi 计费用量](kimi-durable-usage-audit.md) |
-| 原生视图对齐 | [十 CLI 对齐记录](ten-cli-native-parity.md)；标题保留当时范围，不代表当前 CLI 总数 |
+| 过程与遥测 | [公开过程](protocols/public-process.md)、[原生回复与上下文](protocols/native-inspection.md)、[逐轮用量](protocols/native-turn-usage.md) |
+| 数据接口核查 | [全 CLI 数据审计](cli-native-data-audit.md)、[ACP 数据接线](audits/cli-usage-audit-acp.md)、[HTTP／RPC 接线](audits/native-http-rpc-audit.md)、[原生接口补充](audits/native-http-rpc-data-interfaces.md)、[Kimi 计费用量](audits/kimi-durable-usage-audit.md) |
+| 原生视图对齐 | [十 CLI 对齐记录](audits/ten-cli-native-parity.md)；标题保留当时范围，不代表当前 CLI 总数 |
 | 外部经验 | [Codingns4DSH 核查](codingns-reference-audit.md) |
 | Windows | [远程测试](windows-remote-testing.md)、[ConPTY 来源核验](audits/windows-conpty-source.md) |
-| 发布 | [Release 模板](release-template.md)、[dshfind 同步](dshfind-sync.md) |
+| 发布 | [Release 模板](release-template.md) |
 
 ## 4. CLI 专项调查
 
-[Qoder](qoder-protocol.md) · [Hermes](probes/hermes-probe.md) · [Pi／OMP](pi-omp-probe.md) · [OpenCode](opencode-probe.md) · [ZCode](zcode-probe.md) · [Grok](grok-probe.md)
+[Qoder](protocols/qoder-protocol.md) · [Hermes](probes/hermes-probe.md) · [Pi／OMP](probes/pi-omp-probe.md) · [OpenCode](probes/opencode-probe.md) · [ZCode](probes/zcode-probe.md) · [Grok](probes/grok-probe.md)
 
-[旧 Harness CLI 记录](harness-probe.md)属于历史执行器；不要与 DeepSeek Harness 宿主或当前 Hermes Agent 混用。
+早期探针记录写于对应 CLI 接入之前，只作历史参考；当前行为以源码和有效规格为准。
 
 [返回项目 README](../README.md) · [进入原子笔记](knowledge/README.md)

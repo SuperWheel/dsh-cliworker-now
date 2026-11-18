@@ -3,7 +3,7 @@
 ## 1. 调查
 
 - [x] 1.1 核对各 CLI 当前原生工具、MCP、skill 的启用与隔离情况及工具桥接入状态。
-  - 2026-10-28 源码核对：工具均为 CLI 原生，DSH 以 `dsh_worker_tools` 叠加。用户自身 MCP/skill 生效：Codex（`config.toml`）、Claude（`~/.claude`，无 `--strict-mcp-config`）、Kimi、Qoder、Antigravity。被清空或隔离：OpenCode/MiMo（`mcp: {}`、外部 skills 关闭，`opencode-adapter.ts:102-124`）、Hermes（`mcp_servers: {}`、仅 terminal/file，`native-hermes-home.mjs:267-268`）、Pi/OMP（`--no-extensions --no-skills`，`pi-omp-bridge.mjs:255-268`）、ZCode 禁 `Skill`（`zcode-adapter.ts:30-48`）；Grok 用私有 `GROK_HOME`，用户自身 MCP 是否带入未核实。未接桥：OMP（安装版在 `--no-extensions` 下忽略显式扩展）、Hermes（SAFE_MODE 隔离无已核验注入入口）、ZCode（执行未准入）。`doc/native-harness-tools.md` 中 Antigravity「禁用」已过时。
+  - 2026-10-28 源码核对：工具均为 CLI 原生，DSH 以 `dsh_worker_tools` 叠加。用户自身 MCP/skill 生效：Codex（`config.toml`）、Claude（`~/.claude`，无 `--strict-mcp-config`）、Kimi、Qoder、Antigravity。被清空或隔离：OpenCode/MiMo（`mcp: {}`、外部 skills 关闭，`opencode-adapter.ts:102-124`）、Hermes（`mcp_servers: {}`、仅 terminal/file，`native-hermes-home.mjs:267-268`）、Pi/OMP（`--no-extensions --no-skills`，`pi-omp-bridge.mjs:255-268`）、ZCode 禁 `Skill`（`zcode-adapter.ts:30-48`）；Grok 用私有 `GROK_HOME`，用户自身 MCP 是否带入未核实。未接桥：OMP（安装版在 `--no-extensions` 下忽略显式扩展）、Hermes（SAFE_MODE 隔离无已核验注入入口）、ZCode（执行未准入）。`doc/protocols/native-harness-tools.md` 中 Antigravity「禁用」已过时。
 - [x] 1.2 导出 Windows 与 macOS 下子 Agent 实际 `tools.schemas()` 目录（无模型），确认能否得到来源插件，完成 DSH 工具→能力类别映射。
   - 2026-10-28 macOS（darwin arm64，Node 22.23.1）：使用 DSH Desktop 0.12.1 内置的 dsh-base 0.2.1-rc.2 包（解包 app.asar，未启动或退出 Desktop、未读用户 profile/MCP/设置），按 dsh-base `cordis.patch.yml` 与 standard preset 组装真实插件，经 `ctx.agents.create` 建父/子 Agent，`applyChildComposition` 后 `presentAs('native')`，导出 `child.ctx.tools.schemas(child)`。LLM 为调用即抛错的桩；模型、元数据、网络调用均为 0，2 次假 stdio MCP 进程均关闭。
   - 结果：基础 25 项，standard 子 Agent 31 项（working_directory、read、write、edit、read_image、glob、grep、job_output/list/kill、skill、get/create/update_goal、todo_write、exit_plan_mode、web_search、web_fetch、bash、send_message、interrupt_agent、list_agents、subagent、subagent_fork、workflow、present、ask_user_question、schedule_create/list/delete/update）；加假 MCP 后 37 项（另含 list_mcp_resources、list_mcp_resource_templates、read_mcp_resource）；可选插件 38 项（terminal_*、str_replace_editor、bash-persistent 同名 `bash`）。
@@ -62,5 +62,5 @@
 
 ## 5. 文档
 
-- [x] 5.1 README 工具桥说明、`doc/native-harness-tools.md` 接入矩阵（含 Antigravity 现状）同步；验证记录写在本文件对应任务下。
-  - README（中/英）新增「原生工具优先，DSH 工具作为备选」；`doc/native-harness-tools.md` 更新 ZCode、Antigravity 行并新增「原生工具优先」一节（映射、MCP 名称来源、逐 CLI 说明入口与图片支持）；`doc/cli-harness-capabilities.md` 修正 Antigravity/ZCode 行；`doc/design.md` 追加决策记录。
+- [x] 5.1 README 工具桥说明、`doc/protocols/native-harness-tools.md` 接入矩阵（含 Antigravity 现状）同步；验证记录写在本文件对应任务下。
+  - README（中/英）新增「原生工具优先，DSH 工具作为备选」；`doc/protocols/native-harness-tools.md` 更新 ZCode、Antigravity 行并新增「原生工具优先」一节（映射、MCP 名称来源、逐 CLI 说明入口与图片支持）；`doc/protocols/cli-harness-capabilities.md` 修正 Antigravity/ZCode 行；`doc/design.md` 追加决策记录。

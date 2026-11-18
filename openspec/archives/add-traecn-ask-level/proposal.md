@@ -44,7 +44,7 @@ v0.8.8 接入 TRAE CLI CN 时只评估了 `--permission-mode` 的四种原生模
 - Host：`src/host/native-traecn.mjs`（argv、编辑模式）、`src/host/adapters.ts`（去掉询问档报错）。
 - 共享协议：`src/shared/worker-permissions.ts`（TRAE 档位与仅可查看判断）。
 - Client：菜单文案来自共享定义，无组件改动。
-- 文档：`doc/traecn-protocol.md`、README。
+- 文档：`doc/protocols/traecn-protocol.md`、README。
 - 安装入口与持久化：无变化。
 
 ## 范围外

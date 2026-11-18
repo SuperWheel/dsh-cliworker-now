@@ -1,7 +1,7 @@
 ## 1. 调研与 OpenSpec
 
 - [x] 1.1 本机探测 CodeBuddy 2.181.0 的 ACP 握手、`session/new` 目录、配置项、模式、审批、拒绝、续聊与停止（模型 `hy4free`，临时目录）
-  - 2026-11-07 探测脚本在会话 scratchpad，结论写入 proposal 调研表与 `doc/codebuddy-protocol.md`
+  - 2026-11-07 探测脚本在会话 scratchpad，结论写入 proposal 调研表与 `doc/protocols/codebuddy-protocol.md`
 - [x] 1.2 创建 `openspec/archives/add-codebuddy-cli/`（proposal、specs、design、tasks）
 - [x] 1.3 `pnpm spec validate add-codebuddy-cli --strict` 与 `pnpm spec:check`
   - 2026-11-07 注册分工：`corepack pnpm spec validate add-codebuddy-cli --strict --no-interactive` 通过；`corepack pnpm spec:check` 的脚本内裸 `pnpm` 在当前 PATH 不存在，改用等价 `corepack pnpm spec validate --all --strict --no-interactive`，57/57 通过。未归档整个变更。
@@ -101,7 +101,7 @@
 
 ## 12. 文档
 
-- [x] 12.1 `doc/codebuddy-protocol.md`
+- [x] 12.1 `doc/protocols/codebuddy-protocol.md`
 - [x] 12.2 README、README.en、AGENTS.md、usage-details（中英）、design.md
 
 ## 共享改动（供合并处理冲突）

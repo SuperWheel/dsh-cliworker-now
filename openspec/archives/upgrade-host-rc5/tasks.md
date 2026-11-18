@@ -14,7 +14,7 @@
 
 - [x] 3.1 开发 SDK 39 个 pin 与根 workspace 300 条发布期限例外改为 rc.5，`pnpm install --ignore-scripts` 重生根锁：855 个包，第三方无增删、无版本变化。`build-dependencies.mjs`、`build-host-extension.mjs`、`vendor-host-extensions.mjs` 加入 rc.5；选图测试增加 rc.5，未验证版本拒绝改用 rc.6；runtime-host 来源断言改为 rc.5 commit 与版本。
 - [x] 3.2 `pnpm typecheck` 对 DSH 0.2.1-rc.5 通过；关联 `build-dependencies`、`host-runtime-package`、`market-install-peers`、`panel-layering`、`harness-conversation-official`、`harness-conversation`(tsx)、`panel`、`panel-native-composer` 共 8 文件 177 项通过（首次 1 项为预期的旧 rc.3 commit 断言，已改）；全量 `vitest run --maxWorkers=2` 248 个文件通过、4 个跳过，5283 项通过、14 项跳过、0 失败；`pnpm build:preview` 成功，预览包四包均为 0.2.1-rc.5，`ui-chat` 含 `<signature>` 处理，任务选项菜单层级为 100。
-- [x] 3.3 文档：README（中英）宿主说明、`doc/native-conversation-host-extension.md`、`host-extensions/dsh-0.2.1-rc.5/README.md`、`doc/design.md` 已更新。
+- [x] 3.3 文档：README（中英）宿主说明、`doc/protocols/native-conversation-host-extension.md`、`host-extensions/dsh-0.2.1-rc.5/README.md`、`doc/design.md` 已更新。
 
 ## 4. 安装与界面
 

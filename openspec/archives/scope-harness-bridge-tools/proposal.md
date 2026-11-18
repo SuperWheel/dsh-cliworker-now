@@ -9,7 +9,7 @@ DSH 工具桥把当前子 Agent 获准的 host 工具（DSH 内置 read/write/ed
 - Codex MCP 注入未设置 `tool_timeout_sec`，宿主审批等待或长工具可能先超出 Codex 的 MCP 调用时限（默认值来自官方文档，未在本机核实）。
 - 工具桥对非文本结果整体标为错误（`native-harness-tools.ts:83`）。
 - ZCode 不在 execution-ready 列表（`native-harness-injection.mjs:7`），目录仍注入但 `tools/call` 被拒（`native-harness-tools.ts:183-184`）。
-- `doc/native-harness-tools.md` 仍写 Antigravity「禁用」，而源码已接入（`native-harness-injection.mjs:7`、`native-agy-harness.mjs`），文档过时。
+- `doc/protocols/native-harness-tools.md` 仍写 Antigravity「禁用」，而源码已接入（`native-harness-injection.mjs:7`、`native-agy-harness.mjs`），文档过时。
 
 ## What Changes
 
@@ -20,7 +20,7 @@ DSH 工具桥把当前子 Agent 获准的 host 工具（DSH 内置 read/write/ed
 - Codex MCP 注入设置与宿主审批等待相匹配的 `tool_timeout_sec`。
 - 未接通执行的 CLI 不注入工具目录（ZCode 等），任务记录说明原因。
 - 非文本结果按 CLI 原生支持的内容类型传递；不支持时在目录阶段排除。
-- 同步 `doc/native-harness-tools.md` 的接入矩阵（Antigravity 等）。
+- 同步 `doc/protocols/native-harness-tools.md` 的接入矩阵（Antigravity 等）。
 
 范围外：不改变宿主权限与审批链；隔离副本任务仍不接入工具桥；是否重新启用插件关闭的 CLI 原生功能另见后续变更。
 

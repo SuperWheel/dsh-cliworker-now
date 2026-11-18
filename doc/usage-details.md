@@ -52,7 +52,7 @@
 
 v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
 
-v0.8.1 新增 **Qoder**，通过官方 `qoder --acp` 接入同一原生侧栏，模型和思考强度读取其结构化目录并在发送前确认。当前协议仅开放“允许编辑”，未宣告只读规划模式；规划任务会在发送前拒绝。Qoder 按积分计费，输入框底部与回复功能条均显示对应本轮积分，详情标题为「积分用量」；积分缺失时保持未知，不在该模块混入 Token 单位。回复用量的提供方／模型按该轮已确认来源显示为 `CLI/提供方/模型`，例如 `omp/zhipu-coding-plan/glm-5.3-flash`；提供方未公开时明确标为未公开，不展示内部 Worker 路由。所属原生会话若提供上下文比例，则独立展示该比例。同轮原生运行配置或日志能核实实际窗口时，补充容量及带估算标记的占用数量，否则数量和容量仍为未知。积分按本轮原生请求去重，不从积分反推 token；缓存和分类没有来源时仍保持未知。Windows 兼容原生 Administrators 所有权和继承只读 ACL，仍拒绝不可信写权限，不修改用户文件权限。轮次和步骤表示宿主子会话记录，不等于 Qoder 内部请求次数。协议及探针范围见 [Qoder 原生协议核验](qoder-protocol.md)。
+v0.8.1 新增 **Qoder**，通过官方 `qoder --acp` 接入同一原生侧栏，模型和思考强度读取其结构化目录并在发送前确认。当前协议仅开放“允许编辑”，未宣告只读规划模式；规划任务会在发送前拒绝。Qoder 按积分计费，输入框底部与回复功能条均显示对应本轮积分，详情标题为「积分用量」；积分缺失时保持未知，不在该模块混入 Token 单位。回复用量的提供方／模型按该轮已确认来源显示为 `CLI/提供方/模型`，例如 `omp/zhipu-coding-plan/glm-5.3-flash`；提供方未公开时明确标为未公开，不展示内部 Worker 路由。所属原生会话若提供上下文比例，则独立展示该比例。同轮原生运行配置或日志能核实实际窗口时，补充容量及带估算标记的占用数量，否则数量和容量仍为未知。积分按本轮原生请求去重，不从积分反推 token；缓存和分类没有来源时仍保持未知。Windows 兼容原生 Administrators 所有权和继承只读 ACL，仍拒绝不可信写权限，不修改用户文件权限。轮次和步骤表示宿主子会话记录，不等于 Qoder 内部请求次数。协议及探针范围见 [Qoder 原生协议核验](protocols/qoder-protocol.md)。
 
 MiMo 指 [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code)。Hermes Agent 替代的是旧的外部 Harness CLI 入口，**DeepSeek Harness 宿主仍是插件的运行基础**。
 
@@ -70,7 +70,7 @@ Windows 的 Antigravity 后台模型查询及任务使用官方环境开关关�
 
 成功且进程退出已确认的扩展 CLI 模型查询会自动删除本次临时目录和原生解压缓存；失败或清理未确认时保留现场，不删除原始账号文件。
 
-专项记录：[ZCode](zcode-probe.md) · [Grok](grok-probe.md) · [Pi / OMP](pi-omp-probe.md) · [Hermes](probes/hermes-probe.md) · [OpenCode](opencode-probe.md) · [Qoder](qoder-protocol.md) · [Qoder CN](qodercn-protocol.md) · [CodeBuddy](codebuddy-protocol.md)
+专项记录：[ZCode](probes/zcode-probe.md) · [Grok](probes/grok-probe.md) · [Pi / OMP](probes/pi-omp-probe.md) · [Hermes](probes/hermes-probe.md) · [OpenCode](probes/opencode-probe.md) · [Qoder](protocols/qoder-protocol.md) · [Qoder CN](protocols/qodercn-protocol.md) · [CodeBuddy](protocols/codebuddy-protocol.md)
 
 ### TRAE CN 安装与登录
 
@@ -100,13 +100,13 @@ sh -c "$(curl -fsSL https://trae.cn/trae-cli/install_v2.sh)"
 
 **模型。** 先确认登录，再读取 `traecli models --json`；执行 ID 为 `config_name`，显示名为 `name`。0.213.1 前置实测为 18 项，数量随原生目录变化，不固定模型列表。未登录时的 `[]` 报未登录，已登录空列表报「当前账号暂无可确认模型」。执行前通过 ACP `model` 配置项选择并核对回执；模型不在本次会话目录即要求重新选型，不改用默认模型。ACP 没有公开可核实的强度选项，不提供强度选择。
 
-**权限与规划。** 菜单有「询问」「仅工作区编辑」「完全权限」三档（v0.8.9 起）。询问以 TRAE 原生只读沙箱启动（`-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user"`），需要改动时由 TRAE 发起审批并转 DSH，拒绝即不执行；2026-11-11 用 Seed-Code（Doubao-Seed-Code）在 macOS 与 Windows Desktop 实测：写文件先发审批，拒绝后不写入，允许后写入；macOS 上 `ls` 不询问。Windows 上 TRAE 原生只读沙箱对 PowerShell 只读命令也会请求审批；拒绝后若本轮此前已有工具失败，该轮显示为运行失败（被拒操作同样未执行）。glm-5.3-flash 当时被 TRAE 服务端以 400 拒绝，未用于验收。见 [TRAE 协议说明](traecn-protocol.md)。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时按询问档运行。
+**权限与规划。** 菜单有「询问」「仅工作区编辑」「完全权限」三档（v0.8.9 起）。询问以 TRAE 原生只读沙箱启动（`-c sandbox_mode="read-only" -c approval_policy="on-request" -c approvals_reviewer="user"`），需要改动时由 TRAE 发起审批并转 DSH，拒绝即不执行；2026-11-11 用 Seed-Code（Doubao-Seed-Code）在 macOS 与 Windows Desktop 实测：写文件先发审批，拒绝后不写入，允许后写入；macOS 上 `ls` 不询问。Windows 上 TRAE 原生只读沙箱对 PowerShell 只读命令也会请求审批；拒绝后若本轮此前已有工具失败，该轮显示为运行失败（被拒操作同样未执行）。glm-5.3-flash 当时被 TRAE 服务端以 400 拒绝，未用于验收。见 [TRAE 协议说明](protocols/traecn-protocol.md)。仅工作区编辑映射原生 `default`：TRAE 自动批准工作区内读写和命令，实测也放行 `/tmp`，其他工作区外授权请求转 DSH；这不是操作系统沙箱。完全权限映射 `bypass_permissions`，模式不可用时只允许回退 `default` 并说明本轮按仅工作区编辑运行。原生 `auto` 会交由 TRAE 审查子 Agent 代批，插件不使用。Worker 未保存档位而主对话为「仅可查看」时按询问档运行。
 
 规划模式以 `default` 启动，通过 ACP `mode=plan` 切换，确认 `plan` 后才发送任务，授权请求直接拒绝；不能把 `--permission-mode plan` 当启动参数。运行时模式回读不符会停止本轮。DSH 审批仅有「允许一次／拒绝」，不提供会话级授权。拒绝后 TRAE 若以 `cancelled` 结束且用户未主动停止，显示「因拒绝审批而结束：被拒操作未执行，可续聊继续」；主动停止仍按停止处理，确认进程范围退出才报告成功。
 
 **会话与能力边界。** `traecn-acp-v1` 续聊用原生 `session/load`，历史重放不进入新一轮正文；恢复失败报错，不新建会话。支持从最新完成轮原生分支，不支持较早轮次分支。原生子 Agent、记忆、skills 与联网沿用用户设置，附件按 ACP 能力传递。DSH 工具桥本期不提供：ACP 只声明 HTTP MCP，`_meta.trae.options.mcpServers` 的值为已配置服务名且有替换语义，未经核实的注入可能覆盖用户 MCP。运行中引导（steering）虽有能力声明，尚未实测，不提供此入口；运行中发送的消息按原生 Inbox 排队。
 
-2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](traecn-protocol.md) 和 [本次接入任务](../openspec/archives/add-traecn-cli/tasks.md)。
+2026-11-07 的 macOS / 0.213.1 前置探测已记录 `glm-5.3-flash` 的文件读写、命令、历史恢复、取消与分支；这不等于插件或 Desktop 已验收。Windows、企业 SSO/PAT 完整流程、其他模型、工具桥、运行中引导及 Desktop 图标明暗仍未验证。用量只采信本轮 `end_turn` 的有效 `usage`，取消的全零回执保持未知；上下文取同一回执的 `contextWindow.used/size`，不从累计量推算；TRAE CN 没有原生分类来源（无 `/context`），系统提示词、工具定义、对话消息三行保持 `—`。协议字段与逐项边界见 [TRAE 原生协议](protocols/traecn-protocol.md) 和 [本次接入任务](../openspec/archives/add-traecn-cli/tasks.md)。
 
 ### Qoder 安装与登录
 
@@ -126,9 +126,9 @@ irm https://qoder.com/install.ps1 | iex
 
 Qoder 中国版使用独立入口 **Qoder CN**（`cli=qodercn`），默认用户目录 `~/.qoder-cn`、登录变量 `QODERCN_PERSONAL_ACCESS_TOKEN`，不读取国际版账号或偏好。安装与原生登录命令见 [中国版官方说明](https://docs.qoder.cn/cli/installation)，npm 兼容包为 `@qodercn-ai/qoderclicn`。Windows 自动识别 `~/.qoder-cn/bin/qoderclicn/qoderclicn.exe`，并核验同品牌 npm 入口；无需借用国际版路径。两版模型和强度均动态读取，不能照搬对方档位。用户泛称“调用 Qoder”时，仅安装一版则使用该版；两版均安装时，插件先弹原生询问框选择 Qoder 或 Qoder CN，再进入模型选型。明确说“Qoder 国际版”或“Qoder 中国版 / qodercn”时固定对应版本。旧会话保持原品牌，不自动迁移。
 
-Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用户 bin/npm/Bun/Scoop/pnpm 目录，并在进程 PATH 缺失后读取最新用户和机器 PATH。专属目录、npm 包名和原生程序身份仍按 CLI 声明核验；自定义便携位置既未加入 PATH 又无安装登记时仍需设置路径。不扫描任意磁盘、不猜最新版本、不执行桌面 GUI。详见 [中国版协议与隔离](qodercn-protocol.md)。
+Windows 各 CLI 共用有界路径发现：显式路径优先，复用常见用户 bin/npm/Bun/Scoop/pnpm 目录，并在进程 PATH 缺失后读取最新用户和机器 PATH。专属目录、npm 包名和原生程序身份仍按 CLI 声明核验；自定义便携位置既未加入 PATH 又无安装登记时仍需设置路径。不扫描任意磁盘、不猜最新版本、不执行桌面 GUI。详见 [中国版协议与隔离](protocols/qodercn-protocol.md)。
 
-在插件“CLI 连接”选择 Qoder、刷新模型并明确选型后再派遣。初始化握手、登录状态和模型目录是独立检查；握手成功不代表模型调用已通过。账号来源及真实验收限制见 [协议核验](qoder-protocol.md) 与 [实际验证记录](tasks.md)。
+在插件“CLI 连接”选择 Qoder、刷新模型并明确选型后再派遣。初始化握手、登录状态和模型目录是独立检查；握手成功不代表模型调用已通过。账号来源及真实验收限制见 [协议核验](protocols/qoder-protocol.md) 与 [实际验证记录](tasks.md)。
 
 Windows 会自动检查官方原生 `~/.qoder/bin/qodercli/qodercli.exe` 和当前用户 npm 安装入口，即使 Desktop 尚未继承安装后的 PATH。PATH 发现优先采用独立 `qodercli`，缺失时兼容旧 `qoder` CLI 别名；npm 入口按官方包声明静态核验。已有手动路径继续优先，损坏或权限不足时保留错误，可在高级设置检查路径。
 
@@ -240,7 +240,7 @@ v0.8.1 原生会话候选的最新协议和数据覆盖见 [全 CLI 复查](cli-
 
 ## 6. 使用方法
 
-CLI 返回公开思考时，生成中可查看原生摘要预览，结束后展开“已完成，用时…”的原生过程，再点击其中的“思考记录”查看各段内容；关闭重开仍保留。全部 13 种 CLI 使用同一入口，实际内容取决于原生协议和模型是否返回。Codex 新轮会请求公开摘要，已返回的公开增量实时进入原生过程，停止或失败后保留已公开内容；旧轮没有摘要时不会补造。详见 [公开过程说明](public-process.md)。
+CLI 返回公开思考时，生成中可查看原生摘要预览，结束后展开“已完成，用时…”的原生过程，再点击其中的“思考记录”查看各段内容；关闭重开仍保留。全部 13 种 CLI 使用同一入口，实际内容取决于原生协议和模型是否返回。Codex 新轮会请求公开摘要，已返回的公开增量实时进入原生过程，停止或失败后保留已公开内容；旧轮没有摘要时不会补造。详见 [公开过程说明](protocols/public-process.md)。
 
 ### 6.1 首次派遣
 
@@ -352,7 +352,7 @@ flowchart LR
 - v0.8.1 发送、排队、编辑/移除、菜单和快捷键直接使用原生 Session/Inbox。发送结果尚未确认时先核对记录，不自动重发；旧兼容队列不自动导入原生队列。
 - 子对话使用与 Harness 主聊天一致的返回最新圆形按钮和历史功能条淡入淡出；最新消息功能条保持可见，历史条在悬停或键盘聚焦时出现。
 - 子对话输入框按 Enter 发送、Shift+Enter 换行，支持 Ctrl/Cmd+Enter，中文输入法确认不会误发送。
-- 以下自定义运行中发送规则仅用于旧 Worker 兼容路径，v0.8.1 原生子会话使用 DSH Inbox 规则。高级设置的「运行中发送」可选择「引导、插队、排队」：引导交给 CLI 在当前运行中处理；插队先停止当前轮，确认进程退出后优先发送；排队在当前轮正常完成后依次续聊。Codex、Hermes、Pi、OMP 的已接通原生通路默认引导，其余默认排队。旧通路保留原会话，未接通引导时在该对话显示原因。偏好按项目与 CLI 保存，本次按能力一次性更新现有项目的发送方式，后续手动选择继续保留。引导使用独立的当前运行输入通路，不进入排队、不受暂停队列影响；当前轮未就绪或已结束时保留输入并说明原因，不等下一轮自动发送。接收回执不代表模型已执行，能力与限制见 [原生引导说明](running-message-protocol.md)。
+- 以下自定义运行中发送规则仅用于旧 Worker 兼容路径，v0.8.1 原生子会话使用 DSH Inbox 规则。高级设置的「运行中发送」可选择「引导、插队、排队」：引导交给 CLI 在当前运行中处理；插队先停止当前轮，确认进程退出后优先发送；排队在当前轮正常完成后依次续聊。Codex、Hermes、Pi、OMP 的已接通原生通路默认引导，其余默认排队。旧通路保留原会话，未接通引导时在该对话显示原因。偏好按项目与 CLI 保存，本次按能力一次性更新现有项目的发送方式，后续手动选择继续保留。引导使用独立的当前运行输入通路，不进入排队、不受暂停队列影响；当前轮未就绪或已结束时保留输入并说明原因，不等下一轮自动发送。接收回执不代表模型已执行，能力与限制见 [原生引导说明](protocols/running-message-protocol.md)。
 - 历史兼容路径中，点击发送时立即固定消息编号、方式及显示位置。刚提交、准备和停止清理都占用会话，连续发送不会因「已完成」旧状态把排队消息误显示成气泡；排队消息实际启动后才转换一次。卡片插队立即显示同一条用户消息并平滑退出，连续插队只启动最新的未执行请求，已开始的请求先完成停止清理；旧气泡保留，不附加例行取消文字。真实失败和结果不明保留核查入口，迟到回执不能恢复旧卡片。
 - 历史兼容路径的待发送区可以折叠并保留数量，切换或关闭侧栏不改变消息顺序。主动停止、失败和结果不明会暂停关联未发送消息；Host 重启恢复内容并暂停自动执行。停止后明确开始的新一轮及其新增队列可以继续，旧暂停卡片仍需点击「继续发送」。发送方式变更只影响后续提交；存在待发送卡片（包括暂停项）时，模型与强度需先发送或取消这些卡片才能修改，避免改变旧消息选型。用户气泡只按正文计算宽度，时间、复制和反馈独立布局，正文空格与换行保持不变。
 - 本轮结束后，也可在主对话中说：**“让代码审查员继续检查测试覆盖。”**
@@ -377,7 +377,7 @@ CLI 模型只在对应子对话的模型菜单中选择；主对话模型目录�
 
 权限控件将 CLI 的“规划”和“允许编辑”分别映射到原生只读、工作区可写预设，保存与执行仍使用该 CLI 的实际模式；不因此增加全访问或自动批准能力。
 
-「工作过程」也会显示受支持 CLI 明确公开的思考摘要与计划，详见 [公开过程支持范围](public-process.md)。未返回公开摘要时保留已有真实过程，不提取隐藏思考或用生成内容填充。
+「工作过程」也会显示受支持 CLI 明确公开的思考摘要与计划，详见 [公开过程支持范围](protocols/public-process.md)。未返回公开摘要时保留已有真实过程，不提取隐藏思考或用生成内容填充。
 
 回复按原生消息边界连续显示，过程展开跟随 Harness 的工作详情设置，保留思考、工具调用和正文的实际顺序。工具参数、结果及明确公开的父子调用按原生记录展示；既有 OpenCode 单条回复被拆碎的记录，可在证据完整时只读恢复。
 
@@ -385,7 +385,7 @@ CLI 模型只在对应子对话的模型菜单中选择；主对话模型目录�
 
 输入框下的 ContextMeter、StatsPills 及弹层使用真正的 Harness 原生组件。当前窗口、容量、Token 用量和分类分别来自匹配 Worker 的可核查数据。AGY 的 CLI 总量是未缓存输入加输出，不含缓存读取；原生用量弹层按四个独立计费分项汇总，因此会把缓存读取一并计入，并据此显示缓存命中率。已核验的 AGY 输出协议没有独立缓存写入类别，该分项按零规范化。
 
-AGY 上下文来自该 CLI 会话本地原生元数据中的最近一次请求估算与窗口容量。缺失指标按原生规则处理，不以零代替未知值，不拿累计 Token 充当上下文，也不借用父会话或 DSH 显示投影的估算。逐项能力与限制见 [原生界面说明](native-conversation-ui.md) 和 [原生回复与上下文说明](native-inspection.md)。
+AGY 上下文来自该 CLI 会话本地原生元数据中的最近一次请求估算与窗口容量。缺失指标按原生规则处理，不以零代替未知值，不拿累计 Token 充当上下文，也不借用父会话或 DSH 显示投影的估算。逐项能力与限制见 [原生界面说明](native-conversation-ui.md) 和 [原生回复与上下文说明](protocols/native-inspection.md)。
 
 内置角色：**商业审稿人、逻辑审校员、文风审校员、正文修订师、剧情节点设计师、剧情结构规划师、小说主笔**。更多说明见 [默认角色预设](role-presets.md)。
 
@@ -465,7 +465,7 @@ Desktop 不会读取你的 `.zshrc`。插件会识别部分常见安装位置；
 
 v0.8.1 的当前迁移方案在右侧 CLI Worker 栏运行官方完整 `sidebar.chat.conversation` 视图及其状态逻辑，保留原父级管理页。打开 Worker 不切换主页面。顶部按最新截图保持原 CLI Worker 的返回、Worker 标题和任务操作，不加入父会话面包屑、对话/轨迹页签及主页面页头按钮。子 Agent 关联主对话，按原生 subagent 规则排除在普通会话列表之外；CLI Worker 保留任务管理与只读旧历史。CLI 保留自己的 Agent、账号、模型和通信协议，Harness child ID 与 CLI 会话 ID 独立保存。原生发送、排队编辑/删除和停止由 DSH Session/Inbox 处理，Host 桥接 CLI 执行；官方入口统一管理消息、输入、队列及运行状态，保留原 keyboard、Store 和所有权。
 
-模型/强度与权限/规划使用真实原生控件，公开数据及保存回调连接当前 CLI。运行、消息准入、清理期间，以及存在任何原生待发消息或历史兼容队列项（含暂停项）时均锁定设置。经用户授权并随包交付的四包宿主扩展提供主对话按钮呈现和会话作用域统计来源；源码与回退见 [宿主扩展说明](native-conversation-host-extension.md)。原生 ContextMeter/StatsPills 接匹配 Worker 的可核查遥测；首轮尚无数据时保留三个原生模块，以“—”和详情说明等待或缺失原因，不补零、不把 DSH 显示估算或累计 Token 当成 CLI 上下文。Hermes 公开请求/错误状态独立于消息流刷新；收到的公开思考和工具开始状态进入原生过程展示，不生成 CLI 未返回的内容。附件按各 CLI 原生协议适配，旧协议及分支限制有具体说明，指令菜单中可用部分保留；这些适配只作用于精确绑定的 CLI 子会话。
+模型/强度与权限/规划使用真实原生控件，公开数据及保存回调连接当前 CLI。运行、消息准入、清理期间，以及存在任何原生待发消息或历史兼容队列项（含暂停项）时均锁定设置。经用户授权并随包交付的四包宿主扩展提供主对话按钮呈现和会话作用域统计来源；源码与回退见 [宿主扩展说明](protocols/native-conversation-host-extension.md)。原生 ContextMeter/StatsPills 接匹配 Worker 的可核查遥测；首轮尚无数据时保留三个原生模块，以“—”和详情说明等待或缺失原因，不补零、不把 DSH 显示估算或累计 Token 当成 CLI 上下文。Hermes 公开请求/错误状态独立于消息流刷新；收到的公开思考和工具开始状态进入原生过程展示，不生成 CLI 未返回的内容。附件按各 CLI 原生协议适配，旧协议及分支限制有具体说明，指令菜单中可用部分保留；这些适配只作用于精确绑定的 CLI 子会话。
 
 [十一 CLI 数据接口矩阵](cli-native-data-audit.md) 区分每次模型响应、整轮运行、会话累计与当前上下文。本轮候选补充 Kimi 当前会话的持久用量回执、Hermes 原进程的官方请求观察、OMP 原生上下文分类和明确额外账单字段，以及 OpenCode 原生会话统计。OMP 当前保留记录不冒称完整历史，OpenCode 新快照允许下降或清零；只有完整回执才提供整轮统计，缺失缓存或分类不补零。统计范围与估算标记保留，来源和 OMP 额外分类仅在底层留存用于核验。上下文底部、详情和图形共用原生精度逻辑，低于 1% 的已知占用不再取整成 0%；弹层只保留占比、进度条与系统提示词／工具定义／对话消息三行，缺项显示 —，保留估算标记，所有 CLI 均不附加缺失说明或额外分类行，弹层末尾保持正常内边距。Hermes 新请求按实际请求使用其原生估算器补充分类；旧记录没有采集的分类不倒推补造。
 
@@ -475,9 +475,9 @@ Pi、MiMo 和 OpenCode 的新请求现可采集实际请求组成，并按各自
 
 next-step 消息按实际 CLI 通路分流：已接通且就绪的当前运行 steer 使用真实 CLI 接收回执；未接通该通路时，消息在当前完整 CLI run 结束清理后的下一执行步骤接收，不停止重启、不声称实时注入。拒绝或接收状态不明不自动降级或重发。当前已接通 Codex app-server、Hermes HTTP、Pi RPC 和 OMP RPC 的原生引导，并通过模拟协议与真实 DSH Inbox 回归；这不代表本轮已逐一完成真实账号或模型验收。每条原生请求身份及接收状态持久保存，旧 Worker 队列不自动迁入或执行。
 
-DSH skill、已配置 MCP 和普通工具来自当前子 Agent 的实际授权目录，每次调用重核并经过真实权限链；额外 DSH 模型请求明确拒绝，普通主对话模型保持原行为。此前局部 content 嵌入、内部输入代理及主页面打开方案均被当前侧栏方案替代，历史记录保留。实际侧栏、设置、统计和 steer 验收以 [实施记录](tasks.md) 为准，详见 [原生界面说明](native-conversation-ui.md) 和 [工具桥支持范围](native-harness-tools.md)。
+DSH skill、已配置 MCP 和普通工具来自当前子 Agent 的实际授权目录，每次调用重核并经过真实权限链；额外 DSH 模型请求明确拒绝，普通主对话模型保持原行为。此前局部 content 嵌入、内部输入代理及主页面打开方案均被当前侧栏方案替代，历史记录保留。实际侧栏、设置、统计和 steer 验收以 [实施记录](tasks.md) 为准，详见 [原生界面说明](native-conversation-ui.md) 和 [工具桥支持范围](protocols/native-harness-tools.md)。
 
-原生 CLI 会话加号菜单与原生菜单一致，分“添加”“指令”两段并沿用原生图标与名称：“添加”含文件、图片、目标、计划、反馈，“指令”含权限、模型、分支；输入关键字时按原生规则排序。其中“文件”和“图片”：macOS / Windows Desktop 文件沿用原生本地引用，图片沿用 Harness 上传；已经准入的原生附件按 CLI 协议转换为图片块、资源链接或可读取路径。重试校验包含附件身份，运行中附件保留原生队列。Skill/MCP 继续复用真实子 Agent 的工具桥，ACP 仅准入精确的本轮桥工具。各 CLI 的接入、限制和平台证据见 [附件、Skill 与 MCP 能力矩阵](cli-harness-capabilities.md)。
+原生 CLI 会话加号菜单与原生菜单一致，分“添加”“指令”两段并沿用原生图标与名称：“添加”含文件、图片、目标、计划、反馈，“指令”含权限、模型、分支；输入关键字时按原生规则排序。其中“文件”和“图片”：macOS / Windows Desktop 文件沿用原生本地引用，图片沿用 Harness 上传；已经准入的原生附件按 CLI 协议转换为图片块、资源链接或可读取路径。重试校验包含附件身份，运行中附件保留原生队列。Skill/MCP 继续复用真实子 Agent 的工具桥，ACP 仅准入精确的本轮桥工具。各 CLI 的接入、限制和平台证据见 [附件、Skill 与 MCP 能力矩阵](protocols/cli-harness-capabilities.md)。
 
 AGY 续聊若本轮已完整返回但最终汇总为 ERROR，会在证据充分时显示「结果待核实」，保留本轮回复和原始错误；这不代表任务成功或已证实错误来自历史。请先核查实际结果，避免重复写入。宿主后台任务仅有成功/失败/中断三类，其外层仍显示失败，但详情及回传结果会明确区分 `uncertain`。真实本轮错误、非零退出、部分输出和取消仍保留失败或中断状态。
 

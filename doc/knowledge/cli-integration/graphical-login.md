@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 单账号原生 CLI | 已登录先显示当前账号卡片；明确点击「切换账号」后退出，再进入向导 | `src/shared/account-links.ts` 的 `SINGLE_ACCOUNT_CLIS`；`src/client/account-terminal.tsx` 的 `holding`、`switchAccount`；`src/client/account-login/login-window.tsx` 的 `CurrentAccount` |
 | 多服务商/多凭据 CLI | 「账号」窗口列出真实 `logins`，逐项退出，添加账号时选择服务商；有多个来源时按来源分组 | `MULTI_ACCOUNT_CLIS`；`src/client/account-login/accounts-window.tsx`；`src/shared/accounts.ts` 的 `AccountLogin`、`AccountProvider` |
-| 单账号、多登录方式/站点 | 仍为单账号；选择器只是决定本次原生登录路径，不意味着可同时持有多个账号 | `src/host/account-guide/providers.ts` 的 TRAE 表与 `src/host/traecn-accounts.ts` 的 `traecnAccountArguments`；CodeBuddy 参见 `src/host/codebuddy-account.ts` 与 `doc/codebuddy-protocol.md` |
+| 单账号、多登录方式/站点 | 仍为单账号；选择器只是决定本次原生登录路径，不意味着可同时持有多个账号 | `src/host/account-guide/providers.ts` 的 TRAE 表与 `src/host/traecn-accounts.ts` 的 `traecnAccountArguments`；CodeBuddy 参见 `src/host/codebuddy-account.ts` 与 `doc/protocols/codebuddy-protocol.md` |
 | 桌面端托管账号 | 用户在对应桌面应用登录/退出，插件显示指引和原生状态；图形页需单独的无 PTY 观察分支 | `src/host/accounts.ts` 声明 `target: desktop`，仍拒绝旧 `start`；`workbuddy-desktop.ts` 独立观察，`workbuddy-desktop-open.ts` 核实后打开。实现与边界见第 8 节 |
 
 分类表不能代替接线检查：当前 `GUIDED_ACCOUNT_CLIS` 包括 Antigravity、Codex、Claude、Qoder 两版、Grok、ZCode、MiMo、CodeBuddy 与 TRAE CN；后两者保持单账号，其中 CodeBuddy 按 C1–C6 实采标记引导，未知画面与企业/iOA 保持原生；有效账号退出/重登仍待验收。ZCode 在多账号集合中按其分组退出语义展示，不能机械要求两集合互斥。多账号 flow 只在指定 provider 或单项 login 时启用；`manage` 保留原生终端。证据：`src/shared/account-links.ts`、`src/host/account-guide/flows.ts`。
@@ -78,7 +78,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 现有 flow 注释记录了隔离 HOME、200 × 60、未提交授权的屏幕来源；`multi-account.ts`、`kimi-flow.ts`、`omp-flow.ts` 另有明确使用模拟凭据的历史记录。它们是采集方法的依据，不是新 CLI 已采集的证据。新采集按下面的检查顺序执行，并将版本、平台、argv、尺寸、所见步骤及缺口写进对应 change 的 `tasks.md`。
 
 1. **先静态核对入口。** 查本仓库协议文档、账号模块、安装解析与 argv。只启动已识别的安装版，不探测用户 token、认证文件正文或完整环境。CodeBuddy 只允许既有安全投影的 `auth.domain`，不输出设置 JSON；TRAE 的专用状态命令见 `traecn-accounts.ts`。
-2. **准备专用空目录与子进程环境。** 临时采集根/工作目录不在用户项目中；POSIX 私有目录 0700、文件 0600。在子进程 env 中设置隔离 HOME，并核对 CLI 自身目录覆盖变量；Windows 同时核对 `USERPROFILE`、`APPDATA`、`LOCALAPPDATA`。TRAE 要隔离 `TRAE_HOME`，CodeBuddy 认证按 HOME/LOCALAPPDATA 定位，不能只改 `CODEBUDDY_CONFIG_DIR`。不修改宿主 HOME 或用户配置。依据：`codebuddyAuthDirectory`、`traecnEnvironment`、`doc/codebuddy-protocol.md`、`doc/traecn-protocol.md` 与 `AGENTS.md`。
+2. **准备专用空目录与子进程环境。** 临时采集根/工作目录不在用户项目中；POSIX 私有目录 0700、文件 0600。在子进程 env 中设置隔离 HOME，并核对 CLI 自身目录覆盖变量；Windows 同时核对 `USERPROFILE`、`APPDATA`、`LOCALAPPDATA`。TRAE 要隔离 `TRAE_HOME`，CodeBuddy 认证按 HOME/LOCALAPPDATA 定位，不能只改 `CODEBUDDY_CONFIG_DIR`。不修改宿主 HOME 或用户配置。依据：`codebuddyAuthDirectory`、`traecnEnvironment`、`doc/protocols/codebuddy-protocol.md`、`doc/protocols/traecn-protocol.md` 与 `AGENTS.md`。
 3. **禁止沿用真实授权。** 采集子进程不继承登录令牌或指向用户认证目录的覆盖项，不复制用户凭据，不访问钥匙串。HOME 隔离本身不能保证 CLI 不查系统凭据；无法证明隔离时停在该屏并记缺口。模拟状态只在单独标注的测试中使用，不能伪装成真实授权后的画面。
 4. **录屏幕，不提交账号或模型请求。** 从首次启动画面开始，保留分帧 VT 输出与最终可见画面对应关系。菜单导航只限已确认无授权提交的路径；碰到信任、条款、密码/PAT、浏览器确认、设备码授权即停，不代同意、不填值、不发送 prompt。若某后续屏必须经过这些动作才能出现，记为未采集，留到另行授权的验收会话，不能猜 marker。
 5. **记录足以重现识别的结构。** 标题、稳定提示、各选项与高亮位置、完整行尾、清屏/重绘、软折行/OSC 链接、bracketed paste、取消和静止行为都要记录；链接只公开域名和脱敏结构，nonce/state、设备码、回调码用模拟值替换。真实原始输出留在私有临时目录，不进入 Git、Worker 事件或报告。

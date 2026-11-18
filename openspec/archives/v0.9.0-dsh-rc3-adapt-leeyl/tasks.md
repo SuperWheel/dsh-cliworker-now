@@ -41,7 +41,7 @@
 - [x] 3.3 隔离预览包
   - `corepack pnpm build:preview` 退出 0，预览包内四个 runtime-host 均为 0.2.2-rc.3。在 `.cache/preview-package` `pnpm pack` 得到 1142 个文件的 tgz，SHA256 `d17ec2b5ac7d150acfce3e43cc2e8655249462af96cd17e8e1bfd2b202e4ffb4`（tgz 放在会话临时目录，未入库）。
 - [x] 3.4 文档
-  - README 中英文宿主版本行改为 0.2.2-rc.3，验证范围指向本变更；`doc/design.md` 新增 2026-11-14 一节；`doc/native-conversation-host-extension.md` 开头加 rc.3 说明；`runtime-host/README.md` 由 vendor 脚本更新为 rc.3；`host-extensions/dsh-0.2.2-rc.3/README.md` 记录重建过程。AGENTS.md 只有历史发布描述，未改。
+  - README 中英文宿主版本行改为 0.2.2-rc.3，验证范围指向本变更；`doc/design.md` 新增 2026-11-14 一节；`doc/protocols/native-conversation-host-extension.md` 开头加 rc.3 说明；`runtime-host/README.md` 由 vendor 脚本更新为 rc.3；`host-extensions/dsh-0.2.2-rc.3/README.md` 记录重建过程。AGENTS.md 只有历史发布描述，未改。
 
 ## 4. 实机验收 〔测试｜1h｜前置 3〕
 
