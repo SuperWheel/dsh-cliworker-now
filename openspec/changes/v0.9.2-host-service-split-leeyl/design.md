@@ -30,6 +30,217 @@
 
 拆分前后各跑一次 `pnpm build:preview`，对比 `lib/typert.remote-client.d.ts` 与 `lib/` 文件清单；新增文件只能是新领域模块的编译产物。
 
+### 决定 5：领域划分与上下文对象
+
+基准提交 `086b865` 的 TypeScript 语法树有 **80 个**带 Remote 装饰器的方法（其中 6 个流方法），另有 48 个内部方法和 1 个构造函数。原估算 74 漏计了流方法。保留所有 80 个门面的源码签名、JSDoc、装饰器及调用方式。
+
+每个 Cordis 服务实例拥有一个 ServiceContext。它持有 Cordis Context、原有字段及实例级辅助操作；原生会话桥经门面回调使用原有 Remote 调用链。领域函数显式接收该实例。构造阶段按源顺序初始化，连续的会话桥安装代码在原位置调用；订阅与释放继续由原有 Cordis scope 管理。实例之间不共享可变状态。
+
+八个提交领域中，账号域分开管理连接缓存和账号会话；模型域分开目录与权限；消息域把主 Agent 工具注册、选型等待和运行发布分别成文件。这些辅助方法各有独立的调用者及生命周期。
+
+下表列出每个方法直接使用的实例字段与调用。写入列记载赋值、成员赋值和可静态识别的集合写操作；经运行时或存储 API 产生的副作用仍由相应对象管理。构造函数一行包括它注册的回调。
+
+#### 2.1 · service-harness（Harness 会话、父会话与 DSH 子 Agent）
+
+| 方法                               | 直接访问字段                                                      | 写入或集合修改      | 调用本服务方法      |
+| ---------------------------------- | ----------------------------------------------------------------- | ------------------- | ------------------- |
+| `parent`                           | `ctx`、`cliManagement`                                            | —                   | `project`           |
+| `project`                          | —                                                                 | —                   | —                   |
+| `machineDirectory`                 | `options`                                                         | —                   | —                   |
+| `preferenceProject`                | —                                                                 | —                   | `project`           |
+| `dshFallback`                      | `runtime`、`dshSubagents`                                         | —                   | —                   |
+| `waitHarnessRun`                   | `nativeRunDone`、`runtime`                                        | —                   | —                   |
+| Remote `ensureHarnessConversation` | `runtime`、`harnessConversation`                                  | —                   | `parent`、`project` |
+| Remote `repairHarnessConversation` | `runtime`、`harnessConversation`、`disposed`、`repairingDisplays` | `repairingDisplays` | `parent`、`project` |
+| Remote `listDshSubagents`          | `dshSubagents`                                                    | —                   | —                   |
+| Remote `watchDshSubagents`         | `dshSubagents`                                                    | —                   | —                   |
+| Remote `promptDshSubagent`         | `dshSubagents`                                                    | —                   | —                   |
+| Remote `stopDshSubagent`           | `dshSubagents`                                                    | —                   | —                   |
+| Remote `hideDshSubagent`           | `dshSubagents`                                                    | —                   | —                   |
+
+#### 2.2 · service-history（Worker 快照、历史、运行中消息设置与角色预设）
+
+| 方法                            | 直接访问字段                                                        | 写入或集合修改 | 调用本服务方法      |
+| ------------------------------- | ------------------------------------------------------------------- | -------------- | ------------------- |
+| Remote `watch`                  | `runtime`、`ctx`、`disposed`、`harnessConversationStore`、`pending` | —              | —                   |
+| Remote `history`                | `runtime`                                                           | —              | —                   |
+| Remote `runningMessageSettings` | `runtime`                                                           | —              | `parent`、`project` |
+| Remote `saveRunningMessageMode` | `runtime`                                                           | —              | `parent`、`project` |
+| Remote `rolePresets`            | `runtime`                                                           | —              | `parent`            |
+| Remote `saveRolePreset`         | `runtime`                                                           | —              | `parent`            |
+| Remote `deleteRolePreset`       | `runtime`                                                           | —              | `parent`            |
+
+#### 2.3 · service-workers（Worker 身份、目标、生命周期及隔离副本合并）
+
+| 方法                         | 直接访问字段                     | 写入或集合修改 | 调用本服务方法               |
+| ---------------------------- | -------------------------------- | -------------- | ---------------------------- |
+| Remote `renameWorker`        | `runtime`                        | —              | `parent`                     |
+| Remote `renameWorkerTitle`   | `runtime`                        | —              | `parent`                     |
+| Remote `setWorkerGoal`       | `runtime`                        | —              | `parent`                     |
+| Remote `setWorkerGoalStatus` | `runtime`                        | —              | `parent`                     |
+| Remote `clearWorkerGoal`     | `runtime`                        | —              | `parent`                     |
+| Remote `deleteWorker`        | `runtime`                        | —              | `parent`                     |
+| Remote `restoreWorker`       | `runtime`                        | —              | `parent`                     |
+| Remote `forkWorker`          | `harnessConversation`、`runtime` | —              | `parent`                     |
+| `mergeIsolatedWorker`        | `runtime`、`disposed`            | —              | `assertExecution`、`project` |
+
+#### 2.4 · service-settings（设置快照、显示元数据、CLI 开关与通用策略）
+
+| 方法                         | 直接访问字段                                                                            | 写入或集合修改            | 调用本服务方法                                                                                  |
+| ---------------------------- | --------------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
+| Remote `cliSettings`         | `runtime`、`settingsCatalogs`、`displayedBindings`                                      | `displayedBindings`       | `parent`、`connectionCache`、`machineDirectory`、`settingsDisplayMetadata`、`preferenceProject` |
+| `settingsDisplayMetadata`    | `settingsInstance`、`settingsSourceRevisions`、`options`、`settingsCatalogs`、`runtime` | `settingsInstance`        | `connectionCache`、`machineDirectory`                                                           |
+| `invalidateSettingsDisplay`  | `connections`、`settingsCatalogs`、`settingsSourceRevisions`、`cliManagement`           | `settingsSourceRevisions` | —                                                                                               |
+| Remote `generalSettings`     | `runtime`                                                                               | —                         | `parent`                                                                                        |
+| Remote `saveGeneralSettings` | `runtime`                                                                               | —                         | `parent`                                                                                        |
+| Remote `setCliEnabled`       | `accounts`、`runtime`                                                                   | —                         | `parent`、`invalidateSettingsDisplay`                                                           |
+
+#### 2.5 · service-cli-updates（CLI 更新、安装、接管与下载源）
+
+| 方法                            | 直接访问字段    | 写入或集合修改 | 调用本服务方法              |
+| ------------------------------- | --------------- | -------------- | --------------------------- |
+| Remote `cliUpdateSnapshot`      | `cliManagement` | —              | `parent`                    |
+| Remote `checkCliUpdates`        | `cliManagement` | —              | `parent`                    |
+| Remote `watchCliUpdates`        | `cliManagement` | —              | `parent`                    |
+| Remote `startCliOperation`      | `cliManagement` | —              | `parent`、`assertExecution` |
+| Remote `updateAllClis`          | `cliManagement` | —              | `parent`、`assertExecution` |
+| Remote `cancelCliOperation`     | `cliManagement` | —              | `parent`                    |
+| Remote `requestCliTakeover`     | `cliManagement` | —              | `parent`、`assertExecution` |
+| Remote `chooseInstallDirectory` | `cliManagement` | —              | `parent`                    |
+| Remote `checkInstallDirectory`  | `cliManagement` | —              | `parent`                    |
+| Remote `cliDownloadSource`      | `cliManagement` | —              | `parent`                    |
+| Remote `saveCliDownloadSource`  | `cliManagement` | —              | `parent`                    |
+| Remote `testCliDownloadSource`  | `cliManagement` | —              | `parent`                    |
+
+#### 2.6 · service-accounts（账号会话、账号终端及自定义提供商）
+
+| 方法                                | 直接访问字段                                                | 写入或集合修改    | 调用本服务方法                                                                                                                  |
+| ----------------------------------- | ----------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Remote `accountStatus`              | —                                                           | —                 | `readAccountStatus`                                                                                                             |
+| Remote `refreshAccountStatus`       | —                                                           | —                 | `readAccountStatus`                                                                                                             |
+| `readAccountStatus`                 | `options`、`runtime`                                        | —                 | `parent`、`cleanupHeldStatus`、`connectionCache`、`loadSettingsAccount`                                                         |
+| `cleanupHeldStatus`                 | `runtime`                                                   | —                 | —                                                                                                                               |
+| Remote `recoverCliCleanup`          | `accounts`、`runtime`、`cliManagement`                      | —                 | `parent`、`invalidateSettingsDisplay`                                                                                           |
+| Remote `accountDesktopStart`        | `disposed`、`runtime`、`accountParents`、`accounts`         | `accountParents`  | `parent`、`assertExecution`、`machineDirectory`                                                                                 |
+| Remote `accountDesktopRespond`      | `accounts`                                                  | —                 | `parent`                                                                                                                        |
+| Remote `accountDesktopWatch`        | `accounts`                                                  | —                 | `parent`                                                                                                                        |
+| Remote `accountDesktopStop`         | `accounts`                                                  | —                 | —                                                                                                                               |
+| Remote `accountStart`               | —                                                           | —                 | `startAccount`                                                                                                                  |
+| Remote `accountStartForSource`      | —                                                           | —                 | `startAccount`                                                                                                                  |
+| Remote `accountStartForProvider`    | —                                                           | —                 | `startAccount`                                                                                                                  |
+| Remote `accountStartWith`           | —                                                           | —                 | `startAccount`                                                                                                                  |
+| `trackAccountParent`                | `accountParents`、`customProviders`、`accounts`             | `accountParents`  | —                                                                                                                               |
+| `customProviderSource`              | `options`                                                   | —                 | —                                                                                                                               |
+| `customProviderManager`             | `customProviders`、`options`                                | `customProviders` | —                                                                                                                               |
+| Remote `customProviderForm`         | `disposed`、`options`、`runtime`                            | —                 | `parent`、`trackAccountParent`、`customProviderManager`、`customProviderSource`                                                 |
+| Remote `saveCustomProvider`         | `disposed`、`options`、`runtime`、`accounts`                | —                 | `parent`、`assertExecution`、`trackAccountParent`、`customProviderSource`、`customProviderManager`、`invalidateSettingsDisplay` |
+| Remote `deleteAccountConfiguration` | `disposed`、`options`、`runtime`、`accounts`、`connections` | —                 | `parent`、`assertExecution`、`trackAccountParent`、`invalidateSettingsDisplay`                                                  |
+| `startAccount`                      | `runtime`、`accounts`、`connections`                        | —                 | `parent`、`assertExecution`、`trackAccountParent`、`invalidateSettingsDisplay`、`machineDirectory`                              |
+| Remote `accountWatch`               | `accounts`                                                  | —                 | `parent`                                                                                                                        |
+| Remote `accountWrite`               | `accounts`                                                  | —                 | `assertExecution`、`parent`                                                                                                     |
+| Remote `accountRespond`             | `accounts`                                                  | —                 | `assertExecution`、`parent`                                                                                                     |
+| Remote `accountResize`              | `accounts`                                                  | —                 | `parent`                                                                                                                        |
+| Remote `accountStop`                | `accounts`                                                  | —                 | —                                                                                                                               |
+
+#### 2.6 · service-connections（连接缓存、后台加载与可执行路径）
+
+| 方法                              | 直接访问字段                                                                | 写入或集合修改                    | 调用本服务方法                                                                           |
+| --------------------------------- | --------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------------- |
+| `connectionCache`                 | `connections`、`connectionEpochs`、`options`、`cliManagement`、`runtime`    | `connections`、`connectionEpochs` | —                                                                                        |
+| Remote `settingsConnectionStatus` | `runtime`、`disposed`                                                       | —                                 | `parent`、`cleanupHeldStatus`、`connectionCache`、`readAccountStatus`、`settingsCatalog` |
+| Remote `watchSettingsConnections` | `disposed`                                                                  | —                                 | `parent`、`connectionCache`                                                              |
+| `preloadSettingsConnection`       | —                                                                           | —                                 | `preloadSettingsConnectionNow`                                                           |
+| `preloadSettingsConnectionNow`    | `options`、`runtime`                                                        | —                                 | `loadSettingsAccount`、`loadSettingsCatalog`                                             |
+| `loadSettingsAccount`             | `disposed`、`accounts`                                                      | —                                 | `connectionCache`、`machineDirectory`                                                    |
+| `loadSettingsCatalog`             | `accounts`、`disposed`、`options`、`settingsCatalogs`、`runtime`、`backend` | `settingsCatalogs`                | `machineDirectory`、`connectionCache`、`readAccountBinding`、`queryCatalog`              |
+| `executablePathSnapshot`          | `options`                                                                   | —                                 | —                                                                                        |
+| `probeExecutablePath`             | `backend`、`options`、`runtime`                                             | —                                 | `executablePathSnapshot`                                                                 |
+| Remote `cliExecutablePath`        | `disposed`、`options`、`runtime`、`accounts`                                | —                                 | `parent`、`executablePathSnapshot`、`probeExecutablePath`                                |
+| Remote `refreshCliExecutablePath` | `disposed`、`options`、`runtime`、`accounts`、`displayedBindings`           | `displayedBindings`               | `parent`、`invalidateSettingsDisplay`、`probeExecutablePath`                             |
+
+#### 2.7 · service-models（模型目录、授权与选型）
+
+| 方法                          | 直接访问字段                                                    | 写入或集合修改      | 调用本服务方法                                                          |
+| ----------------------------- | --------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------- |
+| `readAccountBinding`          | `options`、`runtime`                                            | —                   | —                                                                       |
+| `queryCatalog`                | `options`、`runtime`                                            | —                   | `freshCatalog`、`busyAccountCatalog`                                    |
+| `freshCatalog`                | `settingsCatalogs`                                              | —                   | —                                                                       |
+| `busyAccountCatalog`          | `settingsCatalogs`                                              | —                   | `readAccountBinding`、`freshCatalog`                                    |
+| `authorizeChoice`             | `options`                                                       | —                   | `querySelection`                                                        |
+| `querySelection`              | `runtime`                                                       | —                   | `busyAccountCatalog`                                                    |
+| Remote `catalog`              | —                                                               | —                   | `catalogForCli`                                                         |
+| Remote `catalogForCli`        | —                                                               | —                   | `settingsCatalog`                                                       |
+| Remote `catalogForWorker`     | `disposed`、`runtime`、`options`、`settingsCatalogs`、`backend` | `settingsCatalogs`  | `parent`、`readAccountBinding`、`queryCatalog`                          |
+| Remote `refreshCatalogForCli` | —                                                               | —                   | `settingsCatalog`                                                       |
+| `settingsCatalog`             | `disposed`、`options`、`runtime`、`displayedBindings`           | `displayedBindings` | `parent`、`loadSettingsCatalog`、`connectionCache`、`preferenceProject` |
+| Remote `configure`            | `runtime`、`backend`、`options`、`displayedBindings`            | —                   | `parent`、`project`、`authorizeChoice`                                  |
+| Remote `configureWorker`      | `runtime`、`settingsCatalogs`、`backend`、`options`             | `settingsCatalogs`  | `parent`、`readAccountBinding`、`assertNativeWorkerSettingsIdle`        |
+
+#### 2.7 · service-permissions（权限档位、原生审批及冷会话配置）
+
+| 方法                               | 直接访问字段                                                                     | 写入或集合修改 | 调用本服务方法                                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `assertExecution`                  | —                                                                                | —              | `hostPlanActive`                                                                                                             |
+| `assertAccessSupported`            | —                                                                                | —              | `permissionState`                                                                                                            |
+| `childPermission`                  | —                                                                                | —              | `permissionState`                                                                                                            |
+| `permissionReceipt`                | —                                                                                | —              | `permissionState`                                                                                                            |
+| `hostPlanActive`                   | `ctx`                                                                            | —              | —                                                                                                                            |
+| `permissionState`                  | —                                                                                | —              | `hostPlanActive`                                                                                                             |
+| `decideNativeApproval`             | `ctx`、`disposed`、`runQuestionSessions`、`runOrigins`                           | —              | `permissionState`                                                                                                            |
+| `answerHarnessApproval`            | `bridgeCalls`、`runtime`、`disposed`、`runQuestionSessions`、`runOrigins`、`ctx` | —              | `decideNativeApproval`、`permissionState`                                                                                    |
+| `assertNativeWorkerSettingsIdle`   | `ctx`                                                                            | —              | —                                                                                                                            |
+| `configureColdWorkerPermission`    | `runtime`、`disposed`、`ctx`、`harnessConversation`                              | —              | `assertExecution`、`project`、`assertNativeWorkerSettingsIdle`、`childPermission`                                            |
+| Remote `permissionForWorker`       | `runtime`                                                                        | —              | `parent`、`project`、`assertExecution`、`assertNativeWorkerSettingsIdle`、`permissionState`                                  |
+| Remote `configureWorkerPermission` | `runtime`、`ctx`                                                                 | —              | `parent`、`assertExecution`、`project`、`assertNativeWorkerSettingsIdle`、`configureColdWorkerPermission`、`childPermission` |
+
+#### 2.8 · service-messages（消息提交、引导、队列及续聊）
+
+| 方法                             | 直接访问字段                                            | 写入或集合修改       | 调用本服务方法                                   |
+| -------------------------------- | ------------------------------------------------------- | -------------------- | ------------------------------------------------ |
+| Remote `submitMessage`           | `messageSubmissions`、`runtime`、`disposed`、`accounts` | `messageSubmissions` | `parent`、`assertExecution`、`project`、`launch` |
+| Remote `queueFollowup`           | `runtime`                                               | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `steerMessage`            | `runtime`、`disposed`、`accounts`                       | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `sendRunningMessage`      | `runtime`、`accounts`                                   | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `interruptMessage`        | `runtime`、`accounts`                                   | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `interruptQueuedFollowup` | `runtime`、`accounts`                                   | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `cancelQueuedFollowup`    | `runtime`                                               | —                    | `parent`                                         |
+| Remote `retryQueuedFollowups`    | `runtime`                                               | —                    | `parent`、`assertExecution`、`project`           |
+| Remote `followup`                | —                                                       | —                    | `continueWorker`                                 |
+| `continueWorker`                 | `runtime`                                               | —                    | `parent`、`assertExecution`、`launch`            |
+| Remote `restartWorker`           | `runtime`                                               | —                    | `parent`、`assertExecution`、`project`、`launch` |
+| Remote `stop`                    | `runtime`                                               | —                    | —                                                |
+
+#### 2.8 · service-dispatch（派遣候选解析、变体询问及选型互斥）
+
+| 方法                     | 直接访问字段                                                                                                                          | 写入或集合修改                                                                           | 调用本服务方法                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `dispatchSubject`        | `ctx`                                                                                                                                 | —                                                                                        | —                                                               |
+| `siblingDispatch`        | `runtime`、`runQuestionSessions`、`runOrigins`、`ctx`                                                                                 | —                                                                                        | —                                                               |
+| `resolveDispatchName`    | `options`、`backend`、`runtime`                                                                                                       | —                                                                                        | —                                                               |
+| `chooseQoderVariant`     | `disposed`、`dispatchWaits`、`pending`、`runtime`                                                                                     | `dispatchWaits`、`pending`                                                               | `project`、`assertExecution`、`resolveDispatchName`             |
+| `chooseWorkBuddyVariant` | `disposed`、`dispatchWaits`、`pending`、`runtime`                                                                                     | `dispatchWaits`、`pending`                                                               | `project`、`assertExecution`、`resolveDispatchName`             |
+| `chooseDispatch`         | `disposed`、`runtime`、`dispatchWaits`、`pending`、`settingsCatalogs`、`backend`、`options`、`selectionBindings`、`selectionProjects` | `dispatchWaits`、`settingsCatalogs`、`selectionBindings`、`selectionProjects`、`pending` | `project`、`assertExecution`、`queryCatalog`、`authorizeChoice` |
+
+#### 2.8 · service-launch（运行准入、发布及重启归属）
+
+| 方法     | 直接访问字段                                                                                                                                            | 写入或集合修改                                       | 调用本服务方法                                                                                          |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `launch` | `disposed`、`runtime`、`accounts`、`selectionProjects`、`selectionBindings`、`backend`、`options`、`runOrigins`、`runQuestionSessions`、`nativeRunDone` | `runOrigins`、`runQuestionSessions`、`nativeRunDone` | `launch`、`assertExecution`、`assertAccessSupported`、`project`、`authorizeChoice`、`permissionReceipt` |
+
+#### 2.8 · service-tools（主 Agent 工具注册）
+
+| 方法            | 直接访问字段                                 | 写入或集合修改 | 调用本服务方法                                                                                                                                                                                                     |
+| --------------- | -------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `registerTools` | `ctx`、`disposed`、`runtime`、`dshSubagents` | —              | `resolveDispatchName`、`dispatchSubject`、`assertExecution`、`siblingDispatch`、`chooseWorkBuddyVariant`、`chooseQoderVariant`、`chooseDispatch`、`launch`、`dshFallback`、`continueWorker`、`mergeIsolatedWorker` |
+
+#### Host 初始化与清理（Host 生命周期与 Cordis 注册）
+
+| 方法          | 直接访问字段                                                                                                                                                                                                                               | 写入或集合修改                                                                                                                                                                               | 调用本服务方法                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `constructor` | `options`、`backend`、`accounts`、`runtime`、`cliManagement`、`dshSubagents`、`ctx`、`harnessConversationStore`、`repairingDisplays`、`harnessConversation`、`bridgeCalls`、`disposed`、`customProviders`、`connections`、`accountParents` | `options`、`backend`、`accounts`、`runtime`、`cliManagement`、`dshSubagents`、`harnessConversationStore`、`harnessConversation`、`bridgeCalls`、`disposed`、`customProviders`、`connections` | `invalidateSettingsDisplay`、`machineDirectory`、`preloadSettingsConnection`、`connectionCache`、`steerMessage`、`forkWorker`、`setWorkerGoal`、`setWorkerGoalStatus`、`clearWorkerGoal`、`configureWorkerPermission`、`permissionForWorker`、`parent`、`waitHarnessRun`、`launch`、`childPermission`、`permissionState`、`assertExecution`、`project`、`assertAccessSupported`、`decideNativeApproval`、`answerHarnessApproval`、`registerTools` |
+
+Typert 声明逐字节比对。JS 中的 sourceLocation 和声明映射回指方法名的位置，入口缩短后坐标随之改变。比对这三项时验证原始哈希、逐方法核对源码位置，并复核坐标以外的内容。
+
 ## Risks / Trade-offs
 
 - 隐式共享 `this` 状态遗漏 → 任务 1 先列出每个方法用到的字段；全量测试与 Desktop 实测兜底。
