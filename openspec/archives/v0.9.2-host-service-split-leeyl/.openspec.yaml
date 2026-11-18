@@ -6,5 +6,6 @@ pm:
   requirement: REQ-0137
   prd: doc/prd/2026-11-18-v0.9.2-host-service-split-PRD.json
   previous_names: []
+  archived: 2026-11-18
 schema: pmspec
 created: 2026-11-18

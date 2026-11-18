@@ -4,13 +4,13 @@
 
 需求 REQ-0137（PRD：`doc/prd/2026-11-18-v0.9.2-host-service-split-PRD.md`）。
 
-- `src/host/index.ts` 共 3768 行，是仓库最大的源文件。`CliWorkerService` 一个类约 3490 行，含 74 个 `@Remote` 接口方法和约 1370 行内部辅助逻辑，84 条 import。
+- `src/host/index.ts` 共 3768 行，是仓库最大的源文件。`CliWorkerService` 一个类约 3490 行，含 80 个 `@Remote` 接口方法（74 个直接调用、6 个流；立项时按名称估为 74 个，任务 1 按语法树核定为 80 个）和约 1370 行内部辅助逻辑，84 条 import。
 - 账号、设置、CLI 更新、Worker 管理、消息与续聊等不相干的改动都要改这一个文件，并行开发时最容易冲突，审查与定位问题困难。
 - 2026-11-18 目录结构审查把它列为长期维护的首要结构问题；用户同日决定放入 0.9.2。
 
 ## What Changes
 
-- `src/host/index.ts` 仍是 Host 入口，只保留 Cordis 注册、74 个 `@Remote` 门面方法与生命周期；门面方法名称、参数、返回类型与调用模式不变，方法体改为委托。
+- `src/host/index.ts` 仍是 Host 入口，只保留 Cordis 注册、80 个 `@Remote` 门面方法与生命周期；门面方法名称、参数、返回类型与调用模式不变，方法体改为委托。
 - 方法体按领域移入不带装饰器的普通模块（领域切分在 design.md 中确定），共享状态通过显式传入的上下文对象访问，不新增全局单例。
 - Typert 生成的远程契约（`lib/typert.remote-client.d.ts`）与预览包除新增内部模块外逐字节一致。
 - 不改任何用户可见行为、文案、`lib/` 输出布局、`cordis.patch.yml`、`package.json` 的 `exports` 与 `files`。

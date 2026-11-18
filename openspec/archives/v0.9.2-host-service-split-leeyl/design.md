@@ -2,9 +2,9 @@
 
 ## Context
 
-- `src/host/index.ts`：3768 行。第 280 行起是 `CliWorkerService extends TypertRemoteService`，74 个 `@Remote` 方法从约第 1647 行开始；之前约 1370 行是构造、生命周期与内部辅助方法。
+- `src/host/index.ts`：3768 行。第 280 行起是 `CliWorkerService extends TypertRemoteService`，`@Remote` 方法从约第 1647 行开始（立项时估为 74 个，任务 1 核定为 80 个，见决定 5）；之前约 1370 行是构造、生命周期与内部辅助方法。
 - `vitest.config.ts` 只对 `/src/host/index.ts` 做装饰器转换；`scripts/build.mjs` 的暂存清单以 `./src/host/index.ts` 为 Host 入口，Typert 生成器据此生成 `lib/typert.remote-client.d.ts`。
-- 74 个 Remote 方法按名称大致分为：Harness 会话与 DSH 子 Agent（6）、历史、运行中消息设置与角色预设（6）、Worker 管理（改名、目标、删除、恢复、分叉，9）、通用设置与 CLI 启用（3）、CLI 管理与更新（11）、连接与账号（约 20）、模型目录、选型与权限（约 9）、消息发送与续聊队列（约 12）。精确归属在任务 1 中按 this 字段依赖核定。
+- 立项时按名称将 Remote 方法大致分为：Harness 会话与 DSH 子 Agent（6）、历史、运行中消息设置与角色预设（6）、Worker 管理（改名、目标、删除、恢复、分叉，9）、通用设置与 CLI 启用（3）、CLI 管理与更新（11）、连接与账号（约 20）、模型目录、选型与权限（约 9）、消息发送与续聊队列（约 12）。精确归属在任务 1 中按 this 字段依赖核定。
 
 ## Goals / Non-Goals
 
