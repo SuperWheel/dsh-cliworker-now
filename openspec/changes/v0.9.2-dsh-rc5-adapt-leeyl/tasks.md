@@ -46,8 +46,11 @@
 - [x] 3.2 执行 `pnpm build:preview` 生成隔离预览包，复核包内 Host、Client、Remote 与四个 rc.5 随包资源的清单、版本和摘要。
   - `corepack pnpm build:preview` 退出 0，构建目录为 `.cache/preview-package/`。用 `corepack pnpm --dir .cache/preview-package --config.ignore-scripts=true pack` 打包。从交付文件重读确认 1,373 个常规文件，四包及清单均为 rc.5。包内 217 个 runtime 文件的摘要全部匹配 manifest，另含 manifest 自身。所有 exports 指向存在的文件，逐件核对预览目录内容；pnpm 打包规范化了根 package.json，移除了 packageManager 和 prepack。
   - 预览包位于上述独立验收目录的 `dsh-cliworker-now-0.9.1.tgz`（沿用现有插件版本），SHA256 为 `9422803fffcb0636cd2bc91a1e65963ca358a292ef44bc6c3eb2e2fab0ea5d50`。Host、Client、Typert Host、Typert Remote Client 入口 SHA256 分别为 `590544672e53643ea6fcbc602129c7bd7abf51ffc54edb1c54aa369b5e55026f`、`d6690b8f4dace7bba336842b4d9f51be18fb31e489f6439d6e4e42f8c2b45020`、`3181981a60ea8605e5f7c74263d6af70ecbbafb49a009dd570b2f34daaea9e48`、`f6c6b3397290024b996bf574ad96af4707c90725e31d48c496bd4904339ca7ea`。
-- [ ] 3.3 用 Mac Desktop rc.5 自带的 `dsh` 将预览包装入隔离 `DSH_HOME` 的 Web profile 并启动 `dsh web`。从有效配置与实际模块路径核对四包均解析到插件 `runtime-host/`，检查主界面、CLI Worker 面板、设置无白屏，检查控制台及 Host 日志无插件相关错误。
-  - （未执行：待生成预览包并启动隔离宿主。）
+- [x] 3.3 用 Mac Desktop rc.5 自带的 `dsh` 将预览包装入隔离 `DSH_HOME` 的 Web profile 并启动 `dsh web`。从有效配置与实际模块路径核对四包均解析到插件 `runtime-host/`，检查主界面、CLI Worker 面板、设置无白屏，检查控制台及 Host 日志无插件相关错误。
+  - 2026-11-19 在验收目录 `web33/` 下建临时 `HOME` 与 `DSH_HOME`（0700）。Desktop 自带 `runtime/cli/bin/dsh --version` 为 0.2.2-rc.5；`dsh plugin --profile web add` 装入 3.2 的 tgz 后，profile `package.json` 依赖指向该 tgz，已装插件版本 0.9.1。以 `dsh --profile web --no-open --host 127.0.0.1 --port 0` 启动，内置浏览器打开本地地址（token 未落盘）。
+  - 有效配置：已装插件的 `cordis.patch.yml` 把官方 `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 设为 `disabled`，改以 `./runtime-host/dsh-client-ui-*/lib/index.js` 插入；四包 `package.json` 版本均为 0.2.2-rc.5。浏览器实际下载的客户端合包中四个模块段大小与 `runtime-host/` 各 `lib/client.js` 对应，且含补丁特有标记 `cliworker-native/`、`cliworker-continuation`。
+  - 主界面、右侧栏 CLI Worker 面板（空态）和「CLI Worker 设置」弹窗（含 CLI 连接列表）均正常渲染，无白屏。控制台无错误；Host 日志只有启动地址一行，无插件报错。停止后进程退出、`host.lock` 释放。
+  - 未执行：真实派遣、续聊与停止（属任务 4）。
 
 ## 4. Desktop 实机验收 〔测试｜3h｜前置 3〕
 
