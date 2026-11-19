@@ -177,6 +177,7 @@ WorkBuddy CN 与 WorkBuddy 各有独立连接页，沿用现有标题、副标�
 - 操作行：沿用 `.cwn-accounts-actions` 右对齐、按钮间距 8px，按「登录窗口按钮规范」用 md：ghost「返回」、primary「保存」；Host 允许时，同一行最左侧放 outline「在原生终端中配置」作为备选（次级位置，窄宽度时换行）。保存中主按钮显示「正在保存…」，字段与其他按钮禁用；关闭窗口会放弃进行中的保存。
 - 成功：复用登录窗口结果页（居中 40px 成功图标、18px/26px 600「已添加 <服务商>」、次级色 Host 提示），下方居中 md primary「完成」回到账号列表；保存成功即触发与其他账号操作相同的账号刷新，并强制重读该 CLI 的模型目录。
 - 内置模板（v0.9.0-zcode-custom-key-leeyl）：表单描述带 `presets` 时，字段组第一项为不带必填标记的「从内置模板预填」，控件与 select 字段同为占满宽度的 `NativeChoice`，占位「不使用模板」，help 提示「API Key 仍需自己填写」。选中后只把模板值写入表单已有的非 secret 字段（可再修改），并清除这些字段的错误；模板选择本身不提交、不进 `CustomProviderValues`。保存成功后回到「不使用模板」。无模板或模板格式无效时不显示此项。
+- OMP「其他服务商」（v0.9.2-omp-custom-provider-leeyl）：字段与 Pi 相同（服务商 ID、名称、Base URL、API 协议、API Key、模型 ID），API 协议为 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Generative AI；`nativeFallback` 为 true，保留「在原生终端中配置」。写入位置提示为插件 OMP 账号目录的 `models.yml`；名称只存插件归属回执，账号卡片显示该名称。OMP 会把密钥先当作环境变量名查找，形如环境变量名的值、`!` 命令和变量引用在 API Key 字段下逐项报错并建议改用原生终端。
 - ZCode「其他服务商」（v0.9.0-zcode-custom-key-leeyl）：字段为名称、接口类型、Base URL、API Key、模型 ID、上下文窗口（可选）；`nativeFallback` 为 false，不显示「在原生终端中配置」。写入位置提示为插件账号目录的 `provider_config.json`。
 - 文案只来自插件固定词条与 Host 描述（Host 文本经 `hostText` 翻译已知词条）。中英文、五种字段、必填与错误、secret 清空、回退终端与成功刷新由模拟 React 测试覆盖；Desktop 明暗主题与 480px 实际目视仍待验收。
 

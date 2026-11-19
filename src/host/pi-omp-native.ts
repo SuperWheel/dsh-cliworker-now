@@ -1,6 +1,6 @@
 import { sameProviderConfiguration, piOmpNativeConfigProviderExists } from './custom-provider-native.ts'
 import { rememberLoginCredential } from './account-guide/credential-evidence.ts'
-import { managedPiOmpProviders, piOmpManagedProviderExists } from './custom-provider-managed.ts'
+import { managedPiOmpProviders, managedProviderLabels, piOmpManagedProviderExists } from './custom-provider-managed.ts'
 import { constants } from 'node:fs'
 import { lstat, open, mkdir, writeFile, rename, rm, mkdtemp, realpath, readlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -375,6 +375,23 @@ async function withSources<T>(
   } finally {
     await rm(scratch, { recursive: true, force: true })
   }
+}
+
+/** Lower-case ids only, never values: configured providers and stored credential rows of every source. */
+export async function piOmpConfiguredProviderIds(
+  cli: PiOmpCli,
+  stateDirectory: string | undefined,
+  signal: AbortSignal,
+  options: { nativeHome?: string } = {},
+): Promise<Set<string>> {
+  return withSources(cli, { accountRoot: stateDirectory, ...options, signal }, async (sources) => {
+    const ids = new Set<string>()
+    for (const source of sources) {
+      for (const key of [...Object.keys(source.models.providers ?? {}), ...Object.keys(source.auth)]) ids.add(key.toLowerCase())
+      for (const row of source.credentials) if (typeof row.provider === 'string') ids.add(row.provider.toLowerCase())
+    }
+    return ids
+  })
 }
 
 /** Current native roots only. Account actions must never remove a merged worker copy. */
@@ -849,6 +866,8 @@ export async function inspectPiOmpNativeAccount(
       const logins: AccountLogin[] = []
       const plugin = sources[1]
       const managed = plugin ? managedPiOmpProviders(plugin.sourceId, plugin.models, plugin.auth) : new Set<string>()
+      // Display names the account form saved (OMP has no native provider name field).
+      const labels = plugin ? managedProviderLabels(plugin.sourceId, plugin.models, plugin.auth) : new Map<string, string>()
       const ownValue = (value: unknown, referenceOnly = false) =>
         typeof value === 'string' &&
         (referenceOnly
@@ -870,6 +889,8 @@ export async function inspectPiOmpNativeAccount(
           ...(accountLabel ? { accountLabel } : {}),
         }
         const owned = managed.has(provider) && (!stored || cli === 'pi' && stored.source === 'plugin')
+        // An OMP provider saved by the account form shows the name entered there, else its id.
+        if (owned && cli === 'omp') login.providerLabel = labels.get(provider) ?? provider
         const id = owned ? accountLoginId(cli, provider, 'plugin.config') : stored && accountLoginId(cli, provider, stored.entry)
         if (id && logins.some(row => row.id === id)) return
         const row: AccountLogin = nativeConfig ? (id ? { ...login, id, source: 'native', nativeConfiguration: true } : login) : owned ? { ...login, id, source: 'plugin', managedConfiguration: true }

@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parse as yaml } from 'yaml'
 import { CustomProviders } from '../src/host/custom-provider.ts'
-import { commitNativeFiles, nativeJson, readNativeFile } from '../src/host/custom-provider-files.ts'
-import { deletePiOmpManagedProvider, managedProviderReceiptChange, managedPiOmpProviders, piOmpManagedProviderExists } from '../src/host/custom-provider-managed.ts'
+import { commitNativeFiles, nativeJson } from '../src/host/custom-provider-files.ts'
+import { deletePiOmpManagedProvider, managedProviderLabels, managedProviderReceiptChange, managedProviderReceiptRemoval, managedPiOmpProviders, piOmpManagedProviderExists } from '../src/host/custom-provider-managed.ts'
 import { inspectPiOmpNativeAccount, piOmpStoredLoginExists } from '../src/host/pi-omp-native.ts'
 import { preparePiOmpLogout } from '../src/host/pi-omp-logout.ts'
 import { DEFAULT_CONFIG } from '../src/host/process.ts'
@@ -24,20 +24,20 @@ function fixture(cli: 'pi' | 'omp') {
   write(auth, JSON.stringify({ old: { type: 'api_key', key: 'SIMULATED_OLD' } }))
   const ownership = join(directory, 'cliworker-created-providers.json')
   const login = `${cli}:custom-demo:plugin.config`
-  if (cli === 'pi') {
-    const manager = new CustomProviders({ home, stateDirectory: state, env: {} })
-    const source = { cli, parent: 'simulated', entry: { mode: 'auto' }, revision: 0 }
-    const form = manager.form(source)!
-    expect(manager.save(source, form.token, JSON.stringify({ providerId: 'custom-demo', providerLabel: 'Simulated',
-      api: 'openai-completions', apiKey: 'simulated-custom', baseUrl: 'https://custom.invalid/v1', models: ['demo'] }), () => {})).toMatchObject({ ok: true })
-  } else {
-    // OMP has no form writer in the current product. Simulate an explicitly
-    // recorded plugin write through the same receipt contract; never adopt old config.
-    const entry = { api: 'openai-completions', apiKey: 'simulated-custom', baseUrl: 'https://custom.invalid/v1', models: [{ id: 'demo' }] }
-    const current = readNativeFile(config, true)
-    commitNativeFiles([{ file: current, text: JSON.stringify({ untouched: { value: 42 }, providers: { old, 'custom-demo': entry } }) },
-      managedProviderReceiptChange(directory, 'custom-demo', entry)], () => {})
+  const manager = new CustomProviders({ home, stateDirectory: state, env: {} })
+  const source = { cli, parent: 'simulated', entry: { mode: 'auto' }, revision: 0 }
+  const form = manager.form(source)!
+  const values = {
+    providerId: 'custom-demo',
+    providerLabel: 'Simulated',
+    api: 'openai-completions',
+    apiKey: 'sk-fake-managed-custom',
+    baseUrl: 'https://custom.invalid/v1',
+    models: ['demo'],
   }
+  expect(
+    manager.save(source, form.token, JSON.stringify(values), () => {}, { ompReserved: new Set(['old']) }),
+  ).toMatchObject({ ok: true })
   const status = () => inspectPiOmpNativeAccount(cli, state, signal(), { nativeHome: home })
   return { cli, home, state, directory, config, auth, ownership, login, status }
 }
@@ -55,7 +55,7 @@ describe.each(['pi', 'omp'] as const)('%s plugin provider deletion (simulated)',
     expect(nativeJson(read(f.auth)).value.old).toEqual(beforeAuth)
     expect((await f.status()).logins?.some(row => row.id === f.login)).toBe(false)
     expect(await piOmpStoredLoginExists(cli, f.login, f.state, signal(), { nativeHome: f.home })).toBe(false)
-    expect(read(f.ownership)).not.toContain('SIMULATED_CUSTOM')
+    expect(read(f.ownership)).not.toContain('sk-fake-managed-custom')
     if (process.platform !== 'win32') for (const path of [f.config, f.ownership]) expect(fs.statSync(path).mode & 0o777).toBe(0o600)
   })
   it('does not adopt a hand-written or copied private config without its creation receipt', async () => {
@@ -110,4 +110,50 @@ it.each(['{"a":1,"b":2,"c":3}', '{"a":1,"b":2,"c":3,}', '{\n//keep\n"a":1, /* ke
     const expected = { ...nativeJson(text).value }; delete expected[key]
     expect(nativeJson(nativeJson(text).remove([key])).value).toEqual(expected)
   }
+})
+
+it('模拟：OMP 回执新增第二项时保留旧标签，移除项时只移除对应标签', () => {
+  const f = fixture('omp')
+  const first = JSON.parse(read(f.ownership))
+  const models = yaml(read(f.config))
+  const id = 'second-provider'
+  const node = { api: 'openai-responses', apiKey: 'sk-fake-managed-second' }
+  models.providers[id] = node
+  const addition = managedProviderReceiptChange(f.directory, id, node, undefined, 'Second Label')
+  commitNativeFiles([addition], () => {})
+  const second = JSON.parse(read(f.ownership))
+  expect(second).toEqual({
+    version: 1,
+    providers: { ...first.providers, [id]: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    labels: { 'custom-demo': 'Simulated', [id]: 'Second Label' },
+  })
+  expect(managedProviderLabels(f.directory, models, {})).toEqual(
+    new Map([
+      ['custom-demo', 'Simulated'],
+      [id, 'Second Label'],
+    ]),
+  )
+
+  const removal = managedProviderReceiptRemoval(f.directory, 'custom-demo')
+  commitNativeFiles([removal], () => {})
+  expect(JSON.parse(read(f.ownership))).toEqual({
+    version: 1,
+    providers: { [id]: second.providers[id] },
+    labels: { [id]: 'Second Label' },
+  })
+  expect(managedProviderLabels(f.directory, models, {})).toEqual(new Map([[id, 'Second Label']]))
+})
+
+it.each([
+  ['未登记的服务商 ID', 'unknown-id', 'Unknown Label'],
+  ['包含控制字符', 'custom-demo', 'Invalid\u0000Label'],
+])('模拟：OMP 回执标签%s时不授予托管身份或标签', (_reason, id, label) => {
+  const f = fixture('omp')
+  const models = yaml(read(f.config))
+  const proof = JSON.parse(read(f.ownership))
+  expect(managedPiOmpProviders(f.directory, models, {})).toEqual(new Set(['custom-demo']))
+  expect(managedProviderLabels(f.directory, models, {})).toEqual(new Map([['custom-demo', 'Simulated']]))
+  write(f.ownership, JSON.stringify({ ...proof, labels: { ...proof.labels, [id]: label } }))
+  expect(managedPiOmpProviders(f.directory, models, {})).toEqual(new Set())
+  expect(managedProviderLabels(f.directory, models, {})).toEqual(new Map())
 })

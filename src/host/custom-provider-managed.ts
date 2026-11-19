@@ -12,32 +12,47 @@ const stable = (v: unknown): unknown => Array.isArray(v) ? v.map(stable) : objec
   ? Object.fromEntries(Object.keys(v).sort().map(key => [key, stable(v[key])])) : v
 const fingerprint = (config: unknown, auth: unknown) => createHash('sha256').update(JSON.stringify(stable([config, auth ?? null]))).digest('hex')
 const invalid = () => new Error('账号来源已变化，请刷新后重试')
+const validLabel = (label: unknown): label is string =>
+  typeof label === 'string' && !!label.trim() && label.length <= 80 && !/[\x00-\x1f\x7f]/.test(label)
 function receipt(directory: string) {
   const file = readNativeFile(join(directory, filename), true)
   const data = nativeJson(file.text).value
   if (file.text !== undefined && (data.version !== 1 || !object(data.providers) ||
-    Object.entries(data.providers).some(([id, hash]) => !ACCOUNT_NAME.test(id) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)))) throw invalid()
-  return { file, providers: (data.providers ?? {}) as Record<string, string> }
+    Object.entries(data.providers).some(([id, hash]) => !ACCOUNT_NAME.test(id) || typeof hash !== 'string' || !/^[a-f0-9]{64}$/.test(hash)) ||
+    // Optional, non-secret display names; older receipts have none.
+    data.labels !== undefined && (!object(data.labels) || Object.entries(data.labels).some(([id, label]) =>
+      !Object.hasOwn(data.providers as object, id) || !validLabel(label))))) throw invalid()
+  return { file, providers: (data.providers ?? {}) as Record<string, string>, labels: (data.labels ?? {}) as Record<string, string> }
 }
+const serialize = (providers: Record<string, string>, labels: Record<string, string>) =>
+  JSON.stringify({ version: 1, providers, ...(Object.keys(labels).length ? { labels } : {}) }, null, 2) + '\n'
 
 /** Include this change in the SAME atomic commit as the plugin's own provider write.
  * Never backfill from a name, URL, shape, or the private directory: snapshots copy user config there too.
  */
-export function managedProviderReceiptChange(directory: string, provider: string, config: unknown, auth?: unknown) {
-  if (!ACCOUNT_NAME.test(provider) || !object(config)) throw invalid()
+export function managedProviderReceiptChange(directory: string, provider: string, config: unknown, auth?: unknown, label?: string) {
+  if (!ACCOUNT_NAME.test(provider) || !object(config) || label !== undefined && !validLabel(label)) throw invalid()
   const current = receipt(directory)
   if (Object.hasOwn(current.providers, provider)) throw invalid()
-  return { file: current.file, text: JSON.stringify({ version: 1,
-    providers: { ...current.providers, [provider]: fingerprint(config, auth) } }, null, 2) + '\n' }
+  return { file: current.file, text: serialize({ ...current.providers, [provider]: fingerprint(config, auth) },
+    { ...current.labels, ...(label !== undefined && label !== provider ? { [provider]: label } : {}) }) }
 }
 
 /** The receipt without `provider`, for the SAME atomic commit that removes the provider. */
 export function managedProviderReceiptRemoval(directory: string, provider: string) {
   const current = receipt(directory)
   if (!Object.hasOwn(current.providers, provider)) throw invalid()
-  const remaining = { ...current.providers }
-  delete remaining[provider]
-  return { file: current.file, text: JSON.stringify({ version: 1, providers: remaining }, null, 2) + '\n' }
+  const remaining = { ...current.providers }, labels = { ...current.labels }
+  delete remaining[provider]; delete labels[provider]
+  return { file: current.file, text: serialize(remaining, labels) }
+}
+
+/** Display names the plugin saved for providers it still owns (unchanged since it wrote them). */
+export function managedProviderLabels(directory: string, models: Record<string, any>, auth: Record<string, any>): Map<string, string> {
+  try {
+    const owned = managedPiOmpProviders(directory, models, auth)
+    return new Map(Object.entries(receipt(directory).labels).filter(([id]) => owned.has(id)))
+  } catch { return new Map() }
 }
 
 /** Safe metadata only. A missing/changed receipt never grants deletion. */
@@ -78,14 +93,15 @@ export function deletePiOmpManagedProvider(cli: Cli, stateDirectory: string, log
     const { target, directory, config, auth, credentials, models, doc } = current
     if (!managedPiOmpProviders(directory, models, credentials).has(target.provider)) throw invalid()
     const proof = receipt(directory)
-    const remaining = { ...proof.providers }; delete remaining[target.provider]
+    const remaining = { ...proof.providers }, labels = { ...proof.labels }
+    delete remaining[target.provider]; delete labels[target.provider]
     // Cooperate with Pi's native proper-lockfile lock. Never steal or clear another writer's lock.
     if (auth) { mkdirSync(auth.path + '.lock', { mode: 0o700 }); unlock = () => rmdirSync(auth.path + '.lock') }
     if (doc) doc.deleteIn(['providers', target.provider])
     const changes = [
       ...(auth && Object.hasOwn(credentials, target.provider) ? [{ file: auth, text: nativeJson(auth.text).remove([target.provider]) }] : []),
       { file: config, text: doc ? doc.toString({ lineWidth: 0 }) : nativeJson(config.text).remove(['providers', target.provider]) },
-      { file: proof.file, text: JSON.stringify({ version: 1, providers: remaining }, null, 2) + '\n' },
+      { file: proof.file, text: serialize(remaining, labels) },
     ]
     commitNativeFiles(changes, assertCurrent, () => {
       for (const change of changes) {

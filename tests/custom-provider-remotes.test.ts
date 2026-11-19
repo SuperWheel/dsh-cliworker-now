@@ -1,7 +1,7 @@
 import { hostServiceFixture } from './fixtures/host-service.ts'
 /** 模拟 Gateway、真实本机文件事务（临时 HOME）；没有账号或网络访问。 */
 import { afterEach, expect, it, vi } from 'vitest'
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import * as os from 'node:os'
 import { tmpdir } from 'node:os'
@@ -142,10 +142,65 @@ it('模拟：父会话释放作废 token；新父会话无法重用旧 token', a
 })
 it('模拟：未核实 CLI 表单统一为 null；非法 CLI 和无效 parent 拒绝', async () => {
   const f = fixture()
-  for (const cli of CLI_IDS.filter(id => !['pi', 'hermes', 'opencode', 'zcode'].includes(id))) expect(await f.form(cli)).toBeNull()
+  for (const cli of CLI_IDS.filter(id => !['pi', 'omp', 'hermes', 'opencode', 'zcode'].includes(id))) expect(await f.form(cli)).toBeNull()
   await expect(f.form('invalid')).rejects.toThrow()
   ;(f.service as any)['host'].parent.mockRejectedValueOnce(new Error('missing parent'))
   await expect(f.form()).rejects.toThrow('missing parent')
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+})
+
+it('模拟：OMP Remote 保存查询 Host 预留集，拒绝冲突后可用同一表单重试', async () => {
+  const f = fixture()
+  const providerId = f.values.providerId
+  const reservations = vi
+    .spyOn(f.accounts, 'ompProviderReservations')
+    .mockResolvedValueOnce(new Set([providerId]))
+    .mockResolvedValueOnce(new Set())
+  const form = await f.form('omp')
+  const config = join(f.root, 'state/accounts/omp/agent/models.yml')
+  expect(form).toMatchObject({ cli: 'omp', target: config, nativeFallback: true })
+  const values = JSON.stringify({ ...f.values, providerId: ` ${providerId} `, apiKey: 'sk-fake-omp-remote' })
+  const save = () => f.service.saveCustomProvider('parent', 'omp', form.token, values, f.controller.signal)
+  const before = readdirSync(f.root, { recursive: true }).sort()
+
+  expect(JSON.parse(await save())).toMatchObject({
+    ok: false,
+    issues: [{ field: 'providerId', message: expect.stringContaining('已存在') }],
+  })
+  expect(reservations).toHaveBeenNthCalledWith(1, providerId, expect.any(AbortSignal))
+  expect(readdirSync(f.root, { recursive: true }).sort()).toEqual(before)
+  expect(f.catalogs.invalidate).not.toHaveBeenCalled()
+  expect(f.accounts.isBusy('omp')).toBe(false)
+
+  expect(JSON.parse(await save())).toMatchObject({ ok: true, cli: 'omp', providerId })
+  expect(reservations).toHaveBeenNthCalledWith(2, providerId, expect.any(AbortSignal))
+  expect(readFileSync(config, 'utf8')).toContain(providerId)
+  expect(f.backend.spawn).not.toHaveBeenCalled()
+  expect(f.accounts.isBusy('omp')).toBe(false)
+})
+
+it('模拟：OMP Remote 预留查询失败返回 providerId 字段问题，释放租约且不写文件', async () => {
+  const f = fixture()
+  const apiKey = 'sk-fake-omp-probe-error'
+  const reservations = vi.spyOn(f.accounts, 'ompProviderReservations').mockRejectedValue(new Error(apiKey))
+  const form = await f.form('omp')
+  const before = readdirSync(f.root, { recursive: true }).sort()
+  const result = await f.service.saveCustomProvider(
+    'parent',
+    'omp',
+    form.token,
+    JSON.stringify({ ...f.values, apiKey }),
+    f.controller.signal,
+  )
+  expect(JSON.parse(result)).toEqual({
+    ok: false,
+    issues: [{ field: 'providerId', message: expect.stringContaining('无法确认') }],
+  })
+  expect(result).not.toContain(apiKey)
+  expect(reservations).toHaveBeenCalledExactlyOnceWith(f.values.providerId, expect.any(AbortSignal))
+  expect(readdirSync(f.root, { recursive: true }).sort()).toEqual(before)
+  expect(f.catalogs.invalidate).not.toHaveBeenCalled()
+  expect(f.accounts.isBusy('omp')).toBe(false)
   expect(f.backend.spawn).not.toHaveBeenCalled()
 })
 

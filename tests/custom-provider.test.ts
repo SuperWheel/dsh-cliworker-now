@@ -1,6 +1,7 @@
 /** 模拟：全部文件都在临时 HOME，不读取真实账号、不启动 CLI、不调用模型。 */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as fs from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import * as os from 'node:os'
 import { dirname, join } from 'node:path'
@@ -13,6 +14,8 @@ import { prepareHermes } from '../src/host/hermes-adapter.ts'
 import { openCodeAuthDirectory, prepareOpenCode } from '../src/host/opencode-adapter.ts'
 import { readOpenCodeProfile } from '../src/host/opencode-native.ts'
 import { nativeJson } from '../src/host/custom-provider-files.ts'
+import { managedPiOmpProviders } from '../src/host/custom-provider-managed.ts'
+import { addOmpProvider, OMP_API_TYPES, ompLiteralKeyIssue, ompProviderNode } from '../src/host/omp-custom-provider.ts'
 
 vi.mock('node:fs', async load => ({ ...await load<typeof import('node:fs')>() }))
 vi.mock('node:os', async load => ({ ...await load<typeof import('node:os')>() }))
@@ -141,7 +144,7 @@ describe.each(['pi', 'opencode', 'hermes'] as const)('%s 原生文件（模拟�
 
 it('模拟：其他 CLI、缺失已记录入口返回 null', () => {
   const f = fixture('pi')
-  for (const cli of ['omp', 'kimi', 'traecn', 'codex', 'harness'] as const) expect(f.manager.form({ ...f.source, cli })).toBeNull()
+  for (const cli of ['kimi', 'traecn', 'codex', 'harness'] as const) expect(f.manager.form({ ...f.source, cli })).toBeNull()
   expect(f.manager.form({ ...f.source, entry: undefined })).toBeNull()
 })
 it('模拟：token 绑定 parent、CLI、入口及 revision，过期和生命周期清理均拒绝', () => {
@@ -439,4 +442,341 @@ it('模拟：OpenCode 读取顺序为全局各配置后私有各配置，私有 
   expect(profile.providers.same.name).toBe('plugin-jsonc')
   expect(profile.auth.same).toEqual({ type: 'api', key: 'synthetic-plugin' })
   expect(f.manager.form(f.source)).toBeNull() // Never choose between two writable private overlays.
+})
+
+const ompSecret = 'sk-fake-omp-provider-4x9'
+const hashFile = (path: string) => createHash('sha256').update(fs.readFileSync(path)).digest('hex')
+
+function directorySnapshot(directory: string): unknown[] {
+  return fs
+    .readdirSync(directory)
+    .sort()
+    .map((name) => {
+      const path = join(directory, name)
+      const stat = fs.statSync(path)
+      return [name, stat.mode & 0o777, stat.isDirectory() ? directorySnapshot(path) : hashFile(path)]
+    })
+}
+
+function ompFixture(options: { env?: NodeJS.ProcessEnv; now?: () => number } = {}) {
+  const home = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'omp-custom-provider-synthetic-')))
+  roots.push(home)
+  const stateDirectory = join(home, 'plugin-state')
+  const agent = join(stateDirectory, 'accounts', 'omp', 'agent')
+  const global = join(home, '.omp', 'agent')
+  const config = join(agent, 'models.yml')
+  const receipt = join(agent, 'cliworker-created-providers.json')
+  const env = options.env ?? {}
+  const manager = new CustomProviders({ home, stateDirectory, env, now: options.now })
+  const source: CustomProviderSource = {
+    cli: 'omp',
+    parent: 'parent',
+    entry: { mode: 'auto', path: '/synthetic/omp' },
+    revision: 3,
+  }
+  const input = {
+    providerId: 'custom-omp',
+    providerLabel: 'Demo OMP',
+    baseUrl: 'https://gateway.invalid/v1',
+    api: 'openai-completions',
+    apiKey: ompSecret,
+    models: ['model-a', 'model-b'],
+  }
+  const form = () => manager.form(source)!
+  const save = (
+    patch: Partial<typeof input> = {},
+    {
+      token = form().token,
+      guard = () => {},
+      context = { ompReserved: new Set<string>() },
+    }: { token?: string; guard?: () => void; context?: { ompReserved?: ReadonlySet<string> } } = {},
+  ) => manager.save(source, token, JSON.stringify({ ...input, ...patch }), guard, context)
+  return {
+    home,
+    stateDirectory,
+    agent,
+    global,
+    config,
+    receipt,
+    env,
+    manager,
+    source,
+    input,
+    form,
+    save,
+    snapshot: () => directorySnapshot(home),
+  }
+}
+
+it('模拟：OMP 表单列出六个字段和四种协议，打开表单不写入文件', () => {
+  const f = ompFixture()
+  const before = f.snapshot()
+  const form = f.form()
+  expect(form).toMatchObject({ cli: 'omp', target: f.config, nativeFallback: true })
+  expect(form.fields.map(({ id, kind }) => [id, kind])).toEqual([
+    ['providerId', 'text'],
+    ['providerLabel', 'text'],
+    ['baseUrl', 'url'],
+    ['api', 'select'],
+    ['apiKey', 'secret'],
+    ['models', 'list'],
+  ])
+  expect(OMP_API_TYPES.map(([value]) => value)).toEqual([
+    'openai-completions',
+    'openai-responses',
+    'anthropic-messages',
+    'google-generative-ai',
+  ])
+  expect(form.fields.find((field) => field.id === 'api')?.options).toEqual(
+    OMP_API_TYPES.map(([value, label]) => ({ value, label })),
+  )
+  expect(f.snapshot()).toEqual(before)
+})
+
+it.each([
+  'OMP_PROFILE',
+  'PI_PROFILE',
+  'PI_CODING_AGENT_DIR',
+  'models.yaml',
+  'models.json',
+  'missing entry',
+] as const)('模拟：OMP 表单遇到 %s 返回 null，目录保持原样', (reason) => {
+  const f = ompFixture()
+  if (reason === 'OMP_PROFILE' || reason === 'PI_PROFILE') f.env[reason] = 'synthetic-profile'
+  if (reason === 'PI_CODING_AGENT_DIR') f.env[reason] = join(f.home, 'unrelated-agent')
+  if (reason === 'models.yaml' || reason === 'models.json') write(join(f.agent, reason), '{}\n')
+  const source = reason === 'missing entry' ? { ...f.source, entry: undefined } : f.source
+  const before = f.snapshot()
+  expect(f.manager.form(source)).toBeNull()
+  expect(f.snapshot()).toEqual(before)
+})
+
+it('模拟：OMP 首次保存写入精确 YAML 和私有回执，消费 token 且不输出密钥', () => {
+  const f = ompFixture()
+  const token = f.form().token
+  const output = (['log', 'info', 'debug', 'warn', 'error'] as const).map((method) =>
+    vi.spyOn(console, method).mockImplementation(() => {}),
+  )
+  const result = f.save({}, { token })
+  expect(result).toMatchObject({
+    ok: true,
+    cli: 'omp',
+    providerId: f.input.providerId,
+    providerLabel: f.input.providerLabel,
+  })
+  expect(JSON.stringify(result)).not.toContain(ompSecret)
+  expect(JSON.stringify(result)).not.toContain('"apiKey"')
+  const models = yaml(fs.readFileSync(f.config, 'utf8'))
+  expect(models).toEqual({
+    providers: {
+      [f.input.providerId]: {
+        baseUrl: f.input.baseUrl,
+        api: 'openai-completions',
+        auth: 'apiKey',
+        apiKey: ompSecret,
+        models: [
+          { id: 'model-a', name: 'model-a' },
+          { id: 'model-b', name: 'model-b' },
+        ],
+      },
+    },
+  })
+  const receiptText = fs.readFileSync(f.receipt, 'utf8')
+  expect(JSON.parse(receiptText)).toEqual({
+    version: 1,
+    providers: { [f.input.providerId]: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    labels: { [f.input.providerId]: f.input.providerLabel },
+  })
+  expect(managedPiOmpProviders(f.agent, models, {})).toEqual(new Set([f.input.providerId]))
+  expect(receiptText).not.toContain(ompSecret)
+  if (process.platform !== 'win32') {
+    for (const path of [f.config, f.receipt]) expect(fs.statSync(path).mode & 0o777).toBe(0o600)
+    for (const path of [f.stateDirectory, join(f.stateDirectory, 'accounts'), dirname(f.agent), f.agent])
+      expect(fs.statSync(path).mode & 0o777).toBe(0o700)
+  }
+  const before = f.snapshot()
+  expect(f.save({}, { token })).toMatchObject({
+    ok: false,
+    issues: [{ message: expect.stringContaining('表单已过期') }],
+  })
+  expect(f.snapshot()).toEqual(before)
+  for (const spy of output) expect(spy).not.toHaveBeenCalled()
+})
+
+it('模拟：OMP 追加服务商保留 CRLF、注释和旧配置，全局配置、agent.db 与 .env 字节不变', () => {
+  const f = ompFixture()
+  const before = [
+    '# keep header',
+    'metadata: { enabled: true, tags: [one, two] } # keep top-level field',
+    'providers:',
+    '  old-provider: # keep existing provider',
+    '    api: openai-responses',
+    '    baseUrl: https://old.invalid/v1',
+    '    apiKey: sk-fake-existing-plugin',
+    '    models: [{id: old-model, name: Old model}]',
+    '# keep footer',
+    '',
+  ].join('\r\n')
+  write(f.config, before)
+  const nativeFiles = [join(f.global, 'models.yml')]
+  write(nativeFiles[0]!, 'providers: {global-demo: {baseUrl: "https://global.invalid/v1"}}\n')
+  for (const directory of [f.global, f.agent]) {
+    const db = join(directory, 'agent.db'),
+      env = join(directory, '.env')
+    write(db, 'synthetic db fixture\x00\r\n')
+    write(env, 'SYNTHETIC_KEY=sk-fake-existing-env\r\n')
+    nativeFiles.push(db, env)
+  }
+  const nativeHashes = nativeFiles.map(hashFile)
+  expect(f.save()).toMatchObject({ ok: true })
+  const after = fs.readFileSync(f.config, 'utf8')
+  expect(after).toContain('\r\n')
+  expect(after.replaceAll('\r\n', '')).not.toMatch(/[\r\n]/)
+  for (const comment of [
+    '# keep header',
+    '# keep top-level field',
+    '# keep existing provider',
+    '# keep footer',
+  ])
+    expect(after).toContain(comment)
+  const { providers, ...otherFields } = yaml(after)
+  const { providers: previousProviders, ...previousFields } = yaml(before)
+  expect(otherFields).toEqual(previousFields)
+  expect(providers['old-provider']).toEqual(previousProviders['old-provider'])
+  expect(Object.keys(providers).sort()).toEqual([f.input.providerId, 'old-provider'].sort())
+  expect(nativeFiles.map(hashFile)).toEqual(nativeHashes)
+})
+
+it('模拟：OMP 拒绝缺失的预留集、Host 预留 ID 和 OMP 内置 ID，文件字节保持原样', () => {
+  const f = ompFixture()
+  write(f.config, 'providers: {existing: {}}\n')
+  const before = f.snapshot()
+  expect(f.save({}, { context: {} })).toMatchObject({
+    ok: false,
+    issues: [{ field: 'providerId', message: expect.stringContaining('无法确认') }],
+  })
+  expect(f.snapshot()).toEqual(before)
+  expect(f.save({}, { context: { ompReserved: new Set([f.input.providerId]) } })).toMatchObject({
+    ok: false,
+    issues: [{ field: 'providerId', message: expect.stringContaining('已存在') }],
+  })
+  expect(f.snapshot()).toEqual(before)
+  expect(f.save({ providerId: 'ollama' })).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+  expect(f.snapshot()).toEqual(before)
+})
+
+it('模拟：OMP 拒绝与本地或全局 ID、保存的显示名称冲突，返回对应字段', () => {
+  const f = ompFixture()
+  write(f.config, 'providers: {Local-Id: {}}\n')
+  write(join(f.global, 'models.yml'), 'providers: {Global-Id: {}}\n')
+  expect(f.save({ providerId: 'managed-id', providerLabel: 'Saved-Label' })).toMatchObject({ ok: true })
+  const before = f.snapshot()
+  for (const providerId of ['local-id', 'global-id', 'saved-label']) {
+    expect(f.save({ providerId })).toMatchObject({ ok: false, issues: [{ field: 'providerId' }] })
+    expect(f.snapshot()).toEqual(before)
+  }
+  for (const providerLabel of ['LOCAL-ID', 'Global-ID', ' saved-LABEL ']) {
+    expect(f.save({ providerLabel })).toMatchObject({ ok: false, issues: [{ field: 'providerLabel' }] })
+    expect(f.snapshot()).toEqual(before)
+  }
+})
+
+it.each([
+  ['API 协议', { api: '@ai-sdk/openai' }, 'api'],
+  ['URL 凭据', { baseUrl: 'https://fake:fake@gateway.invalid/v1' }, 'baseUrl'],
+  ['URL 查询参数', { baseUrl: 'https://gateway.invalid/v1?token=fake' }, 'baseUrl'],
+  ['重复模型', { models: ['same-model', 'same-model'] }, 'models'],
+  ['命令密钥', { apiKey: '!cmd' }, 'apiKey'],
+  ['环境变量引用', { apiKey: '$OPENAI_API_KEY' }, 'apiKey'],
+  ['带大括号的环境变量引用', { apiKey: '${X}' }, 'apiKey'],
+  ['占位密钥', { apiKey: 'placeholder' }, 'apiKey'],
+  ['标识符形态密钥', { apiKey: 'abcDEF_123' }, 'apiKey'],
+  ['与环境变量同名的密钥', { apiKey: 'sk-fake-env-name' }, 'apiKey'],
+  ['粘贴到显示名称的密钥', { providerLabel: `Demo ${ompSecret}` }, 'providerLabel'],
+] satisfies [string, Partial<ReturnType<typeof ompFixture>['input']>, string][])(
+  '模拟：OMP 拒绝%s，返回字段问题且文件字节保持原样',
+  (_reason, patch, field) => {
+    const f = ompFixture({ env: { 'sk-fake-env-name': 'sk-fake-env-value' } })
+    write(f.config, 'providers: {existing: {}}\n')
+    const before = f.snapshot()
+    const result = f.save(patch)
+    expect(result).toMatchObject({ ok: false, issues: [{ field }] })
+    expect(JSON.stringify(result)).not.toContain(patch.apiKey ?? ompSecret)
+    expect(f.snapshot()).toEqual(before)
+  },
+)
+
+it.each([
+  ['重复键', 'providers:\n  old: {}\n  old: {}\n'],
+  ['别名', 'anchor: &old {}\nproviders:\n  old: *old\n'],
+])('模拟：OMP 遇到含%s的 YAML 返回通用错误，文件字节保持原样', (_reason, contents) => {
+  const f = ompFixture()
+  write(f.config, contents)
+  const before = f.snapshot()
+  expect(f.save()).toEqual({
+    ok: false,
+    issues: [
+      {
+        message: '保存失败，原生配置未更改；请检查文件格式、权限或原生账号锁后重试',
+      },
+    ],
+  })
+  expect(f.snapshot()).toEqual(before)
+})
+
+it('模拟：OMP 使用选项时钟拒绝过期 token，目录保持原样', () => {
+  let now = 1_000
+  const f = ompFixture({ now: () => now })
+  const token = f.form().token
+  const before = f.snapshot()
+  now += 10 * 60_000
+  expect(f.save({}, { token })).toMatchObject({
+    ok: false,
+    issues: [{ message: expect.stringContaining('表单已过期') }],
+  })
+  expect(f.snapshot()).toEqual(before)
+})
+
+it.each([false, true])(
+  '模拟：OMP 提交 YAML 后取消（原配置存在=%s），恢复文件并清除暂存和备份',
+  (existing) => {
+    const f = ompFixture()
+    if (existing)
+      expect(f.save({ providerId: 'old-provider', providerLabel: 'Old Provider' })).toMatchObject({
+        ok: true,
+      })
+    const before = f.snapshot()
+    let written: unknown
+    let calls = 0
+    const guard = () => {
+      if (++calls === 3) {
+        written = yaml(fs.readFileSync(f.config, 'utf8'))
+        throw new Error('synthetic cancellation')
+      }
+    }
+    expect(f.save({}, { guard })).toMatchObject({ ok: false })
+    expect(written).toMatchObject({ providers: { [f.input.providerId]: { apiKey: ompSecret } } })
+    expect(f.snapshot()).toEqual(before)
+  },
+)
+
+it('模拟：ompLiteralKeyIssue 仅在 Windows 忽略环境变量名的大小写', () => {
+  const env = { 'SK-FAKE-ENV-NAME': 'sk-fake-env-value' }
+  const match = expect.stringContaining('同名环境变量')
+  expect(ompLiteralKeyIssue('sk-fake-env-name', env, 'win32')).toEqual(match)
+  expect(ompLiteralKeyIssue('sk-fake-env-name', env, 'linux')).toBeUndefined()
+  expect(ompLiteralKeyIssue('SK-FAKE-ENV-NAME', env, 'linux')).toEqual(match)
+  expect(ompLiteralKeyIssue('sk-fake-unmatched', env, 'win32')).toBeUndefined()
+})
+
+it('模拟：addOmpProvider 初始化空 providers，按字面值回读，拒绝覆盖同 ID', () => {
+  const node = ompProviderNode({
+    baseUrl: 'https://gateway.invalid/v1',
+    api: 'openai-responses',
+    apiKey: 'sk-fake-key#fragment',
+    models: ['null', 'true', '42'],
+  })
+  const text = addOmpProvider('other: [1, true, null]\nproviders:\n', 'custom-omp', node)
+  expect(yaml(text)).toEqual({ other: [1, true, null], providers: { 'custom-omp': node } })
+  expect(() => addOmpProvider(text, 'custom-omp', node)).toThrow('Invalid OMP models.yml')
 })

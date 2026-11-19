@@ -28,6 +28,21 @@
 | 密钥表示及凭据优先级 | 版本标签文档确认普通 `apiKey` 先作为环境变量名查找，缺失或为空时以原字符串作为密钥；`!` 前缀另有命令解析语义。优先级为运行时覆盖 → YAML 显式配置 → 已存 OAuth → 登录写入的 API Key → 扩展配置回退 → 环境映射 → 其他已存 API Key。版本标签的注册表将 YAML 密钥注册为配置覆盖，`AuthStorage` 的源码注释也确认它在存储层之前。该顺序意味着同 ID 会遮蔽 `agent.db` 中的既有登录，新增必须查重。 |
 | 实施前待核实 | 当前构建对表单生成 YAML 的本地原生读回、所提协议在最小模型条目下的可见性、字面密钥与最终生效环境同名时的处理，以及空库／同 ID 合成凭据的实际选择，均未做实证。`cascade.ts` 和 schema bundle 未取得可用版本标签正文。命名 profile、显式目录和 broker 等覆盖来源也未核实。 |
 
+#### 实施核实结果（2026-11-19，门槛通过）
+
+隔离目录 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-omp-custom-provider/`（0700）下，以临时 `HOME` 和 `PI_CODING_AGENT_DIR` 运行本机 `/Users/leeyl/.local/bin/omp`（`omp/18.22.0`），`PI_OFFLINE=1`，全部服务商指向本机假端点 `127.0.0.1:18791`（只记录请求头、一律回 401），密钥均为虚构值；未改用户 `~/.omp`，未发真实模型请求。
+
+| 核实项 | 结果 |
+| --- | --- |
+| 读取与可见性 | `models.yml` 的 `providers.<id>` 带 `baseUrl`、`api`、`auth: apiKey`、`apiKey`、`models[{id,name}]` 时，四种 API 的模型均出现在 `omp models --json`（选择器 `<id>/<model>`）。 |
+| 字面密钥 | `omp -p --model <id>/<model>` 向假端点发出的请求：OpenAI Chat/Responses 与 Anthropic Messages 为 `Authorization: Bearer <原值>`（Anthropic 有无 `auth: apiKey` 均如此），Google 为 `x-goog-api-key: <原值>`；`fake-${HOME}-x` 原样发出，不插值。 |
+| 环境变量名优先 | `apiKey` 任何字符串都先按环境变量名查找：进程环境（含带短横线的名字）、启动目录 `.env`、agent 目录 `.env`、`~/.omp/.env` 都会替换字面值。→ 拒绝 `^[A-Za-z_][A-Za-z0-9_]*$` 形式、与 Host 进程环境同名（Windows 不区分大小写）、`!` 命令与 `$` 引用及占位符；项目 `.env` 中恰好以该密钥为变量名的情形无法在保存时排除，记为剩余风险。 |
+| 整文件失效 | 任一服务商校验失败（如缺 `apiKey`）时 OMP 提示 `models.yml validation failed — custom providers disabled`，整份文件的自定义服务商全部不可见。→ 写入节点总是完整，写后用同一解析回读比对。 |
+| 内置同名 | 自定义 `openai`、`deepseek`、`zai`、`kimi-code`、`openrouter` 等会与内置目录合并（列出 5–1240 个模型），全新 ID 只列出自定义模型。→ 保存前在空 HOME 中用合成占位值请 OMP 列出该 ID 的目录，多于占位模型即判为内置；仅动态发现的 `ollama`、`lm-studio`、`vllm` 无内置目录，另列保留 ID。实测探测 `openai`/`deepseek`/`zai` 为真、`my-own-provider` 为假，每次 2–4.5 秒，临时目录清理。 |
+| 目标与来源 | 账号终端与 Worker 使用 `<stateDirectory>/accounts/omp/agent`；Worker 快照 `snapshotPiOmpNative` 先全局后插件合并为 JSON 形式的 `models.yml`，真实 OMP 能读出插件新增条目与全局条目。OMP 文件选择顺序为 `models.yml` → `models.yaml` → 迁移 `models.json`，插件目录存在后两者时表单返回 `null`。 |
+
+通过的 API 选项即上表四项。服务商级 `name` 未核实，名称只存回执 `labels`。
+
 证据以版本标签为准。[OMP v18.22.0 模型文档](https://github.com/can1357/oh-my-pi/blob/v18.22.0/docs/models.md) · [配置校验](https://github.com/can1357/oh-my-pi/blob/v18.22.0/packages/coding-agent/src/config/models-config.ts#L115-L190) · [密钥注册](https://github.com/can1357/oh-my-pi/blob/v18.22.0/packages/coding-agent/src/config/model-registry.ts#L2189-L2195) · [AuthStorage](https://github.com/can1357/oh-my-pi/blob/v18.22.0/packages/ai/src/auth-storage.ts#L1-L19)
 
 ### 决定 2：使用 OMP 原生字段映射通用表单

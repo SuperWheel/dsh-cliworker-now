@@ -1520,9 +1520,15 @@ Windows 保留已核验 launcher 的静态哈希。1.5.2 包内 managed updater 
 
 2026-11-15 修正：Pi 表单写入与账号登录一致的 `<stateDirectory>/accounts/pi/agent/models.json` 与 `auth.json`，显示实际路径；不修改全局 `~/.pi/agent`。Worker 使用全局与插件来源合并后的快照，同 provider 的插件来源优先，因此同时拒绝两处已有 ID/名称冲突。缺省 stateDirectory 跟随 DSH_HOME；未核实的 agent 覆盖仍回退。同日后续修复：Hermes 表单复用 `effectiveHermesHome` 单选生效 HOME，显示实际路径并在提交前复核来源，保留 providers 新建和 dotenv/回滚保护；未生效 HOME 不合并、不写入。OpenCode 表单改写 `accounts/opencode/config/opencode/opencode.json(c)` 与账号登录共用的 `accounts/opencode/data/opencode/auth.json`，对全局三种配置和凭据执行重名检查。两者的模拟运行准备读回及 Hermes HTTP 自定义服务商既有白名单限制见变更 design.md；不代表实机执行通过。
 
-OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/archives/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
+（2026-11-19 更新：OMP 已改为写插件账号目录的 `models.yml`，见下文「OMP 其他服务商」。）OMP 数据库导入的完整回滚、Kimi 2.6.1 registry 导入与通用 endpoint 的对应关系、TRAE CN 通用自定义凭据格式尚未核实，返回 null 并保持原生终端。显式未核实配置覆盖/profile 同样回退。没有真实账号、模型、Desktop 或 Windows 验收；前端独立实施。原生源码、帮助命令、事务异常边界及验收见[本次变更](../openspec/archives/vnext-custom-provider-form-leeyl/design.md)和对应 tasks.md。
 
 2026-11-15 账号窗口修复（`openspec/archives/vnext-account-window-fixes-leeyl/`）：表单写入的服务商同时记录归属回执，账号窗口据此显示「退出」；用户决定原生模型配置文件（Pi models.json、OMP models.yml）中的服务商也可删除（行 id `native.config`）。删除前备份原文件到 `<stateDirectory>/account-config-backups/<cli>/<时间>-<uuid>/`（0600），YAML 按语法节点位置删除单个服务商、不重新序列化，JSON 只删该属性；原子替换并保留文件权限，拒绝符号链接、硬链接与重复键/别名等无法安全编辑的结构，失败回滚，独立回读确认后才报成功；插件快照副本仅在内容与原生条目一致时同步删除。环境变量来源保持只读。账号终端启动前等待同一 CLI 的旧账号查询与模型目录读取通道收尾，终端占用期间拦截新的目录读取；登录前基线在终端启动前读取，成功状态在进程清理与缓存作废之后发布。
+
+## 2026-11-19：OMP 其他服务商（v0.9.2-omp-custom-provider-leeyl）
+
+OMP 18.22.0 在临时 HOME 的实测：`PI_CODING_AGENT_DIR/models.yml` 的 `providers.<id>`（`baseUrl`、`api`、`auth: apiKey`、`apiKey`、`models[]`）四种协议均可见于 `omp models --json`，对本地假端点发出的请求携带字面密钥（OpenAI 兼容与 Anthropic 为 `Authorization: Bearer`，Google 为 `x-goog-api-key`），`${…}` 不插值。三项约束决定了写入规则：任一服务商校验失败会让整份 models.yml 的自定义服务商全部失效；与内置 ID 同名会与内置目录合并、遮蔽原有登录；任何 `apiKey` 字符串都会先按环境变量名查找（进程环境、项目目录 `.env`、agent 目录 `.env`、`~/.omp/.env` 均生效），找不到才用字面值。
+
+因此表单只写 `<stateDirectory>/accounts/omp/agent/models.yml` 新增的一个节点，与归属回执一起原子提交并独立回读（内容与 0600）；不碰全局 `~/.omp/agent`、`agent.db` 或 `.env`。保存前在账号 reservation 内读取全局与插件两处的服务商与凭据行 ID、原生登录选项，并在空 HOME 里用合成占位值让 OMP 列出该 ID 的目录，多于占位模型即判为内置；仅动态发现的 ollama/lm-studio/vllm 另列保留 ID。读不到这些信息时拒绝保存。密钥拒绝 `!` 命令、变量引用、占位符、环境变量名形式（`^[A-Za-z_][A-Za-z0-9_]*$`）及与 Host 进程环境同名的值；项目 `.env` 中恰好以该密钥为变量名的情形无法在保存时排除，属已知剩余风险。profile、重定向的 agent 目录或插件目录已有 `models.yaml`/`models.json` 时返回 null，保留原生终端。名称写入回执的可选 `labels`，账号卡片据此显示。
 
 ### 2026-11-14 Windows 官方默认安装的下载接管（任务 W）
 

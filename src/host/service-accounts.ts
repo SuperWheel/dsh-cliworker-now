@@ -303,7 +303,7 @@ export async function customProviderForm(
     // window starts at the same moment; only saving takes the account reservation.
     host.trackAccountParent(parent)
     // Unsupported CLIs must not touch their entry stores (notably retired Harness).
-    if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id)) return 'null'
+    if (!['pi', 'omp', 'opencode', 'hermes', 'zcode'].includes(id)) return 'null'
     return JSON.stringify(host.customProviderManager().form(host.customProviderSource(parent.id, id)))
   } catch (error) {
     throw failure(error)
@@ -335,16 +335,49 @@ export async function saveCustomProvider(
     await host.accounts.settleQueries(id, AbortSignal.any([control, AbortSignal.timeout(30_000)]))
     releaseAccount = host.accounts.reserveCustomProvider(id)
     host.trackAccountParent(parent)
-    if (!['pi', 'opencode', 'hermes', 'zcode'].includes(id))
+    if (!['pi', 'omp', 'opencode', 'hermes', 'zcode'].includes(id))
       return JSON.stringify({ ok: false, issues: [{ message: '请使用此 CLI 的原生终端配置' }] })
     const source = host.customProviderSource(parent.id, id)
-    const result = host.customProviderManager().save(source, token, valuesJson, () => {
-      control.throwIfAborted()
-      host.runtime.assertCliEnabled(id)
-      host.runtime.assertAccountIdle(id)
-      if (JSON.stringify(host.customProviderSource(parent.id, id)) !== JSON.stringify(source))
-        throw new Error('CLI 入口已变化')
-    })
+    let ompReserved: Set<string> | undefined
+    if (id === 'omp') {
+      // Read every existing OMP id (and OMP's own catalog for this id) while the reservation is held.
+      let provider: unknown
+      try {
+        provider = (JSON.parse(valuesJson) as { providerId?: unknown })?.providerId
+      } catch {
+        provider = undefined
+      }
+      if (typeof provider === 'string' && /^[a-z][a-z0-9_-]{0,63}$/.test(provider.trim())) {
+        try {
+          ompReserved = await host.accounts.ompProviderReservations(provider.trim(), control)
+        } catch (error) {
+          if (error instanceof ProcessCleanupUnconfirmedError) throw error
+          control.throwIfAborted()
+          return JSON.stringify({
+            ok: false,
+            issues: [
+              {
+                field: 'providerId',
+                message: '无法确认此 ID 是否已被 OMP 使用，请稍后重试或在原生终端中配置',
+              },
+            ],
+          })
+        }
+      }
+    }
+    const result = host.customProviderManager().save(
+      source,
+      token,
+      valuesJson,
+      () => {
+        control.throwIfAborted()
+        host.runtime.assertCliEnabled(id)
+        host.runtime.assertAccountIdle(id)
+        if (JSON.stringify(host.customProviderSource(parent.id, id)) !== JSON.stringify(source))
+          throw new Error('CLI 入口已变化')
+      },
+      ompReserved ? { ompReserved } : {},
+    )
     if (result.ok) {
       try {
         host.invalidateSettingsDisplay(id)

@@ -99,7 +99,7 @@ dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in
 | Dispatch and follow-up        | Dispatch by naming a CLI, follow up by agent name, or continue in the child session. Messages sent while it runs are queued or steered by the native rules                     |
 | Project settings              | Default model and effort per project; a new main conversation in the same project asks whether to reuse them                                                                   |
 | Goal · plan · feedback · fork | Use these Harness features in child sessions; plan maps to the CLI's native plan mode and fork creates a native fork; unsupported entries explain why                          |
-| Accounts                      | Step-by-step login, logout, switching and multiple accounts; Pi, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available      |
+| Accounts                      | Step-by-step login, logout, switching and multiple accounts; Pi, OMP, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available |
 | Update CLIs                   | Check, update all, update one or install; updates stay on the existing installation and never add a second copy; official and plugin download channels with resume and cleanup |
 | Sibling dispatch              | An agent can dispatch sibling Workers; DSH's own child agents also appear in the CLI Worker window (dsh-1, dsh-2, …)                                                           |
 | Parallel writes (optional)    | When on, a conflicting writer runs in a plugin-owned copy and the main agent merges it back afterwards (no Git required, nothing is committed)                                 |
