@@ -75,7 +75,8 @@
   - 另见：主 Agent 未核查产物即称「循环没有执行，`ticks2.txt` 也未生成」，与实际 4 行不符。停止说明里「只说明进度」可能让模型略过核查，用户决定调整措辞，见 4.7。
 - [x] 4.7 调整手动停止说明：主 Agent 向用户说明进度前先只读核查实际产物，以核查结果为准，不凭本轮部分回复推测。
   - `STOPPED_BY_USER_GUIDANCE` 与 `src/host/routing.ts` 派遣说明改为「先只读核查实际产物，再按核查结果说明进度」，增量规格同步；`tests/agy-run-outcome.test.ts` 用户停止用例增加该断言，39 例通过；关联 16 个测试文件 898 例通过，`pnpm typecheck` 通过，eslint 无输出，严格校验通过。
-  - 未执行：新措辞尚未正式构建，也未在 Desktop 复测主 Agent 是否先核查产物。
+  - Desktop 复测（2026-11-20，用户授权「构建并复测」）：确认无活动 Worker 后 `pnpm build:preview`、退出 Desktop、`pnpm build` 通过，`lib/index.js` 含新措辞，带无障碍参数重启。Codex Computer Use 在 `ws` 新建对话（会话 `session-f101111e-e4f0-4344-b48a-84e0188dac80`，主模型 GLM-5.3-Flash），派 `codex-1`（GPT-6-Luna、Low）写 `ticks3.txt`，00:07:06 从 Worker 详情停止。
+  - 会话日志：16:07:07Z 主 Agent 收到 `stoppedBy: "user"` 与新说明，16:07:14Z 调一次只读 `bash` 核查 `ticks3.txt`（4 行，00:06:51～00:07:06），回复按核查结果说明「4 行、未完成、已按规则不自动续聊或重新派遣」并等待用户指示，16:07:23Z 结束本轮。之后约 90 秒无新的 Worker 运行或 `cliworker_followup`；`ticks3.txt` 停在 4 行，无残留循环进程。
 - [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
   - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
 
