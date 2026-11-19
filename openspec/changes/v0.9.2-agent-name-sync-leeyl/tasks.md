@@ -1,6 +1,6 @@
 # Tasks
 
-2026-11-19 实施：主任务 1–3、5 与 4.1 已完成并通过模拟回归；4.2、4.3 页头补丁在 rc.5 基线上进行；主任务 6 的 Desktop 实机、真实派遣与真实工具寻址未执行（留待四个变更合并后统一验收）。工时为规划估算。实施 worktree `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-agent-name-sync`（分支 agent-name-sync，已变基到 `dsh-022rc5-adapt`，即 PR #15 之上）。下列测试除注明外均为模拟夹具（标注见各测试文件），环境 macOS、Node 22.23.1、corepack pnpm 11.25.0。跨变更前置为 `v0.9.2-dsh-rc5-adapt-leeyl` 完成 rc.5 的 ui-session、ui-conversation、ui-subagent、ui-chat 四包重建；主任务 4 的页头补丁及主任务 6 的集成验收须在该基线交付后开展。
+2026-11-19 实施：主任务 1–3、5 与 4.1 已完成并通过模拟回归；4.2、4.3 页头补丁已在 rc.5 基线上完成；分支已变基到合入 #14、#15、#16 后的 main（72464ed）；主任务 6 的 Desktop 实机、真实派遣与真实工具寻址未执行（留待四个变更合并后统一验收）。工时为规划估算。实施 worktree `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-agent-name-sync`（分支 agent-name-sync，已变基到 `dsh-022rc5-adapt`，即 PR #15 之上）。下列测试除注明外均为模拟夹具（标注见各测试文件），环境 macOS、Node 22.23.1、corepack pnpm 11.25.0。跨变更前置为 `v0.9.2-dsh-rc5-adapt-leeyl` 完成 rc.5 的 ui-session、ui-conversation、ui-subagent、ui-chat 四包重建；主任务 4 的页头补丁及主任务 6 的集成验收须在该基线交付后开展。
 
 ## 1. 同父会话命名与 Worker 创建 〔后端｜8h〕
 
@@ -39,8 +39,12 @@
 
 - [x] 4.1 在现有名称编辑器接入统一规则和 Host 冲突反馈；用组件用例核对空闲与运行中可改、失败保留输入、复制与查询使用新名，以及原生子 Agent 显示「仅修改显示名」。
   - `src/client/rename-worker.tsx` 保存前用 `agentNameProblem` 显示具体原因、不合规不发请求、保留输入，上限 32；弹窗加改名副作用说明（Worker：子会话、历史、运行中任务不变，旧名可续聊且保留占用，未接入界面可能显示原名；原生：仅修改显示名）。`dsh-subagents.tsx` 原生行新增「改名」并标注「仅修改显示名」。`tests/rename-worker.test.tsx` 21 项、`tests/panel.test.tsx` 137 项、`tests/dsh-subagents-client.test.tsx` 10 项通过。
-- [ ] 4.2 在外部前置 `v0.9.2-dsh-rc5-adapt-leeyl` 的四包重建完成后，将按父会话读取的插件 Remote 快照与更新接入随包 `SubagentHeaderLineage`。增加页头组件回归，核对同名不同父、冷启动、切换会话、断线恢复、订阅释放，以及描述、状态与导航 ID。
-- [ ] 4.3 在上述 rc.5 基线上复核页头补丁及 vendor 产物，运行相关上游组件用例，记录补丁和构建校验结果。同步中英文 README、设计与宿主扩展协议中关于有效名称、旧名及未覆盖界面的说明。
+- [x] 4.2 在外部前置 `v0.9.2-dsh-rc5-adapt-leeyl` 的四包重建完成后，将按父会话读取的插件 Remote 快照与更新接入随包 `SubagentHeaderLineage`。增加页头组件回归，核对同名不同父、冷启动、切换会话、断线恢复、订阅释放，以及描述、状态与导航 ID。
+  - 经既有 `slots.provideRoot` 传入可选根属性 `cliworkerHeaderNames`（与 sidebar-chat 补丁同样用 Slot 属性传值，source.patch 既有用法；rc.5 renderer 把根属性并入会话 Slot 并随 Cordis 生命周期撤销），不改 Harness 核心、不替换 subagent 后台包、不劫持目录投影。插件 Client 入口 `src/client/index.tsx` 以 `scope.effect` 注册 `src/client/header-agent-names.ts`：页头挂载时按目录父 ID 订阅 Host `agentNames` + `watchAgentNames`，同父多视图共享一条流，最后一处卸载即释放，断线回退官方名称。Host 快照对真实覆盖项加 `overridden: true`，未改名的 `dsh-N` 兼容编号不进入页头。
+  - 上游补丁内新增页头组件用例：同名不同父、冷启动、切换会话、订阅释放、描述/状态/导航 ID 保持；插件侧 `tests/header-agent-names.test.ts` 与 `tests/client-registration.test.ts` 覆盖订阅共享、释放与断线重连。
+- [x] 4.3 在上述 rc.5 基线上复核页头补丁及 vendor 产物，运行相关上游组件用例，记录补丁和构建校验结果。同步中英文 README、设计与宿主扩展协议中关于有效名称、旧名及未覆盖界面的说明。
+  - 补丁 50 个文件，SHA256 `54d15e80f63e2df11e5eed95c206cf222d66120689f1d35f99114324804be920`，两份本地 checkout 从干净 tag `dsh-v0.2.2-rc.5` 应用并通过反向应用检查。上游四包 Vitest（Node 24.22.1，保留代理）128 文件 2,219 项全部通过：session 36、conversation 964、subagent 124、chat 1,095。`build-host-extension.mjs --target 0.2.2-rc.5 --prepare-links`、`check-client-types.mjs`（四包 0 错误）、build、`--verify`（631 个文件）、两步 vendor（4 包 217 文件）均退出 0。ui-session 产物逐字节不变，ui-conversation、ui-chat 仅生成的 CSS 模块名前缀不同。runtime manifest SHA256 `25267328b96715706e2eb080206ec5cf424e307ed49ecd0ba11d84f02bdcc971`。构建缓存全部放本 worktree `.cache/`，rc.5 适配 worktree 的缓存只读克隆。
+  - 中英 README、`doc/design.md`、`doc/feature-details*.md`、`doc/protocols/native-conversation-host-extension.md` 与 `host-extensions/dsh-0.2.2-rc.5/README.md` 已同步有效名称、旧名与未覆盖界面说明。
 
 ## 5. 官方改名接口接管与提案 〔后端｜6h｜前置 2〕
 
@@ -55,6 +59,10 @@
 
 - [ ] 6.1 准备隔离预览，运行相关类型检查、命名与工具回归、预览构建；以隔离 DSH_HOME 检查页头补丁确已载入，核对 Desktop 无活动任务后才更新验收版本。记录 SDK、Desktop、四包版本与预览产物。
   - 计划证据目录为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-agent-name-sync/`，测试根权限 0700。若实际在其他日期开始，按当天日期新建并回填此处。临时 HOME、DSH_HOME、工作区和脱敏验收产物均置于该次目录。（未执行：本次仅撰写提案。）
+  - 2026-11-19 在合入 #14、#15、#16 的 main（72464ed）之上：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.5）；全量 `HOME=<验收目录>/home KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm exec vitest run --maxWorkers=2` 退出 0，370 文件（366 通过、4 跳过），9,043 项（9,028 通过、0 失败、15 跳过），262.67 秒；`corepack pnpm lint` 0 error、334 warning，本分支改动文件的 warning 数与 main 逐文件相同；`corepack pnpm build:preview` 退出 0。
+  - `format:check` 仍报若干文件：经逐个比对，其中 25 个在 main 上原本就未按 Prettier 排版（如 `src/host/runtime.ts`、`src/host/routing.ts`），按规则不整体格式化；新文件及原本合规、被本次改动的文件已用 Prettier 修正。
+  - 隔离 `dsh web`：验收目录 `web/` 下临时 `HOME`、`DSH_HOME`（0700）；Desktop 自带 `runtime/cli/bin/dsh --version` 为 0.2.2-rc.5，`dsh plugin --profile web add` 装入预览 tgz 后以 `--profile web --no-open --host 127.0.0.1 --port 0` 启动，内置浏览器打开（令牌已从日志脱敏、未另存）。浏览器实际加载的客户端合包含页头补丁标记 `cliworkerHeaderNames`；主界面与 CLI Worker 面板（空态）正常渲染，控制台无错误，Host 日志只有启动地址一行。停止后进程退出、无 `host.lock` 残留。
+  - 未执行：Mac Desktop 实机加载与更新（四个变更合并后统一做），因此本项不勾选。
 - [ ] 6.2 **真实派遣与原地改名。** 在 Mac Desktop rc.5 的同一父会话派遣 Codex、Antigravity、ZCode 及 DSH 原生子 Agent，对照面板、页头、目录与派遣回执；另验证原生工具抢先占用 `codex-1` 后自动换号。空闲与运行中各改名一次，记录改名前后 childId、目录条目数、CLI 会话、原有历史、后续输出和终态。
   - （未执行：等待实现、rc.5 四包和已有 CLI／模型选型授权。实机证据记录事件、退出状态与实际产物。）
 - [ ] 6.3 **真实工具寻址。** 对照 `list_agents` 的模型可见结果与工具卡，用新名和旧名分别发送、续聊，在可控的独立轮次中验证按新旧名中断。核对送达 childId、消息 ID、审计、接纳与实际停止；验证主 Agent 用新名或曾用名显式创建被拒绝，并观察主 Agent 与子 Agent 作用域钩子是否触发。
