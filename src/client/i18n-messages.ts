@@ -187,6 +187,23 @@ export const en = {
   '新的聊天标题': 'New chat title',
   '新的智能体名称': 'New agent name',
   '之后可在主对话中通过这个名字继续调用。': 'You can call it again by this name from the main conversation.',
+  '只改名称：子会话、历史和运行中的任务不变；改名前的名称仍可用于续聊，且不能再给其他子 Agent 使用。DSH 中未接入的界面（如团队看板）可能仍显示原名。':
+    'Changing the name keeps the child session, history, and running tasks intact. You can still use the old name to continue the conversation, and it stays reserved for this agent. Other DSH views, such as the team board, may still show the old name.',
+  '仅修改显示名：DSH 中该子 Agent 的身份提示和发出消息的署名仍是原名。':
+    'This changes the display name only. DSH still uses the original name in this agent’s identity prompt and as the sender of its messages.',
+  '名称不能为空': 'Enter an agent name.',
+  '名称最多 32 个字符': 'Use at most 32 characters.',
+  '名称不能包含空格': 'The name cannot contain spaces.',
+  '名称不能使用大写字母，请改成小写': 'Use lowercase letters instead of uppercase letters.',
+  '名称不能包含下划线，可改用连字符（-）': 'Use hyphens (-) instead of underscores.',
+  '名称只能使用小写英文字母、数字和连字符（-），不能包含中文或其他符号':
+    'Use only lowercase English letters, digits, and hyphens (-).',
+  '名称必须以小写英文字母开头': 'Start the name with a lowercase English letter.',
+  '“lead” 保留给 DSH 主 Agent，请换一个名称': 'DSH reserves “lead” for the main agent. Choose another name.',
+  '改名': 'Rename',
+  '仅修改显示名': 'Display name only',
+  'DSH 登记名：{name}': 'DSH registered name: {name}',
+  'DSH 子 Agent 改名暂不可用': 'Renaming DSH sub-agents is temporarily unavailable',
   '取消': 'Cancel',
   '保存标题': 'Save title',
   '保存名称': 'Save name',

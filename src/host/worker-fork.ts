@@ -1,9 +1,11 @@
+import { firstFreeAgentName, isDshAgentName } from '../shared/agent-names.ts'
+import { workerNameKeys } from './roles.ts'
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { cliOf, workerName, type Worker, type HarnessConversationBinding } from '../shared/types.ts'
+import { CLI_SHORT_NAMES, cliOf, workerName, type Worker, type HarnessConversationBinding } from '../shared/types.ts'
 import { bridgedFeatureSupport } from '../shared/conversation-features.ts'
 import type { HarnessConversationRecord } from './harness-conversation-types.ts'
 
@@ -79,13 +81,10 @@ export function nativeForkCut(cli: string, raw: string, sourceId: string): Nativ
   throw new Error('当前 CLI 没有可靠的较早完成轮截点映射')
 }
 
-export function forkWorkerName(parent: Worker, workers: readonly Worker[]): string {
-  const names = new Set(workers.filter((worker) => worker.parentSessionId === parent.parentSessionId)
-    .flatMap((worker) => [workerName(worker), ...(worker.nameAliases ?? [])]).map((name) => name.toLocaleLowerCase()))
-  const stem = `${workerName(parent).slice(0, 48)}·分支`
-  let name = stem, count = 2
-  while (names.has(name.toLocaleLowerCase())) name = `${stem}${count++}`
-  return name
+export function forkWorkerName(parent: Worker, workers: readonly Worker[], occupied?: ReadonlySet<string>): string {
+  const base = workerName(parent)
+  const stem = isDshAgentName(base) ? base : CLI_SHORT_NAMES[cliOf(parent.preference)]
+  return firstFreeAgentName(`${stem.slice(0, 25)}-fork`, occupied ?? workerNameKeys(workers, parent.parentSessionId))
 }
 
 export interface ForkChild {
@@ -95,6 +94,7 @@ export interface ForkChild {
 }
 export interface WorkerForkDependencies {
   worker: Worker
+  occupiedNames?(): ReadonlySet<string>
   workers(): readonly Worker[]
   assertIdle(): void
   history(atMessageId: string): Promise<ForkHistory>
@@ -136,7 +136,7 @@ export async function forkWorkerConversation(deps: WorkerForkDependencies, atMes
     const now = new Date().toISOString()
     worker = {
       id: randomUUID(), parentSessionId: source.parentSessionId, project: source.project,
-      title: `${source.title.slice(0, 180)}·分支`, agentName: forkWorkerName(source, deps.workers()), agentNameOrigin: 'custom',
+      title: `${source.title.slice(0, 180)}·分支`, agentName: forkWorkerName(source, deps.workers(), deps.occupiedNames?.()), agentNameOrigin: 'custom',
       preference: structuredClone(source.preference), mode: source.mode, transport: source.transport,
       ...(source.role ? { role: structuredClone(source.role) } : {}),
       ...(source.goal ? { goal: { ...structuredClone(source.goal), revision: 1, updatedAt: now } } : {}),

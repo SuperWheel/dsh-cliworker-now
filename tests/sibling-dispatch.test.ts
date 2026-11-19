@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SystemPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import { WorkerRuntime } from '../src/host/runtime.ts'
+import { WorkerReferenceMissing, WorkerRuntime } from '../src/host/runtime.ts'
 import { runAccess } from '../src/host/native-approval-policy.ts'
 import { mountNativeTools } from './fixtures/harness-native-tools.ts'
 
@@ -28,11 +28,12 @@ async function fixture() {
     resolveWorker: vi.fn((id: string, workerId: string) => [...workers.values()].find(w => w.parentSessionId === id && w.id === workerId)) }
   // SIMULATION: plugin DSH directory; its own naming/prompt rules are covered in dsh-subagents.test.ts.
   const dshSubagents = {
+    readDirectoryNames: vi.fn(async () => []),
     list: vi.fn(async () => [] as any[]),
     resolve: vi.fn(async (_parent: string, ref: { id?: string; name?: string }) =>
       ref.name?.toLowerCase() === 'dsh-1' || ref.id === 'native-dsh' ? { id: 'native-dsh', agentName: 'dsh-1', mode: 'continuable', title: '模拟 DSH' } : undefined),
     followup: vi.fn(async (_parent: string, ref: { id?: string; name?: string }) =>
-      ref.name?.toLowerCase() === 'dsh-1' ? { kind: 'dsh-subagent', workerId: 'native-dsh', agentName: 'dsh-1', receipt: { messageId: 'sim' } } : undefined),
+      ['dsh-1', 'reviewer'].includes(ref.name?.toLowerCase() ?? '') ? { kind: 'dsh-subagent', workerId: 'native-dsh', agentName: 'dsh-1', receipt: { messageId: 'sim' } } : undefined),
   }
   const chooseDispatch = vi.fn(async (_agent, _signal, cli, _surface) => ({ preference: { cli, model: 'user-selected', effort: 'high' }, role: null }))
   const launch = vi.fn(async (...args: any[]) => {
@@ -151,19 +152,19 @@ describe('direct children dispatch siblings under the main conversation', () => 
 describe('DSH native subagents are addressable by their dsh-N name', () => {
   it('continues dsh-N through cliworker_followup only after no CLI Worker matches; other misses keep the CLI error', async () => {
     const f = await fixture()
-    f.runtime.resolveWorker.mockImplementation(() => { throw new Error('当前对话中没有此名称的智能体，请检查名称或使用 worker_id') })
-    const reply = JSON.parse(await f.call('cliworker_followup', { worker_name: 'dsh-1', prompt: '模拟续聊' }, f.parent) as string)
+    f.runtime.resolveWorker.mockImplementation(() => { throw new WorkerReferenceMissing('当前对话中没有此名称的智能体，请检查名称或使用 worker_id') })
+    const reply = JSON.parse(await f.call('cliworker_followup', { worker_name: 'reviewer', prompt: '模拟续聊' }, f.parent) as string)
     expect(reply).toMatchObject({ kind: 'dsh-subagent', agentName: 'dsh-1' })
-    expect(f.dshSubagents.followup).toHaveBeenCalledWith('main', { id: undefined, name: 'dsh-1' }, '模拟续聊', expect.any(AbortSignal))
+    expect(f.dshSubagents.followup).toHaveBeenCalledWith('main', { id: undefined, name: 'reviewer' }, '模拟续聊', expect.any(AbortSignal))
     await expect(f.call('cliworker_followup', { worker_name: 'codex-9', prompt: 'x' }, f.parent)).rejects.toThrow('没有此名称')
     await expect(f.call('cliworker_followup', { worker_name: 'dsh-7', prompt: 'x' }, f.parent)).rejects.toThrow('没有此名称')
-    expect(f.dshSubagents.followup).toHaveBeenCalledTimes(2)
+    expect(f.dshSubagents.followup).toHaveBeenCalledTimes(3)
   })
   it('respects the window switch: hidden DSH group means names are not resolved', async () => {
     const f = await fixture()
-    f.runtime.resolveWorker.mockImplementation(() => { throw new Error('当前对话中没有此名称的智能体') })
+    f.runtime.resolveWorker.mockImplementation(() => { throw new WorkerReferenceMissing('当前对话中没有此名称的智能体') })
     f.runtime.snapshot.mockImplementation(() => ({ workers: [], showDshSubagents: false }) as any)
-    await expect(f.call('cliworker_followup', { worker_name: 'dsh-1', prompt: 'x' }, f.parent)).rejects.toThrow('没有此名称')
+    await expect(f.call('cliworker_followup', { worker_name: 'dsh-1', prompt: 'x' }, f.parent)).rejects.toThrow('显示已关闭')
     expect(JSON.parse(await f.call('cliworker_status', {}, f.parent) as string)).toEqual([])
     expect(f.dshSubagents.followup).not.toHaveBeenCalled(); expect(f.dshSubagents.list).not.toHaveBeenCalled()
   })
@@ -173,7 +174,7 @@ describe('DSH native subagents are addressable by their dsh-N name', () => {
     const rows = JSON.parse(await f.call('cliworker_status', {}, f.parent) as string)
     expect(rows.map((row: any) => row.agentName)).toEqual(['Codex-1', 'dsh-1'])
     expect(rows[1]).toEqual({ kind: 'dsh-subagent', workerId: 'native-dsh', agentName: 'dsh-1', title: '模拟 DSH', status: 'completed', model: 'sim-model', mode: 'continuable' })
-    f.runtime.resolveWorker.mockImplementation(() => { throw new Error('当前对话中没有此名称的智能体') })
+    f.runtime.resolveWorker.mockImplementation(() => { throw new WorkerReferenceMissing('当前对话中没有此名称的智能体') })
     expect(JSON.parse(await f.call('cliworker_status', { worker_name: 'DSH-1' }, f.parent) as string)).toMatchObject({ kind: 'dsh-subagent', workerId: 'native-dsh' })
     expect(f.dshSubagents.followup).not.toHaveBeenCalled()
   })

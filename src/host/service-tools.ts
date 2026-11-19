@@ -1,6 +1,6 @@
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { workerName } from '../shared/types.ts'
-import { agentNameSchema } from './roles.ts'
+import { assertDshAgentName } from '../shared/agent-names.ts'
 import { integrationReport, isolationGuidance, readResolutions } from './isolated-merge-decisions.ts'
 import {
   CLI_NAME_GUIDANCE,
@@ -62,7 +62,7 @@ export function registerTools(this: ServiceContext): void {
             agent_name: {
               type: 'string',
               description:
-                'Optional user-requested unique worker name within this parent conversation. Otherwise assigned from the CLI short name and an ordinal. Use followup by worker_name to reuse an existing named worker.',
+                'Optional user-requested unique worker name within this parent conversation. Use 1–32 lowercase ASCII letters, digits or hyphens, starting with a letter; lead is reserved. Otherwise assigned from the CLI short name and an ordinal. Use followup by worker_name to reuse an existing named worker.',
             },
             read_only: {
               type: 'boolean',
@@ -83,8 +83,7 @@ export function registerTools(this: ServiceContext): void {
               cli = await this.chooseWorkBuddyVariant(parent, exec.signal, args.cli, questionAgent)
             if (isGenericQoderName(args.cli))
               cli = await this.chooseQoderVariant(parent, exec.signal, args.cli, questionAgent)
-            const agentName =
-              args.agent_name === undefined ? undefined : agentNameSchema.parse(args.agent_name)
+            const agentName = args.agent_name === undefined ? undefined : assertDshAgentName(args.agent_name)
             if (cli === 'kimi' && args.read_only) throw new Error('Kimi 非交互模式不支持只读派遣')
             const setup = await this.chooseDispatch(
               parent,
@@ -166,7 +165,7 @@ export function registerTools(this: ServiceContext): void {
         defineTool({
           name: 'cliworker_followup',
           description:
-            "Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its `dsh-N` name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn's actual tier (a Worker without its own level follows the parent preset); report it as is.",
+            "Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its DSH catalog name listed by cliworker_status or a former name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn's actual tier (a Worker without its own level follows the parent preset); report it as is.",
           parameters: {
             worker_id: { type: 'string' },
             worker_name: { type: 'string' },

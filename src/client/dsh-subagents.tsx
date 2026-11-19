@@ -36,6 +36,7 @@ export function DshSubagentCard({
   child,
   collapsed,
   onOpen,
+  onRename,
   onHide,
   busy,
 }: {
@@ -43,6 +44,7 @@ export function DshSubagentCard({
   collapsed: boolean
   busy: boolean
   onOpen(): void
+  onRename?(): void
   onHide(): void
 }) {
   useT()
@@ -55,6 +57,7 @@ export function DshSubagentCard({
   }, [collapsed])
   const visualStatus = child.stopped ? 'interrupted' : child.status
   const external = child.mode === 'external'
+  const canRename = !collapsed && !busy && child.mode === 'continuable' && !!onRename
   const open = () => {
     if (!collapsed && !external) onOpen()
   }
@@ -63,10 +66,10 @@ export function DshSubagentCard({
     point.current = x === undefined || y === undefined ? undefined : { x, y }
     setMenu(true)
   }
-  // Same card grammar as CLI Workers. The title is DSH-owned, so only "delete"
-  // (hide from this window) is offered; the native child and records remain.
+  // The native conversation title and records remain DSH-owned.
   const entries: MenuEntry[] = [
     { id: 'open', label: t('打开对话'), disabled: collapsed || external },
+    { id: 'rename', label: t('改名'), disabled: !canRename },
     { type: 'separator', id: 'separator' },
     { type: 'label', id: 'delete-scope', text: t('仅在此窗口隐藏，不影响 DSH 原生会话与记录') },
     { id: 'delete', label: t('删除'), disabled: collapsed || busy, danger: true },
@@ -102,6 +105,7 @@ export function DshSubagentCard({
         onSelect={(id) => {
           setMenu(false)
           if (id === 'open') open()
+          else if (id === 'rename' && canRename) onRename?.()
           else if (id === 'delete') onHide()
         }}
         anchor={null}
@@ -137,6 +141,14 @@ export function DshSubagentCard({
         </button>
         <div className="cwn-worker-meta">
           <NameCopy name={child.agentName} disabled={collapsed} />
+          {child.registeredName && child.registeredName !== child.agentName && (
+            <span
+              className="cwn-dsh-display-name-note"
+              title={t('DSH 登记名：{name}', { name: child.registeredName })}
+            >
+              {t('仅修改显示名')}
+            </span>
+          )}
           {child.model && <>
             <span className="cwn-meta-divider cwn-name-divider" aria-hidden="true" />
             <span className="cwn-worker-model" title={child.model}>{child.model}</span>

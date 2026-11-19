@@ -95,7 +95,7 @@ describe('模拟：分支事务', () => {
     const child = vi.mocked(f.deps.publish).mock.calls[0]![0]
     expect(result).toEqual({ workerId: child.id, childSessionId: '分支子会话' })
     expect(child).toMatchObject({ preference: source.preference, mode: source.mode, transport: source.transport,
-      project: source.project, parentSessionId: source.parentSessionId, agentName: '会计·分支', conversationId: '原生新会话',
+      project: source.project, parentSessionId: source.parentSessionId, agentName: 'codex-fork-1', conversationId: '原生新会话',
       goal: { objective: '模拟目标', status: 'paused', revision: 1 } })
     expect(child.preference).not.toBe(source.preference)
     expect(f.worker).toEqual(source)
@@ -106,9 +106,9 @@ describe('模拟：分支事务', () => {
   })
   it('names are unique within their parent, including archived names and aliases', () => {
     const f = fixture()
-    expect(forkWorkerName(f.worker, [f.worker, { ...f.worker, agentName: '会计·分支', archivedAt: '旧' },
-      { ...f.worker, agentName: '其他', nameAliases: ['会计·分支2'] },
-      { ...f.worker, parentSessionId: '另一个父', agentName: '会计·分支3' }])).toBe('会计·分支3')
+    expect(forkWorkerName(f.worker, [f.worker, { ...f.worker, agentName: 'codex-fork-1', archivedAt: '旧' },
+      { ...f.worker, agentName: '其他', nameAliases: ['codex-fork-2'] },
+      { ...f.worker, parentSessionId: '另一个父', agentName: 'codex-fork-3' }])).toBe('codex-fork-3')
   })
   it.each(['assertIdle', 'history', 'native', 'stage', 'child', 'publish'])('cleans up after %s fails without resending any task', async (step) => {
     const f = fixture(), before = structuredClone(f.worker)

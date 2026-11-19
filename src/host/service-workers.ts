@@ -11,9 +11,16 @@ export async function renameWorker(
   signal: AbortSignal,
 ): Promise<void> {
   try {
-    await host.parent(parentSessionId)
-    signal.throwIfAborted()
-    host.runtime.renameWorker(parentSessionId, workerId, name)
+    host.runtime.get(parentSessionId, workerId)
+    if (host.renamingWorkers.has(workerId)) throw new Error('名称正在被其他操作修改，请刷新后重试')
+    host.renamingWorkers.add(workerId)
+    try {
+      await host.parent(parentSessionId)
+      await host.dshSubagents.readDirectoryNames(parentSessionId, signal)
+      await host.runtime.renameWorker(parentSessionId, workerId, name, signal)
+    } finally {
+      host.renamingWorkers.delete(workerId)
+    }
   } catch (error) {
     throw failure(error)
   }
@@ -127,6 +134,7 @@ export async function forkWorker(
   try {
     const parent = await host.parent(parentSessionId)
     signal.throwIfAborted()
+    await host.dshSubagents.readDirectoryNames(parentSessionId, signal)
     if (!host.harnessConversation) throw new Error('Harness CLI 会话桥未就绪')
     return JSON.stringify(
       await host.runtime.forkWorker(parent, workerId, atMessageId, host.harnessConversation, signal),

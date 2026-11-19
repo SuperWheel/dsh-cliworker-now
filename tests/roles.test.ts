@@ -231,22 +231,20 @@ describe('named conversations and frozen roles', () => {
     expect(() => runtime.resolveWorker('other-parent', first.worker.id)).toThrow('does not belong')
     expect(() => runtime.resolveWorker('other-parent', undefined, 'agy-1')).toThrow('没有此名称')
     expect(() => runtime.resolveWorker('parent', first.worker.id, 'agy-2')).toThrow('不匹配')
-    expect(() => runtime.renameWorker('parent', second.worker.id, 'agy-1')).toThrow('同名')
-    // dsh-<n> belongs to DSH native subagents in the same window; a CLI Worker cannot take it.
-    expect(() => runtime.renameWorker('parent', second.worker.id, 'DSH-2')).toThrow('保留给 DSH 子 Agent')
-    expect(() => runtime.renameWorker('parent', second.worker.id, 'dsh-助手')).not.toThrow()
-    runtime.renameWorker('parent', first.worker.id, '小林')
-    expect(runtime.resolveWorker('parent', undefined, '小林').id).toBe(first.worker.id)
-    expect(() => runtime.resolveWorker('parent', undefined, 'agy-1')).toThrow('没有此名称')
-    expect(() => runtime.renameWorker('other-parent', first.worker.id, '小李')).toThrow('does not belong')
+    await expect(runtime.renameWorker('parent', second.worker.id, 'agy-1')).rejects.toThrow('同名')
+    await expect(runtime.renameWorker('parent', second.worker.id, 'DSH-2')).rejects.toThrow('大写')
+    await expect(runtime.renameWorker('parent', second.worker.id, 'dsh-助手')).rejects.toThrow('中文')
+    await runtime.renameWorker('parent', second.worker.id, 'dsh-2')
+    await runtime.renameWorker('parent', first.worker.id, 'reviewer')
+    expect(runtime.resolveWorker('parent', undefined, 'reviewer').id).toBe(first.worker.id)
+    expect(runtime.resolveWorker('parent', undefined, 'agy-1').id).toBe(first.worker.id)
+    await expect(runtime.renameWorker('other-parent', first.worker.id, 'audit')).rejects.toThrow('does not belong')
     const save = vi.spyOn(storage, 'save').mockImplementationOnce(() => {
       throw new Error('Synthetic disk failure')
     })
-    expect(() => runtime.renameWorker('parent', first.worker.id, '未保存的新名')).toThrow(
-      'Synthetic disk failure',
-    )
-    expect(runtime.resolveWorker('parent', undefined, '小林').id).toBe(first.worker.id)
-    expect(first.worker.agentName).toBe('小林')
+    await expect(runtime.renameWorker('parent', first.worker.id, 'new-name')).rejects.toThrow('Synthetic disk failure')
+    expect(runtime.resolveWorker('parent', undefined, 'reviewer').id).toBe(first.worker.id)
+    expect(first.worker.agentName).toBe('reviewer')
     save.mockRestore()
     delete second.worker.agentName
     storage.save(second.worker)
@@ -254,7 +252,7 @@ describe('named conversations and frozen roles', () => {
     // A malformed old store with duplicate names is surfaced instead of choosing arbitrarily.
     second.worker.agentName = first.worker.agentName
     storage.save(second.worker)
-    expect(() => runtime.resolveWorker('parent', undefined, '小林')).toThrow('不唯一')
+    expect(() => runtime.resolveWorker('parent', undefined, 'reviewer')).toThrow('不唯一')
     await runtime.stop('parent', first.worker.id)
     await runtime.stop('parent', second.worker.id)
   })

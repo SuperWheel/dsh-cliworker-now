@@ -94,16 +94,16 @@ dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in
 
 ## Capabilities
 
-| Capability                    | What it does                                                                                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Dispatch and follow-up        | Dispatch by naming a CLI, follow up by agent name, or continue in the child session. Messages sent while it runs are queued or steered by the native rules                     |
-| Project settings              | Default model and effort per project; a new main conversation in the same project asks whether to reuse them                                                                   |
-| Goal · plan · feedback · fork | Use these Harness features in child sessions; plan maps to the CLI's native plan mode and fork creates a native fork; unsupported entries explain why                          |
-| Accounts                      | Step-by-step login, logout, switching and multiple accounts; Pi, OMP, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available |
-| Update CLIs                   | Check, update all, update one or install; updates stay on the existing installation and never add a second copy; official and plugin download channels with resume and cleanup |
-| Sibling dispatch              | An agent can dispatch sibling Workers; DSH's own child agents also appear in the CLI Worker window (dsh-1, dsh-2, …)                                                           |
-| Parallel writes (optional)    | When on, a conflicting writer runs in a plugin-owned copy and the main agent merges it back afterwards (no Git required, nothing is committed)                                 |
-| Time limits and language      | Total limit 30 minutes by default plus an optional idle limit; UI follows DSH, Chinese or English                                                                              |
+| Capability                    | What it does                                                                                                                                                                                 |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dispatch and follow-up        | Dispatch by naming a CLI, follow up by agent name, or continue in the child session. Messages sent while it runs are queued or steered by the native rules                                   |
+| Project settings              | Default model and effort per project; a new main conversation in the same project asks whether to reuse them                                                                                 |
+| Goal · plan · feedback · fork | Use these Harness features in child sessions; plan maps to the CLI's native plan mode and fork creates a native fork; unsupported entries explain why                                        |
+| Accounts                      | Step-by-step login, logout, switching and multiple accounts; Pi, OMP, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available               |
+| Update CLIs                   | Check, update all, update one or install; updates stay on the existing installation and never add a second copy; official and plugin download channels with resume and cleanup               |
+| Sibling dispatch              | An agent can dispatch sibling Workers; DSH's own child agents also appear in the CLI Worker window; Worker names match DSH child agent names (codex-1, agy-1, …) and can be renamed in place |
+| Parallel writes (optional)    | When on, a conflicting writer runs in a plugin-owned copy and the main agent merges it back afterwards (no Git required, nothing is committed)                                               |
+| Time limits and language      | Total limit 30 minutes by default plus an optional idle limit; UI follows DSH, Chinese or English                                                                                            |
 
 Per-CLI support for plan, fork and more details are in [feature details and verification boundaries](doc/feature-details.en.md).
 
@@ -152,11 +152,13 @@ For `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, `ERR_PNPM_IGNORED_BUILDS` and simila
 
 1. **Dispatch**: in a main conversation with a working folder, name a CLI, for example:
 
-   > Use Codex to check this project's login error handling, and name this agent "Code reviewer".
+   > Use Codex to check this project's login error handling, and name this agent `code-reviewer`.
 
 2. **Choose**: the first time you use this CLI in a project, question cards ask for the **model, reasoning effort and role**; it starts only after you confirm all three, and cancelling saves nothing. To stop the questions, turn off "Ask for model before dispatch" under CLI Worker settings → Task scheduling.
 3. **Follow and stop**: click a task card in the sidebar to open its conversation on the right; closing the sidebar does not stop the task. You can stop it at any time.
-4. **Continue**: after it ends, continue in the child session, or say "ask Code reviewer to check test coverage too" in the main conversation. Right-click a card to retitle, rename or delete it.
+4. **Continue**: after it ends, continue in the child session, or say "ask code-reviewer to check test coverage too" in the main conversation. Right-click a card to retitle, rename or delete it.
+
+Renaming a child updates its Worker card and bundled DSH header within the same parent session. The header keeps the task description and shows the new name even before you open the Worker panel. You can still use the former name for follow-ups. Native message signatures, the team board and the workspace tree use the host’s name on rc.5.
 
 See [role presets](doc/role-presets.md) and [usage details](doc/usage-details.en.md) for more.
 

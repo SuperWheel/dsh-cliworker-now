@@ -83,6 +83,7 @@ export async function launch(
     expected,
   )
   if (authorizedPreference.model !== preference.model) throw new Error('模型与思考强度不匹配，请重新选择')
+  if (!workerId) await this.dshSubagents.readDirectoryNames(agent.id, signal)
   signal.throwIfAborted()
   this.assertExecution(agent, true)
   this.runtime.assertCliEnabled(cliOf(preference))
@@ -102,6 +103,7 @@ export async function launch(
       label: `${CLI_LABELS[cliOf(preference)]} · ${title} · ${workerId ? '续聊' : '新任务'}：${prompt.replace(/\s+/g, ' ').slice(0, 100)}`,
       outputLimitBytes: 12000,
       run: () => {
+        const bridge = this.harnessConversation
         const submitted = this.runtime.submit(
           agent.id,
           project,
@@ -116,6 +118,26 @@ export async function launch(
           preparationId,
           submissionId,
           attachments,
+          bridge?.namesOnActivation && !workerId
+            ? async (worker, taskSignal) => {
+                signal.throwIfAborted()
+                const admission = new AbortController()
+                const cancel = () => admission.abort(signal.reason)
+                signal.addEventListener('abort', cancel, { once: true })
+                try {
+                  const accepted = await bridge.ensure(agent, worker, {
+                    initialRunId: worker.runId,
+                    signal: AbortSignal.any([admission.signal, taskSignal]),
+                  })
+                  this.runtime.storage.save({ ...worker, harnessConversation: accepted })
+                  worker.harnessConversation = accepted
+                  this.runtime.storage.workers.set(worker.id, worker)
+                  this.runtime.changed()
+                } finally {
+                  signal.removeEventListener('abort', cancel)
+                }
+              }
+            : undefined,
         )
         submission = submitted
         const admittedPermission = (permission = this.permissionReceipt(agent, submitted.worker))
@@ -182,6 +204,7 @@ export async function launch(
   )
   try {
     this.runtime.attachJob(submission.worker, id)
+    await submission.nameReady
   } catch (error) {
     // Admission already happened. Do not leave a process running without a
     // receipt when the job binding cannot be persisted.

@@ -379,3 +379,94 @@ it('times out an accepted interrupt without reporting a still-active turn as sto
   expect((await f.manager.list('parent', f.signal))[0]).toMatchObject({ status: 'running' })
   expect(vi.getTimerCount()).toBe(0)
 })
+
+it('模拟：目录名覆盖旧编号，只为无名条目编号，隐藏和自有名称继续占用', async () => {
+  const f = fixture()
+  writeFileSync(join(f.directory, 'dsh-names.json'), JSON.stringify({ parent: { native: 'dsh-1' } }))
+  Object.assign(f.catalog[0], { name: 'agent-6' })
+  Object.assign(f.catalog[1], { name: 'codex-1' })
+  Object.assign(f.catalog[2], { name: 'dsh-2' })
+  const rows = await f.manager.list('parent', f.signal)
+  expect(rows.map(row => row.agentName)).toEqual(['agent-6', 'dsh-2', 'dsh-3'])
+  expect(rows[0]?.formerNames).toEqual(['dsh-1'])
+  expect(JSON.parse(readFileSync(join(f.directory, 'dsh-names.json'), 'utf8')).parent)
+    .toEqual({ native: 'dsh-1', unknown: 'dsh-3' })
+  for (const name of ['agent-6', 'DSH-1']) expect(await f.manager.resolve('parent', { name }, f.signal)).toMatchObject({ id: 'native' })
+  await f.manager.hide('parent', 'once', f.signal)
+  await f.manager.readDirectoryNames('parent', f.signal)
+  expect([...f.manager.occupiedNames('parent')].sort()).toEqual(['agent-6', 'codex-1', 'dsh-1', 'dsh-2', 'dsh-3'])
+  await expect(f.manager.rename('parent', 'native', 'codex-1', f.signal)).rejects.toThrow('同名')
+  await expect(f.manager.rename('parent', 'once', 'new-name', f.signal)).rejects.toThrow('不在当前')
+})
+
+it('模拟：未登记名称的旧条目只在用户实际改名后向页头标记覆盖', async () => {
+  const f = fixture()
+  const names = async () => JSON.parse(await f.manager.agentNames('parent', f.signal)).native
+  expect(await names()).toMatchObject({ name: 'dsh-1' })
+  expect(await names()).not.toHaveProperty('overridden')
+  await f.manager.rename('parent', 'native', 'reviewer', f.signal)
+  expect(await names()).toMatchObject({ name: 'reviewer', formerNames: ['dsh-1'], overridden: true })
+})
+
+it('模拟：原生改名推送、跨父隔离、重启恢复及按历次别名续聊', async () => {
+  const f = fixture()
+  f.catalog[0].name = 'agent-6'
+  const stream = f.manager.watch('parent', f.signal, true)
+  expect(JSON.parse((await stream.next()).value!).native.name).toBe('agent-6')
+  const next = stream.next()
+  await f.manager.rename('parent', 'native', 'reviewer', f.signal)
+  expect(JSON.parse((await next).value!).native).toEqual({
+    name: 'reviewer', registeredName: 'agent-6', kind: 'native', formerNames: ['agent-6'], overridden: true,
+  })
+  expect((await f.manager.list('parent', f.signal))[0]).toMatchObject({ agentName: 'reviewer', registeredName: 'agent-6' })
+  await f.manager.rename('parent', 'native', 'audit', f.signal)
+  await stream.return(undefined)
+  const restored = new DshSubagents(f.directory, f.services)
+  cleanup.push(() => restored.dispose())
+  for (const name of ['reviewer', 'AUDIT', 'agent-6'])
+    expect(await restored.followup('parent', { name }, '模拟续聊', f.signal)).toMatchObject({ workerId: 'native', agentName: 'audit' })
+  expect(await restored.resolve('other', { name: 'audit' }, f.signal)).toBeUndefined()
+  f.catalog[2].name = 'reviewer'
+  await expect(restored.followup('parent', { name: 'reviewer' }, '模拟冲突', f.signal)).rejects.toThrow('不唯一')
+  expect(f.subagents.prompt).toHaveBeenCalledTimes(3)
+})
+
+it('模拟：官方 rename 在途占位，拒绝不写覆盖，成功采用官方目录', async () => {
+  const f = fixture()
+  f.catalog[0].name = 'before'
+  let settle!: (value: unknown) => void
+  const rename = vi.fn(() => new Promise(resolve => { settle = resolve }))
+  Object.assign(f.subagents, { rename })
+  const first = f.manager.rename('parent', 'native', 'reviewer', f.signal)
+  await vi.waitFor(() => expect(rename).toHaveBeenCalledOnce())
+  expect(f.manager.pending.has('parent', 'reviewer')).toBe(true)
+  await expect(f.manager.rename('parent', 'native', 'different', f.signal)).rejects.toThrow('刷新')
+  await expect(f.manager.rename('parent', 'once', 'reviewer', f.signal)).rejects.toThrow('同名')
+  settle({ accepted: false })
+  await expect(first).rejects.toThrow('拒绝')
+  expect(f.manager.pending.keys('parent').size).toBe(0)
+  expect(f.manager.overrides.get('parent', 'native')).toBeUndefined()
+  rename.mockImplementationOnce(async () => {
+    Object.assign(f.catalog[0], { name: 'reviewer', formerNames: ['before'] })
+    return { accepted: true }
+  })
+  await f.manager.rename('parent', 'native', 'reviewer', f.signal)
+  expect(rename).toHaveBeenLastCalledWith({ parentSessionId: 'parent', childSessionId: 'native', name: 'reviewer', signal: expect.any(AbortSignal) })
+  expect((await f.manager.list('parent', f.signal))[0]).toMatchObject({ agentName: 'reviewer', formerNames: ['before'] })
+  expect(f.manager.overrides.get('parent', 'native')).toBeUndefined()
+})
+
+it('模拟：官方改名等待期间取消，迟到的接纳回执不会发布本地成功', async () => {
+  const f = fixture(), caller = new AbortController()
+  f.catalog[0].name = 'before'
+  let accept!: () => void
+  const rename = vi.fn(async () => new Promise<void>(resolve => { accept = resolve }))
+  Object.assign(f.subagents, { rename })
+  const done = f.manager.rename('parent', 'native', 'reviewer', caller.signal)
+  await vi.waitFor(() => expect(rename).toHaveBeenCalledOnce())
+  caller.abort(new Error('模拟取消'))
+  accept()
+  await expect(done).rejects.toThrow('模拟取消')
+  expect(f.manager.pending.keys('parent').size).toBe(0)
+  expect(f.manager.overrides.get('parent', 'native')).toBeUndefined()
+})

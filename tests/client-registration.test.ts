@@ -93,6 +93,7 @@ function fixture(hasOpenSection = true) {
         callback(ctx)
     },
     slots: {
+      provideRoot: vi.fn(() => vi.fn()),
       inject: (name: string, callback: () => () => void) => {
         let current: (() => void) | undefined
         const update = () => {
@@ -132,6 +133,16 @@ function fixture(hasOpenSection = true) {
     },
   }
 }
+
+it('模拟：Client 加载时注册页头名称源，卸载时释放', () => {
+  const f = fixture()
+  apply(f.ctx)
+  expect(f.ctx.slots.provideRoot).toHaveBeenCalledWith({
+    props: { cliworkerHeaderNames: expect.any(Function) },
+  })
+  f.dispose()
+  expect(f.ctx.slots.provideRoot.mock.results[0].value).toHaveBeenCalledOnce()
+})
 
 it('registers and releases native commands only when their optional services are available', () => {
   const f = fixture()

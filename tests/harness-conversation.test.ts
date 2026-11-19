@@ -38,7 +38,7 @@ const collect = async (stream: AsyncIterable<StreamChunk>) => {
   for await (const chunk of stream) chunks.push(chunk)
   return chunks
 }
-function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: boolean; activation?: boolean; unsupported?: boolean; worker?: Partial<Worker> } = {}) {
+function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: boolean; current?: boolean; activation?: boolean; unsupported?: boolean; worker?: Partial<Worker> } = {}) {
   const parentId = 'parent-synthetic'
   const worker: Worker = {
     id: randomUUID(),
@@ -207,9 +207,12 @@ function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: 
   }
   const activationDispose = vi.fn(async () => {})
   const startActivation = vi.fn(async (spec: any) => ({
-    ...await ctx.subagents.startContinuable(spec), result: outcome.promise, dispose: activationDispose,
+    ...await ctx.subagents.startContinuable(options.current ? { ...spec, request: spec } : spec),
+    ...(options.current ? { name: spec.name ?? 'agent-4' } : {}),
+    result: outcome.promise, dispose: activationDispose,
   }))
   const drainChildren = vi.fn(async () => {})
+  if (options.current) Object.assign(ctx.subagents, { rootOf: () => parent, startActivation })
   if (options.activation) Object.assign(ctx.subagents, { startActivation, drainChildren })
   if (options.unsupported) Object.assign(ctx.subagents, { startContinuable: undefined })
   const bridge = new HarnessConversationBridge(ctx as unknown as Context, deps)
@@ -284,11 +287,12 @@ function fixture(options: { records?: HarnessConversationRecord[]; unresolved?: 
 
 describe('native CLI conversation admission', () => {
   it('uses explicit caller delivery, binds once and disposes the exact activation once', async () => {
-    const f = fixture({ activation: true })
+    const f = fixture({ activation: true, worker: { agentName: 'reviewer' } })
     const binding = await f.ensure()
     expect((await f.ensure()).sessionId).toBe(binding.sessionId)
     expect(f.startActivation).toHaveBeenCalledTimes(1)
     expect(f.startActivation.mock.calls[0][0]).toMatchObject({ delivery: 'caller', childId: binding.sessionId })
+    expect(f.startActivation.mock.calls[0][0]).not.toHaveProperty('name')
     expect(f.deps.bind).toHaveBeenCalledTimes(1)
     await f.preStep([f.turnInbox.shift()!]); await collect(await f.request())
     expect(f.deps.run).not.toHaveBeenCalled()
@@ -932,4 +936,100 @@ it.each(['aborted', 'error'] as const)('joins a cold-resumed rc.2 epoch through 
   end({ id: child.id, stopReason })
   await assertion
   expect(off).toHaveBeenCalledOnce()
+})
+
+describe('模拟：当前 DSH activation 名称与回执', () => {
+  it.each([
+    ['codex', 'codex-1', 'auto'], ['antigravity', 'agy-1', 'auto'], ['zcode', 'zcode-1', 'auto'],
+    ['codex', 'reviewer', 'custom'], ['antigravity', 'writer', 'custom'], ['zcode', 'checker', 'custom'],
+  ] as const)('向当前 DSH 传入 %s 的 %s 并保留原始 label', async (cli, agentName, agentNameOrigin) => {
+    const f = fixture({ current: true, worker: {
+      agentName, agentNameOrigin, preference: { cli, model: 'simulated', effort: 'low' },
+    } })
+    const { sessionId } = await f.ensure()
+    expect(f.startActivation).toHaveBeenCalledWith(expect.objectContaining({
+      name: agentName, label: f.worker.title, childId: sessionId, delivery: 'caller',
+    }))
+  })
+
+  it('legacy continuable 省略 name', async () => {
+    const f = fixture({ worker: { agentName: 'reviewer' } })
+    await f.ensure()
+    expect(f.ctx.subagents.startContinuable.mock.calls[0]![0]).not.toHaveProperty('name')
+    expect(f.ctx.subagents.startContinuable.mock.calls[0]![0].request).not.toHaveProperty('name')
+  })
+
+  const duplicate = () => Object.assign(new Error('模拟名称已占用'), { code: 'DUPLICATE_AGENT_NAME' })
+  it('换号复用同一 childId，仅绑定一次、接纳一次首条消息', async () => {
+    const f = fixture({ current: true, worker: { agentNameOrigin: 'auto', agentName: 'codex-1' } })
+    const release = vi.fn()
+    f.deps.reserveName = vi.fn(() => release)
+    f.deps.retryAutomaticName = vi.fn(async (worker, _, tried) => {
+      expect([...tried]).toEqual(['codex-1'])
+      worker.agentName = 'codex-2'
+    })
+    f.deps.acceptedName = vi.fn()
+    f.startActivation.mockRejectedValueOnce(duplicate())
+    const [first, second] = await Promise.all([f.ensure(), f.ensure()])
+    expect(first.sessionId).toBe(second.sessionId)
+    expect(f.startActivation.mock.calls.map(([args]) => [args.name, args.label, args.childId])).toEqual([
+      ['codex-1', f.worker.title, first.sessionId], ['codex-2', f.worker.title, first.sessionId],
+    ])
+    expect(f.deps.acceptedName).toHaveBeenCalledWith(f.worker, first.sessionId, 'codex-2', undefined)
+    expect(release).toHaveBeenCalledTimes(2)
+    expect(f.deps.bind).toHaveBeenCalledOnce()
+    expect(f.records).toHaveLength(1)
+    expect(f.turnInbox).toHaveLength(1)
+    expect(f.deps.run).not.toHaveBeenCalled()
+  })
+
+  it.each(['custom', 'invalid', 'other', 'cancel', 'exhausted'])('仅明确自动名冲突换号，模拟 %s', async kind => {
+    const f = fixture({ current: true, worker: { agentName: 'codex-1', agentNameOrigin: kind === 'custom' ? 'custom' : 'auto' } })
+    const controller = new AbortController()
+    const release = vi.fn()
+    f.deps.reserveName = () => release
+    f.deps.retryAutomaticName = vi.fn(async (worker, _, tried) => { worker.agentName = `codex-${tried.size + 1}` })
+    f.startActivation.mockImplementation(async () => {
+      if (kind === 'cancel') controller.abort(new Error('模拟取消'))
+      if (kind === 'other') throw new Error('模拟其他错误')
+      if (kind === 'invalid') throw Object.assign(new Error('模拟格式错误'), { code: 'INVALID_AGENT_NAME' })
+      throw duplicate()
+    })
+    await expect(f.bridge.ensure(f.parent, f.worker, { signal: controller.signal })).rejects.toThrow(
+      { custom: '名称已占用', invalid: '格式', other: '其他错误', cancel: '模拟取消', exhausted: '连续冲突' }[kind],
+    )
+    expect(f.startActivation).toHaveBeenCalledTimes(kind === 'exhausted' ? 5 : 1)
+    expect(release).toHaveBeenCalledTimes(f.startActivation.mock.calls.length)
+    expect(f.deps.bind).not.toHaveBeenCalled()
+    expect(f.turnInbox).toHaveLength(0)
+  })
+
+  it('接纳后回执丢失，保留绑定，不重发首条输入', async () => {
+    const f = fixture({ current: true, worker: { agentName: 'agy-1', agentNameOrigin: 'auto' } })
+    const start = f.startActivation.getMockImplementation()!
+    f.startActivation.mockImplementationOnce(async spec => {
+      await start(spec)
+      f.ctx.sessionQuery.observeSession.mockResolvedValue({
+        header: {}, projections: { values: { subagentCatalog: [{ id: spec.childId, name: spec.name }] } },
+        [Symbol.dispose]() {},
+      } as never)
+      throw new Error('模拟回执丢失')
+    })
+    await expect(f.ensure()).rejects.toThrow('回执未确认')
+    expect((await f.ensure()).sessionId).toBe(f.records[0]!.sessionId)
+    expect(f.startActivation).toHaveBeenCalledOnce()
+    expect(f.turnInbox).toHaveLength(1)
+    expect(f.deps.unbind).not.toHaveBeenCalled()
+  })
+
+  it('replacement 省略 name，按新 childId 和官方登记名保留 Worker 名', async () => {
+    const f = fixture({ current: true, worker: { agentName: 'reviewer', formerParentSessionIds: ['old'] } })
+    const previous: HarnessConversationRecord = { workerId: f.worker.id, parentSessionId: 'old', sessionId: 'old-child' }
+    const rebound = fixture({ current: true, worker: f.worker, records: [previous] })
+    rebound.deps.acceptedName = vi.fn()
+    const result = await rebound.ensure()
+    expect(rebound.startActivation.mock.calls[0]![0]).not.toHaveProperty('name')
+    expect(rebound.deps.acceptedName).toHaveBeenCalledWith(rebound.worker, result.sessionId, 'agent-4', previous)
+    expect(rebound.deps.replaceBinding).toHaveBeenCalledOnce()
+  })
 })

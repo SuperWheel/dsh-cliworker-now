@@ -7,11 +7,12 @@ import { setLanguagePreference, t } from './i18n.ts'
 
 export type Snapshot = WorkerSnapshot & { configuring?: boolean }
 export type API = Pick<ClientRemote, '$stream'> & {
-  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'requestCliTakeover' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource' | 'customProviderForm' | 'saveCustomProvider'> & {
+  cliworker: Omit<ClientRemote['cliworker'], 'ensureHarnessConversation' | 'repairHarnessConversation' | 'permissionForWorker' | 'configureWorkerPermission' | 'setWorkerGoal' | 'setWorkerGoalStatus' | 'clearWorkerGoal' | 'forkWorker' | 'accountRespond' | 'accountDesktopStart' | 'accountDesktopRespond' | 'accountDesktopWatch' | 'accountDesktopStop' | 'accountStartWith' | 'recoverCliCleanup' | 'listDshSubagents' | 'watchDshSubagents' | 'promptDshSubagent' | 'stopDshSubagent' | 'renameDshSubagent' | 'hideDshSubagent' | 'refreshAccountStatus' | 'settingsConnectionStatus' | 'watchSettingsConnections' | 'cliUpdateSnapshot' | 'checkCliUpdates' | 'watchCliUpdates' | 'startCliOperation' | 'updateAllClis' | 'cancelCliOperation' | 'requestCliTakeover' | 'chooseInstallDirectory' | 'checkInstallDirectory' | 'cliDownloadSource' | 'saveCliDownloadSource' | 'testCliDownloadSource' | 'customProviderForm' | 'saveCustomProvider'> & {
     listDshSubagents?: (parentId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     watchDshSubagents?: (parentId: string, signal: AbortSignal) => ReturnType<ClientRemote['cliworker']['watch']>
     promptDshSubagent?: (parentId: string, childId: string, prompt: string, requestId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
     stopDshSubagent?: (parentId: string, childId: string, signal: AbortSignal) => Promise<RemoteResult<string>>
+    renameDshSubagent?: (parentId: string, childId: string, name: string, signal: AbortSignal) => Promise<RemoteResult<void>>
     hideDshSubagent?: (parentId: string, childId: string, signal: AbortSignal) => Promise<RemoteResult<void>>
     /** Optional until an older Host has upgraded its native-conversation bridge. */
     ensureHarnessConversation?: (parentId: string, workerId: string) => Promise<RemoteResult<string>>
@@ -178,7 +179,16 @@ export function useDshSubagents(api: API, session: string, enabled: boolean) {
 
 export function filterDshSubagents(rows: DshSubagent[], query: string, filter: string) {
   const search = query.trim().toLowerCase()
-  return rows.filter((row) => `DSH ${row.agentName ?? ''} ${row.name} ${row.model ?? ''}`.toLowerCase().includes(search) &&
-    (filter === 'all' || (filter === 'active' ? row.status === 'running'
-      : filter === 'completed' ? row.status === 'completed' : row.status === 'failed' && !row.stopped)))
+  return rows.filter((row) => {
+    const fields = ['DSH', row.agentName, row.name, row.model, row.registeredName, ...(row.formerNames ?? [])]
+    return (
+      fields.join(' ').toLowerCase().includes(search) &&
+      (filter === 'all' ||
+        (filter === 'active'
+          ? row.status === 'running'
+          : filter === 'completed'
+            ? row.status === 'completed'
+            : row.status === 'failed' && !row.stopped))
+    )
+  })
 }

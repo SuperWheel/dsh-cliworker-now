@@ -3615,6 +3615,167 @@ index 6afbe4be49cee0cf79884960419f42c86dba82c2..5a17eb205feb51f154784acc13996aee
  afterEach(async () => {
    await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose()))
    vi.restoreAllMocks()
+diff --git a/packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx b/packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx
+index 8cbb5be217d5fb0dc7be9544a5b5c7abe267cd0e..3333824fb5d69466d2b352045f1359c8880b884f 100644
+--- a/packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx
++++ b/packages/client/ui-subagent/src/client/SubagentHeaderLineage.tsx
+@@ -1,4 +1,4 @@
+-import { useMemo, useEffect, useId, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
++import { useMemo, useEffect, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+ import { createPortal } from 'react-dom'
+ import {
+   type SessionProjectionMap, type SessionSummary,
+@@ -24,6 +24,20 @@ type SubagentCatalogSnapshot = Omit<SessionProjectionSnapshot, 'values' | 'state
+ }
+ type Catalogs = Readonly<Record<SessionId, SubagentCatalogSnapshot>>
+ 
++type HeaderNames = ReadonlyMap<string, string>
++type HeaderNameSource = (parentId: SessionId) => HostObservable<HeaderNames>
++interface HeaderNameProps {
++  /** Optional root standard prop. Only this parent's renamed children are present. */
++  cliworkerHeaderNames?: HeaderNameSource | undefined
++}
++
++const absentNames = () => undefined
++const noSubscription = () => () => {}
++function useCatalogNames(source: HeaderNameSource | undefined, parentId: SessionId | undefined) {
++  const store = useMemo(() => parentId === undefined ? undefined : source?.(parentId), [source, parentId])
++  return useSyncExternalStore(store?.subscribe ?? noSubscription, store?.getSnapshot ?? absentNames, absentNames)
++}
++
+ /** Business actions supplied by the slot registration. */
+ export type SubagentCatalogInjected = {
+   openChild: (address: SubagentAddress) => void
+@@ -43,9 +57,9 @@ export type SubagentCatalogActionInjected = SubagentCatalogInjected & {
+ 
+ /** Full props for the session-header lineage renderer. */
+ export type SubagentHeaderLineageProps =
+-  PropsRuntime<'conversation.session.header.lineage'> & InjectFace<SubagentCatalogInjected> & PropsLocale<typeof NS>
++  PropsRuntime<'conversation.session.header.lineage'> & HeaderNameProps & InjectFace<SubagentCatalogInjected> & PropsLocale<typeof NS>
+ 
+-interface CatalogRowsProps {
++interface CatalogRowsProps extends HeaderNameProps {
+   parentSessionId: SessionId
+   currentSessionId: SessionId | undefined
+   catalog: SubagentCatalogSnapshot
+@@ -213,7 +227,9 @@ function canExpandCatalog(entry: SubagentCatalogSnapshot['entries'][number], cat
+ }
+ 
+ /** The agent name unique among the row's siblings, or the Session ID for entries recorded without one. */
+-function entryName(entry: SubagentCatalogSnapshot['entries'][number]): string {
++function entryName(entry: SubagentCatalogSnapshot['entries'][number], names: HeaderNames | undefined): string {
++  const effective = names?.get(entry.id)
++  if (effective !== undefined) return effective
+   return entry.mode === 'continuable' || entry.mode === 'external' ? entry.name ?? entry.id : entry.id
+ }
+ 
+@@ -245,9 +261,10 @@ function catalogProgress(entries: SubagentCatalogSnapshot['entries'], summaries:
+ 
+ /** Render one catalog level and recurse only through explicitly expanded rows. */
+ function CatalogRows({
+-  parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level,
++  parentSessionId, currentSessionId, catalog, catalogs, summaries, expanded, level, cliworkerHeaderNames,
+   openChild, openChildAside, refreshProjection, toggleBranch, closeCatalog, t,
+ }: CatalogRowsProps & { t: TranslateNS<typeof NS> }) {
++  const names = useCatalogNames(cliworkerHeaderNames, parentSessionId)
+   const [now, setNow] = useState(() => Date.now())
+   const running = catalog.entries.some(entry => entry.activity === 'running')
+   useEffect(() => {
+@@ -288,7 +305,7 @@ function CatalogRows({
+         const isExpanded = canExpand && expanded.has(entry.id)
+         const summary = summaries[entry.id]
+         const description = entry.label || summary?.title
+-        const name = entryName(entry)
++        const name = entryName(entry, names)
+         const primaryLabel = description || name
+         const secondaryLabel = description ? name : undefined
+         const mode = external ? t('mode.external') : entry.mode === 'unknown' ? t('mode.unknown')
+@@ -441,6 +458,7 @@ function CatalogRows({
+                 className={css.children}
+               >
+                 <CatalogRows
++                  cliworkerHeaderNames={cliworkerHeaderNames}
+                   parentSessionId={entry.id}
+                   currentSessionId={currentSessionId}
+                   catalog={childCatalog}
+@@ -464,7 +482,7 @@ function CatalogRows({
+   )
+ }
+ 
+-interface CatalogDropdownSharedProps extends InjectFace<SubagentCatalogInjected> {
++interface CatalogDropdownSharedProps extends InjectFace<SubagentCatalogInjected>, HeaderNameProps {
+   /** Session whose direct catalog roots the tree. */
+   rootSessionId: SessionId
+   useSessions: SubagentHeaderLineageProps['useSessions']
+@@ -525,6 +543,7 @@ function CatalogDropdown(props: CatalogDropdownProps) {
+     }))
+   }, [projections, summaries, statuses])
+   const catalog = catalogs[rootSessionId]
++  const names = useCatalogNames(props.cliworkerHeaderNames, catalog?.entries.length ? rootSessionId : undefined)
+   const prepareLevel = (sessionId: SessionId): void => {
+     void prepareCatalog(sessionId).catch((error: unknown) => {
+       console.error('[ui-subagent] catalog discovery failed:', error)
+@@ -546,7 +565,7 @@ function CatalogDropdown(props: CatalogDropdownProps) {
+     ? undefined
+     : catalog?.entries.find(entry => entry.id === currentSessionId)
+   const switcherDisplayTitle = currentEntry !== undefined
+-    ? currentEntry.label || entryName(currentEntry)
++    ? currentEntry.label || entryName(currentEntry, names)
+     : displayTitle
+   const directChildren = catalog?.entries ?? []
+   const directCount = directChildren.length
+@@ -806,6 +825,7 @@ function CatalogDropdown(props: CatalogDropdownProps) {
+             )}
+             <div role="tree" aria-label={t('tree.aria')}>
+               <CatalogRows
++                cliworkerHeaderNames={props.cliworkerHeaderNames}
+                 parentSessionId={rootSessionId}
+                 currentSessionId={currentSessionId}
+                 catalog={presentedCatalog}
+@@ -831,7 +851,7 @@ function CatalogDropdown(props: CatalogDropdownProps) {
+ 
+ /** Full props for the root-session catalog entry in the header actions band. */
+ export type SubagentCatalogActionProps =
+-  PropsRuntime<'conversation.session.header.actions'> & InjectFace<SubagentCatalogActionInjected> & PropsLocale<typeof NS>
++  PropsRuntime<'conversation.session.header.actions'> & HeaderNameProps & InjectFace<SubagentCatalogActionInjected> & PropsLocale<typeof NS>
+   & Omit<PropsRenderSlots<'conversation.session.header.actions.subagent.footer'>, 'SessionProvider'>
+ 
+ /**
+@@ -851,7 +871,7 @@ export function SubagentCatalogAction(props: SubagentCatalogActionProps) {
+ 
+ /** Bind task-board visibility only in root conversations. */
+ function RootCatalogAction({
+-  sessionId, useProjection, useSessions, useSessionStatus, useFooterAvailable,
++  sessionId, useProjection, useSessions, useSessionStatus, useFooterAvailable, cliworkerHeaderNames,
+   openChild, openChildAside, refreshProjection, prepareCatalog, t, renderSlot,
+ }: SubagentCatalogActionProps) {
+   const hasSharedTasks = useProjection('agentTeam', team => team?.enabled === true
+@@ -861,6 +881,7 @@ function RootCatalogAction({
+   return (
+     <CatalogDropdown
+       key={sessionId}
++      cliworkerHeaderNames={cliworkerHeaderNames}
+       rootSessionId={sessionId}
+       variant="count"
+       hasSharedTasks={footerAvailable && hasSharedTasks}
+@@ -883,7 +904,7 @@ function RootCatalogAction({
+  * @returns A title-and-chevron sibling switcher, or nothing on a root session.
+  */
+ export function SubagentHeaderLineage({
+-  lineageSessionId, displayTitle, openTitle,
++  lineageSessionId, displayTitle, openTitle, cliworkerHeaderNames,
+   useSessions, useSession, useSessionStatus, openChild, openChildAside, refreshProjection, prepareCatalog, t,
+ }: SubagentHeaderLineageProps) {
+   const address = useSession(session => session.subagent?.address)
+@@ -895,7 +916,7 @@ export function SubagentHeaderLineage({
+     const summary = state.byId[lineageSessionId]
+     return summary?.origin === 'subagent' ? summary.parentId : undefined
+   })
+-  const shared = { useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, prepareCatalog, t }
++  const shared = { cliworkerHeaderNames, useSessions, useSessionStatus, openChild, openChildAside, refreshProjection, prepareCatalog, t }
+   // Root sessions carry no breadcrumb; their descendant count lives in the
+   // header actions band (SubagentCatalogAction).
+   if (parentId === undefined) return null
 diff --git a/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx b/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx
 index 6d9c3fcbb56751c5f3f32a78a9225028f1a04470..5e409af5384e918062712d78f59c2a3edf02fffe 100644
 --- a/packages/client/ui-subagent/src/client/sidebar-chat/index.tsx
@@ -3664,6 +3825,75 @@ index 6d9c3fcbb56751c5f3f32a78a9225028f1a04470..5e409af5384e918062712d78f59c2a3e
      slots: { views: FixedChatConversationView },
    })
  }
+diff --git a/packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx b/packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx
+index a70f41295e680d3f8d6012d238318156a06cd2d4..bbc6a68f48dbd56331589e9297082605dbc7fb20 100644
+--- a/packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx
++++ b/packages/client/ui-subagent/tests/conversation-ui.client.spec.tsx
+@@ -353,6 +353,64 @@ describe('SubagentHeaderLineage', () => {
+     expect(input.openChild).toHaveBeenCalledExactlyOnceWith({ parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable' })
+   })
+ 
++  it('uses a simulated cold header source and replaces the subscription when the directory parent changes', () => {
++    const other = 'other-parent' as SessionId
++    const entry = catalog({ entries: [{ id: CHILD, name: 'reviewer', label: '', mode: 'continuable', activity: 'running' }] })
++    const listeners = new Map<SessionId, Set<() => void>>()
++    const names = new Map<SessionId, ReadonlyMap<string, string>>()
++    const source = (parent: SessionId) => ({
++      getSnapshot: () => names.get(parent)!,
++      subscribe(listener: () => void) {
++        const set = listeners.get(parent) ?? new Set<() => void>()
++        listeners.set(parent, set)
++        set.add(listener)
++        return () => { set.delete(listener) }
++      },
++    })
++    const header = (parent: SessionId) => ({
++      ...props(entry, { [other]: entry }, undefined, { parentSessionId: parent, childSessionId: CHILD, mode: 'continuable' }),
++      sessionId: CHILD, lineageSessionId: CHILD, cliworkerHeaderNames: source,
++    })
++    names.set(PARENT, new Map([[CHILD, 'first']]))
++    names.set(other, new Map([[CHILD, 'second']]))
++    const view = render(<HeaderCatalog {...header(PARENT)} />)
++    expect(screen.getByRole('button', { name: '切换子智能体：first' })).toBeTruthy()
++    const switched = header(other)
++    view.rerender(<HeaderCatalog {...switched} />)
++    expect(listeners.get(PARENT)?.size).toBe(0)
++    const trigger = screen.getByRole('button', { name: '切换子智能体：second' })
++    fireEvent.click(trigger)
++    const row = screen.getByRole('treeitem', { name: /正在扫描项目文件 second/ })
++    expect(row.getAttribute('aria-label')).toContain('可继续')
++    expect(row.getAttribute('aria-label')).toContain('运行')
++    act(() => {
++      names.set(other, new Map([[CHILD, 'updated']]))
++      listeners.get(other)?.forEach(listener => listener())
++    })
++    expect(screen.getByRole('button', { name: '切换子智能体：updated' })).toBeTruthy()
++    fireEvent.click(row)
++    expect(switched.openChild).toHaveBeenCalledExactlyOnceWith({ parentSessionId: other, childSessionId: CHILD, mode: 'continuable' })
++    view.unmount()
++    expect(listeners.get(other)?.size).toBe(0)
++  })
++
++  it('resolves expanded rows against their direct parent and preserves unoverridden names and sidebar addresses', () => {
++    const nested = catalog({ entries: [{ id: GRANDCHILD, name: 'reviewer', label: 'Nested task', mode: 'continuable', activity: 'inactive' }] })
++    const root = catalog({ entries: [{ id: CHILD, name: 'reviewer', label: 'Root task', mode: 'continuable', activity: 'running' }] })
++    const input = props(root, { [CHILD]: nested })
++    const source = (parent: SessionId) => {
++      const names = new Map(parent === CHILD ? [[GRANDCHILD, 'nested-alias']] : [[GRANDCHILD, 'wrong-parent']])
++      return { getSnapshot: () => names, subscribe: () => () => {} }
++    }
++    render(<HeaderCatalog {...input} cliworkerHeaderNames={source} />)
++    fireEvent.click(screen.getByRole('button', { name: /1 个子智能体$/ }))
++    const outer = screen.getByRole('treeitem', { name: /^Root task reviewer/ })
++    fireEvent.click(within(outer).getByRole('button', { name: /展开/ }))
++    const inner = screen.getByRole('treeitem', { name: /^Nested task nested-alias/ })
++    fireEvent.click(within(inner).getByRole('button', { name: /在侧边栏打开/ }))
++    expect(input.openChildAside).toHaveBeenCalledExactlyOnceWith({ parentSessionId: CHILD, childSessionId: GRANDCHILD, mode: 'continuable' })
++  })
++
+   it('hides an empty Team entry but keeps shared tasks and errors reachable without children', () => {
+     const input = props(catalog({ entries: [] }))
+     const initial = input.useSessions(state => state)
 diff --git a/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx b/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx
 index f7417ea9109aa626cf79d59b5063baee20c1e917..d60b172233dd4f4e134b1c0153ae17531d44eb9c 100644
 --- a/packages/client/ui-subagent/tests/sidebar-chat.client.spec.tsx

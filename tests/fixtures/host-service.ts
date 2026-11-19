@@ -6,6 +6,10 @@ export function hostServiceFixture(fields: Record<string, unknown> = {}) {
   const service = Object.create(CliWorkerService.prototype)
   const context = new ServiceContext(service['ctx'], service)
   Object.assign(service, { context })
-  Object.assign(context, fields)
+  Object.assign(
+    context,
+    { dshSubagents: { readDirectoryNames: async () => [], occupiedNames: () => new Set() } },
+    fields,
+  )
   return service
 }

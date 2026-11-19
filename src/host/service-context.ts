@@ -1,6 +1,7 @@
 import type { SettingsConnectionCache } from './settings-connection-cache.ts'
 import type { CustomProviders } from './custom-provider.ts'
 import type { CliManagementService } from './cli-management/service.ts'
+import type { AgentNameOverrides, PendingAgentNames } from './agent-name-overrides.ts'
 import type { DshSubagents } from './dsh-subagents.ts'
 import type { SettingsCatalogCache } from './settings-catalog-cache.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -54,12 +55,15 @@ export class ServiceContext {
   settingsCatalogs?: SettingsCatalogCache
   settingsInstance?: string
   settingsSourceRevisions?: Map<CliId, number>
+  agentNameOverrides!: AgentNameOverrides
+  pendingAgentNames!: PendingAgentNames
   dshSubagents!: DshSubagents
   disposed = new AbortController()
   harnessConversation?: HarnessConversationApi
   harnessConversationStore?: HarnessConversationStore
   nativeRunDone = new Map<string, Promise<Worker>>()
   repairingDisplays = new Set<string>()
+  renamingWorkers = new Set<string>()
 
   constructor(
     readonly ctx: Context,
