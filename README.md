@@ -7,7 +7,7 @@
 **在 DeepSeek Harness 里，给不同 CLI 一个共同的协作空间。**
 
 [![npm](https://img.shields.io/npm/v/dsh-cliworker-now?logo=npm)](https://www.npmjs.com/package/dsh-cliworker-now)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.5-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
 [![CLIs](https://img.shields.io/badge/CLI-17_%E7%A7%8D-FF7A45)](#支持的-cli)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.19-3C873A?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS_%7C_Windows-6E56CF)](#安装与更新)
@@ -25,16 +25,16 @@
 
 dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装后显示为 **CLI Worker / CLI Worker Now**。它把终端里的 AI CLI 接进 Harness，分工如下：
 
-| 🗣️ 主对话 | 🤖 CLI 智能体 | 📋 右侧栏 |
-| --- | --- | --- |
+| 🗣️ 主对话                   | 🤖 CLI 智能体                       | 📋 右侧栏                                       |
+| --------------------------- | ----------------------------------- | ----------------------------------------------- |
 | 点名 CLI 派遣任务，接收结果 | 用该 CLI 自己的账号、模型、工具运行 | 用 Harness 原生对话视图实时显示过程、用量与状态 |
 
 **一次任务的流程**：主对话点名 CLI → 选模型、强度与角色 → 智能体在后台运行 → 侧栏实时查看 → 结果回到主对话 → 按名字续聊
 
-| 适用场景 | 例子 |
-| --- | --- |
-| 💻 开发协作 | 让 Codex 审查代码，再按名字追问 |
-| ✍️ 写作与审校 | 为逻辑、文风、商业审稿配置不同角色 |
+| 适用场景      | 例子                                   |
+| ------------- | -------------------------------------- |
+| 💻 开发协作   | 让 Codex 审查代码，再按名字追问        |
+| ✍️ 写作与审校 | 为逻辑、文风、商业审稿配置不同角色     |
 | ⏳ 长任务跟进 | 对话与执行记录完整保留，结束后可接着做 |
 
 > 插件不附带模型服务、订阅或 API 额度，模型调用走各 CLI 自己的账号。
@@ -62,30 +62,30 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装�
 
 ## 界面一览
 
-| 主对话汇总结果，右侧查看智能体对话 | 首次使用时选择模型、强度与角色 |
-| :---: | :---: |
+|                                      主对话汇总结果，右侧查看智能体对话                                       |                             首次使用时选择模型、强度与角色                             |
+| :-----------------------------------------------------------------------------------------------------------: | :------------------------------------------------------------------------------------: |
 | ![主对话汇总各 CLI 的回复，右侧打开 Antigravity 智能体的原生对话](doc/assets/readme/worker-conversation.webp) | ![主对话中选择 Antigravity 模型的问题卡片](doc/assets/readme/dispatch-model-card.webp) |
-| **让 Antigravity 生成图片，主对话核验产物** | **让 Codex 生成 GIF，再用 Computer Use 插入 Word** |
-| ![Antigravity 智能体生成红色小汽车图片](doc/assets/readme/agy-image-task.webp) | ![Codex 智能体生成 GIF 并插入 Word 文档](doc/assets/readme/codex-computer-use.webp) |
-| **账号登录与项目默认模型** | **图形化分步登录** |
-| ![Antigravity 的账号与项目默认设置](doc/assets/readme/account-model-settings.webp) | ![Antigravity 分步登录窗口](doc/assets/readme/graphical-login.webp) |
-| **「更新 CLI」集中检查与更新** | **智能体角色预设** |
-| ![更新 CLI 页面列出可更新的 CLI](doc/assets/readme/cli-update.webp) | ![智能体预设页面](doc/assets/readme/role-presets.webp) |
+|                                  **让 Antigravity 生成图片，主对话核验产物**                                  |                   **让 Codex 生成 GIF，再用 Computer Use 插入 Word**                   |
+|                ![Antigravity 智能体生成红色小汽车图片](doc/assets/readme/agy-image-task.webp)                 |  ![Codex 智能体生成 GIF 并插入 Word 文档](doc/assets/readme/codex-computer-use.webp)   |
+|                                          **账号登录与项目默认模型**                                           |                                   **图形化分步登录**                                   |
+|              ![Antigravity 的账号与项目默认设置](doc/assets/readme/account-model-settings.webp)               |          ![Antigravity 分步登录窗口](doc/assets/readme/graphical-login.webp)           |
+|                                        **「更新 CLI」集中检查与更新**                                         |                                   **智能体角色预设**                                   |
+|                      ![更新 CLI 页面列出可更新的 CLI](doc/assets/readme/cli-update.webp)                      |                 ![智能体预设页面](doc/assets/readme/role-presets.webp)                 |
 
 > 截图拍摄于 2026-11 的 Harness Desktop（macOS），账号信息已打码。
 
 ## 支持的 CLI
 
-| CLI | 原生通路 | CLI | 原生通路 |
-| --- | --- | --- | --- |
-| Antigravity | ACP（旧版 stream-json 后备） | OMP（Oh My Pi） | RPC |
-| Codex | app-server | Pi | RPC |
-| Claude Code | stream-json | Hermes Agent | Runs API |
-| Kimi Code | ACP | OpenCode | HTTP + SSE |
-| 官方 MiMo Code | HTTP + SSE | Qoder | ACP |
-| ZCode | app-server | Qoder CN | ACP |
-| Grok Build | ACP | CodeBuddy Code | ACP |
-| TRAE CN | ACP | WorkBuddy CN · WorkBuddy | ACP · **试验性** |
+| CLI            | 原生通路                     | CLI                      | 原生通路         |
+| -------------- | ---------------------------- | ------------------------ | ---------------- |
+| Antigravity    | ACP（旧版 stream-json 后备） | OMP（Oh My Pi）          | RPC              |
+| Codex          | app-server                   | Pi                       | RPC              |
+| Claude Code    | stream-json                  | Hermes Agent             | Runs API         |
+| Kimi Code      | ACP                          | OpenCode                 | HTTP + SSE       |
+| 官方 MiMo Code | HTTP + SSE                   | Qoder                    | ACP              |
+| ZCode          | app-server                   | Qoder CN                 | ACP              |
+| Grok Build     | ACP                          | CodeBuddy Code           | ACP              |
+| TRAE CN        | ACP                          | WorkBuddy CN · WorkBuddy | ACP · **试验性** |
 
 - **简称**：`agy` → Antigravity，`glm / zhipu / 智谱` → ZCode，`harmes` → Hermes Agent。名称不明确时只给出候选，不会自动派遣。
 - **前提**：先安装对应 CLI 的原生版本并完成它自己的登录或 API 配置。WorkBuddy 两版使用各自桌面应用内置的 CLI，依赖非公开接口；TRAE CN 只使用官方 `traecli`。
@@ -93,22 +93,22 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装�
 
 ## 功能一览
 
-| 功能 | 说明 |
-| --- | --- |
-| 派遣与续聊 | 主对话点名派遣，按名字续聊；也可以在子会话里直接继续。运行中发送的消息按原生规则排队或引导 |
-| 项目设定 | 每个项目分别保存默认模型与强度；同项目的新主对话会询问是否沿用 |
+| 功能                      | 说明                                                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 派遣与续聊                | 主对话点名派遣，按名字续聊；也可以在子会话里直接继续。运行中发送的消息按原生规则排队或引导                      |
+| 项目设定                  | 每个项目分别保存默认模型与强度；同项目的新主对话会询问是否沿用                                                  |
 | 目标 · 规划 · 反馈 · 分支 | 在子会话使用 Harness 的这些功能；规划映射到 CLI 原生规划模式，分支创建 CLI 原生分支；CLI 不支持的入口会说明原因 |
-| 账号管理 | 分步登录、退出、切换与多账号；Pi、OpenCode、Hermes、ZCode 可添加自己的 API 服务商；仍可打开原生账号终端 |
-| 更新 CLI | 检查、全部更新、逐个更新或首次安装；只在原安装上更新，不另装一份；支持官方与插件双通道下载、续传与结束后清理 |
-| 同级派遣 | 智能体可再派出同级 Worker；DSH 原生子 Agent 也汇入 CLI Worker 窗口（dsh-1、dsh-2…） |
-| 同目录并行写（可选） | 打开后，冲突的写任务在插件私有副本中运行，完成后由主 Agent 合并回项目（不依赖 Git、不替你提交） |
-| 任务时限与语言 | 总时限默认 30 分钟、可设空闲时限；界面可选跟随 DSH、中文或 English |
+| 账号管理                  | 分步登录、退出、切换与多账号；Pi、OpenCode、Hermes、ZCode 可添加自己的 API 服务商；仍可打开原生账号终端         |
+| 更新 CLI                  | 检查、全部更新、逐个更新或首次安装；只在原安装上更新，不另装一份；支持官方与插件双通道下载、续传与结束后清理    |
+| 同级派遣                  | 智能体可再派出同级 Worker；DSH 原生子 Agent 也汇入 CLI Worker 窗口（dsh-1、dsh-2…）                             |
+| 同目录并行写（可选）      | 打开后，冲突的写任务在插件私有副本中运行，完成后由主 Agent 合并回项目（不依赖 Git、不替你提交）                 |
+| 任务时限与语言            | 总时限默认 30 分钟、可设空闲时限；界面可选跟随 DSH、中文或 English                                              |
 
 各 CLI 的规划、分支等支持范围及更多细节，见 [功能细节与验证边界](doc/feature-details.md)。
 
 ## 安装与更新
 
-**要求**：macOS 或 Windows；DeepSeek Harness 0.2.2-rc.3（当前适配版本）；Node.js ≥ 22.19.0。
+**要求**：macOS 或 Windows；DeepSeek Harness 0.2.2-rc.5（当前适配版本）；Node.js ≥ 22.19.0。
 
 先结束活动任务并**完全退出 Harness**，再执行：
 
@@ -161,11 +161,11 @@ dsh plugin --profile desktop add .
 
 ## 权限与数据
 
-| 档位 | 行为 |
-| --- | --- |
-| **询问**（各 CLI 按实际能力命名） | 读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改 |
-| **自动审批** | 使用 CLI 原生的自动审批，由 CLI 判断放行；没有自动审批的 CLI 改用原生编辑模式，命令仍先问你 |
-| **完全权限** | 使用 CLI 原生的免确认模式。**CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用** |
+| 档位                              | 行为                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **询问**（各 CLI 按实际能力命名） | 读取和只读命令直接执行，改文件和有副作用的命令先问你，拒绝就不改                                              |
+| **自动审批**                      | 使用 CLI 原生的自动审批，由 CLI 判断放行；没有自动审批的 CLI 改用原生编辑模式，命令仍先问你                   |
+| **完全权限**                      | 使用 CLI 原生的免确认模式。**CLI 可以不经确认执行命令、修改工作区外的文件和访问网络，请只在信任该任务时使用** |
 
 - **你选的档位优先**：没选过档位的智能体跟随主对话的权限预设；选过后，主 Agent 派遣和续聊都按所选档位运行。
 - **审批交给 DSH**：主 Agent 派出的任务在主对话页弹出授权问题，你在子会话里发起的轮次在子会话中审批。Harness 处于规划模式时一律拒绝写入。

@@ -1,13 +1,32 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, lstatSync, lutimesSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  lutimesSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { applyPlan, collectReferences, parseArgs, parseDuration, planClean, targetTag } from '../scripts/clean.mjs'
+import {
+  applyPlan,
+  collectReferences,
+  parseArgs,
+  parseDuration,
+  planClean,
+  targetTag,
+} from '../scripts/clean.mjs'
 
 const DAY = 86_400_000
 const now = Date.now()
 const roots: string[] = []
-afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
 
 type Item = { path: string; action: 'keep' | 'remove'; reason: string; bytes: number }
 
@@ -28,7 +47,8 @@ function file(root: string, path: string, content = 'synthetic') {
 /** Sets every mtime in a tree (children first, so directory times stick). */
 function age(path: string, days: number) {
   const info = lstatSync(path)
-  if (info.isDirectory() && !info.isSymbolicLink()) for (const name of readdirSync(path)) age(join(path, name), days)
+  if (info.isDirectory() && !info.isSymbolicLink())
+    for (const name of readdirSync(path)) age(join(path, name), days)
   const time = new Date(now - days * DAY)
   lutimesSync(path, time, time)
 }
@@ -40,7 +60,11 @@ const find = (items: Item[], path: string) => {
   if (!item) throw new Error(`No plan item for ${path}`)
   return item
 }
-const removed = (items: Item[]) => items.filter((item) => item.action === 'remove').map((item) => item.path).sort()
+const removed = (items: Item[]) =>
+  items
+    .filter((item) => item.action === 'remove')
+    .map((item) => item.path)
+    .sort()
 
 describe('clean retention rules (synthetic repository fixtures)', () => {
   it('parses options strictly and maps the pinned SDK to its cache tag', () => {
@@ -51,7 +75,11 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     expect(parseDuration('2w')).toBe(14 * DAY)
     expect(parseDuration('3')).toBe(3 * DAY)
     expect(() => parseDuration('soon')).toThrow('older-than')
-    expect(parseArgs(['--apply', '--keep-last', '2', '--older-than', '1d'])).toMatchObject({ apply: true, keepLast: 2, olderThanMs: DAY })
+    expect(parseArgs(['--apply', '--keep-last', '2', '--older-than', '1d'])).toMatchObject({
+      apply: true,
+      keepLast: 2,
+      olderThanMs: DAY,
+    })
     expect(parseArgs([])).toMatchObject({ apply: false, keepLast: undefined, olderThanMs: undefined })
     expect(() => parseArgs(['--keep-last', '-1'])).toThrow('keep-last')
     expect(() => parseArgs(['--force'])).toThrow('Unknown')
@@ -75,7 +103,11 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     file(root, '.test-data/globbed/copy-1.tgz')
     file(root, '.test-data/node_modules/pkg/index.js')
     file(root, '.test-data/stray.tgz')
-    file(root, 'doc/tasks.md', 'Evidence: `.test-data/cited/dsh-cliworker-now-0.8.1.tgz`, `.test-data/cited/report.json` and .test-data/globbed/copy-*.tgz.')
+    file(
+      root,
+      'doc/tasks.md',
+      'Evidence: `.test-data/cited/dsh-cliworker-now-0.8.1.tgz`, `.test-data/cited/report.json` and .test-data/globbed/copy-*.tgz.',
+    )
     mkdirSync(join(root, '.test-data/linked'))
     symlinkSync(join(root, 'node_modules'), join(root, '.test-data/linked/node_modules'))
     expect(plan(root, { scopes: ['.cache'] }).items).toEqual([])
@@ -99,7 +131,12 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
 
   it('prunes evidence only with --keep-last/--older-than and never protected entries', () => {
     const root = repository()
-    for (const [name, days] of [['newest', 1], ['middle', 5], ['old', 20], ['oldest', 40]] as const) {
+    for (const [name, days] of [
+      ['newest', 1],
+      ['middle', 5],
+      ['old', 20],
+      ['oldest', 40],
+    ] as const) {
       file(root, `.test-data/${name}/result.json`)
       age(join(root, '.test-data', name), days)
     }
@@ -114,25 +151,55 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     file(root, '.test-data/copy.tgz')
     file(root, '.test-data/tracked/notes.md')
     file(root, '.test-data/windows-remote/config.json', '{}')
-    for (const name of ['cited-run', 'screens-v1', 'marked', 'active', 'stale', 'plain-pid', 'tracked', 'windows-remote', 'copy.tgz']) age(join(root, '.test-data', name), 60)
+    for (const name of [
+      'cited-run',
+      'screens-v1',
+      'marked',
+      'active',
+      'stale',
+      'plain-pid',
+      'tracked',
+      'windows-remote',
+      'copy.tgz',
+    ])
+      age(join(root, '.test-data', name), 60)
     file(root, 'doc/tasks.md', 'See `.test-data/cited-run/result.json` and .test-data/screens-v*.png')
     file(root, 'openspec/changes/x/tasks.md', '.test-data/marked/')
     const trackedFiles = ['.test-data/tracked/notes.md']
 
     const untouched = plan(root, { trackedFiles })
     expect(removed(untouched.items)).toEqual(['.test-data/copy.tgz'])
-    expect(find(untouched.items, '.test-data/old').reason).toBe('evidence (pass --keep-last/--older-than to prune)')
+    expect(find(untouched.items, '.test-data/old').reason).toBe(
+      'evidence (pass --keep-last/--older-than to prune)',
+    )
 
     const byAge = plan(root, { trackedFiles, olderThanMs: 10 * DAY, olderThan: '10d' })
-    expect(removed(byAge.items)).toEqual(['.test-data/copy.tgz', '.test-data/old', '.test-data/old-log.txt', '.test-data/oldest', '.test-data/stale'])
+    expect(removed(byAge.items)).toEqual([
+      '.test-data/copy.tgz',
+      '.test-data/old',
+      '.test-data/old-log.txt',
+      '.test-data/oldest',
+      '.test-data/stale',
+    ])
 
     const byCount = plan(root, { trackedFiles, keepLast: 2 })
     // The regenerable top-level copy.tgz does not take an evidence slot.
-    expect(removed(byCount.items)).toEqual(['.test-data/copy.tgz', '.test-data/old', '.test-data/old-log.txt', '.test-data/oldest', '.test-data/stale'])
+    expect(removed(byCount.items)).toEqual([
+      '.test-data/copy.tgz',
+      '.test-data/old',
+      '.test-data/old-log.txt',
+      '.test-data/oldest',
+      '.test-data/stale',
+    ])
     expect(find(byCount.items, '.test-data/middle').reason).toBe('among newest 2 evidence entries')
 
     const both = plan(root, { trackedFiles, keepLast: 1, olderThanMs: 25 * DAY, olderThan: '25d' })
-    expect(removed(both.items)).toEqual(['.test-data/copy.tgz', '.test-data/old-log.txt', '.test-data/oldest', '.test-data/stale'])
+    expect(removed(both.items)).toEqual([
+      '.test-data/copy.tgz',
+      '.test-data/old-log.txt',
+      '.test-data/oldest',
+      '.test-data/stale',
+    ])
     expect(find(both.items, '.test-data/middle').reason).toBe('newer than 25d')
 
     for (const [path, reason] of [
@@ -143,18 +210,31 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
       ['.test-data/plain-pid', 'active lock (pid 4242)'],
       ['.test-data/tracked', 'contains Git-tracked files'],
       ['.test-data/windows-remote', 'Windows remote private config and run evidence'],
-    ]) expect(find(both.items, path)).toMatchObject({ action: 'keep', reason })
+    ])
+      expect(find(both.items, path)).toMatchObject({ action: 'keep', reason })
   })
 
   it('keeps the pinned cache target and fixed build caches; old targets need --older-than', () => {
     const root = repository()
-    for (const name of ['cliworker-build-deps-022rc1', 'dsh-host-build-deps', 'preview-package', 'typert', 'build-configs', 'cliworker-build-deps-020rc2', 'reference-dump', 'dsh-host-extension-output-4242', 'cited-ui'])
+    for (const name of [
+      'cliworker-build-deps-022rc1',
+      'dsh-host-build-deps',
+      'preview-package',
+      'typert',
+      'build-configs',
+      'cliworker-build-deps-020rc2',
+      'reference-dump',
+      'dsh-host-extension-output-4242',
+      'cited-ui',
+    ])
       file(root, `.cache/${name}/data.bin`)
     file(root, '.cache/run.lock', '4242')
     file(root, 'doc/tasks.md', 'Screenshot: .cache/cited-ui/verification.json')
     age(join(root, '.cache'), 30)
     expect(removed(plan(root).items)).toEqual([])
-    expect(find(plan(root).items, '.cache/cliworker-build-deps-020rc2').reason).toBe('old DSH target (020rc2) (pass --older-than to prune)')
+    expect(find(plan(root).items, '.cache/cliworker-build-deps-020rc2').reason).toBe(
+      'old DSH target (020rc2) (pass --older-than to prune)',
+    )
     const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
     expect(removed(items)).toEqual(['.cache/cliworker-build-deps-020rc2', '.cache/reference-dump'])
     expect(find(items, '.cache/cliworker-build-deps-022rc1').reason).toBe('current DSH 0.2.2-rc.1 target')
@@ -173,26 +253,48 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     age(join(root, '.cache'), 30)
     expect(removed(plan(root).items)).toEqual([])
     for (const name of previous)
-      expect(find(plan(root).items, `.cache/${name}`).reason).toBe('old DSH target (022rc1) (pass --older-than to prune)')
+      expect(find(plan(root).items, `.cache/${name}`).reason).toBe(
+        'old DSH target (022rc1) (pass --older-than to prune)',
+      )
     const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
-    expect(removed(items)).toEqual(previous.map(name => `.cache/${name}`).sort())
+    expect(removed(items)).toEqual(previous.map((name) => `.cache/${name}`).sort())
     for (const name of current)
-      expect(find(items, `.cache/${name}`)).toMatchObject({ action: 'keep', reason: 'current DSH 0.2.2-rc.2 target' })
+      expect(find(items, `.cache/${name}`)).toMatchObject({
+        action: 'keep',
+        reason: 'current DSH 0.2.2-rc.2 target',
+      })
   })
 
-  it('keeps rc.3 SDK, source, build, store and typecheck caches while pruning aged rc.2 targets', () => {
-    const root = repository('0.2.2-rc.3')
-    const current = ['cliworker-build-deps-022rc3', 'dsh-host-source-022rc3', 'dsh-host-build-deps-022rc3', 'dsh-host-pnpm-store-022rc3', 'dsh-host-typecheck-022rc3']
-    const previous = ['cliworker-build-deps-022rc2', 'dsh-host-source-022rc2', 'dsh-host-build-deps-022rc2', 'dsh-host-pnpm-store-022rc2', 'dsh-host-typecheck-022rc2']
+  it('keeps rc.5 SDK, source, build, store and typecheck caches while pruning aged rc.3 targets', () => {
+    const root = repository('0.2.2-rc.5')
+    const current = [
+      'cliworker-build-deps-022rc5',
+      'dsh-host-source-022rc5',
+      'dsh-host-build-deps-022rc5',
+      'dsh-host-pnpm-store-022rc5',
+      'dsh-host-typecheck-022rc5',
+    ]
+    const previous = [
+      'cliworker-build-deps-022rc3',
+      'dsh-host-source-022rc3',
+      'dsh-host-build-deps-022rc3',
+      'dsh-host-pnpm-store-022rc3',
+      'dsh-host-typecheck-022rc3',
+    ]
     for (const name of [...current, ...previous]) file(root, `.cache/${name}/data.bin`)
     age(join(root, '.cache'), 30)
     expect(removed(plan(root).items)).toEqual([])
     for (const name of previous)
-      expect(find(plan(root).items, `.cache/${name}`).reason).toBe('old DSH target (022rc2) (pass --older-than to prune)')
+      expect(find(plan(root).items, `.cache/${name}`).reason).toBe(
+        'old DSH target (022rc3) (pass --older-than to prune)',
+      )
     const { items } = plan(root, { olderThanMs: 7 * DAY, olderThan: '7d' })
-    expect(removed(items)).toEqual(previous.map(name => `.cache/${name}`).sort())
+    expect(removed(items)).toEqual(previous.map((name) => `.cache/${name}`).sort())
     for (const name of current)
-      expect(find(items, `.cache/${name}`)).toMatchObject({ action: 'keep', reason: 'current DSH 0.2.2-rc.3 target' })
+      expect(find(items, `.cache/${name}`)).toMatchObject({
+        action: 'keep',
+        reason: 'current DSH 0.2.2-rc.5 target',
+      })
   })
 
   it('keeps the three newest formal release groups and every verification.json', () => {
@@ -210,26 +312,48 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     age(join(root, 'artifacts'), 30)
     const { items } = plan(root)
     expect(removed(items)).toEqual([
-      'artifacts/dsh-cliworker-now-0.6.9.tgz', 'artifacts/dsh-cliworker-now-0.6.9.tgz.sha256',
-      'artifacts/dsh-cliworker-now-0.7.7.tgz', 'artifacts/dsh-cliworker-now-0.7.7.tgz.sha256',
+      'artifacts/dsh-cliworker-now-0.6.9.tgz',
+      'artifacts/dsh-cliworker-now-0.6.9.tgz.sha256',
+      'artifacts/dsh-cliworker-now-0.7.7.tgz',
+      'artifacts/dsh-cliworker-now-0.7.7.tgz.sha256',
     ])
-    for (const version of ['0.7.8', '0.7.10', '0.8.1']) expect(find(items, `artifacts/dsh-cliworker-now-${version}.tgz`).reason).toBe('one of 3 newest formal releases')
-    expect(items.filter((item: Item) => item.path.endsWith('-verification.json')).every((item: Item) => item.action === 'keep')).toBe(true)
-    expect(find(items, 'artifacts/dsh-cliworker-now-0.9.0-preview.tgz').reason).toBe('pre-release package (pass --older-than to prune)')
+    for (const version of ['0.7.8', '0.7.10', '0.8.1'])
+      expect(find(items, `artifacts/dsh-cliworker-now-${version}.tgz`).reason).toBe(
+        'one of 3 newest formal releases',
+      )
+    expect(
+      items
+        .filter((item: Item) => item.path.endsWith('-verification.json'))
+        .every((item: Item) => item.action === 'keep'),
+    ).toBe(true)
+    expect(find(items, 'artifacts/dsh-cliworker-now-0.9.0-preview.tgz').reason).toBe(
+      'pre-release package (pass --older-than to prune)',
+    )
     expect(find(items, 'artifacts/bot-icons').reason).toBe('outside release retention rules')
-    expect(removed(plan(root, { olderThanMs: DAY, olderThan: '1d' }).items)).toEqual(expect.arrayContaining(['artifacts/dsh-cliworker-now-0.9.0-preview.tgz', 'artifacts/dsh-cliworker-now-0.9.0-preview.tgz.sha256']))
+    expect(removed(plan(root, { olderThanMs: DAY, olderThan: '1d' }).items)).toEqual(
+      expect.arrayContaining([
+        'artifacts/dsh-cliworker-now-0.9.0-preview.tgz',
+        'artifacts/dsh-cliworker-now-0.9.0-preview.tgz.sha256',
+      ]),
+    )
   })
 
   it('collects cited paths from doc and openspec Markdown, including glob prefixes', () => {
     const root = repository()
-    file(root, 'doc/tasks.md', '- `.test-data/evidence/a.png`\n- .test-data/stop-regression-*.json\n- .cache/agy/{a,b}\n- artifacts/dsh-cliworker-now-0.7.7.tgz。')
+    file(
+      root,
+      'doc/tasks.md',
+      '- `.test-data/evidence/a.png`\n- .test-data/stop-regression-*.json\n- .cache/agy/{a,b}\n- artifacts/dsh-cliworker-now-0.7.7.tgz。',
+    )
     const references = collectReferences(root)
     expect(references.get('.test-data')).toEqual([
       { path: 'evidence/a.png', prefix: false, source: 'doc/tasks.md' },
       { path: 'stop-regression-', prefix: true, source: 'doc/tasks.md' },
     ])
     expect(references.get('.cache')).toEqual([{ path: 'agy', prefix: false, source: 'doc/tasks.md' }])
-    expect(references.get('artifacts')).toEqual([{ path: 'dsh-cliworker-now-0.7.7.tgz', prefix: false, source: 'doc/tasks.md' }])
+    expect(references.get('artifacts')).toEqual([
+      { path: 'dsh-cliworker-now-0.7.7.tgz', prefix: false, source: 'doc/tasks.md' },
+    ])
   })
 
   it('applies only planned removals, never follows links and leaves lib, node_modules and doc/local intact', () => {
@@ -250,7 +374,8 @@ describe('clean retention rules (synthetic repository fixtures)', () => {
     expect(existsSync(join(root, '.test-data/keep-run/node_modules'))).toBe(false)
     expect(existsSync(join(root, '.test-data/keep-run/result.json'))).toBe(true)
     expect(lstatSync(join(root, '.test-data/desktop-link')).isSymbolicLink()).toBe(true)
-    for (const path of ['package.json', 'lib/index.js', 'node_modules/dep/index.js', 'doc/local/runbook.md']) expect(existsSync(join(root, path))).toBe(true)
+    for (const path of ['package.json', 'lib/index.js', 'node_modules/dep/index.js', 'doc/local/runbook.md'])
+      expect(existsSync(join(root, path))).toBe(true)
   })
 
   it('refuses a linked scope directory and honours a scope-level .keep', () => {

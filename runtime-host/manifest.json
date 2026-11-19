@@ -2,9 +2,9 @@
   "schema": 1,
   "upstream": {
     "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-    "tag": "dsh-v0.2.2-rc.3",
-    "commit": "38a6a5c965aa99ab525161efb7cc5cf1fe62fced",
-    "version": "0.2.2-rc.3"
+    "tag": "dsh-v0.2.2-rc.5",
+    "commit": "9c2670d3bce5275e0d1610272958121af87787bb",
+    "version": "0.2.2-rc.5"
   },
   "patch": {
     "path": "source.patch",
@@ -18,7 +18,7 @@
     {
       "id": "ui-session",
       "name": "@deepseek-ai/dsh-client-ui-session",
-      "version": "0.2.2-rc.3",
+      "version": "0.2.2-rc.5",
       "directory": "dsh-client-ui-session",
       "reviewedClientSha256": "9d528eaff2164946350033dabec71a3ff398abe41885451af2f7ac8acee62db6",
       "clientSha256": "bc2249038f76e2dbe1504fa4de047143a6aecec9ba8bc2fe8eef9b12f0e45ffc",
@@ -30,10 +30,10 @@
     {
       "id": "ui-conversation",
       "name": "@deepseek-ai/dsh-client-ui-conversation",
-      "version": "0.2.2-rc.3",
+      "version": "0.2.2-rc.5",
       "directory": "dsh-client-ui-conversation",
-      "reviewedClientSha256": "1650695e1c5923bd10d9cf8b1e0fe79b28ad6b37f7897fcbd59aee9ade24324e",
-      "clientSha256": "0a7d58d3355e22fdc6542abc21f8cf86b31a1303b00ff291bdb1c4e62f304513",
+      "reviewedClientSha256": "87342764e6c4f32e432a0047935ecbabaf874bcc22d3b40324c77b9a8efaa7b9",
+      "clientSha256": "8622628445d72d0422c69dba6332a17f1bf778472ecff57b7fcf67d0a175f18d",
       "externalRequirements": {
         "react": "^18.2.0",
         "react-dom": "^18.2.0"
@@ -43,10 +43,10 @@
     {
       "id": "ui-subagent",
       "name": "@deepseek-ai/dsh-client-ui-subagent",
-      "version": "0.2.2-rc.3",
+      "version": "0.2.2-rc.5",
       "directory": "dsh-client-ui-subagent",
-      "reviewedClientSha256": "c456ab49419b6ba9ad1e11d5cbc9fe3f6c6e7338fed874915ffd5e913c311a33",
-      "clientSha256": "14cf867beb8a06c2cd6f8f30d819311b1ce23e0cc41058000423b3b15d391fcc",
+      "reviewedClientSha256": "dd4e373a990e1ae4616269f51aef6745deee5079ef43c71546aa849063f6b613",
+      "clientSha256": "ce91b34e12690d93fad399549807b0a46a099b5a494320c43633d806897eb6e8",
       "externalRequirements": {
         "react": "^18.2.0",
         "react-dom": "^18.2.0"
@@ -56,10 +56,10 @@
     {
       "id": "ui-chat",
       "name": "@deepseek-ai/dsh-client-ui-chat",
-      "version": "0.2.2-rc.3",
+      "version": "0.2.2-rc.5",
       "directory": "dsh-client-ui-chat",
-      "reviewedClientSha256": "2159e009a9826d05a0c982446683d02d43beecda0a039a710bc25a1d1d810554",
-      "clientSha256": "43dc16f15b564913118b4471572ff922298252a60026ceaddd6ec7c6e48c6b2e",
+      "reviewedClientSha256": "311fa2adf5f84fda4d34f71e0eb91bd73893b9e337625070301bb8c3c2a7b423",
+      "clientSha256": "65c799a45c74a847c3cc085587eecf8914eef3f785bf182cd00c146e592d7508",
       "externalRequirements": {
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
@@ -72,7 +72,7 @@
     {
       "path": "README.md",
       "bytes": 892,
-      "sha256": "e445d4af4ac2ef2d07accb289a35b06628085e81c642eb1c22c72b0099922c3b"
+      "sha256": "428e4c464b304f11f73d72355982ba75efef24a61220d4243f72a23053a2f7a8"
     },
     {
       "path": "dsh-client-ui-chat/LICENSE",
@@ -86,8 +86,8 @@
     },
     {
       "path": "dsh-client-ui-chat/lib/client.js",
-      "bytes": 563504,
-      "sha256": "43dc16f15b564913118b4471572ff922298252a60026ceaddd6ec7c6e48c6b2e"
+      "bytes": 563541,
+      "sha256": "65c799a45c74a847c3cc085587eecf8914eef3f785bf182cd00c146e592d7508"
     },
     {
       "path": "dsh-client-ui-chat/lib/index.js",
@@ -612,7 +612,7 @@
     {
       "path": "dsh-client-ui-chat/package.json",
       "bytes": 1663,
-      "sha256": "0239f7a52346b33cfd4e85f5a5d614362a317f55adb8bec82e30e7ba51b78e0a"
+      "sha256": "45a61e8078fe1318feeaa21d0d3bc9e46c2288a8ef2b3915ddc4e8c72a056028"
     },
     {
       "path": "dsh-client-ui-conversation/LICENSE",
@@ -621,8 +621,8 @@
     },
     {
       "path": "dsh-client-ui-conversation/lib/client.js",
-      "bytes": 700192,
-      "sha256": "0a7d58d3355e22fdc6542abc21f8cf86b31a1303b00ff291bdb1c4e62f304513"
+      "bytes": 700216,
+      "sha256": "8622628445d72d0422c69dba6332a17f1bf778472ecff57b7fcf67d0a175f18d"
     },
     {
       "path": "dsh-client-ui-conversation/lib/index.js",
@@ -1057,7 +1057,7 @@
     {
       "path": "dsh-client-ui-conversation/package.json",
       "bytes": 1395,
-      "sha256": "4183be885b245fd7e02a994057837326ae081af6f773f9b70316d9e5ceb8a585"
+      "sha256": "7b17b3acb14d3a70f072e137976a546eb20c564b3f24e412f92f292647d16eb9"
     },
     {
       "path": "dsh-client-ui-session/LICENSE",
@@ -1092,7 +1092,7 @@
     {
       "path": "dsh-client-ui-session/package.json",
       "bytes": 1058,
-      "sha256": "d7c1cc735b5fbda86e8a90509b6459e0fd512d42472a12a38808f78d92087598"
+      "sha256": "a04bf7ecb844fb097316b6fc63ea82b1e69b5ab5306fbdbb54c2bcbf07c6ea63"
     },
     {
       "path": "dsh-client-ui-subagent/LICENSE",
@@ -1101,8 +1101,8 @@
     },
     {
       "path": "dsh-client-ui-subagent/lib/client.js",
-      "bytes": 60601,
-      "sha256": "14cf867beb8a06c2cd6f8f30d819311b1ce23e0cc41058000423b3b15d391fcc"
+      "bytes": 60469,
+      "sha256": "ce91b34e12690d93fad399549807b0a46a099b5a494320c43633d806897eb6e8"
     },
     {
       "path": "dsh-client-ui-subagent/lib/index.js",
@@ -1147,7 +1147,7 @@
     {
       "path": "dsh-client-ui-subagent/package.json",
       "bytes": 1328,
-      "sha256": "41418132250efd0409e602e542f68cd3b1dad95157536af8dcbd69b0745efc27"
+      "sha256": "03f3115bab793b885d7920e2aef31c46e924abdbf8d9d2619b19a6ade9323a51"
     },
     {
       "path": "source.patch",
