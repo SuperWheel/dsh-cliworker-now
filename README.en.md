@@ -88,6 +88,7 @@ dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in
 | TRAE CN | ACP | WorkBuddy CN · WorkBuddy | ACP · **experimental** |
 
 - **Aliases**: `agy` → Antigravity, `glm / zhipu / 智谱` → ZCode, `harmes` → Hermes Agent. An unclear name returns candidates and never dispatches.
+- **Calling DSH**: say "use dsh to summarize the README" or "调用 DeepSeek Harness 检查这个目录" (`dsh`, `deepseekharness`, `harness` and their "cli" forms work too) and the task goes to DeepSeek Harness's own native sub-agent (the host's `subagent` tool) with no CLI selection; it appears under the "Deepseek Harness" group in the CLI Worker window. If the current agent preset has no sub-agent tool (e.g. Minimal mode), the main agent asks you to pick a preset that has it (e.g. Standard mode) under Settings → Agent presets and start a new task, instead of using another CLI. "调用 dsh 和 codex 分别审查" dispatches one of each. History from the retired external Harness CLI stays read-only.
 - **Before you start**: install the CLI's native build and finish its own login or API setup. Both WorkBuddy editions use the CLI bundled in their desktop apps and rely on non-public interfaces; TRAE CN uses the official `traecli` only.
 - **Verification**: tested versions and what is or is not verified for each CLI are in [adapter coverage and verification](doc/usage-details.en.md#42-adapter-coverage-and-verification). Listing models does not guarantee permission to call them.
 

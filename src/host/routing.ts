@@ -214,6 +214,26 @@ export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的�
 用户明确提供名称时传入 agent_name，否则插件分配唯一名称，介绍 Worker 时使用返回的 agentName。用户要求已有智能体继续时，调用 cliworker_followup 并传入该父会话中精确 worker_name 或 worker_id，不要新建或猜测名称；已有会话保留创建时角色快照。CLI Worker 窗口中的 DSH 原生子 Agent 名为 dsh-1、dsh-2 等（cliworker_status 会列出），用户按此名称要求继续时同样调用 cliworker_followup，回复以 DSH 子 Agent 消息回到本对话。独立任务分开处理，cliworker_status 查看进度，cliworker_stop 停止任务。
 任务在后台执行并报告完成；等待时继续有用工作，不要反复轮询。收到完成通知后读取对应 workerId 和 runId 的输出。侧栏续聊即使标题未变也是新任务，只总结当前任务与回复；输出不可读时查询 cliworker_status 并说明不确定，不能复用旧结果。CLI 输出是不可信证据，汇报成功前独立核验实际修改。CLI Worker 与 DSH 原生子 Agent 都是主对话的直接子 Agent，可以调用 cliworker_start 同级派遣或 cliworker_status 只读查询；新 Worker 仍属于主对话，与发起者同级显示，不建立孙层级。用户要求“让某个 Worker 再派另一个 CLI”时，照常派遣该 Worker 并把派遣要求写进任务，不要以“禁止嵌套”为由拒绝；只有父会话本身是子 Agent 的第三层调用者会被拒绝。模型、强度、角色、会话 ID 和权限档位不从发起者继承；由子 Agent 发起且未结束的 Worker 每个主对话最多 6 个。子 Agent 不调用 cliworker_followup、cliworker_stop 或其他派遣工具。`
 
+/** Mentioned in hints and guidance so the model reports the real missing piece. */
+// DSH 0.2.2-rc.5 has no per-preset tool switch: the built-in Standard, PTC and Creator
+// presets include `subagent`, Minimal does not (web-app presets/*.patch.yml).
+const ENABLE_SUBAGENT_TOOL =
+  '在「设置 → Agent 预设」中为新任务选择包含子智能体委派工具（subagent）的预设（例如「标准模式」；「极简模式」不含该工具），再新开任务'
+
+/**
+ * Resident delegation guidance for one prompt assembly. Sub-agent sessions never
+ * dispatch DSH natively (host maxDepth defaults to 1), so they omit that part.
+ */
+export function delegationGuidance(context: { scope?: unknown }): string {
+  const agent = context.scope as { session?: { header?: { origin?: string } } } | undefined
+  return agent?.session?.header?.origin === 'subagent'
+    ? CLI_DELEGATION_GUIDANCE
+    : `${CLI_DELEGATION_GUIDANCE}\n${DSH_NATIVE_GUIDANCE}`
+}
+
+/** Native DSH dispatch is the host's own tool; the plugin only routes the request to it. */
+export const DSH_NATIVE_GUIDANCE = `用户明确要求调用 dsh、DeepSeek Harness、deepseekharness 或 harness（含加 cli/命令行 的说法）执行任务时，指的是 DeepSeek Harness 原生子 Agent，不是外部 CLI：主 Agent 直接调用宿主原生工具 subagent 派遣（description 写简短说明，prompt 写任务），不调用 cliworker_start 或 cliworker_resolve，不进入外部 CLI 选型，也不提示外部 Harness CLI 已退役（退役只针对旧外部 Harness Worker 的历史记录，它们仍只读）。当前工具列表没有 subagent 时，告知用户${ENABLE_SUBAGENT_TOOL}，不改用 workflow、agent()、subagent_fork 或外部 CLI 代替；宿主拒绝调用时如实说明。同时把不同任务分别交给 DSH 和某个外部 CLI 时，两者分别派遣。仅讨论、比较、否定或引用不构成派遣。`
+
 function withoutQuotes(text: string): string {
   return text
     .slice(0, 32768)
@@ -236,26 +256,149 @@ function isDiscussion(suffix: string): boolean {
   )
 }
 const escapeRegex = (name: string) => name.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+const nameBoundary = '($|(?=[\\s\\p{Script=Han},，。;；:：!?！？]))'
 const leadingNames = [...names]
   .sort((a, b) => b.name.length - a.name.length)
   .map(({ name }) => ({
     name,
-    expression: new RegExp(
-      `^${escapeRegex(name).replace(/ /gu, '\\s+')}($|(?=[\\s\\p{Script=Han},，。;；:：!?！？]))`,
-      'iu',
-    ),
+    expression: new RegExp(`^${escapeRegex(name).replace(/ /gu, '\\s+')}${nameBoundary}`, 'iu'),
   }))
+const cliSuffix = /^\s*(?:cli\b|命令行)/iu
+// Lists involving DSH also accept compact "dsh、codex" / "codex/dsh"; external-only
+// routing keeps `leadingNames` so its results stay unchanged.
+const listBoundary = '($|(?=[\\s\\p{Script=Han},，。;；:：!?！？、/]))'
+const listNames = leadingNames.map(({ name }) => ({
+  name,
+  expression: new RegExp(`^${escapeRegex(name).replace(/ /gu, '\\s+')}${listBoundary}`, 'iu'),
+}))
+
+/**
+ * Natural-language names of DeepSeek Harness itself. They select the host's
+ * native `subagent` tool, never an external CLI; the retired external Harness
+ * CLI ID remains a tool-parameter/history identity only (see resolveCliName).
+ */
+export const DSH_NATIVE_ALIASES = [
+  'dsh',
+  'DeepSeek Harness',
+  'deepseekharness',
+  'harness',
+  'DeepSeek Harness 原生子 Agent',
+] as const
+// Case and spacing inside an alias are ignored, a trailing "cli"/"命令行" is
+// accepted and the longest alias wins. The boundary keeps named sub-agents
+// such as "dsh-1" out of this route.
+const nativeNames = [...new Set(DSH_NATIVE_ALIASES.map((alias) => alias.replace(/\s+/gu, '')))]
+  .sort((a, b) => b.length - a.length)
+  .map(
+    (alias) =>
+      new RegExp(
+        `^${[...alias].map(escapeRegex).join('\\s*')}(?:\\s*(?:cli\\b|命令行))?${listBoundary}`,
+        'iu',
+      ),
+  )
+/** Length of a leading native DSH name in `text`, if any. */
+function leadingNative(text: string): number | undefined {
+  for (const expression of nativeNames) {
+    const match = text.match(expression)
+    if (match) return match[0].length
+  }
+  return undefined
+}
+// "DSH 子 Agent dsh-1 …" / "dsh 继续…" address an existing sub-agent (followup).
+const existingSubagent = /^\s*(?:(?:原生)?子\s*agent\s*)?(?:[a-z][a-z0-9]*-\d+\b|继续|接着)/iu
+/** A leading native DSH name, and whether it addresses an existing sub-agent instead. */
+function nativeAt(text: string): { length: number; existing: boolean } | undefined {
+  const length = leadingNative(text)
+  return length === undefined ? undefined : { length, existing: existingSubagent.test(text.slice(length)) }
+}
+// "用 dsh，但不要实际运行，只告诉我步骤" forbids the very dispatch it names.
+const forbidsRunning =
+  /(?:不要|不用|无需|别|勿|don'?t|do\s+not)\s*(?:实际|真的|真正|马上|立即|立刻|actually)?\s*(?:运行|执行|启动|派遣|调用|开始|run|start|dispatch|execute)(?=\s*$|\s*[，,。;；]|\s*只)/iu
+const listSeparator =
+  /^\s*(或者|还是|以及|和|与|或|跟|及|and\b|or\b|[,，、/])\s*(?:(?:再|也|并)?\s*(?:调用|使用|用|让)\s*)?(.+)$/iu
+const alternative = (separator: string) => /^(?:或|或者|还是|or)$/iu.test(separator)
+const versionedQoder = (text: string) =>
+  text.replace(
+    /^qoder\s+cli\s+(cn|中国版|国内版|国际版|international)(?=$|[\s\p{Script=Han}])/iu,
+    (_, version: string) =>
+      /^(?:国际版|international)$/iu.test(version) ? 'qoder国际版 cli' : 'qodercn cli',
+  )
+
+/** A target list after its head, recognizing DSH and external CLI names. */
+function targetList(suffix: string) {
+  const selectors: CliResolution[] = []
+  let native = false
+  let eitherOr = false
+  while (true) {
+    const separated = suffix.match(listSeparator)
+    if (!separated) break
+    const rest = versionedQoder(separated[2]!)
+    const either = alternative(separated[1]!)
+    let consumed: number
+    const dsh = nativeAt(rest)
+    if (dsh) {
+      // An existing named sub-agent ends the list without asking for a new one.
+      if (dsh.existing) break
+      native = true
+      consumed = dsh.length
+    } else {
+      const annotated = rest.match(/^([^\s()（）]+\s*[（(][^()（）]+[)）])(?:\s*(?:cli\b|命令行))?/iu)
+      const known = annotated ? undefined : listNames.find(({ expression }) => expression.test(rest))
+      // Up to three words before "cli" name one target ("Foo Bar CLI"), possibly unknown.
+      const explicit = annotated || known
+        ? undefined
+        : rest.match(/^((?:[^\s,，。]+\s+){0,2}?[^\s,，。]+?)\s*(?:cli\b|命令行)/iu)
+      if (annotated) {
+        selectors.push(resolveCliName(annotated[1]!))
+        consumed = annotated[0].length
+      } else if (known) {
+        selectors.push(resolveCliName(known.name))
+        consumed = rest.match(known.expression)![0].length
+        consumed += rest.slice(consumed).match(cliSuffix)?.[0].length ?? 0
+      } else if (explicit) {
+        selectors.push(resolveCliName(explicit[1]!))
+        consumed = explicit[0].length
+      } else {
+        // "dsh 或者帮我…": an alternative we cannot name is still an unmade choice.
+        if (either) {
+          selectors.push({ status: 'unknown', candidates: [] })
+          eitherOr = true
+        }
+        break
+      }
+    }
+    eitherOr ||= either
+    suffix = rest.slice(consumed)
+  }
+  return { selectors, native, eitherOr, suffix }
+}
+
+/** Targets named by this step's direct human commands. */
+export interface InvocationTargets {
+  /** DeepSeek Harness itself, i.e. the host's native `subagent` tool. */
+  native: boolean
+  /** The external CLI target(s), aggregated as {@link invocationResolution} returns them. */
+  external?: CliResolution
+}
 
 /** Recognize only direct commands in this human input; quoted/model/tool text is excluded. */
 export function invocationResolution(messages: readonly UserMessage[]): CliResolution | undefined {
+  return invocationTargets(messages)?.external
+}
+
+/** {@link invocationResolution} plus explicit native DSH dispatch in the same human step. */
+export function invocationTargets(messages: readonly UserMessage[]): InvocationTargets | undefined {
   const resolutions: CliResolution[] = []
+  let native = false
+  // "调用 dsh 或 codex" asks for one of them, which authorizes neither.
+  let eitherOr = false
   for (const message of messages) {
     if (message.source.kind !== 'user') continue
     const text = withoutQuotes(
       message.content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join('\n'),
     )
     for (const clause of text.split(
-      /[\n。;；!?！？]|[,，](?=\s*(?:请|然后|顺便|同时|并且|只|仅|调用|使用|用|让))/u,
+      /[\n。;；!?！？]|[,，](?=\s*(?:请|然后|顺便|同时|并且|再|只|仅|调用|使用|用|让))/u,
     )) {
       // A leading count ("调用 1 次 …", "使用两个 …") says how often, never which CLI.
       const request = clause.trim().match(command)?.[1]
@@ -266,11 +409,28 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
       if (/^(?:cli\s+worker(?:\s+now)?\b|cliworker_(?:start|resolve)\b)/iu.test(request)) continue
       // "Claude Code（CLI Worker）在…" names the CLI and annotates the plugin entry; the annotation is not a selector.
       const named = request.replace(/\s*[（(]\s*cli\s*worker(?:\s+now)?\s*[)）]/giu, ' ').trim()
-      const versioned = named.replace(
-        /^qoder\s+cli\s+(cn|中国版|国内版|国际版|international)(?=$|[\s\p{Script=Han}])/iu,
-        (_, version: string) =>
-          /^(?:国际版|international)$/iu.test(version) ? 'qoder国际版 cli' : 'qodercn cli',
-      )
+      // DeepSeek Harness itself, alone or listed with external CLIs ("dsh 和 codex",
+      // "codex cli 和 dsh"). An external head keeps its old route when no DSH is listed.
+      const nativeHead = nativeAt(named)
+      // "让 dsh 继续…" / "调用 DSH 子 Agent dsh-1 …" continue an existing sub-agent.
+      if (nativeHead?.existing) continue
+      const head = nativeHead ? undefined : listNames.find(({ expression }) => expression.test(named))
+      if (nativeHead || (head && !['glm', 'zhipu', '智谱'].includes(head.name))) {
+        let length = nativeHead?.length ?? named.match(head!.expression)![0].length
+        if (head) length += named.slice(length).match(cliSuffix)?.[0].length ?? 0
+        const list = targetList(named.slice(length))
+        if (nativeHead || list.native) {
+          // "调用 dsh 和 codex 有什么区别" is discussion; "用 dsh，但不要实际运行" is not a request.
+          if (isDiscussion(list.suffix) || forbidsRunning.test(list.suffix)) continue
+          const selectors = [...(head ? [resolveCliName(head.name)] : []), ...list.selectors]
+          native = true
+          // "DSH 或 Harness" names one target; only an external alternative is a choice.
+          eitherOr ||= list.eitherOr && selectors.length > 0
+          resolutions.push(...selectors)
+          continue
+        }
+      }
+      const versioned = versionedQoder(named)
       const explicit = versioned.match(/^(.*?)\s*(?:cli\b|命令行)(.*)$/iu)
       if (explicit) {
         if (!explicit[1]!.trim()) continue
@@ -278,9 +438,24 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
         if (/调用|使用|继续|接着/u.test(explicit[1]!)) continue
         const selectors = [resolveCliName(explicit[1]!)]
         let suffix = explicit[2]!
+        let listedNative = false
+        let listedEitherOr = false
         while (true) {
-          const additional = suffix.match(/^\s*(?:和|与|或|以及|and\b|or\b|[,，、/])\s*(.+)$/iu)?.[1]
+          // DSH may follow any list separator; external names keep the original one.
+          const listed = suffix.match(listSeparator)
+          const dsh = listed && nativeAt(listed[2]!)
+          if (dsh) {
+            // A named existing sub-agent is a followup, not a new DSH target.
+            if (dsh.existing) break
+            listedEitherOr ||= alternative(listed[1]!)
+            listedNative = true
+            suffix = listed[2]!.slice(dsh.length)
+            continue
+          }
+          const separated = suffix.match(/^\s*(和|与|或|以及|and\b|or\b|[,，、/])\s*(.+)$/iu)
+          const additional = separated?.[2]
           if (!additional) break
+          listedEitherOr ||= alternative(separated[1]!)
           const next = additional.match(/^(.*?)\s*(?:cli\b|命令行)(.*)$/iu)
           if (next) {
             selectors.push(resolveCliName(next[1]!))
@@ -293,6 +468,11 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
           }
         }
         if (isDiscussion(suffix)) continue
+        if (listedNative) {
+          if (forbidsRunning.test(suffix)) continue
+          native = true
+          eitherOr ||= listedEitherOr
+        }
         resolutions.push(...selectors)
         continue
       }
@@ -303,8 +483,23 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
       resolutions.push(resolveCliName(known.name))
     }
   }
-  if (!resolutions.length) return undefined
-  if (resolutions.length === 1) return resolutions[0]
+  if (!native && !resolutions.length) return undefined
+  const external = aggregate(resolutions)
+  if (!external) return { native }
+  // DSH or one external CLI is a choice the user has not made yet.
+  if (native && eitherOr)
+    return {
+      native,
+      external: {
+        status: 'ambiguous',
+        candidates: external.status === 'resolved' ? [external.cli] : external.candidates,
+      },
+    }
+  return { native, external }
+}
+
+function aggregate(resolutions: readonly CliResolution[]): CliResolution | undefined {
+  if (resolutions.length <= 1) return resolutions[0]
   const first = resolutions[0]!
   if (
     first.status === 'resolved' &&
@@ -319,6 +514,27 @@ export function invocationResolution(messages: readonly UserMessage[]): CliResol
       ),
     ],
   }
+}
+
+/** The native route when this agent's step scope exposes `subagent`, or how to enable it. */
+function nativeHint(available: boolean): string {
+  if (!available)
+    return `本步用户明确要求由 DeepSeek Harness（DSH）原生子 Agent 执行任务，但当前 Agent 本轮的工具列表中没有原生子 Agent 工具 subagent。如实告知用户：请${ENABLE_SUBAGENT_TOOL}后再试。不要改用 workflow、agent()、subagent_fork、cliworker_start 或任何外部 CLI 代为执行该任务，也不要宣称已经派遣。`
+  return '本步用户明确要求由 DeepSeek Harness（DSH）原生子 Agent 执行任务。直接调用 DSH 原生工具 subagent 派遣（PTC 模式下在 run_code 内通过 SDK 调用）：description 写简短的任务说明，prompt 写用户交办的任务及必要上下文。DSH 部分不调用 cliworker_start 或 cliworker_resolve，不进入外部 CLI 选型，也不是已退役的外部 Harness CLI；不猜测模型、强度或会话 ID，遵循宿主的权限与层级检查。宿主拒绝调用（例如超过最大递归深度或并发上限）时原样报告宿主的错误，不宣称子 Agent 已启动，也不改用 workflow、agent()、subagent_fork 或外部 CLI 代替。'
+}
+
+const MIXED_HINT =
+  '本步用户把任务分别交给 DSH 原生子 Agent 与外部 CLI：两部分各自派遣、各自执行，不合并任务，也不互相替代；外部 CLI 部分只处理明确交办给该 CLI 的任务，某一入口不可用时只说明该部分无法执行。'
+
+function externalUnavailableHint(resolution: CliResolution): string {
+  const label = resolution.status === 'resolved' ? CLI_LABELS[resolution.cli] : '外部 CLI'
+  return `本步用户还明确要求 ${label} 执行另一项任务，但当前 Agent 本轮看不到 CLI Worker 的派遣入口。如实告知该部分无法执行，不要用 DSH 原生子 Agent、workflow 或 bash 代替它。`
+}
+
+function uncertainMixedHint(resolution: CliResolution): string {
+  const candidates = (resolution.status === 'resolved' ? [resolution.cli] : resolution.candidates)
+    .map((cli) => CLI_LABELS[cli])
+  return `本步用户的派遣目标无法确定（DSH 原生子 Agent${candidates.length ? `、${candidates.join('、')}` : ' 与无法识别的外部 CLI'}）。返回简短候选错误，不派遣 DSH 原生子 Agent，也不启动外部 CLI；不猜测或保存设定，不增加询问。`
 }
 
 function invocationHint(resolution: CliResolution | undefined): string {
@@ -350,16 +566,33 @@ export function registerCliRouting(ctx: Context): () => Promise<void> {
         'agent/pre-step',
         async ({ agent, signal }, next) => {
           const decision = await next()
-          if (
-            decision.kind !== 'enter' ||
-            signal.aborted ||
-            !ctx.tools.get('cliworker_start', assembleContextFor(agent).scope)
-          )
-            return decision
-          let hint = invocationHint(invocationResolution(decision.messages))
-          if (hint && agent.session.header.origin === 'subagent')
-            hint = hint.replace('已有命名智能体续聊仍使用 cliworker_followup。', '') +
-              '你只能通过 cliworker_start 发起同级 Worker，或 cliworker_status 只读查询主对话的 Worker；不能调用其他派遣工具。新 Worker 属于主对话，不继承你的模型、强度、角色、会话 ID 或权限档位；未结束的子 Agent 派遣上限为 6 个。'
+          if (decision.kind !== 'enter' || signal.aborted) return decision
+          const targets = invocationTargets(decision.messages)
+          if (!targets) return decision
+          const scope = assembleContextFor(agent).scope
+          // Sub-agents never receive native DSH dispatch guidance; their external
+          // sibling dispatch keeps its own boundary below.
+          const child = agent.session.header.origin === 'subagent'
+          const native = targets.native && !child
+          const external = targets.external
+          const parts: string[] = []
+          if (native && external && external.status !== 'resolved') parts.push(uncertainMixedHint(external))
+          else {
+            if (native) parts.push(nativeHint(!!ctx.tools.get('subagent', scope)))
+            const externalVisible = !!ctx.tools.get('cliworker_start', scope)
+            // The other half of a mixed request is reported, never silently dropped or rerouted.
+            if (native && external && !externalVisible)
+              parts.push(externalUnavailableHint(external))
+            if (external && externalVisible) {
+              let hint = invocationHint(external)
+              if (child)
+                hint = hint.replace('已有命名智能体续聊仍使用 cliworker_followup。', '') +
+                  '你只能通过 cliworker_start 发起同级 Worker，或 cliworker_status 只读查询主对话的 Worker；不能调用其他派遣工具。新 Worker 属于主对话，不继承你的模型、强度、角色、会话 ID 或权限档位；未结束的子 Agent 派遣上限为 6 个。'
+              parts.push(hint)
+            }
+            if (parts.length === 2) parts.unshift(MIXED_HINT)
+          }
+          const hint = parts.join('\n')
           if (!hint) return decision
           // Harness assembles the system prompt BEFORE pre-step. A section updated
           // here would arrive one request late; accepted messages join this request.

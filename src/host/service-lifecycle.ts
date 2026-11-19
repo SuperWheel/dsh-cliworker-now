@@ -23,7 +23,7 @@ import { effectiveLevel, levelName } from '../shared/worker-permissions.ts'
 import { WorkerStorage } from './storage.ts'
 import { WorkerRuntime } from './runtime.ts'
 import { AccountManager } from './accounts.ts'
-import { CLI_DELEGATION_GUIDANCE, registerCliRouting } from './routing.ts'
+import { delegationGuidance, registerCliRouting } from './routing.ts'
 import type { ServiceContext } from './service-context.ts'
 import type { Config } from './index.ts'
 import * as harness from './service-harness.ts'
@@ -254,7 +254,7 @@ export function initialize(host: ServiceContext, ctx: Context, config: Config) {
       ctx.systemPrompt.section({
         name: 'cliworker:delegation',
         order: 80,
-        text: CLI_DELEGATION_GUIDANCE,
+        text: delegationGuidance,
       }),
     'cliworker:guidance',
   )
