@@ -2,16 +2,21 @@
 
 ## 1. SDK 来源、差异与构建目标 〔后端｜4h〕
 
-- [ ] 1.1 在指定独立 worktree 实施，记录升级前提交、锁文件非 DSH 包集合及同环境 macOS 全量 Vitest 基线，复核 npm 发布时间、tag commit、Desktop 版本和自带 `dsh` 版本。
+- [x] 1.1 在指定独立 worktree 实施，记录升级前提交、锁文件非 DSH 包集合及同环境 macOS 全量 Vitest 基线，复核 npm 发布时间、tag commit、Desktop 版本和自带 `dsh` 版本。
   - 实施 worktree 为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-dsh-rc5-adapt`。
   - 独立验收目录为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-dsh-rc5-adapt`，用于干净安装对照、临时 `HOME`／`DSH_HOME`、验收工作区及产物。测试根和私有验收目录权限为 0700。
-  - （未执行：当前为提案阶段，待创建实施环境和采集回归基线。）
-- [ ] 1.2 对两套实际安装的 rc.3 与 rc.5 npm 产物逐包比较，核对 Gateway、Remote、Typert、扩展点、主题 token、共享组件、四包及 Cordis。将公开导出、生成类型、运行产物、资源的实际差异和「需适配」或「无需改动」的依据补入设计。若发现破坏性变化，完成最小兼容修正并通过关联测试。
-  - （未执行：已安装 npm 包的逐包对比待实施。）
-- [ ] 1.3 将 `package.json` 的 39 个 `@deepseek-ai/dsh*` 开发依赖同步为精确的 0.2.2-rc.5，更新 `pnpm-workspace.yaml` 发布期限例外和 `pnpm-lock.yaml`。以 `pnpm install --frozen-lockfile` 复核，并比较锁文件非 DSH 包集合与基线逐项一致。
-  - （未执行：待升级并冻结依赖。）
-- [ ] 1.4 在 `scripts/host-targets.json` 注册 rc.5 并将 `vendorDefault` 指向它，核对 `scripts/build-dependencies.mjs`、`scripts/build-host-extension.mjs`、`scripts/vendor-host-extensions.mjs` 对新旧目标的选择与校验。更新当前基线的 `build-dependencies`、`clean` 测试并跑定向回归，旧目标和不支持目标的断言均通过。
-  - （未执行：待接入新目标。）
+  - 基线分支 `dsh-022rc5-adapt`、干净提交 `c6df94a144c809869ed603e95cf4bce78987310c`。macOS、Node 22.23.1、corepack pnpm 11.25.0。修改跟踪文件之前完成根目录冻结安装和 `corepack pnpm build`，均退出 0。锁文件 1,037 项中非 DSH 705 项，排序摘要见 1.3。
+  - 首次 `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run --maxWorkers=2` 退出 1，366 文件（360 通过、2 失败、4 跳过），8,857 项（8,830 通过、12 失败、15 跳过），另有 3 个未处理错误，295.81 秒。将 HOME 从被测试仓库内部移至所列验收目录，恢复原 PATH 的 Python 3.12.13，并只为 Git 指定系统二进制后，Qoder／Hermes 两文件 94 项全部通过。
+  - 按修正环境重测未改动基线，退出 1，366 文件（361 通过、1 失败、4 跳过），8,857 项（8,841 通过、1 失败、15 跳过），362.22 秒。下载总时限模拟用例的流提前关闭，两次单文件复跑为 17/18，通过 c6df94a 的独立 rc.3 安装夹具再次单跑为 18/18（6.61 秒）。升级后全量使用同一外部 HOME、原 Python 与双 worker。
+  - 官方 npm 发布时间分别为 rc.4 `2026-11-17T17:03:03.170Z`、rc.5 `2026-11-18T13:17:23.604Z`，查询时 latest 和 next 均为 rc.5。Git tag 解析为 `3f321d32bfe382212a8ed8785c1d47a5a300aa23`、`9c2670d3bce5275e0d1610272958121af87787bb`。只读 Info.plist 和隔离 HOME 下自带 `runtime/cli/bin/dsh --version` 均得到 0.2.2-rc.5。测试根、验收目录与临时 HOME 权限均为 0700。
+- [x] 1.2 对两套实际安装的 rc.3 与 rc.5 npm 产物逐包比较，核对 Gateway、Remote、Typert、扩展点、主题 token、共享组件、四包及 Cordis。将公开导出、生成类型、运行产物、资源的实际差异和「需适配」或「无需改动」的依据补入设计。若发现破坏性变化，完成最小兼容修正并通过关联测试。
+  - 两棵冻结安装树的 332 个 DSH 包与 Cordis 4.1.0 共 333 包，按约定排除文档噪声、map、垫片和包清单后比对 11,102／11,106 个文件，18 包 47 个差异路径，归一化 pin 后导出与入口等 10 组字段差异 0。39 个直接 pin 中有 3 包出现文件差异，详见设计中的逐包结论，插件接入无需修改。
+  - 逐包清单在上述验收目录的 `sdk-comparison.json`，SHA256 为 `f4c4f6cc274adfc1b45b144a65cf29cf5a59b530ead29de63893157704b4afd8`。
+- [x] 1.3 将 `package.json` 的 39 个 `@deepseek-ai/dsh*` 开发依赖同步为精确的 0.2.2-rc.5，更新 `pnpm-workspace.yaml` 发布期限例外和 `pnpm-lock.yaml`。以 `pnpm install --frozen-lockfile` 复核，并比较锁文件非 DSH 包集合与基线逐项一致。
+  - 39 个 DSH 开发依赖和根 workspace 的 340 条版本例外均更新到 rc.5，插件版本为 0.9.1。根目录 `corepack pnpm install --frozen-lockfile --offline --store-dir "$PWD/.cache/upstream-store-seeded"` 退出 0，用时 12.1 秒。根锁共 1,037 项，非 DSH 包名和精确版本排序清单为 705 项，升级前后逐项一致，SHA256 均为 `203d8c00dfbd41e5290fff7714fac33ef52c637ab1c87f30ff6fbe19a4649692`。
+  - 联网安装曾遇到 DNS 和大包下载超时，保留既有代理，复用私有 store 中已获取的官方包和 rc.3 缓存后冻结复核通过。
+- [x] 1.4 在 `scripts/host-targets.json` 注册 rc.5 并将 `vendorDefault` 指向它，核对 `scripts/build-dependencies.mjs`、`scripts/build-host-extension.mjs`、`scripts/vendor-host-extensions.mjs` 对新旧目标的选择与校验。更新当前基线的 `build-dependencies`、`clean` 测试并跑定向回归，旧目标和不支持目标的断言均通过。
+  - 目标表新增 rc.5 固定 commit、独立工具链和 vendor 标记，vendorDefault 为 rc.5。三个脚本均读取同一目标表。定向 `vitest run tests/build-dependencies.test.ts tests/clean.test.ts --maxWorkers=2` 退出 0，2 文件 26 项通过，失败和跳过均为 0。覆盖 rc.5 选择、历史图、拒绝未支持 rc.4，以及保留当前缓存和清理旧缓存。
 
 ## 2. 四个原生界面包的补丁迁移与分发 〔后端｜5h｜前置 1〕
 

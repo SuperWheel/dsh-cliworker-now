@@ -4,27 +4,42 @@
 
 沿用 rc.3 适配的宿主构建、随包分发和原生 profile 接入流程。`package.json` 的 `devDependencies.@deepseek-ai/dsh` 是开发 SDK 基线，`scripts/host-targets.json` 记录受支持的构建目标及 `vendorDefault`，`runtime-host/manifest.json` 记录实际随包资源的来源和摘要。[提案](proposal.md) · [rc.3 适配归档](../../archives/v0.9.0-dsh-rc3-adapt-leeyl/)
 
-| 官方版本 | npm `@deepseek-ai/dsh` 发布时间（UTC） | 官方 tag | Git commit |
-| --- | --- | --- | --- |
-| 0.2.2-rc.3 | 本次对比基线 | `dsh-v0.2.2-rc.3` | `38a6a5c965aa99ab525161efb7cc5cf1fe62fced` |
-| 0.2.2-rc.4 | `2026-11-17T17:03:03Z` | `dsh-v0.2.2-rc.4` | `3f321d32bfe382212a8ed8785c1d47a5a300aa23` |
-| 0.2.2-rc.5 | `2026-11-18T13:17:23Z` | `dsh-v0.2.2-rc.5` | `9c2670d3bce5275e0d1610272958121af87787bb` |
+| 官方版本   | npm `@deepseek-ai/dsh` 发布时间（UTC） | 官方 tag          | Git commit                                 |
+| ---------- | -------------------------------------- | ----------------- | ------------------------------------------ |
+| 0.2.2-rc.3 | 本次对比基线                           | `dsh-v0.2.2-rc.3` | `38a6a5c965aa99ab525161efb7cc5cf1fe62fced` |
+| 0.2.2-rc.4 | `2026-11-17T17:03:03Z`                 | `dsh-v0.2.2-rc.4` | `3f321d32bfe382212a8ed8785c1d47a5a300aa23` |
+| 0.2.2-rc.5 | `2026-11-18T13:17:23Z`                 | `dsh-v0.2.2-rc.5` | `9c2670d3bce5275e0d1610272958121af87787bb` |
 
 npm 发布信息取自需求资料，所列 `latest` 与 `next` 均为 0.2.2-rc.5。只读核对本地 `.cache/dsh-host-source-022rc2` 得到以上 tag commit，rc.4 和 rc.5 均为 rc.3 的后代。本机 `/Applications/DeepSeek Harness.app` 的 `CFBundleShortVersionString` 为 0.2.2-rc.5。Desktop 自带 `dsh` 版本和可取得的应用构建标记在实机验收时单独记录。[需求 PRD](../../../doc/prd/2026-11-19-v0.9.2-dsh-rc5-names-omp-PRD.md) · [REQ-0138 快照](../../../doc/prd/2026-11-19-v0.9.2-REQ-0138.md)
 
 ### rc.3 → rc.5 源码差异结论
 
-两个 tag 之间共 448 个文件变更，多数为版本号或变更日志。下表以源码为证据，已安装 npm 包的逐包差异清单和最终适配结论由实施任务 1.2 补齐。
+两个 tag 之间共 448 个文件变更，多数为版本号或变更日志。下表以源码为证据，实际安装产物的复核结果见下节。
 
-| 核对面 | 当前结论与依据 |
-| --- | --- |
-| Gateway | 源码未见插件所用 `dsh-api-gateway` 接口变动，暂无需改动。逐包核对其公开导出、声明和运行入口。 |
-| Remote 与 Typert | 源码未见插件所用 Remote、会话控制或 Typert 契约变动，暂无需改动。核对 `api-remotes`、`api-session-controller` 及 Typert 包的生成声明和运行入口。 |
-| Cordis 扩展点 | 插件所用 slots、renderer、会话和子 Agent 扩展点未见源码变动。`bundle/base/cordis.patch.yml` 移除固定 `searchProvider`，保留 `fetchProvider: http`，`tool-cordis` 的 API 目录变化描述的是搜索选择机制。暂无需调整插件扩展点。 |
-| 主题 token 与共享组件 | `ui-theme`、`ui-primitives` 等插件所用主题和共享组件未见源码级导出变化，暂无需改动。核对 npm 包暴露的 token、组件、入口与类型。 |
-| 四个随包界面包 | `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 各自仅变更 `package.json` 中的版本号，现有补丁预计可迁移。按 rc.5 官方 npm 包核对继承的 Host、声明和资源。 |
-| Cordis 版本 | 两个 tag 的 `vendor/cordis/package.json` 均为 `@deepseek-ai/cordis` 4.1.0，插件当前也锁定 4.1.0。暂无需改动，安装后复核版本及实际来源。 |
-| 其他实质变动 | `web`、`web-search-deepseek`、`tool-web`、`ui-settings-web-search` 的默认搜索服务按模型路由选择，`WebSearchRequest` 新增可选 `llmProvider`。`llm-deepseek` 新增内容安全检查，`llm` 的 `LLM_FAILURE_CODES` 增加 `CONTENT_REFUSED`。实验性 `liveshare` 调整隧道的 Electron Node 启动。初步检索 `src/` 未见插件引用这些改动的接口或行为，暂无需接入。 |
+| 核对面                | 当前结论与依据                                                                                                                                                                                                                                                                                                                                     |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gateway               | 源码未见插件所用 `dsh-api-gateway` 接口变动，暂无需改动。逐包核对其公开导出、声明和运行入口。                                                                                                                                                                                                                                                      |
+| Remote 与 Typert      | 源码未见插件所用 Remote、会话控制或 Typert 契约变动，暂无需改动。核对 `api-remotes`、`api-session-controller` 及 Typert 包的生成声明和运行入口。                                                                                                                                                                                                   |
+| Cordis 扩展点         | 插件所用 slots、renderer、会话和子 Agent 扩展点未见源码变动。`bundle/base/cordis.patch.yml` 移除固定 `searchProvider`，保留 `fetchProvider: http`，`tool-cordis` 的 API 目录变化描述的是搜索选择机制。暂无需调整插件扩展点。                                                                                                                       |
+| 主题 token 与共享组件 | `ui-theme`、`ui-primitives` 等插件所用主题和共享组件未见源码级导出变化，暂无需改动。核对 npm 包暴露的 token、组件、入口与类型。                                                                                                                                                                                                                    |
+| 四个随包界面包        | `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 各自仅变更 `package.json` 中的版本号，现有补丁预计可迁移。按 rc.5 官方 npm 包核对继承的 Host、声明和资源。                                                                                                                                                                               |
+| Cordis 版本           | 两个 tag 的 `vendor/cordis/package.json` 均为 `@deepseek-ai/cordis` 4.1.0，插件当前也锁定 4.1.0。暂无需改动，安装后复核版本及实际来源。                                                                                                                                                                                                            |
+| 其他实质变动          | `web`、`web-search-deepseek`、`tool-web`、`ui-settings-web-search` 的默认搜索服务按模型路由选择，`WebSearchRequest` 新增可选 `llmProvider`。`llm-deepseek` 新增内容安全检查，`llm` 的 `LLM_FAILURE_CODES` 增加 `CONTENT_REFUSED`。实验性 `liveshare` 调整隧道的 Electron Node 启动。初步检索 `src/` 未见插件引用这些改动的接口或行为，暂无需接入。 |
+
+### 两套已安装 npm 产物的逐包复核
+
+从同一插件提交的 rc.3 冻结安装和 rc.5 冻结安装分别读取 pnpm 实体包。逐包比较 332 个 DSH 包和 Cordis 4.1.0。文件哈希排除 README、CHANGELOG、package.json、source map、.bin 及嵌套 node_modules；另外单独比较 manifest 的 exports、main、module、types、type、bin、dependencies、peerDependencies、optionalDependencies 和 dsh，先归一化 DSH 的版本 pin。333 个包的这些字段均一致。rc.3 有 11,102 个纳入比较的文件，rc.5 有 11,106 个。315 个包逐文件相同，其余 18 个包共有 47 个差异路径。
+
+| 实际差异包（省略 `@deepseek-ai/`）                                                                           | 文件与契约                                                                                                                          | 插件结论                               |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| dsh                                                                                                          | 8 个中英文文档路径涉及配置、联网搜索与拒答升级指引                                                                                  | CLI 入口及导出相同，无需改动           |
+| dsh-api-remotes                                                                                              | `lib/client.js` 中 web 服务的生成源码位置从第 152 行移到第 174 行，其余字节相同                                                     | Remote 调用与类型契约相同，无需改动    |
+| dsh-client-modules、dsh-client-ui-settings-account、dsh-client-ui-settings-general、dsh-client-ui-sidebar    | 各有 1 个运行入口仅更新内嵌版本或前端短构建标记（`6b729fe` → `3f85d88`）                                                            | 扩展点及类型相同，无需改动             |
+| dsh-llm、dsh-llm-deepseek、dsh-repeat-tool-reminder、dsh-session-persistence-jsonl、dsh-tmux-context         | llm 的源码、运行表和声明新增 `CONTENT_REFUSED`，DeepSeek 转译处理内容安全拒答，后三个包的编译输出带入新枚举值                       | 插件没有对该错误码做穷举分支，无需改动 |
+| dsh-base、dsh-client-ui-settings-web-search、dsh-tool-cordis、dsh-tool-web、dsh-web、dsh-web-search-deepseek | 默认搜索服务按模型路由选择。配置、卡片与词条、工具说明、生成的 web Remote 及类型相应更新；`WebSearchRequest.llmProvider` 为可选字段 | 插件未调用这些搜索接口，无需改动       |
+| dsh-experimental-liveshare                                                                                   | `src/host/tunnel-worker.ts` 及 `lib/index.js` 更改 Electron 下子进程启动                                                            | 插件未使用该隧道，无需改动             |
+
+39 个精确 pin 中仅 dsh、dsh-api-remotes 和 dsh-llm 有上述差异。Gateway、会话控制、Typert 生成器／协议／注册器、主题 token、primitives、slots、renderer、四个原生 UI 包（含图片）、Cordis 的纳入文件均相同。完整逐包清单记在验收目录的 `sdk-comparison.json`，逐行列出两个版本、实际入口、文件数、变化路径及 manifest 结论。此次升级沿用现有 Host、Client 接入。
 
 ## Goals / Non-Goals
 
