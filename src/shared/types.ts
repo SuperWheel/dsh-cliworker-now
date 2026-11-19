@@ -341,14 +341,21 @@ export interface QueuedFollowup {
   pauseReason?: string
 }
 /** Public DSH directory/projection data; never a plugin-owned Worker. */
-/** `dsh-<n>` names are reserved for DSH native subagents in the CLI Worker window. */
+/** Legacy plugin-assigned `dsh-<n>` names of unnamed DSH native subagents (kept as aliases). */
 export const DSH_AGENT_NAME = /^dsh-[1-9]\d*$/i
 export interface DshSubagent {
   id: string
   parentSessionId: string
   name: string
-  /** Plugin-assigned `dsh-N`, stable per main conversation; used by cliworker_followup. */
+  /**
+   * Effective name: plugin rename overlay, else the DSH catalog name, else the stable
+   * legacy `dsh-N` for unnamed historical rows. Used by the panel and cliworker_followup.
+   */
   agentName: string
+  /** Name in the DSH catalog when it differs from `agentName` (overlay rename); DSH identity and sender name still use it. */
+  registeredName?: string
+  /** Earlier names that still address this child (overlay former names, legacy `dsh-N`). */
+  formerNames?: string[]
   createdAt: number
   mode: 'continuable' | 'one-shot' | 'unknown' | 'external'
   status: 'running' | 'completed' | 'failed' | 'unknown'
