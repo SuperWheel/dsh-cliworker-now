@@ -6,10 +6,10 @@ type PlanProjections = { stateOf(session: Agent['session'], key: string): unknow
 /**
  * Whether the parent conversation is in DSH plan mode.
  *
- * DSH 0.2.2-rc.3 Desktop disables the host-plane `plan-mode` plugin and mounts
+ * DSH 0.2.2-rc.5 Desktop configuration disables the host-plane `plan-mode` plugin and mounts
  * it inside each Agent preset's `planning` group with `isolate: planMode`, so
  * neither the plugin context nor `agent.ctx` can resolve the service
- * (2026-11-14 Mac Desktop probe: every `get('planMode')` was undefined while
+ * (2026-11-14 rc.3 Mac Desktop probe: every `get('planMode')` was undefined while
  * the session's `plan` projection was active). The `plan` projection stays a
  * process-wide unit and carries the logged state, so it is read when the
  * service is not visible. A deployment without plan mode has no `plan` unit
@@ -25,7 +25,11 @@ export function readHostPlanActive(agent: Agent, projections: () => PlanProjecti
   if (service) return !!service.get(agent).active
   const state = projections()?.stateOf(agent.session, 'plan')
   if (state === undefined) return false
-  if (typeof state !== 'object' || state === null || typeof (state as { active?: unknown }).active !== 'boolean')
+  if (
+    typeof state !== 'object' ||
+    state === null ||
+    typeof (state as { active?: unknown }).active !== 'boolean'
+  )
     return true
   return (state as { active: boolean }).active
 }

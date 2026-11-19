@@ -39,10 +39,13 @@
 
 ## 3. 插件回归与隔离 Web 宿主 〔测试｜4h｜前置 2〕
 
-- [ ] 3.1 核对 `tests/host-plan-state.test.ts`、`tests/cli-update-layout.test.ts` 和 `src/host/host-plan-state.ts` 的 rc.3 注释或基线。当前宿主规则或窗口尺寸以 rc.5 实际依据为准，保留已有的历史调查记录和模拟标记。先跑相关回归，再运行 `pnpm typecheck`（输出 `Host/Client typecheck passed against DSH 0.2.2-rc.5`）、macOS 全量 Vitest（零失败且通过数不少于 1.1 基线）、`pnpm lint`（零 error、无新增 warning）和 `pnpm format:check`。
-  - （未执行：待依赖和随包资源对齐后验证。）
-- [ ] 3.2 执行 `pnpm build:preview` 生成隔离预览包，复核包内 Host、Client、Remote 与四个 rc.5 随包资源的清单、版本和摘要。
-  - （未执行：待生成预览包。）
+- [x] 3.1 核对 `tests/host-plan-state.test.ts`、`tests/cli-update-layout.test.ts` 和 `src/host/host-plan-state.ts` 的 rc.3 注释或基线。当前宿主规则或窗口尺寸以 rc.5 实际依据为准，保留已有的历史调查记录和模拟标记。先跑相关回归，再运行 `pnpm typecheck`（输出 `Host/Client typecheck passed against DSH 0.2.2-rc.5`）、macOS 全量 Vitest（零失败且通过数不少于 1.1 基线）、`pnpm lint`（零 error、无新增 warning）和 `pnpm format:check`。
+  - 以 rc.5 官方源码核对 `packages/bundle/web-app/cordis.patch.yml` 的宿主 plan-mode 停用、presets 的 planning 组隔离，以及 `apps/desktop/src/main.ts` 的 minWidth 520px。更新三处注释，保留 rc.3 Mac 实测日期和夹具的模拟标记。先跑规划态／布局／runtime 关联回归，3 文件 37 项全部通过。
+  - `corepack pnpm typecheck` 退出 0，输出 `Host/Client typecheck passed against DSH 0.2.2-rc.5`。同一隔离 HOME 下 `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run --maxWorkers=2` 退出 0，366 个文件中 362 通过、4 跳过；8,858 项中 8,843 通过、0 失败、15 跳过，耗时 369.35 秒。新增 rc.5 目标用例，基线中偶发失败的下载总时限模拟用例本轮通过。
+  - `corepack pnpm lint` 退出 0，0 error、332 warning，逐文件的告警描述和数量与同提交改前基线一致。`corepack pnpm format:check`、`corepack pnpm exec pmspec validate v0.9.2-dsh-rc5-adapt-leeyl --strict` 均退出 0。Web、Desktop、Windows、真实账号／模型与派遣按 3.3 和 4.x 留待主会话。
+- [x] 3.2 执行 `pnpm build:preview` 生成隔离预览包，复核包内 Host、Client、Remote 与四个 rc.5 随包资源的清单、版本和摘要。
+  - `corepack pnpm build:preview` 退出 0，构建目录为 `.cache/preview-package/`。用 `corepack pnpm --dir .cache/preview-package --config.ignore-scripts=true pack` 打包。从交付文件重读确认 1,373 个常规文件，四包及清单均为 rc.5。包内 217 个 runtime 文件的摘要全部匹配 manifest，另含 manifest 自身。所有 exports 指向存在的文件，逐件核对预览目录内容；pnpm 打包规范化了根 package.json，移除了 packageManager 和 prepack。
+  - 预览包位于上述独立验收目录的 `dsh-cliworker-now-0.9.1.tgz`（沿用现有插件版本），SHA256 为 `9422803fffcb0636cd2bc91a1e65963ca358a292ef44bc6c3eb2e2fab0ea5d50`。Host、Client、Typert Host、Typert Remote Client 入口 SHA256 分别为 `590544672e53643ea6fcbc602129c7bd7abf51ffc54edb1c54aa369b5e55026f`、`d6690b8f4dace7bba336842b4d9f51be18fb31e489f6439d6e4e42f8c2b45020`、`3181981a60ea8605e5f7c74263d6af70ecbbafb49a009dd570b2f34daaea9e48`、`f6c6b3397290024b996bf574ad96af4707c90725e31d48c496bd4904339ca7ea`。
 - [ ] 3.3 用 Mac Desktop rc.5 自带的 `dsh` 将预览包装入隔离 `DSH_HOME` 的 Web profile 并启动 `dsh web`。从有效配置与实际模块路径核对四包均解析到插件 `runtime-host/`，检查主界面、CLI Worker 面板、设置无白屏，检查控制台及 Host 日志无插件相关错误。
   - （未执行：待生成预览包并启动隔离宿主。）
 
