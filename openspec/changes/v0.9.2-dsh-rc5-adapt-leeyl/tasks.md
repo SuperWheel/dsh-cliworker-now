@@ -68,8 +68,11 @@
   - 根因：会话 `session-6cb26a63…` 中，主 Agent 收到的作业通知只有 `finished [status: killed]` 与 `"status":"interrupted"`，没有停止来源和续派约束；其推理为「任务被打断，应续聊恢复」，随即调用 `cliworker_followup`。`src/host/service-launch.ts` 的作业结果此前不带 `interruptionReason`，`guidance` 只覆盖待核实与完成通知。
   - 修复：`isUserInterrupted(worker)` 为真时结果加 `stoppedBy: "user"` 与 `STOPPED_BY_USER_GUIDANCE`；`src/host/routing.ts` 派遣说明、`src/host/service-tools.ts` 的 `cliworker_followup` 描述加同一规则；增量规格 `specs/worker-run-outcomes/spec.md`。不在 `cliworker_followup` 加硬拦截，避免误挡用户之后明确要求的续聊。
   - 验证：`tests/agy-run-outcome.test.ts` 新增用户停止与超时两例，39 例通过；撤回 `service-launch.ts` 改动时用户停止用例失败。引用路由与续聊工具的 16 个测试文件 898 例通过；`pnpm typecheck` 输出 `Host/Client typecheck passed against DSH 0.2.2-rc.5`；改动的三个源文件 eslint 无输出。`src/host/routing.ts` 与测试文件改前即不符合 Prettier，按约定未整文件格式化。
-- [ ] 4.6 Mac Desktop 复测手动停止后不续派。正式构建并重启 Desktop 后，在已有验收工作区派一项可观察的长任务，从面板停止，核对主 Agent 收到 `stoppedBy: "user"` 且未调用 `cliworker_followup`。
-  - （未执行：待正式构建与用户安排 Desktop 复测。）
+- [x] 4.6 Mac Desktop 复测手动停止后不续派。正式构建并重启 Desktop 后，在已有验收工作区派一项可观察的长任务，从面板停止，核对主 Agent 收到 `stoppedBy: "user"` 且未调用 `cliworker_followup`。
+  - 2026-11-19 用户授权「构建并复测」。确认 Desktop 下无 Worker 子进程后 `pnpm build:preview`、退出 Desktop、`pnpm build` 通过，`lib/index.js` 含 `stoppedBy`；profile 仍 `link:` 本仓库，带无障碍参数重启 Desktop。
+  - 由 Codex Computer Use 在 `ws` 工作区新建对话（会话 `session-4e5f0b5e-99e1-48c7-9aed-18da1fd08808`，主模型 GLM-5.3-Flash），派 Codex Worker `codex-1`（GPT-6-Luna、Low，沿用确认卡）每 5 秒向 `ticks2.txt` 追加一行。约 23:16:12 在 Worker 详情点「停止生成」，事件 15:16:14Z `interrupted`「已停止」，本 Worker 只有一个 runId `4201f3cb…`；`ticks2.txt` 4 行，最后一行 23:16:10 后不再增长，无循环残留进程。
+  - 会话日志中主 Agent 收到的作业结果含 `"stoppedBy":"user"` 与停止说明；其推理为「用户已停止，不应续聊或重派」，回复「被手动停止的任务我不会自行续聊或重新派遣」后结束本轮。之后 90 秒内无新的 tool/call、job/registered 或新 runId。
+  - 另见：主 Agent 未核查产物即称「循环没有执行，`ticks2.txt` 也未生成」，与实际 4 行不符。停止说明里「只说明进度」可能让模型略过核查，待另行决定是否调整措辞。
 - [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
   - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
 
