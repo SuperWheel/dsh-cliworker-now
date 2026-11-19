@@ -43,6 +43,9 @@ import { HarnessCapabilityNotes } from './harness-conversation.tsx'
 import { t, type MessageKey, useT } from './i18n.ts'
 import { hostText } from './operation-error.ts'
 
+/** The user-specified product name for the native sub-agent group only (lowercase s, both locales). */
+const DSH_GROUP_TITLE = 'Deepseek Harness'
+
 const status: Record<WorkerStatus, MessageKey> = {
   queued: '排队中',
   running: '运行中',
@@ -725,10 +728,10 @@ function SessionPanel({
               </div>
             ) : (
               <nav aria-label={t('子 Agent')}>
-                {visibleDsh.length > 0 && <section className="cwn-cli-group" aria-label={t('{cli} 子 Agent', { cli: 'DSH' })}>
+                {visibleDsh.length > 0 && <section className="cwn-cli-group" aria-label={t('{cli} 子 Agent', { cli: DSH_GROUP_TITLE })}>
                   <button className="cwn-cli-heading" type="button" aria-expanded={!collapsed.dsh}
                     aria-controls={`${cliGroupId}-dsh`} onClick={() => setCollapsed((old) => ({ ...old, dsh: !old.dsh }))}>
-                    <DshIcon /><strong>DSH</strong><span>{t('{count} 个 Agent', { count: visibleDsh.length })}</span><Glyph name="chevron" />
+                    <DshIcon /><strong>{DSH_GROUP_TITLE}</strong><span>{t('{count} 个 Agent', { count: visibleDsh.length })}</span><Glyph name="chevron" />
                   </button>
                   <div id={`${cliGroupId}-dsh`} className="cwn-cli-rows" data-expanded={!collapsed.dsh}
                     aria-hidden={!!collapsed.dsh} {...(collapsed.dsh ? { inert: '' } : {})}>

@@ -24,7 +24,7 @@
 #### Scenario: 当前预设没有原生委派工具
 
 - **WHEN** 用户明确请求 DSH 原生派遣，当前主 Agent 的工具列表没有 `subagent`
-- **THEN** 主 Agent 告知用户在 Agent 设置中启用子 Agent 工具，且不通过 `workflow`、`agent()`、`subagent_fork` 或外部 CLI 代为执行该任务
+- **THEN** 主 Agent 告知用户在「设置 → Agent 预设」改选包含子智能体委派工具（`subagent`）的预设后新开任务，且不通过 `workflow`、`agent()`、`subagent_fork` 或外部 CLI 代为执行该任务
 
 #### Scenario: 宿主拒绝原生派遣
 

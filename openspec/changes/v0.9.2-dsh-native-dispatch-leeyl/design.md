@@ -5,7 +5,7 @@
 - `src/host/routing.ts` 的 `invocationResolution` 当前只产出外部 CLI 解析结果。`harness` 和 `deepseekharness` 规范化后由 `resolveCliName` 判为 `retired`，进入该分支时 `invocationHint` 使用 `src/shared/types.ts` 的 `RETIRED_HARNESS_NOTICE`（「外部 Harness CLI 入口已移除；历史记录仅供查看。请新建 Hermes Agent 任务。」）。无 `cli` 或「命令行」标记时，这些名称也不在前缀名称表中。`dsh` 同样不在名称表，`dsh cli` 则会进入显式 CLI 解析的 `unknown` 分支并列出候选。 [路由源码](../../../src/host/routing.ts) · [共享类型](../../../src/shared/types.ts)
 - `registerCliRouting` 在 `agent/pre-step` 读取已准入消息，要求当前作用域能看到 `cliworker_start`，并把指引以独立来源追加进同一次模型请求。`CLI_DELEGATION_GUIDANCE` 当前在 `routing.ts` 第 214 行用 `dsh-1`、`dsh-2` 举例说明原生子 Agent 的按名续聊。Agent 名称将由并行变更 `v0.9.2-agent-name-sync-leeyl` 从 DSH 目录读取，本设计的派遣、显示与验收按原生子 Agent 身份判断。 [路由源码](../../../src/host/routing.ts) · [工具注册](../../../src/host/service-tools.ts)
 - 只读核对本地 `.cache/dsh-host-source-022rc2` 中 `dsh-v0.2.2-rc.5:packages/bundle/base/cordis.patch.yml` 第 386–405 行。基础包默认声明 `tool-subagent`（`provider: spawn`，`toolName: subagent`）与 `tool-subagent-fork`（`provider: fork`，`toolName: subagent_fork`）。同一 tag 的 `packages/subagent/tool-subagent/README.zh.md` 说明工具随提供方和所属 preset 作用域注册，Host 管理 activation 和完成通知。`packages/subagent/tool-subagent/src/index.ts` 第 223–237 行确认 `description` 与 `prompt` 为必填字段。
-- PRD 记载的用户实测中，主 Agent 称工具列表没有直接创建原生子 Agent 的工具，改用 workflow 的 `agent()`。源码中的基础包配置只证明默认声明，当前预设是否挂载以及本轮工具作用域是否过滤 `subagent` 待核实。 [PRD 背景第 9 项](../../../doc/prd/2026-11-19-v0.9.2-dsh-rc5-names-omp-PRD.md#一背景与问题)
+- PRD 记载的用户实测中，主 Agent 称工具列表没有直接创建原生子 Agent 的工具，改用 workflow 的 `agent()`。2026-11-19 只读核对 rc.5（见下方「Open Questions」的结论）：Web/桌面内置的标准、PTC、创造模式在 `delegation` 组加载 `subagent`，极简模式不加载；插件以 `ctx.tools.get('subagent', assembleContextFor(agent).scope)` 可读到预设注册的工具。 [PRD 背景第 9 项](../../../doc/prd/2026-11-19-v0.9.2-dsh-rc5-names-omp-PRD.md#一背景与问题)
 - `src/client/panel.tsx` 第 728–731 行用 `DSH` 渲染分组标题并填入 `t('{cli} 子 Agent', { cli: 'DSH' })`。`i18n-messages.ts` 已有该无障碍模板和计数模板的英文词条。设置规范中的「在 CLI Worker 窗口显示 DSH 子 Agent」控制可见性，属于独立设置行。 [面板源码](../../../src/client/panel.tsx) · [翻译词条](../../../src/client/i18n-messages.ts) · [设置界面规范](../../../doc/settings-ui-design.md)
 
 ## Goals / Non-Goals
@@ -26,7 +26,7 @@
 
 - 最终决定：继续在 `agent/pre-step` 的准入结果上追加 `cliworker-invocation` 来源指引，分别按原生与外部目标判断实际工具作用域。对主 Agent 核验本轮可见的原生 `subagent`，使用宿主有效工具作用域和工具可见性规则，避免把基础包默认声明当作可用性证据。原生提示分支不依赖 `cliworker_start` 是否可见，外部提示沿用该工具的可见性门槛。被拒绝、取消的步骤不注入，子 Agent 不获得原生派遣指引，外部同级派遣按已有机制处理。
 - 工具可见时的提示要点：本步用户明确要求 DSH 原生派遣，调用 `subagent`，用 `description` 写简短任务说明，用 `prompt` 传递用户交办的任务及必要上下文。DSH 部分不调用 `cliworker_start` 或 `cliworker_resolve`，不走外部 CLI 选型，不猜模型、强度或会话 ID，遵循宿主权限和层级检查。常驻委派说明与当轮指引采用同一边界，原生子 Agent 的已有名称按实际列表识别。
-- 工具不可见时的提示要点：告知用户当前 Agent 的原生子 Agent 工具不可用，请在 Agent 设置中为当前预设启用子 Agent 工具后再试。宿主明确拒绝调用时如实报告原因。`workflow`、`agent()`、`subagent_fork` 和外部 CLI 均不替代原生 `subagent`。
+- 工具不可见时的提示要点：告知用户当前 Agent 的原生子 Agent 工具不可用，请在「设置 → Agent 预设」为新任务选择包含子智能体委派工具的预设（如「标准模式」）后新开任务；rc.5 的预设配置查看器只读，没有按预设开关单个工具的控件。宿主明确拒绝调用（如超过「最大递归深度」或并发上限）时原样报告宿主错误。PTC 模式下 `subagent` 经 `run_code` 内的 SDK 调用。`workflow`、`agent()`、`subagent_fork` 和外部 CLI 均不替代原生 `subagent`。
 - 放弃的方案：由插件 Host 直接启动 activation，或把任务交给 workflow。前者绕开了主 Agent 当前有效工具和原生调用结果链路，后者改变了用户指定的执行入口。
 - 影响：权限、预设及生命周期由 DSH 自己管理。插件复用现有 Cordis hook 及其清理方式，无新增执行器或持久化状态。
 
@@ -57,4 +57,5 @@
 
 ## Open Questions
 
-- 用户实测会话所用预设、该预设的 `subagent` 挂载状态，以及插件工具作用域是否影响本轮可见性待核实。对应 `tasks.md` 的调查任务，基础包声明和模型自述分别作为静态来源及观察线索。
+- 已核实（2026-11-19，tag `dsh-v0.2.2-rc.5` 只读源码，Codex gpt-6.2-sol 调查、主会话抽查）：`packages/bundle/web-app/presets/standard.patch.yml` 第 89–110 行在 `delegation` 组加载 `tool-subagent`（`toolName: subagent`、`modelSelection: true`）与 `tool-subagent-fork`；PTC、创造模式相同，极简模式不加载；`packages/client/ui-agent-preset/src/client/locales.ts` 第 90–101 行的入口为「Agent 预设」，预设名「标准模式／PTC 模式／极简模式／创造模式」，无单工具开关。`tools.get(name, scope)` 读取 Agent 作用域视图（`packages/core/tools/src/index.ts`），预设注册的工具对插件根 ctx 可见，`tools.restrict` 的拒绝同样生效；宿主默认最大递归深度 1，一级子 Agent 即使可见也会被拒，插件对 `origin === 'subagent'` 不给原生指引。
+- 仍待核实：PRD 中用户实测会话实际绑定的预设（推测为极简模式或自定义预设，无会话证据）；rc.5 真实派遣在合并后统一验收。

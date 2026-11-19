@@ -3318,6 +3318,33 @@ it('renders DSH beside CLI groups, includes it in search/filters, opens the same
   await t.goBack()
   expect(shown()).toHaveLength(4)
 })
+// SIMULATION: synthetic native rows; checks the user-specified group title in both locales.
+it('titles the native group Deepseek Harness in Chinese and English, keeping its mark, count and members', async () => {
+  const rows = [
+    { id: 'native-a', parentSessionId: 'parent', name: '模拟 DSH 甲', agentName: 'dsh-1', status: 'running', mode: 'continuable', createdAt: 1 },
+    { id: 'native-b', parentSessionId: 'parent', name: '模拟 DSH 乙', agentName: 'dsh-2', status: 'completed', mode: 'one-shot', createdAt: 2 },
+  ]
+  const listDshSubagents = vi.fn(async () => ({ ok: true, value: JSON.stringify(rows) }))
+  const t = await setup(false, undefined, workers, { listDshSubagents })
+  const nativeGroup = () => t.r.root.findAllByProps({ className: 'cwn-cli-group' })
+    .find((group) => group.findAll((node) => typeof node.type === 'string' && node.props['data-dsh-child-id']).length > 0)!
+  const heading = () => nativeGroup().findByProps({ className: 'cwn-cli-heading' })
+  expect(nativeGroup().props['aria-label']).toBe('Deepseek Harness 子 Agent')
+  expect(heading().findByType('strong').children).toEqual(['Deepseek Harness'])
+  expect(heading().findAllByProps({ className: 'cwn-brand' })).toHaveLength(1)
+  const count = () => heading().findAllByType('span').find((span) => span.props.className !== 'cwn-brand')!.children
+  expect(count()).toEqual(['2 个 Agent'])
+  // CLI Workers stay in their own groups; the native group lists only native children.
+  expect(nativeGroup().findAll((node) => typeof node.type === 'string' && node.props['data-worker-id'] !== undefined
+    && !node.props['data-dsh-child-id'])).toHaveLength(0)
+  expect(t.r.root.findAll((node) => typeof node.type === 'string' && node.props.children === 'DSH')).toHaveLength(0)
+  await act(async () => t.streams.at(-1)!.push({ ...t.snapshot(), language: 'en' }))
+  expect(nativeGroup().props['aria-label']).toBe('Deepseek Harness sub-agents')
+  expect(heading().findByType('strong').children).toEqual(['Deepseek Harness'])
+  expect(count()).toEqual(['2 agents'])
+  await act(async () => { heading().props.onClick() })
+  expect(heading().props['aria-expanded']).toBe(false)
+})
 it('hides and restores the DSH group immediately on the Worker settings stream, without changing native agents', async () => {
   const child = { id: 'native', parentSessionId: 'parent', name: '模拟 DSH', agentName: 'dsh-1', status: 'running', mode: 'continuable', createdAt: 1 }
   const listDshSubagents = vi.fn(async () => ({ ok: true, value: JSON.stringify([child]) }))
