@@ -321,7 +321,7 @@ Hermes 账号与模型使用原生 home，不注入共享智谱引用。账号�
 - 角色库由 Host 存在当前 profile 的私有 `role-presets.json`（0600），供所有 CLI 共用。首次初始化从用户提供的七份小说技能装配；之后编辑与删除持久化，不在重启时重新覆盖。每项包含稳定 id、名称、概述和提示词，名称去重，提示词最多 30000 字符。来源调整见 `doc/role-presets.md`。
 - `cliworker_start` 仍按项目＋CLI 取得真实模型和强度，之后每次新建都通过原生 userQuestions 询问角色。选择预设、无角色或 Other 自定义；取消、空答案或无效答案不发布任务。临时提示词仅保存到当前 worker，不自动加入库。问题展示时冻结选项，避免期间编辑模板改变用户实际选择的含义。
 - Worker 新增可选 `agentName` 与 `role` 快照（presetId/name/summary/prompt）。首轮在发送给 CLI 的任务前附加角色，页面中的用户任务保持原文；原 CLI 会话续聊依靠原生历史保留角色，不重复添加整份提示词。模板变更不会改变既有快照。角色不能扩大宿主权限或开启孙智能体。
-- 名称在同一父会话内唯一，默认由角色名或 CLI 助手名加序号生成。工具可接受用户指定的 `agent_name`；续聊、状态和停止可用 `worker_id` 或精确 `worker_name`，两个字段同时传入时必须指向同一 worker，跨父会话和模糊匹配均拒绝。旧记录使用确定的 `智能体-<id前6位>` 展示名，不批量改写历史。
+- 名称在同一父会话内唯一，默认由 CLI 短名加序号生成（v0.9.2 起按 DSH 规则：1–32 位小写字母、数字或连字符，字母开头，非 lead，并在建立 DSH 子会话时作为子 Agent 名称传入；见 `openspec/changes/v0.9.2-agent-name-sync-leeyl/`）。工具可接受用户指定的 `agent_name`；续聊、状态和停止可用 `worker_id` 或精确 `worker_name`，两个字段同时传入时必须指向同一 worker，跨父会话和模糊匹配均拒绝。旧记录使用确定的 `智能体-<id前6位>` 展示名，不批量改写历史。
 - 新增 Gateway RPC：`rolePresets`、`saveRolePreset`、`deleteRolePreset`、`renameWorker`。调用先验证父会话；修改取消后不写入，写盘成功后才发布新状态。预设库 CRUD 与角色选择不启动 CLI 或查询模型。
 - 设置导航增加“智能体预设”：两列名称＋概述卡片，窄屏单列；搜索、新增、编辑、确认删除使用宿主 Input/Button、主题色、圆角与悬停参数，角色正文以纯文本编辑。对话菜单可重命名。总览显示“名称｜模型 · 强度”，详情标题显示“名称｜主题”；标题改为 Cli Worker，NOW 居中并缩小标题区留白。
 - 七份默认角色仅装配可复用提示词；未复制来源技能的工具、共享规范或原小说正文。依赖缺失时提示词要求说明缺口，不声称已完成不存在的脚本或独立审查。
@@ -1385,7 +1385,7 @@ OpenSpec 变更 `relay-codex-computer-use-approvals`，按用户决定复用原�
 - 子会话使用同一 `cliworker.native.sidebar` 与原生 SessionProvider；不登记 CLI 绑定、不覆盖 DSH 用量投影、不复制记录。保留 InputBar、原生队列与统计；原生 Session.prompt 已调用 DSH `subagents.prompt`，停止按钮的公开 action 改走等待确认的插件 Gateway。一次性/未知模式禁用输入与停止，隐藏模型/权限/规划的 Worker 控件及任务选项。原生续聊仍可能因父 Agent 离线或容量限制拒绝，错误由原生输入区显示。
 - 私有 `dsh-hidden.json` 按主会话 ID 保存隐藏 ID，目录 0700、文件 0600；不调用原生删除/归档接口。`showDshSubagents` 与通用设置共同保存、随 Worker 快照同步，缺省为 true；关闭立即撤下 DSH 分组/已打开的 DSH 子窗口。卡片 `initiator` 只显示「由 X 发起」，不增加层级。
 - Antigravity 后台子 Agent（实测后追加）：agy 1.5.1 的 `invoke_subagent` 派发即 completed，结果只在下一次 `session/prompt` 时送出。`runNativeAcp` 的 `background` 设置记录此类调用，end_turn 后保持 stdio、审批与事件，按 15–120 秒递增间隔自动发送同会话跟进；回复 `CLIWORKER_SUBAGENTS_PENDING` 继续等，回复正文结束；总等待不超过 10 分钟与任务超时，用尽报 UNCERTAIN。等待与跟进是带 `notice` 标记的 diagnostic，原生会话流把它投影为已完成的被动工具行 `cliworker_auto_followup`（DSH 聊天按 `chat-visibility` 隐藏 notice 形态上下文，故不用 notice；工具行不派发、不执行），其他诊断仍不进子会话；待完成标记在流式正文中按跨分片前缀过滤。stream 后备路径未处理。
-- 名称（实测后追加）：私有 `dsh-names.json` 按主会话保存 `dsh-<n>`，首次出现时按创建时间递增，隐藏后不复用；CLI Worker 名称拒绝该格式。`cliworker_followup`／`cliworker_status` 先解析 CLI Worker，未匹配且名称形如 `dsh-<n>` 时才查 DSH 目录；续聊走原生 `prompt`（queue），回复由 DSH 子→父消息带回；开关关闭时不解析。卡片与 CLI Worker 卡片同版式，删除在右键菜单并带「仅在此窗口隐藏」说明行；分组图标为 DSH 官方 favicon 的单色路径。
+- 名称（实测后追加）：私有 `dsh-names.json` 按主会话保存 `dsh-<n>`，首次出现时按创建时间递增，隐藏后不复用；CLI Worker 名称拒绝该格式。`cliworker_followup`／`cliworker_status` 先解析 CLI Worker，未匹配且名称形如 `dsh-<n>` 时才查 DSH 目录；续聊走原生 `prompt`（queue），回复由 DSH 子→父消息带回；开关关闭时不解析。卡片与 CLI Worker 卡片同版式，删除在右键菜单并带「仅在此窗口隐藏」说明行；分组图标为 DSH 官方 favicon 的单色路径。v0.9.2 起：原生条目改显示 DSH 目录名，只给无目录名的历史条目分配 `dsh-<n>`，已分配编号保留为别名；任何未匹配 Worker 的名称都会尝试原生目录；CLI Worker 不再拒绝 `dsh-<n>` 格式，改按同父会话实际占用判断。改名经插件私有覆盖表 `agent-name-overrides.json`（0600）在插件面板、`cliworker_followup` 与 `tools/pre-execute`／`tools/execute`／`tools/post-execute` 钩子生效；DSH 官方改名接口可用后逐条迁移。
 - 本轮验证与未做的 Desktop、Windows、真实账号及模型验收见 `add-sibling-dispatch-unified-subagents/tasks.md`；未正式构建或更新 Desktop。
 
 ## 2026-11-06 热切换白屏自动恢复（未发布）
