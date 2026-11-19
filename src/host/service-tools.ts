@@ -165,7 +165,7 @@ export function registerTools(this: ServiceContext): void {
         defineTool({
           name: 'cliworker_followup',
           description:
-            "Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. A DSH native subagent listed in the CLI Worker window is continued the same way by its DSH catalog name listed by cliworker_status or a former name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn's actual tier (a Worker without its own level follows the parent preset); report it as is.",
+            'Continue a specific idle CLI worker by worker_id or its exact agentName in worker_name. Retains its role, current model/effort and CLI conversation; never starts another worker. Do not use it to resume a worker that was stopped manually (its result has stoppedBy: "user") unless the user has since explicitly asked to continue. A DSH native subagent listed in the CLI Worker window is continued the same way by its DSH catalog name listed by cliworker_status or a former name; its reply returns as a DSH subagent message. The CLI Worker receipt includes permission: this turn\'s actual tier (a Worker without its own level follows the parent preset); report it as is.',
           parameters: {
             worker_id: { type: 'string' },
             worker_name: { type: 'string' },

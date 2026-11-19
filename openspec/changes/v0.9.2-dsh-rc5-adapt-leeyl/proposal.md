@@ -10,6 +10,7 @@
 - 将 39 个 `@deepseek-ai/dsh*` 开发依赖精确锁定到 0.2.2-rc.5，同步锁文件和 workspace 发布期限例外。新增 rc.5 构建目标并设为默认 vendor 目标，保留旧目标的校验路径。
 - 在固定的 rc.5 源码上迁移现有 48 文件补丁，冻结独立构建依赖，重建 `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 并更新 `runtime-host/`。
 - 复核构建、回归、隔离 Web 宿主和 Desktop 的加载与核心流程。同步中英文 README、设计文档、原生会话宿主扩展协议文档及 `runtime-host/README.md` 中的当前适配版本。
+- 修复 Desktop 验收发现的问题：用户手动停止 Worker 后，主 Agent 自行续聊重派。后台作业结果标明 `stoppedBy: "user"` 并附续派约束。
 
 ## Capabilities
 
@@ -20,6 +21,7 @@
 ### Modified Capabilities
 
 - `package-distribution`：随包原生界面及默认构建目标对齐 0.2.2-rc.5，按实际证据声明宿主兼容范围。
+- `worker-run-outcomes`：手动停止的轮次在作业结果中标明来源，主 Agent 不自行续派。
 
 ## Impact
 

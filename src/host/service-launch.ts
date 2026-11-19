@@ -5,6 +5,7 @@ import { type RunOrigin } from './native-approval-policy.ts'
 import {
   CLI_LABELS,
   cliOf,
+  isUserInterrupted,
   workerName,
   type Preference,
   type TaskMode,
@@ -15,6 +16,10 @@ import { type WorkerPermissionReceipt } from '../shared/worker-permissions.ts'
 import { type Submission } from './runtime.ts'
 import { isolationGuidance } from './isolated-merge-decisions.ts'
 import type { ServiceContext } from './service-context.ts'
+
+/** Returned to the parent Agent when a Worker run was stopped from the panel or with cliworker_stop. */
+export const STOPPED_BY_USER_GUIDANCE =
+  '此 Worker 已被手动停止（面板停止按钮或 cliworker_stop），这是用户的决定，不是故障。除非用户在此之后明确要求继续，否则不要调用 cliworker_followup 续聊，也不要重新派遣同一任务；只向用户简要说明已完成的进度并等待指示。'
 
 export async function launch(
   this: ServiceContext,
@@ -154,39 +159,45 @@ export async function launch(
         }
         return {
           cancel: submitted.cancel,
-          done: submitted.done.then((worker) => ({
-            status:
-              worker.status === 'completed'
-                ? ('completed' as const)
-                : worker.status === 'interrupted'
-                  ? ('killed' as const)
-                  : ('failed' as const),
-            detail: worker.error,
-            result: JSON.stringify({
-              cli: cliOf(worker.preference),
-              workerId: worker.id,
-              agentName: workerName(worker),
-              runId: worker.runId,
-              task: prompt.slice(0, 300),
-              status: worker.status,
-              response: worker.lastResult,
-              error: worker.error,
-              ...(worker.status === 'completed' && worker.resultNotice
-                ? { notice: worker.resultNotice }
-                : {}),
-              ...admittedPermission,
-              guidance:
-                [
-                  worker.status === 'uncertain'
-                    ? '结果待核实；请先核查本轮输出和实际产物，不要自动重试。'
-                    : undefined,
-                  worker.status === 'completed' && worker.resultNotice ? worker.resultNotice : undefined,
-                  isolationGuidance(worker),
-                ]
-                  .filter(Boolean)
-                  .join(' ') || undefined,
-            }),
-          })),
+          done: submitted.done.then((worker) => {
+            const stoppedByUser = isUserInterrupted(worker)
+            return {
+              status:
+                worker.status === 'completed'
+                  ? ('completed' as const)
+                  : worker.status === 'interrupted'
+                    ? ('killed' as const)
+                    : ('failed' as const),
+              detail: worker.error,
+              result: JSON.stringify({
+                cli: cliOf(worker.preference),
+                workerId: worker.id,
+                agentName: workerName(worker),
+                runId: worker.runId,
+                task: prompt.slice(0, 300),
+                status: worker.status,
+                response: worker.lastResult,
+                error: worker.error,
+                ...(worker.status === 'completed' && worker.resultNotice
+                  ? { notice: worker.resultNotice }
+                  : {}),
+                ...(stoppedByUser ? { stoppedBy: 'user' as const } : {}),
+                ...admittedPermission,
+                guidance:
+                  [
+                    worker.status === 'uncertain'
+                      ? '结果待核实；请先核查本轮输出和实际产物，不要自动重试。'
+                      : undefined,
+                    // A user stop is a decision, not a failure: never resume it on your own.
+                    stoppedByUser ? STOPPED_BY_USER_GUIDANCE : undefined,
+                    worker.status === 'completed' && worker.resultNotice ? worker.resultNotice : undefined,
+                    isolationGuidance(worker),
+                  ]
+                    .filter(Boolean)
+                    .join(' ') || undefined,
+              }),
+            }
+          }),
         }
       },
     })

@@ -318,22 +318,25 @@ describe('AGY runtime outcomes', () => {
     })
   })
 
-  it('returns uncertain and separate response/error to the parent while the host job remains failed', async () => {
-    const f = fixture()
+  // Dispatches the synthetic resume through the host service and returns the DSH job outcome.
+  async function launchJob(f: ReturnType<typeof fixture>) {
     let jobDone!: Promise<{ status: string; detail: string; result: string }>
     const agent = {
       id: 'parent',
       ctx: {
         // Simulated DSH services: jobs, plus the permission state read for the dispatch receipt.
-        get: (name: string) => ({
-          jobs: {
-            start: (spec: any) => {
-              jobDone = spec.run().done
-              return 'synthetic-job'
-            },
-          },
-          sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
-        } as Record<string, unknown>)[name],
+        get: (name: string) =>
+          (
+            ({
+              jobs: {
+                start: (spec: any) => {
+                  jobDone = spec.run().done
+                  return 'synthetic-job'
+                },
+              },
+              sandboxPolicy: { resolve: () => ({ mode: 'workspace-write' }) },
+            }) as Record<string, unknown>
+          )[name],
       },
     }
     const service = hostServiceFixture({
@@ -348,18 +351,55 @@ describe('AGY runtime outcomes', () => {
       querySelection: async () => ({ binding: 'synthetic-account', preference }),
     })
     await service['host'].launch(agent, 'Synthetic', '合成续聊', preference, 'plan', f.previous.id)
-    const call = await f.current()
+    return { call: await f.current(), job: () => jobDone }
+  }
+
+  it('returns uncertain and separate response/error to the parent while the host job remains failed', async () => {
+    const f = fixture()
+    const { call, job: jobDone } = await launchJob(f)
     call.stdout.write(doneSteps().map(line).join('') + line(aggregate()))
     call.finish()
-    const job = await jobDone
+    const job = await jobDone()
     expect(job.status).toBe('failed')
     expect(job.detail).toContain('不要自动重试')
-    expect(JSON.parse(job.result)).toMatchObject({
+    const result = JSON.parse(job.result)
+    expect(result).toMatchObject({
       status: 'uncertain',
       response: '本轮实际回复',
       error: expect.stringContaining('upstream EOF'),
       guidance: expect.stringContaining('不要自动重试'),
     })
+    expect(result.stoppedBy).toBeUndefined()
+    expect(result.guidance).not.toContain('手动停止')
+  })
+
+  it('tells the parent a user stop is final and must not be resumed without a new request', async () => {
+    const f = fixture()
+    const { call, job: jobDone } = await launchJob(f)
+    call.stdout.write(line(step({ state: 'ACTIVE' })))
+    const workerId = f.previous.id
+    await vi.waitFor(() =>
+      expect(f.storage.history(workerId).some((event) => event.kind === 'assistant')).toBe(true),
+    )
+    await f.runtime.stop('parent', workerId)
+    const job = await jobDone()
+    expect(job.status).toBe('killed')
+    const result = JSON.parse(job.result)
+    expect(result).toMatchObject({ status: 'interrupted', stoppedBy: 'user', response: '本轮实际回复' })
+    expect(result.guidance).toContain('手动停止')
+    expect(result.guidance).toContain('不要调用 cliworker_followup')
+  })
+
+  it('does not mark a timeout as a user stop', async () => {
+    const f = fixture(true, { timeoutMs: 100 })
+    const { call, job: jobDone } = await launchJob(f)
+    call.stdout.write(line(step({ state: 'ACTIVE' })))
+    const job = await jobDone()
+    expect(job.status).toBe('killed')
+    const result = JSON.parse(job.result)
+    expect(result.status).toBe('interrupted')
+    expect(result.stoppedBy).toBeUndefined()
+    expect(result.guidance ?? '').not.toContain('手动停止')
   })
 })
 

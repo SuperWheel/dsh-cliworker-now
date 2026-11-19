@@ -62,8 +62,14 @@
   - 17:18 续聊未再弹选型，同一 Worker 第二轮 completed，`hello.txt` 回读两行（追加 `second line`）。两轮原始流的 `threadId` 均为 `01a1f319-1369-…`，沿用同一原生 Codex 会话。
 - [x] 4.3 人工验收 Mac Desktop 停止。经授权启动一项可观察的 Worker 任务，从面板停止，独立核对终态与进程范围已退出。本次遇到原生审批时同时记录审批转交的实际结果。
   - Worker `codex-ticks-loop`（每 5 秒向 `ticks.txt` 追加一行）。17:20:42 在 Worker 详情点「停止生成」，事件 09:20:43Z 为 `interrupted`「已停止」；`ticks.txt` 在 17:20:37 后断档，说明 CLI 进程已退出。17:22:17 第二次停止同样在 1 秒内 `interrupted`，文件同样断档。
-  - 发现（待处理，不属停止本身）：主对话收到 `interruptionReason: user` 后自行续派同一 Worker（新 runId 09:21:12Z、09:22:55Z），最后一轮跑满 60 行于 09:27:09Z completed。用户从面板停止后主 Agent 不应自动续派，需另行修复。
+  - 发现（已在 4.5 修复，Desktop 复测见 4.6）：主对话收到 `interruptionReason: user` 后自行续派同一 Worker（新 runId 09:21:12Z、09:22:55Z），最后一轮跑满 60 行于 09:27:09Z completed。用户从面板停止后主 Agent 不应自动续派。
   - 本次无原生审批卡片（Worker 权限显示「自动审批」）；结束后 DSH 宿主下无残留 Codex 进程。
+- [x] 4.5 修复手动停止后主 Agent 自动续派。还原会话日志确认原因，在后台作业结果、派遣说明和 `cliworker_followup` 描述中写明手动停止不得自行续派，补单测并跑关联回归。
+  - 根因：会话 `session-6cb26a63…` 中，主 Agent 收到的作业通知只有 `finished [status: killed]` 与 `"status":"interrupted"`，没有停止来源和续派约束；其推理为「任务被打断，应续聊恢复」，随即调用 `cliworker_followup`。`src/host/service-launch.ts` 的作业结果此前不带 `interruptionReason`，`guidance` 只覆盖待核实与完成通知。
+  - 修复：`isUserInterrupted(worker)` 为真时结果加 `stoppedBy: "user"` 与 `STOPPED_BY_USER_GUIDANCE`；`src/host/routing.ts` 派遣说明、`src/host/service-tools.ts` 的 `cliworker_followup` 描述加同一规则；增量规格 `specs/worker-run-outcomes/spec.md`。不在 `cliworker_followup` 加硬拦截，避免误挡用户之后明确要求的续聊。
+  - 验证：`tests/agy-run-outcome.test.ts` 新增用户停止与超时两例，39 例通过；撤回 `service-launch.ts` 改动时用户停止用例失败。引用路由与续聊工具的 16 个测试文件 898 例通过；`pnpm typecheck` 输出 `Host/Client typecheck passed against DSH 0.2.2-rc.5`；改动的三个源文件 eslint 无输出。`src/host/routing.ts` 与测试文件改前即不符合 Prettier，按约定未整文件格式化。
+- [ ] 4.6 Mac Desktop 复测手动停止后不续派。正式构建并重启 Desktop 后，在已有验收工作区派一项可观察的长任务，从面板停止，核对主 Agent 收到 `stoppedBy: "user"` 且未调用 `cliworker_followup`。
+  - （未执行：待正式构建与用户安排 Desktop 复测。）
 - [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
   - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
 
