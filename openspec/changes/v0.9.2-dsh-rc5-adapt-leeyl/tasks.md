@@ -54,12 +54,16 @@
 
 ## 4. Desktop 实机验收 〔测试｜3h｜前置 3〕
 
-- [ ] 4.1 人工验收 Mac Desktop 加载。确认无活动 Worker 后执行正式构建，确认 Desktop 链接解析到本次构建，冷启动 0.2.2-rc.5，核对插件加载、原生会话视图、CLI Worker 面板与设置。记录应用和自带 `dsh` 的版本、可取得的应用构建标记及插件日志。
-  - （未执行：待隔离验收通过及安排 Mac Desktop 实机操作。）
-- [ ] 4.2 人工验收 Mac Desktop 真实派遣与续聊。确认主对话模型已有选型授权及可用额度、目标 CLI 已登录，在指定验收工作区由主 Agent 派遣一次并观察选型卡片。核对完成事件、退出状态、实际产物，续聊一次并核对沿用同一原生 CLI 会话。
-  - （未执行：待 Mac Desktop 加载验收、真实模型及 CLI 条件就绪。）
-- [ ] 4.3 人工验收 Mac Desktop 停止。经授权启动一项可观察的 Worker 任务，从面板停止，独立核对终态与进程范围已退出。本次遇到原生审批时同时记录审批转交的实际结果。
-  - （未执行：待 Mac Desktop 加载验收和可停止的实机任务。）
+- [x] 4.1 人工验收 Mac Desktop 加载。确认无活动 Worker 后执行正式构建，确认 Desktop 链接解析到本次构建，冷启动 0.2.2-rc.5，核对插件加载、原生会话视图、CLI Worker 面板与设置。记录应用和自带 `dsh` 的版本、可取得的应用构建标记及插件日志。
+  - 2026-11-19 合并 #14～#17 后的 main（3c5b3f0）：Desktop 宿主下无子进程、221 条 Worker 记录无运行中项，退出 Desktop 后 `pnpm build` 通过，四个随包界面包均为 0.2.2-rc.5。Desktop profile 以 `link:` 指向本仓库（插件 package.json 仍为 0.9.1）。应用 `CFBundleShortVersionString`/`CFBundleVersion` 与自带 `dsh --version` 均为 0.2.2-rc.5。
+  - 冷启动后主界面、CLI Worker 面板（空态）与「CLI Worker 设置」（CLI 连接列表）正常、无白屏；控制台仅有 DSH 自身的 `[deepseek-account] account read failed {field: profile}`，无插件错误。随后以 `--force-renderer-accessibility` 等参数重启，由 Codex Computer Use 在真实窗口复核同样通过。记录：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-v092-desktop-acceptance/round1-notes.md`。
+- [x] 4.2 人工验收 Mac Desktop 真实派遣与续聊。确认主对话模型已有选型授权及可用额度、目标 CLI 已登录，在指定验收工作区由主 Agent 派遣一次并观察选型卡片。核对完成事件、退出状态、实际产物，续聊一次并核对沿用同一原生 CLI 会话。
+  - 用户 2026-11-19 授权开始实机验收。验收工作区 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-v092-desktop-acceptance/ws`（0700，模拟项目）。主对话模型 `workbuddy/glm-5.3-flash`；17:16 主 Agent 派遣 Codex，选型卡选 GPT-6-Luna、Low、不使用角色预设。Worker `codex-hello-txt` 状态 completed，`hello.txt` 回读为 `hello v0.9.2`。
+  - 17:18 续聊未再弹选型，同一 Worker 第二轮 completed，`hello.txt` 回读两行（追加 `second line`）。两轮原始流的 `threadId` 均为 `01a1f319-1369-…`，沿用同一原生 Codex 会话。
+- [x] 4.3 人工验收 Mac Desktop 停止。经授权启动一项可观察的 Worker 任务，从面板停止，独立核对终态与进程范围已退出。本次遇到原生审批时同时记录审批转交的实际结果。
+  - Worker `codex-ticks-loop`（每 5 秒向 `ticks.txt` 追加一行）。17:20:42 在 Worker 详情点「停止生成」，事件 09:20:43Z 为 `interrupted`「已停止」；`ticks.txt` 在 17:20:37 后断档，说明 CLI 进程已退出。17:22:17 第二次停止同样在 1 秒内 `interrupted`，文件同样断档。
+  - 发现（待处理，不属停止本身）：主对话收到 `interruptionReason: user` 后自行续派同一 Worker（新 runId 09:21:12Z、09:22:55Z），最后一轮跑满 60 行于 09:27:09Z completed。用户从面板停止后主 Agent 不应自动续派，需另行修复。
+  - 本次无原生审批卡片（Worker 权限显示「自动审批」）；结束后 DSH 宿主下无残留 Codex 进程。
 - [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
   - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
 

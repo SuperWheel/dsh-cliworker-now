@@ -59,6 +59,8 @@
   - `corepack pnpm format:check`：报 8 个改动文件不符合 Prettier；逐个核对 main 版本同样不通过（README.md、README.en.md、doc/design.md、proposal.md、panel.tsx、routing.ts、panel.test.tsx、routing.test.ts），按项目规定不整文件重排，`styles.ts`、`service-lifecycle.ts` 通过
   - `corepack pnpm build:preview`：通过，隔离包 `.cache/preview-package`
   - 未执行：预览包在 rc.5 宿主加载。本分支开发依赖仍为 rc.3，rc.5 适配在 `v0.9.2-dsh-rc5-adapt-leeyl`（分支 `dsh-022rc5-adapt`），待合并后统一验收
-- [ ] 4.2 Mac Desktop 0.2.2-rc.5 真实验收：在 `v0.9.2-dsh-rc5-adapt-leeyl` 合入且已有模型选型授权后，在主对话分别发送一次「调用 dsh 帮我总结 README」和「用 DeepSeek Harness 检查这个目录」。逐条核对实际 `subagent` 工具调用、原生子 Agent 创建与完成事件、返回主对话的结果、无外部选型及 CLI Worker 面板 `Deepseek Harness` 分组。核对中英文界面的可见标题、无障碍名称、图标、计数及窄栏展示。（未执行：待合并后统一验收，需 rc.5 适配合入及真实调用授权）
+- [ ] 4.2 Mac Desktop 0.2.2-rc.5 真实验收：在 `v0.9.2-dsh-rc5-adapt-leeyl` 合入且已有模型选型授权后，在主对话分别发送一次「调用 dsh 帮我总结 README」和「用 DeepSeek Harness 检查这个目录」。逐条核对实际 `subagent` 工具调用、原生子 Agent 创建与完成事件、返回主对话的结果、无外部选型及 CLI Worker 面板 `Deepseek Harness` 分组。核对中英文界面的可见标题、无障碍名称、图标、计数及窄栏展示。（未通过：Desktop 主 Agent 工具列表缺少 `subagent`，见下）
   - 实施验收时，在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/<YYYY-MM-DD>-dsh-native-dispatch/` 新建权限为 `0700` 的独立验收子目录，保存实机工作区及脱敏证据，并在本任务填写实际路径和结果。若需临时 `HOME` 或 `DSH_HOME`，放在同一验收子目录。
   - 同时核对：极简模式会话的预设提示、宿主深度拒绝时的报告、PTC 模式经 `run_code` 调用。
+  - 2026-11-19 第一轮（main 3c5b3f0，Desktop 0.2.2-rc.5，验收工作区 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-v092-desktop-acceptance/ws`）：17:21 发「调用 dsh 帮我总结 README」、17:23 发「用 DeepSeek Harness 检查这个目录」。两次都没有外部选型卡（符合），插件注入了「无 subagent 工具」分支的提示，主 Agent 如实告知无法派遣，未改用其他工具（符合降级要求），但没有产生 DSH 原生子 Agent，面板无「Deepseek Harness」分组，标题、计数、图标未能验证。
+  - 会话记录 `request/header.tools` 有 `list_agents`、`send_message`、`wait_agent` 与 `cliworker_*`，没有 `subagent`、`subagent_fork`，也没有 Desktop profile 用户补丁加的 `subagent_oar`；rc.5 基础包 `packages/bundle/base/cordis.patch.yml` 仍注册 `tool-subagent`（toolName `subagent`）。缺失原因未查明（可能是 Agent 预设过滤或用户 profile 的实验性 oar 配置），待排查。
