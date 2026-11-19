@@ -399,6 +399,15 @@ it('模拟：目录名覆盖旧编号，只为无名条目编号，隐藏和自�
   await expect(f.manager.rename('parent', 'once', 'new-name', f.signal)).rejects.toThrow('不在当前')
 })
 
+it('模拟：未登记名称的旧条目只在用户实际改名后向页头标记覆盖', async () => {
+  const f = fixture()
+  const names = async () => JSON.parse(await f.manager.agentNames('parent', f.signal)).native
+  expect(await names()).toMatchObject({ name: 'dsh-1' })
+  expect(await names()).not.toHaveProperty('overridden')
+  await f.manager.rename('parent', 'native', 'reviewer', f.signal)
+  expect(await names()).toMatchObject({ name: 'reviewer', formerNames: ['dsh-1'], overridden: true })
+})
+
 it('模拟：原生改名推送、跨父隔离、重启恢复及按历次别名续聊', async () => {
   const f = fixture()
   f.catalog[0].name = 'agent-6'
@@ -407,7 +416,7 @@ it('模拟：原生改名推送、跨父隔离、重启恢复及按历次别名�
   const next = stream.next()
   await f.manager.rename('parent', 'native', 'reviewer', f.signal)
   expect(JSON.parse((await next).value!).native).toEqual({
-    name: 'reviewer', registeredName: 'agent-6', kind: 'native', formerNames: ['agent-6'],
+    name: 'reviewer', registeredName: 'agent-6', kind: 'native', formerNames: ['agent-6'], overridden: true,
   })
   expect((await f.manager.list('parent', f.signal))[0]).toMatchObject({ agentName: 'reviewer', registeredName: 'agent-6' })
   await f.manager.rename('parent', 'native', 'audit', f.signal)

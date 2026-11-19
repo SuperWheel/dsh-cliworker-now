@@ -2,6 +2,8 @@
 
 当前适配版本为 **0.2.2-rc.5**。2026-11-19 从官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）重建四个原生 UI。rc.3 的 48 文件补丁逐字节保留，Gateway、会话控制与四包导出契约沿用原接入方式。构建输入见[扩展说明](../../host-extensions/dsh-0.2.2-rc.5/README.md)，平台验证见[任务清单](../../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
 
+在 rc.5 基线上，插件通过 `slots.provideRoot({ props: { cliworkerHeaderNames } })` 为页头提供只读名称源。参数为当前目录父会话 ID，快照以 childId 为键。首次订阅和 Gateway 重连时先读 `agentNames`，再接收 `watchAgentNames` 的完整快照。Remote 仅对实际持久覆盖附加 `overridden: true`，从而区分未登记名称但已有兼容编号的旧行。同父页头共享一条流，最后一处卸载即释放；切换父会话重新取值。行描述、状态、模式、主区与侧栏地址仍由官方目录决定。曾用名用于插件按名查找，团队看板、工作区树与原生发信署名沿用 DSH 的名称。
+
 2026-11-14 源码候选迁移至 **0.2.2-rc.3**，公开 tag `dsh-v0.2.2-rc.3` 固定于 `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`。rc.2 → rc.3 四包源码只有版本号变化，rc.2 的 48 文件补丁无冲突应用并原样导出，重建四包后纳入 `runtime-host/`；说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`，验证边界见 `openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md`。下文 rc.2 记录保留为历史。
 
 2026-11-12 源码候选迁移至 **0.2.2-rc.2**，公开 tag `dsh-v0.2.2-rc.2` 固定于 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`。rc.1 的 48 文件补丁在新基线上有 10 个文件冲突，人工合并后重建四个原生界面包并纳入 `runtime-host/`；保留官方 CSS anchor、Retry、文件接收与子会话直接输入行为，移除对已删除 `useAnchoredPosition` 的引用。新输入及合并说明见 `host-extensions/dsh-0.2.2-rc.2/README.md`；Mac Desktop 0.2.2-rc.2 已做部分界面核对，Windows 与真实模型／CLI 派遣未验证，详细边界见 `openspec/archives/upgrade-host-022rc2/tasks.md`。下文 rc.1 及更早版本记录保留为历史。

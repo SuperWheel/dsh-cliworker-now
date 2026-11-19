@@ -1,3 +1,4 @@
+import { installHeaderAgentNames } from './header-agent-names.ts'
 import { DshConversation } from './dsh-subagents.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
@@ -73,6 +74,7 @@ export function apply(ctx: Context): void {
     const remote = scope.remote,
       worker = remote.cliworker
     const api: API = { $stream: (options) => remote.$stream(options), cliworker: worker }
+    scope.effect(() => installHeaderAgentNames(scope.slots, api))
     const nativeChatSettings = scope.configForms.get<{ transcriptView?: unknown }>('ui-chat')
     const harnessServices = { sessions: scope.sessions }
     const bindings = new HarnessBindingRegistry()

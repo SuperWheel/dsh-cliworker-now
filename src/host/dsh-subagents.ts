@@ -47,7 +47,7 @@ export interface DshSubagentServices {
   log(reason: string): void
 }
 type NamedChild = SubagentCatalogEntry & { name?: string; formerNames?: readonly string[] }
-type ChildNames = Pick<AgentNameOverride, 'name' | 'registeredName' | 'formerNames' | 'kind'>
+type ChildNames = Pick<AgentNameOverride, 'name' | 'registeredName' | 'formerNames' | 'kind'> & { overridden?: true }
 
 /** Current and replaced display Sessions remain plugin-owned across segment changes. */
 export function ownedHarnessSessions(
@@ -229,7 +229,7 @@ export class DshSubagents {
       .filter((former): former is string => !!former && former !== name))]
     return {
       name, formerNames,
-      ...(override ? { registeredName: child.name ?? override.registeredName } : {}),
+      ...(override ? { overridden: true as const, registeredName: child.name ?? override.registeredName } : {}),
       kind: override?.kind ?? (this.isInternalSession(child) ? 'worker' : 'native'),
     }
   }
@@ -246,7 +246,7 @@ export class DshSubagents {
       }
     }
     for (const [id, { name, formerNames, registeredName, kind }] of Object.entries(this.overrides.entries(parent)))
-      entries.set(id, { name, formerNames, registeredName, kind })
+      entries.set(id, { name, formerNames, registeredName, kind, overridden: true })
     for (const child of catalog) {
       const names = this.childNames(parent, child)
       const worker = workers.get(child.id)

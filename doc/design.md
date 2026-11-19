@@ -1749,3 +1749,5 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 ## 2026-11-19 随包原生界面升级到 Harness 0.2.2-rc.5
 
 开发 SDK、默认 vendor 目标和四个原生 UI 包均对齐官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）。rc.3 的 48 文件补丁在新基线上原样应用。四包继续经原生 bundle 注入，继承同版本官方 Host、声明和资源。rc.3 等历史目标可按版本显式校验。上游测试与实际 npm 差异见[本次适配设计](../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/design.md)，各平台验收进度见[任务清单](../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
+
+在这一基线上，随包 ui-subagent 的页头从根 Slot 属性 `cliworkerHeaderNames` 取得只读名称源。插件 Client 在 Remote 可用时注册，页头按直属目录父 ID 订阅，用行 childId 读取覆盖。没有改名的历史行继续按官方规则显示。旧名保留供同父会话按名查找，DSH 原生发信署名、团队看板与工作区树沿用宿主逻辑。

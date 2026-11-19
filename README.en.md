@@ -152,11 +152,13 @@ For `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, `ERR_PNPM_IGNORED_BUILDS` and simila
 
 1. **Dispatch**: in a main conversation with a working folder, name a CLI, for example:
 
-   > Use Codex to check this project's login error handling, and name this agent "Code reviewer".
+   > Use Codex to check this project's login error handling, and name this agent `code-reviewer`.
 
 2. **Choose**: the first time you use this CLI in a project, question cards ask for the **model, reasoning effort and role**; it starts only after you confirm all three, and cancelling saves nothing. To stop the questions, turn off "Ask for model before dispatch" under CLI Worker settings → Task scheduling.
 3. **Follow and stop**: click a task card in the sidebar to open its conversation on the right; closing the sidebar does not stop the task. You can stop it at any time.
-4. **Continue**: after it ends, continue in the child session, or say "ask Code reviewer to check test coverage too" in the main conversation. Right-click a card to retitle, rename or delete it.
+4. **Continue**: after it ends, continue in the child session, or say "ask code-reviewer to check test coverage too" in the main conversation. Right-click a card to retitle, rename or delete it.
+
+Renaming a child updates its Worker card and bundled DSH header within the same parent session. The header keeps the task description and shows the new name even before you open the Worker panel. You can still use the former name for follow-ups. Native message signatures, the team board and the workspace tree use the host’s name on rc.5.
 
 See [role presets](doc/role-presets.md) and [usage details](doc/usage-details.en.md) for more.
 
