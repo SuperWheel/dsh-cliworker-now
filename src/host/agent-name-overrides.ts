@@ -123,7 +123,8 @@ export class AgentNameOverrides {
     const state = this.read()
     const previous = state.parents[parent]?.[childId]
     const current = previous?.name ?? input.expected
-    if (agentNameKey(current) !== agentNameKey(input.expected)) throw new Error('名称已被其他操作修改，请刷新后重试')
+    if (agentNameKey(current) !== agentNameKey(input.expected))
+      throw new Error('名称已被其他操作修改，请刷新后重试')
     const former = [...(previous?.formerNames ?? []), ...(input.alsoFormer ?? []), current]
     const seen = new Set<string>([agentNameKey(input.name)])
     const formerNames: string[] = []
@@ -206,7 +207,12 @@ export class PendingAgentNames {
  * and is exercised in tests with a simulated service.
  */
 export interface OfficialSubagentRename {
-  rename(request: { parentSessionId: string; childSessionId: string; name: string; signal?: AbortSignal }): Promise<unknown> | unknown
+  rename(request: {
+    parentSessionId: string
+    childSessionId: string
+    name: string
+    signal?: AbortSignal
+  }): Promise<unknown> | unknown
 }
 export function officialRename(subagents: unknown): OfficialSubagentRename | undefined {
   return typeof subagents === 'object' &&

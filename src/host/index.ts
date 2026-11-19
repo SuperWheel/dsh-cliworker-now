@@ -211,6 +211,26 @@ export class CliWorkerService extends TypertRemoteService {
   async hideDshSubagent(parentSessionId: string, childSessionId: string, signal: AbortSignal): Promise<void> {
     return harness.hideDshSubagent(this.host, parentSessionId, childSessionId, signal)
   }
+  /** @param parentSessionId - Owning parent. @param childSessionId - Visible native child. @param name - New effective name. @param signal - Mutation lifetime. @returns After rename is committed. */
+  @Remote({ name: 'renameDshSubagent', resources: { session: (_parent, child) => SessionId(child) } })
+  async renameDshSubagent(
+    parentSessionId: string,
+    childSessionId: string,
+    name: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    return harness.renameDshSubagent(this.host, parentSessionId, childSessionId, name, signal)
+  }
+  /** @param parentSessionId - Owning parent. @param signal - Read lifetime. @returns Names indexed by child ID. */
+  @Remote('agentNames')
+  async agentNames(parentSessionId: string, signal: AbortSignal): Promise<string> {
+    return this.host.dshSubagents.agentNames(parentSessionId, signal)
+  }
+  /** @param parentSessionId - Owning parent. @param signal - Subscription lifetime. @returns Initial and updated names indexed by child ID. */
+  @Remote({ mode: 'stream' })
+  async *watchAgentNames(parentSessionId: string, signal: AbortSignal): AsyncIterable<string> {
+    yield* this.host.dshSubagents.watch(parentSessionId, signal, true)
+  }
   /** @param parentSessionId - Owning Harness session. @param workerId - Selected worker or empty string. @param signal - Stream lifetime. @returns JSON snapshots, initially and after changes. */
   @Remote({ mode: 'stream' })
   async *watch(parentSessionId: string, workerId: string, signal: AbortSignal): AsyncIterable<string> {

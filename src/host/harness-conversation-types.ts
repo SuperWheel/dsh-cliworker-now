@@ -36,6 +36,10 @@ export interface HarnessConversationRun {
 
 /** Execution and persistence remain owned by the existing Host service. */
 export interface HarnessConversationDependencies {
+  holdNameRegistration?(workerId: string): () => void
+  reserveName?(parent: string, name: string): () => void
+  retryAutomaticName?(worker: Worker, childId: string, tried: Set<string>, signal: AbortSignal): Promise<void>
+  acceptedName?(worker: Worker, childId: string, registered: string, previous?: HarnessConversationRecord): void
   bindings(): readonly HarnessConversationRecord[]
   bind(record: HarnessConversationRecord): Promise<void>
   /** Exact-identity rollback when official child publication failed. */
@@ -96,6 +100,7 @@ export interface HarnessConversationEnsureOptions {
 }
 
 export interface HarnessConversationApi {
+  readonly namesOnActivation?: boolean
   forkHistory(worker: Worker, atMessageId: string, signal: AbortSignal): Promise<import('./worker-fork.ts').ForkHistory>
   createFork(parent: Agent, worker: Worker, history: import('./worker-fork.ts').ForkHistory, signal: AbortSignal): Promise<import('./worker-fork.ts').ForkChild>
 

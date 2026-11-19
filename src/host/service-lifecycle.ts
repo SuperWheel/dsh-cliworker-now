@@ -2,6 +2,10 @@ import { startTemporaryTreeMaintenance } from './temporary-sweep.ts'
 import { CliMaintenance } from './cli-management/maintenance.ts'
 import { CliManagementService } from './cli-management/service.ts'
 import { ownsDirectSubagent } from './native-subagent-ownership.ts'
+import { AgentNameOverrides, PendingAgentNames, officialRename } from './agent-name-overrides.ts'
+import { AgentNameResolutionError, registerAgentNameTools } from './agent-name-tools.ts'
+import { migrateOverridesToOfficial } from './agent-name-official.ts'
+import { agentNameKey } from '../shared/agent-names.ts'
 import { DshSubagents, ownedHarnessSessions, type DshSubagentServices } from './dsh-subagents.ts'
 import { Context } from '@deepseek-ai/cordis'
 import { homedir } from 'node:os'
@@ -10,7 +14,7 @@ import { DsBotLineage } from './parent-lineage.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { runAccess } from './native-approval-policy.ts'
-import { CLI_IDS, cliOf } from '../shared/types.ts'
+import { CLI_IDS, cliOf, workerName } from '../shared/types.ts'
 import { DEFAULT_CONFIG } from './process.ts'
 import { nativeProcessBackend } from './native-process.ts'
 import { WindowsSystemProxySource } from './windows-system-proxy.ts'
@@ -69,13 +73,123 @@ export function initialize(host: ServiceContext, ctx: Context, config: Config) {
     (cli) => host.invalidateSettingsDisplay(cli),
   )
 
+  host.agentNameOverrides = new AgentNameOverrides(stateDirectory)
+  host.pendingAgentNames = new PendingAgentNames()
+  host.dshSubagents = new DshSubagents(
+    stateDirectory,
+    {
+      subagents: () => host.ctx.get('subagents'),
+      query: () => host.ctx.get('sessionQuery') as ReturnType<DshSubagentServices['query']>,
+      assertLiveChild: (parentId, id) => {
+        const child = host.ctx.agents.get(SessionId(id))
+        if (!child) return // Cold prompt restoration validates its catalog ancestry in DSH.
+        const parent = host.ctx.agents.get(SessionId(parentId))
+        if (!parent || !ownsDirectSubagent(host.ctx.get('subagents'), parent, child))
+          throw new Error('DSH 子会话所属主对话不匹配')
+      },
+      workers: () => host.runtime.storage.workers.values(),
+      namesChanged: () => host.runtime.changed(),
+      relatedSessions: (workerId) => {
+        const record = host.harnessConversationStore?.list().find((row) => row.workerId === workerId)
+        return record ? [record.sessionId, ...(record.retiredSessionIds ?? [])] : []
+      },
+      workerNames: (parent, excluding) => host.runtime.workerNames(parent, excluding),
+      reconcile: (parent) => host.runtime.reconcileDirectory(parent),
+      ownedSessions: () =>
+        ownedHarnessSessions(host.runtime.storage.workers.values(), host.harnessConversationStore?.list()),
+      hasWorker: (id) => host.runtime.storage.workers.has(id),
+      subscribe: (notify) => {
+        const offSession = host.ctx.on(
+          'session/event',
+          (session, event) => {
+            if (
+              [
+                'subagent/catalog',
+                'subagent/rename',
+                'subagent/descriptor',
+                'turn/start',
+                'turn/end',
+                'model/selection',
+                'request/header',
+              ].includes(event.type)
+            )
+              notify(session.id)
+          },
+          { global: true },
+        )
+        // Worker registration/hiding can change exclusion without a native event.
+        const offWorkers = host.runtime.subscribe(() => {
+          for (const worker of host.runtime.storage.workers.values()) notify(worker.parentSessionId)
+        })
+        return () => {
+          offSession()
+          offWorkers()
+        }
+      },
+      log: (reason) => console.warn(`[CLI Worker / DSH] ${reason}`),
+    },
+    host.agentNameOverrides,
+    host.pendingAgentNames,
+  )
+
   host.runtime = new WorkerRuntime(
-    new WorkerStorage(
-      config.stateDirectory ?? join(process.env.DSH_HOME ?? join(homedir(), '.dsh'), 'cliworker-now'),
-    ),
+    new WorkerStorage(stateDirectory),
     host.backend,
     host.options,
+    host.dshSubagents,
   )
+
+  // REQ-0138 §7: until DSH has an official rename, overlay names reach the native
+  // subagent tools through these hooks (creation guard, addressing, list_agents).
+  ctx.effect(
+    () =>
+      registerAgentNameTools(ctx, {
+        overrides: host.agentNameOverrides,
+        pending: host.pendingAgentNames,
+        occupied: (parent) => host.dshSubagents.occupiedNames(parent),
+        workerAlias: (parent, name) => {
+          const key = agentNameKey(name)
+          const owners = new Set<string>()
+          for (const worker of host.runtime.storage.workers.values()) {
+            const child = worker.harnessConversation?.sessionId
+            if (!child || worker.parentSessionId !== parent) continue
+            if (
+              [workerName(worker), ...(worker.nameAliases ?? [])].some((alias) => agentNameKey(alias) === key)
+            )
+              owners.add(child)
+          }
+          if (owners.size > 1) throw new AgentNameResolutionError('子 Agent 名称有歧义，请使用明确的会话 ID')
+          return owners.values().next().value
+        },
+        subagents: () => host.ctx.get('subagents'),
+        log: (reason) => console.warn(`[CLI Worker / names] ${reason}`),
+      }),
+    'cliworker:agent-name-tools',
+  )
+
+  // Official rename (future DSH): migrate overlay entries one by one; failures keep the entry.
+  ctx.effect(() => {
+    const controller = new AbortController()
+    const official = officialRename(host.ctx.get('subagents'))
+    if (official && host.agentNameOverrides.parents().length)
+      void migrateOverridesToOfficial(
+        {
+          overrides: host.agentNameOverrides,
+          official,
+          readCatalog: (parent, signal) => host.dshSubagents.readDirectoryNames(parent, signal),
+          log: (reason) => console.warn(`[CLI Worker / names] ${reason}`),
+        },
+        controller.signal,
+      )
+        .then((report) => {
+          if (report.kept.length)
+            console.warn(`[CLI Worker / names] ${report.kept.length} 项名称覆盖保留，待下次启动重试`)
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) console.warn('[CLI Worker / names] 官方改名迁移未完成，保留覆盖表')
+        })
+    return () => controller.abort()
+  }, 'cliworker:agent-name-official-migration')
 
   host.cliManagement = new CliManagementService({
     root: stateDirectory,
@@ -121,48 +235,6 @@ export function initialize(host: ServiceContext, ctx: Context, config: Config) {
     'cliworker:metadata-accounts',
   )
 
-  host.dshSubagents = new DshSubagents(stateDirectory, {
-    subagents: () => host.ctx.get('subagents'),
-    query: () => host.ctx.get('sessionQuery') as ReturnType<DshSubagentServices['query']>,
-    assertLiveChild: (parentId, id) => {
-      const child = host.ctx.agents.get(SessionId(id))
-      if (!child) return // Cold prompt restoration validates its catalog ancestry in DSH.
-      const parent = host.ctx.agents.get(SessionId(parentId))
-      if (!parent || !ownsDirectSubagent(host.ctx.get('subagents'), parent, child))
-        throw new Error('DSH 子会话所属主对话不匹配')
-    },
-    ownedSessions: () =>
-      ownedHarnessSessions(host.runtime.storage.workers.values(), host.harnessConversationStore?.list()),
-    hasWorker: (id) => host.runtime.storage.workers.has(id),
-    subscribe: (notify) => {
-      const offSession = host.ctx.on(
-        'session/event',
-        (session, event) => {
-          if (
-            [
-              'subagent/catalog',
-              'subagent/descriptor',
-              'turn/start',
-              'turn/end',
-              'model/selection',
-              'request/header',
-            ].includes(event.type)
-          )
-            notify(session.id)
-        },
-        { global: true },
-      )
-      // Worker registration/hiding can change exclusion without a native event.
-      const offWorkers = host.runtime.subscribe(() => {
-        for (const worker of host.runtime.storage.workers.values()) notify(worker.parentSessionId)
-      })
-      return () => {
-        offSession()
-        offWorkers()
-      }
-    },
-    log: (reason) => console.warn(`[CLI Worker / DSH] ${reason}`),
-  })
   harness.registerConversationBridge(host)
 
   host.runtime.setFollowupLauncher(async (worker, item, admission, signal) => {

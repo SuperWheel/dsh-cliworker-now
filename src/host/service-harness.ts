@@ -1,3 +1,4 @@
+import { WorkerReferenceMissing } from './runtime.ts'
 import { z as validate } from 'zod'
 import { existsSync } from 'node:fs'
 import { createHarnessConversationBridge } from './harness-conversation.ts'
@@ -22,7 +23,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { workerApproval } from './native-approval-policy.ts'
-import { cliOf, DSH_AGENT_NAME, type Worker } from '../shared/types.ts'
+import { cliOf, type Worker } from '../shared/types.ts'
 import { machineDirectory as resolveMachineDirectory, projectDirectory } from './process.ts'
 import { askRunsAsPlan, type WorkerPermissionState } from '../shared/worker-permissions.ts'
 import { failure } from './service-errors.ts'
@@ -71,20 +72,25 @@ export function preferenceProject(this: ServiceContext, agent: Agent): string | 
 
 /** Resolve ownership only; child status stays read-only even in plan mode. */
 /** CLI Workers win; only an unmatched reference is tried against this conversation's DSH native subagents. */
-export async function dshFallback<T>(
+export async function dshFallback(
   this: ServiceContext,
   parent: string,
   args: { worker_id?: string; worker_name?: string },
   signal: AbortSignal,
-  cli: () => T,
+  cli: () => Worker,
   prompt?: string,
-): Promise<T | ({ kind: 'dsh-subagent' } & Record<string, unknown>)> {
+): Promise<Worker | ({ kind: 'dsh-subagent' } & Record<string, unknown>)> {
+  const name = args.worker_name?.trim()
+  if (name) await this.dshSubagents.readDirectoryNames(parent, signal)
+  let worker: Worker
   try {
-    return cli()
+    worker = cli()
   } catch (error) {
-    const name = args.worker_name?.trim()
-    if (name && !DSH_AGENT_NAME.test(name)) throw error
-    if (this.runtime.snapshot(parent).showDshSubagents === false) throw error
+    // Only a missing Worker may route to a native child. In particular an ambiguous
+    // Worker name or a mismatched ID/name pair must never cause a second delivery.
+    if (!(error instanceof WorkerReferenceMissing)) throw error
+    if (this.runtime.snapshot(parent).showDshSubagents === false)
+      throw new Error('当前对话没有匹配的 Worker，DSH 子 Agent 显示已关闭')
     const ref = { id: args.worker_id, name }
     const found =
       prompt === undefined
@@ -102,6 +108,15 @@ export async function dshFallback<T>(
     if (!found) throw error
     return found
   }
+  if (name && !args.worker_id) {
+    if (
+      this.dshSubagents
+        .occupiedNames(parent, worker.harnessConversation?.sessionId, worker.id, false)
+        .has(name.toLowerCase())
+    )
+      throw new Error('智能体名称不唯一，请使用 worker_id')
+  }
+  return worker
 }
 
 export function waitHarnessRun(
@@ -259,6 +274,20 @@ export async function stopDshSubagent(
   }
 }
 
+export async function renameDshSubagent(
+  host: ServiceContext,
+  parentSessionId: string,
+  childSessionId: string,
+  name: string,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    await host.dshSubagents.rename(parentSessionId, childSessionId, name, signal)
+  } catch (error) {
+    throw failure(error)
+  }
+}
+
 export async function hideDshSubagent(
   host: ServiceContext,
   parentSessionId: string,
@@ -278,6 +307,12 @@ export function registerConversationBridge(host: ServiceContext) {
     host.harnessConversationStore = records
     const bridge = createHarnessConversationBridge(scope, {
       bindings: () => records.list(),
+      holdNameRegistration: (id) => host.runtime.holdNameRegistration(id),
+      reserveName: (parent, name) => host.pendingAgentNames.reserve(parent, name),
+      retryAutomaticName: (worker, id, tried, signal) =>
+        host.runtime.retryAutomaticName(worker, id, tried, signal),
+      acceptedName: (worker, childId, name, previous) =>
+        host.runtime.acceptRegistration(worker, childId, name, previous),
       bind: async (record) => {
         const worker = host.runtime.get(record.parentSessionId, record.workerId)
         // Public capability metadata is derived by the bridge, never used as authority.

@@ -80,7 +80,9 @@ describe('AgentNameOverrides', () => {
     const store = new AgentNameOverrides(fresh())
     store.set('p', 'c1', { name: 'reviewer', expected: 'codex-1', kind: 'worker' })
     expect(() => store.set('p', 'c1', { name: 'audit', expected: 'codex-1', kind: 'worker' })).toThrow('刷新')
-    expect(() => store.set('p', 'c1', { name: 'Audit', expected: 'reviewer', kind: 'worker' })).toThrow('大写')
+    expect(() => store.set('p', 'c1', { name: 'Audit', expected: 'reviewer', kind: 'worker' })).toThrow(
+      '大写',
+    )
     expect(store.get('p', 'c1')?.name).toBe('reviewer')
   })
 

@@ -569,7 +569,8 @@ export class WorkerStorage {
     )
     for (const worker of ordered) {
       const cli = cliOf(worker.preference)
-      if (isRetiredCli(cli) || worker.agentNameOrigin === 'custom') continue
+      // Bound Workers reconcile against their childId when the parent directory is read.
+      if (isRetiredCli(cli) || worker.agentNameOrigin === 'custom' || worker.harnessConversation) continue
       const previousName = workerName(worker)
       const stem = CLI_SHORT_NAMES[cli]
       const isNumbered = (name: string, prefix: string) =>
@@ -593,11 +594,13 @@ export class WorkerStorage {
         )
       )
         continue
+      const nameAliases = [...new Set([...(worker.nameAliases ?? []), previousName])]
+      if (nameAliases.length > 32) continue
       const migrated: Worker = {
         ...worker,
         agentName: availableAgentName(this.workers.values(), worker.parentSessionId, stem),
         agentNameOrigin: 'auto',
-        nameAliases: [...new Set([...(worker.nameAliases ?? []), previousName])],
+        nameAliases,
       }
       // Validate the additional compatibility data before its atomic write.
       workerSchema.parse(migrated)

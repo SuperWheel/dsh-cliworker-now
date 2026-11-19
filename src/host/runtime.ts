@@ -1,5 +1,7 @@
+import { agentNameKey, assertDshAgentName, firstFreeAgentName, isDshAgentName } from '../shared/agent-names.ts'
+import type { DshSubagents } from './dsh-subagents.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { HarnessConversationApi } from './harness-conversation-types.ts'
+import type { HarnessConversationApi, HarnessConversationRecord } from './harness-conversation-types.ts'
 import { forkWorkerConversation, readWorkerForkState, writeWorkerForkState, type NativeForkCut, type ForkHistory, type WorkerForkState } from './worker-fork.ts'
 import { readClaudeOwnRoute, prepareClaudeWorkerLaunch } from './claude-own-route.ts'
 import { extendedLaunch, isExtendedCli } from './extended-adapters.ts'
@@ -23,7 +25,6 @@ import {
   cliOf,
   workerName,
   foldEvents,
-  DSH_AGENT_NAME,
   RESULT_NOTICE_TITLE,
   type Preference,
   type WorkerEvent,
@@ -40,7 +41,7 @@ import {
 } from '../shared/types.ts'
 import {
   agentNameSchema,
-  availableAgentName,
+  workerNameKeys,
   promptForWorker,
   roleSnapshotSchema,
   workerTitleSchema,
@@ -200,6 +201,7 @@ class UserStoppedError extends Error {
   }
 }
 export interface Submission {
+  nameReady?: Promise<void>
   worker: Worker
   done: Promise<Worker>
   cancel: () => void
@@ -267,6 +269,8 @@ async function trackApproval(
   runtime.changed()
   return decision
 }
+
+export class WorkerReferenceMissing extends Error {}
 
 export class WorkerRuntime {
   private harnessPreparation?: (
@@ -393,6 +397,7 @@ export class WorkerRuntime {
   private telemetryReader = new TelemetryReader()
   private supplementalContextReader = new NativeSupplementalContextReader(() => { if (!this.disposed) this.changed() })
   private nativeTimelineReprojector = new NativeTimelineReprojector()
+  private readonly registeringNames = new Set<string>()
   private readonly stagedForks = new Map<string, Worker>()
   private tasks = new Map<string, Task>()
   private queue: Task[] = []
@@ -441,6 +446,7 @@ export class WorkerRuntime {
     readonly storage: WorkerStorage,
     private backend: ProcessBackend,
     readonly config: RuntimeConfig,
+    readonly names?: DshSubagents,
   ) {
     try {
       this.followups = new FollowupQueue(storage)
@@ -1267,8 +1273,8 @@ export class WorkerRuntime {
   get(parent: string, id: string): Worker {
     this.adoptSegments(parent)
     const worker = this.storage.workers.get(id) ?? this.stagedForks.get(id)
-    if (!worker || worker.parentSessionId !== parent)
-      throw new Error('Worker does not belong to this conversation')
+    if (!worker) throw new WorkerReferenceMissing('Worker does not belong to this conversation')
+    if (worker.parentSessionId !== parent) throw new Error('Worker does not belong to this conversation')
     if (worker.archivedAt) throw new Error('此任务已删除，请先恢复')
     return worker
   }
@@ -1287,46 +1293,129 @@ export class WorkerRuntime {
       (worker) =>
         worker.parentSessionId === parent && !worker.archivedAt && this.matchesName(worker, normalized!),
     )
-    if (matches.length !== 1)
-      throw new Error(
-        matches.length
-          ? '智能体名称不唯一，请使用 worker_id'
-          : '当前对话中没有此名称的智能体，请检查名称或使用 worker_id',
-      )
+    if (!matches.length) throw new WorkerReferenceMissing('当前对话中没有此名称的智能体，请检查名称或使用 worker_id')
+    if (matches.length > 1) throw new Error('智能体名称不唯一，请使用 worker_id')
     return matches[0]!
   }
   private matchesName(worker: Worker, name: string): boolean {
-    return workerName(worker) === name || (worker.nameAliases ?? []).includes(name)
+    const child = worker.harnessConversation?.sessionId
+    const bound = child && this.names?.boundNames(worker.parentSessionId, child)
+    return [workerName(worker), ...(worker.nameAliases ?? []), ...(bound ? [bound.registeredName, ...bound.formerNames] : [])]
+      .some(value => value && agentNameKey(value) === agentNameKey(name))
   }
-  private checkAgentName(parent: string, name: string, excludingId?: string): string {
-    const clean = agentNameSchema.parse(name)
+
+  workerNames(parent: string, excludingId?: string) {
     this.adoptSegments(parent)
-    if (DSH_AGENT_NAME.test(clean)) throw new Error('“dsh-数字”保留给 DSH 子 Agent，请换一个名称')
-    if (
-      [...this.storage.workers.values()].some(
-        (worker) =>
-          worker.parentSessionId === parent &&
-          worker.id !== excludingId &&
-          [workerName(worker), ...(worker.nameAliases ?? [])].some(
-            (name) => name.toLocaleLowerCase() === clean.toLocaleLowerCase(),
-          ),
-      )
-    )
-      throw new Error('当前对话已有同名智能体，请换一个名称或续用已有智能体')
-    return clean
+    return workerNameKeys([...this.storage.workers.values(), ...this.stagedForks.values()], parent, excludingId)
   }
-  renameWorker(parent: string, id: string, name: string): void {
-    if (this.disposed) throw new Error('CLI Worker is shutting down')
-    const worker = this.get(parent, id)
-    const agentName = this.checkAgentName(parent, name, id)
-    // Publish the new name only after persistence succeeds. Keep a running task's
-    // shared worker reference in sync so its next process event cannot revert it.
-    this.storage.save({ ...worker, agentName, agentNameOrigin: 'custom' })
-    worker.agentName = agentName
-    worker.agentNameOrigin = 'custom'
-    this.storage.workers.set(id, worker)
+
+  private occupiedNames(parent: string, worker?: Worker) {
+    return this.names?.occupiedNames(parent, worker?.harnessConversation?.sessionId, worker?.id)
+      ?? this.workerNames(parent, worker?.id)
+  }
+
+  private checkAgentName(parent: string, name: string, worker?: Worker): string {
+    assertDshAgentName(name)
+    if (this.occupiedNames(parent, worker).has(agentNameKey(name)))
+      throw new Error('当前对话已有同名智能体，请换一个名称或续用已有智能体')
+    return name
+  }
+
+  private aliasesAfterRename(worker: Worker, name: string) {
+    const aliases = [...new Set([...(worker.nameAliases ?? []), workerName(worker)])].filter(alias => alias !== name)
+    if (aliases.length > 32 && !worker.harnessConversation) throw new Error('改名次数已达上限')
+    return aliases
+  }
+
+  private saveName(worker: Worker, name: string, origin: 'auto' | 'custom', aliases: string[]) {
+    const update = { agentName: name, agentNameOrigin: origin, nameAliases: aliases.slice(-32) }
+    if (!this.stagedForks.has(worker.id)) this.storage.save({ ...worker, ...update })
+    Object.assign(worker, update)
+    const running = this.tasks.get(worker.id)?.worker
+    if (running && running !== worker) Object.assign(running, update)
+    if (!this.stagedForks.has(worker.id)) this.storage.workers.set(worker.id, worker)
     this.changed()
   }
+
+  adoptRegisteredName(worker: Worker, name: string) {
+    if (workerName(worker) === name) return
+    const aliases = this.aliasesAfterRename(worker, name)
+    const child = worker.harnessConversation?.sessionId
+    if (aliases.length > 32 && child && this.names) {
+      const bound = this.names.boundNames(worker.parentSessionId, child)
+      this.names.overrides.set(worker.parentSessionId, child, { name, expected: bound.effective ?? name,
+        registeredName: bound.registeredName, kind: 'worker', alsoFormer: aliases })
+    }
+    this.saveName(worker, name, 'custom', aliases)
+  }
+
+  acceptRegistration(worker: Worker, childId: string, registered: string, previous?: HarnessConversationRecord) {
+    const current = this.get(worker.parentSessionId, worker.id)
+    if (!previous) return this.adoptRegisteredName(current, registered)
+    if (!this.names) throw new Error('子会话名称覆盖表不可用')
+    const overrides = this.names.overrides
+    const parent = current.parentSessionId
+    const old = overrides.get(previous.parentSessionId, previous.sessionId)
+    const previousName = workerName(current)
+    // A historical Chinese name cannot become a new DSH override. Keep it as
+    // an alias of the verified registration, just as in catalog reconciliation.
+    const name = isDshAgentName(previousName) ? previousName : registered
+    overrides.set(parent, childId, {
+      name, expected: registered, registeredName: registered, kind: 'worker',
+      alsoFormer: [previousName, ...(current.nameAliases ?? []), ...(old?.formerNames ?? []),
+        ...(old?.registeredName ? [old.registeredName] : [])],
+    })
+    try {
+      this.adoptRegisteredName(current, name)
+      // Reusing the previous effective name under a new child must leave just
+      // one address in this parent. The retired DSH catalog row stays intact.
+      if (old && previous.parentSessionId === parent) overrides.delete(parent, previous.sessionId)
+    } catch (error) {
+      overrides.delete(parent, childId)
+      throw error
+    }
+  }
+
+  holdNameRegistration(id: string) {
+    this.registeringNames.add(id)
+    return () => this.registeringNames.delete(id)
+  }
+
+  reconcileDirectory(parent: string) {
+    for (const worker of this.storage.workers.values()) {
+      const id = worker.harnessConversation?.sessionId
+      if (worker.parentSessionId !== parent || !id || this.registeringNames.has(worker.id)) continue
+      const name = this.names?.boundNames(parent, id).effective
+      if (name) this.adoptRegisteredName(worker, name)
+    }
+  }
+
+  async retryAutomaticName(worker: Worker, childId: string, tried: Set<string>, signal: AbortSignal) {
+    const catalog = await this.names?.readDirectoryNames(worker.parentSessionId, signal)
+    signal.throwIfAborted()
+    if (catalog?.some(child => child.id === childId) || worker.harnessConversation || worker.agentNameOrigin !== 'auto')
+      throw new Error('子会话或名称已变更，请核对目录后重试')
+    const name = firstFreeAgentName(CLI_SHORT_NAMES[cliOf(worker.preference)], this.occupiedNames(worker.parentSessionId, worker), tried)
+    this.saveName(worker, name, 'auto', worker.nameAliases ?? [])
+  }
+
+  async renameWorker(parent: string, id: string, name: string, signal = new AbortController().signal, expected?: string): Promise<void> {
+    this.assertHostOpen()
+    signal.throwIfAborted()
+    const worker = this.get(parent, id)
+    const current = workerName(worker)
+    if (current === name) return
+    if (this.registeringNames.has(id)) throw new Error('子会话名称正在登记，请稍后重试')
+    if (expected !== undefined && current !== expected) throw new Error('名称已被其他操作修改，请刷新后重试')
+    this.checkAgentName(parent, name, worker)
+    const aliases = this.aliasesAfterRename(worker, name)
+    const commit = () => this.saveName(worker, name, 'custom', aliases)
+    const childId = worker.harnessConversation?.sessionId
+    if (childId && this.names)
+      await this.names.renameBound(parent, childId, { name, expected: current, kind: 'worker', workerId: id, aliases }, signal, commit)
+    else commit()
+  }
+
   renameWorkerTitle(parent: string, id: string, title: string): void {
     if (this.disposed) throw new Error('CLI Worker is shutting down')
     const worker = this.get(parent, id)
@@ -1418,8 +1507,8 @@ export class WorkerRuntime {
   restoreWorker(parent: string, id: string): void {
     this.adoptSegments(parent)
     const worker = this.storage.workers.get(id)
-    if (!worker || worker.parentSessionId !== parent)
-      throw new Error('Worker does not belong to this conversation')
+    if (!worker) throw new WorkerReferenceMissing('Worker does not belong to this conversation')
+    if (worker.parentSessionId !== parent) throw new Error('Worker does not belong to this conversation')
     this.assertManagedIdle(worker)
     if (!worker.archivedAt) throw new Error('此任务尚未删除')
     const restored = { ...worker }
@@ -1567,7 +1656,7 @@ export class WorkerRuntime {
       const created: string[] = []
       try {
         return await forkWorkerConversation({
-          worker: source, workers: () => [...this.storage.workers.values(), ...this.stagedForks.values()],
+          worker: source, occupiedNames: () => this.occupiedNames(parent.id), workers: () => [...this.storage.workers.values(), ...this.stagedForks.values()],
           assertIdle: () => { ownSignal.throwIfAborted() },
           history: (at) => bridge.forkHistory(source, at, ownSignal),
           raw: (runId) => readFileSync(join(this.storage.directory, `${this.forkRunSource(source, runId).workerId}.${runId}.raw.jsonl`), 'utf8'),
@@ -1825,6 +1914,7 @@ export class WorkerRuntime {
     preparationId?: string,
     submissionId?: string,
     attachments?: readonly NativeAttachment[],
+    bindNewName?: (worker: Worker, signal: AbortSignal) => Promise<void>,
   ): Submission {
     if (this.disposed) throw new Error('CLI Worker is shutting down')
     if (this.blocked) throw new Error(this.blocked)
@@ -1912,9 +2002,9 @@ export class WorkerRuntime {
       ...(identity?.initiator ? { initiator: structuredClone(identity.initiator) } : {}),
       project: canonical,
       title: title.slice(0, 160),
-      agentName: identity?.agentName
+      agentName: identity?.agentName !== undefined
         ? this.checkAgentName(parent, identity.agentName)
-        : availableAgentName(this.storage.workers.values(), parent, CLI_SHORT_NAMES[cliOf(preference)]),
+        : firstFreeAgentName(CLI_SHORT_NAMES[cliOf(preference)], this.occupiedNames(parent)),
       agentNameOrigin: identity?.agentName ? 'custom' : 'auto',
       role: identity?.role ? roleSnapshotSchema.parse(structuredClone(identity.role)) : undefined,
       preference: { ...preference },
@@ -1967,9 +2057,20 @@ export class WorkerRuntime {
     })
     const controller = new AbortController()
     // Start the own-account read at admission, before this task waits in the queue.
-    const admission = authorizedBinding
+    const accountAdmission = authorizedBinding
       ? Promise.resolve(authorizedBinding)
       : readCliAccountBinding(cliOf(effective), this.backend, this.config, canonical, controller.signal)
+    // Submit serializes allocation. Publish the accepted name even when this CLI turn
+    // is queued, and join the very same creation before allowing the process to start.
+    const nameReady = !previous && bindNewName
+      ? accountAdmission.then(() => {
+          controller.signal.throwIfAborted()
+          return bindNewName(worker, controller.signal).then(() => {
+            task.prompt = withGoal(task.goal, promptForWorker(worker, task.userPrompt))
+          })
+        })
+      : undefined
+    const admission = nameReady ? nameReady.then(() => accountAdmission) : accountAdmission
     // Freeze the goal when this turn is admitted, so edits during preparation
     // or execution affect only later turns. Every CLI shares this prompt.
     const forkSource = readWorkerForkState(this.storage.directory, worker.id)?.sourceConversationId
@@ -2016,6 +2117,7 @@ export class WorkerRuntime {
     return {
       worker,
       done,
+      nameReady,
       cancel: () => {
         if (this.tasks.get(worker.id) === task)
           void this.stop(parent, worker.id).catch((error) => {
@@ -2401,7 +2503,6 @@ export class WorkerRuntime {
   private async execute(task: Task, directory: string): Promise<void> {
     const { worker, controller } = task
     const isolated = directory !== worker.project
-    const prompt = isolated ? isolationPromptNotice(directory, worker.project) + task.prompt : task.prompt
     let handle: SubprocessHandle | undefined
     let completed = false
     let readers: Promise<void>[] = []
@@ -2532,6 +2633,7 @@ export class WorkerRuntime {
     let reboundResume = false
     try {
       let admitted = await task.admission
+      const prompt = isolated ? isolationPromptNotice(directory, worker.project) + task.prompt : task.prompt
       task.accountKey = JSON.stringify([cliOf(worker.preference), admitted])
       controller.signal.throwIfAborted()
       const previousBinding = this.storage.accountBinding(worker.id)

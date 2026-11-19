@@ -138,13 +138,17 @@ it('renames through its owning parent session and keeps a conflicting name edita
     mounted.push(r)
   })
   const t = controls(r)
-  await t.edit('新的智能体名称', '审稿人')
+  await t.edit('新的智能体名称', 'reviewer')
   await t.submit()
   expect(t.text()).toContain('同名智能体已存在')
   expect(onClose).not.toHaveBeenCalled()
-  await t.edit('新的智能体名称', '因果审稿人')
+  await t.edit('新的智能体名称', 'causal-reviewer')
   await t.submit()
-  expect(renameWorker.mock.calls[1].slice(0, 3)).toEqual(['parent-fixture', 'worker-fixture', '因果审稿人'])
+  expect(renameWorker.mock.calls[1].slice(0, 3)).toEqual([
+    'parent-fixture',
+    'worker-fixture',
+    'causal-reviewer',
+  ])
   expect(onClose).toHaveBeenCalledOnce()
 })
 

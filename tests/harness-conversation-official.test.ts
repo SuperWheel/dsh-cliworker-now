@@ -136,6 +136,7 @@ it('uses real continuable child identity, preserves ordered native history and r
     runId: randomUUID(),
     project: directory,
     title: 'Synthetic official conversation',
+    agentName: 'opencode-1',
     preference: { cli: 'opencode', model: 'saved-model', effort: 'default' },
     mode: 'accept-edits',
     status: 'completed',
@@ -245,7 +246,7 @@ it('uses real continuable child identity, preserves ordered native history and r
   if ('startActivation' in ctx.subagents) {
     const provider = ctx.subagents.getProvider('cliworker-native-conversation')!
     expect(provider.capabilities).toEqual({ agentOptions: true, agentPreset: false, outputSchema: false, depthLimit: false })
-    expect(await readDshChildren(ctx.sessionQuery, parent.agent.id, new AbortController().signal)).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id })]))
+    expect(await readDshChildren(ctx.sessionQuery, parent.agent.id, new AbortController().signal)).toEqual(expect.arrayContaining([expect.objectContaining({ id: child.id, name: worker.agentName, label: worker.title })]))
   }
 
   expect(child.session.header).toMatchObject({ origin: 'subagent', parentSession: parent.agent.id })

@@ -52,7 +52,11 @@ export function numberedAgentName(stem: string, n: number): string {
 }
 
 /** First free `${stem}-N` (N ≥ 1) not in `taken` (compared with {@link agentNameKey}) nor in `skip`. */
-export function firstFreeAgentName(stem: string, taken: ReadonlySet<string>, skip: ReadonlySet<string> = new Set()): string {
+export function firstFreeAgentName(
+  stem: string,
+  taken: ReadonlySet<string>,
+  skip: ReadonlySet<string> = new Set(),
+): string {
   for (let n = 1; ; n++) {
     const candidate = numberedAgentName(stem, n)
     if (!taken.has(agentNameKey(candidate)) && !skip.has(agentNameKey(candidate))) return candidate

@@ -18,7 +18,8 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
-import { cliOf, type HarnessConversationBinding, type Worker, type WorkerEvent } from '../shared/types.ts'
+import { agentNameKey, isDshAgentName } from '../shared/agent-names.ts'
+import { cliOf, workerName, type HarnessConversationBinding, type Worker, type WorkerEvent } from '../shared/types.ts'
 import { HarnessConversationStream } from './harness-conversation-stream.ts'
 import { HarnessConversationCommandGuard } from './harness-conversation-commands.ts'
 import { bindHarnessTurnRun } from './harness-turn-usage.ts'
@@ -1272,6 +1273,39 @@ export class HarnessConversationBridge implements HarnessConversationApi {
     }
   }
 
+  get namesOnActivation(): boolean {
+    return currentSubagents(this.ctx.subagents)
+  }
+
+  private async startNamedActivation(subagents: Context['subagents'], spec: NativeChildSpec, worker: Worker, replacement: boolean) {
+    const tried = new Set<string>()
+    for (let attempt = 1; ; attempt++) {
+      spec.signal.throwIfAborted()
+      const candidate = workerName(worker)
+      const name = !replacement && isDshAgentName(candidate) ? candidate : undefined
+      const release = name && this.deps.reserveName?.(worker.parentSessionId, name)
+      try {
+        return await subagents.startActivation({
+          ...spec.request, prompt: [...spec.request.prompt], provider: spec.provider, label: spec.label,
+          childId: spec.childId, signal: spec.signal, delivery: 'caller', ...(name ? { name } : {}),
+        })
+      } catch (error) {
+        spec.signal.throwIfAborted()
+        if (!error || typeof error !== 'object' || !('code' in error)) throw error
+        if (error.code === 'INVALID_AGENT_NAME') throw new Error(`DSH 拒绝名称格式：${String(error)}`, { cause: error })
+        if (error.code !== 'DUPLICATE_AGENT_NAME') throw error
+        if (!name || worker.agentNameOrigin !== 'auto' || this.records.has(spec.childId) ||
+            this.ctx.agents.get(spec.childId) || !this.deps.retryAutomaticName)
+          throw new Error(`DSH 子 Agent 名称已占用：${name ?? candidate}`, { cause: error })
+        tried.add(agentNameKey(name))
+        if (attempt >= 5) throw new Error('DSH 子 Agent 名称连续冲突，请重试', { cause: error })
+      } finally {
+        if (release) release()
+      }
+      await this.deps.retryAutomaticName!(worker, spec.childId, tried, spec.signal)
+    }
+  }
+
   private async create(
     parent: Agent,
     worker: Worker,
@@ -1295,6 +1329,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       ? AbortSignal.any([options.signal, this.lifetime.signal])
       : this.lifetime.signal
     signal.throwIfAborted()
+    const releaseRegistration = this.deps.holdNameRegistration?.(worker.id)
     this.provisioning.set(record.sessionId, record)
     if (forkHistory) this.forkSeeds.set(record.sessionId, forkHistory)
     if (previous) this.replacements.set(record.sessionId, previous)
@@ -1316,15 +1351,15 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       const subagents: unknown = this.ctx.subagents
       if (managedSubagents(subagents)) {
         const activation = currentSubagents(subagents)
-          ? await subagents.startActivation({
-              ...spec.request, prompt: [...spec.request.prompt], provider: spec.provider, label: spec.label,
-              childId: spec.childId, signal: spec.signal, delivery: 'caller',
-            })
+          ? await this.startNamedActivation(subagents, spec, worker, !!previous)
           : await subagents.startActivation({ ...spec, delivery: 'caller' })
         this.activations.set(record.sessionId, activation)
         // Observe settlement exactly once without consuming or replaying input.
         void activation.result.catch((error) => this.lifecycleIssues.push(error))
         result = activation
+        if (currentSubagents(subagents) && activation.childId === record.sessionId &&
+            'name' in activation && typeof activation.name === 'string' && (!!previous || activation.name !== activation.childId))
+          this.deps.acceptedName?.(worker, activation.childId, activation.name, previous)
       } else if (legacySubagents(this.ctx.subagents)) result = await this.ctx.subagents.startContinuable(spec)
       else throw new Error('Harness CLI 子会话生命周期接口已失效')
       if (result.childId !== record.sessionId) throw new Error('Harness 返回了不同的 CLI 子会话身份')
@@ -1345,6 +1380,15 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       }
       return this.binding(record)
     } catch (error) {
+      // The provider binds before DSH delivers the first input. If the receipt was
+      // lost after acceptance, keep that binding so opening the Worker cannot replay it.
+      if (!signal.aborted && !previous && !forkHistory && currentSubagents(this.ctx.subagents) &&
+          this.records.has(record.sessionId) && !this.activations.has(record.sessionId)) {
+        const query = this.ctx.get('sessionQuery')
+        const children = query ? await readDshChildren(query, parent.id, signal).catch(() => undefined) : undefined
+        if (!children || children.some(child => child.id === record.sessionId))
+          throw new Error(`DSH 创建回执未确认，已保留原子会话绑定，请核对目录：${String(error)}`, { cause: error })
+      }
       try {
         await this.drainChildren(parent, [SessionId(record.sessionId)])
         if (previous && this.records.has(record.sessionId)) {
@@ -1364,6 +1408,7 @@ export class HarnessConversationBridge implements HarnessConversationApi {
       }
       throw error
     } finally {
+      releaseRegistration?.()
       this.forkSeeds.delete(record.sessionId)
       this.provisioning.delete(record.sessionId)
       this.replacements.delete(record.sessionId)

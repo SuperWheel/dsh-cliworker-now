@@ -1,3 +1,4 @@
+import { agentNameKey, firstFreeAgentName } from '../shared/agent-names.ts'
 import { z } from 'zod'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type { RolePreset, RoleSnapshot, Worker } from '../shared/types.ts'
@@ -73,17 +74,17 @@ export async function askRolePreset(
   return readRoleAnswer(offered, response)
 }
 
+export function workerNameKeys(workers: Iterable<Worker>, parent: string, excludingId?: string): Set<string> {
+  const names = new Set<string>()
+  for (const worker of workers) {
+    if (worker.parentSessionId !== parent || worker.id === excludingId) continue
+    for (const name of [workerName(worker), ...(worker.nameAliases ?? [])]) names.add(agentNameKey(name))
+  }
+  return names
+}
+
 export function availableAgentName(workers: Iterable<Worker>, parent: string, base: string): string {
-  const names = new Set(
-    [...workers]
-      .filter((worker) => worker.parentSessionId === parent)
-      .flatMap((worker) => [workerName(worker), ...(worker.nameAliases ?? [])])
-      .map((name) => name.toLocaleLowerCase()),
-  )
-  const stem = agentNameSchema.parse(base).slice(0, 48)
-  let number = 1
-  while (names.has(`${stem}-${number}`.toLocaleLowerCase())) number++
-  return `${stem}-${number}`
+  return firstFreeAgentName(base, workerNameKeys(workers, parent))
 }
 
 /** Role is prepended only for a fresh CLI conversation. Timeline keeps the task verbatim. */
