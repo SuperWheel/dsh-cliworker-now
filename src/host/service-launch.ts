@@ -19,7 +19,7 @@ import type { ServiceContext } from './service-context.ts'
 
 /** Returned to the parent Agent when a Worker run was stopped from the panel or with cliworker_stop. */
 export const STOPPED_BY_USER_GUIDANCE =
-  '此 Worker 已被手动停止（面板停止按钮或 cliworker_stop），这是用户的决定，不是故障。除非用户在此之后明确要求继续，否则不要调用 cliworker_followup 续聊，也不要重新派遣同一任务；只向用户简要说明已完成的进度并等待指示。'
+  '此 Worker 已被手动停止（面板停止按钮或 cliworker_stop），这是用户的决定，不是故障。除非用户在此之后明确要求继续，否则不要调用 cliworker_followup 续聊，也不要重新派遣同一任务。向用户说明进度前，先只读核查实际产物（相关文件、目录或状态），以核查结果为准，不要凭 response 推测已完成或未完成的部分；说明后等待用户指示。'
 
 export async function launch(
   this: ServiceContext,

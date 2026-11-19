@@ -388,6 +388,8 @@ describe('AGY runtime outcomes', () => {
     expect(result).toMatchObject({ status: 'interrupted', stoppedBy: 'user', response: '本轮实际回复' })
     expect(result.guidance).toContain('手动停止')
     expect(result.guidance).toContain('不要调用 cliworker_followup')
+    // The parent must check real artifacts instead of guessing progress from the partial response.
+    expect(result.guidance).toContain('先只读核查实际产物')
   })
 
   it('does not mark a timeout as a user stop', async () => {

@@ -72,7 +72,10 @@
   - 2026-11-19 用户授权「构建并复测」。确认 Desktop 下无 Worker 子进程后 `pnpm build:preview`、退出 Desktop、`pnpm build` 通过，`lib/index.js` 含 `stoppedBy`；profile 仍 `link:` 本仓库，带无障碍参数重启 Desktop。
   - 由 Codex Computer Use 在 `ws` 工作区新建对话（会话 `session-4e5f0b5e-99e1-48c7-9aed-18da1fd08808`，主模型 GLM-5.3-Flash），派 Codex Worker `codex-1`（GPT-6-Luna、Low，沿用确认卡）每 5 秒向 `ticks2.txt` 追加一行。约 23:16:12 在 Worker 详情点「停止生成」，事件 15:16:14Z `interrupted`「已停止」，本 Worker 只有一个 runId `4201f3cb…`；`ticks2.txt` 4 行，最后一行 23:16:10 后不再增长，无循环残留进程。
   - 会话日志中主 Agent 收到的作业结果含 `"stoppedBy":"user"` 与停止说明；其推理为「用户已停止，不应续聊或重派」，回复「被手动停止的任务我不会自行续聊或重新派遣」后结束本轮。之后 90 秒内无新的 tool/call、job/registered 或新 runId。
-  - 另见：主 Agent 未核查产物即称「循环没有执行，`ticks2.txt` 也未生成」，与实际 4 行不符。停止说明里「只说明进度」可能让模型略过核查，待另行决定是否调整措辞。
+  - 另见：主 Agent 未核查产物即称「循环没有执行，`ticks2.txt` 也未生成」，与实际 4 行不符。停止说明里「只说明进度」可能让模型略过核查，用户决定调整措辞，见 4.7。
+- [x] 4.7 调整手动停止说明：主 Agent 向用户说明进度前先只读核查实际产物，以核查结果为准，不凭本轮部分回复推测。
+  - `STOPPED_BY_USER_GUIDANCE` 与 `src/host/routing.ts` 派遣说明改为「先只读核查实际产物，再按核查结果说明进度」，增量规格同步；`tests/agy-run-outcome.test.ts` 用户停止用例增加该断言，39 例通过；关联 16 个测试文件 898 例通过，`pnpm typecheck` 通过，eslint 无输出，严格校验通过。
+  - 未执行：新措辞尚未正式构建，也未在 Desktop 复测主 Agent 是否先核查产物。
 - [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
   - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
 
