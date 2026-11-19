@@ -34,7 +34,7 @@ import { CopyText } from './copy-text.tsx'
 import { BrandIcon, DshIcon, Glyph } from './icons.tsx'
 import { WorkerModelMenu } from './worker-model-menu.tsx'
 import { SettingsDialog } from './settings-dialog.tsx'
-import { RenameWorker } from './rename-worker.tsx'
+import { RenameDialog, RenameWorker } from './rename-worker.tsx'
 import { WorkerCard, type WorkerManagementAction } from './worker-card.tsx'
 import { RUNNING_MESSAGE_LABELS } from '../shared/running-message.ts'
 import { useMessageSubmissions } from './message-submissions.ts'
@@ -171,7 +171,7 @@ function SessionPanel({
   // A task's 「默认设置」 opens its CLI; the header button opens 「CLI Worker 设置」.
   const [settingsCli, setSettingsCli] = useState<CliId>()
   const [settings, setSettings] = useState(false)
-  const [renaming, setRenaming] = useState<{ worker: Worker; mode: 'name' | 'title' }>()
+  const [renaming, setRenaming] = useState<{ worker: Worker; mode: 'name' | 'title' } | { child: DshSubagent }>()
   const [restartFor, setRestartFor] = useState('')
   const nativeSettingsRequested = useRef(false)
   useEffect(() => {
@@ -389,13 +389,18 @@ function SessionPanel({
     setFollowing(true)
     if (feed.current) feed.current.scrollTop = feed.current.scrollHeight
   }
+  const search = query.trim().toLowerCase()
   const visibleWorkers = snapshot.workers.filter((w) => {
-    const matches =
-      `${CLI_LABELS[cliOf(w.preference)]} ${workerName(w)} ${w.title} ${w.preference.model} ${w.preference.effort}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase())
+    const fields = [
+      CLI_LABELS[cliOf(w.preference)],
+      workerName(w),
+      w.title,
+      w.preference.model,
+      w.preference.effort,
+      ...(w.nameAliases ?? []),
+    ]
     return (
-      matches &&
+      fields.join(' ').toLowerCase().includes(search) &&
       (filter === 'all' ||
         (filter === 'active'
           ? active(w.status)
@@ -608,13 +613,27 @@ function SessionPanel({
           </Button>
         </div>
       )}
-      {renaming && (
+      {renaming && 'worker' in renaming && (
         <RenameWorker
           key={`${renaming.worker.id}:${renaming.mode}`}
           api={api}
           sessionId={sessionId}
           worker={renaming.worker}
           mode={renaming.mode}
+          onClose={() => setRenaming(undefined)}
+        />
+      )}
+      {renaming && 'child' in renaming && (
+        <RenameDialog
+          key={`dsh:${renaming.child.id}`}
+          mode="dsh-name"
+          initialName={renaming.child.agentName}
+          onSave={async (name, signal) => {
+            if (!api.cliworker.renameDshSubagent) throw new Error(t('DSH 子 Agent 改名暂不可用'))
+            const result = await api.cliworker.renameDshSubagent(sessionId, renaming.child.id, name, signal)
+            if (result.ok && !signal.aborted) dsh.refresh()
+            return result
+          }}
           onClose={() => setRenaming(undefined)}
         />
       )}
@@ -738,6 +757,7 @@ function SessionPanel({
                     <div className="cwn-cli-rows-inner">{visibleDsh.map((child) => <DshSubagentCard key={child.id}
                       child={child} collapsed={!!collapsed.dsh} busy={busy}
                       onOpen={() => { lastWorker.current = child.id; setSettings(false); select(''); selectDsh(child) }}
+                      onRename={api.cliworker.renameDshSubagent ? () => setRenaming({ child }) : undefined}
                       onHide={() => void perform(async () => {
                         const controller = new AbortController()
                         managementAbort.current = controller

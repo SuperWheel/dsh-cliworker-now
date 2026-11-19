@@ -440,7 +440,14 @@ it('shows and searches worker names alongside model metadata and the conversatio
     '因果审稿人｜Worker a',
   ])
   await t.click('修改智能体名称')
-  expect(t.r.root.findByProps({ 'aria-label': '新的智能体名称' }).props.value).toBe('因果审稿人')
+  const dialog = t.r.root.findByProps({ role: 'dialog', 'aria-label': '智能体名称' })
+  expect(dialog.findByType('input').props.value).toBe('因果审稿人')
+  await act(async () => dialog.findByType('form').props.onSubmit({ preventDefault() {} }))
+  expect(dialog.findByProps({ role: 'alert' }).children).toEqual([
+    '名称只能使用小写英文字母、数字和连字符（-），不能包含中文或其他符号',
+  ])
+  expect(dialog.findByType('input').props.value).toBe('因果审稿人')
+  expect(t.api.cliworker.renameWorker).not.toHaveBeenCalled()
 })
 it('queues a running followup without interrupting and keeps newer typing while admission is pending', async () => {
   const t = await setup(),
@@ -1703,6 +1710,55 @@ it('copies a card name independently and reports actual clipboard failure', asyn
   expect(t.text()).toContain('复制失败，请选择文本手动复制')
   expect(t.r.root.findAllByType('textarea')).toHaveLength(0)
 })
+
+it.each(['completed', 'running'] as const)(
+  'renames a %s Worker and copies the new name from its updated snapshot',
+  async (status) => {
+    const worker = { ...workers[0]!, agentName: 'agent-1', status }
+    const t = await setup(false, undefined, [worker, workers[1]!])
+    await act(async () => {
+      t.r.root.findByProps({ 'data-worker-id': worker.id }).props.onContextMenu({
+        preventDefault() {},
+        stopPropagation() {},
+        clientX: 1,
+        clientY: 2,
+      })
+    })
+    const rename = t.r.root.findByType('nav').findByProps({ 'aria-label': 'name' })
+    expect(rename.props.disabled).toBe(false)
+    await t.click('name')
+    const dialog = t.r.root.findByProps({ role: 'dialog', 'aria-label': '智能体名称' })
+    expect(dialog.findByType('input').props.value).toBe('agent-1')
+    expect(dialog.findAllByType('p').map((node) => node.children.join(''))).toContain(
+      '只改名称：子会话、历史和运行中的任务不变；改名前的名称仍可用于续聊，且不能再给其他子 Agent 使用。DSH 中未接入的界面（如团队看板）可能仍显示原名。',
+    )
+    await act(async () => dialog.findByType('input').props.onChange({ target: { value: 'auditor' } }))
+    await act(async () => dialog.findByType('form').props.onSubmit({ preventDefault() {} }))
+    expect(t.api.cliworker.renameWorker).toHaveBeenCalledWith(
+      'parent',
+      worker.id,
+      'auditor',
+      expect.any(AbortSignal),
+    )
+    expect(t.r.root.findAllByProps({ role: 'dialog' })).toHaveLength(0)
+
+    const snapshot = t.snapshot()
+    await act(async () =>
+      t.streams.at(-1)!.push({
+        ...snapshot,
+        revision: snapshot.revision + 1,
+        workers: [{ ...worker, agentName: 'auditor', nameAliases: ['agent-1'] }, workers[1]!],
+      }),
+    )
+    for (const query of ['AUDITOR', 'agent-1']) {
+      await act(async () => t.r.root.findByType('input').props.onChange({ target: { value: query } }))
+      expect(t.r.root.findByProps({ 'data-worker-id': worker.id })).toBeDefined()
+      expect(t.r.root.findAllByProps({ 'data-worker-id': 'b' })).toHaveLength(0)
+    }
+    await t.click('复制名称 auditor')
+    expect(clipboard).toHaveBeenLastCalledWith('auditor')
+  },
+)
 
 it('deletes only the chosen card, retains four main filters and restores from the persistent deleted view', async () => {
   const t = await setup(false)
@@ -3273,6 +3329,103 @@ it('adopts a streamed interface language in every open view without reloading', 
 })
 
 // SIMULATION: public DSH rows with the real Panel/filter/search; no models.
+it('renames a native child from its card and searches the refreshed names while copying the effective name', async () => {
+  let child: DshSubagent = {
+    id: 'native',
+    parentSessionId: 'parent',
+    name: '模拟原生聊天',
+    agentName: 'agent-4',
+    status: 'running',
+    mode: 'continuable',
+    createdAt: 1,
+    formerNames: ['dsh-4'],
+  }
+  const listDshSubagents = vi.fn(async () => ({ ok: true, value: JSON.stringify([child]) }))
+  const renameDshSubagent = vi.fn(async () => {
+    child = { ...child, agentName: 'auditor', registeredName: 'agent-4' }
+    return { ok: true, value: undefined }
+  })
+  const t = await setup(false, undefined, workers, { listDshSubagents, renameDshSubagent })
+  const card = () => t.r.root.findByProps({ 'data-dsh-child-id': child.id })
+  await act(async () =>
+    card().props.onContextMenu({
+      preventDefault() {},
+      stopPropagation() {},
+      clientX: 1,
+      clientY: 2,
+    }),
+  )
+  expect(card().findByProps({ 'aria-label': 'rename' }).props.disabled).toBe(false)
+  await t.click('rename')
+  const dialog = t.r.root.findByProps({ role: 'dialog', 'aria-label': '智能体名称' })
+  expect(dialog.findByType('p').children).toEqual([
+    '仅修改显示名：DSH 中该子 Agent 的身份提示和发出消息的署名仍是原名。',
+  ])
+  await act(async () => setLanguagePreference('en'))
+  expect(dialog.findByType('p').children).toEqual([
+    'This changes the display name only. DSH still uses the original name in this agent’s identity prompt and as the sender of its messages.',
+  ])
+  await act(async () => setLanguagePreference('follow'))
+  expect(dialog.findByType('input').props.value).toBe('agent-4')
+  await act(async () => dialog.findByType('input').props.onChange({ target: { value: 'auditor' } }))
+  await act(async () => dialog.findByType('form').props.onSubmit({ preventDefault() {} }))
+  expect(renameDshSubagent).toHaveBeenCalledExactlyOnceWith(
+    'parent',
+    child.id,
+    'auditor',
+    expect.any(AbortSignal),
+  )
+  expect(t.api.cliworker.renameWorker).not.toHaveBeenCalled()
+  expect(listDshSubagents).toHaveBeenCalledTimes(2)
+  expect(t.r.root.findAllByProps({ role: 'dialog' })).toHaveLength(0)
+  expect(card().findByProps({ title: 'DSH 登记名：agent-4' }).children).toEqual(['仅修改显示名'])
+  for (const query of ['auditor', 'AGENT-4', 'DSH-4']) {
+    await act(async () => t.r.root.findByType('input').props.onChange({ target: { value: query } }))
+    expect(card()).toBeDefined()
+  }
+  await t.click('复制名称 auditor')
+  expect(clipboard).toHaveBeenLastCalledWith('auditor')
+})
+
+it.each([
+  { mode: 'one-shot', hasRemote: true },
+  { mode: 'unknown', hasRemote: true },
+  { mode: 'external', hasRemote: true },
+  { mode: 'continuable', hasRemote: false },
+] as const)(
+  'disables native rename for $mode with remote availability $hasRemote',
+  async ({ mode, hasRemote }) => {
+    const child: DshSubagent = {
+      id: 'native',
+      parentSessionId: 'parent',
+      name: '模拟原生聊天',
+      agentName: 'agent-4',
+      status: 'completed',
+      mode,
+      createdAt: 1,
+    }
+    const renameDshSubagent = vi.fn()
+    const t = await setup(false, undefined, workers, {
+      listDshSubagents: vi.fn(async () => ({ ok: true, value: JSON.stringify([child]) })),
+      renameDshSubagent: hasRemote ? renameDshSubagent : undefined,
+    })
+    const card = t.r.root.findByProps({ 'data-dsh-child-id': child.id })
+    await act(async () =>
+      card.props.onContextMenu({
+        preventDefault() {},
+        stopPropagation() {},
+        clientX: 1,
+        clientY: 2,
+      }),
+    )
+    const rename = card.findByProps({ 'aria-label': 'rename' })
+    expect(rename.props.disabled).toBe(true)
+    await act(async () => rename.props.onClick())
+    expect(t.r.root.findAllByProps({ role: 'dialog' })).toHaveLength(0)
+    expect(renameDshSubagent).not.toHaveBeenCalled()
+  },
+)
+
 it('renders DSH beside CLI groups, includes it in search/filters, opens the same child seat and returns', async () => {
   const rows: DshSubagent[] = [
     { id: 'dsh-running', parentSessionId: 'parent', name: '模拟 DSH 运行', agentName: 'dsh-1', status: 'running', mode: 'continuable', createdAt: 1, model: 'sim-native-model' },
