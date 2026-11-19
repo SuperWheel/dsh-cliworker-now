@@ -1,6 +1,8 @@
 # 原生子对话与主对话体验的宿主接口缺口
 
-2026-11-14 当前源码候选迁移至 **0.2.2-rc.3**，公开 tag `dsh-v0.2.2-rc.3` 固定于 `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`。rc.2 → rc.3 四包源码只有版本号变化，rc.2 的 48 文件补丁无冲突应用并原样导出，重建四包后纳入 `runtime-host/`；说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`，验证边界见 `openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md`。下文 rc.2 记录保留为历史。
+当前适配版本为 **0.2.2-rc.5**。2026-11-19 从官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）重建四个原生 UI。rc.3 的 48 文件补丁逐字节保留，Gateway、会话控制与四包导出契约沿用原接入方式。构建输入见[扩展说明](../../host-extensions/dsh-0.2.2-rc.5/README.md)，平台验证见[任务清单](../../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
+
+2026-11-14 源码候选迁移至 **0.2.2-rc.3**，公开 tag `dsh-v0.2.2-rc.3` 固定于 `38a6a5c965aa99ab525161efb7cc5cf1fe62fced`。rc.2 → rc.3 四包源码只有版本号变化，rc.2 的 48 文件补丁无冲突应用并原样导出，重建四包后纳入 `runtime-host/`；说明见 `host-extensions/dsh-0.2.2-rc.3/README.md`，验证边界见 `openspec/archives/v0.9.0-dsh-rc3-adapt-leeyl/tasks.md`。下文 rc.2 记录保留为历史。
 
 2026-11-12 源码候选迁移至 **0.2.2-rc.2**，公开 tag `dsh-v0.2.2-rc.2` 固定于 `ddac96760b6edf8fa0fe17cbdcf0b512f4c12b2c`。rc.1 的 48 文件补丁在新基线上有 10 个文件冲突，人工合并后重建四个原生界面包并纳入 `runtime-host/`；保留官方 CSS anchor、Retry、文件接收与子会话直接输入行为，移除对已删除 `useAnchoredPosition` 的引用。新输入及合并说明见 `host-extensions/dsh-0.2.2-rc.2/README.md`；Mac Desktop 0.2.2-rc.2 已做部分界面核对，Windows 与真实模型／CLI 派遣未验证，详细边界见 `openspec/archives/upgrade-host-022rc2/tasks.md`。下文 rc.1 及更早版本记录保留为历史。
 
@@ -77,7 +79,6 @@ rc.2 的嵌套 Factory/Slot 会重新注入 useProjection。给最外层官方�
 
 Host 在领取真实 Inbox 请求后持久化 turn/run 精确关系；仅完整、已结束且身份一致的回执可汇总。此接口不新增 assistant、attempt 或推理事件，不重写 Session 日志。新建第四个候选 UI 包须独立验收；已安装的三个包不会在开发过程中自动被替换。
 
-
 同一 `tokenUsage` 观察值附带可选的 externalScope、externalRunId、externalIsPrevious 来源元信息，仅由原生 StatsPills 详情增加统计范围文字；数字、布局、按钮和弹层仍由原组件实现。缺省时不改变官方会话。这样本轮/最近已确认运行不会被误读为完整会话累计。
 
 ### 2026-10-17 数据补充
@@ -99,7 +100,6 @@ Host 在领取真实 Inbox 请求后持久化 turn/run 精确关系；仅完整�
 通过二验的历史轮次在原生 ChatView 的有效条目序列中，将晚到的公开过程移到对应答案上方；复用原节点、分组、组件、key 和展开状态。候选答案自身同时含 reasoning/text 时仍使用原生两种分座，正文只显示一次。未知成员或非对应 turn 不参与重排，不靠 CSS order 改视觉顺序。验收同时检查折叠、展开和真实渲染的上下位置。
 
 上下文占用与账单总量分开：Hermes 这条实际历史记录的最近请求占用为 4046，CLI 有效窗口为 1048576，约 0.386%；rc.2 原生 `contextOccupancy` 取整后显示 0%。这不是缺数，也不能将会话累计 Token 当作上下文占用。缺值保留未知，详情显示真实占用/容量和来源；本次未改普通原生百分比格式。
-
 
 ### 2026-10-17 后续上下文完整性修复
 

@@ -9,7 +9,12 @@ import {
   type CliUpdateLayout,
 } from '../src/client/cli-update-layout.ts'
 import { setLanguagePreference } from '../src/client/i18n.ts'
-import type { CliUpdateEntry, CliUpdateGroup, CliUpdateOperation, CliUpdateSnapshot } from '../src/shared/cli-management.ts'
+import type {
+  CliUpdateEntry,
+  CliUpdateGroup,
+  CliUpdateOperation,
+  CliUpdateSnapshot,
+} from '../src/shared/cli-management.ts'
 import { CLI_IDS, type ActiveCliId } from '../src/shared/types.ts'
 
 // Simulated Host snapshots only; no CLI is probed and no release source is queried.
@@ -21,7 +26,11 @@ function snapshot(
   extra: Partial<Omit<CliUpdateSnapshot, 'entries' | 'revision'>> = {},
 ): CliUpdateSnapshot {
   revision += 1
-  const entries = (Object.entries(rows) as [ActiveCliId, Row][]).map(([cli, row]) => ({ cli, installed: true, ...row }))
+  const entries = (Object.entries(rows) as [ActiveCliId, Row][]).map(([cli, row]) => ({
+    cli,
+    installed: true,
+    ...row,
+  }))
   return { revision, activity: 'idle', queue: [], results: [], ...extra, entries }
 }
 /** Every CLI with the same row, overridden per CLI. */
@@ -49,7 +58,13 @@ it('首次无缓存：读完本地版本重排一次，查完最新版本再重�
   expect(layout.regroups).toBe(0)
 
   // Some local reads done: the Host already knows Kimi is not installed, but the row stays put.
-  layout = advanceLayout(layout, snapshot(all(checkingLocal, { kimi: { group: 'notInstalled', installed: false } }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all(checkingLocal, { kimi: { group: 'notInstalled', installed: false } }), {
+      activity: 'checking',
+    }),
+    none,
+  )
   expect(nonEmpty(layout)).toEqual({ checking: [...CLI_IDS] })
   expect(layout.regroups).toBe(0)
 
@@ -66,19 +81,33 @@ it('首次无缓存：读完本地版本重排一次，查完最新版本再重�
   expect(layout.groups.checking).toHaveLength(15)
 
   // Step 2 results are written in place: Codex is updatable but stays in 「检查中」.
-  layout = advanceLayout(layout, snapshot({ ...step1, codex: { group: 'updatable' }, opencode: { group: 'failed', reason: 'RELEASE_UNREACHABLE' } }, { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(
+      {
+        ...step1,
+        codex: { group: 'updatable' },
+        opencode: { group: 'failed', reason: 'RELEASE_UNREACHABLE' },
+      },
+      { activity: 'checking' },
+    ),
+    none,
+  )
   expect(layout.regroups).toBe(1)
   expect(layout.groups.checking).toContain('codex')
   expect(layout.groups.checking).toContain('opencode')
 
   // Last release read: second regroup, 「检查中」 disappears.
-  const done = all({ group: 'latest' }, {
-    kimi: { group: 'notInstalled', installed: false },
-    hermes: { group: 'failed', reason: 'UNKNOWN_VERSION' },
-    codex: { group: 'updatable' },
-    opencode: { group: 'failed', reason: 'RELEASE_UNREACHABLE' },
-    zcode: { group: 'manual', reason: 'APP_MANAGED' },
-  })
+  const done = all(
+    { group: 'latest' },
+    {
+      kimi: { group: 'notInstalled', installed: false },
+      hermes: { group: 'failed', reason: 'UNKNOWN_VERSION' },
+      codex: { group: 'updatable' },
+      opencode: { group: 'failed', reason: 'RELEASE_UNREACHABLE' },
+      zcode: { group: 'manual', reason: 'APP_MANAGED' },
+    },
+  )
   layout = advanceLayout(layout, snapshot(done, { activity: 'checking' }), none)
   expect(layout.regroups).toBe(2)
   expect(layout.groups.checking).toEqual([])
@@ -101,7 +130,10 @@ it('首次两步若在同一快照间完成，只重排一次', () => {
 })
 
 it('全部有缓存：直接按缓存分区显示，零重排，后续空闲快照不移动行', () => {
-  const cached = all({ group: 'latest' }, { codex: { group: 'updatable' }, kimi: { group: 'notInstalled', installed: false } })
+  const cached = all(
+    { group: 'latest' },
+    { codex: { group: 'updatable' }, kimi: { group: 'notInstalled', installed: false } },
+  )
   let layout = initialLayout(snapshot(cached))
   expect(layout.regroups).toBe(0)
   expect(layout.groups.checking).toEqual([])
@@ -115,16 +147,26 @@ it('全部有缓存：直接按缓存分区显示，零重排，后续空闲快�
 
 it('部分缺缓存：只有缺的行进「检查中」，两步读完后只重排一次', () => {
   const cached = all({ group: 'latest' }, { codex: { group: 'updatable' } })
-  let layout = initialLayout(snapshot({ ...cached, kimi: { group: 'checking', stage: 'local' } }, { activity: 'checking' }))
+  let layout = initialLayout(
+    snapshot({ ...cached, kimi: { group: 'checking', stage: 'local' } }, { activity: 'checking' }),
+  )
   expect(layout.groups.checking).toEqual(['kimi'])
   expect(layout.groups.updatable).toEqual(['codex'])
 
   // Local read of Kimi done, release source pending: no regroup with cached rows on screen.
-  layout = advanceLayout(layout, snapshot({ ...cached, kimi: { group: 'checking', stage: 'remote' } }, { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot({ ...cached, kimi: { group: 'checking', stage: 'remote' } }, { activity: 'checking' }),
+    none,
+  )
   expect(layout.regroups).toBe(0)
   expect(layout.groups.checking).toEqual(['kimi'])
 
-  layout = advanceLayout(layout, snapshot({ ...cached, kimi: { group: 'updatable' } }, { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot({ ...cached, kimi: { group: 'updatable' } }, { activity: 'checking' }),
+    none,
+  )
   expect(layout.regroups).toBe(1)
   expect(layout.groups.checking).toEqual([])
   expect(layout.groups.updatable).toEqual(['codex', 'kimi'])
@@ -137,17 +179,37 @@ it('「检查更新」重查：行原地写结果，查完统一重排一次；�
   const cached = all({ group: 'latest' })
   let layout = initialLayout(snapshot(cached))
   // Every row re-reads in place.
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest', stage: 'remote' }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest', stage: 'remote' }), { activity: 'checking' }),
+    none,
+  )
   expect(layout.regroups).toBe(0)
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest', stage: 'remote' }, { codex: { group: 'updatable' } }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest', stage: 'remote' }, { codex: { group: 'updatable' } }), {
+      activity: 'checking',
+    }),
+    none,
+  )
   expect(layout.groups.latest).toContain('codex')
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest' }, { codex: { group: 'updatable' } }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest' }, { codex: { group: 'updatable' } }), { activity: 'checking' }),
+    none,
+  )
   expect(layout.regroups).toBe(1)
   expect(layout.groups.updatable).toEqual(['codex'])
   layout = advanceLayout(layout, snapshot(all({ group: 'latest' }, { codex: { group: 'updatable' } })), none)
 
   // A second check starts a new round with its own count.
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest', stage: 'local' }, { codex: { group: 'updatable', stage: 'local' } }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest', stage: 'local' }, { codex: { group: 'updatable', stage: 'local' } }), {
+      activity: 'checking',
+    }),
+    none,
+  )
   expect(layout.regroups).toBe(0)
   layout = advanceLayout(layout, snapshot(all({ group: 'latest' }), { activity: 'checking' }), none)
   expect(layout.regroups).toBe(1)
@@ -156,7 +218,11 @@ it('「检查更新」重查：行原地写结果，查完统一重排一次；�
 
 it('没有标阶段的检查在 Host 空闲时归类一次', () => {
   let layout = initialLayout(snapshot(all({ group: 'latest' })))
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest' }, { pi: { group: 'updatable' } }), { activity: 'preloading' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest' }, { pi: { group: 'updatable' } }), { activity: 'preloading' }),
+    none,
+  )
   expect(layout.groups.updatable).toEqual([])
   layout = advanceLayout(layout, snapshot(all({ group: 'latest' }, { pi: { group: 'updatable' } })), none)
   expect(layout.regroups).toBe(1)
@@ -167,9 +233,16 @@ it('展开的行在重排点不动，收起后到下一次重排点才归类', (
   const remote = { group: 'latest', stage: 'remote' } as const
   let layout = initialLayout(snapshot(all({ group: 'latest' }, { zcode: { group: 'updatable' } })))
   expect(layout.groups.updatable).toEqual(['zcode'])
-  layout = advanceLayout(layout, snapshot(all(remote, { zcode: { group: 'updatable', stage: 'remote' } }), { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all(remote, { zcode: { group: 'updatable', stage: 'remote' } }), { activity: 'checking' }),
+    none,
+  )
 
-  const result = all({ group: 'latest' }, { zcode: { group: 'manual', reason: 'APP_MANAGED' }, codex: { group: 'updatable' } })
+  const result = all(
+    { group: 'latest' },
+    { zcode: { group: 'manual', reason: 'APP_MANAGED' }, codex: { group: 'updatable' } },
+  )
   const expanded = new Set<ActiveCliId>(['zcode'])
   layout = advanceLayout(layout, snapshot(result, { activity: 'checking' }), expanded)
   expect(layout.regroups).toBe(1)
@@ -188,20 +261,38 @@ it('展开的行在重排点不动，收起后到下一次重排点才归类', (
 })
 
 it('正在更新、排队中和刚有结果的行在空闲归类时不动，结果在下次检查时归类', () => {
-  const before = all({ group: 'latest' }, { codex: { group: 'updatable' }, claude: { group: 'updatable' }, pi: { group: 'updatable' } })
+  const before = all(
+    { group: 'latest' },
+    { codex: { group: 'updatable' }, claude: { group: 'updatable' }, pi: { group: 'updatable' } },
+  )
   let layout = initialLayout(snapshot(before))
   const after = all({ group: 'latest' }, { claude: { group: 'updatable' }, pi: { group: 'updatable' } })
   // Codex just finished (result kept), Claude is running, Pi is queued; the Host already regrouped all three.
   const running = snapshot(
     { ...after, claude: { group: 'latest' }, pi: { group: 'latest' } },
-    { operation: operation('claude', 'installing'), queue: ['pi'], results: [operation('codex', 'succeeded')] },
+    {
+      operation: operation('claude', 'installing'),
+      queue: ['pi'],
+      results: [operation('codex', 'succeeded')],
+    },
   )
   layout = advanceLayout(layout, running, none)
   expect(layout.groups.updatable).toEqual(['codex', 'claude', 'pi'])
 
   // A new check round regroups the finished row even though its result is still listed.
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest', stage: 'remote' }), { activity: 'checking', results: [operation('codex', 'succeeded')] }), none)
-  layout = advanceLayout(layout, snapshot(all({ group: 'latest' }), { activity: 'checking', results: [operation('codex', 'succeeded')] }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest', stage: 'remote' }), {
+      activity: 'checking',
+      results: [operation('codex', 'succeeded')],
+    }),
+    none,
+  )
+  layout = advanceLayout(
+    layout,
+    snapshot(all({ group: 'latest' }), { activity: 'checking', results: [operation('codex', 'succeeded')] }),
+    none,
+  )
   expect(layout.groups.updatable).toEqual([])
 })
 
@@ -211,7 +302,18 @@ it('新出现的 CLI 放进它的分区；从快照消失的行（含 pinned）�
   let layout = initialLayout(snapshot(withoutWorkbuddy, { activity: 'checking' }))
   expect(Object.values(layout.groups).flat()).not.toContain('workbuddy')
   // Mid-round, frozen otherwise: the new row still appears in its own section.
-  layout = advanceLayout(layout, snapshot({ ...withoutWorkbuddy, workbuddy: { group: 'notInstalled', installed: false }, pi: { group: 'updatable' } }, { activity: 'checking' }), none)
+  layout = advanceLayout(
+    layout,
+    snapshot(
+      {
+        ...withoutWorkbuddy,
+        workbuddy: { group: 'notInstalled', installed: false },
+        pi: { group: 'updatable' },
+      },
+      { activity: 'checking' },
+    ),
+    none,
+  )
   expect(layout.groups.notInstalled).toEqual(['workbuddy'])
   expect(layout.groups.updatable).toEqual([])
 
@@ -221,7 +323,9 @@ it('新出现的 CLI 放进它的分区；从快照消失的行（含 pinned）�
 })
 
 it('空闲时新快照直接归类（例如操作结束后的快照）', () => {
-  let layout = initialLayout(snapshot(all({ group: 'latest' }, { kimi: { group: 'notInstalled', installed: false } })))
+  let layout = initialLayout(
+    snapshot(all({ group: 'latest' }, { kimi: { group: 'notInstalled', installed: false } })),
+  )
   layout = advanceLayout(layout, snapshot(all({ group: 'latest' })), none)
   expect(layout.groups.notInstalled).toEqual([])
   expect(layout.groups.latest).toHaveLength(17)
@@ -231,28 +335,51 @@ it('空闲时新快照直接归类（例如操作结束后的快照）', () => {
 it('导航指示：操作或队列 → 转圈；可更新数 → 数量；否则无', () => {
   expect(navIndicator(undefined)).toBeUndefined()
   const cached = all({ group: 'latest' }, { codex: { group: 'updatable' }, pi: { group: 'updatable' } })
-  expect(navIndicator(snapshot(cached, { operation: operation('codex', 'downloading') }))).toEqual({ kind: 'spinner' })
+  expect(navIndicator(snapshot(cached, { operation: operation('codex', 'downloading') }))).toEqual({
+    kind: 'spinner',
+  })
   expect(navIndicator(snapshot(cached, { queue: ['pi'] }))).toEqual({ kind: 'spinner' })
   // A finished operation no longer counts as running.
-  expect(navIndicator(snapshot(cached, { operation: operation('codex', 'succeeded') }))).toEqual({ kind: 'count', count: 2 })
+  expect(navIndicator(snapshot(cached, { operation: operation('codex', 'succeeded') }))).toEqual({
+    kind: 'count',
+    count: 2,
+  })
   expect(navIndicator(snapshot(cached))).toEqual({ kind: 'count', count: 2 })
   expect(navIndicator(snapshot(all({ group: 'latest' })))).toBeUndefined()
 
   // Recheck after a finished check: cached count stays; only a check with no usable result spins.
-  expect(navIndicator(snapshot(cached, { activity: 'checking', checkedAt: 1 }))).toEqual({ kind: 'count', count: 2 })
-  expect(navIndicator(snapshot(all({ group: 'latest' }), { activity: 'checking', checkedAt: 1 }))).toBeUndefined()
+  expect(navIndicator(snapshot(cached, { activity: 'checking', checkedAt: 1 }))).toEqual({
+    kind: 'count',
+    count: 2,
+  })
+  expect(
+    navIndicator(snapshot(all({ group: 'latest' }), { activity: 'checking', checkedAt: 1 })),
+  ).toBeUndefined()
   // First check ever: spins even once some rows already have a result.
   expect(navIndicator(snapshot(cached, { activity: 'checking' }))).toEqual({ kind: 'spinner' })
-  expect(navIndicator(snapshot(all({ group: 'checking', stage: 'local' }), { activity: 'checking' }))).toEqual({ kind: 'spinner' })
   expect(
-    navIndicator(snapshot(all({ group: 'checking', stage: 'remote' }, { kimi: { group: 'notInstalled', installed: false } }), { activity: 'checking' })),
+    navIndicator(snapshot(all({ group: 'checking', stage: 'local' }), { activity: 'checking' })),
+  ).toEqual({ kind: 'spinner' })
+  expect(
+    navIndicator(
+      snapshot(
+        all({ group: 'checking', stage: 'remote' }, { kimi: { group: 'notInstalled', installed: false } }),
+        { activity: 'checking' },
+      ),
+    ),
   ).toEqual({ kind: 'spinner' })
   // Background preloading never spins.
-  expect(navIndicator(snapshot(all({ group: 'checking', stage: 'local' }), { activity: 'preloading' }))).toBeUndefined()
+  expect(
+    navIndicator(snapshot(all({ group: 'checking', stage: 'local' }), { activity: 'preloading' })),
+  ).toBeUndefined()
 })
 
 /** Minimal DOM stand-in: rows laid out at fixed heights inside a scrolled container. */
-function fakeContainer(rows: { cli: string; top: number; height: number }[], viewTop = 100, viewHeight = 300) {
+function fakeContainer(
+  rows: { cli: string; top: number; height: number }[],
+  viewTop = 100,
+  viewHeight = 300,
+) {
   const elements = rows.map((row) => ({
     row,
     getAttribute: (name: string) => (name === 'data-cli' ? row.cli : null),
@@ -315,17 +442,21 @@ it('重排播报：中英文各一句，不逐行播报', () => {
   })
   const finished = groups({ updatable: ['codex', 'kimi', 'pi'], failed: ['opencode'], latest: ['claude'] })
   expect(regroupAnnouncement(finished)).toBe('检查完成：3 个可更新，1 个检查失败')
-  expect(regroupAnnouncement(groups({ latest: ['claude'], notInstalled: ['kimi'] }))).toBe('检查完成：没有可更新的 CLI')
-  expect(regroupAnnouncement(groups({ checking: ['codex', 'claude'], notInstalled: ['kimi'], failed: ['hermes'] }))).toBe(
-    '已读取当前版本：1 个未安装，1 个检查失败，2 个正在查询最新版本',
+  expect(regroupAnnouncement(groups({ latest: ['claude'], notInstalled: ['kimi'] }))).toBe(
+    '检查完成：没有可更新的 CLI',
   )
+  expect(
+    regroupAnnouncement(
+      groups({ checking: ['codex', 'claude'], notInstalled: ['kimi'], failed: ['hermes'] }),
+    ),
+  ).toBe('已读取当前版本：1 个未安装，1 个检查失败，2 个正在查询最新版本')
   setLanguagePreference('en')
   expect(regroupAnnouncement(finished)).toBe('Check finished: 3 can be updated, 1 failed to check')
   expect(regroupAnnouncement(groups({ manual: ['zcode'] }))).toBe('Check finished: 1 need a manual update')
 })
 
 // 模拟：只检查页面 CSS 规则文本，不渲染任何真实 CLI 行。
-// DSH Desktop 0.2.2-rc.3 的最小窗口宽 520px：设置弹窗 min(800px,90vw)=468px，Modal 正文左右各 24px 余 420px，
+// DSH 0.2.2-rc.5 的 apps/desktop/src/main.ts 指定最小窗口宽 520px：设置弹窗 min(800px,90vw)=468px，Modal 正文左右各 24px 余 420px，
 // ≤640px 时导航列 clamp(112px,30vw,184px)=156px、列间距 16px，更新页只剩约 248px。
 it('keeps narrow update rows readable: buttons and the channel tag move before the status text gets thinner than 10 characters', async () => {
   const { cliUpdateStyles: css } = await import('../src/client/cli-update-styles.ts')

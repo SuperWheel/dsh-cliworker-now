@@ -7,7 +7,7 @@
 ## What Changes
 
 - 识别主对话中的明确 DSH 派遣指令，在同一次模型请求中指导主 Agent 将任务交给宿主 `subagent`。混合指令中的 DSH 与外部 CLI 子任务走各自的入口。讨论、比较、否定和引用不触发派遣指引。
-- 当前主 Agent 缺少 `subagent` 时，引导用户在 Agent 设置中启用子 Agent 工具。旧外部 Harness CLI 历史仍可查看，沿用只读边界。
+- 当前主 Agent 缺少 `subagent` 时，引导用户在「设置 → Agent 预设」改选包含子智能体委派工具的预设（如「标准模式」）后新开任务（rc.5 没有按预设开关单个工具的设置项）。旧外部 Harness CLI 历史仍可查看，沿用只读边界。
 - 将 CLI Worker 面板中 DSH 原生子 Agent 分组的中英文标题改为「Deepseek Harness」，无障碍名称使用同一产品名。沿用现有图标、计数和分组交互，窄宽度下保持可读。
 
 ## Capabilities
