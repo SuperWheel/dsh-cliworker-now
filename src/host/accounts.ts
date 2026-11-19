@@ -1,6 +1,7 @@
 import { piInstallationIntegrityMessage } from './pi-installation.mjs'
 import { deletePiOmpNativeConfigProvider } from './custom-provider-native.ts'
 import { deletePiOmpManagedProvider } from './custom-provider-managed.ts'
+import { ompCatalogDefinesProvider } from './omp-custom-provider.ts'
 import { spawnProbe } from './probe-process.ts'
 import { codebuddyEnvironment, readCodebuddyAccount } from './codebuddy-account.ts'
 import { isWorkBuddyCli } from './workbuddy-variant.ts'
@@ -85,7 +86,7 @@ import {
   listHermesAccountSources,
   selectHermesNousAfterLogin,
 } from './hermes-accounts.ts'
-import { listPiOmpAccountSources, piOmpStoredLoginExists } from './pi-omp-native.ts'
+import { listPiOmpAccountSources, piOmpConfiguredProviderIds, piOmpStoredLoginExists } from './pi-omp-native.ts'
 import { verifyHermesExecutable, HermesExecutableError } from './hermes-installation.ts'
 import { preparePiOmpAccountTerminal } from './pi-omp-accounts.ts'
 import { readKimiAccount, KIMI_CODE_LOGIN, KIMI_MANAGE_LOGIN, prepareKimiAccountDirectory } from './kimi-accounts.ts'
@@ -425,6 +426,22 @@ export class AccountManager {
     }
   }
   /** Synchronous reservation shared by native terminals, desktop accounts and form writes. */
+  /**
+   * Lower-case ids a new OMP custom provider must not reuse: every configured OMP source and stored
+   * credential row, the native login options, and `provider` itself when OMP's catalog defines it.
+   * Ids only; the catalog probe runs in an empty private HOME and sends no model request.
+   */
+  async ompProviderReservations(provider: string, signal: AbortSignal): Promise<Set<string>> {
+    const control = AbortSignal.any([signal, this.controller.signal])
+    const executable = await resolveCliExecutable('omp', this.backend, this.config, control)
+    const reserved = await piOmpConfiguredProviderIds('omp', this.config.stateDirectory, control)
+    for (const option of await this.nativeLoginProviders.read('omp', executable, control)) {
+      reserved.add(option.id.toLowerCase())
+      if (option.stores) reserved.add(option.stores.toLowerCase())
+    }
+    if (await ompCatalogDefinesProvider(this.backend, this.config, executable, provider, control)) reserved.add(provider)
+    return reserved
+  }
   reserveCustomProvider(cli: CliId): () => void {
     validateCli(cli)
     this.controller.signal.throwIfAborted()

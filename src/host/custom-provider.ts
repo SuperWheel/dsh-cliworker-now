@@ -1,8 +1,10 @@
-import { managedProviderReceiptChange } from './custom-provider-managed.ts'
+import { managedProviderLabels, managedProviderReceiptChange } from './custom-provider-managed.ts'
+import { addOmpProvider, OMP_API_TYPES, OMP_RESERVED_PROVIDER_IDS, ompLiteralKeyIssue, ompProviderNode, parseOmpModels } from './omp-custom-provider.ts'
 import { randomUUID, createHash } from 'node:crypto'
 import { mkdirSync, rmdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { parseDocument, isMap } from 'yaml'
 import type { CustomProviderField, CustomProviderForm, CustomProviderIssue, CustomProviderResult } from '../shared/custom-provider.ts'
 import { CLI_LABELS, type CliId } from '../shared/types.ts'
@@ -15,10 +17,11 @@ import { commitNativeFiles, nativeJson, NativeRollbackError, readNativeFile } fr
 import { readZCodeBuiltin, zcodeAuthDirectory } from './zcode-adapter.ts'
 import { saveZCodeProvider, ZCODE_API_TYPES, zcodeProviderFields, zcodeProviderPresets, zcodeProviderTarget } from './zcode-custom-provider.ts'
 
-type Supported = 'pi' | 'opencode' | 'hermes' | 'zcode'
+type Supported = 'pi' | 'omp' | 'opencode' | 'hermes' | 'zcode'
 const APIs: Record<Supported, readonly (readonly [string, string])[]> = {
   zcode: ZCODE_API_TYPES,
   pi: [['openai-completions', 'OpenAI Chat Completions'], ['openai-responses', 'OpenAI Responses'], ['anthropic-messages', 'Anthropic Messages'], ['google-generative-ai', 'Google Generative AI']],
+  omp: OMP_API_TYPES,
   opencode: [['@ai-sdk/openai-compatible', 'OpenAI 兼容'], ['@ai-sdk/openai', 'OpenAI'], ['@ai-sdk/anthropic', 'Anthropic']],
   hermes: [['chat_completions', 'OpenAI Chat Completions'], ['codex_responses', 'OpenAI Responses'], ['anthropic_messages', 'Anthropic Messages']],
 }
@@ -58,6 +61,17 @@ export class CustomProviders {
       const agent = piOmpAccountDirectory('pi', this.stateDirectory())
       if (env.PI_CODING_AGENT_DIR && ![resolve(home, '.pi', 'agent'), agent].includes(resolve(env.PI_CODING_AGENT_DIR))) return undefined
       return { config: join(agent, 'models.json'), auth: join(agent, 'auth.json'), display: `${join(agent, 'models.json')} + ${join(agent, 'auth.json')}` }
+    }
+    if (cli === 'omp') {
+      // A profile or a redirected agent root makes OMP read another models.yml.
+      if (env.OMP_PROFILE?.trim() || env.PI_PROFILE?.trim()) return undefined
+      const agent = piOmpAccountDirectory('omp', this.stateDirectory()), global = join(home, '.omp', 'agent')
+      if (env.PI_CODING_AGENT_DIR && ![global, agent].includes(resolve(env.PI_CODING_AGENT_DIR))) return undefined
+      // OMP reads models.yml first, else models.yaml, else migrates models.json; only models.yml is managed here.
+      for (const name of ['models.yaml', 'models.json']) if (readNativeFile(join(agent, name)).text !== undefined) return undefined
+      const config = join(agent, 'models.yml')
+      // Account login, discovery and Worker snapshots merge this plugin source after the global one.
+      return { config, auth: config, display: config, conflicts: { configs: [join(global, 'models.yml')], auth: join(global, 'agent.db') } }
     }
     if (cli === 'opencode') {
       if (env.OPENCODE_CONFIG || env.OPENCODE_CONFIG_DIR || env.OPENCODE_CONFIG_CONTENT || env.OPENCODE_AUTH_CONTENT) return undefined
@@ -122,9 +136,15 @@ export class CustomProviders {
       { id: 'models', label: '模型 ID', kind: 'list', required: true, help: '每行一个准确模型 ID；不请求服务商或推测模型能力。' },
     ]
     const token = this.ticket(source, targets)
+    if (cli === 'omp') return { cli, title: '添加其他服务商', description: '用你自己的 API Key 配置服务商，只保存到 CLI Worker 的 OMP 账号目录（models.yml），不修改 OMP 全局配置或 agent.db；不验证密钥或调用模型。',
+      fields, target: targets.display, nativeFallback: true, token }
     return { cli, title: '添加其他服务商', description: `保存到 ${CLI_LABELS[cli]} 原生配置，不验证密钥或调用模型。`, fields, target: targets.display, nativeFallback: true, token }
   }
-  save(source: CustomProviderSource, token: string, valuesJson: string, assertCurrent: () => void): CustomProviderResult {
+  /**
+   * `context.ompReserved`: lower-case provider ids the Host read from every OMP source (models and
+   * agent.db rows) plus OMP's own catalog for this id. OMP saves are refused without it.
+   */
+  save(source: CustomProviderSource, token: string, valuesJson: string, assertCurrent: () => void, context: { ompReserved?: ReadonlySet<string> } = {}): CustomProviderResult {
     const ticket = this.tickets.get(token)
     if (!ticket || ticket.expires <= this.now() || ticket.source !== this.source(source)) {
       this.tickets.delete(token)
@@ -170,8 +190,41 @@ export class CustomProviders {
       if (secret) for (const [field, value] of Object.entries({ providerId: id, providerLabel: label, baseUrl: url, api, models })) {
         if ((Array.isArray(value) ? value : [value]).some(item => typeof item === 'string' && item.includes(secret))) issue(field, '此字段不能包含 API Key')
       }
+      if (cli === 'omp' && secret && !issues.some(item => item.field === 'apiKey')) {
+        const keyIssue = ompLiteralKeyIssue(secret, this.options.env ?? process.env)
+        if (keyIssue) issue('apiKey', keyIssue)
+      }
       if (issues.length) return { ok: false, issues }
       const config = readNativeFile(targets.config), auth = readNativeFile(targets.auth, true)
+      if (cli === 'omp') {
+        const reserved = context.ompReserved
+        if (!reserved) return failed('无法确认已有服务商，请稍后重试或在原生终端中配置', 'providerId')
+        const file = auth, local = parseOmpModels(file.text), global = parseOmpModels(readNativeFile(targets.conflicts!.configs[0]!).text)
+        // Effective names: a saved label, otherwise the id. Compare trimmed and case-insensitive.
+        const labels = managedProviderLabels(dirname(file.path), local.value, {})
+        const names = [...Object.keys(local.providers).map(key => labels.get(key) ?? key), ...Object.keys(global.providers)].map(name => name.trim().toLowerCase())
+        const ids = [...Object.keys(local.providers), ...Object.keys(global.providers)].map(key => key.toLowerCase())
+        if (reserved.has(id) || OMP_RESERVED_PROVIDER_IDS.includes(id) || isLoginProvider(cli, id) || ids.includes(id) || names.includes(id))
+          return failed('服务商 ID 已存在或与 OMP 内置服务商重名，请使用其他 ID', 'providerId')
+        if (names.includes(label.toLowerCase()) || reserved.has(label.toLowerCase())) return failed('服务商名称已存在，请使用其他名称', 'providerLabel')
+        const node = ompProviderNode({ baseUrl: url, api, apiKey: secret, models: models as string[] })
+        const text = addOmpProvider(file.text, id, node)
+        const changes = [{ file, text }, managedProviderReceiptChange(dirname(file.path), id, node, undefined, label === id ? undefined : label)]
+        commitNativeFiles(changes, () => {
+          assertCurrent()
+          if (ticket.expires <= this.now()) throw new Error('Expired')
+          if (JSON.stringify(this.targets(source.cli)) !== ticket.targets) throw new Error('Changed account source')
+        }, () => {
+          // Independent readback of both files: content, private mode and the literal key.
+          for (const change of changes) {
+            const actual = readNativeFile(change.file.path)
+            if (actual.text !== change.text || actual.mode !== 0o600) throw new Error('Readback failed')
+          }
+          if (!isDeepStrictEqual(parseOmpModels(readNativeFile(file.path).text).providers[id], node)) throw new Error('Readback failed')
+        })
+        this.tickets.delete(token)
+        return { ok: true, cli, providerId: id, providerLabel: label, notice: '已保存到 CLI Worker 的 OMP 账号目录；密钥有效性与模型可用性尚未验证' }
+      }
       let configText: string, authText: string
       if (cli === 'hermes') {
         // Match the existing own-account reader's bounded dotenv subset; no redirects or interpolation.
