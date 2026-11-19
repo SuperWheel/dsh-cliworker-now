@@ -5,7 +5,7 @@
 - [x] 1.1 在指定独立 worktree 实施，记录升级前提交、锁文件非 DSH 包集合及同环境 macOS 全量 Vitest 基线，复核 npm 发布时间、tag commit、Desktop 版本和自带 `dsh` 版本。
   - 实施 worktree 为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-dsh-rc5-adapt`。
   - 独立验收目录为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-dsh-rc5-adapt`，用于干净安装对照、临时 `HOME`／`DSH_HOME`、验收工作区及产物。测试根和私有验收目录权限为 0700。
-  - 基线分支 `dsh-022rc5-adapt`、干净提交 `c6df94a144c809869ed603e95cf4bce78987310c`。macOS、Node 22.23.1、corepack pnpm 11.25.0。修改跟踪文件之前完成根目录冻结安装和 `corepack pnpm build`，均退出 0。锁文件 1,037 项中非 DSH 705 项，排序摘要见 1.3。
+  - 基线分支 `dsh-022rc5-adapt`、干净提交 `c6df94a144c809869ed603e95cf4bce78987310c`。macOS、Node 22.23.1、corepack pnpm 11.25.0。修改跟踪文件之前完成根目录冻结安装和 `corepack pnpm build`，均退出 0。首次冻结安装复用了现有 `~/Library/pnpm/store/v11`；后续显式使用 worktree 内的 store。锁文件 1,037 项中非 DSH 705 项，排序摘要见 1.3。
   - 首次 `KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm vitest run --maxWorkers=2` 退出 1，366 文件（360 通过、2 失败、4 跳过），8,857 项（8,830 通过、12 失败、15 跳过），另有 3 个未处理错误，295.81 秒。将 HOME 从被测试仓库内部移至所列验收目录，恢复原 PATH 的 Python 3.12.13，并只为 Git 指定系统二进制后，Qoder／Hermes 两文件 94 项全部通过。
   - 按修正环境重测未改动基线，退出 1，366 文件（361 通过、1 失败、4 跳过），8,857 项（8,841 通过、1 失败、15 跳过），362.22 秒。下载总时限模拟用例的流提前关闭，两次单文件复跑为 17/18，通过 c6df94a 的独立 rc.3 安装夹具再次单跑为 18/18（6.61 秒）。升级后全量使用同一外部 HOME、原 Python 与双 worker。
   - 官方 npm 发布时间分别为 rc.4 `2026-11-17T17:03:03.170Z`、rc.5 `2026-11-18T13:17:23.604Z`，查询时 latest 和 next 均为 rc.5。Git tag 解析为 `3f321d32bfe382212a8ed8785c1d47a5a300aa23`、`9c2670d3bce5275e0d1610272958121af87787bb`。只读 Info.plist 和隔离 HOME 下自带 `runtime/cli/bin/dsh --version` 均得到 0.2.2-rc.5。测试根、验收目录与临时 HOME 权限均为 0700。
@@ -20,17 +20,22 @@
 
 ## 2. 四个原生界面包的补丁迁移与分发 〔后端｜5h｜前置 1〕
 
-- [ ] 2.1 在官方 rc.5 commit 建干净与补丁工作树，三方迁移 rc.3 的 48 文件补丁，导出 `host-extensions/dsh-0.2.2-rc.5/source.patch`。对比旧补丁的文件清单和内容，记录任何差异和处理原因，验证补丁反向应用及 `git diff --check`。
+- [x] 2.1 在官方 rc.5 commit 建干净与补丁工作树，三方迁移 rc.3 的 48 文件补丁，导出 `host-extensions/dsh-0.2.2-rc.5/source.patch`。对比旧补丁的文件清单和内容，记录任何差异和处理原因，验证补丁反向应用及 `git diff --check`。
   - 上游干净与补丁工作树分别放在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-dsh-rc5-upstream-clean` 和 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/worktrees/2026-11-19-dsh-rc5-upstream-patched`。
-  - （未执行：待创建上游对照工作树及迁移补丁。）
-- [ ] 2.2 同步 rc.5 的独立构建依赖、锁文件和 workspace 清单，冻结安装复核。使用相同 Node、代理和依赖配置分别运行补丁前后的 `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 上游 Vitest。按包记录通过、失败、跳过数，逐项追溯并处理失败。
-  - （未执行：待冻结独立依赖及运行补丁前后对照。）
-- [ ] 2.3 准备依赖链接、通过四包类型检查，运行 `node scripts/build-host-extension.mjs --target 0.2.2-rc.5` 及同目标 `--verify`。用 `node scripts/vendor-host-extensions.mjs --from <经校验的产物目录>` 更新 `runtime-host/`，再以不带参数的 vendor 命令复核。核对四包 `package.json` 及 manifest 均指向 rc.5、继承的 Host 和声明文件及 ui-chat 图片与官方同版本包逐字节一致，并通过 `tests/host-runtime-package.test.ts`。
-  - （未执行：待构建和校验随包资源。）
-- [ ] 2.4 在独立夹具验证 rc.3 旧目标的 `build-host-extension --verify` 及显式 vendor 路径可用，复核 rc.5 随包清单和旧目标资产均未被夹具覆盖。
-  - （未执行：待复用旧目标的已校验产物或按固定来源重建。）
-- [ ] 2.5 同步 `README.md`、`README.en.md`、`doc/design.md`、`doc/protocols/native-conversation-host-extension.md` 和生成的 `runtime-host/README.md` 的当前宿主适配版本。核对新扩展目录 README 的来源和构建说明，检索所有当前适配版本文字均为 0.2.2-rc.5，旧版本历史及对应证据可查。
-  - （未执行：待确认本次最终构建来源及验收范围。）
+  - 用 `git worktree add --detach` 建立上述两棵官方 rc.5 树，HEAD 均为设计中的完整 commit。补丁树 `git apply --3way` 成功，`build-host-extension --target 0.2.2-rc.5 --source <补丁树> --export-patch` 导出 48 文件、0 冲突。新旧补丁 cmp、补丁树反向应用检查和 `git diff HEAD --check` 均退出 0，文件清单及内容逐字节相同。SHA256 为 `e96e40bea9924a54d1058adfdaf16fb9a95864659aec19b12c6dcc480f279439`，保留 rc.3 现有行为。
+- [x] 2.2 同步 rc.5 的独立构建依赖、锁文件和 workspace 清单，冻结安装复核。使用相同 Node、代理和依赖配置分别运行补丁前后的 `ui-session`、`ui-conversation`、`ui-subagent`、`ui-chat` 上游 Vitest。按包记录通过、失败、跳过数，逐项追溯并处理失败。
+  - 构建目录 `.cache/dsh-host-build-deps-022rc5/` 的 package.json、workspace 和锁文件冻结安装退出 0。独立锁 991 项，662 项非 DSH 清单与 rc.3 一致。上游两树按各自相同的 rc.5 上游锁、Node 24.22.1、pnpm 11.28.5 冻结安装，沿用代理，仅从 Vitest setupFiles 排除清除代理的测试钩子。
+  - `KIMI_CODE_NO_AUTO_UPDATE=1 node node_modules/vitest/vitest.mjs run packages/client/ui-session packages/client/ui-conversation packages/client/ui-subagent packages/client/ui-chat --config <保留代理的配置> --maxWorkers=2`，两树均退出 0。按 session、conversation、subagent、chat 排列，干净树分别通过 30、914、121、1,016 项（122 文件／2,081 项，77.43 秒），补丁树分别通过 36、964、122、1,095 项（128 文件／2,217 项，79.27 秒），各包均 0 失败、0 跳过。
+  - 大包联网首次重试超时后，使用工作树内的官方包缓存和已安装 rc.3 的 store 副本，通过同一冻结锁复核。上游的完整依赖与构建用的 863 条别名分在不同 checkout。
+- [x] 2.3 准备依赖链接、通过四包类型检查，运行 `node scripts/build-host-extension.mjs --target 0.2.2-rc.5` 及同目标 `--verify`。用 `node scripts/vendor-host-extensions.mjs --from <经校验的产物目录>` 更新 `runtime-host/`，再以不带参数的 vendor 命令复核。核对四包 `package.json` 及 manifest 均指向 rc.5、继承的 Host 和声明文件及 ui-chat 图片与官方同版本包逐字节一致，并通过 `tests/host-runtime-package.test.ts`。
+  - `generate-dependency-links` 复核 863 条别名，303 条 DSH 版本变化、0 项非 DSH 版本变化，删除已由 pmspec 替代且四包不用的旧规划 CLI 别名。独立 workspace 沿用旧例外并追加 rc.5，最终冻结安装退出 0，991 项供应链策略通过。三份实际构建输入与冻结清单 cmp 一致。
+  - `build-host-extension --target 0.2.2-rc.5 --prepare-links`、四包源码类型检查、相同目标的构建／更新 README 后的重建及 `--verify` 均退出 0。构建核对 631 文件；显式 vendor 和无参数复核均退出 0，runtime 4 包、217 文件（另有 manifest）。四包及 manifest 版本、tag 和 commit 与 rc.5 固定来源一致。runtime manifest SHA256 为 `536941144672da6d3282162530849a38351358bd12a1bcb8e7e6444481791512`。
+  - 独立读取官方 rc.5 npm 包，202 个 Host／声明文件均逐字节匹配，ui-chat 图片集合、导出及 21,631 字节鲸鱼图相同，图片 SHA256 为 `0fd990d118113d19af7af4480f2b55d610b103451a08be6f7bf5a146823f8bd3`。最终 `tests/host-runtime-package.test.ts` 单跑 1 文件 12 项全过，退出 0。
+- [x] 2.4 在独立夹具验证 rc.3 旧目标的 `build-host-extension --verify` 及显式 vendor 路径可用，复核 rc.5 随包清单和旧目标资产均未被夹具覆盖。
+  - 原 rc.3 构建产物目录已不存在。在 `.cache/rc3-fixture/` 用官方 rc.3 tag、旧补丁、原三份构建依赖重建，按冻结清单从主仓库只读拷贝旧工具别名。使用本分支目标表和脚本，`build-host-extension --target 0.2.2-rc.3 --verify` 退出 0（631 文件）；显式 vendor 导入和 `--target 0.2.2-rc.3` 校验均退出 0（4 包 217 文件）。夹具内以默认目标检查这套 rc.3 产物如期退出 1，提示所选目标 rc.5 不符。
+  - 根目录无参数 vendor 仍通过；夹具操作前后 rc.5 runtime manifest SHA256 均为 2.3 所列值。`git diff --quiet c6df94a -- host-extensions/dsh-0.2.2-rc.3` 退出 0。
+- [x] 2.5 同步 `README.md`、`README.en.md`、`doc/design.md`、`doc/protocols/native-conversation-host-extension.md` 和生成的 `runtime-host/README.md` 的当前宿主适配版本。核对新扩展目录 README 的来源和构建说明，检索所有当前适配版本文字均为 0.2.2-rc.5，旧版本历史及对应证据可查。
+  - 中文／英文 README 的需求行和徽标、设计文档的新版本段落、宿主协议开头、生成的 runtime README 和新扩展 README 均核对为 rc.5，保留带日期的旧版历史和 rc.3 扩展目录。新 README 记录真实 tag、commit、补丁摘要、四包构建命令、上游 Vitest 配置与结果；纳入最终重建后与产物目录逐字节一致。隔离 Web、Desktop、Windows 与真实模型分别由 3.3、4.x 跟进。
 
 ## 3. 插件回归与隔离 Web 宿主 〔测试｜4h｜前置 2〕
 

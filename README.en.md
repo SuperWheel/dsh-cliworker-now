@@ -7,7 +7,7 @@
 **A shared workspace for your AI CLIs inside DeepSeek Harness.**
 
 [![npm](https://img.shields.io/npm/v/dsh-cliworker-now?logo=npm)](https://www.npmjs.com/package/dsh-cliworker-now)
-[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.3-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH](https://img.shields.io/badge/DSH-0.2.2--rc.5-4D6BFE)](https://github.com/deepseek-ai/deepseek-harness)
 [![CLIs](https://img.shields.io/badge/CLIs-17-FF7A45)](#supported-clis)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D22.19-3C873A?logo=node.js&logoColor=white)](https://nodejs.org)
 [![Platform](https://img.shields.io/badge/Platform-macOS_%7C_Windows-6E56CF)](#install-and-update)
@@ -25,17 +25,17 @@
 
 dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in Harness as **CLI Worker / CLI Worker Now**. It brings your terminal AI CLIs into Harness and splits the work like this:
 
-| 🗣️ Main conversation | 🤖 CLI agent | 📋 Right sidebar |
-| --- | --- | --- |
+| 🗣️ Main conversation                               | 🤖 CLI agent                                       | 📋 Right sidebar                                                               |
+| -------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------ |
 | Name a CLI to dispatch work and receive the result | Runs with that CLI's own account, models and tools | Shows the process, usage and status live in Harness's native conversation view |
 
 **How one task flows**: name a CLI in the main conversation → choose model, effort and role → the agent runs in the background → follow it in the sidebar → the result returns to the main conversation → follow up by name
 
-| Use case | Example |
-| --- | --- |
-| 💻 Development | Ask Codex to review code, then keep asking the same agent |
-| ✍️ Writing and editing | Separate roles for logic, style and commercial review |
-| ⏳ Long tasks | Conversations and run records are kept, so you can continue after it ends |
+| Use case               | Example                                                                   |
+| ---------------------- | ------------------------------------------------------------------------- |
+| 💻 Development         | Ask Codex to review code, then keep asking the same agent                 |
+| ✍️ Writing and editing | Separate roles for logic, style and commercial review                     |
+| ⏳ Long tasks          | Conversations and run records are kept, so you can continue after it ends |
 
 > The plugin includes no model service, subscription or API quota; model calls go through each CLI's own account.
 
@@ -62,30 +62,30 @@ dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in
 
 ## Screenshots
 
-| Main conversation summary beside an agent's conversation | Choose model, effort and role on first use |
-| :---: | :---: |
-| ![The main conversation summarizes each CLI's reply while the Antigravity agent's own conversation is open on the right](doc/assets/readme/worker-conversation.webp) | ![Question card choosing an Antigravity model](doc/assets/readme/dispatch-model-card.webp) |
-| **Antigravity generates an image; the main agent checks the file** | **Codex makes a GIF and inserts it into Word with Computer Use** |
-| ![Antigravity agent generating a red car image](doc/assets/readme/agy-image-task.webp) | ![Codex agent inserting a GIF into a Word document](doc/assets/readme/codex-computer-use.webp) |
-| **Account and project default model** | **Step-by-step login** |
-| ![Antigravity account and project defaults](doc/assets/readme/account-model-settings.webp) | ![Antigravity step-by-step login window](doc/assets/readme/graphical-login.webp) |
-| **Check and update CLIs in one place** | **Agent role presets** |
-| ![Update CLIs page listing available updates](doc/assets/readme/cli-update.webp) | ![Agent presets page](doc/assets/readme/role-presets.webp) |
+|                                                       Main conversation summary beside an agent's conversation                                                       |                           Choose model, effort and role on first use                           |
+| :------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------: |
+| ![The main conversation summarizes each CLI's reply while the Antigravity agent's own conversation is open on the right](doc/assets/readme/worker-conversation.webp) |   ![Question card choosing an Antigravity model](doc/assets/readme/dispatch-model-card.webp)   |
+|                                                  **Antigravity generates an image; the main agent checks the file**                                                  |                **Codex makes a GIF and inserts it into Word with Computer Use**                |
+|                                        ![Antigravity agent generating a red car image](doc/assets/readme/agy-image-task.webp)                                        | ![Codex agent inserting a GIF into a Word document](doc/assets/readme/codex-computer-use.webp) |
+|                                                                **Account and project default model**                                                                 |                                     **Step-by-step login**                                     |
+|                                      ![Antigravity account and project defaults](doc/assets/readme/account-model-settings.webp)                                      |        ![Antigravity step-by-step login window](doc/assets/readme/graphical-login.webp)        |
+|                                                                **Check and update CLIs in one place**                                                                |                                     **Agent role presets**                                     |
+|                                           ![Update CLIs page listing available updates](doc/assets/readme/cli-update.webp)                                           |                   ![Agent presets page](doc/assets/readme/role-presets.webp)                   |
 
 > Captured in Harness Desktop on macOS in 2026-11 (Chinese UI), with account details blurred.
 
 ## Supported CLIs
 
-| CLI | Native transport | CLI | Native transport |
-| --- | --- | --- | --- |
-| Antigravity | ACP (legacy stream-json fallback) | OMP (Oh My Pi) | RPC |
-| Codex | app-server | Pi | RPC |
-| Claude Code | stream-json | Hermes Agent | Runs API |
-| Kimi Code | ACP | OpenCode | HTTP + SSE |
-| Official MiMo Code | HTTP + SSE | Qoder | ACP |
-| ZCode | app-server | Qoder CN | ACP |
-| Grok Build | ACP | CodeBuddy Code | ACP |
-| TRAE CN | ACP | WorkBuddy CN · WorkBuddy | ACP · **experimental** |
+| CLI                | Native transport                  | CLI                      | Native transport       |
+| ------------------ | --------------------------------- | ------------------------ | ---------------------- |
+| Antigravity        | ACP (legacy stream-json fallback) | OMP (Oh My Pi)           | RPC                    |
+| Codex              | app-server                        | Pi                       | RPC                    |
+| Claude Code        | stream-json                       | Hermes Agent             | Runs API               |
+| Kimi Code          | ACP                               | OpenCode                 | HTTP + SSE             |
+| Official MiMo Code | HTTP + SSE                        | Qoder                    | ACP                    |
+| ZCode              | app-server                        | Qoder CN                 | ACP                    |
+| Grok Build         | ACP                               | CodeBuddy Code           | ACP                    |
+| TRAE CN            | ACP                               | WorkBuddy CN · WorkBuddy | ACP · **experimental** |
 
 - **Aliases**: `agy` → Antigravity, `glm / zhipu / 智谱` → ZCode, `harmes` → Hermes Agent. An unclear name returns candidates and never dispatches.
 - **Before you start**: install the CLI's native build and finish its own login or API setup. Both WorkBuddy editions use the CLI bundled in their desktop apps and rely on non-public interfaces; TRAE CN uses the official `traecli` only.
@@ -93,22 +93,22 @@ dsh-cliworker-now is a **multi-CLI agent plugin for DeepSeek Harness**, shown in
 
 ## Capabilities
 
-| Capability | What it does |
-| --- | --- |
-| Dispatch and follow-up | Dispatch by naming a CLI, follow up by agent name, or continue in the child session. Messages sent while it runs are queued or steered by the native rules |
-| Project settings | Default model and effort per project; a new main conversation in the same project asks whether to reuse them |
-| Goal · plan · feedback · fork | Use these Harness features in child sessions; plan maps to the CLI's native plan mode and fork creates a native fork; unsupported entries explain why |
-| Accounts | Step-by-step login, logout, switching and multiple accounts; Pi, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available |
-| Update CLIs | Check, update all, update one or install; updates stay on the existing installation and never add a second copy; official and plugin download channels with resume and cleanup |
-| Sibling dispatch | An agent can dispatch sibling Workers; DSH's own child agents also appear in the CLI Worker window (dsh-1, dsh-2, …) |
-| Parallel writes (optional) | When on, a conflicting writer runs in a plugin-owned copy and the main agent merges it back afterwards (no Git required, nothing is committed) |
-| Time limits and language | Total limit 30 minutes by default plus an optional idle limit; UI follows DSH, Chinese or English |
+| Capability                    | What it does                                                                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dispatch and follow-up        | Dispatch by naming a CLI, follow up by agent name, or continue in the child session. Messages sent while it runs are queued or steered by the native rules                     |
+| Project settings              | Default model and effort per project; a new main conversation in the same project asks whether to reuse them                                                                   |
+| Goal · plan · feedback · fork | Use these Harness features in child sessions; plan maps to the CLI's native plan mode and fork creates a native fork; unsupported entries explain why                          |
+| Accounts                      | Step-by-step login, logout, switching and multiple accounts; Pi, OpenCode, Hermes and ZCode accept your own API providers; the native account terminal is still available      |
+| Update CLIs                   | Check, update all, update one or install; updates stay on the existing installation and never add a second copy; official and plugin download channels with resume and cleanup |
+| Sibling dispatch              | An agent can dispatch sibling Workers; DSH's own child agents also appear in the CLI Worker window (dsh-1, dsh-2, …)                                                           |
+| Parallel writes (optional)    | When on, a conflicting writer runs in a plugin-owned copy and the main agent merges it back afterwards (no Git required, nothing is committed)                                 |
+| Time limits and language      | Total limit 30 minutes by default plus an optional idle limit; UI follows DSH, Chinese or English                                                                              |
 
 Per-CLI support for plan, fork and more details are in [feature details and verification boundaries](doc/feature-details.en.md).
 
 ## Install and update
 
-**Requirements**: macOS or Windows; DeepSeek Harness 0.2.2-rc.3 (current target); Node.js ≥ 22.19.0.
+**Requirements**: macOS or Windows; DeepSeek Harness 0.2.2-rc.5 (current target); Node.js ≥ 22.19.0.
 
 Finish active tasks and **quit Harness completely**, then run:
 
@@ -161,11 +161,11 @@ See [role presets](doc/role-presets.md) and [usage details](doc/usage-details.en
 
 ## Permissions and data
 
-| Level | Behavior |
-| --- | --- |
-| **Ask** (named after what each CLI can actually do) | Reads and read-only commands run directly; edits and commands with side effects ask you first, and nothing changes if you refuse |
-| **Auto-approve** | Uses the CLI's native auto-approval, where the CLI decides; CLIs without one use their native edit mode and still ask before commands |
-| **Full access** | Uses the CLI's native no-confirmation mode. **The CLI can run commands, change files outside the workspace and use the network without asking; use it only for tasks you trust** |
+| Level                                               | Behavior                                                                                                                                                                         |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ask** (named after what each CLI can actually do) | Reads and read-only commands run directly; edits and commands with side effects ask you first, and nothing changes if you refuse                                                 |
+| **Auto-approve**                                    | Uses the CLI's native auto-approval, where the CLI decides; CLIs without one use their native edit mode and still ask before commands                                            |
+| **Full access**                                     | Uses the CLI's native no-confirmation mode. **The CLI can run commands, change files outside the workspace and use the network without asking; use it only for tasks you trust** |
 
 - **Your choice wins**: an agent you never set follows the main conversation's permission preset; once you pick a level, dispatches and follow-ups from the main agent use it.
 - **Approvals go to DSH**: tasks dispatched by the main agent ask on the main conversation page; turns you start in a child session ask there. Writes are always refused while Harness is in plan mode.
