@@ -33,7 +33,7 @@
 - [x] 3.3 在 `tools/post-execute` 替换 `list_agents` 的结构化名称字段，用同名文本出现在描述、路径具有相似前缀、诊断和错误结果的用例核对只改目标路径，保留状态、可见性和工具原有渲染。
   - `tools/post-execute`：只替换 `list_agents` 成员行（running/inactive）路径首段，`lead`、诊断行、描述、状态、顺序不变；描述含同名文本、相似前缀路径、错误结果不改。
 - [x] 3.4 对照 rc.5 的工具名、入参和输出声明记录兼容点；检查热卸载/重载后无重复监听，与宿主审计和渲染的实机对照见 6.3。
-  - rc.3 与 rc.5 的 `packages/subagent/**`、`packages/core/tools/**` 源码除 package.json 版本号外无差异（`git diff --stat dsh-v0.2.2-rc.3 dsh-v0.2.2-rc.5`）。钩子经 `ctx.effect` 注册（`service-lifecycle.ts` `cliworker:agent-name-tools`），返回的 disposer 一次卸载三个监听；测试核对卸载后不再触发。与宿主审计、渲染的实机对照见 6.3（未执行）。
+  - rc.3 与 rc.5 的 `packages/subagent/**`、`packages/core/tools/**` 源码除 package.json 版本号外无差异（`git diff --stat dsh-v0.2.2-rc.3 dsh-v0.2.2-rc.5`）。钩子经 `ctx.effect` 注册（`service-lifecycle.ts` `cliworker:agent-name-tools`），返回的 disposer 一次卸载三个监听；测试核对卸载后不再触发。与宿主审计、渲染的实机对照见 6.3（2026-11-20 已在 Mac Desktop 执行）。
 
 ## 4. 插件面板与 rc.5 随包页头 〔前端｜8h｜前置 2〕
 
@@ -67,11 +67,11 @@
   - 2026-11-20，工作区 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-v092-desktop-acceptance/ws`，父会话 `session-c2274839-e749-4181-9aef-ae5f4ed0c4d0`（主模型 GLM-5.3-Flash）。DSH 原生子 Agent 以 `codex-1` 创建（childId `bf307a19…`）；随后同时派遣 Codex（GPT-6-Luna Low）、Antigravity（Gemini 3.8 Flash Low）、ZCode（glm-5.3-flash Low），回执与面板依次为 `codex-2`（`codex-1` 已被原生条目占用，自动换号）、`agy-1`、`zcode-1`，主回复、面板列表与原生切换器名称一致；三个文件 `name-*.txt` 实际写出（Codex 经隔离副本合并）。
   - 空闲改名：14:36:49 `codex-2`→`cx-renamed`，14:37:25 原生 `codex-1`→`dsh-renamed`（面板标注「仅修改显示名」）。运行中改名：Antigravity 续聊开始约 14 秒后 14:38:31 `agy-1`→`agy-live`，改名成功，之后该轮仍有输出事件（06:38:31.156–31.608Z）。`~/.dsh/cliworker-now/agent-name-overrides.json`（0600）记录三条，均含 `registeredName` 与 `formerNames`；父会话日志 `subagent/catalog` 始终 4 条，改名未新增目录条目；三个 Worker 的 childId 与 CLI 会话 ID 不变，`nameAliases` 记录曾用名。
   - Antigravity 那一轮以「CLI 工具缺少终态」失败，与改名无关：agy 把 60 秒循环命令自行转到后台并结束本轮，事件里该命令始终是 RUNNING，`agy-ticks.txt` 只有 2 行；这是 v0.8.1 起 `native-acp.mjs` 的保守判定。插件任务结果已用新名 `agy-live`，但 DSH 原生的结束通知仍写登记名「Background subagent agy-1 failed」，主 Agent 据此沿用旧名；属设计决定 2 中 rc.5 原生署名沿用登记名的已知限制，旧名仍可寻址。
-- [ ] 6.3 **真实工具寻址。** 对照 `list_agents` 的模型可见结果与工具卡，用新名和旧名分别发送、续聊，在可控的独立轮次中验证按新旧名中断。核对送达 childId、消息 ID、审计、接纳与实际停止；验证主 Agent 用新名或曾用名显式创建被拒绝，并观察主 Agent 与子 Agent 作用域钩子是否触发。
+- [x] 6.3 **真实工具寻址。** 对照 `list_agents` 的模型可见结果与工具卡，用新名和旧名分别发送、续聊，在可控的独立轮次中验证按新旧名中断。核对送达 childId、消息 ID、审计、接纳与实际停止；验证主 Agent 用新名或曾用名显式创建被拒绝，并观察主 Agent 与子 Agent 作用域钩子是否触发。
   - 2026-11-20 14:53–14:59 第一轮：主 Agent `list_agents` 工具卡与模型可见文本均为 `lead`、`dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`；曾用名 `codex-1` 的 `send_message` 送达，子会话实际回复 `pong-old`；`cliworker_followup` 按现名 `cx-renamed` 与曾用名 `agy-1` 均续上原 Worker（回执 `agentName` 为现名，沿用原模型，无选型卡），读回 `codex ok`、`agy ok`；`subagent` 显式用现名 `cx-renamed`、曾用名 `codex-2` 创建均被插件钩子拒绝（「名称已被同一会话中的子 Agent 使用（含改名前的名称）」），目录未新增。
   - 发现缺陷：按现名 `dsh-renamed` 的 `send_message` 四次都返回 DSH 的 `subagent "dsh-renamed" is unavailable`。15:03 临时诊断（`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-agent-name-sync/name-tools-diag.log`）显示 Desktop 把控制工具注册在 Agent 作用域，全局视图没有 `send_message`（`hasGlobal:false`，`sameAsScoped:true`），钩子按全局视图比对后总是交回 DSH。修复 2dc06d8 改为按调用者作用域比对，`tests/agent-name-tools.test.ts` 新增作用域注册加本步 toolSet 的模拟用例（修复前失败、修复后通过），名称相关 4 个文件 33 项通过。
   - 15:10 复测：现名 `send_message` 工具卡「消息已送达」，子会话 `bf307a19-a8e6-460b-a8a9-08d44c0d77da` 收到「Agent lead sent a message」并回复 `pong-new3`；让该子 Agent 自己调 `list_agents`，它看到 `lead`、`dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`，子 Agent 作用域钩子同样生效。
-  - 未通过项（故不勾选）：按新旧名中断。Desktop rc.5 主 Agent 工具列表没有 `interrupt_agent`（主 Agent 两次明确答复没有该工具），无法实机触发；中断路径只有 `agent-name-tools.test.ts` 的模拟覆盖；是否以模拟覆盖接受本项，待用户决定。消息 ID 未在工具文本中返回，以子会话收信记录代替核对送达。
+  - 按新旧名中断未实测：Desktop rc.5 主 Agent 工具列表没有 `interrupt_agent`（主 Agent 两次明确答复没有该工具），无法实机触发；中断路径只有 `agent-name-tools.test.ts` 的模拟覆盖。2026-11-20 用户决定以模拟覆盖接受该项，故勾选；Desktop 提供 `interrupt_agent` 后仍应实测。消息 ID 未在工具文本中返回，以子会话收信记录代替核对送达。
 - [x] 6.4 **真实重启与存量对照。** 冷启动时先看页头再打开插件面板，分别回读列表、面包屑、侧栏的名称，旧名仍定位原 ID；核对旧 Worker 采用 `agent-N`、原生条目沿用目录名、原生显示改名标注与实际署名。记录未覆盖界面或无法验证的平台、账号与官方接口。
   - 2026-11-20 15:03 冷启动后先不开面板：原生切换器「4 个子智能体」依次为 `dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`；子会话页头按钮为「切换子智能体：只读 README.md 并一句话总结」，面包屑为「DSH subagent 创建 codex-1 总结 README / 只读 README.md 并一句话总结」，现名只在展开切换器时出现；子会话里的历史消息没有作者署名。左侧栏只显示用户的会话标题（含 `codex-1` 字样，属聊天标题，按设计保留）。
   - 随后打开面板：Deepseek Harness 分组 `dsh-renamed`（标「仅修改显示名」）、Antigravity `agy-live`、Codex `cx-renamed`、ZCode `zcode-1`，详情头为「现名｜任务标题」（原生条目只显示任务标题）。`cliworker_status` 用曾用名 `codex-2` 查询返回 `agentName: cx-renamed`、workerId `fb4ef16a-…`、`nameAliases: ["codex-2"]`，旧名定位原 ID。
