@@ -204,6 +204,28 @@ it('模拟：「其他服务商」 opens the Host form for ZCode, and older Host
   expect(button(r, '在原生终端中配置')).toBeUndefined()
 })
 
+it('模拟：the form is read once even when the Remote client returns a new function on every read', async () => {
+  // Like the real Remote client: each property read yields a fresh function. Re-reading the form on
+  // every render minted a new Host ticket each time and evicted the one the open form would submit.
+  const calls = vi.fn()
+  const cliworker = {
+    get customProviderForm() {
+      return async (...args: unknown[]) => {
+        calls(...args)
+        return ok(zcodeForm)
+      }
+    },
+  }
+  const { r } = await openZCode(cliworker)
+  await click(r, '添加账号')
+  const other = r.root.findAllByProps({ role: 'radio' }).at(-1)!
+  await act(async () => other.props.onClick())
+  await click(r, '继续')
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)))
+  expect(r.root.findAllByType('form')).toHaveLength(1)
+  expect(calls).toHaveBeenCalledTimes(1)
+})
+
 it('模拟：a Host without a ZCode form shows no 「其他服务商」 card', async () => {
   const { r } = await openZCode({ customProviderForm: vi.fn(async () => ok('null')) })
   await click(r, '添加账号')

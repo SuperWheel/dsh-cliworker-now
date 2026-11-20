@@ -393,9 +393,14 @@ function AddAccount({
   const [chosen, setChosen] = useState(list[0]?.id ?? NATIVE)
   const [replace, setReplace] = useState<string>()
   const readForm = api.cliworker?.customProviderForm
+  // The Remote client hands out a new function on every property read; depending on it would re-read
+  // the form (and mint a Host ticket) on every render, evicting the ticket the open form holds.
+  const readFormRef = useRef(readForm)
+  readFormRef.current = readForm
+  const canReadForm = !!readForm
   // ZCode signs in to its two providers in the terminal; its own API-key providers need the Host form
   // (no native terminal configures them), so older Hosts keep only the two providers.
-  const other = cli !== 'zcode' || !!readForm
+  const other = cli !== 'zcode' || canReadForm
   const [read, setRead] = useState<FormRead>(() =>
     other && readForm ? { state: 'loading' } : { state: 'ready', form: null },
   )
@@ -403,6 +408,7 @@ function AddAccount({
   const [editing, setEditing] = useState(false)
   // Read once when the page opens, so the card can say what 「继续」 will do; older Hosts have no form.
   useEffect(() => {
+    const readForm = readFormRef.current
     if (!other || !readForm) return
     const controller = new AbortController()
     void (async () => {
@@ -417,7 +423,7 @@ function AddAccount({
       }
     })()
     return () => controller.abort()
-  }, [other, readForm, sessionId, cli])
+  }, [other, canReadForm, sessionId, cli])
   const provider = list.find((item) => item.id === chosen)
   const form = read.state === 'ready' ? read.form : null
   // Hermes keeps several keys of one provider: add another, or replace one of them.
