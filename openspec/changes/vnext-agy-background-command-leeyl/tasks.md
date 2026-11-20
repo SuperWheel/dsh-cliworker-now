@@ -29,10 +29,18 @@
   - `corepack pnpm lint`：0 error；改动的两个源文件无 warning（测试目录被 lint 忽略）
   - `corepack pnpm format:check`：新规格已格式化；`native-acp.mjs`、`native-agy-acp.mjs`、`tests/native-agy-acp.test.ts` 在改动前（HEAD）就不符合 Prettier，属存量，按约定不整文件格式化
   - `corepack pnpm spec validate vnext-agy-background-command-leeyl --strict`：通过
-  - 未新建仓库外测试或备份目录；临时文件只在会话 scratchpad
+  - 3.x 阶段未新建仓库外测试或备份目录；临时文件只在会话 scratchpad（4.1 实机证据目录见下）
 
 ## 4. 真实验收 〔测试｜0.5h｜前置 3〕
 
-- [ ] 4.1 Mac Desktop 真实 agy：让 Antigravity Worker 前台跑约 60 秒循环，核对 agy 转后台时任务卡为「结果待核实」、说明与命令行一致、工具行为失败附说明，事件与 raw 记录相符
-  - 未执行：需要用户授权真实模型调用；隔离构建（`pnpm build:preview`）与 Desktop 链接更新也未做
-- [ ] 4.2 Windows 与 Antigravity stream 后备：未执行，stream 后备不在本变更范围
+- [x] 4.1 Mac Desktop 真实 agy：让 Antigravity Worker 前台跑约 60 秒循环，核对 agy 转后台时任务卡为「结果待核实」、说明与命令行一致、工具行为失败附说明，事件与 raw 记录相符
+  - 2026-11-20 用户授权（经主会话转达）真实 agy 调用与 Mac Desktop 测试。确认无运行中/排队 Worker 后 `corepack pnpm build:preview`（隔离包含 `agyBackgroundCommand`）→ osascript 退出 Desktop（4 秒内退出）→ `corepack pnpm build` → 带无障碍与三项防节流参数重启 DSH Desktop 0.2.2-rc.5（main `67c2b7e`，含 `b7703b2`）；之后无新崩溃日志
+  - 操作：Codex CU（gpt-6.2-sol high，完整路径绑定、只用 paste）在已有工作区 `ws` 新建对话「派遣 Worker 追加时间戳任务」，派 Antigravity（gemini-3.8-flash-low，自动审批档）执行「前台每 5 秒向 agy-bg-ticks.txt 追加时间、共 12 次、跑完报告行数」。Worker `b8184daa-65df-4af5-b197-f356c40cf0c5`（显示名 `agy-bg-ticks`）
+  - run `57f9fe78`：agy 发起 `run_command`（`WaitMsBeforeAsync: 10000`，另带新参数 `IsDaemon: false`）后只回「已启动循环任务……将等待」并 `end_turn`。raw 终态行 `status: UNCERTAIN`，`error` 为「Antigravity ACP 把命令转入后台后结束了本轮：命令在本轮结束时仍未完成，Worker 关闭会话后随之中止，没有结果。请核查实际产物；需要结果时续聊并要求在前台运行。命令：for i in {1..12}; …」；events.jsonl 工具帧 RUNNING → FAILED，输出「已转入后台，本轮结束时仍未完成，随会话关闭中止」，状态行 `state: uncertain` 同文说明
+  - 主 Agent 读到说明后自行续聊：run `9ddc48d3` 又把同一 60 秒命令转后台，结果同上（UNCERTAIN、同文说明）；run `f897f525` 主 Agent 要求拆成每条 ≤10 秒的命令，agy 前台逐条执行，SUCCESS，报告 18 行
+  - 界面（CU 抄录）：首轮任务卡「结果待核实」及上述说明全文，命令步骤「失败」附说明；卡片、Worker 详情与任务通知均未出现「CLI 工具缺少终态」；三份 raw 与 events.jsonl 中「缺少终态」计数均为 0
+  - 退出状态：两次后台轮次的终态保持 UNCERTAIN（未被进程非零退出改判 ERROR）；三轮 raw 各有一次 `stopReason: end_turn`
+  - 进程与产物（`process-watch.log` 每 2 秒采样）：run 1 循环进程 87232 在 16:26:30–16:26:44 写入 3 行，结果 16:26:44.5 发出，16:26:46 循环进程与 agy 进程 87066 同时消失；run 2（88120/87954）写入 3 行，结果 16:27:35.9，16:27:36 均消失；`agy-bg-ticks.txt` 共 18 行 = 3 + 3 + 12，与说明「随之中止」和 Worker 报告一致；16:31:39 复查无残留 `agy acp` 与循环进程
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-agy-background-command/`（events.jsonl 与三份 raw 副本、`agy-bg-ticks.snapshot.txt`、`process-watch.log`、`process-watch-2.log`、`start-time.txt`）；原件在 `~/.dsh/cliworker-now/b8184daa-…` 未改动
+  - 未改任何设置；Desktop 保持运行，Worker 详情窗口留在打开状态
+- [ ] 4.2 Windows 与 Antigravity stream 后备：未执行（Windows 已装含 `b7703b2` 的构建但本次只验 Mac；stream 后备不在本变更范围）
