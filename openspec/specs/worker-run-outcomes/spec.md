@@ -177,3 +177,72 @@ CLI 本轮带有结果说明（例如因拒绝审批而结束）时，Host SHALL
 #### Scenario: 拒绝审批后结束本轮
 - **WHEN** WorkBuddy 请求的操作被用户拒绝，CLI 随后以 cancelled 结束本轮
 - **THEN** Worker 窗口显示“本轮结果说明：因拒绝审批而结束：被拒操作未执行，可续聊继续”
+
+### Requirement: Claude Code 规划模式提交方案即完成本轮
+Claude Code 以原生规划模式运行（DSH 规划模式或 Worker 规划开关）时，原生 `ExitPlanMode` 授权请求带非空方案（`input.plan`）SHALL 视为本轮已完成：方案 SHALL 作为本轮结果正文交给主 Agent 与 Worker，终态 SHALL 为成功，并附说明「已提交方案，未退出规划、未执行」。插件 MUST NOT 批准退出规划模式，MUST NOT 把该请求转交 DSH 审批，SHALL 回复拒绝并中断，使 CLI 不执行方案中的任何步骤。`ExitPlanMode` 工具步骤 SHALL 记为完成。派遣、续聊、原生会话恢复与分支 SHALL 按同一规则判定。
+
+#### Scenario: 主 Agent 派遣规划任务
+- **WHEN** 规划模式的 Claude Code Worker 调用 `ExitPlanMode`，请求带 `requires_user_interaction: true` 与完整方案，插件中断后 CLI 以 `error_during_execution` 结束
+- **THEN** Worker 终态为成功，结果正文为方案原文，不出现审批卡，CLI 没有执行方案
+
+#### Scenario: 续聊与恢复原生会话
+- **WHEN** 已有原生会话的 Claude Code Worker 以规划模式续聊（`--resume`），本轮以 `ExitPlanMode` 收尾
+- **THEN** 结果与新会话相同：方案作为结果、终态成功、不退出规划
+
+### Requirement: Claude Code 规划收尾的失败边界
+插件为保持规划而中断后，CLI 给出的 `error_during_execution` 终态与对 `ExitPlanMode` 的拒绝记录 MUST NOT 计为失败或用户拒绝。非规划模式下的 `ExitPlanMode`、方案为空的 `ExitPlanMode` 以及其他需要用户交互的请求 MUST 保持「CLI 请求额外交互授权，插件未批准」失败判定。中断之后出现其他终态错误、非零退出或未完成工具时 MUST 仍判失败。
+
+#### Scenario: 方案为空
+- **WHEN** 规划模式下 `ExitPlanMode` 的 `input.plan` 为空白
+- **THEN** 插件不伪造结果，仍判「CLI 请求额外交互授权，插件未批准」失败
+
+#### Scenario: 非规划模式或其他交互请求
+- **WHEN** 非规划模式的 Claude Code 发出 `ExitPlanMode`，或规划模式下发出其他需要用户交互的请求
+- **THEN** 插件拒绝并中断，结果仍为失败
+
+### Requirement: Claude Code 选 Haiku 时规划回合的模型映射
+Claude Code 选 Haiku 且以原生规划模式运行时，CLI 会以 Sonnet 回答规划回合（官方「haiku in plan mode」行为，类似 opusplan）。此时插件 SHALL 把同一进程初始化返回的唯一 `sonnet` 别名映射（`resolvedModel`）视为与选型一致的主回复模型。初始化未返回唯一 `sonnet` 映射、或不在规划模式时，Sonnet 回复 MUST 仍判「原生回复模型与明确选型不一致」。插件 MUST NOT 据此接受其他模型，也 MUST NOT 改写用户保存的模型选择。
+
+#### Scenario: Haiku 规划回合由 Sonnet 回复
+- **WHEN** 选 Haiku 的 Claude Code Worker 在规划模式下，初始化报告 Haiku，主回复消息的模型为本进程 `sonnet` 别名对应的模型
+- **THEN** 插件不判模型不一致，方案按规划收尾规则作为结果，终态成功
+
+#### Scenario: 缺少映射或非规划模式
+- **WHEN** 初始化未返回唯一 `sonnet` 映射，或 Worker 不在规划模式而主回复为 Sonnet
+- **THEN** 插件判「原生回复模型与明确选型不一致」并中止本轮
+
+### Requirement: 手动停止的轮次不由主 Agent 自行续派
+
+Worker 本轮因面板停止按钮或 `cliworker_stop` 结束时，Host 交给主 Agent 的后台作业结果 SHALL 带 `stoppedBy: "user"`，并在 `guidance` 中说明这是用户的决定：除非用户在此之后明确要求继续，主 Agent MUST NOT 调用 `cliworker_followup` 续聊或重新派遣同一任务，向用户说明进度前 SHALL 先只读核查实际产物并以核查结果为准，MUST NOT 凭本轮部分回复推测进度。超时、故障等其他中断 MUST NOT 带 `stoppedBy`。派遣说明与 `cliworker_followup` 工具描述 SHALL 写明同一规则。
+
+#### Scenario: 用户从面板停止
+- **WHEN** Worker 运行中，用户在 Worker 详情点「停止生成」，本轮以 `interrupted` 结束且中断原因为用户
+- **THEN** 后台作业结果为 `killed`，结果 JSON 含 `status: "interrupted"`、`stoppedBy: "user"` 和 `guidance`：不要自行续聊或重派，先只读核查实际产物再说明进度
+
+#### Scenario: 超时中断
+- **WHEN** Worker 本轮因超时被中断
+- **THEN** 结果 JSON 为 `status: "interrupted"`，不含 `stoppedBy`，`guidance` 不含手动停止说明
+
+### Requirement: Antigravity 转入后台的命令在本轮结束时判待核实
+
+Antigravity ACP 的 `run_command` 入参带数值 `WaitMsBeforeAsync` 时，SHALL 视为 agy 可自行转入后台的命令。本轮原生以 `end_turn` 结束、用户未停止且没有其他失败，而仍未到 `completed`/`failed` 的工具全部是这类命令时，Worker SHALL 以待核实（UNCERTAIN）结束并保留本轮正文；结果说明 SHALL 写明命令已被转入后台、本轮结束时仍未完成、随 Worker 关闭会话中止且没有结果，并列出命令（截断）。对应工具步骤 SHALL 以失败收尾并给出同样的说明，MUST NOT 停留在运行中，也 MUST NOT 计为成功。存在其他未终态工具、原生轮次不是 `end_turn` 或用户停止时 MUST 按原有规则判失败。插件 MUST NOT 依据模型正文判断是否转入后台。其他 CLI 不受影响。
+
+#### Scenario: agy 把长命令转入后台后结束本轮
+
+- **WHEN** agy 发起带 `WaitMsBeforeAsync` 的 `run_command`，只给出 `in_progress`，随后回复「已启动后台任务，请稍候」并以 `end_turn` 结束
+- **THEN** Worker 状态为结果待核实，说明命令已转入后台、未完成并随会话中止，不显示「CLI 工具缺少终态」，命令步骤显示失败及说明
+
+#### Scenario: 同一轮内后台命令补发完成
+
+- **WHEN** 带 `WaitMsBeforeAsync` 的命令在本轮结束前收到 `completed` 更新
+- **THEN** 按原有工具结果规则判定，不附加后台说明
+
+#### Scenario: 其他工具缺少终态
+
+- **WHEN** 本轮以 `end_turn` 结束，但还有未带 `WaitMsBeforeAsync` 的工具停在运行中
+- **THEN** 仍判失败「CLI 工具缺少终态」
+
+#### Scenario: 原生轮次未正常结束
+
+- **WHEN** 后台命令未终态，且原生轮次以 `cancelled`、`max_tokens` 等非 `end_turn` 结束或用户停止
+- **THEN** 按原有失败或停止规则判定，不改判待核实

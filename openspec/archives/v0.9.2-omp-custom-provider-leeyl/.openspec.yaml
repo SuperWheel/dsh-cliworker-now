@@ -1,10 +1,11 @@
 pm:
-  title: Worker 名称与 DSH 子 Agent 一致及名称覆盖层改名
+  title: OMP 其他服务商图形化配置
   version: 0.9.2
   creator: leeyl
   creator_name: Leeyl
   requirement: REQ-0138
   prd: doc/prd/2026-11-19-v0.9.2-REQ-0138.md
   previous_names: []
+  archived: 2026-11-20
 schema: pmspec
 created: 2026-11-19

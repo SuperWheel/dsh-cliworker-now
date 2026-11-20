@@ -7,15 +7,23 @@
 ## Requirements
 
 ### Requirement: 简短默认名称与兼容
-默认智能体名 SHALL 使用 CLI 短名和递增序号，Antigravity 为 agy。升级 SHALL 只转换可确认的旧自动名，保留用户自定义名和旧名称引用兼容；同父会话名称 MUST 保持无歧义，隐藏任务的名称不被无意复用。
+
+新建 Worker 的自动名 SHALL 使用 CLI 短名和递增序号（Antigravity 为 `agy`），用户显式指定的合规空闲名称 SHALL 原样采用。插件 MUST 在建立 DSH 子会话时传名，以 DSH 实际接纳的身份和名称作为派遣回执、页头、面板及按名续聊的共同依据。已有绑定的 Worker SHALL 按同一子会话 ID 采用已有 DSH 名称，原插件名称（含自定义名）和既有别名继续指向原 Worker。尚无目录名证据时 SHALL 保留已有记录和可核实的引用。
 
 #### Scenario: 新任务与旧自动名
-- **WHEN** 创建无自定义名的任务或加载旧自动命名记录
-- **THEN** 使用如 agy-1、codex-1 的短名称；原 Worker ID、角色和历史保持，旧名称可以精确定位原任务
+
+- **WHEN** 在名称可用的父会话内依次派遣 Codex、Antigravity 和 ZCode
+- **THEN** 页头、卡片和派遣回执分别显示 `codex-1`、`agy-1`、`zcode-1`，用 `cliworker_followup(worker_name="codex-1")` 命中对应 Worker
 
 #### Scenario: 自定义与冲突
-- **WHEN** 用户自定义名称或短名称已有占用
-- **THEN** 保留自定义名，自动选择未占用序号，不将重名匹配到其他任务
+
+- **WHEN** 用户指定可用的 `reviewer`，或主 Agent 已用 DSH 工具创建 `codex-1` 后又自动命名 Codex Worker
+- **THEN** 前者在两处都叫 `reviewer`，后者选用下一个未占用的序号；若预检后 DSH 因并发拒绝自动名，插件换号重试，成功后只有一个新 Worker 和一条对应目录记录
+
+#### Scenario: 升级前两处名称不同
+
+- **WHEN** 原 Worker 在 DSH 叫 `agent-4`，在插件叫 `codex-1` 或旧自定义名「小林」
+- **THEN** 卡片采用 `agent-4`，原插件名称和原有别名仍可精确定位同一 Worker；已有角色、历史、CLI 续聊绑定和 DSH 子会话 ID 全部保留，重启后不重复迁移
 
 ### Requirement: 强度展示大小写
 插件所有面向用户的思考强度 SHALL 使用首字母大写；协议default统一显示为“默认”。显示 label MUST 映射回原始支持的协议值，不通过字符串猜测或改写模型 ID。
@@ -212,15 +220,23 @@ Host SHALL 把工具事件的 `toolCall.command` 截到 32768 个 UTF-16 码元�
 - **THEN** 卡片与 Codex-1 同级，标题行显示「标题｜由 Codex-1 发起」
 
 ### Requirement: DSH 子 Agent 在 CLI Worker 窗口统一显示
-开关开启时，CLI Worker 窗口 SHALL 列出当前主对话中 DSH 原生调用的直接子 Agent，作为「DSH」分组与各 CLI 分组同级，分组标题 SHALL 像 CLI 分组一样带图标（DSH 官方单色标志）；CLI Worker 自身对应的子会话 MUST NOT 重复列出。条目 SHALL 采用与 CLI Worker 卡片相同的版式：标题与状态一行，下方为插件名称、模型（有公开信息时），右侧箭头，「打开对话 / 删除」放在右键菜单；状态由 DSH 原生事件得出，并参与搜索与「全部 / 进行中 / 已完成 / 异常」筛选。状态 MUST 来自 DSH 原生公开数据，不伪造进度。
+
+开关开启时，CLI Worker 窗口 SHALL 列出当前主对话中 DSH 原生调用的直接子 Agent，作为「Deepseek Harness」分组与各 CLI 分组同级。中英文界面的分组标题和无障碍名称中的产品名 SHALL 均为 `Deepseek Harness`，并保留 DSH 官方单色标志和原有计数。窄栏中标题、图标和计数 MUST 保持可读且不重叠、不溢出。CLI Worker 自身对应的子会话 MUST NOT 重复列出。条目 SHALL 采用与 CLI Worker 卡片相同的版式：标题与状态一行，下方为插件名称、模型（有公开信息时），右侧箭头，「打开对话 / 删除」放在右键菜单。状态由 DSH 原生事件得出，并参与搜索与「全部 / 进行中 / 已完成 / 异常」筛选。状态 MUST 来自 DSH 原生公开数据，不伪造进度。
 
 #### Scenario: 主 Agent 调用 DSH 子 Agent
+
 - **WHEN** 主 Agent 在当前主对话启动一个 DSH 原生子 Agent
-- **THEN** CLI Worker 窗口出现「DSH」分组和对应条目，运行结束后状态随原生事件更新
+- **THEN** 在显示开关开启时，CLI Worker 窗口出现「Deepseek Harness」分组和对应条目，运行结束后状态随原生事件更新
 
 #### Scenario: CLI Worker 不重复
+
 - **WHEN** 当前主对话同时有 CLI Worker 与 DSH 原生子 Agent
-- **THEN** 每个 CLI Worker 只出现在其 CLI 分组，「DSH」分组只含 DSH 原生子 Agent
+- **THEN** 每个 CLI Worker 只出现在其 CLI 分组，「Deepseek Harness」分组只含 DSH 原生子 Agent
+
+#### Scenario: 中英文及窄栏显示
+
+- **WHEN** 有可见 DSH 原生子 Agent，用户在中文或英文界面打开 CLI Worker 面板，并将侧栏缩到受支持的窄宽度
+- **THEN** 可见标题保持完整的 `Deepseek Harness`，分组无障碍名称中的产品名与标题一致，原有图标和本地化计数依然可见，标题不造成重叠、裁切或横向溢出
 
 ### Requirement: DSH 子 Agent 打开方式与操作
 用户点开 DSH 子 Agent 条目时，插件 SHALL 打开与 CLI Worker 子会话相同样式的窗口，显示其原生记录与统计。可续聊模式（continuable）的子 Agent SHALL 提供续聊与停止，分别调用 DSH 原生 `prompt` 与 `interruptByParent`；一次性或未知模式的子 Agent 只读，输入区与停止不可用。停止 MUST 在原生确认结束后才报告成功。
@@ -234,30 +250,42 @@ Host SHALL 把工具事件的 `toolCall.command` 截到 32768 个 UTF-16 码元�
 - **THEN** 插件调用原生中断，子会话结束后状态改为已停止；中断失败时显示错误，不报告成功
 
 ### Requirement: DSH 子 Agent 名称与按名续聊
-插件 SHALL 为每个 DSH 原生子 Agent 分配主对话内唯一的名称 `dsh-<n>`：按插件首次看到的顺序（同批按创建时间）递增，持久保存在插件私有文件（目录 0700、文件 0600）中，隐藏后不复用、不重新编号，不同主对话分别编号。CLI Worker 的名称 MUST NOT 使用 `dsh-<n>` 格式。主 Agent SHALL 能通过 `cliworker_followup` 的 `worker_name` 按该名称（不区分大小写）续聊可续聊模式的 DSH 子 Agent，请求经 DSH 原生 `prompt` 排队送达，回复以 DSH 子 Agent 消息回到主对话；`cliworker_status` SHALL 列出这些名称并可按名称只读查询。名称先匹配 CLI Worker；只有未匹配时才查找 DSH 子 Agent。显示开关关闭、条目已隐藏、名称不存在或子 Agent 为只读时 MUST NOT 发送，并返回明确错误。
+
+原生子 Agent SHALL 以同父 DSH 目录登记的名称显示，有改名覆盖时显示覆盖名。无名旧条目沿用已存的稳定 `dsh-N`，首次遇到无名条目才分配未占用的兼容编号。原有编号 SHALL 作为该条目的别名永久保留。插件 SHALL 在本父会话内按现名、曾用名或 ID 精确定位，兼容原生旧编号的大小写；`cliworker_status` 列出当前名称并支持只读查询，`cliworker_followup` 将可续聊原生条目经 DSH 原生 `prompt` 排队，回复以原生消息回主对话。隐藏、显示开关关闭、只读、未知引用、归属不符或歧义 MUST 拒绝发送。
 
 #### Scenario: 按名称续聊
-- **WHEN** 用户让主 Agent「继续 dsh-1，补充 X」
-- **THEN** 主 Agent 调用 `cliworker_followup`，worker_name 为 dsh-1，DSH 子 Agent 收到消息并在其子会话中回复
+
+- **WHEN** 目录名为 `agent-6` 的可续聊条目曾分配 `dsh-1`
+- **THEN** 卡片与状态列表显示 `agent-6`，按 `agent-6`、`dsh-1` 或 `DSH-1` 续聊均送入同一原生子会话并收到原生回复
 
 #### Scenario: 名称稳定
-- **WHEN** 用户隐藏 dsh-2 后主 Agent 又启动一个 DSH 子 Agent
-- **THEN** 新子 Agent 名为 dsh-4（已有 dsh-1 至 dsh-3），dsh-1 与 dsh-3 的名称不变
+
+- **WHEN** 无名历史条目已有 `dsh-2`，经隐藏、恢复或重启，期间又出现其他原生条目
+- **THEN** `dsh-2` 保留给原 ID；有目录名的新条目直接显示目录名，无名条目按首次发现顺序（同批按创建时间）分配未占用编号，分别按父会话持久保存
 
 #### Scenario: 保留名称
-- **WHEN** 用户把某个 CLI Worker 改名为 dsh-2
-- **THEN** 插件拒绝并提示该格式保留给 DSH 子 Agent
+
+- **WHEN** 新 Worker 希望使用 `dsh-2`
+- **THEN** 若同父会话中已有条目的现名或旧编号占用则拒绝；没有占用则接受，其他父会话对此无影响
+
+#### Scenario: 原生只读条目与显示开关
+
+- **WHEN** 按名称续聊 one-shot、unknown、已隐藏条目，或原生显示开关已关闭
+- **THEN** 插件说明拒绝原因，原生子会话没有收到消息；状态查询遵循原有可见范围
 
 ### Requirement: DSH 子 Agent 显示开关
-「CLI Worker 设置 → CLI Worker 设置」SHALL 提供「在 CLI Worker 窗口显示 DSH 子 Agent」开关，默认开启。关闭后 CLI Worker 窗口 MUST 不再列出 DSH 子 Agent，但 DSH 子 Agent 的运行与 DSH 原生入口不受影响；重新开启后立即恢复。「CLI 连接」列表 MUST NOT 为 DSH 新增连接或设置页。
+
+「CLI Worker 设置 → CLI Worker 设置」SHALL 提供「在 CLI Worker 窗口显示 DSH 子 Agent」开关，默认开启。关闭后 CLI Worker 窗口 MUST 不再列出 DSH 子 Agent，但 DSH 子 Agent 的运行与 DSH 原生入口不受影响。重新开启后立即恢复。「CLI 连接」列表 MUST NOT 为 DSH 新增连接或设置页。
 
 #### Scenario: 默认值
+
 - **WHEN** 用户升级后首次打开设置
 - **THEN** 开关为开启
 
 #### Scenario: 关闭开关
+
 - **WHEN** 用户关闭开关
-- **THEN** 「DSH」分组立即从 CLI Worker 窗口消失，DSH 子 Agent 照常运行
+- **THEN** 「Deepseek Harness」分组立即从 CLI Worker 窗口消失，DSH 子 Agent 照常运行
 
 ### Requirement: DSH 子 Agent 数据边界
 插件 SHALL 只读取 DSH 原生子 Agent 的公开目录、状态与记录，MUST NOT 复制或改写其会话数据。在 CLI Worker 窗口删除 DSH 子 Agent 条目 SHALL 只在插件内隐藏该条目，并提示不影响 DSH 原生会话。
@@ -265,3 +293,54 @@ Host SHALL 把工具事件的 `toolCall.command` 截到 32768 个 UTF-16 码元�
 #### Scenario: 删除 DSH 条目
 - **WHEN** 用户在 CLI Worker 窗口删除一个 DSH 子 Agent 条目
 - **THEN** 条目从列表隐藏，DSH 原生会话与记录保持不变
+
+### Requirement: 子 Agent 名称校验与占用
+
+自动命名、自定义命名与改名 SHALL 统一接受 1–32 个 ASCII 小写字母、数字或连字符，首位为字母，且不得为 `lead`。同一父会话内分配新名 MUST 排除所有子 Agent 的现名、曾用名和正在分配的名称，包括插件 Worker、DSH 工具创建的条目、已结束及已隐藏的条目。显式命名出错时 SHALL 指明原因，保留原输入供修正；仅自动名遇到明确的重名拒绝时可换号。
+
+#### Scenario: 保存前提示具体原因
+
+- **WHEN** 自定义名或改名输入为空、含中文、大写、空格或下划线、超过 32 位、以数字或连字符开头、为 `lead`，或与同父会话已结束条目的曾用名相同
+- **THEN** 保存前分别提示长度、允许字符、首字符、保留名或重名原因；已经存在的名称及会话不变，新建请求也不以另一个名字启动
+
+#### Scenario: 直达工具与并发提交
+
+- **WHEN** 两个同父会话的显式创建或改名请求同时争用一个名称，或 DSH 在预检后拒绝显式名称
+- **THEN** 最多一个请求取得该名称，其余收到具体冲突；格式错误、取消和其他启动失败均不触发换号重试
+
+### Requirement: 原地改名与运行连续性
+
+用户 SHALL 能在同一入口修改空闲或运行中的子 Agent 名称。成功后面板和随包 DSH 页头立即显示新名，原名进入曾用名；Worker ID、父子关系、子会话 ID、既有记录、CLI 会话、在途任务及缓存继续沿用。rc.5 的原生子 Agent 改名 SHALL 明示「仅修改显示名」，其身份提示及原生发信署名仍沿用 DSH 登记名。覆盖表 MUST 持久保存，失败或跨父会话请求不得发布成功状态。
+
+#### Scenario: 空闲与运行中改名
+
+- **WHEN** 用户把空闲 Worker 和正在输出的 Worker 分别改为可用名称
+- **THEN** 两处立即显示各自新名；前者能继续既有对话，后者继续同一轮输出直到自然结束，进程事件不会把名称改回；目录条目数、各自的子会话 ID、历史和聊天标题保持原值
+
+#### Scenario: 原生显示名与重启
+
+- **WHEN** 在 rc.5 为原生子 Agent 设置显示名，随后重启并重新打开父会话
+- **THEN** 插件面板及随包页头恢复该显示名，插件仍标注仅修改显示名；用户可在原子会话看到 DSH 产生的原有署名
+
+### Requirement: 覆盖名称的发现、寻址与创建保护
+
+在插件覆盖的入口，`list_agents` SHALL 用新名列出原先可见的同一成员；`send_message`、`interrupt_agent` 及插件的 `cliworker_followup` SHALL 接受现名和曾用名并遵守各自原有身份、权限、可见性及运行状态限制。主 Agent 通过 DSH 创建工具显式指定同父会话中已占用的覆盖名或曾用名时 MUST 在创建前收到拒绝。
+
+#### Scenario: 名称变更后按新旧名操作
+
+- **WHEN** 同一 Worker 先从 `codex-1` 改为 `reviewer` 再改为 `audit`
+- **THEN** `list_agents` 的模型结果和工具卡均显示 `audit`；各次允许的发送、续聊及中断用任一名称都命中原 childId，回执与实际操作一致，每次请求只投递一次
+
+#### Scenario: 工具拒绝冲突及越权
+
+- **WHEN** 主 Agent 用 DSH 创建工具显式选用 `audit` 或 `reviewer`，或另一棵会话树试图用这些名称控制该成员
+- **THEN** 创建请求提示名称已占用且无新增条目；跨树请求无法控制该成员，既有 DSH 中断权限同样适用于按别名发起的请求
+
+### Requirement: 官方改名能力接管及逐条迁移
+
+插件 SHALL 探测 DSH 官方原地改名能力。缺少能力时将覆盖写入插件私有存储；能力可用时新改名直接走官方接口。启动迁移 SHALL 按父会话和 childId 逐条处理，确认官方目录已反映目标名称、旧引用可恢复后才删除成功覆盖项。冲突或失败 MUST 保留原项并提示，重启重试不得重复创建、错误释放别名或覆盖别人的名称。
+
+#### Scenario: 部分成功及中途重启
+
+- **WHEN** 官方接口出现，两个待迁移条目中一个成功、另一个名称已被占用，或进程在官方成功后本地清理前重启
+- **THEN** 成功项在核对同一 childId 后清除，冲突项保留并可辨认原因；重启复核已成功项并继续其余条目，旧名继续可用，后续改名仍通过同一入口

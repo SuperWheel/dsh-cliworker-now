@@ -20,7 +20,7 @@ import { hostText, operationMessage } from '../operation-error.ts'
 import { Result } from './login-window.tsx'
 
 /*
- * 「服务商表单」模板（openspec/changes/vnext-custom-provider-form-leeyl）：账号窗口里填写服务商配置的
+ * 「服务商表单」模板（openspec/archives/vnext-custom-provider-form-leeyl）：账号窗口里填写服务商配置的
  * 唯一实现，完全由表单描述驱动，不为某个 CLI 写专用字段。样式沿用 `.cwn-accounts-*` / `.cwn-login-*`，
  * 规则见 doc/settings-ui-design.md「服务商表单模板」。
  *

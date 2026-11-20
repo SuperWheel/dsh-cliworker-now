@@ -1,7 +1,7 @@
 import type { CliId } from './types.ts'
 
 /*
- * 「其他服务商」图形化配置协议（openspec/changes/vnext-custom-provider-form-leeyl）。
+ * 「其他服务商」图形化配置协议（openspec/archives/vnext-custom-provider-form-leeyl）。
  * Host 按 CLI 已核实的原生格式生成表单描述；Client 用同一个模板渲染，不为某个 CLI 写专用组件。
  */
 

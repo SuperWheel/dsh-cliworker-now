@@ -1,6 +1,6 @@
 # 原生子对话与主对话体验的宿主接口缺口
 
-当前适配版本为 **0.2.2-rc.5**。2026-11-19 从官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）重建四个原生 UI。rc.3 的 48 文件补丁逐字节保留，Gateway、会话控制与四包导出契约沿用原接入方式。构建输入见[扩展说明](../../host-extensions/dsh-0.2.2-rc.5/README.md)，平台验证见[任务清单](../../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
+当前适配版本为 **0.2.2-rc.5**。2026-11-19 从官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）重建四个原生 UI。rc.3 的 48 文件补丁逐字节保留，Gateway、会话控制与四包导出契约沿用原接入方式。构建输入见[扩展说明](../../host-extensions/dsh-0.2.2-rc.5/README.md)，平台验证见[任务清单](../../openspec/archives/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
 
 在 rc.5 基线上，插件通过 `slots.provideRoot({ props: { cliworkerHeaderNames } })` 为页头提供只读名称源。参数为当前目录父会话 ID，快照以 childId 为键。首次订阅和 Gateway 重连时先读 `agentNames`，再接收 `watchAgentNames` 的完整快照。Remote 仅对实际持久覆盖附加 `overridden: true`，从而区分未登记名称但已有兼容编号的旧行。同父页头共享一条流，最后一处卸载即释放；切换父会话重新取值。行描述、状态、模式、主区与侧栏地址仍由官方目录决定。曾用名用于插件按名查找，团队看板、工作区树与原生发信署名沿用 DSH 的名称。
 

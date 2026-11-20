@@ -1,10 +1,11 @@
 pm:
-  title: OMP 其他服务商图形化配置
+  title: 适配 DeepSeek Harness 0.2.2-rc.5（SDK、随包界面与构建目标）
   version: 0.9.2
   creator: leeyl
   creator_name: Leeyl
   requirement: REQ-0138
   prd: doc/prd/2026-11-19-v0.9.2-REQ-0138.md
   previous_names: []
+  archived: 2026-11-20
 schema: pmspec
 created: 2026-11-19

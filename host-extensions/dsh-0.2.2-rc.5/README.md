@@ -20,7 +20,7 @@ node scripts/vendor-host-extensions.mjs --from artifacts/dsh-host-extension-022r
 node scripts/vendor-host-extensions.mjs
 ```
 
-补丁迁移与反向应用在指定上游工作树执行。上游 Vitest 使用该源码仓库自身的冻结依赖，浏览器构建使用另一份相同提交和补丁的 checkout。这样两套工具链可以分别占用各自的 `node_modules`。上游 Vitest 配置沿用官方配置，仅从 setupFiles 排除会清除代理变量的 `scripts/test-proxy-environment.ts`。具体路径、测试数字和摘要见[适配任务记录](../../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
+补丁迁移与反向应用在指定上游工作树执行。上游 Vitest 使用该源码仓库自身的冻结依赖，浏览器构建使用另一份相同提交和补丁的 checkout。这样两套工具链可以分别占用各自的 `node_modules`。上游 Vitest 配置沿用官方配置，仅从 setupFiles 排除会清除代理变量的 `scripts/test-proxy-environment.ts`。具体路径、测试数字和摘要见[适配任务记录](../../openspec/archives/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
 
 ## 本次构建记录
 
