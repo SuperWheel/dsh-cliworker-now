@@ -87,6 +87,20 @@
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-windows-rc5-check/`（包、清单、安装与启动脚本、Worker 事件和 worker.json）；Windows 端 `%LOCALAPPDATA%\cliworker-now-remote\v092-b7703b2-20261120\`（安装结果、安装器日志、profile 备份、启动日志）。
   - 未执行：Windows CI 定向检查（按发布规格另行执行）；其他 CLI 的 Windows 派遣；DSH 原生子 Agent 在 Windows 上的派遣。检查结束后 Windows Desktop 保持运行，装的是本次构建。
 
+## 5. v0.9.2 发布验收 〔测试｜4h｜前置 4〕
+
+- [x] 5.1 macOS 自动检查、Windows 远程隔离检查、正式构建、打包与隔离安装（版本号 0.9.2，`299b872 chore(release): 0.9.2`；用户 2026-11-20 要求「归档这 6 个变更，提交到 github，然后发布」）
+  - macOS：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.5）；全量 vitest 366 个文件通过、4 跳过，9038 项通过、15 跳过、0 失败（106 秒，日志 `.test-data/release-v0.9.2/vitest-full.log`）；`pnpm spec validate --all --strict` 41/41；`git diff --check origin/main...HEAD` 通过；`pnpm lint` 0 error（334 warning）
+  - 格式：相对 origin/main 改动的 16 个代码文件中，11 个未通过 Prettier，但它们在 origin/main 上已不符合 Prettier（存量文件，按 AGENTS.md 不整文件重排）；本次新改的其余 5 个文件通过
+  - Windows 远程隔离：运行 `015239d4`（299b872，config-d.json）preview、冻结依赖、包列表与入口、解包、契约类型、类型检查、31 个 Windows CI 文件 1039 项（1031 通过、0 失败、8 跳过）与安装包 Host 加载全部通过，无模型调用
+  - 正式构建与隔离构建：退出 Mac Desktop 后 `corepack pnpm build` 通过；`lib` 1167/1167、`runtime-host` 218/218 文件一致，仅 `lib/client.js(.map)` 的 `//#region` 路径注释不同；Host `lib/index.js` SHA-256 `1fe54100…`，Client `ed1f2613…`。发布验证记录 `artifacts/dsh-cliworker-now-0.9.2-verification.json`，`scripts/package-release.mjs` 通过
+  - 安装包：`artifacts/release-v0.9.2/dsh-cliworker-now-0.9.2.tgz`，22000825 字节，SHA-256 `94e1fec194604812077960cfcf45b15f732b89739a9659f6c4996ab064d2b70b`，1391 个文件；顶层只有 `LICENSE`、两份 README、`cordis.patch.yml`、`icon.png`、`lib`、`package.json`、`runtime-host`；`private:false`，无 scripts／devDependencies，repository／homepage／bugs 指向 `SuperWheel/dsh-cliworker-now`；内容扫描未发现 `.env`、`.test-data`、日志、私钥、令牌特征、私人路径、IP 或账号标识
+  - 官方 dsh 0.2.2-rc.5（Desktop 自带 CLI）全新隔离 `HOME`／`DSH_HOME`：`plugin --profile web add --save-exact <tgz>` 退出 0，版本 0.9.2，1391 个文件与包内逐字节一致，`lib` 与 `runtime-host` 1385 个文件与正式构建逐字节一致；临时 profile 已删除，日志留在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-release-v0.9.2-isolated-install/install.log`
+  - Mac Desktop（DSH 0.2.2-rc.5，链接正式构建，Codex CU 只读，17:08）：插件 v0.9.2 已启用，CLI Worker 面板正常；17 个 CLI 设置页均显示状态（已登录 8、已连接 6、API 登录 1、已配置 1、未安装 1）；「更新 CLI」检查完成（可更新 10、已是最新 6、未安装 1）；无错误提示
+  - 真实 CLI：自上次真实验收以来派遣代码有变化的是 Antigravity（`b7703b2`），2026-11-20 已在 Mac 与 Windows Desktop 用含该提交的构建实测（见 `v0.9.2-agy-background-command-leeyl` 4.1、4.2）；Codex 派遣 2026-11-20 在 Windows rc.5 实测（4.4）；OMP 服务商配置为隔离环境验收（`v0.9.2-omp-custom-provider-leeyl` 5）；发布候选包与这些构建只差 initialize 中的版本字符串，未在候选包上重跑真实派遣
+- [ ] 5.2 Windows Desktop 用原生安装器装入发布候选包并只读核对（未执行：用户要求等其回来再测 Windows）
+- [ ] 5.3 推送 GitHub、创建 Release、npm 发布与回读（未执行：等 5.2 完成）
+
 ## 跟进
 
 - 达到实施验收要求后按项目流程合并并清理已合入的 worktree 和分支，并保留指定测试根内仍有用的证据。发布验收另按 `development-workflow` 执行，保留尚未验证的账号、模型与平台范围。
