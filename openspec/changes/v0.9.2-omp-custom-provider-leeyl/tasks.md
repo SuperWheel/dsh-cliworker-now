@@ -46,7 +46,15 @@
 
 ## 5. Mac Desktop 服务商保存验收 〔测试｜3h｜前置 4〕
 
-- [ ] 5.1 建立隔离 Mac Desktop（DSH 0.2.2-rc.5）验收环境，用虚构服务商和不可用于真实服务的测试密钥；写前备份插件目标，记录文件存在性、权限和全局目录基线（未执行：等待可验收构建及实机环境）
-  - 未执行：按主会话安排，Desktop 实机验收在四个 v0.9.2 变更合并后统一进行。
-  - 拟使用 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-omp-custom-provider/` 存放隔离 `HOME`／`DSH_HOME`、夹具与脱敏证据，配置备份和恢复材料放 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/backup/2026-11-19-omp-custom-provider/`。目录 `0700`，备份文件 `0600`；若实际日期不同，按建立日期更新本条。两处均为计划路径。
-- [ ] 5.2 真实验收「添加账号 → 其他服务商」表单与原生终端备选，保存虚构服务商后查账号状态和模型目录；独立回读插件写入内容与权限，对比全局目录及已有凭据，验后恢复备份并复核恢复结果。保留脱敏界面和回读证据，全程不调用模型（未执行：等待 Mac Desktop 实机验收）
+- [x] 5.1 建立隔离 Mac Desktop（DSH 0.2.2-rc.5）验收环境，用虚构服务商和不可用于真实服务的测试密钥；写前备份插件目标，记录文件存在性、权限和全局目录基线
+  - 2026-11-20：用 Desktop 自带的 rc.5 `dsh`（`/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh`）在隔离 `HOME`／`DSH_HOME`（`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-omp-custom-provider/web-acceptance/`，0700）以 `--profile web` 启动 Web 界面，经内置浏览器操作，与 Desktop 同一 Host 与界面代码；插件为 `build:preview` 隔离包。未在用户真实 Desktop profile 中写服务商。
+  - 插件写入目标在隔离 `DSH_HOME` 内，写前不存在，故无需备份；`backup/2026-11-19-omp-custom-provider/` 未建立。真实 `~/.omp` 与 `~/.dsh/cliworker-now/accounts/omp` 的 232 个文件写前做 SHA-256 基线（`real-baseline-before.txt`）。
+  - 测试密钥为虚构字符串，服务商为 `api.example.com`（保留域名）与本机模拟服务商，不能用于真实服务。
+- [x] 5.2 真实验收「添加账号 → 其他服务商」表单与原生终端备选，保存虚构服务商后查账号状态和模型目录；独立回读插件写入内容与权限，对比全局目录及已有凭据，验后恢复备份并复核恢复结果。保留脱敏界面和回读证据，全程不调用模型
+  - 首轮发现缺陷：每次保存都报「表单已过期或 CLI 入口已变更」。原因是 Remote 客户端每次读 `api.cliworker.customProviderForm` 都返回新函数，账号窗口把它放进 `useEffect` 依赖，每次渲染都重新读表单并让 Host 新开票据，票据表满 256 后挤掉表单持有的那张（隔离 Host 临时诊断日志记录 `has:false, size:256`，诊断代码已随重装移除）。修复：`accounts-window.tsx` 用 `useRef` 保存读取函数，effect 只依赖「是否可读」；`tests/zcode-account-window.test.tsx` 新增模拟用例（每次读取都返回新函数，表单只读一次），修复前超时失败、修复后通过。
+  - 修复后复测：保存「验收测试服务商」（`acceptance-test`，`https://api.example.com/v1`）成功；`models.yml` 与 `cliworker-created-providers.json` 均 0600、目录 0700，回执只含服务商 ID、SHA-256 指纹和名称。账号状态显示「验收测试服务商 API 登录」，模型目录为空：插件只列服务商 `/models` 只读接口确认的模型，虚构域名无法确认，保守不显示（既有设计，规格场景已写明）。
+  - 再加第二个服务商「本机模拟服务商」（`acceptance-local`，指向 `mock-provider.mjs`，标注为模拟，只回答 `GET /v1/models`）：两条服务商并存，原条目保留；设置页模型下拉列出 `test-model-a`、`test-model-b`。模拟服务商全程只收到 4 次 `GET /v1/models`，没有任何模型调用请求。
+  - 「在原生终端中配置」打开 OMP 原生 setup（服务商登录列表），未登录直接关闭。
+  - 恢复：在账号窗口逐个「退出」两条服务商，`models.yml` 回读为 `{ "providers": {} }`，回执 `providers` 为空；删第一条后列表约数秒后才刷新，不影响结果。整个测试目录搜索虚构密钥无残留；真实目录 232 个文件写后 SHA-256 与基线一致，未新增文件。
+  - 回归：`KIMI_CODE_NO_AUTO_UPDATE=1` 下关联 5 个测试文件 427 通过；`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.5）；改动文件 eslint 无告警；两文件在 main 上本就未按 Prettier 格式化，未整文件重排。
+  - 未验证：Windows；真实服务商与真实密钥（按要求不调用模型）。
