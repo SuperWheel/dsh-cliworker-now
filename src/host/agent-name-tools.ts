@@ -110,10 +110,12 @@ export function registerAgentNameTools(ctx: Context, deps: AgentNameToolDependen
       // A wrapper runs before the tool body, including the body's input validation and executable lookup.
       const tools = ctx.get('tools')
       const definition = tools?.executable(exec.name, caller, exec.toolSet)
+      // Compare with the caller's scope view: Desktop registers the control tools in an agent scope,
+      // where the global view has no send_message and every overlay name would fall back to DSH.
       if (
         !service ||
         !definition ||
-        definition !== tools?.get(exec.name) ||
+        definition !== tools?.get(exec.name, caller) ||
         validateJsonSchemaValue(definition.parameters, args).length
       )
         return next()

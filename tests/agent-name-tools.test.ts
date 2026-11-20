@@ -42,7 +42,7 @@ function member(id: string, path: string, parentId = 'root'): SubagentDescendant
 }
 
 // 模拟身份、子会话目录和消息接收端。Cordis、工具注册、三个控制工具及其结果渲染使用已安装的 DSH 包。
-async function fixture() {
+async function fixture(options: { scopedControl?: boolean } = {}) {
   const ctx = new Context()
   cleanups.push(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt, { includeHarnessIdentity: false })
@@ -70,7 +70,10 @@ async function fixture() {
   Object.defineProperty(ctx, 'subagents', { value: service })
   Object.defineProperty(ctx, 'agents', { value: { get: () => undefined } })
   const control = await import(pathToFileURL(controlModule).href)
-  control.apply(ctx)
+  // Desktop registers the control tools in an agent scope, so the global view has no send_message.
+  if (options.scopedControl)
+    await scope.ctx.inject(['tools', 'systemPrompt'], (scoped) => control.apply(scoped))
+  else control.apply(ctx)
   const create = vi.fn(async () => 'created')
   for (const name of ['subagent', 'unrelated'])
     ctx.tools.register(
@@ -105,13 +108,20 @@ async function fixture() {
   }
   const off = registerAgentNameTools(ctx, deps)
   const pipeline = new ToolExecutionPipeline(ctx)
-  const call = async (name: string, args: unknown, sender = root, signal = new AbortController().signal) => {
+  const call = async (
+    name: string,
+    args: unknown,
+    sender = root,
+    signal = new AbortController().signal,
+    toolSet?: Awaited<ReturnType<typeof ctx.tools.resolve>>,
+  ) => {
     const prepared = await pipeline.prepare({
       callId: ToolCallId('模拟调用'),
       name,
       arguments: args,
       agent: sender,
       signal,
+      ...(toolSet ? { toolSet } : {}),
     })
     const outcome = prepared.kind === 'dispatch' ? await pipeline.dispatch(prepared.exec) : prepared
     return pipeline.complete(prepared.exec, outcome)
@@ -166,6 +176,33 @@ describe('模拟子 Agent 创建与名称工具', () => {
       expect(args).toEqual([f.caller, 'child', [{ type: 'text', text: '模拟正文' }], { signal }])
     }
     expect(f.deps.log).not.toHaveBeenCalled()
+  })
+
+  it('模拟：控制工具只注册在调用者作用域、调用带本步 toolSet 时，现名仍由插件送达', async () => {
+    const f = await fixture({ scopedControl: true })
+    expect(f.ctx.tools.get('send_message')).toBeUndefined()
+    const signal = new AbortController().signal
+    const toolSet = await f.ctx.tools.resolve({ agent: f.caller, signal } as Parameters<
+      typeof f.ctx.tools.resolve
+    >[0])
+    cleanups.push(() => toolSet.dispose())
+    const result = await f.call(
+      'send_message',
+      { agent: 'audit', message: '模拟正文' },
+      f.caller,
+      signal,
+      toolSet,
+    )
+    expect(result).toMatchObject({ isError: false, value: { messageId: 'simulated-message' } })
+    expect(f.service.resolveName).not.toHaveBeenCalled()
+    expect(f.service.sendMessage).toHaveBeenCalledExactlyOnceWith(
+      f.caller,
+      'child',
+      [{ type: 'text', text: '模拟正文' }],
+      {
+        signal,
+      },
+    )
   })
 
   it('多段引用只翻译首段；原登记名、未知引用和其他树走原生解析', async () => {
