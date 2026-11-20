@@ -13,7 +13,7 @@ raw 记录核对（`~/.dsh/cliworker-now/b665400a-….5d6e130e-….raw.jsonl`，
 
 `src/host/native-acp.mjs` 自 v0.8.1 起对所有仍未终态的工具一律判失败。这把「CLI 自己选择后台运行、本轮正常结束」与「协议丢失终态」混为一谈：主 Agent 只看到笼统的 CLI 错误，看不到命令其实没有完成、已经中止。
 
-本变更与 `vnext-plan-exit-agy-background-leeyl` 无关：那边处理 `invoke_subagent` 派出的原生后台子 Agent 的等待与误报，这里处理 `run_command` 转入后台的终端命令。
+本变更与 `v0.9.2-plan-exit-agy-background-leeyl` 无关：那边处理 `invoke_subagent` 派出的原生后台子 Agent 的等待与误报，这里处理 `run_command` 转入后台的终端命令。
 
 ## What Changes
 

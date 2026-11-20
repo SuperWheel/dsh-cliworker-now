@@ -1491,7 +1491,7 @@ ZCode/WorkBuddy CN/WorkBuddy 官方现有 feed 与匿名包 HEAD 未提供第二
 
 ## 2026-11-14 Claude 规划收尾、Claude 官方登录确认与 Antigravity 后台子 Agent 误报修复（未发布）
 
-- 来源：B 站用户在 v0.8.9 上的两个报告。变更 `openspec/changes/vnext-plan-exit-agy-background-leeyl/`。
+- 来源：B 站用户在 v0.8.9 上的两个报告。变更 `openspec/changes/v0.9.2-plan-exit-agy-background-leeyl/`。
 - Claude Code 规划模式：原生 `ExitPlanMode` 带 `requires_user_interaction: true`，原实现按不支持的额外交互判失败并中断，结果正文为空。现在规划模式下带非空 `input.plan` 的 `ExitPlanMode` 视为本轮完成：方案作为结果正文，终态成功并附「未退出规划、未执行」说明；插件仍回复拒绝并中断，不转交 DSH。理由：规划模式下授权一律直接拒绝（`worker-permission-levels`），离开规划是用户对规划状态的决定，不属于单次操作授权。插件中断造成的 `error_during_execution` 与对 `ExitPlanMode` 的拒绝记录不计为失败。其他交互请求、非规划模式与空方案保持原判定。
 - Antigravity 后台子 Agent：等待上限原从主回合开始时起算，主回合与审批耗时会占满上限，导致不发跟进就判待核实；现改为只累计跟进前的等待间隔（10 分钟），整轮仍受任务总时限约束，跟进轮请求超时取任务剩余时间。agy 子 Agent 状态只有 ALIVE／KILLED，已汇报的子 Agent 仍是 ALIVE；跟进提示改为以结果消息或产物为完成依据。用户猜测的「结果直接回到主对话」没有对应通道：agy 子 Agent 只向 agy 父会话汇报，主 Agent 是在 Worker 判待核实后自行核对了文件。
 - Claude 官方登录不认（2026-11-14 用户 Mac Desktop 实机，Claude Code 2.1.311）：插件在所有 Claude 子进程的 `--settings` env 中设置 `CLAUDE_CONFIG_DIR=~/.claude`。2.1.311 一旦设置该变量，就改用带目录哈希后缀的钥匙串条目和 `<dir>/.claude.json`；插件发起的登录写入了带后缀条目，同样参数下的 `auth status` 却读不带后缀的条目，登录窗口因此「未能确认」，设置页显示未登录、模型为空。现在不再经 settings 设置该变量，Host 自己设置时由子进程在启动时继承，与用户终端读写同一处。旧版插件登录写入带后缀条目的用户需要重新登录一次；插件不读取、不迁移钥匙串。
@@ -1752,8 +1752,8 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 
 在这一基线上，随包 ui-subagent 的页头从根 Slot 属性 `cliworkerHeaderNames` 取得只读名称源。插件 Client 在 Remote 可用时注册，页头按直属目录父 ID 订阅，用行 childId 读取覆盖。没有改名的历史行继续按官方规则显示。旧名保留供同父会话按名查找，DSH 原生发信署名、团队看板与工作区树沿用宿主逻辑。
 
-## 2026-11-20：Antigravity 命令转后台后判待核实（vnext-agy-background-command-leeyl）
+## 2026-11-20：Antigravity 命令转后台后判待核实（v0.9.2-agy-background-command-leeyl）
 
 agy 的 `run_command` 带必填参数 `WaitMsBeforeAsync`，命令超过该时长就转入后台；ACP 上不发任何更新，工具停在 `in_progress`。插件每轮结束都关闭 agy 进程，后台命令随之中止（2026-11-20 实机：ticks 文件停在转后台前，下一轮 agy 自报该工具 `failed`）。此前 ACP 运行器把它与协议丢失终态一起判为「CLI 工具缺少终态」。
 
-现在 ACP 运行器提供默认关闭的 `backgroundCommand` 钩子，仅 Antigravity ACP 启用。本轮以 `end_turn` 结束、未停止、无其他失败，且未终态的工具全部是这类命令时，整轮判结果待核实，说明命令已转入后台、未完成、随会话中止并列出命令；工具行收尾为失败附同样说明。其他未终态工具、非 `end_turn`、停止仍按原规则判失败。识别只看工具入参，不看模型正文。不让后台命令跑完（不保持进程、不自动跟进），Antigravity stream 后备不在范围内。详见[变更设计](../openspec/changes/vnext-agy-background-command-leeyl/design.md)。
+现在 ACP 运行器提供默认关闭的 `backgroundCommand` 钩子，仅 Antigravity ACP 启用。本轮以 `end_turn` 结束、未停止、无其他失败，且未终态的工具全部是这类命令时，整轮判结果待核实，说明命令已转入后台、未完成、随会话中止并列出命令；工具行收尾为失败附同样说明。其他未终态工具、非 `end_turn`、停止仍按原规则判失败。识别只看工具入参，不看模型正文。不让后台命令跑完（不保持进程、不自动跟进），Antigravity stream 后备不在范围内。详见[变更设计](../openspec/changes/v0.9.2-agy-background-command-leeyl/design.md)。
