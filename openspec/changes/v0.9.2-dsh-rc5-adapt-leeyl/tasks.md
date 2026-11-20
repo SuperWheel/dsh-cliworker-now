@@ -77,8 +77,15 @@
   - `STOPPED_BY_USER_GUIDANCE` 与 `src/host/routing.ts` 派遣说明改为「先只读核查实际产物，再按核查结果说明进度」，增量规格同步；`tests/agy-run-outcome.test.ts` 用户停止用例增加该断言，39 例通过；关联 16 个测试文件 898 例通过，`pnpm typecheck` 通过，eslint 无输出，严格校验通过。
   - Desktop 复测（2026-11-20，用户授权「构建并复测」）：确认无活动 Worker 后 `pnpm build:preview`、退出 Desktop、`pnpm build` 通过，`lib/index.js` 含新措辞，带无障碍参数重启。Codex Computer Use 在 `ws` 新建对话（会话 `session-f101111e-e4f0-4344-b48a-84e0188dac80`，主模型 GLM-5.3-Flash），派 `codex-1`（GPT-6-Luna、Low）写 `ticks3.txt`，00:07:06 从 Worker 详情停止。
   - 会话日志：16:07:07Z 主 Agent 收到 `stoppedBy: "user"` 与新说明，16:07:14Z 调一次只读 `bash` 核查 `ticks3.txt`（4 行，00:06:51～00:07:06），回复按核查结果说明「4 行、未完成、已按规则不自动续聊或重新派遣」并等待用户指示，16:07:23Z 结束本轮。之后约 90 秒无新的 Worker 运行或 `cliworker_followup`；`ticks3.txt` 停在 4 行，无残留循环进程。
-- [ ] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
-  - （未执行：等待用户安排 Windows rc.5 环境和调用条件。）
+- [x] 4.4 Windows Desktop 由用户安排基础加载与派遣检查。确认实际宿主版本和插件来源，核对面板及设置可用，并记录获授权派遣的事件、退出状态和实际产物。Windows 实机本项只做基础检查；Windows CI 定向检查按发布规格执行。
+  - 2026-11-20 用户在 Windows 应用内把 Desktop 从 0.2.2-rc.3 更新到 rc.5，并授权「连接 Windows，完成实机检查」。经 SSH 核对：`DeepSeek Harness.exe` FileVersion `0.2.2-rc.5`，`runtime.json` desktopVersion `0.2.2-rc.5`；更新前插件为 0.9.1 正式包（`v091-8ef27ef-20261117`）。
+  - 插件来源：在临时 worktree（HEAD `b7703b2`，构建后已移除）执行 `pnpm build:preview` 并打包，包 SHA256 `1b38ddbe605f45e8fc4433170a839f510280b09842dbde3d74fb02fb74c821b8`，1391 个文件，devDependencies 锁定 `@deepseek-ai/dsh` 0.2.2-rc.5，包内没有 `doc/local`、`.test-data` 或 `.ssh`。安装前空闲检查 activeWorkers=0、账号进程 0；经应用菜单正常退出（quitRequested=true，进程数 0）后运行原生安装器 `dsh plugin --profile desktop add --save-exact`，退出码 0，1391/1391 个文件哈希一致（lib 1167 个），profile 依赖改为 `v092-b7703b2-20261120\dsh-cliworker-now-b7703b2.tgz`；安装前 profile 与旧插件已备份到同目录 `profile-before`。在交互桌面带无障碍参数启动，进程正常响应，stderr 为空，启动日志无错误。
+  - 界面（内置浏览器经 SSH 端口转发访问 Windows Host Web UI）：插件页显示 dsh-cliworker-now v0.9.1，已启用，说明文字为本次构建（含 rc.5 与委派深度说明）；右侧 CLI Worker 面板正常加载，无白屏；「CLI Worker 设置」打开正常，17 个 CLI 均列出，「更新 CLI」显示 9 项可更新；Codex 页显示已登录，项目默认为 GPT-5.6-Luna、Low。
+  - 派遣：工作区 `live-codex`（`C:\Users\admin\cw081f1\live-codex`），标准模式，主模型 DeepSeek-V4.1-Flash High。用户已授权本次检查调用模型，派遣 Codex 新建 `rc5-win-check.txt`；问题卡片询问是否沿用 GPT-5.6-Luna · Low，选择沿用后启动。Worker `codex-1`（`596fd348-5864-4b5a-a4ff-1adf5bd917cf`），codex-app-v1，自动审批档（accept-edits）。
+  - 事件：08:11:48Z queued → 08:11:52Z「本轮权限：自动审批」→ 08:11:56Z CLI 已连接，observedModel gpt-5.6-luna → 08:12:31Z result SUCCESS → 08:12:32Z completed。共 444 条事件，4 个工具步骤；步骤 2 是 Codex 用 `rg` 搜索自身记忆，无匹配退出码 1（FAILED），由此产生「本轮有 1 个工具步骤失败，CLI 已自行处理」的结果说明；fileChange 与读回命令（退出码 0）均完成。
+  - 产物：SSH 读回 `rc5-win-check.txt` 共 24 字节，十六进制 `7263352077696e646f7773206469737061746368206f6b0a`（`rc5 windows dispatch ok` 加 LF），修改时间 16:12:21+08:00。主对话也用读取工具独立读回，内容一致。
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-windows-rc5-check/`（包、清单、安装与启动脚本、Worker 事件和 worker.json）；Windows 端 `%LOCALAPPDATA%\cliworker-now-remote\v092-b7703b2-20261120\`（安装结果、安装器日志、profile 备份、启动日志）。
+  - 未执行：Windows CI 定向检查（按发布规格另行执行）；其他 CLI 的 Windows 派遣；DSH 原生子 Agent 在 Windows 上的派遣。检查结束后 Windows Desktop 保持运行，装的是本次构建。
 
 ## 跟进
 
