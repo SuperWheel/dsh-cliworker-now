@@ -75,7 +75,9 @@
   - 续聊要求用自带生图：01:08:38 `invoke_subagent`（image-generator），01:08:41 诊断「15 秒后第 1 次跟进」，01:08:56 自动跟进 1 次，01:09:22 result SUCCESS、终态 completed；事件中无待核实（UNCERTAIN）。`dog.png` 实际存在：1024×1024 RGB PNG、1,515,167 字节，由子 Agent 产物 `blue_watercolor_dog_*.jpg`（782,443 字节）经 Pillow 转码保存
   - 2026-11-14 主回合较长（含审批）情形在 Windows 通过（用户在 Windows DSH 登录 DeepSeek 后实测；正式 Desktop 0.2.2-rc.3，插件 `e03db09`）：Worker `c2395796`，Gemini 3.8 Flash／Low，自动审批档；agy 报告无终端沙箱，原生请求逐条经 DSH 审批。02:09:09 `invoke_subagent` 后台启动，随后 5 次 PowerShell／Python 命令逐条授权（允许一次），主回合持续到 02:12:56；02:13:01 诊断「子 Agent 仍在后台运行，15 秒后第 1 次跟进」，02:13:16 自动跟进 1 次，02:13:20 result SUCCESS、终态 completed，无 UNCERTAIN
   - 产物：agy 把子 Agent 的 JPEG（783,228 字节）以 `win-dog.png` 名保存；主 Agent 核对发现格式不符后转码为真 PNG。Windows 读回 IHDR 1024×1024、1,976,115 字节
-- [ ] 5.3 向报告用户索取 Worker 的 `events.jsonl`，确认其误报属于哪种原因（未执行：需用户联系报告者）
+- [x] 5.3 确认报告用户的误报属于哪种原因（用户决定不再追查）
+  - 原计划：向报告用户索取 Worker 的 `events.jsonl`。
+  - 2026-11-20 用户决定：两个可能原因均已修复，并已通过 5.1/5.2 真实验收，不再联系报告者，本项勾选。报告者的 `events.jsonl` 未取得，其误报属于哪种原因仍未确认。
 
 ## 6. 文档同步 〔产品｜1h｜前置 2〕
 - [x] 6.1 README 中英文：规划模式说明补充 `ExitPlanMode` 收尾行为；后台子 Agent 段落改写等待上限与完成依据
