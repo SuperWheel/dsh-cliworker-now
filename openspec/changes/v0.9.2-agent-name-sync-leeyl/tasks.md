@@ -57,15 +57,23 @@
 
 ## 6. Mac Desktop rc.5 跨入口验收 〔测试｜6h｜前置 3,4,5〕
 
-- [ ] 6.1 准备隔离预览，运行相关类型检查、命名与工具回归、预览构建；以隔离 DSH_HOME 检查页头补丁确已载入，核对 Desktop 无活动任务后才更新验收版本。记录 SDK、Desktop、四包版本与预览产物。
+- [x] 6.1 准备隔离预览，运行相关类型检查、命名与工具回归、预览构建；以隔离 DSH_HOME 检查页头补丁确已载入，核对 Desktop 无活动任务后才更新验收版本。记录 SDK、Desktop、四包版本与预览产物。
   - 计划证据目录为 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-agent-name-sync/`，测试根权限 0700。若实际在其他日期开始，按当天日期新建并回填此处。临时 HOME、DSH_HOME、工作区和脱敏验收产物均置于该次目录。（未执行：本次仅撰写提案。）
   - 2026-11-19 在合入 #14、#15、#16 的 main（72464ed）之上：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.5）；全量 `HOME=<验收目录>/home KIMI_CODE_NO_AUTO_UPDATE=1 corepack pnpm exec vitest run --maxWorkers=2` 退出 0，370 文件（366 通过、4 跳过），9,043 项（9,028 通过、0 失败、15 跳过），262.67 秒；`corepack pnpm lint` 0 error、334 warning，本分支改动文件的 warning 数与 main 逐文件相同；`corepack pnpm build:preview` 退出 0。
   - `format:check` 仍报若干文件：经逐个比对，其中 25 个在 main 上原本就未按 Prettier 排版（如 `src/host/runtime.ts`、`src/host/routing.ts`），按规则不整体格式化；新文件及原本合规、被本次改动的文件已用 Prettier 修正。
   - 隔离 `dsh web`：验收目录 `web/` 下临时 `HOME`、`DSH_HOME`（0700）；Desktop 自带 `runtime/cli/bin/dsh --version` 为 0.2.2-rc.5，`dsh plugin --profile web add` 装入预览 tgz 后以 `--profile web --no-open --host 127.0.0.1 --port 0` 启动，内置浏览器打开（令牌已从日志脱敏、未另存）。浏览器实际加载的客户端合包含页头补丁标记 `cliworkerHeaderNames`；主界面与 CLI Worker 面板（空态）正常渲染，控制台无错误，Host 日志只有启动地址一行。停止后进程退出、无 `host.lock` 残留。
-  - 未执行：Mac Desktop 实机加载与更新（四个变更合并后统一做），因此本项不勾选。
-- [ ] 6.2 **真实派遣与原地改名。** 在 Mac Desktop rc.5 的同一父会话派遣 Codex、Antigravity、ZCode 及 DSH 原生子 Agent，对照面板、页头、目录与派遣回执；另验证原生工具抢先占用 `codex-1` 后自动换号。空闲与运行中各改名一次，记录改名前后 childId、目录条目数、CLI 会话、原有历史、后续输出和终态。
-  - （未执行：等待实现、rc.5 四包和已有 CLI／模型选型授权。实机证据记录事件、退出状态与实际产物。）
+  - 2026-11-20 Mac Desktop 实机加载：Desktop `CFBundleShortVersionString` 0.2.2-rc.5，开发依赖 `@deepseek-ai/dsh` 及随包 ui-session、ui-conversation、ui-subagent 等均为 0.2.2-rc.5；Desktop profile 的 `dsh-cliworker-now` 链接到本仓库。每次更新前核对 `~/.dsh/cliworker-now/*.worker.json` 无运行中或排队 Worker，正常退出 Desktop 后 `corepack pnpm build`，再带无障碍与防节流参数冷启动：14:3x 用 c6c1ba5 的构建做第一阶段；15:03 加临时诊断构建（定位 6.3 缺陷，诊断代码未提交）；15:09 载入修复 2dc06d8；15:31 载入派遣提示修订。Codex Computer Use 按完整路径绑定操作真实窗口。
+- [x] 6.2 **真实派遣与原地改名。** 在 Mac Desktop rc.5 的同一父会话派遣 Codex、Antigravity、ZCode 及 DSH 原生子 Agent，对照面板、页头、目录与派遣回执；另验证原生工具抢先占用 `codex-1` 后自动换号。空闲与运行中各改名一次，记录改名前后 childId、目录条目数、CLI 会话、原有历史、后续输出和终态。
+  - 2026-11-20，工作区 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-v092-desktop-acceptance/ws`，父会话 `session-c2274839-e749-4181-9aef-ae5f4ed0c4d0`（主模型 GLM-5.3-Flash）。DSH 原生子 Agent 以 `codex-1` 创建（childId `bf307a19…`）；随后同时派遣 Codex（GPT-6-Luna Low）、Antigravity（Gemini 3.8 Flash Low）、ZCode（glm-5.3-flash Low），回执与面板依次为 `codex-2`（`codex-1` 已被原生条目占用，自动换号）、`agy-1`、`zcode-1`，主回复、面板列表与原生切换器名称一致；三个文件 `name-*.txt` 实际写出（Codex 经隔离副本合并）。
+  - 空闲改名：14:36:49 `codex-2`→`cx-renamed`，14:37:25 原生 `codex-1`→`dsh-renamed`（面板标注「仅修改显示名」）。运行中改名：Antigravity 续聊开始约 14 秒后 14:38:31 `agy-1`→`agy-live`，改名成功，之后该轮仍有输出事件（06:38:31.156–31.608Z）。`~/.dsh/cliworker-now/agent-name-overrides.json`（0600）记录三条，均含 `registeredName` 与 `formerNames`；父会话日志 `subagent/catalog` 始终 4 条，改名未新增目录条目；三个 Worker 的 childId 与 CLI 会话 ID 不变，`nameAliases` 记录曾用名。
+  - Antigravity 那一轮以「CLI 工具缺少终态」失败，与改名无关：agy 把 60 秒循环命令自行转到后台并结束本轮，事件里该命令始终是 RUNNING，`agy-ticks.txt` 只有 2 行；这是 v0.8.1 起 `native-acp.mjs` 的保守判定。插件任务结果已用新名 `agy-live`，但 DSH 原生的结束通知仍写登记名「Background subagent agy-1 failed」，主 Agent 据此沿用旧名；属设计决定 2 中 rc.5 原生署名沿用登记名的已知限制，旧名仍可寻址。
 - [ ] 6.3 **真实工具寻址。** 对照 `list_agents` 的模型可见结果与工具卡，用新名和旧名分别发送、续聊，在可控的独立轮次中验证按新旧名中断。核对送达 childId、消息 ID、审计、接纳与实际停止；验证主 Agent 用新名或曾用名显式创建被拒绝，并观察主 Agent 与子 Agent 作用域钩子是否触发。
-  - （未执行：需真实 rc.5 工具执行记录。）
-- [ ] 6.4 **真实重启与存量对照。** 冷启动时先看页头再打开插件面板，分别回读列表、面包屑、侧栏的名称，旧名仍定位原 ID；核对旧 Worker 采用 `agent-N`、原生条目沿用目录名、原生显示改名标注与实际署名。记录未覆盖界面或无法验证的平台、账号与官方接口。
-  - （未执行：需完成改名后重启 Desktop 并回读。）
+  - 2026-11-20 14:53–14:59 第一轮：主 Agent `list_agents` 工具卡与模型可见文本均为 `lead`、`dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`；曾用名 `codex-1` 的 `send_message` 送达，子会话实际回复 `pong-old`；`cliworker_followup` 按现名 `cx-renamed` 与曾用名 `agy-1` 均续上原 Worker（回执 `agentName` 为现名，沿用原模型，无选型卡），读回 `codex ok`、`agy ok`；`subagent` 显式用现名 `cx-renamed`、曾用名 `codex-2` 创建均被插件钩子拒绝（「名称已被同一会话中的子 Agent 使用（含改名前的名称）」），目录未新增。
+  - 发现缺陷：按现名 `dsh-renamed` 的 `send_message` 四次都返回 DSH 的 `subagent "dsh-renamed" is unavailable`。15:03 临时诊断（`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-19-agent-name-sync/name-tools-diag.log`）显示 Desktop 把控制工具注册在 Agent 作用域，全局视图没有 `send_message`（`hasGlobal:false`，`sameAsScoped:true`），钩子按全局视图比对后总是交回 DSH。修复 2dc06d8 改为按调用者作用域比对，`tests/agent-name-tools.test.ts` 新增作用域注册加本步 toolSet 的模拟用例（修复前失败、修复后通过），名称相关 4 个文件 33 项通过。
+  - 15:10 复测：现名 `send_message` 工具卡「消息已送达」，子会话 `bf307a19-a8e6-460b-a8a9-08d44c0d77da` 收到「Agent lead sent a message」并回复 `pong-new3`；让该子 Agent 自己调 `list_agents`，它看到 `lead`、`dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`，子 Agent 作用域钩子同样生效。
+  - 未通过项（故不勾选）：按新旧名中断。Desktop rc.5 主 Agent 工具列表没有 `interrupt_agent`（主 Agent 两次明确答复没有该工具），无法实机触发；中断路径只有 `agent-name-tools.test.ts` 的模拟覆盖；是否以模拟覆盖接受本项，待用户决定。消息 ID 未在工具文本中返回，以子会话收信记录代替核对送达。
+- [x] 6.4 **真实重启与存量对照。** 冷启动时先看页头再打开插件面板，分别回读列表、面包屑、侧栏的名称，旧名仍定位原 ID；核对旧 Worker 采用 `agent-N`、原生条目沿用目录名、原生显示改名标注与实际署名。记录未覆盖界面或无法验证的平台、账号与官方接口。
+  - 2026-11-20 15:03 冷启动后先不开面板：原生切换器「4 个子智能体」依次为 `dsh-renamed`、`agy-live`、`cx-renamed`、`zcode-1`；子会话页头按钮为「切换子智能体：只读 README.md 并一句话总结」，面包屑为「DSH subagent 创建 codex-1 总结 README / 只读 README.md 并一句话总结」，现名只在展开切换器时出现；子会话里的历史消息没有作者署名。左侧栏只显示用户的会话标题（含 `codex-1` 字样，属聊天标题，按设计保留）。
+  - 随后打开面板：Deepseek Harness 分组 `dsh-renamed`（标「仅修改显示名」）、Antigravity `agy-live`、Codex `cx-renamed`、ZCode `zcode-1`，详情头为「现名｜任务标题」（原生条目只显示任务标题）。`cliworker_status` 用曾用名 `codex-2` 查询返回 `agentName: cx-renamed`、workerId `fb4ef16a-…`、`nameAliases: ["codex-2"]`，旧名定位原 ID。
+  - 存量对照：11-19 22:52 的会话「调用dsh总结README」中原生条目沿用目录名 `agent-1`、`agent-2`，面板与原生切换器一致。
+  - 未覆盖：页头本身不显示名称（rc.5 页头只显示任务标题），因此「页头显示新名」只能在切换器中核对；DSH 原生结束通知与子 Agent 身份提示仍用登记名（设计决定 2 的已知限制，待官方 rename）；官方 rename 接口尚不存在，迁移路径未实测；Windows 未测。
