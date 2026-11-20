@@ -102,7 +102,11 @@
   - 2026-11-20 用户回来后要求「开始测 Windows」。Windows（DSH Desktop 0.2.2-rc.5）上 Desktop 原本未运行，空闲门禁（`hermes-windows-preflight-readonly.ps1`）通过；备份 profile 的 7 个文件到 `%LOCALAPPDATA%\cliworker-now-remote\v092-release-20261120\profile-before`，用 Desktop 自带 pnpm 原生安装 `dsh-cliworker-now-0.9.2.tgz`（SHA-256 `94e1fec1…d2b70b`），退出码 0，依赖由 0.9.1 换为 0.9.2；1391/1391 文件与清单一致、lib 1167/1167，Host 哈希 `1fe54100…730aeb` 与 Mac 构建相同。脚本与清单副本在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-windows-release-v0.9.2/`
   - 带无障碍与防节流参数启动（pid 29372，会话 38），进程响应正常，`desktop.stderr.log` 0 字节。直接调用 Codex Computer Use（Windows）只读核对：插件页 dsh-cliworker-now 显示 v0.9.2、已启用，6 个组件全部「运行中」；CLI Worker 面板正常渲染已有 CodeBuddy 任务；「CLI Worker 设置」17 个 CLI 都显示状态，16 个绿点，Qoder CN 红点「Qoder 原生账号查询暂不可用…（原生账号未认证）」，属该机 Qoder CN 原生登录状态，与本版改动无关；「更新 CLI」自动检查列出 可更新 11、需要手动更新 3（Qoder、Qoder CN、TRAE CN）、已是最新 3（MiMo 0.1.17、ZCode CLI 0.17.1、Pi 1.5.2）。核对后关闭设置、回到原会话，未改动任何设置，未点更新，未调用模型；Computer Use 中继已停止（无残留）
   - 未覆盖：Windows 上本次发布包未做真实模型派遣（4.4 已用 rc.5 + main 做过 Codex 派遣）；Desktop 保持运行，安装前 profile 备份保留以便回退
-- [ ] 5.3 推送 GitHub、创建 Release、npm 发布与回读（未执行：等用户批准的发布流程执行到这一步）
+- [x] 5.3 推送 GitHub、创建 Release、npm 发布与回读
+  - 2026-11-20 按用户批准推送 main（`3c5b3f0..4e52a67`）。[CI](https://github.com/SuperWheel/dsh-cliworker-now/actions/runs/44753553622) Windows native runtime 通过（31 个文件）；Linux checks 55 项失败，对照 11-18 已知清单（测试未固定模拟平台、Hermes／手动接管用例），失败文件与上一提交相同，变化的只是同一参数化用例的不同实例，相关源码在 3c5b3f0..299b872 间未改，判为非本版回归
+  - 创建 [GitHub Release v0.9.2](https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.9.2)（标题 `dsh-cliworker-now v0.9.2`，标签指向 `4e52a67`，附 tgz 与 `SHA256SUMS.txt`）。`gh release download` 回读到 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-release-v0.9.2-readback/gh/`，tgz SHA-256 `94e1fec1…d2b70b` 与本地一致
+  - npm：旧令牌失效（whoami 401），用户在终端完成网页登录与 2FA；`npm publish <tgz> --access public` 退出 0，输出 `+ dsh-cliworker-now@0.9.2`，npm 计算的 shasum `700277f175c5aa81b6237a432329c4b68ab0b445` 与本地 tgz SHA-1 一致，1391 个文件，标签 latest（日志 `.test-data/release-v0.9.2/npm-publish.log`）
+  - 未执行：npm 仓库回读。发布后约 5 分钟内仓库仍处于处理状态（`latest` 仍为 0.9.1，`0.9.2` 返回 404）；用户要求不再等待
 
 ## 跟进
 
