@@ -1,0 +1,8 @@
+pm:
+  title: Antigravity 命令转后台后本轮如实标为待核实
+  version: next
+  creator: leeyl
+  creator_name: Leeyl
+  previous_names: []
+schema: pmspec
+created: 2026-11-20

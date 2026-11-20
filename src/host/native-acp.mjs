@@ -17,6 +17,8 @@ export async function nativeAcpAttachmentPrompt(config, agentCapabilities, signa
 }
 
 const ACP_KINDS = { execute: 'command', edit: 'file', delete: 'file', move: 'file', fetch: 'network' }
+/** Tool row output for a command the CLI moved to the background before the turn ended. */
+export const BACKGROUND_COMMAND_TOOL_NOTE = '已转入后台，本轮结束时仍未完成，随会话关闭中止'
 /** Public summary of one ACP permission request for the DSH prompt. A session
  * grant is offered only when the CLI's own session-scoped option is present. */
 export function acpApprovalRequest(params, sessionOption) {
@@ -279,8 +281,11 @@ export async function runNativeAcp(config, io, settings) {
       if (settings.background?.isBackgroundTool(update)) background.add(update.toolCallId)
       lastToolAt = response.length
       const previous = tools.get(update.toolCallId) ?? { step: step++, title: '工具', status: 'pending' }
+      // Kept once seen: later updates may omit the input that identifies it.
+      const backgroundCommand = previous.backgroundCommand ?? settings.backgroundCommand?.(update)
       const value = {
         ...previous,
+        ...(backgroundCommand ? { backgroundCommand } : {}),
         ...(nonempty(update.title) ? { title: update.title } : {}),
         ...(nonempty(update.status) ? { status: update.status } : {}),
       }
@@ -501,12 +506,29 @@ export async function runNativeAcp(config, io, settings) {
     }
     if (result?.stopReason !== 'end_turn' && !deniedCancel)
       fail(`CLI 未成功完成（${String(result?.stopReason ?? 'missing terminal')}）`)
-    if ([...tools.values()].some((tool) => !['completed', 'failed'].includes(tool.status)))
-      fail('CLI 工具缺少终态')
+    const open = [...tools.entries()].filter(([, tool]) => !['completed', 'failed'].includes(tool.status))
+    // The CLI itself moved these commands to the background and then ended a normal turn;
+    // closing its process ends them. Anything else without a terminal state is a protocol gap.
+    const backgrounded = result?.stopReason === 'end_turn' ? open.filter(([, tool]) => tool.backgroundCommand) : []
+    if (open.length > backgrounded.length) fail('CLI 工具缺少终态')
     if (io.signal.aborted) fail('任务已停止')
+    let backgroundCommandNote
+    if (!failure && backgrounded.length) {
+      for (const [callId, tool] of backgrounded) {
+        tools.set(callId, { ...tool, status: 'failed', output: BACKGROUND_COMMAND_TOOL_NOTE })
+        emit({ kind: 'tool', step: tool.step, text: tool.title, state: 'FAILED',
+          toolCall: { callId, output: BACKGROUND_COMMAND_TOOL_NOTE } })
+      }
+      const commands = backgrounded.slice(0, 3).map(([, tool]) => {
+        const text = String(tool.backgroundCommand).replace(/\s+/g, ' ').trim()
+        return text.length > 200 ? `${text.slice(0, 200)}…` : text
+      })
+      backgroundCommandNote = `${settings.name} 把命令转入后台后结束了本轮：命令在本轮结束时仍未完成，Worker 关闭会话后随之中止，没有结果。请核查实际产物；需要结果时续聊并要求在前台运行。命令：${commands.join('；')}${backgrounded.length > 3 ? ` 等 ${backgrounded.length} 条` : ''}`
+    }
+    const unverified = [backgroundUnconfirmed, backgroundCommandNote].filter(Boolean).join('；')
     if (failure) io.result('ERROR', response, failure, 'run')
     else if (deniedCancel) io.result('SUCCESS', response, undefined, 'run', '因拒绝审批而结束：被拒操作未执行，可续聊继续')
-    else if (backgroundUnconfirmed) io.result('UNCERTAIN', response, backgroundUnconfirmed, 'run')
+    else if (unverified) io.result('UNCERTAIN', response, unverified, 'run')
     else if (!response) io.result('UNCERTAIN', response, 'CLI 未返回可核查的本轮正文', 'run')
     else toolOutcomes.settle(io, response, 'run', denied)
     inspect = !failure && !io.signal.aborted

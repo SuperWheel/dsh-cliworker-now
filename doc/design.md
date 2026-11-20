@@ -1751,3 +1751,9 @@ OMP 18.20.2 的内嵌 `startup-cwd.ts` 接受 `--cwd`，`tools/bash.ts` 使用�
 开发 SDK、默认 vendor 目标和四个原生 UI 包均对齐官方 tag `dsh-v0.2.2-rc.5`（`9c2670d3bce5275e0d1610272958121af87787bb`）。rc.3 的 48 文件补丁在新基线上原样应用。四包继续经原生 bundle 注入，继承同版本官方 Host、声明和资源。rc.3 等历史目标可按版本显式校验。上游测试与实际 npm 差异见[本次适配设计](../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/design.md)，各平台验收进度见[任务清单](../openspec/changes/v0.9.2-dsh-rc5-adapt-leeyl/tasks.md)。
 
 在这一基线上，随包 ui-subagent 的页头从根 Slot 属性 `cliworkerHeaderNames` 取得只读名称源。插件 Client 在 Remote 可用时注册，页头按直属目录父 ID 订阅，用行 childId 读取覆盖。没有改名的历史行继续按官方规则显示。旧名保留供同父会话按名查找，DSH 原生发信署名、团队看板与工作区树沿用宿主逻辑。
+
+## 2026-11-20：Antigravity 命令转后台后判待核实（vnext-agy-background-command-leeyl）
+
+agy 的 `run_command` 带必填参数 `WaitMsBeforeAsync`，命令超过该时长就转入后台；ACP 上不发任何更新，工具停在 `in_progress`。插件每轮结束都关闭 agy 进程，后台命令随之中止（2026-11-20 实机：ticks 文件停在转后台前，下一轮 agy 自报该工具 `failed`）。此前 ACP 运行器把它与协议丢失终态一起判为「CLI 工具缺少终态」。
+
+现在 ACP 运行器提供默认关闭的 `backgroundCommand` 钩子，仅 Antigravity ACP 启用。本轮以 `end_turn` 结束、未停止、无其他失败，且未终态的工具全部是这类命令时，整轮判结果待核实，说明命令已转入后台、未完成、随会话中止并列出命令；工具行收尾为失败附同样说明。其他未终态工具、非 `end_turn`、停止仍按原规则判失败。识别只看工具入参，不看模型正文。不让后台命令跑完（不保持进程、不自动跟进），Antigravity stream 后备不在范围内。详见[变更设计](../openspec/changes/vnext-agy-background-command-leeyl/design.md)。

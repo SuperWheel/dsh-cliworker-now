@@ -18,6 +18,17 @@ export const AGY_BACKGROUND = Object.freeze({
   delaysMs: Object.freeze([15_000, 20_000, 30_000, 45_000, 60_000, 60_000, 90_000, 90_000, 120_000]),
   budgetMs: 10 * 60_000,
 })
+/** agy's run_command requires WaitMsBeforeAsync: "milliseconds to wait for the command to finish
+ * before backgrounding it". ACP sends nothing when it does; the tool just stays in_progress.
+ * Returns the command text for such a tool, never judged from the model's reply. */
+export function agyBackgroundCommand(update) {
+  if (update?.name !== 'run_command') return undefined
+  const input = [update.rawInput, update.args].find(value => value && typeof value === 'object' &&
+    Number.isFinite(value.WaitMsBeforeAsync))
+  if (!input) return undefined
+  return typeof input.CommandLine === 'string' && input.CommandLine.trim() ? input.CommandLine
+    : typeof update.title === 'string' && update.title.trim() ? update.title : 'run_command'
+}
 const option = (state, id) => state?.configOptions?.find(item => item.id === id)
 const values = items => (items ?? []).flatMap(item => Array.isArray(item.options) ? values(item.options) : [item.value])
 const modelIds = state => (state?.models?.availableModels ?? []).map(item => item.modelId)
@@ -106,6 +117,7 @@ export async function runNativeAgyAcp(config, io, { sandbox, background = AGY_BA
     encode: value => value,
     toolName: update => update.name,
     background,
+    backgroundCommand: agyBackgroundCommand,
     // No ACP permission-mode catalog or plan agent was advertised by 1.4.11.
     sessionUnavailable: () => new AgySessionUnavailable('Antigravity ACP 未提供会话加载'),
     loadSession: async (peer, params) => {

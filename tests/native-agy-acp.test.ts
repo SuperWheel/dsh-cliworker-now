@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { agyArguments } from '../src/host/process.ts'
 import { createNativeIO } from '../src/host/native-transport.mjs'
-import { AGY_BACKGROUND, agyAcpArgv, runNativeAgyAuto, runNativeAgyAcp, probeAgyAcp } from '../src/host/native-agy-acp.mjs'
+import { AGY_BACKGROUND, agyAcpArgv, agyBackgroundCommand, runNativeAgyAuto, runNativeAgyAcp, probeAgyAcp } from '../src/host/native-agy-acp.mjs'
 import { nativeHarnessMcpServers } from '../src/host/native-harness-injection.mjs'
 import { createNativeHarnessTools } from '../src/host/native-harness-tools.ts'
 import { extractTelemetry } from '../src/host/telemetry.ts'
@@ -86,6 +86,18 @@ createInterface({input:process.stdin}).on('line',async line=>{
    update({sessionUpdate:'tool_call',toolCallId:'cmd',name:'run_command',title:'模拟只读命令',kind:'execute',status:'pending',rawInput:{CommandLine:'pwd -P'}});
    send({jsonrpc:'2.0',id:'ask',method:'session/request_permission',params:{sessionId:id,toolCall:{toolCallId:'cmd',kind:s==='permission-edit'?'edit':'execute',title:'模拟只读命令',rawInput:{CommandLine:'pwd -P'}},options:[{kind:'allow_once',optionId:'allow'},{kind:'reject_once',optionId:'deny'},{kind:'allow_always',optionId:'persist'}]}});
    if(s==='permission-late'){text();finish();}return;
+  }
+  // 模拟：按 2026-11-20 实机 raw 记录的形状回放 agy 把 run_command 转入后台后结束本轮。
+  if(s.startsWith('async-command')){
+   const say=t=>update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:t}});
+   const input={CommandLine:'python3 -c "模拟 12 次计时循环"; wc -l agy-ticks.txt',WaitMsBeforeAsync:10000,toolSummary:'Execute periodic tick loop'};
+   update({sessionUpdate:'tool_call',toolCallId:'call_bg',name:'run_command',args:input,status:'in_progress',kind:'execute',title:input.CommandLine,rawInput:input});
+   if(s==='async-command-done')update({sessionUpdate:'tool_call_update',toolCallId:'call_bg',name:'run_command',status:'completed',rawOutput:{output:'12 agy-ticks.txt',exit_code:0}});
+   if(s==='async-command-other')update({sessionUpdate:'tool_call',toolCallId:'cmd',title:'模拟工具',status:'in_progress'});
+   if(s==='async-command-cancel'){say('已启动');return;}
+   say('已启动');say('后台计时循环任务，完成后将自动读取并报告文件的总行数。请');say('稍候。');
+   if(s==='async-command-partial'){reply(pending,{stopReason:'max_tokens'});return;}
+   finish();return;
   }
   if(s==='unfinished')update({sessionUpdate:'tool_call',toolCallId:'cmd',title:'模拟工具',status:'in_progress'});
   if(s==='tool-failure')update({sessionUpdate:'tool_call',toolCallId:'cmd',title:'模拟工具',status:'failed'});
@@ -401,4 +413,52 @@ it('模拟：成功完成本轮后 agy 关闭时非零退出，报告待核实�
   expect(r.result.error).toContain('关闭时异常退出')
   expect(r.result.error).toContain('退出码 2')
   expect(r.result.response).toContain('图片已保存到 cat.png')
+})
+// 模拟：以下按 2026-11-20 Mac 实机 raw 记录（Worker b665400a，run 5d6e130e）的更新形状回放，不调用真实 agy 或模型。
+const toolFrames = (r: any, callId: string) => r.frames.filter((f: any) => f.event?.kind === 'tool' && f.event.toolCall?.callId === callId).map((f: any) => f.event)
+it('模拟：agy 把 run_command 转入后台后以 end_turn 结束，判待核实并说明命令未完成、随会话中止', async () => {
+  const r = await run(setup('async-command'), 'allow-once', undefined, false)
+  expect(r.error).toBeUndefined()
+  expect(r.result).toMatchObject({ status: 'UNCERTAIN', resultScope: 'run' })
+  expect(r.result.response).toContain('后台计时循环任务')
+  expect(r.result.error).not.toContain('缺少终态')
+  expect(r.result.error).toContain('转入后台')
+  expect(r.result.error).toContain('仍未完成')
+  expect(r.result.error).toContain('随之中止')
+  expect(r.result.error).toContain('wc -l agy-ticks.txt')
+  // 命令步骤收尾为失败并附说明，不停在运行中，也不计为成功。
+  const states = toolFrames(r, 'call_bg')
+  expect(states.map((e: any) => e.state)).toEqual(['RUNNING', 'FAILED'])
+  expect(states.at(-1).toolCall.output).toContain('已转入后台')
+  expect(prompts(r)).toBe(1)
+})
+it('模拟：后台命令在本轮结束前补发 completed，按原规则判成功且不附后台说明', async () => {
+  const r = await run(setup('async-command-done'), 'allow-once', undefined, false)
+  expect(r.result.status).toBe('SUCCESS')
+  expect(JSON.stringify(r.result)).not.toContain('转入后台')
+  expect(toolFrames(r, 'call_bg').at(-1).state).toBe('COMPLETED')
+})
+it('模拟：还有不带 WaitMsBeforeAsync 的工具未终态时仍判缺少终态', async () => {
+  const r = await run(setup('async-command-other'), 'allow-once', undefined, false)
+  expect(r.result).toMatchObject({ status: 'ERROR', error: 'CLI 工具缺少终态' })
+})
+it('模拟：后台命令未终态且原生轮次不是 end_turn 时按原规则判失败', async () => {
+  const r = await run(setup('async-command-partial'), 'allow-once', undefined, false)
+  expect(r.result.status).toBe('ERROR')
+  expect(r.result.error).toContain('max_tokens')
+  expect(JSON.stringify(r.result)).not.toContain('转入后台')
+})
+it('模拟：后台命令运行中用户停止，按停止处理而不是待核实', async () => {
+  const r = await run(setup('async-command-cancel'), 'allow-once', 'text', false)
+  expect(r.result.status).toBe('ERROR')
+  expect(JSON.stringify(r.result)).not.toContain('转入后台')
+  expect(r.rows.some((x: any) => x.cancelled)).toBe(true)
+})
+it('模拟：只按 run_command 的 WaitMsBeforeAsync 识别可转后台命令，不看模型正文', () => {
+  const input = { CommandLine: 'sleep 120', WaitMsBeforeAsync: 500 }
+  expect(agyBackgroundCommand({ name: 'run_command', rawInput: input })).toBe('sleep 120')
+  expect(agyBackgroundCommand({ name: 'run_command', args: input, title: 'sleep 120' })).toBe('sleep 120')
+  expect(agyBackgroundCommand({ name: 'run_command', rawInput: { CommandLine: 'pwd -P' } })).toBeUndefined()
+  expect(agyBackgroundCommand({ name: 'invoke_subagent', rawInput: input })).toBeUndefined()
+  expect(agyBackgroundCommand({ name: 'run_command', rawInput: { WaitMsBeforeAsync: 'soon' } })).toBeUndefined()
 })
