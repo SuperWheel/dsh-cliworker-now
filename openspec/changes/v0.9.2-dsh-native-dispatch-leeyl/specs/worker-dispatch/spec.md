@@ -26,6 +26,11 @@
 - **WHEN** 用户明确请求 DSH 原生派遣，当前主 Agent 的工具列表没有 `subagent`
 - **THEN** 主 Agent 告知用户在「设置 → Agent 预设」改选包含子智能体委派工具（`subagent`）的预设后新开任务，且不通过 `workflow`、`agent()`、`subagent_fork` 或外部 CLI 代为执行该任务
 
+#### Scenario: 委派深度已用尽
+
+- **WHEN** 用户明确请求 DSH 原生派遣，宿主因委派深度已达「最大递归深度」而未提供 `subagent`，并在运行上下文写明剩余层级为 0
+- **THEN** 主 Agent 说明原因是最大递归深度而非预设，提示在插件页的子智能体设置中调高该值；不派遣、不由主 Agent 自行代做该任务（可询问用户是否改由主 Agent 直接完成），也不改用其他执行入口
+
 #### Scenario: 宿主拒绝原生派遣
 
 - **WHEN** 当前主 Agent 可见 `subagent`，但 DSH 原生权限或层级检查拒绝本次调用

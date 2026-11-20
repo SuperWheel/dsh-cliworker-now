@@ -722,6 +722,10 @@ describe('native DSH dispatch from this human step', () => {
     expect(current.text).toContain('在「设置 → Agent 预设」中为新任务选择包含子智能体委派工具（subagent）的预设')
     expect(current.text).toContain('「标准模式」')
     expect(current.text).toContain('不要改用 workflow、agent()、subagent_fork、cliworker_start')
+    // rc.5 drops subagent at depth 0 too: the hint names that cause and forbids doing the task itself.
+    expect(current.text).toContain('remaining levels 0')
+    expect(current.text).toContain('最大递归深度')
+    expect(current.text).toContain('主 Agent 也不要自行代做')
     expect(current.text).not.toContain('直接调用 DSH 原生工具 subagent')
     // A scope that denies subagent is the same as not having it.
     f.exposeSubagent()

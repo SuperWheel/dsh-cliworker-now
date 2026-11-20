@@ -88,7 +88,7 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**，安装�
 | TRAE CN        | ACP                          | WorkBuddy CN · WorkBuddy | ACP · **试验性** |
 
 - **简称**：`agy` → Antigravity，`glm / zhipu / 智谱` → ZCode，`harmes` → Hermes Agent。名称不明确时只给出候选，不会自动派遣。
-- **调用 DSH**：说「调用 dsh 帮我总结 README」「用 DeepSeek Harness 检查这个目录」（`dsh`、`deepseekharness`、`harness` 及加 cli 的说法同样可以），任务交给 DeepSeek Harness 自己的原生子 Agent（宿主 `subagent` 工具），不走 CLI 选型；它出现在 CLI Worker 窗口的「Deepseek Harness」分组。当前 Agent 预设不含子智能体委派工具（如「极简模式」）时，主 Agent 会提示你在「设置 → Agent 预设」改用含该工具的预设（如「标准模式」）后新开任务，不会改用其他 CLI。「调用 dsh 和 codex 分别审查」会各派一个。旧版外部 Harness CLI 的历史任务仍只读。
+- **调用 DSH**：说「调用 dsh 帮我总结 README」「用 DeepSeek Harness 检查这个目录」（`dsh`、`deepseekharness`、`harness` 及加 cli 的说法同样可以），任务交给 DeepSeek Harness 自己的原生子 Agent（宿主 `subagent` 工具），不走 CLI 选型；它出现在 CLI Worker 窗口的「Deepseek Harness」分组。当前 Agent 预设不含子智能体委派工具（如「极简模式」）时，主 Agent 会提示你在「设置 → Agent 预设」改用含该工具的预设（如「标准模式」）后新开任务；子智能体层级已达到 DSH「最大递归深度」时，宿主同样会去掉该工具，主 Agent 会提示你在插件页的子智能体设置中调高该值。两种情况都不会改用其他 CLI，也不会由主 Agent 自行代做。「调用 dsh 和 codex 分别审查」会各派一个。旧版外部 Harness CLI 的历史任务仍只读。
 - **前提**：先安装对应 CLI 的原生版本并完成它自己的登录或 API 配置。WorkBuddy 两版使用各自桌面应用内置的 CLI，依赖非公开接口；TRAE CN 只使用官方 `traecli`。
 - **验证边界**：每个 CLI 的实测版本、已通过与未验证的部分见 [支持范围与验证边界](doc/usage-details.md#42-支持范围与验证边界)。能列出模型不代表一定有调用权限。
 

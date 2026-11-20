@@ -219,6 +219,10 @@ export const CLI_DELEGATION_GUIDANCE = `CLI Worker Now 是调用外部 CLI 的�
 // presets include `subagent`, Minimal does not (web-app presets/*.patch.yml).
 const ENABLE_SUBAGENT_TOOL =
   '在「设置 → Agent 预设」中为新任务选择包含子智能体委派工具（subagent）的预设（例如「标准模式」；「极简模式」不含该工具），再新开任务'
+// rc.5 also removes `subagent` once the delegation depth is used up and only states it in a
+// runtime-context line ("Delegation depth for `subagent`: … remaining levels 0").
+const DEPTH_EXHAUSTED =
+  '若宿主上下文写明 subagent 的委派层级剩余为 0（Delegation depth … remaining levels 0），原因是已达到 DSH 的最大递归深度而不是预设，应告知用户在插件页的子智能体设置中调高「最大递归深度」后再试；否则原因是当前预设，告知用户'
 
 /**
  * Resident delegation guidance for one prompt assembly. Sub-agent sessions never
@@ -232,7 +236,7 @@ export function delegationGuidance(context: { scope?: unknown }): string {
 }
 
 /** Native DSH dispatch is the host's own tool; the plugin only routes the request to it. */
-export const DSH_NATIVE_GUIDANCE = `用户明确要求调用 dsh、DeepSeek Harness、deepseekharness 或 harness（含加 cli/命令行 的说法）执行任务时，指的是 DeepSeek Harness 原生子 Agent，不是外部 CLI：主 Agent 直接调用宿主原生工具 subagent 派遣（description 写简短说明，prompt 写任务），不调用 cliworker_start 或 cliworker_resolve，不进入外部 CLI 选型，也不提示外部 Harness CLI 已退役（退役只针对旧外部 Harness Worker 的历史记录，它们仍只读）。当前工具列表没有 subagent 时，告知用户${ENABLE_SUBAGENT_TOOL}，不改用 workflow、agent()、subagent_fork 或外部 CLI 代替；宿主拒绝调用时如实说明。同时把不同任务分别交给 DSH 和某个外部 CLI 时，两者分别派遣。仅讨论、比较、否定或引用不构成派遣。`
+export const DSH_NATIVE_GUIDANCE = `用户明确要求调用 dsh、DeepSeek Harness、deepseekharness 或 harness（含加 cli/命令行 的说法）执行任务时，指的是 DeepSeek Harness 原生子 Agent，不是外部 CLI：主 Agent 直接调用宿主原生工具 subagent 派遣（description 写简短说明，prompt 写任务），不调用 cliworker_start 或 cliworker_resolve，不进入外部 CLI 选型，也不提示外部 Harness CLI 已退役（退役只针对旧外部 Harness Worker 的历史记录，它们仍只读）。当前工具列表没有 subagent 时，${DEPTH_EXHAUSTED}${ENABLE_SUBAGENT_TOOL}，不改用 workflow、agent()、subagent_fork 或外部 CLI 代替，也不由主 Agent 自行代做（可询问用户是否改由主 Agent 直接完成）；宿主拒绝调用时如实说明。同时把不同任务分别交给 DSH 和某个外部 CLI 时，两者分别派遣。仅讨论、比较、否定或引用不构成派遣。`
 
 function withoutQuotes(text: string): string {
   return text
@@ -519,7 +523,7 @@ function aggregate(resolutions: readonly CliResolution[]): CliResolution | undef
 /** The native route when this agent's step scope exposes `subagent`, or how to enable it. */
 function nativeHint(available: boolean): string {
   if (!available)
-    return `本步用户明确要求由 DeepSeek Harness（DSH）原生子 Agent 执行任务，但当前 Agent 本轮的工具列表中没有原生子 Agent 工具 subagent。如实告知用户：请${ENABLE_SUBAGENT_TOOL}后再试。不要改用 workflow、agent()、subagent_fork、cliworker_start 或任何外部 CLI 代为执行该任务，也不要宣称已经派遣。`
+    return `本步用户明确要求由 DeepSeek Harness（DSH）原生子 Agent 执行任务，但当前 Agent 本轮的工具列表中没有原生子 Agent 工具 subagent。如实告知用户原因：${DEPTH_EXHAUSTED}请${ENABLE_SUBAGENT_TOOL}后再试。不要改用 workflow、agent()、subagent_fork、cliworker_start 或任何外部 CLI 代为执行该任务，主 Agent 也不要自行代做（可询问用户是否改由主 Agent 直接完成），也不要宣称已经派遣。`
   return '本步用户明确要求由 DeepSeek Harness（DSH）原生子 Agent 执行任务。直接调用 DSH 原生工具 subagent 派遣（PTC 模式下在 run_code 内通过 SDK 调用）：description 写简短的任务说明，prompt 写用户交办的任务及必要上下文。DSH 部分不调用 cliworker_start 或 cliworker_resolve，不进入外部 CLI 选型，也不是已退役的外部 Harness CLI；不猜测模型、强度或会话 ID，遵循宿主的权限与层级检查。宿主拒绝调用（例如超过最大递归深度或并发上限）时原样报告宿主的错误，不宣称子 Agent 已启动，也不改用 workflow、agent()、subagent_fork 或外部 CLI 代替。'
 }
 
