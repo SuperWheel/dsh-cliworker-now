@@ -46,4 +46,12 @@
   - 进程与产物（`process-watch.log` 每 2 秒采样）：run 1 循环进程 87232 在 16:26:30–16:26:44 写入 3 行，结果 16:26:44.5 发出，16:26:46 循环进程与 agy 进程 87066 同时消失；run 2（88120/87954）写入 3 行，结果 16:27:35.9，16:27:36 均消失；`agy-bg-ticks.txt` 共 18 行 = 3 + 3 + 12，与说明「随之中止」和 Worker 报告一致；16:31:39 复查无残留 `agy acp` 与循环进程
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-agy-background-command/`（events.jsonl 与三份 raw 副本、`agy-bg-ticks.snapshot.txt`、`process-watch.log`、`process-watch-2.log`、`start-time.txt`）；原件在 `~/.dsh/cliworker-now/b8184daa-…` 未改动
   - 未改任何设置；Desktop 保持运行，Worker 详情窗口留在打开状态
-- [ ] 4.2 Windows 与 Antigravity stream 后备：未执行（Windows 已装含 `b7703b2` 的构建但本次只验 Mac；stream 后备不在本变更范围）
+- [x] 4.2 Windows Desktop 真实 agy：同样的前台约 60 秒循环，核对转后台时的判定、说明、进程与产物
+  - 2026-11-20 用户要求「测 Windows」。Windows DSH Desktop 0.2.2-rc.5，插件为 main `b7703b2` 构建（安装与哈希核对见 `v0.9.2-dsh-rc5-adapt-leeyl` 4.4）。内置浏览器经 SSH 端口转发访问 Windows Host Web UI，在已有工作区 `live-codex`（`C:\Users\admin\cw081f1\live-codex`）新建对话「派 agy 前台循环追加时间」，主模型 DeepSeek-V4.1-Flash High，标准模式；问题卡片沿用 Gemini 3.8 Flash · Low。Worker `e72fe38a-e551-43c4-bdff-7420527f9bfa`（`agy-1`，自动审批档）；agy 报告此主机没有终端沙箱，原生命令逐条经 DSH 审批，均选「允许一次」
+  - run `6e10844e`：第一条命令（外层 `powershell -Command` 引号嵌套）0.7 秒结束，未写出文件；第二条 `run_command`（`WaitMsBeforeAsync: 10000`）08:42:49Z 获准，08:43:03.6Z 工具帧 FAILED，输出「已转入后台，本轮结束时仍未完成，随会话关闭中止」；08:43:03.9Z raw 结果 `status: UNCERTAIN`，`error` 与 Mac 同文（含「转入后台／仍未完成／随之中止」及命令）；08:43:04.9Z 状态 `uncertain`；raw 有一次 `stopReason: end_turn`
+  - 界面：右侧 Worker 卡片状态为「结果待核实」。主 Agent 读到说明后核实文件只有 3 行，自行续聊 run `7b976b3a` 要求分段补齐；agy 改为每条 1～2 次的短命令前台执行（逐条授权），08:48:33Z SUCCESS，08:48:34Z completed
+  - 进程与产物（`process-watch.log`，Windows 侧每约 2 秒采样）：循环进程 powershell 6100 在 16:42:50–16:43:03 存在，写入 3 行；16:43:05 循环进程与 agy 进程 10900 同时消失（结果发出后约 1 秒）；续聊结束后文件共 12 行（3 + 9）；收尾复查 agy 与循环进程数为 0
+  - 「缺少终态」在两份 raw 与 events.jsonl 中计数为 0
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-windows-agy-background/`（events.jsonl、两份 raw、worker.json、`agy-bg-ticks.snapshot.txt`、`process-watch.log`、采样脚本）
+  - 附带发现（不属于本变更）：Windows 授权卡片把命令中的 `$…$` 片段按数学公式渲染，部分文字显示为斜体、反斜杠被转义，命令可读性下降，Mac 未核对
+  - 未执行：Antigravity stream 后备通路（不在本变更范围）
