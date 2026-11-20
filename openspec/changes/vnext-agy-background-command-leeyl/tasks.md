@@ -8,13 +8,16 @@
   - 同类旧例：Worker `e15ebd2f` run `56a468f1`（`sleep 120`，`WaitMsBeforeAsync: 500`）同样判「CLI 工具缺少终态」；本机其余含该参数的 raw 记录中，该命令都已有终态（本轮内 `completed`，或下一轮回放中的 `failed`）
   - `strings ~/.local/bin/agy`：`WaitMsBeforeAsync` 为 `run_command` 必填参数，说明「Milliseconds to wait for the command to finish before backgrounding it (500 to 10000)」
 - [x] 1.2 定位判定：`src/host/native-acp.mjs` 原第 504 行对任何未终态工具判「CLI 工具缺少终态」（v0.8.1 起），不区分 CLI 主动转后台与协议丢失终态
+  - 证据：`b7703b2` 之前的 `native-acp.mjs` 第 504–505 行 `if ([...tools.values()].some(...)) fail('CLI 工具缺少终态')`；两次实机失败的 raw 终态行 `error` 均为该文本
 
 ## 2. 实现 〔后端｜1.5h｜前置 1〕
 
 - [x] 2.1 `native-acp.mjs`：新增默认关闭的 `settings.backgroundCommand(update)`；工具首次识别后在状态中保留命令文本。本轮 `end_turn`、无其他失败且未停止时，未终态工具全部可转后台 → UNCERTAIN，说明「转入后台、本轮结束时仍未完成、随会话中止、没有结果、请核查产物或续聊要求前台运行」并列出命令（单条截断 200 字符，最多 3 条）；工具行补发 FAILED，输出 `BACKGROUND_COMMAND_TOOL_NOTE`；与后台子 Agent 待核实说明合并
   - 其他未终态工具仍判「CLI 工具缺少终态」；非 `end_turn` 与停止不进入该分支
 - [x] 2.2 `native-agy-acp.mjs`：`agyBackgroundCommand` 只认 `name === 'run_command'` 且 `rawInput`/`args` 带数值 `WaitMsBeforeAsync`，返回 `CommandLine`；Antigravity ACP 启用该钩子
+  - 证据：`native-agy-acp.mjs` 导出 `agyBackgroundCommand` 并在 `runNativeAgyAcp` 传入 `backgroundCommand`；识别用例见 3.1，实机识别见 4.1
 - [x] 2.3 文档：`doc/design.md` 追加 2026-11-20 一节；README 与用户文档未提及该错误文本，无需改
+  - 证据：`doc/design.md`「2026-11-20：Antigravity 命令转后台后判待核实」；`grep 缺少终态 README*` 无结果
 
 ## 3. 模拟回归测试 〔测试｜1h｜前置 2〕
 
