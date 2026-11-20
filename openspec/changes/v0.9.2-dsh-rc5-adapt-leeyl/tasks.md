@@ -98,8 +98,11 @@
   - 官方 dsh 0.2.2-rc.5（Desktop 自带 CLI）全新隔离 `HOME`／`DSH_HOME`：`plugin --profile web add --save-exact <tgz>` 退出 0，版本 0.9.2，1391 个文件与包内逐字节一致，`lib` 与 `runtime-host` 1385 个文件与正式构建逐字节一致；临时 profile 已删除，日志留在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-release-v0.9.2-isolated-install/install.log`
   - Mac Desktop（DSH 0.2.2-rc.5，链接正式构建，Codex CU 只读，17:08）：插件 v0.9.2 已启用，CLI Worker 面板正常；17 个 CLI 设置页均显示状态（已登录 8、已连接 6、API 登录 1、已配置 1、未安装 1）；「更新 CLI」检查完成（可更新 10、已是最新 6、未安装 1）；无错误提示
   - 真实 CLI：自上次真实验收以来派遣代码有变化的是 Antigravity（`b7703b2`），2026-11-20 已在 Mac 与 Windows Desktop 用含该提交的构建实测（见 `v0.9.2-agy-background-command-leeyl` 4.1、4.2）；Codex 派遣 2026-11-20 在 Windows rc.5 实测（4.4）；OMP 服务商配置为隔离环境验收（`v0.9.2-omp-custom-provider-leeyl` 5）；发布候选包与这些构建只差 initialize 中的版本字符串，未在候选包上重跑真实派遣
-- [ ] 5.2 Windows Desktop 用原生安装器装入发布候选包并只读核对（未执行：用户要求等其回来再测 Windows）
-- [ ] 5.3 推送 GitHub、创建 Release、npm 发布与回读（未执行：等 5.2 完成）
+- [x] 5.2 Windows Desktop 用原生安装器装入发布候选包并只读核对
+  - 2026-11-20 用户回来后要求「开始测 Windows」。Windows（DSH Desktop 0.2.2-rc.5）上 Desktop 原本未运行，空闲门禁（`hermes-windows-preflight-readonly.ps1`）通过；备份 profile 的 7 个文件到 `%LOCALAPPDATA%\cliworker-now-remote\v092-release-20261120\profile-before`，用 Desktop 自带 pnpm 原生安装 `dsh-cliworker-now-0.9.2.tgz`（SHA-256 `94e1fec1…d2b70b`），退出码 0，依赖由 0.9.1 换为 0.9.2；1391/1391 文件与清单一致、lib 1167/1167，Host 哈希 `1fe54100…730aeb` 与 Mac 构建相同。脚本与清单副本在 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-windows-release-v0.9.2/`
+  - 带无障碍与防节流参数启动（pid 29372，会话 38），进程响应正常，`desktop.stderr.log` 0 字节。直接调用 Codex Computer Use（Windows）只读核对：插件页 dsh-cliworker-now 显示 v0.9.2、已启用，6 个组件全部「运行中」；CLI Worker 面板正常渲染已有 CodeBuddy 任务；「CLI Worker 设置」17 个 CLI 都显示状态，16 个绿点，Qoder CN 红点「Qoder 原生账号查询暂不可用…（原生账号未认证）」，属该机 Qoder CN 原生登录状态，与本版改动无关；「更新 CLI」自动检查列出 可更新 11、需要手动更新 3（Qoder、Qoder CN、TRAE CN）、已是最新 3（MiMo 0.1.17、ZCode CLI 0.17.1、Pi 1.5.2）。核对后关闭设置、回到原会话，未改动任何设置，未点更新，未调用模型；Computer Use 中继已停止（无残留）
+  - 未覆盖：Windows 上本次发布包未做真实模型派遣（4.4 已用 rc.5 + main 做过 Codex 派遣）；Desktop 保持运行，安装前 profile 备份保留以便回退
+- [ ] 5.3 推送 GitHub、创建 Release、npm 发布与回读（未执行：等用户批准的发布流程执行到这一步）
 
 ## 跟进
 
