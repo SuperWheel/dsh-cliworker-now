@@ -106,7 +106,8 @@
   - 2026-11-20 按用户批准推送 main（`3c5b3f0..4e52a67`）。[CI](https://github.com/SuperWheel/dsh-cliworker-now/actions/runs/44753553622) Windows native runtime 通过（31 个文件）；Linux checks 55 项失败，对照 11-18 已知清单（测试未固定模拟平台、Hermes／手动接管用例），失败文件与上一提交相同，变化的只是同一参数化用例的不同实例，相关源码在 3c5b3f0..299b872 间未改，判为非本版回归
   - 创建 [GitHub Release v0.9.2](https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.9.2)（标题 `dsh-cliworker-now v0.9.2`，标签指向 `4e52a67`，附 tgz 与 `SHA256SUMS.txt`）。`gh release download` 回读到 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-20-release-v0.9.2-readback/gh/`，tgz SHA-256 `94e1fec1…d2b70b` 与本地一致
   - npm：旧令牌失效（whoami 401），用户在终端完成网页登录与 2FA；`npm publish <tgz> --access public` 退出 0，输出 `+ dsh-cliworker-now@0.9.2`，npm 计算的 shasum `700277f175c5aa81b6237a432329c4b68ab0b445` 与本地 tgz SHA-1 一致，1391 个文件，标签 latest（日志 `.test-data/release-v0.9.2/npm-publish.log`）
-  - 未执行：npm 仓库回读。发布后约 5 分钟内仓库仍处于处理状态（`latest` 仍为 0.9.1，`0.9.2` 返回 404）；用户要求不再等待
+  - npm 仓库回读：发布后约 5 分钟内仓库仍在处理（`latest` 为 0.9.1，`0.9.2` 返回 404）；22:49 直接查询 registry，`latest` 为 0.9.2，`dist.shasum` `700277f1…b0b445` 与本地一致，1391 个文件
+  - 面板：6 个变更按归档路径同步（31 条任务，新建 1 条为本主任务 5），版本 0.9.2 标记已上线（实际上线 2026-11-20，缺运营素材，按用户要求记决策「0.9.2 发布（未完成项已说明）」），补丁车道新建 0.9.3；联动把 REQ-0138 等 2 个需求改为已上线并各建复盘任务（截止 2026-12-04）
 
 ## 跟进
 
