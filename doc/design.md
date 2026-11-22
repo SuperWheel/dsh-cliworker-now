@@ -12,7 +12,7 @@
 - 新增 `workbuddycn`（WorkBuddy）与 `workbuddy`（WorkBuddy AI），位于 Qoder CN 之后；独立路径、默认选型、目录、会话与 ACP transport。复用已存在的 WorkBuddy 安装解析、引导与 runner，未修改这些核心模块。
 - Host 发现只读核对应用包；原生桥请求携带 `[runtime, entry]`，不通过 PATH 或 CodeBuddy 回退。元数据目录与账号验证在一次授权范围内共用一次握手，范围外不缓存；来源绑定只表示经重新登录验证的应用／站点，不声称能识别未公开的账号主体或检测同站点账号切换。
 - 原生规划与三档权限、附件、原生工具类别已注册；不启用 DSH 工具桥、分支、steer、积分或 token 推导。账号页只给桌面端指引；连接页显示试验性说明；Worker 卡片不显示（2026-11-08 用户要求删除）。
-- 接口、生命周期及未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)、`openspec/archives/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
+- 接口、生命周期及未验证边界见 [WorkBuddy 协议](protocols/workbuddy-protocol.md)、`openspec/archives/add-workbuddy-cli/`；实际验证只写该 change 的 tasks.md。本次不更新已安装 Desktop、不调用真实模型。
 
 ## v0.8.3（未发布）：市场安装的宿主 peer 范围（2026-10-24）
 
@@ -736,7 +736,7 @@ Cordis patch id `cliworker-now`、Gateway `cliworker`、工具 `cliworker_*`、�
 - Host 停止先通过本轮私有停止邮箱尝试原生 interrupt/cancel/abort/stop，再终止并确认整个执行范围，回执不能替代进程退出。Pi/OMP 的引导与停止命名空间隔离；新协议不因原生支持就自动开放尚未实现的引导或审批界面。
 - Hermes 使用独立 API-only gateway home 保留自身 API session 数据，每轮认证材料和其他平台配置隔离，不导入用户定时任务和其他消息平台，不改原账号来源；原生空定时线程随 gateway 退出。MiMo 0.1.15 的 /doc 漏列子路由按实际安装版证据限定兼容，不套用 SDK/main 的假设。
 - 新 Kimi ACP 可在实际模式目录包含 plan 且设置回执通过时执行只读任务；历史 Kimi 执行通路和 Hermes 继续拒绝只读派遣。
-- 详见 doc/native-protocols.md；OpenSpec 为 migrate-native-cli-protocols。真实模型、两平台及 Desktop 证据分别记录，未验收不归档隐藏。
+- 详见 doc/protocols/native-protocols.md；OpenSpec 为 migrate-native-cli-protocols。真实模型、两平台及 Desktop 证据分别记录，未验收不归档隐藏。
 
 ## 2026-10-16：v0.7.10 提交占用、队列代际与原生引导
 
@@ -772,7 +772,7 @@ Cordis patch id `cliworker-now`、Gateway `cliworker`、工具 `cliworker_*`、�
 - Client 使用 SessionReference、SessionProvider 与 `conversation.content` factory；这是原生对话组件，不复制 Codingns4DSH 的页面。缺少公开细粒度接点时使用仅在插件容器内、限定 rc.2 的 DOM 能力 guard 和原生 Tooltip；不修改 Harness 核心或全局 CSS。
 - 既有 queue、独立 steer 与等待清理的 Stop 保留原执行链。当前原生调度没有完全相同的暂停代际和回执契约，因此相应入口明确禁用，旧控制保留；未知能力不能因 UI 看起来可点击就放行。原生 ContextMeter 尚未映射 CLI 实测统计时显示未知并禁用，其余真实统计在 Worker 详情查看。
 - run 级回环工具桥只向选定 CLI 子进程注入临时连接，令牌不进 argv、公开 DTO 或用户账号配置。工具 schema 与执行均来自真实子 Agent 的公开 tools 运行时，权限、规划与用户审批链继续有效。显式禁止桥内再次派遣 Worker 或 Agent；技能按需读取并限制资源目录。
-- 主生成、恢复与被桥接工具的额外模型请求均受路由守卫；未适配的辅助生成明确拒绝，不调用 DSH 模型 API。该约束只用于 CLI Worker 子会话，不更改普通主对话的配置。CLI 的实际工具准入、订阅及平台证据逐项记录，详见 `native-conversation-ui.md` 与 `native-harness-tools.md`。
+- 主生成、恢复与被桥接工具的额外模型请求均受路由守卫；未适配的辅助生成明确拒绝，不调用 DSH 模型 API。该约束只用于 CLI Worker 子会话，不更改普通主对话的配置。CLI 的实际工具准入、订阅及平台证据逐项记录，详见 `protocols/native-conversation-ui.md` 与 `native-harness-tools.md`。
 - 历史记录不批量改写：首次挂接投影当前运行，之后新轮连续进入原生对话。此前更早记录保留原 WorkerStorage 和独立只读入口；不为了补齐旧工具生命周期而伪造原生调用。
 - 完整宿主核验确认 rc.2 原生子会话输入没有公开的发送前准入接点，detached 连发可在 Host 后置拒绝后丢稿，因此本次关闭普通原生发送。公开 `conversation.composer` chain 显示原因并保留原生待审批/提问；Worker 输入框作为唯一发送入口，继续原子预占、排队与独立引导规则，不猴补宿主提交方法。
 
@@ -818,7 +818,7 @@ AGY 原生用量中的 input 是未缓存输入，reported total 为 input + out
 
 用户于 2026-10-16 授权有限宿主扩展、安装前验收。官方 rc.2 隔离源码新增可选 `composerPresentation: main` 和 `commandSource` owner 参数，以及 `uiSession.provideProjections(reference, sources)` 会话来源接口；不修改真实子 Agent 身份、权限、Inbox、默认主会话行为。统计桥是无 React 的 Gateway 订阅与数值转换，绑定精确代际并清理；原生组件自己消费数据，不再逐组件包装。
 
-Host 持久保存同一 CLI 会话已确认的累计快照，新 run 尚无数据时继续使用，换会话即失效；响应 usage 与累计分开。AGY 的真实响应边界、公开过程及单次 usage 经实际 AgentLoop 结算；工具回执只读投影，不重执行。缺少公开思考、精确响应边界或单次 usage 时保持未知，不补造。具体支持边界和验收见 native-conversation-ui.md、native-conversation-host-extension.md 与 tasks.md。
+Host 持久保存同一 CLI 会话已确认的累计快照，新 run 尚无数据时继续使用，换会话即失效；响应 usage 与累计分开。AGY 的真实响应边界、公开过程及单次 usage 经实际 AgentLoop 结算；工具回执只读投影，不重执行。缺少公开思考、精确响应边界或单次 usage 时保持未知，不补造。具体支持边界和验收见 protocols/native-conversation-ui.md、native-conversation-host-extension.md 与 tasks.md。
 
 ### v0.8.1 十一 CLI 数据范围与原生每轮用量补充
 
@@ -826,11 +826,11 @@ Host 持久保存同一 CLI 会话已确认的累计快照，新 run 尚无数�
 
 完整原生视图继续使用官方 sidebar.chat.conversation。用户已授权宿主扩展，本轮在隔离 ui-chat 增加可选 externalTurnUsage 来源及 StatsPills 的范围说明，由原生 TurnTailNodeView/TurnUsagePanel 和详情消费数据；不新增自绘用量/过程控件。每轮绑定持久保存；旧历史只按 accepted nativeInputs、批次/run 和原生 user.source.rpcId 的唯一闭合事件恢复内存映射，不重写 Session、不按文本或时间猜对应。
 
-底部优先使用已确认的同会话累计。只有完整 run 账单时，下一轮期间保留最近已确认回执，并在原生详情说明范围；不将其提升为会话累计。Hermes 本地 canonical input 与 HTTP inclusive input 分别处理；历史会话累计按精确 CLI home/session/cwd 读取。存在 WAL 时仅查询私有 DB/WAL 快照并销毁，避免只读 SQLite 连接仍更新用户 SHM；无 WAL 使用 immutable 只读 URI。无公开过程/容量仍按原生未知行为处理。当前四包扩展仅隔离验收，正式 Desktop 未安装；逐 CLI 证据和边界见 cli-native-data-audit.md。
+底部优先使用已确认的同会话累计。只有完整 run 账单时，下一轮期间保留最近已确认回执，并在原生详情说明范围；不将其提升为会话累计。Hermes 本地 canonical input 与 HTTP inclusive input 分别处理；历史会话累计按精确 CLI home/session/cwd 读取。存在 WAL 时仅查询私有 DB/WAL 快照并销毁，避免只读 SQLite 连接仍更新用户 SHM；无 WAL 使用 immutable 只读 URI。无公开过程/容量仍按原生未知行为处理。当前四包扩展仅隔离验收，正式 Desktop 未安装；逐 CLI 证据和边界见 audits/cli-native-data-audit.md。
 
 ### v0.8.1 当前 CLI 补充数据接口与完整性（2026-10-17）
 
-用户追加授权参考 codex-host、Codingns4DSH 及相关官方项目补齐数据接口。先按安装版证明来源，再接观察或只读查询，保持原 CLI Agent、transport、保存选型及权限。外部参考代码不执行；缺计数补零、累计差 clamp、空白 reasoning 占位及 DOM 统计补丁不采用。全十一 CLI 的具体版本、来源、作用与限制统一见 `cli-native-data-audit.md`；第 10 节旧报告保留历史证据，新入口按第 11 节核验。
+用户追加授权参考 codex-host、Codingns4DSH 及相关官方项目补齐数据接口。先按安装版证明来源，再接观察或只读查询，保持原 CLI Agent、transport、保存选型及权限。外部参考代码不执行；缺计数补零、累计差 clamp、空白 reasoning 占位及 DOM 统计补丁不采用。全十一 CLI 的具体版本、来源、作用与限制统一见 `audits/cli-native-data-audit.md`；第 10 节旧报告保留历史证据，新入口按第 11 节核验。
 
 Kimi 2.1.1 保持 ACP。发送前保存精确 session/main wire cursor，只读官方 durable usage.record、llm.request、step.end 与 turn.ended，核 session、项目、agent、模型、prompt/turn/step 身份及前缀连续性，不枚举其他用户会话。只有请求覆盖完整、终态成功且无辅助／重试／子 agent 缺口时发布 run 账单，其余仅 reported；CLI emptyUsage 四零不能证明 provider 已给完整零账单。独立响应回执不强绑到已丢失响应身份的 ACP 正文，当前上下文仍使用 ACP used/size。不得切换旧 Python Wire 或为统计启动 Web 服务。
 
@@ -1083,7 +1083,7 @@ SettingsForms 本身不修改：describe、update、replace、mutate、revision 
 
 此前的启用/禁用兼容性记录不能推导为连续热切换安全。本次实际市场 toggle 路由在隔离 rc.2 Desktop Host 与 rc.3 原生 Host 均触发 `session-maybe` adapter 缺失和 React 白屏；stock 模块随后恢复也不能恢复已经崩溃的页面。scratch guard 在 dispose 中停 vendor、等待旧 fiber、恢复 stock 的候选同样失败，未合入。rc.3 还复现失败启用重新加入 bundle、却保留 owned rows disabled 的分裂状态，最终 stock/vendor 同时关闭；rc.2 Desktop 的市场停用列表过滤使该方向表现不同。
 
-保持现有 fail-closed、settings alias 释放及唯一来源契约；不在插件销毁时引入未经保证的跨模块交换，不重新插入 stock id。建议上游在 live mutation 前识别需重启 bundle，延迟完整切换，并修复失败启用的 bundle/patch 一致性。详细源码行号、候选、实测和未验证范围见 [调查报告](blank-toggle-investigation.md)。
+保持现有 fail-closed、settings alias 释放及唯一来源契约；不在插件销毁时引入未经保证的跨模块交换，不重新插入 stock id。建议上游在 live mutation 前识别需重启 bundle，延迟完整切换，并修复失败启用的 bundle/patch 一致性。详细源码行号、候选、实测和未验证范围见 [调查报告](audits/blank-toggle-investigation.md)。
 
 ## 2026-10-25：界面中英双语（add-client-i18n，未发布）
 

@@ -47,7 +47,7 @@
 - [x] 3b.2 WorkBuddy 自动识别：安装器允许自选目录（实机 `D:\Software\workbuddy`），不在默认候选内。未配置路径且默认位置失败时，只读查询卸载注册表中 DisplayName 为 WorkBuddy、发布者为 Tencent 的 InstallLocation/DisplayIcon，作为普通候选再走 product.json 站点校验；结果缓存 60 秒；显式路径不回退。
 - [x] 3b.3 CodeBuddy 登录窗口露出原生终端：Windows ConPTY 下，输入 `/login` 后的建议列表帧、选站后菜单清屏帧都不是已录制画面，兜底步骤立即显示“无法识别当前步骤”并自动展开原生终端。兜底步骤（`afterRecognized`）改为只在屏幕静止后判定；中间帧保持上一步提示。
 - [x] 3b.4 授权时弹出的窗口：实机观察为 CodeBuddy CLI 自行打开系统默认浏览器（Tabbit）的授权页，插件不自动打开（窗口按钮为“重新打开登录页面”）。属 CLI 原生行为，未改。
-- [x] 3b.5 Worker 卡片去掉“试验性：依赖 WorkBuddy 桌面端非公开接口”小字（用户要求），连接页仍保留；同步 `doc/design.md`、`doc/settings-ui-design.md`、`doc/workbuddy-protocol.md`。
+- [x] 3b.5 Worker 卡片去掉“试验性：依赖 WorkBuddy 桌面端非公开接口”小字（用户要求），连接页仍保留；同步 `doc/design.md`、`doc/settings-ui-design.md`、`doc/protocols/workbuddy-protocol.md`。
 - [x] 3b.6 Windows 实机：CodeBuddy“切换账号”先退出成功（状态变为尚未登录），站点菜单识别正确；选中国站后旧版出现上述误判，随后浏览器等待步骤恢复识别。
 - [x] 3b.7 CodeBuddy 授权后仍露出终端（用户 11-08 晚再次报告）：Windows 日志显示浏览器授权 5 分钟后 TimeoutError，CLI 回到未录制的失败画面，静止后转交原生并自动展开终端。macOS 隔离采集（无浏览器打开器）得到同一失败行 `Failed to login. Press esc to return to login`，Esc 回到站点菜单、再 Esc 回到输入界面。新增 CodeBuddy `failed` 步骤（警告 + 「重新登录」→ Esc）与输入界面回访引导（引擎 `again`：自动输入过 `/login` 后从其他画面回到同一步骤，显示「重新登录」，同一画面重绘不算）；企业域、iOA 改为已录制的原生步骤。
 - [x] 3b.8 所有 CLI：客户端只为需要在终端作答的原生步骤（非警告色）自动展开终端；“无法识别当前步骤”等警告兜底只提示并提供「显示原生终端」。审查结果：保留自动展开的只有 Antigravity 首次设置、TRAE 企业流程、OpenCode 未建模服务商的登录方式、CodeBuddy 企业域/iOA。同步 `cli-connection-health` 规格“原生终端回退”。

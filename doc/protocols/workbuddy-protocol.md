@@ -1,6 +1,6 @@
 # WorkBuddy 内置 CLI 接入（试验性）
 
-试验性：依赖 WorkBuddy 桌面端非公开接口。实现决策以 [OpenSpec design](../openspec/archives/add-workbuddy-cli/design.md) 为准。注册接线复用已有核心模块，不改其他 CLI 的协议。
+试验性：依赖 WorkBuddy 桌面端非公开接口。实现决策以 [OpenSpec design](../../openspec/archives/add-workbuddy-cli/design.md) 为准。注册接线复用已有核心模块，不改其他 CLI 的协议。
 
 | 项目 | 国内版 | 国际版 |
 | --- | --- | --- |
@@ -44,10 +44,10 @@ Host 原生桥请求的 `argv` 是 `[runtime, entry]`；`native-workbuddy.mjs` �
 | DSH 工具桥 | 关闭；WorkBuddy 内置 CLI 只公开 http/sse MCP，未验证插件工具通道 |
 | 分支 | 关闭；当前 CLI 不支持会话分支：WorkBuddy 内置 CLI 的 ACP 没有实现 session/fork |
 | 运行中消息 | 原生 Inbox，整轮清理后接收；不声明 steer |
-| 遥测 | 用量：本轮 `end_turn` 后读取内置 CLI 原生会话文件（`<configDir>/projects/<项目键>/<sessionId>.jsonl`），按请求去重汇总 token 与 `rawUsage.credit`，按积分显示；缺积分或有子 Agent 时积分未知。上下文：采用 ACP `usage_update` 的 `used`/`size`；每轮结束、Worker 进程退出后，另起不落盘（`--no-session-persistence`）的同版本内置 CLI 读取原生 `/context` 分类（做法同 [CodeBuddy 第 9 节](protocols/codebuddy-protocol.md#9-上下文分类2026-11-09)；2.165 的输出不带 `commandKind` 标记，按无模型请求 ID 识别；副进程同样经引导投递凭据）。两版回执互不归属 |
+| 遥测 | 用量：本轮 `end_turn` 后读取内置 CLI 原生会话文件（`<configDir>/projects/<项目键>/<sessionId>.jsonl`），按请求去重汇总 token 与 `rawUsage.credit`，按积分显示；缺积分或有子 Agent 时积分未知。上下文：采用 ACP `usage_update` 的 `used`/`size`；每轮结束、Worker 进程退出后，另起不落盘（`--no-session-persistence`）的同版本内置 CLI 读取原生 `/context` 分类（做法同 [CodeBuddy 第 9 节](codebuddy-protocol.md#9-上下文分类2026-11-09)；2.165 的输出不带 `commandKind` 标记，按无模型请求 ID 识别；副进程同样经引导投递凭据）。两版回执互不归属 |
 
 skills、子 Agent 与记忆继续由原生设置决定，未新增扫描目录或共享逻辑。连接页显示试验性说明，Worker 卡片不显示；现有字号、主题 token、表单组件和布局继续复用。
 
 ## 证据边界
 
-本机安装版与元数据历史调研见本变更 proposal／tasks；本次注册接线测试使用明确标注的模拟程序与探测结果，没有登录、密钥读取或真实模型调用。国际版应用身份、Windows 实机、真实任务／审批／恢复／停止、Desktop 明暗主题及图标仍待实际验收。隔离构建和类型检查不等于这些真实行为已通过。命令与结果见 [tasks.md](../openspec/archives/add-workbuddy-cli/tasks.md)。
+本机安装版与元数据历史调研见本变更 proposal／tasks；本次注册接线测试使用明确标注的模拟程序与探测结果，没有登录、密钥读取或真实模型调用。国际版应用身份、Windows 实机、真实任务／审批／恢复／停止、Desktop 明暗主题及图标仍待实际验收。隔离构建和类型检查不等于这些真实行为已通过。命令与结果见 [tasks.md](../../openspec/archives/add-workbuddy-cli/tasks.md)。

@@ -27,7 +27,7 @@ Qoder 使用原生 `acceptEdits`，对应 CLI flag `--permission-mode accept_edi
 
 正文、公开思考和工具分别来自 agent_message_chunk、agent_thought_chunk、tool_call/tool_call_update；原始工具名读取 `_meta.qoder.toolName`。prompt 最终回执的 input/output/total 只作为整轮账单，缺少缓存分类、当前上下文和 Credits 时保持未知。CLI 独立发行版与 SDK 内置运行时不同步，不能用 SDK 专有方法推定 ACP 能力。
 
-本次已执行非模拟初始化和明确标注模拟的空会话配置，未发送真实模型任务。真实账号模型、工具产物、同会话恢复、运行中取消和 Windows 仍待验收；包版本、哈希、实际字段和账号边界见 [Qoder 原生协议核验](protocols/qoder-protocol.md)。
+本次已执行非模拟初始化和明确标注模拟的空会话配置，未发送真实模型任务。真实账号模型、工具产物、同会话恢复、运行中取消和 Windows 仍待验收；包版本、哈希、实际字段和账号边界见 [Qoder 原生协议核验](qoder-protocol.md)。
 
 ## Grok 公开思考（v0.8.1）
 
@@ -63,7 +63,7 @@ HTTP 实例只监听回环地址，使用本轮生成的认证，结束后关闭
 
 v0.7.10 按原生消息/part/block 或有明确边界的连续文本段归并流式回复，分别核对 delta、完整快照及最终响应。桥终态的 `resultScope` 明确区分本轮聚合与最后回复，避免重复内容或误删正文。工具事件只传公开 `toolCall` 字段（真实 ID、明确父 ID、名称、输入、输出、命令、退出码），存储重开后保留；未知结构仍可查看原有通用详情，不伪造父调用。
 
-原生 `native` 帧的当前窗口、累计 usage、严格匹配模型容量和原生分类通过白名单进入 telemetry。公开思考的签名、加密和 redacted 字段不投影。各 CLI 指标公式及缺失边界独立核对，详见 [原生回复与上下文矩阵](protocols/native-inspection.md)；原生过程界面适配见 [公开过程设计](protocols/public-process.md)。
+原生 `native` 帧的当前窗口、累计 usage、严格匹配模型容量和原生分类通过白名单进入 telemetry。公开思考的签名、加密和 redacted 字段不投影。各 CLI 指标公式及缺失边界独立核对，详见 [原生回复与上下文矩阵](native-inspection.md)；原生过程界面适配见 [公开过程设计](public-process.md)。
 
 ## 官方协议依据
 

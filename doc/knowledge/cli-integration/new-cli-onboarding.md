@@ -281,7 +281,7 @@
 - 取消：先发原生 cancel/interrupt，再由 Host 终止进程并核对进程范围退出；清理未确认时保留阻塞。
 - transport 标记：缺省或 `legacy` 进入历史路径，未知标记直接拒绝；升级插件不改已有 Worker 的 transport。
 
-原理见 [选择并固定原生通信协议](native-transports.md) 与 [原生通信说明](../../native-protocols.md)。
+原理见 [选择并固定原生通信协议](native-transports.md) 与 [原生通信说明](../../protocols/native-protocols.md)。
 
 ---
 

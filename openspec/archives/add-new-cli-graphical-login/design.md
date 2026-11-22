@@ -126,7 +126,7 @@ Host 分别保存 `{parent, cli, controller, deadline, inFlight, sequence}`，�
 
 1. 本轮完成指南、提案、规格与任务清单并严格校验，保留活动 change，不归档。
 2. 后续在允许的真实 CLI 会话完成 C/T 授权前画面采集；按已有可核实步骤实现 Host，再接 Client 与模拟测试。无法到达的授权后屏保留 Desktop 任务。
-3. 同步关联文档：`doc/settings-ui-design.md` 与 `doc/workbuddy-protocol.md` 的“无入口”改为“有桌面管理指引，无 CLI 登录/退出”；同步 README、usage、设计和相关协议记录。`add-workbuddy-cli` 仍未归档，其“模型目录与账号状态”需求需协调同样的语义修订，不在本 change 冒充已有主规格做 MODIFIED。
+3. 同步关联文档：`doc/settings-ui-design.md` 与 `doc/protocols/workbuddy-protocol.md` 的“无入口”改为“有桌面管理指引，无 CLI 登录/退出”；同步 README、usage、设计和相关协议记录。`add-workbuddy-cli` 仍未归档，其“模型目录与账号状态”需求需协调同样的语义修订，不在本 change 冒充已有主规格做 MODIFIED。
 4. `add-cli-login-templates` 的“登录来源下拉框”与当前源码两列卡片不一致；并入主规格前同步为选择卡片，保留“没有原生参数时不在启动阶段代选”的规则。CodeBuddy 的当前屏 `choice` 是用户当场回答，不是后台替用户选服务商；若归档时仍有歧义，补充该区分再同步，不能留下互相冲突的要求。
 5. 跑关联回归、typecheck、隔离 preview 与最小平台检查，再在 Desktop 验收明确范围。正式构建更新链接前确认无活动 Worker/账号操作；本轮不构建、不更新 Desktop。
 6. 回退以关闭新增引导能力为单位：CodeBuddy/TRAE 恢复原生终端；WorkBuddy 恢复既有静态桌面提示。停止所有新增观察、取消查询并确认清理；没有账号存储迁移，不回滚用户真实账号。

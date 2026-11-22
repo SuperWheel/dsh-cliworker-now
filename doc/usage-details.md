@@ -8,7 +8,7 @@
 
 打开指引只查一次；点击「打开桌面端」或「继续观察」后，每轮完成至少间隔 15 秒，最多观察 5 分钟或自动查询 20 次。手动刷新与正在执行的查询合并，预算到期后刷新只查一次。元数据成功表示当前已登录；当前认证错误无法可靠区分缺失与其他拒绝，只提示“请在桌面端检查登录状态”，不证明已退出或同站点换号。打开失败可手动打开对应版本后刷新或重试。关闭指引等待插件查询清理，不关闭桌面端。查询账号和模型会创建一条空的原生会话，原生未提供删除接口。
 
-试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用及系统提示词、工具定义、对话消息分类（每轮结束后另起不落盘的内置 CLI 读取原生 `/context`，规则同 CodeBuddy）；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。审批卡提供「本会话始终允许」（原生 `allow_always`，只在当前这一轮有效，下一轮再次询问）。国内版已完成 Mac 与 Windows 真实任务、审批及 Desktop 界面验收；国际版未安装，仍未验证。
+试验性：依赖 WorkBuddy 桌面端非公开接口。支持原生规划及三档权限，原生模式与未验证边界见 [WorkBuddy 协议](protocols/workbuddy-protocol.md)。运行中消息走 Inbox；按积分显示本轮用量（读取内置 CLI 的原生会话文件，规则同 CodeBuddy），并显示原生上下文占用及系统提示词、工具定义、对话消息分类（每轮结束后另起不落盘的内置 CLI 读取原生 `/context`，规则同 CodeBuddy）；分支（内置 CLI 未实现 `session/fork`）与 DSH 工具桥未开放。审批卡提供「本会话始终允许」（原生 `allow_always`，只在当前这一轮有效，下一轮再次询问）。国内版已完成 Mac 与 Windows 真实任务、审批及 Desktop 界面验收；国际版未安装，仍未验证。
 
 [简体中文](usage-details.md) | [English](usage-details.en.md) · [返回 README](../README.md)
 
@@ -49,7 +49,7 @@
 | CodeBuddy Code | 2.181.0                      | v0.8.8 新增原生 ACP；macOS 真实验收（免费模型 `hy4free`）见 [变更任务](../openspec/archives/add-codebuddy-cli/tasks.md)；国际站、企业域、iOA 与 Windows 未验收                                         |
 | TRAE CN        | 0.213.1                      | 2026-11-07 macOS 前置协议探测：18 项模型目录及 glm-5.3-flash 读写、命令、恢复、取消和分支；插件/Desktop 与 Windows 未验收，见本次接入任务                                                              |
 
-v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](native-protocols.md) 与 [验收记录](tasks.md)。
+v0.7.10 的新任务改用各 CLI 原生双向协议：Codex app-server、Claude/Antigravity stream-json 输入输出、Kimi/Grok ACP、ZCode app-server、OpenCode/MiMo HTTP+SSE、Hermes Runs API；Pi/OMP 保持原生 RPC。旧任务仍按创建时的通路恢复会话，不静默改换模型或协议。上表保留历史执行证据，新通路的实际验证范围见 [原生通信说明](protocols/native-protocols.md) 与 [验收记录](tasks.md)。
 
 v0.8.1 新增 **Qoder**，通过官方 `qoder --acp` 接入同一原生侧栏，模型和思考强度读取其结构化目录并在发送前确认。当前协议仅开放“允许编辑”，未宣告只读规划模式；规划任务会在发送前拒绝。Qoder 按积分计费，输入框底部与回复功能条均显示对应本轮积分，详情标题为「积分用量」；积分缺失时保持未知，不在该模块混入 Token 单位。回复用量的提供方／模型按该轮已确认来源显示为 `CLI/提供方/模型`，例如 `omp/zhipu-coding-plan/glm-5.3-flash`；提供方未公开时明确标为未公开，不展示内部 Worker 路由。所属原生会话若提供上下文比例，则独立展示该比例。同轮原生运行配置或日志能核实实际窗口时，补充容量及带估算标记的占用数量，否则数量和容量仍为未知。积分按本轮原生请求去重，不从积分反推 token；缓存和分类没有来源时仍保持未知。Windows 兼容原生 Administrators 所有权和继承只读 ACL，仍拒绝不可信写权限，不修改用户文件权限。轮次和步骤表示宿主子会话记录，不等于 Qoder 内部请求次数。协议及探针范围见 [Qoder 原生协议核验](protocols/qoder-protocol.md)。
 
@@ -237,7 +237,7 @@ dsh plugin --profile desktop remove dsh-cliworker-now
 
 </details>
 
-v0.8.1 原生会话候选的最新协议和数据覆盖见 [全 CLI 复查](cli-native-data-audit.md)：新建 Worker 使用原生双向协议，历史 Worker 保持原协议；已知用量由完整 DSH 视图显示，缺少上游数据时不伪造。候选与实际 Desktop 安装状态以验收记录为准。
+v0.8.1 原生会话候选的最新协议和数据覆盖见 [全 CLI 复查](audits/cli-native-data-audit.md)：新建 Worker 使用原生双向协议，历史 Worker 保持原协议；已知用量由完整 DSH 视图显示，缺少上游数据时不伪造。候选与实际 Desktop 安装状态以验收记录为准。
 
 ## 6. 使用方法
 
@@ -387,7 +387,7 @@ CLI 模型只在对应子对话的模型菜单中选择；主对话模型目录�
 
 输入框下的 ContextMeter、StatsPills 及弹层使用真正的 Harness 原生组件。当前窗口、容量、Token 用量和分类分别来自匹配 Worker 的可核查数据。AGY 的 CLI 总量是未缓存输入加输出，不含缓存读取；原生用量弹层按四个独立计费分项汇总，因此会把缓存读取一并计入，并据此显示缓存命中率。已核验的 AGY 输出协议没有独立缓存写入类别，该分项按零规范化。
 
-AGY 上下文来自该 CLI 会话本地原生元数据中的最近一次请求估算与窗口容量。缺失指标按原生规则处理，不以零代替未知值，不拿累计 Token 充当上下文，也不借用父会话或 DSH 显示投影的估算。逐项能力与限制见 [原生界面说明](native-conversation-ui.md) 和 [原生回复与上下文说明](protocols/native-inspection.md)。
+AGY 上下文来自该 CLI 会话本地原生元数据中的最近一次请求估算与窗口容量。缺失指标按原生规则处理，不以零代替未知值，不拿累计 Token 充当上下文，也不借用父会话或 DSH 显示投影的估算。逐项能力与限制见 [原生界面说明](protocols/native-conversation-ui.md) 和 [原生回复与上下文说明](protocols/native-inspection.md)。
 
 内置角色：**商业审稿人、逻辑审校员、文风审校员、正文修订师、剧情节点设计师、剧情结构规划师、小说主笔**。更多说明见 [默认角色预设](role-presets.md)。
 
@@ -469,7 +469,7 @@ v0.8.1 的当前迁移方案在右侧 CLI Worker 栏运行官方完整 `sidebar.
 
 模型/强度与权限/规划使用真实原生控件，公开数据及保存回调连接当前 CLI。运行、消息准入、清理期间，以及存在任何原生待发消息或历史兼容队列项（含暂停项）时均锁定设置。经用户授权并随包交付的四包宿主扩展提供主对话按钮呈现和会话作用域统计来源；源码与回退见 [宿主扩展说明](protocols/native-conversation-host-extension.md)。原生 ContextMeter/StatsPills 接匹配 Worker 的可核查遥测；首轮尚无数据时保留三个原生模块，以“—”和详情说明等待或缺失原因，不补零、不把 DSH 显示估算或累计 Token 当成 CLI 上下文。Hermes 公开请求/错误状态独立于消息流刷新；收到的公开思考和工具开始状态进入原生过程展示，不生成 CLI 未返回的内容。附件按各 CLI 原生协议适配，旧协议及分支限制有具体说明，指令菜单中可用部分保留；这些适配只作用于精确绑定的 CLI 子会话。
 
-[十一 CLI 数据接口矩阵](cli-native-data-audit.md) 区分每次模型响应、整轮运行、会话累计与当前上下文。本轮候选补充 Kimi 当前会话的持久用量回执、Hermes 原进程的官方请求观察、OMP 原生上下文分类和明确额外账单字段，以及 OpenCode 原生会话统计。OMP 当前保留记录不冒称完整历史，OpenCode 新快照允许下降或清零；只有完整回执才提供整轮统计，缺失缓存或分类不补零。统计范围与估算标记保留，来源和 OMP 额外分类仅在底层留存用于核验。上下文底部、详情和图形共用原生精度逻辑，低于 1% 的已知占用不再取整成 0%；弹层只保留占比、进度条与系统提示词／工具定义／对话消息三行，缺项显示 —，保留估算标记，所有 CLI 均不附加缺失说明或额外分类行，弹层末尾保持正常内边距。Hermes 新请求按实际请求使用其原生估算器补充分类；旧记录没有采集的分类不倒推补造。
+[十一 CLI 数据接口矩阵](audits/cli-native-data-audit.md) 区分每次模型响应、整轮运行、会话累计与当前上下文。本轮候选补充 Kimi 当前会话的持久用量回执、Hermes 原进程的官方请求观察、OMP 原生上下文分类和明确额外账单字段，以及 OpenCode 原生会话统计。OMP 当前保留记录不冒称完整历史，OpenCode 新快照允许下降或清零；只有完整回执才提供整轮统计，缺失缓存或分类不补零。统计范围与估算标记保留，来源和 OMP 额外分类仅在底层留存用于核验。上下文底部、详情和图形共用原生精度逻辑，低于 1% 的已知占用不再取整成 0%；弹层只保留占比、进度条与系统提示词／工具定义／对话消息三行，缺项显示 —，保留估算标记，所有 CLI 均不附加缺失说明或额外分类行，弹层末尾保持正常内边距。Hermes 新请求按实际请求使用其原生估算器补充分类；旧记录没有采集的分类不倒推补造。
 
 Pi、MiMo 和 OpenCode 的新请求现可采集实际请求组成，并按各自原生估算算法提供三类统计。分类估算不代替供应商用量或上下文总量；旧轮次未保存的分类仍为未知。原生过程展开取决于 CLI 实际返回的公开思考或工具事件：只有最终正文、空块或签名的轮次不生成展开内容。七张截图对应问题的真实复验、旧记录回放和安装结果见 [实施记录](tasks.md#2026-10-17-v081-第-16-阶段七张真实截图回归)。
 
@@ -477,7 +477,7 @@ Pi、MiMo 和 OpenCode 的新请求现可采集实际请求组成，并按各自
 
 next-step 消息按实际 CLI 通路分流：已接通且就绪的当前运行 steer 使用真实 CLI 接收回执；未接通该通路时，消息在当前完整 CLI run 结束清理后的下一执行步骤接收，不停止重启、不声称实时注入。拒绝或接收状态不明不自动降级或重发。当前已接通 Codex app-server、Hermes HTTP、Pi RPC 和 OMP RPC 的原生引导，并通过模拟协议与真实 DSH Inbox 回归；这不代表本轮已逐一完成真实账号或模型验收。每条原生请求身份及接收状态持久保存，旧 Worker 队列不自动迁入或执行。
 
-DSH skill、已配置 MCP 和普通工具来自当前子 Agent 的实际授权目录，每次调用重核并经过真实权限链；额外 DSH 模型请求明确拒绝，普通主对话模型保持原行为。此前局部 content 嵌入、内部输入代理及主页面打开方案均被当前侧栏方案替代，历史记录保留。实际侧栏、设置、统计和 steer 验收以 [实施记录](tasks.md) 为准，详见 [原生界面说明](native-conversation-ui.md) 和 [工具桥支持范围](protocols/native-harness-tools.md)。
+DSH skill、已配置 MCP 和普通工具来自当前子 Agent 的实际授权目录，每次调用重核并经过真实权限链；额外 DSH 模型请求明确拒绝，普通主对话模型保持原行为。此前局部 content 嵌入、内部输入代理及主页面打开方案均被当前侧栏方案替代，历史记录保留。实际侧栏、设置、统计和 steer 验收以 [实施记录](tasks.md) 为准，详见 [原生界面说明](protocols/native-conversation-ui.md) 和 [工具桥支持范围](protocols/native-harness-tools.md)。
 
 原生 CLI 会话加号菜单与原生菜单一致，分“添加”“指令”两段并沿用原生图标与名称：“添加”含文件、图片、目标、计划、反馈，“指令”含权限、模型、分支；输入关键字时按原生规则排序。其中“文件”和“图片”：macOS / Windows Desktop 文件沿用原生本地引用，图片沿用 Harness 上传；已经准入的原生附件按 CLI 协议转换为图片块、资源链接或可读取路径。重试校验包含附件身份，运行中附件保留原生队列。Skill/MCP 继续复用真实子 Agent 的工具桥，ACP 仅准入精确的本轮桥工具。各 CLI 的接入、限制和平台证据见 [附件、Skill 与 MCP 能力矩阵](protocols/cli-harness-capabilities.md)。
 

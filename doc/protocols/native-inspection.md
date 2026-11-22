@@ -59,4 +59,4 @@ MiMo 0.1.15 和 OpenCode 1.19.0 的原生 usage 不含分类。当前实现从�
 
 每次一个用户轮次、一个已绑定主请求，三项经真实共享投影保留；完成、回复标记、无意外工具、进程范围退出及原 source hashes 未变均已核验。私有报告为 `.test-data/seven-cli-regression-20261017/http-mimo-4EkKKR/report.json` 与 `http-opencode-erdy4T/report.json`。先前 MiMo `http-mimo-749TJY/report.json` 生成成功但观察 0，原因是 PURE 禁用外部 plugin，分类验收失败；保留该失败证据，最终 relay 重验成功不能覆盖它。4 文件 81 项关联离线回归通过，官方 CLI 零模型配置探针通过；不代表 Desktop 安装或完整工具／续聊／取消／Windows 验收。
 
-旧截图与旧 raw 未保存真实请求组成，三项继续显示 `—`，不从 DSH 镜像、账单或当前 CLI 请求倒推。实现、失败调查和完整证据范围见 [数据审计第16节](../cli-native-data-audit.md)。
+旧截图与旧 raw 未保存真实请求组成，三项继续显示 `—`，不从 DSH 镜像、账单或当前 CLI 请求倒推。实现、失败调查和完整证据范围见 [数据审计第16节](../audits/cli-native-data-audit.md)。

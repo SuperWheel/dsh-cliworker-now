@@ -16,6 +16,6 @@
 
 - [共享统计合同](../../../src/shared/telemetry.ts)：`TokenUsage`、`Telemetry`、`ContextTelemetryCheckpoint`；[上下文快照](../../../src/host/context-telemetry.ts)：`withContextTelemetry`；[累计快照](../../../src/host/conversation-telemetry.ts)。
 - [上下文回归](../../../tests/context-telemetry.test.ts) · [累计回归](../../../tests/conversation-telemetry.test.ts) · [CLI 统计审计](../../../tests/cli-telemetry-audit.test.ts)。
-- [逐 CLI 原生数据范围](../../cli-native-data-audit.md)。
+- [逐 CLI 原生数据范围](../../audits/cli-native-data-audit.md)。
 
 关联：[逐轮归属](turn-usage-attribution.md) · [公开过程](public-process.md) · [返回分类索引](README.md)

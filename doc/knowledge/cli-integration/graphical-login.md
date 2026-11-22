@@ -132,7 +132,7 @@ Client AccountTerminal → LoginWindow（固定模板）/ xterm（原生回退�
 
 `src/host/workbuddy-installation.ts` 返回已核实的 `appRoot/runtime/entry`，通过包名、入口及 `product.json` endpoint 分国内/国际版，不靠应用名判断；`workbuddy-variant.ts` 保存两个 CliId 的站点与路径线索。`workbuddy-metadata.ts` 调用 `probeWorkBuddyMetadata`，成功返回模型/站点和安装来源绑定；`accounts.ts` 对泛化认证错误返回 unknown，提示“请在桌面端检查登录状态”，不证明已退出。
 
-`doc/workbuddy-protocol.md` 与 `src/host/native-workbuddy.mjs` 记录元数据探测只做初始化、空会话和模型配置查询，不发 prompt；每次探测仍会留下空的原生会话。它不是廉价的文件状态读取。元数据 Host 不读凭据文件；现有私有引导助手路径属于既有实现，图形引导不得新增读取或暴露密钥。
+`doc/protocols/workbuddy-protocol.md` 与 `src/host/native-workbuddy.mjs` 记录元数据探测只做初始化、空会话和模型配置查询，不发 prompt；每次探测仍会留下空的原生会话。它不是廉价的文件状态读取。元数据 Host 不读凭据文件；现有私有引导助手路径属于既有实现，图形引导不得新增读取或暴露密钥。
 
 ### 已实现的桌面管理分支（真实 Desktop 仍未验收）
 

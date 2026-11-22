@@ -32,13 +32,13 @@
 
 | 主题 | 文档 |
 | --- | --- |
-| 通信 | [原生协议总览](native-protocols.md)、[运行中发送](protocols/running-message-protocol.md) |
-| 原生会话与工具 | [完整会话界面](native-conversation-ui.md)、[宿主接口扩展](protocols/native-conversation-host-extension.md)、[Harness 工具桥](protocols/native-harness-tools.md)、[附件与 Skill/MCP 矩阵](protocols/cli-harness-capabilities.md) |
+| 通信 | [原生协议总览](protocols/native-protocols.md)、[运行中发送](protocols/running-message-protocol.md) |
+| 原生会话与工具 | [完整会话界面](protocols/native-conversation-ui.md)、[宿主接口扩展](protocols/native-conversation-host-extension.md)、[Harness 工具桥](protocols/native-harness-tools.md)、[附件与 Skill/MCP 矩阵](protocols/cli-harness-capabilities.md) |
 | 设置与角色 | [设置设计规范](settings-ui-design.md)、[角色预设](role-presets.md) |
 | 过程与遥测 | [公开过程](protocols/public-process.md)、[原生回复与上下文](protocols/native-inspection.md)、[逐轮用量](protocols/native-turn-usage.md) |
-| 数据接口核查 | [全 CLI 数据审计](cli-native-data-audit.md)、[ACP 数据接线](audits/cli-usage-audit-acp.md)、[HTTP／RPC 接线](audits/native-http-rpc-audit.md)、[原生接口补充](audits/native-http-rpc-data-interfaces.md)、[Kimi 计费用量](audits/kimi-durable-usage-audit.md) |
+| 数据接口核查 | [全 CLI 数据审计](audits/cli-native-data-audit.md)、[ACP 数据接线](audits/cli-usage-audit-acp.md)、[HTTP／RPC 接线](audits/native-http-rpc-audit.md)、[原生接口补充](audits/native-http-rpc-data-interfaces.md)、[Kimi 计费用量](audits/kimi-durable-usage-audit.md) |
 | 原生视图对齐 | [十 CLI 对齐记录](audits/ten-cli-native-parity.md)；标题保留当时范围，不代表当前 CLI 总数 |
-| 外部经验 | [Codingns4DSH 核查](codingns-reference-audit.md) |
+| 外部经验 | [Codingns4DSH 核查](audits/codingns-reference-audit.md) |
 | Windows | [远程测试](windows-remote-testing.md)、[ConPTY 来源核验](audits/windows-conpty-source.md) |
 | 发布 | [Release 模板](release-template.md) |
 

@@ -35,7 +35,7 @@
 ## 3、相关资料
 
 - [知识库总索引](../README.md)
-- [原生 CLI 通信协议](../../native-protocols.md)
-- [原生数据来源审计](../../cli-native-data-audit.md)
+- [原生 CLI 通信协议](../../protocols/native-protocols.md)
+- [原生数据来源审计](../../audits/cli-native-data-audit.md)
 - [设置界面设计规范](../../settings-ui-design.md)
 - [OpenSpec 开发流程](../../openspec.md)

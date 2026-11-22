@@ -19,7 +19,7 @@ Worker 保留 CLI 原生 `conversationId`，另有 Harness 子会话绑定；两
 - [会话 adapter](../../../src/host/harness-conversation.ts)、[会话契约](../../../src/host/harness-conversation-types.ts)。
 - [Client 原生会话扩展](../../../src/client/harness-conversation.tsx)、[子会话模型目录](../../../src/client/native-cli-model-directory.ts)。
 - [事件流投影](../../../src/host/harness-conversation-stream.ts)、[运行中消息能力](../../../src/shared/running-message.ts)。
-- [原生会话设计](../../native-conversation-ui.md)、[公开过程设计](../../protocols/public-process.md)。
+- [原生会话设计](../../protocols/native-conversation-ui.md)、[公开过程设计](../../protocols/public-process.md)。
 - [原生内容回归](../../../tests/harness-native-content.test.tsx)、[原生控件回归](../../../tests/harness-native-controls.test.tsx)。
 
 ## 4、关联笔记

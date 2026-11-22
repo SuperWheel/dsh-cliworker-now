@@ -16,6 +16,6 @@
 
 - [调度停止](../../../src/host/runtime.ts)：`stopCurrent`、`run`、`markCleanupBlocked`；[进程合同](../../../src/host/process.ts)：`ProcessCleanupUnconfirmedError`；[冷恢复](../../../src/host/storage.ts)：`WorkerStorage` 构造器。
 - [进程回归](../../../tests/native-process.test.ts) · [清理回归](../../../tests/runtime-metadata-cleanup.test.ts) · [Windows 进程回归](../../../tests/windows-process.test.ts)。
-- [显示恢复条件](../../native-conversation-ui.md)。
+- [显示恢复条件](../../protocols/native-conversation-ui.md)。
 
 关联：[调度锁](scheduling-locks.md) · [三类身份](session-identities.md) · [返回分类索引](README.md)

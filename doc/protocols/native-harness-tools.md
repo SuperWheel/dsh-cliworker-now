@@ -109,4 +109,4 @@ OMP 16.4.4 的帮助文本虽然声称显式 `-e` 在 `--no-extensions` 下仍�
 - [Claude Code MCP 文档](https://code.claude.com/docs/en/mcp)：临时 MCP 配置、环境变量引用以及 init 中 MCP 加载错误的公开字段。
 - [OpenCode MCP 文档](https://opencode.ai/docs/mcp-servers/) 与 [MiMo v0.1.15 config 源码](https://github.com/XiaomiMiMo/MiMo-Code/blob/v0.1.15/packages/opencode/src/config/config.ts)：本地 command array/environment 配置。
 - [Pi v1.0.4 resource loader 源码](https://github.com/earendil-works/pi/blob/v1.0.4/packages/coding-agent/src/core/resource-loader.ts) 与 [公开 extensions 文档](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md)。OMP 边界以当前安装 16.4.4 的实际 startup 与零 prompt 结果为准，不推断其它版本相同。
-- Kimi、Grok、ZCode 任务协议及公开入口继续参考 `doc/native-protocols.md`；MCP 接入 shape 已实现不代表执行权限或真实模型验收已通过。
+- Kimi、Grok、ZCode 任务协议及公开入口继续参考 `doc/protocols/native-protocols.md`；MCP 接入 shape 已实现不代表执行权限或真实模型验收已通过。

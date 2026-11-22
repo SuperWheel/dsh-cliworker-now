@@ -16,6 +16,6 @@
 
 - [Host 服务](../../../src/host/index.ts)：`CliWorkerService`、Remote API 注册；[调度](../../../src/host/runtime.ts)：`WorkerRuntime`；[存储](../../../src/host/storage.ts)：`WorkerStorage`。
 - [Client 会话接入](../../../src/client/harness-conversation.tsx)：`HarnessConversation`；[服务集成回归](../../../tests/harness-service-integration.test.ts)。
-- [现行原生界面说明](../../native-conversation-ui.md)。上述入口不是本次执行测试的声明。
+- [现行原生界面说明](../../protocols/native-conversation-ui.md)。上述入口不是本次执行测试的声明。
 
 关联：[三类身份](session-identities.md) · [模型目录隔离](model-catalog-isolation.md) · [返回分类索引](README.md)

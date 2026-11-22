@@ -205,7 +205,7 @@ Subscriptions, billing and model access are decided by each CLI's provider; logg
 <details>
 <summary><strong>Model menu errors or HTTP 404 after updating the plugin?</strong></summary>
 
-Finish running tasks, then quit Harness completely and reopen it. Refreshing only the plugin list can leave an old Host with a new Client. Enabling or disabling the plugin can blank the page for about a second before it recovers; see the [blank-page investigation](doc/blank-toggle-investigation.md).
+Finish running tasks, then quit Harness completely and reopen it. Refreshing only the plugin list can leave an old Host with a new Client. Enabling or disabling the plugin can blank the page for about a second before it recovers; see the [blank-page investigation](doc/audits/blank-toggle-investigation.md).
 
 </details>
 
@@ -246,7 +246,7 @@ pnpm build
 
 - [Feature details and verification boundaries](doc/feature-details.en.md): per-CLI notes, update and download behavior, permission mapping, full FAQ
 - [Usage details](doc/usage-details.en.md): accounts, paths, model rules and full installation notes for each CLI
-- [Design and protocols](doc/design.md) · [Native protocols](doc/native-protocols.md) · [Native conversation UI](doc/native-conversation-ui.md) · [WorkBuddy protocol](doc/workbuddy-protocol.md)
+- [Design and protocols](doc/design.md) · [Native protocols](doc/protocols/native-protocols.md) · [Native conversation UI](doc/protocols/native-conversation-ui.md) · [WorkBuddy protocol](doc/protocols/workbuddy-protocol.md)
 - [Historical verification log](doc/tasks.md) (before 2026-10-28) · [Documentation index](doc/README.md)
 - [Open an issue](https://github.com/SuperWheel/dsh-cliworker-now/issues): include Harness / plugin / CLI versions, steps to reproduce and redacted logs; never upload tokens or private project content.
 
@@ -254,4 +254,4 @@ pnpm build
 
 [MIT License](LICENSE). This is an independent community plugin; DeepSeek Harness and CLI names and trademarks belong to their owners, and no official affiliation or endorsement is implied.
 
-Thanks to the authors and contributors of [codex-host](https://github.com/BytePioneer-AI/codex-host), [Codingns4DSH](https://github.com/jingyi0605/Codingns4DSH) and [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), and to the developers of [Codex](https://github.com/openai/codex), [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Kimi Code](https://github.com/MoonshotAI/kimi-code), [Grok Build](https://github.com/xai-org/grok-build), [Pi](https://github.com/earendil-works/pi), [Oh My Pi](https://github.com/can1357/oh-my-pi), [OpenCode](https://github.com/anomalyco/opencode), [MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) and [ZCode](https://github.com/zai-org/ZCode) for publishing source code and protocol documentation. See the [CLI data interface audit](doc/cli-native-data-audit.md) and the [Codingns4DSH reference notes](doc/codingns-reference-audit.md).
+Thanks to the authors and contributors of [codex-host](https://github.com/BytePioneer-AI/codex-host), [Codingns4DSH](https://github.com/jingyi0605/Codingns4DSH) and [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), and to the developers of [Codex](https://github.com/openai/codex), [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Kimi Code](https://github.com/MoonshotAI/kimi-code), [Grok Build](https://github.com/xai-org/grok-build), [Pi](https://github.com/earendil-works/pi), [Oh My Pi](https://github.com/can1357/oh-my-pi), [OpenCode](https://github.com/anomalyco/opencode), [MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) and [ZCode](https://github.com/zai-org/ZCode) for publishing source code and protocol documentation. See the [CLI data interface audit](doc/audits/cli-native-data-audit.md) and the [Codingns4DSH reference notes](doc/audits/codingns-reference-audit.md).

@@ -43,7 +43,7 @@ dsh-cliworker-now 是 DeepSeek Harness 的**多 CLI 智能体插件**。它把�
 | TRAE CN | ACP | | |
 | WorkBuddy CN (`workbuddycn`) | ACP · 试验性 | WorkBuddy (`workbuddy`) | ACP · 试验性 |
 
-WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装对应桌面端；设置账号行的「在桌面端管理」打开插件指引，可打开已核实的对应应用并观察当前状态。有桌面管理指引，无 CLI 登录/退出；登录、退出与换号由用户在桌面端完成。打开指引只读一次；点击打开或继续观察后，查询完成至少间隔 15 秒，最多 5 分钟或 20 次自动查询，手动刷新与在途查询合并。关闭指引取消查询，不关闭桌面端。通用认证错误不证明已退出，同站点换号也不能确认。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；按积分显示本轮用量（读取内置 CLI 的原生会话文件），并显示原生上下文占用及系统提示词、工具定义、对话消息等分类（每轮结束后由不保存会话的副进程运行原生 `/context` 读取，数值为原生估算；CodeBuddy Code 同）；DSH 工具桥与原生分支（内置 CLI 未实现 `session/fork`）未开放。WorkBuddy CN 已在 macOS 与 Windows Desktop 完成真实任务、询问档审批与界面验收；国际版尚未验收。详见 [WorkBuddy 协议](workbuddy-protocol.md)。
+WorkBuddy CN（`workbuddycn`）与 WorkBuddy（`workbuddy`）使用各自桌面应用内置 CLI。**试验性：依赖 WorkBuddy 桌面端非公开接口。** 请先安装对应桌面端；设置账号行的「在桌面端管理」打开插件指引，可打开已核实的对应应用并观察当前状态。有桌面管理指引，无 CLI 登录/退出；登录、退出与换号由用户在桌面端完成。打开指引只读一次；点击打开或继续观察后，查询完成至少间隔 15 秒，最多 5 分钟或 20 次自动查询，手动刷新与在途查询合并。关闭指引取消查询，不关闭桌面端。通用认证错误不证明已退出，同站点换号也不能确认。高级路径设置可填写应用目录、自带运行时或内置 CLI 入口。发现核对 product 站点，不回退 PATH 上的 CodeBuddy 或另一版本。泛称 WorkBuddy 只装一版用该版，两版都装时通过宿主原生询问选择；显式 WorkBuddy（国际版）（兼容别名 WorkBuddy AI）固定国际版。模型与强度来自原生元数据握手，每次查询会留下空会话。已接通原生规划、询问／自动审批／完全权限；按积分显示本轮用量（读取内置 CLI 的原生会话文件），并显示原生上下文占用及系统提示词、工具定义、对话消息等分类（每轮结束后由不保存会话的副进程运行原生 `/context` 读取，数值为原生估算；CodeBuddy Code 同）；DSH 工具桥与原生分支（内置 CLI 未实现 `session/fork`）未开放。WorkBuddy CN 已在 macOS 与 Windows Desktop 完成真实任务、询问档审批与界面验收；国际版尚未验收。详见 [WorkBuddy 协议](protocols/workbuddy-protocol.md)。
 
 - **系统**：macOS / Windows。外部 CLI 需安装对应系统的原生版本，并完成该 CLI 自己的登录或 API 配置。
 - **宿主**：DeepSeek Harness（当前适配目标及随包四个原生界面包均为 0.2.2-rc.3；此前 rc.3 版本已隔离验证 0.2.1-rc.2/rc.3 的启用、禁用、页面与原生设置）；Node.js ≥ 22.19.0。
@@ -121,7 +121,7 @@ dsh plugin --profile desktop add dsh-cliworker-now@latest
 - 启动 Harness 不会自动更新插件。pnpm 11 默认等待新版本发布满 24 小时，期间可能仍装到旧版，可用 `dsh plugin --profile desktop ls dsh-cliworker-now --depth=0` 核对。
 - 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.9.1/dsh-cliworker-now-0.9.1.tgz`，每个 Release 附 `SHA256SUMS.txt`。
 - 安装包自带原生子对话所需的界面扩展，无需手工构建宿主；卸载插件即恢复官方界面。与已有界面覆盖冲突时启动预检会明确拒绝，不改动你的配置，详见 [runtime-host](../runtime-host/README.md)。
-- 页面打开时启用或停用此插件，DSH 会热替换原生会话界面，页面可能空白约 1 秒，插件随后让 DSH 重新挂载界面原地恢复（输入框中未发送的内容可能丢失）。无法原地恢复时，网页会刷新一次；DSH Desktop 会提示完全退出后重新打开。旧版 dshmarket（如 1.70.1）热切换失败可能留下不一致的配置，这种情况仍需完全重启，详见 [白屏调查及验证边界](blank-toggle-investigation.md) 与 [dsh-market/dsh-market#1010](https://github.com/dsh-market/dsh-market/issues/1010)。聊天展示和忙时 Enter 等原生偏好仍保存在原设置项中。
+- 页面打开时启用或停用此插件，DSH 会热替换原生会话界面，页面可能空白约 1 秒，插件随后让 DSH 重新挂载界面原地恢复（输入框中未发送的内容可能丢失）。无法原地恢复时，网页会刷新一次；DSH Desktop 会提示完全退出后重新打开。旧版 dshmarket（如 1.70.1）热切换失败可能留下不一致的配置，这种情况仍需完全重启，详见 [白屏调查及验证边界](audits/blank-toggle-investigation.md) 与 [dsh-market/dsh-market#1010](https://github.com/dsh-market/dsh-market/issues/1010)。聊天展示和忙时 Enter 等原生偏好仍保存在原设置项中。
 - 卸载：`dsh plugin --profile desktop remove dsh-cliworker-now`，保留本机账号、历史会话和偏好。
 
 <details>

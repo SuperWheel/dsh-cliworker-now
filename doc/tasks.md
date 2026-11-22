@@ -1665,7 +1665,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ### 实际范围与结果
 
-- 按用户要求由三组 GPT-6.1-sol 分别复查 Antigravity/Codex/Claude、Kimi/Grok/ZCode、MiMo/OpenCode/OMP/Pi，主任务复查截图 Hermes 并统一接线。核对源码分派、已安装 lib 的 transport 映射、本机协议类型和模拟进程；新建 Worker 已使用新协议，旧 Worker 缺省/legacy 保留原协议。完整十一项矩阵见 `doc/cli-native-data-audit.md`。
+- 按用户要求由三组 GPT-6.1-sol 分别复查 Antigravity/Codex/Claude、Kimi/Grok/ZCode、MiMo/OpenCode/OMP/Pi，主任务复查截图 Hermes 并统一接线。核对源码分派、已安装 lib 的 transport 映射、本机协议类型和模拟进程；新建 Worker 已使用新协议，旧 Worker 缺省/legacy 保留原协议。完整十一项矩阵见 `doc/audits/cli-native-data-audit.md`。
 - 保留整个官方 `sidebar.chat.conversation` 和真实子 SessionProvider。候选 ui-chat 增加可选整轮用量来源，原生 TurnTailNodeView/TurnUsagePanel 消费精确 turn/run 账单；与原生每响应账单二选一，不伪造响应、不重复累计。原生 StatsPills 详情解释本轮、最近已确认运行或已公开响应范围；新 run 无新数据时保留同一 CLI 会话的可信快照。
 - 补齐各 CLI 已公开的响应身份、缓存、reasoning 数值子桶、终态/迟到 usage 和工具/过程映射；Codex 恢复运行必须有真实确认的历史终态基线，Grok 模型容量必须精确匹配所选模型及实际窗口。OMP 的 reported total 不等于完整四桶时保持未知。过程只显示 CLI 公开内容，没有公开块就不能展开。
 - 截图 Hermes 确认仍为 legacy stream-json。本轮 3901 = 未缓存输入 3673 + 输出 4 + 缓存读取 224 + 缓存写入 0；同一会话累计 8669 = 8160 + 93 + 416 + 0。按 accepted nativeInputs、Worker run/batch 和原生 user.source.rpcId 唯一恢复 turn 3 的内存映射；不重写历史。该轮缺公开过程、单次响应用量和可核实上下文容量，仍未知。9 个相关用户源文件读取前后哈希一致，证据为 `.test-data/native-turn-usage-hermes-readonly/combined-real-hermes-usage-report.json`。
@@ -1703,7 +1703,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ### 实施与最终候选
 
-- 按用户授权继续参考固定 codex-host、Codingns4DSH 及当前安装版官方接口，补齐 Kimi 同一 ACP session 的 durable 用量回执、Hermes 原进程官方 request hooks、OMP 原生 /context 分类与显式 orchestration 桶、OpenCode GET session.tokens counter。具体版本、来源、完整性条件与未提供字段见 `doc/cli-native-data-audit.md`、`doc/audits/kimi-durable-usage-audit.md` 和 `doc/audits/native-http-rpc-data-interfaces.md`。保留官方完整侧栏和原 CLI Agent／选型／transport，不补造过程、缓存零或分类。
+- 按用户授权继续参考固定 codex-host、Codingns4DSH 及当前安装版官方接口，补齐 Kimi 同一 ACP session 的 durable 用量回执、Hermes 原进程官方 request hooks、OMP 原生 /context 分类与显式 orchestration 桶、OpenCode GET session.tokens counter。具体版本、来源、完整性条件与未提供字段见 `doc/audits/cli-native-data-audit.md`、`doc/audits/kimi-durable-usage-audit.md` 和 `doc/audits/native-http-rpc-data-interfaces.md`。保留官方完整侧栏和原 CLI Agent／选型／transport，不补造过程、缓存零或分类。
 - OMP get_session_stats 仅覆盖当前保留 state.messages，明确 reported／native-active-context，不持久成完整 session；正额外桶不能塞进普通四桶。OpenCode 原生 session 快照覆盖替换，允许下降／清零，不累加或取最大。原生 ContextMeter 保留 partial 分类、来源与估算，原生用量详情可保留 total-only／extra 和 unknown；普通 DSH 会话无外部来源时默认行为不变。
 - 最终 `build:preview` 已成功，包含最后 ZCode 工具输入形态修复，源码冻结。候选四包目录为 `artifacts/dsh-host-extension-rc2-data/`；旧 `rc2-audit` 为前一阶段候选，不代表本轮最终包。Desktop 已完成安装与冷启动原生侧栏验收；具体数据、范围及回退记录见本节末的安装记录。
 
@@ -1870,7 +1870,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 | MiMo | `xiaomi/mimo-v2.6-flash` | `http-mimo-4EkKKR/report.json`，三分类3868/16987/38，上下文21125/1048576；先前回复成功但观察为0的记录保留 |
 | OpenCode | `zhipuai-coding-plan/glm-5.3-flash` | `http-opencode-erdy4T/report.json`，三分类2294/4113/39，上下文6041/1000000 |
 
-路径均相对私有 `.test-data/seven-cli-regression-20261017/`，数据不入Git。Pi/MiMo/OpenCode 经完整 WorkerRuntime；ZCode/Grok 本轮实际执行证据为适配器与原生 runner，不冒称全部Runtime取消/恢复已实测。MiMo/OpenCode 每个最终运行只有1个用户turn和1个主请求；真实工具调用均为0。Pi官方fd3和两HTTP官方CLI路由另有零模型本机探针；详细范围见 `doc/cli-native-data-audit.md`、`doc/audits/ten-cli-native-parity.md`。
+路径均相对私有 `.test-data/seven-cli-regression-20261017/`，数据不入Git。Pi/MiMo/OpenCode 经完整 WorkerRuntime；ZCode/Grok 本轮实际执行证据为适配器与原生 runner，不冒称全部Runtime取消/恢复已实测。MiMo/OpenCode 每个最终运行只有1个用户turn和1个主请求；真实工具调用均为0。Pi官方fd3和两HTTP官方CLI路由另有零模型本机探针；详细范围见 `doc/audits/cli-native-data-audit.md`、`doc/audits/ten-cli-native-parity.md`。
 
 ### 自动与原生界面验收
 
@@ -2074,7 +2074,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 ## 2026-10-18：CodexHost 用量与缓存来源调查
 
-- 按用户给出的仓库复查固定提交 `a8adb78b519a81795fc05b787811f20a9738d7f0`，阅读 Qoder/Hermes 实时、历史、元数据与测试路径，并对照其他共有 CLI 的用量来源；结论补入 `doc/cli-native-data-audit.md`。仅阅读外部仓库，未运行其安装脚本、服务或测试。
+- 按用户给出的仓库复查固定提交 `a8adb78b519a81795fc05b787811f20a9738d7f0`，阅读 Qoder/Hermes 实时、历史、元数据与测试路径，并对照其他共有 CLI 的用量来源；结论补入 `doc/audits/cli-native-data-audit.md`。仅阅读外部仓库，未运行其安装脚本、服务或测试。
 - Qoder SDK 读取消息/result用量，独立查询上下文、Credits和套餐；历史按消息ID去重，四桶全零标 `tokensUnknown`。插件当前可补非零历史缓存桶及独立Credits，但本轮调查未实施该行为变更。截图原记录重新读取仍全零，真实Credits为0.2834514285714286、上下文比例为17.617777…%，不能换算成Token或缓存率。
 - Hermes `session.usage.cache_hit_pct` 来自原生正缓存读数/含缓存prompt，零读数不输出；没有额外隐藏数据来源。精确截图session的HTTP/hook与私有DB副本再次核对：4091+10=4101、reasoning1、canonical缓存读写0，仍无法区分未报告与真实0。当前hook去除raw_usage，未来准确0%需要原生公开接口保留字段存在性。
 - 仅对本机Hermes原生比例计算AST片段做3个离线模拟回放：4091/0和0/0均不输出，520/400输出77%；此结果不等于Gateway或真实模型验收。首次DB读取用了不存在的默认路径而退出，未写用户数据；随后按既有绑定定位到Worker受管HTTP目录并成功复核。
@@ -2084,7 +2084,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 ## 2026-10-18：原生思考过程内的持久思考记录（v0.8.1）
 
 - 按用户最终位置要求，去掉最初预览的 turnTail 面板，改为复用原生 assistant-step / ReasoningRow。只有已绑定 CLI 子会话调整“思考记录”标题及正文滚动；原生“已完成，用时…”与步骤分组负责外层收起，公开块、工具顺序和历史持久化保持原生。
-- Codex 新建/恢复轮次显式请求 `summary: auto`，不改变原有 model/effort/permission，不读取 raw reasoning。CodexHost 的 Qoder/Hermes 用量边界、Codex 摘要与三类上下文核查详见 `cli-native-data-audit.md`。
+- Codex 新建/恢复轮次显式请求 `summary: auto`，不改变原有 model/effort/permission，不读取 raw reasoning。CodexHost 的 Qoder/Hermes 用量边界、Codex 摘要与三类上下文核查详见 `audits/cli-native-data-audit.md`。
 - 最终实现定向检查：`pnpm --config.verify-deps-before-run=false test tests/harness-reasoning-records.test.tsx tests/client-registration.test.ts tests/native-primary-runners.test.ts`，3 文件 85 项通过。前序本次协议检查另有 207 项通过：stream、ACP、Qoder、HTTP、ZCode、Pi/OMP、Hermes 相关测试；HTTP 首次在沙箱遇到本机监听 EPERM，允许本地监听重跑后 66 项全通过。合计 292 项；非全量测试。
 - `/opt/homebrew/bin/node scripts/build.mjs --typecheck-only` 与 `scripts/build-preview.mjs` 通过（Node 22.23.1，固定 DSH 0.2.1-rc.2）。初版修正漏了可选 Chat slot 的类型边界，已修正后重新完成上述检查与构建。
 - 最终隔离 UI：真实 Harness Host/原生组件、真实 WorkerStorage/投影，全部输入明确标注模拟，阻止真实 CLI、账号与外网调用。12 CLI 原生过程内展开和收起通过；Codex 思考—工具—思考顺序、完成快照无重复、安全 Markdown、长正文 400px 滚动通过；Grok/OMP/Codex 空白摘要不生成入口或缺失提示；Enter/Space、刷新后重新打开历史、980px 窗口内 524px 子栏（正文 405px）无横向溢出通过。
@@ -2099,7 +2099,7 @@ Claude/Kimi/MiMo/Grok 没有此项目保存模型与强度，本轮没有模型�
 
 - 用户确认无公开思考或工具记录时保持不可展开。当天新建 agy-new / codex-new / zcode-new / grok-new / pi-new 的精确 run 均没有公开 reasoning 或 tool 事件。Pi 原生最终消息只有 text、reasoning=0；ZCode 只有两个 text_delta；Grok 没有 agent_thought_chunk；AGY stream-json 没有公开思考文本，参考 CodexHost 的 AGY 通路也未提供相应恢复。没有把回答、签名或用量改造成思考。
 - 仅检查相关既有 Desktop 界面：pi-new 完成行禁用；pi-2 经“已完成→已完成分析→思考记录”可展开真实正文；zcode-1 第二轮同样可展开，另外两轮无内容时禁用。未启动新真实模型任务。证据为私有 `.test-data/cli-thinking-regression-20261018/existing-five-cli-audit.json` 与本次原生 AX 操作记录。
-- Codex 新轮的 rollout `summary` 字段为 none，reasoning output=0；安装产物含 auto 请求。该字段当时误记为 effective summary，后续已确认不能用于判断实际请求配置，见下节。仅针对这点生成当前已安装0.162.1协议类型、运行隔离 app-server 参数对照。首两次模拟请求502后到25秒时限退出，后续对照改为首错退出；本机模拟服务均未收到模型请求，不能作为摘要链路通过证据。当时保留未确认原因，不宣称已修复；详见 `cli-native-data-audit.md`。
+- Codex 新轮的 rollout `summary` 字段为 none，reasoning output=0；安装产物含 auto 请求。该字段当时误记为 effective summary，后续已确认不能用于判断实际请求配置，见下节。仅针对这点生成当前已安装0.162.1协议类型、运行隔离 app-server 参数对照。首两次模拟请求502后到25秒时限退出，后续对照改为首错退出；本机模拟服务均未收到模型请求，不能作为摘要链路通过证据。当时保留未确认原因，不宣称已修复；详见 `audits/cli-native-data-audit.md`。
 - 此次仅更新调查和展示边界文档，未改生产代码、构建或更新 Desktop，未运行单元全量、全量验收或真实账号模型调用，未提交/推送/发布。GitHub 提交前再按用户授权执行全量验收。
 
 ## 2026-10-18：Codex 公开摘要实时投影修复（v0.8.1）
@@ -2551,7 +2551,7 @@ OpenSpec 变更 `harden-host-lifecycle-durability`。来源为 4 个 Codex gpt-6
 - 起点 `codex/release-v081` / `a9d4017`，干净工作树。按用户要求由 gpt-6-astra/high 独立审查生命周期；所有运行实验位于本会话 `scratchpad/blank-toggle/`，只有 preview 和副本，真实 DSH Desktop/官方 app 及其数据未操作；没有正式 build、commit/push、模型调用或任务派遣。
 - 实际经过 dshmarket 1.70.1 `POST /dsh-market/toggle`、登录 cookie 和变更锁；无头 Chromium 保存截图、浏览器异常、Loader/graph/设置状态。rc.2 Desktop 解包（默认 HMR 与 ConfigWatchHmr）和 rc.3 原生 Host 均复现停用白屏，错误为 `SlotAssemblyError: scope 'session-maybe' rendered without an installed adapter`。stock 恢复后页面仍白，rc.2 停用后冷启动正常。
 - scratch guard dispose 恢复 stock 的实际候选在 rc.2/rc.3 都失败，未合入。rc.3 刷新恢复聊天后再启用，HTTP 502 但 bundle 已重新加入，六个 vendor disabled 行继续存在，最终 stock/vendor 全关。rc.2 Desktop 的市场停用列表过滤使该方向保持 stock，未独立复现健康页面启用后的新白屏。
-- scratch 上游方向原型跳过 live mutation、仅记录下次启动状态；rc.2 两轮 off/on 保持页面和 graph。仅是方向性证据；跨宿主、后续配置刷新、既有 overrides 和分组切换未解决，不是可发布补丁。详细证据索引、失败启动记录、源码行号和后续真实 Desktop 验证清单见 [调查报告](blank-toggle-investigation.md)。
+- scratch 上游方向原型跳过 live mutation、仅记录下次启动状态；rc.2 两轮 off/on 保持页面和 graph。仅是方向性证据；跨宿主、后续配置刷新、既有 overrides 和分组切换未解决，不是可发布补丁。详细证据索引、失败启动记录、源码行号和后续真实 Desktop 验证清单见 [调查报告](audits/blank-toggle-investigation.md)。
 - 实际命令均使用 `PATH=/opt/homebrew/lib/node_modules/corepack/shims:$PATH pnpm --config.verifyDepsBeforeRun=false …`：`build:preview` 通过；`typecheck` 通过；`test tests/host-runtime-package.test.ts tests/client-registration.test.ts tests/build-dependencies.test.ts` 为 **3 文件、30 项通过**，TMPDIR 指向上述 scratch。原生 SettingsForms 的设置写入、revision/reset/释放沿用真实 Loader 关联测试；未做浏览器设置编辑和真实账号验收。
 - 只更新 README 中英文、设计与调查/验证文档，澄清连续热切换未通过；没有运行行为变更、新行为测试、全量 suite 或 OpenSpec 归档。失败候选保留在 scratch 供主会话审阅，不更新真实 Desktop。
 

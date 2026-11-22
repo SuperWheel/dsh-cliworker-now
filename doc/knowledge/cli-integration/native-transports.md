@@ -26,7 +26,7 @@
 
 - [transport 与桥入口](../../../src/host/native-worker.ts)：`NATIVE_TRANSPORTS`、`usesNativeBridge`。
 - [通用桥分派](../../../src/host/native-bridge.mjs)、[ACP runner](../../../src/host/native-acp.mjs)。
-- [协议设计与历史兼容](../../native-protocols.md)、[transport 回归](../../../tests/native-transport.test.ts)。
+- [协议设计与历史兼容](../../protocols/native-protocols.md)、[transport 回归](../../../tests/native-transport.test.ts)。
 
 ## 5、关联笔记
 

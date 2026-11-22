@@ -205,7 +205,7 @@ Desktop 不读取 `.zshrc`。插件会识别常见安装位置；仍找不到时
 <details>
 <summary><strong>更新插件后模型菜单报错或出现 HTTP 404？</strong></summary>
 
-结束运行中的任务后，完全退出并重新打开 Harness。只刷新插件列表可能留下旧 Host 与新 Client。启用或停用插件时页面可能空白约 1 秒，随后会原地恢复，详见 [白屏调查](doc/blank-toggle-investigation.md)。
+结束运行中的任务后，完全退出并重新打开 Harness。只刷新插件列表可能留下旧 Host 与新 Client。启用或停用插件时页面可能空白约 1 秒，随后会原地恢复，详见 [白屏调查](doc/audits/blank-toggle-investigation.md)。
 
 </details>
 
@@ -246,7 +246,7 @@ pnpm build
 
 - [功能细节与验证边界](doc/feature-details.md)：各 CLI 补充说明、更新与下载机制、权限映射、完整常见问题
 - [使用细节与 CLI 说明](doc/usage-details.md)：各 CLI 的账号、路径、模型规则及完整安装说明
-- [设计与协议](doc/design.md) · [原生通信说明](doc/native-protocols.md) · [原生界面说明](doc/native-conversation-ui.md) · [WorkBuddy 协议](doc/workbuddy-protocol.md)
+- [设计与协议](doc/design.md) · [原生通信说明](doc/protocols/native-protocols.md) · [原生界面说明](doc/protocols/native-conversation-ui.md) · [WorkBuddy 协议](doc/protocols/workbuddy-protocol.md)
 - [历史验证记录](doc/tasks.md)（2026-10-28 之前） · [文档索引](doc/README.md)
 - [提交 Issue](https://github.com/SuperWheel/dsh-cliworker-now/issues)：请附 Harness / 插件 / CLI 版本、复现步骤和脱敏日志，不要上传令牌或私人项目内容。
 
@@ -254,4 +254,4 @@ pnpm build
 
 [MIT License](LICENSE)。本项目是独立社区插件，DeepSeek Harness 及各 CLI 的名称和商标归各自权利人所有，不表示官方关联或背书。
 
-感谢 [codex-host](https://github.com/BytePioneer-AI/codex-host)、[Codingns4DSH](https://github.com/jingyi0605/Codingns4DSH) 和 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的作者与贡献者，以及 [Codex](https://github.com/openai/codex)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)、[Kimi Code](https://github.com/MoonshotAI/kimi-code)、[Grok Build](https://github.com/xai-org/grok-build)、[Pi](https://github.com/earendil-works/pi)、[Oh My Pi](https://github.com/can1357/oh-my-pi)、[OpenCode](https://github.com/anomalyco/opencode)、[MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) 和 [ZCode](https://github.com/zai-org/ZCode) 的开发者公开源码与协议文档。参考范围见 [CLI 数据接口核查](doc/cli-native-data-audit.md) 与 [Codingns4DSH 参考记录](doc/codingns-reference-audit.md)。
+感谢 [codex-host](https://github.com/BytePioneer-AI/codex-host)、[Codingns4DSH](https://github.com/jingyi0605/Codingns4DSH) 和 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的作者与贡献者，以及 [Codex](https://github.com/openai/codex)、[Hermes Agent](https://github.com/NousResearch/hermes-agent)、[Kimi Code](https://github.com/MoonshotAI/kimi-code)、[Grok Build](https://github.com/xai-org/grok-build)、[Pi](https://github.com/earendil-works/pi)、[Oh My Pi](https://github.com/can1357/oh-my-pi)、[OpenCode](https://github.com/anomalyco/opencode)、[MiMo Code](https://github.com/XiaomiMiMo/MiMo-Code) 和 [ZCode](https://github.com/zai-org/ZCode) 的开发者公开源码与协议文档。参考范围见 [CLI 数据接口核查](doc/audits/cli-native-data-audit.md) 与 [Codingns4DSH 参考记录](doc/audits/codingns-reference-audit.md)。

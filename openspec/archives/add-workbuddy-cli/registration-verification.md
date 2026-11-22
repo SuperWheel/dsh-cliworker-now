@@ -38,7 +38,7 @@ corepack pnpm test tests/workbuddy-registration.test.ts tests/workbuddy-installa
 - `doc/design.md`
 - `doc/settings-ui-design.md`
 - `doc/usage-details.md`
-- `doc/workbuddy-protocol.md`
+- `doc/protocols/workbuddy-protocol.md`
 - `openspec/changes/add-workbuddy-cli/registration-checklist.md`
 - `openspec/changes/add-workbuddy-cli/registration-verification.md`
 - `openspec/changes/add-workbuddy-cli/tasks.md`
