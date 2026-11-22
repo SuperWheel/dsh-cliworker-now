@@ -33,4 +33,5 @@
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/mac/desktop/switch-summary.json`、`mac/报告.md` 第 2 节
 - [x] 4.2 Windows DSH Desktop 0.2.2-rc.5 装入含本修复的构建，复测「热启用恢复后 30 秒内停用」，确认页面原地恢复、不出现重启提示
   - 2026-11-22，测试包 `dsh-cliworker-now-4a8a9c2.tgz` 经 Desktop 原生安装器装入（1,392/1,392 文件一致）；两轮快速停用距启用恢复 5,144 ms、5,123 ms，根子元素 1→0→1，停用后 1,526 ms、1,260 ms 原地恢复原会话输入栏；八次切换重启提示 0，控制台「needs a full restart」0
+  - 重启后复测（2026-11-22 14:45 重启，C 盘可用 44.70 GiB）：首次冷启动即「共 6 个 · 6 运行中」，控制台 ENOSPC 0；默认会话与 Worker 父子输入框可见可编辑、实际获焦；停用→启用→快速停用→启用四次根节点均 1→0→1，快速停用距启用恢复 5,146 ms、1,233 ms 后原会话输入栏恢复，重启提示 0、「needs a full restart」0；收尾插件启用、bundles 与备份一致、经「应用 → 退出」关闭、进程与监听为 0。证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows-after-reboot/报告.md`、`round1-quick-off-transition.json`、`cold-components.json`、`final-readback.json`
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows/报告.md` 第 3 节、`windows/round1-quick-off-transition.json`、`windows/round2-quick-off-transition.json`、`windows/console.jsonl`
