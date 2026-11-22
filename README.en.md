@@ -121,7 +121,7 @@ Open Harness again when it finishes.
 
 - Enable the `dsh` command from the Desktop menu "Manage dsh command…". For the web profile, replace `desktop` with `web`. You can also enter `dsh-cliworker-now@latest` under "Add plugin" on the plugins page.
 - Starting Harness does not update the plugin; run the command again to update. pnpm 11 waits 24 hours after a release by default; check the version with `dsh plugin --profile desktop ls dsh-cliworker-now --depth=0`.
-- Fallback package: `dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.9.2/dsh-cliworker-now-0.9.2.tgz`; every release includes `SHA256SUMS.txt`.
+- Fallback package: `dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.9.3/dsh-cliworker-now-0.9.3.tgz`; every release includes `SHA256SUMS.txt`.
 - The package ships the UI extension that native child sessions need, so no host build is required; uninstalling restores the official UI. See [runtime-host](runtime-host/README.md).
 - Uninstall: `dsh plugin --profile desktop remove dsh-cliworker-now` (local accounts, history and preferences are kept).
 

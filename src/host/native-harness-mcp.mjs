@@ -70,7 +70,7 @@ export function runNativeHarnessMcp({ input = process.stdin, output = process.st
     const id = value.id
     try {
       if (value.method === 'initialize') {
-        reply(id, { protocolVersion: '2024-11-05', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'dsh-worker-tools', version: '0.9.2' } }); return
+        reply(id, { protocolVersion: '2024-11-05', capabilities: { tools: {}, resources: {} }, serverInfo: { name: 'dsh-worker-tools', version: '0.9.3' } }); return
       }
       if (value.method === 'ping') { reply(id, {}); return }
       if (!['tools/list', 'tools/call', 'resources/list', 'resources/templates/list', 'resources/read'].includes(value.method)) {

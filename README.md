@@ -121,7 +121,7 @@ dsh plugin --profile desktop add dsh-cliworker-now@latest
 
 - `dsh` 命令可在 Desktop 菜单「管理 dsh 命令…」中启用；Web profile 把 `desktop` 换成 `web`。也可以在插件页「添加插件」中输入 `dsh-cliworker-now@latest`。
 - 启动 Harness 不会自动更新插件，更新时重新执行上面的命令。pnpm 11 默认等待新版本发布满 24 小时，可用 `dsh plugin --profile desktop ls dsh-cliworker-now --depth=0` 核对版本。
-- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.9.2/dsh-cliworker-now-0.9.2.tgz`，每个 Release 附 `SHA256SUMS.txt`。
+- 备用安装包：`dsh plugin --profile desktop add https://github.com/SuperWheel/dsh-cliworker-now/releases/download/v0.9.3/dsh-cliworker-now-0.9.3.tgz`，每个 Release 附 `SHA256SUMS.txt`。
 - 安装包自带原生子对话所需的界面扩展，无需手工构建宿主；卸载插件即恢复官方界面，详见 [runtime-host](runtime-host/README.md)。
 - 卸载：`dsh plugin --profile desktop remove dsh-cliworker-now`（保留本机账号、历史会话和偏好）。
 
