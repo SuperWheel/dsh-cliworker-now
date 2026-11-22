@@ -56,6 +56,7 @@
   - 冷启动（CDP 经 SSH 转发）：插件页「共 6 个 · 6 运行中」；默认、已有、新建会话与 Worker 子窗口输入栏均可见可编辑。首次启动因 C 盘写满出现主组件 `ENOSPC`，回收本轮临时副本后重新冷启动通过
   - REQ-0139：两轮快速停用距启用恢复 5,144 ms、5,123 ms，根子元素 1→0→1，停用后 1,526 ms、1,260 ms 原地恢复原会话输入栏；八次切换均 settled/applied，采样与截图中重启提示 0，`console.jsonl` 中「needs a full restart」0；停用态冷启动后热启用也通过
   - REQ-0140（Windows Host `dsh.cmd --profile web`，独立临时 HOME/APPDATA 等，Mac 无头 Chromium 经回环转发访问）：未构建源码（2,316/2,316 文件回读一致）原生安装 failed；用 pnpm 建立真实 `link:` 依赖后启用返回 failed、`changed=false`，诊断为标记 ENOENT，bundles 不变，官方四行 active，输入框点击获焦；只向 bundles 加入插件名后冷启动，Host 记录 `skipping profile bundle "dsh-cliworker-now"`，官方四行 active、输入框获焦；完整 tgz 对照安装与启用 applied、六行 active
-  - 收尾：真实 Desktop 保留测试包且插件启用，bundles 与备份逐项同序一致，经「应用 → 退出」关闭，进程、测试监听、辅助计划任务均为 0；C 盘剩余约 31.6 MiB，需用户清理
+  - 收尾：真实 Desktop 保留测试包且插件启用，bundles 与备份逐项同序一致，经「应用 → 退出」关闭，进程、测试监听、辅助计划任务均为 0；C 盘剩余约 31.6 MiB
+  - 清理（2026-11-22，用户授权）：删除 `cliworker-now-remote` 下 6 个 v0.9.1 预览目录、`v092-b7703b2-20261120`、`v092-release-20261120\profile-before`、`2026-11-22-composer-cold-hot`、本轮 `built-run`/`source`/`source-run`，以及 DSH 更新器中已安装的 rc.5 安装包两份（共 1,083 MB）；DSH 自带 pnpm `store prune` 再腾出 254 MB；C 盘可用 35 MB → 1,372 MB。保留本轮 `profile-before` 与测试包、0.9.2 正式包；回读已装插件 1,392 个文件、构建标记在、启用列表不变
   - 观察（与 Mac 相同）：每次热切换一次 session-maybe `SlotAssemblyError` 后自动重挂；原生安装拒绝未构建源码后 `node_modules` 仍有源码符号链接，再次启用仍被拒绝
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows/报告.md`、`windows/evidence-index.json`、`round1-quick-off-transition.json`、`round2-quick-off-transition.json`、`source-declared-enable.json`、`stale-declared-host.log`、`built-enable.json`、`final-readback.json`
