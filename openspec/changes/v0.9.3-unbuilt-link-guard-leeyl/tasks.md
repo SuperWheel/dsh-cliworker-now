@@ -61,3 +61,18 @@
   - 重启后复测（2026-11-22 14:45 重启，C 盘可用 44.70 GiB）：首次冷启动即「共 6 个 · 6 运行中」，控制台 ENOSPC 0；默认会话与 Worker 父子输入框可见可编辑、实际获焦；停用→启用→快速停用→启用四次根节点均 1→0→1，快速停用距启用恢复 5,146 ms、1,233 ms 后原会话输入栏恢复，重启提示 0、「needs a full restart」0；收尾插件启用、bundles 与备份一致、经「应用 → 退出」关闭、进程与监听为 0。证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows-after-reboot/报告.md`、`round1-quick-off-transition.json`、`cold-components.json`、`final-readback.json`
   - 观察（与 Mac 相同）：每次热切换一次 session-maybe `SlotAssemblyError` 后自动重挂；原生安装拒绝未构建源码后 `node_modules` 仍有源码符号链接，再次启用仍被拒绝
   - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows/报告.md`、`windows/evidence-index.json`、`round1-quick-off-transition.json`、`round2-quick-off-transition.json`、`source-declared-enable.json`、`stale-declared-host.log`、`built-enable.json`、`final-readback.json`
+
+## 6. v0.9.3 发布验收 〔测试｜4h｜前置 5〕
+
+- [x] 6.1 macOS 自动检查、Windows 远程隔离检查、正式构建、打包与隔离安装（版本号 0.9.3，`f3a79d1 chore(release): 0.9.3`；用户 2026-11-22 要求「开始发布 v0.9.3」）
+  - 发布前整理：6 篇根 README 链接的文档移入 `doc/protocols`、`doc/audits`，按旧路径重算全仓库 32 个文件的链接（`0e8a30f`）；Markdown 相对链接断链数移动前后均为 2（原有的 `...` 误报）
+  - macOS：`corepack pnpm typecheck` 通过（DSH 0.2.2-rc.5）；`pmspec validate --all --strict` 38/38；`git diff --check origin/main...HEAD` 通过；`pnpm lint` 0 error（334 warning，与基线相同）；`pnpm format:check` 只报未跟踪的 `vnext-doubao-cli-leeyl` 3 个文件（另一会话的 0.9.4 变更，不在本版）
+  - macOS 全量 vitest（f3a79d1）：366 个文件通过、1 失败、4 跳过，9,042 项通过、1 失败、15 跳过（195 秒，`.test-data/release-v0.9.3/vitest-full.log`）。失败项为 `tests/cli-management-download.test.ts` 的「模拟：持续有真实字节仍受两小时总预算约束」（`Controller is already closed`），运行时正式构建与 Windows 远程检查同时进行；单独重跑该文件两次均 18/18（`download-rerun.log`），本版未改下载代码，v0.9.2 发布记录也记载过同一用例的负载敏感失败；改版本号前的全量运行为 9,043 项全部通过
+  - Windows 远程隔离：运行 `def46a1a`（f3a79d1，config-d.json）preview、冻结依赖、包列表与入口、解包、契约类型、类型检查、31 个 Windows CI 文件 1,039 项（1,031 通过、0 失败、8 跳过）与安装包 Host 加载全部通过，无模型调用
+  - 正式构建：退出 Mac Desktop 后 `corepack pnpm build` 通过；与同源 preview 包比对 `lib` 1,168/1,168、`runtime-host` 218/218 文件一致，仅 `lib/client.js(.map)` 的 `//#region` 路径注释不同；Host `lib/index.js` SHA-256 `37977132…c569446`，Client `0e82ea52…1bb0c5`（`0e82ea52e063bc9f…`），构建标记 `eb0060d2…0f657b2`。验证记录 `artifacts/dsh-cliworker-now-0.9.3-verification.json`，`scripts/package-release.mjs` 通过
+  - Mac Desktop（DSH 0.2.2-rc.5，链接正式构建，CDP 只读，15:27）：插件 v0.9.3 已启用、「共 6 个 · 6 运行中」，输入栏可编辑，CLI Worker 面板正常；17 个 CLI 设置页均显示状态；「更新 CLI」检查完成（可更新 12、已是最新 4、未安装 1）；无错误提示；收尾以 `open -a` 无调试参数重启，profile 三个文件哈希不变。证据 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/mac-desktop/报告.md`
+  - 安装包：`artifacts/release-v0.9.3/dsh-cliworker-now-0.9.3.tgz`，22,002,058 字节，SHA-256 `9c3896b1dd70c424ac19753f873e76c261eef8860ab02a82bdc17cdc82ea1bb0`，1,392 个文件；顶层只有 `LICENSE`、两份 README、`cordis.patch.yml`、`icon.png`、`lib`、`package.json`、`runtime-host`；`private:false`，无 scripts／devDependencies，repository／homepage／bugs 指向 `SuperWheel/dsh-cliworker-now`，`dsh.bundle.patch` 含构建标记；内容扫描未发现 `.env`、`.test-data`、日志、私钥、令牌特征、私人路径、IP 或账号标识
+  - 官方 dsh 0.2.2-rc.5（Desktop 自带 CLI）全新隔离 `HOME`／`DSH_HOME`：`plugin --profile web add --save-exact <tgz>` 退出 0，版本 0.9.3，1,392 个文件与包内逐字节一致，`lib` 与 `runtime-host` 1,386 个文件与正式构建逐字节一致；临时 profile 已删除，日志 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/isolated-install/install.log`
+  - 真实 CLI：自 v0.9.2 以来派遣、登录、退出代码均无变化（运行时只改 `src/client/root-recovery.ts`，另两处为注释路径与版本字符串），按发布规格不重跑真实 CLI，引用 v0.9.2 发布记录
+- [ ] 6.2 Windows Desktop 用原生安装器装入发布候选包并只读核对
+- [ ] 6.3 推送 GitHub、创建 Release、npm 发布与回读
