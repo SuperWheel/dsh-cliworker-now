@@ -144,6 +144,8 @@ pnpm --config.verifyDepsBeforeRun=false build
 dsh plugin --profile desktop add .
 ```
 
+A source folder works only after the install and build steps above; a downloaded source archive (GitHub "Download ZIP" or a Release's Source code) contains no build output. Since v0.9.3 Harness refuses to enable an unbuilt folder. If such a folder previously made the conversation area and input box disappear, a cold start restores the stock interface; then install with one of the commands above.
+
 For `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`, `ERR_PNPM_IGNORED_BUILDS` and similar cases, see [installation details](doc/usage-details.en.md#5-installation-and-updates).
 
 </details>

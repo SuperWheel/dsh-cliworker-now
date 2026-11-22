@@ -144,6 +144,8 @@ pnpm --config.verifyDepsBeforeRun=false build
 dsh plugin --profile desktop add .
 ```
 
+源码目录必须先完成上面的安装依赖和构建两步才能使用；直接下载的源码压缩包（GitHub「Download ZIP」或 Release 附带的 Source code）没有构建产物。v0.9.3 起，Harness 会拒绝启用未构建的目录；之前因此导致对话区和输入框消失的，冷启动后会恢复官方界面，再改用上面的安装命令即可。
+
 遇到 `ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED`、`ERR_PNPM_IGNORED_BUILDS` 等情况，见 [安装细节](doc/usage-details.md#5-安装与更新)。
 
 </details>

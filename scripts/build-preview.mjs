@@ -13,6 +13,7 @@ for (const file of [
   'src',
   'scripts/build.mjs',
   'scripts/build-host-copy-manifest.mjs',
+  'scripts/build-complete-marker.mjs',
   'scripts/build-dependencies.mjs',
   'scripts/host-targets.json',
   'scripts/host-runtime.mjs',
@@ -30,6 +31,14 @@ for (const file of [
 ]) {
   cpSync(join(root, file), join(preview, file), { recursive: true })
 }
-symlinkSync(dependencies.modules, join(preview, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
-execFileSync(process.execPath, ['scripts/build.mjs'], { cwd: preview, stdio: 'inherit', env: { ...process.env, CLIWORKER_BUILD_DEPS: dependencies.directory } })
+symlinkSync(
+  dependencies.modules,
+  join(preview, 'node_modules'),
+  process.platform === 'win32' ? 'junction' : 'dir',
+)
+execFileSync(process.execPath, ['scripts/build.mjs'], {
+  cwd: preview,
+  stdio: 'inherit',
+  env: { ...process.env, CLIWORKER_BUILD_DEPS: dependencies.directory },
+})
 console.log(`Isolated package ready: ${preview}`)

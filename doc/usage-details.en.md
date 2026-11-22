@@ -6,7 +6,6 @@ This page keeps the full text from before the README was shortened in v0.8.2: pe
 
 ## Native conversation notes
 
-
 The current development version is **v0.8.1**. The v0.7.10 source, uncommitted work and build were independently backed up and verified before migration. The native conversation and tool bridge migration, and further fixes before the next formal submission, belong to v0.8.1. Bug fixes use focused verification; full macOS and Windows acceptance runs before the formal GitHub submission. Actual results and verification boundaries are recorded in the [implementation log](tasks.md).
 
 Qoder bills in credits. Turn usage displays confirmed `CLI/provider/model` identities, such as `omp/zhipu-coding-plan/glm-5.3-flash`, rather than internal Worker routes; undisclosed providers stay explicit. Its composer and completed-turn usage indicators display the credits for their exact bound run and its dialog is titled “Credits usage”, without token units in that module; missing credits remain unknown. A verified native context percentage remains visible without a token count or window; an actual same-turn native window may supplement an explicitly estimated count. Windows supports Qoder's native administrator ownership and inherited read-only ACLs while rejecting untrusted writers and preserving file permissions. This fix was checked on Windows Desktop using existing history and focused regressions; no new model calls or Mac tests were run. See the [Qoder protocol notes](protocols/qoder-protocol.md#63-积分计费显示2026-10-18).
@@ -25,11 +24,9 @@ Native next-step messages follow the current CLI transport. A supported and read
 
 The tool bridge inherits the child's configured skills, MCP and tools, rechecks access and uses DSH's permission pipeline. Extra DSH model calls remain blocked; ordinary parent models retain their behavior. Earlier partial-content embedding, internal input proxies and full-page navigation have been superseded by this sidebar design, with historical records retained. Actual sidebar, control, telemetry and steering acceptance is tracked in the [implementation log](tasks.md). See the [native UI contract](native-conversation-ui.md) and [tool bridge boundaries](protocols/native-harness-tools.md).
 
-
 When a resumed AGY turn has a complete reply but its final aggregate reports ERROR, sufficient conflicting evidence produces an `uncertain` outcome. The current reply and original error remain available; this does not establish success or prove that the error is historical. Verify actual results before retrying writes. Harness jobs support only completed/failed/killed, so the outer job remains failed with an explicit uncertainty notice and structured outcome. Current errors, nonzero exits, partial output and cancellation retain their failure or interruption outcome.
 
 Finished empty intermediate replies appear in the expandable work process with their usage, timestamps and reported duration. Task duration uses local timing for this run; upstream AGY duration and usage are labelled as conversation totals and are never added to step values. Streaming replies, tools and errors remain visible.
-
 
 The native CLI plus menu matches the native menu: an Add section (file, image, goal, plan, feedback) and a Commands section (permission, model, fork), with native icons and labels; a typed query uses the native ranking. It offers Desktop file references on macOS/Windows and Harness image uploads. Admitted native attachment blocks are converted to each CLI's supported content blocks, resource links or file paths. Generic browser file receipts remain unavailable in rc.2 child sessions. Attachment identities participate in retry deduplication; uploads submitted during generation stay in the native queue. Harness Skills and configured MCP tools reuse the scoped Host bridge and approval pipeline. ACP approval is limited to exact, currently granted bridge tools. See the [per-CLI capability matrix](protocols/cli-harness-capabilities.md) for limits and platform evidence.
 
@@ -37,14 +34,14 @@ The native CLI plus menu matches the native menu: an Add section (file, image, g
 
 ### 4.1 Requirements
 
-| Component | Requirement |
-| --- | --- |
-| Operating system | **macOS / Windows**; each external CLI needs its native installation for that system |
-| Host | **DeepSeek Harness**; required interfaces are checked without rejecting the host solely by version. Release notes record tested versions; optional native-view extensions are built and verified against their corresponding official source |
-| Node.js | **22.19.0 or newer** |
-| External CLIs | Install only those you need, with their own account or API access; the OMP npm package needs Bun ≥ 1.3.14 |
-| Install command | Enable `dsh` from Desktop’s Manage dsh Command menu; macOS and Windows share the same syntax |
-| Source development | pnpm **11.25.0**, as pinned in the repository |
+| Component          | Requirement                                                                                                                                                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operating system   | **macOS / Windows**; each external CLI needs its native installation for that system                                                                                                                                                         |
+| Host               | **DeepSeek Harness**; required interfaces are checked without rejecting the host solely by version. Release notes record tested versions; optional native-view extensions are built and verified against their corresponding official source |
+| Node.js            | **22.19.0 or newer**                                                                                                                                                                                                                         |
+| External CLIs      | Install only those you need, with their own account or API access; the OMP npm package needs Bun ≥ 1.3.14                                                                                                                                    |
+| Install command    | Enable `dsh` from Desktop’s Manage dsh Command menu; macOS and Windows share the same syntax                                                                                                                                                 |
+| Source development | pnpm **11.25.0**, as pinned in the repository                                                                                                                                                                                                |
 
 The plugin package and Harness UI are not restricted to macOS. Worker execution uses each CLI's native protection and permission options; the plugin adds no operating-system process sandbox. Windows x64 previously passed runtime and own-account source tests for all 11 CLIs, plus actual Codex/Pi/OMP startup and Pi SDK metadata checks. Those historical results do not verify the new transports on a Windows machine. Individual CLI installations and live model access remain separate requirements.
 
@@ -54,23 +51,23 @@ New v0.7.10 Workers use native duplex transports: Codex app-server, Claude/Antig
 
 An integrated adapter does not mean every model, subscription or platform has been tested. The table preserves historical live checks. Account isolation and model permissions were tightened in later releases, so an earlier successful task does not establish current access. During v0.7.9 development, macOS Antigravity and Codex live conversations were checked for the affected message and stop flows. Cross-platform release checks cover automated regressions and isolated installation/lifecycle checks; they do not establish live generation access for every provider. See the [verification log](tasks.md) for exact scopes.
 
-| CLI | Checked version | Verification scope |
-| --- | --- | --- |
-| Antigravity | 1.2.16 | Live first turn, follow-up and stopping verified |
-| Codex | 0.160.0 | Live first turn and continuation of the same native session verified |
-| Claude Code | 2.1.176 | Live first turn and follow-up verified; `sonnet` mapped to GLM in that test environment |
-| Kimi Code | 2.1.1 | Native token status, account identity and login management checked; an earlier 0.42.0 live request was blocked by subscription HTTP 403; generation has not been repeated |
-| Official MiMo Code | 0.1.15 | Live first turn and follow-up verified |
-| ZCode | 0.16.9 | Native authentication, headless execution and session protocol integrated; see its probe record |
-| Grok Build | 1.0.0 | Own login, official Build access permission and model directory checked separately; generation remains unverified |
-| OMP | 16.4.4 | Native login/logout menus and own log-write permissions checked; RPC integrated; Zhipu Coding CN GLM-5.3-Flash was tested historically |
-| Pi | 1.0.2 / 1.0.4 / 1.1.0 | Executable identity and SDK/RPC checked by version; 1.0.2 with Zhipu Coding CN GLM-5.3-Flash was tested historically; 1.0.4 checks were read-only or offline; 1.1.0 passed credential-free SDK/RPC, native login menu display and termination cleanup on Windows, with live login and model execution still unverified |
-| Hermes Agent | Installed checkout 6c80c32734 | Own account directory, native account menus and Nous model access checked; a read-only check returned 10 free models; generation and continuation remain unverified |
-| OpenCode | 1.18.21 | Native model directory and JSONL adapter integrated; Zhipu models were tested historically; a free MiMo request previously returned HTTP 403 |
-| Qoder | 1.1.73 | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified |
-| Qoder CN | 1.1.74 | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested |
-| CodeBuddy Code | 2.181.0 | Native ACP added in v0.8.8; macOS live checks (free model `hy4free`) are recorded in the [change tasks](../openspec/archives/add-codebuddy-cli/tasks.md); International site, enterprise domain, iOA and Windows remain unverified |
-| TRAE CN | 0.213.1 | Preliminary macOS protocol probes on 2026-11-07: 18-model catalog and glm-5.3-flash file tools, commands, load, cancel and fork; plugin/Desktop and Windows acceptance remain unverified; see integration tasks |
+| CLI                | Checked version               | Verification scope                                                                                                                                                                                                                                                                                                     |
+| ------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Antigravity        | 1.2.16                        | Live first turn, follow-up and stopping verified                                                                                                                                                                                                                                                                       |
+| Codex              | 0.160.0                       | Live first turn and continuation of the same native session verified                                                                                                                                                                                                                                                   |
+| Claude Code        | 2.1.176                       | Live first turn and follow-up verified; `sonnet` mapped to GLM in that test environment                                                                                                                                                                                                                                |
+| Kimi Code          | 2.1.1                         | Native token status, account identity and login management checked; an earlier 0.42.0 live request was blocked by subscription HTTP 403; generation has not been repeated                                                                                                                                              |
+| Official MiMo Code | 0.1.15                        | Live first turn and follow-up verified                                                                                                                                                                                                                                                                                 |
+| ZCode              | 0.16.9                        | Native authentication, headless execution and session protocol integrated; see its probe record                                                                                                                                                                                                                        |
+| Grok Build         | 1.0.0                         | Own login, official Build access permission and model directory checked separately; generation remains unverified                                                                                                                                                                                                      |
+| OMP                | 16.4.4                        | Native login/logout menus and own log-write permissions checked; RPC integrated; Zhipu Coding CN GLM-5.3-Flash was tested historically                                                                                                                                                                                 |
+| Pi                 | 1.0.2 / 1.0.4 / 1.1.0         | Executable identity and SDK/RPC checked by version; 1.0.2 with Zhipu Coding CN GLM-5.3-Flash was tested historically; 1.0.4 checks were read-only or offline; 1.1.0 passed credential-free SDK/RPC, native login menu display and termination cleanup on Windows, with live login and model execution still unverified |
+| Hermes Agent       | Installed checkout 6c80c32734 | Own account directory, native account menus and Nous model access checked; a read-only check returned 10 free models; generation and continuation remain unverified                                                                                                                                                    |
+| OpenCode           | 1.18.21                       | Native model directory and JSONL adapter integrated; Zhipu models were tested historically; a free MiMo request previously returned HTTP 403                                                                                                                                                                           |
+| Qoder              | 1.1.73                        | Native ACP added in v0.8.1; real account metadata and a 17-model dynamic catalog checked; live model tasks, tool artifacts, restoration, in-run cancellation and Windows remain unverified                                                                                                                             |
+| Qoder CN           | 1.1.74                        | Its own account and 15-model catalog checked on Windows; Qwen3.8-Flash / low passed generation, file tools, same-session continuation and in-run cancellation; a separate normal new-chat dispatch and native child UI check also passed; other models and the Mac runtime remain untested                             |
+| CodeBuddy Code     | 2.181.0                       | Native ACP added in v0.8.8; macOS live checks (free model `hy4free`) are recorded in the [change tasks](../openspec/archives/add-codebuddy-cli/tasks.md); International site, enterprise domain, iOA and Windows remain unverified                                                                                     |
+| TRAE CN            | 0.213.1                       | Preliminary macOS protocol probes on 2026-11-07: 18-model catalog and glm-5.3-flash file tools, commands, load, cancel and fork; plugin/Desktop and Windows acceptance remain unverified; see integration tasks                                                                                                        |
 
 MiMo refers to [XiaomiMiMo/MiMo-Code](https://github.com/XiaomiMiMo/MiMo-Code). Hermes Agent replaced the old external Harness CLI adapter; DeepSeek Harness remains the plugin's host.
 
@@ -110,11 +107,11 @@ The installer needs direct access to trae.cn. The 2026-11-07 probe from outside 
 
 **Account.** Official documentation restricts CLI access to the enterprise flagship plan. Preliminary checks also completed live tasks with a personal account using an under-development feature; that does not establish access for all personal accounts. `traecli login status` is the account source: `Logged in using Trae` with exit 0 means logged in without distinguishing personal from enterprise, `Not logged in` with exit 1 means signed out, and other output stays unknown. Unsupported plans retain the native reason.
 
-| Login method | Native command and behavior |
-| --- | --- |
-| Personal account | `traecli --enable personal_user_login login --personal`; depends on the under-development `personal_user_login` feature. The flag applies only to that login command, not task launches |
-| Enterprise SSO | `traecli login --enterprise`; uses the native browser flow |
-| Enterprise PAT | `traecli login --with-trae-pat`; reads `TRAECLI_PERSONAL_ACCESS_TOKEN`, or reads stdin. Version 0.213.1 exits with an error when a PTY has no PAT input; it does not display an input prompt. The plugin does not supply, collect or store the token |
+| Login method     | Native command and behavior                                                                                                                                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Personal account | `traecli --enable personal_user_login login --personal`; depends on the under-development `personal_user_login` feature. The flag applies only to that login command, not task launches                                                              |
+| Enterprise SSO   | `traecli login --enterprise`; uses the native browser flow                                                                                                                                                                                           |
+| Enterprise PAT   | `traecli login --with-trae-pat`; reads `TRAECLI_PERSONAL_ACCESS_TOKEN`, or reads stdin. Version 0.213.1 exits with an error when a PTY has no PAT input; it does not display an input prompt. The plugin does not supply, collect or store the token |
 
 The two-column method cards start no CLI until Continue. Personal sign-in offers a browser link and full callback URL field; enterprise SSO/PAT stay native. A signed-in account opens its current-account card first. Switching signs out, confirms state and process cleanup, then asks for a new method.
 
@@ -228,6 +225,8 @@ Without `#`, the source comes from the repository's default branch. The existing
 ```sh
 dsh plugin --profile desktop add "github:SuperWheel/dsh-cliworker-now#<full-commit-SHA>"
 ```
+
+A downloaded source archive (GitHub "Download ZIP" or a Release's Source code) has no build output and cannot be linked directly. The plugin declares `lib/build-complete.patch.yml`, written as the last build step, as a required bundle patch: since v0.9.3 Harness refuses to enable an unbuilt folder, so the stock conversation UI stays in place, and a previously selected unbuilt folder is skipped as a whole layer on the next cold start, restoring the stock UI.
 
 This downloads build dependencies and compiles the plugin, so it usually takes longer than installing a prebuilt package. Default-branch source is separate from the frozen npm stable package. Repeating the install command does not guarantee that it follows the latest HEAD; check the resolved commit.
 
@@ -361,13 +360,13 @@ flowchart LR
 
 ### 6.3 Manage roles and CLIs
 
-| Setting | What you can change | Scope |
-| --- | --- | --- |
-| Agent settings | Add, edit or remove name / summary / instruction presets | Shared in the current Harness profile; existing agents keep their original role snapshot |
-| CLI connections | Enable a CLI, refresh status, manage or switch accounts, open the native account terminal | That CLI; finish its tasks and account terminals before disabling it |
-| Project defaults | Save the default model and reasoning effort | New main conversations in the current project and CLI; confirmed conversations keep their setup |
-| Native child model menu | Choose a model or effort from the corresponding CLI catalog | Saved for that Worker and revalidated when sending; locked during execution or while any queued item exists |
-| Native child permission / planning controls | Select modes actually supported and writable for that CLI | Host-validated save; locked during execution, admission, cleanup or any native/compatibility queue |
+| Setting                                     | What you can change                                                                       | Scope                                                                                                       |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Agent settings                              | Add, edit or remove name / summary / instruction presets                                  | Shared in the current Harness profile; existing agents keep their original role snapshot                    |
+| CLI connections                             | Enable a CLI, refresh status, manage or switch accounts, open the native account terminal | That CLI; finish its tasks and account terminals before disabling it                                        |
+| Project defaults                            | Save the default model and reasoning effort                                               | New main conversations in the current project and CLI; confirmed conversations keep their setup             |
+| Native child model menu                     | Choose a model or effort from the corresponding CLI catalog                               | Saved for that Worker and revalidated when sending; locked during execution or while any queued item exists |
+| Native child permission / planning controls | Select modes actually supported and writable for that CLI                                 | Host-validated save; locked during execution, admission, cleanup or any native/compatibility queue          |
 
 Child conversations reuse the catalog saved during first dispatch. Reopening the menu does not query the CLI again; missing matching catalogs require discovery. Cached choices do not authorize execution. Invalid choices fail explicitly at send time without silent fallback. The plugin retains the native session ID on model changes; provider-side cross-model context semantics have not been live-tested in this iteration.
 
@@ -383,14 +382,13 @@ AGY context comes from the latest request estimate and window capacity in that C
 
 The shared native context meter keeps positive occupancy below 1% distinct from a true zero and uses the unrounded ratio for both graphics. Its three composition rows remain visible for external conversations, with missing values shown as — and explained. New supported Hermes requests capture numeric composition estimates from the actual request using Hermes's own estimator; old records without that evidence stay unknown. Exact provider totals and estimated composition remain separate.
 
-
 Included roles: **commercial reviewer, logic reviewer, style reviewer, prose reviser, plot-beat designer, story-structure planner and lead novelist**. See [default role presets](role-presets.md) for their instructions.
 
-| Status dot | Meaning |
-| --- | --- |
-| Gray | Not installed, not logged in, ordinary configuration only, or not checked yet; checking displays a loading state |
-| Red | Known expired login, damaged configuration, read failure, invalid explicit executable path, or failed catalog discovery for a configured CLI |
-| Green | Logged in, based on native state, a renewable login session, or an exact current-account credential binding |
+| Status dot | Meaning                                                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Gray       | Not installed, not logged in, ordinary configuration only, or not checked yet; checking displays a loading state                             |
+| Red        | Known expired login, damaged configuration, read failure, invalid explicit executable path, or failed catalog discovery for a configured CLI |
+| Green      | Logged in, based on native state, a renewable login session, or an exact current-account credential binding                                  |
 
 An empty model directory for an unconfigured CLI stays gray. Account reads finish before model loading. Refreshing authentication or finishing an account operation invalidates and reloads the model list. Stale models cannot be selected while a refresh is pending or after it fails. Stored defaults remain for rechecking. The navigation dot and account summary use the same status rules; the account section keeps necessary information on one line.
 
@@ -398,12 +396,12 @@ An empty model directory for an unconfigured CLI stays gray. Account reads finis
 
 CLI child conversations support Harness goal, plan, feedback and branch. An unsupported control stays visible but disabled, and its tooltip explains why; clicking it sends no request and shows no error.
 
-| Feature | Behavior | Coverage |
-| --- | --- | --- |
-| Goal | Set, edit, pause, resume or clear the goal from the goal bar, the "+" menu or `/goal`. An active goal is prepended as a delimited block to each turn sent to the CLI, while the conversation keeps showing your original message. A goal never starts a turn by itself and does not use any CLI's own goal auto-continuation. | All CLIs |
-| Plan | Uses the existing mapping to each CLI's native plan or read-only mode, from the "+" menu, the permission control, the plan chip or `/plan`. Those CLIs hide the plan chip, while the "+" menu keeps the Plan row with the reason. They have only the accept-edits permission mode, so the permission control is also disabled with that reason. | Disabled for Hermes, Qoder, Qoder CN and the legacy Kimi transport |
-| Feedback | Thumbs and the feedback dialog use Harness feedback services and stay recorded in Harness only. Nothing is sent to the CLI or its vendor, and nothing enters model context. | All CLIs |
-| Branch | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued. | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN, TRAE CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
+| Feature  | Behavior                                                                                                                                                                                                                                                                                                                                        | Coverage                                                                                                                                                                             |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Goal     | Set, edit, pause, resume or clear the goal from the goal bar, the "+" menu or `/goal`. An active goal is prepended as a delimited block to each turn sent to the CLI, while the conversation keeps showing your original message. A goal never starts a turn by itself and does not use any CLI's own goal auto-continuation.                   | All CLIs                                                                                                                                                                             |
+| Plan     | Uses the existing mapping to each CLI's native plan or read-only mode, from the "+" menu, the permission control, the plan chip or `/plan`. Those CLIs hide the plan chip, while the "+" menu keeps the Plan row with the reason. They have only the accept-edits permission mode, so the permission control is also disabled with that reason. | Disabled for Hermes, Qoder, Qoder CN and the legacy Kimi transport                                                                                                                   |
+| Feedback | Thumbs and the feedback dialog use Harness feedback services and stay recorded in Harness only. Nothing is sent to the CLI or its vendor, and nothing enters model context.                                                                                                                                                                     | All CLIs                                                                                                                                                                             |
+| Branch   | The message branch button, the conversation menu, the shortcut and `/fork` call the CLI's native fork to create a new native session. A sibling Worker conversation then gets the history up to the cut point, and the original stays usable. You cannot branch while a turn is running or messages are queued.                                 | Latest completed turn: Codex, Claude Code, Kimi (ACP), MiMo, ZCode, Pi, OpenCode, Qoder, Qoder CN, TRAE CN. Earlier turns: Codex only. Not supported: Antigravity, Hermes, Grok, OMP |
 
 ZCode forks inclusively from the latest native assistant message; a conversation without workspace edits needs no checkpoint. Pi, OpenCode and ZCode branches retain the source session's native state directory across Host restarts and nested forks.
 

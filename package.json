@@ -46,7 +46,10 @@
   ],
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": [
+        "./cordis.patch.yml",
+        "./lib/build-complete.patch.yml"
+      ]
     },
     "client": {
       "platform": "web",

@@ -5,7 +5,20 @@ import { createWriteStream } from 'node:fs'
 import { chmod, mkdir, lstat, readFile, writeFile, cp, readdir, open, rm } from 'node:fs/promises'
 import { resolve, join, relative, dirname, isAbsolute, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { OWNER, MARKER, WINDOWS_TESTS, sha256, validateRemoteRoot, createSnapshot, validateSnapshot, validateArchiveEntries, runtimeManifestFromSnapshot, strictSshArgs, encodedPowerShell, assertNoLinksWithin } from './windows-remote-common.mjs'
+import {
+  OWNER,
+  MARKER,
+  WINDOWS_TESTS,
+  sha256,
+  validateRemoteRoot,
+  createSnapshot,
+  validateSnapshot,
+  validateArchiveEntries,
+  runtimeManifestFromSnapshot,
+  strictSshArgs,
+  encodedPowerShell,
+  assertNoLinksWithin,
+} from './windows-remote-common.mjs'
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url))
 const projectRoot = resolve(scriptDirectory, '..')
@@ -15,26 +28,43 @@ export async function readConfig(path, root = projectRoot) {
   const absolute = resolve(root, path)
   const privateDirectory = join(root, '.test-data', 'windows-remote')
   const withinPrivate = relative(privateDirectory, absolute)
-  if (!withinPrivate || isAbsolute(withinPrivate) || withinPrivate === '..' || withinPrivate.startsWith(`..${sep}`)) throw new Error('Config must be inside .test-data/windows-remote (Git ignored)')
+  if (
+    !withinPrivate ||
+    isAbsolute(withinPrivate) ||
+    withinPrivate === '..' ||
+    withinPrivate.startsWith(`..${sep}`)
+  )
+    throw new Error('Config must be inside .test-data/windows-remote (Git ignored)')
   for (let current = absolute; current !== root; current = dirname(current)) {
-    if ((await lstat(current)).isSymbolicLink()) throw new Error(`Config path may not contain symlinks: ${current}`)
+    if ((await lstat(current)).isSymbolicLink())
+      throw new Error(`Config path may not contain symlinks: ${current}`)
   }
   const config = JSON.parse(await readFile(absolute, 'utf8'))
-  if (Object.keys(config).some((key) => !['host', 'user', 'identity', 'knownHosts', 'remoteRoot'].includes(key))) throw new Error('Unknown connection config field')
-  if (typeof config.host !== 'string' || !/^[A-Za-z\d][A-Za-z\d.-]*$/.test(config.host)) throw new Error('An explicit host is required')
-  if (typeof config.user !== 'string' || !/^[A-Za-z\d_][A-Za-z\d_.-]*$/.test(config.user)) throw new Error('An explicit SSH user is required')
+  if (
+    Object.keys(config).some((key) => !['host', 'user', 'identity', 'knownHosts', 'remoteRoot'].includes(key))
+  )
+    throw new Error('Unknown connection config field')
+  if (typeof config.host !== 'string' || !/^[A-Za-z\d][A-Za-z\d.-]*$/.test(config.host))
+    throw new Error('An explicit host is required')
+  if (typeof config.user !== 'string' || !/^[A-Za-z\d_][A-Za-z\d_.-]*$/.test(config.user))
+    throw new Error('An explicit SSH user is required')
   validateRemoteRoot(config.remoteRoot)
   for (const key of ['identity', 'knownHosts']) {
-    if (typeof config[key] !== 'string' || !isAbsolute(config[key]) || /[\r\n\0]/.test(config[key])) throw new Error(`${key} must be an absolute local file path`)
+    if (typeof config[key] !== 'string' || !isAbsolute(config[key]) || /[\r\n\0]/.test(config[key]))
+      throw new Error(`${key} must be an absolute local file path`)
     const info = await lstat(config[key])
     if (!info.isFile() || info.isSymbolicLink()) throw new Error(`${key} must be a regular local file`)
-    if (key === 'identity' && process.platform !== 'win32' && (info.mode & 0o077)) throw new Error('SSH private key permissions must be 0600 or stricter')
+    if (key === 'identity' && process.platform !== 'win32' && info.mode & 0o077)
+      throw new Error('SSH private key permissions must be 0600 or stricter')
   }
   return config
 }
 
 export function bootstrapCommand(config, runId) {
-  const data = Buffer.from(JSON.stringify({ root: config.remoteRoot, runId, marker: OWNER }), 'utf8').toString('base64')
+  const data = Buffer.from(
+    JSON.stringify({ root: config.remoteRoot, runId, marker: OWNER }),
+    'utf8',
+  ).toString('base64')
   return encodedPowerShell(`$ErrorActionPreference='Stop'
 $d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))|ConvertFrom-Json
 $root=$d.root
@@ -67,9 +97,19 @@ Write-Output 'Dedicated Windows run directory ready.'`)
 }
 
 export function runnerCommand(config, runId, packageHash, snapshotHash, cancel = false) {
-  const args = [...(cancel ? ['--cancel'] : []), config.remoteRoot, runId, ...(cancel ? [] : [packageHash, snapshotHash])]
-  const data = Buffer.from(JSON.stringify({ file: `${config.remoteRoot}/runs/${runId}/windows-remote-runner.mjs`, args }), 'utf8').toString('base64')
-  return encodedPowerShell(`$ErrorActionPreference='Stop';$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))|ConvertFrom-Json;$node=(Get-Command node -CommandType Application -ErrorAction Stop).Source; & $node $d.file @($d.args);exit $LASTEXITCODE`)
+  const args = [
+    ...(cancel ? ['--cancel'] : []),
+    config.remoteRoot,
+    runId,
+    ...(cancel ? [] : [packageHash, snapshotHash]),
+  ]
+  const data = Buffer.from(
+    JSON.stringify({ file: `${config.remoteRoot}/runs/${runId}/windows-remote-runner.mjs`, args }),
+    'utf8',
+  ).toString('base64')
+  return encodedPowerShell(
+    `$ErrorActionPreference='Stop';$d=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${data}'))|ConvertFrom-Json;$node=(Get-Command node -CommandType Application -ErrorAction Stop).Source; & $node $d.file @($d.args);exit $LASTEXITCODE`,
+  )
 }
 
 export async function verifyPreviewSnapshot(preview, snapshot) {
@@ -82,45 +122,134 @@ export async function verifyPreviewSnapshot(preview, snapshot) {
     if (info.isDirectory()) {
       for (const name of await readdir(path)) if (name !== '.DS_Store') await visit(`${relativePath}/${name}`)
     } else {
-      if (sha256(await readFile(path)) !== hashes.get(relativePath)) throw new Error(`Source changed since preview build: ${relativePath}; rerun verification`)
+      if (sha256(await readFile(path)) !== hashes.get(relativePath))
+        throw new Error(`Source changed since preview build: ${relativePath}; rerun verification`)
       seen.add(relativePath)
     }
   }
   await visit('src')
-  for (const file of snapshot.files) if (file.path.startsWith('src/') && !seen.has(file.path)) throw new Error(`Source added since preview build: ${file.path}`)
+  for (const file of snapshot.files)
+    if (file.path.startsWith('src/') && !seen.has(file.path))
+      throw new Error(`Source added since preview build: ${file.path}`)
   await visit('runtime-host')
-  for (const file of snapshot.files) if (file.path.startsWith('runtime-host/') && !seen.has(file.path)) throw new Error(`Source added since preview build: ${file.path}`)
-  for (const file of ['package.json', 'tsconfig.base.json', 'tsconfig.host-build.json', 'tsconfig.client.json', 'cordis.patch.yml',
-    'scripts/build.mjs', 'scripts/build-dependencies.mjs', 'scripts/host-runtime.mjs', 'scripts/host-extension-guard.mjs']) await visit(file)
+  for (const file of snapshot.files)
+    if (file.path.startsWith('runtime-host/') && !seen.has(file.path))
+      throw new Error(`Source added since preview build: ${file.path}`)
+  for (const file of [
+    'package.json',
+    'tsconfig.base.json',
+    'tsconfig.host-build.json',
+    'tsconfig.client.json',
+    'cordis.patch.yml',
+    'scripts/build.mjs',
+    'scripts/build-dependencies.mjs',
+    'scripts/build-complete-marker.mjs',
+    'scripts/host-runtime.mjs',
+    'scripts/host-extension-guard.mjs',
+  ])
+    await visit(file)
 }
 
 export function verifyRemoteReport(report, testBytes, state) {
-  const required = ['pnpm-version', 'install', 'typecheck', 'windows-tests', 'package-list', 'package-entries', 'package-unpack', 'mac-contract-types', 'mac-package-host-load']
-  if (report.runId !== state.runId || report.platform !== 'win32' || report.success !== true || report.modelCalls !== 0 || report.guiVerified !== false || report.officialCliSmokeExecuted !== false || !report.finishedAt || !report.cleanup?.confirmed || !report.cleanup?.lockReleased) throw new Error('Remote report identity, scope, completion or cleanup mismatch')
-  if (report.receivedPackageSha256 !== state.macPackageSha256 || report.macPackageSha256 !== state.macPackageSha256 || report.sourceSnapshotSha256 !== state.sourceSnapshotSha256) throw new Error('Remote transfer hash mismatch')
+  const required = [
+    'pnpm-version',
+    'install',
+    'typecheck',
+    'windows-tests',
+    'package-list',
+    'package-entries',
+    'package-unpack',
+    'mac-contract-types',
+    'mac-package-host-load',
+  ]
+  if (
+    report.runId !== state.runId ||
+    report.platform !== 'win32' ||
+    report.success !== true ||
+    report.modelCalls !== 0 ||
+    report.guiVerified !== false ||
+    report.officialCliSmokeExecuted !== false ||
+    !report.finishedAt ||
+    !report.cleanup?.confirmed ||
+    !report.cleanup?.lockReleased
+  )
+    throw new Error('Remote report identity, scope, completion or cleanup mismatch')
+  if (
+    report.receivedPackageSha256 !== state.macPackageSha256 ||
+    report.macPackageSha256 !== state.macPackageSha256 ||
+    report.sourceSnapshotSha256 !== state.sourceSnapshotSha256
+  )
+    throw new Error('Remote transfer hash mismatch')
   for (const name of required) {
     const stages = report.stages?.filter((stage) => stage.name === name)
-    if (stages?.length !== 1 || stages[0].exitCode !== 0 || stages[0].signal || stages[0].success !== true) throw new Error(`Remote stage is not confirmed: ${name}`)
+    if (stages?.length !== 1 || stages[0].exitCode !== 0 || stages[0].signal || stages[0].success !== true)
+      throw new Error(`Remote stage is not confirmed: ${name}`)
   }
-  if (!testBytes || sha256(testBytes) !== report.windowsTestsSha256) throw new Error('Windows test evidence hash mismatch or missing')
+  if (!testBytes || sha256(testBytes) !== report.windowsTestsSha256)
+    throw new Error('Windows test evidence hash mismatch or missing')
   const tests = JSON.parse(testBytes.toString())
-  if (!tests.success || report.tests?.success !== true || tests.numFailedTests !== 0 || !tests.numPassedTests || tests.numPassedTests + tests.numPendingTests !== tests.numTotalTests) throw new Error('Windows test JSON does not confirm passed tests')
-  for (const [key, source] of Object.entries({ passed: 'numPassedTests', failed: 'numFailedTests', pending: 'numPendingTests', total: 'numTotalTests' })) if (report.tests?.[key] !== tests[source]) throw new Error('Windows report and test JSON disagree')
+  if (
+    !tests.success ||
+    report.tests?.success !== true ||
+    tests.numFailedTests !== 0 ||
+    !tests.numPassedTests ||
+    tests.numPassedTests + tests.numPendingTests !== tests.numTotalTests
+  )
+    throw new Error('Windows test JSON does not confirm passed tests')
+  for (const [key, source] of Object.entries({
+    passed: 'numPassedTests',
+    failed: 'numFailedTests',
+    pending: 'numPendingTests',
+    total: 'numTotalTests',
+  }))
+    if (report.tests?.[key] !== tests[source]) throw new Error('Windows report and test JSON disagree')
   const paths = tests.testResults?.map((result) => result.name.replaceAll('\\', '/')) ?? []
-  if (paths.length !== WINDOWS_TESTS.length || WINDOWS_TESTS.some((file) => !paths.some((path) => path.endsWith(`/${file}`)))) throw new Error('Windows evidence does not cover every Windows CI test file')
-  const skipped = tests.testResults.flatMap((result) => result.assertionResults.filter((assertion) => assertion.status === 'pending' || assertion.status === 'skipped').map((assertion) => ({ file: result.name.replaceAll('\\', '/'), title: assertion.title })))
+  if (
+    paths.length !== WINDOWS_TESTS.length ||
+    WINDOWS_TESTS.some((file) => !paths.some((path) => path.endsWith(`/${file}`)))
+  )
+    throw new Error('Windows evidence does not cover every Windows CI test file')
+  const skipped = tests.testResults.flatMap((result) =>
+    result.assertionResults
+      .filter((assertion) => assertion.status === 'pending' || assertion.status === 'skipped')
+      .map((assertion) => ({ file: result.name.replaceAll('\\', '/'), title: assertion.title })),
+  )
   // Only these POSIX/macOS-only cases may skip on Windows; any other skip fails the run.
   const allowedSkips = [
-    ['/tests/cli-account-binding.test.ts', 'binds an Antigravity login that keeps only id_token_email, stable across case and rotation'],
+    [
+      '/tests/cli-account-binding.test.ts',
+      'binds an Antigravity login that keeps only id_token_email, stable across case and rotation',
+    ],
     ['/tests/os-credential-store.test.ts', '模拟：security 以十六进制输出的非 ASCII 登录文档同样可读'],
-    ['/tests/pi-omp-identity.test.ts', 'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry'],
-    ['/tests/codebuddy-account.test.ts', 'keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout'],
-    ['/tests/codebuddy-account.test.ts', 'checks macOS fallbacks only after missing PATH, preserves explicit failures'],
-    ['/tests/traecn-integration.test.ts', 'uses only the local/bin/traecli fallback, never alternate aliases'],
+    [
+      '/tests/pi-omp-identity.test.ts',
+      'uses the POSIX official Pi launcher before an old private runtime and resolves one canonical entry',
+    ],
+    [
+      '/tests/codebuddy-account.test.ts',
+      'keeps lstat presence separate from readable login evidence; invalid entries cannot prove logout',
+    ],
+    [
+      '/tests/codebuddy-account.test.ts',
+      'checks macOS fallbacks only after missing PATH, preserves explicit failures',
+    ],
+    [
+      '/tests/traecn-integration.test.ts',
+      'uses only the local/bin/traecli fallback, never alternate aliases',
+    ],
     ['/tests/zcode-app-runtime.test.ts', '模拟：权限不是仅本人可读写的密钥文件同样判为不可用'],
-    ['/tests/zcode-app-runtime.test.ts', '模拟：启动检查、--help、登录、退出、账号终端、版本读取和基础环境都使用同一个 /tmp/cwn- 目录'],
+    [
+      '/tests/zcode-app-runtime.test.ts',
+      '模拟：启动检查、--help、登录、退出、账号终端、版本读取和基础环境都使用同一个 /tmp/cwn- 目录',
+    ],
   ]
-  if (skipped.length !== tests.numPendingTests || skipped.some((skip) => !allowedSkips.some(([file, title]) => skip.file.endsWith(file) && skip.title === title))) throw new Error('Unexpected skipped Windows test; inspect its evidence')
+  if (
+    skipped.length !== tests.numPendingTests ||
+    skipped.some(
+      (skip) => !allowedSkips.some(([file, title]) => skip.file.endsWith(file) && skip.title === title),
+    )
+  )
+    throw new Error('Unexpected skipped Windows test; inspect its evidence')
   return true
 }
 
@@ -139,8 +268,10 @@ Requires pnpm and system ssh/scp on Mac, native Node >=22.19 and Windows tar.
 Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys into config.`)
     return
   }
-  if (args.length !== 2 || args[0] !== '--config') throw new Error('Use --config .test-data/windows-remote/config.json; see --help')
-  if (process.platform !== 'darwin') throw new Error('This developer entry currently requires Mac; the remote runner requires native Windows')
+  if (args.length !== 2 || args[0] !== '--config')
+    throw new Error('Use --config .test-data/windows-remote/config.json; see --help')
+  if (process.platform !== 'darwin')
+    throw new Error('This developer entry currently requires Mac; the remote runner requires native Windows')
   const config = await readConfig(args[1])
   const runId = randomUUID()
   const local = join(privateRoot, 'runs', runId)
@@ -153,7 +284,16 @@ Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys 
   await mkdir(local, { mode: 0o700 })
   for (const folder of [privateRoot, join(privateRoot, 'runs'), local]) await chmod(folder, 0o700)
   await chmod(resolve(projectRoot, args[1]), 0o600)
-  const state = { schema: 1, runId, startedAt: new Date().toISOString(), success: false, modelCalls: 0, guiVerified: false, stages: [], remoteCleanupConfirmed: null }
+  const state = {
+    schema: 1,
+    runId,
+    startedAt: new Date().toISOString(),
+    success: false,
+    modelCalls: 0,
+    guiVerified: false,
+    stages: [],
+    remoteCleanupConfirmed: null,
+  }
   const stateFile = join(local, 'local-report.json')
   const persist = () => writeFile(stateFile, JSON.stringify(state, null, 2), { mode: 0o600 })
   const sshArgs = strictSshArgs(config)
@@ -164,32 +304,67 @@ Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys 
   let remoteStarted = false
   let remoteReady = false
   let interruptedGroup = null
-  const interrupt = () => { interrupted = true; if (currentChild) { interruptedGroup = currentChild.pid; try { process.kill(-currentChild.pid, 'SIGTERM') } catch { currentChild.kill('SIGTERM') } } }
-  process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt)
-  async function run(name, file, argv, { cwd = projectRoot, allowInterrupted = false, capture = false } = {}) {
+  const interrupt = () => {
+    interrupted = true
+    if (currentChild) {
+      interruptedGroup = currentChild.pid
+      try {
+        process.kill(-currentChild.pid, 'SIGTERM')
+      } catch {
+        currentChild.kill('SIGTERM')
+      }
+    }
+  }
+  process.on('SIGINT', interrupt)
+  process.on('SIGTERM', interrupt)
+  async function run(
+    name,
+    file,
+    argv,
+    { cwd = projectRoot, allowInterrupted = false, capture = false } = {},
+  ) {
     if (interrupted && !allowInterrupted) throw new Error('Local run interrupted')
     const item = { name, startedAt: new Date().toISOString(), exitCode: null, success: false }
-    state.stages.push(item); await persist()
+    state.stages.push(item)
+    await persist()
     console.log(`Starting ${name}`)
     const log = createWriteStream(join(local, `${name}.log`), { mode: 0o600 })
     const child = spawn(file, argv, { cwd, shell: false, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
     currentChild = child
     let output = ''
-    child.stdout.on('data', (bytes) => { log.write(bytes); if (capture) output += bytes.toString(); if (name === 'windows-run') process.stdout.write(bytes) })
+    child.stdout.on('data', (bytes) => {
+      log.write(bytes)
+      if (capture) output += bytes.toString()
+      if (name === 'windows-run') process.stdout.write(bytes)
+    })
     child.stderr.on('data', (bytes) => log.write(bytes))
-    const result = await new Promise((r) => { child.once('error', (error) => r({ code: -1, error: String(error) })); child.once('close', (code, signal) => r({ code, signal })) })
+    const result = await new Promise((r) => {
+      child.once('error', (error) => r({ code: -1, error: String(error) }))
+      child.once('close', (code, signal) => r({ code, signal }))
+    })
     currentChild = null
     await new Promise((r) => log.end(r))
-    Object.assign(item, { exitCode: result.code, signal: result.signal ?? null, success: result.code === 0 && !result.signal, finishedAt: new Date().toISOString() })
+    Object.assign(item, {
+      exitCode: result.code,
+      signal: result.signal ?? null,
+      success: result.code === 0 && !result.signal,
+      finishedAt: new Date().toISOString(),
+    })
     if (result.error) item.error = result.error
     await persist()
-    if (!item.success) throw new Error(`${name} failed (${result.code}); inspect ${join(local, `${name}.log`)}`)
+    if (!item.success)
+      throw new Error(`${name} failed (${result.code}); inspect ${join(local, `${name}.log`)}`)
     return output
   }
   try {
     await run('mac-preview-build', 'pnpm', ['--config.verifyDepsBeforeRun=false', 'build:preview'])
     const packagePath = join(local, 'plugin.tgz')
-    await run('mac-preview-pack', 'pnpm', ['--config.verifyDepsBeforeRun=false', 'pack', '--out', packagePath], { cwd: join(projectRoot, '.cache', 'preview-package') })
+    await run(
+      'mac-preview-pack',
+      'pnpm',
+      ['--config.verifyDepsBeforeRun=false', 'pack', '--out', packagePath],
+      { cwd: join(projectRoot, '.cache', 'preview-package') },
+    )
     const listing = await run('mac-package-list', 'tar', ['-tzf', packagePath], { capture: true })
     const verbose = await run('mac-package-entries', 'tar', ['-tvzf', packagePath], { capture: true })
     const snapshot = validateSnapshot(await createSnapshot(projectRoot))
@@ -200,38 +375,95 @@ Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys 
     await writeFile(join(local, 'snapshot.json'), snapshotBytes, { mode: 0o600 })
     const packageHash = sha256(await readFile(packagePath))
     const snapshotHash = sha256(snapshotBytes)
-    Object.assign(state, { macPackageSha256: packageHash, sourceSnapshotSha256: snapshotHash, sourceFiles: snapshot.files.length })
+    Object.assign(state, {
+      macPackageSha256: packageHash,
+      sourceSnapshotSha256: snapshotHash,
+      sourceFiles: snapshot.files.length,
+    })
     await run('prepare-remote-run', 'ssh', [...sshArgs, destination, ...bootstrapCommand(config, runId)])
     remoteReady = true
-    for (const name of ['windows-remote-runner.mjs', 'windows-remote-common.mjs']) await cp(join(scriptDirectory, name), join(local, name))
-    await run('upload', 'scp', [...sshArgs, join(local, 'snapshot.json'), packagePath,
-      join(local, 'windows-remote-runner.mjs'), join(local, 'windows-remote-common.mjs'), `${destination}:${remote}/`])
+    for (const name of ['windows-remote-runner.mjs', 'windows-remote-common.mjs'])
+      await cp(join(scriptDirectory, name), join(local, name))
+    await run('upload', 'scp', [
+      ...sshArgs,
+      join(local, 'snapshot.json'),
+      packagePath,
+      join(local, 'windows-remote-runner.mjs'),
+      join(local, 'windows-remote-common.mjs'),
+      `${destination}:${remote}/`,
+    ])
     remoteStarted = true
-    await run('windows-run', 'ssh', [...sshArgs, '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3', destination, ...runnerCommand(config, runId, packageHash, snapshotHash)])
+    await run('windows-run', 'ssh', [
+      ...sshArgs,
+      '-o',
+      'ServerAliveInterval=15',
+      '-o',
+      'ServerAliveCountMax=3',
+      destination,
+      ...runnerCommand(config, runId, packageHash, snapshotHash),
+    ])
   } catch (error) {
     state.error = String(error)
     process.exitCode = 1
     if (remoteStarted) {
-      try { await run('request-remote-cancel', 'ssh', [...sshArgs, destination, ...runnerCommand(config, runId, '', '', true)], { allowInterrupted: true }) }
-      catch (cancelError) { state.cancelError = String(cancelError) }
+      try {
+        await run(
+          'request-remote-cancel',
+          'ssh',
+          [...sshArgs, destination, ...runnerCommand(config, runId, '', '', true)],
+          { allowInterrupted: true },
+        )
+      } catch (cancelError) {
+        state.cancelError = String(cancelError)
+      }
     }
   } finally {
     // Retain evidence, including partial remote output, even when any stage failed.
     if (remoteReady) {
       try {
         await mkdir(join(local, 'remote'), { mode: 0o700 })
-        await run('download-report', 'scp', [...sshArgs, `${destination}:${remote}/report.json`, join(local, 'remote', 'report.json')], { allowInterrupted: true })
+        await run(
+          'download-report',
+          'scp',
+          [...sshArgs, `${destination}:${remote}/report.json`, join(local, 'remote', 'report.json')],
+          { allowInterrupted: true },
+        )
         const report = JSON.parse(await readFile(join(local, 'remote', 'report.json'), 'utf8'))
-        await run('download-logs', 'scp', [...sshArgs, '-r', `${destination}:${remote}/logs`, join(local, 'remote', 'logs')], { allowInterrupted: true })
+        await run(
+          'download-logs',
+          'scp',
+          [...sshArgs, '-r', `${destination}:${remote}/logs`, join(local, 'remote', 'logs')],
+          { allowInterrupted: true },
+        )
         if (report.stages?.some((stage) => stage.name === 'windows-tests')) {
-          try { await run('download-tests', 'scp', [...sshArgs, `${destination}:${remote}/windows-tests.json`, join(local, 'remote', 'windows-tests.json')], { allowInterrupted: true }) }
-          catch (error) { state.testDownloadError = String(error) }
+          try {
+            await run(
+              'download-tests',
+              'scp',
+              [
+                ...sshArgs,
+                `${destination}:${remote}/windows-tests.json`,
+                join(local, 'remote', 'windows-tests.json'),
+              ],
+              { allowInterrupted: true },
+            )
+          } catch (error) {
+            state.testDownloadError = String(error)
+          }
         }
-        state.remoteCleanupConfirmed = report.cleanup?.confirmed === true && report.cleanup?.lockReleased === true
-        state.success = !state.error && !interrupted && !state.testDownloadError && verifyRemoteReport(report, await readFile(join(local, 'remote', 'windows-tests.json')), state)
+        state.remoteCleanupConfirmed =
+          report.cleanup?.confirmed === true && report.cleanup?.lockReleased === true
+        state.success =
+          !state.error &&
+          !interrupted &&
+          !state.testDownloadError &&
+          verifyRemoteReport(report, await readFile(join(local, 'remote', 'windows-tests.json')), state)
         if (report.error) state.remoteError = report.error
         if (!state.success) process.exitCode = 1
-      } catch (error) { state.downloadError = String(error); process.exitCode = 1 }
+      } catch (error) {
+        state.downloadError = String(error)
+        process.exitCode = 1
+      }
     }
     async function protect(path) {
       const info = await lstat(path)
@@ -239,12 +471,23 @@ Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys 
       await chmod(path, info.isDirectory() ? 0o700 : 0o600)
       if (info.isDirectory()) for (const name of await readdir(path)) await protect(join(path, name))
     }
-    try { await protect(local) } catch (error) { state.privacyError = String(error); state.success = false; process.exitCode = 1 }
+    try {
+      await protect(local)
+    } catch (error) {
+      state.privacyError = String(error)
+      state.success = false
+      process.exitCode = 1
+    }
     state.interrupted = interrupted
     state.finishedAt = new Date().toISOString()
     let groupStopped = true
     if (interruptedGroup) {
-      try { process.kill(-interruptedGroup, 0); groupStopped = false } catch (error) { groupStopped = error.code === 'ESRCH' }
+      try {
+        process.kill(-interruptedGroup, 0)
+        groupStopped = false
+      } catch (error) {
+        groupStopped = error.code === 'ESRCH'
+      }
     }
     state.localCleanupConfirmed = groupStopped
     if (groupStopped) {
@@ -252,15 +495,25 @@ Verify the Windows SSH fingerprint before creating knownHosts. Never paste keys 
         const own = JSON.parse(await readFile(lockPath, 'utf8'))
         if (own.runId !== runId || own.pid !== process.pid) throw new Error('Local lock ownership changed')
         await rm(lockPath)
-      } catch (error) { state.localCleanupConfirmed = false; state.localCleanupError = String(error) }
+      } catch (error) {
+        state.localCleanupConfirmed = false
+        state.localCleanupError = String(error)
+      }
     }
-    if (!state.localCleanupConfirmed) { state.success = false; process.exitCode = 1 }
+    if (!state.localCleanupConfirmed) {
+      state.success = false
+      process.exitCode = 1
+    }
     await persist()
-    process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt)
+    process.off('SIGINT', interrupt)
+    process.off('SIGTERM', interrupt)
     console.log(`Evidence: ${local}\nOverall result: ${state.success ? 'passed' : 'failed'}`)
   }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main().catch((error) => { console.error(error.stack ?? String(error)); process.exitCode = 1 })
+  main().catch((error) => {
+    console.error(error.stack ?? String(error))
+    process.exitCode = 1
+  })
 }
