@@ -80,4 +80,8 @@
   - 控制台：1 条 `[deepseek-account] account read failed`、9 次插件详情资源 404、1 次 `/plugins/events` ERR_FAILED（与 v0.9.2 记录的官方问题相同）、1 次 `/api/cliworker/agentNames` 503（07:35:30，紧接退出，Mac 退出时也出现过）；无错误弹窗
   - 收尾：插件保持 0.9.3 启用，经「应用 → 退出」关闭，进程、监听、辅助计划任务、活动 Worker 均为 0，bundles 与备份一致，C 盘约 44.6 GiB。证据 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/windows-desktop/报告.md`
   - 未覆盖：Windows 上本次发布包未做真实模型派遣（本版未改派遣代码）
-- [ ] 6.3 推送 GitHub、创建 Release、npm 发布与回读
+- [x] 6.3 推送 GitHub、创建 Release、npm 发布
+  - 2026-11-22 按用户批准「推送并发布」推送 main（`b99bfe4..39a8cd8`）。[CI Windows native runtime](https://github.com/SuperWheel/dsh-cliworker-now/actions/runs/44999905255) 通过（31 个文件）；[CI Linux checks](https://github.com/SuperWheel/dsh-cliworker-now/actions/runs/44999905198) 53 项失败（9 个文件），上一次 Linux 运行 44757216729 为 54 项，属 11-18 起的已知失败（用户决定暂不修）；本版只改客户端恢复与构建标记，未逐项比对失败用例（用户要求不再等待）
+  - 创建 [GitHub Release v0.9.3](https://github.com/SuperWheel/dsh-cliworker-now/releases/tag/v0.9.3)（标题 `dsh-cliworker-now v0.9.3`，标签指向 `39a8cd8`，附 tgz 与 `SHA256SUMS.txt`）。`gh release download` 回读到 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/readback/gh/`，`shasum -c` 通过
+  - npm：用户在终端 `npm login --auth-type=web` 后执行 `npm publish <tgz> --access public`，经网页两步验证，输出 `+ dsh-cliworker-now@0.9.3`，标签 latest，npm 计算的 shasum `3cc499e6c3faf058c4a5fc9d093683b1ca207302` 与本地 tgz SHA-1 一致，1,392 个文件
+  - 未执行：npm 仓库回读。发布后约 3 分钟内 registry 的 `latest` 仍为 0.9.2、`0.9.3` 尚未出现（与 v0.9.2 发布后的处理延迟相同），用户要求不再等待，直接记为已发布
