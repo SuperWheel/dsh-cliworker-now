@@ -74,5 +74,10 @@
   - 安装包：`artifacts/release-v0.9.3/dsh-cliworker-now-0.9.3.tgz`，22,002,058 字节，SHA-256 `9c3896b1dd70c424ac19753f873e76c261eef8860ab02a82bdc17cdc82ea1bb0`，1,392 个文件；顶层只有 `LICENSE`、两份 README、`cordis.patch.yml`、`icon.png`、`lib`、`package.json`、`runtime-host`；`private:false`，无 scripts／devDependencies，repository／homepage／bugs 指向 `SuperWheel/dsh-cliworker-now`，`dsh.bundle.patch` 含构建标记；内容扫描未发现 `.env`、`.test-data`、日志、私钥、令牌特征、私人路径、IP 或账号标识
   - 官方 dsh 0.2.2-rc.5（Desktop 自带 CLI）全新隔离 `HOME`／`DSH_HOME`：`plugin --profile web add --save-exact <tgz>` 退出 0，版本 0.9.3，1,392 个文件与包内逐字节一致，`lib` 与 `runtime-host` 1,386 个文件与正式构建逐字节一致；临时 profile 已删除，日志 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/isolated-install/install.log`
   - 真实 CLI：自 v0.9.2 以来派遣、登录、退出代码均无变化（运行时只改 `src/client/root-recovery.ts`，另两处为注释路径与版本字符串），按发布规格不重跑真实 CLI，引用 v0.9.2 发布记录
-- [ ] 6.2 Windows Desktop 用原生安装器装入发布候选包并只读核对
+- [x] 6.2 Windows Desktop 用原生安装器装入发布候选包并只读核对
+  - 2026-11-22 用户在主对话批准「批准安装核对」（首次请求被自动模式分类器拦截，未执行任何操作）。门禁 Desktop 进程 0、活动 Worker 0；profile 备份到 `%LOCALAPPDATA%\cliworker-now-remote\v093-release-20261122\profile-before`；候选包 SHA-256 校验一致，Desktop 自带 `dsh.cmd plugin --profile desktop add --save-exact` 退出 0，依赖由测试包 4a8a9c2 换为 0.9.3，已装 1,392/1,392 文件与包内一致，构建标记哈希 `eb0060d2…0f657b2`，Host 与 Mac 正式构建相同
+  - CDP 只读核对：插件页 v0.9.3、已启用、「共 6 个 · 6 运行中」、不需重启；默认会话输入框可见可编辑并实际获焦，CLI Worker 面板正常；17 个 CLI 均显示状态，16 个绿点，Qoder CN 红点「Qoder 原生账号查询暂不可用…（原生账号未认证）」，与 v0.9.2 发布时相同，属该机 Qoder CN 原生登录状态；「更新 CLI」自动检查完成（可更新 15、已是最新 2：MiMo、ZCode），未点更新
+  - 控制台：1 条 `[deepseek-account] account read failed`、9 次插件详情资源 404、1 次 `/plugins/events` ERR_FAILED（与 v0.9.2 记录的官方问题相同）、1 次 `/api/cliworker/agentNames` 503（07:35:30，紧接退出，Mac 退出时也出现过）；无错误弹窗
+  - 收尾：插件保持 0.9.3 启用，经「应用 → 退出」关闭，进程、监听、辅助计划任务、活动 Worker 均为 0，bundles 与备份一致，C 盘约 44.6 GiB。证据 `/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-release-v0.9.3/windows-desktop/报告.md`
+  - 未覆盖：Windows 上本次发布包未做真实模型派遣（本版未改派遣代码）
 - [ ] 6.3 推送 GitHub、创建 Release、npm 发布与回读
