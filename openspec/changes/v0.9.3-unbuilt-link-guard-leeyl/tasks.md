@@ -33,9 +33,29 @@
 
 ## 4. Mac 实测 〔测试｜2h｜前置 3〕
 
-- [ ] 4.1 rc.5 隔离 web profile：未构建源码目录启用被拒绝、启用列表不变、输入栏保持；已选中未构建目录的 profile 冷启动跳过插件、输入栏可见；预览构建包正常启用与冷启动
-- [ ] 4.2 Mac DSH Desktop 用正式构建实测：插件正常加载；热启用恢复后 30 秒内停用，页面原地恢复（REQ-0139）
+- [x] 4.1 rc.5 隔离 web profile：未构建源码目录启用被拒绝、启用列表不变、输入栏保持；已选中未构建目录的 profile 冷启动跳过插件、输入栏可见；预览构建包正常启用与冷启动
+  - 2026-11-22，macOS arm64，DSH 0.2.2-rc.5，Codex gpt-6.2-astra high 执行；各组独立 HOME/DSH_HOME、回环随机端口；输入栏「1/1」= seat 与 input 各一、contenteditable、实际点击取得焦点
+  - A（`git archive 4a8a9c2` 未构建源码）：安装 failed（exitCode=1）；启用 8 ms 返回 failed、`changed=false`，诊断为读取 `lib/build-complete.patch.yml` ENOENT；bundles 与 dependencies 均无插件，官方四行 active；启用后、刷新、冷启动输入栏均 1/1
+  - B（预置旧选择后冷启动，做两次：仅写 bundles + 残留链接；离线 `pnpm add` 构建旧 link 依赖与锁文件）：Host stderr 记录 skipping profile bundle 与缺失标记，插件六行未装配，官方四行 active，输入栏 1/1
+  - C（测试包 `dsh-cliworker-now-4a8a9c2.tgz`，SHA-256 `e054b5fb…a386a23a`，1,392 个文件与 manifest 一致）：安装与启用均 applied，插件六行 active、官方四行禁用；热启用、刷新、冷启动输入栏均 1/1，右侧栏有 CLI Worker 入口
+  - 正对照 v0.9.2 未构建源码：启用 failed 但 `changed=true`，官方四行被禁用，启用后、刷新、冷启动输入栏均 0/0，复现用户故障
+  - 观察（不影响本修复）：rc.5 拒绝安装后 `node_modules/dsh-cliworker-now` 仍留有指向源码的链接，dependencies 与 bundles 无插件，未导致启用
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/mac/报告.md`、`mac/evidence/verified-{A,B,C,control}-*.json`、`mac/evidence/legacy-B-cold-host.log`、`mac/evidence/package-integrity.json`、`mac/evidence/cleanup.json`
+- [x] 4.2 Mac DSH Desktop 用正式构建实测：插件正常加载；热启用恢复后 30 秒内停用，页面原地恢复（REQ-0139）
+  - 门禁：229 条 Worker 记录非终态 0；备份三份 profile 文件后退出 Desktop；仓库 `corepack pnpm build` 成功并生成标记，Host 入口与标记哈希同测试包
+  - 调试端口启动、CDP 连接 `dsh-app://app`：初始「共 6 个 · 6 运行中」；八次开关（两轮 停用→启用→约 5.7 秒内再停用）根子元素均 1→0→1，输入栏 1/1 可编辑，均回到原会话；两次快速停用距启用恢复 5.778 s、5.668 s，停用后 1.410 s、1.236 s 恢复；全程无 `[data-cliworker-restart-notice]`，无「DSH Desktop needs a full restart」
+  - 每次热切换仍记录一次 session-maybe 的 `SlotAssemblyError`（随即恢复）；冷启动一次 `[deepseek-account] account read failed`，未定位
+  - 收尾：`open -a` 正常启动（无调试参数，端口已关），辅助功能树读到可编辑输入栏与 CLI Worker 面板；bundles 成员与顺序不变，package.json、cordis.patch.yml、cordis.yml 与备份逐字节一致
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/mac/desktop/switch-summary.json`、`operation-journal.json`、`console-summary.json`、`normal-profile.json`、`normal-final.png`
 
 ## 5. Windows 实测 〔测试｜2h｜前置 3〕
 
-- [ ] 5.1 Windows DSH Desktop 0.2.2-rc.5 装入含两项修复的构建：插件正常加载；热启用恢复后 30 秒内停用页面原地恢复；未构建源码目录启用被拒绝、输入栏保持
+- [x] 5.1 Windows DSH Desktop 0.2.2-rc.5 装入含两项修复的构建：插件正常加载；热启用恢复后 30 秒内停用页面原地恢复；未构建源码目录启用被拒绝、输入栏保持
+  - 2026-11-22，Codex gpt-6.2-astra high 执行；门禁 Desktop 进程 0、85 条 Worker 记录活动 0；备份 profile 文件与旧插件目录（1,391 个文件）到 `%LOCALAPPDATA%\cliworker-now-remote\2026-11-22-v093-fixes\profile-before\`
+  - 安装：Desktop 自带 `dsh.cmd plugin --profile desktop add --save-exact <tgz>` 退出 0，测试包 SHA-256 同 Mac，安装目录 1,392/1,392 一致，构建标记存在
+  - 冷启动（CDP 经 SSH 转发）：插件页「共 6 个 · 6 运行中」；默认、已有、新建会话与 Worker 子窗口输入栏均可见可编辑。首次启动因 C 盘写满出现主组件 `ENOSPC`，回收本轮临时副本后重新冷启动通过
+  - REQ-0139：两轮快速停用距启用恢复 5,144 ms、5,123 ms，根子元素 1→0→1，停用后 1,526 ms、1,260 ms 原地恢复原会话输入栏；八次切换均 settled/applied，采样与截图中重启提示 0，`console.jsonl` 中「needs a full restart」0；停用态冷启动后热启用也通过
+  - REQ-0140（Windows Host `dsh.cmd --profile web`，独立临时 HOME/APPDATA 等，Mac 无头 Chromium 经回环转发访问）：未构建源码（2,316/2,316 文件回读一致）原生安装 failed；用 pnpm 建立真实 `link:` 依赖后启用返回 failed、`changed=false`，诊断为标记 ENOENT，bundles 不变，官方四行 active，输入框点击获焦；只向 bundles 加入插件名后冷启动，Host 记录 `skipping profile bundle "dsh-cliworker-now"`，官方四行 active、输入框获焦；完整 tgz 对照安装与启用 applied、六行 active
+  - 收尾：真实 Desktop 保留测试包且插件启用，bundles 与备份逐项同序一致，经「应用 → 退出」关闭，进程、测试监听、辅助计划任务均为 0；C 盘剩余约 31.6 MiB，需用户清理
+  - 观察（与 Mac 相同）：每次热切换一次 session-maybe `SlotAssemblyError` 后自动重挂；原生安装拒绝未构建源码后 `node_modules` 仍有源码符号链接，再次启用仍被拒绝
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows/报告.md`、`windows/evidence-index.json`、`round1-quick-off-transition.json`、`round2-quick-off-transition.json`、`source-declared-enable.json`、`stale-declared-host.log`、`built-enable.json`、`final-readback.json`

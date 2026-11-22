@@ -28,5 +28,9 @@
 
 ## 4. 实机复测 〔测试｜1h｜前置 3〕
 
-- [ ] 4.1 Windows DSH Desktop 0.2.2-rc.5 装入含本修复的构建，复测「热启用恢复后 30 秒内停用」，确认页面原地恢复、不出现重启提示
-  - 未执行：需用户安排 Windows 实机与插件安装授权
+- [x] 4.1 Mac DSH Desktop 0.2.2-rc.5 用含本修复的构建复测「热启用恢复后 30 秒内停用」
+  - 2026-11-22，两轮快速停用距启用恢复 5.778 s、5.668 s，根子元素 1→0→1，停用后 1.410 s、1.236 s 原地恢复原会话与可编辑输入栏；八次开关均无重启提示，控制台无「DSH Desktop needs a full restart」
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/mac/desktop/switch-summary.json`、`mac/报告.md` 第 2 节
+- [x] 4.2 Windows DSH Desktop 0.2.2-rc.5 装入含本修复的构建，复测「热启用恢复后 30 秒内停用」，确认页面原地恢复、不出现重启提示
+  - 2026-11-22，测试包 `dsh-cliworker-now-4a8a9c2.tgz` 经 Desktop 原生安装器装入（1,392/1,392 文件一致）；两轮快速停用距启用恢复 5,144 ms、5,123 ms，根子元素 1→0→1，停用后 1,526 ms、1,260 ms 原地恢复原会话输入栏；八次切换重启提示 0，控制台「needs a full restart」0
+  - 证据：`/Users/leeyl/AI-Project/DeepSeekHarness/cliworker-now-test/test/2026-11-22-v093-fixes-acceptance/windows/报告.md` 第 3 节、`windows/round1-quick-off-transition.json`、`windows/round2-quick-off-transition.json`、`windows/console.jsonl`
