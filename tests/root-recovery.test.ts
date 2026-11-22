@@ -15,7 +15,10 @@ import {
 // Simulated page: a #root element with React's container marker and a child count.
 type FakeRoot = { childElementCount: number; [key: string]: unknown }
 const unmounted = (): FakeRoot => ({ childElementCount: 0 })
-const mounted = (children: number): FakeRoot => ({ childElementCount: children, __reactContainer$abc: { tag: 3 } })
+const mounted = (children: number): FakeRoot => ({
+  childElementCount: children,
+  __reactContainer$abc: { tag: 3 },
+})
 
 function fakeEnv(root: FakeRoot | null, storage = new Map<string, string>()) {
   let clock = 1_000_000
@@ -25,7 +28,10 @@ function fakeEnv(root: FakeRoot | null, storage = new Map<string, string>()) {
   const env: RootRecoveryEnv & { root: FakeRoot | null } = {
     root,
     getRoot: () => env.root,
-    storage: { getItem: (key) => storage.get(key) ?? null, setItem: (key, value) => void storage.set(key, value) },
+    storage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => void storage.set(key, value),
+    },
     reload,
     now: () => clock,
     setTimeout: (run, ms) => {
@@ -51,7 +57,16 @@ function fakeEnv(root: FakeRoot | null, storage = new Map<string, string>()) {
     }
     clock = end
   }
-  return { env, reload, advance, timers, storage, setClock: (value: number) => { clock = value } }
+  return {
+    env,
+    reload,
+    advance,
+    timers,
+    storage,
+    setClock: (value: number) => {
+      clock = value
+    },
+  }
 }
 
 describe('hot-switch blank page recovery (simulated page)', () => {
@@ -137,7 +152,14 @@ describe('hot-switch blank page recovery (simulated page)', () => {
 
   it('still recovers when session storage is unavailable', async () => {
     const page = fakeEnv(mounted(0))
-    page.env.storage = { getItem: () => { throw new Error('denied') }, setItem: () => { throw new Error('denied') } }
+    page.env.storage = {
+      getItem: () => {
+        throw new Error('denied')
+      },
+      setItem: () => {
+        throw new Error('denied')
+      },
+    }
     expect(await recoverCrashedRoot(page.env)).toBe(true)
     expect(page.reload).toHaveBeenCalledTimes(1)
   })
@@ -148,7 +170,9 @@ describe('hot-switch blank page recovery (simulated page)', () => {
 
   it('on DSH Desktop shows the restart notice instead of reloading, once', () => {
     const page = fakeEnv(mounted(0))
-    const showNotice = vi.fn(() => { page.env.root = mounted(1) })
+    const showNotice = vi.fn(() => {
+      page.env.root = mounted(1)
+    })
     page.env.showNotice = showNotice
     installRootRecovery(page.env)
     page.advance(ACTIVATION_WATCH_MS)
@@ -165,18 +189,33 @@ describe('hot-switch blank page recovery (simulated page)', () => {
   })
 
   it('renders the Desktop notice as plain text, never markup', () => {
-    const created: { attributes: Record<string, string>; textContent: string; style: { cssText: string } }[] = []
+    const created: { attributes: Record<string, string>; textContent: string; style: { cssText: string } }[] =
+      []
     const document = {
       createElement: () => {
-        const node = { attributes: {} as Record<string, string>, textContent: '', style: { cssText: '' },
-          setAttribute(name: string, value: string) { node.attributes[name] = value } }
+        const node = {
+          attributes: {} as Record<string, string>,
+          textContent: '',
+          style: { cssText: '' },
+          setAttribute(name: string, value: string) {
+            node.attributes[name] = value
+          },
+        }
         created.push(node)
         return node
       },
     }
     const appended: unknown[] = []
     const text = '<img src=x onerror=alert(1)> 请完全退出后重新打开'
-    renderRestartNotice({ append: (node: unknown) => { appended.push(node) }, ownerDocument: document } as unknown as Pick<HTMLElement, "append" | "ownerDocument">, text)
+    renderRestartNotice(
+      {
+        append: (node: unknown) => {
+          appended.push(node)
+        },
+        ownerDocument: document,
+      } as unknown as Pick<HTMLElement, 'append' | 'ownerDocument'>,
+      text,
+    )
     expect(appended).toEqual([created[0]])
     expect(created[0]!.textContent).toBe(text)
     expect(created[0]!.attributes.role).toBe('alert')
@@ -214,16 +253,38 @@ async function hostFixture() {
       element.__reactContainer$abc = null
     }
   })
-  const provider = await ctx.plugin((scope) => { scope.provide('uiRenderer', { mount }) })
-  // Mirrors packages/client/web/src/mount.ts; ownership stays under the root context.
-  const owner = await ctx.inject(['uiRenderer'], scope => {
-    scope.effect(() => scope.get('uiRenderer')!.mount(element as unknown as HTMLElement), 'web boot: application mount')
+  const provider = await ctx.plugin((scope) => {
+    scope.provide('uiRenderer', { mount })
   })
-  const plugin = await ctx.plugin(scope => { page.env.remount = hostRootRemount(scope) })
-  const settle = async () => { await owner.await(); await Promise.resolve() }
-  return { ctx, page, element, graph, mount, owner, plugin, provider, events, settle,
+  // Mirrors packages/client/web/src/mount.ts; ownership stays under the root context.
+  const owner = await ctx.inject(['uiRenderer'], (scope) => {
+    scope.effect(
+      () => scope.get('uiRenderer')!.mount(element as unknown as HTMLElement),
+      'web boot: application mount',
+    )
+  })
+  const plugin = await ctx.plugin((scope) => {
+    page.env.remount = hostRootRemount(scope)
+  })
+  const settle = async () => {
+    await owner.await()
+    await Promise.resolve()
+  }
+  return {
+    ctx,
+    page,
+    element,
+    graph,
+    mount,
+    owner,
+    plugin,
+    provider,
+    events,
+    settle,
     live: () => liveRoots,
-    blockUnmount: (wait: () => Promise<void>) => { beforeUnmount = wait },
+    blockUnmount: (wait: () => Promise<void>) => {
+      beforeUnmount = wait
+    },
     cleanup: () => ctx.fiber.dispose(),
   }
 }
@@ -245,7 +306,9 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
       expect(f.page.reload).not.toHaveBeenCalled()
       if (platform === 'desktop') expect(f.page.env.showNotice).not.toHaveBeenCalled()
       expect(f.page.timers).toHaveLength(0)
-    } finally { await f.cleanup() }
+    } finally {
+      await f.cleanup()
+    }
     expect(f.live()).toBe(0)
   })
 
@@ -270,7 +333,9 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
       expect(f.live()).toBe(1)
       expect(f.page.reload).not.toHaveBeenCalled()
       expect(f.page.timers).toHaveLength(0)
-    } finally { await f.cleanup() }
+    } finally {
+      await f.cleanup()
+    }
     expect(f.events.at(-1)).toBe('unmount:3')
     expect(f.live()).toBe(0)
   })
@@ -278,7 +343,9 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
   it('awaits the original owner disposer and coalesces overlapping watches', async () => {
     const f = await hostFixture()
     let release!: () => void
-    const barrier = new Promise<void>(resolve => { release = resolve })
+    const barrier = new Promise<void>((resolve) => {
+      release = resolve
+    })
     try {
       f.blockUnmount(() => barrier)
       f.element.childElementCount = 0
@@ -291,7 +358,10 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
       expect(await recovery).toBe(true)
       expect(f.events).toEqual(['mount:1', 'unmount:1', 'mount:2'])
       expect(f.page.reload).not.toHaveBeenCalled()
-    } finally { release(); await f.cleanup() }
+    } finally {
+      release()
+      await f.cleanup()
+    }
   })
 
   it('does not mount during cold boot even when the host seam is available', () => {
@@ -319,7 +389,9 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
       f.page.advance(1000)
       await f.settle()
       expect(f.mount).toHaveBeenCalledTimes(2)
-    } finally { await f.cleanup() }
+    } finally {
+      await f.cleanup()
+    }
   })
 
   it('bounds a graph that never settles and makes disposal idempotent', () => {
@@ -336,25 +408,41 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
     expect(page.reload).not.toHaveBeenCalled()
   })
 
-  it.each(['unavailable', 'throws', 'still-empty'])('falls back after %s, never reloading Desktop', async (mode) => {
-    for (const desktop of [false, true]) {
-      const page = fakeEnv(mounted(0))
-      const order: string[] = []
-      page.env.reload = vi.fn(() => { order.push('reload') })
-      if (desktop) page.env.showNotice = vi.fn(() => { order.push('notice') })
-      page.env.remount = () => mode === 'unavailable' ? 'unavailable' : {
-        restart: async () => { order.push('restart'); if (mode === 'throws') throw new Error('simulated mount failure') },
+  it.each(['unavailable', 'throws', 'still-empty'])(
+    'falls back after %s, never reloading Desktop',
+    async (mode) => {
+      for (const desktop of [false, true]) {
+        const page = fakeEnv(mounted(0))
+        const order: string[] = []
+        page.env.reload = vi.fn(() => {
+          order.push('reload')
+        })
+        if (desktop)
+          page.env.showNotice = vi.fn(() => {
+            order.push('notice')
+          })
+        page.env.remount = () =>
+          mode === 'unavailable'
+            ? 'unavailable'
+            : {
+                restart: async () => {
+                  order.push('restart')
+                  if (mode === 'throws') throw new Error('simulated mount failure')
+                },
+              }
+        expect(await recoverCrashedRoot(page.env)).toBe(true)
+        expect(order).toEqual([...(mode === 'unavailable' ? [] : ['restart']), desktop ? 'notice' : 'reload'])
+        if (desktop) expect(page.env.reload).not.toHaveBeenCalled()
       }
-      expect(await recoverCrashedRoot(page.env)).toBe(true)
-      expect(order).toEqual([...(mode === 'unavailable' ? [] : ['restart']), desktop ? 'notice' : 'reload'])
-      if (desktop) expect(page.env.reload).not.toHaveBeenCalled()
-    }
-  })
+    },
+  )
 
   it('guards repeated in-place attempts even without session storage', async () => {
     const page = fakeEnv(mounted(0))
     delete page.env.storage
-    const restart = vi.fn(async () => { page.env.root!.childElementCount = 1 })
+    const restart = vi.fn(async () => {
+      page.env.root!.childElementCount = 1
+    })
     page.env.remount = () => ({ restart })
     expect(await recoverCrashedRoot(page.env)).toBe(true)
     page.env.root!.childElementCount = 0
@@ -366,21 +454,75 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
     expect(restart).toHaveBeenCalledTimes(2)
   })
 
-  it.each(['label', 'extra-effect', 'ambiguous', 'failed-graph', 'missing-modules'])('refuses an unproven mount owner: %s', async (mode) => {
+  it('gives each live switch its own remount, even within the gap of the previous one', async () => {
+    const page = fakeEnv(mounted(0))
+    page.env.showNotice = vi.fn()
+    const restart = vi.fn(async () => {
+      page.env.root!.childElementCount = 1
+    })
+    page.env.remount = () => ({ restart })
+    const enable = {},
+      disable = {}
+    expect(await recoverCrashedRoot(page.env, enable)).toBe(true)
+    // 2026-11-22 Windows rc.5: the next switch crashed the page 5,631 ms later.
+    page.advance(5631)
+    page.env.root!.childElementCount = 0
+    expect(await recoverCrashedRoot(page.env, disable)).toBe(true)
+    expect(restart).toHaveBeenCalledTimes(2)
+    expect(page.env.showNotice).not.toHaveBeenCalled()
+    // The same switch crashing again does not remount a second time.
+    page.env.root!.childElementCount = 0
+    await recoverCrashedRoot(page.env, disable)
+    expect(restart).toHaveBeenCalledTimes(2)
+    expect(page.env.showNotice).toHaveBeenCalledTimes(1)
+  })
+
+  it('recovers on Desktop when the plugin is disabled right after a hot enable', async () => {
     const f = await hostFixture()
     try {
-      if (mode === 'label') vi.spyOn(f.owner, 'getEffects').mockReturnValue([{ label: 'another owner', children: [] }])
-      if (mode === 'extra-effect') f.owner.ctx.effect(() => () => {}, 'unrelated resource')
-      if (mode === 'ambiguous') await f.ctx.inject(['uiRenderer'], () => {})
-      if (mode === 'failed-graph') f.graph.failures.push({ id: 'simulated' })
-      if (mode === 'missing-modules') f.ctx.set('modules', undefined)
-      expect(f.page.env.remount!()).toBe('unavailable')
+      f.page.env.showNotice = vi.fn()
       f.element.childElementCount = 0
-      await recoverCrashedRoot(f.page.env)
-      expect(f.mount).toHaveBeenCalledTimes(1)
-      expect(f.page.reload).toHaveBeenCalledTimes(1)
-    } finally { await f.cleanup() }
+      const dispose = installRootRecovery(f.page.env)
+      f.page.advance(500)
+      await f.settle()
+      expect(f.events).toEqual(['mount:1', 'unmount:1', 'mount:2'])
+      f.page.advance(5000)
+      // Disabling swaps the stock UI back and crashes the page again.
+      dispose()
+      f.element.childElementCount = 0
+      // Disposal watch polls every 250 ms, then confirms the empty root for 500 ms.
+      f.page.advance(1000)
+      await f.settle()
+      expect(f.events).toEqual(['mount:1', 'unmount:1', 'mount:2', 'unmount:2', 'mount:3'])
+      expect(f.element.childElementCount).toBe(1)
+      expect(f.page.env.showNotice).not.toHaveBeenCalled()
+      expect(f.page.reload).not.toHaveBeenCalled()
+    } finally {
+      await f.cleanup()
+    }
   })
+
+  it.each(['label', 'extra-effect', 'ambiguous', 'failed-graph', 'missing-modules'])(
+    'refuses an unproven mount owner: %s',
+    async (mode) => {
+      const f = await hostFixture()
+      try {
+        if (mode === 'label')
+          vi.spyOn(f.owner, 'getEffects').mockReturnValue([{ label: 'another owner', children: [] }])
+        if (mode === 'extra-effect') f.owner.ctx.effect(() => () => {}, 'unrelated resource')
+        if (mode === 'ambiguous') await f.ctx.inject(['uiRenderer'], () => {})
+        if (mode === 'failed-graph') f.graph.failures.push({ id: 'simulated' })
+        if (mode === 'missing-modules') f.ctx.set('modules', undefined)
+        expect(f.page.env.remount!()).toBe('unavailable')
+        f.element.childElementCount = 0
+        await recoverCrashedRoot(f.page.env)
+        expect(f.mount).toHaveBeenCalledTimes(1)
+        expect(f.page.reload).toHaveBeenCalledTimes(1)
+      } finally {
+        await f.cleanup()
+      }
+    },
+  )
 
   it('does not resurrect the app or fall back when teardown races the remount', async () => {
     const f = await hostFixture()
@@ -392,6 +534,8 @@ describe('host-owned in-place recovery (simulated DSH and React, real Cordis lif
       expect(f.live()).toBe(0)
       expect(f.mount).toHaveBeenCalledTimes(1)
       expect(f.page.reload).not.toHaveBeenCalled()
-    } finally { await f.cleanup() }
+    } finally {
+      await f.cleanup()
+    }
   })
 })

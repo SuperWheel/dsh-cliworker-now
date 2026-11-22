@@ -41,7 +41,10 @@ type RootElement = { childElementCount: number }
 
 type RemountDecision = 'waiting' | 'unavailable' | 'stopped' | { restart: () => Promise<void> }
 // Shared by activation/disposal watches. Also guards attempts when storage is denied.
-const remountAttempts = new WeakMap<RootElement, { at: number; pending: boolean }>()
+// `watch` identifies the live switch that made the attempt: each switch gets one
+// remount even right after another switch's; repeats without a new switch wait
+// RELOAD_GAP_MS.
+const remountAttempts = new WeakMap<RootElement, { at: number; pending: boolean; watch?: object }>()
 
 /**
  * 只重启 DSH 自己拥有的 web mount fiber，不直接调用 uiRenderer.mount。
@@ -55,18 +58,25 @@ export function hostRootRemount(ctx: Context): () => RemountDecision {
   return () => {
     // FiberState.ACTIVE = 2；避免运行时导入 const enum 或额外 Cordis 副本。
     if (!root || root.fiber.state !== 2) return 'stopped'
-    const modules = root.get('modules') as {
-      version?: string
-      entries?: { state?: { getSnapshot: () => { syncing: boolean; failures: readonly unknown[] } } }
-    } | undefined
+    const modules = root.get('modules') as
+      | {
+          version?: string
+          entries?: { state?: { getSnapshot: () => { syncing: boolean; failures: readonly unknown[] } } }
+        }
+      | undefined
     if (modules?.version !== 'client' || !modules.entries?.state) return 'unavailable'
     const state = modules.entries.state.getSnapshot()
     if (state.syncing) return 'waiting'
     if (state.failures.length) return 'unavailable'
     if (!root.get('uiRenderer')) return 'unavailable'
-    const candidates = [...root.registry.values()].flatMap(runtime => [...runtime.fibers]).filter(fiber =>
-      fiber.parent.fiber === root.fiber && Object.keys(fiber.inject).length === 1 && 'uiRenderer' in fiber.inject,
-    )
+    const candidates = [...root.registry.values()]
+      .flatMap((runtime) => [...runtime.fibers])
+      .filter(
+        (fiber) =>
+          fiber.parent.fiber === root.fiber &&
+          Object.keys(fiber.inject).length === 1 &&
+          'uiRenderer' in fiber.inject,
+      )
     // 多个候选、额外 effect 或提供服务时，不能证明这是唯一的应用挂载 owner。
     if (candidates.length !== 1) return 'unavailable'
     const fiber = candidates[0]!
@@ -96,7 +106,8 @@ export interface RootRecoveryEnv {
 export function mountedRoot(element: RootElement | null): boolean {
   if (element === null) return false
   return Object.keys(element).some(
-    (key) => key.startsWith('__reactContainer$') && (element as unknown as Record<string, unknown>)[key] != null,
+    (key) =>
+      key.startsWith('__reactContainer$') && (element as unknown as Record<string, unknown>)[key] != null,
   )
 }
 
@@ -117,17 +128,21 @@ function lastReload(env: RootRecoveryEnv): number {
 /**
  * Prefer the host-owned remount. If unavailable/unsuccessful, reload once in
  * browsers or show the Desktop restart notice. Never interrupt host teardown.
+ * @param watch - the live switch's watch token; a different switch may remount
+ *   within RELOAD_GAP_MS of an earlier one (enable, then quickly disable).
  * @returns whether remount succeeded or a reload/notice was requested.
  */
-export async function recoverCrashedRoot(env: RootRecoveryEnv): Promise<boolean> {
+export async function recoverCrashedRoot(env: RootRecoveryEnv, watch?: object): Promise<boolean> {
   const root = env.getRoot()
   if (!root || !crashedRoot(root)) return false
   const decision = remountDecision(env)
   if (decision === 'waiting' || decision === 'stopped') return false
   const previous = remountAttempts.get(root)
   if (previous?.pending) return false
-  if (typeof decision === 'object' && (!previous || env.now() - previous.at >= RELOAD_GAP_MS)) {
-    const attempt = { at: env.now(), pending: true }
+  const allowed =
+    !previous || (watch !== undefined && previous.watch !== watch) || env.now() - previous.at >= RELOAD_GAP_MS
+  if (typeof decision === 'object' && allowed) {
+    const attempt = { at: env.now(), pending: true, ...(watch ? { watch } : {}) }
     remountAttempts.set(root, attempt)
     try {
       await decision.restart()
@@ -143,14 +158,18 @@ export async function recoverCrashedRoot(env: RootRecoveryEnv): Promise<boolean>
     if (after === 'stopped' || after === 'waiting') return false
   }
   if (env.showNotice) {
-    env.warn?.('CLI Worker: the Harness page went blank during a live plugin switch; DSH Desktop needs a full restart')
+    env.warn?.(
+      'CLI Worker: the Harness page went blank during a live plugin switch; DSH Desktop needs a full restart',
+    )
     env.showNotice()
     return true
   }
   const now = env.now(),
     since = now - lastReload(env)
   if (since >= 0 && since < RELOAD_GAP_MS) {
-    env.warn?.('CLI Worker: the Harness page crashed again right after an automatic reload; leaving it for a manual restart')
+    env.warn?.(
+      'CLI Worker: the Harness page crashed again right after an automatic reload; leaving it for a manual restart',
+    )
     return false
   }
   try {
@@ -182,10 +201,13 @@ export function watchCrashedRoot(env: RootRecoveryEnv, durationMs: number): () =
     stopped = false,
     observedRoot: RootElement | null = null,
     crashedSince = env.now()
+  // One token per live switch; a watch recovers at most once, then stops.
+  const watch = {}
   const finish = (fallbackOnly = false) => {
     stopped = true
-    void recoverCrashedRoot(fallbackOnly ? { ...env, remount: () => 'unavailable' } : env)
-      .catch(() => env.warn?.('CLI Worker: page recovery failed'))
+    void recoverCrashedRoot(fallbackOnly ? { ...env, remount: () => 'unavailable' } : env, watch).catch(() =>
+      env.warn?.('CLI Worker: page recovery failed'),
+    )
   }
   const schedule = (ms: number, step: () => void) => {
     handle = env.setTimeout(() => {
@@ -215,7 +237,10 @@ export function watchCrashedRoot(env: RootRecoveryEnv, durationMs: number): () =
       if (env.now() + SETTLE_MS > deadline) return
       schedule(SETTLE_MS, () => {
         // A newer graph may have started during the confirmation interval.
-        if (remountDecision(env) === 'waiting') { poll(); return }
+        if (remountDecision(env) === 'waiting') {
+          poll()
+          return
+        }
         finish()
       })
       return
@@ -259,7 +284,7 @@ export function inDshDesktop(): boolean {
 }
 
 /** Fill a crashed root with plain text; React no longer owns any node in it. */
-export function renderRestartNotice(root: Pick<HTMLElement, "append" | "ownerDocument">, text: string): void {
+export function renderRestartNotice(root: Pick<HTMLElement, 'append' | 'ownerDocument'>, text: string): void {
   const notice = root.ownerDocument.createElement('div')
   notice.setAttribute('role', 'alert')
   notice.setAttribute('data-cliworker-restart-notice', '')
@@ -281,7 +306,10 @@ export function renderRestartNotice(root: Pick<HTMLElement, "append" | "ownerDoc
  * The browser environment, or undefined outside a page (tests, server).
  * @param desktopNotice - text for the Desktop restart notice, resolved when it is shown.
  */
-export function browserRootRecoveryEnv(desktopNotice: () => string, ctx?: Context): RootRecoveryEnv | undefined {
+export function browserRootRecoveryEnv(
+  desktopNotice: () => string,
+  ctx?: Context,
+): RootRecoveryEnv | undefined {
   if (typeof document === 'undefined' || typeof location === 'undefined') return undefined
   let storage: Storage | undefined
   try {
